@@ -105,13 +105,13 @@ function UsageContent() {
             />
           </Suspense>
           <UsageTokensChart period={period} />
-          <UsageBreakdown stats={stats} />
           <UsageTopology
             providers={providers}
             activeRequests={stats?.activeRequests || []}
             lastProvider={stats?.recentRequests?.[0]?.provider || ""}
             errorProvider={stats?.errorProvider || ""}
           />
+          <UsageBreakdown stats={stats} />
         </div>
       ) : (
         <RequestLog />
