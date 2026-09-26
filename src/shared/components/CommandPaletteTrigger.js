@@ -17,7 +17,7 @@ export default function CommandPaletteTrigger() {
       onClick={palette.openPalette}
       aria-label="Open command palette"
       aria-haspopup="dialog"
-      className="flex h-11 items-center gap-2.5 rounded-xl border border-line bg-raised px-3 text-start text-sm text-muted transition-colors hover:border-line/80 hover:text-text focus-visible:outline-none focus-visible:shadow-focus max-sm:size-11 max-sm:justify-center max-sm:px-0 sm:w-[260px] md:w-[320px]"
+      className="flex h-11 items-center gap-2.5 rounded-xl border border-line bg-raised px-3 text-start text-sm text-muted transition-colors hover:border-line/80 hover:text-text focus-visible:outline-none focus-visible:shadow-focus max-sm:size-11 max-sm:justify-center max-sm:px-0 sm:min-w-[140px] sm:max-w-[320px] sm:flex-1"
     >
       <span
         className="material-symbols-outlined shrink-0 text-[18px] text-muted"

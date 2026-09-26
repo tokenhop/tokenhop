@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import PropTypes from "prop-types";
-import ProviderIcon from "@/shared/components/ProviderIcon";
+import ProviderTile from "@/shared/components/ProviderTile";
 import HeaderMenu from "@/shared/components/HeaderMenu";
 import HeaderLanguage from "@/shared/components/HeaderLanguage";
 import DonateModal from "@/shared/components/DonateModal";
@@ -18,7 +18,6 @@ import {
   APIKEY_PROVIDERS,
 } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS } from "@/shared/constants/providers";
-import { getProviderIconSrc } from "@/shared/utils/providerIcon";
 import { COMBINED_WEB_ITEM } from "@/shared/constants/navigation";
 import { translate } from "@/i18n/runtime";
 
@@ -37,6 +36,17 @@ export const getPageInfo = (pathname) => {
   if (mediaDetailMatch) {
     const kindId = mediaDetailMatch[1];
     const providerId = mediaDetailMatch[2];
+    if (kindId === "combo") {
+      return {
+        title: "",
+        description: "",
+        breadcrumbs: [
+          { label: "Media Providers", href: "/dashboard/media-providers" },
+          { label: "Combo", href: "/dashboard/media-providers" },
+          { label: providerId },
+        ],
+      };
+    }
     const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kindId);
     const provider = AI_PROVIDERS[providerId];
     // Detail page renders its own in-page h1 (YAN-314); shell shows breadcrumb only.
@@ -46,7 +56,7 @@ export const getPageInfo = (pathname) => {
       breadcrumbs: [
         { label: "Media Providers", href: `/dashboard/media-providers/${kindId}` },
         { label: kindConfig?.label || kindId, href: `/dashboard/media-providers/${kindId}` },
-        { label: provider?.name || providerId, image: getProviderIconSrc(providerId) },
+        { label: provider?.name || providerId, providerId },
       ],
     };
   }
@@ -89,7 +99,7 @@ export const getPageInfo = (pathname) => {
           { label: "Providers", href: "/dashboard/providers" },
           {
             label: providerInfo.name,
-            image: getProviderIconSrc(providerInfo.id),
+            providerId: providerInfo.id,
           },
         ],
       };
@@ -289,7 +299,7 @@ export default function Header({
       )}
 
       {/* Title block: subtitle ABOVE display H1 per the Signal board */}
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <div className="flex min-w-[9rem] max-w-[28rem] flex-col gap-1 lg:min-w-[14rem]">
         {breadcrumbs.length > 0 ? (
           <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs text-muted">
             {breadcrumbs.map((crumb, index) => (
@@ -311,15 +321,7 @@ export default function Header({
                   </Link>
                 ) : (
                   <span className="flex items-center gap-1.5 font-medium text-text">
-                    {crumb.image && (
-                      <ProviderIcon
-                        src={crumb.image}
-                        alt={crumb.label}
-                        size={20}
-                        className="object-contain"
-                        fallbackText={crumb.label.slice(0, 2).toUpperCase()}
-                      />
-                    )}
+                    {crumb.providerId && <ProviderTile providerId={crumb.providerId} size="sm" />}
                     <span>{translate(crumb.label)}</span>
                   </span>
                 )}
@@ -338,7 +340,7 @@ export default function Header({
       </div>
 
       {/* Right actions */}
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
         {displayName && (loginMethod === "OIDC" || loginMethod === "SAML") && (
           <div
             className="hidden items-center gap-1.5 rounded-full border border-line bg-raised px-3 py-1 text-xs text-muted sm:flex"
@@ -394,7 +396,7 @@ function HeaderSearch() {
   if (!visible) return null;
 
   return (
-    <div className="relative w-[180px] sm:w-[240px]">
+    <div className="relative min-w-[120px] max-w-[240px] flex-1">
       <span
         className="material-symbols-outlined pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-[18px] text-muted"
         aria-hidden="true"
