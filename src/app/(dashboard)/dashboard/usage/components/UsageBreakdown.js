@@ -165,36 +165,37 @@ export default function UsageBreakdown({ stats }) {
   };
 
   return (
-    <Card
-      padding="none"
-      title="Breakdown"
-      action={
-        <div className="flex flex-wrap items-center gap-2">
-          <SegmentedControl
-            aria-label="Breakdown view"
-            size="sm"
-            value={view}
-            onChange={setView}
-            options={[
-              { value: "model", label: "Model" },
-              { value: "account", label: "Account" },
-              { value: "apiKey", label: "API key" },
-              { value: "endpoint", label: "Endpoint" },
-            ]}
-          />
-          <SegmentedControl
-            aria-label="Breakdown metric"
-            size="sm"
-            value={mode}
-            onChange={setMode}
-            options={[
-              { value: "costs", label: "Costs" },
-              { value: "tokens", label: "Tokens" },
-            ]}
-          />
-        </div>
-      }
-    >
+    <Card padding="none">
+      <Card.Header
+        className="px-6 pt-4 pb-4"
+        title="Breakdown"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <SegmentedControl
+              aria-label="Breakdown view"
+              size="sm"
+              value={view}
+              onChange={setView}
+              options={[
+                { value: "model", label: "Model" },
+                { value: "account", label: "Account" },
+                { value: "apiKey", label: "API key" },
+                { value: "endpoint", label: "Endpoint" },
+              ]}
+            />
+            <SegmentedControl
+              aria-label="Breakdown metric"
+              size="sm"
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: "costs", label: "Costs" },
+                { value: "tokens", label: "Tokens" },
+              ]}
+            />
+          </div>
+        }
+      />
       {!stats || groups.length === 0 ? (
         <EmptyState icon="table_rows" title={config.empty} />
       ) : (

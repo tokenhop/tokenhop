@@ -105,15 +105,13 @@ function UsageContent() {
             />
           </Suspense>
           <UsageTokensChart period={period} />
-          <div className="grid min-w-0 grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-            <UsageBreakdown stats={stats} />
-            <UsageTopology
-              providers={providers}
-              activeRequests={stats?.activeRequests || []}
-              lastProvider={stats?.recentRequests?.[0]?.provider || ""}
-              errorProvider={stats?.errorProvider || ""}
-            />
-          </div>
+          <UsageBreakdown stats={stats} />
+          <UsageTopology
+            providers={providers}
+            activeRequests={stats?.activeRequests || []}
+            lastProvider={stats?.recentRequests?.[0]?.provider || ""}
+            errorProvider={stats?.errorProvider || ""}
+          />
         </div>
       ) : (
         <RequestLog />
