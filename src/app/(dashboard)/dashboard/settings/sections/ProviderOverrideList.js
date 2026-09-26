@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import Button from "@/shared/components/Button";
 import Select from "@/shared/components/Select";
 import NumberStepper from "@/shared/components/NumberStepper";
+import ProviderTile from "@/shared/components/ProviderTile";
 import Modal from "@/shared/components/Modal";
 import { applyProviderOverride, removeProviderOverride } from "./routingSettings";
 
@@ -219,6 +220,7 @@ export default function ProviderOverrideList({ overrides, onOverridesChange }) {
                   availableProviders.find((p) => p.value === providerId)?.label || providerId;
                 return (
                   <li key={providerId} className="flex flex-wrap items-center gap-3 p-3">
+                    <ProviderTile providerId={providerId} size="md" />
                     <div className="min-w-40 flex-1">
                       <p className="text-sm font-semibold text-text">{label}</p>
                       <p className="font-mono text-[11px] text-subtle">{providerId}</p>

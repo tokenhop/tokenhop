@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import ProviderIcon from "@/shared/components/ProviderIcon";
+import ProviderTile from "@/shared/components/ProviderTile";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
@@ -829,13 +829,7 @@ export default function ProviderLimits() {
                       apps
                     </span>
                   ) : (
-                    <ProviderIcon
-                      src={`/providers/${providerFilter}.png`}
-                      alt=""
-                      size={18}
-                      className="size-[18px] rounded object-contain"
-                      fallbackText={providerFilter.slice(0, 2).toUpperCase()}
-                    />
+                    <ProviderTile providerId={providerFilter} size="sm" />
                   )}
                   <span className="hidden truncate lg:inline">{selectedProviderLabel}</span>
                   <span className="sr-only lg:hidden">{selectedProviderLabel}</span>
@@ -870,7 +864,10 @@ export default function ProviderLimits() {
                   setProviderFilter(provider);
                 }}
               >
-                {providerLabel(provider)}
+                <span className="flex items-center gap-2">
+                  <ProviderTile providerId={provider} size="sm" />
+                  {providerLabel(provider)}
+                </span>
               </MenuItem>
             ))}
           </Menu>
@@ -1020,15 +1017,7 @@ export default function ProviderLimits() {
               <div className="px-3 py-2 border-b border-black/10 dark:border-white/10">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-8 h-8 shrink-0 rounded-md flex items-center justify-center overflow-hidden">
-                      <ProviderIcon
-                        src={`/providers/${conn.provider}.png`}
-                        alt={conn.provider}
-                        size={32}
-                        className="object-contain"
-                        fallbackText={conn.provider?.slice(0, 2).toUpperCase() || "PR"}
-                      />
-                    </div>
+                    <ProviderTile providerId={conn.provider || "provider"} size="md" />
                     <div className="min-w-0">
                       <h3 className="text-sm font-semibold text-text-primary truncate">
                         {providerLabel(conn.provider)}

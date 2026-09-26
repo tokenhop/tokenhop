@@ -11,7 +11,16 @@ import {
   TERMINAL_LEVELS,
   terminalLevelClass,
 } from "../../src/shared/components/displayPrimitives.js";
-import { PROVIDER_BRANDS } from "../../src/shared/constants/providerBrands.js";
+import { readdirSync } from "node:fs";
+import {
+  PROVIDER_BRANDS,
+  getProviderBrand,
+  resolveProviderId,
+} from "../../src/shared/constants/providerBrands.js";
+import {
+  getProviderIconSrc,
+  markProviderIconMissing,
+} from "../../src/shared/utils/providerIcon.js";
 import { contrastRatio } from "../../src/shared/utils/contrast.js";
 
 describe("Signal meter", () => {
@@ -64,6 +73,38 @@ describe("provider monogram colors", () => {
     for (const [id, brand] of Object.entries(PROVIDER_BRANDS)) {
       expect(brand.monogram, id).toBeTruthy();
       expect(contrastRatio("#ffffff", brand.color), id).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
+describe("provider logo resolution", () => {
+  it("resolves ids, aliases and alias/model strings to the registry id", () => {
+    expect(resolveProviderId("claude")).toBe("claude");
+    expect(resolveProviderId("cc")).toBe("claude");
+    expect(resolveProviderId("cc/claude-sonnet-4")).toBe("claude");
+    expect(resolveProviderId("mc/muse-spark")).toBe("meta-code");
+    // Same precedence as the router: registry id beats a colliding alias, aliases[] resolve.
+    expect(resolveProviderId("mmf")).toBe("mmf");
+    expect(resolveProviderId("kimi-coding/k2")).toBe("kimi");
+    expect(resolveProviderId("CC")).toBe("claude");
+    expect(resolveProviderId("ag/gemini")).toBe("antigravity");
+    expect(resolveProviderId("bb/model")).toBe("blackbox");
+  });
+  it("compatible nodes inherit family brand and logo", () => {
+    expect(getProviderBrand("openai-compatible-abc123").monogram).toBe("OC");
+    expect(getProviderIconSrc("openai-compatible-abc123")).toBe("/providers/oai-cc.png");
+    expect(getProviderIconSrc("anthropic-compatible-x")).toBe("/providers/anthropic-m.png");
+  });
+  it("caches missing compatible-family logo across generated node ids", () => {
+    markProviderIconMissing("openai-compatible-missing-test");
+    expect(getProviderIconSrc("openai-compatible-other-test")).toBeNull();
+  });
+  it("every registry brand logo points at a shipped file", async () => {
+    const { default: registry } = await import("../../open-sse/providers/registry/index.js");
+    const shipped = new Set(readdirSync(new URL("../../public/providers", import.meta.url)));
+    expect(getProviderIconSrc("meta-code")).toBe("/providers/meta-code.svg");
+    for (const entry of registry.filter((provider) => provider.display)) {
+      expect(shipped.has(getProviderIconSrc(entry.id).split("/").pop()), entry.id).toBe(true);
     }
   });
 });

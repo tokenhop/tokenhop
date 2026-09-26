@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Card from "@/shared/components/Card";
+import ProviderTile from "@/shared/components/ProviderTile";
 import Button from "@/shared/components/Button";
 import StatusPill from "@/shared/components/StatusPill";
 import EmptyState from "@/shared/components/EmptyState";
@@ -216,8 +217,11 @@ export default function RequestLog() {
                         {d.timestamp ? new Date(d.timestamp).toLocaleString() : "—"}
                       </td>
                       <td className="max-w-[260px] truncate p-4 font-mono">{d.model}</td>
-                      <td className="max-w-[180px] truncate p-4">
-                        {providerLabel(d.provider, nameCache)}
+                      <td className="max-w-[180px] p-4">
+                        <span className="flex min-w-0 items-center gap-2">
+                          {d.provider && <ProviderTile providerId={d.provider} size="sm" />}
+                          <span className="truncate">{providerLabel(d.provider, nameCache)}</span>
+                        </span>
                       </td>
                       <td className="p-4 text-right font-mono">
                         {getInput(d.tokens).toLocaleString()}

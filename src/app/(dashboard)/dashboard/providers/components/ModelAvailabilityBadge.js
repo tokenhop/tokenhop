@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
+import ProviderTile from "@/shared/components/ProviderTile";
 
 const STATUS_CONFIG = {
   available: { icon: "check_circle", color: "#22c55e", label: "Available" },
@@ -140,7 +141,8 @@ export default function ModelAvailabilityBadge() {
               <div className="flex flex-col gap-2.5">
                 {Object.entries(byProvider).map(([provider, provModels]) => (
                   <div key={provider}>
-                    <p className="text-xs font-semibold text-text-main mb-1.5 capitalize">
+                    <p className="mb-1.5 flex items-center gap-2 text-xs font-semibold capitalize text-text-main">
+                      <ProviderTile providerId={provider} size="sm" />
                       {provider}
                     </p>
                     <div className="flex flex-col gap-1">

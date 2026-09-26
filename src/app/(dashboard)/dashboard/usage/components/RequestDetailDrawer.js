@@ -4,6 +4,7 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import Drawer from "@/shared/components/Drawer";
 import StatusPill from "@/shared/components/StatusPill";
+import ProviderTile from "@/shared/components/ProviderTile";
 import EmptyState from "@/shared/components/EmptyState";
 import CopyField from "@/shared/components/CopyField";
 import { buildCurl } from "../lib/usageShapes";
@@ -135,7 +136,10 @@ export default function RequestDetailDrawer({ detail, isOpen, onClose, providerN
           ) : null}
           <div>
             <dt className="text-xs text-muted">Provider</dt>
-            <dd>{providerName || detail.provider}</dd>
+            <dd className="flex items-center gap-2">
+              {detail.provider && <ProviderTile providerId={detail.provider} size="sm" />}
+              {providerName || detail.provider}
+            </dd>
           </div>
           <div>
             <dt className="text-xs text-muted">Timestamp</dt>

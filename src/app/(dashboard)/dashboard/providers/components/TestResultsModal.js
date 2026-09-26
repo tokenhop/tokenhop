@@ -2,6 +2,7 @@
 
 import PropTypes from "prop-types";
 import { Modal, StatusPill } from "@/shared/components";
+import ProviderTile from "@/shared/components/ProviderTile";
 
 /**
  * Restyled Signal test results modal.
@@ -70,6 +71,7 @@ export default function TestResultsModal({ isOpen, onClose, results }) {
                   >
                     {r.valid ? "check_circle" : "error"}
                   </span>
+                  <ProviderTile providerId={r.provider} size="sm" />
                   <div className="min-w-0 flex-[1_1_160px]">
                     <span className="block truncate font-medium text-text sm:inline">
                       {r.connectionName}

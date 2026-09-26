@@ -8,13 +8,13 @@ import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/prov
 function resolveSrc(src, providerId) {
   if (providerId) return getProviderIconSrc(providerId);
   if (!src) return null;
-  const m = String(src).match(/^\/providers\/([^/]+)\.png$/i);
+  const m = String(src).match(/^\/providers\/([^/]+)\.(?:png|svg)$/i);
   if (m) return getProviderIconSrc(m[1]);
   return src;
 }
 
 /**
- * Provider logo from `/public/providers/{id}.png` with a Signal monogram tile
+ * Provider logo from `/public/providers/{id}.png|svg` with a Signal monogram tile
  * (brand color, white text) as the fallback when the logo is missing.
  */
 export default function ProviderIcon({
@@ -28,7 +28,7 @@ export default function ProviderIcon({
 }) {
   const effectiveSrc = resolveSrc(src, providerId);
   const [errored, setErrored] = useState(false);
-  const idFromSrc = effectiveSrc?.match(/^\/providers\/([^/]+)\.png$/i)?.[1];
+  const idFromSrc = effectiveSrc?.match(/^\/providers\/([^/]+)\.(?:png|svg)$/i)?.[1];
   const brand = getProviderBrand(providerId ?? idFromSrc);
   const background = fallbackColor ?? brand.color;
 

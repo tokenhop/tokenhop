@@ -6,6 +6,7 @@ import Link from "next/link";
 import Button from "@/shared/components/Button";
 import Toggle from "@/shared/components/Toggle";
 import { autoPingConnections } from "./providersModelsHelpers";
+import ProviderTile from "@/shared/components/ProviderTile";
 
 /**
  * Per-connection auto-ping list for one provider family.
@@ -70,9 +71,12 @@ export default function AutoPingList({
   return (
     <div className="mt-3 rounded-xl border border-line bg-raised p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="text-sm font-semibold text-text">Auto-ping · {label}</p>
-          <p className="font-mono text-[11px] text-subtle">{settingKey}</p>
+        <div className="flex items-center gap-3">
+          <ProviderTile providerId={providerId} size="md" />
+          <div>
+            <p className="text-sm font-semibold text-text">Auto-ping · {label}</p>
+            <p className="font-mono text-[11px] text-subtle">{settingKey}</p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Link

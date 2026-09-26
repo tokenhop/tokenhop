@@ -5,7 +5,7 @@ import PropTypes from "prop-types";
 import { ReactFlow, Handle, Position, Controls, BaseEdge, getBezierPath } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
-import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
+import ProviderTile from "@/shared/components/ProviderTile";
 
 // Force-stop FE animation if a provider stays active longer than this
 const FE_ACTIVE_TIMEOUT_MS = 60000;
@@ -19,14 +19,9 @@ function getProviderConfig(providerId) {
   return AI_PROVIDERS[providerId] || { color: "#6b7280", name: providerId };
 }
 
-function getProviderImageUrl(providerId) {
-  return getProviderIconSrc(providerId);
-}
-
 // Custom provider node - rectangle with image + name
 function ProviderNode({ data }) {
-  const { label, color, imageUrl, textIcon, active } = data;
-  const [imgError, setImgError] = useState(false);
+  const { label, color, providerId, active } = data;
   return (
     <div
       className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border-2 transition-all duration-300 bg-bg"
@@ -61,30 +56,7 @@ function ProviderNode({ data }) {
         className="!bg-transparent !border-0 !w-0 !h-0"
       />
 
-      {/* Provider icon */}
-      <div
-        className="w-8 h-8 rounded-md flex items-center justify-center shrink-0"
-        style={{ backgroundColor: `${color}15` }}
-      >
-        {imageUrl && !imgError ? (
-          <img
-            src={imageUrl}
-            alt={label}
-            className="w-6 h-6 rounded-sm object-contain"
-            loading="lazy"
-            decoding="async"
-            onError={() => {
-              const m = imageUrl?.match(/^\/providers\/([^/]+)\.png$/i);
-              if (m) markProviderIconMissing(m[1]);
-              setImgError(true);
-            }}
-          />
-        ) : (
-          <span className="text-sm font-bold" style={{ color }}>
-            {textIcon}
-          </span>
-        )}
-      </div>
+      <ProviderTile providerId={providerId} size="md" />
 
       {/* Provider name */}
       <span
@@ -371,8 +343,7 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
       label:
         (config.name !== p.provider ? config.name : null) || p.nodeName || p.name || p.provider,
       color: config.color || "#6b7280",
-      imageUrl: getProviderImageUrl(p.provider),
-      textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
+      providerId: p.provider,
       active,
     };
 

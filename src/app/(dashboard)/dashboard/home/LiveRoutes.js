@@ -2,6 +2,9 @@
 
 import PropTypes from "prop-types";
 import Callout from "@/shared/components/Callout";
+import { useState } from "react";
+import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
+import { getProviderBrand, resolveProviderId } from "@/shared/constants/providerBrands";
 import { EDGE_STATE_LABEL, WINDOW_MS } from "@/lib/home/liveRoutes";
 import { formatCompact, formatReset, timeAgo } from "./format";
 import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
@@ -83,6 +86,11 @@ ClientNode.propTypes = {
 };
 
 function ProviderNode({ x, y, provider }) {
+  const id = resolveProviderId(provider.id);
+  const brand = getProviderBrand(id);
+  const [logoMissing, setLogoMissing] = useState(false);
+  const logo = logoMissing ? null : getProviderIconSrc(id);
+  const plateY = y + (NODE_H - 22) / 2;
   return (
     <g>
       <rect
@@ -114,8 +122,43 @@ function ProviderNode({ x, y, provider }) {
                 : "var(--signal-line)"
         }
       />
-      <text x={x + 28} y={y + 21} fill="var(--signal-text)" fontSize="12" fontWeight="500">
-        {provider.name.length > 20 ? `${provider.name.slice(0, 19)}…` : provider.name}
+      {/* Brand plate behind the logo keeps dark glyph logos visible on dark panels. */}
+      <rect
+        x={x + 28}
+        y={plateY}
+        width={22}
+        height={22}
+        rx={6}
+        fill={logo ? `color-mix(in srgb, ${brand.color} 8%, #ffffff)` : brand.color}
+      />
+      {logo ? (
+        <image
+          href={logo}
+          x={x + 28}
+          y={plateY}
+          width={22}
+          height={22}
+          style={{ clipPath: "inset(0 round 6px)" }}
+          preserveAspectRatio="xMidYMid meet"
+          onError={() => {
+            markProviderIconMissing(id);
+            setLogoMissing(true);
+          }}
+        />
+      ) : (
+        <text
+          x={x + 39}
+          y={y + NODE_H / 2 + 3.5}
+          textAnchor="middle"
+          fontSize="9"
+          fontWeight="700"
+          fill="#ffffff"
+        >
+          {brand.monogram}
+        </text>
+      )}
+      <text x={x + 58} y={y + 21} fill="var(--signal-text)" fontSize="12" fontWeight="500">
+        {provider.name.length > 16 ? `${provider.name.slice(0, 15)}…` : provider.name}
       </text>
       {provider.state === "error" || provider.state === "cooling" ? (
         <text

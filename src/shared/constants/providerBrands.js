@@ -5,6 +5,7 @@
 // the Signal component layer (docs/redesign/README.md).
 
 import REGISTRY from "open-sse/providers/registry/index.js";
+import { resolveProviderAlias } from "open-sse/services/model.js";
 import { contrastRatio, parseColor } from "@/shared/utils/contrast";
 
 const TEXT_MIN = 4.5;
@@ -33,6 +34,28 @@ export function toTileColor(hex) {
   }
   return PROVIDER_BRAND_FALLBACK.color;
 }
+
+/**
+ * Canonical provider id for a registry id, alias (`cc`) or `alias/model` string.
+ * Same precedence as the router (open-sse/services/model.js).
+ * @param {string} value
+ * @returns {string}
+ */
+export function resolveProviderId(value) {
+  const raw = String(value || "")
+    .trim()
+    .toLowerCase();
+  const head = raw.includes("/") ? raw.slice(0, raw.indexOf("/")) : raw;
+  const routed = resolveProviderAlias(head);
+  return routed === head && !PROVIDER_IDS.has(head) ? (UI_ALIAS_TO_ID[head] ?? head) : routed;
+}
+
+// Dashboard short aliases (`ag`, `bb`) that the router map does not know.
+// Registry ids still win on collisions (`mmf`).
+const PROVIDER_IDS = new Set(REGISTRY.map((entry) => entry.id));
+const UI_ALIAS_TO_ID = Object.fromEntries(
+  REGISTRY.filter((entry) => entry.uiAlias).map((entry) => [entry.uiAlias, entry.id]),
+);
 
 const registryColor = (id) => REGISTRY.find((entry) => entry.id === id)?.display?.color;
 
@@ -73,9 +96,12 @@ export const PROVIDER_BRANDS = {
  * @param {string} id
  * @returns {{ color: string, monogram: string }}
  */
-export function getProviderBrand(id) {
+export function getProviderBrand(rawId) {
+  const id = resolveProviderId(rawId);
+  const family = Object.keys(SYNTHETIC_BRANDS).find((key) => String(id).startsWith(`${key}-`));
   return (
-    PROVIDER_BRANDS[id] ?? {
+    PROVIDER_BRANDS[id] ??
+    PROVIDER_BRANDS[family] ?? {
       color: PROVIDER_BRAND_FALLBACK.color,
       monogram: String(id || "?")
         .slice(0, 2)

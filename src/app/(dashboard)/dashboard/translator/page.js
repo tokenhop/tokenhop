@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Card, Button, StatusPill, Callout } from "@/shared/components";
+import { Card, Button, StatusPill, Callout, ProviderTile } from "@/shared/components";
 import TranslatorStep from "./TranslatorStep";
 // 7 steps matching requestLogger files exactly
 const STEPS = [
@@ -303,9 +303,14 @@ export default function TranslatorPage() {
         {meta && (
           <Card padding="xs" className="flex flex-wrap items-center gap-2" role="status">
             {["sourceFormat", "targetFormat", "provider", "model"].map((key) => (
-              <StatusPill key={key} variant={META_VARIANTS[key]} size="sm">
-                <span className="opacity-70">{key}:</span> {meta[key]}
-              </StatusPill>
+              <span key={key} className="inline-flex items-center gap-1.5">
+                {key === "provider" && meta.provider && (
+                  <ProviderTile providerId={meta.provider} size="sm" />
+                )}
+                <StatusPill variant={META_VARIANTS[key]} size="sm">
+                  <span className="opacity-70">{key}:</span> {meta[key]}
+                </StatusPill>
+              </span>
             ))}
           </Card>
         )}

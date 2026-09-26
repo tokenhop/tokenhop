@@ -8,6 +8,7 @@ import Button from "@/shared/components/Button";
 import PricingModal from "@/shared/components/PricingModal";
 import { Skeleton } from "@/shared/components/Loading";
 import EmptyState from "@/shared/components/EmptyState";
+import ProviderTile from "@/shared/components/ProviderTile";
 
 /**
  * Pricing section: overview table + edit modal + reset to defaults.
@@ -107,6 +108,11 @@ export default function PricingSection({ modalOpen, onModalChange }) {
                       return (
                         <tr key={`${provider}/${model}`} className="border-t border-line">
                           <td className="px-3 py-2 font-mono text-xs text-text">
+                            <ProviderTile
+                              providerId={provider}
+                              size="sm"
+                              className="me-2 align-middle"
+                            />
                             {provider}/{model}
                             {entry.custom === true && (
                               <span className="ms-1.5 rounded-full bg-coral-bg px-1.5 py-0.5 text-[10px] font-semibold text-coral-ink">

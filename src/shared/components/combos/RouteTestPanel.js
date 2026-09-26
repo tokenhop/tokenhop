@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import Button from "@/shared/components/Button";
+import ProviderTile from "@/shared/components/ProviderTile";
 import StatusPill from "@/shared/components/StatusPill";
 import { formatProbeLatency, probeLastRunLabel } from "./routeTestFormat";
 
@@ -116,6 +117,7 @@ export default function RouteTestPanel({ comboId }) {
                 >
                   <span className="font-mono">{step.status ?? "—"}</span>
                 </StatusPill>
+                <ProviderTile providerId={step.model} size="sm" />
                 <span className="min-w-0 truncate font-mono">{step.model}</span>
                 <span className="truncate text-muted">
                   {reason} · {formatProbeLatency(step.latencyMs)}

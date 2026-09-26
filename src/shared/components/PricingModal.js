@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import { getDefaultPricing } from "open-sse/providers/pricing.js";
 import Modal, { ConfirmDialog } from "./Modal";
 import Button from "./Button";
+import ProviderTile from "@/shared/components/ProviderTile";
 
 const PRICING_FIELDS = ["input", "output", "cached", "reasoning", "cache_creation"];
 const FIELD_LABELS = {
@@ -179,7 +180,8 @@ PricingModal.propTypes = {
 function ProviderPricingTable({ provider, models, onChange }) {
   return (
     <div className="overflow-hidden rounded-lg border border-line">
-      <div className="bg-raised px-4 py-2 text-sm font-semibold text-text">
+      <div className="flex items-center gap-2 bg-raised px-4 py-2 text-sm font-semibold text-text">
+        <ProviderTile providerId={provider} size="sm" />
         {provider.toUpperCase()}
       </div>
       <section

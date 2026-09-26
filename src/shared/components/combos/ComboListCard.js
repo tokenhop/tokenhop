@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { getProviderBrand } from "@/shared/constants/providerBrands";
+import ProviderTile from "@/shared/components/ProviderTile";
 import StatusPill from "@/shared/components/StatusPill";
 
 /**
@@ -28,11 +28,7 @@ export default function ComboListCard({
   onSelect,
 }) {
   const models = combo?.models || [];
-  const tiles = models.slice(0, 3).map((m, i) => {
-    const providerId = m.includes("/") ? m.slice(0, m.indexOf("/")) : m;
-    const brand = getProviderBrand(providerId);
-    return { key: `${m}-${i}`, brand, short: m };
-  });
+  const tiles = models.slice(0, 3).map((m, i) => ({ key: `${m}-${i}`, short: m }));
   return (
     <button
       type="button"
@@ -58,15 +54,10 @@ export default function ComboListCard({
           <span
             key={t.key}
             title={t.short}
-            aria-hidden="true"
-            style={{
-              backgroundColor: t.brand.color,
-              zIndex: 3 - i,
-              marginInlineStart: i === 0 ? 0 : -6,
-            }}
-            className="inline-flex size-6 items-center justify-center rounded-md font-display text-[10px] font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14),0_0_0_2px_var(--signal-panel)]"
+            style={{ zIndex: 3 - i, marginInlineStart: i === 0 ? 0 : -6 }}
+            className="relative inline-flex rounded-md shadow-[0_0_0_2px_var(--signal-panel)]"
           >
-            {t.brand.monogram}
+            <ProviderTile providerId={t.short} size="sm" />
           </span>
         ))}
         <span className="ms-3 text-xs text-muted">

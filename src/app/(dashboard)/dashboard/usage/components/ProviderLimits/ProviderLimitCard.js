@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import Card from "@/shared/components/Card";
-import ProviderIcon from "@/shared/components/ProviderIcon";
+import ProviderTile from "@/shared/components/ProviderTile";
 import Badge from "@/shared/components/Badge";
-import { getProviderBrand } from "@/shared/constants/providerBrands";
 import QuotaProgressBar from "./QuotaProgressBar";
 import { calculatePercentage } from "./utils";
 
@@ -38,8 +37,6 @@ export default function ProviderLimitCard({
     }
   };
 
-  // Tile background from the shared contrast-safe brand map.
-  const providerColor = getProviderBrand(provider).color;
   const planVariant = planVariants[plan?.toLowerCase()] || "default";
 
   return (
@@ -48,19 +45,7 @@ export default function ProviderLimitCard({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           {/* Provider Logo */}
-          <div
-            className="size-10 rounded-lg flex items-center justify-center p-1.5"
-            style={{ backgroundColor: `color-mix(in srgb, ${providerColor} 12%, transparent)` }}
-          >
-            <ProviderIcon
-              src={`/providers/${provider}.png`}
-              alt={provider || "Provider"}
-              size={40}
-              className="object-contain rounded-lg"
-              fallbackText={provider?.slice(0, 2).toUpperCase() || "PR"}
-              fallbackColor={providerColor}
-            />
-          </div>
+          <ProviderTile providerId={provider || "provider"} size="md" />
 
           <div>
             <h3 className="font-semibold text-text-primary">{name || provider}</h3>

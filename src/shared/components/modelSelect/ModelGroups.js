@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import ProviderIcon from "../ProviderIcon";
+import ProviderTile from "../ProviderTile";
 import CapacityBadges from "../CapacityBadges";
 
 /**
@@ -26,13 +26,7 @@ export function ModelGroupChips({
   return (
     <div>
       <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
-        <ProviderIcon
-          src={`/providers/${providerId}.png`}
-          alt={group.name}
-          size={14}
-          fallbackText={(group.name || providerId).slice(0, 2).toUpperCase()}
-          fallbackColor={group.color}
-        />
+        <ProviderTile providerId={providerId} size="sm" />
         <span className="text-xs font-medium text-coral">{group.name}</span>
         <span className="text-[10px] text-muted">({group.models.length})</span>
       </div>

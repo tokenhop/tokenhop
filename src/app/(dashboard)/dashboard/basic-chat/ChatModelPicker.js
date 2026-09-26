@@ -3,6 +3,7 @@
 import PropTypes from "prop-types";
 import { useCallback, useRef } from "react";
 import { Skeleton, StatusPill } from "@/shared/components";
+import ProviderTile from "@/shared/components/ProviderTile";
 import { cn } from "@/shared/utils/cn";
 import useMenuDismiss from "./useMenuDismiss";
 
@@ -40,12 +41,17 @@ export default function ChatModelPicker({
             <Skeleton className="h-3 w-44" />
           </span>
         ) : (
-          <span className="min-w-0">
-            <span className="block truncate font-display text-sm font-semibold text-text">
-              {activeModel ? activeModel.name : "Select model"}
-            </span>
-            <span className="block truncate font-mono text-xs text-subtle">
-              {activeModel ? activeModel.requestModel : "Choose from connected providers"}
+          <span className="flex min-w-0 items-center gap-3">
+            {activeModel?.providerId && (
+              <ProviderTile providerId={activeModel.providerId} size="md" />
+            )}
+            <span className="min-w-0">
+              <span className="block truncate font-display text-sm font-semibold text-text">
+                {activeModel ? activeModel.name : "Select model"}
+              </span>
+              <span className="block truncate font-mono text-xs text-subtle">
+                {activeModel ? activeModel.requestModel : "Choose from connected providers"}
+              </span>
             </span>
           </span>
         )}
@@ -79,8 +85,9 @@ export default function ChatModelPicker({
                 aria-label={group.providerName}
                 className="mb-2 rounded-xl border border-line bg-raised p-2 last:mb-0"
               >
-                <div className="flex items-center justify-between px-2 py-2">
-                  <p className="font-display text-sm font-semibold text-text">
+                <div className="flex items-center justify-between gap-2 px-2 py-2">
+                  <ProviderTile providerId={group.providerId} size="sm" />
+                  <p className="me-auto font-display text-sm font-semibold text-text">
                     {group.providerName}
                   </p>
                   <StatusPill variant="neutral" size="sm">
@@ -141,6 +148,7 @@ const modelShape = PropTypes.shape({
   id: PropTypes.string.isRequired,
   name: PropTypes.string.isRequired,
   requestModel: PropTypes.string.isRequired,
+  providerId: PropTypes.string,
 });
 
 ChatModelPicker.propTypes = {

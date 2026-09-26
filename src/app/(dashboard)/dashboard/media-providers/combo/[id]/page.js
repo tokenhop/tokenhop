@@ -12,7 +12,7 @@ import {
   ConfirmDialog,
   Callout,
 } from "@/shared/components";
-import ProviderIcon from "@/shared/components/ProviderIcon";
+import ProviderTile from "@/shared/components/ProviderTile";
 import { AI_PROVIDERS, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { previewAuthHeader } from "@/shared/constants/previewAuth";
 import { createObjectUrlRegistry } from "@/shared/constants/playgroundUrls";
@@ -448,14 +448,7 @@ export default function ComboDetailPage() {
                   className="flex items-center gap-3 p-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02]"
                 >
                   <span className="text-xs text-text-muted w-5 text-center">{idx + 1}</span>
-                  <ProviderIcon
-                    src={`/providers/${providerId}.png`}
-                    alt={p?.name || providerId}
-                    size={24}
-                    className="object-contain rounded shrink-0"
-                    fallbackText={p?.textIcon || providerId.slice(0, 2).toUpperCase()}
-                    fallbackColor={p?.color}
-                  />
+                  <ProviderTile providerId={providerId} size="sm" />
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium truncate">{p?.name || providerId}</div>
                     {model && (

@@ -5,6 +5,7 @@ import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { QUOTA_SORT_OPTIONS } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
 import Button from "@/shared/components/Button";
 import SegmentedControl from "@/shared/components/SegmentedControl";
+import ProviderTile from "@/shared/components/ProviderTile";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All" },
@@ -41,7 +42,12 @@ export default function QuotaFilters({
     { value: "all", label: "All providers" },
     ...providerOptions.map((provider) => ({
       value: provider,
-      label: AI_PROVIDERS[provider]?.name || provider,
+      label: (
+        <span className="inline-flex items-center gap-1.5">
+          <ProviderTile providerId={provider} size="sm" />
+          {AI_PROVIDERS[provider]?.name || provider}
+        </span>
+      ),
     })),
   ];
 

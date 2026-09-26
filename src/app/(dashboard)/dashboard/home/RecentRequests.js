@@ -2,6 +2,7 @@
 
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
+import ProviderTile from "@/shared/components/ProviderTile";
 import { formatCompact, formatLatency, timeAgo } from "./format";
 import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
 
@@ -43,6 +44,7 @@ export function normalizeRecentRequest(item) {
   return {
     id: item?.id || `${item?.timestamp}-${model}`,
     model,
+    provider,
     via,
     status,
     tok,
@@ -97,6 +99,7 @@ export default function RecentRequests({ details, fallback, loading, error, onRe
                 item.status === "ok" ? "bg-ok" : item.status === "warn" ? "bg-warn" : "bg-err"
               }`}
             />
+            {item.provider && <ProviderTile providerId={item.provider} size="md" />}
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="truncate font-mono text-sm text-text">{item.model}</span>
               <span className="truncate text-xs text-muted">{item.via}</span>

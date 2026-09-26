@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import SectionCard from "@/shared/components/SectionCard";
 import SettingRow from "@/shared/components/SettingRow";
 import Toggle from "@/shared/components/Toggle";
+import ProviderTile from "@/shared/components/ProviderTile";
 import Select from "@/shared/components/Select";
 import Input from "@/shared/components/Input";
 import Button from "@/shared/components/Button";
@@ -194,7 +195,12 @@ export default function ProvidersModelsSection({ settings, onSettingsChange }) {
                 return (
                   <div key={providerId}>
                     <Select
-                      label={providerId}
+                      label={
+                        <span className="inline-flex items-center gap-2">
+                          <ProviderTile providerId={providerId} size="sm" />
+                          {providerId}
+                        </span>
+                      }
                       value={current}
                       onChange={(e) => saveThinkingMode(providerId, e.target.value)}
                       disabled={thinkingUpdating[providerId] === true}
@@ -270,7 +276,10 @@ export default function ProvidersModelsSection({ settings, onSettingsChange }) {
                   key={providerId}
                   className="rounded-lg border border-line bg-raised p-3 text-sm"
                 >
-                  <p className="font-mono text-xs text-text">{providerId}</p>
+                  <p className="flex items-center gap-2 font-mono text-xs text-text">
+                    <ProviderTile providerId={providerId} size="sm" />
+                    {providerId}
+                  </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {hiddenKeysForProvider(quotaVisibility, providerId).map((key) => (
                       <span

@@ -14,6 +14,7 @@ import {
   Skeleton,
 } from "@/shared/components";
 import { formatTokens, formatUptime, reasonLabel, statusLabel } from "./pxpipePresentation";
+import ProviderTile from "@/shared/components/ProviderTile";
 
 const TONE_TEXT = {
   ok: "text-ok",
@@ -243,6 +244,13 @@ export default function PxpipeClient() {
                     {new Date(ev.ts).toLocaleString()}
                   </td>
                   <td className="py-1.5 pe-3 font-mono text-xs">
+                    {ev.provider && (
+                      <ProviderTile
+                        providerId={ev.provider}
+                        size="sm"
+                        className="me-2 align-middle"
+                      />
+                    )}
                     {ev.provider ? `${ev.provider}/${ev.model}` : ev.model || "—"}
                   </td>
                   <td className="py-1.5 pe-3 text-end font-mono text-xs">

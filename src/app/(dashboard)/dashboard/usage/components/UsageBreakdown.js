@@ -6,6 +6,7 @@ import Card from "@/shared/components/Card";
 import SegmentedControl from "@/shared/components/SegmentedControl";
 import EmptyState from "@/shared/components/EmptyState";
 import Meter from "@/shared/components/Meter";
+import ProviderTile from "@/shared/components/ProviderTile";
 import { groupRows, sharePct, sortRows } from "../lib/usageShapes";
 
 const fmt = (n) => new Intl.NumberFormat().format(n || 0);
@@ -241,6 +242,8 @@ export default function UsageBreakdown({ stats }) {
               {groups.map((group) => {
                 const open = expanded.has(group.groupKey);
                 const pct = share(group.summary);
+                const providers = new Set(group.items.map((item) => item.provider));
+                const groupProvider = providers.size === 1 ? group.items[0]?.provider : null;
                 return (
                   <Fragment key={group.groupKey}>
                     <tr className="transition-colors hover:bg-raised/50">
@@ -264,6 +267,9 @@ export default function UsageBreakdown({ stats }) {
                           >
                             chevron_right
                           </span>
+                          {view === "model" && groupProvider && (
+                            <ProviderTile providerId={groupProvider} size="sm" />
+                          )}
                           <span className="max-w-[280px] truncate font-mono text-[13px]">
                             {group.groupKey}
                           </span>
@@ -294,9 +300,16 @@ export default function UsageBreakdown({ stats }) {
                           className="bg-raised/20"
                         >
                           <td className="py-3 ps-12 pe-6 font-mono text-[13px] text-muted">
-                            {item.provider
-                              ? `${item.rawModel || item.groupKey} · ${item.provider}`
-                              : item.rawModel || item.key || "—"}
+                            <span className="flex min-w-0 items-center gap-2">
+                              {item.provider && (
+                                <ProviderTile providerId={item.provider} size="sm" />
+                              )}
+                              <span className="truncate">
+                                {item.provider
+                                  ? `${item.rawModel || item.groupKey} · ${item.provider}`
+                                  : item.rawModel || item.key || "—"}
+                              </span>
+                            </span>
                           </td>
                           {cells(item)}
                           <td className="px-6 py-3">
