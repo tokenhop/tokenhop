@@ -12,33 +12,20 @@ import {
 } from "./tokenSaverUtils";
 
 /**
- * Page header: subtitle line + H1 with the Today/7d/30d control.
+ * Page toolbar: Today/7d/30d control. Shell Header owns the title.
  * @param {object} props
  * @param {string} props.period
  * @param {(period: string) => void} props.onPeriodChange
  */
 export function TokenSaverHeader({ period, onPeriodChange }) {
   return (
-    <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end">
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <p className="text-xs font-medium text-muted lg:text-sm">
-          Send fewer tokens, get the same answers.
-        </p>
-        {/* Shell Header renders the page h1; in-page title stays a paragraph
-            so the document keeps exactly one h1 (YAN-314). */}
-        <p
-          className="font-display text-2xl font-bold tracking-[-0.02em] text-text lg:text-[42px] lg:leading-[1.05]"
-          aria-hidden="true"
-        >
-          Token saver
-        </p>
-      </div>
+    <div className="flex min-w-0 justify-end">
       <SegmentedControl
         aria-label="Savings period"
         options={SAVINGS_PERIODS}
         value={period}
         onChange={onPeriodChange}
-        className="w-full sm:w-auto lg:shrink-0"
+        className="w-full sm:w-auto"
       />
     </div>
   );

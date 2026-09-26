@@ -101,14 +101,9 @@ export default function PxpipeClient() {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-subtle">
-            Experimental
-          </p>
-          <h1 className="font-display text-[28px] font-bold tracking-[-0.02em] text-text">
-            PXPIPE dashboard
-          </h1>
-        </div>
+        <p className="text-xs font-semibold uppercase tracking-[0.08em] text-subtle">
+          Experimental
+        </p>
         <div className="flex items-center gap-2">
           <Link
             href="/dashboard/token-saver"

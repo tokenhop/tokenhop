@@ -14,8 +14,7 @@ export const HOME_PERIODS = [
 ];
 
 /**
- * Home page header: derived status line, H1 "Command center" and the
- * Today/7d/30d control. The status text is plain English translated at render.
+ * Home toolbar: derived status line and the Today/7d/30d control. The status text is plain English translated at render.
  *
  * @param {object} props
  * @param {Array<object>} props.connections provider connections for the status line
@@ -47,20 +46,16 @@ export default function HomeHeader({ connections, providersLoading, period, onPe
         statuses.map((item) => ({ status: item.status === "off" ? "idle" : item.status })),
       );
 
+  // Shell Header owns the page title; this is the page toolbar.
   return (
-    <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end">
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <p className="text-xs font-medium text-muted lg:text-sm">{statusLine}</p>
-        <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-text lg:text-[42px] lg:leading-[1.05]">
-          Command center
-        </h1>
-      </div>
+    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm font-medium text-muted">{statusLine}</p>
       <SegmentedControl
         aria-label="Stats period"
         options={options}
         value={period}
         onChange={onPeriodChange}
-        className="w-full sm:w-auto lg:shrink-0"
+        className="w-full sm:w-auto sm:shrink-0"
       />
     </div>
   );

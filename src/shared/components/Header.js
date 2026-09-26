@@ -84,7 +84,11 @@ export const getPageInfo = (pathname) => {
     const providerId = providerMatch[1];
     // /dashboard/providers/new renders its own in-page h1 (YAN-314).
     if (providerId === "new") {
-      return { title: "", description: "", breadcrumbs: [] };
+      return {
+        title: "Add provider",
+        description: "Configure a new AI provider to use with your applications.",
+        breadcrumbs: [{ label: "Providers", href: "/dashboard/providers" }, { label: "New" }],
+      };
     }
     const providerInfo =
       OAUTH_PROVIDERS[providerId] ||
@@ -122,10 +126,8 @@ export const getPageInfo = (pathname) => {
     };
   if (pathname.includes("/usage"))
     return {
-      // UsagePage renders its own in-page h1; the shell must stay h1-free
-      // so the document keeps exactly one h1 (YAN-314).
-      title: "",
-      description: "",
+      title: "Usage",
+      description: "Requests, tokens and cost across every route.",
       breadcrumbs: [],
     };
   if (pathname.includes("/auth-files"))
@@ -152,8 +154,15 @@ export const getPageInfo = (pathname) => {
   if (pathname.includes("/token-saver"))
     return {
       title: "Token Saver",
-      description: "Compress prompts and outputs to save tokens",
+      description: "Send fewer tokens, get the same answers.",
       icon: "savings",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/pxpipe"))
+    return {
+      title: "PXPIPE dashboard",
+      description: "Service status, token savings, history and install logs.",
+      icon: "terminal",
       breadcrumbs: [],
     };
   if (pathname.includes("/cli-tools"))
@@ -184,18 +193,13 @@ export const getPageInfo = (pathname) => {
       icon: "api",
       breadcrumbs: [],
     };
-  if (pathname.includes("/settings") || pathname.includes("/profile")) {
-    // /dashboard/settings renders its own in-page h1; /dashboard/profile is a
-    // redirect stub whose region violation is a stub artifact (YAN-314: keep
-    // the shell h1 there so the stub keeps one h1 + landmark coverage).
-    const isStub = pathname.includes("/profile");
+  if (pathname.includes("/settings") || pathname.includes("/profile"))
     return {
-      title: isStub ? "Settings" : "",
-      description: isStub ? "Every knob in one place" : "",
-      icon: isStub ? "settings" : undefined,
+      title: "Settings",
+      description: "Every knob in one place.",
+      icon: "settings",
       breadcrumbs: [],
     };
-  }
   if (pathname.includes("/translator"))
     return {
       title: "Translator",
@@ -210,8 +214,12 @@ export const getPageInfo = (pathname) => {
       icon: "monitor",
       breadcrumbs: [],
     };
-  // Home renders its own derived status line, H1 and period control in-page.
-  if (pathname === "/dashboard") return { title: "", description: "", breadcrumbs: [] };
+  if (pathname === "/dashboard")
+    return {
+      title: "Command center",
+      description: "",
+      breadcrumbs: [],
+    };
   return { title: "", description: "", breadcrumbs: [] };
 };
 

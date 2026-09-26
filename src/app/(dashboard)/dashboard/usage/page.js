@@ -63,13 +63,7 @@ function UsageContent() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
-      <header className="flex flex-col gap-4">
-        <div>
-          <p className="text-sm font-medium text-muted">
-            Requests, tokens and cost across every route.
-          </p>
-          <h1 className="font-display text-4xl font-bold">Usage</h1>
-        </div>
+      <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <Tabs
             aria-label="Usage view"
@@ -91,7 +85,7 @@ function UsageContent() {
             />
           )}
         </div>
-      </header>
+      </div>
 
       {activeTab === "overview" ? (
         <div className="flex min-w-0 flex-col gap-6">

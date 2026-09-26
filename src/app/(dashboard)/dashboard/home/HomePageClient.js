@@ -63,7 +63,7 @@ export default function HomePageClient() {
     summaryCombos ?? (usage.current ? comboUsageFromByEndpoint(usage.current.byEndpoint) : null);
 
   return (
-    <div className="flex min-w-0 flex-col gap-5 px-4 pt-2 pb-8 lg:gap-5 lg:px-10 lg:pt-0 lg:pb-8">
+    <div className="flex min-w-0 flex-col gap-5 pb-8">
       <HomeHeader
         connections={providers.connections}
         providersLoading={providers.loading}

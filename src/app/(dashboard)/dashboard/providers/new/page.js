@@ -83,10 +83,6 @@ export default function NewProviderPage() {
           <span className="material-symbols-outlined text-lg">arrow_back</span>
           Back to Providers
         </Link>
-        <h1 className="text-3xl font-semibold tracking-tight">Add New Provider</h1>
-        <p className="text-text-muted mt-2">
-          Configure a new AI provider to use with your applications.
-        </p>
       </div>
 
       {/* Form */}

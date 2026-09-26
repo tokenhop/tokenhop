@@ -148,7 +148,7 @@ export default function TokenSaverPageClient() {
 
   if (settingsLoading) {
     return (
-      <div className="flex min-w-0 flex-col gap-5 px-4 pt-2 pb-8 lg:gap-5 lg:px-10 lg:pt-0 lg:pb-8">
+      <div className="flex min-w-0 flex-col gap-5 pb-8">
         <div role="status" aria-label="Loading Token saver">
           <Skeleton className="h-10 w-64" />
           <Skeleton className="mt-4 h-36 w-full" />
@@ -165,7 +165,7 @@ export default function TokenSaverPageClient() {
 
   if (!settings) {
     return (
-      <div className="flex min-w-0 flex-col gap-5 px-4 pt-2 pb-8 lg:px-10 lg:pt-0 lg:pb-8">
+      <div className="flex min-w-0 flex-col gap-5 pb-8">
         <TokenSaverHeader period={period} onPeriodChange={setPeriod} />
         <Callout variant="err" title="Could not load Token saver">
           Settings failed to load.
@@ -186,7 +186,7 @@ export default function TokenSaverPageClient() {
   const ponytailDesc = PONYTAIL_LEVELS.find((lvl) => lvl.id === settings.ponytailLevel)?.desc;
 
   return (
-    <div className="flex min-w-0 flex-col gap-5 px-4 pt-2 pb-8 lg:gap-5 lg:px-10 lg:pt-0 lg:pb-8">
+    <div className="flex min-w-0 flex-col gap-5 pb-8">
       <TokenSaverHeader period={period} onPeriodChange={setPeriod} />
       <div aria-live="polite" className="sr-only">
         {savedTick ? "Saved" : ""}

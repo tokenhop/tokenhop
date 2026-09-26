@@ -131,10 +131,8 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-6xl space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm text-muted">Every knob in one place.</p>
-            <h1 className="font-display text-3xl font-bold text-text">Settings</h1>
             <p className="text-sm text-muted">
               Changes save instantly.{" "}
               <span aria-live="polite" aria-atomic="true" className="font-medium text-ok">
