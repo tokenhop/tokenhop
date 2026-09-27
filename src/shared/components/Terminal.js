@@ -1,52 +1,16 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { memo } from "react";
+import { Fragment } from "react";
 import { terminalLevelClass } from "./displayPrimitives";
-
-/** Memoized terminal row with timestamp, level tag and keyboard-readable full text. */
-const TerminalRow = memo(function TerminalRow({ line, onOpen }) {
-  return (
-    <li className="flex gap-4 whitespace-nowrap">
-      <span className="signal-terminal-time shrink-0">{line.time || "--:--:--"}</span>
-      <span className={`w-[52px] shrink-0 font-semibold ${terminalLevelClass(line.level)}`}>
-        {line.level}
-      </span>
-      {onOpen ? (
-        <button
-          type="button"
-          onClick={() => onOpen(line)}
-          title={line.message}
-          aria-label={`Show full line: ${line.message}`}
-          className="min-w-0 flex-1 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap rounded-sm bg-transparent p-0 text-start text-inherit hover:underline focus-visible:shadow-focus"
-        >
-          {line.message}
-        </button>
-      ) : (
-        <span className="min-w-0 flex-1 whitespace-pre">{line.message}</span>
-      )}
-    </li>
-  );
-});
-
-TerminalRow.propTypes = {
-  line: PropTypes.shape({
-    id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
-    time: PropTypes.string,
-    level: PropTypes.oneOf(["LOG", "INFO", "WARN", "ERROR", "DEBUG"]).isRequired,
-    message: PropTypes.string.isRequired,
-  }).isRequired,
-  onOpen: PropTypes.func,
-};
 
 /**
  * Terminal/console surface (dark in both themes) with level-colored lines.
  * Text colors are fixed-light (`.signal-terminal*` classes in globals.css) and
- * the log is always LTR, including in RTL locales. The list region is
- * keyboard-focusable; each truncated row is a button that opens the full
- * line in a dialog. `live` should be off for a fast stream, polite while
- * paused.
- * @param {{ lines: {time?: string, level: "LOG"|"INFO"|"WARN"|"ERROR"|"DEBUG", message: string}[], label?: string, className?: string, live?: "off"|"polite", onScroll?: (event: object) => void, scrollRef?: { current: object }, cursor?: boolean, onOpenLine?: (line: {time?: string, level: string, message: string}) => void }} props
+ * the log is always LTR, including in RTL locales. Pass `row` to render a
+ * custom expandable row; otherwise plain lines are shown. `live` should be off
+ * for a fast stream, polite while paused.
+ * @param {{ lines: {time?: string, level: "LOG"|"INFO"|"WARN"|"ERROR"|"DEBUG", message: string}[], label?: string, className?: string, live?: "off"|"polite", onScroll?: (event: object) => void, scrollRef?: { current: object }, cursor?: boolean, row?: (line: object, index: number) => import("react").ReactNode }} props
  */
 export default function Terminal({
   lines,
@@ -56,7 +20,7 @@ export default function Terminal({
   onScroll,
   scrollRef,
   cursor = false,
-  onOpenLine,
+  row,
 }) {
   return (
     <div
@@ -71,9 +35,23 @@ export default function Terminal({
       className={`signal-terminal custom-scrollbar m-0 overflow-auto rounded-2xl p-[18px_22px] text-start font-mono text-[13px] leading-[1.75] focus-visible:shadow-focus${className ? ` ${className}` : ""}`}
     >
       <ol className="m-0 list-none p-0">
-        {lines.map((line) => (
-          <TerminalRow key={line.id} line={line} onOpen={onOpenLine} />
-        ))}
+        {row
+          ? lines.map((line, index) => (
+              <Fragment key={line.key ?? line.id ?? `${line.time}-${index}`}>
+                {row(line, index)}
+              </Fragment>
+            ))
+          : lines.map((line, index) => (
+              <li key={line.id ?? `${line.time}-${index}`} className="flex gap-4 whitespace-nowrap">
+                <span className="signal-terminal-time shrink-0">{line.time || "--:--:--"}</span>
+                <span
+                  className={`w-[52px] shrink-0 font-semibold ${terminalLevelClass(line.level)}`}
+                >
+                  {line.level}
+                </span>
+                <span className="min-w-0 flex-1 whitespace-pre">{line.message}</span>
+              </li>
+            ))}
         {cursor && (
           <li className="mt-0.5 flex gap-4 whitespace-nowrap" aria-hidden="true">
             <span className="signal-terminal-time shrink-0">--:--:--</span>
@@ -90,7 +68,7 @@ export default function Terminal({
 Terminal.propTypes = {
   lines: PropTypes.arrayOf(
     PropTypes.shape({
-      id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+      id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
       time: PropTypes.string,
       level: PropTypes.oneOf(["LOG", "INFO", "WARN", "ERROR", "DEBUG"]).isRequired,
       message: PropTypes.string.isRequired,
@@ -102,5 +80,5 @@ Terminal.propTypes = {
   onScroll: PropTypes.func,
   scrollRef: PropTypes.shape({ current: PropTypes.object }),
   cursor: PropTypes.bool,
-  onOpenLine: PropTypes.func,
+  row: PropTypes.func,
 };
