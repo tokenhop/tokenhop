@@ -132,7 +132,14 @@ function createDataCache() {
 }
 
 async function runPaletteVerb(verb, helpers) {
-  const { router: nav, notify: toast, announce: confirm, openShortcuts, openLanguage } = helpers;
+  const {
+    router: nav,
+    navigate,
+    notify: toast,
+    announce: confirm,
+    openShortcuts,
+    openLanguage,
+  } = helpers;
   if (verb === "test-providers") {
     toast.info("Testing all providers");
     confirm("Testing all providers");
@@ -177,8 +184,9 @@ async function runPaletteVerb(verb, helpers) {
     confirm(outcome.message);
     return;
   }
-  if (verb === "open-request-log") nav.push("/dashboard/usage?tab=logs");
-  else if (verb === "open-shortcuts") openShortcuts();
+  if (verb === "open-request-log") {
+    navigate(() => nav.push("/dashboard/usage?tab=logs"), "/dashboard/usage?tab=logs");
+  } else if (verb === "open-shortcuts") openShortcuts();
 }
 
 /**
@@ -188,6 +196,18 @@ async function runPaletteVerb(verb, helpers) {
  */
 export function CommandPaletteProvider({ children }) {
   const router = useRouter();
+  const routeGuardRef = useRef(null);
+  const registerRouteGuard = useCallback((guard) => {
+    routeGuardRef.current = guard;
+    return () => {
+      if (routeGuardRef.current === guard) routeGuardRef.current = null;
+    };
+  }, []);
+  const navigate = useCallback((action, href) => {
+    const guard = routeGuardRef.current;
+    if (guard) guard.requestNavigation(action, href);
+    else action();
+  }, []);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [commands, setCommands] = useState([]);
@@ -295,7 +315,7 @@ export function CommandPaletteProvider({ children }) {
       }
       if (run.type === "navigate" && run.href) {
         closePalette();
-        router.push(run.href);
+        navigate(() => router.push(run.href), run.href);
         return;
       }
       if (run.type === "copy" || run.type === "copy-endpoint") {
@@ -323,6 +343,7 @@ export function CommandPaletteProvider({ children }) {
       if (run.type === "verb") {
         runPaletteVerb(run.verb, {
           router,
+          navigate,
           notify,
           announce,
           openShortcuts: () => setShortcutsOpen(true),
@@ -334,7 +355,7 @@ export function CommandPaletteProvider({ children }) {
       }
       closePalette();
     },
-    [recents, closePalette, router, notify, announce],
+    [recents, closePalette, router, navigate, notify, announce],
   );
 
   // Global shortcut: ⌘K / Ctrl+K. Toggles even from the palette's own
@@ -379,12 +400,12 @@ export function CommandPaletteProvider({ children }) {
         setShortcutsOpen(true);
       } else if (result.href) {
         event.preventDefault();
-        router.push(result.href);
+        navigate(() => router.push(result.href), result.href);
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [router]);
+  }, [router, navigate]);
 
   const displayCommands = useMemo(
     () =>
@@ -470,9 +491,11 @@ export function CommandPaletteProvider({ children }) {
       inputRef,
       onInputKeyDown,
       openShortcuts: () => setShortcutsOpen(true),
+      registerRouteGuard,
       announcement: open ? formatResultAnnouncement(ranked.length) : "",
     }),
     [
+      registerRouteGuard,
       open,
       openPalette,
       closePalette,

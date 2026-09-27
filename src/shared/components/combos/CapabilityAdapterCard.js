@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import PropTypes from "prop-types";
 import Toggle from "@/shared/components/Toggle";
 import Button from "@/shared/components/Button";
 import ModelSelectModal from "@/shared/components/ModelSelectModal";
 import CapacityBadges from "@/shared/components/CapacityBadges";
+import { adapterWarnings } from "./comboBuilder";
 
 const CAPACITY_ADAPTER_CAPS = [
   {
@@ -37,11 +37,13 @@ const CAPACITY_ADAPTER_CAPS = [
  */
 export default function CapabilityAdapterCard({
   capacityAdapter = {},
+  activeCapForModal,
+  onActiveCapChange,
   onChange,
   activeProviders = [],
   getCaps,
 }) {
-  const [activeCapForModal, setActiveCapForModal] = useState(null);
+  const emptyEnabled = adapterWarnings(capacityAdapter);
 
   const updateCap = (key, patch) => {
     const current = capacityAdapter[key] || { enabled: true, roundRobin: false, models: [] };
@@ -131,12 +133,29 @@ export default function CapabilityAdapterCard({
                 size="sm"
                 icon="add"
                 disabled={!enabled}
-                onClick={() => setActiveCapForModal(cap.key)}
+                onClick={() => onActiveCapChange?.(cap.key)}
                 className="h-8 border-dashed px-2.5 text-xs"
               >
                 Add model
               </Button>
             </div>
+
+            {emptyEnabled.includes(cap.key) && (
+              <p
+                role="status"
+                className="rounded-xl border border-warn bg-warn-bg p-3 text-xs text-warn"
+              >
+                On, but no models. 9router tries oc/mimo-v2.5-free; if it can't handle the request,
+                the original route may reject the media.{" "}
+                <button
+                  type="button"
+                  onClick={() => onActiveCapChange?.(cap.key)}
+                  className="font-semibold underline underline-offset-2 focus-visible:shadow-focus focus-visible:outline-none"
+                >
+                  Add model
+                </button>
+              </p>
+            )}
 
             {/* Model list chips */}
             {models.length > 0 ? (
@@ -200,7 +219,7 @@ export default function CapabilityAdapterCard({
       {activeCapForModal && activeCapConfig && (
         <ModelSelectModal
           isOpen={true}
-          onClose={() => setActiveCapForModal(null)}
+          onClose={() => onActiveCapChange?.(null)}
           onSelect={(model) => handleAdd(activeCapForModal, model)}
           activeProviders={activeProviders}
           title={`Add ${activeCapConfig.short} Model`}
@@ -215,6 +234,8 @@ export default function CapabilityAdapterCard({
 
 CapabilityAdapterCard.propTypes = {
   capacityAdapter: PropTypes.object,
+  activeCapForModal: PropTypes.string,
+  onActiveCapChange: PropTypes.func,
   onChange: PropTypes.func.isRequired,
   activeProviders: PropTypes.array,
   getCaps: PropTypes.func,
