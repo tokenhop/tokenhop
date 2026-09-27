@@ -1,29 +1,30 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import PropTypes from "prop-types";
-import { GITHUB_CONFIG } from "@/shared/constants/config";
+
+// Donation channels are static and bundled locally: opening this modal makes
+// no network request (the QR image is served from /public).
+const DONATE_INFO = {
+  title: "Support 9Router",
+  message: "If 9Router helps your work, consider supporting development.",
+  channels: [
+    {
+      id: "buymeacoffee",
+      label: "Buy Me a Coffee",
+      description: "Support development",
+      icon: "local_cafe",
+      color: "#C2410C",
+      url: "https://buymeacoffee.com/yandyr",
+      qr: "/donate/buymeacoffee.svg",
+    },
+  ],
+};
 
 export default function DonateModal({ isOpen, onClose }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const data = DONATE_INFO;
   const modalRef = useRef(null);
-
-  useEffect(() => {
-    if (!isOpen || data) return;
-    setLoading(true);
-    setError("");
-    fetch(GITHUB_CONFIG.donateUrl, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((json) => setData(json))
-      .catch((err) => setError(err.message || "Failed to load"))
-      .finally(() => setLoading(false));
-  }, [isOpen, data]);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -47,7 +48,7 @@ export default function DonateModal({ isOpen, onClose }) {
         <div className="flex items-center justify-between p-3 border-b border-black/5 dark:border-white/5">
           <h2 className="text-lg font-semibold text-text-main flex items-center gap-2">
             <span className="material-symbols-outlined text-pink-500">volunteer_activism</span>
-            {data?.title || "Support 9Router"}
+            {data.title}
           </h2>
           <button
             onClick={onClose}
@@ -59,25 +60,12 @@ export default function DonateModal({ isOpen, onClose }) {
         </div>
 
         <div className="p-6 overflow-y-auto flex-1">
-          {loading && (
-            <div className="flex items-center justify-center py-10 text-text-muted">
-              <span className="material-symbols-outlined animate-spin mr-2">progress_activity</span>
-              Loading...
-            </div>
-          )}
-          {error && <div className="text-red-500 py-4">Failed to load donate info: {error}</div>}
-          {!loading && !error && data && (
-            <>
-              {data.message && (
-                <p className="text-text-muted text-sm mb-6 text-center">{data.message}</p>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {data.channels?.map((ch) => (
-                  <DonateChannelCard key={ch.id} channel={ch} />
-                ))}
-              </div>
-            </>
-          )}
+          <p className="text-text-muted text-sm mb-6 text-center">{data.message}</p>
+          <div className="flex flex-wrap justify-center gap-4">
+            {data.channels.map((ch) => (
+              <DonateChannelCard key={ch.id} channel={ch} />
+            ))}
+          </div>
         </div>
       </div>
     </div>,
@@ -110,7 +98,7 @@ function DonateChannelCard({ channel }) {
   );
 
   return (
-    <div className="flex flex-col items-center p-4 rounded-xl border border-black/10 dark:border-white/10 bg-surface/50 hover:border-pink-500/40 transition-colors">
+    <div className="flex w-full flex-col items-center p-4 rounded-xl border border-black/10 dark:border-white/10 bg-surface/50 hover:border-pink-500/40 transition-colors sm:w-64">
       {content}
       {url && (
         <a

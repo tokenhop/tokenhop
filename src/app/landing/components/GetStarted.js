@@ -1,6 +1,10 @@
 "use client";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
+// Published by this project on GHCR. (The `9router` package on npm is not ours.)
+const INSTALL_COMMAND =
+  "docker run -d -p 20128:20128 -v ~/.9router:/app/data -e INITIAL_PASSWORD=change-me ghcr.io/yandy-r/9router";
+
 export default function GetStarted() {
   const { copied, copy } = useCopyToClipboard();
 
@@ -28,7 +32,7 @@ export default function GetStarted() {
                 <div>
                   <h4 className="font-bold text-lg">Install 9Router</h4>
                   <p className="text-sm text-gray-500 mt-1">
-                    Run npx command to start the server instantly
+                    Run the Docker image to start the server instantly
                   </p>
                 </div>
               </div>
@@ -74,10 +78,10 @@ export default function GetStarted() {
               <div className="p-6 font-mono text-sm leading-relaxed overflow-x-auto">
                 <div
                   className="flex items-center gap-2 mb-4 group cursor-pointer"
-                  onClick={() => handleCopy("npx 9router")}
+                  onClick={() => handleCopy(INSTALL_COMMAND)}
                 >
                   <span className="text-green-400">$</span>
-                  <span className="text-white">npx 9router</span>
+                  <span className="text-white">{INSTALL_COMMAND}</span>
                   <span className="ml-auto text-gray-500 text-xs opacity-0 group-hover:opacity-100">
                     {copied === "landing" ? "✓ Copied" : "Copy"}
                   </span>

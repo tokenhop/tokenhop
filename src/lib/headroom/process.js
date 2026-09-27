@@ -10,6 +10,14 @@ import {
   getInstalledHeadroomExtras,
 } from "./detect.js";
 
+// Headroom's telemetry beacon and PyPI update check are always forced off for
+// the proxy we launch: 9router doesn't track anyone or phone home on your behalf.
+export const HEADROOM_PRIVACY_ENV = Object.freeze({
+  HEADROOM_TELEMETRY: "off",
+  HEADROOM_UPDATE_CHECK: "off",
+  DO_NOT_TRACK: "1",
+});
+
 const HEADROOM_DIR = path.join(DATA_DIR, "headroom");
 const PID_FILE = path.join(HEADROOM_DIR, "proxy.pid");
 const LOG_FILE = path.join(HEADROOM_DIR, "proxy.log");
@@ -94,7 +102,7 @@ export async function startHeadroomProxy({
     stdio: ["ignore", outFd, outFd],
     detached: true,
     windowsHide: true,
-    env: { ...process.env },
+    env: { ...process.env, ...HEADROOM_PRIVACY_ENV },
   });
 
   if (!child.pid) {

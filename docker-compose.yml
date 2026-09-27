@@ -30,6 +30,11 @@ services:
   headroom:
     image: ghcr.io/chopratejas/headroom:latest
     container_name: headroom
+    environment:
+      # Never send Headroom telemetry or update checks.
+      HEADROOM_TELEMETRY: "off"
+      HEADROOM_UPDATE_CHECK: "off"
+      DO_NOT_TRACK: "1"
     restart: always
     ports:
       - "8787:8787"
