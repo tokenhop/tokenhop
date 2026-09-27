@@ -37,7 +37,9 @@ export default function Terminal({
       <ol className="m-0 list-none p-0">
         {row
           ? lines.map((line, index) => (
-              <Fragment key={line.id ?? `${line.time}-${index}`}>{row(line, index)}</Fragment>
+              <Fragment key={line.key ?? line.id ?? `${line.time}-${index}`}>
+                {row(line, index)}
+              </Fragment>
             ))
           : lines.map((line, index) => (
               <li key={line.id ?? `${line.time}-${index}`} className="flex gap-4 whitespace-nowrap">
@@ -66,7 +68,7 @@ export default function Terminal({
 Terminal.propTypes = {
   lines: PropTypes.arrayOf(
     PropTypes.shape({
-      id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+      id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
       time: PropTypes.string,
       level: PropTypes.oneOf(["LOG", "INFO", "WARN", "ERROR", "DEBUG"]).isRequired,
       message: PropTypes.string.isRequired,

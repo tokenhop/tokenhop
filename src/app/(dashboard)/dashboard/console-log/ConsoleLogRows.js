@@ -4,7 +4,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { terminalLevelClass } from "@/shared/components/displayPrimitives";
 import { copyTextToClipboard } from "@/shared/components/formPrimitives";
-import { prettyConsoleMessage } from "@/shared/utils/consoleLog";
+import { MAX_DETAIL_OCCURRENCES, prettyConsoleMessage } from "@/shared/utils/consoleLog";
 
 /** Copy button for an expanded row, with a polite "Copied" / "Copy failed" announcement. */
 function CopyLineButton({ value, label }) {
@@ -61,17 +61,24 @@ const ConsoleLogRow = memo(function ConsoleLogRow({
   selected,
   onToggle,
   onSelect,
+  onBlur,
 }) {
-  const rowKey = `row-${row.key.replace(/[^A-Za-z0-9_-]/g, "-")}`;
-  const detailId = `console-row-${rowKey}`;
-  const detailText =
-    row.count > 1
-      ? row.occurrences
-          .map((item) => (raw ? item.raw || item.message : prettyConsoleMessage(item.message)))
-          .join("\n\n")
-      : raw
-        ? row.raw || row.message
-        : prettyConsoleMessage(row.message);
+  // The row key is a unique group key or a monotonic raw id. Hex-encoding the
+  // full key is injective; replacing punctuation with '-' could collide.
+  const detailId = `console-row-${Array.from(row.key, (char) => char.codePointAt(0).toString(16)).join("-")}`;
+  const formatOccurrence = (item) =>
+    raw ? item.raw || item.message : prettyConsoleMessage(item.message);
+  const allDetailText = row.occurrences.map(formatOccurrence).join("\n\n");
+  const omitted = Math.max(0, row.count - MAX_DETAIL_OCCURRENCES * 2);
+  const visibleOccurrences = omitted
+    ? [
+        ...row.occurrences.slice(0, MAX_DETAIL_OCCURRENCES),
+        ...row.occurrences.slice(-MAX_DETAIL_OCCURRENCES),
+      ]
+    : row.occurrences;
+  const detailText = omitted
+    ? `${visibleOccurrences.slice(0, MAX_DETAIL_OCCURRENCES).map(formatOccurrence).join("\n\n")}\n\n… ${omitted} more occurrences (copy includes all) …\n\n${visibleOccurrences.slice(-MAX_DETAIL_OCCURRENCES).map(formatOccurrence).join("\n\n")}`
+    : allDetailText;
   const seen =
     row.count > 1
       ? `Seen ${row.count} times, first at ${row.firstTime || "unknown"}, last at ${row.time || "unknown"}`
@@ -88,7 +95,12 @@ const ConsoleLogRow = memo(function ConsoleLogRow({
   };
 
   return (
-    <li className="flex gap-4">
+    // content-visibility skips paint/layout for off-screen rows (native, no
+    // virtualization dependency); `auto` remembers each row's real height.
+    <li
+      onBlur={onBlur}
+      className="flex gap-4 [content-visibility:auto] [contain-intrinsic-size:auto_23px]"
+    >
       <span className="signal-terminal-time shrink-0" title={seen || undefined}>
         {row.time || "--:--:--"}
       </span>
@@ -104,7 +116,7 @@ const ConsoleLogRow = memo(function ConsoleLogRow({
           tabIndex={selected ? 0 : -1}
           onClick={() => onToggle(row.key)}
           onKeyDown={onKeyDown}
-          onFocus={() => onSelect(index)}
+          onFocus={() => onSelect(index, row.key)}
           className="flex w-full min-w-0 cursor-pointer items-baseline gap-2 rounded-sm bg-transparent p-0 text-start text-inherit hover:underline focus-visible:shadow-focus"
         >
           {row.source === "browser" && (
@@ -134,7 +146,7 @@ const ConsoleLogRow = memo(function ConsoleLogRow({
             <pre className="m-0 min-w-0 flex-1 overflow-x-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-[1.6]">
               {detailText}
             </pre>
-            <CopyLineButton value={detailText} label="Copy full line" />
+            <CopyLineButton value={allDetailText} label="Copy full line" />
           </div>
         )}
       </div>
@@ -160,6 +172,7 @@ ConsoleLogRow.propTypes = {
   selected: PropTypes.bool.isRequired,
   onToggle: PropTypes.func.isRequired,
   onSelect: PropTypes.func.isRequired,
+  onBlur: PropTypes.func.isRequired,
 };
 
 export default ConsoleLogRow;

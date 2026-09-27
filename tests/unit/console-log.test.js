@@ -5,6 +5,8 @@ import {
   countConsoleLevels,
   filterConsoleLines,
   groupConsoleLines,
+  prepareConsoleLine,
+  pruneExpandedKeys,
   stripConsolePrefix,
   prettyConsoleMessage,
   retryDelayMs,
@@ -228,11 +230,50 @@ describe("autoScrollReducer", () => {
     expect(state.enabled).toBe(true);
   });
 
+  it("keeps state identity for repeated scroll events", () => {
+    expect(autoScrollReducer(initialAutoScrollState, { type: "scroll", atBottom: true })).toBe(
+      initialAutoScrollState,
+    );
+  });
+
   it("throws on unknown actions", () => {
     expect(() => autoScrollReducer(initialAutoScrollState, { type: "nope" })).toThrow();
   });
 });
 
+describe("pruneExpandedKeys", () => {
+  it("keeps keys hidden by filters and drops keys that left the buffer", () => {
+    const groups = [{ key: "g1", occurrences: [{ id: 1 }, { id: 2 }] }];
+    const keys = new Set(["g1", "2"]);
+    expect(pruneExpandedKeys(keys, groups)).toBe(keys);
+    expect([...pruneExpandedKeys(new Set(["g1", "gone", "9"]), groups)]).toEqual(["g1"]);
+  });
+});
+
+describe("console semantics", () => {
+  it("never conflates different numbers, 16+ hex values, plain ids or request ids", () => {
+    const make = (message, id) =>
+      prepareConsoleLine({ id, level: "INFO", time: "10:00:00", message, raw: message });
+    const grid = groupConsoleLines([make("grid: 5 done", 0), make("grid: 9 done", 1)]);
+    expect(grid).toHaveLength(2);
+    const hex = groupConsoleLines([
+      make("digest abcdef0123456789", 0),
+      make("digest 9876543210fedcba", 1),
+    ]);
+    expect(hex).toHaveLength(2);
+    expect(
+      groupConsoleLines([make("digest abcdef0123456789", 0), make("digest abcdef0123456789", 1)])[0]
+        .count,
+    ).toBe(2);
+    expect(
+      groupConsoleLines([make("token id=alpha ready", 0), make("token id=alpha ready", 1)])[0]
+        .count,
+    ).toBe(2);
+    const ids = groupConsoleLines([make("requestId=one ready", 0), make("requestId=two ready", 1)]);
+    expect(ids).toHaveLength(1);
+    expect(filterConsoleLines(ids, { query: "one" })).toHaveLength(1);
+  });
+});
 describe("console polish", () => {
   it("strips only leading status glyphs and separates browser source", () => {
     expect(stripConsolePrefix("ℹ️  [TOKEN_REFRESH] Ready ❌")).toBe("[TOKEN_REFRESH] Ready ❌");

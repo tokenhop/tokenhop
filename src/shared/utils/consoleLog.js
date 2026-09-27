@@ -25,8 +25,9 @@ const BROWSER_PREFIX = /^\[browser\]\s*/;
 const ISO_TIME_RE = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?\b/g;
 const CLOCK_RE = /\b\d{1,2}:\d{2}:\d{2}(?:\.\d+)?\b/g;
 const UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
-const HEX_ID_RE = /\b[0-9a-f]{16,}\b/gi;
-const KEYED_ID_RE = /\b(\w*id)("?\s*[:=]\s*"?)[\w.-]+/gi;
+// Only explicit identifiers are masked. Arbitrary hex values and fields such as
+// `grid` can carry diagnostic meaning and must not collapse distinct events.
+const KEYED_ID_RE = /\b(id|requestId|connectionId|traceId|sessionId)("?\s*[:=]\s*"?)[\w.-]+/gi;
 const RETRY_MIN_MS = 1000;
 const RETRY_MAX_MS = 30000;
 
@@ -53,7 +54,6 @@ export function normalizeConsoleMessage(message) {
     .replace(ISO_TIME_RE, "<time>")
     .replace(CLOCK_RE, "<time>")
     .replace(UUID_RE, "<id>")
-    .replace(HEX_ID_RE, "<id>")
     .replace(KEYED_ID_RE, "$1$2<id>");
 }
 
@@ -107,6 +107,20 @@ export function prettyConsoleMessage(message) {
     }
   }
   return message;
+}
+
+/**
+ * Repeat detail: cap huge ×N expansions. Copy uses every occurrence; the view
+ * shows the first/last 8 so the panel stays usable on hot repeats.
+ */
+export const MAX_DETAIL_OCCURRENCES = 8;
+
+/** Search text is prepared at ingest, never pretty-printed on each keystroke. */
+export function prepareConsoleLine(line) {
+  return {
+    ...line,
+    searchText: `${line.message}\n${prettyConsoleMessage(line.message)}`.toLowerCase(),
+  };
 }
 
 /**
@@ -238,9 +252,27 @@ export function filterConsoleLines(lines, filters = {}) {
       (!hideBrowser || line.source !== "browser") &&
       (needle === "" ||
         (line.occurrences || [line]).some((item) =>
-          `${item.message}\n${prettyConsoleMessage(item.message)}`.toLowerCase().includes(needle),
+          (item.searchText ?? prepareConsoleLine(item).searchText).includes(needle),
         )),
   );
+}
+
+/**
+ * Keep expanded disclosures across filter and Raw toggles: a key is dropped
+ * only when no buffered line can render it any more. Grouped keys and raw
+ * line ids are both kept so switching modes restores the same expansion.
+ * @param {Set<string>} keys
+ * @param {{ key: string, occurrences: { id: number }[] }[]} groups
+ * @returns {Set<string>} the same Set when nothing changed
+ */
+export function pruneExpandedKeys(keys, groups) {
+  const live = new Set();
+  for (const group of groups) {
+    live.add(group.key);
+    for (const line of group.occurrences) live.add(String(line.id));
+  }
+  if ([...keys].every((key) => live.has(key))) return keys;
+  return new Set([...keys].filter((key) => live.has(key)));
 }
 
 /**
@@ -271,7 +303,10 @@ export function tagConsoleLines(lines, startId) {
     throw new Error(`tagConsoleLines: expected a non-negative startId, got ${startId}`);
   }
   return {
-    lines: lines.map((line, index) => ({ ...line, id: startId + index })),
+    lines: lines.map((line, index) => {
+      const numbered = { ...line, id: startId + index };
+      return prepareConsoleLine(numbered);
+    }),
     nextId: startId + lines.length,
   };
 }
@@ -405,8 +440,12 @@ export const initialAutoScrollState = { enabled: true };
  */
 export function autoScrollReducer(state, action) {
   switch (action.type) {
-    case "scroll":
-      return { enabled: action.atBottom !== false };
+    case "scroll": {
+      // Scroll fires per frame: keep identity when nothing changed so the
+      // page (and 200 memoized rows) does not re-render while scrolling.
+      const enabled = action.atBottom !== false;
+      return enabled === state.enabled ? state : { enabled };
+    }
     case "toggle":
       return { enabled: !state.enabled };
     default:

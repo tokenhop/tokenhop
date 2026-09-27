@@ -22,6 +22,7 @@ import {
   filterConsoleLines,
   groupConsoleLines,
   initialAutoScrollState,
+  pruneExpandedKeys,
 } from "@/shared/utils/consoleLog";
 import ConsoleLogRow from "./ConsoleLogRows";
 import useConsoleStream from "./useConsoleStream";
@@ -47,10 +48,14 @@ export default function ConsoleLogClient() {
   const [expandedKeys, setExpandedKeys] = useState(() => new Set());
   const [activeRow, setActiveRow] = useState(0);
   const scrollRef = useRef(null);
+  // Key of the row button that held focus, set only while it is focused.
+  const focusedRowKey = useRef(null);
 
   const paused = buffer.paused;
   const lines = buffer.visible;
   const grouped = useMemo(() => groupConsoleLines(lines), [lines]);
+  // Raw rows keep independent disclosure keys (their line id); grouped rows use
+  // the group key. Both survive filters and mode switches via pruneExpandedKeys.
   const rawRows = useMemo(
     () => lines.map((line) => ({ ...line, key: String(line.id), count: 1, occurrences: [line] })),
     [lines],
@@ -74,14 +79,23 @@ export default function ConsoleLogClient() {
     setActiveRow((index) => Math.min(index, Math.max(0, rows.length - 1)));
   }, [rows.length]);
 
-  // A new row joins the bottom and moves its group there; clear a stale
-  // expansion so it never follows a different message with the same key.
+  // Keep disclosures expanded through filtering and Raw toggles; prune only
+  // keys whose lines left the 200-line buffer. Grouped and raw keys are
+  // independent, so each mode restores its own expansion when revisited.
   useEffect(() => {
-    setExpandedKeys((keys) => {
-      const visible = new Set(rows.map((row) => row.key));
-      if ([...keys].every((key) => visible.has(key))) return keys;
-      return new Set([...keys].filter((key) => visible.has(key)));
-    });
+    setExpandedKeys((keys) => pruneExpandedKeys(keys, grouped));
+  }, [grouped]);
+
+  // Filtering or buffer rotation can unmount the focused row. Only then move
+  // focus to the filter, so it never lands on <body> and is never stolen from
+  // a control the user moved to.
+  useEffect(() => {
+    const key = focusedRowKey.current;
+    if (!key || rows.some((row) => row.key === key)) return;
+    focusedRowKey.current = null;
+    if (document.activeElement === document.body || !document.activeElement) {
+      document.getElementById("console-log-filter")?.focus();
+    }
   }, [rows]);
 
   const handleScroll = useCallback(() => {
@@ -121,6 +135,16 @@ export default function ConsoleLogClient() {
       else next.add(key);
       return next;
     });
+  }, []);
+
+  const selectRow = useCallback((index, key) => {
+    focusedRowKey.current = key;
+    setActiveRow(index);
+  }, []);
+
+  const clearRowFocus = useCallback((event) => {
+    // Keep the key while focus moves inside the row (e.g. to its copy button).
+    if (!event.currentTarget.contains(event.relatedTarget)) focusedRowKey.current = null;
   }, []);
 
   const options = useMemo(
@@ -186,7 +210,8 @@ export default function ConsoleLogClient() {
             raw={raw}
             expanded={expandedKeys.has(row.key)}
             selected={index === activeRow}
-            onSelect={setActiveRow}
+            onSelect={selectRow}
+            onBlur={clearRowFocus}
             onToggle={toggleExpanded}
           />
         )}
@@ -225,6 +250,7 @@ export default function ConsoleLogClient() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-[200px] flex-1 sm:max-w-[440px]">
           <Input
+            id="console-log-filter"
             icon="search"
             aria-label="Filter lines"
             placeholder="Filter by model, provider or status"
@@ -232,6 +258,7 @@ export default function ConsoleLogClient() {
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
+        <span className="sr-only">Counts show lines, not grouped rows</span>
         <SegmentedControl
           aria-label="Log level"
           options={options}
@@ -264,7 +291,7 @@ export default function ConsoleLogClient() {
       {/* Footer */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted">
         <span>
-          {lines.length} of {MAX_LINES} lines
+          {rows.length} {raw ? "rows" : "groups"} · {lines.length} of {MAX_LINES} lines
         </span>
         <span className="text-warn">{warnCount} warnings</span>
         <button
