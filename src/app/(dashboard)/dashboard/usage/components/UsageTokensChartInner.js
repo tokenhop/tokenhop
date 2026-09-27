@@ -16,6 +16,7 @@ import Card from "@/shared/components/Card";
 import SegmentedControl from "@/shared/components/SegmentedControl";
 import EmptyState from "@/shared/components/EmptyState";
 import { shapeChartSeries } from "../lib/usageShapes";
+import { useReducedMotion } from "@/shared/hooks/useOverlay";
 
 const fmtTokens = (n) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n || 0);
@@ -38,6 +39,7 @@ export default function UsageTokensChartInner({ period = "7d" }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("tokens");
+  const reducedMotion = useReducedMotion();
 
   const [fetchError, setFetchError] = useState(null);
 
@@ -151,6 +153,7 @@ export default function UsageTokensChartInner({ period = "7d" }) {
                     fill="url(#usageSky)"
                     dot={false}
                     activeDot={{ r: 4 }}
+                    isAnimationActive={!reducedMotion}
                   />
                   <Area
                     type="monotone"
@@ -162,6 +165,7 @@ export default function UsageTokensChartInner({ period = "7d" }) {
                     fill="url(#usageLime)"
                     dot={false}
                     activeDot={{ r: 4 }}
+                    isAnimationActive={!reducedMotion}
                   />
                   <Area
                     type="monotone"
@@ -172,6 +176,7 @@ export default function UsageTokensChartInner({ period = "7d" }) {
                     fill="url(#usageCoral)"
                     dot={false}
                     activeDot={{ r: 4 }}
+                    isAnimationActive={!reducedMotion}
                   />
                 </>
               ) : (
@@ -184,6 +189,7 @@ export default function UsageTokensChartInner({ period = "7d" }) {
                   fill="url(#usageCoral)"
                   dot={false}
                   activeDot={{ r: 4 }}
+                  isAnimationActive={!reducedMotion}
                 />
               )}
             </AreaChart>
