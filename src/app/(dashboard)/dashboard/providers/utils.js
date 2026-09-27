@@ -1,4 +1,5 @@
 import { getErrorCode, getRelativeTime } from "@/shared/utils";
+import { connectionHealth, cooldownUntil, providerHealth } from "@/shared/utils/providerHealth";
 
 export const LIST_FILTERS = {
   ALL: "all",
@@ -81,20 +82,7 @@ export function getConnectionErrorTag(connection) {
 }
 
 export function getCooldownUntil(connection) {
-  if (!connection) return null;
-  const now = Date.now();
-  let earliest = null;
-  for (const [key, value] of Object.entries(connection)) {
-    if (key.startsWith("modelLock_") && value) {
-      const time = new Date(value).getTime();
-      if (!Number.isNaN(time) && time > now) {
-        if (!earliest || time < earliest.time) {
-          earliest = { time, iso: value };
-        }
-      }
-    }
-  }
-  return earliest ? earliest.iso : null;
+  return cooldownUntil(connection);
 }
 
 export function getEffectiveStatus(connection) {
@@ -110,20 +98,18 @@ export function getProviderStats(connections, providerId, authType) {
     (c) => c.provider === providerId && authTypes.includes(c.authType),
   );
 
-  const connected = providerConnections.filter((c) => {
-    const status = getEffectiveStatus(c);
-    return status === "active" || status === "success";
-  }).length;
+  const health = providerHealth(providerConnections);
+  const connected = health.counts.ok + health.counts.warn + health.counts.err;
+  const errorConns = providerConnections.filter((c) =>
+    ["err", "warn"].includes(connectionHealth(c).status),
+  );
 
-  const errorConns = providerConnections.filter((c) => {
-    const status = getEffectiveStatus(c);
-    return status === "error" || status === "expired" || status === "unavailable";
-  });
-
-  const error = errorConns.length;
+  const error = health.counts.err + health.counts.warn;
   const total = providerConnections.length;
-  const allDisabled = total > 0 && providerConnections.every((c) => c.isActive === false);
-  const hasCooldown = providerConnections.some((c) => Boolean(getCooldownUntil(c)));
+  const allDisabled = total > 0 && health.counts.off === total;
+  const hasCooldown = providerConnections.some(
+    (c) => connectionHealth(c).reason === "Cooling down",
+  );
 
   const latestError = errorConns.sort(
     (a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0),
@@ -140,17 +126,10 @@ export function getAccountSegments(providerConnections) {
   }
   return providerConnections.map((c, i) => {
     const label = c.name || c.email || `Account ${i + 1}`;
-    if (c.isActive === false) {
-      return { value: 0, kind: "none", label };
-    }
-    const isCool = Boolean(getCooldownUntil(c));
-    const effective = getEffectiveStatus(c);
-    if (isCool) {
-      return { value: 50, kind: "warn", label };
-    }
-    if (effective === "error" || effective === "expired") {
-      return { value: 100, kind: "err", label };
-    }
+    const health = connectionHealth(c);
+    if (health.status === "off") return { value: 0, kind: "none", label };
+    if (health.status === "warn") return { value: 50, kind: "warn", label };
+    if (health.status === "err") return { value: 100, kind: "err", label };
     return { value: 100, kind: "ok", label };
   });
 }
@@ -174,16 +153,17 @@ export function writeSelectedProvider(searchParamsString, providerId) {
   return qs ? `/dashboard/providers?${qs}` : "/dashboard/providers";
 }
 
-export function matchesProviderListFilter(filter, stats, isNoAuth = false, authGroup = null) {
+export function matchesProviderListFilter(
+  filter,
+  stats,
+  isNoAuth = false,
+  authGroup = null,
+  entryHasCooldown = undefined,
+) {
   if (filter === LIST_FILTERS.ALL) return true;
-  if (filter === LIST_FILTERS.CONNECTED) {
-    if (isNoAuth) return true;
-    return (stats?.connected || 0) > 0;
-  }
-  if (filter === LIST_FILTERS.NEEDS_ATTENTION) {
-    if (isNoAuth) return false;
-    return (stats?.error || 0) > 0 || stats?.hasCooldown === true;
-  }
+  if (filter === LIST_FILTERS.CONNECTED) return !isNoAuth && (stats?.connected || 0) > 0;
+  if (filter === LIST_FILTERS.NEEDS_ATTENTION)
+    return needsAttention(stats, isNoAuth, entryHasCooldown);
   if (filter === LIST_FILTERS.OAUTH) return authGroup === "oauth";
   if (filter === LIST_FILTERS.FREE) return authGroup === "free";
   if (filter === LIST_FILTERS.APIKEY) return authGroup === "apikey" || authGroup === "compatible";
@@ -202,13 +182,19 @@ export function buildProviderListFilterCounts(entries) {
 
   for (const entry of entries) {
     const { stats, isNoAuth, authGroup } = entry;
-    const entryCooldown = entry.hasCooldown ?? stats?.hasCooldown;
-    if (isNoAuth || (stats?.connected || 0) > 0) {
+    if (matchesProviderListFilter(LIST_FILTERS.CONNECTED, stats, isNoAuth)) {
       counts[LIST_FILTERS.CONNECTED] += 1;
     }
-    if (!isNoAuth && ((stats?.error || 0) > 0 || entryCooldown)) {
+    if (
+      matchesProviderListFilter(
+        LIST_FILTERS.NEEDS_ATTENTION,
+        stats,
+        isNoAuth,
+        authGroup,
+        entry.hasCooldown,
+      )
+    )
       counts[LIST_FILTERS.NEEDS_ATTENTION] += 1;
-    }
     if (authGroup === "oauth") counts[LIST_FILTERS.OAUTH] += 1;
     else if (authGroup === "free") counts[LIST_FILTERS.FREE] += 1;
     else if (authGroup === "apikey" || authGroup === "compatible") counts[LIST_FILTERS.APIKEY] += 1;
@@ -217,6 +203,16 @@ export function buildProviderListFilterCounts(entries) {
   return counts;
 }
 
+/** Shared providerHealth rule: stats.error counts err + warn (cooldown/pending) connections. */
+export function needsAttention(stats, isNoAuth = false, entryHasCooldown = undefined) {
+  if (isNoAuth) return false;
+  return (stats?.error || 0) > 0 || (entryHasCooldown ?? stats?.hasCooldown) === true;
+}
+
 export function countNeedsAttention(entries) {
-  return entries.filter((e) => !e.isNoAuth && ((e.stats?.error || 0) > 0 || e.hasCooldown)).length;
+  return entries.filter((e) => needsAttention(e.stats, e.isNoAuth, e.hasCooldown)).length;
+}
+
+export function needsLookLabel(count) {
+  return `${count} ${count === 1 ? "needs" : "need"} a look`;
 }

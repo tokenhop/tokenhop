@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import SegmentedControl from "@/shared/components/SegmentedControl";
 import { deriveCommandCenterStatus } from "@/shared/utils/commandCenter";
-import { connectionHealth } from "./ProviderHealth";
+import { summarizeProviders } from "@/shared/utils/providerHealth";
 
 /** Home periods: the segmented control drives every stat. */
 export const HOME_PERIODS = [
@@ -37,8 +37,9 @@ export default function HomeHeader({ connections, providersLoading, period, onPe
     ? HOME_PERIODS.map((item) => ({ ...item, label: labels[item.value] }))
     : HOME_PERIODS;
 
+  // One status per provider (worst enabled connection), not one per connection.
   const statuses = Array.isArray(connections)
-    ? connections.map((connection) => ({ status: connectionHealth(connection) }))
+    ? summarizeProviders([], connections).providers.map(({ status }) => ({ status }))
     : [];
   const statusLine = providersLoading
     ? "Checking provider status…"

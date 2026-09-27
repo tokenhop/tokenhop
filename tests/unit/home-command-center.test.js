@@ -27,8 +27,11 @@ describe("deriveCommandCenterStatus", () => {
     );
   });
 
-  it("errors outrank cooldowns", () => {
+  it("errors outrank cooldowns and the count matches the cards (err + warn)", () => {
     expect(deriveCommandCenterStatus([{ status: "warn" }, { status: "err" }])).toBe(
+      "2 providers need attention",
+    );
+    expect(deriveCommandCenterStatus([{ status: "ok" }, { status: "err" }])).toBe(
       "1 provider needs attention",
     );
     expect(deriveCommandCenterStatus([{ status: "err" }, { status: "err" }])).toBe(

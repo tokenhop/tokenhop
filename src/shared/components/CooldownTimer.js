@@ -1,6 +1,14 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 
+/**
+ * Cooldown countdown. Single shared copy; all dashboard surfaces import this.
+ *
+ * @param {object} props
+ * @param {string} props.until ISO timestamp when the cooldown ends
+ */
 export default function CooldownTimer({ until }) {
   const [remaining, setRemaining] = useState("");
 
@@ -30,7 +38,11 @@ export default function CooldownTimer({ until }) {
 
   if (!remaining) return null;
 
-  return <span className="text-xs text-orange-500 font-mono">⏱ {remaining}</span>;
+  return (
+    <span className="font-mono text-xs text-warn" aria-live="off">
+      {remaining} left
+    </span>
+  );
 }
 
 CooldownTimer.propTypes = {

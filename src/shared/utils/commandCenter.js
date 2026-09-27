@@ -11,7 +11,10 @@ export function deriveCommandCenterStatus(providers) {
   if (!Array.isArray(providers) || providers.length === 0) return "Connect your first provider";
   const warn = providers.filter((p) => p?.status === "warn").length;
   const err = providers.filter((p) => p?.status === "err").length;
-  if (err > 0) return err === 1 ? "1 provider needs attention" : `${err} providers need attention`;
+  // Same "needs attention" count as the provider cards: errors and cooldowns (YAN-391).
+  const attention = err + warn;
+  if (err > 0)
+    return attention === 1 ? "1 provider needs attention" : `${attention} providers need attention`;
   if (warn > 0)
     return warn === 1
       ? "All routes humming · 1 provider cooling down"

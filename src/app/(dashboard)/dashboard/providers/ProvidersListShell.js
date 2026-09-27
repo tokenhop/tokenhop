@@ -22,6 +22,8 @@ import {
   getProviderStats,
   matchesProviderListFilter,
   buildProviderListFilterCounts,
+  needsAttention as entryNeedsAttention,
+  needsLookLabel,
   readSelectedProvider,
   writeSelectedProvider,
 } from "./utils";
@@ -158,14 +160,13 @@ function ProvidersListShell({ initialProviderId = null }) {
     .filter((section) => section.entries.length > 0 || section.id === "custom");
 
   const needsAttention = allEntries
-    .filter(
-      (entry) => !entry.isNoAuth && (entry.stats.error > 0 || entry.stats.hasCooldown === true),
-    )
+    .filter((entry) => entryNeedsAttention(entry.stats, entry.isNoAuth))
     .slice(0, 6);
 
   const connectedTotal = filterCounts[LIST_FILTERS.CONNECTED];
   const availableTotal = sections.reduce((sum, s) => sum + s.totalCount, 0);
   const attentionTotal = filterCounts[LIST_FILTERS.NEEDS_ATTENTION];
+  const noAuthReadyTotal = allEntries.filter((entry) => entry.isNoAuth).length;
   const isApikeySearching = !!query || filter !== LIST_FILTERS.ALL;
 
   // Keep panel selection in sync with the URL on Back/Forward.
@@ -294,7 +295,9 @@ function ProvidersListShell({ initialProviderId = null }) {
     <div className="flex min-w-0 flex-col gap-5 px-1 sm:px-0">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <p className="text-sm text-muted" aria-live="polite">
-          {availableTotal} available · {connectedTotal} connected · {attentionTotal} need a look
+          {availableTotal} available · {connectedTotal} connected
+          {noAuthReadyTotal > 0 && ` · ${noAuthReadyTotal} ready`} ·{" "}
+          {needsLookLabel(attentionTotal)}
         </p>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Button
