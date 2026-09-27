@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { resolveUserRow } from "@/shared/utils/shell";
 import ThemeToggle from "./ThemeToggle";
 import Menu, { MenuItem } from "./Menu";
 import LanguageSwitcher from "./LanguageSwitcher";
@@ -13,9 +14,7 @@ import IconButton from "./IconButton";
  * The SSO name pill in the header is preserved separately.
  */
 export default function SidebarUserRow() {
-  const [displayName, setDisplayName] = useState("");
-  const [loginMethod, setLoginMethod] = useState("");
-  const [requireLogin, setRequireLogin] = useState(true);
+  const [status, setStatus] = useState({});
   const [languageOpen, setLanguageOpen] = useState(false);
 
   useEffect(() => {
@@ -25,24 +24,9 @@ export default function SidebarUserRow() {
         const res = await fetch("/api/auth/status", { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
-        if (!cancelled) {
-          setDisplayName(
-            data?.displayName ||
-              data?.samlName ||
-              data?.samlEmail ||
-              data?.oidcName ||
-              data?.oidcEmail ||
-              "",
-          );
-          setLoginMethod(data?.loginMethod || "");
-          setRequireLogin(data?.requireLogin !== false);
-        }
+        if (!cancelled) setStatus(data || {});
       } catch {
-        if (!cancelled) {
-          setDisplayName("");
-          setLoginMethod("");
-          setRequireLogin(true);
-        }
+        if (!cancelled) setStatus({});
       }
     }
     loadAuthStatus();
@@ -60,13 +44,7 @@ export default function SidebarUserRow() {
     }
   };
 
-  const name = displayName || "Admin";
-  const sub =
-    loginMethod === "OIDC" || loginMethod === "SAML"
-      ? `${loginMethod} SSO`
-      : requireLogin
-        ? "Local password"
-        : "No login required";
+  const { name, sub } = resolveUserRow(status);
 
   return (
     <>

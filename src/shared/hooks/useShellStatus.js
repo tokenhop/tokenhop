@@ -18,6 +18,23 @@ export function countConnectedProviders(connections) {
 }
 
 /**
+ * Providers that need attention under the shared health rule, plus the worst
+ * status among them, for the Providers badge tint and label.
+ * @param {Array<object>} connections
+ * @returns {{ count: number, status: "warn"|"err"|null }}
+ */
+export function providerAttention(connections) {
+  if (!Array.isArray(connections)) return { count: 0, status: null };
+  const flagged = summarizeProviders([], connections).providers.filter((p) => p.needsAttention);
+  const status = flagged.some((p) => p.status === "err")
+    ? "err"
+    : flagged.length > 0
+      ? "warn"
+      : null;
+  return { count: flagged.length, status };
+}
+
+/**
  * Count accounts whose lowest visible quota is at or below `threshold` percent.
  * Reads the same localStorage cache the quota page writes (`quotaCacheData`),
  * so the badge matches what the quota page shows without extra polling.
@@ -95,6 +112,7 @@ const store = {
     startedAt: null,
     serverPort: null,
     badges: { providers: null, combos: null, quota: null },
+    providerAttention: { count: 0, status: null },
     enableTranslator: false,
   },
   listeners: new Set(),
@@ -125,6 +143,7 @@ async function refreshShellStatus() {
     const next = {
       ...readGatewayStatus(statusRes.status === "fulfilled" ? statusRes.value : null),
       badges: { ...store.state.badges },
+      providerAttention: store.state.providerAttention,
     };
     if (next.statusBody) {
       const body = await next.statusBody;
@@ -139,8 +158,9 @@ async function refreshShellStatus() {
     let activeProviderIds = null;
     if (providersRes.status === "fulfilled" && providersRes.value.ok) {
       const data = await providersRes.value.json();
-      next.badges.providers = countConnectedProviders(data?.connections);
       if (Array.isArray(data?.connections)) {
+        next.badges.providers = countConnectedProviders(data.connections);
+        next.providerAttention = providerAttention(data.connections);
         activeProviderIds = new Set(
           data.connections.filter((c) => c?.isActive !== false).map((c) => c.id),
         );
@@ -154,11 +174,14 @@ async function refreshShellStatus() {
       }
     }
 
-    const cached = readQuotaCache();
-    const filtered = activeProviderIds
-      ? Object.fromEntries(Object.entries(cached).filter(([id]) => activeProviderIds.has(id)))
-      : cached;
-    next.badges.quota = countLowQuotaAccounts(filtered);
+    // The quota cache is only trustworthy once we know which connections are
+    // active; until then the badge stays hidden (null) instead of guessing.
+    if (activeProviderIds) {
+      const cached = readQuotaCache();
+      next.badges.quota = countLowQuotaAccounts(
+        Object.fromEntries(Object.entries(cached).filter(([id]) => activeProviderIds.has(id))),
+      );
+    }
     setState({ ...next, loading: false });
   } finally {
     store.inFlight = false;
@@ -203,6 +226,7 @@ function onVisibilityChange() {
  *   startedAt: string|null,
  *   port: number|null,
  *   badges: { providers: number|null, combos: number|null, quota: number|null },
+ *   providerAttention: { count: number, status: "warn"|"err"|null },
  *   enableTranslator: boolean,
  * }}
  */

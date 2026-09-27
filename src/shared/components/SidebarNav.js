@@ -9,6 +9,7 @@ import {
   isActive,
   visibleGroups,
 } from "@/shared/constants/navigation";
+import { badgeTint } from "@/shared/utils/shell";
 import { cn } from "@/shared/utils/cn";
 
 /**
@@ -19,10 +20,17 @@ import { cn } from "@/shared/utils/cn";
  * @param {object} props
  * @param {boolean} props.enableTranslator Show the Debug translator item.
  * @param {Record<string, number|null>} [props.badges] Badge counts by badgeKey.
+ * @param {{ count: number, status: "warn"|"err"|null }} [props.providerAttention]
+ *   Worst needs-attention status for the Providers badge tint.
  * @param {() => void} [props.onNavigate] Called after any navigation (closes drawer).
  */
 
-export default function SidebarNav({ enableTranslator, badges = {}, onNavigate }) {
+export default function SidebarNav({
+  enableTranslator,
+  badges = {},
+  providerAttention = { count: 0, status: null },
+  onNavigate,
+}) {
   const pathname = usePathname() || "";
   const groups = visibleGroups({ enableTranslator }).filter((group) => group.items.length > 0);
 
@@ -41,7 +49,12 @@ export default function SidebarNav({ enableTranslator, badges = {}, onNavigate }
             const rawCount =
               item.badgeKey && badges[item.badgeKey] != null ? badges[item.badgeKey] : null;
             const badge = rawCount != null ? formatBadge(rawCount) : null;
-            const badgeLabel = badge ? badgeAriaLabel(item.badgeKey, rawCount) : null;
+            const attention =
+              item.badgeKey === "providers" ? providerAttention : { count: 0, status: null };
+            const badgeLabel = badge
+              ? badgeAriaLabel(item.badgeKey, rawCount, attention.count)
+              : null;
+            const tint = badge ? badgeTint(item.badgeKey, rawCount, attention.status) : null;
             return (
               <Link
                 key={item.id}
@@ -68,11 +81,15 @@ export default function SidebarNav({ enableTranslator, badges = {}, onNavigate }
                   aria-hidden="true"
                   className={cn(
                     "min-w-[28px] shrink-0 rounded-full px-[7px] py-px text-center font-mono text-[11px]",
-                    active ? "bg-coral text-on-coral" : "bg-raised text-muted",
-                    badge ? "visible" : "invisible",
+                    // Invisible reserves badge space so the nav never shifts.
+                    !badge && "invisible bg-raised text-muted",
+                    badge && tint === "warn" && "bg-warn-bg text-warn",
+                    badge && tint === "err" && "bg-err-bg text-err",
+                    badge && tint === "neutral" && active && "bg-coral text-on-coral",
+                    badge && tint === "neutral" && !active && "bg-raised text-muted",
                   )}
                 >
-                  {badge || "0"}
+                  {badge}
                 </span>
               </Link>
             );
@@ -89,6 +106,10 @@ SidebarNav.propTypes = {
     providers: PropTypes.number,
     combos: PropTypes.number,
     quota: PropTypes.number,
+  }),
+  providerAttention: PropTypes.shape({
+    count: PropTypes.number,
+    status: PropTypes.oneOf(["warn", "err"]),
   }),
   onNavigate: PropTypes.func,
 };

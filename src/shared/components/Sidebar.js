@@ -4,6 +4,7 @@ import PropTypes from "prop-types";
 import Link from "next/link";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { useShellStatus } from "@/shared/hooks";
+import { resolveVersionChip } from "@/shared/utils/shell";
 import SidebarNav from "./SidebarNav";
 import GatewayStatusCard from "./GatewayStatusCard";
 import SidebarUserRow from "./SidebarUserRow";
@@ -22,7 +23,9 @@ import IconButton from "./IconButton";
  * @param {boolean} [props.inDrawer=false] Adjusts container styling when rendered inside a Drawer.
  */
 export default function Sidebar({ onClose, inDrawer = false }) {
-  const { loading, gatewayOnline, port, startedAt, badges, enableTranslator } = useShellStatus();
+  const { loading, gatewayOnline, port, startedAt, badges, providerAttention, enableTranslator } =
+    useShellStatus();
+  const chip = resolveVersionChip(APP_CONFIG.version);
 
   return (
     <aside
@@ -49,9 +52,14 @@ export default function Sidebar({ onClose, inDrawer = false }) {
             router
           </span>
         </Link>
-        <span className="ms-auto rounded-md border border-line px-1.5 py-0.5 font-mono text-[11px] text-muted">
-          v{APP_CONFIG.version}
-        </span>
+        {chip.label ? (
+          <span
+            className="ms-auto max-w-[7.5rem] truncate rounded-md border border-line px-1.5 py-0.5 font-mono text-[11px] whitespace-nowrap text-muted"
+            title={chip.full}
+          >
+            v{chip.label}
+          </span>
+        ) : null}
         {inDrawer && onClose ? (
           <IconButton icon="close" label="Close navigation" onClick={onClose} />
         ) : null}
@@ -66,7 +74,12 @@ export default function Sidebar({ onClose, inDrawer = false }) {
       />
 
       {/* Grouped navigation */}
-      <SidebarNav enableTranslator={enableTranslator} badges={badges} onNavigate={onClose} />
+      <SidebarNav
+        enableTranslator={enableTranslator}
+        badges={badges}
+        providerAttention={providerAttention}
+        onNavigate={onClose}
+      />
 
       {/* User row */}
       <SidebarUserRow />

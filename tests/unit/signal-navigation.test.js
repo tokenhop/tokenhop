@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   countConnectedProviders,
   countLowQuotaAccounts,
+  providerAttention,
   readTranslatorGate,
 } from "@/shared/hooks/useShellStatus.js";
 import {
@@ -136,6 +137,26 @@ describe("shell status helpers", () => {
     expect(countConnectedProviders(connections)).toBe(3);
   });
 
+  it("reports how many providers need attention and the worst status", () => {
+    expect(providerAttention([{ provider: "openai", testStatus: "active" }])).toEqual({
+      count: 0,
+      status: null,
+    });
+    expect(
+      providerAttention([
+        { provider: "openai", testStatus: "active" },
+        { provider: "codex", testStatus: "error" },
+        { provider: "gemini", testStatus: "mystery" },
+        { provider: "off", testStatus: "error", isActive: false },
+      ]),
+    ).toEqual({ count: 2, status: "err" });
+    expect(providerAttention([{ provider: "gemini", testStatus: "mystery" }])).toEqual({
+      count: 1,
+      status: "warn",
+    });
+    expect(providerAttention(null)).toEqual({ count: 0, status: null });
+  });
+
   it("counts accounts at or below the low-quota threshold", () => {
     const quotaData = {
       c1: { quotas: [{ remainingPercentage: 15 }] },
@@ -151,7 +172,14 @@ describe("badgeAriaLabel", () => {
   it("names the count for screen readers", () => {
     expect(badgeAriaLabel("providers", 14)).toBe("14 connected providers");
     expect(badgeAriaLabel("combos", 4)).toBe("4 combos");
-    expect(badgeAriaLabel("quota", 2)).toBe("2 low quota accounts");
+    expect(badgeAriaLabel("quota", 2)).toBe("2 accounts low on quota");
+  });
+
+  it("uses singular nouns and names attention items", () => {
+    expect(badgeAriaLabel("quota", 1)).toBe("1 account low on quota");
+    expect(badgeAriaLabel("combos", 1)).toBe("1 combo");
+    expect(badgeAriaLabel("providers", 9, 2)).toBe("9 connected providers, 2 need attention");
+    expect(badgeAriaLabel("providers", 9, 1)).toBe("9 connected providers, 1 needs attention");
   });
 
   it("returns null for empty counts or unknown keys", () => {
