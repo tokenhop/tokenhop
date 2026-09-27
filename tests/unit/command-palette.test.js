@@ -171,16 +171,93 @@ describe("commandSources deduplication & shapes", () => {
     ];
     const cmds = __test.modelCommands({ models: list });
     expect(cmds.map((c) => c.id)).toEqual(["model:gemini/gemini-2.5-flash", "model:openai/gpt-4o"]);
+    expect(cmds[0].run).toEqual({ type: "copy", value: "gemini/gemini-2.5-flash" });
+    expect(cmds[0].secondary).toEqual({
+      label: "Open provider",
+      run: { type: "navigate", href: "/dashboard/providers/gemini" },
+    });
+  });
+
+  it("lists providers once with provider ids, display names and searchable account names", () => {
+    const cmds = __test.providerCommands({
+      providers: [
+        { id: "uuid-a", provider: "claude", name: "Account 1", testStatus: "active" },
+        { id: "uuid-b", provider: "claude", name: "Backup account", testStatus: "error" },
+      ],
+    });
+    expect(cmds).toHaveLength(1);
+    expect(cmds[0]).toMatchObject({
+      id: "provider:claude",
+      run: { type: "navigate", href: "/dashboard/providers/claude" },
+      providerId: "claude",
+    });
+    expect(cmds[0].label).not.toBe("Account 1");
+    expect(cmds[0].hint).toBe("2 accounts · Test failed");
+    expect(filterAndRank(cmds, "Backup account")).toHaveLength(1);
+    expect(__test.providerCommands({ providers: [{ id: "bad", name: "Orphan" }] })).toEqual([]);
+    expect(
+      __test.providerCommands({ providers: [{ id: "bad", provider: "does-not-exist" }] }),
+    ).toEqual([]);
+  });
+
+  it("keeps compatible providers and resolves model aliases to detail ids", () => {
+    const compatibleId = "openai-compatible-example";
+    const providers = __test.providerCommands({
+      providers: [
+        { id: "uuid-1", provider: compatibleId, name: "Custom gateway" },
+        { id: "uuid-2", provider: compatibleId, name: "Second account" },
+      ],
+    });
+    expect(providers).toHaveLength(1);
+    expect(providers[0]).toMatchObject({
+      label: "Custom gateway",
+      run: { href: `/dashboard/providers/${compatibleId}` },
+    });
+    expect(
+      __test.modelCommands({ models: [{ fullModel: "gc/example", provider: "gc" }] })[0].secondary
+        .run.href,
+    ).toBe("/dashboard/providers/gemini-cli");
+    expect(
+      __test.modelCommands({ models: [{ fullModel: "unknown/example", provider: "unknown" }] })[0]
+        .secondary,
+    ).toBeUndefined();
+  });
+
+  it("opens LLM combos by selection and media combos at their own detail route", () => {
+    const combos = __test.comboCommands({
+      combos: [
+        { id: "test-1", name: "Primary", models: [] },
+        { id: "web-1", name: "Search", kind: "webSearch", models: [] },
+        { id: "img-1", name: "Images", kind: "image", models: [] },
+      ],
+    });
+    expect(combos.map((c) => c.run.href)).toEqual([
+      "/dashboard/combos?combo=test-1",
+      "/dashboard/media-providers/combo/web-1",
+      "/dashboard/media-providers/combo/img-1",
+    ]);
   });
 
   it("produces quick action commands for endpoint, new key, theme and settings", () => {
     const actions = __test.actionCommands();
     expect(actions.map((a) => a.id)).toEqual([
       "action:copy-endpoint",
+      "action:add-provider",
+      "action:new-combo",
       "action:new-key",
+      "action:test-providers",
+      "action:refresh-quota",
+      "action:open-request-log",
+      "action:toggle-tunnel",
+      "action:clear-console",
+      "action:change-language",
       "action:toggle-theme",
+      "action:sign-out",
       "action:open-settings",
     ]);
+    expect(actions.find((a) => a.id === "action:new-key").run.href).toBe(
+      "/dashboard/endpoint?create=key",
+    );
   });
 
   it("collects static and registered sources together", async () => {
