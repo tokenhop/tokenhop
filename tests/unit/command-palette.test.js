@@ -192,7 +192,7 @@ describe("commandSources deduplication & shapes", () => {
       providerId: "claude",
     });
     expect(cmds[0].label).not.toBe("Account 1");
-    expect(cmds[0].hint).toMatch(/2 accounts/);
+    expect(cmds[0].hint).toBe("2 accounts · Test failed");
     expect(filterAndRank(cmds, "Backup account")).toHaveLength(1);
     expect(__test.providerCommands({ providers: [{ id: "bad", name: "Orphan" }] })).toEqual([]);
     expect(
