@@ -9,7 +9,7 @@ const FEATURES = [
   {
     icon: "bolt",
     title: "Easy setup",
-    desc: "Get up and running in minutes with npx command.",
+    desc: "Get up and running in minutes with one Docker command.",
   },
   {
     icon: "shield_with_heart",

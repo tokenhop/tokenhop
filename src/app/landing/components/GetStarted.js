@@ -2,10 +2,14 @@
 
 import { CopyField } from "@/shared/components";
 
+// Published by this project on GHCR. (The `9router` package on npm is not ours.)
+const INSTALL_COMMAND =
+  "docker run -d -p 20128:20128 -v ~/.9router:/app/data -e INITIAL_PASSWORD=change-me ghcr.io/yandy-r/9router";
+
 const STEPS = [
   {
     title: "Install 9Router",
-    desc: "Run npx command to start the server instantly",
+    desc: "Run the Docker image to start the server instantly",
   },
   {
     title: "Open dashboard",
@@ -26,7 +30,7 @@ const LOG_LINES = [
 
 /**
  * Get-started section: three install steps beside a dark terminal card with a
- * copyable `npx 9router` command.
+ * copyable `docker run` command for this project's GHCR image.
  */
 export default function GetStarted() {
   return (
@@ -77,8 +81,8 @@ export default function GetStarted() {
 
               <div className="overflow-x-auto p-6 font-mono text-sm leading-relaxed">
                 <CopyField
-                  value="$ npx 9router"
-                  copyValue="npx 9router"
+                  value={`$ ${INSTALL_COMMAND}`}
+                  copyValue={INSTALL_COMMAND}
                   label="Copy install command"
                   className="mb-6"
                 />

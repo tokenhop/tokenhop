@@ -27,8 +27,8 @@ const RESOURCE_LINKS = [
     rel: "noopener noreferrer",
   },
   {
-    label: "NPM",
-    href: "https://www.npmjs.com/package/9router",
+    label: "Docker",
+    href: "https://github.com/yandy-r/9router/pkgs/container/9router",
     target: "_blank",
     rel: "noopener noreferrer",
   },
@@ -145,11 +145,11 @@ export default function Footer() {
             </a>
             <a
               className="inline-flex min-h-[44px] items-center text-sm text-muted transition-colors hover:text-text focus-visible:shadow-focus"
-              href="https://www.npmjs.com/package/9router"
+              href="https://github.com/yandy-r/9router/pkgs/container/9router"
               target="_blank"
               rel="noopener noreferrer"
             >
-              NPM
+              Docker
             </a>
           </div>
         </div>
