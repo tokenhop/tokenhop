@@ -4,6 +4,7 @@ import PropTypes from "prop-types";
 import { useEffect, useState } from "react";
 import { Button, Field, Input, Modal, StatusPill, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import CopyStatus from "@/shared/components/CopyStatus";
 import { headroomStatusLabel } from "./tokenSaverUtils";
 import { fetchJson } from "./tokenSaverApi";
 
@@ -172,7 +173,7 @@ export function HeadroomModal({ open, onClose, headroom, running, label, onReche
   const [timeoutDraft, setTimeoutDraft] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState("");
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, error, copy } = useCopyToClipboard();
 
   useEffect(() => {
     if (open) {
@@ -310,8 +311,9 @@ export function HeadroomModal({ open, onClose, headroom, running, label, onReche
                 variant="ghost"
                 onClick={() => copy(`pip install "headroom-ai[proxy]"`)}
               >
-                {copied ? "Copied" : "Copy"}
+                {copied ? "Copied" : error ? "Couldn't copy" : "Copy"}
               </Button>
+              <CopyStatus copied={copied} error={error} />
             </div>
           </div>
         )}

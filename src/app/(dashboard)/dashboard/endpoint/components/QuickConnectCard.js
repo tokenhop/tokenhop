@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import { useState } from "react";
 import { Card, Button, Select, Tabs } from "@/shared/components";
 import { duplicateKeyLabel, quickConnectSnippets } from "../endpointLogic";
+import CopyStatus from "@/shared/components/CopyStatus";
 
 const LANGUAGES = [
   { value: "shell", label: "Shell" },
@@ -35,6 +36,7 @@ export default function QuickConnectCard({
   onSelectKey,
   onCopy,
   copiedId,
+  copyError,
 }) {
   const [language, setLanguage] = useState("shell");
   const selected = keys.find((key) => key.id === selectedKeyId) ?? null;
@@ -74,16 +76,21 @@ export default function QuickConnectCard({
           >
             <code>{snippet}</code>
           </pre>
-          <div className="flex justify-end border-t border-line px-3 py-2" aria-live="polite">
+          <div className="flex justify-end border-t border-line px-3 py-2">
             <Button
               variant="ghost"
               size="sm"
-              icon={copiedId === copyId ? "check" : "content_copy"}
+              icon={copiedId === copyId ? "check" : copyError === copyId ? "error" : "content_copy"}
               disabled={!canCopy}
               onClick={() => canCopy && onCopy(copySnippet, copyId)}
             >
-              {copiedId === copyId ? "Copied" : "Copy snippet"}
+              {copiedId === copyId
+                ? "Copied"
+                : copyError === copyId
+                  ? "Couldn't copy"
+                  : "Copy snippet"}
             </Button>
+            <CopyStatus copied={copiedId} error={copyError} id={copyId} />
           </div>
         </div>
 
@@ -117,4 +124,5 @@ QuickConnectCard.propTypes = {
   onSelectKey: PropTypes.func.isRequired,
   onCopy: PropTypes.func.isRequired,
   copiedId: PropTypes.string,
+  copyError: PropTypes.string,
 };

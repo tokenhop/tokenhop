@@ -11,6 +11,7 @@ import {
 } from "@/shared/components/signalMonaco";
 import { Card, Button, StatusPill, Skeleton } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import CopyStatus from "@/shared/components/CopyStatus";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -41,7 +42,7 @@ export default function TranslatorStep({
   action,
 }) {
   const { isDark } = useTheme();
-  const { copy, copied } = useCopyToClipboard();
+  const { copy, copied, error } = useCopyToClipboard();
 
   const handleCopy = () => {
     if (!content) return;
@@ -131,11 +132,22 @@ export default function TranslatorStep({
               <Button
                 size="sm"
                 variant="secondary"
-                icon={copied === `translator-step-${step.id}` ? "check" : "content_copy"}
+                icon={
+                  copied === `translator-step-${step.id}`
+                    ? "check"
+                    : error === `translator-step-${step.id}`
+                      ? "error"
+                      : "content_copy"
+                }
                 onClick={handleCopy}
               >
-                {copied === `translator-step-${step.id}` ? "Copied" : "Copy"}
+                {copied === `translator-step-${step.id}`
+                  ? "Copied"
+                  : error === `translator-step-${step.id}`
+                    ? "Couldn't copy"
+                    : "Copy"}
               </Button>
+              <CopyStatus copied={copied} error={error} id={`translator-step-${step.id}`} />
               {action}
             </div>
           </div>

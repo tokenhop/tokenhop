@@ -12,6 +12,7 @@ import {
   StatusPill,
 } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import CopyStatus from "@/shared/components/CopyStatus";
 import {
   SKILLS,
   SKILLS_BLOB_BASE,
@@ -39,20 +40,18 @@ export function getSkillOpenUrl(skill) {
  * @param {{ value: string }} props
  */
 function HeroCopyButton({ value }) {
-  const { copied, copy } = useCopyToClipboard(2000);
+  const { copied, error, copy } = useCopyToClipboard(2000);
   return (
     <span className="inline-flex items-center gap-2">
       <Button
         variant="primary"
-        icon={copied ? "check" : "content_copy"}
+        icon={copied ? "check" : error ? "error" : "content_copy"}
         onClick={() => copy(value)}
         aria-label="Copy entry skill line"
       >
-        {copied ? "Copied" : "Copy"}
+        {copied ? "Copied" : error ? "Couldn't copy" : "Copy"}
       </Button>
-      <span aria-live="polite" className="sr-only">
-        {copied ? "Copied entry skill line" : ""}
-      </span>
+      <CopyStatus copied={copied} error={error} />
     </span>
   );
 }
@@ -66,22 +65,20 @@ HeroCopyButton.propTypes = {
  * @param {{ url: string, skillName: string }} props
  */
 function SkillCopyButton({ url, skillName }) {
-  const { copied, copy } = useCopyToClipboard(2000);
+  const { copied, error, copy } = useCopyToClipboard(2000);
   const done = copied === url;
   return (
     <span className="inline-flex items-center gap-2">
       <Button
         size="sm"
         variant="secondary"
-        icon={done ? "check" : "content_copy"}
+        icon={done ? "check" : error === url ? "error" : "content_copy"}
         onClick={() => copy(url, url)}
         aria-label={`Copy link for ${skillName}`}
       >
-        {done ? "Copied" : "Copy link"}
+        {done ? "Copied" : error === url ? "Couldn't copy" : "Copy link"}
       </Button>
-      <span aria-live="polite" className="sr-only">
-        {done ? `Copied link for ${skillName}` : ""}
-      </span>
+      <CopyStatus copied={copied} error={error} id={url} />
     </span>
   );
 }

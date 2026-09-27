@@ -10,6 +10,7 @@ import IconButton from "@/shared/components/IconButton";
 import StatusPill from "@/shared/components/StatusPill";
 import Callout from "@/shared/components/Callout";
 import ToolTile from "./ToolTile";
+import { LoadingState } from "@/shared/components/StateViews";
 
 /**
  * Shared shell for every CLI-tool setup panel (board: Claude Code panel).
@@ -86,12 +87,7 @@ export default function SetupScaffold({
       </div>
 
       {checking ? (
-        <p className="flex items-center gap-2 text-sm text-muted" role="status">
-          <span className="material-symbols-outlined animate-spin text-[18px]" aria-hidden="true">
-            progress_activity
-          </span>
-          {checkingLabel}
-        </p>
+        <LoadingState lines={2} label={checkingLabel} />
       ) : notInstalled ? (
         notInstalled
       ) : (

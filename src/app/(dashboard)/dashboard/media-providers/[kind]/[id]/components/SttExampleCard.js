@@ -7,6 +7,7 @@ import { getProviderAlias } from "@/shared/constants/providers";
 import { getModelKind } from "@/shared/constants/models";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import CopyStatus from "@/shared/components/CopyStatus";
 import {
   Row,
   controlClass,
@@ -42,8 +43,8 @@ export function SttExampleCard({ providerId }) {
   const [latency, setLatency] = useState(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
-  const { copied: copiedCurl, copy: copyCurl } = useCopyToClipboard();
-  const { copied: copiedRes, copy: copyRes } = useCopyToClipboard();
+  const { copied: copiedCurl, error: errorCurl, copy: copyCurl } = useCopyToClipboard();
+  const { copied: copiedRes, error: errorRes, copy: copyRes } = useCopyToClipboard();
 
   useEffect(() => {
     setLocalEndpoint(window.location.origin);
@@ -290,11 +291,12 @@ export function SttExampleCard({ providerId }) {
               <Button
                 size="sm"
                 variant="ghost"
-                icon={copiedCurl ? "check" : "content_copy"}
+                icon={copiedCurl ? "check" : errorCurl ? "error" : "content_copy"}
                 onClick={() => copyCurl(curlSnippet)}
               >
-                {copiedCurl ? "Copied" : "Copy"}
+                {copiedCurl ? "Copied" : errorCurl ? "Couldn't copy" : "Copy"}
               </Button>
+              <CopyStatus copied={copiedCurl} error={errorCurl} />
               <Button
                 size="sm"
                 variant="primary"
@@ -333,12 +335,13 @@ export function SttExampleCard({ providerId }) {
               <Button
                 size="sm"
                 variant="ghost"
-                icon={copiedRes ? "check" : "content_copy"}
+                icon={copiedRes ? "check" : errorRes ? "error" : "content_copy"}
                 onClick={() => copyRes(resultStr)}
               >
-                {copiedRes ? "Copied" : "Copy"}
+                {copiedRes ? "Copied" : errorRes ? "Couldn't copy" : "Copy"}
               </Button>
             )}
+            <CopyStatus copied={copiedRes} error={errorRes} />
           </div>
           <pre className={`${codeBlockClass} opacity-80`} dir="ltr">
             {resultStr}

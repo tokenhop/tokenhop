@@ -8,6 +8,7 @@ import Checkbox from "./Checkbox";
 import Callout from "./Callout";
 import EmptyState from "./EmptyState";
 import Button from "./Button";
+import { LoadingState } from "./StateViews";
 
 const REGISTRY_ENDPOINT = "/api/cli-tools/cowork-mcp-registry";
 const TOOLS_ENDPOINT = "/api/cli-tools/cowork-mcp-tools";
@@ -157,14 +158,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
           </p>
         )}
 
-        {loading && (
-          <div className="flex items-center justify-center gap-2 py-4 text-xs text-muted">
-            <span className="material-symbols-outlined animate-spin text-[18px]" aria-hidden="true">
-              progress_activity
-            </span>
-            <span>Loading registry...</span>
-          </div>
-        )}
+        {loading && <LoadingState lines={3} label="Loading registry" className="py-2" />}
 
         {!loading && (
           <div className="flex flex-col gap-1 max-h-[60vh] overflow-y-auto">
@@ -232,15 +226,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                   {expanded && (
                     <div className="flex flex-col gap-2 border-t border-line bg-raised/40 px-3 py-2">
                       {isLoadingTools && (
-                        <div className="flex items-center gap-2 py-1 text-[10px] text-muted">
-                          <span
-                            className="material-symbols-outlined animate-spin text-[14px]"
-                            aria-hidden="true"
-                          >
-                            progress_activity
-                          </span>
-                          <span>Probing server for tools...</span>
-                        </div>
+                        <LoadingState lines={1} label="Probing server for tools" />
                       )}
                       {!isLoadingTools && cache?.requiresAuth && (
                         <Callout variant="warn" className="p-2 text-[10px]">

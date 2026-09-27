@@ -157,10 +157,9 @@ export default function LoginPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg p-4">
         <Card className="w-full max-w-md">
-          <SkeletonText lines={3} />
-          <p className="mt-4 text-center text-muted" role="status">
-            Loading...
-          </p>
+          <div role="status" aria-label="Loading sign-in">
+            <SkeletonText lines={3} />
+          </div>
         </Card>
       </div>
     );

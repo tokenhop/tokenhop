@@ -20,7 +20,7 @@ export default function CompatibleModelsSection({
   models,
   actions,
 }) {
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, error: copyError, copy } = useCopyToClipboard();
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -147,6 +147,7 @@ export default function CompatibleModelsSection({
               model={{ id }}
               fullModel={`${displayAlias}/${id}`}
               copied={copied}
+              copyError={copyError}
               onCopy={copy}
               onDeleteAlias={() =>
                 source === "custom"

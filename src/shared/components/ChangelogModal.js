@@ -5,7 +5,7 @@ import PropTypes from "prop-types";
 import { marked } from "marked";
 import { GITHUB_CONFIG } from "@/shared/constants/config";
 import Modal from "./Modal";
-import { Spinner } from "./Loading";
+import { LoadingState } from "./StateViews";
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -39,12 +39,7 @@ export default function ChangelogModal({ isOpen, onClose }) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Change Log" size="full">
       <div aria-live="polite">
-        {loading && (
-          <div className="flex items-center justify-center gap-2 py-10 text-muted">
-            <Spinner size="sm" />
-            Loading...
-          </div>
-        )}
+        {loading && <LoadingState lines={6} label="Loading changelog" className="py-4" />}
         {error && (
           <p role="alert" className="py-4 text-err">
             Failed to load changelog: {error}

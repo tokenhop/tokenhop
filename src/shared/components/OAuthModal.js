@@ -38,6 +38,7 @@ export default function OAuthModal({
     ideStatus,
     placeholderUrl,
     copied,
+    copyError,
     copy,
     startOAuthFlow,
     handleManualSubmit,
@@ -91,7 +92,13 @@ export default function OAuthModal({
         )}
 
         {step === "waiting" && isDeviceCode && deviceData && (
-          <OAuthDeviceStep deviceData={deviceData} copied={copied} copy={copy} polling={polling} />
+          <OAuthDeviceStep
+            deviceData={deviceData}
+            copied={copied}
+            error={copyError}
+            copy={copy}
+            polling={polling}
+          />
         )}
 
         {step === "success" && (

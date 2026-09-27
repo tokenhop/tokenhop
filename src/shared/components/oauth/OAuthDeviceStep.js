@@ -3,10 +3,11 @@
 import PropTypes from "prop-types";
 import IconButton from "../IconButton";
 import CopyField from "../CopyField";
+import CopyStatus from "../CopyStatus";
 import { Spinner } from "../Loading";
 
 /** Device-code step: login URL, user code, and the poll progress line. */
-export default function OAuthDeviceStep({ deviceData, copied, copy, polling }) {
+export default function OAuthDeviceStep({ deviceData, copied, error, copy, polling }) {
   const loginUrl = deviceData?.verification_uri_complete || deviceData?.verification_uri || "";
   const open = () => window.open(loginUrl, "_blank", "noopener,noreferrer");
 
@@ -34,10 +35,17 @@ export default function OAuthDeviceStep({ deviceData, copied, copy, polling }) {
             <div className="flex items-center justify-center gap-2">
               <p className="font-mono text-2xl font-bold text-coral-ink">{deviceData.user_code}</p>
               <IconButton
-                icon={copied === "user_code" ? "check" : "content_copy"}
+                icon={
+                  copied === "user_code"
+                    ? "check"
+                    : error === "user_code"
+                      ? "error"
+                      : "content_copy"
+                }
                 label="Copy code"
                 onClick={() => copy(deviceData.user_code, "user_code")}
               />
+              <CopyStatus copied={copied} error={error} id="user_code" />
             </div>
           </div>
         )}
@@ -59,6 +67,7 @@ OAuthDeviceStep.propTypes = {
     user_code: PropTypes.string,
   }),
   copied: PropTypes.string,
+  error: PropTypes.string,
   copy: PropTypes.func.isRequired,
   polling: PropTypes.bool.isRequired,
 };

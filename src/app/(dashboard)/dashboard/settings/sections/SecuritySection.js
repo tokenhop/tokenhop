@@ -9,6 +9,7 @@ import Input from "@/shared/components/Input";
 import Button from "@/shared/components/Button";
 import Callout from "@/shared/components/Callout";
 import CopyField from "@/shared/components/CopyField";
+import { Skeleton } from "@/shared/components/Loading";
 import { useSettingsField } from "../useSettingsField";
 
 /**
@@ -230,10 +231,14 @@ export default function SecuritySection({ settings, onSettingsChange }) {
             <div className="w-full sm:min-w-72 sm:max-w-sm">
               {cookieSecure ? (
                 <CopyField value={cookieSecure} label="Copy secure cookie state" />
-              ) : (
-                <p className="text-sm text-muted" role={cookieError ? "alert" : "status"}>
-                  {cookieError ? "Could not load cookie state" : "Loading…"}
+              ) : cookieError ? (
+                <p className="text-sm text-err" role="alert">
+                  Could not load cookie state
                 </p>
+              ) : (
+                <div role="status" aria-label="Loading cookie state">
+                  <Skeleton className="h-11 w-full" />
+                </div>
               )}
             </div>
           }

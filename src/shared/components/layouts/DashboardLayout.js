@@ -25,9 +25,14 @@ function getToastStyle(type) {
 
 function Toast({ notification, onDismiss }) {
   const style = getToastStyle(notification.type);
+  const isError = notification.type === "error";
+  const onAction = () => {
+    notification.action.onSelect();
+    onDismiss();
+  };
   return (
     <div
-      role="status"
+      role={isError ? "alert" : "status"}
       className={`rounded-xl border px-3 py-2 shadow-card backdrop-blur-sm ${style.wrapper}`}
     >
       <div className="flex items-start gap-2">
@@ -40,6 +45,15 @@ function Toast({ notification, onDismiss }) {
           ) : null}
           <p className="whitespace-pre-wrap break-words text-xs">{notification.message}</p>
         </div>
+        {notification.action ? (
+          <button
+            type="button"
+            onClick={onAction}
+            className="inline-flex h-6 shrink-0 items-center rounded-md border border-current px-2 text-xs font-semibold transition-colors hover:bg-line/60 focus-visible:outline-none focus-visible:shadow-focus"
+          >
+            {notification.action.label}
+          </button>
+        ) : null}
         {notification.dismissible ? (
           <button
             type="button"
@@ -59,10 +73,14 @@ function Toast({ notification, onDismiss }) {
 
 Toast.propTypes = {
   notification: PropTypes.shape({
-    id: PropTypes.string,
+    id: PropTypes.number,
     type: PropTypes.string,
     title: PropTypes.string,
     message: PropTypes.string,
+    action: PropTypes.shape({
+      label: PropTypes.string.isRequired,
+      onSelect: PropTypes.func.isRequired,
+    }),
     dismissible: PropTypes.bool,
   }).isRequired,
   onDismiss: PropTypes.func.isRequired,

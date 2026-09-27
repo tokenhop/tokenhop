@@ -8,6 +8,7 @@ import Card from "@/shared/components/Card";
 import CopyField from "@/shared/components/CopyField";
 import StatusPill from "@/shared/components/StatusPill";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import CopyStatus from "@/shared/components/CopyStatus";
 import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
 
 /**
@@ -57,7 +58,7 @@ export function deriveWaysIn(tunnel) {
 export default function EndpointHero({ origin, tunnel, loading, error, onRetry, onChanged }) {
   const [enabling, setEnabling] = useState(false);
   const [enableError, setEnableError] = useState(null);
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, error: copyError, copy } = useCopyToClipboard();
 
   if (loading) return <WidgetSkeleton lines={3} label="Loading endpoint" />;
   if (error) return <WidgetError message={error} onRetry={onRetry} />;
@@ -108,8 +109,9 @@ export default function EndpointHero({ origin, tunnel, loading, error, onRetry, 
           onClick={() => copy(endpoint, "endpoint")}
           className="sm:min-h-[60px] sm:px-6 sm:text-[15px]"
         >
-          {copied === "endpoint" ? "Copied" : "Copy"}
+          {copied === "endpoint" ? "Copied" : copyError === "endpoint" ? "Couldn't copy" : "Copy"}
         </Button>
+        <CopyStatus copied={copied} error={copyError} id="endpoint" />
       </div>
 
       <ul className="flex flex-wrap gap-2.5" aria-label="Ways to reach your endpoint">

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
 import Button from "./Button";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import CopyStatus from "./CopyStatus";
 
 /**
  * Read-only manual configuration snippets with per-file copy.
@@ -15,14 +15,7 @@ export default function ManualConfigModal({
   title = "Manual Configuration",
   configs = [],
 }) {
-  const { copy } = useCopyToClipboard();
-  const [copiedIndex, setCopiedIndex] = useState(null);
-
-  const copyConfig = (text, index) => {
-    copy(text, `manualconfig-${index}`);
-    setCopiedIndex(index);
-    setTimeout(() => setCopiedIndex(null), 2000);
-  };
+  const { copied, error, copy } = useCopyToClipboard();
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} size="xl">
@@ -35,14 +28,22 @@ export default function ManualConfigModal({
               <Button
                 variant="ghost"
                 size="sm"
-                icon={copiedIndex === index ? "check" : "content_copy"}
-                onClick={() => copyConfig(config.content, index)}
+                icon={
+                  copied === `manualconfig-${index}`
+                    ? "check"
+                    : error === `manualconfig-${index}`
+                      ? "error"
+                      : "content_copy"
+                }
+                onClick={() => copy(config.content, `manualconfig-${index}`)}
               >
-                {copiedIndex === index ? "Copied!" : "Copy"}
+                {copied === `manualconfig-${index}`
+                  ? "Copied!"
+                  : error === `manualconfig-${index}`
+                    ? "Couldn't copy"
+                    : "Copy"}
               </Button>
-              <span className="hidden" aria-hidden="true">
-                {copiedIndex === index ? "check" : "content_copy"}
-              </span>
+              <CopyStatus copied={copied} error={error} id={`manualconfig-${index}`} />
             </div>
             <pre className="max-h-60 overflow-x-auto overflow-y-auto rounded border border-line bg-raised px-3 py-2 font-mono text-xs whitespace-pre-wrap break-all">
               {config.content}
