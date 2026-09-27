@@ -140,14 +140,16 @@ export default function CapabilityAdapterCard({
 
             {/* Model list chips */}
             {models.length > 0 ? (
-              <ul aria-label={`${cap.label} model pool`} className="flex flex-wrap gap-1.5 pt-1">
+              <ul aria-label={`${cap.label} model pool`} className="flex flex-col gap-1.5 pt-1">
                 {models.map((model, index) => (
                   <li
                     // biome-ignore lint/suspicious/noArrayIndexKey: pools may repeat; position is the identity.
                     key={`${model}-${index}`}
-                    className="group/chip inline-flex items-center gap-1 rounded-md border border-line bg-raised ps-2 pe-1 py-0.5 font-mono text-xs text-text"
+                    className="group/chip flex min-w-0 items-center gap-1 rounded-md border border-line bg-raised ps-2 pe-1 py-0.5 font-mono text-xs text-text [&>*:not(:first-child)]:shrink-0"
                   >
-                    <span className="truncate max-w-[140px] sm:max-w-[200px]">{model}</span>
+                    <span className="min-w-0 flex-1 truncate" title={model}>
+                      {model}
+                    </span>
                     <CapacityBadges caps={getCaps?.(model)} />
                     <button
                       type="button"

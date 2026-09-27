@@ -407,7 +407,7 @@ export default function CombosPageClient() {
       ) : (
         <div className="flex min-w-0 flex-col gap-6 lg:flex-row lg:items-start">
           {/* List column */}
-          <div className="flex w-full shrink-0 flex-col gap-3 lg:w-80">
+          <div className="flex w-full min-w-0 shrink-0 flex-col gap-3 lg:w-80">
             <Button icon="add" fullWidth onClick={() => setShowCreateModal(true)}>
               New combo
             </Button>
