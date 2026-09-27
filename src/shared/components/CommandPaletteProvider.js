@@ -26,8 +26,20 @@ import {
 } from "@/shared/utils/commandPalette.js";
 import "@/shared/utils/commandSources.js";
 import useThemeStore from "@/store/themeStore";
-import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useNotificationStore } from "@/store/notificationStore";
+import { copyTextToClipboard } from "@/shared/components/formPrimitives";
+import { GO_TO, matchGoTo } from "@/shared/utils/goToShortcuts";
+import {
+  clearConsoleLog,
+  readTunnelEnabled,
+  setTunnel,
+  signOut,
+  testAllProviders,
+} from "@/shared/utils/paletteVerbs";
+import Modal from "./Modal";
+import LanguageSwitcher from "./LanguageSwitcher";
+import { getCurrentLocale } from "@/i18n/runtime";
+import Kbd from "./Kbd";
 
 const CommandPaletteContext = createContext(null);
 
@@ -35,6 +47,51 @@ const CommandPaletteContext = createContext(null);
 export function useCommandPalette() {
   return useContext(CommandPaletteContext);
 }
+
+const CHEAT_ROWS = [...Object.entries(GO_TO), ["?", ["Keyboard shortcuts", null]]];
+
+/**
+ * `?` cheat sheet. Shared Modal gives focus trap, Esc, scroll lock, RTL.
+ * @param {{ isOpen: boolean, onClose: () => void }} props
+ */
+export function ShortcutsDialog({ isOpen, onClose }) {
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Keyboard shortcuts" size="sm">
+      <dl className="flex flex-col gap-2.5">
+        {[
+          ["Command palette", ["⌘K", "Ctrl K"]],
+          ["Search Providers or Settings", ["/"]],
+          ["Move through results", ["↑", "↓"]],
+          ["Run result", ["↵"]],
+          ["Open a model's provider", ["⇧↵"]],
+          ["Close dialog", ["Esc"]],
+        ].map(([label, keys]) => (
+          <div key={label} className="flex items-center justify-between gap-3">
+            <dt className="text-sm text-text">{label}</dt>
+            <dd className="m-0 flex gap-1">
+              {keys.map((key) => (
+                <Kbd key={key}>{key}</Kbd>
+              ))}
+            </dd>
+          </div>
+        ))}
+        {CHEAT_ROWS.map(([keys, [label]]) => (
+          <div key={keys} className="flex items-center justify-between gap-3">
+            <dt className="text-sm text-text">{label}</dt>
+            <dd className="m-0">
+              <Kbd>{keys === "?" ? "?" : `g ${keys}`}</Kbd>
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </Modal>
+  );
+}
+
+ShortcutsDialog.propTypes = {
+  isOpen: PropTypes.bool,
+  onClose: PropTypes.func,
+};
 
 async function fetchJson(path) {
   const res = await fetch(path, { cache: "no-store" });
@@ -74,6 +131,56 @@ function createDataCache() {
   };
 }
 
+async function runPaletteVerb(verb, helpers) {
+  const { router: nav, notify: toast, announce: confirm, openShortcuts, openLanguage } = helpers;
+  if (verb === "test-providers") {
+    toast.info("Testing all providers");
+    confirm("Testing all providers");
+    const outcome = await testAllProviders();
+    toast[outcome.level](outcome.message);
+    confirm(outcome.message);
+    return;
+  }
+  if (verb === "clear-console") {
+    const outcome = await clearConsoleLog();
+    toast[outcome.level](outcome.message);
+    confirm(outcome.message);
+    return;
+  }
+  if (verb === "sign-out") {
+    const outcome = await signOut();
+    if (outcome.level === "success") window.location.assign("/login");
+    else {
+      toast.error(outcome.message);
+      confirm(outcome.message);
+    }
+    return;
+  }
+  if (verb === "change-language") {
+    helpers.languageLocaleRef.current = getCurrentLocale();
+    openLanguage();
+    return;
+  }
+  if (verb === "toggle-tunnel") {
+    const enabled = await readTunnelEnabled();
+    if (enabled === null) {
+      const outcome = { level: "error", message: "Could not read tunnel status" };
+      toast.error(outcome.message);
+      confirm(outcome.message);
+      return;
+    }
+    const pending = enabled ? "Stopping tunnel" : "Starting tunnel. This can take 30 seconds.";
+    toast.info(pending);
+    confirm(pending);
+    const outcome = await setTunnel(!enabled);
+    toast[outcome.level === "warning" ? "warning" : outcome.level](outcome.message);
+    confirm(outcome.message);
+    return;
+  }
+  if (verb === "open-request-log") nav.push("/dashboard/usage?tab=logs");
+  else if (verb === "open-shortcuts") openShortcuts();
+}
+
 /**
  * Global ⌘K / Ctrl+K palette provider. Mount once in DashboardLayout.
  * @param {object} props
@@ -89,9 +196,30 @@ export function CommandPaletteProvider({ children }) {
   const [loadingLists, setLoadingLists] = useState(false);
   const cacheRef = useRef(null);
   if (!cacheRef.current) cacheRef.current = createDataCache();
-  const { copy } = useCopyToClipboard();
+  const notify = useNotificationStore();
   const listboxId = `palette-list-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const inputRef = useRef(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [languageOpen, setLanguageOpen] = useState(false);
+  const [actionMessage, setActionMessage] = useState("");
+  const announce = useCallback((message) => setActionMessage(message), []);
+  const pendingChord = useRef(null);
+  const languageLocaleRef = useRef("en");
+  const paletteOpenRef = useRef(false);
+  paletteOpenRef.current = open;
+  const [tunnelEnabled, setTunnelEnabled] = useState(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    setTunnelEnabled(null);
+    readTunnelEnabled().then((enabled) => {
+      if (active) setTunnelEnabled(enabled);
+    });
+    return () => {
+      active = false;
+    };
+  }, [open]);
 
   const openPalette = useCallback(() => setOpen(true), []);
   const closePalette = useCallback(() => {
@@ -159,19 +287,54 @@ export function CommandPaletteProvider({ children }) {
       const next = pushRecent(recents, command.id);
       setRecents(next);
       saveRecents(window.localStorage, next);
-      closePalette();
       const run = command.run || {};
-      if (run.type === "navigate" && run.href) router.push(run.href);
-      else if (run.type === "copy-endpoint") {
-        copy(`${window.location.origin}/v1`, "palette-endpoint").then((ok) => {
-          const notify = useNotificationStore.getState();
-          if (ok) notify.success("Endpoint copied");
-          else notify.error("Couldn't copy endpoint");
+      if (typeof command.run === "function") {
+        closePalette();
+        command.run();
+        return;
+      }
+      if (run.type === "navigate" && run.href) {
+        closePalette();
+        router.push(run.href);
+        return;
+      }
+      if (run.type === "copy" || run.type === "copy-endpoint") {
+        const value = run.type === "copy" ? run.value : `${window.location.origin}/v1`;
+        copyTextToClipboard(value).then(
+          () => {
+            notify.success("Copied");
+            announce("Copied");
+          },
+          () => {
+            notify.error("Copy failed");
+            announce("Copy failed");
+          },
+        );
+        closePalette();
+        return;
+      }
+      if (run.type === "toggle-theme") {
+        useThemeStore.getState().toggleTheme();
+        notify.success("Theme updated");
+        announce("Theme updated");
+        closePalette();
+        return;
+      }
+      if (run.type === "verb") {
+        runPaletteVerb(run.verb, {
+          router,
+          notify,
+          announce,
+          openShortcuts: () => setShortcutsOpen(true),
+          openLanguage: () => setLanguageOpen(true),
+          languageLocaleRef,
         });
-      } else if (run.type === "toggle-theme") useThemeStore.getState().toggleTheme();
-      else if (typeof command.run === "function") command.run();
+        closePalette();
+        return;
+      }
+      closePalette();
     },
-    [recents, closePalette, router, copy],
+    [recents, closePalette, router, notify, announce],
   );
 
   // Global shortcut: ⌘K / Ctrl+K. Toggles even from the palette's own
@@ -196,7 +359,56 @@ export function CommandPaletteProvider({ children }) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const ranked = useMemo(() => filterAndRank(commands, query, recents), [commands, query, recents]);
+  // g chords and ?. Skip editors, modifier keys and any open dialog.
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      const flags = eventShortcutFlags(event);
+      const blocked =
+        flags.defaultPrevented ||
+        flags.isComposing ||
+        flags.inEditable ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        paletteOpenRef.current ||
+        Boolean(document.querySelector('[role="dialog"][aria-modal="true"]'));
+      const result = matchGoTo(pendingChord.current, event.key, Date.now(), blocked);
+      pendingChord.current = result.pending;
+      if (result.help) {
+        event.preventDefault();
+        setShortcutsOpen(true);
+      } else if (result.href) {
+        event.preventDefault();
+        router.push(result.href);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [router]);
+
+  const displayCommands = useMemo(
+    () =>
+      commands.map((command) =>
+        command.id === "action:toggle-tunnel"
+          ? {
+              ...command,
+              label: tunnelEnabled ? "Stop Cloudflare tunnel" : "Start Cloudflare tunnel",
+              hint:
+                tunnelEnabled === null
+                  ? "Status unknown"
+                  : tunnelEnabled
+                    ? "Tunnel is on"
+                    : "Tunnel is off",
+              icon: tunnelEnabled ? "cloud_off" : "cloud_upload",
+            }
+          : command,
+      ),
+    [commands, tunnelEnabled],
+  );
+  const ranked = useMemo(
+    () => filterAndRank(displayCommands, query, recents),
+    [displayCommands, query, recents],
+  );
   const groups = useMemo(() => groupResults(ranked), [ranked]);
 
   useEffect(() => {
@@ -230,7 +442,12 @@ export function CommandPaletteProvider({ children }) {
         moveActive(-1);
       } else if (event.key === "Enter") {
         event.preventDefault();
-        runCommand(ranked.find((c) => c.id === activeId) || ranked[0]);
+        const command = ranked.find((c) => c.id === activeId) || ranked[0];
+        runCommand(
+          event.shiftKey && command?.secondary
+            ? { ...command, run: command.secondary.run }
+            : command,
+        );
       }
     },
     [moveActive, runCommand, ranked, activeId],
@@ -252,6 +469,7 @@ export function CommandPaletteProvider({ children }) {
       listboxId,
       inputRef,
       onInputKeyDown,
+      openShortcuts: () => setShortcutsOpen(true),
       announcement: open ? formatResultAnnouncement(ranked.length) : "",
     }),
     [
@@ -269,7 +487,24 @@ export function CommandPaletteProvider({ children }) {
     ],
   );
 
-  return <CommandPaletteContext.Provider value={value}>{children}</CommandPaletteContext.Provider>;
+  return (
+    <CommandPaletteContext.Provider value={value}>
+      {children}
+      <p role="status" aria-live="polite" className="sr-only">
+        {actionMessage}
+      </p>
+      <ShortcutsDialog isOpen={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <LanguageSwitcher
+        hideTrigger
+        isOpen={languageOpen}
+        onClose={(nextLocale) => {
+          const changed = languageLocaleRef.current !== nextLocale;
+          setLanguageOpen(false);
+          if (changed) announce("Language updated");
+        }}
+      />
+    </CommandPaletteContext.Provider>
+  );
 }
 
 CommandPaletteProvider.propTypes = {

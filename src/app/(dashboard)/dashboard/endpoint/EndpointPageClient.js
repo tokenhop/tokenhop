@@ -1,7 +1,8 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Button,
   IconButton,
@@ -39,6 +40,45 @@ export default function EndpointPageClient({ machineId: _machineId }) {
   const localUrl = useLocalBaseUrl();
   const { copied, error: copyError, copy } = useCopyToClipboard();
   const [selectedKeyId, setSelectedKeyId] = useState(null);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const createRequested = searchParams.get("create") === "key";
+  const lastRevealedId = useRef(apiKeys.revealed?.id);
+  const setShowAddModalRef = useRef(apiKeys.setShowAddModal);
+  setShowAddModalRef.current = apiKeys.setShowAddModal;
+
+  // Drop only `create`, preserving the rest of the URL (other params, hash).
+  const clearCreateParam = useCallback(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("create") !== "key") return;
+    url.searchParams.delete("create");
+    router.replace(`${url.pathname}${url.search}${url.hash}`, { scroll: false });
+  }, [router]);
+
+  // ?create=key drives the modal after keys load. Applied only when the
+  // URL's create value changes (same-route palette pushes, Back/Forward).
+  // Setter stays in a ref: useApiKeys recreates it every render, and
+  // re-applying the URL value after the user closes the modal would reopen it.
+  const lastCreateRequested = useRef(null);
+  useEffect(() => {
+    if (!apiKeys.loading && createRequested !== lastCreateRequested.current) {
+      lastCreateRequested.current = createRequested;
+      setShowAddModalRef.current(createRequested);
+    }
+  }, [createRequested, apiKeys.loading]);
+
+  useEffect(() => {
+    if (apiKeys.revealed?.id && apiKeys.revealed.id !== lastRevealedId.current) {
+      clearCreateParam();
+    }
+    lastRevealedId.current = apiKeys.revealed?.id;
+  }, [apiKeys.revealed, clearCreateParam]);
+
+  const closeCreate = () => {
+    apiKeys.setShowAddModal(false);
+    apiKeys.setNewKeyName("");
+    clearCreateParam();
+  };
 
   const security = deriveSecurityState({
     requireApiKey: tunnel.requireApiKey,
@@ -223,20 +263,11 @@ export default function EndpointPageClient({ machineId: _machineId }) {
       {/* Create key modal (Signal primitives). */}
       <Modal
         isOpen={apiKeys.showAddModal}
-        onClose={() => {
-          apiKeys.setShowAddModal(false);
-          apiKeys.setNewKeyName("");
-        }}
+        onClose={closeCreate}
         title="Create API Key"
         footer={
           <>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                apiKeys.setShowAddModal(false);
-                apiKeys.setNewKeyName("");
-              }}
-            >
+            <Button variant="ghost" onClick={closeCreate}>
               Cancel
             </Button>
             <Button

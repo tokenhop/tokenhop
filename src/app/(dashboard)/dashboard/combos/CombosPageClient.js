@@ -24,6 +24,30 @@ import {
 const CAPACITY_ADAPTER_CAPS = ["vision", "audioInput"];
 const EMPTY_CAP_ENTRY = { enabled: true, roundRobin: false, models: [] };
 
+function setUrlParam(key, value, method = "replaceState") {
+  const url = new URL(window.location.href);
+  if (value) url.searchParams.set(key, value);
+  else url.searchParams.delete(key);
+  // No-op when nothing changed: keeps state->URL effects from looping
+  // against the popstate handler and preserves all other params.
+  if (url.href !== window.location.href) {
+    window.history[method](window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+}
+
+/**
+ * Pure URL-state helpers for the linkable ?combo=<id> / ?create=1 params.
+ * Kept pure (no window) so they are unit-testable. Other params preserved
+ * because callers only set/delete the one key they own.
+ */
+export function readComboSelection(search) {
+  return new URLSearchParams(search || "").get("combo") || null;
+}
+
+export function readCreateRequested(search) {
+  return new URLSearchParams(search || "").get("create") === "1";
+}
+
 /** Legacy stored form was an array of {model, enabled}. */
 export function normalizeCapEntry(entry) {
   if (Array.isArray(entry)) {
@@ -89,6 +113,44 @@ export default function CombosPageClient() {
     strategiesRef.current = comboStrategies;
   }, [comboStrategies]);
 
+  // Back/Forward: URL drives state. Unknown ids fall back to the first combo.
+  useEffect(() => {
+    if (loading || loadError) return;
+    const onPopState = () => {
+      const requested = readComboSelection(window.location.search);
+      setSelectedId(combos.find((c) => c.id === requested)?.id || combos[0]?.id || null);
+      setShowCreateModal(readCreateRequested(window.location.search));
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [combos, loading, loadError]);
+
+  // State -> URL via replaceState, which never fires popstate (no loop).
+  // Covers initial fallback selection, create, delete, and invalid deep links.
+  useEffect(() => {
+    if (!loading && !loadError) setUrlParam("combo", selectedId);
+  }, [selectedId, loading, loadError]);
+
+  // ?create=1 opens the new-combo modal (also when the list is empty).
+  useEffect(() => {
+    setShowCreateModal(readCreateRequested(window.location.search));
+  }, []);
+
+  // User clicks get their own history entry so Back returns to the prior combo.
+  const selectCombo = (id) => {
+    if (id === selectedId) return;
+    setUrlParam("combo", id, "pushState");
+    setSelectedId(id);
+  };
+  const openCreate = () => {
+    setShowCreateModal(true);
+    setUrlParam("create", "1");
+  };
+  const closeCreate = () => {
+    setShowCreateModal(false);
+    setUrlParam("create", null);
+  };
+
   const fetchData = useCallback(async () => {
     setLoadError("");
     try {
@@ -109,7 +171,11 @@ export default function CombosPageClient() {
       // Only LLM combos here — webSearch/webFetch combos belong to media-providers/web.
       const list = (combosData.combos || []).filter((c) => !c.kind || c.kind === "llm");
       setCombos(list);
+      // Honor a ?combo=<id> deep link (e.g. from the command palette);
+      // unknown ids fall back to the previous selection, then the first combo.
+      const requested = readComboSelection(window.location.search);
       setSelectedId((prev) => {
+        if (requested && list.some((c) => c.id === requested)) return requested;
         if (prev && list.some((c) => c.id === prev)) return prev;
         return list[0]?.id || null;
       });
@@ -213,7 +279,7 @@ export default function CombosPageClient() {
     const created = await res.json().catch(() => null);
     await fetchData();
     if (created?.id) setSelectedId(created.id);
-    setShowCreateModal(false);
+    closeCreate();
   };
 
   // Atomic per-combo strategy patch: server merges `patch` into
@@ -399,7 +465,7 @@ export default function CombosPageClient() {
           title="No combos yet"
           body="Create model combos with fallback support."
           action={
-            <Button icon="add" onClick={() => setShowCreateModal(true)}>
+            <Button icon="add" onClick={openCreate}>
               New combo
             </Button>
           }
@@ -408,7 +474,7 @@ export default function CombosPageClient() {
         <div className="flex min-w-0 flex-col gap-6 lg:flex-row lg:items-start">
           {/* List column */}
           <div className="flex w-full min-w-0 shrink-0 flex-col gap-3 lg:w-80">
-            <Button icon="add" fullWidth onClick={() => setShowCreateModal(true)}>
+            <Button icon="add" fullWidth onClick={openCreate}>
               New combo
             </Button>
             <ul aria-label="Combos" className="m-0 flex list-none flex-col gap-3 p-0">
@@ -423,7 +489,7 @@ export default function CombosPageClient() {
                       strategyVariant={STRATEGY_PILL[sid] || "brand"}
                       usageToday={usageToday[combo.id] || 0}
                       selected={combo.id === selectedId}
-                      onSelect={setSelectedId}
+                      onSelect={selectCombo}
                     />
                   </li>
                 );
@@ -498,7 +564,7 @@ export default function CombosPageClient() {
         <ComboFormModal
           key="create"
           isOpen={showCreateModal}
-          onClose={() => setShowCreateModal(false)}
+          onClose={closeCreate}
           onSave={handleCreate}
           activeProviders={activeProviders}
         />

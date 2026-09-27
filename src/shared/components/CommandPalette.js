@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import Modal from "./Modal";
 import EmptyState from "./EmptyState";
 import Kbd from "./Kbd";
+import ProviderTile from "./ProviderTile";
 import { useCommandPalette } from "./CommandPaletteProvider";
 
 /**
@@ -42,6 +43,7 @@ function CommandPaletteDialog({ palette }) {
     listboxId,
     inputRef,
     onInputKeyDown,
+    openShortcuts,
     announcement,
   } = palette;
 
@@ -76,6 +78,17 @@ function CommandPaletteDialog({ palette }) {
             spellCheck={false}
             className="h-11 min-w-0 flex-1 bg-transparent text-[15px] text-text outline-none placeholder:text-subtle"
           />
+          <button
+            type="button"
+            onClick={openShortcuts}
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts (?)"
+            className="flex size-11 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:text-text focus-visible:shadow-focus"
+          >
+            <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+              keyboard
+            </span>
+          </button>
           {query ? (
             <button
               type="button"
@@ -140,19 +153,29 @@ function CommandPaletteDialog({ palette }) {
                           id={`palette-option-${command.id}`}
                           role="option"
                           aria-selected={active}
-                          onClick={() => runCommand(command)}
+                          onClick={(event) =>
+                            runCommand(
+                              event.shiftKey && command.secondary
+                                ? { ...command, run: command.secondary.run }
+                                : command,
+                            )
+                          }
                           onMouseEnter={() => setActiveId(command.id)}
                           onFocus={() => setActiveId(command.id)}
                           className={`flex min-h-11 w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-start ${
                             active ? "bg-coral-bg text-text" : "text-text hover:bg-raised"
                           }`}
                         >
-                          <span
-                            className="material-symbols-outlined shrink-0 text-[20px] text-muted"
-                            aria-hidden="true"
-                          >
-                            {command.icon || "chevron_right"}
-                          </span>
+                          {command.providerId ? (
+                            <ProviderTile providerId={command.providerId} size="sm" />
+                          ) : (
+                            <span
+                              className="material-symbols-outlined shrink-0 text-[20px] text-muted"
+                              aria-hidden="true"
+                            >
+                              {command.icon || "chevron_right"}
+                            </span>
+                          )}
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-sm font-medium">
                               {command.label}
@@ -163,12 +186,28 @@ function CommandPaletteDialog({ palette }) {
                               </span>
                             ) : null}
                           </span>
+                          {command.chord ? (
+                            <span
+                              className="hidden shrink-0 sm:inline-flex"
+                              title={`Shortcut ${command.chord}`}
+                            >
+                              <Kbd>{command.chord}</Kbd>
+                            </span>
+                          ) : null}
                           {active ? (
                             <span
                               className="hidden shrink-0 items-center gap-1 sm:flex"
                               aria-hidden="true"
                             >
                               <Kbd>↵</Kbd>
+                              {command.secondary ? (
+                                <>
+                                  <Kbd>⇧↵</Kbd>
+                                  <span className="text-xs text-muted">
+                                    {command.secondary.label}
+                                  </span>
+                                </>
+                              ) : null}
                             </span>
                           ) : null}
                         </button>
@@ -202,6 +241,7 @@ CommandPaletteDialog.propTypes = {
     listboxId: PropTypes.string,
     inputRef: PropTypes.shape({ current: PropTypes.any }),
     onInputKeyDown: PropTypes.func,
+    openShortcuts: PropTypes.func,
     announcement: PropTypes.string,
   }).isRequired,
 };

@@ -2,9 +2,29 @@
 // Each source is (ctx) => commands[]; registrations happen at import time.
 
 import { MEDIA_TABS, visibleItems } from "@/shared/constants/navigation.js";
+import {
+  AI_PROVIDERS,
+  isAnthropicCompatibleProvider,
+  isOpenAICompatibleProvider,
+  resolveProviderId,
+} from "@/shared/constants/providers.js";
+import { GO_TO } from "./goToShortcuts.js";
 import { toCommandItems } from "@/app/(dashboard)/dashboard/settings/registry.js";
 import { registerStaticSource } from "./commandPalette.js";
-import { connectionHealth } from "./providerHealth.js";
+import { providerHealth } from "./providerHealth.js";
+
+const CHORD_BY_HREF = Object.fromEntries(
+  Object.entries(GO_TO).map(([key, [, href]]) => [href, `g ${key}`]),
+);
+
+function providerIdForDetail(providerId) {
+  if (typeof providerId !== "string" || !providerId) return null;
+  if (isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId)) {
+    return providerId;
+  }
+  const id = resolveProviderId(providerId);
+  return AI_PROVIDERS[id] ? id : null;
+}
 
 function pageCommands() {
   const items = visibleItems();
@@ -13,6 +33,7 @@ function pageCommands() {
     group: "Pages",
     label: item.label,
     hint: item.href,
+    chord: CHORD_BY_HREF[item.href],
     keywords: `${item.id} ${item.href} go to open page`,
     icon: item.icon || "article",
     run: { type: "navigate", href: item.href },
@@ -33,27 +54,29 @@ function pageCommands() {
 
 function providerCommands({ providers } = {}) {
   const list = Array.isArray(providers) ? providers : [];
-  return list.flatMap((connection) => {
-    const name = connection?.name || connection?.provider || connection?.id;
-    if (!name) return [];
-    const health = connectionHealth(connection);
-    const healthHint = health.reason || "Healthy";
-    return [
-      {
-        id: `provider:${connection.id || name}`,
-        group: "Providers",
-        label: String(name),
-        // Keep the provider identity first so YAN-390's ⌘K fix keeps working;
-        // the shared health rule adds status context after it.
-        hint: `${connection?.provider ? String(connection.provider) : ""} · ${healthHint}`,
-        keywords: `provider ${connection?.provider || ""} ${connection?.id || ""} open`,
-        icon: "dns",
-        run: {
-          type: "navigate",
-          href: `/dashboard/providers${connection.id ? `/${connection.id}` : ""}`,
-        },
-      },
-    ];
+  const byProvider = new Map();
+  for (const connection of list) {
+    const providerId = providerIdForDetail(connection?.provider);
+    if (!providerId) continue;
+    if (!byProvider.has(providerId)) byProvider.set(providerId, []);
+    byProvider.get(providerId).push(connection);
+  }
+  return [...byProvider.entries()].map(([providerId, entries]) => {
+    const health = providerHealth(entries);
+    const status = health.reason || (health.connected ? "Healthy" : "Disabled");
+    return {
+      id: `provider:${providerId}`,
+      group: "Providers",
+      label: AI_PROVIDERS[providerId]?.name || entries[0]?.name || providerId,
+      hint: `${entries.length} account${entries.length === 1 ? "" : "s"} · ${status}`,
+      keywords: `provider ${providerId} ${entries
+        .map((c) => c.name)
+        .filter(Boolean)
+        .join(" ")} open`,
+      icon: "dns",
+      providerId,
+      run: { type: "navigate", href: `/dashboard/providers/${providerId}` },
+    };
   });
 }
 
@@ -70,7 +93,7 @@ function comboCommands({ combos } = {}) {
         hint: Array.isArray(combo.models) ? combo.models.slice(0, 3).join(", ") : "",
         keywords: `combo fallback ${(combo.models || []).join(" ")}`,
         icon: "layers",
-        run: { type: "navigate", href: "/dashboard/combos" },
+        run: { type: "navigate", href: `/dashboard/combos?combo=${encodeURIComponent(combo.id)}` },
       },
     ];
   });
@@ -84,6 +107,7 @@ function modelCommands({ models } = {}) {
     // /api/models can repeat an id (custom + builtin overlap).
     if (!id || seen.has(id)) return [];
     seen.add(id);
+    const providerId = providerIdForDetail(model.provider);
     return [
       {
         id: `model:${id}`,
@@ -92,7 +116,15 @@ function modelCommands({ models } = {}) {
         hint: String(model.provider || ""),
         keywords: `model ${id} ${model.provider || ""} ${model.model || ""}`,
         icon: "neurology",
-        run: { type: "navigate", href: "/dashboard/endpoint" },
+        run: { type: "copy", value: id },
+        ...(providerId
+          ? {
+              secondary: {
+                label: "Open provider",
+                run: { type: "navigate", href: `/dashboard/providers/${providerId}` },
+              },
+            }
+          : {}),
       },
     ];
   });
@@ -110,13 +142,85 @@ function actionCommands() {
       run: { type: "copy-endpoint" },
     },
     {
+      id: "action:add-provider",
+      group: "Actions",
+      label: "Add provider",
+      hint: "Providers",
+      keywords: "add new provider oauth api key connect account",
+      icon: "add_circle",
+      run: { type: "navigate", href: "/dashboard/providers/new" },
+    },
+    {
+      id: "action:new-combo",
+      group: "Actions",
+      label: "Create combo",
+      hint: "Combos",
+      keywords: "create new combo fallback route model builder",
+      icon: "layers",
+      run: { type: "navigate", href: "/dashboard/combos?create=1" },
+    },
+    {
       id: "action:new-key",
       group: "Actions",
       label: "Create API key",
       hint: "Endpoint",
       keywords: "new create api key endpoint",
       icon: "add",
-      run: { type: "navigate", href: "/dashboard/endpoint" },
+      run: { type: "navigate", href: "/dashboard/endpoint?create=key" },
+    },
+    {
+      id: "action:test-providers",
+      group: "Actions",
+      label: "Test all providers",
+      hint: "Providers",
+      keywords: "test all providers connections health check",
+      icon: "play_arrow",
+      run: { type: "verb", verb: "test-providers" },
+    },
+    {
+      id: "action:refresh-quota",
+      group: "Actions",
+      label: "Refresh quota",
+      hint: "Quota",
+      keywords: "refresh reload quota usage limits sync",
+      icon: "refresh",
+      run: { type: "navigate", href: "/dashboard/quota?refresh=1" },
+    },
+    {
+      id: "action:open-request-log",
+      group: "Actions",
+      label: "Open request log",
+      hint: "Usage",
+      keywords: "open request log usage history traffic requests",
+      icon: "receipt_long",
+      run: { type: "navigate", href: "/dashboard/usage?tab=logs" },
+    },
+    {
+      id: "action:toggle-tunnel",
+      group: "Actions",
+      label: "Cloudflare tunnel",
+      hint: "Starts or stops the tunnel",
+      keywords: "cloudflare tunnel start stop on off internet expose remote access",
+      icon: "cloud",
+      run: { type: "verb", verb: "toggle-tunnel" },
+    },
+    {
+      id: "action:clear-console",
+      group: "Actions",
+      label: "Clear console log",
+      hint: "Console log",
+      keywords: "clear console log terminal output delete",
+      icon: "delete",
+      run: { type: "verb", verb: "clear-console" },
+    },
+    {
+      id: "action:change-language",
+      group: "Actions",
+      label: "Change language",
+      hint: "Settings",
+      keywords: "change language locale translate display",
+      icon: "translate",
+      run: { type: "verb", verb: "change-language" },
     },
     {
       id: "action:toggle-theme",
@@ -126,6 +230,15 @@ function actionCommands() {
       keywords: "toggle theme dark light appearance",
       icon: "contrast",
       run: { type: "toggle-theme" },
+    },
+    {
+      id: "action:sign-out",
+      group: "Actions",
+      label: "Sign out",
+      hint: "Log out",
+      keywords: "sign out logout session end",
+      icon: "logout",
+      run: { type: "verb", verb: "sign-out" },
     },
     {
       id: "action:open-settings",

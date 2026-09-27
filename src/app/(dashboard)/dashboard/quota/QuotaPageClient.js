@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter, useSearchParams } from "next/navigation";
+import { useNotificationStore } from "@/store/notificationStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AUTO_REFRESH_STORAGE_KEY,
@@ -68,6 +70,11 @@ export default function QuotaPageClient() {
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
+  const [initialQuotaLoaded, setInitialQuotaLoaded] = useState(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlRefreshHandledRef = useRef(false);
+  const notify = useNotificationStore();
 
   // Per-account action state
   const [deletingId, setDeletingId] = useState(null);
@@ -500,12 +507,43 @@ export default function QuotaPageClient() {
       setQuotaData((prev) => filterQuotaStateByConnections(prev, list));
 
       await Promise.all(list.map((c) => fetchQuota(c.id, c.provider)));
+      if (!cancelled) setInitialQuotaLoaded(true);
     }
     init();
     return () => {
       cancelled = true;
     };
   }, [fetchConnections, fetchQuota, page]);
+
+  // Command-palette action: /dashboard/quota?refresh=1 runs one forced
+  // refresh after initial load. The page's own per-row errors stay inline;
+  // the toast confirms only that a refresh ran, per row-by-row honesty.
+  const refreshRequested = searchParams?.get("refresh") === "1";
+  useEffect(() => {
+    if (!refreshRequested) {
+      urlRefreshHandledRef.current = false;
+      return;
+    }
+    if (urlRefreshHandledRef.current || !initialQuotaLoaded || connectionsLoading || refreshingAll)
+      return;
+    urlRefreshHandledRef.current = true;
+    refreshAll(true).finally(() => {
+      notify.info("Quota refresh finished. Failed accounts show their own error inline.");
+    });
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("refresh");
+    const query = params.toString();
+    router.replace(query ? `/dashboard/quota?${query}` : "/dashboard/quota", { scroll: false });
+  }, [
+    refreshRequested,
+    initialQuotaLoaded,
+    connectionsLoading,
+    refreshingAll,
+    refreshAll,
+    router,
+    searchParams,
+    notify,
+  ]);
 
   // Load proxy pools for edit modal
   useEffect(() => {
