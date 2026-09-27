@@ -48,6 +48,19 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
     [notifyError],
   );
 
+  // Writes already succeeded at this point: a stale read must not flip the
+  // result to failure (that would leave modals open and invite double writes).
+  const refreshQuietly = useCallback(
+    async (refresh, fallback) => {
+      try {
+        await refresh();
+      } catch (error) {
+        report(error, fallback);
+      }
+    },
+    [report],
+  );
+
   const fetchAliases = useCallback(async () => {
     const res = await request("/api/models/alias", undefined, "Failed to fetch aliases");
     const data = await res.json();
@@ -204,13 +217,13 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
           },
           "Failed to set alias",
         );
-        await fetchAliases();
+        await refreshQuietly(fetchAliases, "Saved, but aliases could not be reloaded");
         return true;
       } catch (error) {
         return report(error, "Failed to set alias");
       }
     },
-    [fetchAliases, report, request],
+    [fetchAliases, refreshQuietly, report, request],
   );
 
   const setAlias = useCallback(
@@ -228,7 +241,7 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
           { method: "DELETE" },
           "Failed to delete alias",
         );
-        await fetchAliases();
+        await refreshQuietly(fetchAliases, "Saved, but aliases could not be reloaded");
         useNotificationStore.getState().success(
           "Alias removed",
           previous
@@ -242,7 +255,7 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
         return report(error, "Failed to delete alias");
       }
     },
-    [fetchAliases, modelAliases, report, request, saveAlias],
+    [fetchAliases, modelAliases, refreshQuietly, report, request, saveAlias],
   );
 
   const addCustomModel = useCallback(
@@ -265,13 +278,13 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
         );
         if (typeof window !== "undefined")
           window.dispatchEvent(new CustomEvent("customModelChanged"));
-        await fetchCustomModels();
+        await refreshQuietly(fetchCustomModels, "Saved, but models could not be reloaded");
         return true;
       } catch (error) {
         return report(error, "Failed to add custom model");
       }
     },
-    [fetchCustomModels, report, request, storageAlias],
+    [fetchCustomModels, refreshQuietly, report, request, storageAlias],
   );
 
   const deleteCustomModel = useCallback(
@@ -291,7 +304,7 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
         );
         if (typeof window !== "undefined")
           window.dispatchEvent(new CustomEvent("customModelChanged"));
-        await fetchCustomModels();
+        await refreshQuietly(fetchCustomModels, "Saved, but models could not be reloaded");
         useNotificationStore.getState().success("Model removed", {
           action: {
             label: "Undo",
@@ -310,7 +323,15 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
         return report(error, "Failed to delete custom model");
       }
     },
-    [addCustomModel, customModels, fetchCustomModels, report, request, storageAlias],
+    [
+      addCustomModel,
+      customModels,
+      fetchCustomModels,
+      refreshQuietly,
+      report,
+      request,
+      storageAlias,
+    ],
   );
 
   const disableModels = useCallback(
@@ -325,13 +346,16 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
           },
           "Failed to disable models",
         );
-        await fetchDisabledModels();
+        await refreshQuietly(
+          fetchDisabledModels,
+          "Saved, but disabled models could not be reloaded",
+        );
         return true;
       } catch (error) {
         return report(error, "Failed to disable models");
       }
     },
-    [fetchDisabledModels, report, request, storageAlias],
+    [fetchDisabledModels, refreshQuietly, report, request, storageAlias],
   );
 
   const enableModels = useCallback(
@@ -343,13 +367,16 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
           { method: "DELETE" },
           "Failed to enable models",
         );
-        await fetchDisabledModels();
+        await refreshQuietly(
+          fetchDisabledModels,
+          "Saved, but disabled models could not be reloaded",
+        );
         return true;
       } catch (error) {
         return report(error, "Failed to enable models");
       }
     },
-    [fetchDisabledModels, report, request, storageAlias],
+    [fetchDisabledModels, refreshQuietly, report, request, storageAlias],
   );
 
   const disableModel = useCallback(

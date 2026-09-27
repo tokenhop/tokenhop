@@ -17,11 +17,11 @@ export default function FetchModelsButton({
   onAddModel,
 }) {
   const [fetching, setFetching] = useState(false);
-  const notify = useNotificationStore();
 
   const handleClick = async () => {
     if (fetching) return;
     setFetching(true);
+    const notify = useNotificationStore.getState();
     try {
       const { models, warning } = await refresh();
       if (!models.length) {
@@ -40,16 +40,13 @@ export default function FetchModelsButton({
       let imported = 0;
       // Sequential on purpose: each add refetches the custom model list.
       for (const id of ids) {
-        if (!(await onAddModel(id))) {
-          notify.error(
-            `Could not add ${id}. Added ${imported} of ${ids.length} models; retry to add the rest.`,
-          );
-          return;
-        }
-        imported += 1;
+        if (await onAddModel(id)) imported += 1;
       }
       if (ids.length === 0) notify.info("All models already exist. No new models added.");
-      else notify.success(`Added ${ids.length} model${ids.length === 1 ? "" : "s"}.`);
+      else if (imported === ids.length)
+        notify.success(`Added ${imported} model${imported === 1 ? "" : "s"}.`);
+      else
+        notify.error(`Added ${imported} of ${ids.length} models; ${ids.length - imported} failed.`);
     } catch (error) {
       notify.error(
         `Could not fetch models: ${error instanceof Error ? error.message : "Unknown error"}`,

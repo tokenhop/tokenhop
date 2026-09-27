@@ -104,10 +104,14 @@ describe("provider model failures", () => {
     expect(useNotificationStore.getState().notifications).toEqual([]);
   });
 
-  it("reports failed refresh after successful write instead of claiming success", async () => {
+  it("keeps write success and Undo when follow-up refresh fails", async () => {
     queue(response(), response({ error: "reload rejected" }, false));
-    expect(await renderHook().disableModel("model-a")).toBe(false);
+    expect(await renderHook().disableModel("model-a")).toBe(true);
     expect(notifyError).toHaveBeenCalledWith("reload rejected");
+    expect(useNotificationStore.getState().notifications[0].action.label).toBe("Undo");
+    queue(response(), response({ error: "reload rejected" }, false));
+    expect(await renderHook().addCustomModel("new-model")).toBe(true);
+    expect(notifyError).toHaveBeenCalledTimes(2);
   });
 
   it("restores custom model type and caps via Undo after successful removal", async () => {

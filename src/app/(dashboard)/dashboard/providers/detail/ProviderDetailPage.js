@@ -35,9 +35,11 @@ export default function ProviderDetailPage() {
   const params = useParams();
   const router = useRouter();
   const providerId = params.id;
-  const notify = useNotificationStore();
-  const notifyError = useCallback((message) => notify.error(message), [notify]);
-  const notifySuccess = useCallback((message) => notify.success(message), [notify]);
+  const notifyError = useCallback((message) => useNotificationStore.getState().error(message), []);
+  const notifySuccess = useCallback(
+    (message) => useNotificationStore.getState().success(message),
+    [],
+  );
 
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState("");
