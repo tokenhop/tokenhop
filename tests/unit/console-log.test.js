@@ -4,6 +4,14 @@ import {
   autoScrollReducer,
   countConsoleLevels,
   filterConsoleLines,
+  groupConsoleLines,
+  stripConsolePrefix,
+  prettyConsoleMessage,
+  retryDelayMs,
+  connectionBadge,
+  connectionReducer,
+  initialConnectionState,
+  snapshotOverlap,
   initialAutoScrollState,
   initialConsoleBufferState,
   parseConsoleLine,
@@ -25,6 +33,8 @@ describe("parseConsoleLine", () => {
       time: "14:07:19",
       level: "WARN",
       message: "cooling down",
+      raw: "[14:07:19] [WARN] cooling down",
+      source: "server",
     });
   });
 
@@ -32,6 +42,7 @@ describe("parseConsoleLine", () => {
     expect(parseConsoleLine("[14:07:19] ⚠️ [gc] 429 cooling down")).toMatchObject({
       time: "14:07:19",
       level: "WARN",
+      message: "[gc] 429 cooling down",
     });
     expect(parseConsoleLine("[14:07:31] ❌ [kimi] refresh failed")).toMatchObject({
       level: "ERROR",
@@ -45,8 +56,10 @@ describe("parseConsoleLine", () => {
       time: "",
       level: "LOG",
       message: "Server listening on :20128",
+      raw: "Server listening on :20128",
+      source: "server",
     });
-    expect(parseConsoleLine("[oops] something odd")).toEqual({
+    expect(parseConsoleLine("[oops] something odd")).toMatchObject({
       time: "",
       level: "LOG",
       message: "[oops] something odd",
@@ -217,5 +230,111 @@ describe("autoScrollReducer", () => {
 
   it("throws on unknown actions", () => {
     expect(() => autoScrollReducer(initialAutoScrollState, { type: "nope" })).toThrow();
+  });
+});
+
+describe("console polish", () => {
+  it("strips only leading status glyphs and separates browser source", () => {
+    expect(stripConsolePrefix("ℹ️  [TOKEN_REFRESH] Ready ❌")).toBe("[TOKEN_REFRESH] Ready ❌");
+    expect(stripConsolePrefix("❌ [browser] Failed")).toBe("[browser] Failed");
+    expect(parseConsoleLine("[14:07:31] ❌ [TOKEN_REFRESH] Failed")).toMatchObject({
+      level: "ERROR",
+      message: "[TOKEN_REFRESH] Failed",
+      source: "server",
+    });
+    expect(parseConsoleLine("[browser] React Flow warning")).toMatchObject({
+      source: "browser",
+      message: "React Flow warning",
+    });
+    expect(parseConsoleLine("[14:07:31] [ERROR] ❌ [browser] Failed")).toMatchObject({
+      level: "ERROR",
+      source: "browser",
+      message: "Failed",
+    });
+  });
+
+  it("groups recurring level + normalized text, preserving raw lines and last seen time", () => {
+    const lines = [
+      {
+        id: 1,
+        level: "ERROR",
+        time: "14:01:00",
+        message: '[TOKEN_REFRESH] id=abc123 time=2026-09-27T14:01:00Z failed {"status":400}',
+      },
+      { id: 2, level: "INFO", time: "14:02:00", message: "unrelated" },
+      {
+        id: 3,
+        level: "ERROR",
+        time: "14:06:00",
+        message: '[TOKEN_REFRESH] id=def456 time=2026-09-27T14:06:00Z failed {"status":400}',
+      },
+      {
+        id: 4,
+        level: "WARN",
+        time: "14:07:00",
+        message: '[TOKEN_REFRESH] id=def456 time=2026-09-27T14:06:00Z failed {"status":400}',
+      },
+    ];
+    const grouped = groupConsoleLines(lines);
+    expect(grouped).toHaveLength(3);
+    expect(grouped[1]).toMatchObject({ id: 3, count: 2, firstTime: "14:01:00", time: "14:06:00" });
+    expect(grouped[1].occurrences).toEqual([lines[0], lines[2]]);
+    expect(grouped[2].count).toBe(1);
+    expect(filterConsoleLines(grouped, { query: "abc123" })).toEqual([grouped[1]]);
+  });
+
+  it("filters browser lines while keeping count and raw view available", () => {
+    const lines = [parseConsoleLine("[browser] warning"), parseConsoleLine("[server] ready")];
+    expect(filterConsoleLines(lines, { hideBrowser: true })).toEqual([lines[1]]);
+    expect(filterConsoleLines(lines)).toEqual(lines);
+  });
+
+  it("pretty prints trailing JSON while preserving source tags, or falls back to raw text", () => {
+    expect(
+      prettyConsoleMessage('[TOKEN_REFRESH] failed {"status":400,"detail":{"retry":false}}'),
+    ).toContain('\n  "detail": {');
+    expect(prettyConsoleMessage("failed {broken")).toBe("failed {broken");
+  });
+
+  it("computes snapshot overlap and buffers only missed lines while paused", () => {
+    const rows = ["a", "b", "c"].map((raw) => ({ ...LINES[0], raw, message: raw }));
+    expect(snapshotOverlap(rows.slice(0, 2), rows.slice(1))).toBe(1);
+    let state = pauseBufferReducer(initialConsoleBufferState, {
+      type: "append",
+      lines: rows.slice(0, 2),
+      maxLines: 200,
+    });
+    state = pauseBufferReducer(state, { type: "pause" });
+    state = pauseBufferReducer(state, { type: "snapshot", lines: rows, maxLines: 200 });
+    expect(state.pending.map((row) => row.raw)).toEqual(["c"]);
+    state = pauseBufferReducer(state, { type: "snapshot", lines: rows, maxLines: 200 });
+    expect(state.visible).toHaveLength(2);
+    expect(state.pending.map((row) => row.raw)).toEqual(["c"]);
+    state = pauseBufferReducer(state, { type: "snapshot", lines: rows, maxLines: 200 });
+    expect(state.pending).toHaveLength(1);
+    state = pauseBufferReducer(state, { type: "resume", maxLines: 200 });
+    expect(state.visible.map((row) => row.raw)).toEqual(["a", "b", "c"]);
+  });
+
+  it("reduces actual stream events to honest badge states with bounded retry", () => {
+    let state = initialConnectionState;
+    expect(connectionBadge(state, { paused: false }).label).toBe("Connecting");
+    state = connectionReducer(state, { type: "open" });
+    expect(connectionBadge(state, { paused: false }).label).toBe("Live");
+    expect(connectionBadge(state, { paused: true, newCount: 3 })).toMatchObject({
+      variant: "warn",
+      label: "Paused · 3 new",
+    });
+    state = connectionReducer(state, { type: "error" });
+    expect(state).toMatchObject({ status: "reconnecting", attempt: 1, retryInMs: 1000 });
+    expect(connectionBadge(state, { paused: true }).variant).toBe("err");
+    state = connectionReducer(state, { type: "connect" });
+    expect(connectionBadge(state, { paused: false }).label).toBe("Disconnected · reconnecting");
+    state = connectionReducer(state, { type: "error" });
+    expect(state.retryInMs).toBe(2000);
+    expect(retryDelayMs(100)).toBe(30000);
+    expect(connectionReducer(state, { type: "hidden" }).status).toBe("idle");
+    expect(connectionReducer(state, { type: "open" }).attempt).toBe(0);
+    expect(() => connectionReducer(state, { type: "unknown" })).toThrow();
   });
 });

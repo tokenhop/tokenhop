@@ -513,7 +513,7 @@ export default function ProviderTopology({
           minZoom={0.1}
           maxZoom={2}
           onInit={onInit}
-          proOptions={{ hideAttribution: true }}
+          attributionPosition="bottom-right"
           panOnDrag
           zoomOnScroll
           zoomOnPinch

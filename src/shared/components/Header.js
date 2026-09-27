@@ -209,7 +209,7 @@ export const getPageInfo = (pathname) => {
     };
   if (pathname.includes("/console-log"))
     return {
-      title: "Console Log",
+      title: "Console log",
       description: "Live server console output",
       icon: "monitor",
       breadcrumbs: [],

@@ -7,8 +7,8 @@ import {
   Callout,
   EmptyState,
   Input,
-  Modal,
   SegmentedControl,
+  SkeletonText,
   StatusPill,
   Terminal,
   Toggle,
@@ -17,83 +17,72 @@ import { useNotificationStore } from "@/store/notificationStore";
 import { CONSOLE_LOG_CONFIG } from "@/shared/constants/config";
 import {
   autoScrollReducer,
+  connectionBadge,
   countConsoleLevels,
   filterConsoleLines,
+  groupConsoleLines,
   initialAutoScrollState,
-  initialConsoleBufferState,
-  parseConsoleLine,
-  pauseBufferReducer,
 } from "@/shared/utils/consoleLog";
+import ConsoleLogRow from "./ConsoleLogRows";
+import useConsoleStream from "./useConsoleStream";
 
 const MAX_LINES = CONSOLE_LOG_CONFIG.maxLines;
 const LEVEL_OPTIONS = ["ALL", "INFO", "WARN", "ERROR", "DEBUG"];
 const SCROLL_THRESHOLD_PX = 48;
 
 /**
- * Signal Console log page: live SSE stream with pause/resume buffering,
- * text + level filters with counts, auto-scroll toggle and a terminal
- * surface with level-colored rows.
+ * Signal Console log page: an honest SSE connection badge, repeat-grouped
+ * keyboard-expandable rows, browser-noise filter, text + level filters with
+ * counts, pause/resume buffering and auto-scroll.
  */
 export default function ConsoleLogClient() {
   const notify = useNotificationStore((state) => state.error);
-  const [buffer, dispatchBuffer] = useReducer(pauseBufferReducer, initialConsoleBufferState);
+  const { buffer, connection, dispatchBuffer, loadError, loading, hasSnapshot, reconnect } =
+    useConsoleStream();
   const [autoScroll, dispatchAutoScroll] = useReducer(autoScrollReducer, initialAutoScrollState);
   const [query, setQuery] = useState("");
   const [level, setLevel] = useState("ALL");
-  const [selectedLine, setSelectedLine] = useState(null);
-  const [connected, setConnected] = useState(false);
-  const [streamError, setStreamError] = useState(false);
+  const [raw, setRaw] = useState(false);
+  const [hideBrowser, setHideBrowser] = useState(false);
+  const [expandedKeys, setExpandedKeys] = useState(() => new Set());
+  const [activeRow, setActiveRow] = useState(0);
   const scrollRef = useRef(null);
 
   const paused = buffer.paused;
-  const visible = buffer.visible;
+  const lines = buffer.visible;
+  const grouped = useMemo(() => groupConsoleLines(lines), [lines]);
+  const rawRows = useMemo(
+    () => lines.map((line) => ({ ...line, key: String(line.id), count: 1, occurrences: [line] })),
+    [lines],
+  );
+  const rows = useMemo(
+    () => filterConsoleLines(raw ? rawRows : grouped, { query, level, hideBrowser }),
+    [raw, rawRows, grouped, query, level, hideBrowser],
+  );
+  const counts = useMemo(() => countConsoleLevels(lines), [lines]);
+  const warnCount = counts.WARN;
+  const errorCount = counts.ERROR;
+  const browserCount = useMemo(
+    () => lines.filter((line) => line.source === "browser").length,
+    [lines],
+  );
+  const badge = connectionBadge(connection, { paused, newCount: buffer.newCount });
+  const connected = connection.status === "open";
+  const streamError = !connected && lines.length === 0 && (loadError || !loading);
 
   useEffect(() => {
-    const es = new EventSource("/api/translator/console-logs/stream");
+    setActiveRow((index) => Math.min(index, Math.max(0, rows.length - 1)));
+  }, [rows.length]);
 
-    es.onopen = () => {
-      setConnected(true);
-      setStreamError(false);
-    };
-
-    es.onmessage = (event) => {
-      let msg;
-      try {
-        msg = JSON.parse(event.data);
-      } catch {
-        return;
-      }
-      if (msg.type === "init" && Array.isArray(msg.logs)) {
-        dispatchBuffer({ type: "clear" });
-        dispatchBuffer({
-          type: "append",
-          lines: msg.logs.map(parseConsoleLine),
-          maxLines: MAX_LINES,
-        });
-      } else if (msg.type === "line" && typeof msg.line === "string") {
-        dispatchBuffer({
-          type: "append",
-          lines: [parseConsoleLine(msg.line)],
-          maxLines: MAX_LINES,
-        });
-      } else if (msg.type === "lines" && Array.isArray(msg.lines)) {
-        dispatchBuffer({
-          type: "append",
-          lines: msg.lines.map(parseConsoleLine),
-          maxLines: MAX_LINES,
-        });
-      } else if (msg.type === "clear") {
-        dispatchBuffer({ type: "clear" });
-      }
-    };
-
-    es.onerror = () => {
-      setConnected(false);
-      setStreamError(true);
-    };
-
-    return () => es.close();
-  }, []);
+  // A new row joins the bottom and moves its group there; clear a stale
+  // expansion so it never follows a different message with the same key.
+  useEffect(() => {
+    setExpandedKeys((keys) => {
+      const visible = new Set(rows.map((row) => row.key));
+      if ([...keys].every((key) => visible.has(key))) return keys;
+      return new Set([...keys].filter((key) => visible.has(key)));
+    });
+  }, [rows]);
 
   const handleScroll = useCallback(() => {
     const node = scrollRef.current;
@@ -102,13 +91,13 @@ export default function ConsoleLogClient() {
     dispatchAutoScroll({ type: "scroll", atBottom });
   }, []);
 
-  // Stick to the bottom on new visible lines when auto-scroll is on.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `visible` is the trigger; its length stalls at the 200-line cap.
+  // Stick to the bottom on new rows when auto-scroll is on.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `rows` is the trigger; its length stalls at the 200-line cap.
   useEffect(() => {
     const node = scrollRef.current;
     if (!node || !autoScroll.enabled) return;
     node.scrollTop = node.scrollHeight;
-  }, [visible, autoScroll.enabled]);
+  }, [rows, autoScroll.enabled]);
 
   const handleClear = useCallback(async () => {
     try {
@@ -123,35 +112,97 @@ export default function ConsoleLogClient() {
     } catch {
       notify("Could not clear the console log. Try again.", "Clear failed");
     }
-  }, [notify]);
+  }, [notify, dispatchBuffer]);
 
-  const counts = useMemo(() => countConsoleLevels(visible), [visible]);
-  const filtered = useMemo(
-    () => filterConsoleLines(visible, { query, level }),
-    [visible, query, level],
-  );
-  const warnCount = counts.WARN;
-  const errorCount = counts.ERROR;
+  const toggleExpanded = useCallback((key) => {
+    setExpandedKeys((keys) => {
+      const next = new Set(keys);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   const options = useMemo(
     () =>
       LEVEL_OPTIONS.map((value) => ({
         value,
         label: value === "ALL" ? "All" : value.charAt(0) + value.slice(1).toLowerCase(),
-        count: value === "ALL" ? visible.length : counts[value],
+        count: value === "ALL" ? lines.length : counts[value],
       })),
-    [visible.length, counts],
+    [lines.length, counts],
   );
+
+  const body = (() => {
+    if (loading && !hasSnapshot) {
+      return (
+        <div className="signal-terminal rounded-2xl p-[18px_22px]">
+          <span className="sr-only" role="status">
+            Loading console history
+          </span>
+          <SkeletonText lines={8} />
+        </div>
+      );
+    }
+    if (streamError) {
+      return (
+        <Callout variant="err" title="Log stream disconnected">
+          <p>{loadError || "Could not connect to the log stream."}</p>
+          <Button size="sm" variant="secondary" icon="refresh" onClick={reconnect} className="mt-3">
+            Reconnect
+          </Button>
+        </Callout>
+      );
+    }
+    if (rows.length === 0) {
+      return (
+        <div className="signal-terminal flex min-h-[320px] items-center justify-center rounded-2xl">
+          <EmptyState
+            icon="terminal"
+            title={lines.length === 0 ? "No console logs yet" : "No lines match the filters"}
+            body={
+              lines.length === 0
+                ? "Server output will appear here once the gateway starts logging."
+                : "Try a different search term or log level."
+            }
+            className="[&_h3]:text-[var(--signal-terminal-text)] [&_p]:text-[var(--signal-terminal-time)]"
+          />
+        </div>
+      );
+    }
+    return (
+      <Terminal
+        lines={rows}
+        scrollRef={scrollRef}
+        onScroll={handleScroll}
+        live={paused ? "polite" : "off"}
+        label="Console output"
+        cursor={connected && !paused}
+        className="h-[min(60vh,720px)] min-h-[320px]"
+        row={(row, index) => (
+          <ConsoleLogRow
+            row={row}
+            index={index}
+            raw={raw}
+            expanded={expandedKeys.has(row.key)}
+            selected={index === activeRow}
+            onSelect={setActiveRow}
+            onToggle={toggleExpanded}
+          />
+        )}
+      />
+    );
+  })();
 
   return (
     <div className="flex flex-col gap-5">
       {/* Header row: subtitle is in the shell Header; actions live here */}
       <div className="flex flex-wrap items-center gap-2">
-        <StatusPill variant={paused ? "warn" : "live"} dot>
-          {paused ? `Paused · ${buffer.newCount} new` : "Live"}
+        <StatusPill variant={badge.variant} dot>
+          {badge.label}
         </StatusPill>
         <span className="sr-only" role="status">
-          {paused ? `Stream paused, ${buffer.newCount} new lines buffered` : "Streaming live"}
+          {badge.announcement}
         </span>
         <div className="ms-auto flex flex-wrap items-center gap-2">
           <Button
@@ -187,6 +238,17 @@ export default function ConsoleLogClient() {
           value={level}
           onChange={setLevel}
         />
+        <Toggle
+          label={`Hide browser lines${browserCount > 0 ? ` (${browserCount})` : ""}`}
+          checked={hideBrowser}
+          onChange={setHideBrowser}
+        />
+        <Toggle
+          label="Raw lines"
+          description="Show every line; no ×N grouping"
+          checked={raw}
+          onChange={setRaw}
+        />
         <div className="ms-auto">
           <Toggle
             label="Auto-scroll"
@@ -197,56 +259,22 @@ export default function ConsoleLogClient() {
       </div>
 
       {/* Terminal surface */}
-      {streamError && visible.length === 0 ? (
-        <Callout variant="err" title="Log stream unreachable">
-          Could not connect to the log stream. Check that the gateway is running, then reload the
-          page.
-        </Callout>
-      ) : null}
-      {filtered.length === 0 ? (
-        <div className="signal-terminal flex min-h-[320px] items-center justify-center rounded-2xl">
-          <EmptyState
-            icon="terminal"
-            title={visible.length === 0 ? "No console logs yet" : "No lines match the filters"}
-            body={
-              visible.length === 0
-                ? "Server output will appear here once the gateway starts logging."
-                : "Try a different search term or log level."
-            }
-            className="[&_h3]:text-[var(--signal-terminal-text)] [&_p]:text-[var(--signal-terminal-time)]"
-          />
-        </div>
-      ) : (
-        <Terminal
-          lines={filtered}
-          scrollRef={scrollRef}
-          onScroll={handleScroll}
-          live={paused ? "polite" : "off"}
-          label="Console output"
-          cursor={!paused}
-          onOpenLine={setSelectedLine}
-          className="h-[min(60vh,720px)] min-h-[320px]"
-        />
-      )}
-      <Modal
-        isOpen={selectedLine !== null}
-        onClose={() => setSelectedLine(null)}
-        title={selectedLine ? `${selectedLine.time || "--:--:--"} · ${selectedLine.level}` : ""}
-        size="lg"
-      >
-        <p className="font-mono text-sm break-words whitespace-pre-wrap">{selectedLine?.message}</p>
-      </Modal>
+      {body}
 
       {/* Footer */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted">
         <span>
-          {visible.length} of {MAX_LINES} lines
+          {lines.length} of {MAX_LINES} lines
         </span>
         <span className="text-warn">{warnCount} warnings</span>
-        <span className="text-err">
+        <button
+          type="button"
+          onClick={() => setLevel(errorCount > 0 && level !== "ERROR" ? "ERROR" : "ALL")}
+          aria-pressed={level === "ERROR"}
+          className="rounded-sm text-err underline-offset-2 hover:underline focus-visible:shadow-focus"
+        >
           {errorCount} {errorCount === 1 ? "error" : "errors"}
-        </span>
-        {!connected && visible.length > 0 ? <span>Reconnecting…</span> : null}
+        </button>
         <span className="ms-auto">
           Tip: turn on request details in{" "}
           <Link href="/dashboard/settings#logs" className="font-semibold text-coral-ink">
