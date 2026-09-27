@@ -292,7 +292,7 @@ export default function AddApiKeyModal({
 
         {mode === "bulk" && (
           <div className="flex flex-col gap-3">
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted">
               {isCloudflareAi ? (
                 <>
                   One key per line. Format: <code>name|apiKey|accountId</code> or just{" "}
@@ -311,7 +311,7 @@ export default function AddApiKeyModal({
               )}
             </p>
             <textarea
-              className="w-full rounded border border-accent/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[140px] focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-full rounded border border-coral/30 bg-panel p-2 text-sm font-mono resize-y min-h-[140px] focus:outline-none focus:ring-1 focus:ring-coral"
               placeholder={bulkPlaceholder}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
@@ -385,12 +385,12 @@ export default function AddApiKeyModal({
               </div>
             )}
             {isXaiApiKey && (
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted">
                 Use a direct xAI API key from console.x.ai. This is separate from Grok Build OAuth.
               </p>
             )}
             {isCookie && authHint && (
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted">
                 {authHint}
                 {website && (
                   <>
@@ -399,7 +399,7 @@ export default function AddApiKeyModal({
                       href={website}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-primary underline"
+                      className="text-coral-ink underline"
                     >
                       Open {website.replace(/^https?:\/\//, "")}
                     </a>
@@ -424,7 +424,7 @@ export default function AddApiKeyModal({
               />
             )}
             {isOllamaLocal && (
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted">
                 Leave blank to use <code>http://localhost:11434</code>. For remote Ollama, enter the
                 full host URL (e.g. <code>http://192.168.1.10:11434</code>).
               </p>
@@ -436,13 +436,13 @@ export default function AddApiKeyModal({
             )}
             {error && <p className="text-xs text-red-500 break-words">{error}</p>}
             {isCompatible && (
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted">
                 Enter the model ID exactly as your compatible endpoint expects it. This model will
                 be saved as the connection default.
               </p>
             )}
             {isCloudflareAi && (
-              <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+              <div className="bg-raised p-4 rounded-lg border border-coral/20">
                 <h3 className="font-semibold mb-3 text-sm">Cloudflare Workers AI</h3>
                 <Input
                   label="Account ID"
@@ -452,13 +452,13 @@ export default function AddApiKeyModal({
                   }
                   placeholder="abc123def456..."
                 />
-                <p className="text-xs text-text-muted mt-2">
+                <p className="text-xs text-muted mt-2">
                   Find your Account ID in the right sidebar of{" "}
                   <a
                     href="https://dash.cloudflare.com"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-primary underline"
+                    className="text-coral-ink underline"
                   >
                     dash.cloudflare.com
                   </a>
@@ -466,7 +466,7 @@ export default function AddApiKeyModal({
               </div>
             )}
             {isAzure && (
-              <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+              <div className="bg-raised p-4 rounded-lg border border-coral/20">
                 <h3 className="font-semibold mb-3 text-sm">Azure OpenAI Configuration</h3>
                 <div className="flex flex-col gap-3">
                   <Input
@@ -518,12 +518,12 @@ export default function AddApiKeyModal({
             />
 
             {(proxyPools || []).length === 0 && (
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted">
                 No active proxy pools available. Create one in Proxy Pools page first.
               </p>
             )}
 
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted">
               Legacy manual proxy fields are still accepted by API for backward compatibility.
             </p>
 

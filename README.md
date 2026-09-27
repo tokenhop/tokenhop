@@ -7,6 +7,30 @@ rotation, OAuth credential management and usage tracking, plus a Next.js dashboa
 > This is a personal copy of [9Router](https://github.com/decolua/9router) by
 > [decolua](https://github.com/decolua) and contributors, used under the MIT License.
 
+## Dashboard
+
+The Next.js dashboard defaults to dark for new installs, groups its sidebar into
+**Route** (Home, Providers, Combos, Endpoint & keys), **Watch** (Usage, Quota, Console
+log) and **Tune** (Token saver, CLI tools, Media providers, Proxy pools, Skills,
+Settings), plus a **Debug** group with the Translator when it is enabled, and shows live
+gateway status. Home is a command center for the endpoint and API keys, usage stats, live
+routes, recent requests, quota, combos and provider health.
+
+**Settings** (`/dashboard/settings`) is one page, grouped into Account, Traffic, Models &
+usage and System tabs (the old `/dashboard/profile` and `/dashboard/settings/pricing` URLs
+redirect there): General (theme, language, start page, density), Security & access,
+Single sign-on, Routing, **Reliability** (retry/cooldown/backoff/stream-timeout policy —
+previously hardcoded), Network, Token saver, Providers & models, Observability & logs,
+Pricing, **Data & backup** (database location, backup download/restore, and a
+config export/import for settings, combos and pricing overrides — secrets and provider
+accounts are never included), Environment (read-only `.env` readout) and Danger zone.
+
+### Screenshots
+
+| Dark (default)                                             | Light                                                        |
+| ---------------------------------------------------------- | ------------------------------------------------------------ |
+| ![Dashboard, dark theme](images/signal-dashboard-dark.png) | ![Dashboard, light theme](images/signal-dashboard-light.png) |
+
 ## What's different here
 
 - **Claude Code client fingerprint is configurable.** The identity sent on `claude`

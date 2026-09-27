@@ -181,7 +181,7 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
     <Modal isOpen={isOpen} title={translate("Bulk Add Grok CLI Accounts")} onClose={handleClose}>
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-text-muted">
+          <p className="text-xs text-muted">
             {translate("Upload multiple .json files or paste JSON array / object.")}
           </p>
           <input
@@ -210,12 +210,12 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
           onDrop={handleDrop}
           className={`relative rounded border transition-colors ${
             isDragging
-              ? "border-primary bg-primary/10 ring-2 ring-primary/30"
-              : "border-accent/30 bg-sidebar"
+              ? "border-coral bg-coral-bg ring-2 ring-coral/30"
+              : "border-coral/30 bg-panel"
           }`}
         >
           <textarea
-            className="w-full rounded bg-transparent p-2.5 text-sm font-mono resize-y min-h-[240px] focus:outline-none focus:ring-1 focus:ring-primary"
+            className="w-full rounded bg-transparent p-2.5 text-sm font-mono resize-y min-h-[240px] focus:outline-none focus:ring-1 focus:ring-coral"
             placeholder={PLACEHOLDER}
             value={jsonText}
             onChange={(e) => {
@@ -226,11 +226,11 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
           />
 
           {isDragging && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-sidebar/90 rounded pointer-events-none backdrop-blur-xs">
-              <span className="material-symbols-outlined text-3xl text-primary mb-1">
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-panel/90 rounded pointer-events-none backdrop-blur-xs">
+              <span className="material-symbols-outlined text-3xl text-coral-ink mb-1">
                 upload_file
               </span>
-              <span className="text-sm font-medium text-primary">
+              <span className="text-sm font-medium text-coral-ink">
                 {translate("Drop .json files here")}
               </span>
             </div>
@@ -255,7 +255,7 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
               ✗ {result.failed} {translate("failed")}
             </div>
             {failedItems.length > 0 && (
-              <ul className="rounded border border-accent/20 bg-sidebar/50 p-2 text-xs font-mono max-h-40 overflow-y-auto">
+              <ul className="rounded border border-coral/20 bg-raised p-2 text-xs font-mono max-h-40 overflow-y-auto">
                 {failedItems.map((item) => (
                   <li key={item.index} className="text-red-400">
                     [{item.index}] {item.error}

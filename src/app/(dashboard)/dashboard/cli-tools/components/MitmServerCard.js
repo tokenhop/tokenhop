@@ -137,18 +137,18 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
 
   return (
     <>
-      <Card padding="sm" className="border-primary/20 bg-primary/5">
+      <Card padding="sm" className="border-coral/20 bg-coral-bg">
         <div className="flex flex-col gap-3">
           {/* Header */}
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <span
-                className="material-symbols-outlined text-primary text-[20px]"
+                className="material-symbols-outlined text-coral-ink text-[20px]"
                 aria-hidden="true"
               >
                 security
               </span>
-              <span className="font-semibold text-sm text-text-main">MITM Server</span>
+              <span className="font-semibold text-sm text-text">MITM Server</span>
               {isRunning ? (
                 <Badge variant="success" size="sm">
                   Running
@@ -160,7 +160,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               )}
             </div>
             <div
-              className="flex flex-wrap items-center gap-1 text-xs text-text-muted"
+              className="flex flex-wrap items-center gap-1 text-xs text-muted"
               data-i18n-skip="true"
             >
               {[
@@ -170,7 +170,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               ].map(({ label, ok }) => (
                 <span
                   key={label}
-                  className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${ok ? "text-green-600" : "text-text-muted"}`}
+                  className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${ok ? "text-green-600" : "text-muted"}`}
                 >
                   <span className="material-symbols-outlined text-[12px]" aria-hidden="true">
                     {ok ? "check_circle" : "cancel"}
@@ -182,26 +182,26 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           </div>
 
           {/* Purpose & How it works */}
-          <div className="px-2 py-2 rounded-lg bg-surface/50 border border-border/50 flex flex-col gap-2">
-            <p className="text-[11px] text-text-muted leading-relaxed">
-              <span className="font-medium text-text-main">Purpose:</span> Use Antigravity IDE &
-              GitHub Copilot → with ANY provider/model from 9Router
+          <div className="px-2 py-2 rounded-lg bg-panel/50 border border-line/50 flex flex-col gap-2">
+            <p className="text-[11px] text-muted leading-relaxed">
+              <span className="font-medium text-text">Purpose:</span> Use Antigravity IDE & GitHub
+              Copilot → with ANY provider/model from 9Router
             </p>
-            <p className="text-[11px] text-text-muted leading-relaxed">
-              <span className="font-medium text-text-main">How it works:</span> Antigravity/Copilot
-              IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router →
-              response to Antigravity/Copilot
+            <p className="text-[11px] text-muted leading-relaxed">
+              <span className="font-medium text-text">How it works:</span> Antigravity/Copilot IDE
+              request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response
+              to Antigravity/Copilot
             </p>
           </div>
 
           {/* Base URL + API Key — same row pattern as Claude Code / cli-tools */}
           <div className="flex flex-col gap-2">
             <div className="grid gap-1 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
-              <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">
+              <span className="text-xs font-semibold text-text sm:text-right sm:text-sm">
                 9Router Base URL
               </span>
               <span
-                className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline"
+                className="material-symbols-outlined hidden text-muted text-[14px] sm:inline"
                 aria-hidden="true"
               >
                 arrow_forward
@@ -212,16 +212,16 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
                 onChange={(e) => setMitmRouterBaseUrl(e.target.value)}
                 placeholder={DEFAULT_MITM_ROUTER_BASE}
                 disabled={isRunning}
-                className="flex-1 min-w-0 px-2 py-1.5 bg-surface rounded border border-border text-xs text-text-main focus:outline-none focus:ring-1 focus:ring-primary/50 disabled:opacity-50"
+                className="flex-1 min-w-0 px-2 py-1.5 bg-panel rounded border border-line text-xs text-text focus:outline-none focus:ring-1 focus:ring-coral/50 disabled:opacity-50"
               />
             </div>
             {!isRunning && (
               <div className="grid gap-1 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
-                <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">
+                <span className="text-xs font-semibold text-text sm:text-right sm:text-sm">
                   API Key
                 </span>
                 <span
-                  className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline"
+                  className="material-symbols-outlined hidden text-muted text-[14px] sm:inline"
                   aria-hidden="true"
                 >
                   arrow_forward
@@ -232,7 +232,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
                   value={selectedApiKey}
                   onChange={(e) => setSelectedApiKey(e.target.value)}
                   placeholder={cloudEnabled ? "Enter or pick API key" : "sk_9router (default)"}
-                  className="flex-1 min-w-0 px-2 py-1.5 bg-surface rounded border border-border text-xs text-text-main focus:outline-none focus:ring-1 focus:ring-primary/50"
+                  className="flex-1 min-w-0 px-2 py-1.5 bg-panel rounded border border-line text-xs text-text focus:outline-none focus:ring-1 focus:ring-coral/50"
                 />
                 {apiKeys?.length > 0 && (
                   <datalist id="mitm-api-keys">
@@ -289,7 +289,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               </Button>
             )}
             {isRunning && (
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted">
                 Enable DNS per tool below to activate interception
               </p>
             )}
@@ -339,9 +339,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
             <span className="material-symbols-outlined text-warn text-[20px]" aria-hidden="true">
               warning
             </span>
-            <p className="text-xs text-text-muted">
-              Required for SSL certificate and server startup
-            </p>
+            <p className="text-xs text-muted">Required for SSL certificate and server startup</p>
           </div>
           <Input
             type="password"
@@ -398,9 +396,9 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               <span className="material-symbols-outlined text-warn text-[20px]" aria-hidden="true">
                 warning
               </span>
-              <div className="flex flex-col gap-1 text-xs text-text-muted">
+              <div className="flex flex-col gap-1 text-xs text-muted">
                 <p>Port 443 is currently used by another process:</p>
-                <p className="font-mono text-text-main" data-i18n-skip="true">
+                <p className="font-mono text-text" data-i18n-skip="true">
                   {port443Conflict.owner.name} (PID {port443Conflict.owner.pid})
                 </p>
                 <p>Kill this process to start MITM Server?</p>

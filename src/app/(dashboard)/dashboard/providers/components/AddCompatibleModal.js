@@ -120,9 +120,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
       return (
         <>
           <Badge variant="success">Valid</Badge>
-          {method === "chat" && (
-            <span className="text-sm text-text-muted">(via inference test)</span>
-          )}
+          {method === "chat" && <span className="text-sm text-muted">(via inference test)</span>}
         </>
       );
     }

@@ -12,7 +12,7 @@
  *
  * Provider monogram contrast is asserted in signal-display-primitives.test.js.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -38,32 +38,6 @@ function signalProps(selector) {
 }
 
 const light = signalProps(":root");
-
-/** Extract legacy `--color-*` fill roles for `:root` (light) and `.dark`. */
-function legacyProps(selector) {
-  const props = {};
-  for (const block of css.matchAll(new RegExp(`${selector}\\s*\\{([\\s\\S]*?)\\n\\}`, "gm"))) {
-    for (const [, name, value] of block[1].matchAll(/(--color-[\w-]+)\s*:\s*([^;]+);/g)) {
-      props[name] = value.trim();
-    }
-  }
-  return props;
-}
-
-/** Resolve one level of var() chains across the legacy and signal maps. */
-function resolveVar(value, ...maps) {
-  let current = value;
-  for (let depth = 0; depth < 4; depth += 1) {
-    const ref = /^var\(([\w-]+)\)$/.exec(current.trim());
-    if (!ref) return current;
-    const next = maps.map((m) => m[ref[1]]).find((v) => typeof v === "string");
-    if (!next) throw new Error(`signal-contrast: unresolvable ${value}`);
-    current = next;
-  }
-  throw new Error(`signal-contrast: var() cycle in ${value}`);
-}
-
-const legacy = { light: legacyProps(":root"), dark: legacyProps(String.raw`\.dark`) };
 
 const dark = signalProps(String.raw`\.dark`);
 
@@ -168,28 +142,6 @@ describe("signal token contrast", () => {
       it("terminal surface differs from panel", () => {
         expect(light["--signal-terminal-bg"]).not.toBe(props["--signal-panel"]);
       });
-
-      it("white text on legacy brand fills >= 4.5 (YAN-314)", () => {
-        for (const role of ["--color-primary-fill", "--color-brand-500", "--color-brand-600"]) {
-          const direct = legacy[name][role];
-          if (!direct) throw new Error(`signal-contrast: no ${name} ${role}`);
-          const ratio = contrastRatio("#ffffff", resolveVar(direct, legacy[name], props));
-          expect(ratio, `${name} white on ${role} = ${ratio.toFixed(2)}`).toBeGreaterThanOrEqual(
-            4.5,
-          );
-        }
-      });
-
-      it("legacy text roles track the signal coral ink (YAN-314)", () => {
-        // --color-primary doubles as text in legacy call sites; it must equal
-        // the coral ink so axe color-contrast passes on panel surfaces.
-        expect(resolveVar(legacy[name]["--color-primary"], legacy[name], props)).toBe(
-          props["--signal-coral-ink"],
-        );
-        expect(resolveVar(legacy[name]["--color-primary-hover"], legacy[name], props)).toBe(
-          props["--signal-coral-ink"],
-        );
-      });
     });
   }
 
@@ -215,39 +167,73 @@ describe("signal token contrast", () => {
   // signal-display-primitives.test.js next to the brand map (YAN-277).
 });
 
-describe("tailwind @theme utility contract (YAN-314 merge gate)", () => {
-  /** Every `--color-*` utility used in `src` must resolve to a token in the
-   * `@theme inline` block, or Tailwind generates no CSS for it. Scoped to
-   * known `@theme` tokens plus the project's semantic aliases so layout
-   * keywords (`bg-center`, `bg-cover`) and Tailwind palette utilities
-   * (`bg-red-500/10`) never pollute the check. */
-  it("every theme color utility in src exists in @theme inline", async () => {
-    const { execFileSync } = await import("node:child_process");
-    const { resolve } = await import("node:path");
-    const root = resolve(here, "..", "..");
-    const out = execFileSync(
-      "git",
-      [
-        "grep",
-        "-rhoE",
-        "(bg|text|border|ring)-(muted|subtle|line|panel|raised|bg|text|coral|coral-ink|coral-bg|on-coral|lime|lime-ink|lime-bg|on-lime|sky|sky-bg|ok|ok-bg|warn|warn-bg|err|err-bg|scrim|toggle-on|toggle-knob-on|terminal-bg|primary|primary-hover|primary-fill|accent|danger|success|warning|info|surface|surface-2|surface-3|sidebar|border|text-main|text-primary|text-muted|text-subtle)(/[0-9]+)?",
-        "--",
-        "src",
-      ],
-      { cwd: root, encoding: "utf8", maxBuffer: 10 * 1024 * 1024 },
-    );
-    const themeBlock = css.match(/@theme inline \{([\s\S]*?)\n\}/)?.[1] ?? "";
-    const declared = new Set([...themeBlock.matchAll(/--color-([\w-]+)\s*:/g)].map((m) => m[1]));
-    const missing = new Set();
-    for (const util of new Set(out.split("\n").filter(Boolean))) {
-      const token = util.replace(/^(bg|text|border|ring)-/, "").split("/")[0];
-      if (!declared.has(token)) missing.add(token);
+describe("tailwind @theme utility contract", () => {
+  const themeBlock = css.match(/@theme inline \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  const declared = new Set([...themeBlock.matchAll(/--color-([\w-]+)\s*:/g)].map((m) => m[1]));
+  const src = resolve(repoRoot, "src");
+  const source = readdirSync(src, { recursive: true })
+    .filter((file) => /\.[jt]sx?$/.test(file))
+    .map((file) => readFileSync(resolve(src, file), "utf8"))
+    .join("\n");
+
+  it("exposes Signal semantic roles and shadows without legacy aliases", () => {
+    for (const role of [
+      "bg",
+      "panel",
+      "raised",
+      "line",
+      "text",
+      "muted",
+      "subtle",
+      "coral",
+      "coral-ink",
+      "coral-bg",
+      "on-coral",
+      "lime",
+      "lime-ink",
+      "lime-bg",
+      "on-lime",
+      "sky",
+      "sky-bg",
+      "ok",
+      "ok-bg",
+      "warn",
+      "warn-bg",
+      "err",
+      "err-bg",
+      "scrim",
+      "toggle-on",
+      "toggle-knob-on",
+      "terminal-bg",
+    ]) {
+      expect(declared.has(role), `missing --color-${role}`).toBe(true);
     }
-    expect(
-      [...missing],
-      `color utilities with no @theme token: ${[...missing].join(", ")}`,
-    ).toEqual([]);
-    // The gate that caught the merge issue: bg-primary-fill must resolve.
-    expect(declared.has("primary-fill"), "@theme inline declares --color-primary-fill").toBe(true);
+    expect(themeBlock).toMatch(/--shadow-card:\s*var\(--signal-shadow-card\)/);
+    expect(themeBlock).toMatch(/--shadow-focus:\s*var\(--signal-focus-ring\)/);
+    expect(css).not.toMatch(
+      /--color-(?:primary(?:-fill|-hover)?|brand-\d+|bg-(?:alt|subtle|hover|light|dark)|surface(?:-[\w-]+)?|sidebar(?:-[\w-]+)?|border(?:-subtle|-light|-dark)?|text-(?:main|primary|muted|subtle)(?:-light|-dark)?|accent|danger|success|warning|info)\s*:/,
+    );
+    expect(css).not.toMatch(/--(?:radius-brand(?:-lg)?|shadow-(?:soft|warm|elev|elevated))\s*:/);
+  });
+
+  it("source uses Signal utilities, not legacy aliases or bg-background", () => {
+    const legacyUtility =
+      /\b(?:bg|text|border|ring|from|to|via|fill|stroke|outline|accent|caret|decoration|placeholder|selection)-(?:primary(?:-hover|-fill)?|brand-\d+|bg-(?:alt|subtle|hover|light|dark)|surface(?:-[\w-]+)?|sidebar(?:-[\w-]+)?|border-subtle|text-(?:main|primary|muted|subtle)(?:-light|-dark)?|accent|danger|success|warning|info)(?![\w-])|\b(?:rounded-brand(?:-lg)?|shadow-(?:soft|warm|elev|elevated))(?![\w-])/g;
+    const offenders = [...new Set(source.match(legacyUtility) ?? [])];
+    expect(offenders, `legacy utilities in: ${offenders.join(", ")}`).toEqual([]);
+    expect(source).not.toMatch(
+      /\b(?:bg|text|border|ring|divide|from|via|to|fill|stroke)-(?:background|error|success|surface|sidebar|primary(?:-hover|-fill)?|brand-\d+)(?![\w-])/,
+    );
+  });
+
+  it("every Signal color utility in src exists in @theme inline", () => {
+    const signalRoles = [...declared].sort((a, b) => b.length - a.length).join("|");
+    const utilities = new RegExp(
+      `\\b(?:bg|text|border|ring|from|to|via|fill|stroke|outline|accent|caret|decoration|placeholder|selection)-(${signalRoles})(?![\\w-])`,
+      "g",
+    );
+    const used = [...source.matchAll(utilities)].map((match) => match[1]);
+    expect(used.length, "Signal utilities must be scanned from src").toBeGreaterThan(0);
+    expect([...new Set(used.filter((role) => !declared.has(role)))]).toEqual([]);
   });
 });

@@ -47,7 +47,7 @@ export default function SettingsNav({ groups, sections, activeId, onSelect }) {
                 aria-hidden="true"
                 className={cn(
                   "material-symbols-outlined flex size-9 shrink-0 items-center justify-center rounded-lg text-[20px]",
-                  active ? "bg-coral text-bg" : "bg-raised text-muted group-hover:text-text",
+                  active ? "bg-coral text-on-coral" : "bg-raised text-muted group-hover:text-text",
                 )}
               >
                 {group.icon}

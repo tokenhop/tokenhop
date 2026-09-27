@@ -25,7 +25,7 @@ export function ModelGroupChips({
 }) {
   return (
     <div>
-      <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
+      <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-panel py-0.5">
         <ProviderTile providerId={providerId} size="sm" />
         <span className="text-xs font-medium text-coral">{group.name}</span>
         <span className="text-[10px] text-muted">({group.models.length})</span>
@@ -66,12 +66,12 @@ ModelGroupChips.propTypes = {
 export function ModelChipButton({ model, selected, added, caps, onSelect }) {
   const placeholder = model.isPlaceholder;
   const klass = placeholder
-    ? "border-dashed border-border text-muted hover:border-coral/50 hover:text-coral bg-surface italic"
+    ? "border-dashed border-line text-muted hover:border-coral/50 hover:text-coral bg-panel italic"
     : selected
       ? "bg-coral text-on-coral border-coral"
       : added
         ? "bg-coral border-coral text-on-coral hover:bg-coral-ink"
-        : "bg-surface border-border text-text hover:border-coral/50 hover:bg-coral-bg";
+        : "bg-panel border-line text-text hover:border-coral/50 hover:bg-coral-bg";
   return (
     <button
       type="button"
@@ -130,7 +130,7 @@ export function ComboChips({ combos, selectedModel, addedModelValues = [], onSel
   if (combos.length === 0) return null;
   return (
     <div>
-      <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
+      <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-panel py-0.5">
         <span className="material-symbols-outlined text-coral text-[14px]" aria-hidden="true">
           layers
         </span>
@@ -145,7 +145,7 @@ export function ComboChips({ combos, selectedModel, addedModelValues = [], onSel
               ? "bg-coral text-on-coral border-coral"
               : added
                 ? "bg-coral border-coral text-on-coral hover:bg-coral-ink"
-                : "bg-surface border-border text-text hover:border-coral/50 hover:bg-coral-bg";
+                : "bg-panel border-line text-text hover:border-coral/50 hover:bg-coral-bg";
           return (
             <button
               type="button"

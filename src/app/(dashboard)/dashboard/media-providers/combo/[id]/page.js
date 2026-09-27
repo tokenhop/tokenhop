@@ -347,7 +347,7 @@ export default function ComboDetailPage() {
     return out;
   }
 
-  if (loading) return <div className="text-text-muted text-sm">Loading...</div>;
+  if (loading) return <div className="text-muted text-sm">Loading...</div>;
   if (!combo) return notFound();
 
   const kindLabel =
@@ -371,14 +371,14 @@ export default function ComboDetailPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3 min-w-0">
-          <Link href={backHref} className="text-text-muted hover:text-primary">
+          <Link href={backHref} className="text-muted hover:text-coral-ink">
             <span className="material-symbols-outlined">arrow_back</span>
           </Link>
-          <div className="size-10 rounded-lg bg-primary/10 flex items-center justify-center">
-            <span className="material-symbols-outlined text-primary">layers</span>
+          <div className="size-10 rounded-lg bg-coral-bg flex items-center justify-center">
+            <span className="material-symbols-outlined text-coral-ink">layers</span>
           </div>
           <div className="min-w-0">
-            <p className="text-xs text-text-muted">{kindLabel} Combo</p>
+            <p className="text-xs text-muted">{kindLabel} Combo</p>
             <code className="text-lg font-semibold font-mono">{combo.name}</code>
           </div>
         </div>
@@ -402,12 +402,12 @@ export default function ComboDetailPage() {
               onBlur={handleSaveName}
               error={nameError}
             />
-            <p className="text-[10px] text-text-muted mt-0.5">Only letters, numbers, -, _ and .</p>
+            <p className="text-[10px] text-muted mt-0.5">Only letters, numbers, -, _ and .</p>
           </div>
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium">Round Robin</p>
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-muted">
                 Rotate providers across requests instead of strict fallback order.
               </p>
             </div>
@@ -425,7 +425,7 @@ export default function ComboDetailPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
           <div>
             <h2 className="text-lg font-semibold">Providers</h2>
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted">
               Tried in order (top-down) or rotated when round-robin is on.
             </p>
           </div>
@@ -434,7 +434,7 @@ export default function ComboDetailPage() {
           </Button>
         </div>
         {providers.length === 0 ? (
-          <div className="text-center py-6 border border-dashed border-border rounded-lg text-text-muted text-sm">
+          <div className="text-center py-6 border border-dashed border-line rounded-lg text-muted text-sm">
             No providers yet.
           </div>
         ) : (
@@ -445,14 +445,14 @@ export default function ComboDetailPage() {
               return (
                 <div
                   key={`${entry}-${idx}`}
-                  className="flex items-center gap-3 p-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02]"
+                  className="flex items-center gap-3 p-2 rounded-lg bg-raised"
                 >
-                  <span className="text-xs text-text-muted w-5 text-center">{idx + 1}</span>
+                  <span className="text-xs text-muted w-5 text-center">{idx + 1}</span>
                   <ProviderTile providerId={providerId} size="sm" />
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium truncate">{p?.name || providerId}</div>
                     {model && (
-                      <code className="text-[10px] text-text-muted font-mono truncate block">
+                      <code className="text-[10px] text-muted font-mono truncate block">
                         {model}
                       </code>
                     )}
@@ -461,7 +461,7 @@ export default function ComboDetailPage() {
                     <button
                       onClick={() => handleMove(idx, -1)}
                       disabled={idx === 0}
-                      className={`p-1 rounded ${idx === 0 ? "text-text-muted/20" : "text-text-muted hover:text-primary hover:bg-black/5"}`}
+                      className={`p-1 rounded ${idx === 0 ? "text-muted/20" : "text-muted hover:text-coral-ink hover:bg-raised"}`}
                       title="Move up"
                     >
                       <span className="material-symbols-outlined text-[16px]">arrow_upward</span>
@@ -469,14 +469,14 @@ export default function ComboDetailPage() {
                     <button
                       onClick={() => handleMove(idx, 1)}
                       disabled={idx === providers.length - 1}
-                      className={`p-1 rounded ${idx === providers.length - 1 ? "text-text-muted/20" : "text-text-muted hover:text-primary hover:bg-black/5"}`}
+                      className={`p-1 rounded ${idx === providers.length - 1 ? "text-muted/20" : "text-muted hover:text-coral-ink hover:bg-raised"}`}
                       title="Move down"
                     >
                       <span className="material-symbols-outlined text-[16px]">arrow_downward</span>
                     </button>
                     <button
                       onClick={() => handleRemoveProvider(idx)}
-                      className="p-1 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10"
+                      className="p-1 rounded text-muted hover:text-red-500 hover:bg-red-500/10"
                       title="Remove"
                     >
                       <span className="material-symbols-outlined text-[16px]">close</span>
@@ -503,14 +503,14 @@ export default function ComboDetailPage() {
               {testing ? "Running..." : "Run"}
             </Button>
           </div>
-          <pre className="text-xs font-mono bg-black/[0.03] dark:bg-white/[0.03] p-3 rounded-lg overflow-x-auto whitespace-pre-wrap break-all">
+          <pre className="text-xs font-mono bg-raised p-3 rounded-lg overflow-x-auto whitespace-pre-wrap break-all">
             {curlExample}
           </pre>
           {testError && <p className="mt-3 text-xs text-red-500 break-words">{testError}</p>}
           {testResult && (
             <div className="mt-3 flex flex-col gap-3">
               {testResult.latencyMs != null && (
-                <span className="text-[11px] text-text-muted">⚡ {testResult.latencyMs}ms</span>
+                <span className="text-[11px] text-muted">⚡ {testResult.latencyMs}ms</span>
               )}
               {testResult.imageUrl && (
                 <div>
@@ -518,7 +518,7 @@ export default function ComboDetailPage() {
                     <a
                       href={testResult.imageUrl}
                       download="image.png"
-                      className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
+                      className="inline-flex items-center gap-1 text-xs text-muted hover:text-coral-ink transition-colors"
                     >
                       <span className="material-symbols-outlined text-[14px]">download</span>
                       Download
@@ -527,7 +527,7 @@ export default function ComboDetailPage() {
                   <img
                     src={testResult.imageUrl}
                     alt="Generated"
-                    className="max-w-full rounded-lg border border-border"
+                    className="max-w-full rounded-lg border border-line"
                     loading="lazy"
                     decoding="async"
                   />
@@ -539,7 +539,7 @@ export default function ComboDetailPage() {
                     <a
                       href={testResult.audioUrl}
                       download="speech.mp3"
-                      className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
+                      className="inline-flex items-center gap-1 text-xs text-muted hover:text-coral-ink transition-colors"
                     >
                       <span className="material-symbols-outlined text-[14px]">download</span>
                       Download
@@ -549,7 +549,7 @@ export default function ComboDetailPage() {
                 </div>
               )}
               {testResult.json && (
-                <pre className="text-xs font-mono bg-black/[0.03] dark:bg-white/[0.03] p-3 rounded-lg overflow-auto max-h-[300px] whitespace-pre-wrap break-all">
+                <pre className="text-xs font-mono bg-raised p-3 rounded-lg overflow-auto max-h-[300px] whitespace-pre-wrap break-all">
                   {testResult.json}
                 </pre>
               )}
@@ -562,9 +562,9 @@ export default function ComboDetailPage() {
       <Card>
         <h2 className="text-lg font-semibold mb-3">Usage Logs</h2>
         {logs.length === 0 ? (
-          <p className="text-xs text-text-muted italic">No usage yet.</p>
+          <p className="text-xs text-muted italic">No usage yet.</p>
         ) : (
-          <pre className="text-[11px] font-mono bg-black/[0.03] dark:bg-white/[0.03] p-3 rounded-lg overflow-auto max-h-[400px] whitespace-pre-wrap">
+          <pre className="text-[11px] font-mono bg-raised p-3 rounded-lg overflow-auto max-h-[400px] whitespace-pre-wrap">
             {logs.join("\n")}
           </pre>
         )}
