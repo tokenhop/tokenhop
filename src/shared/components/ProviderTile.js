@@ -30,9 +30,19 @@ const STATUS_RING = {
  * @param {string} props.providerId Provider id, alias, `alias/model` string, or brand key.
  * @param {"sm"|"md"|"lg"} [props.size="md"] sm 24, md 36, lg 56.
  * @param {"ok"|"warn"|"err"|"info"|"live"|"neutral"} [props.status] Optional status dot with panel ring.
+ * @param {{ color: string, monogram: string }} [props.brand] Brand for non-registry ids (CLI
+ *   tools); color must already keep white text at 4.5:1.
+ * @param {string} [props.iconSrc] Static logo path for non-registry ids.
  * @param {string} [props.className]
  */
-export default function ProviderTile({ providerId, size = "md", status, className }) {
+export default function ProviderTile({
+  providerId,
+  size = "md",
+  status,
+  brand: brandOverride,
+  iconSrc,
+  className,
+}) {
   const [missingFor, setMissingFor] = useState(null);
   const dims = SIZES[size];
   if (!dims) throw new Error(`ProviderTile: unknown size "${size}"`);
@@ -40,8 +50,8 @@ export default function ProviderTile({ providerId, size = "md", status, classNam
     throw new Error(`ProviderTile: unknown status "${status}"`);
   }
   const id = resolveProviderId(providerId);
-  const brand = getProviderBrand(id);
-  const src = missingFor === id ? null : getProviderIconSrc(id);
+  const brand = brandOverride ?? getProviderBrand(id);
+  const src = missingFor === id ? null : (iconSrc ?? getProviderIconSrc(id));
 
   const plate = src
     ? {
@@ -91,5 +101,10 @@ ProviderTile.propTypes = {
   providerId: PropTypes.string.isRequired,
   size: PropTypes.oneOf(Object.keys(SIZES)),
   status: PropTypes.oneOf(Object.keys(STATUS_RING)),
+  brand: PropTypes.shape({
+    color: PropTypes.string.isRequired,
+    monogram: PropTypes.string.isRequired,
+  }),
+  iconSrc: PropTypes.string,
   className: PropTypes.string,
 };

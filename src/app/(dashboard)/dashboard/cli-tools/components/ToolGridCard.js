@@ -4,7 +4,8 @@ import PropTypes from "prop-types";
 import Link from "next/link";
 import { useCallback } from "react";
 import StatusPill from "@/shared/components/StatusPill";
-import { deriveToolStatus, getToolBrand } from "../lib/toolStatus";
+import ToolTile from "./ToolTile";
+import { deriveToolStatus } from "../lib/toolStatus";
 
 /**
  * One tool tile in the CLI-tools grid: brand monogram, name and a status
@@ -22,7 +23,6 @@ import { deriveToolStatus, getToolBrand } from "../lib/toolStatus";
  */
 export default function ToolGridCard({ toolId, tool, status, selected = false, onSelect }) {
   const derived = deriveToolStatus(tool, status);
-  const brand = getToolBrand(tool);
 
   const handleClick = useCallback(
     (event) => {
@@ -48,13 +48,7 @@ export default function ToolGridCard({ toolId, tool, status, selected = false, o
           : "border-line hover:border-subtle"
       }`}
     >
-      <span
-        aria-hidden="true"
-        style={{ backgroundColor: brand.color }}
-        className="flex size-9 shrink-0 items-center justify-center rounded-[10px] font-display text-sm font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]"
-      >
-        {brand.monogram}
-      </span>
+      <ToolTile tool={tool} size="md" />
       <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
         <span className="w-full truncate text-sm font-semibold text-text">{tool.name}</span>
         <StatusPill variant={derived.variant} size="sm">
@@ -77,6 +71,7 @@ ToolGridCard.propTypes = {
     name: PropTypes.string.isRequired,
     color: PropTypes.string,
     configType: PropTypes.string,
+    image: PropTypes.string,
   }).isRequired,
   status: PropTypes.shape({
     installed: PropTypes.bool,

@@ -1,37 +1,27 @@
 "use client";
 
 import PropTypes from "prop-types";
+import dynamic from "next/dynamic";
 import { CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
-import ClaudeToolCard from "./ClaudeToolCard";
-import CodexToolCard from "./CodexToolCard";
-import OpenCodeToolCard from "./OpenCodeToolCard";
-import CopilotToolCard from "./CopilotToolCard";
-import CoworkToolCard from "./CoworkToolCard";
-import ClineToolCard from "./ClineToolCard";
-import KiloToolCard from "./KiloToolCard";
-import DroidToolCard from "./DroidToolCard";
-import HermesToolCard from "./HermesToolCard";
-import OpenClawToolCard from "./OpenClawToolCard";
-import DeepSeekTuiToolCard from "./DeepSeekTuiToolCard";
-import JcodeToolCard from "./JcodeToolCard";
-import GrokBuildToolCard from "./GrokBuildToolCard";
-import DefaultToolCard from "./DefaultToolCard";
 
+// Each literal import gives Next a separate split point.
+const loading = () => <CardSkeleton />;
 const TOOL_CARDS = {
-  claude: ClaudeToolCard,
-  codex: CodexToolCard,
-  opencode: OpenCodeToolCard,
-  copilot: CopilotToolCard,
-  cowork: CoworkToolCard,
-  cline: ClineToolCard,
-  kilo: KiloToolCard,
-  droid: DroidToolCard,
-  hermes: HermesToolCard,
-  openclaw: OpenClawToolCard,
-  "deepseek-tui": DeepSeekTuiToolCard,
-  jcode: JcodeToolCard,
-  "grok-build": GrokBuildToolCard,
+  claude: dynamic(() => import("./ClaudeToolCard"), { loading }),
+  codex: dynamic(() => import("./CodexToolCard"), { loading }),
+  opencode: dynamic(() => import("./OpenCodeToolCard"), { loading }),
+  copilot: dynamic(() => import("./CopilotToolCard"), { loading }),
+  cowork: dynamic(() => import("./CoworkToolCard"), { loading }),
+  cline: dynamic(() => import("./ClineToolCard"), { loading }),
+  kilo: dynamic(() => import("./KiloToolCard"), { loading }),
+  droid: dynamic(() => import("./DroidToolCard"), { loading }),
+  hermes: dynamic(() => import("./HermesToolCard"), { loading }),
+  openclaw: dynamic(() => import("./OpenClawToolCard"), { loading }),
+  "deepseek-tui": dynamic(() => import("./DeepSeekTuiToolCard"), { loading }),
+  jcode: dynamic(() => import("./JcodeToolCard"), { loading }),
+  "grok-build": dynamic(() => import("./GrokBuildToolCard"), { loading }),
+  default: dynamic(() => import("./DefaultToolCard"), { loading }),
 };
 
 /** One setup surface for inline aside and deep-link detail route. */
@@ -39,7 +29,7 @@ export default function ToolSetupPanel({ toolId, data, onStatusUpdate }) {
   const tool = CLI_TOOLS[toolId];
   if (!tool) return null;
   if (data.loading) return <CardSkeleton />;
-  const CardComponent = TOOL_CARDS[toolId] || DefaultToolCard;
+  const CardComponent = TOOL_CARDS[toolId] || TOOL_CARDS.default;
   return (
     <CardComponent
       key={toolId}
@@ -56,6 +46,7 @@ export default function ToolSetupPanel({ toolId, data, onStatusUpdate }) {
       tailscaleEnabled={data.tailscaleEnabled}
       tailscaleUrl={data.tailscaleUrl}
       modelAliases={data.modelAliases}
+      ccFilterNaming={data.ccFilterNaming}
       onStatusUpdate={onStatusUpdate}
     />
   );
@@ -76,6 +67,7 @@ ToolSetupPanel.propTypes = {
     tailscaleEnabled: PropTypes.bool,
     tailscaleUrl: PropTypes.string,
     modelAliases: PropTypes.object,
+    ccFilterNaming: PropTypes.bool,
   }).isRequired,
   onStatusUpdate: PropTypes.func,
 };

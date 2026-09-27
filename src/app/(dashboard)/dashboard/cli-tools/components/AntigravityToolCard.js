@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Button from "@/shared/components/Button";
 import Input from "@/shared/components/Input";
 import Modal from "@/shared/components/Modal";
@@ -37,6 +37,12 @@ export default function AntigravityToolCard({
   const [modalOpen, setModalOpen] = useState(false);
   const [currentEditingAlias, setCurrentEditingAlias] = useState(null);
   const [modelAliases, setModelAliases] = useState({});
+  // Latest callback in a ref so the mount fetch below never re-runs on a new
+  // callback identity (see setupCard.js).
+  const onStatusUpdateRef = useRef(onStatusUpdate);
+  useEffect(() => {
+    onStatusUpdateRef.current = onStatusUpdate;
+  }, [onStatusUpdate]);
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) setSelectedApiKey(apiKeys[0].key);
@@ -49,7 +55,7 @@ export default function AntigravityToolCard({
         if (res.ok) {
           const data = await res.json();
           setStatus(data);
-          onStatusUpdate?.("antigravity", data);
+          onStatusUpdateRef.current?.("antigravity", data);
         }
       } catch {
         setStatus({ running: false });
@@ -75,7 +81,7 @@ export default function AntigravityToolCard({
         /* ignore */
       }
     })();
-  }, [onStatusUpdate]);
+  }, []);
 
   const fetchStatus = async () => {
     try {
@@ -83,7 +89,7 @@ export default function AntigravityToolCard({
       if (res.ok) {
         const data = await res.json();
         setStatus(data);
-        onStatusUpdate?.("antigravity", data);
+        onStatusUpdateRef.current?.("antigravity", data);
       }
     } catch {
       setStatus({ running: false });

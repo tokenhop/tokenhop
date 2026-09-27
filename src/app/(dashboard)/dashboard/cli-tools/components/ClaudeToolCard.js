@@ -38,6 +38,7 @@ export default function ClaudeToolCard({
   activeProviders = [],
   hasActiveProviders = false,
   modelAliases = {},
+  ccFilterNaming: ccFilterNamingProp = false,
   onStatusUpdate,
 }) {
   const [claudeStatus, setClaudeStatus] = useState(null);
@@ -51,12 +52,19 @@ export default function ClaudeToolCard({
   const [selectedApiKey, setSelectedApiKey] = useState("");
   const [showManualModal, setShowManualModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
-  const [ccFilterNaming, setCcFilterNaming] = useState(false);
+  const [ccFilterNaming, setCcFilterNaming] = useState(ccFilterNamingProp);
   const [exaMcpEnabled, setExaMcpEnabled] = useState(false);
   const [autoCompactWindow, setAutoCompactWindow] = useState("");
   const [oneMContext, setOneMContext] = useState(false);
   const [modelMappings, setModelMappings] = useState({});
   const hasInitializedModels = useRef(false);
+
+  // Stable callback identity across renders — see setupCard.js. The latest
+  // callback lives in a ref so the effect below runs once per mount.
+  const onStatusUpdateRef = useRef(onStatusUpdate);
+  useEffect(() => {
+    onStatusUpdateRef.current = onStatusUpdate;
+  }, [onStatusUpdate]);
 
   const fetchStatus = useCallback(async () => {
     setChecking(true);
@@ -65,26 +73,22 @@ export default function ClaudeToolCard({
       const data = await res.json();
       setClaudeStatus(data);
       setExaMcpEnabled(Boolean(data?.exaMcpEnabled));
-      onStatusUpdate?.("claude", data);
+      onStatusUpdateRef.current?.("claude", data);
     } catch (err) {
       setClaudeStatus({ installed: false, error: err.message });
     } finally {
       setChecking(false);
     }
-  }, [onStatusUpdate]);
+  }, []);
 
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
 
+  // Shared (useToolSetupData) already loads /api/settings once; sync here.
   useEffect(() => {
-    fetch("/api/settings")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) setCcFilterNaming(Boolean(data.ccFilterNaming));
-      })
-      .catch(() => {});
-  }, []);
+    setCcFilterNaming(ccFilterNamingProp);
+  }, [ccFilterNamingProp]);
 
   // Sync API keys and initial mappings from on-disk settings
   useEffect(() => {
@@ -419,5 +423,6 @@ ClaudeToolCard.propTypes = {
   activeProviders: PropTypes.array,
   hasActiveProviders: PropTypes.bool,
   modelAliases: PropTypes.object,
+  ccFilterNaming: PropTypes.bool,
   onStatusUpdate: PropTypes.func,
 };

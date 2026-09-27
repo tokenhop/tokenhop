@@ -167,7 +167,7 @@ export const getPageInfo = (pathname) => {
     };
   if (pathname.includes("/cli-tools"))
     return {
-      title: "CLI Tools",
+      title: "CLI tools",
       description: "Configure CLI tools",
       icon: "terminal",
       breadcrumbs: [],

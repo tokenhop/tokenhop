@@ -1,13 +1,15 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { useState } from "react";
 import Button from "@/shared/components/Button";
+import { ConfirmDialog } from "@/shared/components/Modal";
 import Card from "@/shared/components/Card";
 import Input from "@/shared/components/Input";
 import IconButton from "@/shared/components/IconButton";
 import StatusPill from "@/shared/components/StatusPill";
 import Callout from "@/shared/components/Callout";
-import { getToolBrand } from "../lib/toolStatus";
+import ToolTile from "./ToolTile";
 
 /**
  * Shared shell for every CLI-tool setup panel (board: Claude Code panel).
@@ -35,10 +37,20 @@ export default function SetupScaffold({
   onManualConfig,
   manualDisabled = false,
   fileHint = "",
+  confirmReset = true,
   hideActions = false,
   children,
 }) {
-  const brand = getToolBrand(tool);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  // Reset rewrites the named user config file, so confirm first. Cards with no
+  // fileHint (Antigravity "Save mappings") reuse the slot for a safe action.
+  const needsConfirm = confirmReset && Boolean(fileHint);
+  const handleResetClick = needsConfirm ? () => setConfirmOpen(true) : onReset;
+  const handleConfirmReset = async () => {
+    await onReset?.();
+    setConfirmOpen(false);
+  };
+
   return (
     <Card
       padding="md"
@@ -47,19 +59,13 @@ export default function SetupScaffold({
       aria-label={`${tool.name} setup`}
     >
       <div className="flex items-start gap-3.5">
-        <span
-          aria-hidden="true"
-          style={{ backgroundColor: brand.color }}
-          className="flex size-14 shrink-0 items-center justify-center rounded-2xl font-display text-[22px] font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]"
-        >
-          {brand.monogram}
-        </span>
+        <ToolTile tool={tool} size="lg" />
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <span className="font-display text-[26px] leading-tight font-bold text-text">
             {tool.name}
           </span>
           <div className="flex flex-wrap items-center gap-1.5">
-            {status && (
+            {status && !checking && (
               <StatusPill variant={status.variant} size="sm" dot={status.variant === "ok"}>
                 {status.label}
               </StatusPill>
@@ -125,7 +131,7 @@ export default function SetupScaffold({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={onReset}
+                onClick={handleResetClick}
                 disabled={resetDisabled}
                 loading={resetting}
                 icon="restore"
@@ -137,6 +143,23 @@ export default function SetupScaffold({
           </div>
           {fileHint && <p className="font-mono text-xs text-muted">Writes {fileHint}</p>}
         </>
+      )}
+      {needsConfirm && (
+        <ConfirmDialog
+          isOpen={confirmOpen}
+          onClose={() => setConfirmOpen(false)}
+          onConfirm={handleConfirmReset}
+          title={`Reset ${tool.name} settings?`}
+          message={
+            <span>
+              This rewrites <span className="font-mono">{fileHint}</span> and removes the 9Router
+              configuration. Your other settings stay untouched.
+            </span>
+          }
+          confirmText="Reset"
+          cancelText="Cancel"
+          variant="danger"
+        />
       )}
     </Card>
   );
@@ -169,6 +192,7 @@ SetupScaffold.propTypes = {
   onManualConfig: PropTypes.func,
   manualDisabled: PropTypes.bool,
   fileHint: PropTypes.string,
+  confirmReset: PropTypes.bool,
   hideActions: PropTypes.bool,
   resetLabel: PropTypes.string,
   children: PropTypes.node,

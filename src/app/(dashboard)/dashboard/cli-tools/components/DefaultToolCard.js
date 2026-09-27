@@ -33,7 +33,7 @@ export default function DefaultToolCard({
   const [selectedApiKey, setSelectedApiKey] = useState(() =>
     apiKeys?.length > 0 ? apiKeys[0].key : "",
   );
-  const { copy } = useCopyToClipboard();
+  const { copied, copy } = useCopyToClipboard();
 
   const replaceVars = (text) => {
     const keyToUse = selectedApiKey?.trim() || (!cloudEnabled ? "sk_9router" : "your-api-key");
@@ -132,10 +132,13 @@ export default function DefaultToolCard({
               {replaceVars(tool.codeBlock.code)}
             </pre>
             <IconButton
-              icon="content_copy"
-              label="Copy snippet"
+              icon={copied === `toolcard-${toolId}` ? "check" : "content_copy"}
+              label={copied === `toolcard-${toolId}` ? "Copied" : "Copy snippet"}
               onClick={() => copy(replaceVars(tool.codeBlock.code), `toolcard-${toolId}`)}
             />
+            <span aria-live="polite" className="sr-only">
+              {copied === `toolcard-${toolId}` ? "Copied" : ""}
+            </span>
           </div>
         </div>
       )}
