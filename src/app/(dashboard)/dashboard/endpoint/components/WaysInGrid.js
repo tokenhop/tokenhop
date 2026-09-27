@@ -96,13 +96,11 @@ function TunnelWay({ tunnel, onEnableTunnel, onStopTunnel, onDisableTunnel }) {
       }
     >
       {tunnel.loading ? (
-        <div className="flex flex-col gap-2" aria-live="polite">
-          <div className="flex items-center gap-2 rounded-lg border border-line bg-raised px-3 py-2 text-sm text-muted">
-            <span className="material-symbols-outlined animate-spin text-[16px]" aria-hidden="true">
-              progress_activity
-            </span>
-            <span className="truncate">{tunnel.progress || "Creating tunnel..."}</span>
-          </div>
+        <div className="flex flex-col gap-2" aria-live="polite" aria-busy="true">
+          <Skeleton className="h-11 w-full" />
+          <span className="truncate text-sm text-muted">
+            {tunnel.progress || "Creating tunnel..."}
+          </span>
           <Button variant="ghost" size="sm" onClick={onStopTunnel}>
             Stop
           </Button>
@@ -145,7 +143,7 @@ function TunnelWay({ tunnel, onEnableTunnel, onStopTunnel, onDisableTunnel }) {
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          <Button variant="primary" size="sm" icon="cloud_upload" onClick={onEnableTunnel}>
+          <Button variant="secondary" size="sm" icon="cloud_upload" onClick={onEnableTunnel}>
             Enable
           </Button>
           {!tunnel.canEnable ? (
@@ -194,13 +192,11 @@ function TailscaleWay({ tailscale, onConnect, onDisconnect, onInstall, onStop })
       }
     >
       {tailscale.loading ? (
-        <div className="flex flex-col gap-2" aria-live="polite">
-          <div className="flex items-center gap-2 rounded-lg border border-line bg-raised px-3 py-2 text-sm text-muted">
-            <span className="material-symbols-outlined animate-spin text-[16px]" aria-hidden="true">
-              progress_activity
-            </span>
-            <span className="truncate">{tailscale.progress || "Connecting..."}</span>
-          </div>
+        <div className="flex flex-col gap-2" aria-live="polite" aria-busy="true">
+          <Skeleton className="h-11 w-full" />
+          <span className="truncate text-sm text-muted">
+            {tailscale.progress || "Connecting..."}
+          </span>
           <div className="flex gap-2">
             {tailscale.authUrl && (
               <Button variant="secondary" size="sm" icon="open_in_new" onClick={openAuth}>

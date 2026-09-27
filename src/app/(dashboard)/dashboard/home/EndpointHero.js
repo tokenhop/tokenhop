@@ -125,7 +125,7 @@ export default function EndpointHero({ origin, tunnel, loading, error, onRetry, 
             {item.label}
             {item.id === "cloudflare" && !tunnelOn ? (
               <Button
-                variant="primary"
+                variant="secondary"
                 size="sm"
                 loading={enabling}
                 onClick={enableTunnel}

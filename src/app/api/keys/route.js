@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, createApiKey, getApiKeyUsage } from "@/lib/localDb";
+import { validateKeyName } from "@/app/(dashboard)/dashboard/endpoint/endpointLogic";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 export const dynamic = "force-dynamic";
@@ -39,13 +40,15 @@ export async function POST(request) {
     const body = await request.json();
     const { name } = body;
 
-    if (!name) {
-      return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    // Same rule as rename/PUT: no blank, oversized, or control-character names.
+    const nameError = validateKeyName(name);
+    if (nameError) {
+      return NextResponse.json({ error: nameError }, { status: 400 });
     }
 
     // Always get machineId from server
     const machineId = await getConsistentMachineId();
-    const apiKey = await createApiKey(name, machineId);
+    const apiKey = await createApiKey(name.trim(), machineId);
 
     return NextResponse.json(
       {

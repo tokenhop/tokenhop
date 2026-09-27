@@ -9,6 +9,7 @@ import Input from "@/shared/components/Input";
 import Modal from "@/shared/components/Modal";
 import Toggle from "@/shared/components/Toggle";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { duplicateKeyLabel } from "../endpoint/endpointLogic";
 import { maskApiKey } from "./format";
 import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
 
@@ -140,13 +141,15 @@ export default function KeysSummary({ keys, loading, error, onRetry, onChanged }
           const enabled = key.isActive !== false;
           return (
             <li key={key.id} className="flex items-center gap-2.5 border-t border-line py-2">
-              <span className="truncate text-sm font-semibold text-text">{key.name}</span>
+              <span className="truncate text-sm font-semibold text-text">
+                {duplicateKeyLabel(key, keys)}
+              </span>
               <span className="truncate font-mono text-xs text-muted">{maskApiKey(key.key)}</span>
               <Toggle
                 checked={enabled}
                 disabled={toggling === key.id}
                 onChange={() => toggle(key)}
-                aria-label={`${key.name} key ${enabled ? "enabled" : "paused"}`}
+                aria-label={`${duplicateKeyLabel(key, keys)} key ${enabled ? "enabled" : "paused"}`}
                 className="ms-auto"
               />
             </li>

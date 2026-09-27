@@ -4,7 +4,7 @@ import Link from "next/link";
 import PropTypes from "prop-types";
 import { useState } from "react";
 import { Card, Button, Select, Tabs } from "@/shared/components";
-import { buildQuickConnectSnippet, maskKey } from "../endpointLogic";
+import { duplicateKeyLabel, quickConnectSnippets } from "../endpointLogic";
 
 const LANGUAGES = [
   { value: "shell", label: "Shell" },
@@ -13,10 +13,10 @@ const LANGUAGES = [
 ];
 
 /**
- * Quick connect card: key picker + Shell/cURL/Python snippet with copy.
- * When the selected key matches the just-created `revealed` key, the snippet
- * embeds the real plain text; otherwise it embeds the masked form so the
- * snippet is copy-paste illustrative without leaking keys on screen.
+ * Quick connect card: key picker + Shell/cURL/Python snippet. The screen shows
+ * the masked key; copying pastes the real full key (same template, real
+ * secret). The full key is also never shown from the eye-reveal state — only
+ * the just-created banner or explicit per-row reveal shows it.
  *
  * @param {object} props
  * @param {string} props.baseUrl Endpoint root (e.g. http://localhost:20128/v1).
@@ -38,13 +38,15 @@ export default function QuickConnectCard({
 }) {
   const [language, setLanguage] = useState("shell");
   const selected = keys.find((key) => key.id === selectedKeyId) ?? null;
-  const snippetKey =
-    revealed && revealed.id === selectedKeyId
-      ? revealed.plain
-      : selected
-        ? maskKey(selected.key)
-        : "";
-  const snippet = buildQuickConnectSnippet(language, baseUrl, snippetKey);
+  const effectiveKey =
+    revealed && revealed.id === selectedKeyId ? { key: revealed.plain } : selected;
+  const { display: snippet, copy: copySnippet } = quickConnectSnippets(
+    language,
+    baseUrl,
+    effectiveKey,
+  );
+  const copyId = `quick-${language}`;
+  const canCopy = Boolean(copySnippet);
 
   return (
     <Card title="Quick connect" icon="bolt">
@@ -53,7 +55,7 @@ export default function QuickConnectCard({
           label="API key"
           value={selectedKeyId ?? ""}
           onChange={(event) => onSelectKey(event.target.value)}
-          options={keys.map((key) => ({ value: key.id, label: key.name }))}
+          options={keys.map((key) => ({ value: key.id, label: duplicateKeyLabel(key, keys) }))}
           placeholder={keys.length === 0 ? "No keys yet" : "Select a key"}
           disabled={keys.length === 0}
         />
@@ -68,18 +70,19 @@ export default function QuickConnectCard({
         <div className="overflow-hidden rounded-xl border border-line bg-raised">
           <pre
             dir="ltr"
-            className="max-h-64 overflow-auto whitespace-pre-wrap break-all p-4 font-mono text-[13px] leading-relaxed text-text"
+            className="max-h-64 overflow-auto whitespace-pre p-4 text-start font-mono text-[13px] leading-relaxed text-text"
           >
             <code>{snippet}</code>
           </pre>
-          <div className="flex justify-end border-t border-line px-3 py-2">
+          <div className="flex justify-end border-t border-line px-3 py-2" aria-live="polite">
             <Button
               variant="ghost"
               size="sm"
-              icon={copiedId === `quick-${language}` ? "check" : "content_copy"}
-              onClick={() => onCopy(snippet, `quick-${language}`)}
+              icon={copiedId === copyId ? "check" : "content_copy"}
+              disabled={!canCopy}
+              onClick={() => canCopy && onCopy(copySnippet, copyId)}
             >
-              {copiedId === `quick-${language}` ? "Copied!" : "Copy snippet"}
+              {copiedId === copyId ? "Copied" : "Copy snippet"}
             </Button>
           </div>
         </div>
