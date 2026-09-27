@@ -510,6 +510,11 @@ button:disabled,
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin {
+    animation: none;
+  }
+}
 
 /* Landing-style faint grid overlay (use absolute pos inside relative parent) */
 .landing-grid {

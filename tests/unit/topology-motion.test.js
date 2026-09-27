@@ -27,4 +27,14 @@ describe("topology CSS motion guards", async () => {
       /prefers-reduced-motion: reduce\)\s*\{\s*\.topology-edge-flow\s*\{\s*animation:\s*none;/,
     );
   });
+
+  it("stops the request-log spinner under reduced motion", () => {
+    const spin = css.indexOf(".animate-spin {\n  animation: spin");
+    const guard = css.indexOf("@media (prefers-reduced-motion: reduce)", spin);
+    expect(spin).toBeGreaterThan(-1);
+    expect(guard).toBeGreaterThan(spin);
+    expect(css.slice(guard)).toMatch(
+      /^@media \(prefers-reduced-motion: reduce\) \{\s*\.animate-spin \{\s*animation: none;\s*\}\s*\}/,
+    );
+  });
 });
