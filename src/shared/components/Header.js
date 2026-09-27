@@ -252,7 +252,6 @@ export default function Header({
   const [donateOpen, setDonateOpen] = useState(false);
 
   const searchVisible = useHeaderSearchStore((s) => s.visible);
-  const hasSecondRow = searchVisible || Boolean(actions);
   const pageInfo = useMemo(() => getPageInfo(pathname), [pathname]);
   const { title, description, breadcrumbs } = pageInfo;
 
@@ -361,7 +360,7 @@ export default function Header({
       </div>
 
       {/* Right actions. Below sm only ⌘K and the ⋮ menu stay inline; page
-          search and injected actions wrap to their own row. */}
+          search wraps to its own row. */}
       <div className="flex shrink-0 items-center justify-end gap-2 sm:min-w-0 sm:flex-1">
         {displayName && (loginMethod === "OIDC" || loginMethod === "SAML") && (
           <div
@@ -391,20 +390,22 @@ export default function Header({
             className="text-coral hover:bg-coral-bg hover:text-coral-ink"
           />
 
-          {/* Page-injected actions slot */}
-          {actions}
-
           <HeaderLanguage />
         </div>
         <HeaderMenu onLogout={handleLogout} onDonate={() => setDonateOpen(true)} />
       </div>
 
-      {/* Below sm: page search and actions on their own full-width row */}
-      {hasSecondRow ? (
+      {/* Below sm: page search on its own full-width row */}
+      {searchVisible ? (
         <div className="flex w-full min-w-0 items-center gap-2 sm:hidden">
           <HeaderSearch />
-          {actions}
         </div>
+      ) : null}
+
+      {/* Page-injected actions, mounted once: a full-width row below sm,
+          inline at the end from sm up */}
+      {actions ? (
+        <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">{actions}</div>
       ) : null}
 
       <DonateModal isOpen={donateOpen} onClose={() => setDonateOpen(false)} />

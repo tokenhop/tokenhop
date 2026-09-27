@@ -56,7 +56,7 @@ export default function HeaderMenu({ onLogout, onDonate }) {
     <MenuItem
       key={`${keyPrefix}-theme`}
       icon={isDark ? "light_mode" : "dark_mode"}
-      label={isDark ? "Light theme" : "Dark theme"}
+      label="Theme"
       onSelect={() => toggleTheme()}
     />
   );
@@ -103,7 +103,7 @@ export default function HeaderMenu({ onLogout, onDonate }) {
           trigger={
             <IconButton
               icon="more_vert"
-              label="More actions"
+              label="Menu"
               className="border-transparent bg-transparent hover:bg-raised"
             />
           }
