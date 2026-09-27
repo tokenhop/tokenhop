@@ -4,6 +4,8 @@ import {
   isLoginUnsafe,
   canExposeRemote,
   buildQuickConnectSnippet,
+  quickConnectSnippets,
+  duplicateKeyLabel,
   maskKey,
   formatLastUsed,
   isNewKey,
@@ -199,6 +201,39 @@ describe("buildQuickConnectSnippet", () => {
 
   it("throws on unknown kind", () => {
     expect(() => buildQuickConnectSnippet("ruby", base, "k")).toThrow();
+  });
+});
+
+describe("quickConnectSnippets", () => {
+  const keys = [
+    { id: "one", name: "Default Key", key: "sk-9r-abcdef1234" },
+    { id: "two", name: "Default Key", key: "sk-9r-ghijkl5678" },
+  ];
+
+  it.each(["shell", "curl", "python"])(
+    "masks display but copies the selected real key in %s",
+    (kind) => {
+      for (const selected of keys) {
+        const { display, copy } = quickConnectSnippets(kind, "http://localhost:20166/v1", selected);
+        expect(display).toContain(maskKey(selected.key));
+        expect(display).not.toContain(selected.key);
+        expect(copy).toContain(selected.key);
+        expect(copy).not.toContain("••••");
+        expect(copy).toBe(
+          buildQuickConnectSnippet(kind, "http://localhost:20166/v1", selected.key),
+        );
+      }
+    },
+  );
+
+  it("never substitutes a placeholder for an absent selection", () => {
+    expect(quickConnectSnippets("shell", "/v1", null).copy).toBeNull();
+  });
+
+  it("suffixes duplicate names without exposing the key", () => {
+    expect(duplicateKeyLabel(keys[0], keys)).toBe("Default Key …1234");
+    expect(duplicateKeyLabel(keys[1], keys)).toBe("Default Key …5678");
+    expect(duplicateKeyLabel({ ...keys[0], name: "Other" }, keys)).toBe("Other");
   });
 });
 

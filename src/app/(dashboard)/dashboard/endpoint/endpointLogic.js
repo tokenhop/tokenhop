@@ -119,6 +119,58 @@ function pyEscape(val) {
 }
 
 /**
+ * Display vs clipboard snippets for one key. The screen string always embeds
+ * the mask; the copy string embeds the real key and is never rendered.
+ *
+ * @param {"shell"|"curl"|"python"} kind
+ * @param {string} baseUrl
+ * @param {{ key?: string }|null} selected
+ * @returns {{ display: string, copy: string|null }}
+ */
+export function quickConnectSnippets(kind, baseUrl, selected) {
+  const real = selected?.key;
+  if (!real) return { display: buildQuickConnectSnippet(kind, baseUrl, ""), copy: null };
+  return {
+    display: buildQuickConnectSnippet(kind, baseUrl, maskKey(real)),
+    copy: buildQuickConnectSnippet(kind, baseUrl, real),
+  };
+}
+
+/**
+ * Disambiguate duplicate key names with the last 4 characters. Unique names stay as-is.
+ * @param {{ name: string, key?: string }} key
+ * @param {Array<{ name: string }>} keys
+ * @returns {string}
+ */
+export function duplicateKeyLabel(key, keys) {
+  const name = key?.name || "";
+  const duplicated = (keys || []).filter((item) => item.name === name).length > 1;
+  if (!duplicated) return name;
+  return `${name} \u2026${String(key.key || "").slice(-4)}`;
+}
+
+const KEY_NAME_MAX = 64;
+
+/**
+ * Key-name check shared by the API and the rename field. Error literal, or null.
+ * @param {unknown} name
+ * @returns {string|null}
+ */
+export function validateKeyName(name) {
+  if (typeof name !== "string") return "Name is required";
+  const trimmed = name.trim();
+  if (!trimmed) return "Name is required";
+  if (trimmed.length > KEY_NAME_MAX) return "Name must be 64 characters or fewer";
+  // C0, DEL and C1 control characters (code-point check keeps the regex linter quiet).
+  const hasControl = [...trimmed].some((ch) => {
+    const code = ch.codePointAt(0);
+    return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+  });
+  if (hasControl) return "Name can't include control characters";
+  return null;
+}
+
+/**
  * Build Quick Connect code snippet.
  *
  * @param {"shell"|"curl"|"python"} kind

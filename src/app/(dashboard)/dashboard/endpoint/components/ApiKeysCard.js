@@ -1,6 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   Card,
   Button,
@@ -9,6 +10,7 @@ import {
   Toggle,
   EmptyState,
   StatusPill,
+  Skeleton,
 } from "@/shared/components";
 import { maskKey, formatLastUsed, isNewKey, formatNumber } from "../endpointLogic";
 
@@ -34,12 +36,12 @@ function CreatedBanner({ banner, copiedId, onCopy, onDismiss }) {
         </code>
         <div className="mt-2">
           <Button
-            variant="primary"
+            variant="secondary"
             size="sm"
             icon={copiedId === "created-banner" ? "check" : "content_copy"}
             onClick={() => onCopy(banner.plainKey, "created-banner")}
           >
-            {copiedId === "created-banner" ? "Copied!" : "Copy key"}
+            {copiedId === "created-banner" ? "Copied" : "Copy key"}
           </Button>
         </div>
       </div>
@@ -83,6 +85,136 @@ KeyStatusTags.propTypes = {
 };
 
 /**
+ * Inline rename control for one key row. Enter saves, Escape cancels; the
+ * input stays open on save failure so the error below it can be read.
+ *
+ * @param {object} props
+ * @param {{id: string, name: string}} props.apiKey
+ * @param {boolean} props.editing Whether this row is in edit mode.
+ * @param {(id: string|null) => void} props.setEditingId Shared edit-state setter.
+ * @param {boolean} props.loading Rename request in flight.
+ * @param {string} [props.error] Per-row rename error, announced via aria-describedby.
+ * @param {(id: string, name: string) => Promise<boolean>} props.onRenameKey
+ * @param {(id: string) => void} props.clearRenameError
+ */
+function KeyName({ apiKey, editing, setEditingId, loading, error, onRenameKey, clearRenameError }) {
+  const [value, setValue] = useState(apiKey.name);
+  const inputRef = useRef(null);
+  const pendingRef = useRef(false);
+  const inputId = useId();
+
+  // Desktop table and mobile card both mount. Focus only the visible editor.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only re-run when edit mode opens/closes.
+  useEffect(() => {
+    if (editing) {
+      setValue(apiKey.name);
+      if (inputRef.current?.getClientRects().length) {
+        inputRef.current.focus();
+        inputRef.current.select();
+      }
+    }
+  }, [editing]);
+
+  const cancel = () => {
+    if (loading || pendingRef.current) return;
+    setValue(apiKey.name);
+    clearRenameError(apiKey.id);
+    setEditingId(null);
+  };
+
+  // pendingRef blocks a double Enter before the parent's renamingId arrives.
+  const save = async () => {
+    if (loading || pendingRef.current) return;
+    pendingRef.current = true;
+    try {
+      if (await onRenameKey(apiKey.id, value)) setEditingId(null);
+    } finally {
+      pendingRef.current = false;
+    }
+  };
+
+  if (!editing) {
+    return (
+      <span className="flex flex-wrap items-center gap-1.5 font-medium text-text">
+        {apiKey.name}
+        <KeyStatusTags apiKey={apiKey} />
+        <IconButton
+          icon="edit"
+          aria-label={`Rename key ${apiKey.name}`}
+          className="size-7"
+          onClick={() => setEditingId(apiKey.id)}
+        />
+      </span>
+    );
+  }
+
+  return (
+    <span className="flex flex-col gap-1">
+      <span className="flex items-center gap-1">
+        <input
+          ref={inputRef}
+          id={inputId}
+          type="text"
+          value={value}
+          disabled={loading}
+          onChange={(e) => {
+            setValue(e.target.value);
+            clearRenameError(apiKey.id);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              save();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              cancel();
+            }
+          }}
+          aria-label={`Rename key ${apiKey.name}`}
+          aria-describedby={error ? `${inputId}-error` : undefined}
+          aria-invalid={error ? true : undefined}
+          className="w-full min-w-0 rounded-lg border border-line bg-raised px-2 py-1 text-sm text-text transition-colors duration-150 focus:border-coral focus:shadow-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-err"
+        />
+        <IconButton
+          icon="check"
+          aria-label="Save name"
+          loading={loading}
+          className="size-7"
+          onClick={save}
+        />
+        <IconButton
+          icon="close"
+          aria-label="Cancel rename"
+          disabled={loading}
+          className="size-7"
+          onClick={cancel}
+        />
+      </span>
+      {error && (
+        <span id={`${inputId}-error`} role="alert" className="text-xs text-err">
+          {error}
+        </span>
+      )}
+    </span>
+  );
+}
+
+KeyName.propTypes = {
+  apiKey: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    name: PropTypes.string.isRequired,
+    isActive: PropTypes.bool,
+    createdAt: PropTypes.string,
+  }).isRequired,
+  editing: PropTypes.bool.isRequired,
+  setEditingId: PropTypes.func.isRequired,
+  loading: PropTypes.bool,
+  error: PropTypes.string,
+  onRenameKey: PropTypes.func.isRequired,
+  clearRenameError: PropTypes.func.isRequired,
+};
+
+/**
  * API keys management card: require-key gate, one-time reveal banner, key
  * table on desktop and stacked cards on mobile. The create/delete modals live
  * in the parent — this card only fires callbacks.
@@ -102,6 +234,10 @@ KeyStatusTags.propTypes = {
  * @param {(id: string, checked: boolean) => void} props.onToggleKey
  * @param {string|null} props.deletingId Row id mid-delete.
  * @param {(id: string) => void} props.onDeleteKey Opens the delete confirm in the parent.
+ * @param {(id: string, name: string) => Promise<boolean>} props.onRenameKey
+ * @param {string|null} props.renamingId Row id mid-rename.
+ * @param {Record<string, string>} props.renameErrors Per-row rename errors.
+ * @param {(id: string) => void} props.clearRenameError
  * @param {boolean} props.loading Initial list load.
  */
 export default function ApiKeysCard({
@@ -119,9 +255,25 @@ export default function ApiKeysCard({
   onToggleKey,
   deletingId,
   onDeleteKey,
+  onRenameKey,
+  renamingId,
+  renameErrors,
+  clearRenameError,
   loading,
 }) {
+  const [editingId, setEditingId] = useState(null);
   const showValue = (apiKey) => (visibleIds.has(apiKey.id) ? apiKey.key : maskKey(apiKey.key));
+  const renderName = (apiKey) => (
+    <KeyName
+      apiKey={apiKey}
+      editing={editingId === apiKey.id}
+      setEditingId={setEditingId}
+      loading={renamingId === apiKey.id}
+      error={renameErrors[apiKey.id]}
+      onRenameKey={onRenameKey}
+      clearRenameError={clearRenameError}
+    />
+  );
 
   return (
     <Card
@@ -162,16 +314,18 @@ export default function ApiKeysCard({
       )}
 
       {loading ? (
-        <p className="py-6 text-center text-sm text-muted" aria-live="polite">
-          Loading keys...
-        </p>
+        <div className="flex flex-col gap-3 py-6" aria-live="polite" aria-busy="true">
+          <span className="sr-only">Loading keys...</span>
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
       ) : keys.length === 0 && !createdBanner ? (
         <EmptyState
           icon="vpn_key"
           title="No API keys yet"
           body="Create your first API key to call the endpoint."
           action={
-            <Button variant="primary" icon="add" onClick={onCreateKey}>
+            <Button variant="secondary" icon="add" onClick={onCreateKey}>
               Create key
             </Button>
           }
@@ -209,12 +363,7 @@ export default function ApiKeysCard({
               <tbody>
                 {keys.map((apiKey) => (
                   <tr key={apiKey.id} className="border-b border-line last:border-b-0">
-                    <td className="py-3 pe-3">
-                      <span className="flex flex-wrap items-center gap-1.5 font-medium text-text">
-                        {apiKey.name}
-                        <KeyStatusTags apiKey={apiKey} />
-                      </span>
-                    </td>
+                    <td className="py-3 pe-3">{renderName(apiKey)}</td>
                     <td className="py-3 pe-3">
                       <code className="font-mono text-[13px] text-muted" dir="ltr">
                         {showValue(apiKey)}
@@ -270,10 +419,7 @@ export default function ApiKeysCard({
                 key={apiKey.id}
                 className="flex flex-col gap-2 rounded-xl border border-line bg-raised p-3"
               >
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="font-medium text-text">{apiKey.name}</span>
-                  <KeyStatusTags apiKey={apiKey} />
-                </div>
+                {renderName(apiKey)}
                 <div className="flex items-center gap-1">
                   <code
                     className="min-w-0 flex-1 truncate font-mono text-[13px] text-muted"
@@ -349,5 +495,9 @@ ApiKeysCard.propTypes = {
   onToggleKey: PropTypes.func.isRequired,
   deletingId: PropTypes.string,
   onDeleteKey: PropTypes.func.isRequired,
+  onRenameKey: PropTypes.func.isRequired,
+  renamingId: PropTypes.string,
+  renameErrors: PropTypes.objectOf(PropTypes.string).isRequired,
+  clearRenameError: PropTypes.func.isRequired,
   loading: PropTypes.bool.isRequired,
 };

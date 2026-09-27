@@ -9,6 +9,7 @@ import {
   ConfirmDialog,
   Input,
   CardSkeleton,
+  Skeleton,
   Callout,
 } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -87,7 +88,11 @@ export default function EndpointPageClient({ machineId: _machineId }) {
     );
   }
 
-  const effectiveSelectedKeyId = selectedKeyId ?? apiKeys.keys[0]?.id ?? null;
+  // If the selected key was deleted, fall back so Quick connect keeps working.
+  const effectiveSelectedKeyId =
+    (selectedKeyId && apiKeys.keys.some((k) => k.id === selectedKeyId) ? selectedKeyId : null) ??
+    apiKeys.keys[0]?.id ??
+    null;
 
   const handleToggleKey = (id, checked) => {
     const target = apiKeys.keys.find((k) => k.id === id);
@@ -151,8 +156,8 @@ export default function EndpointPageClient({ machineId: _machineId }) {
         </Callout>
       )}
 
-      <div className="grid items-start gap-4 xl:grid-cols-3">
-        <div className="xl:col-span-2">
+      <div className="grid items-start gap-4 lg:grid-cols-3">
+        <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
           <ApiKeysCard
             keys={apiKeys.keys}
             requireApiKey={tunnel.requireApiKey}
@@ -182,17 +187,11 @@ export default function EndpointPageClient({ machineId: _machineId }) {
                 },
               });
             }}
+            onRenameKey={apiKeys.renameKey}
+            renamingId={apiKeys.renamingId}
+            renameErrors={apiKeys.renameErrors}
+            clearRenameError={apiKeys.clearRenameError}
             loading={false}
-          />
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-4">
-          <AccessCard
-            requireLogin={tunnel.requireLogin}
-            tunnelDashboardAccess={tunnel.tunnelDashboardAccess}
-            security={security}
-            onToggleLogin={tunnel.handleRequireLogin}
-            onToggleTunnelDash={tunnel.handleTunnelDashboardAccess}
           />
           <QuickConnectCard
             baseUrl={localUrl}
@@ -202,6 +201,16 @@ export default function EndpointPageClient({ machineId: _machineId }) {
             onSelectKey={setSelectedKeyId}
             onCopy={copy}
             copiedId={copied}
+          />
+        </div>
+
+        <div className="min-w-0">
+          <AccessCard
+            requireLogin={tunnel.requireLogin}
+            tunnelDashboardAccess={tunnel.tunnelDashboardAccess}
+            security={security}
+            onToggleLogin={tunnel.handleRequireLogin}
+            onToggleTunnelDash={tunnel.handleTunnelDashboardAccess}
           />
         </div>
       </div>
@@ -238,14 +247,27 @@ export default function EndpointPageClient({ machineId: _machineId }) {
           </>
         }
       >
-        <div className="flex flex-col gap-4">
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            apiKeys.createKey();
+          }}
+        >
           <Input
             label="Key Name"
             value={apiKeys.newKeyName}
             onChange={(e) => apiKeys.setNewKeyName(e.target.value)}
             placeholder="Production Key"
+            error={apiKeys.createError}
+            maxLength={64}
           />
-        </div>
+          {apiKeys.createError && (
+            <p className="sr-only" role="alert">
+              {apiKeys.createError}
+            </p>
+          )}
+        </form>
       </Modal>
 
       {/* Enable Tunnel modal */}
@@ -258,7 +280,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
             <Button variant="ghost" onClick={() => tunnel.setShowEnableTunnelModal(false)}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={tunnel.handleEnableTunnel}>
+            <Button variant="secondary" onClick={tunnel.handleEnableTunnel}>
               Start Tunnel
             </Button>
           </>
@@ -327,12 +349,13 @@ export default function EndpointPageClient({ machineId: _machineId }) {
       >
         <div className="flex flex-col gap-4">
           {tunnel.tsInstalled === null && (
-            <p className="flex items-center gap-2 text-sm text-muted">
-              <span className="material-symbols-outlined animate-spin text-sm" aria-hidden="true">
-                progress_activity
+            <div className="flex flex-col gap-2" aria-busy="true">
+              <span className="sr-only" aria-live="polite">
+                Checking...
               </span>
-              Checking...
-            </p>
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-11 w-full" />
+            </div>
           )}
           {tunnel.tsInstalled === false && !tunnel.tsInstalling && (
             <div className="flex flex-col gap-3">
@@ -340,7 +363,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
                 Tailscale is not installed. Install it to enable Funnel.
               </p>
               <div className="flex gap-2">
-                <Button variant="primary" onClick={tunnel.handleInstallTailscale} fullWidth>
+                <Button variant="secondary" onClick={tunnel.handleInstallTailscale} fullWidth>
                   Install Tailscale
                 </Button>
                 <Button variant="ghost" onClick={() => tunnel.setShowTsModal(false)} fullWidth>
@@ -351,12 +374,8 @@ export default function EndpointPageClient({ machineId: _machineId }) {
           )}
           {tunnel.tsInstalling && (
             <div className="flex flex-col gap-2" aria-live="polite">
-              <div className="flex items-center gap-2 text-sm text-muted">
-                <span className="material-symbols-outlined animate-spin text-sm" aria-hidden="true">
-                  progress_activity
-                </span>
-                Installing Tailscale...
-              </div>
+              <Skeleton className="h-4 w-2/3" />
+              <span className="text-sm text-muted">Installing Tailscale...</span>
               {tunnel.tsInstallLog.length > 0 && (
                 <div
                   ref={tunnel.tsLogRef}
@@ -379,7 +398,11 @@ export default function EndpointPageClient({ machineId: _machineId }) {
                 Tailscale installed
               </div>
               <div className="flex gap-2">
-                <Button variant="primary" onClick={() => tunnel.handleConnectTailscale()} fullWidth>
+                <Button
+                  variant="secondary"
+                  onClick={() => tunnel.handleConnectTailscale()}
+                  fullWidth
+                >
                   Connect
                 </Button>
                 <Button variant="ghost" onClick={() => tunnel.setShowTsModal(false)} fullWidth>
