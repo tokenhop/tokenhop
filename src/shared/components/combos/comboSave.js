@@ -28,6 +28,16 @@ export function shouldReseedDraft(savedComboId, saveGeneration, selectedComboId,
   return savedComboId === selectedComboId && saveGeneration === editGeneration;
 }
 
+/** Guard programmatic route changes (palette, g chords), discarding only after confirmation. */
+export function requestComboNavigation(dirty, request, discard, navigate) {
+  if (dirty)
+    request(() => {
+      discard();
+      navigate();
+    });
+  else navigate();
+}
+
 /**
  * Whether a link click must go through the unsaved-changes guard.
  * Pure decision extracted from useUnsavedComboGuard's capture listener so
@@ -77,4 +87,34 @@ export async function saveComboRoute({ putModels, patchStrategy, onModelsCommitt
   await patchStrategy();
   onSaved?.(commit);
   return commit;
+}
+
+/**
+ * Leave the page without stacking history. While the same-URL Back sentinel
+ * is armed, pop it first and defer the navigation to the next popstate;
+ * otherwise navigate now.
+ * @param {{ armed: boolean, pendingForward: (() => void) | null }} state Mutable refs bag.
+ * @param {() => void} back `history.back`
+ * @param {() => void} action The navigation.
+ */
+export function leaveOverSentinel(state, back, action) {
+  if (state.pendingForward) {
+    // Sentinel pop already in flight: newest request wins, no second back().
+    state.pendingForward = action;
+    return;
+  }
+  if (!state.armed) {
+    action();
+    return;
+  }
+  state.armed = false;
+  state.pendingForward = action;
+  back();
+}
+
+/** Popstate side of leaveOverSentinel: runs a deferred navigation once. */
+export function takeDeferredForward(state) {
+  const next = state.pendingForward;
+  state.pendingForward = null;
+  return next;
 }

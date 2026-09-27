@@ -15,6 +15,7 @@ import ComboListCard from "@/shared/components/combos/ComboListCard";
 import ComboEditor from "@/shared/components/combos/ComboEditor";
 import CapabilityAdapterCard from "@/shared/components/combos/CapabilityAdapterCard";
 import useUnsavedComboGuard from "@/shared/components/combos/useUnsavedComboGuard";
+import { useCommandPalette } from "@/shared/components/CommandPaletteProvider";
 import {
   commitModelsIntoList,
   saveComboRoute,
@@ -244,7 +245,7 @@ export default function CombosPageClient() {
 
   const selectCombo = (id) => {
     if (id === selectedComboId) return;
-    guard.request(() => {
+    guard.requestNavigation(() => {
       internalSelectionRef.current = id;
       selectedIdRef.current = id;
       editGenerationRef.current += 1;
@@ -254,7 +255,7 @@ export default function CombosPageClient() {
     });
   };
   const openCreate = () =>
-    guard.request(() => {
+    guard.requestNavigation(() => {
       setShowCreateModal(true);
       navigateCombos(router, { create: true });
     });
@@ -338,6 +339,12 @@ export default function CombosPageClient() {
     applyServerState(selected, strategiesRef.current);
   });
   guardRef.current = guard;
+  const { registerRouteGuard } = useCommandPalette() || {};
+  useEffect(() => {
+    if (!registerRouteGuard) return;
+    const unregister = registerRouteGuard(guard);
+    return unregister;
+  }, [registerRouteGuard, guard]);
   routeDirtyRef.current = routeDirty;
   const emptyAdapters = adapterWarnings(capacityAdapter);
   // Edit generation: bumped on every draft change and on selection reseed so
