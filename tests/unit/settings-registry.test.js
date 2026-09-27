@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   SETTINGS_SECTIONS,
+  SETTINGS_GROUPS,
   filterRows,
   sectionAnchors,
   toCommandItems,
@@ -39,6 +40,13 @@ describe("settings registry", () => {
         expect(typeof row.keywords).toBe("string");
       }
     }
+  });
+});
+
+describe("SETTINGS_GROUPS", () => {
+  it("places every section in exactly one group", () => {
+    const grouped = SETTINGS_GROUPS.flatMap((group) => group.sections);
+    expect(grouped.toSorted()).toEqual(SETTINGS_SECTIONS.map((s) => s.id).toSorted());
   });
 });
 

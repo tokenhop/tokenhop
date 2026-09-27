@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Input from "@/shared/components/Input";
 import EmptyState from "@/shared/components/EmptyState";
 import { Skeleton } from "@/shared/components/Loading";
@@ -20,8 +20,9 @@ import DataSection from "./sections/DataSection";
 import EnvironmentSection from "./sections/EnvironmentSection";
 import DangerSection from "./sections/DangerSection";
 import SettingsAnchorNav from "./SettingsAnchorNav";
-import { filterRows, sectionAnchors } from "./registry";
+import { filterRows, SETTINGS_GROUPS, SETTINGS_SECTIONS } from "./registry";
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
+import { cn } from "@/shared/utils/cn";
 
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return "en";
@@ -42,6 +43,7 @@ export default function SettingsPage() {
   const [locale, setLocale] = useState("en");
   const [savedTick, setSavedTick] = useState(0);
   const [dataVersion, setDataVersion] = useState(0);
+  const [activeId, setActiveId] = useState("general");
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
@@ -63,23 +65,22 @@ export default function SettingsPage() {
     setLocale(getLocaleFromCookie());
   }, [loadSettings]);
 
-  // Deep-link support (/dashboard/profile#sso, legacy redirects): scroll once
-  // the sections are mounted, and on later hash changes.
+  // Preserve existing #section deep links, including legacy redirects.
   useEffect(() => {
-    if (loading) return undefined;
-    const scrollToHash = () => {
-      const hash = window.location.hash.slice(1);
-      const target = hash ? document.getElementById(hash) : null;
-      const scroller = target?.closest("main")?.querySelector(".custom-scrollbar");
-      if (scroller) {
-        scroller.scrollTop +=
-          target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 96;
-      }
+    const selectHash = () => {
+      const id = decodeURIComponent(window.location.hash.slice(1));
+      if (SETTINGS_SECTIONS.some((section) => section.id === id)) setActiveId(id);
     };
-    scrollToHash();
-    window.addEventListener("hashchange", scrollToHash);
-    return () => window.removeEventListener("hashchange", scrollToHash);
-  }, [loading]);
+    selectHash();
+    window.addEventListener("hashchange", selectHash);
+    return () => window.removeEventListener("hashchange", selectHash);
+  }, []);
+
+  const selectSection = useCallback((id) => {
+    setActiveId(id);
+    window.history.replaceState(null, "", `#${id}`);
+    document.querySelector("main .custom-scrollbar")?.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   // `/` focuses search from anywhere on the page
   useEffect(() => {
@@ -109,10 +110,9 @@ export default function SettingsPage() {
     [loadSettings],
   );
 
-  const anchors = useMemo(() => sectionAnchors(), []);
   const filtered = filterRows(query);
-  const visibleIds = new Set(filtered.map((s) => s.id));
-  const navAnchors = anchors.filter((a) => !query || visibleIds.has(a.id));
+  const visibleIds = new Set(query ? filtered.map((s) => s.id) : [activeId]);
+  const activeSection = SETTINGS_SECTIONS.find((section) => section.id === activeId);
 
   // Pricing modal opens from the deep link ?editPricing=1 (legacy
   // /dashboard/settings/pricing redirect) or from the Pricing section.
@@ -157,78 +157,98 @@ export default function SettingsPage() {
         />
       </div>
 
-      <SettingsAnchorNav sections={navAnchors.length > 0 ? navAnchors : anchors} />
-
-      {/* Keep sections in one vertical flow so anchor scrolling cannot leave an empty column. */}
-      {loading ? (
-        <div className="space-y-4">
-          <Skeleton />
-          <Skeleton />
-        </div>
-      ) : error ? (
-        <EmptyState
-          icon="error"
-          title="Could not load settings"
-          body={error}
-          action={<Button onClick={loadSettings}>Retry</Button>}
-        />
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          icon="search"
-          title="No settings match"
-          body={`Nothing matches “${query}”. Try a different search.`}
-          action={
-            <Button variant="ghost" onClick={() => setQuery("")}>
-              Clear search
-            </Button>
-          }
-        />
-      ) : (
-        <div className="space-y-6">
-          {visibleIds.has("general") && (
-            <GeneralSection
-              settings={settings}
-              locale={locale}
-              onLocaleChange={setLocale}
-              onSettingsChange={onSettingsChange}
+      <div className="grid gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
+        {query ? (
+          <p className="text-sm text-muted lg:col-span-2" aria-live="polite">
+            {filtered.reduce((n, section) => n + section.rows.length, 0)} matching settings in{" "}
+            {filtered.length} sections
+          </p>
+        ) : (
+          <SettingsAnchorNav
+            groups={SETTINGS_GROUPS}
+            sections={SETTINGS_SECTIONS}
+            activeId={activeId}
+            onSelect={selectSection}
+          />
+        )}
+        <div className={cn("min-w-0", query && "lg:col-span-2")}>
+          {!query && activeSection && (
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
+              {SETTINGS_GROUPS.find((group) => group.sections.includes(activeId))?.title} /{" "}
+              <span className="text-text">{activeSection.title}</span>
+            </p>
+          )}
+          {loading ? (
+            <div className="space-y-4">
+              <Skeleton />
+              <Skeleton />
+            </div>
+          ) : error ? (
+            <EmptyState
+              icon="error"
+              title="Could not load settings"
+              body={error}
+              action={<Button onClick={loadSettings}>Retry</Button>}
             />
-          )}
-          {visibleIds.has("security") && (
-            <SecuritySection settings={settings} onSettingsChange={onSettingsChange} />
-          )}
-          {visibleIds.has("sso") && (
-            <SsoSection settings={settings} onSettingsChange={onSettingsChange} />
-          )}
-          {visibleIds.has("routing") && (
-            <RoutingSection settings={settings} onSettingsChange={onSettingsChange} />
-          )}
-          {visibleIds.has("reliability") && (
-            <ReliabilitySection settings={settings} onSettingsChange={onSettingsChange} />
-          )}
-          {visibleIds.has("network") && (
-            <NetworkSection settings={settings} onSettingsChange={onSettingsChange} />
-          )}
-          {visibleIds.has("token-saver") && (
-            <TokenSaverSection settings={settings} onSettingsChange={onSettingsChange} />
-          )}
-          {visibleIds.has("providers") && (
-            <ProvidersModelsSection settings={settings} onSettingsChange={onSettingsChange} />
-          )}
-          {visibleIds.has("logs") && (
-            <ObservabilitySection settings={settings} onSettingsChange={onSettingsChange} />
-          )}
-          {visibleIds.has("pricing") && (
-            <PricingSection
-              key={`pricing-${dataVersion}`}
-              modalOpen={pricingModalOpen}
-              onModalChange={handlePricingModalChange}
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon="search"
+              title="No settings match"
+              body={`Nothing matches “${query}”. Try a different search.`}
+              action={
+                <Button variant="ghost" onClick={() => setQuery("")}>
+                  Clear search
+                </Button>
+              }
             />
+          ) : (
+            <div className="space-y-6">
+              {visibleIds.has("general") && (
+                <GeneralSection
+                  settings={settings}
+                  locale={locale}
+                  onLocaleChange={setLocale}
+                  onSettingsChange={onSettingsChange}
+                />
+              )}
+              {visibleIds.has("security") && (
+                <SecuritySection settings={settings} onSettingsChange={onSettingsChange} />
+              )}
+              {visibleIds.has("sso") && (
+                <SsoSection settings={settings} onSettingsChange={onSettingsChange} />
+              )}
+              {visibleIds.has("routing") && (
+                <RoutingSection settings={settings} onSettingsChange={onSettingsChange} />
+              )}
+              {visibleIds.has("reliability") && (
+                <ReliabilitySection settings={settings} onSettingsChange={onSettingsChange} />
+              )}
+              {visibleIds.has("network") && (
+                <NetworkSection settings={settings} onSettingsChange={onSettingsChange} />
+              )}
+              {visibleIds.has("token-saver") && (
+                <TokenSaverSection settings={settings} onSettingsChange={onSettingsChange} />
+              )}
+              {visibleIds.has("providers") && (
+                <ProvidersModelsSection settings={settings} onSettingsChange={onSettingsChange} />
+              )}
+              {visibleIds.has("logs") && (
+                <ObservabilitySection settings={settings} onSettingsChange={onSettingsChange} />
+              )}
+              {visibleIds.has("pricing") && (
+                <PricingSection
+                  key={`pricing-${dataVersion}`}
+                  modalOpen={pricingModalOpen}
+                  onModalChange={handlePricingModalChange}
+                />
+              )}
+              {visibleIds.has("data") && <DataSection onSettingsChange={onSettingsChange} />}
+              {visibleIds.has("environment") && <EnvironmentSection />}
+              {visibleIds.has("danger") && <DangerSection />}
+            </div>
           )}
-          {visibleIds.has("data") && <DataSection onSettingsChange={onSettingsChange} />}
-          {visibleIds.has("environment") && <EnvironmentSection />}
-          {visibleIds.has("danger") && <DangerSection />}
         </div>
-      )}
+      </div>
     </div>
   );
 }

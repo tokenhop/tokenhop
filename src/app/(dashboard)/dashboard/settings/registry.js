@@ -577,6 +577,28 @@ export const SETTINGS_SECTIONS = [
   },
 ];
 
+export const SETTINGS_GROUPS = [
+  {
+    id: "account",
+    title: "Account",
+    icon: "manage_accounts",
+    sections: ["general", "security", "sso"],
+  },
+  {
+    id: "traffic",
+    title: "Traffic",
+    icon: "route",
+    sections: ["routing", "reliability", "network", "token-saver"],
+  },
+  {
+    id: "models",
+    title: "Models & usage",
+    icon: "dns",
+    sections: ["providers", "logs", "pricing"],
+  },
+  { id: "system", title: "System", icon: "settings", sections: ["data", "environment", "danger"] },
+];
+
 /** Anchor nav entries in section order: [{ id, title }]. */
 export const SETTINGS_ANCHORS = SETTINGS_SECTIONS.map(({ id, title }) => ({ id, title }));
 

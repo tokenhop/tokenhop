@@ -1,113 +1,144 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useEffect, useRef, useState } from "react";
 import { cn } from "@/shared/utils/cn";
 
-/**
- * Anchor navigation with IntersectionObserver scroll-spy. Renders
- * SegmentedControl-style pills that scroll smoothly to section headings.
- *
- * @param {object} props
- * @param {Array<{ id: string, title: string }>} props.sections
- */
-export default function SettingsAnchorNav({ sections }) {
-  const [activeId, setActiveId] = useState(sections[0]?.id || "");
-  const observerRef = useRef(null);
-  const sectionIds = sections.map((section) => section.id).join(",");
+const TAG_STYLE = {
+  new: "bg-coral-bg text-coral",
+  experimental: "bg-raised text-muted",
+};
 
-  useEffect(() => {
-    if (typeof window === "undefined" || !("IntersectionObserver" in window)) return;
-    const elements = sectionIds
-      .split(",")
-      .map((id) => document.getElementById(id))
-      .filter(Boolean);
-
-    observerRef.current?.disconnect();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Pick the top-most intersecting section
-        const intersecting = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (intersecting[0]?.target?.id) {
-          setActiveId(intersecting[0].target.id);
-        }
-      },
-      {
-        rootMargin: "-20% 0px -60% 0px",
-        threshold: [0, 0.25, 0.5, 0.75, 1],
-      },
-    );
-    observerRef.current = observer;
-    for (const el of elements) observer.observe(el);
-
-    return () => observer.disconnect();
-  }, [sectionIds]);
-
-  const handleClick = (e, id) => {
-    e.preventDefault();
-    setActiveId(id);
-    const target = document.getElementById(id);
-    if (target) {
-      const scroller = target.closest("main")?.querySelector(".custom-scrollbar");
-      if (scroller) {
-        scroller.scrollTo({
-          top:
-            scroller.scrollTop +
-            target.getBoundingClientRect().top -
-            scroller.getBoundingClientRect().top -
-            96,
-          behavior: "smooth",
-        });
-      }
-      if (window.history?.replaceState) {
-        window.history.replaceState(null, "", `#${id}`);
-      }
-      // Move keyboard focus to the section heading for screen-reader users.
-      const heading = target.querySelector("h2");
-      if (heading) {
-        heading.setAttribute("tabindex", "-1");
-        heading.focus({ preventScroll: true });
-      }
-    }
-  };
-
-  return (
-    <nav
-      aria-label="Settings sections"
-      className="sticky top-0 z-10 -mx-4 mb-6 overflow-x-auto border-b border-line bg-bg/90 px-4 py-2 backdrop-blur-md sm:mx-0 sm:rounded-xl sm:border sm:px-2"
-    >
-      <ul className="flex items-center gap-1 min-w-max">
-        {sections.map(({ id, title }) => {
-          const active = activeId === id;
-          return (
-            <li key={id}>
-              <a
-                href={`#${id}`}
-                onClick={(e) => handleClick(e, id)}
-                aria-current={active ? "location" : undefined}
-                className={cn(
-                  "inline-flex items-center rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-                  "focus-visible:shadow-focus outline-none",
-                  active ? "bg-coral-bg text-coral" : "text-muted hover:bg-raised hover:text-text",
-                )}
-              >
-                {title}
-              </a>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
+function sectionTags(section) {
+  return [...new Set(section.rows.flatMap((row) => row.tags ?? []))].filter(
+    (tag) => TAG_STYLE[tag],
   );
 }
 
-SettingsAnchorNav.propTypes = {
-  sections: PropTypes.arrayOf(
+/**
+ * Two-level settings navigation: group tabs across the top, section list down
+ * the side. Each section is its own view, addressable by `#section-id`.
+ */
+export default function SettingsNav({ groups, sections, activeId, onSelect }) {
+  const byId = Object.fromEntries(sections.map((section) => [section.id, section]));
+  const activeGroup = groups.find((group) => group.sections.includes(activeId)) ?? groups[0];
+
+  return (
+    <>
+      <nav
+        aria-label="Settings groups"
+        className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:col-span-2"
+      >
+        {groups.map((group) => {
+          const active = group.id === activeGroup.id;
+          return (
+            <button
+              key={group.id}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onSelect(group.sections[0])}
+              className={cn(
+                "group flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all outline-none focus-visible:shadow-focus",
+                active
+                  ? "border-coral/40 bg-coral-bg shadow-card"
+                  : "border-line bg-panel hover:-translate-y-0.5 hover:bg-raised",
+              )}
+            >
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "material-symbols-outlined flex size-9 shrink-0 items-center justify-center rounded-lg text-[20px]",
+                  active ? "bg-coral text-bg" : "bg-raised text-muted group-hover:text-text",
+                )}
+              >
+                {group.icon}
+              </span>
+              <span className="min-w-0">
+                <span
+                  className={cn("block text-sm font-semibold", active ? "text-coral" : "text-text")}
+                >
+                  {group.title}
+                </span>
+                <span className="block truncate text-xs text-muted">
+                  {group.sections.map((id) => byId[id]?.title).join(" · ")}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+
+      <nav
+        aria-label={`${activeGroup.title} sections`}
+        className="lg:sticky lg:top-0 lg:self-start"
+      >
+        <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2 lg:flex lg:flex-col">
+          {activeGroup.sections.map((id) => {
+            const section = byId[id];
+            if (!section) return null;
+            const active = id === activeId;
+            const danger = id === "danger";
+            return (
+              <li key={id} className="min-w-0">
+                <a
+                  href={`#${id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onSelect(id);
+                  }}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "relative flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors outline-none focus-visible:shadow-focus",
+                    active ? "bg-panel shadow-card" : "hover:bg-raised",
+                    active &&
+                      "lg:before:absolute lg:before:inset-y-2 lg:before:left-0 lg:before:w-0.5 lg:before:rounded-full lg:before:bg-coral",
+                  )}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "material-symbols-outlined mt-0.5 text-[18px]",
+                      danger ? "text-err" : active ? "text-coral" : "text-muted",
+                    )}
+                  >
+                    {section.icon}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-2 text-sm font-semibold whitespace-nowrap text-text">
+                      {section.title}
+                      {sectionTags(section).map((tag) => (
+                        <span
+                          key={tag}
+                          className={cn(
+                            "rounded px-1.5 py-px text-[10px] uppercase tracking-wide",
+                            TAG_STYLE[tag],
+                          )}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </span>
+                    <span className="hidden text-xs text-muted lg:block">{section.subtitle}</span>
+                  </span>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+    </>
+  );
+}
+
+SettingsNav.propTypes = {
+  groups: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.string.isRequired,
       title: PropTypes.string.isRequired,
+      icon: PropTypes.string.isRequired,
+      sections: PropTypes.arrayOf(PropTypes.string).isRequired,
     }),
   ).isRequired,
+  sections: PropTypes.arrayOf(PropTypes.object).isRequired,
+  activeId: PropTypes.string.isRequired,
+  onSelect: PropTypes.func.isRequired,
 };
