@@ -10,8 +10,9 @@ import IconButton from "@/shared/components/IconButton";
 import ProviderTile from "@/shared/components/ProviderTile";
 import StatusPill from "@/shared/components/StatusPill";
 import Toggle from "@/shared/components/Toggle";
-import Tooltip from "@/shared/components/Tooltip";
 import { Skeleton } from "@/shared/components/Loading";
+import { memo } from "react";
+import Menu, { MenuItem } from "@/shared/components/Menu";
 import QuotaRow from "./QuotaRow";
 
 /**
@@ -21,7 +22,7 @@ import QuotaRow from "./QuotaRow";
  *
  * @param {object} props
  */
-export default function QuotaAccountCard({
+function QuotaAccountCard({
   connection,
   quotas,
   hiddenQuotaRows,
@@ -31,7 +32,6 @@ export default function QuotaAccountCard({
   rowBusy,
   autoPing,
   canAutoPing,
-  autoPingHint,
   codexResetCredits,
   canResetCodex,
   quotaSortLabel,
@@ -86,55 +86,6 @@ export default function QuotaAccountCard({
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <StatusPill variant={status.variant}>{status.label}</StatusPill>
         <div className="flex-1" />
-        {connection.provider === "codex" && (
-          <>
-            <Tooltip
-              text={
-                canResetCodex
-                  ? `Use one Codex reset credit. Available: ${codexResetCredits}`
-                  : "No Codex reset credits available"
-              }
-            >
-              <button
-                type="button"
-                onClick={() => onResetCodex(connection)}
-                disabled={!canResetCodex || loading || rowBusy}
-                aria-label={
-                  canResetCodex
-                    ? `Use one Codex reset credit. ${codexResetCredits} available.`
-                    : "No Codex reset credits available"
-                }
-                className="flex h-10 min-w-10 items-center justify-center gap-1 rounded-lg border border-line px-2 font-mono text-[11px] text-muted transition-colors hover:text-text focus-visible:shadow-focus disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <span className="material-symbols-outlined text-[15px]" aria-hidden="true">
-                  restart_alt
-                </span>
-                <span aria-hidden="true">{codexResetCredits}</span>
-              </button>
-            </Tooltip>
-            <IconButton
-              icon="schedule"
-              label="View Codex reset credit expiry"
-              disabled={loading || rowBusy}
-              onClick={() => onViewCodexCredits(connection)}
-            />
-          </>
-        )}
-        {canAutoPing && (
-          <Tooltip text={autoPingHint}>
-            <button
-              type="button"
-              onClick={() => onToggleAutoPing(connection.id, connection.provider, !autoPing)}
-              aria-label={autoPing ? "Disable auto-ping" : "Enable auto-ping"}
-              aria-pressed={autoPing}
-              className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors hover:bg-raised focus-visible:shadow-focus ${autoPing ? "text-lime-ink dark:text-lime" : "text-muted"}`}
-            >
-              <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
-                bolt
-              </span>
-            </button>
-          </Tooltip>
-        )}
         <IconButton
           icon="refresh"
           label="Refresh quota"
@@ -142,19 +93,54 @@ export default function QuotaAccountCard({
           disabled={rowBusy}
           onClick={() => onRefresh(connection.id, connection.provider)}
         />
-        <IconButton
-          icon="edit"
-          label="Edit connection"
-          disabled={rowBusy}
-          onClick={() => onEdit(connection)}
-        />
-        <IconButton
-          icon="delete"
-          label="Delete connection"
-          disabled={rowBusy}
-          onClick={() => onDelete(connection.id)}
-          className="hover:text-err"
-        />
+        <Menu
+          trigger={
+            <IconButton
+              icon="more_vert"
+              label={`More actions for ${label || providerName}`}
+              disabled={rowBusy}
+            />
+          }
+        >
+          <MenuItem icon="edit" onSelect={() => onEdit(connection)} disabled={rowBusy}>
+            Edit connection
+          </MenuItem>
+          {connection.provider === "codex" && (
+            <MenuItem
+              icon="restart_alt"
+              onSelect={() => onResetCodex(connection)}
+              disabled={!canResetCodex || loading || rowBusy}
+            >
+              Use reset credit ({codexResetCredits} available)
+            </MenuItem>
+          )}
+          {connection.provider === "codex" && (
+            <MenuItem
+              icon="schedule"
+              onSelect={() => onViewCodexCredits(connection)}
+              disabled={loading || rowBusy}
+            >
+              View reset credit expiry
+            </MenuItem>
+          )}
+          {canAutoPing && (
+            <MenuItem
+              icon="bolt"
+              onSelect={() => onToggleAutoPing(connection.id, connection.provider, !autoPing)}
+              disabled={rowBusy}
+            >
+              {autoPing ? "Disable auto-ping" : "Enable auto-ping"}
+            </MenuItem>
+          )}
+          <MenuItem
+            icon="delete"
+            danger
+            onSelect={() => onDelete(connection.id)}
+            disabled={rowBusy}
+          >
+            Delete connection
+          </MenuItem>
+        </Menu>
       </div>
 
       {/* Quota rows */}
@@ -170,6 +156,13 @@ export default function QuotaAccountCard({
               error
             </span>
             <p className="text-xs text-muted">{error}</p>
+            <button
+              type="button"
+              onClick={() => onRefresh(connection.id, connection.provider)}
+              className="min-h-10 rounded-lg border border-line bg-raised px-3 text-xs font-semibold text-text hover:bg-line/60 focus-visible:shadow-focus"
+            >
+              Retry refresh
+            </button>
           </div>
         ) : message ? (
           <p className="py-5 text-center text-xs text-muted">{message}</p>
@@ -237,7 +230,6 @@ QuotaAccountCard.propTypes = {
   rowBusy: PropTypes.bool,
   autoPing: PropTypes.bool,
   canAutoPing: PropTypes.bool,
-  autoPingHint: PropTypes.string,
   codexResetCredits: PropTypes.number,
   canResetCodex: PropTypes.bool,
   quotaSortLabel: PropTypes.bool,
@@ -251,3 +243,5 @@ QuotaAccountCard.propTypes = {
   onHideQuota: PropTypes.func,
   onShowQuota: PropTypes.func,
 };
+
+export default memo(QuotaAccountCard);

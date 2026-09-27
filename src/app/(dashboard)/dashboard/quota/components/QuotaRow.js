@@ -11,6 +11,9 @@ import Meter from "@/shared/components/Meter";
  * Signal quota row: name, level-colored remaining text,
  * a shared `Meter` fill, and the reset text (relative + absolute).
  *
+ * The hide button is revealed on row hover or keyboard focus on devices that
+ * hover; touch devices (no hover) always show it. It stays in the tab order.
+ *
  * Handles special rows per parity with the old QuotaTable:
  * - `unlimited` rows show "Unlimited" in level lime with no meter
  * - `isCreditBalance` rows show "Credit: $x" in level sky with no meter
@@ -55,7 +58,7 @@ export default function QuotaRow({ quota, compact = false, onHide }) {
     countdown !== "-" ? (recurring ? `in ${countdown}` : `expires in ${countdown}`) : null;
 
   return (
-    <div className="flex min-w-0 flex-col gap-1.5" data-testid="quota-row">
+    <div className="group flex min-w-0 flex-col gap-1.5" data-testid="quota-row">
       <div className="flex min-w-0 items-baseline gap-2 text-[13px]">
         <span className="min-w-0 flex-1 truncate font-semibold text-text">{quota.name}</span>
         <span className={`shrink-0 font-semibold tabular-nums ${levelClass}`}>
@@ -93,7 +96,7 @@ export default function QuotaRow({ quota, compact = false, onHide }) {
           <button
             type="button"
             onClick={() => onHide(quota)}
-            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-raised hover:text-text focus-visible:shadow-focus"
+            className="-my-3 inline-flex size-10 shrink-0 items-center justify-center rounded-lg text-muted transition-[opacity,color,background-color] hover:bg-raised hover:text-text focus-visible:shadow-focus [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-visible:opacity-100"
             title="Hide this quota row"
             aria-label={`Hide quota ${quota.name}`}
           >
