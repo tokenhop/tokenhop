@@ -42,13 +42,23 @@ export default function SetupScaffold({
   children,
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [resetError, setResetError] = useState(null);
   // Reset rewrites the named user config file, so confirm first. Cards with no
   // fileHint (Antigravity "Save mappings") reuse the slot for a safe action.
   const needsConfirm = confirmReset && Boolean(fileHint);
-  const handleResetClick = needsConfirm ? () => setConfirmOpen(true) : onReset;
+  const handleResetClick = needsConfirm
+    ? () => {
+        setResetError(null);
+        setConfirmOpen(true);
+      }
+    : onReset;
+  // Card resets resolve true on success. On failure the dialog stays open and
+  // shows the error inline; Esc/Cancel stay safe.
   const handleConfirmReset = async () => {
-    await onReset?.();
-    setConfirmOpen(false);
+    setResetError(null);
+    const ok = await onReset?.();
+    if (ok) setConfirmOpen(false);
+    else setResetError("Reset failed. Check the message in the panel and try again.");
   };
 
   return (
@@ -153,12 +163,13 @@ export default function SetupScaffold({
           message={
             <span>
               This rewrites <span className="font-mono">{fileHint}</span> and removes the 9Router
-              configuration. Your other settings stay untouched.
+              configuration from it.
             </span>
           }
           confirmText="Reset"
           cancelText="Cancel"
           variant="danger"
+          error={resetError}
         />
       )}
     </Card>

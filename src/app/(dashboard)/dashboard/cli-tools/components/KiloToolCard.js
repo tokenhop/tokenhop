@@ -93,8 +93,10 @@ export default function KiloToolCard({
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
       }
+      return res.ok;
     } catch (err) {
       card.setMessage({ type: "error", text: err.message });
+      return false;
     } finally {
       card.setRestoring(false);
     }

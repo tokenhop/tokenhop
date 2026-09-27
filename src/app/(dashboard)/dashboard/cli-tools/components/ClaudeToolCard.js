@@ -219,8 +219,10 @@ export default function ClaudeToolCard({
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings." });
       }
+      return res.ok;
     } catch (err) {
       setMessage({ type: "error", text: err.message });
+      return false;
     } finally {
       setRestoring(false);
     }
