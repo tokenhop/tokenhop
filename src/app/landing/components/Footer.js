@@ -75,11 +75,11 @@ export default function Footer() {
             </a>
             <a
               className="text-gray-400 hover:text-[#f97815] text-sm transition-colors"
-              href="https://www.npmjs.com/package/9router"
+              href="https://github.com/yandy-r/9router/pkgs/container/9router"
               target="_blank"
               rel="noopener noreferrer"
             >
-              NPM
+              Docker
             </a>
           </div>
 
@@ -111,11 +111,11 @@ export default function Footer() {
             </a>
             <a
               className="text-gray-600 hover:text-white text-sm transition-colors"
-              href="https://www.npmjs.com/package/9router"
+              href="https://github.com/yandy-r/9router/pkgs/container/9router"
               target="_blank"
               rel="noopener noreferrer"
             >
-              NPM
+              Docker
             </a>
           </div>
         </div>

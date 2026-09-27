@@ -25,6 +25,9 @@ export function parseRelayUrl(raw) {
   if (url.protocol !== "https:") {
     throw new Error(`TUNNEL_WORKER_URL must use https: ${value}`);
   }
+  if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+    throw new Error(`TUNNEL_WORKER_URL must be a bare https origin: ${value}`);
+  }
   return { origin: url.origin, host: url.host };
 }
 

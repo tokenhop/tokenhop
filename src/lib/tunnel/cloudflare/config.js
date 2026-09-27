@@ -8,5 +8,15 @@ export const HEALTH_CHECK = {
   dnsTimeoutMs: 2000,
 };
 
-// Opt-in only: null unless TUNNEL_WORKER_URL points at a relay you run yourself.
-export const TUNNEL_RELAY = parseRelayUrl(process.env.TUNNEL_WORKER_URL);
+let cachedRelay;
+
+/**
+ * The opt-in tunnel relay: null unless TUNNEL_WORKER_URL points at a relay you
+ * run yourself. Parsed on first use (not at import) so a bad value fails the
+ * tunnel calls that need it instead of every page that imports this module.
+ * @returns {{ origin: string, host: string } | null}
+ */
+export function getTunnelRelay() {
+  if (cachedRelay === undefined) cachedRelay = parseRelayUrl(process.env.TUNNEL_WORKER_URL);
+  return cachedRelay;
+}

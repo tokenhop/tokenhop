@@ -61,7 +61,7 @@ export default function DonateModal({ isOpen, onClose }) {
 
         <div className="p-6 overflow-y-auto flex-1">
           <p className="text-text-muted text-sm mb-6 text-center">{data.message}</p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="flex flex-wrap justify-center gap-4">
             {data.channels.map((ch) => (
               <DonateChannelCard key={ch.id} channel={ch} />
             ))}
@@ -98,7 +98,7 @@ function DonateChannelCard({ channel }) {
   );
 
   return (
-    <div className="flex flex-col items-center p-4 rounded-xl border border-black/10 dark:border-white/10 bg-surface/50 hover:border-pink-500/40 transition-colors">
+    <div className="flex w-full flex-col items-center p-4 rounded-xl border border-black/10 dark:border-white/10 bg-surface/50 hover:border-pink-500/40 transition-colors sm:w-64">
       {content}
       {url && (
         <a

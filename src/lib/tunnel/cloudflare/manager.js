@@ -7,7 +7,7 @@ import {
 } from "./cloudflared.js";
 import { clearPid } from "./pid.js";
 import { waitForHealth, probeUrlAlive } from "./healthCheck.js";
-import { TUNNEL_RELAY } from "./config.js";
+import { getTunnelRelay } from "./config.js";
 import { buildPublicUrl } from "./relay.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
 
@@ -34,13 +34,19 @@ export function setTunnelUnexpectedExitCallback(cb) {
 }
 
 // Only talks to a relay you configured yourself (TUNNEL_WORKER_URL); no-op otherwise.
-async function registerTunnelUrl(shortId, tunnelUrl) {
-  if (!TUNNEL_RELAY) return;
-  await fetch(`${TUNNEL_RELAY.origin}/api/tunnel/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ shortId, tunnelUrl }),
-  });
+// Best-effort: called after local state is saved, and a failure is logged, not thrown.
+export async function registerTunnelUrl(shortId, tunnelUrl, relay = getTunnelRelay()) {
+  if (!relay) return;
+  try {
+    const res = await fetch(`${relay.origin}/api/tunnel/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shortId, tunnelUrl }),
+    });
+    if (!res.ok) console.warn(`[Tunnel] relay register failed: HTTP ${res.status}`);
+  } catch (e) {
+    console.warn(`[Tunnel] relay register failed: ${e.message}`);
+  }
 }
 
 function throwIfCancelled(token) {
@@ -49,6 +55,7 @@ function throwIfCancelled(token) {
 
 export async function enableTunnel(localPort = 20128) {
   console.log(`[Tunnel] enable start (port=${localPort})`);
+  const relay = getTunnelRelay();
   svc.cancelToken = { cancelled: false };
   svc.activeLocalPort = localPort;
   svc.spawnInProgress = true;
@@ -61,7 +68,7 @@ export async function enableTunnel(localPort = 20128) {
         const publicUrl = buildPublicUrl({
           shortId: existing.shortId,
           tunnelUrl: existing.tunnelUrl,
-          relay: TUNNEL_RELAY,
+          relay,
         });
         // Reuse only if BOTH direct + public URL alive (avoid stale socket after network change)
         const [directOk, publicOk] = await Promise.all([
@@ -92,9 +99,9 @@ export async function enableTunnel(localPort = 20128) {
     const onUrlUpdate = async (url) => {
       if (token.cancelled) return;
       console.log(`[Tunnel] url updated: ${url}`);
-      await registerTunnelUrl(shortId, url);
       saveState({ shortId, tunnelUrl: url });
       await updateSettings({ tunnelEnabled: true, tunnelUrl: url });
+      await registerTunnelUrl(shortId, url, relay);
     };
 
     // Register exit handler BEFORE spawn so it fires even on early exit
@@ -107,14 +114,24 @@ export async function enableTunnel(localPort = 20128) {
     console.log(`[Tunnel] spawned: ${tunnelUrl}`);
     throwIfCancelled(token);
 
-    const publicUrl = buildPublicUrl({ shortId, tunnelUrl, relay: TUNNEL_RELAY });
-    await registerTunnelUrl(shortId, tunnelUrl);
+    const publicUrl = buildPublicUrl({ shortId, tunnelUrl, relay });
     saveState({ shortId, tunnelUrl });
     await updateSettings({ tunnelEnabled: true, tunnelUrl });
+    await registerTunnelUrl(shortId, tunnelUrl, relay);
     console.log(`[Tunnel] ready shortId=${shortId} publicUrl=${publicUrl}`);
 
-    await waitForHealth(publicUrl, token);
-    console.log("[Tunnel] public URL healthy");
+    try {
+      await waitForHealth(publicUrl, token);
+      console.log("[Tunnel] public URL healthy");
+    } catch (e) {
+      // Without a relay this probes *.trycloudflare.com from the server, whose DNS
+      // can lag or be filtered even when clients reach the tunnel fine. Keep the
+      // tunnel up and let the dashboard's browser-side ping report reachability.
+      if (relay || token.cancelled) throw e;
+      console.warn(
+        `[Tunnel] direct URL not confirmed from this host (${e.message}); keeping tunnel up`,
+      );
+    }
     // With a relay, the direct probe is best-effort: *.trycloudflare.com DNS can lag
     if (publicUrl !== tunnelUrl) {
       if (!(await probeUrlAlive(tunnelUrl))) {
@@ -166,7 +183,7 @@ export async function getTunnelStatus() {
   const state = loadState();
   const shortId = state?.shortId || "";
   const tunnelUrl = state?.tunnelUrl || "";
-  const publicUrl = buildPublicUrl({ shortId, tunnelUrl, relay: TUNNEL_RELAY });
+  const publicUrl = buildPublicUrl({ shortId, tunnelUrl, relay: getTunnelRelay() });
 
   // Lazy: skip PID probe entirely when user disabled tunnel
   const running = settingsEnabled ? isCloudflaredRunning() : false;
