@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { shouldGuardLinkClick } from "./comboSave";
 
 /**
  * Warn before discarding unsaved combo edits: in-page requests, same-origin
@@ -26,7 +27,7 @@ export default function useUnsavedComboGuard(dirty, onDiscard) {
   const pendingRef = useRef(false);
   const armedRef = useRef(false);
   const skipPopRef = useRef(false);
-  const advanceBack = () => window.setTimeout(() => window.history.back(), 0);
+  const advanceBackRef = useRef(() => window.setTimeout(() => window.history.back(), 0));
 
   const request = (action) => {
     if (dirtyRef.current) setPending(() => action);
@@ -60,23 +61,30 @@ export default function useUnsavedComboGuard(dirty, onDiscard) {
       event.returnValue = "";
     };
     const onClick = (event) => {
+      if (!dirtyRef.current) return;
+      const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
       if (
-        !dirtyRef.current ||
-        event.defaultPrevented ||
-        event.button !== 0 ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey
+        !shouldGuardLinkClick(
+          event,
+          {
+            href: link?.href,
+            target: link?.target,
+            hasDownload: link?.hasAttribute("download"),
+          },
+          window.location.href,
+          window.location.origin,
+        )
       )
         return;
-      const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
-      if (!link || link.target === "_blank" || link.hasAttribute("download")) return;
-      const next = new URL(link.href, window.location.href);
-      if (next.href === window.location.href || next.origin !== window.location.origin) return;
       event.preventDefault();
       event.stopPropagation();
-      setPending(() => () => router.push(`${next.pathname}${next.search}${next.hash}`));
+      setPending(() => () => {
+        // Discard first: keeps one confirm for in-app links. Draft resets,
+        // the URL effect then sees a clean page and selects the target.
+        onDiscardRef.current?.();
+        const next = new URL(link.href, window.location.href);
+        router.push(`${next.pathname}${next.search}${next.hash}`);
+      });
     };
     const onPopState = () => {
       if (skipPopRef.current) {
@@ -90,14 +98,14 @@ export default function useUnsavedComboGuard(dirty, onDiscard) {
         // without going back twice.
         if (!pendingRef.current) {
           skipPopRef.current = true;
-          advanceBack();
+          advanceBackRef.current();
         }
         return;
       }
       setPending(() => () => {
         onDiscardRef.current?.();
         skipPopRef.current = true;
-        advanceBack();
+        advanceBackRef.current();
       });
     };
     window.addEventListener("beforeunload", beforeUnload);
