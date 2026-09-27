@@ -146,6 +146,40 @@ export function isDirty(state) {
   return JSON.stringify(state.saved) !== JSON.stringify(state.draft);
 }
 
+export const CAPABILITY_ADAPTER_CAPS = ["vision", "audioInput"];
+
+/**
+ * Capability-adapter keys whose pool is enabled but empty. Missing entries
+ * default to enabled (the DB default), matching the settings seed.
+ * @param {Record<string, { enabled?: boolean, models?: string[] }>} adapter
+ * @returns {string[]}
+ */
+export function adapterWarnings(adapter) {
+  const out = [];
+  for (const key of CAPABILITY_ADAPTER_CAPS) {
+    const entry = adapter?.[key];
+    const enabled = entry?.enabled !== false;
+    const models = Array.isArray(entry?.models) ? entry.models.filter(Boolean) : [];
+    if (enabled && models.length === 0) out.push(key);
+  }
+  return out;
+}
+
+/**
+ * Canonical save snapshot for dirty comparison: weights key order is
+ * normalized so server round-trips never read as edits.
+ */
+export function comboSnapshot({ models = [], strategy = "fallback", weights = {}, judge = "" }) {
+  const sortedWeights = {};
+  for (const k of Object.keys(weights || {}).sort()) sortedWeights[k] = weights[k];
+  return {
+    models: [...models],
+    strategy,
+    weights: sortedWeights,
+    judge: judge || "",
+  };
+}
+
 /**
  * Stable per-instance step identities for the route track.
  * The API allows duplicate models, so the model string alone cannot key

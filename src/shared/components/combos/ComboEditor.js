@@ -49,6 +49,9 @@ export default function ComboEditor({
   healthByProvider,
   providerLabelById,
   saving,
+  dirty,
+  emptyAdapters = [],
+  onAddAdapterModel,
   saveError,
   onRename,
   onDelete,
@@ -229,7 +232,14 @@ export default function ComboEditor({
         <Button variant="danger" icon="delete" onClick={() => setConfirmDelete(true)}>
           Delete
         </Button>
-        <Button variant="primary" icon="save" loading={saving} onClick={onSave}>
+        {dirty && <span className="text-sm font-medium text-warn">Unsaved changes</span>}
+        <Button
+          variant="primary"
+          icon="save"
+          loading={saving}
+          disabled={!dirty || saving}
+          onClick={onSave}
+        >
           Save
         </Button>
       </div>
@@ -239,6 +249,20 @@ export default function ComboEditor({
         </p>
       )}
 
+      {emptyAdapters.length > 0 && (
+        <p role="status" className="rounded-xl border border-warn bg-warn-bg p-3 text-sm text-warn">
+          {emptyAdapters.map((key) => (key === "vision" ? "Vision" : "Audio")).join(" and ")}{" "}
+          adapter on, but no models. 9router tries oc/mimo-v2.5-free; if it can't handle the
+          request, the original route may reject the media.{" "}
+          <button
+            type="button"
+            className="font-semibold underline underline-offset-2 focus-visible:shadow-focus focus-visible:outline-none"
+            onClick={() => onAddAdapterModel?.(emptyAdapters[0])}
+          >
+            Add model
+          </button>
+        </p>
+      )}
       <StrategyPicker value={strategy} onChange={onStrategyChange} />
 
       {/* Route track */}
@@ -285,6 +309,8 @@ export default function ComboEditor({
                           const { [id]: _dropped, ...rest } = prev;
                           return rest;
                         });
+                        const parsed = parseWeight(v);
+                        if (parsed.ok && model !== undefined) onWeightSave?.(model, parsed.value);
                       }}
                       onWeightBlur={() => saveWeight(id)}
                       onRemove={() => {
@@ -414,6 +440,9 @@ ComboEditor.propTypes = {
   healthByProvider: PropTypes.object,
   providerLabelById: PropTypes.object,
   saving: PropTypes.bool,
+  dirty: PropTypes.bool,
+  emptyAdapters: PropTypes.arrayOf(PropTypes.string),
+  onAddAdapterModel: PropTypes.func,
   saveError: PropTypes.string,
   onRename: PropTypes.func,
   onDelete: PropTypes.func,

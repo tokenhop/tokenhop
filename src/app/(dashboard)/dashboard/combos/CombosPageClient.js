@@ -7,22 +7,24 @@ import {
   CardSkeleton,
   ComboFormModal,
   ConfirmModal,
-  SectionCard,
   EmptyState,
 } from "@/shared/components";
+import { ConfirmDialog } from "@/shared/components/Modal";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import ComboListCard from "@/shared/components/combos/ComboListCard";
 import ComboEditor from "@/shared/components/combos/ComboEditor";
 import CapabilityAdapterCard from "@/shared/components/combos/CapabilityAdapterCard";
+import useUnsavedComboGuard from "@/shared/components/combos/useUnsavedComboGuard";
 import {
+  adapterWarnings,
+  CAPABILITY_ADAPTER_CAPS,
+  comboSnapshot,
+  isDirty,
   STRATEGIES,
   STRATEGY_PILL,
   usageTodayForCombo,
 } from "@/shared/components/combos/comboBuilder";
 
-// Valid capability-adapter pools. pdf / videoInput stay hidden until the
-// translator supports those blocks.
-const CAPACITY_ADAPTER_CAPS = ["vision", "audioInput"];
 const EMPTY_CAP_ENTRY = { enabled: true, roundRobin: false, models: [] };
 
 /**
@@ -146,6 +148,8 @@ export default function CombosPageClient() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [adapterError, setAdapterError] = useState("");
+  const [adapterToOpen, setAdapterToOpen] = useState(null);
+  const [saveAnnouncement, setSaveAnnouncement] = useState("");
   const [confirmState, setConfirmState] = useState(null);
   const { getCaps } = useModelCaps();
   const strategiesRef = useRef(comboStrategies);
@@ -180,28 +184,69 @@ export default function CombosPageClient() {
     combos,
     lastValidSelectionRef.current ?? selectedId,
   );
-  const selectedComboId = requestedCombo || fallbackId;
+  const [committedComboId, setCommittedComboId] = useState(null);
+  const selectedComboId =
+    committedComboId && combos.some((c) => c.id === committedComboId)
+      ? committedComboId
+      : requestedCombo || fallbackId;
+  const guardRef = useRef(null);
+  const routeDirtyRef = useRef(false);
+  const internalSelectionRef = useRef(null);
+  useEffect(() => {
+    if (loading || loadError || !combos.length || committedComboId) return;
+    setCommittedComboId(requestedCombo || fallbackId);
+  }, [loading, loadError, combos.length, committedComboId, requestedCombo, fallbackId]);
   useEffect(() => {
     if (loading || loadError || createRequested) return;
-    if (requestedComboId === fallbackId) return;
-    navigateRef.current(fallbackId, "replace");
-  }, [requestedComboId, fallbackId, createRequested, loading, loadError]);
+    if (requestedComboId === selectedComboId) {
+      internalSelectionRef.current = null;
+      return;
+    }
+    if (internalSelectionRef.current === selectedComboId) return;
+    if (!requestedCombo) {
+      navigateRef.current(selectedComboId, "replace");
+      return;
+    }
+    if (!routeDirtyRef.current) {
+      setCommittedComboId(requestedCombo);
+      return;
+    }
+    navigateRef.current(selectedComboId, "replace");
+    guardRef.current?.request(() => {
+      internalSelectionRef.current = requestedCombo;
+      setCommittedComboId(requestedCombo);
+      navigateRef.current(requestedCombo, "push");
+    });
+  }, [requestedComboId, requestedCombo, selectedComboId, createRequested, loading, loadError]);
 
-  // ?create=1 opens the new-combo modal (also when the list is empty).
   useEffect(() => {
-    setShowCreateModal(createRequested);
-  }, [createRequested]);
+    if (!createRequested) {
+      setShowCreateModal(false);
+      return;
+    }
+    if (routeDirtyRef.current && !showCreateModal) {
+      navigateCombos(router, { create: false });
+      guardRef.current?.request(() => {
+        setShowCreateModal(true);
+        navigateCombos(router, { create: true });
+      });
+    } else setShowCreateModal(true);
+  }, [createRequested, router, showCreateModal]);
 
-  // User clicks get their own history entry so Back returns to the prior combo.
   const selectCombo = (id) => {
     if (id === selectedComboId) return;
-    navigate(id, "push");
-    setSelectedId(id);
+    guard.request(() => {
+      internalSelectionRef.current = id;
+      setCommittedComboId(id);
+      setSelectedId(id);
+      navigate(id, "push");
+    });
   };
-  const openCreate = () => {
-    setShowCreateModal(true);
-    navigateCombos(router, { create: true });
-  };
+  const openCreate = () =>
+    guard.request(() => {
+      setShowCreateModal(true);
+      navigateCombos(router, { create: true });
+    });
   const closeCreate = () => {
     setShowCreateModal(false);
     navigateCombos(router, { create: false });
@@ -234,7 +279,8 @@ export default function CombosPageClient() {
       setComboStrategies(settingsData.comboStrategies || {});
       const rawAdapter = settingsData.capacityAdapter || {};
       const normalized = {};
-      for (const key of CAPACITY_ADAPTER_CAPS) normalized[key] = normalizeCapEntry(rawAdapter[key]);
+      for (const key of CAPABILITY_ADAPTER_CAPS)
+        normalized[key] = normalizeCapEntry(rawAdapter[key]);
       setCapacityAdapter(normalized);
       const byModel = usageData.byModel || {};
       const today = {};
@@ -254,6 +300,34 @@ export default function CombosPageClient() {
 
   const selected = combos.find((c) => c.id === selectedComboId) || null;
   const selectedStrategy = selected ? strategyOf(comboStrategies, selected.name) : "fallback";
+  const selectedSnapshot =
+    selected != null && draftModels != null
+      ? comboSnapshot({
+          models: draftModels,
+          strategy: draftStrategy,
+          weights: draftWeights,
+          judge: draftJudge,
+        })
+      : null;
+  const savedSnapshot =
+    selected != null
+      ? comboSnapshot({
+          models: selected.models || [],
+          strategy: selectedStrategy,
+          weights: comboStrategies[selected.name]?.weights || {},
+          judge: comboStrategies[selected.name]?.judgeModel || "",
+        })
+      : null;
+  const routeDirty =
+    !!selectedSnapshot && isDirty({ saved: savedSnapshot, draft: selectedSnapshot });
+  const guard = useUnsavedComboGuard(routeDirty, () => {
+    if (!selected) return;
+    seededIdRef.current = selected.id;
+    applyServerState(selected, strategiesRef.current);
+  });
+  guardRef.current = guard;
+  routeDirtyRef.current = routeDirty;
+  const emptyAdapters = adapterWarnings(capacityAdapter);
 
   // Seed the editor draft on selection change only. Server round-trips
   // (fetchData, weight/judge auto-saves) must never wipe unsaved edits:
@@ -381,6 +455,7 @@ export default function CombosPageClient() {
     if (!selected) return;
     setSaving(true);
     setSaveError("");
+    setSaveAnnouncement("");
     try {
       // Persist the ordered models first (PUT validates name/models server-side).
       const res = await fetch(`/api/combos/${selected.id}`, {
@@ -401,23 +476,34 @@ export default function CombosPageClient() {
       }
       const result = await handleSetComboStrategy(selected.name, patch);
       if (!result?.ok) throw new Error(result?.error || "Failed to save strategy");
-      const combosRes = await fetch("/api/combos");
-      const settingsRes = await fetch("/api/settings");
-      if (combosRes.ok && settingsRes.ok) {
-        const combosData = await combosRes.json();
-        const settingsData = await settingsRes.json();
+      // Both writes committed. Clear the draft before nonessential refresh.
+      const updated = { ...selected, models: [...(draftModels || [])] };
+      setCombos((prev) => prev.map((combo) => (combo.id === selected.id ? updated : combo)));
+      seededIdRef.current = selected.id;
+      applyServerState(updated, strategiesRef.current);
+      setSaveAnnouncement("Saved");
+      try {
+        const [combosRes, settingsRes] = await Promise.all([
+          fetch("/api/combos"),
+          fetch("/api/settings"),
+        ]);
+        if (!combosRes.ok || !settingsRes.ok) throw new Error("Refresh failed");
+        const [combosData, settingsData] = await Promise.all([
+          combosRes.json(),
+          settingsRes.json(),
+        ]);
         const list = (combosData.combos || []).filter((c) => !c.kind || c.kind === "llm");
         const strategies = settingsData.comboStrategies || {};
         strategiesRef.current = strategies;
         setComboStrategies(strategies);
         setCombos(list);
-        const fresh = list.find((c) => c.id === selected.id) || null;
-        seededIdRef.current = selected.id;
-        applyServerState(fresh, strategies);
-      } else {
-        await fetchData();
+        const fresh = list.find((c) => c.id === selected.id);
+        if (fresh) applyServerState(fresh, strategies);
+      } catch {
+        setSaveError("Saved, but couldn't refresh the route. Reload to see the latest state.");
       }
     } catch (error) {
+      setSaveAnnouncement("Couldn't save");
       setSaveError(error?.message || "Failed to save");
     } finally {
       setSaving(false);
@@ -514,11 +600,9 @@ export default function CombosPageClient() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <SectionCard
-        icon="layers"
-        title="Combos"
-        subtitle="One name, many models. Pick how they take turns."
-      />
+      <span aria-live="polite" className="sr-only">
+        {saveAnnouncement}
+      </span>
 
       {combos.length === 0 ? (
         <EmptyState
@@ -535,7 +619,7 @@ export default function CombosPageClient() {
         <div className="flex min-w-0 flex-col gap-6 lg:flex-row lg:items-start">
           {/* List column */}
           <div className="flex w-full min-w-0 shrink-0 flex-col gap-3 lg:w-80">
-            <Button icon="add" fullWidth onClick={openCreate}>
+            <Button variant="secondary" icon="add" fullWidth onClick={openCreate}>
               New combo
             </Button>
             <ul aria-label="Combos" className="m-0 flex list-none flex-col gap-3 p-0">
@@ -556,12 +640,21 @@ export default function CombosPageClient() {
                 );
               })}
             </ul>
+            {emptyAdapters.length > 0 && (
+              <p role="status" className="text-xs text-warn">
+                Capability adapter on, empty pool:{" "}
+                {emptyAdapters.map((key) => (key === "vision" ? "vision" : "audio")).join(", ")}.
+                Pick a pool below to add a model.
+              </p>
+            )}
             <section aria-label="Capability adapter" className="flex flex-col gap-3">
               <h2 className="text-xs font-semibold tracking-wider text-muted uppercase">
                 Capability adapter
               </h2>
               <CapabilityAdapterCard
                 capacityAdapter={capacityAdapter}
+                activeCapForModal={adapterToOpen}
+                onActiveCapChange={setAdapterToOpen}
                 onChange={handleSetCapacityAdapter}
                 activeProviders={activeProviders}
                 getCaps={getCaps}
@@ -586,6 +679,9 @@ export default function CombosPageClient() {
               healthByProvider={healthByProvider}
               providerLabelById={providerLabelById}
               saving={saving}
+              dirty={routeDirty}
+              emptyAdapters={emptyAdapters}
+              onAddAdapterModel={setAdapterToOpen}
               saveError={saveError}
               onRename={handleRename}
               onDelete={handleDelete}
@@ -594,21 +690,13 @@ export default function CombosPageClient() {
                 setDraftStrategy(s);
                 setSaveError("");
               }}
-              onWeightSave={async (model, value) => {
+              onWeightSave={(model, value) => {
                 setDraftWeights((prev) => ({ ...prev, [model]: value }));
-                const result = await handleSetComboStrategy(selected.name, {
-                  fallbackStrategy: "weighted",
-                  weights: { [model]: value },
-                });
-                if (!result?.ok) setSaveError(result?.error || "Failed to save weight");
+                setSaveError("");
               }}
-              onJudgeChange={async (value) => {
+              onJudgeChange={(value) => {
                 setDraftJudge(value);
-                const result = await handleSetComboStrategy(selected.name, {
-                  fallbackStrategy: "fusion",
-                  judgeModel: value,
-                });
-                if (!result?.ok) setSaveError(result?.error || "Failed to save judge");
+                setSaveError("");
               }}
               onModelsChange={(next) => {
                 setDraftModels(next);
@@ -630,6 +718,16 @@ export default function CombosPageClient() {
           activeProviders={activeProviders}
         />
       )}
+
+      <ConfirmDialog
+        isOpen={guard.pending}
+        onClose={guard.cancel}
+        onConfirm={guard.confirm}
+        title="Discard unsaved changes?"
+        message="This combo has route changes that aren't saved. Leave without saving them?"
+        confirmText="Discard changes"
+        cancelText="Keep editing"
+      />
 
       <ConfirmModal
         isOpen={!!confirmState}

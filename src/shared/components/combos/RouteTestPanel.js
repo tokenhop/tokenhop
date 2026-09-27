@@ -68,7 +68,7 @@ export default function RouteTestPanel({ comboId }) {
         {lastRun && <span className="text-xs text-muted">{lastRun}</span>}
         <Button
           size="sm"
-          variant="primary"
+          variant="secondary"
           icon="play_arrow"
           onClick={runTest}
           loading={running}
