@@ -69,7 +69,12 @@ export default function SettingsPage() {
     if (loading) return undefined;
     const scrollToHash = () => {
       const hash = window.location.hash.slice(1);
-      if (hash) document.getElementById(hash)?.scrollIntoView({ block: "start" });
+      const target = hash ? document.getElementById(hash) : null;
+      const scroller = target?.closest("main")?.querySelector(".custom-scrollbar");
+      if (scroller) {
+        scroller.scrollTop +=
+          target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 96;
+      }
     };
     scrollToHash();
     window.addEventListener("hashchange", scrollToHash);
@@ -154,7 +159,7 @@ export default function SettingsPage() {
 
       <SettingsAnchorNav sections={navAnchors.length > 0 ? navAnchors : anchors} />
 
-      {/* Sections: two-column masonry at ≥1280px via CSS columns */}
+      {/* Keep sections in one vertical flow so anchor scrolling cannot leave an empty column. */}
       {loading ? (
         <div className="space-y-4">
           <Skeleton />
@@ -179,7 +184,7 @@ export default function SettingsPage() {
           }
         />
       ) : (
-        <div className="columns-1 gap-6 xl:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
+        <div className="space-y-6">
           {visibleIds.has("general") && (
             <GeneralSection
               settings={settings}

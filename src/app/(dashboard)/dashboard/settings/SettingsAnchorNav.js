@@ -50,7 +50,17 @@ export default function SettingsAnchorNav({ sections }) {
     setActiveId(id);
     const target = document.getElementById(id);
     if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      const scroller = target.closest("main")?.querySelector(".custom-scrollbar");
+      if (scroller) {
+        scroller.scrollTo({
+          top:
+            scroller.scrollTop +
+            target.getBoundingClientRect().top -
+            scroller.getBoundingClientRect().top -
+            96,
+          behavior: "smooth",
+        });
+      }
       if (window.history?.replaceState) {
         window.history.replaceState(null, "", `#${id}`);
       }
