@@ -8,6 +8,7 @@ import {
 const NOW = Date.parse("2026-09-27T12:00:00Z");
 const connection = (provider, fields = {}) => ({
   provider,
+  authType: "oauth",
   isActive: true,
   testStatus: "active",
   ...fields,
@@ -19,13 +20,20 @@ describe("provider health", () => {
     [{ testStatus: "success" }, "ok", null],
     [{ testStatus: "ok" }, "ok", null],
     [{ testStatus: null }, "ok", null],
-    [{ testStatus: "expired" }, "err", "Token expired · reconnect"],
-    [{ lastErrorType: "token_refresh_failed" }, "err", "Token refresh failed · reconnect"],
-    [{ testStatus: "error", errorCode: 401 }, "err", "Test failed · 401"],
+    [
+      { testStatus: "error", lastError: "Token expired and refresh failed" },
+      "err",
+      "Token refresh failed · reconnect",
+    ],
+    [{ testStatus: "error", lastError: "Token expired" }, "err", "Token expired · reconnect"],
+    [
+      { testStatus: "error", lastError: "Token invalid or revoked" },
+      "err",
+      "Token revoked · reconnect",
+    ],
     [{ testStatus: "unavailable" }, "ok", null],
     [{ testStatus: "unavailable", modelLock_x: "2026-09-27T12:02:14Z" }, "warn", "Cooling down"],
     [{ testStatus: "active", modelLock_x: "2026-09-27T12:02:14Z" }, "warn", "Cooling down"],
-    [{ testStatus: "cooldown" }, "warn", "Cooling down"],
     [{ testStatus: "unknown" }, "ok", null],
     [{ testStatus: "untested" }, "ok", null],
     [{ testStatus: "pending" }, "ok", null],
@@ -42,13 +50,94 @@ describe("provider health", () => {
     );
   });
 
-  it("maps 401/403 test failures to a reconnect fix, other codes to a retest", () => {
+  it("classifies real persisted writer shapes", () => {
+    // testSingleConnection: testStatus/lastError/lastErrorAt, no errorCode.
+    expect(
+      connectionHealth(
+        connection("a", {
+          testStatus: "error",
+          lastError: "Token invalid or revoked",
+          lastErrorAt: "2026-09-27T11:00:00Z",
+        }),
+        NOW,
+      ),
+    ).toMatchObject({ status: "err", action: "reconnect" });
+    expect(
+      connectionHealth(
+        connection("a", { testStatus: "error", lastError: "API returned 500" }),
+        NOW,
+      ),
+    ).toMatchObject({ status: "err", action: "test" });
+    // markAccountUnavailable: lock + unavailable + errorCode.
+    expect(
+      connectionHealth(
+        connection("a", {
+          testStatus: "unavailable",
+          errorCode: 429,
+          lastError: "rate",
+          modelLock___all: "2026-09-27T12:05:00Z",
+        }),
+        NOW,
+      ),
+    ).toMatchObject({ status: "warn", until: "2026-09-27T12:05:00Z" });
+    // Background refresh failures are only logged, so a stored healthy row stays healthy.
+    expect(
+      connectionHealth(
+        connection("a", {
+          testStatus: "active",
+          authType: "oauth",
+          expiresAt: "2026-09-27T11:00:00Z",
+        }),
+        NOW,
+      ).status,
+    ).toBe("ok");
+  });
+
+  it("uses only persisted provider-test auth failures for the repair action", () => {
+    for (const lastError of [
+      "Token invalid or revoked",
+      "Access denied",
+      "No access token",
+      "Invalid API key",
+      "Invalid session cookie",
+      "Invalid SSO cookie",
+      "Session expired — re-paste cookie",
+    ]) {
+      expect(
+        connectionHealth(connection("a", { testStatus: "error", lastError }), NOW),
+      ).toMatchObject({
+        status: "err",
+        action: "reconnect",
+      });
+    }
+    // Only markAccountUnavailable writes errorCode; it also writes unavailable + a lock.
     expect(
       connectionHealth(connection("a", { testStatus: "error", errorCode: 401 }), NOW).action,
-    ).toBe("reconnect");
-    expect(
-      connectionHealth(connection("a", { testStatus: "error", errorCode: 500 }), NOW).action,
     ).toBe("test");
+    expect(
+      connectionHealth(connection("a", { testStatus: "error", lastError: "API returned 500" }), NOW)
+        .action,
+    ).toBe("test");
+    expect(
+      connectionHealth(
+        connection("iflow", {
+          authType: "cookie",
+          testStatus: "error",
+          lastError: "Invalid session cookie",
+        }),
+        NOW,
+      ).action,
+    ).toBe("open");
+    expect(
+      connectionHealth(
+        connection("web", {
+          authType: "cookie",
+          testStatus: "error",
+          lastError: "Invalid session cookie",
+        }),
+        NOW,
+      ).action,
+    ).toBe("reconnect");
   });
 
   it("ignores expired locks and disabled failures; worst active connection wins", () => {
@@ -56,7 +145,7 @@ describe("provider health", () => {
       [
         connection("a", { modelLock_x: "2026-09-27T11:59:00Z" }),
         connection("a", { isActive: false, testStatus: "expired" }),
-        connection("a", { testStatus: "error", errorCode: 403 }),
+        connection("a", { testStatus: "error", lastError: "Access denied" }),
       ],
       NOW,
     );
@@ -66,7 +155,7 @@ describe("provider health", () => {
       needsAttention: true,
       counts: { ok: 1, err: 1, off: 1 },
     });
-    expect(health.reason).toBe("Test failed · 403");
+    expect(health.reason).toBe("Access denied · reconnect");
     expect(providerHealth([], NOW)).toMatchObject({
       status: "off",
       connected: false,

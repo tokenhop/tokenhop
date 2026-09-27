@@ -12,7 +12,34 @@ export function cooldownUntil(connection, nowMs = Date.now()) {
   return earliest?.value || null;
 }
 
-/** Pure connection assessment. Reason/action come from safe status fields, never raw error text. */
+// Exact lastError strings persisted by testSingleConnection
+// (src/app/api/providers/[id]/test/testUtils.js) that mean the stored credential is dead.
+const CREDENTIAL_FAILURES = new Map([
+  ["Token expired and refresh failed", "Token refresh failed"],
+  ["Token expired", "Token expired"],
+  ["Token invalid or revoked", "Token revoked"],
+  ["Access denied", "Access denied"],
+  ["No access token", "Signed out"],
+  ["Invalid API key", "Key rejected"],
+  ["Invalid session cookie", "Cookie rejected"],
+  ["Invalid SSO cookie", "Cookie rejected"],
+  ["Session expired — re-paste cookie", "Cookie expired"],
+]);
+
+/**
+ * Repair only where an existing flow replaces this credential:
+ * OAuth re-sign-in, or PUT /api/providers/[id] which accepts a new apiKey
+ * for apikey and cookie rows. iFlow cookies need cookie exchange, and
+ * api_key/access_token imports store accessToken, which that PUT ignores.
+ */
+export function repairAction(connection) {
+  const type = connection?.authType;
+  if (type === "oauth" || type === "apikey") return "reconnect";
+  if (type === "cookie" && connection.provider !== "iflow") return "reconnect";
+  return "open";
+}
+
+/** Pure connection assessment. Reason/action come from safe persisted fields, never raw error text. */
 export function connectionHealth(connection, nowMs = Date.now()) {
   if (!connection || connection.isActive === false)
     return { status: "off", reason: "Disabled", action: "enable" };
@@ -20,19 +47,29 @@ export function connectionHealth(connection, nowMs = Date.now()) {
   const until = cooldownUntil(connection, nowMs);
   const code = Number(connection.errorCode);
   const safeCode = Number.isInteger(code) && code >= 400 && code <= 599 ? String(code) : null;
-  if (connection.lastErrorType === "token_refresh_failed")
-    return { status: "err", reason: "Token refresh failed · reconnect", action: "reconnect" };
-  if (connection.testStatus === "expired" || connection.lastErrorType === "token_expired")
-    return { status: "err", reason: "Token expired · reconnect", action: "reconnect" };
-  if (until || connection.testStatus === "cooldown")
-    return { status: "warn", reason: "Cooling down", action: "open", until };
-  if (connection.testStatus === "error")
+  // Writer shapes only: testSingleConnection persists "active"/"error" plus an
+  // exact lastError; routing failures persist "unavailable" with a modelLock_*
+  // lock and errorCode. Background refresh failures only log. Values carried
+  // only by manual PUT lastError can read, but the classifier must not require
+  // any branch no writer emits.
+  if (until) return { status: "warn", reason: "Cooling down", action: "open", until };
+  if (connection.testStatus === "error") {
+    const failure = CREDENTIAL_FAILURES.get(connection.lastError);
+    if (failure) {
+      const action = repairAction(connection);
+      return {
+        status: "err",
+        reason: action === "reconnect" ? `${failure} · reconnect` : `${failure} · open provider`,
+        action,
+      };
+    }
     return {
       status: "err",
       reason: safeCode ? `Test failed · ${safeCode}` : "Test failed",
-      action: safeCode === "401" || safeCode === "403" ? "reconnect" : "test",
+      action: "test",
       code: safeCode,
     };
+  }
   // Untested or stale-unavailable accounts are not a current outage. Unknown statuses fail
   // closed as warnings so a new persisted error value cannot look healthy.
   if (

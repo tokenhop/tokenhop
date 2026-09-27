@@ -36,6 +36,7 @@ import ProviderDetailSidePanel from "./components/ProviderDetailSidePanel";
 import AddAccountDialog from "./components/AddAccountDialog";
 import TestResultsModal from "./components/TestResultsModal";
 import useProviderListData from "./useProviderListData";
+import { repairTarget } from "./repairAction";
 
 const APIKEY_INITIAL_VISIBLE = 20;
 
@@ -414,14 +415,14 @@ function ProvidersListShell({ initialProviderId = null }) {
               testing={testingMode === entry.id}
               onRetry={() => handleBatchTest("provider", entry.id)}
               onRepair={(connection) => {
-                // API keys and cookies are fixed in place on the failing connection.
-                // OAuth grants need a fresh sign-in; re-authorising the same account
-                // updates that connection instead of adding a new one.
-                if (connection.authType === "oauth") {
+                const target = repairTarget(connection);
+                if (target === "reauthorize") {
                   setAddConnectionError("");
                   setAddAccountEntry(entry);
-                } else {
+                } else if (target === "edit") {
                   setRepairConnection(connection);
+                } else {
+                  openProvider(entry);
                 }
               }}
               onCooldownExpired={refreshData}

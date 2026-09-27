@@ -22,9 +22,11 @@ export default function NeedsAttentionCard({
   const errorConn = [...enabled].sort(
     (a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0),
   )[0];
-  // The exact account that needs re-auth, so the fix targets it (not a new account).
+  // Open imported credentials in the provider detail; only replaceable
+  // credentials get a Reconnect action.
   const repairConn = enabled.find((c) => connectionHealth(c).action === "reconnect");
   const showRepair = Boolean(repairConn);
+  const showOpen = health.action === "open";
 
   return (
     <div
@@ -52,14 +54,20 @@ export default function NeedsAttentionCard({
         variant={showRepair ? "primary" : "secondary"}
         loading={testing}
         disabled={testing}
-        onClick={showRepair ? () => onRepair(repairConn) : onRetry}
+        onClick={showRepair ? () => onRepair(repairConn) : showOpen ? onOpen : onRetry}
         aria-label={
           showRepair
             ? `Reconnect ${repairConn.name || repairConn.email || entry.info.name}`
             : undefined
         }
       >
-        {testing ? "Retrying…" : showRepair ? "Reconnect" : "Retry now"}
+        {testing
+          ? "Retrying…"
+          : showRepair
+            ? "Reconnect"
+            : showOpen
+              ? "Open provider"
+              : "Retry now"}
       </Button>
     </div>
   );

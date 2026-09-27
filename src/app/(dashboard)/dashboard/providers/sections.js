@@ -5,19 +5,16 @@ import {
   FREE_TIER_PROVIDERS,
   OPENAI_COMPATIBLE_PREFIX,
   ANTHROPIC_COMPATIBLE_PREFIX,
+  AI_PROVIDERS,
 } from "@/shared/constants/providers";
 import { getProviderStats } from "./utils";
 
-function dualAuthTypes(info, key) {
-  if (key === "kiro") return ["oauth", "apikey", "api_key"];
-  const modes = info?.authModes;
-  if (!Array.isArray(modes)) {
-    return key in FREE_TIER_PROVIDERS || key in APIKEY_PROVIDERS
-      ? ["oauth", "apikey", "api_key"]
-      : "oauth";
-  }
-  if (!modes.includes("apikey")) return "oauth";
-  return ["oauth", "apikey", "api_key"];
+// The API returns all credential shapes for a provider under the same provider id.
+// Keep every shape in its catalog card: OAuth, imported tokens, API keys and cookies.
+const CONNECTION_AUTH_TYPES = ["oauth", "apikey", "api_key", "cookie", "access_token"];
+
+function dualAuthTypes() {
+  return CONNECTION_AUTH_TYPES;
 }
 
 function sortOAuth(entries, connections) {
@@ -25,8 +22,8 @@ function sortOAuth(entries, connections) {
     const pa = ea.info.priority ?? 999;
     const pb = eb.info.priority ?? 999;
     if (pa !== pb) return pa - pb;
-    const sa = getProviderStats(connections, ea.id, "oauth");
-    const sb = getProviderStats(connections, eb.id, "oauth");
+    const sa = getProviderStats(connections, ea.id, CONNECTION_AUTH_TYPES);
+    const sb = getProviderStats(connections, eb.id, CONNECTION_AUTH_TYPES);
     const ca = sa.connected > 0 ? 1 : 0;
     const cb = sb.connected > 0 ? 1 : 0;
     if (ca !== cb) return cb - ca;
@@ -44,9 +41,9 @@ export function PROVIDER_SECTIONS({ connections, providerNodes, statsFor }) {
         name: node.name || "OpenAI Compatible",
         apiType: node.apiType,
       },
-      stats: statsFor(node.id, "apikey"),
+      stats: statsFor(node.id, CONNECTION_AUTH_TYPES),
       authGroup: "compatible",
-      authTypes: ["apikey"],
+      authTypes: CONNECTION_AUTH_TYPES,
       isNoAuth: false,
       compatibleType: "openai",
       compatibleLabel: node.apiType === "responses" ? "Responses" : "Chat",
@@ -57,9 +54,9 @@ export function PROVIDER_SECTIONS({ connections, providerNodes, statsFor }) {
     .map((node) => ({
       id: node.id,
       info: { id: node.id, name: node.name || "Anthropic Compatible" },
-      stats: statsFor(node.id, "apikey"),
+      stats: statsFor(node.id, CONNECTION_AUTH_TYPES),
       authGroup: "compatible",
-      authTypes: ["apikey"],
+      authTypes: CONNECTION_AUTH_TYPES,
       isNoAuth: false,
       compatibleType: "anthropic",
       compatibleLabel: "Messages",
@@ -127,9 +124,9 @@ export function PROVIDER_SECTIONS({ connections, providerNodes, statsFor }) {
     .map(([key, info]) => ({
       id: key,
       info,
-      stats: statsFor(key, "apikey"),
+      stats: statsFor(key, CONNECTION_AUTH_TYPES),
       authGroup: "apikey",
-      authTypes: ["apikey"],
+      authTypes: CONNECTION_AUTH_TYPES,
       isNoAuth: !!info.noAuth,
     }))
     .sort((ea, eb) => {
@@ -139,14 +136,38 @@ export function PROVIDER_SECTIONS({ connections, providerNodes, statsFor }) {
       return (ea.info.name || "").localeCompare(eb.info.name || "");
     });
 
+  // Hidden registry providers can still have live imported connections.
+  // Surface those real accounts instead of dropping them from Providers totals.
+  const listed = new Set(
+    [
+      ...oauthEntries,
+      ...freeEntries,
+      ...freeTierEntries,
+      ...apikeyEntries,
+      ...compatibleEntries,
+      ...anthropicEntries,
+    ].map((entry) => entry.id),
+  );
+  const connectedHiddenEntries = [...new Set(connections.map((c) => c.provider))]
+    .filter((id) => id && !listed.has(id))
+    .map((id) => ({
+      id,
+      info: AI_PROVIDERS[id] || { id, name: id },
+      stats: statsFor(id, CONNECTION_AUTH_TYPES),
+      // Web cookies are entered as a key; iFlow's cookie uses its own exchange.
+      authGroup: AI_PROVIDERS[id]?.authType === "cookie" ? "apikey" : "oauth",
+      authTypes: CONNECTION_AUTH_TYPES,
+      isNoAuth: false,
+    }));
+
   return [
     {
       id: "oauth",
       title: "Subscriptions & OAuth",
       subtitle: "Sign in once. 9router refreshes tokens for you.",
       testMode: "oauth",
-      entries: oauthEntries,
-      totalCount: oauthEntries.length,
+      entries: [...oauthEntries, ...connectedHiddenEntries],
+      totalCount: oauthEntries.length + connectedHiddenEntries.length,
     },
     {
       id: "free",
