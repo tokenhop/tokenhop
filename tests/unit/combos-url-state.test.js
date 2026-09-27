@@ -26,41 +26,33 @@ describe("combo URL state", () => {
     expect(readCreateRequested("?create=0")).toBe(false);
   });
 
-  it("preserves other params, hash, and history state; skips redundant writes", () => {
-    const location = { href: "https://example.test/dashboard/combos?tab=details&create=1#editor" };
-    Object.defineProperty(location, "search", {
-      get: () => new URL(location.href).search,
-    });
-    const calls = [];
-    const state = { navigation: 42 };
-    const history = {
-      state,
-      pushState: (...args) => {
-        calls.push(["push", ...args]);
-        location.href = new URL(args[2], location.href).href;
-      },
-      replaceState: (...args) => {
-        calls.push(["replace", ...args]);
-        location.href = new URL(args[2], location.href).href;
-      },
-    };
-    const setUrlParam = new Function(
-      "window",
-      `${source.match(/function setUrlParam\([\s\S]*?\n}/)[0]}; return setUrlParam;`,
-    )({ location, history });
-    setUrlParam("combo", "foo/bar", "pushState");
-    expect(calls[0]).toEqual([
-      "push",
-      state,
-      "",
+  it("applies same-route query changes to an already selected combo", () => {
+    const readComboSelection = loadHelper("readComboSelection");
+    const readCreateRequested = loadHelper("readCreateRequested");
+    const resolveComboSelection = loadHelper("resolveComboSelection");
+    const list = [{ id: "first" }, { id: "second" }];
+    expect(resolveComboSelection(readComboSelection("?combo=second"), list, "first")).toBe(
+      "second",
+    );
+    expect(resolveComboSelection(readComboSelection("?combo=first"), list, "second")).toBe("first");
+    expect(resolveComboSelection("missing", list, "second")).toBe("second");
+    expect(resolveComboSelection("missing", list, null)).toBe("first");
+    expect(resolveComboSelection(null, [], "first")).toBeNull();
+    expect(readCreateRequested("?create=1")).toBe(true);
+    expect(readCreateRequested("?combo=second")).toBe(false);
+  });
+
+  it("preserves other params and the hash when navigating", () => {
+    const comboHref = loadHelper("comboHref");
+    expect(comboHref("?tab=details&create=1#editor", { combo: "foo/bar" })).toBe(
       "/dashboard/combos?tab=details&create=1&combo=foo%2Fbar#editor",
-    ]);
-    setUrlParam("combo", "foo/bar", "pushState");
-    expect(calls).toHaveLength(1);
-    setUrlParam("create", null);
-    expect(calls[1][0]).toBe("replace");
-    expect(location.href).toBe(
-      "https://example.test/dashboard/combos?tab=details&combo=foo%2Fbar#editor",
+    );
+    expect(comboHref("?combo=foo%2Fbar&tab=details", { combo: null })).toBe(
+      "/dashboard/combos?tab=details",
+    );
+    expect(comboHref("", { combo: "first" })).toBe("/dashboard/combos?combo=first");
+    expect(comboHref("?combo=old&create=1", { combo: "new", create: false })).toBe(
+      "/dashboard/combos?combo=new",
     );
   });
 });

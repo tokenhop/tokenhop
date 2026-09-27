@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Button,
   CardSkeleton,
@@ -24,15 +25,40 @@ import {
 const CAPACITY_ADAPTER_CAPS = ["vision", "audioInput"];
 const EMPTY_CAP_ENTRY = { enabled: true, roundRobin: false, models: [] };
 
-function setUrlParam(key, value, method = "replaceState") {
-  const url = new URL(window.location.href);
-  if (value) url.searchParams.set(key, value);
-  else url.searchParams.delete(key);
-  // No-op when nothing changed: keeps state->URL effects from looping
-  // against the popstate handler and preserves all other params.
-  if (url.href !== window.location.href) {
-    window.history[method](window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+/**
+ * Combos URL with `combo` and/or `create` changed. Other params and the hash
+ * are preserved; `undefined` leaves a key untouched, `null`/`false` removes it.
+ * @param {string} search `location.search` plus optional `location.hash`
+ * @param {{combo?: string|null, create?: boolean}} changes
+ */
+export function comboHref(search, changes) {
+  const raw = search || "";
+  const hashIndex = raw.indexOf("#");
+  const params = new URLSearchParams(hashIndex === -1 ? raw : raw.slice(0, hashIndex));
+  const hash = hashIndex === -1 ? "" : raw.slice(hashIndex);
+  if (changes.combo !== undefined) {
+    if (changes.combo) params.set("combo", changes.combo);
+    else params.delete("combo");
   }
+  if (changes.create !== undefined) {
+    if (changes.create) params.set("create", "1");
+    else params.delete("create");
+  }
+  const query = params.toString();
+  return `${query ? `/dashboard/combos?${query}` : "/dashboard/combos"}${hash}`;
+}
+
+/**
+ * Every combos URL change goes through the App Router — never raw history —
+ * so useSearchParams, Back/Forward and in-flight navigations stay in one
+ * consistent history. Skips no-op navigations.
+ */
+function navigateCombos(router, changes, method = "replace") {
+  const current = `${window.location.search}${window.location.hash}`;
+  const href = comboHref(current, changes);
+  if (href === `${window.location.pathname}${current}`) return;
+  if (method === "push") router.push(href, { scroll: false });
+  else router.replace(href, { scroll: false });
 }
 
 /**
@@ -46,6 +72,22 @@ export function readComboSelection(search) {
 
 export function readCreateRequested(search) {
   return new URLSearchParams(search || "").get("create") === "1";
+}
+
+/**
+ * Pick the combo to select for a `?combo=` value: the requested id when it
+ * exists, else the current selection when it still exists, else the first
+ * combo, else null.
+ * @param {string|null} requested
+ * @param {Array<{id: string}>} combos
+ * @param {string|null} current
+ * @returns {string|null}
+ */
+export function resolveComboSelection(requested, combos, current) {
+  const list = Array.isArray(combos) ? combos : [];
+  if (requested && list.some((c) => c.id === requested)) return requested;
+  if (current && list.some((c) => c.id === current)) return current;
+  return list[0]?.id || null;
 }
 
 /** Legacy stored form was an array of {model, enabled}. */
@@ -113,42 +155,48 @@ export default function CombosPageClient() {
     strategiesRef.current = comboStrategies;
   }, [comboStrategies]);
 
-  // Back/Forward: URL drives state. Unknown ids fall back to the first combo.
+  // URL is the source of truth. useSearchParams changes on same-route
+  // router.push (the palette) and Back/Forward; Next keeps this page mounted
+  // for search-only changes. Clicks navigate with router.push, so there is no
+  // pushState/setState race for Next to reconcile behind the scenes.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const searchString = searchParams?.toString() ?? "";
+  const navigate = (id, method) => navigateCombos(router, { combo: id }, method);
+  const requestedComboId = readComboSelection(searchString);
+  const createRequested = readCreateRequested(searchString);
+  const requestedCombo = combos.some((c) => c.id === requestedComboId) ? requestedComboId : null;
+  const selectedComboId = requestedCombo || selectedId;
+
+  // Missing/invalid ?combo= falls back via navigation once the list is known.
+  // navigate derives from router + location at call time so the effect does
+  // not hold a stale closure over it.
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
   useEffect(() => {
     if (loading || loadError) return;
-    const onPopState = () => {
-      const requested = readComboSelection(window.location.search);
-      setSelectedId(combos.find((c) => c.id === requested)?.id || combos[0]?.id || null);
-      setShowCreateModal(readCreateRequested(window.location.search));
-    };
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, [combos, loading, loadError]);
-
-  // State -> URL via replaceState, which never fires popstate (no loop).
-  // Covers initial fallback selection, create, delete, and invalid deep links.
-  useEffect(() => {
-    if (!loading && !loadError) setUrlParam("combo", selectedId);
-  }, [selectedId, loading, loadError]);
+    if (requestedComboId === selectedComboId) return;
+    navigateRef.current(selectedComboId, "replace");
+  }, [requestedComboId, selectedComboId, loading, loadError]);
 
   // ?create=1 opens the new-combo modal (also when the list is empty).
   useEffect(() => {
-    setShowCreateModal(readCreateRequested(window.location.search));
-  }, []);
+    setShowCreateModal(createRequested);
+  }, [createRequested]);
 
   // User clicks get their own history entry so Back returns to the prior combo.
   const selectCombo = (id) => {
-    if (id === selectedId) return;
-    setUrlParam("combo", id, "pushState");
+    if (id === selectedComboId) return;
+    navigate(id, "push");
     setSelectedId(id);
   };
   const openCreate = () => {
     setShowCreateModal(true);
-    setUrlParam("create", "1");
+    navigateCombos(router, { create: true });
   };
   const closeCreate = () => {
     setShowCreateModal(false);
-    setUrlParam("create", null);
+    navigateCombos(router, { create: false });
   };
 
   const fetchData = useCallback(async () => {
@@ -171,14 +219,9 @@ export default function CombosPageClient() {
       // Only LLM combos here — webSearch/webFetch combos belong to media-providers/web.
       const list = (combosData.combos || []).filter((c) => !c.kind || c.kind === "llm");
       setCombos(list);
-      // Honor a ?combo=<id> deep link (e.g. from the command palette);
-      // unknown ids fall back to the previous selection, then the first combo.
-      const requested = readComboSelection(window.location.search);
-      setSelectedId((prev) => {
-        if (requested && list.some((c) => c.id === requested)) return requested;
-        if (prev && list.some((c) => c.id === prev)) return prev;
-        return list[0]?.id || null;
-      });
+      // Selection derives from the URL on every render, so refetches only need
+      // to keep a valid selectedId fallback for missing/invalid params.
+      setSelectedId((prev) => resolveComboSelection(null, list, prev));
       setActiveProviders(providersData.connections || []);
       setComboStrategies(settingsData.comboStrategies || {});
       const rawAdapter = settingsData.capacityAdapter || {};
@@ -201,7 +244,7 @@ export default function CombosPageClient() {
     fetchData();
   }, [fetchData]);
 
-  const selected = combos.find((c) => c.id === selectedId) || null;
+  const selected = combos.find((c) => c.id === selectedComboId) || null;
   const selectedStrategy = selected ? strategyOf(comboStrategies, selected.name) : "fallback";
 
   // Seed the editor draft on selection change only. Server round-trips
@@ -277,9 +320,16 @@ export default function CombosPageClient() {
       throw new Error(err.error || "Failed to create combo");
     }
     const created = await res.json().catch(() => null);
+    // Refetch first so the new combo is in the list, then select it and drop
+    // ?create=1 in one navigation so the two URL writes can't race.
     await fetchData();
-    if (created?.id) setSelectedId(created.id);
-    closeCreate();
+    setShowCreateModal(false);
+    if (created?.id) {
+      setSelectedId(created.id);
+      navigateCombos(router, { combo: created.id, create: false }, "push");
+    } else {
+      navigateCombos(router, { create: false });
+    }
   };
 
   // Atomic per-combo strategy patch: server merges `patch` into
@@ -401,7 +451,6 @@ export default function CombosPageClient() {
         try {
           const res = await fetch(`/api/combos/${deleteId}`, { method: "DELETE" });
           if (!res.ok) throw new Error(`delete ${res.status}`);
-          setCombos((prev) => prev.filter((c) => c.id !== deleteId));
           setComboStrategies((prev) => {
             if (!Object.hasOwn(prev, deleteName)) return prev;
             const next = { ...prev };
@@ -409,11 +458,10 @@ export default function CombosPageClient() {
             strategiesRef.current = next;
             return next;
           });
-          setSelectedId((prev) => {
-            if (prev !== deleteId) return prev;
-            const rest = combos.filter((c) => c.id !== deleteId);
-            return rest[0]?.id || null;
-          });
+          const rest = combos.filter((c) => c.id !== deleteId);
+          if (selectedId === deleteId) navigate(rest[0]?.id || null, "replace");
+          setCombos((prev) => prev.filter((c) => c.id !== deleteId));
+          setSelectedId(rest[0]?.id || null);
         } catch (error) {
           setSaveError(error?.message || "Failed to delete combo");
         }
@@ -488,7 +536,7 @@ export default function CombosPageClient() {
                       strategyLabel={strategyLabelOf(sid)}
                       strategyVariant={STRATEGY_PILL[sid] || "brand"}
                       usageToday={usageToday[combo.id] || 0}
-                      selected={combo.id === selectedId}
+                      selected={combo.id === selectedComboId}
                       onSelect={selectCombo}
                     />
                   </li>
