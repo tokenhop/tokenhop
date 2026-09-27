@@ -127,8 +127,8 @@ export default function UsageTokensChartInner({ period = "7d" }) {
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "var(--color-bg)",
-                  border: "1px solid var(--color-border)",
+                  backgroundColor: "var(--signal-bg)",
+                  border: "1px solid var(--signal-line)",
                   borderRadius: "8px",
                   fontSize: "12px",
                 }}

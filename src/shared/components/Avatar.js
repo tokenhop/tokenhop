@@ -23,7 +23,7 @@ export default function Avatar({ src, alt = "Avatar", name, size = "md", classNa
 
   // Generate color from name
   const getColorFromName = (name) => {
-    if (!name) return "bg-primary-fill";
+    if (!name) return "bg-coral text-on-coral";
     const colors = [
       "bg-red-500",
       "bg-orange-500",
@@ -44,7 +44,7 @@ export default function Avatar({ src, alt = "Avatar", name, size = "md", classNa
       "bg-rose-500",
     ];
     const index = name.charCodeAt(0) % colors.length;
-    return colors[index];
+    return `${colors[index]} text-white`;
   };
 
   if (src) {
@@ -52,7 +52,7 @@ export default function Avatar({ src, alt = "Avatar", name, size = "md", classNa
       <div
         className={cn(
           "rounded-full bg-cover bg-center bg-no-repeat",
-          "ring-2 ring-white dark:ring-surface-dark shadow-sm",
+          "ring-2 ring-panel shadow-sm",
           sizes[size],
           className,
         )}
@@ -66,8 +66,8 @@ export default function Avatar({ src, alt = "Avatar", name, size = "md", classNa
   return (
     <div
       className={cn(
-        "rounded-full flex items-center justify-center font-semibold text-white",
-        "ring-2 ring-white dark:ring-surface-dark shadow-sm",
+        "rounded-full flex items-center justify-center font-semibold",
+        "ring-2 ring-panel shadow-sm",
         sizes[size],
         getColorFromName(name),
         className,

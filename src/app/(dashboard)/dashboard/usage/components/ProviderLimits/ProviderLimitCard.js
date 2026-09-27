@@ -48,7 +48,7 @@ export default function ProviderLimitCard({
           <ProviderTile providerId={provider || "provider"} size="md" />
 
           <div>
-            <h3 className="font-semibold text-text-primary">{name || provider}</h3>
+            <h3 className="font-semibold text-text">{name || provider}</h3>
             {plan && (
               <Badge variant={planVariants[plan?.toLowerCase()] || "default"} size="xs">
                 {plan}
@@ -61,11 +61,11 @@ export default function ProviderLimitCard({
         <button
           onClick={handleRefresh}
           disabled={refreshing || loading}
-          className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="p-2 rounded-lg hover:bg-raised transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           title="Refresh quota"
         >
           <span
-            className={`material-symbols-outlined text-[20px] text-text-muted ${
+            className={`material-symbols-outlined text-[20px] text-muted ${
               refreshing || loading ? "animate-spin" : ""
             }`}
           >
@@ -78,12 +78,12 @@ export default function ProviderLimitCard({
       {loading && (
         <div className="space-y-4">
           <div className="space-y-2">
-            <div className="h-4 bg-black/5 dark:bg-white/5 rounded animate-pulse" />
-            <div className="h-2 bg-black/5 dark:bg-white/5 rounded animate-pulse" />
+            <div className="h-4 bg-raised rounded animate-pulse" />
+            <div className="h-2 bg-raised rounded animate-pulse" />
           </div>
           <div className="space-y-2">
-            <div className="h-4 bg-black/5 dark:bg-white/5 rounded animate-pulse" />
-            <div className="h-2 bg-black/5 dark:bg-white/5 rounded animate-pulse" />
+            <div className="h-4 bg-raised rounded animate-pulse" />
+            <div className="h-2 bg-raised rounded animate-pulse" />
           </div>
         </div>
       )}
@@ -137,7 +137,7 @@ export default function ProviderLimitCard({
 
       {/* Empty State */}
       {!loading && !error && !message && quotas?.length === 0 && (
-        <div className="text-center py-8 text-text-muted">
+        <div className="text-center py-8 text-muted">
           <span className="material-symbols-outlined text-[48px] opacity-20">data_usage</span>
           <p className="text-sm mt-2">No quota data available</p>
         </div>

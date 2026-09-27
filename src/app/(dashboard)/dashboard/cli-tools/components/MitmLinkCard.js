@@ -12,7 +12,7 @@ export default function MitmLinkCard({ tool }) {
     <Link href="/dashboard/mitm" className="block" aria-label={`${tool.name} — open MITM setup`}>
       <Card
         padding="sm"
-        className="overflow-hidden hover:border-primary/50 transition-colors cursor-pointer"
+        className="overflow-hidden hover:border-coral/50 transition-colors cursor-pointer"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -38,12 +38,10 @@ export default function MitmLinkCard({ tool }) {
                   MITM
                 </StatusPill>
               </div>
-              <p className="text-xs text-text-muted truncate">{tool.description}</p>
+              <p className="text-xs text-muted truncate">{tool.description}</p>
             </div>
           </div>
-          <span className="material-symbols-outlined text-text-muted text-[20px]">
-            chevron_right
-          </span>
+          <span className="material-symbols-outlined text-muted text-[20px]">chevron_right</span>
         </div>
       </Card>
     </Link>

@@ -90,12 +90,12 @@ export default function EndpointPresetControl({
 
   return (
     <div className="flex items-center gap-2">
-      <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Preset</span>
-      <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+      <span className="w-32 shrink-0 text-sm font-semibold text-text text-right">Preset</span>
+      <span className="material-symbols-outlined text-muted text-[14px]">arrow_forward</span>
       <select
         value={selectedName}
         onChange={(event) => handleSelect(event.target.value)}
-        className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
+        className="flex-1 px-2 py-1.5 bg-panel rounded text-xs border border-line focus:outline-none focus:ring-1 focus:ring-coral/50"
       >
         <option value="">Manual / current endpoint</option>
         {presets.map((preset) => (
@@ -108,7 +108,7 @@ export default function EndpointPresetControl({
         type="button"
         onClick={handleSave}
         disabled={!baseUrl || !apiKey}
-        className="px-2 py-1.5 rounded border text-xs bg-surface border-border text-text-main hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+        className="px-2 py-1.5 rounded border text-xs bg-panel border-line text-text hover:border-coral disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
         title="Save current Base URL and API key as a browser-local preset"
       >
         Save
@@ -117,7 +117,7 @@ export default function EndpointPresetControl({
         <button
           type="button"
           onClick={handleDelete}
-          className="p-1 text-text-muted hover:text-red-500 rounded transition-colors"
+          className="p-1 text-muted hover:text-red-500 rounded transition-colors"
           title="Delete selected preset"
         >
           <span className="material-symbols-outlined text-[14px]">delete</span>

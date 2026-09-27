@@ -23,7 +23,7 @@ export default function ToolSummaryCard({ toolId, tool, status }) {
     >
       <Card
         padding="sm"
-        className="h-full overflow-hidden hover:border-primary/50 transition-colors cursor-pointer"
+        className="h-full overflow-hidden hover:border-coral/50 transition-colors cursor-pointer"
       >
         <div className="flex h-full flex-col gap-2">
           <div className="flex items-center gap-3">
@@ -59,7 +59,7 @@ export default function ToolSummaryCard({ toolId, tool, status }) {
                 </StatusPill>
               </div>
             </div>
-            <span className="material-symbols-outlined text-text-muted text-[18px] shrink-0">
+            <span className="material-symbols-outlined text-muted text-[18px] shrink-0">
               chevron_right
             </span>
           </div>

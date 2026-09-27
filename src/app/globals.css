@@ -63,6 +63,9 @@
   --signal-toggle-on: #16171c;
   --signal-toggle-knob-on: #cff24a;
 
+  /* Signal card shadow */
+  --signal-shadow-card: 0 1px 2px rgba(22, 23, 28, 0.05), 0 16px 40px -24px rgba(22, 23, 28, 0.22);
+
   color-scheme: light;
 }
 
@@ -108,6 +111,10 @@
   /* Overlay backdrop (design-system §4) */
   --signal-scrim: rgba(0, 0, 0, 0.5);
 
+  /* Signal card shadow */
+  --signal-shadow-card:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 16px 40px -20px rgba(0, 0, 0, 0.7);
+
   color-scheme: dark;
 }
 
@@ -143,114 +150,6 @@
 }
 
 /* ============================================================
-   Legacy compatibility map — old variables now resolve to the
-   closest Signal value, so the existing app re-themes without
-   touching components (full re-style lands in later issues).
-
-   --color-primary / -hover   -> coral / coral-ink (light).
-                                 Dark overrides these fills below so white
-                                 text on brand buttons stays >= 4.5:1.
-   --color-brand-* (50..900)  -> coral ramp (500 = coral; 50-200
-                                 tints -> coral-bg; 300/800/900 text
-                                 shades -> coral-ink). Dark: 400/500 and
-                                 600/700 are the darker button fills.
-   --color-bg                 -> signal ground
-   --color-bg-alt/-subtle     -> raised
-   --color-bg-hover           -> line
-   --color-surface            -> panel
-   --color-surface-2          -> raised
-   --color-surface-3          -> line
-   --color-surface-secondary  -> raised   (was undefined)
-   --color-sidebar            -> panel
-   --color-border             -> line
-   --color-border-subtle      -> line blended toward panel
-   --color-text / -main / -primary -> signal text
-   --color-text-muted         -> muted
-   --color-text-subtle        -> subtle
-   --color-accent             -> coral
-   --color-danger/success/warning/info -> err/ok/warn/sky
-   --radius-brand / -lg       -> 10px / 16px (was 10px / 14px)
-   --shadow-soft/-warm/-elevated/-elev -> card shadow / coral glow
-   --shadow-focus             -> coral focus ring
-   ============================================================ */
-:root {
-  --color-primary: var(--signal-coral);
-  --color-primary-hover: var(--signal-coral-ink);
-
-  --color-brand-50: var(--signal-coral-bg);
-  --color-brand-100: var(--signal-coral-bg);
-  --color-brand-200: var(--signal-coral-bg);
-  --color-brand-300: var(--signal-coral-ink);
-  --color-brand-400: var(--signal-coral);
-  --color-brand-500: var(--signal-coral);
-  --color-brand-600: var(--signal-coral-ink);
-  --color-brand-700: var(--signal-coral-ink);
-  --color-brand-800: var(--signal-coral-ink);
-  --color-brand-900: var(--signal-coral-ink);
-  /* Solid brand fill that holds white text at >= 4.5:1 (YAN-314). */
-  --color-primary-fill: var(--signal-coral);
-
-  --color-bg: var(--signal-bg);
-  --color-bg-alt: var(--signal-raised);
-  --color-bg-subtle: var(--signal-raised);
-  --color-bg-hover: var(--signal-line);
-  --color-surface: var(--signal-panel);
-  --color-surface-2: var(--signal-raised);
-  --color-surface-3: var(--signal-line);
-  --color-surface-secondary: var(--signal-raised);
-  --color-sidebar: var(--signal-panel);
-
-  --color-border: var(--signal-line);
-  --color-border-subtle: color-mix(in srgb, var(--signal-line) 55%, var(--signal-panel));
-
-  --color-text: var(--signal-text);
-  --color-text-main: var(--signal-text);
-  --color-text-primary: var(--signal-text);
-  --color-text-muted: var(--signal-muted);
-  --color-text-subtle: var(--signal-subtle);
-
-  --color-accent: var(--signal-coral);
-  --color-danger: var(--signal-err);
-  --color-success: var(--signal-ok);
-  --color-warning: var(--signal-warn);
-  --color-info: var(--signal-sky);
-
-  --radius-brand: var(--signal-radius-md);
-  --radius-brand-lg: var(--signal-radius-xl);
-
-  --shadow-soft: 0 1px 2px rgba(22, 23, 28, 0.05);
-  --shadow-warm: 0 2px 12px -2px var(--signal-coral-bg);
-  --shadow-elevated: var(--signal-shadow-card);
-  --shadow-elev: var(--signal-shadow-card);
-  --shadow-focus: var(--signal-focus-ring);
-
-  /* Signal card shadow (theme-scoped via the legacy indirection above) */
-  --signal-shadow-card: 0 1px 2px rgba(22, 23, 28, 0.05), 0 16px 40px -24px rgba(22, 23, 28, 0.22);
-}
-
-.dark {
-  /* Legacy fills: Signal coral (#ff6a48) is 2.84:1 under white text.
-     These stay in the coral family but hold white at >= 4.5:1.
-     --signal-coral / --signal-coral-ink stay the text/link colors.
-     --color-primary doubles as text AND fill; YAN-314 keeps it on
-     --signal-coral-ink for text contrast (4.5:1) and uses
-     --color-primary-fill where a fill is needed. */
-  --color-primary: #ff8b70;
-  --color-primary-hover: #ff8b70;
-  --color-primary-fill: #cf4323;
-  --color-brand-400: #cf4323;
-  --color-brand-500: #cf4323;
-  --color-brand-600: #b93a1d;
-  --color-brand-700: #b93a1d;
-
-  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-warm: 0 2px 12px -2px var(--signal-coral-bg);
-
-  --signal-shadow-card:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 16px 40px -20px rgba(0, 0, 0, 0.7);
-}
-
-/* ============================================================
    Fix native select dropdowns in dark mode
    ============================================================ */
 select {
@@ -262,8 +161,8 @@ select {
 }
 
 .dark select option {
-  background-color: var(--color-surface);
-  color: var(--color-text-main);
+  background-color: var(--signal-panel);
+  color: var(--signal-text);
 }
 
 @theme inline {
@@ -296,54 +195,6 @@ select {
   --color-toggle-knob-on: var(--signal-toggle-knob-on);
   --color-terminal-bg: var(--signal-terminal-bg);
 
-  /* Legacy aliases (see the compatibility map above) */
-  --color-primary: var(--color-primary);
-  --color-primary-hover: var(--color-primary-hover);
-  --color-primary-fill: var(--color-primary-fill);
-  --color-brand-50: var(--color-brand-50);
-  --color-brand-100: var(--color-brand-100);
-  --color-brand-200: var(--color-brand-200);
-  --color-brand-300: var(--color-brand-300);
-  --color-brand-400: var(--color-brand-400);
-  --color-brand-500: var(--color-brand-500);
-  --color-brand-600: var(--color-brand-600);
-  --color-brand-700: var(--color-brand-700);
-  --color-brand-800: var(--color-brand-800);
-  --color-brand-900: var(--color-brand-900);
-  --color-bg-alt: var(--color-bg-alt);
-  --color-bg-subtle: var(--color-bg-subtle);
-  --color-bg-hover: var(--color-bg-hover);
-  --color-surface: var(--color-surface);
-  --color-surface-2: var(--color-surface-2);
-  --color-surface-3: var(--color-surface-3);
-  --color-surface-secondary: var(--color-surface-secondary);
-  --color-sidebar: var(--color-sidebar);
-  --color-border: var(--color-border);
-  --color-border-subtle: var(--color-border-subtle);
-  --color-text-main: var(--color-text-main);
-  --color-text-primary: var(--color-text-primary);
-  --color-text-muted: var(--color-text-muted);
-  --color-text-subtle: var(--color-text-subtle);
-  --color-accent: var(--color-accent);
-  --color-danger: var(--color-danger);
-  --color-success: var(--color-success);
-  --color-warning: var(--color-warning);
-  --color-info: var(--color-info);
-
-  /* Static per-mode fallbacks (explicit opt-in utilities only) */
-  --color-bg-light: #f3f1ea;
-  --color-bg-dark: #0d0e12;
-  --color-surface-light: #ffffff;
-  --color-surface-dark: #15171d;
-  --color-sidebar-light: #f7f5ef;
-  --color-sidebar-dark: #15171d;
-  --color-border-light: #e2ded3;
-  --color-border-dark: #2a2e39;
-  --color-text-main-light: #16171c;
-  --color-text-main-dark: #f3f2ee;
-  --color-text-muted-light: #545968;
-  --color-text-muted-dark: #a3a8b5;
-
   /* Signal radius scale (overrides the Tailwind defaults) */
   --radius-xs: var(--signal-radius-xs);
   --radius-sm: var(--signal-radius-sm);
@@ -352,16 +203,10 @@ select {
   --radius-xl: var(--signal-radius-xl);
   --radius-2xl: var(--signal-radius-2xl);
   --radius-pill: var(--signal-radius-pill);
-  --radius-brand: var(--radius-brand);
-  --radius-brand-lg: var(--radius-brand-lg);
 
   /* Shadows */
   --shadow-card: var(--signal-shadow-card);
-  --shadow-soft: var(--shadow-soft);
-  --shadow-warm: var(--shadow-warm);
-  --shadow-elevated: var(--shadow-elevated);
-  --shadow-elev: var(--shadow-elev);
-  --shadow-focus: var(--shadow-focus);
+  --shadow-focus: var(--signal-focus-ring);
 
   /* Signal fonts */
   --font-sans: var(--signal-font-sans);
@@ -555,7 +400,7 @@ textarea {
   accent-color: var(--signal-coral);
 }
 
-/* Scrollbar (custom-scrollbar utility kept for compat) */
+/* Scrollbar (custom-scrollbar utility) */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
@@ -567,23 +412,7 @@ textarea {
   border-radius: 20px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: var(--color-primary);
-}
-
-/* Thin horizontal scrollbar - brand colored */
-.scroll-thin-x {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--signal-coral) 55%, transparent) transparent;
-}
-.scroll-thin-x::-webkit-scrollbar {
-  height: 3px;
-}
-.scroll-thin-x::-webkit-scrollbar-track {
-  background: transparent;
-}
-.scroll-thin-x::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--signal-coral) 55%, transparent);
-  border-radius: 3px;
+  background-color: var(--signal-coral-ink);
 }
 
 /* Global thin mac-like scrollbars (overrides clunky Windows/Linux default) */
@@ -615,53 +444,6 @@ textarea {
 }
 .dark *::-webkit-scrollbar-thumb:hover {
   background-color: rgba(180, 180, 180, 0.5);
-}
-
-/* Reusable elevated card */
-.card-soft {
-  background-color: var(--color-surface);
-  box-shadow: var(--shadow-soft);
-  border-radius: var(--radius-brand-lg);
-}
-.card-elev {
-  background-color: var(--color-surface);
-  box-shadow: var(--shadow-elev);
-  border-radius: var(--radius-brand-lg);
-}
-
-/* Hero gradient (compat) */
-.bg-hero-gradient {
-  background: linear-gradient(180deg, var(--color-bg-alt) 0%, var(--color-bg) 100%);
-}
-
-/* macOS Vibrancy */
-.bg-vibrancy {
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  background: rgba(255, 255, 255, 0.72);
-}
-.dark .bg-vibrancy {
-  background: rgba(21, 23, 29, 0.72);
-}
-
-/* macOS Traffic Lights */
-.traffic-lights {
-  display: flex;
-  gap: 8px;
-}
-.traffic-light {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-.traffic-light.red {
-  background: #ff5f56;
-}
-.traffic-light.yellow {
-  background: #ffbd2e;
-}
-.traffic-light.green {
-  background: #27c93f;
 }
 
 /* Material Symbols (design-system §7: thin strokes; .fill-1 = active state) */
@@ -729,136 +511,11 @@ button:disabled,
   animation: spin 1s linear infinite;
 }
 
-@keyframes border-glow {
-  0%,
-  100% {
-    box-shadow:
-      0 0 5px color-mix(in srgb, var(--signal-coral) 30%, transparent),
-      0 0 10px color-mix(in srgb, var(--signal-coral) 30%, transparent);
-    border-color: color-mix(in srgb, var(--signal-coral) 50%, transparent);
-  }
-  50% {
-    box-shadow:
-      0 0 10px color-mix(in srgb, var(--signal-coral) 55%, transparent),
-      0 0 20px color-mix(in srgb, var(--signal-coral) 55%, transparent);
-    border-color: var(--signal-coral);
-  }
-}
-.animate-border-glow {
-  animation: border-glow 2s ease-in-out infinite;
-}
-
-@keyframes slideInFromRight {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes slideInFromTop {
-  from {
-    transform: translateY(-10px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-.slide-in-right {
-  animation: slideInFromRight 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-.fade-in {
-  animation: fadeIn 0.2s ease-out forwards;
-}
-.slide-in-top {
-  animation: slideInFromTop 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-@keyframes pulseGlow {
-  0%,
-  100% {
-    opacity: 0.4;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.7;
-    transform: scale(1.05);
-  }
-}
-.animate-pulse-glow {
-  animation: pulseGlow 3s ease-in-out infinite;
-}
-
-/* CTA shimmer + glow pulse */
-@keyframes ctaShimmer {
-  0% {
-    transform: translateX(-120%) skewX(-20deg);
-  }
-  100% {
-    transform: translateX(220%) skewX(-20deg);
-  }
-}
-@keyframes ctaGlowPulse {
-  0%,
-  100% {
-    box-shadow:
-      0 8px 24px -8px color-mix(in srgb, var(--signal-coral) 45%, transparent),
-      0 0 0 0 color-mix(in srgb, var(--signal-coral) 45%, transparent);
-  }
-  50% {
-    box-shadow:
-      0 12px 32px -8px color-mix(in srgb, var(--signal-coral) 60%, transparent),
-      0 0 0 8px rgba(0, 0, 0, 0);
-  }
-}
-.btn-cta {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-  animation: ctaGlowPulse 2.4s ease-in-out infinite;
-}
-.btn-cta::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
-  animation: ctaShimmer 2.8s ease-in-out infinite;
-  pointer-events: none;
-  z-index: 1;
-}
-.btn-cta > * {
-  position: relative;
-  z-index: 2;
-}
-
-/* Dot Grid Background Pattern */
-.dot-grid-bg {
-  background-color: var(--color-bg);
-  background-image:
-    radial-gradient(circle at 15% 20%, var(--signal-coral-bg) 0%, transparent 40%),
-    radial-gradient(circle at 85% 80%, var(--signal-coral-bg) 0%, transparent 40%);
-}
-
 /* Landing-style faint grid overlay (use absolute pos inside relative parent) */
 .landing-grid {
   background-image:
-    linear-gradient(to right, var(--color-accent) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--color-accent) 1px, transparent 1px);
+    linear-gradient(to right, var(--signal-coral) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--signal-coral) 1px, transparent 1px);
   background-size: 40px 40px;
   opacity: 0.08;
 }
@@ -873,7 +530,7 @@ button:disabled,
     transform: scale(1);
     box-shadow:
       0 0 8px #fde047,
-      0 0 20px color-mix(in srgb, var(--color-primary) 65%, transparent),
+      0 0 20px color-mix(in srgb, var(--signal-coral-ink) 65%, transparent),
       0 0 32px rgba(34, 211, 238, 0.4),
       inset 0 0 10px rgba(253, 224, 71, 0.3);
   }
@@ -965,18 +622,18 @@ button:disabled,
 
 /* React Flow controls: match app theme */
 .react-flow-controls-custom {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--signal-panel);
+  border: 1px solid var(--signal-line);
   border-radius: var(--signal-radius-md);
-  box-shadow: var(--shadow-soft);
+  box-shadow: var(--signal-shadow-card);
   overflow: hidden;
 }
 
 .react-flow-controls-custom button {
-  background: var(--color-surface);
-  color: var(--color-text-main);
+  background: var(--signal-panel);
+  color: var(--signal-text);
   border: 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--signal-line);
 }
 
 .react-flow-controls-custom button:last-child {
@@ -984,7 +641,7 @@ button:disabled,
 }
 
 .react-flow-controls-custom button:hover {
-  background: var(--color-bg-alt);
+  background: var(--signal-raised);
 }
 
 /* Changelog markdown body */
@@ -993,7 +650,7 @@ button:disabled,
   font-weight: 700;
   margin: 1.5rem 0 0.75rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--signal-line);
 }
 .changelog-body h1:first-child {
   margin-top: 0;
@@ -1002,7 +659,7 @@ button:disabled,
   font-size: 1.05rem;
   font-weight: 600;
   margin: 1rem 0 0.5rem;
-  color: var(--color-primary);
+  color: var(--signal-coral-ink);
 }
 .changelog-body h3 {
   font-size: 0.95rem;
@@ -1023,18 +680,18 @@ button:disabled,
   line-height: 1.6;
 }
 .changelog-body code {
-  background: var(--color-bg-alt);
+  background: var(--signal-raised);
   padding: 0.1rem 0.35rem;
   border-radius: 4px;
   font-size: 0.875em;
   font-family: var(--signal-font-mono);
 }
 .changelog-body a {
-  color: var(--color-primary);
+  color: var(--signal-coral-ink);
   text-decoration: underline;
 }
 .changelog-body hr {
   border: none;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--signal-line);
   margin: 1.5rem 0;
 }

@@ -112,8 +112,8 @@ export default function ModelAvailabilityBadge() {
       </button> */}
 
       {expanded && (
-        <div className="absolute top-full right-0 mt-2 w-80 bg-surface border border-border rounded-xl shadow-2xl z-50 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-bg">
+        <div className="absolute top-full right-0 mt-2 w-80 bg-panel border border-line rounded-xl shadow-2xl z-50 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-line bg-raised">
             <div className="flex items-center gap-2">
               <span
                 className="material-symbols-outlined text-[16px]"
@@ -121,11 +121,11 @@ export default function ModelAvailabilityBadge() {
               >
                 {isHealthy ? "verified" : "warning"}
               </span>
-              <span className="text-sm font-semibold text-text-main">Model Status</span>
+              <span className="text-sm font-semibold text-text">Model Status</span>
             </div>
             <button
               onClick={fetchStatus}
-              className="p-1 rounded-lg hover:bg-surface text-text-muted hover:text-text-main transition-colors"
+              className="p-1 rounded-lg hover:bg-raised text-muted hover:text-text transition-colors"
               title="Refresh"
             >
               <span className="material-symbols-outlined text-[14px]">refresh</span>
@@ -134,14 +134,14 @@ export default function ModelAvailabilityBadge() {
 
           <div className="px-4 py-3 max-h-60 overflow-y-auto">
             {isHealthy ? (
-              <p className="text-sm text-text-muted text-center py-2">
+              <p className="text-sm text-muted text-center py-2">
                 All models are responding normally.
               </p>
             ) : (
               <div className="flex flex-col gap-2.5">
                 {Object.entries(byProvider).map(([provider, provModels]) => (
                   <div key={provider}>
-                    <p className="mb-1.5 flex items-center gap-2 text-xs font-semibold capitalize text-text-main">
+                    <p className="mb-1.5 flex items-center gap-2 text-xs font-semibold capitalize text-text">
                       <ProviderTile providerId={provider} size="sm" />
                       {provider}
                     </p>
@@ -152,7 +152,7 @@ export default function ModelAvailabilityBadge() {
                         return (
                           <div
                             key={`${m.provider}-${m.model}`}
-                            className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-surface/30"
+                            className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-raised"
                           >
                             <div className="flex items-center gap-1.5 min-w-0">
                               <span
@@ -161,7 +161,7 @@ export default function ModelAvailabilityBadge() {
                               >
                                 {status.icon}
                               </span>
-                              <span className="font-mono text-xs text-text-main truncate">
+                              <span className="font-mono text-xs text-text truncate">
                                 {m.model}
                               </span>
                             </div>

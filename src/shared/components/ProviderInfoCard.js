@@ -46,7 +46,7 @@ export default function ProviderInfoCard({ config, provider, title = "Provider I
             href={signupUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+            className="text-xs text-coral-ink hover:underline inline-flex items-center gap-1"
           >
             <span className="material-symbols-outlined text-sm">open_in_new</span>
             Get API Key
@@ -56,18 +56,18 @@ export default function ProviderInfoCard({ config, provider, title = "Provider I
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
         {rows.map((r) => (
           <div key={r.key} className="flex items-center gap-3 min-w-0">
-            <span className="text-xs text-text-muted w-28 shrink-0">{r.label}</span>
+            <span className="text-xs text-muted w-28 shrink-0">{r.label}</span>
             {r.isLink ? (
               <a
                 href={r.raw}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`text-sm text-primary hover:underline truncate ${r.mono ? "font-mono" : ""}`}
+                className={`text-sm text-coral-ink hover:underline truncate ${r.mono ? "font-mono" : ""}`}
               >
                 {r.value}
               </a>
             ) : (
-              <span className={`text-sm text-text-main truncate ${r.mono ? "font-mono" : ""}`}>
+              <span className={`text-sm text-text truncate ${r.mono ? "font-mono" : ""}`}>
                 {r.value}
               </span>
             )}
@@ -75,8 +75,8 @@ export default function ProviderInfoCard({ config, provider, title = "Provider I
         ))}
         {noticeText && (
           <div className="flex items-start gap-3 min-w-0 sm:col-span-2">
-            <span className="text-xs text-text-muted w-28 shrink-0 mt-0.5">Notice</span>
-            <span className="text-sm text-text-main leading-relaxed">{noticeText}</span>
+            <span className="text-xs text-muted w-28 shrink-0 mt-0.5">Notice</span>
+            <span className="text-sm text-text leading-relaxed">{noticeText}</span>
           </div>
         )}
       </div>

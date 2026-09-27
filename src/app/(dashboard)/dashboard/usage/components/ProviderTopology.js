@@ -26,7 +26,7 @@ function ProviderNode({ data }) {
     <div
       className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border-2 transition-all duration-300 bg-bg"
       style={{
-        borderColor: active ? color : "var(--color-border)",
+        borderColor: active ? color : "var(--signal-line)",
         boxShadow: active ? `0 0 16px ${color}40` : "none",
         minWidth: "150px",
       }}
@@ -61,7 +61,7 @@ function ProviderNode({ data }) {
       {/* Provider name */}
       <span
         className="text-base font-medium truncate"
-        style={{ color: active ? color : "var(--color-text)" }}
+        style={{ color: active ? color : "var(--signal-text)" }}
       >
         {label}
       </span>
@@ -94,8 +94,8 @@ function RouterNode({ data }) {
     <div
       className={`relative z-[1] flex items-center justify-center px-5 py-3 rounded-xl border-2 min-w-[130px] ${
         powering
-          ? "topology-router-core border-yellow-300 bg-gradient-to-br from-primary/30 via-yellow-400/20 to-cyan-400/25"
-          : "border-primary bg-primary/5 shadow-md"
+          ? "topology-router-core border-yellow-300 bg-gradient-to-br from-coral/30 via-yellow-400/20 to-cyan-400/25"
+          : "border-coral bg-coral-bg shadow-md"
       }`}
     >
       <Handle
@@ -131,7 +131,7 @@ function RouterNode({ data }) {
         decoding="async"
       />
       <span
-        className={`text-sm font-bold ${powering ? "topology-router-label text-yellow-300" : "text-primary"}`}
+        className={`text-sm font-bold ${powering ? "topology-router-label text-yellow-300" : "text-coral-ink"}`}
       >
         9Router
       </span>
@@ -169,7 +169,7 @@ function TopologyEdge({
     targetPosition,
   });
   const active = !!data?.active;
-  const stroke = style.stroke || "var(--color-border)";
+  const stroke = style.stroke || "var(--signal-line)";
   const filterId = `topo-electric-${id}`;
 
   if (!active) {
@@ -330,7 +330,7 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
     if (error) return { stroke: "#ef4444", strokeWidth: 2.5, opacity: 0.9 };
     if (active) return { stroke: "#22d3ee", strokeWidth: 3.5, opacity: 1 };
     if (last) return { stroke: "#f59e0b", strokeWidth: 2, opacity: 0.7 };
-    return { stroke: "var(--color-border)", strokeWidth: 1, opacity: 0.3 };
+    return { stroke: "var(--signal-line)", strokeWidth: 1, opacity: 0.3 };
   };
 
   providers.forEach((p, i) => {
@@ -495,10 +495,10 @@ export default function ProviderTopology({
   return (
     <div
       ref={containerRef}
-      className="h-[320px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[480px]"
+      className="h-[320px] w-full min-w-0 rounded-lg border border-line bg-raised/30 sm:h-[480px]"
     >
       {providers.length === 0 ? (
-        <div className="h-full flex items-center justify-center text-text-muted text-sm">
+        <div className="h-full flex items-center justify-center text-muted text-sm">
           No providers connected
         </div>
       ) : (
