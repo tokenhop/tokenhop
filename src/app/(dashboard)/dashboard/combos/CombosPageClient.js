@@ -523,12 +523,14 @@ export default function CombosPageClient() {
               strategiesRef.current,
             );
           }
-          setSaveAnnouncement("Saved");
+          if (selectedIdRef.current === savedId) setSaveAnnouncement("Saved");
         },
       });
     } catch (error) {
-      setSaveAnnouncement("Couldn't save");
-      setSaveError(error?.message || "Failed to save");
+      if (selectedIdRef.current === savedId) {
+        setSaveAnnouncement("Couldn't save");
+        setSaveError(error?.message || "Failed to save");
+      }
     } finally {
       setSaving(false);
     }
