@@ -45,9 +45,12 @@ export default function CompatibleModelsSection({
         body: JSON.stringify({ model: `${storageAlias}/${modelId}` }),
       });
       const data = await res.json().catch(() => ({}));
-      setTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
+      const passed = res.ok && data.ok;
+      setTestResults((prev) => ({ ...prev, [modelId]: passed ? "ok" : "error" }));
+      if (!passed) actions.notifyError(data.error || "Model not reachable");
     } catch {
       setTestResults((prev) => ({ ...prev, [modelId]: "error" }));
+      actions.notifyError("Network error");
     } finally {
       setTestingId(null);
     }
@@ -62,10 +65,7 @@ export default function CompatibleModelsSection({
     }
     setAdding(true);
     try {
-      await models.addCustomModel(modelId, "llm", storageAlias);
-      setNewModel("");
-    } catch (error) {
-      console.log("Error adding model:", error);
+      if (await models.addCustomModel(modelId, "llm", storageAlias)) setNewModel("");
     } finally {
       setAdding(false);
     }
@@ -93,14 +93,13 @@ export default function CompatibleModelsSection({
         const modelId = model.id || model.name || model.model;
         if (!modelId) continue;
         if (allModels.some((row) => row.id === modelId)) continue;
-        await models.addCustomModel(modelId, "llm", storageAlias);
-        importedCount += 1;
+        if (await models.addCustomModel(modelId, "llm", storageAlias)) importedCount += 1;
       }
       if (importedCount === 0) actions.notifyError("No new models were added.");
       else
         actions.notifySuccess(`Imported ${importedCount} model${importedCount === 1 ? "" : "s"}.`);
     } catch (error) {
-      console.log("Error importing models:", error);
+      actions.notifyError(error instanceof Error ? error.message : "Failed to import models");
     } finally {
       setImporting(false);
     }

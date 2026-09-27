@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
-import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import { Badge, Button, Callout, Input, Modal, Select, StatusPill } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { planBulkAdd } from "@/shared/utils/bulkAdd";
 
@@ -317,11 +317,14 @@ export default function AddApiKeyModal({
               onChange={(e) => setBulkText(e.target.value)}
             />
             {bulkResult && (
-              <div
-                className={`text-sm font-medium ${bulkResult.failed > 0 ? "text-yellow-400" : "text-green-400"}`}
-              >
-                ✓ {bulkResult.success} added
-                {bulkResult.failed > 0 ? `, ✗ ${bulkResult.failed} failed` : ""}
+              <div role="status">
+                {bulkResult.failed > 0 ? (
+                  <StatusPill variant="warn">
+                    {bulkResult.success} added, {bulkResult.failed} failed
+                  </StatusPill>
+                ) : (
+                  <StatusPill variant="ok">{bulkResult.success} added</StatusPill>
+                )}
               </div>
             )}
             <div className="flex gap-2">
@@ -434,7 +437,11 @@ export default function AddApiKeyModal({
                 {validationResult === "success" ? "Valid" : "Invalid"}
               </Badge>
             )}
-            {error && <p className="text-xs text-red-500 break-words">{error}</p>}
+            {error && (
+              <Callout variant="err" className="break-words">
+                {error}
+              </Callout>
+            )}
             {isCompatible && (
               <p className="text-xs text-muted">
                 Enter the model ID exactly as your compatible endpoint expects it. This model will

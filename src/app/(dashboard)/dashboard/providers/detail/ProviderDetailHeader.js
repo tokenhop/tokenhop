@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import PropTypes from "prop-types";
 import {
   Button,
@@ -13,9 +12,8 @@ import {
 import { getCooldownUntil } from "../utils";
 
 /**
- * Signal provider detail header: back link, lg tile, display name,
- * get-key/learn-more link, connection count, auth + status pills,
- * quota meters and the model-id snippet.
+ * Signal provider detail identity: tile, connection count, auth/status pills,
+ * sign-up link and model-id snippet. The shell owns the breadcrumb; this block owns the H1.
  */
 export default function ProviderDetailHeader({
   providerId,
@@ -44,15 +42,6 @@ export default function ProviderDetailHeader({
 
   return (
     <div className="min-w-0">
-      <Link
-        href="/dashboard/providers"
-        className="mb-4 inline-flex min-h-11 items-center gap-1 text-sm text-muted transition-colors hover:text-coral-ink focus-visible:shadow-focus focus-visible:outline-none rtl:[&>span]:-scale-x-100"
-      >
-        <span className="material-symbols-outlined text-lg" aria-hidden="true">
-          arrow_back
-        </span>
-        Back to Providers
-      </Link>
       <div className="flex min-w-0 flex-wrap items-start gap-3.5">
         <ProviderTile
           providerId={providerId}
@@ -60,13 +49,10 @@ export default function ProviderDetailHeader({
           status={status.variant === "neutral" ? undefined : status.variant}
         />
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <h2 className="font-display text-2xl font-bold tracking-tight text-text">
+          <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-text lg:text-[42px] lg:leading-[1.05]">
             {providerInfo?.name || providerId}
-          </h2>
-          <p className="text-sm text-muted" aria-live="polite">
-            {connections.length} connection{connections.length === 1 ? "" : "s"}
-          </p>
-          <div className="flex flex-wrap items-center gap-1.5">
+          </h1>
+          <div className="flex flex-wrap items-center gap-1.5" aria-live="polite">
             <StatusPill variant={authVariant}>{authLabel}</StatusPill>
             <StatusPill variant={status.variant} dot={status.variant !== "neutral"}>
               {status.label}
@@ -115,11 +101,18 @@ ProviderDetailHeader.propTypes = {
   loading: PropTypes.bool,
 };
 
+/** Strips a leading warning glyph and redundant "Risk notice:" label; the Callout supplies both. */
+export function plainNotice(text) {
+  return String(text || "")
+    .replace(/^\s*(?:\u26A0\uFE0F?\s*)?(?:risk notice:\s*)?/i, "")
+    .trim();
+}
+
 export function ProviderDetailNotices({ providerInfo }) {
   if (providerInfo?.deprecated) {
     return (
-      <Callout variant="warn" title="Deprecated provider">
-        {providerInfo.deprecationNotice}
+      <Callout variant="warn" title="Risk notice">
+        {plainNotice(providerInfo.deprecationNotice)}
       </Callout>
     );
   }
@@ -135,7 +128,7 @@ export function ProviderDetailNotices({ providerInfo }) {
               iconRight="open_in_new"
               onClick={() => window.open(providerInfo.notice.apiKeyUrl, "_blank", "noopener")}
             >
-              Get API Key
+              Get API key
             </Button>
           ) : null}
         </span>

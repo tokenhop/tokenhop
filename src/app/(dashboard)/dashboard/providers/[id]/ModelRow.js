@@ -8,7 +8,8 @@ const STATUS_TONE = { ok: "text-ok border-ok/40", error: "text-err border-err/40
 
 /**
  * Signal model row: status icon, mono model id (with thinking suffix),
- * display name, capability icons and Test / Copy / Remove actions.
+ * display name, capability icons and Copy (always visible) plus Test / Alias /
+ * Remove actions revealed on hover or focus (always on touch and narrow screens).
  * Used for built-in, custom and compatible-provider models.
  */
 export default function ModelRow({
@@ -36,10 +37,18 @@ export default function ModelRow({
   const copyKey = `model-${model.id}`;
   const removeLabel = isCustom ? "Remove custom model" : "Disable this model";
   const onRemove = isCustom ? onDeleteAlias : onDisable;
+  const quietActions =
+    "sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus-visible:opacity-100 [@media(pointer:coarse)]:opacity-100 motion-safe:transition-opacity";
+  const saveAlias = async () => {
+    const next = aliasDraft.trim();
+    if (!next || (await onSetAlias(next)) === false) return;
+    setAliasDraft("");
+    setAliasOpen(false);
+  };
 
   return (
     <li
-      className={`flex min-w-0 max-w-full list-none items-center gap-2 rounded-xl border bg-raised px-3 py-2 ${tone.split(" ")[1]}`}
+      className={`group flex min-w-0 max-w-full list-none items-center gap-2 rounded-xl border bg-raised px-3 py-2 ${tone.split(" ")[1]}`}
     >
       <span
         className={`material-symbols-outlined shrink-0 text-base ${tone.split(" ")[0]}`}
@@ -62,14 +71,6 @@ export default function ModelRow({
           </span>
         ) : null}
       </div>
-      {onTest ? (
-        <IconButton
-          icon="science"
-          label={isTesting ? `Testing ${displayModel}` : `Test ${displayModel}`}
-          loading={isTesting}
-          onClick={onTest}
-        />
-      ) : null}
       <IconButton
         icon={copied === copyKey ? "check" : copyError === copyKey ? "error" : "content_copy"}
         label={
@@ -82,6 +83,15 @@ export default function ModelRow({
         onClick={() => onCopy(displayModel, copyKey)}
       />
       <CopyStatus copied={copied} error={copyError} id={copyKey} />
+      {onTest ? (
+        <IconButton
+          icon="science"
+          label={isTesting ? `Testing ${displayModel}` : `Test ${displayModel}`}
+          loading={isTesting}
+          onClick={onTest}
+          className={quietActions}
+        />
+      ) : null}
       {!isCustom && onSetAlias ? (
         alias ? (
           <span className="flex min-w-0 items-center gap-1">
@@ -90,7 +100,7 @@ export default function ModelRow({
               icon="close"
               label={`Remove alias ${alias} for ${displayModel}`}
               onClick={onDeleteAlias}
-              className="hover:text-err"
+              className={`${quietActions} hover:text-err`}
             />
           </span>
         ) : aliasOpen ? (
@@ -100,10 +110,8 @@ export default function ModelRow({
               value={aliasDraft}
               onChange={(event) => setAliasDraft(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && aliasDraft.trim()) {
-                  onSetAlias(aliasDraft.trim());
-                  setAliasDraft("");
-                  setAliasOpen(false);
+                if (event.key === "Enter") {
+                  saveAlias();
                 } else if (event.key === "Escape") {
                   setAliasDraft("");
                   setAliasOpen(false);
@@ -114,13 +122,9 @@ export default function ModelRow({
             />
             <IconButton
               icon="check"
+              className={quietActions}
               label={`Save alias for ${displayModel}`}
-              onClick={() => {
-                if (!aliasDraft.trim()) return;
-                onSetAlias(aliasDraft.trim());
-                setAliasDraft("");
-                setAliasOpen(false);
-              }}
+              onClick={saveAlias}
             />
           </span>
         ) : (
@@ -128,6 +132,7 @@ export default function ModelRow({
             icon="label"
             label={`Set alias for ${displayModel}`}
             onClick={() => setAliasOpen(true)}
+            className={quietActions}
           />
         )
       ) : null}
@@ -136,7 +141,7 @@ export default function ModelRow({
           icon="close"
           label={`${removeLabel} ${displayModel}`}
           onClick={onRemove}
-          className="hover:text-err"
+          className={`${quietActions} hover:text-err`}
         />
       ) : null}
     </li>

@@ -4,7 +4,7 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Toggle, StatusPill, Menu, MenuItem, Tooltip } from "@/shared/components";
+import { Toggle, StatusPill, Menu, MenuItem, Tooltip, Spinner } from "@/shared/components";
 import CooldownTimer from "@/shared/components/CooldownTimer";
 import { cooldownUntil, connectionHealth } from "@/shared/utils/providerHealth";
 import { formatCooldownRemaining, weightSharePct } from "../detailUtils";
@@ -315,9 +315,13 @@ export default function SortableConnectionRow({
                     hasAnyProxy ? "text-coral-ink" : "text-muted hover:text-text"
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
-                    {proxyUpdating ? "progress_activity" : "lan"}
-                  </span>
+                  {proxyUpdating ? (
+                    <Spinner size="sm" className="text-[18px]" />
+                  ) : (
+                    <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                      lan
+                    </span>
+                  )}
                   <span className="text-[10px] leading-tight">Proxy</span>
                 </button>
               }
