@@ -1,3 +1,17 @@
+# v0.3.3 (2026-09-27)
+
+## Security
+- **Privacy**: 9router no longer tracks anyone or calls services run by the original upstream authors (#293).
+  - The dashboard's hardcoded Google Analytics tag is removed. It had been sending every page view (URL and title) to the upstream author's analytics account.
+  - The Donate dialog is bundled locally and no longer calls `9router.com`.
+  - `.env.example` no longer points `CLOUD_URL` at `9router.com`.
+  - The Cloudflare tunnel no longer registers its URL with the upstream `abc-tunnel.us` relay.
+  - The Headroom sidecar is started with its telemetry and update check turned off.
+
+## Changes
+- **Cloudflare tunnel**: a stable-URL relay is now opt-in through `TUNNEL_WORKER_URL`, which must be an https origin you run yourself. Without one, the tunnel's public URL is its own `*.trycloudflare.com` address, which changes when the tunnel restarts (#293).
+- **Dashboard**: the sidebar no longer promotes the upstream 9Remote and 9English products. The landing page now installs this project's GHCR image instead of `npx 9router`, which is the upstream author's npm package (#293).
+
 # v0.3.2 (2026-09-25)
 
 ## Features
