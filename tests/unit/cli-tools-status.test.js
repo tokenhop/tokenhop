@@ -37,6 +37,14 @@ describe("deriveToolStatus", () => {
       variant: "err",
     });
   });
+  it("guide tools report a failed detection rather than hiding it as a guide", () => {
+    expect(
+      deriveToolStatus({ name: "GitHub Copilot", configType: "guide" }, { error: "status 500" }),
+    ).toMatchObject({
+      key: "error",
+      label: "Detection failed",
+    });
+  });
   it("maps missing payload and not-installed to notInstalled", () => {
     expect(deriveToolStatus(cliTool, null).key).toBe("notInstalled");
     expect(deriveToolStatus(cliTool, { installed: false }).key).toBe("notInstalled");

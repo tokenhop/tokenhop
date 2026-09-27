@@ -14,15 +14,17 @@ export const TOOL_STATUS_KEYS = ["connected", "notConfigured", "notInstalled", "
 
 /**
  * Derive a grid status from a tool def and its detection payload.
- * Guide tools always report "guide" regardless of detection.
+ * A failed detection always reports "error", even for guide tools that own a
+ * writer card (Copilot), so a real failure is never masked. Otherwise guide
+ * tools report "guide" regardless of detection.
  *
  * @param {object} tool CLI_TOOLS entry (may carry configType)
  * @param {object|null|undefined} status Detection payload (installed, has9Router, error)
  * @returns {{ key: "connected"|"notConfigured"|"notInstalled"|"error"|"guide", label: string, variant: "ok"|"warn"|"info"|"neutral"|"err" }}
  */
 export function deriveToolStatus(tool, status) {
-  if (tool?.configType === "guide") return { key: "guide", label: "Guide", variant: "info" };
   if (status?.error) return { key: "error", label: "Detection failed", variant: "err" };
+  if (tool?.configType === "guide") return { key: "guide", label: "Guide", variant: "info" };
   if (!status) return { key: "notInstalled", label: "Not installed", variant: "neutral" };
   if (!status.installed) return { key: "notInstalled", label: "Not installed", variant: "neutral" };
   if (status.has9Router) return { key: "connected", label: "Connected", variant: "ok" };
