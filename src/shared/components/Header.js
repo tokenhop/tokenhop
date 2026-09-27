@@ -228,8 +228,11 @@ export const getPageInfo = (pathname) => {
  * - Muted subtitle line ABOVE Bricolage display H1
  * - Provider breadcrumb preserved
  * - Mobile hamburger (<1024px)
- * - Right actions: SSO name pill, registered search (providers page),
+ * - Right actions: SSO name pill, ⌘K, registered search (providers page),
  *   heart Donate IconButton, HeaderLanguage, HeaderMenu, optional children
+ * - Below `sm` the row is hamburger + title + ⌘K + ⋮ only; Support, Language
+ *   and Theme live in the ⋮ menu and page search wraps to its own row.
+ *   Breakpoints are CSS-only so server and client markup match.
  *
  * @param {object} props
  * @param {() => void} [props.onMenuClick] Mobile menu hamburger trigger.
@@ -248,6 +251,8 @@ export default function Header({
   const [loginMethod, setLoginMethod] = useState("");
   const [donateOpen, setDonateOpen] = useState(false);
 
+  const searchVisible = useHeaderSearchStore((s) => s.visible);
+  const hasSecondRow = searchVisible || Boolean(actions);
   const pageInfo = useMemo(() => getPageInfo(pathname), [pathname]);
   const { title, description, breadcrumbs } = pageInfo;
 
@@ -292,7 +297,7 @@ export default function Header({
   };
 
   return (
-    <header className="flex shrink-0 items-end justify-between gap-3 px-4 pt-6 pb-4 lg:px-10 lg:pt-7 lg:pb-5">
+    <header className="flex shrink-0 flex-wrap items-end gap-x-3 gap-y-2 px-4 pt-6 pb-4 lg:px-10 lg:pt-7 lg:pb-5">
       {/* Mobile hamburger */}
       {showMenuButton && (
         <div className="flex shrink-0 items-center lg:hidden">
@@ -307,13 +312,16 @@ export default function Header({
       )}
 
       {/* Title block: subtitle ABOVE display H1 per the Signal board */}
-      <div className="flex min-w-[9rem] max-w-[28rem] flex-col gap-1 lg:min-w-[14rem]">
+      <div className="flex min-w-0 flex-1 flex-col gap-1 sm:max-w-[28rem]">
         {breadcrumbs.length > 0 ? (
-          <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs text-muted">
+          <nav
+            aria-label="Breadcrumb"
+            className="flex min-w-0 items-center gap-1.5 overflow-hidden text-xs text-muted"
+          >
             {breadcrumbs.map((crumb, index) => (
               <div
                 key={`${crumb.label}-${crumb.href || "current"}`}
-                className="flex items-center gap-1.5"
+                className="inline-flex min-w-0 items-center gap-1.5"
               >
                 {index > 0 && (
                   <span
@@ -328,27 +336,33 @@ export default function Header({
                     {crumb.label}
                   </Link>
                 ) : (
-                  <span className="flex items-center gap-1.5 font-medium text-text">
+                  <span className="flex min-w-0 items-center gap-1.5 font-medium text-text">
                     {crumb.providerId && <ProviderTile providerId={crumb.providerId} size="sm" />}
-                    <span>{translate(crumb.label)}</span>
+                    <span className="truncate">{translate(crumb.label)}</span>
                   </span>
                 )}
               </div>
             ))}
           </nav>
         ) : description ? (
-          <p className="text-xs font-medium text-muted lg:text-sm">{translate(description)}</p>
+          <p className="truncate text-xs font-medium text-muted lg:text-sm">
+            {translate(description)}
+          </p>
         ) : null}
 
         {title ? (
-          <h1 className="truncate font-display text-2xl font-bold tracking-[-0.02em] text-text lg:text-[42px] lg:leading-[1.05]">
+          <h1
+            className="font-display text-xl leading-tight font-bold tracking-[-0.02em] text-text max-sm:line-clamp-2 max-sm:break-words sm:truncate sm:text-2xl xl:text-[42px] xl:leading-[1.05]"
+            title={translate(title)}
+          >
             {translate(title)}
           </h1>
         ) : null}
       </div>
 
-      {/* Right actions */}
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+      {/* Right actions. Below sm only ⌘K and the ⋮ menu stay inline; page
+          search and injected actions wrap to their own row. */}
+      <div className="flex shrink-0 items-center justify-end gap-2 sm:min-w-0 sm:flex-1">
         {displayName && (loginMethod === "OIDC" || loginMethod === "SAML") && (
           <div
             className="hidden items-center gap-1.5 rounded-full border border-line bg-raised px-3 py-1 text-xs text-muted sm:flex"
@@ -366,22 +380,32 @@ export default function Header({
 
         <CommandPaletteTrigger />
 
-        <HeaderSearch />
+        <div className="hidden min-w-0 items-center gap-2 sm:contents">
+          <HeaderSearch />
 
-        {/* Support heart icon button */}
-        <IconButton
-          icon="volunteer_activism"
-          label="Support 9router"
-          onClick={() => setDonateOpen(true)}
-          className="text-coral hover:bg-coral-bg hover:text-coral-ink"
-        />
+          {/* Support heart icon button (in the ⋮ menu below sm) */}
+          <IconButton
+            icon="volunteer_activism"
+            label="Support 9router"
+            onClick={() => setDonateOpen(true)}
+            className="text-coral hover:bg-coral-bg hover:text-coral-ink"
+          />
 
-        {/* Page-injected actions slot */}
-        {actions}
+          {/* Page-injected actions slot */}
+          {actions}
 
-        <HeaderLanguage />
-        <HeaderMenu onLogout={handleLogout} />
+          <HeaderLanguage />
+        </div>
+        <HeaderMenu onLogout={handleLogout} onDonate={() => setDonateOpen(true)} />
       </div>
+
+      {/* Below sm: page search and actions on their own full-width row */}
+      {hasSecondRow ? (
+        <div className="flex w-full min-w-0 items-center gap-2 sm:hidden">
+          <HeaderSearch />
+          {actions}
+        </div>
+      ) : null}
 
       <DonateModal isOpen={donateOpen} onClose={() => setDonateOpen(false)} />
     </header>

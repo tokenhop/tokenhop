@@ -238,20 +238,25 @@ export function formatBadge(count) {
   return String(count);
 }
 
+// [singular, plural] so screen readers never hear "1 combos".
 const BADGE_NOUNS = {
-  providers: "connected providers",
-  combos: "combos",
-  quota: "low quota accounts",
+  providers: ["connected provider", "connected providers"],
+  combos: ["combo", "combos"],
+  quota: ["account low on quota", "accounts low on quota"],
 };
 
 /**
- * Screen-reader text for a nav badge, e.g. "14 connected providers".
+ * Screen-reader text for a nav badge, e.g. "14 connected providers" or
+ * "9 connected providers, 2 need attention".
  * @param {string} badgeKey
  * @param {number} count
+ * @param {number} [attentionCount=0] Items in that count that need attention.
  * @returns {string|null} null when there is nothing to announce
  */
-export function badgeAriaLabel(badgeKey, count) {
-  const noun = BADGE_NOUNS[badgeKey];
-  if (!noun || formatBadge(count) === null) return null;
-  return `${count} ${noun}`;
+export function badgeAriaLabel(badgeKey, count, attentionCount = 0) {
+  const nouns = BADGE_NOUNS[badgeKey];
+  if (!nouns || formatBadge(count) === null) return null;
+  const base = `${count} ${count === 1 ? nouns[0] : nouns[1]}`;
+  if (!(attentionCount > 0)) return base;
+  return `${base}, ${attentionCount} ${attentionCount === 1 ? "needs" : "need"} attention`;
 }

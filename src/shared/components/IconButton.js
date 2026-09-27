@@ -3,7 +3,12 @@
 import PropTypes from "prop-types";
 import { cn } from "@/shared/utils/cn";
 
-/** Signal icon-only button: 40px square, line border, muted icon that turns text-colored on hover. An accessible name (`label`, `aria-label` or `aria-labelledby`) is required. */
+/**
+ * Signal icon-only button: 40px square, line border, muted icon that turns
+ * text-colored on hover. An accessible name (`label`, `aria-label` or
+ * `aria-labelledby`) is required. An optional decorative `suffix` (e.g. a
+ * locale code chip) widens it; pass `aria-hidden` content only.
+ */
 export default function IconButton({
   icon,
   label,
@@ -11,6 +16,7 @@ export default function IconButton({
   loading = false,
   disabled = false,
   className,
+  suffix,
   ...props
 }) {
   const accessibleLabel = label ?? ariaLabel;
@@ -35,6 +41,7 @@ export default function IconButton({
       >
         {loading ? "progress_activity" : icon}
       </span>
+      {suffix}
     </button>
   );
 }
@@ -54,4 +61,5 @@ IconButton.propTypes = {
   loading: PropTypes.bool,
   disabled: PropTypes.bool,
   className: PropTypes.string,
+  suffix: PropTypes.node,
 };

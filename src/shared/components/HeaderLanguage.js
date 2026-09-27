@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
-import { LOCALE_FLAGS } from "@/shared/constants/locales";
+import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
+import { languageButtonLabel } from "@/shared/utils/shell";
+import IconButton from "./IconButton";
 import LanguageSwitcher from "./LanguageSwitcher";
 
 function getLocaleFromCookie() {
@@ -12,31 +14,44 @@ function getLocaleFromCookie() {
   return normalizeLocale(value);
 }
 
+/**
+ * Signal language control: `translate` IconButton with a locale code chip and
+ * an accessible name ("Language: English"). Opens the LanguageSwitcher modal.
+ * No emoji: flag glyphs render as boxes without an emoji font. The label tracks
+ * runtime locale changes (the modal switch reloads without a page reload).
+ */
 export default function HeaderLanguage() {
   const [open, setOpen] = useState(false);
   const [locale, setLocale] = useState("en");
 
   useEffect(() => {
-    setLocale(getLocaleFromCookie());
-  }, [open]);
+    setLocale(getCurrentLocale() || getLocaleFromCookie());
+    return onLocaleChange(() => setLocale(getCurrentLocale() || getLocaleFromCookie()));
+  }, []);
+
+  const { code, label } = languageButtonLabel(locale);
 
   return (
     <>
-      <button
+      <IconButton
+        icon="translate"
+        aria-label={label}
         onClick={() => setOpen(true)}
-        className="flex items-center justify-center p-2 rounded-lg text-muted hover:text-text hover:bg-coral-bg transition-all"
-        title="Language"
         data-i18n-skip="true"
-      >
-        <span className="text-lg leading-none">{LOCALE_FLAGS[locale] || "🌐"}</span>
-      </button>
+        className="w-auto gap-1 px-2.5"
+        suffix={
+          <span className="font-mono text-xs font-semibold" aria-hidden="true">
+            {code}
+          </span>
+        }
+      />
 
       <LanguageSwitcher
         hideTrigger
         isOpen={open}
-        onClose={(next) => {
+        onClose={() => {
           setOpen(false);
-          setLocale(next);
+          setLocale(getCurrentLocale() || getLocaleFromCookie());
         }}
       />
     </>
