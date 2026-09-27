@@ -3,6 +3,7 @@ import {
   createLatestSaveQueue,
   mitmFailureMessage,
   readMitmResponse,
+  resolveSaveVisibility,
   restoredMappings,
 } from "../../src/app/(dashboard)/dashboard/cli-tools/components/mitmToolActions.js";
 
@@ -88,11 +89,19 @@ describe("createLatestSaveQueue", () => {
     await Promise.resolve();
     expect(calls).toEqual(["old"]);
     gates[0].resolve({ fast: "old" });
-    await expect(first).resolves.toEqual({ latest: false, saved: { fast: "old" } });
+    await expect(first).resolves.toEqual({
+      latest: false,
+      saved: { fast: "old" },
+      generation: 1,
+    });
     await Promise.resolve();
     expect(calls).toEqual(["old", "new"]);
     gates[1].resolve({ fast: "new" });
-    await expect(second).resolves.toEqual({ latest: true, saved: { fast: "new" } });
+    await expect(second).resolves.toEqual({
+      latest: true,
+      saved: { fast: "new" },
+      generation: 2,
+    });
   });
 
   it("reports failures without breaking later saves", async () => {
@@ -104,8 +113,28 @@ describe("createLatestSaveQueue", () => {
     });
     const failed = await enqueue({ fast: "a" });
     expect(failed.latest).toBe(true);
+    expect(failed.generation).toBe(1);
     expect(failed.error.message).toBe("Alias store unavailable");
-    await expect(enqueue({ fast: "b" })).resolves.toEqual({ latest: true, saved: { fast: "b" } });
+    await expect(enqueue({ fast: "b" })).resolves.toEqual({
+      latest: true,
+      saved: { fast: "b" },
+      generation: 2,
+    });
+  });
+});
+
+describe("resolveSaveVisibility", () => {
+  it("keeps newer unsent typing visible when the latest queued PUT resolves", () => {
+    const saved = { a: "saved/model" };
+    const typing = { a: "still-typing/model" };
+    expect(resolveSaveVisibility(typing, 3, saved, 2)).toBe(typing);
+    expect(resolveSaveVisibility(typing, 2, saved, 2)).toBe(saved);
+  });
+
+  it("keeps newer local typing on failed-save rollback and initial-load completion", () => {
+    const typing = { a: "draft/model" };
+    expect(resolveSaveVisibility(typing, 4, {}, 2)).toBe(typing);
+    expect(resolveSaveVisibility(typing, 4, { a: "server/model" }, 0)).toBe(typing);
   });
 });
 
@@ -115,7 +144,7 @@ describe("mitmFailureMessage", () => {
       "Couldn't load model mappings for Kiro: HTTP 500.",
     );
     expect(mitmFailureMessage("save", "Kiro", "Failed to save aliases")).toBe(
-      "Couldn't save model mappings for Kiro: Failed to save aliases. The last saved mappings were restored.",
+      "Couldn't save model mappings for Kiro: Failed to save aliases. Check the mappings before trying again.",
     );
     expect(mitmFailureMessage("enable", "Antigravity", "Wrong sudo password")).toBe(
       "Couldn't start DNS for Antigravity: Wrong sudo password.",

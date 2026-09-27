@@ -48,14 +48,28 @@ export function createLatestSaveQueue(send) {
     const run = tail.then(async () => {
       try {
         const saved = await send(mappings);
-        return { latest: mine === generation, saved };
+        return { latest: mine === generation, saved, generation: mine };
       } catch (error) {
-        return { latest: mine === generation, error };
+        return { latest: mine === generation, error, generation: mine };
       }
     });
     tail = run.then(() => undefined);
     return run;
   };
+}
+
+/**
+ * Decide what a finished save may show. Server-confirmed aliases are adopted
+ * only when no newer local edit exists; otherwise the user's current text
+ * stays on screen (saved state still advances so the next blur PUTs it).
+ * @param {object} current visible mappings
+ * @param {number} currentGeneration local edit generation
+ * @param {object} saved server-confirmed mappings
+ * @param {number} saveGeneration generation the finished request was built at
+ * @returns {object}
+ */
+export function resolveSaveVisibility(current, currentGeneration, saved, saveGeneration) {
+  return currentGeneration > saveGeneration ? current : saved;
 }
 
 /**
@@ -72,6 +86,6 @@ export function mitmFailureMessage(action, toolName, detail) {
       : action === "save"
         ? `save model mappings for ${toolName}`
         : `${action === "enable" ? "start" : "stop"} DNS for ${toolName}`;
-  const suffix = action === "save" ? " The last saved mappings were restored." : "";
+  const suffix = action === "save" ? " Check the mappings before trying again." : "";
   return `Couldn't ${what}${detail ? `: ${detail}` : ""}.${suffix}`;
 }

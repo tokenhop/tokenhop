@@ -9,6 +9,7 @@ import {
   createLatestSaveQueue,
   mitmFailureMessage,
   readMitmResponse,
+  resolveSaveVisibility,
   restoredMappings,
 } from "./mitmToolActions";
 
@@ -45,17 +46,41 @@ export default function MitmToolCard({
   const [modalOpen, setModalOpen] = useState(false);
   const [currentEditingAlias, setCurrentEditingAlias] = useState(null);
   const savedMappings = useRef({});
+  const editGeneration = useRef(0);
+  const saveEpoch = useRef(0);
+  const savePending = useRef(0);
+  const loadGeneration = useRef(0);
   const notifyError = useNotificationStore((state) => state.error);
 
   const mitmHosts = TOOL_HOSTS[tool.id] ?? [];
   const canRunWithoutPassword = isWin || hasCachedPassword || needsSudoPassword === false;
 
+  // A load that finishes after the user typed must not clobber the newer
+  // local text; server state still advances for the next blur PUT.
   const loadSavedMappings = useCallback(async () => {
+    const editGenerationAtStart = editGeneration.current;
+    const saveEpochAtStart = saveEpoch.current;
+    const thisLoad = ++loadGeneration.current;
     try {
       const res = await fetch(`/api/cli-tools/antigravity-mitm/alias?tool=${tool.id}`);
       const data = await readMitmResponse(res, "Failed to load aliases");
+      // A finished save or a newer started load supersedes this GET result.
+      if (
+        saveEpochAtStart !== saveEpoch.current ||
+        savePending.current > 0 ||
+        thisLoad !== loadGeneration.current
+      ) {
+        return true;
+      }
       savedMappings.current = restoredMappings(data.aliases);
-      setModelMappings(savedMappings.current);
+      setModelMappings((visible) =>
+        resolveSaveVisibility(
+          visible,
+          editGeneration.current,
+          savedMappings.current,
+          editGenerationAtStart,
+        ),
+      );
       return true;
     } catch (error) {
       notifyError(mitmFailureMessage("load", tool.name, error.message));
@@ -85,27 +110,52 @@ export default function MitmToolCard({
 
   const saveMappings = useCallback(
     async (mappings) => {
-      const result = await enqueueSave(mappings);
+      const submittedEditGeneration = editGeneration.current;
+      savePending.current += 1;
+      let result;
+      try {
+        result = await enqueueSave(mappings);
+      } finally {
+        savePending.current -= 1;
+      }
+      saveEpoch.current += 1;
       if (result.error) {
         // A failed PUT must never leave the unsaved optimistic edit visible.
         // Roll back to the last server-confirmed map; no refetch, so it can't
         // race a newer queued save. Older failures defer to the newest save.
         if (!result.latest) return;
         notifyError(mitmFailureMessage("save", tool.name, result.error.message));
-        setModelMappings(restoredMappings(savedMappings.current));
+        setModelMappings((visible) =>
+          resolveSaveVisibility(
+            visible,
+            editGeneration.current,
+            savedMappings.current,
+            submittedEditGeneration,
+          ),
+        );
         return;
       }
       savedMappings.current = restoredMappings(result.saved);
-      if (result.latest) setModelMappings(savedMappings.current);
+      if (!result.latest) return;
+      setModelMappings((visible) =>
+        resolveSaveVisibility(
+          visible,
+          editGeneration.current,
+          savedMappings.current,
+          submittedEditGeneration,
+        ),
+      );
     },
     [enqueueSave, tool.name, notifyError],
   );
 
   const handleMappingBlur = (alias, value) => {
+    editGeneration.current += 1;
     saveMappings({ ...modelMappings, [alias]: value });
   };
 
   const handleModelMappingChange = (alias, value) => {
+    editGeneration.current += 1;
     setModelMappings((prev) => ({ ...prev, [alias]: value }));
   };
 
@@ -116,6 +166,7 @@ export default function MitmToolCard({
 
   const handleModelSelect = (model) => {
     if (!currentEditingAlias || model.isPlaceholder) return;
+    editGeneration.current += 1;
     const updated = { ...modelMappings, [currentEditingAlias]: model.value };
     setModelMappings(updated);
     saveMappings(updated);

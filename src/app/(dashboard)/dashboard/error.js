@@ -4,14 +4,16 @@ import PropTypes from "prop-types";
 import { ErrorState } from "@/shared/components/StateViews";
 import { copyTextToClipboard } from "@/shared/components/formPrimitives";
 import { useNotificationStore } from "@/store/notificationStore";
+import { getCopyableErrorDetails } from "./errorDetails";
 
 /** Dashboard render errors stay visible and retryable inside the Signal shell. */
 export default function DashboardError({ error, reset }) {
   const notify = useNotificationStore();
   const copyDetails = async () => {
     try {
-      // Production server errors only expose a digest; never copy stack traces or secrets.
-      await copyTextToClipboard(error.digest || error.message || "Dashboard render error");
+      // Client-side error text can carry secrets, so only copy the server
+      // digest (or fixed support text), never the raw message.
+      await copyTextToClipboard(getCopyableErrorDetails(error));
       notify.success("Error details copied");
     } catch {
       notify.error("Could not copy error details");

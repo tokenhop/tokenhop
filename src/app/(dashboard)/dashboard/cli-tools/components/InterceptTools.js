@@ -7,6 +7,7 @@ import { CardSkeleton, EmptyState } from "@/shared/components";
 import Button from "@/shared/components/Button";
 import StatusPill from "@/shared/components/StatusPill";
 import ToolTile from "./ToolTile";
+import { readInterceptStatus } from "../lib/interceptStatus";
 
 // Client-side ceiling; the route success path already sets real data.
 const INTERCEPT_TIMEOUT_MS = 8000;
@@ -40,9 +41,11 @@ function InterceptToolsSection({ tools, onRetry }) {
         const res = await fetch("/api/cli-tools/antigravity-mitm", {
           signal: controller.signal,
         });
-        if (!res.ok) throw new Error(`MITM status request failed (${res.status}).`);
-        const data = await res.json();
-        if (!unmounted) setDnsStatus(data.running ? (data.dnsStatus ?? {}) : {});
+        const status = await readInterceptStatus(
+          res,
+          tools.map(([toolId]) => toolId),
+        );
+        if (!unmounted) setDnsStatus(status);
       } catch (err) {
         if (!unmounted) {
           setError(timedOut ? "MITM status took too long to respond." : err.message);
@@ -57,7 +60,7 @@ function InterceptToolsSection({ tools, onRetry }) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, []);
+  }, [tools]);
 
   if (!tools?.length) return null;
 
@@ -100,7 +103,7 @@ function InterceptToolsSection({ tools, onRetry }) {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {tools.map(([toolId, tool]) => {
-            const on = Boolean(dnsStatus?.[toolId]);
+            const on = dnsStatus[toolId] === true;
             return (
               <Link
                 key={toolId}
