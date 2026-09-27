@@ -19,9 +19,7 @@ const PERIODS = [
   { value: "60d", label: "60D" },
 ];
 
-// RecentRequests is superseded by the Request log tab — not rendered.
-// RequestLogger (raw pipe table) is untouched for other consumers; the
-// "Request log" tab is now RequestLog. Sorting is local state inside
+// The "Request log" tab is now RequestLog. Sorting is local state inside
 // UsageBreakdown (old ?sortBy= URL sync removed — it fought the tab router).
 
 /**

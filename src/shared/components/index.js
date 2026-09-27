@@ -31,7 +31,6 @@ export {
   SkeletonText,
   CardSkeleton,
 } from "./Loading";
-export { default as Avatar } from "./Avatar";
 export { default as Badge } from "./Badge";
 export { default as Toggle } from "./Toggle";
 export { default as ThemeToggle } from "./ThemeToggle";
@@ -49,7 +48,6 @@ export { default as McpMarketplaceModal } from "./McpMarketplaceModal";
 export { default as LanguageSwitcher } from "./LanguageSwitcher";
 export { default as HeaderMenu } from "./HeaderMenu";
 export { default as ChangelogModal } from "./ChangelogModal";
-export { default as RequestLogger } from "./RequestLogger";
 export { default as KiroAuthModal } from "./KiroAuthModal";
 export { default as KiroOAuthWrapper } from "./KiroOAuthWrapper";
 export { default as KiroSocialOAuthModal } from "./KiroSocialOAuthModal";

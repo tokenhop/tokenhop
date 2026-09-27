@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   formatCreditDate,
   formatTimeRemaining,
-} from "../../src/app/(dashboard)/dashboard/usage/components/ProviderLimits/resetCreditFormat.js";
+} from "../../src/app/(dashboard)/dashboard/quota/lib/resetCreditFormat.js";
 
 describe("reset credit expiry", () => {
   it("formats missing and invalid values", () => {

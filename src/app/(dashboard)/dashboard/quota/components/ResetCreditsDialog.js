@@ -2,8 +2,8 @@
 
 import PropTypes from "prop-types";
 import { Modal } from "@/shared/components";
-import { getConnectionLabel } from "./utils";
-import { formatCreditDate, formatTimeRemaining } from "./resetCreditFormat";
+import { getConnectionLabel } from "../lib/quotaUtils";
+import { formatCreditDate, formatTimeRemaining } from "../lib/resetCreditFormat";
 
 /** Credit expiry details retain loading, error, empty, and credit-table states. */
 export default function ResetCreditsDialog({ state, onClose }) {

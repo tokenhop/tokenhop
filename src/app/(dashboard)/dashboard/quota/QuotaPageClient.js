@@ -21,7 +21,7 @@ import {
   setQuotaCache,
   shouldResetPage,
   sortVisibleConnections,
-} from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+} from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 import { getBulkActionTargets, getSoonestReset, summarizeQuotaHealth } from "./quotaSummary";
 import { getConnectionLabel } from "./quotaLabels";
 import QuotaSummaryCard from "./components/QuotaSummaryCard";
@@ -32,7 +32,7 @@ import EmptyState from "@/shared/components/EmptyState";
 import Pagination from "@/shared/components/Pagination";
 import Toggle from "@/shared/components/Toggle";
 import { ConfirmDialog, EditConnectionModal } from "@/shared/components";
-import ResetCreditsDialog from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/ResetCreditsDialog";
+import ResetCreditsDialog from "@/app/(dashboard)/dashboard/quota/components/ResetCreditsDialog";
 
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
