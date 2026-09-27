@@ -6,6 +6,7 @@ import { QUOTA_SORT_OPTIONS } from "@/app/(dashboard)/dashboard/quota/lib/quotaU
 import Button from "@/shared/components/Button";
 import SegmentedControl from "@/shared/components/SegmentedControl";
 import ProviderTile from "@/shared/components/ProviderTile";
+import Select from "@/shared/components/Select";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All" },
@@ -72,18 +73,13 @@ export default function QuotaFilters({
 
       {/* Codex-specific remaining sort select (preserved from legacy) */}
       {providerFilter === "codex" && typeof onQuotaSortModeChange === "function" && (
-        <select
+        <Select
+          label="Sort Codex quotas by remaining"
           value={quotaSortMode}
           onChange={(e) => onQuotaSortModeChange(e.target.value)}
-          aria-label="Sort Codex quotas by remaining"
-          className="h-9 rounded-lg border border-line bg-raised px-2.5 text-xs font-semibold text-text outline-none transition-colors hover:bg-line/60 focus-visible:shadow-focus"
-        >
-          {QUOTA_SORT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+          options={QUOTA_SORT_OPTIONS}
+          className="min-w-[210px]"
+        />
       )}
 
       {/* Expiring first toggle */}
