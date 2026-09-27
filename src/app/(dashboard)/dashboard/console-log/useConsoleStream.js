@@ -9,6 +9,7 @@ import {
   parseConsoleLine,
   pauseBufferReducer,
   retryDelayMs,
+  reconcileConsoleBatch,
 } from "@/shared/utils/consoleLog";
 
 const STREAM_URL = "/api/translator/console-logs/stream";
@@ -17,12 +18,17 @@ const MAX_LINES = CONSOLE_LOG_CONFIG.maxLines;
 
 /** Manages the console SSE lifecycle. Hidden tabs close the stream; visible tabs fetch a catch-up snapshot. */
 export default function useConsoleStream() {
-  const [buffer, dispatchBuffer] = useReducer(pauseBufferReducer, initialConsoleBufferState);
+  const [buffer, dispatchBuffer] = useReducer(
+    (state, action) =>
+      typeof action === "function" ? action(state) : pauseBufferReducer(state, action),
+    initialConsoleBufferState,
+  );
   const [connection, dispatchConnection] = useReducer(connectionReducer, initialConnectionState);
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
   const [visibilityEpoch, setVisibilityEpoch] = useState(0);
   const [hasSnapshot, setHasSnapshot] = useState(false);
+  const [connectionFailed, setConnectionFailed] = useState(false);
   const streamRef = useRef(null);
   const retryRef = useRef(null);
   const retryAttemptRef = useRef(0);
@@ -58,24 +64,55 @@ export default function useConsoleStream() {
     let snapshotPending = true;
     const pendingEvents = [];
     let initialEvent = null;
-    let snapshotRaw = [];
 
+    // The server appends to its buffer at once but flushes SSE batches up to
+    // 100ms later, so batches queued during the catch-up fetch, and the first
+    // live batch after it, can partially overlap the snapshot tail. Only those
+    // are reconciled (longest matching prefix trimmed); every later batch is
+    // appended as-is so genuine identical repeats are never dropped.
+    let reconcileNextLive = false;
+    const appendLines = (raws, reconcile) => {
+      const lines = raws.map(parseConsoleLine);
+      dispatchBuffer(
+        reconcile
+          ? (state) => reconcileConsoleBatch(state, { lines, maxLines: MAX_LINES })
+          : { type: "append", lines, maxLines: MAX_LINES },
+      );
+    };
+    const eventLines = (msg) => {
+      if (msg.type === "line" && typeof msg.line === "string") return [msg.line];
+      if (msg.type === "lines" && Array.isArray(msg.lines)) return msg.lines;
+      return null;
+    };
     const handleEvent = (msg) => {
-      if (msg.type === "line" && typeof msg.line === "string") {
-        dispatchBuffer({
-          type: "append",
-          lines: [parseConsoleLine(msg.line)],
-          maxLines: MAX_LINES,
-        });
-      } else if (msg.type === "lines" && Array.isArray(msg.lines)) {
-        dispatchBuffer({
-          type: "append",
-          lines: msg.lines.map(parseConsoleLine),
-          maxLines: MAX_LINES,
-        });
-      } else if (msg.type === "clear") {
+      if (msg.type === "clear") {
+        reconcileNextLive = false;
         dispatchBuffer({ type: "clear" });
+        return;
       }
+      const raws = eventLines(msg);
+      if (!raws || raws.length === 0) return;
+      appendLines(raws, reconcileNextLive);
+      reconcileNextLive = false;
+    };
+    const flushQueued = () => {
+      // Queued batches are one ordered run until a clear; reconcile the run
+      // against the snapshot tail as a whole, then keep the rest verbatim.
+      let run = [];
+      let reconcile = true;
+      for (const msg of pendingEvents.splice(0)) {
+        if (msg.type === "clear") {
+          if (run.length) appendLines(run, reconcile);
+          run = [];
+          reconcile = false;
+          dispatchBuffer({ type: "clear" });
+          continue;
+        }
+        const raws = eventLines(msg);
+        if (raws) run.push(...raws);
+      }
+      if (run.length) appendLines(run, reconcile);
+      reconcileNextLive = reconcile;
     };
 
     const openStream = () => {
@@ -86,6 +123,7 @@ export default function useConsoleStream() {
       es.onopen = () => {
         if (!activeRef.current) return;
         retryAttemptRef.current = 0;
+        setConnectionFailed(false);
         dispatchConnection({ type: "open" });
         setLoadError("");
       };
@@ -109,6 +147,7 @@ export default function useConsoleStream() {
       es.onerror = () => {
         es.close();
         if (!activeRef.current || document.hidden) return;
+        setConnectionFailed(true);
         dispatchConnection({ type: "error" });
         retryAttemptRef.current += 1;
         const delay = retryDelayMs(retryAttemptRef.current);
@@ -125,10 +164,9 @@ export default function useConsoleStream() {
         const data = await res.json();
         if (!data.success || !Array.isArray(data.logs)) throw new Error("Invalid log snapshot");
         if (cancelled || version !== snapshotVersionRef.current) return;
-        snapshotRaw = Array.isArray(data.logs) ? data.logs.slice(-MAX_LINES) : [];
         dispatchBuffer({
           type: "snapshot",
-          lines: snapshotRaw.map(parseConsoleLine),
+          lines: data.logs.slice(-MAX_LINES).map(parseConsoleLine),
           maxLines: MAX_LINES,
         });
         setHasSnapshot(true);
@@ -136,10 +174,9 @@ export default function useConsoleStream() {
       } catch (error) {
         if (cancelled || version !== snapshotVersionRef.current) return;
         if (initialEvent) {
-          snapshotRaw = initialEvent.slice(-MAX_LINES);
           dispatchBuffer({
             type: "snapshot",
-            lines: snapshotRaw.map(parseConsoleLine),
+            lines: initialEvent.slice(-MAX_LINES).map(parseConsoleLine),
             maxLines: MAX_LINES,
           });
           setHasSnapshot(true);
@@ -149,17 +186,7 @@ export default function useConsoleStream() {
       } finally {
         if (!cancelled && version === snapshotVersionRef.current) {
           snapshotPending = false;
-          // De-duplicate: events received after the HTTP snapshot may already be
-          // in it. Snapshot raw lines are the source of truth here.
-          const queued = pendingEvents.splice(0);
-          if (queued.length > 0) {
-            const existing = new Set(snapshotRaw);
-            for (const msg of queued) {
-              if (msg.type === "line" && existing.has(msg.line)) continue;
-              if (msg.type === "lines" && msg.lines.every((line) => existing.has(line))) continue;
-              handleEvent(msg);
-            }
-          }
+          flushQueued();
           setLoading(false);
         }
       }
@@ -181,8 +208,12 @@ export default function useConsoleStream() {
     connection,
     dispatchBuffer,
     loadError,
+    connectionFailed,
     loading,
     hasSnapshot,
-    reconnect: () => setVisibilityEpoch((value) => value + 1),
+    reconnect: () => {
+      setConnectionFailed(false);
+      setVisibilityEpoch((value) => value + 1);
+    },
   };
 }

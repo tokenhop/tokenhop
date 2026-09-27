@@ -38,15 +38,23 @@ const SCROLL_THRESHOLD_PX = 48;
  */
 export default function ConsoleLogClient() {
   const notify = useNotificationStore((state) => state.error);
-  const { buffer, connection, dispatchBuffer, loadError, loading, hasSnapshot, reconnect } =
-    useConsoleStream();
+  const {
+    buffer,
+    connection,
+    dispatchBuffer,
+    loadError,
+    connectionFailed,
+    loading,
+    hasSnapshot,
+    reconnect,
+  } = useConsoleStream();
   const [autoScroll, dispatchAutoScroll] = useReducer(autoScrollReducer, initialAutoScrollState);
   const [query, setQuery] = useState("");
   const [level, setLevel] = useState("ALL");
   const [raw, setRaw] = useState(false);
   const [hideBrowser, setHideBrowser] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState(() => new Set());
-  const [activeRow, setActiveRow] = useState(0);
+  const [activeKey, setActiveKey] = useState(null);
   const scrollRef = useRef(null);
   // Key of the row button that held focus, set only while it is focused.
   const focusedRowKey = useRef(null);
@@ -73,11 +81,23 @@ export default function ConsoleLogClient() {
   );
   const badge = connectionBadge(connection, { paused, newCount: buffer.newCount });
   const connected = connection.status === "open";
-  const streamError = !connected && lines.length === 0 && (loadError || !loading);
+  // Only surface the disconnected callout after a real error/close, never on
+  // first load: badge says Connecting until the stream has failed at least once.
+  const streamError =
+    !connected && lines.length === 0 && connectionFailed && (loadError || !loading);
+
+  // Roving tabindex follows a row key, not an index, so a group reordered by
+  // a repeat keeps its tab stop.
+  const activeIndex = Math.max(
+    0,
+    rows.findIndex((row) => row.key === activeKey),
+  );
 
   useEffect(() => {
-    setActiveRow((index) => Math.min(index, Math.max(0, rows.length - 1)));
-  }, [rows.length]);
+    if (rows.length > 0 && !rows.some((row) => row.key === activeKey)) {
+      setActiveKey(rows[rows.length - 1].key);
+    }
+  }, [rows, activeKey]);
 
   // Keep disclosures expanded through filtering and Raw toggles; prune only
   // keys whose lines left the 200-line buffer. Grouped and raw keys are
@@ -86,15 +106,26 @@ export default function ConsoleLogClient() {
     setExpandedKeys((keys) => pruneExpandedKeys(keys, grouped));
   }, [grouped]);
 
-  // Filtering or buffer rotation can unmount the focused row. Only then move
-  // focus to the filter, so it never lands on <body> and is never stolen from
-  // a control the user moved to.
+  // Restore focus to the same group key after reorder: when a repeat moves the
+  // focused row to the bottom, React moves its DOM node and focus can fall to
+  // body; put it back on that row so keyboard users keep their place. If the
+  // row is gone (filtered out or rotated), focus the filter instead. Group
+  // keys contain \u0000 separators, which CSS.escape maps to U+FFFD and would
+  // break the selector, so compare attributes directly.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `rows` is the trigger; the effect reads the DOM.
   useEffect(() => {
-    const key = focusedRowKey.current;
-    if (!key || rows.some((row) => row.key === key)) return;
-    focusedRowKey.current = null;
-    if (document.activeElement === document.body || !document.activeElement) {
-      document.getElementById("console-log-filter")?.focus();
+    if (
+      focusedRowKey.current &&
+      (document.activeElement === document.body || !document.activeElement)
+    ) {
+      const target = [...(scrollRef.current?.querySelectorAll("[data-console-key]") ?? [])].find(
+        (element) => element.getAttribute("data-console-key") === focusedRowKey.current,
+      );
+      if (target) target.focus();
+      else {
+        focusedRowKey.current = null;
+        document.getElementById("console-log-filter")?.focus();
+      }
     }
   }, [rows]);
 
@@ -137,9 +168,9 @@ export default function ConsoleLogClient() {
     });
   }, []);
 
-  const selectRow = useCallback((index, key) => {
+  const selectRow = useCallback((key) => {
     focusedRowKey.current = key;
-    setActiveRow(index);
+    setActiveKey(key);
   }, []);
 
   const clearRowFocus = useCallback((event) => {
@@ -209,7 +240,7 @@ export default function ConsoleLogClient() {
             index={index}
             raw={raw}
             expanded={expandedKeys.has(row.key)}
-            selected={index === activeRow}
+            selected={index === activeIndex}
             onSelect={selectRow}
             onBlur={clearRowFocus}
             onToggle={toggleExpanded}

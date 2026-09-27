@@ -96,10 +96,12 @@ const ConsoleLogRow = memo(function ConsoleLogRow({
 
   return (
     // content-visibility skips paint/layout for off-screen rows (native, no
-    // virtualization dependency); `auto` remembers each row's real height.
+    // virtualization dependency). It also applies paint containment, which
+    // would clip the 3px focus ring at the row edge, so the row carries 3px of
+    // padding and its intrinsic size matches the padded height.
     <li
       onBlur={onBlur}
-      className="flex gap-4 [content-visibility:auto] [contain-intrinsic-size:auto_23px]"
+      className="flex gap-4 px-[3px] py-[3px] [content-visibility:auto] [contain-intrinsic-size:auto_29px]"
     >
       <span className="signal-terminal-time shrink-0" title={seen || undefined}>
         {row.time || "--:--:--"}
@@ -110,14 +112,15 @@ const ConsoleLogRow = memo(function ConsoleLogRow({
       <div className="min-w-0 flex-1">
         <button
           data-console-row
+          data-console-key={row.key}
           type="button"
           aria-expanded={expanded}
           aria-controls={expanded ? detailId : undefined}
           tabIndex={selected ? 0 : -1}
           onClick={() => onToggle(row.key)}
           onKeyDown={onKeyDown}
-          onFocus={() => onSelect(index, row.key)}
-          className="flex w-full min-w-0 cursor-pointer items-baseline gap-2 rounded-sm bg-transparent p-0 text-start text-inherit hover:underline focus-visible:shadow-focus"
+          onFocus={() => onSelect(row.key)}
+          className="flex w-full min-w-0 cursor-pointer items-baseline gap-2 rounded-sm bg-transparent px-[3px] py-0 text-start text-inherit hover:underline focus-visible:shadow-focus"
         >
           {row.source === "browser" && (
             <span className="shrink-0 rounded border border-[var(--signal-terminal-time)] px-1 text-[11px] text-[var(--signal-terminal-time)]">

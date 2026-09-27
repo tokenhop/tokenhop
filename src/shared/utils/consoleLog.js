@@ -312,6 +312,22 @@ export function tagConsoleLines(lines, startId) {
 }
 
 /**
+ * Reconcile an SSE batch received after a snapshot: server appends to state.logs
+ * immediately, but batches flush up to 100ms later, so a batch can partially overlap
+ * snapshot tail. Trim only the longest matching prefix; everything else, including
+ * genuine repeats, is new. A fully overlapping batch is a no-op (returns the same
+ * state, keeping ids stable).
+ */
+export function reconcileConsoleBatch(state, action) {
+  if (!Array.isArray(action.lines)) throw new Error("reconcileConsoleBatch: needs lines");
+  const maxLines = reducerMaxLines(action);
+  const overlap = snapshotOverlap([...state.visible, ...state.pending], action.lines);
+  const fresh = action.lines.slice(overlap);
+  if (fresh.length === 0) return state;
+  return pauseBufferReducer(state, { type: "append", lines: fresh, maxLines });
+}
+
+/**
  * Cap a visible-lines array at maxLines, keeping the newest.
  * Existing row objects are preserved by reference so memoized rows do not
  * re-render merely because the buffer head dropped.

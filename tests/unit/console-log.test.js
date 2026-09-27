@@ -14,6 +14,7 @@ import {
   connectionReducer,
   initialConnectionState,
   snapshotOverlap,
+  reconcileConsoleBatch,
   initialAutoScrollState,
   initialConsoleBufferState,
   parseConsoleLine,
@@ -247,6 +248,58 @@ describe("pruneExpandedKeys", () => {
     const keys = new Set(["g1", "2"]);
     expect(pruneExpandedKeys(keys, groups)).toBe(keys);
     expect([...pruneExpandedKeys(new Set(["g1", "gone", "9"]), groups)]).toEqual(["g1"]);
+  });
+});
+
+describe("reconcileConsoleBatch", () => {
+  const seed = (raws) =>
+    pauseBufferReducer(initialConsoleBufferState, {
+      type: "append",
+      lines: raws.map(parseConsoleLine),
+      maxLines: 200,
+    });
+  const reconcile = (state, raws) =>
+    reconcileConsoleBatch(state, {
+      lines: raws.map(parseConsoleLine),
+      maxLines: 200,
+    });
+
+  it("trims only overlapping prefix of a partially overlapping batch", () => {
+    expect(
+      reconcile(seed(["a", "b", "c"]), ["b", "c", "d"]).visible.map((line) => line.raw),
+    ).toEqual(["a", "b", "c", "d"]);
+  });
+  it("handles a batch arriving after snapshot", () => {
+    expect(reconcile(seed(["a", "b"]), ["c", "d"]).visible.map((line) => line.raw)).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+    ]);
+  });
+  it("keeps genuine identical repeats after a matching snapshot prefix", () => {
+    expect(reconcile(seed(["A"]), ["A", "A", "B"]).visible.map((line) => line.raw)).toEqual([
+      "A",
+      "A",
+      "B",
+    ]);
+  });
+  it("does not dedupe a later batch of identical lines", () => {
+    let state = reconcile(seed(["A"]), ["A", "B"]);
+    state = pauseBufferReducer(state, {
+      type: "append",
+      lines: [parseConsoleLine("B")],
+      maxLines: 200,
+    });
+    expect(state.visible.map((line) => line.raw)).toEqual(["A", "B", "B"]);
+  });
+  it("does not consume ids for a fully overlapping batch", () => {
+    const state = seed(["a", "b"]);
+    expect(reconcile(state, ["a", "b"])).toBe(state);
+  });
+  it("retains paused buffering", () => {
+    const state = pauseBufferReducer(seed(["a", "b"]), { type: "pause" });
+    expect(reconcile(state, ["b", "c"]).pending.map((line) => line.raw)).toEqual(["c"]);
   });
 });
 
