@@ -181,8 +181,13 @@ export default function ComboFormModal({
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: forcePrefix + name.trim(), models });
-    setSaving(false);
+    try {
+      await onSave({ name: forcePrefix + name.trim(), models });
+    } catch (error) {
+      setNameError(error?.message || "Failed to create combo");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const isEdit = !!combo;

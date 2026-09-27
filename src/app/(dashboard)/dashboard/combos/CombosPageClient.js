@@ -166,18 +166,26 @@ export default function CombosPageClient() {
   const requestedComboId = readComboSelection(searchString);
   const createRequested = readCreateRequested(searchString);
   const requestedCombo = combos.some((c) => c.id === requestedComboId) ? requestedComboId : null;
-  const selectedComboId = requestedCombo || selectedId;
 
   // Missing/invalid ?combo= falls back via navigation once the list is known.
   // navigate derives from router + location at call time so the effect does
-  // not hold a stale closure over it.
+  // not hold a stale closure over it. The last valid URL selection becomes the
+  // fallback source, so a palette jump is never lost to a stale selectedId.
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
+  const lastValidSelectionRef = useRef(requestedCombo || selectedId);
+  if (requestedCombo) lastValidSelectionRef.current = requestedCombo;
+  const fallbackId = resolveComboSelection(
+    null,
+    combos,
+    lastValidSelectionRef.current ?? selectedId,
+  );
+  const selectedComboId = requestedCombo || fallbackId;
   useEffect(() => {
     if (loading || loadError || createRequested) return;
-    if (requestedComboId === selectedComboId) return;
-    navigateRef.current(selectedComboId, "replace");
-  }, [requestedComboId, selectedComboId, createRequested, loading, loadError]);
+    if (requestedComboId === fallbackId) return;
+    navigateRef.current(fallbackId, "replace");
+  }, [requestedComboId, fallbackId, createRequested, loading, loadError]);
 
   // ?create=1 opens the new-combo modal (also when the list is empty).
   useEffect(() => {

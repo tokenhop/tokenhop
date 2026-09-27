@@ -589,8 +589,13 @@ export default function ComboDetailPage() {
         isOpen={confirmDelete}
         onClose={() => setConfirmDelete(false)}
         onConfirm={async () => {
-          await handleDelete();
-          setConfirmDelete(false);
+          try {
+            await handleDelete();
+          } catch (error) {
+            setSaveError(error?.message || "Delete failed");
+          } finally {
+            setConfirmDelete(false);
+          }
         }}
         title="Delete combo"
         message={`Delete combo "${combo.name}"?`}
