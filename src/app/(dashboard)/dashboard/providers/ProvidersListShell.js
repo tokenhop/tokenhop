@@ -11,6 +11,7 @@ import {
   Kbd,
   SegmentedControl,
   CardSkeleton,
+  EditConnectionModal,
 } from "@/shared/components";
 import Menu, { MenuItem } from "@/shared/components/Menu";
 import { useNotificationStore } from "@/store/notificationStore";
@@ -77,6 +78,7 @@ function ProvidersListShell({ initialProviderId = null }) {
   const [addConnectionError, setAddConnectionError] = useState("");
   const [proxyPools, setProxyPools] = useState([]);
   const [testAccountsMode, setTestAccountsMode] = useState(null);
+  const [repairConnection, setRepairConnection] = useState(null);
 
   const narrowPanel = useIsNarrow();
   const notify = useNotificationStore();
@@ -275,6 +277,27 @@ function ProvidersListShell({ initialProviderId = null }) {
     }
   };
 
+  const handleRepairConnection = async (formData) => {
+    if (!repairConnection) return "Nothing to repair";
+    try {
+      const res = await fetch(`/api/providers/${repairConnection.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+      if (res.ok) {
+        setRepairConnection(null);
+        refreshData();
+        notify.success("Connection updated. Test it to confirm.");
+        return null;
+      }
+      const data = await res.json().catch(() => ({}));
+      return data.error || "Failed to save connection";
+    } catch {
+      return "Failed to save connection";
+    }
+  };
+
   const modelCountFor = (entry) =>
     entry.authGroup === "compatible"
       ? null
@@ -390,10 +413,18 @@ function ProvidersListShell({ initialProviderId = null }) {
               connections={entryConnections(entry, connections)}
               testing={testingMode === entry.id}
               onRetry={() => handleBatchTest("provider", entry.id)}
-              onReconnect={() => {
-                setAddConnectionError("");
-                setAddAccountEntry(entry);
+              onRepair={(connection) => {
+                // API keys and cookies are fixed in place on the failing connection.
+                // OAuth grants need a fresh sign-in; re-authorising the same account
+                // updates that connection instead of adding a new one.
+                if (connection.authType === "oauth") {
+                  setAddConnectionError("");
+                  setAddAccountEntry(entry);
+                } else {
+                  setRepairConnection(connection);
+                }
               }}
+              onCooldownExpired={refreshData}
               onOpen={() => openProvider(entry)}
             />
           ))}
@@ -520,6 +551,14 @@ function ProvidersListShell({ initialProviderId = null }) {
           onChanged={refreshData}
         />
       )}
+
+      <EditConnectionModal
+        isOpen={Boolean(repairConnection)}
+        connection={repairConnection}
+        proxyPools={proxyPools}
+        onSave={handleRepairConnection}
+        onClose={() => setRepairConnection(null)}
+      />
 
       <TestResultsModal
         isOpen={isTestModalOpen}

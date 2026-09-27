@@ -37,7 +37,7 @@ function providerCommands({ providers } = {}) {
     const name = connection?.name || connection?.provider || connection?.id;
     if (!name) return [];
     const health = connectionHealth(connection);
-    const healthHint = health.reason ? `${health.status} · ${health.reason}` : health.status;
+    const healthHint = health.reason || "Healthy";
     return [
       {
         id: `provider:${connection.id || name}`,

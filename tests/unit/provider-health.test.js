@@ -26,20 +26,29 @@ describe("provider health", () => {
     [{ testStatus: "unavailable", modelLock_x: "2026-09-27T12:02:14Z" }, "warn", "Cooling down"],
     [{ testStatus: "active", modelLock_x: "2026-09-27T12:02:14Z" }, "warn", "Cooling down"],
     [{ testStatus: "cooldown" }, "warn", "Cooling down"],
-    [{ testStatus: "pending" }, "warn", "Test pending"],
+    [{ testStatus: "unknown" }, "ok", null],
+    [{ testStatus: "untested" }, "ok", null],
+    [{ testStatus: "pending" }, "ok", null],
+    [{ testStatus: "surprise" }, "warn", "Status unknown · test"],
     [{ isActive: false, testStatus: "error" }, "off", "Disabled"],
   ])("classifies %o as %s", (fields, status, reason) => {
     expect(connectionHealth(connection("a", fields), NOW)).toMatchObject({ status, reason });
   });
 
-  it("treats expired OAuth tokens as failed but not expired API keys", () => {
+  it("does not infer failure from an expired access token the gateway can refresh", () => {
     const expiresAt = "2026-09-27T11:59:00Z";
     expect(connectionHealth(connection("a", { authType: "oauth", expiresAt }), NOW).status).toBe(
-      "err",
-    );
-    expect(connectionHealth(connection("a", { authType: "apikey", expiresAt }), NOW).status).toBe(
       "ok",
     );
+  });
+
+  it("maps 401/403 test failures to a reconnect fix, other codes to a retest", () => {
+    expect(
+      connectionHealth(connection("a", { testStatus: "error", errorCode: 401 }), NOW).action,
+    ).toBe("reconnect");
+    expect(
+      connectionHealth(connection("a", { testStatus: "error", errorCode: 500 }), NOW).action,
+    ).toBe("test");
   });
 
   it("ignores expired locks and disabled failures; worst active connection wins", () => {

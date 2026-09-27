@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 
 /**
@@ -8,17 +8,24 @@ import PropTypes from "prop-types";
  *
  * @param {object} props
  * @param {string} props.until ISO timestamp when the cooldown ends
+ * @param {() => void} [props.onExpire] called once when a live countdown reaches zero
  */
-export default function CooldownTimer({ until }) {
+export default function CooldownTimer({ until, onExpire }) {
   const [remaining, setRemaining] = useState("");
+  const wasLive = useRef(false);
 
   useEffect(() => {
     const updateRemaining = () => {
       const diff = new Date(until).getTime() - Date.now();
       if (diff <= 0) {
         setRemaining("");
+        if (wasLive.current) {
+          wasLive.current = false;
+          onExpire?.();
+        }
         return;
       }
+      wasLive.current = true;
       const secs = Math.floor(diff / 1000);
       if (secs < 60) {
         setRemaining(`${secs}s`);
@@ -34,7 +41,7 @@ export default function CooldownTimer({ until }) {
     updateRemaining();
     const interval = setInterval(updateRemaining, 1000);
     return () => clearInterval(interval);
-  }, [until]);
+  }, [until, onExpire]);
 
   if (!remaining) return null;
 
@@ -47,4 +54,5 @@ export default function CooldownTimer({ until }) {
 
 CooldownTimer.propTypes = {
   until: PropTypes.string.isRequired,
+  onExpire: PropTypes.func,
 };

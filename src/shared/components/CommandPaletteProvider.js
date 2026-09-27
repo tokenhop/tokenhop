@@ -46,12 +46,13 @@ function createDataCache() {
   const modelsLoader = createCachedLoader();
   let snapshot = { providers: null, combos: null, models: null };
   return {
-    async refresh({ includeModels }) {
+    async refresh({ includeModels, forceProviders = false }) {
       const [providers, combos] = await Promise.all([
-        snapshot.providers ??
-          fetchJson("/api/providers")
-            .then((d) => d.connections || [])
-            .catch(() => []),
+        forceProviders || snapshot.providers == null
+          ? fetchJson("/api/providers")
+              .then((d) => d.connections || [])
+              .catch(() => [])
+          : snapshot.providers,
         snapshot.combos ??
           fetchJson("/api/combos")
             .then((d) => d.combos || [])
@@ -114,7 +115,7 @@ export function CommandPaletteProvider({ children }) {
     let cancelled = false;
     setLoadingLists(true);
     cacheRef.current
-      .refresh({ includeModels: false })
+      .refresh({ includeModels: false, forceProviders: true })
       .then((snapshot) => collectCommands(snapshot))
       .then((all) => {
         if (!cancelled) setCommands(all);

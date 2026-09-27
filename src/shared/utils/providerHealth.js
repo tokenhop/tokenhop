@@ -22,13 +22,7 @@ export function connectionHealth(connection, nowMs = Date.now()) {
   const safeCode = Number.isInteger(code) && code >= 400 && code <= 599 ? String(code) : null;
   if (connection.lastErrorType === "token_refresh_failed")
     return { status: "err", reason: "Token refresh failed · reconnect", action: "reconnect" };
-  if (
-    connection.testStatus === "expired" ||
-    connection.lastErrorType === "token_expired" ||
-    (connection.authType === "oauth" &&
-      connection.expiresAt &&
-      new Date(connection.expiresAt).getTime() <= nowMs)
-  )
+  if (connection.testStatus === "expired" || connection.lastErrorType === "token_expired")
     return { status: "err", reason: "Token expired · reconnect", action: "reconnect" };
   if (until || connection.testStatus === "cooldown")
     return { status: "warn", reason: "Cooling down", action: "open", until };
@@ -39,14 +33,15 @@ export function connectionHealth(connection, nowMs = Date.now()) {
       action: safeCode === "401" || safeCode === "403" ? "reconnect" : "test",
       code: safeCode,
     };
-  // Stale unavailable without a live lock is not a current outage.
+  // Untested or stale-unavailable accounts are not a current outage. Unknown statuses fail
+  // closed as warnings so a new persisted error value cannot look healthy.
   if (
     connection.testStatus === "unavailable" ||
     !connection.testStatus ||
-    ["active", "success", "ok"].includes(connection.testStatus)
+    ["active", "success", "ok", "unknown", "untested", "pending"].includes(connection.testStatus)
   )
     return { status: "ok", reason: null, action: null };
-  return { status: "warn", reason: "Test pending", action: "test" };
+  return { status: "warn", reason: "Status unknown · test", action: "test" };
 }
 
 /** Worst enabled connection wins. Disabled accounts cannot mask active failures. */
