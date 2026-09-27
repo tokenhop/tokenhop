@@ -59,6 +59,7 @@ function deleteQuotaCacheEntry(connectionId) {
 export function useQuotaActions({
   fetchConnections,
   fetchQuota,
+  invalidateQuota,
   retryLoad,
   page,
   // quotaData is part of the page contract; no action reads it today.
@@ -199,6 +200,8 @@ export function useQuotaActions({
           failToast(`Delete failed: ${error.message}`, () => handleDeleteConnection(id));
           throw error;
         }
+        // In-flight quota fetches for the deleted account must not re-add it.
+        invalidateQuota(id);
         setQuotaData(withoutKey(id));
         setLoading(withoutKey(id));
         setErrors(withoutKey(id));
@@ -209,7 +212,7 @@ export function useQuotaActions({
         setDeletingId(null);
       }
     },
-    [failToast, refreshAfter, setErrors, setLoading, setQuotaData],
+    [failToast, invalidateQuota, refreshAfter, setErrors, setLoading, setQuotaData],
   );
 
   // Per-connection active toggle; toasts, never throws (card has no catcher).

@@ -62,6 +62,7 @@ export default function QuotaPageClient() {
     providerOptions,
     fetchConnections,
     fetchQuota,
+    invalidateQuota,
     refreshProvider,
     refreshAll,
     retryLoad,
@@ -103,6 +104,7 @@ export default function QuotaPageClient() {
   } = useQuotaActions({
     fetchConnections,
     fetchQuota,
+    invalidateQuota,
     retryLoad,
     page,
     setQuotaData,

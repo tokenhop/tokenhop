@@ -48,7 +48,10 @@ const rt = vi.hoisted(() => {
 vi.mock("react", () => rt.hooks);
 
 import { useQuotaData } from "../../src/app/(dashboard)/dashboard/quota/hooks/useQuotaData.js";
-import { REFRESH_INTERVAL_MS } from "../../src/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
+import {
+  QUOTA_CACHE_KEY,
+  REFRESH_INTERVAL_MS,
+} from "../../src/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 
 const json = (status, body) => ({
   ok: status >= 200 && status < 300,
@@ -313,6 +316,108 @@ describe("useQuotaData", () => {
     const latest = render();
     expect(latest.connections).toEqual([connA]);
     expect(latest.connectionsError).toBeNull();
+  });
+
+  it("keeps the newer quota and cache when an older request succeeds last", async () => {
+    await mount();
+    const pending = [];
+    routes.a = () => new Promise((resolve) => pending.push(resolve));
+    const first = render().fetchQuota("a", "codex");
+    const second = render().fetchQuota("a", "codex", { force: true });
+    expect(pending).toHaveLength(2);
+    pending[1](json(200, { plan: "fresh" }));
+    await expect(second).resolves.toBe(true);
+    pending[0](json(200, { plan: "stale" }));
+    await expect(first).resolves.toBeNull();
+    const latest = render();
+    expect(latest.quotaData.a.plan).toBe("fresh");
+    expect(latest.loading.a).toBe(false);
+    expect(latest.errors.a).toBeNull();
+    expect(JSON.parse(window.localStorage.getItem(QUOTA_CACHE_KEY)).a.plan).toBe("fresh");
+  });
+
+  it("ignores stale failures, including 401 cache writes, after a successful refresh", async () => {
+    await mount();
+    const pending = [];
+    routes.a = () => new Promise((resolve, reject) => pending.push({ resolve, reject }));
+    const first = render().fetchQuota("a", "codex");
+    const second = render().fetchQuota("a", "codex", { force: true });
+    pending[1].resolve(json(200, { plan: "fresh" }));
+    await expect(second).resolves.toBe(true);
+    pending[0].resolve(json(401, { error: "expired stale token" }));
+    await expect(first).resolves.toBeNull();
+    expect(render().quotaData.a.plan).toBe("fresh");
+    expect(render().errors.a).toBeNull();
+    expect(JSON.parse(window.localStorage.getItem(QUOTA_CACHE_KEY)).a.plan).toBe("fresh");
+
+    const third = render().fetchQuota("a", "codex");
+    const fourth = render().fetchQuota("a", "codex");
+    pending[3].resolve(json(200, { plan: "newer" }));
+    await expect(fourth).resolves.toBe(true);
+    pending[2].reject(new Error("stale network"));
+    await expect(third).resolves.toBeNull();
+    expect(render().quotaData.a.plan).toBe("newer");
+    expect(render().errors.a).toBeNull();
+  });
+
+  it("lets refreshAll supersede in-flight initial quota loads without a false failure", async () => {
+    const pending = [];
+    routes.a = () => new Promise((resolve) => pending.push(resolve));
+    render();
+    await flush();
+    expect(pending).toHaveLength(1);
+    const refresh = render().refreshAll(true);
+    await flush();
+    expect(pending).toHaveLength(2);
+    pending[1](json(200, { plan: "refresh" }));
+    await flush();
+    pending[0](json(500, { error: "old failure" }));
+    expect(await refresh).toEqual({ total: 2, failed: 0 });
+    await flush();
+    const latest = render();
+    expect(latest.quotaData.a.plan).toBe("refresh");
+    expect(latest.errors.a).toBeNull();
+    expect(latest.initialQuotaLoaded).toBe(true);
+    expect(notify.error).not.toHaveBeenCalled();
+  });
+
+  it("drops a late quota settle for a deleted account", async () => {
+    await mount();
+    let resolveOld;
+    routes.a = () => new Promise((resolve) => (resolveOld = resolve));
+    const old = render().fetchQuota("a", "codex");
+    render().invalidateQuota("a");
+    routes.connections = () =>
+      json(200, {
+        connections: [connB],
+        pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+      });
+    await render().retryLoad();
+    resolveOld(json(200, { plan: "deleted" }));
+    await expect(old).resolves.toBeNull();
+    const latest = render();
+    expect(latest.connections).toEqual([connB]);
+    expect(latest.quotaData.a).toBeUndefined();
+    expect(latest.loading.a).toBeUndefined();
+    expect(latest.errors.a).toBeUndefined();
+  });
+
+  it("ignores an old page's quota response after a page change", async () => {
+    await mount();
+    let resolveOld;
+    routes.a = () => new Promise((resolve) => (resolveOld = resolve));
+    const old = render().fetchQuota("a", "codex");
+    routes.connections = () =>
+      json(200, {
+        connections: [connB],
+        pagination: { page: 2, pageSize: 20, total: 21, totalPages: 2 },
+      });
+    await render({ ...props(), page: 2 }).retryLoad();
+    resolveOld(json(200, { plan: "wrong page" }));
+    await expect(old).resolves.toBeNull();
+    const latest = render({ ...props(), page: 2 });
+    expect(latest.connections).toEqual([connB]);
+    expect(latest.quotaData.a).toBeUndefined();
   });
 
   it("retryLoad refetches the list and quota after a failure", async () => {

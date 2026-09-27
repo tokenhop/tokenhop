@@ -128,6 +128,7 @@ function QuotaAccountCard({
               icon="bolt"
               onSelect={() => onToggleAutoPing(connection.id, connection.provider, !autoPing)}
               disabled={rowBusy}
+              title="Auto-ping keeps OAuth sessions active. Quota refresh runs separately."
             >
               {autoPing ? "Disable auto-ping" : "Enable auto-ping"}
             </MenuItem>

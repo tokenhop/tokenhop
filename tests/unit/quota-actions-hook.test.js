@@ -63,6 +63,7 @@ let notify;
 let store;
 let fetchConnections;
 let fetchQuota;
+let invalidateQuota;
 let retryLoad;
 
 function route(url, init = {}) {
@@ -89,6 +90,7 @@ function render() {
   const result = useQuotaActions({
     fetchConnections,
     fetchQuota,
+    invalidateQuota,
     retryLoad,
     page: 1,
     quotaData: store.quotaData,
@@ -131,6 +133,7 @@ beforeEach(() => {
     await fetchConnections(1);
   });
   fetchQuota = vi.fn(async () => true);
+  invalidateQuota = vi.fn();
   globalThis.window = {
     localStorage: {
       getItem: () => null,
@@ -156,6 +159,7 @@ describe("useQuotaActions", () => {
     expect(store.quotaData).toEqual({});
     expect(store.loading).toEqual({});
     expect(store.errors).toEqual({});
+    expect(invalidateQuota).toHaveBeenCalledWith("a");
     expect(fetchConnections).toHaveBeenCalled();
     expect(r.deleteConfirmState).toBeNull();
     expect(r.deleteError).toBeNull();
@@ -172,6 +176,7 @@ describe("useQuotaActions", () => {
     expect(r.deleteConfirmState).toEqual({ id: "a" });
     expect(r.deleteError).toMatch(/500.*db down/);
     expect(store.quotaData).toEqual({ a: { quotas: [] } });
+    expect(invalidateQuota).not.toHaveBeenCalled();
     expect(notify.error).toHaveBeenCalledTimes(1);
     expect(notify.error.mock.calls[0][1].action.label).toBe("Retry");
   });

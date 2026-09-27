@@ -48,6 +48,36 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
   const refreshingRef = useRef(false);
   const tickCountRef = useRef(0);
   const connectionsGenerationRef = useRef(0);
+  const quotaGenerationsRef = useRef(new Map());
+  const viewRef = useRef({ page, pageSize, accountFilter, providerFilter });
+  const previousView = viewRef.current;
+  if (
+    previousView.page !== page ||
+    previousView.pageSize !== pageSize ||
+    previousView.accountFilter !== accountFilter ||
+    previousView.providerFilter !== providerFilter
+  ) {
+    viewRef.current = { page, pageSize, accountFilter, providerFilter };
+  }
+  const invalidateQuota = useCallback((id) => {
+    const generations = quotaGenerationsRef.current;
+    generations.set(id, (generations.get(id) || 0) + 1);
+  }, []);
+  // Drop state for accounts no longer listed and ignore their in-flight quota settles.
+  // Keys stay in the map (bounded by account count): deleting one would restart its
+  // counter and let an old in-flight settle match a new request's generation.
+  const pruneQuotaState = useCallback(
+    (list) => {
+      const keep = new Set(list.map((c) => c.id));
+      for (const id of quotaGenerationsRef.current.keys()) {
+        if (!keep.has(id)) invalidateQuota(id);
+      }
+      setLoading((prev) => filterQuotaStateByConnections(prev, list));
+      setErrors((prev) => filterQuotaStateByConnections(prev, list));
+      setQuotaData((prev) => filterQuotaStateByConnections(prev, list));
+    },
+    [invalidateQuota],
+  );
   const refreshAllRef = useRef(null);
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
@@ -112,49 +142,61 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
   );
 
   // Fetch quota for a specific connection; 401/404 surface as row errors.
-  const fetchQuota = useCallback(async (connectionId, provider, { force = false } = {}) => {
-    setLoading((prev) => ({ ...prev, [connectionId]: true }));
-    setErrors((prev) => ({ ...prev, [connectionId]: null }));
+  const fetchQuota = useCallback(
+    async (connectionId, provider, { force = false } = {}) => {
+      // Latest request per account wins; older settles (data, errors, cache, loading) are dropped.
+      // A changed page/filters/size invalidates in-flight settles captured under the previous view.
+      const view = viewRef.current;
+      invalidateQuota(connectionId);
+      const generation = quotaGenerationsRef.current.get(connectionId);
+      const isCurrent = () =>
+        viewRef.current === view && quotaGenerationsRef.current.get(connectionId) === generation;
+      setLoading((prev) => ({ ...prev, [connectionId]: true }));
+      setErrors((prev) => ({ ...prev, [connectionId]: null }));
 
-    try {
-      const url = `/api/usage/${connectionId}${force ? "?force=1" : ""}`;
-      const response = await fetch(url);
+      try {
+        const url = `/api/usage/${connectionId}${force ? "?force=1" : ""}`;
+        const response = await fetch(url);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMsg = errorData.error || response.statusText;
-        if (response.status === 401) {
-          const quotaEntry = { quotas: [], message: errorMsg };
-          setQuotaData((prev) => ({ ...prev, [connectionId]: quotaEntry }));
-          setQuotaCache(connectionId, quotaEntry);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          const errorMsg = errorData.error || response.statusText;
+          if (response.status === 401 && isCurrent()) {
+            const quotaEntry = { quotas: [], message: errorMsg };
+            setQuotaData((prev) => ({ ...prev, [connectionId]: quotaEntry }));
+            setQuotaCache(connectionId, quotaEntry);
+          }
+          throw new Error(`HTTP ${response.status}: ${errorMsg}`);
         }
-        throw new Error(`HTTP ${response.status}: ${errorMsg}`);
+
+        const data = await response.json();
+        const parsedQuotas = parseQuotaData(provider, data);
+
+        const quotaEntry = {
+          quotas: parsedQuotas,
+          plan: data.plan || null,
+          message: data.message || null,
+          raw: data,
+        };
+
+        if (!isCurrent()) return null;
+        setQuotaData((prev) => ({ ...prev, [connectionId]: quotaEntry }));
+        setQuotaCache(connectionId, quotaEntry);
+        return true;
+      } catch (error) {
+        if (!isCurrent()) return null;
+        console.error(`[Quota] Error fetching quota for ${provider} (${connectionId}):`, error);
+        setErrors((prev) => ({
+          ...prev,
+          [connectionId]: error.message || "Failed to fetch quota",
+        }));
+        return false;
+      } finally {
+        if (isCurrent()) setLoading((prev) => ({ ...prev, [connectionId]: false }));
       }
-
-      const data = await response.json();
-      const parsedQuotas = parseQuotaData(provider, data);
-
-      const quotaEntry = {
-        quotas: parsedQuotas,
-        plan: data.plan || null,
-        message: data.message || null,
-        raw: data,
-      };
-
-      setQuotaData((prev) => ({ ...prev, [connectionId]: quotaEntry }));
-      setQuotaCache(connectionId, quotaEntry);
-      return true;
-    } catch (error) {
-      console.error(`[Quota] Error fetching quota for ${provider} (${connectionId}):`, error);
-      setErrors((prev) => ({
-        ...prev,
-        [connectionId]: error.message || "Failed to fetch quota",
-      }));
-      return false;
-    } finally {
-      setLoading((prev) => ({ ...prev, [connectionId]: false }));
-    }
-  }, []);
+    },
+    [invalidateQuota],
+  );
 
   const refreshProvider = useCallback(
     async (connectionId, provider) => {
@@ -179,13 +221,12 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
         if (!visibleConnections) return undefined;
         const targets = visibleConnections.filter(shouldFetch);
         setLoading(buildLoadingState(targets));
-        setErrors((prev) => filterQuotaStateByConnections(prev, visibleConnections));
-        setQuotaData((prev) => filterQuotaStateByConnections(prev, visibleConnections));
+        pruneQuotaState(visibleConnections);
 
         const results = await Promise.all(
           targets.map((conn) => fetchQuota(conn.id, conn.provider, { force })),
         );
-        const failed = results.filter((ok) => !ok).length;
+        const failed = results.filter((ok) => ok === false).length;
         const summary = { total: targets.length, failed };
         if (failed > 0) {
           notifyRef.current?.error(
@@ -213,7 +254,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
         setRefreshingAll(false);
       }
     },
-    [fetchConnections, fetchQuota, page],
+    [fetchConnections, fetchQuota, page, pruneQuotaState],
   );
 
   refreshAllRef.current = refreshAll;
@@ -223,13 +264,12 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
       const list = await fetchConnections(page);
       if (!list) return;
       setLoading(buildLoadingState(list));
-      setErrors((prev) => filterQuotaStateByConnections(prev, list));
-      setQuotaData((prev) => filterQuotaStateByConnections(prev, list));
+      pruneQuotaState(list);
       await Promise.all(list.map((conn) => fetchQuota(conn.id, conn.provider)));
     } catch {
       // fetchConnections records the error for the retry UI.
     }
-  }, [fetchConnections, fetchQuota, page]);
+  }, [fetchConnections, fetchQuota, page, pruneQuotaState]);
 
   // Initial load
   useEffect(() => {
@@ -247,8 +287,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
       }
 
       setLoading(buildLoadingState(list));
-      setErrors((prev) => filterQuotaStateByConnections(prev, list));
-      setQuotaData((prev) => filterQuotaStateByConnections(prev, list));
+      pruneQuotaState(list);
 
       await Promise.all(list.map((c) => fetchQuota(c.id, c.provider)));
       if (!cancelled) setInitialQuotaLoaded(true);
@@ -257,7 +296,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
     return () => {
       cancelled = true;
     };
-  }, [fetchConnections, fetchQuota, page]);
+  }, [fetchConnections, fetchQuota, page, pruneQuotaState]);
 
   // Hydrate & persist autoRefresh
   useEffect(() => {
@@ -312,6 +351,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
     providerOptions,
     fetchConnections,
     fetchQuota,
+    invalidateQuota,
     refreshProvider,
     refreshAll,
     retryLoad,
