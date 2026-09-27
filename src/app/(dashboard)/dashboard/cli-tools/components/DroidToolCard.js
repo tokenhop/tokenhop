@@ -169,7 +169,7 @@ export default function DroidToolCard({
         checking={card.checking}
         checkingLabel="Checking Factory Droid CLI..."
         notInstalled={
-          !card.checking && status && !status.installed ? (
+          !card.checking && status && !status.installed && !status.error ? (
             <NotInstalledBlock
               toolName="Factory Droid"
               onManualConfig={() => card.setShowManualModal(true)}

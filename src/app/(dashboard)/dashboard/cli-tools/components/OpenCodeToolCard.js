@@ -223,7 +223,7 @@ export default function OpenCodeToolCard({
         checking={card.checking}
         checkingLabel="Checking OpenCode CLI..."
         notInstalled={
-          !card.checking && status && !status.installed ? (
+          !card.checking && status && !status.installed && !status.error ? (
             <NotInstalledBlock
               toolName="OpenCode"
               onManualConfig={() => card.setShowManualModal(true)}

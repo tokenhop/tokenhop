@@ -167,7 +167,7 @@ export default function OpenClawToolCard({
         checking={card.checking}
         checkingLabel="Checking Open Claw CLI..."
         notInstalled={
-          !card.checking && status && !status.installed ? (
+          !card.checking && status && !status.installed && !status.error ? (
             <NotInstalledBlock
               toolName="Open Claw"
               onManualConfig={() => card.setShowManualModal(true)}

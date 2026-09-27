@@ -142,7 +142,7 @@ export default function ClineToolCard({
         checking={card.checking}
         checkingLabel="Checking Cline..."
         notInstalled={
-          !card.checking && status && !status.installed ? (
+          !card.checking && status && !status.installed && !status.error ? (
             <NotInstalledBlock
               toolName="Cline"
               onManualConfig={() => card.setShowManualModal(true)}

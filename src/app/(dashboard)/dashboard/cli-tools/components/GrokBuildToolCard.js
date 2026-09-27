@@ -180,7 +180,7 @@ export default function GrokBuildToolCard({
         checking={card.checking}
         checkingLabel="Checking Grok Build..."
         notInstalled={
-          !card.checking && status && !status.installed ? (
+          !card.checking && status && !status.installed && !status.error ? (
             <NotInstalledBlock
               toolName="Grok Build"
               onManualConfig={() => card.setShowManualModal(true)}

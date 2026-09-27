@@ -129,7 +129,7 @@ export default function DeepSeekTuiToolCard({
         checking={card.checking}
         checkingLabel="Checking DeepSeek TUI..."
         notInstalled={
-          !card.checking && status && !status.installed ? (
+          !card.checking && status && !status.installed && !status.error ? (
             <NotInstalledBlock
               toolName="DeepSeek TUI"
               onManualConfig={() => card.setShowManualModal(true)}

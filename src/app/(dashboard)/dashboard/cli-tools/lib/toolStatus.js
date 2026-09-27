@@ -21,6 +21,7 @@ export const TOOL_STATUS_KEYS = ["connected", "notConfigured", "notInstalled", "
  */
 export function deriveToolStatus(tool, status) {
   if (tool?.configType === "guide") return { key: "guide", label: "Guide", variant: "info" };
+  if (status?.error) return { key: "error", label: "Detection failed", variant: "err" };
   if (!status) return { key: "notInstalled", label: "Not installed", variant: "neutral" };
   if (!status.installed) return { key: "notInstalled", label: "Not installed", variant: "neutral" };
   if (status.has9Router) return { key: "connected", label: "Connected", variant: "ok" };

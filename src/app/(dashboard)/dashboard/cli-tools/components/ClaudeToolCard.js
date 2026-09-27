@@ -258,7 +258,7 @@ export default function ClaudeToolCard({
         checking={checking}
         checkingLabel="Checking Claude CLI..."
         notInstalled={
-          !checking && claudeStatus && !claudeStatus.installed ? (
+          !checking && claudeStatus && !claudeStatus.installed && !claudeStatus.error ? (
             <NotInstalledBlock
               toolName="Claude Code"
               onManualConfig={() => setShowManualModal(true)}

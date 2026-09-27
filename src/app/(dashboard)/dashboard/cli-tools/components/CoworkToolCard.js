@@ -194,7 +194,7 @@ export default function CoworkToolCard({
         checking={card.checking}
         checkingLabel="Checking Claude Cowork..."
         notInstalled={
-          !card.checking && status && !status.installed ? (
+          !card.checking && status && !status.installed && !status.error ? (
             <NotInstalledBlock
               toolName="Claude Desktop (Cowork)"
               onManualConfig={() => card.setShowManualModal(true)}

@@ -151,7 +151,7 @@ default_subagent_model = "${effectiveSubagentModel}"
         checking={card.checking}
         checkingLabel="Checking Codex CLI..."
         notInstalled={
-          !card.checking && status && !status.installed ? (
+          !card.checking && status && !status.installed && !status.error ? (
             <NotInstalledBlock
               toolName="Codex CLI"
               onManualConfig={() => card.setShowManualModal(true)}

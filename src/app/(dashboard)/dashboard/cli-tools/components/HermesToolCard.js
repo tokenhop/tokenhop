@@ -133,7 +133,7 @@ export default function HermesToolCard({
         checking={card.checking}
         checkingLabel="Checking Hermes Agent..."
         notInstalled={
-          !card.checking && status && !status.installed ? (
+          !card.checking && status && !status.installed && !status.error ? (
             <NotInstalledBlock
               toolName="Hermes Agent"
               onManualConfig={() => card.setShowManualModal(true)}

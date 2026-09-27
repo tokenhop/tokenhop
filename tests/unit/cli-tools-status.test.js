@@ -29,6 +29,13 @@ describe("deriveToolStatus", () => {
       variant: "warn",
     });
   });
+  it("maps a failed detection to an error, not notInstalled", () => {
+    expect(deriveToolStatus(cliTool, { installed: false, error: "boom" })).toMatchObject({
+      key: "error",
+      label: "Detection failed",
+      variant: "err",
+    });
+  });
   it("maps missing payload and not-installed to notInstalled", () => {
     expect(deriveToolStatus(cliTool, null).key).toBe("notInstalled");
     expect(deriveToolStatus(cliTool, { installed: false }).key).toBe("notInstalled");

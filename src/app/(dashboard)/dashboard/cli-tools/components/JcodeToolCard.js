@@ -139,7 +139,7 @@ export default function JcodeToolCard({
         checking={card.checking}
         checkingLabel="Checking jcode CLI..."
         notInstalled={
-          !card.checking && status && !status.installed ? (
+          !card.checking && status && !status.installed && !status.error ? (
             <NotInstalledBlock
               toolName="jcode"
               onManualConfig={() => card.setShowManualModal(true)}

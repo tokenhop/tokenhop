@@ -128,7 +128,7 @@ export default function KiloToolCard({
         checking={card.checking}
         checkingLabel="Checking Kilo Code..."
         notInstalled={
-          !card.checking && status && !status.installed ? (
+          !card.checking && status && !status.installed && !status.error ? (
             <NotInstalledBlock
               toolName="Kilo Code"
               onManualConfig={() => card.setShowManualModal(true)}
