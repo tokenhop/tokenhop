@@ -4,7 +4,7 @@ import PropTypes from "prop-types";
 import {
   formatResetTime,
   getRemainingPercentage,
-} from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+} from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 import Meter from "@/shared/components/Meter";
 
 /**

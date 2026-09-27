@@ -10,7 +10,7 @@ import {
   USAGE_SUPPORTED_PROVIDERS,
   USAGE_APIKEY_PROVIDERS,
 } from "../../src/shared/constants/providers.js";
-import { parseQuotaData } from "../../src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { parseQuotaData } from "../../src/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 
 const USAGE_URL = "https://ollama.com/api/usage";
 const ME_URL = "https://ollama.com/api/me";

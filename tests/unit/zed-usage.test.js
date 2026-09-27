@@ -11,7 +11,7 @@ vi.mock("../../open-sse/shared/zedAuth.js", async (importOriginal) => {
 import { fetchZedAuthenticatedUser } from "../../open-sse/shared/zedAuth.js";
 import { getUsageForProvider } from "../../open-sse/services/usage.js";
 import { USAGE_SUPPORTED_PROVIDERS } from "../../src/shared/constants/providers.js";
-import { parseQuotaData } from "../../src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { parseQuotaData } from "../../src/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 import {
   formatZedPlanLabel,
   parseZedUsageLimit,

@@ -6,7 +6,7 @@ import {
   getSoonestReset,
   summarizeQuotaHealth,
 } from "@/app/(dashboard)/dashboard/quota/quotaSummary.js";
-import { sortVisibleConnections } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { sortVisibleConnections } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 
 const quota = (remaining, resetAt = null) => ({
   name: "Window",

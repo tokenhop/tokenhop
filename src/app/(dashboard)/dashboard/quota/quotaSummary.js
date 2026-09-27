@@ -1,4 +1,4 @@
-import { getRemainingPercentage } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { getRemainingPercentage } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 
 /**
  * Health bucket for one quota reading. The account-level summary uses

@@ -1,9 +1,8 @@
-import { getConnectionLabel as getProviderLimitsLabel } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { getConnectionLabel as getProviderLimitsLabel } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 
 /**
  * Primary account label: name, else email, else display name.
- * Single implementation shared with the legacy ProviderLimits view —
- * re-exported here so the Quota page never drifts from it.
+ * Re-exported from quota/lib so account labels stay consistent.
  */
 export const getConnectionLabel = getProviderLimitsLabel;
 

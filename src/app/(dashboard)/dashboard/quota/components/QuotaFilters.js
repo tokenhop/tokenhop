@@ -2,7 +2,7 @@
 
 import PropTypes from "prop-types";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
-import { QUOTA_SORT_OPTIONS } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { QUOTA_SORT_OPTIONS } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 import Button from "@/shared/components/Button";
 import SegmentedControl from "@/shared/components/SegmentedControl";
 import ProviderTile from "@/shared/components/ProviderTile";

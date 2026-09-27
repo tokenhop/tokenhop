@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { formatResetTime } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { formatResetTime } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 import Card from "@/shared/components/Card";
 
 /**

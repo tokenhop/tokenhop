@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseQuotaData } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { parseQuotaData } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 
 describe("Codex Spark Quota Tracking (#3431)", () => {
   it("labels a business primary weekly window as Weekly, not 5h", () => {

@@ -18,7 +18,7 @@
  * - auto-ping consumer: src/shared/services/quotaAutoPing.js
  *   (per-connection `connections` maps only, no global toggle)
  * - thinking writers: providers/[id]/page.js (`{ [provider]: { mode } }`)
- * - visibility writers: usage ProviderLimits (`{ [provider]: { hidden: [] } }`)
+ * - visibility writers: Quota page (`{ [provider]: { hidden: [] } }`)
  * - observability consumer: requestDetailsRepo.js
  *   (`observabilityMaxJsonSize` is kilobytes — multiplied by 1024 in code)
  */

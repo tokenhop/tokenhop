@@ -4,7 +4,7 @@ import PropTypes from "prop-types";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { getAccountStatus } from "../quotaSummary";
 import { getConnectionLabel, getConnectionSecondaryLabel } from "../quotaLabels";
-import { getQuotaVisibilityKey } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { getQuotaVisibilityKey } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 import Card from "@/shared/components/Card";
 import IconButton from "@/shared/components/IconButton";
 import ProviderTile from "@/shared/components/ProviderTile";

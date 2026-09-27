@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseQuotaData } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { parseQuotaData } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 
 describe("Antigravity dashboard normalization with weekly quotas", () => {
   const data = {
