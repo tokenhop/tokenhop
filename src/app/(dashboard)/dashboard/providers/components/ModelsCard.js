@@ -6,12 +6,14 @@ import { Card, Button, Modal } from "@/shared/components";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import CopyStatus from "@/shared/components/CopyStatus";
 
 // ── ModelRow ───────────────────────────────────────────────────
 export function ModelRow({
   model,
   fullModel,
   copied,
+  copyError,
   onCopy,
   testStatus,
   isCustom,
@@ -69,12 +71,21 @@ export function ModelRow({
             className="p-0.5 hover:bg-raised rounded text-muted hover:text-coral-ink"
           >
             <span className="material-symbols-outlined text-sm">
-              {copied === `model-${model.id}` ? "check" : "content_copy"}
+              {copied === `model-${model.id}`
+                ? "check"
+                : copyError === `model-${model.id}`
+                  ? "error"
+                  : "content_copy"}
             </span>
           </button>
           <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
-            {copied === `model-${model.id}` ? "Copied!" : "Copy"}
+            {copied === `model-${model.id}`
+              ? "Copied!"
+              : copyError === `model-${model.id}`
+                ? "Couldn't copy"
+                : "Copy"}
           </span>
+          <CopyStatus copied={copied} error={copyError} id={`model-${model.id}`} />
         </div>
         {isFree && (
           <span className="text-[10px] font-bold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">
@@ -99,6 +110,7 @@ ModelRow.propTypes = {
   model: PropTypes.shape({ id: PropTypes.string.isRequired }).isRequired,
   fullModel: PropTypes.string.isRequired,
   copied: PropTypes.string,
+  copyError: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
   testStatus: PropTypes.oneOf(["ok", "error"]),
   isCustom: PropTypes.bool,
@@ -155,7 +167,7 @@ AddCustomModelModal.propTypes = {
 // Self-contained card: shows models for a provider, filtered by optional `kindFilter`.
 // kindFilter: if provided, only shows models with matching type/kinds field.
 export default function ModelsCard({ providerId, kindFilter, providerAliasOverride }) {
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, error: copyError, copy } = useCopyToClipboard();
   const [modelAliases, setModelAliases] = useState({});
   const [customModels, setCustomModels] = useState([]);
   const [modelTestResults, setModelTestResults] = useState({});
@@ -301,6 +313,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
                 fullModel={`${providerAlias}/${model.id}`}
                 alias={existingAlias}
                 copied={copied}
+                copyError={copyError}
                 onCopy={copy}
                 onSetAlias={(alias) => handleSetAlias(model.id, alias)}
                 onDeleteAlias={() => handleDeleteAlias(existingAlias)}
@@ -318,6 +331,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
               model={{ id: model.id, name: model.name }}
               fullModel={`${providerAlias}/${model.id}`}
               copied={copied}
+              copyError={copyError}
               onCopy={copy}
               onSetAlias={() => {}}
               onDeleteAlias={() => handleDeleteCustomModel(model.id)}

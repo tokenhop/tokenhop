@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import { Button, Card, Field, SegmentedControl, Select, Callout } from "@/shared/components";
 import { MEDIA_PROVIDER_KINDS, resolveProviderId } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import CopyStatus from "@/shared/components/CopyStatus";
 import { buildPlaygroundCurl } from "@/shared/constants/mediaStatus";
 import { createObjectUrlRegistry } from "@/shared/constants/playgroundUrls";
 import {
@@ -85,8 +86,8 @@ export function MediaPlayground({ kind, connections = [], className = "" }) {
   };
   const [latency, setLatency] = useState(null);
 
-  const { copied: copiedCurl, copy: copyCurl } = useCopyToClipboard();
-  const { copied: copiedRes, copy: copyRes } = useCopyToClipboard();
+  const { copied: copiedCurl, error: errorCurl, copy: copyCurl } = useCopyToClipboard();
+  const { copied: copiedRes, error: errorRes, copy: copyRes } = useCopyToClipboard();
 
   useEffect(() => {
     setLocalOrigin(window.location.origin);
@@ -252,11 +253,12 @@ export function MediaPlayground({ kind, connections = [], className = "" }) {
             <Button
               size="sm"
               variant="ghost"
-              icon={copiedCurl ? "check" : "content_copy"}
+              icon={copiedCurl ? "check" : errorCurl ? "error" : "content_copy"}
               onClick={() => copyCurl(curlSnippet)}
             >
-              {copiedCurl ? "Copied" : "Copy"}
+              {copiedCurl ? "Copied" : errorCurl ? "Couldn't copy" : "Copy"}
             </Button>
+            <CopyStatus copied={copiedCurl} error={errorCurl} />
           </div>
           <pre className={codeBlockClass} dir="ltr">
             {curlSnippet}
@@ -345,6 +347,7 @@ export function MediaPlayground({ kind, connections = [], className = "" }) {
             result={result}
             latency={latency}
             copiedRes={copiedRes}
+            errorRes={errorRes}
             onCopyResult={() => copyRes(JSON.stringify(result, null, 2))}
             running={running}
           />

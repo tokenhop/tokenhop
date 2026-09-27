@@ -1,9 +1,17 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Card, Button, Badge, Input, ModelSelectModal, Modal } from "@/shared/components";
 import { TOOL_HOSTS } from "@/shared/constants/mitmToolHosts";
+import { useNotificationStore } from "@/store/notificationStore";
 import Image from "next/image";
+import {
+  createLatestSaveQueue,
+  mitmFailureMessage,
+  readMitmResponse,
+  resolveSaveVisibility,
+  restoredMappings,
+} from "./mitmToolActions";
 
 /**
  * Per-tool MITM card — shows DNS status + model mappings.
@@ -29,6 +37,7 @@ export default function MitmToolCard({
 }) {
   const [loading, setLoading] = useState(false);
   const [warning, setWarning] = useState(null);
+  const [dnsError, setDnsError] = useState(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [sudoPassword, setSudoPassword] = useState("");
   const [pendingDnsAction, setPendingDnsAction] = useState(null);
@@ -36,46 +45,117 @@ export default function MitmToolCard({
   const [modelMappings, setModelMappings] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const [currentEditingAlias, setCurrentEditingAlias] = useState(null);
+  const savedMappings = useRef({});
+  const editGeneration = useRef(0);
+  const saveEpoch = useRef(0);
+  const savePending = useRef(0);
+  const loadGeneration = useRef(0);
+  const notifyError = useNotificationStore((state) => state.error);
 
   const mitmHosts = TOOL_HOSTS[tool.id] ?? [];
   const canRunWithoutPassword = isWin || hasCachedPassword || needsSudoPassword === false;
 
-  useEffect(() => {
-    if (isExpanded) loadSavedMappings();
-  }, [isExpanded]);
-
-  const loadSavedMappings = async () => {
+  // A load that finishes after the user typed must not clobber the newer
+  // local text; server state still advances for the next blur PUT.
+  const loadSavedMappings = useCallback(async () => {
+    const editGenerationAtStart = editGeneration.current;
+    const saveEpochAtStart = saveEpoch.current;
+    const thisLoad = ++loadGeneration.current;
     try {
       const res = await fetch(`/api/cli-tools/antigravity-mitm/alias?tool=${tool.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (Object.keys(data.aliases || {}).length > 0) setModelMappings(data.aliases);
+      const data = await readMitmResponse(res, "Failed to load aliases");
+      // A finished save or a newer started load supersedes this GET result.
+      if (
+        saveEpochAtStart !== saveEpoch.current ||
+        savePending.current > 0 ||
+        thisLoad !== loadGeneration.current
+      ) {
+        return true;
       }
-    } catch {
-      /* ignore */
+      savedMappings.current = restoredMappings(data.aliases);
+      setModelMappings((visible) =>
+        resolveSaveVisibility(
+          visible,
+          editGeneration.current,
+          savedMappings.current,
+          editGenerationAtStart,
+        ),
+      );
+      return true;
+    } catch (error) {
+      notifyError(mitmFailureMessage("load", tool.name, error.message));
+      return false;
     }
-  };
+  }, [tool.id, tool.name, notifyError]);
 
-  const saveMappings = useCallback(
-    async (mappings) => {
-      try {
-        await fetch("/api/cli-tools/antigravity-mitm/alias", {
+  useEffect(() => {
+    if (isExpanded) loadSavedMappings();
+  }, [isExpanded, loadSavedMappings]);
+
+  // Whole-map PUTs run one at a time; only the newest result touches state,
+  // so a slow earlier save can never overwrite a later edit.
+  const enqueueSave = useMemo(
+    () =>
+      createLatestSaveQueue(async (mappings) => {
+        const res = await fetch("/api/cli-tools/antigravity-mitm/alias", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ tool: tool.id, mappings }),
         });
-      } catch {
-        /* ignore */
-      }
-    },
+        const data = await readMitmResponse(res, "Failed to save aliases");
+        return data.aliases ?? mappings;
+      }),
     [tool.id],
   );
 
+  const saveMappings = useCallback(
+    async (mappings) => {
+      const submittedEditGeneration = editGeneration.current;
+      savePending.current += 1;
+      let result;
+      try {
+        result = await enqueueSave(mappings);
+      } finally {
+        savePending.current -= 1;
+      }
+      saveEpoch.current += 1;
+      if (result.error) {
+        // A failed PUT must never leave the unsaved optimistic edit visible.
+        // Roll back to the last server-confirmed map; no refetch, so it can't
+        // race a newer queued save. Older failures defer to the newest save.
+        if (!result.latest) return;
+        notifyError(mitmFailureMessage("save", tool.name, result.error.message));
+        setModelMappings((visible) =>
+          resolveSaveVisibility(
+            visible,
+            editGeneration.current,
+            savedMappings.current,
+            submittedEditGeneration,
+          ),
+        );
+        return;
+      }
+      savedMappings.current = restoredMappings(result.saved);
+      if (!result.latest) return;
+      setModelMappings((visible) =>
+        resolveSaveVisibility(
+          visible,
+          editGeneration.current,
+          savedMappings.current,
+          submittedEditGeneration,
+        ),
+      );
+    },
+    [enqueueSave, tool.name, notifyError],
+  );
+
   const handleMappingBlur = (alias, value) => {
+    editGeneration.current += 1;
     saveMappings({ ...modelMappings, [alias]: value });
   };
 
   const handleModelMappingChange = (alias, value) => {
+    editGeneration.current += 1;
     setModelMappings((prev) => ({ ...prev, [alias]: value }));
   };
 
@@ -86,6 +166,7 @@ export default function MitmToolCard({
 
   const handleModelSelect = (model) => {
     if (!currentEditingAlias || model.isPlaceholder) return;
+    editGeneration.current += 1;
     const updated = { ...modelMappings, [currentEditingAlias]: model.value };
     setModelMappings(updated);
     saveMappings(updated);
@@ -106,14 +187,14 @@ export default function MitmToolCard({
   const doDnsAction = async (action, password) => {
     setLoading(true);
     setWarning(null);
+    setDnsError(null);
     try {
       const res = await fetch("/api/cli-tools/antigravity-mitm", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tool: tool.id, action, sudoPassword: password }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to toggle DNS");
+      const data = await readMitmResponse(res, "Failed to toggle DNS");
 
       if (action === "enable") {
         setWarning(`Restart ${tool.name} to apply changes`);
@@ -121,13 +202,26 @@ export default function MitmToolCard({
 
       setShowPasswordModal(false);
       setSudoPassword("");
+      setPendingDnsAction(null);
       onDnsChange?.(data);
-    } catch {
-      /* ignore */
+    } catch (error) {
+      // DNS state stays as the server last reported; show the failure inline
+      // (and in the sudo modal when it is open) instead of pretending success.
+      // The pending action stays set so Confirm in the open modal retries it.
+      const message = mitmFailureMessage(action, tool.name, error.message);
+      setDnsError(message);
+      setModalError(error.message || "Failed to toggle DNS");
+      notifyError(message);
     } finally {
       setLoading(false);
-      setPendingDnsAction(null);
     }
+  };
+
+  const closePasswordModal = () => {
+    setShowPasswordModal(false);
+    setSudoPassword("");
+    setModalError(null);
+    setPendingDnsAction(null);
   };
 
   const handleConfirmPassword = () => {
@@ -314,6 +408,14 @@ export default function MitmToolCard({
                   <span>{warning}</span>
                 </div>
               )}
+              {dnsError && (
+                <p role="alert" className="flex items-center gap-2 text-xs text-err">
+                  <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                    error
+                  </span>
+                  <span>{dnsError}</span>
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -324,9 +426,7 @@ export default function MitmToolCard({
         isOpen={showPasswordModal}
         onClose={() => {
           if (loading) return;
-          setShowPasswordModal(false);
-          setSudoPassword("");
-          setModalError(null);
+          closePasswordModal();
         }}
         title="Sudo Password Required"
         size="sm"
@@ -358,16 +458,7 @@ export default function MitmToolCard({
             </div>
           )}
           <div className="flex items-center justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setShowPasswordModal(false);
-                setSudoPassword("");
-                setModalError(null);
-              }}
-              disabled={loading}
-            >
+            <Button variant="ghost" size="sm" onClick={closePasswordModal} disabled={loading}>
               Cancel
             </Button>
             <Button variant="primary" size="sm" onClick={handleConfirmPassword} loading={loading}>

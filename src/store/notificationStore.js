@@ -7,6 +7,9 @@ import { create } from "zustand";
 
 let idCounter = 0;
 
+/** Error announcements interrupt politely announced status updates. */
+export const toastRole = (type) => (type === "error" ? "alert" : "status");
+
 export const useNotificationStore = create((set, get) => ({
   notifications: [],
 
@@ -17,6 +20,7 @@ export const useNotificationStore = create((set, get) => ({
       type: notification.type || "info",
       message: notification.message,
       title: notification.title || null,
+      action: notification.action ?? null,
       duration: notification.duration ?? 5000,
       dismissible: notification.dismissible ?? true,
       createdAt: Date.now(),
@@ -38,9 +42,26 @@ export const useNotificationStore = create((set, get) => ({
 
   clearAll: () => set({ notifications: [] }),
 
-  success: (message, title) => get().addNotification({ type: "success", message, title }),
-  error: (message, title) =>
-    get().addNotification({ type: "error", message, title, duration: 8000 }),
-  warning: (message, title) => get().addNotification({ type: "warning", message, title }),
-  info: (message, title) => get().addNotification({ type: "info", message, title }),
+  success: (message, options) => get().addNotification(toastInput("success", message, options)),
+  error: (message, options) =>
+    get().addNotification({ duration: 8000, ...toastInput("error", message, options) }),
+  warning: (message, options) => get().addNotification(toastInput("warning", message, options)),
+  info: (message, options) => get().addNotification(toastInput("info", message, options)),
 }));
+
+/**
+ * Keep the legacy `(message, title)` call shape while accepting
+ * `(message, { title, action, duration, dismissible })`.
+ */
+function toastInput(type, message, options) {
+  if (typeof options === "string") return { type, message, title: options };
+  const input = { type, message, ...(options || {}) };
+  const { action } = input;
+  if (
+    action != null &&
+    (typeof action.label !== "string" || !action.label || typeof action.onSelect !== "function")
+  ) {
+    throw new TypeError("notification action needs a label and onSelect function");
+  }
+  return input;
+}

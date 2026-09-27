@@ -86,7 +86,7 @@ export default function useOAuthFlow({
   const isOpenRef = useRef(isOpen);
   const authModeRef = useRef(authMode);
   const startOAuthFlowRef = useRef(null);
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, error: copyError, copy } = useCopyToClipboard();
 
   useEffect(() => {
     setIsLocalhost(isLocalhostHostname(window.location.hostname));
@@ -521,6 +521,7 @@ export default function useOAuthFlow({
     ideStatus,
     placeholderUrl,
     copied,
+    copyError,
     copy,
     startOAuthFlow,
     handleManualSubmit,

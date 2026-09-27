@@ -32,7 +32,7 @@ export default function ModelsSection({
   onDisableAll,
 }) {
   const { getCaps } = useModelCaps();
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, error: copyError, copy } = useCopyToClipboard();
 
   const hasActiveConnection = connections.some((entry) => entry.isActive !== false);
 
@@ -162,6 +162,7 @@ export default function ModelsSection({
                   model={{ id: row.id, name: row.name }}
                   fullModel={`${displayAlias}/${row.id}`}
                   copied={copied}
+                  copyError={copyError}
                   onCopy={copy}
                   onDeleteAlias={() => {
                     if (row.source === "custom") {
@@ -193,6 +194,7 @@ export default function ModelsSection({
                     fullModel={`${displayAlias}/${model.id}`}
                     alias={existingAlias}
                     copied={copied}
+                    copyError={copyError}
                     onCopy={copy}
                     onSetAlias={(next) => models.setAlias(model.id, next, storageAlias)}
                     onDeleteAlias={

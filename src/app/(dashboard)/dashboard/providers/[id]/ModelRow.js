@@ -1,6 +1,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { CapacityBadges, IconButton } from "@/shared/components";
+import CopyStatus from "@/shared/components/CopyStatus";
 
 const STATUS_ICON = { ok: "check_circle", error: "cancel" };
 const STATUS_TONE = { ok: "text-ok border-ok/40", error: "text-err border-err/40" };
@@ -15,6 +16,7 @@ export default function ModelRow({
   fullModel,
   alias,
   copied,
+  copyError,
   onCopy,
   onSetAlias,
   testStatus,
@@ -69,10 +71,17 @@ export default function ModelRow({
         />
       ) : null}
       <IconButton
-        icon={copied === copyKey ? "check" : "content_copy"}
-        label={copied === copyKey ? `Copied ${displayModel}` : `Copy ${displayModel}`}
+        icon={copied === copyKey ? "check" : copyError === copyKey ? "error" : "content_copy"}
+        label={
+          copied === copyKey
+            ? `Copied ${displayModel}`
+            : copyError === copyKey
+              ? `Couldn't copy ${displayModel}`
+              : `Copy ${displayModel}`
+        }
         onClick={() => onCopy(displayModel, copyKey)}
       />
+      <CopyStatus copied={copied} error={copyError} id={copyKey} />
       {!isCustom && onSetAlias ? (
         alias ? (
           <span className="flex min-w-0 items-center gap-1">
@@ -142,6 +151,7 @@ ModelRow.propTypes = {
   fullModel: PropTypes.string.isRequired,
   alias: PropTypes.string,
   copied: PropTypes.string,
+  copyError: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
   onSetAlias: PropTypes.func,
   testStatus: PropTypes.oneOf(["ok", "error"]),

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Card, Button, Badge, Input, Modal } from "@/shared/components";
+import { useNotificationStore } from "@/store/notificationStore";
+import { readMitmResponse } from "./mitmToolActions";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
@@ -30,21 +32,23 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
     !isAdmin &&
     (serverIsWindows || (!status?.hasCachedPassword && status?.needsSudoPassword !== false));
 
+  const notifyError = useNotificationStore((state) => state.error);
+
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/cli-tools/antigravity-mitm");
-      if (res.ok) {
-        const data = await res.json();
-        setStatus(data);
-        if (data.mitmRouterBaseUrl) {
-          setMitmRouterBaseUrl(data.mitmRouterBaseUrl);
-        }
-        onStatusChange?.(data);
+      const data = await readMitmResponse(res, "Failed to load MITM status");
+      setStatus(data);
+      if (data.mitmRouterBaseUrl) {
+        setMitmRouterBaseUrl(data.mitmRouterBaseUrl);
       }
-    } catch {
-      setStatus({ running: false, certExists: false, dnsStatus: {} });
+      onStatusChange?.(data);
+    } catch (error) {
+      // Keep the card visible: stale controls are better than a blank page,
+      // but the failed refresh must say so.
+      notifyError(`Couldn't load MITM server status: ${error.message || "Network error"}.`);
     }
-  }, [onStatusChange]);
+  }, [notifyError, onStatusChange]);
 
   useEffect(() => {
     queueMicrotask(() => {

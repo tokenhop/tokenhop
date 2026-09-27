@@ -27,6 +27,7 @@ import {
 import "@/shared/utils/commandSources.js";
 import useThemeStore from "@/store/themeStore";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { useNotificationStore } from "@/store/notificationStore";
 
 const CommandPaletteContext = createContext(null);
 
@@ -162,11 +163,11 @@ export function CommandPaletteProvider({ children }) {
       const run = command.run || {};
       if (run.type === "navigate" && run.href) router.push(run.href);
       else if (run.type === "copy-endpoint") {
-        try {
-          copy(`${window.location.origin}/v1`, "palette-endpoint");
-        } catch {
-          // Clipboard denied: toast layer already handles failure silently.
-        }
+        copy(`${window.location.origin}/v1`, "palette-endpoint").then((ok) => {
+          const notify = useNotificationStore.getState();
+          if (ok) notify.success("Endpoint copied");
+          else notify.error("Couldn't copy endpoint");
+        });
       } else if (run.type === "toggle-theme") useThemeStore.getState().toggleTheme();
       else if (typeof command.run === "function") command.run();
     },

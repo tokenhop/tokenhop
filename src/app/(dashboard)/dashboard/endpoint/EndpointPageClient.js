@@ -37,7 +37,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
   const apiKeys = useApiKeys();
   const isRemoteHost = useRemoteHost();
   const localUrl = useLocalBaseUrl();
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, error: copyError, copy } = useCopyToClipboard();
   const [selectedKeyId, setSelectedKeyId] = useState(null);
 
   const security = deriveSecurityState({
@@ -171,6 +171,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
             onDismissBanner={apiKeys.dismissRevealed}
             onCopy={copy}
             copiedId={copied}
+            copyError={copyError}
             visibleIds={apiKeys.visibleKeys}
             onToggleVisibility={apiKeys.toggleVisibility}
             togglingId={apiKeys.togglingId}
@@ -201,6 +202,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
             onSelectKey={setSelectedKeyId}
             onCopy={copy}
             copiedId={copied}
+            copyError={copyError}
           />
         </div>
 

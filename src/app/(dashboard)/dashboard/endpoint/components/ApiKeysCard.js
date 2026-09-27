@@ -10,15 +10,16 @@ import {
   Toggle,
   EmptyState,
   StatusPill,
-  Skeleton,
 } from "@/shared/components";
 import { maskKey, formatLastUsed, isNewKey, formatNumber } from "../endpointLogic";
+import CopyStatus from "@/shared/components/CopyStatus";
+import { LoadingState } from "@/shared/components/StateViews";
 
 /**
  * One-time reveal banner shown after a key is created. The plain key is never
  * retrievable again, so this is the only copy affordance.
  */
-function CreatedBanner({ banner, copiedId, onCopy, onDismiss }) {
+function CreatedBanner({ banner, copiedId, copyError, onCopy, onDismiss }) {
   return (
     <div role="alert" className="mb-4 flex gap-3 rounded-xl border border-lime/40 bg-lime-bg p-4">
       <span
@@ -38,11 +39,22 @@ function CreatedBanner({ banner, copiedId, onCopy, onDismiss }) {
           <Button
             variant="secondary"
             size="sm"
-            icon={copiedId === "created-banner" ? "check" : "content_copy"}
+            icon={
+              copiedId === "created-banner"
+                ? "check"
+                : copyError === "created-banner"
+                  ? "error"
+                  : "content_copy"
+            }
             onClick={() => onCopy(banner.plainKey, "created-banner")}
           >
-            {copiedId === "created-banner" ? "Copied" : "Copy key"}
+            {copiedId === "created-banner"
+              ? "Copied"
+              : copyError === "created-banner"
+                ? "Couldn't copy"
+                : "Copy key"}
           </Button>
+          <CopyStatus copied={copiedId} error={copyError} id="created-banner" />
         </div>
       </div>
       <IconButton icon="close" aria-label="Dismiss" onClick={onDismiss} className="self-start" />
@@ -56,6 +68,7 @@ CreatedBanner.propTypes = {
     plainKey: PropTypes.string.isRequired,
   }).isRequired,
   copiedId: PropTypes.string,
+  copyError: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
   onDismiss: PropTypes.func.isRequired,
 };
@@ -249,6 +262,7 @@ export default function ApiKeysCard({
   onDismissBanner,
   onCopy,
   copiedId,
+  copyError,
   visibleIds,
   onToggleVisibility,
   togglingId,
@@ -308,17 +322,18 @@ export default function ApiKeysCard({
         <CreatedBanner
           banner={createdBanner}
           copiedId={copiedId}
+          copyError={copyError}
           onCopy={onCopy}
           onDismiss={onDismissBanner}
         />
       )}
 
+      <CopyStatus
+        copied={copiedId === "created-banner" ? null : copiedId}
+        error={copyError === "created-banner" ? null : copyError}
+      />
       {loading ? (
-        <div className="flex flex-col gap-3 py-6" aria-live="polite" aria-busy="true">
-          <span className="sr-only">Loading keys...</span>
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-        </div>
+        <LoadingState lines={3} label="Loading API keys" className="py-4" />
       ) : keys.length === 0 && !createdBanner ? (
         <EmptyState
           icon="vpn_key"
@@ -393,8 +408,18 @@ export default function ApiKeysCard({
                           onClick={() => onToggleVisibility(apiKey.id)}
                         />
                         <IconButton
-                          icon={copiedId === apiKey.id ? "check" : "content_copy"}
-                          aria-label={`Copy key ${apiKey.name}`}
+                          icon={
+                            copiedId === apiKey.id
+                              ? "check"
+                              : copyError === apiKey.id
+                                ? "error"
+                                : "content_copy"
+                          }
+                          aria-label={
+                            copyError === apiKey.id
+                              ? `Couldn't copy key ${apiKey.name}`
+                              : `Copy key ${apiKey.name}`
+                          }
                           onClick={() => onCopy(apiKey.key, apiKey.id)}
                         />
                         <IconButton
@@ -433,8 +458,18 @@ export default function ApiKeysCard({
                     onClick={() => onToggleVisibility(apiKey.id)}
                   />
                   <IconButton
-                    icon={copiedId === apiKey.id ? "check" : "content_copy"}
-                    aria-label={`Copy key ${apiKey.name}`}
+                    icon={
+                      copiedId === apiKey.id
+                        ? "check"
+                        : copyError === apiKey.id
+                          ? "error"
+                          : "content_copy"
+                    }
+                    aria-label={
+                      copyError === apiKey.id
+                        ? `Couldn't copy key ${apiKey.name}`
+                        : `Copy key ${apiKey.name}`
+                    }
                     onClick={() => onCopy(apiKey.key, apiKey.id)}
                   />
                 </div>
@@ -489,6 +524,7 @@ ApiKeysCard.propTypes = {
   onDismissBanner: PropTypes.func.isRequired,
   onCopy: PropTypes.func.isRequired,
   copiedId: PropTypes.string,
+  copyError: PropTypes.string,
   visibleIds: PropTypes.instanceOf(Set).isRequired,
   onToggleVisibility: PropTypes.func.isRequired,
   togglingId: PropTypes.string,

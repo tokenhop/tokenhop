@@ -6,6 +6,8 @@ import { Button, Callout, Card, IconButton, Modal } from "@/shared/components";
 import { AI_PROVIDERS, getProviderAlias } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import CopyStatus from "@/shared/components/CopyStatus";
+import { LoadingState } from "@/shared/components/StateViews";
 import { createObjectUrlRegistry } from "@/shared/constants/playgroundUrls";
 import { TTS_PROVIDER_CONFIG } from "@/shared/constants/ttsProviders";
 import { getTtsVoicesForModel } from "open-sse/config/ttsModels.js";
@@ -60,7 +62,7 @@ export function TtsExampleCard({ providerId }) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [latency, setLatency] = useState(null);
-  const { copied: copiedCurl, copy: copyCurl } = useCopyToClipboard();
+  const { copied: copiedCurl, error: errorCurl, copy: copyCurl } = useCopyToClipboard();
 
   // Country picker modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -577,11 +579,12 @@ export function TtsExampleCard({ providerId }) {
                 <Button
                   size="sm"
                   variant="ghost"
-                  icon={copiedCurl ? "check" : "content_copy"}
+                  icon={copiedCurl ? "check" : errorCurl ? "error" : "content_copy"}
                   onClick={() => copyCurl(curlSnippet)}
                 >
-                  {copiedCurl ? "Copied" : "Copy"}
+                  {copiedCurl ? "Copied" : errorCurl ? "Couldn't copy" : "Copy"}
                 </Button>
+                <CopyStatus copied={copiedCurl} error={errorCurl} />
                 <Button
                   size="sm"
                   variant="primary"
@@ -688,7 +691,7 @@ export function TtsExampleCard({ providerId }) {
               </p>
             )}
             {modalLoading ? (
-              <p className="text-xs text-muted px-2 py-3">Loading...</p>
+              <LoadingState lines={4} label="Loading languages" className="px-2 py-3" />
             ) : (
               <div className="flex flex-col gap-0.5">
                 {filteredLanguages.map((c) => (

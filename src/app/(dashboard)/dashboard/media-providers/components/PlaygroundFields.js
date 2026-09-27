@@ -3,6 +3,7 @@
 import PropTypes from "prop-types";
 import { Button, Field, SegmentedControl } from "@/shared/components";
 import { controlClass } from "../[kind]/[id]/components/exampleShared";
+import CopyStatus from "@/shared/components/CopyStatus";
 
 /**
  * Kind-specific playground inputs (YAN-305): image size/ref/mask, embedding
@@ -238,6 +239,7 @@ export function PlaygroundResult({
   result,
   latency,
   copiedRes,
+  errorRes,
   onCopyResult,
   running,
 }) {
@@ -291,12 +293,13 @@ export function PlaygroundResult({
               <Button
                 size="sm"
                 variant="ghost"
-                icon={copiedRes ? "check" : "content_copy"}
+                icon={copiedRes ? "check" : errorRes ? "error" : "content_copy"}
                 onClick={onCopyResult}
               >
-                {copiedRes ? "Copied" : "Copy"}
+                {copiedRes ? "Copied" : errorRes ? "Couldn't copy" : "Copy"}
               </Button>
             )}
+            <CopyStatus copied={copiedRes} error={errorRes} />
           </div>
           <pre
             className="m-0 max-h-48 overflow-x-auto whitespace-pre-wrap break-all rounded-xl border border-line bg-raised px-4 py-3 text-start font-mono text-xs leading-relaxed text-text"
@@ -327,6 +330,7 @@ PlaygroundResult.propTypes = {
   result: PropTypes.object,
   latency: PropTypes.number,
   copiedRes: PropTypes.string,
+  errorRes: PropTypes.string,
   onCopyResult: PropTypes.func,
   running: PropTypes.bool,
 };

@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Button from "@/shared/components/Button";
 import Callout from "@/shared/components/Callout";
 import EmptyState from "@/shared/components/EmptyState";
 import { CardSkeleton, Skeleton, SkeletonText, Spinner } from "@/shared/components/Loading";
+import { ErrorState, LoadingState } from "@/shared/components/StateViews";
 import Terminal from "@/shared/components/Terminal";
+import { useNotificationStore } from "@/store/notificationStore";
 
 const LINES = [
   { id: "kit-log-1", time: "14:02:11", level: "LOG", message: "Gateway listening on :20128" },
@@ -24,8 +27,23 @@ const LINES = [
   },
 ];
 
-/** Kit section: callouts, empty state, skeletons and terminal. */
+/** Kit section: callouts, empty state, skeletons, state views, toast action and terminal. */
 export default function KitFeedback() {
+  const notify = useNotificationStore();
+  const [undoCount, setUndoCount] = useState(0);
+
+  const showUndo = () => {
+    notify.error("Couldn't save the combo. Your previous version is still active.", {
+      action: {
+        label: "Undo",
+        onSelect: () => {
+          setUndoCount((count) => count + 1);
+          notify.success("Undone");
+        },
+      },
+    });
+  };
+
   return (
     <section aria-labelledby="kit-feedback" className="flex flex-col gap-4">
       <h2 id="kit-feedback" className="font-display text-xl font-bold">
@@ -44,6 +62,16 @@ export default function KitFeedback() {
         <Callout variant="ok" title="Saved">
           <span dir="auto">All changes saved.</span>
         </Callout>
+      </div>
+      <div className="rounded-2xl border border-line bg-panel p-6 shadow-card">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" size="sm" icon="undo" onClick={showUndo}>
+            Error toast with undo
+          </Button>
+          <p aria-live="polite" className="text-xs text-muted">
+            {undoCount > 0 ? `Undo pressed ${undoCount} time${undoCount === 1 ? "" : "s"}.` : ""}
+          </p>
+        </div>
       </div>
       <div className="rounded-2xl border border-line bg-panel shadow-card">
         <EmptyState
@@ -65,6 +93,24 @@ export default function KitFeedback() {
         </div>
         <div className="flex items-center justify-center rounded-2xl border border-line bg-panel p-6 shadow-card">
           <Spinner size="lg" />
+        </div>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-2xl border border-line bg-panel p-6 shadow-card">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted">
+            LoadingState
+          </p>
+          <LoadingState lines={3} label="Loading demo widget" />
+        </div>
+        <div className="rounded-2xl border border-line bg-panel p-6 shadow-card">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted">
+            ErrorState
+          </p>
+          <ErrorState
+            title="Could not load this widget"
+            message="The backend did not answer in time."
+            onRetry={() => notify.info("Retry demo pressed")}
+          />
         </div>
       </div>
       <Terminal lines={LINES} />

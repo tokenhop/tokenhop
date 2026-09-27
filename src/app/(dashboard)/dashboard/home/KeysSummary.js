@@ -10,6 +10,7 @@ import Modal from "@/shared/components/Modal";
 import Toggle from "@/shared/components/Toggle";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { duplicateKeyLabel } from "../endpoint/endpointLogic";
+import CopyStatus from "@/shared/components/CopyStatus";
 import { maskApiKey } from "./format";
 import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
 
@@ -43,7 +44,7 @@ export default function KeysSummary({ keys, loading, error, onRetry, onChanged }
   const [createError, setCreateError] = useState(null);
   const [keyName, setKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, error: copyError, copy } = useCopyToClipboard();
 
   if (loading) return <WidgetSkeleton lines={2} label="Loading API keys" />;
   if (error) return <WidgetError message={error} onRetry={onRetry} />;
@@ -194,8 +195,13 @@ export default function KeysSummary({ keys, loading, error, onRetry, onChanged }
                 icon="content_copy"
                 onClick={() => copy(createdKey.key, "new-key")}
               >
-                {copied === "new-key" ? "Copied" : "Copy"}
+                {copied === "new-key"
+                  ? "Copied"
+                  : copyError === "new-key"
+                    ? "Couldn't copy"
+                    : "Copy"}
               </Button>
+              <CopyStatus copied={copied} error={copyError} id="new-key" />
             </div>
           </div>
         ) : (
