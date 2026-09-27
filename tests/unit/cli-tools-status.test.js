@@ -4,6 +4,7 @@ import {
   filterToolEntries,
   buildEndpointOptions,
   getToolBrand,
+  TOOL_STATUS_KEYS,
 } from "@/app/(dashboard)/dashboard/cli-tools/lib/toolStatus.js";
 import { describe, it, expect } from "vitest";
 
@@ -82,6 +83,46 @@ describe("countToolsByFilter + filterToolEntries", () => {
   });
   it("rejects unknown filters", () => {
     expect(() => filterToolEntries(entries, statuses, "nope", "")).toThrow();
+  });
+});
+
+describe("status buckets stay consistent (YAN-388 merge gate)", () => {
+  // One tool per status key, so every key is exercised by count and filter.
+  // Fixtures are fixed here (not derived from TOOL_STATUS_KEYS) so a key
+  // missing from that list can't silently drop out of the check.
+  const PAYLOAD_FOR_KEY = {
+    connected: { installed: true, has9Router: true },
+    notConfigured: { installed: true, has9Router: false },
+    notInstalled: { installed: false },
+    error: { installed: false, error: "status 500" },
+    guide: null,
+  };
+  const KEYS = Object.keys(PAYLOAD_FOR_KEY);
+  const entries = KEYS.map((key) => [
+    key,
+    key === "guide" ? { name: "Guide tool", configType: "guide" } : { name: `Tool ${key}` },
+  ]);
+  const statuses = { ...PAYLOAD_FOR_KEY };
+
+  it("TOOL_STATUS_KEYS lists every key deriveToolStatus can return", () => {
+    const derived = entries.map(([id, tool]) => deriveToolStatus(tool, statuses[id]).key);
+    expect(derived).toEqual(KEYS);
+    expect([...TOOL_STATUS_KEYS].sort()).toEqual([...KEYS].sort());
+  });
+
+  it("each filter's count equals its filtered list length for every status", () => {
+    const counts = countToolsByFilter(entries, statuses);
+    for (const filter of ["all", "connected", "needsSetup", "guides"]) {
+      expect(filterToolEntries(entries, statuses, filter, "")).toHaveLength(counts[filter]);
+    }
+  });
+
+  it("a failed detection lands in Needs setup, not nowhere", () => {
+    expect(filterToolEntries(entries, statuses, "needsSetup", "").map(([id]) => id)).toEqual([
+      "notConfigured",
+      "notInstalled",
+      "error",
+    ]);
   });
 });
 

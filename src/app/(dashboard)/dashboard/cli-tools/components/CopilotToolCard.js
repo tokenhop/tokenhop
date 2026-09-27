@@ -160,9 +160,7 @@ export default function CopilotToolCard({
     <>
       <SetupScaffold
         tool={tool}
-        status={
-          status ? deriveToolStatus(tool, { installed: true, has9Router: status.has9Router }) : null
-        }
+        status={status ? deriveToolStatus(tool, status) : null}
         checking={card.checking}
         checkingLabel="Checking Copilot config..."
         message={card.message}

@@ -7,17 +7,18 @@
  * connected: tool installed + points at 9Router.
  * notConfigured: installed but no 9Router config.
  * notInstalled: CLI not detected on this machine.
+ * error: detection request failed, so install state is unknown.
  * guide: configType "guide" tools are docs, not detection.
  */
-export const TOOL_STATUS_KEYS = ["connected", "notConfigured", "notInstalled", "guide"];
+export const TOOL_STATUS_KEYS = ["connected", "notConfigured", "notInstalled", "error", "guide"];
 
 /**
  * Derive a grid status from a tool def and its detection payload.
  * Guide tools always report "guide" regardless of detection.
  *
  * @param {object} tool CLI_TOOLS entry (may carry configType)
- * @param {object|null|undefined} status Detection payload (installed, has9Router)
- * @returns {{ key: string, label: string, variant: "ok"|"warn"|"info"|"neutral" }}
+ * @param {object|null|undefined} status Detection payload (installed, has9Router, error)
+ * @returns {{ key: "connected"|"notConfigured"|"notInstalled"|"error"|"guide", label: string, variant: "ok"|"warn"|"info"|"neutral"|"err" }}
  */
 export function deriveToolStatus(tool, status) {
   if (tool?.configType === "guide") return { key: "guide", label: "Guide", variant: "info" };
@@ -28,9 +29,14 @@ export function deriveToolStatus(tool, status) {
   return { key: "notConfigured", label: "Not configured", variant: "warn" };
 }
 
+/** Status keys that land in the "Needs setup" bucket (unknown state included). */
+const NEEDS_SETUP_KEYS = new Set(["notConfigured", "notInstalled", "error"]);
+
 /**
- * Count tools per filter bucket. "needsSetup" covers both notConfigured
- * and notInstalled; "guides" covers configType guide.
+ * Count tools per filter bucket. "needsSetup" covers notConfigured,
+ * notInstalled and error (failed detection); "guides" covers configType guide.
+ * Uses the same bucket rule as filterToolEntries, so a count always equals
+ * the filtered list length.
  *
  * @param {Array<[string, object]>} entries [toolId, tool] pairs
  * @param {Record<string, object>} statuses Detection payloads by toolId
@@ -42,7 +48,8 @@ export function countToolsByFilter(entries, statuses = {}) {
     const { key } = deriveToolStatus(tool, statuses[toolId]);
     if (key === "guide") counts.guides += 1;
     else if (key === "connected") counts.connected += 1;
-    else counts.needsSetup += 1;
+    else if (NEEDS_SETUP_KEYS.has(key)) counts.needsSetup += 1;
+    else throw new Error(`countToolsByFilter: unbucketed status "${key}"`);
   }
   return counts;
 }
@@ -63,7 +70,7 @@ export function filterToolEntries(entries, statuses = {}, filter = "all", query 
     if (filter === "all") return true;
     const { key } = deriveToolStatus(tool, statuses[toolId]);
     if (filter === "connected") return key === "connected";
-    if (filter === "needsSetup") return key === "notConfigured" || key === "notInstalled";
+    if (filter === "needsSetup") return NEEDS_SETUP_KEYS.has(key);
     if (filter === "guides") return key === "guide";
     throw new Error(`filterToolEntries: unknown filter "${filter}"`);
   });

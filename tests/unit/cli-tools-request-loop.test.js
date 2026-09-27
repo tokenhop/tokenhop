@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -60,5 +60,25 @@ describe("CLI tool status fetch stability", () => {
       expect(source).toMatch(/const onStatusUpdateRef = useRef\(onStatusUpdate\)/);
       expect(source).not.toMatch(/[^.]onStatusUpdate\?\.\(/);
     }
+  });
+});
+
+// Merge-gate regression: a card that rebuilt its own payload
+// (`{ installed: true, has9Router }`) dropped `status.error`, so the panel
+// said "Not configured" while the grid said "Detection failed".
+describe("setup panels pass the real detection payload", () => {
+  const cards = readdirSync(resolve(root, "components")).filter((f) => f.endsWith("ToolCard.js"));
+
+  it("no card synthesizes an installed payload for deriveToolStatus", () => {
+    for (const file of cards) {
+      const source = read(`components/${file}`);
+      expect(source, file).not.toMatch(/deriveToolStatus\(\s*tool,\s*\{/);
+      expect(source, file).not.toMatch(/installed:\s*true/);
+    }
+  });
+
+  it("CopilotToolCard derives its pill from the fetched status", () => {
+    const source = read("components/CopilotToolCard.js");
+    expect(source).toMatch(/status=\{status \? deriveToolStatus\(tool, status\) : null\}/);
   });
 });
