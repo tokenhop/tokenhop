@@ -123,7 +123,10 @@ const ConsoleLogRow = memo(function ConsoleLogRow({
           className="flex w-full min-w-0 cursor-pointer items-baseline gap-2 rounded-sm bg-transparent px-[3px] py-0 text-start text-inherit hover:underline focus-visible:shadow-focus"
         >
           {row.source === "browser" && (
-            <span className="shrink-0 rounded border border-[var(--signal-terminal-time)] px-1 text-[11px] text-[var(--signal-terminal-time)]">
+            <span
+              data-i18n-skip="true"
+              className="shrink-0 rounded border border-[var(--signal-terminal-time)] px-1 text-[11px] text-[var(--signal-terminal-time)]"
+            >
               browser
             </span>
           )}
