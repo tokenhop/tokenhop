@@ -141,7 +141,8 @@ describe("getProviderStats", () => {
   it("counts mixed auth types and reports latest error", () => {
     const stats = getProviderStats(connections, "claude", ["oauth", "apikey", "api_key"]);
     expect(stats.total).toBe(3);
-    expect(stats.connected).toBe(1);
+    // Unified rule (YAN-391): connected = enabled accounts, including ones needing attention.
+    expect(stats.connected).toBe(3);
     expect(stats.error).toBe(2);
     expect(stats.errorCode).toBe("AUTH");
     expect(typeof stats.errorTime).toBe("string");
@@ -208,11 +209,12 @@ describe("matchesProviderListFilter / counts", () => {
     }
   });
 
-  it("connected matches providers with a working connection", () => {
+  it("connected matches providers with an enabled connection; no-auth is ready, not connected", () => {
     expect(matchesProviderListFilter("connected", active)).toBe(true);
     expect(matchesProviderListFilter("connected", error)).toBe(false);
     expect(matchesProviderListFilter("connected", empty)).toBe(false);
     expect(matchesProviderListFilter("connected", disabled)).toBe(false);
+    expect(matchesProviderListFilter("connected", empty, true)).toBe(false);
   });
 
   it("needs-attention matches providers with errors (noAuth exempt)", () => {
@@ -264,9 +266,10 @@ describe("matchesProviderListFilter / counts", () => {
       { stats: active, authGroup: "compatible" },
     ];
     const counts = buildProviderListFilterCounts(entries);
+    // No-auth entries are "ready", not connected (YAN-391).
     expect(counts).toEqual({
       all: 5,
-      connected: 4,
+      connected: 3,
       "needs-attention": 1,
       oauth: 2,
       free: 1,

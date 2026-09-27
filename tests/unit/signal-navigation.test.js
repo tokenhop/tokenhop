@@ -124,15 +124,16 @@ describe("media tabs", () => {
 });
 
 describe("shell status helpers", () => {
-  it("counts distinct connected providers using effective status", () => {
+  it("counts distinct providers with an enabled connection (shared health rule)", () => {
     const connections = [
       { provider: "openai", testStatus: "active" },
       { provider: "openai", testStatus: "success" },
       { provider: "anthropic", testStatus: "active" },
+      // Needs-attention connections still count as connected under the unified rule.
       { provider: "codex", testStatus: "error" },
       { provider: "disabled-one", testStatus: "active", isActive: false },
     ];
-    expect(countConnectedProviders(connections)).toBe(2);
+    expect(countConnectedProviders(connections)).toBe(3);
   });
 
   it("counts accounts at or below the low-quota threshold", () => {

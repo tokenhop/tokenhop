@@ -1,32 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { summarizeProviders } from "@/shared/utils/providerHealth";
 
 const REFRESH_MS = 60_000;
 const LOW_QUOTA_THRESHOLD = 20;
 
 /**
- * Count distinct connected providers (not raw connections), matching the
- * Signal shell spec: "Providers: connected-provider count". Provider counting
- * uses the providers page's effective-status rule (cooldown-adjusted
- * active/success), then counts each provider once.
+ * Count distinct connected providers (not raw connections), using the shared
+ * provider-health rule: a provider is connected when it has at least one
+ * enabled connection, even if that connection needs attention.
  * @param {Array<object>} connections
  */
 export function countConnectedProviders(connections) {
   if (!Array.isArray(connections)) return 0;
-  const seen = new Set();
-  for (const conn of connections) {
-    if (conn?.isActive === false) continue;
-    const cooldown = Object.entries(conn || {}).some(
-      ([key, value]) =>
-        key.startsWith("modelLock_") && value && new Date(value).getTime() > Date.now(),
-    );
-    const effective = conn.testStatus === "unavailable" && !cooldown ? "active" : conn.testStatus;
-    if (effective === "active" || effective === "success") {
-      if (conn.provider) seen.add(conn.provider);
-    }
-  }
-  return seen.size;
+  return summarizeProviders([], connections).connected;
 }
 
 /**
@@ -203,8 +191,8 @@ function onVisibilityChange() {
  * refreshes via a module-level store.
  *
  * Badge counts:
- * - providers: connections with an active/success effective status, counted
- *   the same way as the providers page
+ * - providers: distinct providers with at least one enabled connection
+ *   (shared provider-health rule)
  * - combos: LLM combos from GET /api/combos
  * - quota: active connections whose lowest quota is ≤ 20% remaining,
  *   computed from the quota page's localStorage cache (no new polling)

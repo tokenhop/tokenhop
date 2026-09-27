@@ -22,7 +22,8 @@ import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 import { useNotificationStore } from "@/store/notificationStore";
 import { getRelativeTime } from "@/shared/utils";
-import { getCooldownUntil } from "../utils";
+import CooldownTimer from "@/shared/components/CooldownTimer";
+import { connectionHealth } from "@/shared/utils/providerHealth";
 
 const shortLabel = (label) => String(label).split(" — ")[0];
 
@@ -40,51 +41,19 @@ const AUTH_PILL_LABEL = {
   compatible: "Compatible",
 };
 
-function CooldownCountdown({ until }) {
-  const [remaining, setRemaining] = useState("");
-
-  useEffect(() => {
-    const update = () => {
-      const diff = new Date(until).getTime() - Date.now();
-      if (diff <= 0) {
-        setRemaining("");
-        return;
-      }
-      const s = Math.floor(diff / 1000);
-      if (s < 60) setRemaining(`${s}s`);
-      else if (s < 3600) setRemaining(`${Math.floor(s / 60)}m ${s % 60}s`);
-      else setRemaining(`${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`);
-    };
-    update();
-    const t = setInterval(update, 1000);
-    return () => clearInterval(t);
-  }, [until]);
-
-  if (!remaining) return null;
-  return (
-    <span className="font-mono text-xs text-warn" aria-live="off">
-      {remaining} left
-    </span>
-  );
-}
-
-CooldownCountdown.propTypes = { until: PropTypes.string.isRequired };
-
 function AccountItem({ connection, index, quotaSnapshot, onToggle, onClearCooldown }) {
-  const until = getCooldownUntil(connection);
+  const health = connectionHealth(connection);
+  const until = health.until;
   const displayName = connection.name || connection.email || connection.displayName || "Account";
   const sub =
     connection.email && connection.name
       ? connection.email
       : connection.email || connection.displayName || "";
-  const disabled = connection.isActive === false;
-  const status = until
-    ? { variant: "warn", label: "Cooldown" }
-    : connection.testStatus === "error" || connection.testStatus === "expired"
-      ? { variant: "err", label: "Error" }
-      : disabled
-        ? { variant: "neutral", label: "Off" }
-        : { variant: "ok", label: "Active" };
+  const disabled = health.status === "off";
+  const status = {
+    variant: { off: "neutral", ok: "ok", warn: "warn", err: "err" }[health.status],
+    label: { off: "Off", ok: "Active", warn: "Cooldown", err: "Error" }[health.status],
+  };
 
   const windows = quotaSnapshot?.windows || [];
   const primaryWindow = windows[0];
@@ -122,7 +91,7 @@ function AccountItem({ connection, index, quotaSnapshot, onToggle, onClearCooldo
           <div className="flex-1">
             <Meter value={100} label={`${displayName} cooldown`} valueText="Rate limited" />
           </div>
-          <CooldownCountdown until={until} />
+          <CooldownTimer until={until} />
           <button
             type="button"
             onClick={onClearCooldown}

@@ -4,28 +4,8 @@ import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
 import ProviderTile from "@/shared/components/ProviderTile";
 import { deriveCommandCenterStatus } from "@/shared/utils/commandCenter";
+import { summarizeProviders } from "@/shared/utils/providerHealth";
 import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
-
-/**
- * Map a connection record to the home health status.
- * warn = cooling down (model locks) or degrading test status; err = error/expired.
- * @param {object} connection
- * @param {number} [nowMs]
- * @returns {"ok"|"warn"|"err"|"off"}
- */
-export function connectionHealth(connection, nowMs = Date.now()) {
-  if (!connection) return "off";
-  if (connection.isActive === false) return "off";
-  const locked = Object.entries(connection).some(
-    ([key, value]) => key.startsWith("modelLock_") && value && new Date(value).getTime() > nowMs,
-  );
-  if (locked || connection.testStatus === "cooldown") return "warn";
-  const status = connection.testStatus;
-  if (status === "active" || status === "success" || status === "ok") return "ok";
-  if (status === "error" || status === "expired" || status === "unavailable") return "err";
-  if (!status) return "ok";
-  return "warn";
-}
 
 /**
  * Provider health: monogram tile grid with status dots plus a
@@ -52,20 +32,14 @@ export default function ProviderHealth({ connections, loading, error, onRetry })
     );
   }
 
-  const worstRank = { ok: 0, off: 0, warn: 1, err: 2 };
-  const byProvider = new Map();
-  for (const connection of connections) {
-    const status = connectionHealth(connection);
-    const current = byProvider.get(connection.provider);
-    if (!current || worstRank[status] > worstRank[current.status]) {
-      byProvider.set(connection.provider, { provider: connection.provider, status });
-    }
-  }
-  const providers = [...byProvider.values()].sort((a, b) => a.provider.localeCompare(b.provider));
-  const attention = providers.filter(
-    (item) => item.status === "warn" || item.status === "err",
-  ).length;
-  const connected = providers.filter((item) => item.status !== "off").length;
+  const {
+    connected,
+    needsAttention: attention,
+    providers: summary,
+  } = summarizeProviders([], connections);
+  const providers = summary
+    .map((item) => ({ provider: item.id, status: item.status }))
+    .sort((a, b) => a.provider.localeCompare(b.provider));
   const statusLine = deriveCommandCenterStatus(
     providers.map((item) => ({ status: item.status === "off" ? "idle" : item.status })),
   );
@@ -101,7 +75,7 @@ export default function ProviderHealth({ connections, loading, error, onRetry })
           className="flex items-center gap-2.5 rounded-xl bg-err-bg px-3 py-2.5 text-[13px] text-text"
         >
           <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-err" />
-          {attention} need attention
+          {attention} {attention === 1 ? "needs" : "need"} attention
           <span className="ms-auto font-semibold text-err">Review</span>
         </a>
       ) : null}

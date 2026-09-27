@@ -11,6 +11,7 @@ import {
   Kbd,
   SegmentedControl,
   CardSkeleton,
+  EditConnectionModal,
 } from "@/shared/components";
 import Menu, { MenuItem } from "@/shared/components/Menu";
 import { useNotificationStore } from "@/store/notificationStore";
@@ -22,6 +23,8 @@ import {
   getProviderStats,
   matchesProviderListFilter,
   buildProviderListFilterCounts,
+  needsAttention as entryNeedsAttention,
+  needsLookLabel,
   readSelectedProvider,
   writeSelectedProvider,
 } from "./utils";
@@ -33,6 +36,7 @@ import ProviderDetailSidePanel from "./components/ProviderDetailSidePanel";
 import AddAccountDialog from "./components/AddAccountDialog";
 import TestResultsModal from "./components/TestResultsModal";
 import useProviderListData from "./useProviderListData";
+import { repairTarget } from "./repairAction";
 
 const APIKEY_INITIAL_VISIBLE = 20;
 
@@ -75,6 +79,7 @@ function ProvidersListShell({ initialProviderId = null }) {
   const [addConnectionError, setAddConnectionError] = useState("");
   const [proxyPools, setProxyPools] = useState([]);
   const [testAccountsMode, setTestAccountsMode] = useState(null);
+  const [repairConnection, setRepairConnection] = useState(null);
 
   const narrowPanel = useIsNarrow();
   const notify = useNotificationStore();
@@ -158,14 +163,13 @@ function ProvidersListShell({ initialProviderId = null }) {
     .filter((section) => section.entries.length > 0 || section.id === "custom");
 
   const needsAttention = allEntries
-    .filter(
-      (entry) => !entry.isNoAuth && (entry.stats.error > 0 || entry.stats.hasCooldown === true),
-    )
+    .filter((entry) => entryNeedsAttention(entry.stats, entry.isNoAuth))
     .slice(0, 6);
 
   const connectedTotal = filterCounts[LIST_FILTERS.CONNECTED];
   const availableTotal = sections.reduce((sum, s) => sum + s.totalCount, 0);
   const attentionTotal = filterCounts[LIST_FILTERS.NEEDS_ATTENTION];
+  const noAuthReadyTotal = allEntries.filter((entry) => entry.isNoAuth).length;
   const isApikeySearching = !!query || filter !== LIST_FILTERS.ALL;
 
   // Keep panel selection in sync with the URL on Back/Forward.
@@ -274,6 +278,27 @@ function ProvidersListShell({ initialProviderId = null }) {
     }
   };
 
+  const handleRepairConnection = async (formData) => {
+    if (!repairConnection) return "Nothing to repair";
+    try {
+      const res = await fetch(`/api/providers/${repairConnection.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+      if (res.ok) {
+        setRepairConnection(null);
+        refreshData();
+        notify.success("Connection updated. Test it to confirm.");
+        return null;
+      }
+      const data = await res.json().catch(() => ({}));
+      return data.error || "Failed to save connection";
+    } catch {
+      return "Failed to save connection";
+    }
+  };
+
   const modelCountFor = (entry) =>
     entry.authGroup === "compatible"
       ? null
@@ -294,7 +319,9 @@ function ProvidersListShell({ initialProviderId = null }) {
     <div className="flex min-w-0 flex-col gap-5 px-1 sm:px-0">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <p className="text-sm text-muted" aria-live="polite">
-          {availableTotal} available · {connectedTotal} connected · {attentionTotal} need a look
+          {availableTotal} available · {connectedTotal} connected
+          {noAuthReadyTotal > 0 && ` · ${noAuthReadyTotal} ready`} ·{" "}
+          {needsLookLabel(attentionTotal)}
         </p>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Button
@@ -387,10 +414,18 @@ function ProvidersListShell({ initialProviderId = null }) {
               connections={entryConnections(entry, connections)}
               testing={testingMode === entry.id}
               onRetry={() => handleBatchTest("provider", entry.id)}
-              onReconnect={() => {
-                setAddConnectionError("");
-                setAddAccountEntry(entry);
+              onRepair={(connection) => {
+                const target = repairTarget(connection);
+                if (target === "reauthorize") {
+                  setAddConnectionError("");
+                  setAddAccountEntry(entry);
+                } else if (target === "edit") {
+                  setRepairConnection(connection);
+                } else {
+                  openProvider(entry);
+                }
               }}
+              onCooldownExpired={refreshData}
               onOpen={() => openProvider(entry)}
             />
           ))}
@@ -517,6 +552,14 @@ function ProvidersListShell({ initialProviderId = null }) {
           onChanged={refreshData}
         />
       )}
+
+      <EditConnectionModal
+        isOpen={Boolean(repairConnection)}
+        connection={repairConnection}
+        proxyPools={proxyPools}
+        onSave={handleRepairConnection}
+        onClose={() => setRepairConnection(null)}
+      />
 
       <TestResultsModal
         isOpen={isTestModalOpen}

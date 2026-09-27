@@ -2,8 +2,8 @@
 
 import PropTypes from "prop-types";
 import { ProviderTile, StatusPill, Toggle } from "@/shared/components";
-import { getErrorCode } from "@/shared/utils";
-import { getCooldownUntil, getAccountSegments } from "../utils";
+import { providerHealth } from "@/shared/utils/providerHealth";
+import { getAccountSegments } from "../utils";
 
 const AUTH_PILL_VARIANT = {
   oauth: "info",
@@ -21,29 +21,31 @@ const AUTH_PILL_LABEL = {
 
 function tileStatus(entry, connections) {
   if (entry.stats.allDisabled) return "neutral";
-  const hasCooldown = connections.some((c) => getCooldownUntil(c));
-  if (hasCooldown) return "warn";
-  if (entry.stats.error > 0) return "err";
-  if (entry.stats.connected > 0) return "ok";
+  const health = providerHealth(entry.isNoAuth ? [] : connections);
+  if (health.status === "err") return "err";
+  if (health.status === "warn") return "warn";
+  if (health.connected) return "ok";
   return "neutral";
 }
 
 function statusForEntry(entry, connections) {
   if (entry.isNoAuth) return { variant: "ok", label: "Ready", dot: true };
   if (entry.stats.allDisabled) return { variant: "neutral", label: "Disabled", dot: false };
-  const cooldownConn = connections.find((c) => getCooldownUntil(c));
-  if (cooldownConn) {
-    const code = getErrorCode(cooldownConn.lastError);
-    const codeSuffix = code && code !== "ERR" ? ` ${code}` : "";
-    return { variant: "warn", label: `Cooldown${codeSuffix}`, dot: true };
+  const health = providerHealth(connections);
+  if (health.status === "warn" && health.until) {
+    return { variant: "warn", label: "Cooldown", dot: true };
   }
-  if (entry.stats.connected > 0) return { variant: "ok", label: "Connected", dot: true };
-  if (entry.stats.error > 0) {
+  if (health.status === "err") {
+    const errCount = health.counts.err;
     const errText = entry.stats.errorCode
-      ? `${entry.stats.error} Error (${entry.stats.errorCode})`
-      : `${entry.stats.error} Error`;
+      ? `${errCount} Error (${entry.stats.errorCode})`
+      : `${errCount} Error`;
     return { variant: "err", label: errText, dot: true };
   }
+  if (health.status === "warn" && health.reason) {
+    return { variant: "warn", label: health.reason, dot: true };
+  }
+  if (entry.stats.connected > 0) return { variant: "ok", label: "Connected", dot: true };
   const isKey = entry.authGroup === "apikey" || entry.authGroup === "compatible";
   return { variant: "neutral", label: isKey ? "Add key" : "Connect", dot: false };
 }

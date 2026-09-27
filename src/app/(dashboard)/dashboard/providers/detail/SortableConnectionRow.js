@@ -4,11 +4,10 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { Toggle, StatusPill, Menu, MenuItem, Tooltip } from "@/shared/components";
-import { getEffectiveStatus } from "../utils";
+import CooldownTimer from "@/shared/components/CooldownTimer";
+import { cooldownUntil, connectionHealth } from "@/shared/utils/providerHealth";
 import { formatCooldownRemaining, weightSharePct } from "../detailUtils";
-import CooldownTimer from "../[id]/CooldownTimer";
 
 function formatWeight(value) {
   return Number.isFinite(value) ? String(Number(value.toFixed(2))) : "?";
@@ -123,20 +122,12 @@ export default function SortableConnectionRow({
         ? connection.displayName.trim()
         : null;
 
-  const modelLockUntil = getEarliestModelLockUntil(connection);
+  const health = connectionHealth(connection);
+  const modelLockUntil = cooldownUntil(connection);
   const isCooldown = !!modelLockUntil;
-  const effectiveStatus = getEffectiveStatus(connection);
-  const statusPillVariant =
-    effectiveStatus === "active" || effectiveStatus === "success"
-      ? "ok"
-      : effectiveStatus === "error" ||
-          effectiveStatus === "expired" ||
-          effectiveStatus === "unavailable"
-        ? "err"
-        : effectiveStatus === "cooldown"
-          ? "warn"
-          : "neutral";
-  const disabled = connection.isActive === false;
+  const statusPillVariant = { off: "neutral", ok: "ok", warn: "warn", err: "err" }[health.status];
+  const statusLabel = health.status === "ok" ? "active" : health.reason;
+  const disabled = health.status === "off";
   const weightInfo =
     showWeighted && !disabled
       ? {
@@ -255,7 +246,7 @@ export default function SortableConnectionRow({
           ) : null}
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
             <StatusPill variant={statusPillVariant} dot>
-              {disabled ? "disabled" : effectiveStatus || "Unknown"}
+              {disabled ? "disabled" : statusLabel}
             </StatusPill>
             <StatusPill variant="neutral">{authLabel}</StatusPill>
             {hasAnyProxy ? <StatusPill variant={proxyVariant}>Proxy</StatusPill> : null}

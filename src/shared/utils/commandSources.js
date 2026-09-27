@@ -4,6 +4,7 @@
 import { MEDIA_TABS, visibleItems } from "@/shared/constants/navigation.js";
 import { toCommandItems } from "@/app/(dashboard)/dashboard/settings/registry.js";
 import { registerStaticSource } from "./commandPalette.js";
+import { connectionHealth } from "./providerHealth.js";
 
 function pageCommands() {
   const items = visibleItems();
@@ -35,12 +36,16 @@ function providerCommands({ providers } = {}) {
   return list.flatMap((connection) => {
     const name = connection?.name || connection?.provider || connection?.id;
     if (!name) return [];
+    const health = connectionHealth(connection);
+    const healthHint = health.reason || "Healthy";
     return [
       {
         id: `provider:${connection.id || name}`,
         group: "Providers",
         label: String(name),
-        hint: connection?.provider ? String(connection.provider) : "",
+        // Keep the provider identity first so YAN-390's ⌘K fix keeps working;
+        // the shared health rule adds status context after it.
+        hint: `${connection?.provider ? String(connection.provider) : ""} · ${healthHint}`,
         keywords: `provider ${connection?.provider || ""} ${connection?.id || ""} open`,
         icon: "dns",
         run: {
