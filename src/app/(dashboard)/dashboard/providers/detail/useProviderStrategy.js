@@ -23,7 +23,8 @@ export function useProviderStrategy({ providerId, notifyError }) {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/settings", { cache: "no-store" });
-      const data = res.ok ? await res.json() : {};
+      if (!res.ok) throw new Error("Failed to load provider strategy.");
+      const data = await res.json();
       const override = data.providerStrategies?.[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
       setGlobalStrategy(data.fallbackStrategy || null);
@@ -33,9 +34,11 @@ export function useProviderStrategy({ providerId, notifyError }) {
       setStickyDraft(stored);
       setSavedSticky(stored);
     } catch (err) {
-      console.log("Error loading provider strategy:", err);
+      const message = err instanceof Error ? err.message : "Failed to load provider strategy.";
+      setError(message);
+      notifyError?.(message);
     }
-  }, [providerId]);
+  }, [notifyError, providerId]);
 
   const save = useCallback(
     async (strategy, stickyLimit) => {
@@ -93,27 +96,30 @@ export function useProviderStrategy({ providerId, notifyError }) {
   const changeStrategy = useCallback(
     async (value) => {
       const strategy = value === "inherit" ? null : value;
-      // Round-robin keeps its legacy per-provider default of 1.
-      const stickyLimit = strategy === "round-robin" && stickyDraft === "" ? "1" : stickyDraft;
-      if (await save(strategy, stickyLimit)) {
-        setStickyDraft(strategy === "fill-first" ? "" : stickyLimit);
+      // Existing round-robin selection rotates each request unless a sticky override is set.
+      const nextSticky = strategy === "round-robin" && stickyDraft === "" ? "1" : stickyDraft;
+      if (await save(strategy, nextSticky)) {
+        setStickyDraft(strategy === "fill-first" ? "" : nextSticky);
       }
     },
     [save, stickyDraft],
   );
 
-  const commitSticky = useCallback(() => {
-    if (
-      providerStrategy !== "round-robin" &&
-      providerStrategy !== "weighted" &&
-      providerStrategy !== null
-    )
-      return;
-    save(
-      providerStrategy,
-      stickyDraft === "" && providerStrategy === "round-robin" ? "1" : stickyDraft,
-    );
-  }, [providerStrategy, save, stickyDraft]);
+  /** Saves a committed stepper value; failures restore the last saved value. */
+  const commitSticky = useCallback(
+    async (next) => {
+      if (
+        providerStrategy !== "round-robin" &&
+        providerStrategy !== "weighted" &&
+        providerStrategy !== null
+      )
+        return;
+      const draft = next === "" || next == null ? "" : String(next);
+      setStickyDraft(draft);
+      if (!(await save(providerStrategy, draft))) setStickyDraft(savedSticky);
+    },
+    [providerStrategy, save, savedSticky],
+  );
 
   const clearStickyOverride = useCallback(async () => {
     // Sticky-only clear: keep the current strategy override intact.
@@ -150,7 +156,6 @@ export function useProviderStrategy({ providerId, notifyError }) {
     providerStrategy,
     globalStrategy,
     stickyDraft,
-    setStickyDraft,
     savedSticky,
     globalSticky,
     error,

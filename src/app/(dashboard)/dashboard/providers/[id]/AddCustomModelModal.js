@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { Button, Modal, Toggle } from "@/shared/components";
+import { Button, Callout, Modal, Toggle } from "@/shared/components";
 import { CAPACITY_META } from "@/shared/constants/models";
 
 const defaultCaps = () => Object.fromEntries(Object.keys(CAPACITY_META).map((key) => [key, false]));
@@ -48,8 +48,8 @@ export default function AddCustomModelModal({
         body: JSON.stringify({ model: `${providerAlias}/${cleanId}` }),
       });
       const data = await res.json();
-      setTestStatus(data.ok ? "ok" : "error");
-      setTestError(data.error || "");
+      setTestStatus(res.ok && data.ok ? "ok" : "error");
+      setTestError(data.error || (res.ok && data.ok ? "" : "Model not reachable"));
     } catch (err) {
       setTestStatus("error");
       setTestError(err.message);
@@ -72,7 +72,7 @@ export default function AddCustomModelModal({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Add Custom Model">
+    <Modal isOpen={isOpen} onClose={onClose} title="Add custom model">
       <div className="flex flex-col gap-4">
         <div>
           <label className="text-sm font-medium mb-1.5 block">Model ID</label>
@@ -125,17 +125,9 @@ export default function AddCustomModelModal({
         </div>
 
         {/* Test result */}
-        {testStatus === "ok" && (
-          <div className="flex items-center gap-2 text-sm text-green-600">
-            <span className="material-symbols-outlined text-base">check_circle</span>
-            Model is reachable
-          </div>
-        )}
+        {testStatus === "ok" && <Callout variant="ok">Model is reachable</Callout>}
         {testStatus === "error" && (
-          <div className="flex items-start gap-2 text-sm text-red-500">
-            <span className="material-symbols-outlined text-base shrink-0">cancel</span>
-            <span>{testError || "Model not reachable"}</span>
-          </div>
+          <Callout variant="err">{testError || "Model not reachable"}</Callout>
         )}
 
         <div className="flex gap-2 pt-1">
@@ -143,7 +135,7 @@ export default function AddCustomModelModal({
             Cancel
           </Button>
           <Button onClick={handleSave} fullWidth size="sm" disabled={!modelId.trim() || saving}>
-            {saving ? "Adding..." : "Add Model"}
+            {saving ? "Adding…" : "Add model"}
           </Button>
         </div>
       </div>

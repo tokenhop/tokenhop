@@ -2,13 +2,11 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { translate } from "@/i18n/runtime";
+import { Button } from "@/shared/components";
+import { useNotificationStore } from "@/store/notificationStore";
 import { selectModelsToImport } from "@/shared/utils/liveModels";
 
-/**
- * Re-fetches the provider's live catalog (bypassing the server cache) and imports
- * every model not already available as a custom model.
- */
+/** Refreshes the live catalog and imports models not already available. */
 export default function FetchModelsButton({
   providerId,
   refresh,
@@ -19,14 +17,15 @@ export default function FetchModelsButton({
   onAddModel,
 }) {
   const [fetching, setFetching] = useState(false);
+  const notify = useNotificationStore();
 
   const handleClick = async () => {
     if (fetching) return;
     setFetching(true);
     try {
       const { models, warning } = await refresh();
-      if (models.length === 0) {
-        alert(translate("No models returned") + (warning ? `: ${warning}` : ""));
+      if (!models.length) {
+        notify.error(warning ? `No models returned: ${warning}` : "No models returned");
         return;
       }
 
@@ -38,38 +37,39 @@ export default function FetchModelsButton({
         modelAliases,
         providerStorageAlias,
       });
+      let imported = 0;
       // Sequential on purpose: each add refetches the custom model list.
       for (const id of ids) {
-        await onAddModel(id);
+        if (!(await onAddModel(id))) {
+          notify.error(
+            `Could not add ${id}. Added ${imported} of ${ids.length} models; retry to add the rest.`,
+          );
+          return;
+        }
+        imported += 1;
       }
-
-      if (ids.length === 0) {
-        alert(translate("All models already exist, no new models added"));
-      } else {
-        alert(translate("Successfully added") + ` ${ids.length} ` + translate("models"));
-      }
+      if (ids.length === 0) notify.info("All models already exist. No new models added.");
+      else notify.success(`Added ${ids.length} model${ids.length === 1 ? "" : "s"}.`);
     } catch (error) {
-      console.log(`Error fetching ${providerId} models:`, error);
-      alert(translate("Error fetching models") + ": " + error.message);
+      notify.error(
+        `Could not fetch models: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     } finally {
       setFetching(false);
     }
   };
 
   return (
-    <button
+    <Button
+      type="button"
+      size="sm"
+      variant="secondary"
+      icon="download"
+      loading={fetching}
       onClick={handleClick}
-      disabled={fetching}
-      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 dark:text-blue-400 transition-colors hover:border-blue-500 hover:bg-blue-500/5 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
     >
-      <span
-        className="material-symbols-outlined text-sm"
-        style={fetching ? { animation: "spin 1s linear infinite" } : undefined}
-      >
-        {fetching ? "progress_activity" : "download"}
-      </span>
-      {fetching ? translate("Fetching...") : translate("Fetch Models")}
-    </button>
+      {fetching ? "Fetching…" : "Fetch models"}
+    </Button>
   );
 }
 

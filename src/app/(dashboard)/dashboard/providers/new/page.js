@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Card, Button, Input, Select, Toggle } from "@/shared/components";
+import { Card, Button, Callout, Input, Select, Toggle } from "@/shared/components";
 import { AI_PROVIDERS, AUTH_METHODS } from "@/shared/constants/config";
 
 const providerOptions = Object.values(AI_PROVIDERS).map((p) => ({
@@ -120,7 +120,7 @@ export default function NewProviderPage() {
           {/* Auth Method */}
           <div className="flex flex-col gap-3">
             <label className="text-sm font-medium">
-              Authentication Method <span className="text-red-500">*</span>
+              Authentication Method <span className="text-err">*</span>
             </label>
             <div className="flex gap-3">
               {authMethodOptions.map((method) => (
@@ -187,11 +187,7 @@ export default function NewProviderPage() {
           />
 
           {/* Error Message */}
-          {errors.submit && (
-            <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm">
-              {errors.submit}
-            </div>
-          )}
+          {errors.submit && <Callout variant="err">{errors.submit}</Callout>}
 
           {/* Actions */}
           <div className="flex gap-3 pt-4 border-t border-line">

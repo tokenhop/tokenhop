@@ -46,6 +46,7 @@
 
   /* Sky: info and OAuth */
   --signal-sky: #1f6bc2;
+  --signal-sky-ink: #1b62b3;
   --signal-sky-bg: rgba(31, 107, 194, 0.09);
 
   /* Status only: OK / Warn / Error */
@@ -94,6 +95,7 @@
 
   /* Sky */
   --signal-sky: #72b7ff;
+  --signal-sky-ink: #72b7ff;
   --signal-sky-bg: rgba(114, 183, 255, 0.12);
 
   /* Status */
@@ -183,6 +185,7 @@ select {
   --color-lime-bg: var(--signal-lime-bg);
   --color-on-lime: var(--signal-on-lime);
   --color-sky: var(--signal-sky);
+  --color-sky-ink: var(--signal-sky-ink);
   --color-sky-bg: var(--signal-sky-bg);
   --color-ok: var(--signal-ok);
   --color-ok-bg: var(--signal-ok-bg);

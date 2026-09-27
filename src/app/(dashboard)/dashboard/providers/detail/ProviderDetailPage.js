@@ -255,7 +255,7 @@ export default function ProviderDetailPage() {
 
   const confirmDeleteNode = () => {
     conn.setConfirmState({
-      title: "Delete Compatible Node",
+      title: "Delete compatible node",
       message: `Delete this ${authFlags.isAnthropicCompatible ? "Anthropic" : "OpenAI"} Compatible node?`,
       onConfirm: async () => {
         conn.setConfirmState(null);
@@ -312,8 +312,9 @@ export default function ProviderDetailPage() {
     updateNode: handleUpdateNode,
     closeEditNode: () => close("editNode"),
     saveCustomModel: async (modelId, caps) => {
-      await models.addCustomModel(modelId, "llm", storageAlias, caps);
-      models.setShowAddCustomModel(false);
+      const saved = await models.addCustomModel(modelId, "llm", storageAlias, caps);
+      if (saved) models.setShowAddCustomModel(false);
+      return saved;
     },
     closeAddCustomModel: () => models.setShowAddCustomModel(false),
     closeBulkCodex: () => close("bulkCodex"),
@@ -360,7 +361,7 @@ export default function ProviderDetailPage() {
           href="/dashboard/providers"
           className="inline-flex min-h-11 items-center text-sm font-semibold text-coral-ink hover:text-coral focus-visible:shadow-focus focus-visible:outline-none"
         >
-          Back to Providers
+          Back to providers
         </Link>
       </div>
     );
@@ -439,7 +440,6 @@ export default function ProviderDetailPage() {
         refreshLive={refreshLive}
         models={models}
         onDisableAll={(state) => conn.setConfirmState(state)}
-        extraAddButtons={isCompatible ? null : addButtons}
         compatibleSection={
           <CompatibleModelsSection
             isFreeNoAuth={authFlags.isFreeNoAuth}

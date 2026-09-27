@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Modal, Button } from "@/shared/components";
+import { Modal, Button, Callout, StatusPill } from "@/shared/components";
 import { translate } from "@/i18n/runtime";
 
 const PLACEHOLDER = `[
@@ -238,26 +238,27 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
         </div>
 
         {fileCountInfo && (
-          <div className="flex items-center gap-1.5 text-xs text-green-400 font-medium bg-green-500/10 border border-green-500/20 px-2.5 py-1.5 rounded">
-            <span className="material-symbols-outlined text-sm">check_circle</span>
-            <span>
-              {translate("Loaded")} {fileCountInfo.accountsCount} {translate("account(s) from")}{" "}
-              {fileCountInfo.filesCount} {translate("file(s)")}
-            </span>
-          </div>
+          <Callout variant="ok" className="p-2 text-xs">
+            {translate("Loaded")} {fileCountInfo.accountsCount} {translate("account(s) from")}{" "}
+            {fileCountInfo.filesCount} {translate("file(s)")}
+          </Callout>
         )}
 
-        {parseError && <p className="text-xs text-red-500 break-words">{parseError}</p>}
+        {parseError && (
+          <Callout variant="err" className="break-words">
+            {parseError}
+          </Callout>
+        )}
 
         {result && result.failed > 0 && (
           <div className="flex flex-col gap-2">
-            <div className="text-sm font-medium text-yellow-400">
-              ✗ {result.failed} {translate("failed")}
-            </div>
+            <StatusPill variant="warn" className="self-start">
+              {result.failed} {translate("failed")}
+            </StatusPill>
             {failedItems.length > 0 && (
               <ul className="rounded border border-coral/20 bg-raised p-2 text-xs font-mono max-h-40 overflow-y-auto">
                 {failedItems.map((item) => (
-                  <li key={item.index} className="text-red-400">
+                  <li key={item.index} className="text-err">
                     [{item.index}] {item.error}
                   </li>
                 ))}

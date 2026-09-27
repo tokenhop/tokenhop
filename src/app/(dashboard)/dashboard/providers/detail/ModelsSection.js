@@ -27,7 +27,6 @@ export default function ModelsSection({
   liveError,
   refreshLive,
   models,
-  extraAddButtons,
   compatibleSection,
   onDisableAll,
 }) {
@@ -85,7 +84,7 @@ export default function ModelsSection({
 
   return (
     <Card
-      title="Available Models"
+      title="Available models"
       subtitle={
         isCompatible
           ? `Manual ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible catalog`
@@ -107,7 +106,7 @@ export default function ModelsSection({
           ) : null}
           {!isCompatible && models.disabledModelIds.length > 0 ? (
             <Button size="sm" variant="secondary" icon="restart_alt" onClick={models.enableAll}>
-              Active All
+              Enable all
             </Button>
           ) : null}
           {!isCompatible && activeIds.length > 0 ? (
@@ -117,7 +116,7 @@ export default function ModelsSection({
               icon="block"
               onClick={() => models.disableAll(activeIds, onDisableAll)}
             >
-              Disable All
+              Disable all
             </Button>
           ) : null}
         </div>
@@ -221,7 +220,7 @@ export default function ModelsSection({
               icon="add"
               onClick={() => models.setShowAddCustomModel(true)}
             >
-              Add Model
+              Add model
             </Button>
             {isLiveCatalog && hasActiveConnection ? (
               <FetchModelsButton
@@ -234,7 +233,6 @@ export default function ModelsSection({
                 onAddModel={(modelId) => models.addCustomModel(modelId, "llm", storageAlias)}
               />
             ) : null}
-            {extraAddButtons}
           </div>
           {suggested.length > 0 ? (
             <div className="flex flex-col gap-2">
@@ -300,7 +298,6 @@ ModelsSection.propTypes = {
   liveError: PropTypes.string,
   refreshLive: PropTypes.func,
   models: PropTypes.object.isRequired,
-  extraAddButtons: PropTypes.node,
   compatibleSection: PropTypes.node,
   onDisableAll: PropTypes.func.isRequired,
 };

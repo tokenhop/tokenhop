@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useNotificationStore } from "@/store/notificationStore";
 import { getModelKind } from "@/shared/constants/models";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
@@ -29,116 +30,157 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
   const [testingIds, setTestingIds] = useState(() => new Set());
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
 
-  const fetchAliases = useCallback(async () => {
-    try {
-      const res = await fetch("/api/models/alias");
+  // All requests, including follow-up reads, must report HTTP failures.
+  const request = useCallback(async (url, options, fallback) => {
+    const res = await fetch(url, options);
+    if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching aliases:", error);
+      throw new Error(data.error || fallback);
     }
+    return res;
   }, []);
+
+  const report = useCallback(
+    (error, fallback) => {
+      notifyError?.(error instanceof Error ? error.message : fallback);
+      return false;
+    },
+    [notifyError],
+  );
+
+  const fetchAliases = useCallback(async () => {
+    const res = await request("/api/models/alias", undefined, "Failed to fetch aliases");
+    const data = await res.json();
+    setModelAliases(data.aliases || {});
+  }, [request]);
 
   const fetchCustomModels = useCallback(async () => {
-    try {
-      const res = await fetch("/api/models/custom", { cache: "no-store" });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) setCustomModels(data.models || []);
-    } catch (error) {
-      console.log("Error fetching custom models:", error);
-    }
-  }, []);
+    const res = await request(
+      "/api/models/custom",
+      { cache: "no-store" },
+      "Failed to fetch custom models",
+    );
+    const data = await res.json();
+    setCustomModels(data.models || []);
+  }, [request]);
 
   const fetchDisabledModels = useCallback(async () => {
-    try {
-      const res = await fetch(
-        `/api/models/disabled?providerAlias=${encodeURIComponent(storageAlias)}`,
-        { cache: "no-store" },
-      );
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) setDisabledModelIds(data.ids || []);
-    } catch (error) {
-      console.log("Error fetching disabled models:", error);
-    }
-  }, [storageAlias]);
+    const res = await request(
+      `/api/models/disabled?providerAlias=${encodeURIComponent(storageAlias)}`,
+      { cache: "no-store" },
+      "Failed to fetch disabled models",
+    );
+    const data = await res.json();
+    setDisabledModelIds(data.ids || []);
+  }, [request, storageAlias]);
 
   const load = useCallback(async () => {
-    await Promise.all([fetchAliases(), fetchCustomModels(), fetchDisabledModels()]);
-  }, [fetchAliases, fetchCustomModels, fetchDisabledModels]);
+    const results = await Promise.allSettled([
+      fetchAliases(),
+      fetchCustomModels(),
+      fetchDisabledModels(),
+    ]);
+    let success = true;
+    for (const result of results) {
+      if (result.status === "rejected") success = report(result.reason, "Failed to load models");
+    }
+    return success;
+  }, [fetchAliases, fetchCustomModels, fetchDisabledModels, report]);
 
   useEffect(() => {
     if (providerId !== "kilocode") return;
-    fetch("/api/providers/kilo/free-models")
+    request("/api/providers/kilo/free-models", undefined, "Failed to fetch free models")
       .then((res) => res.json())
       .then((data) => {
         if (data.models?.length) setKiloFreeModels(data.models);
       })
-      .catch(() => {});
-  }, [providerId]);
+      .catch((error) => report(error, "Failed to fetch free models"));
+  }, [providerId, report, request]);
 
   useEffect(() => {
     const fetcher = getModelsFetcher(providerId);
     if (!fetcher) return;
-    fetchSuggestedModels(fetcher).then(setSuggestedModels);
-  }, [providerId]);
+    fetchSuggestedModels(fetcher)
+      .then(setSuggestedModels)
+      .catch((error) => report(error, "Failed to fetch suggested models"));
+  }, [providerId, report]);
 
   const loadThinking = useCallback(async () => {
     try {
-      const res = await fetch("/api/settings", { cache: "no-store" });
-      const data = res.ok ? await res.json() : {};
-      const thinkingCfg = data.providerThinking?.[providerId] || {};
-      setThinkingMode(thinkingCfg.mode || "auto");
+      const res = await request(
+        "/api/settings",
+        { cache: "no-store" },
+        "Failed to load thinking config",
+      );
+      const data = await res.json();
+      setThinkingMode(data.providerThinking?.[providerId]?.mode || "auto");
+      return true;
     } catch (error) {
-      console.log("Error loading thinking config:", error);
+      return report(error, "Failed to load thinking config");
     }
-  }, [providerId]);
+  }, [providerId, report, request]);
 
   const changeThinking = useCallback(
     async (mode) => {
+      const previous = thinkingMode;
       setThinkingMode(mode);
       try {
-        const settingsRes = await fetch("/api/settings", { cache: "no-store" });
-        const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-        const current = settingsData.providerThinking || {};
-        const updated = { ...current };
+        const res = await request(
+          "/api/settings",
+          { cache: "no-store" },
+          "Failed to load thinking config",
+        );
+        const settingsData = await res.json();
+        const updated = { ...settingsData.providerThinking };
         if (!mode || mode === "auto") delete updated[providerId];
         else updated[providerId] = { mode };
-        await fetch("/api/settings", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ providerThinking: updated }),
-        });
+        await request(
+          "/api/settings",
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ providerThinking: updated }),
+          },
+          "Failed to save thinking config",
+        );
+        return true;
       } catch (error) {
-        console.log("Error saving thinking config:", error);
+        setThinkingMode(previous);
+        return report(error, "Failed to save thinking config");
       }
     },
-    [providerId],
+    [providerId, report, request, thinkingMode],
   );
 
   const testModel = useCallback(
     async (modelId) => {
-      if (!modelId) return;
+      if (!modelId) return false;
       let started = false;
       setTestingIds((prev) => {
         if (prev.has(modelId)) return prev;
         started = true;
         return new Set(prev).add(modelId);
       });
-      if (!started) return;
+      if (!started) return false;
       try {
-        const res = await fetch("/api/models/test", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: `${storageAlias}/${modelId}` }),
-        });
-        const data = await res.json().catch(() => ({}));
-        setTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
-        setTestError(data.ok ? "" : data.error || "Model not reachable");
-        if (!data.ok) notifyError?.(data.error || "Model not reachable");
-      } catch {
+        const res = await request(
+          "/api/models/test",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: `${storageAlias}/${modelId}` }),
+          },
+          "Model not reachable",
+        );
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "Model not reachable");
+        setTestResults((prev) => ({ ...prev, [modelId]: "ok" }));
+        setTestError("");
+        return true;
+      } catch (error) {
         setTestResults((prev) => ({ ...prev, [modelId]: "error" }));
-        setTestError("Network error");
-        notifyError?.("Network error");
+        setTestError(error instanceof Error ? error.message : "Network error");
+        return report(error, "Network error");
       } finally {
         setTestingIds((prev) => {
           const next = new Set(prev);
@@ -147,160 +189,196 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
         });
       }
     },
-    [notifyError, storageAlias],
+    [report, request, storageAlias],
+  );
+
+  const saveAlias = useCallback(
+    async (model, alias) => {
+      try {
+        await request(
+          "/api/models/alias",
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model, alias }),
+          },
+          "Failed to set alias",
+        );
+        await fetchAliases();
+        return true;
+      } catch (error) {
+        return report(error, "Failed to set alias");
+      }
+    },
+    [fetchAliases, report, request],
   );
 
   const setAlias = useCallback(
-    async (modelId, alias, aliasOverride = null) => {
-      const fullModel = `${aliasOverride || storageAlias}/${modelId}`;
-      try {
-        const res = await fetch("/api/models/alias", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: fullModel, alias }),
-        });
-        if (res.ok) await fetchAliases();
-        else {
-          const data = await res.json().catch(() => ({}));
-          notifyError?.(data.error || "Failed to set alias");
-        }
-      } catch (error) {
-        console.log("Error setting alias:", error);
-      }
-    },
-    [fetchAliases, notifyError, storageAlias],
+    (modelId, alias, aliasOverride = null) =>
+      saveAlias(`${aliasOverride || storageAlias}/${modelId}`, alias),
+    [saveAlias, storageAlias],
   );
 
   const deleteAlias = useCallback(
     async (alias) => {
+      const previous = modelAliases[alias];
       try {
-        const res = await fetch(`/api/models/alias?alias=${encodeURIComponent(alias)}`, {
-          method: "DELETE",
-        });
-        if (res.ok) await fetchAliases();
+        await request(
+          `/api/models/alias?alias=${encodeURIComponent(alias)}`,
+          { method: "DELETE" },
+          "Failed to delete alias",
+        );
+        await fetchAliases();
+        useNotificationStore.getState().success(
+          "Alias removed",
+          previous
+            ? {
+                action: { label: "Undo", onSelect: () => saveAlias(previous, alias) },
+              }
+            : undefined,
+        );
+        return true;
       } catch (error) {
-        console.log("Error deleting alias:", error);
+        return report(error, "Failed to delete alias");
       }
     },
-    [fetchAliases],
+    [fetchAliases, modelAliases, report, request, saveAlias],
   );
 
   const addCustomModel = useCallback(
-    async (modelId, type = "llm", aliasOverride = storageAlias, caps) => {
+    async (modelId, type = "llm", aliasOverride = storageAlias, caps, name) => {
       try {
-        const res = await fetch("/api/models/custom", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            providerAlias: aliasOverride,
-            id: modelId,
-            type,
-            ...(caps ? { caps } : {}),
-          }),
-        });
-        if (res.ok) {
-          await fetchCustomModels();
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent("customModelChanged"));
-          }
-        } else {
-          const data = await res.json().catch(() => ({}));
-          notifyError?.(data.error || "Failed to add custom model");
-        }
+        await request(
+          "/api/models/custom",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              providerAlias: aliasOverride,
+              id: modelId,
+              type,
+              ...(name ? { name } : {}),
+              ...(caps ? { caps } : {}),
+            }),
+          },
+          "Failed to add custom model",
+        );
+        if (typeof window !== "undefined")
+          window.dispatchEvent(new CustomEvent("customModelChanged"));
+        await fetchCustomModels();
+        return true;
       } catch (error) {
-        console.log("Error adding custom model:", error);
+        return report(error, "Failed to add custom model");
       }
     },
-    [fetchCustomModels, notifyError, storageAlias],
+    [fetchCustomModels, report, request, storageAlias],
   );
 
   const deleteCustomModel = useCallback(
     async (modelId, type = "llm", aliasOverride = storageAlias) => {
+      const previous = customModels.find(
+        (model) =>
+          model.providerAlias === aliasOverride &&
+          model.id === modelId &&
+          (model.type || model.kind || "llm") === type,
+      );
       try {
-        const params = new URLSearchParams({
-          providerAlias: aliasOverride,
-          id: modelId,
-          type,
+        const params = new URLSearchParams({ providerAlias: aliasOverride, id: modelId, type });
+        await request(
+          `/api/models/custom?${params}`,
+          { method: "DELETE" },
+          "Failed to delete custom model",
+        );
+        if (typeof window !== "undefined")
+          window.dispatchEvent(new CustomEvent("customModelChanged"));
+        await fetchCustomModels();
+        useNotificationStore.getState().success("Model removed", {
+          action: {
+            label: "Undo",
+            onSelect: () =>
+              addCustomModel(
+                modelId,
+                previous?.type || previous?.kind || type,
+                aliasOverride,
+                previous?.caps,
+                previous?.name,
+              ),
+          },
         });
-        const res = await fetch(`/api/models/custom?${params}`, { method: "DELETE" });
-        if (res.ok) {
-          await fetchCustomModels();
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent("customModelChanged"));
-          }
-        }
+        return true;
       } catch (error) {
-        console.log("Error deleting custom model:", error);
+        return report(error, "Failed to delete custom model");
       }
     },
-    [fetchCustomModels, storageAlias],
+    [addCustomModel, customModels, fetchCustomModels, report, request, storageAlias],
+  );
+
+  const disableModels = useCallback(
+    async (ids) => {
+      try {
+        await request(
+          "/api/models/disabled",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ providerAlias: storageAlias, ids }),
+          },
+          "Failed to disable models",
+        );
+        await fetchDisabledModels();
+        return true;
+      } catch (error) {
+        return report(error, "Failed to disable models");
+      }
+    },
+    [fetchDisabledModels, report, request, storageAlias],
+  );
+
+  const enableModels = useCallback(
+    async (modelId) => {
+      try {
+        const query = `providerAlias=${encodeURIComponent(storageAlias)}`;
+        await request(
+          `/api/models/disabled?${query}${modelId ? `&id=${encodeURIComponent(modelId)}` : ""}`,
+          { method: "DELETE" },
+          "Failed to enable models",
+        );
+        await fetchDisabledModels();
+        return true;
+      } catch (error) {
+        return report(error, "Failed to enable models");
+      }
+    },
+    [fetchDisabledModels, report, request, storageAlias],
   );
 
   const disableModel = useCallback(
     async (modelId) => {
-      try {
-        const res = await fetch("/api/models/disabled", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ providerAlias: storageAlias, ids: [modelId] }),
+      const disabled = await disableModels([modelId]);
+      if (disabled) {
+        useNotificationStore.getState().success("Model disabled", {
+          action: { label: "Undo", onSelect: () => enableModels(modelId) },
         });
-        if (res.ok) await fetchDisabledModels();
-      } catch (error) {
-        console.log("Error disabling model:", error);
       }
+      return disabled;
     },
-    [fetchDisabledModels, storageAlias],
+    [disableModels, enableModels],
   );
-
-  const enableModel = useCallback(
-    async (modelId) => {
-      try {
-        const res = await fetch(
-          `/api/models/disabled?providerAlias=${encodeURIComponent(storageAlias)}&id=${encodeURIComponent(modelId)}`,
-          { method: "DELETE" },
-        );
-        if (res.ok) await fetchDisabledModels();
-      } catch (error) {
-        console.log("Error enabling model:", error);
-      }
-    },
-    [fetchDisabledModels, storageAlias],
-  );
+  const enableModel = useCallback((modelId) => enableModels(modelId), [enableModels]);
+  const enableAll = useCallback(() => enableModels(), [enableModels]);
 
   const disableAll = useCallback(
     async (ids, requestConfirm) => {
-      if (!ids.length) return;
+      if (!ids.length) return false;
       requestConfirm({
-        title: "Disable All Models",
+        title: "Disable all models",
         message: `Disable all ${ids.length} model(s)?`,
-        onConfirm: async () => {
-          try {
-            const res = await fetch("/api/models/disabled", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ providerAlias: storageAlias, ids }),
-            });
-            if (res.ok) await fetchDisabledModels();
-          } catch (error) {
-            console.log("Error disabling all models:", error);
-          }
-        },
+        onConfirm: () => disableModels(ids),
       });
+      return true;
     },
-    [fetchDisabledModels, storageAlias],
+    [disableModels],
   );
-
-  const enableAll = useCallback(async () => {
-    try {
-      const res = await fetch(
-        `/api/models/disabled?providerAlias=${encodeURIComponent(storageAlias)}`,
-        { method: "DELETE" },
-      );
-      if (res.ok) await fetchDisabledModels();
-    } catch (error) {
-      console.log("Error enabling all models:", error);
-    }
-  }, [fetchDisabledModels, storageAlias]);
 
   const allModels = [
     ...catalogModels,

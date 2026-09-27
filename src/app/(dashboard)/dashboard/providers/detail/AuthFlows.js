@@ -17,6 +17,7 @@ import EditCompatibleNodeModal from "../[id]/EditCompatibleNodeModal";
 import AddCustomModelModal from "../[id]/AddCustomModelModal";
 import BulkImportCodexModal from "../[id]/BulkImportCodexModal";
 import BulkImportGrokCliModal from "../[id]/BulkImportGrokCliModal";
+import { plainNotice } from "./ProviderDetailHeader";
 
 /**
  * Every auth entry point on the detail page, through Signal modals.
@@ -55,7 +56,7 @@ export function AddConnectionButtons({
           onClick={onBulkCodex}
           title="Bulk import codex accounts from JSON"
         >
-          Bulk Add
+          Bulk add
         </Button>
       ) : null}
       {providerId === "grok-cli" ? (
@@ -66,7 +67,7 @@ export function AddConnectionButtons({
           onClick={onBulkGrokCli}
           title="Bulk import Grok CLI accounts from JSON"
         >
-          Bulk Add
+          Bulk add
         </Button>
       ) : null}
       {hasDualAuthModes ? (
@@ -80,7 +81,7 @@ export function AddConnectionButtons({
         </>
       ) : (
         <Button size="sm" icon="add" variant="primary" onClick={onAdd}>
-          {isCompatible ? "Add API Key" : providerId === "iflow" ? "OAuth" : "Add Connection"}
+          {isCompatible ? "Add API key" : providerId === "iflow" ? "OAuth" : "Add connection"}
         </Button>
       )}
     </>
@@ -222,9 +223,9 @@ export default function AuthFlows({
         isOpen={show.agRisk}
         onClose={handlers.closeAgRisk}
         onConfirm={handlers.confirmAgRisk}
-        title="Risk Notice"
-        message={providerInfo?.deprecationNotice}
-        confirmText="I Understand, Continue"
+        title="Risk notice"
+        message={plainNotice(providerInfo?.deprecationNotice)}
+        confirmText="I understand, continue"
         cancelText="Cancel"
         variant="danger"
       />

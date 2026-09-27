@@ -32,7 +32,7 @@ export const PILL_VARIANTS = {
   ok: "bg-ok-bg text-ok",
   warn: "bg-warn-bg text-warn",
   err: "bg-err-bg text-err",
-  info: "bg-sky-bg text-sky",
+  info: "bg-sky-bg text-sky-ink",
   brand: "bg-coral-bg text-coral-ink",
   live: "bg-lime-bg text-lime-ink",
   neutral: "bg-raised text-muted shadow-[inset_0_0_0_1px_var(--signal-line)]",

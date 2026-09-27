@@ -76,29 +76,48 @@ export default function ConnectionsSection({
   const usesStickyLimit = effectiveStrategy === "round-robin" || effectiveStrategy === "weighted";
   const showWeighted = effectiveStrategy === "weighted";
   const subscriptionProvider = SUBSCRIPTION_PROVIDERS.includes(providerId);
-  const inheritedStickyText = !usesStickyLimit
-    ? ""
-    : strategy.stickyDraft !== ""
-      ? `Effective: ${effectiveStrategy} (${strategy.providerStrategy === null ? "global" : "provider"}), sticky ${strategy.stickyDraft} calls per account (provider override).`
-      : effectiveStrategy === "round-robin"
-        ? `Effective: round-robin (global), sticky ${strategy.globalSticky ?? 3} calls per account (global).`
-        : `Effective: weighted (global), sticky ${strategy.globalSticky ?? 3} calls per account for OAuth subscription providers, otherwise 1 (global).`;
-  const effectiveWeightedSticky =
-    strategy.stickyDraft !== ""
-      ? Number(strategy.stickyDraft)
-      : subscriptionProvider
-        ? Number(strategy.globalSticky ?? 3)
-        : 1;
+  // Mirrors src/sse/services/auth.js + accountSelection.js resolution order.
+  const hasStickyOverride = strategy.savedSticky !== "";
+  const weightedDefault = showWeighted && !subscriptionProvider;
+  const effectiveSticky = hasStickyOverride
+    ? Number(strategy.savedSticky)
+    : weightedDefault
+      ? 1
+      : Number(strategy.globalSticky ?? 3);
+  const stickySource = hasStickyOverride
+    ? "provider override"
+    : weightedDefault || strategy.globalSticky == null
+      ? showWeighted && subscriptionProvider
+        ? "default for OAuth"
+        : "default"
+      : "global";
+  const strategySource = strategy.providerStrategy
+    ? "provider override"
+    : strategy.globalStrategy
+      ? "global"
+      : "default";
+  const strategyLabels = {
+    "fill-first": "Fill first",
+    "round-robin": "Round robin",
+    weighted: "Weighted",
+  };
+  const effectiveLabel = strategyLabels[effectiveStrategy] || effectiveStrategy;
+  const inheritedStickyText = usesStickyLimit
+    ? `Effective: ${effectiveLabel} (${strategySource}), sticky ${effectiveSticky} calls per account (${stickySource}).`
+    : `Effective: ${effectiveLabel} (${strategySource}).`;
   const activeConnections = connections.filter((entry) => entry.isActive !== false);
   const totalWeight = activeConnections.reduce(
     (sum, entry) => sum + Math.max(0, entry.effectiveWeight?.weight || 0),
     0,
   );
   const strategyOptions = [
-    { value: "inherit", label: `Inherit global (${strategy.globalStrategy || "fill-first"})` },
+    {
+      value: "inherit",
+      label: `Inherit global (${strategyLabels[strategy.globalStrategy] || "Fill first"})`,
+    },
     ...ACCOUNT_STRATEGY_OPTIONS.map((option) => ({
       value: option.value,
-      label: option.label.split(" — ")[0],
+      label: strategyLabels[option.value] || option.label.split(" — ")[0],
     })),
   ];
   const selectedConnections = connections.filter((entry) => selectedIds.includes(entry.id));
@@ -163,12 +182,12 @@ export default function ConnectionsSection({
             <div className="flex flex-wrap items-center gap-2">
               {proxyPools.length > 0 ? (
                 <Button size="sm" variant="secondary" icon="lan" onClick={openBulkProxy}>
-                  Apply Proxy
+                  Apply proxy
                 </Button>
               ) : null}
               {selectedIds.length > 0 ? (
                 <Button size="sm" variant="danger" icon="delete" onClick={conn.confirmBulkDelete}>
-                  Delete Selected ({selectedIds.length})
+                  Delete selected ({selectedIds.length})
                 </Button>
               ) : null}
               <Button
@@ -217,42 +236,41 @@ export default function ConnectionsSection({
               {strategy.saving ? " · Saving…" : ""}
             </span>
           </div>
-          {strategy.providerStrategy === "round-robin" ||
-          strategy.providerStrategy === "weighted" ||
-          (strategy.providerStrategy === null &&
-            (usesStickyLimit || strategy.savedSticky !== "")) ? (
+          {usesStickyLimit ? (
             <div className="flex flex-wrap items-end gap-2">
               <NumberStepper
                 label="Sticky limit"
+                className="w-44"
                 min={1}
                 max={100}
-                value={strategy.stickyDraft}
-                onChange={(next) => strategy.setStickyDraft(next === "" ? "" : String(next))}
-                onBlur={strategy.commitSticky}
+                value={strategy.stickyDraft === "" ? effectiveSticky : Number(strategy.stickyDraft)}
+                placeholder={`${effectiveSticky} · ${stickySource}`}
+                onChange={strategy.commitSticky}
                 hint={
                   (strategy.providerStrategy || effectiveStrategy) === "weighted"
                     ? OAUTH_STICKY_HINT
-                    : "Calls per account before rotating. Blank inherits the global limit."
+                    : "Calls per account before rotating."
                 }
                 error={strategy.error || undefined}
                 disabled={strategy.saving}
               />
-              {strategy.providerStrategy === null && strategy.savedSticky !== "" ? (
-                <button
-                  type="button"
+              {hasStickyOverride ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon="restart_alt"
                   onClick={strategy.clearStickyOverride}
                   disabled={strategy.saving}
-                  className="mb-8 text-xs text-muted underline-offset-2 hover:text-coral-ink hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Clear override
-                </button>
+                  Reset to default
+                </Button>
               ) : null}
             </div>
           ) : null}
-          {inheritedStickyText ? (
-            <p className="w-full text-xs text-muted">{inheritedStickyText}</p>
-          ) : null}
-          {showWeighted && subscriptionProvider && effectiveWeightedSticky === 1 ? (
+          <p className="w-full text-xs text-muted" aria-live="polite">
+            {inheritedStickyText}
+          </p>
+          {showWeighted && subscriptionProvider && effectiveSticky === 1 ? (
             <p className="w-full text-xs text-warn">
               Sticky limit 1 rotates every request; subscription OAuth providers may flag rapid
               account switching.
@@ -368,7 +386,7 @@ export default function ConnectionsSection({
         onClose={() => {
           if (!bulkProxyUpdating) setBulkProxyOpen(false);
         }}
-        title={`Apply Proxy (${connections.length} connections)`}
+        title={`Apply proxy (${connections.length} connections)`}
         footer={
           <Button
             variant="ghost"

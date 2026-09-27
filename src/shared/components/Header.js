@@ -95,19 +95,14 @@ export const getPageInfo = (pathname) => {
       APIKEY_PROVIDERS[providerId] ||
       FREE_PROVIDERS[providerId] ||
       FREE_TIER_PROVIDERS[providerId];
-    if (providerInfo) {
-      return {
-        title: providerInfo.name,
-        description: "",
-        breadcrumbs: [
-          { label: "Providers", href: "/dashboard/providers" },
-          {
-            label: providerInfo.name,
-            providerId: providerInfo.id,
-          },
-        ],
-      };
-    }
+    return {
+      title: "",
+      description: "",
+      breadcrumbs: [
+        { label: "Providers", href: "/dashboard/providers" },
+        { label: providerInfo?.name || providerId, providerId: providerInfo?.id },
+      ],
+    };
   }
 
   if (pathname.includes("/providers") && !pathname.includes("/media-providers"))
