@@ -174,10 +174,10 @@ export default function CombosPageClient() {
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
   useEffect(() => {
-    if (loading || loadError) return;
+    if (loading || loadError || createRequested) return;
     if (requestedComboId === selectedComboId) return;
     navigateRef.current(selectedComboId, "replace");
-  }, [requestedComboId, selectedComboId, loading, loadError]);
+  }, [requestedComboId, selectedComboId, createRequested, loading, loadError]);
 
   // ?create=1 opens the new-combo modal (also when the list is empty).
   useEffect(() => {
@@ -459,9 +459,14 @@ export default function CombosPageClient() {
             return next;
           });
           const rest = combos.filter((c) => c.id !== deleteId);
-          if (selectedId === deleteId) navigate(rest[0]?.id || null, "replace");
-          setCombos((prev) => prev.filter((c) => c.id !== deleteId));
-          setSelectedId(rest[0]?.id || null);
+          const nextId = resolveComboSelection(
+            null,
+            rest,
+            selectedId === deleteId ? null : selectedId,
+          );
+          if (selectedComboId === deleteId) navigate(nextId, "replace");
+          setCombos(rest);
+          setSelectedId(nextId);
         } catch (error) {
           setSaveError(error?.message || "Failed to delete combo");
         }

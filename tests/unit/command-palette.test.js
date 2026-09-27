@@ -223,10 +223,19 @@ describe("commandSources deduplication & shapes", () => {
     ).toBeUndefined();
   });
 
-  it("opens selected combo by id", () => {
-    expect(
-      __test.comboCommands({ combos: [{ id: "test-1", name: "Primary", models: [] }] })[0].run,
-    ).toEqual({ type: "navigate", href: "/dashboard/combos?combo=test-1" });
+  it("opens LLM combos by selection and media combos at their own detail route", () => {
+    const combos = __test.comboCommands({
+      combos: [
+        { id: "test-1", name: "Primary", models: [] },
+        { id: "web-1", name: "Search", kind: "webSearch", models: [] },
+        { id: "img-1", name: "Images", kind: "image", models: [] },
+      ],
+    });
+    expect(combos.map((c) => c.run.href)).toEqual([
+      "/dashboard/combos?combo=test-1",
+      "/dashboard/media-providers/combo/web-1",
+      "/dashboard/media-providers/combo/img-1",
+    ]);
   });
 
   it("produces quick action commands for endpoint, new key, theme and settings", () => {

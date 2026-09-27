@@ -93,7 +93,13 @@ function comboCommands({ combos } = {}) {
         hint: Array.isArray(combo.models) ? combo.models.slice(0, 3).join(", ") : "",
         keywords: `combo fallback ${(combo.models || []).join(" ")}`,
         icon: "layers",
-        run: { type: "navigate", href: `/dashboard/combos?combo=${encodeURIComponent(combo.id)}` },
+        run: {
+          type: "navigate",
+          href:
+            combo.kind && combo.kind !== "llm"
+              ? `/dashboard/media-providers/combo/${encodeURIComponent(combo.id)}`
+              : `/dashboard/combos?combo=${encodeURIComponent(combo.id)}`,
+        },
       },
     ];
   });
