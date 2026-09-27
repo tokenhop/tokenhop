@@ -118,8 +118,10 @@ export default function CopilotToolCard({
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
       }
+      return res.ok;
     } catch (err) {
       card.setMessage({ type: "error", text: err.message });
+      return false;
     } finally {
       card.setRestoring(false);
     }
@@ -158,9 +160,7 @@ export default function CopilotToolCard({
     <>
       <SetupScaffold
         tool={tool}
-        status={
-          status ? deriveToolStatus(tool, { installed: true, has9Router: status.has9Router }) : null
-        }
+        status={status ? deriveToolStatus(tool, status) : null}
         checking={card.checking}
         checkingLabel="Checking Copilot config..."
         message={card.message}

@@ -136,8 +136,10 @@ export default function CoworkToolCard({
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
       }
+      return res.ok;
     } catch (err) {
       card.setMessage({ type: "error", text: err.message });
+      return false;
     } finally {
       card.setRestoring(false);
     }
@@ -192,7 +194,7 @@ export default function CoworkToolCard({
         checking={card.checking}
         checkingLabel="Checking Claude Cowork..."
         notInstalled={
-          !card.checking && status && !status.installed ? (
+          !card.checking && status && !status.installed && !status.error ? (
             <NotInstalledBlock
               toolName="Claude Desktop (Cowork)"
               onManualConfig={() => card.setShowManualModal(true)}

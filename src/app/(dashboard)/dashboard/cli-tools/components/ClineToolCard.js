@@ -99,8 +99,10 @@ export default function ClineToolCard({
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
       }
+      return res.ok;
     } catch (err) {
       card.setMessage({ type: "error", text: err.message });
+      return false;
     } finally {
       card.setRestoring(false);
     }
@@ -140,7 +142,7 @@ export default function ClineToolCard({
         checking={card.checking}
         checkingLabel="Checking Cline..."
         notInstalled={
-          !card.checking && status && !status.installed ? (
+          !card.checking && status && !status.installed && !status.error ? (
             <NotInstalledBlock
               toolName="Cline"
               onManualConfig={() => card.setShowManualModal(true)}

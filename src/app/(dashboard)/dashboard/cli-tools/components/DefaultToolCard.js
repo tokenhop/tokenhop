@@ -1,12 +1,12 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Callout from "@/shared/components/Callout";
 import CopyField from "@/shared/components/CopyField";
 import IconButton from "@/shared/components/IconButton";
 import ModelSelectModal from "@/shared/components/ModelSelectModal";
-import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { copyTextToClipboard } from "@/shared/components/formPrimitives";
 import ApiKeySelect from "./ApiKeySelect";
 import SetupScaffold, { SingleModelRow } from "./SetupScaffold";
 import { getToolBrand } from "../lib/toolStatus";
@@ -33,7 +33,21 @@ export default function DefaultToolCard({
   const [selectedApiKey, setSelectedApiKey] = useState(() =>
     apiKeys?.length > 0 ? apiKeys[0].key : "",
   );
-  const { copy } = useCopyToClipboard();
+  // "copied" | "error" | null; set only after the clipboard write settles.
+  const [copyState, setCopyState] = useState(null);
+  const copyTimer = useRef(null);
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
+  const copySnippet = async (text) => {
+    let next = "copied";
+    try {
+      await copyTextToClipboard(text);
+    } catch {
+      next = "error";
+    }
+    setCopyState(next);
+    clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopyState(null), 2000);
+  };
 
   const replaceVars = (text) => {
     const keyToUse = selectedApiKey?.trim() || (!cloudEnabled ? "sk_9router" : "your-api-key");
@@ -132,10 +146,21 @@ export default function DefaultToolCard({
               {replaceVars(tool.codeBlock.code)}
             </pre>
             <IconButton
-              icon="content_copy"
-              label="Copy snippet"
-              onClick={() => copy(replaceVars(tool.codeBlock.code), `toolcard-${toolId}`)}
+              icon={
+                copyState === "copied" ? "check" : copyState === "error" ? "error" : "content_copy"
+              }
+              label={
+                copyState === "copied"
+                  ? "Copied"
+                  : copyState === "error"
+                    ? "Copy failed"
+                    : "Copy snippet"
+              }
+              onClick={() => copySnippet(replaceVars(tool.codeBlock.code))}
             />
+            <span aria-live="polite" className="sr-only">
+              {copyState === "copied" ? "Copied" : copyState === "error" ? "Copy failed" : ""}
+            </span>
           </div>
         </div>
       )}

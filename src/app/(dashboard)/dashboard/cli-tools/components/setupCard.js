@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import ModelSelectModal from "@/shared/components/ModelSelectModal";
 import ManualConfigModal from "@/shared/components/ManualConfigModal";
 import ApiKeySelect from "./ApiKeySelect";
@@ -34,13 +34,22 @@ export function useSetupCard({
   const [selectedApiKey, setSelectedApiKey] = useState("");
   const [modelAliases, setModelAliases] = useState({});
 
+  // Callback-ref pattern: the page re-renders (and passes a new callback
+  // identity) after every status update. Depending on that identity would
+  // retrigger this effect per render — the cli-tools request loop. The latest
+  // callback goes in a ref; only real inputs re-trigger the fetch.
+  const onStatusUpdateRef = useRef(onStatusUpdate);
+  useEffect(() => {
+    onStatusUpdateRef.current = onStatusUpdate;
+  }, [onStatusUpdate]);
+
   const fetchStatus = async () => {
     setChecking(true);
     try {
       const res = await fetch(statusUrl);
       const data = await res.json();
       setStatus(data);
-      onStatusUpdate?.(toolId, data);
+      onStatusUpdateRef.current?.(toolId, data);
     } catch (err) {
       setStatus({ installed: false, error: err.message });
     } finally {
@@ -55,7 +64,7 @@ export function useSetupCard({
       .then((data) => {
         if (cancelled) return;
         setStatus(data);
-        onStatusUpdate?.(toolId, data);
+        onStatusUpdateRef.current?.(toolId, data);
       })
       .catch((err) => {
         if (!cancelled) setStatus({ installed: false, error: err.message });
@@ -72,7 +81,7 @@ export function useSetupCard({
     return () => {
       cancelled = true;
     };
-  }, [statusUrl, aliasesUrl, onStatusUpdate, toolId]);
+  }, [statusUrl, aliasesUrl, toolId]);
 
   return {
     status,

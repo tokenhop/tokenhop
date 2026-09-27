@@ -14,6 +14,7 @@ export function useToolSetupData() {
   const [connections, setConnections] = useState([]);
   const [apiKeys, setApiKeys] = useState([]);
   const [cloudEnabled, setCloudEnabled] = useState(false);
+  const [ccFilterNaming, setCcFilterNaming] = useState(false);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
   const [tunnelPublicUrl, setTunnelPublicUrl] = useState("");
   const [tailscaleEnabled, setTailscaleEnabled] = useState(false);
@@ -37,6 +38,7 @@ export function useToolSetupData() {
       if (settingsRes.ok) {
         const d = await settingsRes.json();
         setCloudEnabled(Boolean(d.cloudEnabled));
+        setCcFilterNaming(Boolean(d.ccFilterNaming));
       }
       if (tunnelRes.ok) {
         const d = await tunnelRes.json();
@@ -141,6 +143,7 @@ export function useToolSetupData() {
     hasActiveProviders,
     apiKeys,
     cloudEnabled,
+    ccFilterNaming,
     cloudUrl: CLOUD_URL,
     tunnelEnabled,
     tunnelPublicUrl,

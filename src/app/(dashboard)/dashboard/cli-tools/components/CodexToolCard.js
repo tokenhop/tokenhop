@@ -109,8 +109,10 @@ export default function CodexToolCard({
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
       }
+      return res.ok;
     } catch (err) {
       card.setMessage({ type: "error", text: err.message });
+      return false;
     } finally {
       card.setRestoring(false);
     }
@@ -149,7 +151,7 @@ default_subagent_model = "${effectiveSubagentModel}"
         checking={card.checking}
         checkingLabel="Checking Codex CLI..."
         notInstalled={
-          !card.checking && status && !status.installed ? (
+          !card.checking && status && !status.installed && !status.error ? (
             <NotInstalledBlock
               toolName="Codex CLI"
               onManualConfig={() => card.setShowManualModal(true)}

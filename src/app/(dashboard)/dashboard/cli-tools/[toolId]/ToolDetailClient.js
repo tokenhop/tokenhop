@@ -25,7 +25,7 @@ export default function ToolDetailClient({ toolId }) {
           <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
             arrow_back
           </span>
-          Back to CLI Tools
+          Back to CLI tools
         </Link>
         <p className="text-sm text-muted">Tool not found or disabled.</p>
       </div>
@@ -41,7 +41,7 @@ export default function ToolDetailClient({ toolId }) {
         <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
           arrow_back
         </span>
-        Back to CLI Tools
+        Back to CLI tools
       </Link>
       {data.loading ? (
         <CardSkeleton />

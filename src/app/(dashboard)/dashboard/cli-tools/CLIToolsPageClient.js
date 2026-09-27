@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CardSkeleton, EmptyState, SegmentedControl } from "@/shared/components";
 import { CLI_TOOLS, MITM_TOOLS } from "@/shared/constants/cliTools";
@@ -89,6 +89,15 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
     router.replace(`/dashboard/cli-tools?tool=${toolId}`, { scroll: false });
   };
 
+  // Stable status callback: pages re-render on every status update, so an
+  // inline arrow here would change identity each render and retrigger the
+  // per-card status effects (the claude-settings request loop). setStatuses
+  // is a stable updater, so a useCallback wrapper never changes.
+  const handleStatusUpdate = useCallback(
+    (id, next) => setStatuses((prev) => ({ ...prev, [id]: next })),
+    [],
+  );
+
   return (
     <Suspense fallback={<CardSkeleton />}>
       <CLIToolsView
@@ -101,7 +110,7 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
         statuses={statuses}
         selectedTool={CLI_TOOLS[selected] ? selected : null}
         onSelect={handleSelect}
-        setStatuses={setStatuses}
+        onStatusUpdate={handleStatusUpdate}
         data={data}
       />
     </Suspense>
@@ -118,7 +127,7 @@ function CLIToolsView({
   statuses,
   selectedTool,
   onSelect,
-  setStatuses,
+  onStatusUpdate,
   data,
 }) {
   return (
@@ -189,11 +198,7 @@ function CLIToolsView({
         {selectedTool && (
           <div className="hidden w-[440px] shrink-0 xl:block">
             <div className="sticky top-4 max-h-[calc(100vh-6rem)] overflow-y-auto">
-              <ToolSetupPanel
-                toolId={selectedTool}
-                data={data}
-                onStatusUpdate={(id, next) => setStatuses((prev) => ({ ...prev, [id]: next }))}
-              />
+              <ToolSetupPanel toolId={selectedTool} data={data} onStatusUpdate={onStatusUpdate} />
             </div>
           </div>
         )}
