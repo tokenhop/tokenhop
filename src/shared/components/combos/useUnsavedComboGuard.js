@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   leaveOverSentinel,
@@ -44,8 +44,11 @@ export default function useUnsavedComboGuard(dirty, onDiscard) {
   };
   // Leave the page without stacking history: pop the same-URL Back sentinel
   // first (if armed), then run the navigation from the popstate handler.
-  const leave = (action) =>
-    leaveOverSentinel(sentinelRef.current, () => window.history.back(), action);
+  // Refs-only, so it never triggers the listener effect's dependency list.
+  const leave = useCallback(
+    (action) => leaveOverSentinel(sentinelRef.current, () => window.history.back(), action),
+    [],
+  );
   const requestNavigation = (action, href) => {
     // Selecting the combo already open is a no-op, not a discard request.
     if (
@@ -151,7 +154,7 @@ export default function useUnsavedComboGuard(dirty, onDiscard) {
       document.removeEventListener("click", onClick, true);
       window.removeEventListener("popstate", onPopState);
     };
-  }, [router]);
+  }, [router, leave]);
 
   return {
     request,
