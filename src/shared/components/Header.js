@@ -14,7 +14,7 @@ import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/mediaProviderKinds";
 import { PROVIDER_DISPLAY } from "@/shared/constants/providerDisplay.generated";
 import { COMBINED_WEB_ITEM } from "@/shared/constants/navigation";
-import { translate } from "@/i18n/runtime";
+import { onLocaleChange, translate } from "@/i18n/runtime";
 
 // Lazy shell dialog: the chunk loads on first open, not with the shell.
 const DonateModal = dynamic(() => import("@/shared/components/DonateModal"), { ssr: false });
@@ -242,6 +242,9 @@ export default function Header({
   const [displayName, setDisplayName] = useState("");
   const [loginMethod, setLoginMethod] = useState("");
   const [donateOpen, setDonateOpen] = useState(false);
+  // translate() output is rendered by React, so re-render when the locale switches.
+  const [, setLocaleTick] = useState(0);
+  useEffect(() => onLocaleChange(() => setLocaleTick((n) => n + 1)), []);
 
   const searchVisible = useHeaderSearchStore((s) => s.visible);
   const pageInfo = useMemo(() => getPageInfo(pathname), [pathname]);

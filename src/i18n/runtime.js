@@ -5,6 +5,10 @@ import { DEFAULT_LOCALE, LOCALE_COOKIE, normalizeLocale } from "./config";
 let translationMap = {};
 let currentLocale = DEFAULT_LOCALE;
 let reloadCallbacks = [];
+const localeMaps = new Map();
+let observer = null;
+// Bumped per init/reload so a slower, superseded locale load never applies.
+let loadEpoch = 0;
 
 // Read locale from cookie
 function getLocaleFromCookie() {
@@ -14,16 +18,23 @@ function getLocaleFromCookie() {
   return normalizeLocale(value);
 }
 
-// Load translation map
+// Load translation map; successful loads are cached for the page lifetime.
 async function loadTranslations(locale) {
   if (locale === "en") {
     translationMap = {};
     return;
   }
+  const cached = localeMaps.get(locale);
+  if (cached) {
+    translationMap = cached;
+    return;
+  }
 
   try {
     const response = await fetch(`/i18n/literals/${locale}.json`);
+    if (!response.ok) throw new Error(`HTTP ${response.status} for ${locale}.json`);
     translationMap = await response.json();
+    localeMaps.set(locale, translationMap);
   } catch (err) {
     console.error("Failed to load translations:", err);
     translationMap = {};
@@ -103,14 +114,12 @@ function processTextNode(node) {
   const parent = node.parentElement;
   if (!parent || shouldSkipTextParent(parent)) return;
 
-  // Store original text if not already stored
-  if (!node._originalText) {
+  // A value we didn't write is new source copy (first visit or a React update).
+  if (node._originalText === undefined || node.nodeValue !== node._translatedText) {
     node._originalText = node.nodeValue;
   }
-
-  // Use original text for translation
-  const original = node._originalText;
-  const translated = translate(original);
+  const translated = translate(node._originalText);
+  node._translatedText = translated;
 
   // Only update if different to avoid unnecessary DOM mutations
   if (translated !== node.nodeValue) {
@@ -129,13 +138,16 @@ const TRANSLATABLE_ATTRS = ["aria-label", "placeholder", "title", "alt"];
 export function processElementAttributes(element) {
   if (shouldSkipTextParent(element)) return;
   if (!element._i18nOriginalAttrs) element._i18nOriginalAttrs = {};
+  if (!element._i18nTranslatedAttrs) element._i18nTranslatedAttrs = {};
   for (const attr of TRANSLATABLE_ATTRS) {
     if (!element.hasAttribute?.(attr)) continue;
-    if (!(attr in element._i18nOriginalAttrs)) {
-      element._i18nOriginalAttrs[attr] = element.getAttribute(attr);
+    const current = element.getAttribute(attr);
+    if (!(attr in element._i18nOriginalAttrs) || current !== element._i18nTranslatedAttrs[attr]) {
+      element._i18nOriginalAttrs[attr] = current;
     }
     const translated = translate(element._i18nOriginalAttrs[attr] ?? "");
-    if (translated && translated !== element.getAttribute(attr)) {
+    element._i18nTranslatedAttrs[attr] = translated || current;
+    if (translated && translated !== current) {
       element.setAttribute(attr, translated);
     }
   }
@@ -166,45 +178,70 @@ function processElement(element) {
   attrTargets.forEach(processElementAttributes);
 }
 
-// Initialize runtime i18n
+/** Translate only what changed: added subtrees, edited text and edited copy attributes. */
+function handleMutations(mutations) {
+  for (const mutation of mutations) {
+    if (mutation.type === "characterData") {
+      processTextNode(mutation.target);
+    } else if (mutation.type === "attributes") {
+      processElementAttributes(mutation.target);
+    } else {
+      mutation.addedNodes.forEach((node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) processElement(node);
+        else if (node.nodeType === Node.TEXT_NODE) processTextNode(node);
+      });
+    }
+  }
+}
+
+function startObserver() {
+  if (observer) return;
+  observer = new MutationObserver(handleMutations);
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: TRANSLATABLE_ATTRS,
+  });
+}
+
+function stopObserver() {
+  observer?.disconnect();
+  observer = null;
+}
+
+// Initialize runtime i18n. English does no fetch, walk or observation.
 export async function initRuntimeI18n() {
   if (typeof window === "undefined") return;
 
   currentLocale = getLocaleFromCookie();
+  if (currentLocale === "en") return;
+  const epoch = ++loadEpoch;
   await loadTranslations(currentLocale);
-
-  // Process existing DOM
+  if (epoch !== loadEpoch) return;
   processElement(document.body);
-
-  // Watch for new nodes
-  const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      mutation.addedNodes.forEach((node) => {
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          processElement(node);
-        } else if (node.nodeType === Node.TEXT_NODE) {
-          processTextNode(node);
-        }
-      });
-    });
-  });
-
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
+  startObserver();
 }
 
 // Reload translations when locale changes
 export async function reloadTranslations() {
+  const epoch = ++loadEpoch;
+  const previousLocale = currentLocale;
   currentLocale = getLocaleFromCookie();
   await loadTranslations(currentLocale);
+  if (epoch !== loadEpoch) return;
 
-  // Notify all registered callbacks
   reloadCallbacks.forEach((callback) => {
     callback();
   });
 
-  // Re-process entire DOM (will use stored original text)
+  if (currentLocale === "en") {
+    stopObserver();
+    // One walk restores stored originals; staying in English does nothing.
+    if (previousLocale !== "en") processElement(document.body);
+    return;
+  }
   processElement(document.body);
+  startObserver();
 }
