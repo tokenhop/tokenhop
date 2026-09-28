@@ -1,3 +1,16 @@
+# v0.4.1 (2026-09-28)
+
+## Features
+- **UI bundle**: shrink the shared bundle, icon font and provider logos (#348).
+
+## Fixes
+- **CLI tools**: explain local-only access behind a reverse proxy instead of a failing Retry (#341).
+- **Dashboard**: polish Token saver, Skills and Proxy pools (#345).
+- **Usage**: explain idle Meta Code subscription instead of an empty quota card (#347).
+
+## Changes
+- **Maintenance**: temporary GLM coding secret added then removed.
+
 # v0.4.0 (2026-09-28)
 
 ## Features
