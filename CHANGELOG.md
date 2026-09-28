@@ -1,3 +1,42 @@
+# v0.4.0 (2026-09-28)
+
+## Features
+- **Signal design system**: new dark-first theme with design tokens, Bricolage Grotesque / Geist / Geist Mono typography, action and form primitives, display primitives, accessible overlays (focus trap, Esc, focus return), and a dev-only UI kit (#164, #170, #178, #251).
+- **App shell**: grouped Route/Watch/Tune sidebar, gateway status with uptime, mobile drawer, header, skip link (#261).
+- **Command palette**: ⌘K / Ctrl+K navigation to pages, providers, combos, models and actions, with dirty-guard routing (#262, #327, #335).
+- **Home command center**: endpoint, keys, stats, savings, recent requests, quota watch, provider health and a live routes map (#273, #281, #326).
+- **Providers**: redesigned list with filters and attention strip, full provider detail page with connections, strategy, priority reorder, models and auth flows, plus in-place connection repair (#268, #282, #337).
+- **Combos**: route builder with four strategies, keyboard/pointer sortable steps, weighted shares, Fusion judge, test-this-route dry run and unsaved-changes guard (#269, #280, #335).
+- **Endpoint & keys**: three ways in, one-time key reveal, quick connect that copies the real key, key-name validation and inline rename (#270, #322).
+- **Usage**: stats, chart, breakdown, redacted request-detail drawer and savings summary priced from real usage (#272, #277).
+- **Quota**: summary, filters, meters, bulk actions, single re-render per refresh and failure surfacing with retry (#271, #336).
+- **Console log**: live/pause/resume, level filters, honest stream state and grouped repeats (#264, #325).
+- **CLI tools**: redesigned list and setup panels with per-tool cards, real status detection and confirm-before-reset (#275, #323).
+- **Settings**: consolidated tabbed sections covering General, Security, SSO, Pricing, Data, Routing, Network, Token saver, Providers, Observability, Reliability and Danger zone (#267, #276, #279, #284, #285).
+- **Media providers and proxy pools**: kind tabs with try-it playground, bulk actions, masked credentials and relay deploy (#263, #274).
+- **Skills page**: local, allowlisted `/skills/<id>/SKILL.md` URLs (#265).
+- **Login, callback, landing, MITM, translator, basic chat**: restyled on Signal primitives (#266, #324, #334).
+- **Provider logos** restored across the dashboard with brand fallbacks and Muse Code mark; Buy Me a Coffee donate dialog with local QR (#288, #290).
+- **Reliability policy**: configurable retry, cooldown, backoff and timeouts with defaults preserving existing behavior (#285).
+- **Config export/import**: versioned, secret-stripping, preview-diff and atomic apply (#284).
+
+## Fixes
+- **Accessibility, RTL and responsive audit**: zero serious/critical axe violations on all 24 routes in both themes at 1440 px and 390 px (#287).
+- **Provider detail crash**: `ReferenceError: staticModels is not defined` fixed for live-catalog providers; Usage stats error state no longer crashes; Biome now fails on undeclared variables (#289).
+- **Shell**: mobile header without overlap, accessible language control, no false-zero badge flash, page titles centralized (#334).
+- **Quota**: weekly Codex primary window labeled correctly; stale responses can no longer overwrite fresh data (#336).
+- **Endpoint**: Quick connect copies the real key for every language (#322).
+- **CLI tools**: status-request loops stopped, real detection errors surfaced, Copilot reports its real status (#323).
+- **Feedback**: truthful copy status, error toasts with undo and shared loading/error views; MITM load/save/DNS failures surface with rollback (#324).
+- **Console log**: precise grouping, stable keyboard focus, smooth scrolling (#325).
+- **Live routes**: rapid flashing removed; reduced-motion safe in Home and Usage (#333).
+- **Combos sidebar**: long capability-adapter model chips no longer overflow the 320 px column (#295).
+
+## Changes
+- **Translations**: redesigned copy translated across all 34 locales with placeholder-mismatch and coverage guards; accessible attributes now translate (#291, #338).
+- **Legacy cleanup**: old style tokens removed, dead components and assets deleted, README and `docs/ARCHITECTURE.md` updated for the SQLite persistence layer, shell, Settings, reliability precedence and auth boundaries (#296, #321).
+- **Sidebar promos**: upstream 9Remote/9English links removed (#294).
+
 # v0.3.3 (2026-09-27)
 
 ## Security
