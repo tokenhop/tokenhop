@@ -30,16 +30,18 @@ export function parseMetaSubsUsage(subs) {
   return quotas;
 }
 
+// Meta omits `subs_usage` until a request opens a usage window (idle subscription).
+const IDLE_MESSAGE = "No active usage window yet. Quota appears after the next Meta Code request.";
+
 async function fetchMetaCodeUsage(dcaToken, proxyOptions) {
   try {
     const data = await mintMetaCodeKey(dcaToken, proxyOptions);
     if (!data.is_subs_active) {
       return { plan: "Pay-as-you-go", message: "No active Muse Code subscription." };
     }
-    return {
-      plan: data.subs_tier_name || "Muse Code",
-      quotas: parseMetaSubsUsage(data.subs_usage),
-    };
+    const plan = data.subs_tier_name || "Muse Code";
+    const quotas = parseMetaSubsUsage(data.subs_usage);
+    return Object.keys(quotas).length ? { plan, quotas } : { plan, message: IDLE_MESSAGE };
   } catch (error) {
     if (error.status === 401 || error.status === 403) {
       return { message: "Meta Code sign-in expired. Please re-authorize." };

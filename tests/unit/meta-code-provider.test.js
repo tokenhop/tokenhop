@@ -106,6 +106,15 @@ describe("meta-code quota", () => {
     await getMetaCodeUsage("dca:quota", null, { force: true });
     expect(proxyAwareFetch).toHaveBeenCalledTimes(3);
   });
+
+  it("explains an idle subscription when Meta omits subs_usage", async () => {
+    const { subs_usage: _omitted, ...idle } = MINT;
+    vi.mocked(proxyAwareFetch).mockResolvedValue(json(idle));
+    const usage = await getMetaCodeUsage("dca:idle");
+    expect(usage.plan).toBe("Muse Code Everyday");
+    expect(usage.quotas).toBeUndefined();
+    expect(usage.message).toMatch(/no active usage window/i);
+  });
 });
 
 describe("meta-code device poll", () => {
