@@ -145,11 +145,7 @@ export default function DashboardLayout({ children }) {
           tabIndex={-1}
           className="relative isolate flex h-full min-w-0 flex-1 flex-col"
         >
-          <Header
-            key={pathname}
-            onMenuClick={() => setSidebarOpen(true)}
-            sidebarOpen={sidebarOpen}
-          />
+          <Header onMenuClick={() => setSidebarOpen(true)} sidebarOpen={sidebarOpen} />
           <div
             className={`custom-scrollbar flex-1 overflow-y-auto ${isBasicChat ? "flex flex-col overflow-hidden" : "p-4 lg:px-10 lg:pt-7 lg:pb-8"}`}
           >

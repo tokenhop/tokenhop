@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { resolveUserRow } from "@/shared/utils/shell";
+import useAuthStatus from "@/shared/hooks/useAuthStatus";
 import dynamic from "next/dynamic";
 import ThemeToggle from "./ThemeToggle";
 import Menu, { MenuItem } from "./Menu";
@@ -19,27 +20,9 @@ const LanguageSwitcher = dynamic(() => import("./LanguageSwitcher"), { ssr: fals
  * The SSO name pill in the header is preserved separately.
  */
 export default function SidebarUserRow() {
-  const [status, setStatus] = useState({});
+  const status = useAuthStatus();
   const [languageOpen, setLanguageOpen] = useState(false);
   const [languageMounted, setLanguageMounted] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadAuthStatus() {
-      try {
-        const res = await fetch("/api/auth/status", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) setStatus(data || {});
-      } catch {
-        if (!cancelled) setStatus({});
-      }
-    }
-    loadAuthStatus();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const handleLogout = async () => {
     try {

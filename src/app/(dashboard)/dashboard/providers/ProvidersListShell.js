@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import PropTypes from "prop-types";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -8,14 +9,13 @@ import {
   Callout,
   Drawer,
   EmptyState,
-  Kbd,
   SegmentedControl,
   CardSkeleton,
   EditConnectionModal,
+  ToolbarSearch,
 } from "@/shared/components";
 import Menu, { MenuItem } from "@/shared/components/Menu";
 import { useNotificationStore } from "@/store/notificationStore";
-import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import {
   LIST_FILTERS,
@@ -64,8 +64,13 @@ function ProvidersListShell({ initialProviderId = null }) {
     setProviderNodes,
     loading,
     fetchError,
-    refreshData,
+    refreshData: reloadList,
   } = useProviderListData();
+  // Every list reload follows a mutation or retry, so the shell badges refresh with it.
+  const refreshData = useCallback(() => {
+    reloadList();
+    refreshShellStatus();
+  }, [reloadList]);
   const [filter, setFilter] = useState(LIST_FILTERS.ALL);
   const [searchInput, setSearchInput] = useState("");
   const [showAllApikey, setShowAllApikey] = useState(false);
@@ -83,38 +88,9 @@ function ProvidersListShell({ initialProviderId = null }) {
 
   const narrowPanel = useIsNarrow();
   const notify = useNotificationStore();
-  const headerQuery = useHeaderSearchStore((s) => s.query);
-  const headerVisible = useHeaderSearchStore((s) => s.visible);
-  const registerSearch = useHeaderSearchStore((s) => s.register);
-  const unregisterSearch = useHeaderSearchStore((s) => s.unregister);
-  const setHeaderQuery = useHeaderSearchStore((s) => s.setQuery);
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const searchInputRef = useRef(null);
-
-  useEffect(() => {
-    registerSearch("Search providers...");
-    return () => unregisterSearch();
-  }, [registerSearch, unregisterSearch]);
-
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target;
-      if (
-        target &&
-        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
-      )
-        return;
-      event.preventDefault();
-      const headerInput = document.querySelector('input[type="search"]');
-      if (headerInput) headerInput.focus();
-      else searchInputRef.current?.focus();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,7 +117,7 @@ function ProvidersListShell({ initialProviderId = null }) {
     ? entryConnections(selectedEntry, connections)
     : [];
 
-  const query = (headerVisible ? headerQuery : searchInput).trim().toLowerCase();
+  const query = searchInput.trim().toLowerCase();
   const matchSearch = (name) => !query || (name || "").toLowerCase().includes(query);
 
   const filterEntriesForCounts = allEntries.map((entry) => ({
@@ -210,6 +186,7 @@ function ProvidersListShell({ initialProviderId = null }) {
       setConnections(previous);
       notify.error("Failed to update provider. Please try again.");
     }
+    refreshShellStatus();
   };
 
   const handleBatchTest = async (mode, providerId = null) => {
@@ -370,28 +347,13 @@ function ProvidersListShell({ initialProviderId = null }) {
             count: filterCounts[option.value] ?? 0,
           }))}
         />
-        {!headerVisible && (
-          <label className="flex h-10 items-center gap-2 rounded-xl border border-line bg-raised px-3 text-sm text-muted lg:ms-auto lg:w-[280px]">
-            <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
-              search
-            </span>
-            <input
-              ref={searchInputRef}
-              type="search"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search providers"
-              aria-label="Search providers"
-              className="min-w-0 flex-1 bg-transparent text-text outline-none placeholder:text-subtle"
-            />
-            <Kbd>/</Kbd>
-          </label>
-        )}
-        {headerVisible && (
-          <span className="hidden items-center gap-1.5 text-xs text-muted lg:ms-auto lg:flex">
-            Press <Kbd>/</Kbd> to search
-          </span>
-        )}
+        <ToolbarSearch
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Search providers"
+          ariaLabel="Search providers"
+          className="lg:ms-auto lg:w-[280px]"
+        />
       </div>
 
       {fetchError && (
@@ -442,7 +404,6 @@ function ProvidersListShell({ initialProviderId = null }) {
               onClick={() => {
                 setFilter(LIST_FILTERS.ALL);
                 setSearchInput("");
-                setHeaderQuery("");
               }}
             >
               Clear filters

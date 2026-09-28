@@ -19,6 +19,7 @@ export default function Input({
   className,
   inputClassName,
   id,
+  ref,
   ...props
 }) {
   return (
@@ -42,6 +43,7 @@ export default function Input({
           )}
           <input
             {...props}
+            ref={ref}
             id={inputId}
             type={type}
             placeholder={placeholder}
