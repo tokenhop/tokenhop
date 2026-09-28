@@ -257,8 +257,11 @@ export function CommandPaletteProvider({ children }) {
   }, [open]);
 
   const openPalette = useCallback(() => {
-    setCommands([]);
-    setLoadingLists(true);
+    // Already open: the [open] effect won't re-run, so don't reset its lists.
+    if (!paletteOpenRef.current) {
+      setCommands([]);
+      setLoadingLists(true);
+    }
     setOpen(true);
   }, []);
   const closePalette = useCallback(() => {
@@ -292,7 +295,10 @@ export function CommandPaletteProvider({ children }) {
         if (!cancelled) setCommands(all);
       })
       .catch(() => {
-        if (!cancelled) setCommands([]);
+        if (cancelled) return;
+        setCommands([]);
+        useNotificationStore.getState().error("Couldn't load search results. Try again.");
+        announce("Couldn't load search results");
       })
       .finally(() => {
         if (!cancelled) setLoadingLists(false);
@@ -300,7 +306,7 @@ export function CommandPaletteProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, announce]);
 
   // Lazy models: fetch once the user starts typing (cached, shared inflight).
   // Debounced so typing does not refetch per keystroke; providers/combos
