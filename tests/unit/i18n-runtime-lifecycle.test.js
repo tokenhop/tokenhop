@@ -124,6 +124,47 @@ describe("runtime i18n lifecycle", () => {
     expect(observers).toHaveLength(0);
   });
 
+  it("keeps the newest locale's map when an older load resolves last", async () => {
+    const { fetchMock } = installDom("es");
+    let resolveEs;
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => (resolveEs = resolve)));
+    fetchMock.mockImplementationOnce(async () => ({
+      ok: true,
+      json: async () => ({ Hello: "Bonjour" }),
+    }));
+    const runtime = await loadRuntime();
+    const init = runtime.initRuntimeI18n();
+
+    Object.assign(document, { cookie: "locale=fr" });
+    await runtime.reloadTranslations();
+    resolveEs({ ok: true, json: async () => ({ Hello: "Hola" }) });
+    await init;
+
+    expect(runtime.getCurrentLocale()).toBe("fr");
+    expect(runtime.translate("Hello")).toBe("Bonjour");
+  });
+
+  it("re-translates copy attributes React changes in place", async () => {
+    installDom("es");
+    const runtime = await loadRuntime();
+    await runtime.initRuntimeI18n();
+    const attrs = { title: "Hello" };
+    const target = {
+      ...element([]),
+      hasAttribute: (name) => name in attrs,
+      getAttribute: (name) => attrs[name],
+      setAttribute: (name, value) => {
+        attrs[name] = value;
+      },
+    };
+    observers[0].callback([{ type: "attributes", target }]);
+    expect(attrs.title).toBe("Hola");
+
+    attrs.title = "Save";
+    observers[0].callback([{ type: "attributes", target }]);
+    expect(attrs.title).toBe("Guardar");
+  });
+
   it("restores English once, then stops observing", async () => {
     const { body } = installDom("es");
     const node = text("Hello");

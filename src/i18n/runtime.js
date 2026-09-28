@@ -18,27 +18,33 @@ function getLocaleFromCookie() {
   return normalizeLocale(value);
 }
 
-// Load translation map; successful loads are cached for the page lifetime.
-async function loadTranslations(locale) {
-  if (locale === "en") {
-    translationMap = {};
-    return;
-  }
+// Resolve a locale's map (cached for the page lifetime). Never touches module
+// state, so a superseded load can't clobber the active map.
+async function fetchLocaleMap(locale) {
+  if (locale === "en") return {};
   const cached = localeMaps.get(locale);
-  if (cached) {
-    translationMap = cached;
-    return;
-  }
-
+  if (cached) return cached;
   try {
     const response = await fetch(`/i18n/literals/${locale}.json`);
     if (!response.ok) throw new Error(`HTTP ${response.status} for ${locale}.json`);
-    translationMap = await response.json();
-    localeMaps.set(locale, translationMap);
+    const map = await response.json();
+    localeMaps.set(locale, map);
+    return map;
   } catch (err) {
     console.error("Failed to load translations:", err);
-    translationMap = {};
+    return {};
   }
+}
+
+/** Load the cookie locale; resolves false when a newer init/reload superseded it. */
+async function loadCookieLocale() {
+  const epoch = ++loadEpoch;
+  const locale = getLocaleFromCookie();
+  const map = await fetchLocaleMap(locale);
+  if (epoch !== loadEpoch) return false;
+  currentLocale = locale;
+  translationMap = map;
+  return true;
 }
 
 // Translate text - exported for use in components
@@ -215,22 +221,16 @@ function stopObserver() {
 export async function initRuntimeI18n() {
   if (typeof window === "undefined") return;
 
-  currentLocale = getLocaleFromCookie();
-  if (currentLocale === "en") return;
-  const epoch = ++loadEpoch;
-  await loadTranslations(currentLocale);
-  if (epoch !== loadEpoch) return;
+  if (getLocaleFromCookie() === "en") return;
+  if (!(await loadCookieLocale())) return;
   processElement(document.body);
   startObserver();
 }
 
 // Reload translations when locale changes
 export async function reloadTranslations() {
-  const epoch = ++loadEpoch;
   const previousLocale = currentLocale;
-  currentLocale = getLocaleFromCookie();
-  await loadTranslations(currentLocale);
-  if (epoch !== loadEpoch) return;
+  if (!(await loadCookieLocale())) return;
 
   reloadCallbacks.forEach((callback) => {
     callback();
