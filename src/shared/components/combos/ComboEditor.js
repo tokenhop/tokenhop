@@ -56,6 +56,7 @@ export default function ComboEditor({
   onRename,
   onDelete,
   onSave,
+  onDiscard,
   onStrategyChange,
   onWeightSave,
   onJudgeChange,
@@ -156,8 +157,7 @@ export default function ComboEditor({
 
       {/* Header: name + rename, CopyField, Delete/Save */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="text-xs font-semibold tracking-wider text-muted uppercase">Combo</span>
+        <div className="flex shrink-0 flex-col gap-1">
           {renaming ? (
             <div className="flex max-w-sm flex-col gap-1">
               <Input
@@ -207,10 +207,8 @@ export default function ComboEditor({
               </div>
             </div>
           ) : (
-            <div className="flex min-w-0 items-center gap-2">
-              <h2 className="min-w-0 truncate font-mono text-2xl font-semibold text-text sm:text-[32px]">
-                {combo.name}
-              </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xs font-semibold tracking-wider text-muted uppercase">Combo</h2>
               <IconButton
                 icon="edit"
                 label={`Rename combo ${combo.name}`}
@@ -219,6 +217,7 @@ export default function ComboEditor({
                   setNameError("");
                   setRenaming(true);
                 }}
+                className="size-8 rounded-md"
               />
             </div>
           )}
@@ -227,22 +226,45 @@ export default function ComboEditor({
           value={`"model": "${combo.name}"`}
           copyValue={combo.name}
           label="Copy combo model name"
-          className="w-full sm:w-auto sm:min-w-52"
+          className="w-full min-w-0 sm:w-auto sm:min-w-52 sm:flex-1"
         />
-        <Button variant="danger" icon="delete" onClick={() => setConfirmDelete(true)}>
-          Delete
-        </Button>
-        {dirty && <span className="text-sm font-medium text-warn">Unsaved changes</span>}
-        <Button
-          variant="primary"
-          icon="save"
-          loading={saving}
-          disabled={!dirty || saving}
-          onClick={onSave}
-        >
-          Save
-        </Button>
+        <div className="ms-auto flex flex-wrap items-center gap-2">
+          <Button variant="danger" icon="delete" onClick={() => setConfirmDelete(true)}>
+            Delete
+          </Button>
+          <Button
+            variant="secondary"
+            icon="undo"
+            disabled={!dirty || saving}
+            onClick={() => {
+              setDrafts({});
+              setWeightErrors({});
+              onDiscard?.();
+            }}
+          >
+            Discard
+          </Button>
+          <Button
+            variant="primary"
+            icon="save"
+            loading={saving}
+            disabled={!dirty || saving}
+            onClick={onSave}
+          >
+            Save
+          </Button>
+        </div>
       </div>
+      <p
+        aria-live="polite"
+        className={`-mt-2 flex items-center gap-2 text-xs font-medium ${dirty ? "text-warn" : "text-muted"}`}
+      >
+        <span
+          aria-hidden="true"
+          className={`size-2 rounded-full ${dirty ? "bg-warn" : "bg-subtle"}`}
+        />
+        {dirty ? "Unsaved changes" : "No changes"}
+      </p>
       {saveError && (
         <p role="alert" className="text-sm text-err">
           {saveError}
@@ -447,6 +469,7 @@ ComboEditor.propTypes = {
   onRename: PropTypes.func,
   onDelete: PropTypes.func,
   onSave: PropTypes.func,
+  onDiscard: PropTypes.func,
   onStrategyChange: PropTypes.func,
   onWeightSave: PropTypes.func,
   onJudgeChange: PropTypes.func,

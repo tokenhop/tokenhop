@@ -719,6 +719,7 @@ export default function CombosPageClient() {
               onRename={handleRename}
               onDelete={handleDelete}
               onSave={handleSaveRoute}
+              onDiscard={() => applyServerState(selected, strategiesRef.current)}
               onStrategyChange={(s) => {
                 editGenerationRef.current += 1;
                 setDraftStrategy(s);
