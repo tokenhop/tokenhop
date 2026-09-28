@@ -45,12 +45,15 @@ export default function ToolbarSearch({
         aria-label={ariaLabel}
         inputClassName={cn("min-h-10 sm:pe-10", inputClassName)}
       />
-      <span
-        className="pointer-events-none absolute inset-y-0 end-3 hidden items-center sm:flex"
-        aria-hidden="true"
-      >
-        <Kbd>/</Kbd>
-      </span>
+      {/* Hidden once there is text, so it never sits over the native clear button. */}
+      {!value && (
+        <span
+          className="pointer-events-none absolute inset-y-0 end-3 hidden items-center sm:flex"
+          aria-hidden="true"
+        >
+          <Kbd>/</Kbd>
+        </span>
+      )}
     </div>
   );
 }

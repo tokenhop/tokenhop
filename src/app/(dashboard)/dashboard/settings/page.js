@@ -83,8 +83,6 @@ export default function SettingsPage() {
     document.querySelector("main .custom-scrollbar")?.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
-  // `/` focuses the toolbar search via useSlashShortcut (ToolbarSearch).
-
   const onSettingsChange = useCallback(
     (patch) => {
       if (!patch) {

@@ -186,6 +186,7 @@ function ProvidersListShell({ initialProviderId = null }) {
       setConnections(previous);
       notify.error("Failed to update provider. Please try again.");
     }
+    refreshShellStatus();
   };
 
   const handleBatchTest = async (mode, providerId = null) => {

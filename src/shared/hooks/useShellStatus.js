@@ -67,6 +67,8 @@ const store = {
 async function fetchSummary() {
   let status = null;
   let body = null;
+  // Stamped at attempt time: an in-flight request already carries fresh data,
+  // so tab-focus bursts during it add nothing (mutations still queue one).
   store.lastRefreshAt = Date.now();
   try {
     const res = await fetch("/api/shell/summary", { cache: "no-store" });

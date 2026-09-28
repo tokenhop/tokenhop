@@ -30,7 +30,7 @@ const connections = [
   { id: "c", provider: "gemini", testStatus: "mystery" },
   { id: "d", provider: "off", testStatus: "active", isActive: false },
 ];
-const window = (usedFraction) => ({ windows: [{ kind: "5h", usedFraction }] });
+const snapshotWindow = (usedFraction) => ({ windows: [{ kind: "5h", usedFraction }] });
 
 describe("buildShellSummary", () => {
   it("counts providers, attention, LLM combos, low quota and the translator gate", () => {
@@ -39,7 +39,8 @@ describe("buildShellSummary", () => {
       combos: [{ name: "x" }, { name: "y", kind: "llm" }, { name: "z", kind: "image" }],
       translatorEnabled: true,
       gateway,
-      getSnapshotView: (id) => ({ a: window(0.85), b: window(0.5), d: window(1) })[id] ?? null,
+      getSnapshotView: (id) =>
+        ({ a: snapshotWindow(0.85), b: snapshotWindow(0.5), d: snapshotWindow(1) })[id] ?? null,
     });
     expect(summary).toEqual({
       gateway,
@@ -121,5 +122,70 @@ describe("applyShellSummary", () => {
       gatewayOnline: true,
       badges: prev.badges,
     });
+  });
+});
+
+describe("useShellStatus refresh lifecycle", () => {
+  it("coalesces refreshes, throttles focus and stops polling with the last listener", async () => {
+    vi.resetModules();
+    const cleanups = [];
+    vi.doMock("react", () => ({
+      useState: (init) => [init, () => {}],
+      useEffect: (fn) => cleanups.push(fn()),
+    }));
+    const handlers = {};
+    vi.stubGlobal("document", {
+      hidden: false,
+      addEventListener: (type, fn) => {
+        handlers[type] = fn;
+      },
+      removeEventListener: (type) => delete handlers[type],
+    });
+    vi.stubGlobal("window", {
+      location: { port: "" },
+      setInterval: vi.fn(() => 7),
+      clearInterval: vi.fn(),
+    });
+    const resolvers = [];
+    const fetchMock = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(() => resolve({ status: 200, ok: true, json: async () => ({}) }));
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const flush = async () => {
+      while (resolvers.length) resolvers.shift()();
+      await new Promise((r) => setTimeout(r, 0));
+    };
+    try {
+      const mod = await import("@/shared/hooks/useShellStatus.js");
+      mod.default(); // first listener: initial fetch + poll + focus listener
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // Two mutations during flight queue exactly one follow-up.
+      mod.refreshShellStatus();
+      mod.refreshShellStatus();
+      handlers.visibilitychange(); // in flight: ignored
+      await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      handlers.visibilitychange(); // within 15s of the last attempt: throttled
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      vi.spyOn(Date, "now").mockReturnValue(Date.now() + mod.FOCUS_THROTTLE_MS + 1);
+      handlers.visibilitychange();
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      await flush();
+
+      for (const fn of cleanups) fn?.();
+      expect(globalThis.window.clearInterval).toHaveBeenCalledWith(7);
+      expect(handlers.visibilitychange).toBeUndefined();
+    } finally {
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+      vi.doUnmock("react");
+    }
   });
 });
