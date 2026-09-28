@@ -81,6 +81,8 @@ describe("google oauth clients (env-sourced)", () => {
     );
   });
 
+  // Cold-imports the whole OAuth login path (registry + src/lib/oauth) and can
+  // exceed the 5s default under full-suite load — allow extra time.
   it("OAuth login fails fast before building an auth URL when unconfigured", async () => {
     for (const k of Object.keys(ENV)) delete process.env[k];
     const { generateAuthData } = await import("../../src/lib/oauth/providers/index.js");
@@ -90,13 +92,13 @@ describe("google oauth clients (env-sourced)", () => {
     await expect(generateAuthData("antigravity", "http://localhost/callback")).rejects.toThrow(
       /ANTIGRAVITY_OAUTH_CLIENT_ID/,
     );
-  });
+  }, 20_000);
 
   it("OAuth login builds the auth URL with the env client id", async () => {
     const { generateAuthData } = await import("../../src/lib/oauth/providers/index.js");
     const { authUrl } = await generateAuthData("gemini-cli", "http://localhost/callback");
     expect(new URL(authUrl).searchParams.get("client_id")).toBe(GOOGLE.clientId);
-  });
+  }, 20_000);
 
   it("token refresh returns null and logs when the client is unconfigured", async () => {
     const { refreshGoogleToken } = await import(

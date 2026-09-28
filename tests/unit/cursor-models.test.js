@@ -1,11 +1,45 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// agent.api5.cursor.sh is HTTP/2-only: cursorModels.js fetches via
+// http2PostProto (node:http2 connect/request), so a global.fetch mock never
+// sees the request. Mock node:http2 instead — the fake client emits a canned
+// response (from h2ResponseQueue) when req.end() is called.
+const { connectMock, h2ResponseQueue, h2Requests } = vi.hoisted(() => ({
+  connectMock: vi.fn(),
+  h2ResponseQueue: [],
+  h2Requests: [],
+}));
+
+vi.mock("http2", async () => {
+  const { EventEmitter } = await import("node:events");
+  connectMock.mockImplementation(() => {
+    const client = new EventEmitter();
+    client.close = () => {};
+    client.request = (headers) => {
+      const record = { headers };
+      h2Requests.push(record);
+      const req = new EventEmitter();
+      req.end = (body) => {
+        record.body = body;
+        const next = h2ResponseQueue.shift() ?? { status: 200, body: new Uint8Array() };
+        process.nextTick(() => {
+          req.emit("response", { ":status": next.status ?? 200 });
+          if (next.body?.length) req.emit("data", Buffer.from(next.body));
+          req.emit("end");
+        });
+      };
+      return req;
+    };
+    return client;
+  });
+  return { default: { connect: connectMock }, connect: connectMock };
+});
+
 import {
   clearCursorModelCache,
   parseCursorUsableModels,
   resolveCursorModels,
 } from "../../open-sse/services/cursorModels.js";
-
-const originalFetch = global.fetch;
 
 function varint(value) {
   const bytes = [];
@@ -43,10 +77,12 @@ function model(id, name) {
 describe("Cursor live model catalog", () => {
   beforeEach(() => {
     clearCursorModelCache();
+    connectMock.mockClear();
+    h2ResponseQueue.length = 0;
+    h2Requests.length = 0;
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
     clearCursorModelCache();
   });
 
@@ -64,8 +100,10 @@ describe("Cursor live model catalog", () => {
   });
 
   it("fetches the account-specific catalog and caches it", async () => {
-    const payload = concat(model("claude-4.6-opus", "Claude 4.6 Opus"));
-    global.fetch = vi.fn().mockResolvedValue(new Response(payload, { status: 200 }));
+    h2ResponseQueue.push({
+      status: 200,
+      body: concat(model("claude-4.6-opus", "Claude 4.6 Opus")),
+    });
     const credentials = {
       accessToken: "cursor-token",
       providerSpecificData: { machineId: "machine-id" },
@@ -78,22 +116,22 @@ describe("Cursor live model catalog", () => {
       models: [{ id: "claude-4.6-opus", name: "Claude 4.6 Opus" }],
     });
 
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledWith(
-      "https://agent.api5.cursor.sh/agent.v1.AgentService/GetUsableModels",
-      expect.objectContaining({
-        method: "POST",
-        body: expect.any(Uint8Array),
-        headers: expect.objectContaining({
-          "content-type": "application/proto",
-          accept: "application/proto",
-        }),
-      }),
-    );
+    expect(connectMock).toHaveBeenCalledTimes(1);
+    expect(connectMock).toHaveBeenCalledWith("https://agent.api5.cursor.sh");
+    expect(h2Requests[0].headers).toMatchObject({
+      ":method": "POST",
+      ":path": "/agent.v1.AgentService/GetUsableModels",
+      ":authority": "agent.api5.cursor.sh",
+      ":scheme": "https",
+      "content-type": "application/proto",
+      accept: "application/proto",
+    });
+    // Unary GET-like call: empty body → req.end(undefined).
+    expect(h2Requests[0].body).toBeUndefined();
   });
 
   it("fails open when the Cursor catalog request fails", async () => {
-    global.fetch = vi.fn().mockResolvedValue(new Response("no", { status: 403 }));
+    h2ResponseQueue.push({ status: 403, body: text("no") });
 
     await expect(
       resolveCursorModels({
