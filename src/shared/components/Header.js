@@ -7,19 +7,17 @@ import PropTypes from "prop-types";
 import ProviderTile from "@/shared/components/ProviderTile";
 import HeaderMenu from "@/shared/components/HeaderMenu";
 import HeaderLanguage from "@/shared/components/HeaderLanguage";
-import DonateModal from "@/shared/components/DonateModal";
+import dynamic from "next/dynamic";
 import IconButton from "@/shared/components/IconButton";
 import CommandPaletteTrigger from "@/shared/components/CommandPaletteTrigger";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
-import {
-  FREE_PROVIDERS,
-  FREE_TIER_PROVIDERS,
-  OAUTH_PROVIDERS,
-  APIKEY_PROVIDERS,
-} from "@/shared/constants/config";
-import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS } from "@/shared/constants/providers";
+import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/mediaProviderKinds";
+import { PROVIDER_DISPLAY } from "@/shared/constants/providerDisplay.generated";
 import { COMBINED_WEB_ITEM } from "@/shared/constants/navigation";
 import { translate } from "@/i18n/runtime";
+
+// Lazy shell dialog: the chunk loads on first open, not with the shell.
+const DonateModal = dynamic(() => import("@/shared/components/DonateModal"), { ssr: false });
 
 /**
  * Maps pathname to page title, description (subtitle line), icon and breadcrumbs.
@@ -48,7 +46,7 @@ export const getPageInfo = (pathname) => {
       };
     }
     const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kindId);
-    const provider = AI_PROVIDERS[providerId];
+    const provider = PROVIDER_DISPLAY[providerId];
     // Detail page renders its own in-page h1 (YAN-314); shell shows breadcrumb only.
     return {
       title: "",
@@ -90,17 +88,16 @@ export const getPageInfo = (pathname) => {
         breadcrumbs: [{ label: "Providers", href: "/dashboard/providers" }, { label: "New" }],
       };
     }
-    const providerInfo =
-      OAUTH_PROVIDERS[providerId] ||
-      APIKEY_PROVIDERS[providerId] ||
-      FREE_PROVIDERS[providerId] ||
-      FREE_TIER_PROVIDERS[providerId];
+    const providerInfo = PROVIDER_DISPLAY[providerId];
     return {
       title: "",
       description: "",
       breadcrumbs: [
         { label: "Providers", href: "/dashboard/providers" },
-        { label: providerInfo?.name || providerId, providerId: providerInfo?.id },
+        {
+          label: providerInfo?.name || providerId,
+          providerId: providerInfo ? providerId : undefined,
+        },
       ],
     };
   }
@@ -403,7 +400,7 @@ export default function Header({
         <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">{actions}</div>
       ) : null}
 
-      <DonateModal isOpen={donateOpen} onClose={() => setDonateOpen(false)} />
+      {donateOpen && <DonateModal isOpen={donateOpen} onClose={() => setDonateOpen(false)} />}
     </header>
   );
 }

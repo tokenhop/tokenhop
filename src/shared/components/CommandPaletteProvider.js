@@ -24,22 +24,22 @@ import {
   saveRecents,
   shouldOpenCommandPalette,
 } from "@/shared/utils/commandPalette.js";
-import "@/shared/utils/commandSources.js";
+import {
+  ensurePaletteSources,
+  ensurePaletteVerbs,
+  prefetchOnIdle,
+} from "@/shared/utils/paletteLazy.js";
 import useThemeStore from "@/store/themeStore";
 import { useNotificationStore } from "@/store/notificationStore";
 import { copyTextToClipboard } from "@/shared/components/formPrimitives";
 import { GO_TO, matchGoTo } from "@/shared/utils/goToShortcuts";
-import {
-  clearConsoleLog,
-  readTunnelEnabled,
-  setTunnel,
-  signOut,
-  testAllProviders,
-} from "@/shared/utils/paletteVerbs";
 import Modal from "./Modal";
-import LanguageSwitcher from "./LanguageSwitcher";
+import dynamic from "next/dynamic";
 import { getCurrentLocale } from "@/i18n/runtime";
 import Kbd from "./Kbd";
+
+// Lazy shell dialog: the chunk loads on first open, not with the shell.
+const LanguageSwitcher = dynamic(() => import("./LanguageSwitcher"), { ssr: false });
 
 const CommandPaletteContext = createContext(null);
 
@@ -140,22 +140,24 @@ async function runPaletteVerb(verb, helpers) {
     openShortcuts,
     openLanguage,
   } = helpers;
+  // paletteVerbs.js loads with the rest of the palette heavies on first open.
+  const verbs = await ensurePaletteVerbs();
   if (verb === "test-providers") {
     toast.info("Testing all providers");
     confirm("Testing all providers");
-    const outcome = await testAllProviders();
+    const outcome = await verbs.testAllProviders();
     toast[outcome.level](outcome.message);
     confirm(outcome.message);
     return;
   }
   if (verb === "clear-console") {
-    const outcome = await clearConsoleLog();
+    const outcome = await verbs.clearConsoleLog();
     toast[outcome.level](outcome.message);
     confirm(outcome.message);
     return;
   }
   if (verb === "sign-out") {
-    const outcome = await signOut();
+    const outcome = await verbs.signOut();
     if (outcome.level === "success") window.location.assign("/login");
     else {
       toast.error(outcome.message);
@@ -169,7 +171,7 @@ async function runPaletteVerb(verb, helpers) {
     return;
   }
   if (verb === "toggle-tunnel") {
-    const enabled = await readTunnelEnabled();
+    const enabled = await verbs.readTunnelEnabled();
     if (enabled === null) {
       const outcome = { level: "error", message: "Could not read tunnel status" };
       toast.error(outcome.message);
@@ -179,7 +181,7 @@ async function runPaletteVerb(verb, helpers) {
     const pending = enabled ? "Stopping tunnel" : "Starting tunnel. This can take 30 seconds.";
     toast.info(pending);
     confirm(pending);
-    const outcome = await setTunnel(!enabled);
+    const outcome = await verbs.setTunnel(!enabled);
     toast[outcome.level === "warning" ? "warning" : outcome.level](outcome.message);
     confirm(outcome.message);
     return;
@@ -221,6 +223,7 @@ export function CommandPaletteProvider({ children }) {
   const inputRef = useRef(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
+  const [languageMounted, setLanguageMounted] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
   const announce = useCallback((message) => setActionMessage(message), []);
   const pendingChord = useRef(null);
@@ -229,19 +232,35 @@ export function CommandPaletteProvider({ children }) {
   paletteOpenRef.current = open;
   const [tunnelEnabled, setTunnelEnabled] = useState(null);
 
+  // Idle-prefetch the palette heavies after mount so ⌘K stays imperceptible.
+  useEffect(() => {
+    const cancel = prefetchOnIdle(() => {
+      ensurePaletteSources().catch(() => {});
+      ensurePaletteVerbs().catch(() => {});
+    });
+    return cancel;
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     let active = true;
     setTunnelEnabled(null);
-    readTunnelEnabled().then((enabled) => {
-      if (active) setTunnelEnabled(enabled);
-    });
+    ensurePaletteVerbs()
+      .then(({ readTunnelEnabled }) => readTunnelEnabled())
+      .then((enabled) => {
+        if (active) setTunnelEnabled(enabled);
+      })
+      .catch(() => {});
     return () => {
       active = false;
     };
   }, [open]);
 
-  const openPalette = useCallback(() => setOpen(true), []);
+  const openPalette = useCallback(() => {
+    setCommands([]);
+    setLoadingLists(true);
+    setOpen(true);
+  }, []);
   const closePalette = useCallback(() => {
     setOpen(false);
     setQuery("");
@@ -257,14 +276,17 @@ export function CommandPaletteProvider({ children }) {
   }, []);
 
   // Reset query on open, then pull provider/combo lists; models load lazily.
+  // commandSources.js registers its static sources on import (exactly once);
+  // the open-gate sets loadingLists so the dialog shows skeletons instead of
+  // the "no results" empty state while sources are still loading.
   useEffect(() => {
     if (!open) return;
     setQuery("");
     setActiveId(null);
     let cancelled = false;
     setLoadingLists(true);
-    cacheRef.current
-      .refresh({ includeModels: false, forceProviders: true })
+    ensurePaletteSources()
+      .then(() => cacheRef.current.refresh({ includeModels: false, forceProviders: true }))
       .then((snapshot) => collectCommands(snapshot))
       .then((all) => {
         if (!cancelled) setCommands(all);
@@ -287,8 +309,8 @@ export function CommandPaletteProvider({ children }) {
     if (!open || !query.trim()) return;
     let cancelled = false;
     const timer = setTimeout(() => {
-      cacheRef.current
-        .refresh({ includeModels: true })
+      ensurePaletteSources()
+        .then(() => cacheRef.current.refresh({ includeModels: true }))
         .then((snapshot) => collectCommands(snapshot))
         .then((all) => {
           if (!cancelled) setCommands(all);
@@ -341,14 +363,22 @@ export function CommandPaletteProvider({ children }) {
         return;
       }
       if (run.type === "verb") {
+        // Loading the verbs chunk can fail (offline first visit). Surface it:
+        // runPaletteVerb otherwise closes the palette and nothing happens.
         runPaletteVerb(run.verb, {
           router,
           navigate,
           notify,
           announce,
           openShortcuts: () => setShortcutsOpen(true),
-          openLanguage: () => setLanguageOpen(true),
+          openLanguage: () => {
+            setLanguageMounted(true);
+            setLanguageOpen(true);
+          },
           languageLocaleRef,
+        }).catch(() => {
+          notify.error("Action failed to load. Try again.");
+          announce("Action failed to load");
         });
         closePalette();
         return;
@@ -373,6 +403,10 @@ export function CommandPaletteProvider({ children }) {
       });
       if (shouldOpenCommandPalette(flags)) {
         event.preventDefault();
+        if (!paletteOpenRef.current) {
+          setCommands([]);
+          setLoadingLists(true);
+        }
         setOpen((wasOpen) => !wasOpen);
       }
     };
@@ -517,15 +551,17 @@ export function CommandPaletteProvider({ children }) {
         {actionMessage}
       </p>
       <ShortcutsDialog isOpen={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
-      <LanguageSwitcher
-        hideTrigger
-        isOpen={languageOpen}
-        onClose={(nextLocale) => {
-          const changed = languageLocaleRef.current !== nextLocale;
-          setLanguageOpen(false);
-          if (changed) announce("Language updated");
-        }}
-      />
+      {languageMounted && (
+        <LanguageSwitcher
+          hideTrigger
+          isOpen={languageOpen}
+          onClose={(nextLocale) => {
+            const changed = languageLocaleRef.current !== nextLocale;
+            setLanguageOpen(false);
+            if (changed) announce("Language updated");
+          }}
+        />
+      )}
     </CommandPaletteContext.Provider>
   );
 }

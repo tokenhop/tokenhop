@@ -4,8 +4,13 @@ import { useEffect, useState } from "react";
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
 import { languageButtonLabel } from "@/shared/utils/shell";
+import dynamic from "next/dynamic";
 import IconButton from "./IconButton";
-import LanguageSwitcher from "./LanguageSwitcher";
+
+// Lazy popover: the visible trigger stays synchronous; the modal panel loads
+// on first open. The `panelMounted` latch keeps the modal mounted across close
+// so the shared Modal still returns focus and handles Esc.
+const LanguageSwitcher = dynamic(() => import("./LanguageSwitcher"), { ssr: false });
 
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return "en";
@@ -22,6 +27,7 @@ function getLocaleFromCookie() {
  */
 export default function HeaderLanguage() {
   const [open, setOpen] = useState(false);
+  const [panelMounted, setPanelMounted] = useState(false);
   const [locale, setLocale] = useState("en");
 
   useEffect(() => {
@@ -36,7 +42,10 @@ export default function HeaderLanguage() {
       <IconButton
         icon="translate"
         aria-label={label}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setPanelMounted(true);
+          setOpen(true);
+        }}
         data-i18n-skip="true"
         className="w-auto gap-1 px-2.5"
         suffix={
@@ -46,14 +55,16 @@ export default function HeaderLanguage() {
         }
       />
 
-      <LanguageSwitcher
-        hideTrigger
-        isOpen={open}
-        onClose={() => {
-          setOpen(false);
-          setLocale(getCurrentLocale() || getLocaleFromCookie());
-        }}
-      />
+      {panelMounted && (
+        <LanguageSwitcher
+          hideTrigger
+          isOpen={open}
+          onClose={() => {
+            setOpen(false);
+            setLocale(getCurrentLocale() || getLocaleFromCookie());
+          }}
+        />
+      )}
     </>
   );
 }

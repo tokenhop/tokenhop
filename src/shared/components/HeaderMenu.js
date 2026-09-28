@@ -1,15 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import PropTypes from "prop-types";
-import { APP_CONFIG } from "@/shared/constants/config";
+import { APP_CONFIG } from "@/shared/constants/appConfig";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { resolveVersionChip } from "@/shared/utils/shell";
-import ChangelogModal from "./ChangelogModal";
-import LanguageSwitcher from "./LanguageSwitcher";
 import { ConfirmDialog } from "./Modal";
 import Menu, { MenuItem } from "./Menu";
 import IconButton from "./IconButton";
+
+// Lazy shell dialogs: the chunks load on first open, not with the shell.
+// The `*Mounted` latches keep each modal mounted across close so the shared
+// Modal still returns focus and handles Esc.
+const ChangelogModal = dynamic(() => import("./ChangelogModal"), { ssr: false });
+const LanguageSwitcher = dynamic(() => import("./LanguageSwitcher"), { ssr: false });
 
 /**
  * Header app menus, switched by CSS breakpoint (no JS media query, so server
@@ -26,7 +31,9 @@ import IconButton from "./IconButton";
  */
 export default function HeaderMenu({ onLogout, onDonate }) {
   const [changelogOpen, setChangelogOpen] = useState(false);
+  const [changelogMounted, setChangelogMounted] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
+  const [languageMounted, setLanguageMounted] = useState(false);
   const [shutdownOpen, setShutdownOpen] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const { toggleTheme, isDark } = useTheme();
@@ -43,13 +50,21 @@ export default function HeaderMenu({ onLogout, onDonate }) {
     setShutdownOpen(false);
   };
 
+  const openChangelog = () => {
+    setChangelogMounted(true);
+    setChangelogOpen(true);
+  };
+  const openLanguage = () => {
+    setLanguageMounted(true);
+    setLanguageOpen(true);
+  };
   const changelogItem = (keyPrefix) => (
     <MenuItem
       key={`${keyPrefix}-changelog`}
       icon="history"
       label="Change Log"
       trailing={full ? <span data-i18n-skip="true">{full}</span> : undefined}
-      onSelect={() => setChangelogOpen(true)}
+      onSelect={openChangelog}
     />
   );
   const themeItem = (keyPrefix) => (
@@ -119,7 +134,7 @@ export default function HeaderMenu({ onLogout, onDonate }) {
             key="mobile-language"
             icon="translate"
             label="Language"
-            onSelect={() => setLanguageOpen(true)}
+            onSelect={openLanguage}
           />
           {themeItem("mobile")}
           {changelogItem("mobile")}
@@ -128,8 +143,16 @@ export default function HeaderMenu({ onLogout, onDonate }) {
         </Menu>
       </span>
 
-      <ChangelogModal isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
-      <LanguageSwitcher hideTrigger isOpen={languageOpen} onClose={() => setLanguageOpen(false)} />
+      {changelogMounted && (
+        <ChangelogModal isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
+      )}
+      {languageMounted && (
+        <LanguageSwitcher
+          hideTrigger
+          isOpen={languageOpen}
+          onClose={() => setLanguageOpen(false)}
+        />
+      )}
       <ConfirmDialog
         isOpen={shutdownOpen}
         onClose={() => setShutdownOpen(false)}
