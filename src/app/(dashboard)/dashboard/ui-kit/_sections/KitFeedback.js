@@ -97,13 +97,19 @@ export default function KitFeedback() {
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-2xl border border-line bg-panel p-6 shadow-card">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted">
+          <p
+            data-i18n-skip="true"
+            className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted"
+          >
             LoadingState
           </p>
           <LoadingState lines={3} label="Loading demo widget" />
         </div>
         <div className="rounded-2xl border border-line bg-panel p-6 shadow-card">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted">
+          <p
+            data-i18n-skip="true"
+            className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted"
+          >
             ErrorState
           </p>
           <ErrorState

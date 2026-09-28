@@ -202,7 +202,7 @@ function CommandPaletteDialog({ palette }) {
                               <Kbd>↵</Kbd>
                               {command.secondary ? (
                                 <>
-                                  <Kbd>⇧↵</Kbd>
+                                  <Kbd data-i18n-skip="true">⇧↵</Kbd>
                                   <span className="text-xs text-muted">
                                     {command.secondary.label}
                                   </span>

@@ -230,7 +230,30 @@ function hasSkipAncestor(elementPath) {
  * @returns {Set<string>} Trimmed literals in first-seen order.
  */
 export function extractFromSource(code, filename = "unknown.js") {
-  const literals = new Set();
+  return new Set(extractWithLines(code, filename).map((entry) => entry.literal));
+}
+
+/**
+ * Extract translatable literals with the 1-based line of each occurrence.
+ * @param {string} code File contents.
+ * @param {string} [filename] Used only for parser error messages.
+ * `slot` names the syntactic home of the literal (JSX parent tag, attribute,
+ * object key or translate call) so tooling can tell same-location edits
+ * apart from moved copy.
+ * @returns {Array<{literal: string, line: number, endLine: number, slot: string}>} Occurrences in source order.
+ */
+export function extractWithLines(code, filename = "unknown.js") {
+  const found = [];
+  const literals = {
+    add(literal, node, slot) {
+      found.push({
+        literal,
+        line: node?.loc?.start?.line ?? 0,
+        endLine: node?.loc?.end?.line ?? 0,
+        slot,
+      });
+    },
+  };
   let ast;
   try {
     ast = babelParser.parse(code, {
@@ -238,7 +261,7 @@ export function extractFromSource(code, filename = "unknown.js") {
       plugins: ["jsx", "typescript"],
     });
   } catch {
-    return literals;
+    return found;
   }
 
   babelTraverse(ast, {
@@ -249,7 +272,8 @@ export function extractFromSource(code, filename = "unknown.js") {
       // Fragments split by JSX expressions/components cannot be translated by
       // the runtime's exact text-node lookup. Report only complete literals.
       if (/^[,.;:\-)]|[,;:\-(]$/.test(trimmed)) return;
-      literals.add(trimmed);
+      const parentTag = path.parentPath?.node?.openingElement?.name?.name || "fragment";
+      literals.add(trimmed, path.node, `text:${parentTag}`);
     },
     JSXAttribute(path) {
       const attrName = path.node.name?.name;
@@ -264,7 +288,7 @@ export function extractFromSource(code, filename = "unknown.js") {
       const trimmed = path.node.value.value.replace(/\s+/g, " ").trim();
       if (isUntranslatableValue(trimmed)) return;
       if (hasSkipAncestor(path)) return;
-      literals.add(trimmed);
+      literals.add(trimmed, path.node, `attr:${tagName}.${attrName}`);
     },
     ObjectProperty(path) {
       const key = path.node.key;
@@ -276,19 +300,19 @@ export function extractFromSource(code, filename = "unknown.js") {
       const trimmed = path.node.value.value.replace(/\s+/g, " ").trim();
       if (isUntranslatableValue(trimmed)) return;
       if (OBJECT_VALUE_SKIP_RE.test(trimmed)) return;
-      literals.add(trimmed);
+      literals.add(trimmed, path.node, `key:${keyName}`);
     },
     CallExpression(path) {
       if (path.node.callee?.name !== "translate") return;
       const arg = path.node.arguments[0];
-      if (!arg || arg.type !== "StringLiteral") return;
+      if (arg?.type !== "StringLiteral") return;
       const trimmed = arg.value.replace(/\s+/g, " ").trim();
       if (isUntranslatableValue(trimmed)) return;
-      literals.add(trimmed);
+      literals.add(trimmed, path.node, "call:translate");
     },
   });
 
-  return literals;
+  return found;
 }
 
 function collectJsFiles(roots) {
@@ -409,9 +433,15 @@ export function validateLocaleFile(map) {
 function parseArgs(argv) {
   const options = { json: false, root: null, locales: null };
   for (let index = 0; index < argv.length; index += 1) {
-    if (argv[index] === "--json") options.json = true;
-    else if (argv[index] === "--root") options.root = resolve(argv[(index += 1)]);
-    else if (argv[index] === "--locales") options.locales = resolve(argv[(index += 1)]);
+    if (argv[index] === "--json") {
+      options.json = true;
+    } else if (argv[index] === "--root") {
+      index += 1;
+      options.root = resolve(argv[index]);
+    } else if (argv[index] === "--locales") {
+      index += 1;
+      options.locales = resolve(argv[index]);
+    }
   }
   return options;
 }
