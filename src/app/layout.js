@@ -1,5 +1,5 @@
 import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google";
-import "material-symbols/outlined.css";
+import localFont from "next/font/local";
 import "./globals.css";
 import { ThemeProvider } from "@/shared/components/ThemeProvider";
 import DensityApplier from "@/shared/components/DensityApplier";
@@ -15,24 +15,30 @@ initConsoleLogCapture();
 
 // Signal type system: Bricolage Grotesque (display), Geist (UI), Geist Mono
 const bricolage = Bricolage_Grotesque({
-  subsets: ["latin", "latin-ext"],
+  subsets: ["latin"],
   display: "swap",
   variable: "--font-bricolage",
-  weight: ["500", "700", "800"],
 });
 
 const geist = Geist({
-  subsets: ["latin", "latin-ext"],
+  subsets: ["latin"],
   display: "swap",
   variable: "--font-geist",
-  weight: ["400", "500", "600"],
 });
 
 const geistMono = Geist_Mono({
-  subsets: ["latin", "latin-ext"],
+  subsets: ["latin"],
   display: "swap",
   variable: "--font-geist-mono",
-  weight: ["400", "500", "600"],
+});
+
+// Material Symbols subset: only used glyphs, Signal axes pinned (scripts/icons-subset.mjs).
+// `block` keeps ligature text invisible until the (small, preloaded) font arrives.
+const materialSymbols = localFont({
+  src: "./fonts/material-symbols-subset.woff2",
+  display: "block",
+  variable: "--font-icons",
+  adjustFontFallback: false,
 });
 
 export const metadata = {
@@ -56,7 +62,7 @@ export default function RootLayout({ children }) {
     <html
       lang="en"
       // next/font variables must live on <html>: --signal-font-* is declared on :root
-      className={`${bricolage.variable} ${geist.variable} ${geistMono.variable}`}
+      className={`${bricolage.variable} ${geist.variable} ${geistMono.variable} ${materialSymbols.variable}`}
       suppressHydrationWarning
     >
       <head>
@@ -67,12 +73,6 @@ export default function RootLayout({ children }) {
           // biome-ignore lint/security/noDangerouslySetInnerHtml: static no-flash theme script, no user input
           dangerouslySetInnerHTML={{
             __html: `(function(){var r=document.documentElement;try{var s=localStorage.getItem('theme');var t=s?(JSON.parse(s).state||{}).theme:'dark';t=t||'dark';var m=window.matchMedia('(prefers-color-scheme: dark)').matches;if(t==='dark'||(t==='system'&&m)){r.classList.add('dark')}else{r.classList.remove('dark')}}catch(e){r.classList.add('dark')}try{var c=document.cookie.match(/(?:^|; )${LOCALE_COOKIE}=([^;]*)/);var l=c?decodeURIComponent(c[1]):'en';if(l==='zh')l='zh-CN';if(${JSON.stringify(LOCALES)}.indexOf(l)<0)l='en';r.lang=l;if(${JSON.stringify(RTL_LOCALES)}.indexOf(l)>=0)r.dir='rtl'}catch(e){}})();`,
-          }}
-        />
-        <script
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: static font-loader script, no user input
-          dangerouslySetInnerHTML={{
-            __html: `var d=document,r=d.documentElement,f=function(){r.classList.add('fonts-loaded')};if(d.fonts&&d.fonts.load){d.fonts.load('24px "Material Symbols Outlined"').then(f).catch(f);setTimeout(f,3000)}else{f()}`,
           }}
         />
         <script

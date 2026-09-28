@@ -3,15 +3,6 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Hide icon ligature text until font is ready */
-.material-symbols-outlined {
-  opacity: 0;
-}
-.fonts-loaded .material-symbols-outlined {
-  opacity: 1;
-  transition: opacity 0.12s ease-out;
-}
-
 /* ============================================================
    Signal design tokens — docs/redesign/tokens.css (YAN-275)
    Light on :root, dark on .dark (existing class strategy).
@@ -451,7 +442,7 @@ textarea {
 
 /* Material Symbols (design-system §7: thin strokes; .fill-1 = active state) */
 .material-symbols-outlined {
-  font-family: "Material Symbols Outlined", sans-serif;
+  font-family: var(--font-icons);
   font-weight: normal;
   font-style: normal;
   font-size: 24px;
