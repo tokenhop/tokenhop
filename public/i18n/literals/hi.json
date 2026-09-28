@@ -521,6 +521,7 @@
   "Couldn't load part of this page": "इस पेज का हिस्सा लोड नहीं हो सका",
   "Couldn't load proxy pools": "प्रॉक्सी पूल लोड नहीं हो सके",
   "Couldn't load usage stats": "उपयोग आंकड़े लोड नहीं हो सके",
+  "Couldn't reach Headroom at": "Headroom तक नहीं पहुँच सके:",
   "Count": "गिनती",
   "Country": "देश",
   "Counts show lines, not grouped rows": "गिनती पंक्तियाँ दिखाती है, समूहित पंक्तियाँ नहीं",

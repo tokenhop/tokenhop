@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmModal } from "@/shared/components";
 import { fetchJson } from "./tokenSaverApi";
+import { probeHeadroomStatus } from "./tokenSaverUtils";
 
 /**
  * Headroom extras state machine: probe, extras list, install/uninstall with
@@ -22,29 +23,28 @@ export function useHeadroomExtras(onChanged) {
   const [restartingProxy, setRestartingProxy] = useState(false);
   const logPollRef = useRef(null);
 
+  const probeSeqRef = useRef(0);
+
   const refresh = useCallback(async () => {
+    const seq = ++probeSeqRef.current;
     setHeadroom((s) => ({ ...s, loading: true }));
-    try {
-      const data = await fetchJson("/api/headroom/status");
-      setHeadroom({ ...data, loading: false });
-      if (!data?.installed) {
-        setAvailable(["code", "ml"]);
-        setPendingExtras([]);
-        return;
-      }
-      try {
-        const extras = await fetchJson("/api/headroom/extras");
-        if (extras.version) setHeadroom((s) => ({ ...s, version: extras.version }));
-        setAvailable(extras.available || ["code", "ml"]);
-        setPendingExtras([]);
-      } catch {
-        setAvailable(["code", "ml"]);
-        setPendingExtras([]);
-      }
-    } catch {
-      setHeadroom({ installed: false, running: false, loading: false });
+    // probeHeadroomStatus never throws: failures and timeouts come back as `unreachable`.
+    const data = await probeHeadroomStatus(fetchJson);
+    // A newer Recheck superseded this probe: drop the stale answer.
+    if (seq !== probeSeqRef.current) return;
+    setHeadroom({ ...data, loading: false });
+    setPendingExtras([]);
+    if (data.unreachable || !data.installed) {
       setAvailable(["code", "ml"]);
-      setPendingExtras([]);
+      return;
+    }
+    try {
+      const extras = await fetchJson("/api/headroom/extras");
+      if (seq !== probeSeqRef.current) return;
+      if (extras.version) setHeadroom((s) => ({ ...s, version: extras.version }));
+      setAvailable(extras.available || ["code", "ml"]);
+    } catch {
+      if (seq === probeSeqRef.current) setAvailable(["code", "ml"]);
     }
   }, []);
 

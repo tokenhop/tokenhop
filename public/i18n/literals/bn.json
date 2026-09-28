@@ -524,6 +524,7 @@
   "Couldn't load part of this page": "এই পৃষ্ঠার অংশ লোড করা যায়নি",
   "Couldn't load proxy pools": "প্রক্সি পুল লোড করা যায়নি",
   "Couldn't load usage stats": "ব্যবহারের পরিসংখ্যান লোড করা যায়নি",
+  "Couldn't reach Headroom at": "Headroom-এ পৌঁছানো যায়নি:",
   "Count": "গণনা",
   "Country": "দেশ",
   "Counts show lines, not grouped rows": "গণনা লাইন দেখায়, গ্রুপকৃত সারি নয়",

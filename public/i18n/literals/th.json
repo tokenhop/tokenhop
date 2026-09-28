@@ -636,6 +636,7 @@
   "Couldn't load part of this page": "ไม่สามารถโหลดบางส่วนของหน้านี้ได้",
   "Couldn't load proxy pools": "ไม่สามารถโหลดพูลพร็อกซีได้",
   "Couldn't load usage stats": "ไม่สามารถโหลดสถิติการใช้งานได้",
+  "Couldn't reach Headroom at": "ไม่สามารถเชื่อมต่อ Headroom ที่",
   "Country": "ประเทศ",
   "Counts show lines, not grouped rows": "ตัวนับแสดงบรรทัด ไม่ใช่แถวที่จัดกลุ่ม",
   "Create": "สร้าง",

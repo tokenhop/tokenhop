@@ -521,6 +521,7 @@
   "Couldn't load part of this page": "Không thể tải một phần của trang này",
   "Couldn't load proxy pools": "Không thể tải các nhóm proxy",
   "Couldn't load usage stats": "Không thể tải thống kê sử dụng",
+  "Couldn't reach Headroom at": "Không thể kết nối Headroom tại",
   "Count": "Số lượng",
   "Country": "Quốc gia",
   "Counts show lines, not grouped rows": "Số lượng hiển thị dòng, không phải hàng đã nhóm",

@@ -523,6 +523,7 @@
   "Couldn't load part of this page": "Tämän sivun osan lataaminen epäonnistui",
   "Couldn't load proxy pools": "Proxy-poolien lataaminen epäonnistui",
   "Couldn't load usage stats": "Käyttötilastojen lataaminen epäonnistui",
+  "Couldn't reach Headroom at": "Headroomia ei tavoitettu osoitteessa",
   "Count": "Määrä",
   "Country": "Maa",
   "Counts show lines, not grouped rows": "Luvut näyttävät rivit, ei ryhmiteltyjä rivejä",

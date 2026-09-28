@@ -520,6 +520,7 @@
   "Couldn't load part of this page": "No se pudo cargar parte de esta página",
   "Couldn't load proxy pools": "No se pudieron cargar los grupos de proxy",
   "Couldn't load usage stats": "No se pudieron cargar las estadísticas de uso",
+  "Couldn't reach Headroom at": "No se pudo conectar con Headroom en",
   "Count": "Cantidad",
   "Country": "País",
   "Counts show lines, not grouped rows": "Los recuentos muestran líneas, no filas agrupadas",
