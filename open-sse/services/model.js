@@ -2,7 +2,8 @@ import REGISTRY from "../providers/registry/index.js";
 
 // Alias→id derived from registry single-source: id→id, alias→id, aliases[]→id.
 // Media-only providers without a registry transport entry keep explicit aliases here.
-const MEDIA_ONLY_ALIASES = {
+/** Extra router aliases exported for the generated shell display snapshot. */
+export const MEDIA_ONLY_ALIASES = {
   el: "elevenlabs",
   jina: "jina-ai",
   "jina-ai": "jina-ai",

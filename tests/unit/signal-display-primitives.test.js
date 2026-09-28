@@ -92,8 +92,8 @@ describe("provider logo resolution", () => {
   });
   it("compatible nodes inherit family brand and logo", () => {
     expect(getProviderBrand("openai-compatible-abc123").monogram).toBe("OC");
-    expect(getProviderIconSrc("openai-compatible-abc123")).toBe("/providers/oai-cc.png");
-    expect(getProviderIconSrc("anthropic-compatible-x")).toBe("/providers/anthropic-m.png");
+    expect(getProviderIconSrc("openai-compatible-abc123")).toBe("/providers/oai-cc.webp");
+    expect(getProviderIconSrc("anthropic-compatible-x")).toBe("/providers/anthropic-m.webp");
   });
   it("caches missing compatible-family logo across generated node ids", () => {
     markProviderIconMissing("openai-compatible-missing-test");
@@ -105,6 +105,15 @@ describe("provider logo resolution", () => {
     expect(getProviderIconSrc("meta-code")).toBe("/providers/meta-code.svg");
     for (const entry of registry.filter((provider) => provider.display)) {
       expect(shipped.has(getProviderIconSrc(entry.id).split("/").pop()), entry.id).toBe(true);
+    }
+  });
+  it("every PNG logo has a regenerated WebP twin", async () => {
+    const dir = new URL("../../public/providers", import.meta.url);
+    const shipped = readdirSync(dir);
+    const pngs = shipped.filter((name) => name.endsWith(".png"));
+    expect(pngs.length).toBeGreaterThan(0);
+    for (const name of pngs) {
+      expect(shipped, name).toContain(name.replace(/\.png$/, ".webp"));
     }
   });
 });

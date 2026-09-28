@@ -1,7 +1,7 @@
 // Navigation constants and helpers for the Signal shell.
 // Defines grouped routes (Route, Watch, Tune, Debug) and media kinds.
 
-import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
+import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/mediaProviderKinds";
 
 /**
  * Visible media kinds in the new single-entry media providers page.

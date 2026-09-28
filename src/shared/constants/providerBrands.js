@@ -4,8 +4,11 @@
 // here (same hue) until it passes. Brand colors are the one raw-hex exception in
 // the Signal component layer (docs/redesign/README.md).
 
-import REGISTRY from "open-sse/providers/registry/index.js";
-import { resolveProviderAlias } from "open-sse/services/model.js";
+import {
+  PROVIDER_ALIASES,
+  PROVIDER_DISPLAY,
+  PROVIDER_UI_ALIASES,
+} from "@/shared/constants/providerDisplay.generated";
 import { contrastRatio, parseColor } from "@/shared/utils/contrast";
 
 const TEXT_MIN = 4.5;
@@ -37,7 +40,8 @@ export function toTileColor(hex) {
 
 /**
  * Canonical provider id for a registry id, alias (`cc`) or `alias/model` string.
- * Same precedence as the router (open-sse/services/model.js).
+ * Same precedence as the router (open-sse/services/model.js), resolved against
+ * the generated alias snapshot instead of the full registry.
  * @param {string} value
  * @returns {string}
  */
@@ -46,26 +50,24 @@ export function resolveProviderId(value) {
     .trim()
     .toLowerCase();
   const head = raw.includes("/") ? raw.slice(0, raw.indexOf("/")) : raw;
-  const routed = resolveProviderAlias(head);
-  return routed === head && !PROVIDER_IDS.has(head) ? (UI_ALIAS_TO_ID[head] ?? head) : routed;
+  const routed = PROVIDER_ALIASES[head] || head;
+  if (routed === head && !PROVIDER_IDS.has(head)) return PROVIDER_UI_ALIASES[head] ?? head;
+  return routed;
 }
 
-// Dashboard short aliases (`ag`, `bb`) that the router map does not know.
+// Registry ids + dashboard short aliases (`ag`, `bb`) from the generated map.
 // Registry ids still win on collisions (`mmf`).
-const PROVIDER_IDS = new Set(REGISTRY.map((entry) => entry.id));
-const UI_ALIAS_TO_ID = Object.fromEntries(
-  REGISTRY.filter((entry) => entry.uiAlias).map((entry) => [entry.uiAlias, entry.id]),
-);
+const PROVIDER_IDS = new Set(Object.keys(PROVIDER_DISPLAY));
 
-const registryColor = (id) => REGISTRY.find((entry) => entry.id === id)?.display?.color;
+const displayColor = (id) => PROVIDER_DISPLAY[id]?.color;
 
 /**
  * Brand keys for providers that are not registry entries (user-created nodes).
  * Compatible nodes reuse their parent vendor's registry color.
  */
 const SYNTHETIC_BRANDS = {
-  "openai-compatible": { source: registryColor("openai"), monogram: "OC" },
-  "anthropic-compatible": { source: registryColor("anthropic"), monogram: "AC" },
+  "openai-compatible": { source: displayColor("openai"), monogram: "OC" },
+  "anthropic-compatible": { source: displayColor("anthropic"), monogram: "AC" },
   "custom-embedding": { source: "#6366F1", monogram: "CE" },
 };
 
@@ -74,13 +76,15 @@ const SYNTHETIC_BRANDS = {
  */
 export const PROVIDER_BRANDS = {
   ...Object.fromEntries(
-    REGISTRY.filter((entry) => entry.display).map((entry) => [
-      entry.id,
-      {
-        color: toTileColor(entry.display.color),
-        monogram: entry.display.textIcon || entry.id.slice(0, 2).toUpperCase(),
-      },
-    ]),
+    Object.entries(PROVIDER_DISPLAY)
+      .filter(([, entry]) => entry.name)
+      .map(([id, entry]) => [
+        id,
+        {
+          color: toTileColor(entry.color),
+          monogram: entry.textIcon || id.slice(0, 2).toUpperCase(),
+        },
+      ]),
   ),
   ...Object.fromEntries(
     Object.entries(SYNTHETIC_BRANDS).map(([id, { source, monogram }]) => [
