@@ -37,8 +37,9 @@ describe("OpenAI → Claude context mapping", () => {
   });
 
   // Anthropic 400s on history thinking blocks when thinking is disabled — the
-  // mapping must not invent a thinking block for a no-intent request.
-  it("reasoning_content is not turned into a thinking block without thinking intent", () => {
+  // mapping must not invent a thinking block for a no-intent request; the
+  // reasoning folds into a leading text block instead of being dropped.
+  it("reasoning_content folds into text without thinking intent", () => {
     const out = T({
       messages: [
         { role: "user", content: "q" },
@@ -48,6 +49,7 @@ describe("OpenAI → Claude context mapping", () => {
     });
     const assistant = out.messages.find((m) => m.role === "assistant");
     expect(assistant.content.some((b) => b.type === "thinking")).toBe(false);
+    expect(assistant.content[0]).toEqual({ type: "text", text: "my hidden reasoning" });
   });
 
   // openai-to-claude.js convertOpenAIToolChoice — "none" must keep its "do not call" intent

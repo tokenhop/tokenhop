@@ -283,24 +283,28 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map(), thinkingInten
       }
     }
   } else if (msg.role === ROLE.ASSISTANT) {
-    // DeepSeek/GLM/Qwen/Kimi carry assistant reasoning in reasoning_content —
-    // map it to a leading Claude thinking block so it survives the bridge, but
-    // ONLY when the request carries thinking intent. Anthropic rejects history
-    // thinking blocks when thinking is disabled (400), and applyThinking
-    // (thinkingUnified.js) normalizes thinking centrally after translation, so
-    // a no-intent request must not invent one here. Signed so the native-Claude
-    // pass (formats/claude.js) keeps it; skipped when the content array already
-    // carries a thinking block (no duplicates).
+    // DeepSeek/GLM/Qwen/Kimi carry assistant reasoning in reasoning_content.
+    // With thinking intent, map it to a leading Claude thinking block so it
+    // survives the bridge (Anthropic rejects history thinking blocks when
+    // thinking is disabled, so never invent one for a no-intent request).
+    // Without intent, fold it into a leading text block so the context is not
+    // silently dropped. Signed so the native-Claude pass (formats/claude.js)
+    // keeps it; skipped when the content array already carries a thinking
+    // block (no duplicates).
     const thinkingRequested = !!thinkingIntent && thinkingIntent.mode !== "none";
     const hasThinkingBlock =
       Array.isArray(msg.content) && msg.content.some((p) => p?.type === CLAUDE_BLOCK.THINKING);
     const rc = msg.reasoning_content || msg.thought || msg.reasoning;
-    if (thinkingRequested && !hasThinkingBlock && typeof rc === "string" && rc) {
-      blocks.push({
-        type: CLAUDE_BLOCK.THINKING,
-        thinking: rc,
-        signature: DEFAULT_THINKING_CLAUDE_SIGNATURE,
-      });
+    if (!hasThinkingBlock && typeof rc === "string" && rc) {
+      if (thinkingRequested) {
+        blocks.push({
+          type: CLAUDE_BLOCK.THINKING,
+          thinking: rc,
+          signature: DEFAULT_THINKING_CLAUDE_SIGNATURE,
+        });
+      } else {
+        blocks.push({ type: CLAUDE_BLOCK.TEXT, text: rc });
+      }
     }
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {

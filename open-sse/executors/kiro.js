@@ -511,12 +511,11 @@ export class KiroExecutor extends BaseExecutor {
     // retry response must reach readResponsePrefix immediately. Transient
     // failures (5xx, network) still get their normal in-place retry — only
     // the endpoint-walk statuses are pinned to the single surface.
-    const ENDPOINT_WALK_STATUSES = new Set([401, 403, 404]);
     const baseShouldRetry = this.shouldRetry.bind(this);
     const singleSurfaceExecutor = Object.create(this, {
       shouldRetry: {
         value: (status, attempt) =>
-          !ENDPOINT_WALK_STATUSES.has(status) && baseShouldRetry(status, attempt),
+          !KIRO_ENDPOINT_FALLBACK_STATUSES.has(status) && baseShouldRetry(status, attempt),
       },
       getFallbackCount: { value: () => 1 },
     });

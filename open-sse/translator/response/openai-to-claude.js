@@ -232,13 +232,18 @@ export function openaiToClaudeResponse(chunk, state) {
     }
   }
 
-  // Emit complete tool JSON before finish_reason; keep partial chunks buffered
-  // until the next argument chunk (or finish) so sanitization sees full args.
+  // Emit tool deltas early ONLY when the buffer is a complete JSON object —
+  // tool args are objects, so the closing brace marks exact completeness.
+  // Scalars ("12" of a split "1234") never early-emit and keep accumulating
+  // until finish, so sanitization always sees full args and no partial is
+  // ever emitted twice.
   if (state.toolArgBuffers?.size) {
     for (const [idx, buffered] of state.toolArgBuffers) {
       if (!choice.finish_reason) {
+        const trimmed = buffered.trimStart();
+        if (!trimmed.startsWith("{")) continue;
         try {
-          JSON.parse(buffered);
+          JSON.parse(trimmed);
         } catch {
           continue;
         }
