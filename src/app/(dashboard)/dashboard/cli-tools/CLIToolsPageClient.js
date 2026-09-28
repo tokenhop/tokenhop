@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 import { CardSkeleton, EmptyState, SegmentedControl } from "@/shared/components";
 import { CLI_TOOLS, MITM_TOOLS } from "@/shared/constants/cliTools";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
+import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
+import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 import { useToolSetupData } from "./hooks/useToolSetupData";
 import { countToolsByFilter, deriveToolStatus, filterToolEntries } from "./lib/toolStatus";
 import ToolGridCard from "./components/ToolGridCard";
 import InterceptTools from "./components/InterceptTools";
 import ToolSetupPanel from "./components/ToolSetupPanel";
+import LocalOnlyNotice from "./components/LocalOnlyNotice";
 
 const FILTER_OPTIONS = [
   { value: "all", label: "All" },
@@ -34,6 +37,7 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
   const [statusesError, setStatusesError] = useState(false);
   const [selected, setSelected] = useState(initialTool);
   const data = useToolSetupData();
+  const localOnly = useCliAccessStore((s) => s.localOnly);
 
   useEffect(() => {
     registerSearch("Find a tool");
@@ -45,6 +49,7 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
     (async () => {
       try {
         const res = await fetch("/api/cli-tools/all-statuses");
+        if (await isLocalOnlyResponse(res)) return markLocalOnly();
         if (!res.ok) throw new Error(`status ${res.status}`);
         const payload = await res.json();
         if (mounted) {
@@ -97,6 +102,10 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
     (id, next) => setStatuses((prev) => ({ ...prev, [id]: next })),
     [],
   );
+
+  // Over a reverse proxy every /api/cli-tools/* call is refused, so one
+  // notice replaces the grid, intercept section and panel.
+  if (localOnly) return <LocalOnlyNotice />;
 
   return (
     <Suspense fallback={<CardSkeleton />}>
