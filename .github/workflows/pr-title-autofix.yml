@@ -19,7 +19,7 @@ name: PR title autofix
 
 on:
   pull_request_target:
-    branches: [master]
+    branches: [master, re-design]
     types: [opened, edited, reopened]
 
 permissions:

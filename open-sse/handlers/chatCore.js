@@ -41,6 +41,7 @@ import {
   isHeadroomPhantomSavings,
 } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
+import { buildSavingsEntry } from "../rtk/savingsEstimate.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
@@ -107,6 +108,7 @@ export async function handleChatCore({
   onPxpipeEvent,
   sourceFormatOverride,
   providerThinking,
+  comboName = null,
 }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
@@ -543,22 +545,25 @@ export async function handleChatCore({
       status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}`,
     }).catch(() => {});
     saveRequestDetail(
-      buildRequestDetail({
-        provider,
-        model,
-        connectionId,
-        latency: { ttft: 0, total: Date.now() - requestStartTime },
-        tokens: { prompt_tokens: 0, completion_tokens: 0 },
-        request: extractRequestConfig(body, stream),
-        providerRequest: translatedBody || null,
-        response: {
-          error: error.message || String(error),
-          status: error.name === "AbortError" ? 499 : 502,
-          thinking: null,
+      buildRequestDetail(
+        {
+          provider,
+          model,
+          connectionId,
+          latency: { ttft: 0, total: Date.now() - requestStartTime },
+          tokens: { prompt_tokens: 0, completion_tokens: 0 },
+          request: extractRequestConfig(body, stream),
+          providerRequest: translatedBody || null,
+          response: {
+            error: error.message || String(error),
+            status: error.name === "AbortError" ? 499 : 502,
+            thinking: null,
+          },
+          pxpipe: pxpipeSummary,
+          status: "error",
         },
-        pxpipe: pxpipeSummary,
-        status: "error",
-      }),
+        { endpoint: clientRawRequest?.endpoint || null },
+      ),
     ).catch(() => {});
 
     if (error.name === "AbortError") {
@@ -658,18 +663,21 @@ export async function handleChatCore({
       () => {},
     );
     saveRequestDetail(
-      buildRequestDetail({
-        provider,
-        model,
-        connectionId,
-        latency: { ttft: 0, total: Date.now() - requestStartTime },
-        tokens: { prompt_tokens: 0, completion_tokens: 0 },
-        request: extractRequestConfig(body, stream),
-        providerRequest: finalBody || translatedBody || null,
-        response: { error: message, status: statusCode, thinking: null },
-        pxpipe: pxpipeSummary,
-        status: "error",
-      }),
+      buildRequestDetail(
+        {
+          provider,
+          model,
+          connectionId,
+          latency: { ttft: 0, total: Date.now() - requestStartTime },
+          tokens: { prompt_tokens: 0, completion_tokens: 0 },
+          request: extractRequestConfig(body, stream),
+          providerRequest: finalBody || translatedBody || null,
+          response: { error: message, status: statusCode, thinking: null },
+          pxpipe: pxpipeSummary,
+          status: "error",
+        },
+        { endpoint: clientRawRequest?.endpoint || null },
+      ),
     ).catch(() => {});
 
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
@@ -698,6 +706,9 @@ export async function handleChatCore({
     clientRawRequest,
     onRequestSuccess,
     pxpipe: pxpipeSummary,
+    // Measured token-saver deltas; persisted only by success-path saveUsageStats.
+    savings: buildSavingsEntry({ rtkStats, headroomStats, headroomDiagnostics, pxpipeSummary }),
+    comboName,
     reqTag,
     log,
   };

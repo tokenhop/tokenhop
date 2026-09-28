@@ -15,6 +15,8 @@ async function getObservabilityConfig() {
   try {
     const { getSettings } = await import("./settingsRepo.js");
     const settings = await getSettings();
+    // YAN-312: env var set → env value; else stored requestLogsEnabled; else
+    // the legacy OBSERVABILITY_ENABLED fallback (default on).
     const envRequestLogs = process.env.ENABLE_REQUEST_LOGS;
     if (envRequestLogs !== undefined) {
       const enabled = envRequestLogs.toLowerCase() === "true";
@@ -40,8 +42,17 @@ async function getObservabilityConfig() {
       return cachedConfig;
     }
     const envFallback = process.env.OBSERVABILITY_ENABLED !== "false";
-    const uiFlag = typeof settings.enableObservability === "boolean";
-    const enabled = uiFlag ? settings.enableObservability : envFallback;
+    const storedFlag =
+      typeof settings.requestLogsEnabled === "boolean" ? settings.requestLogsEnabled : null;
+    const obsFlag =
+      typeof settings.enableObservability === "boolean" ? settings.enableObservability : null;
+    // YAN-312: the requestLogsEnabled setting is the primary switch; the
+    // legacy enableObservability toggle stays as a fallback so old rows keep
+    // working. Either one being explicitly true enables recording.
+    const enabled =
+      storedFlag === true ||
+      obsFlag === true ||
+      (storedFlag === null && obsFlag === null && envFallback);
 
     cachedConfig = {
       enabled,

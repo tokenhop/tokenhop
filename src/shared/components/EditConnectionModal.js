@@ -275,9 +275,9 @@ export default function EditConnectionModal({ isOpen, connection, onSave, onClos
           placeholder={isOAuth ? "Account name" : "Production Key"}
         />
         {isOAuth && connection.email && (
-          <div className="bg-sidebar/50 p-3 rounded-lg">
-            <p className="text-sm text-text-muted mb-1">Email</p>
-            <p className="font-medium">{connection.email}</p>
+          <div className="rounded-lg bg-raised p-3">
+            <p className="mb-1 text-sm text-muted">Email</p>
+            <p className="font-medium text-text">{connection.email}</p>
           </div>
         )}
         <Input
@@ -320,8 +320,8 @@ export default function EditConnectionModal({ isOpen, connection, onSave, onClos
         )}
 
         {isAzure && (
-          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
-            <h3 className="font-semibold mb-3 text-sm">Azure OpenAI Configuration</h3>
+          <div className="rounded-lg border border-coral/20 bg-raised p-4">
+            <h3 className="mb-3 text-sm font-semibold text-text">Azure OpenAI Configuration</h3>
             <div className="flex flex-col gap-3">
               <Input
                 label="Azure Endpoint"
@@ -391,7 +391,7 @@ export default function EditConnectionModal({ isOpen, connection, onSave, onClos
         )}
 
         {saveError && (
-          <p className="text-sm text-red-500" role="alert">
+          <p className="text-sm text-err" role="alert">
             {saveError}
           </p>
         )}

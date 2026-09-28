@@ -3,6 +3,7 @@ import { getSettings } from "@/lib/localDb";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { resolveStartPage } from "@/lib/settingsFlags";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
@@ -116,7 +117,11 @@ export async function POST(request) {
       await setDashboardAuthCookie(cookieStore, request);
 
       return NextResponse.json(
-        { success: true, mustChangePassword: false },
+        {
+          success: true,
+          mustChangePassword: false,
+          startPage: resolveStartPage(settings.startPage),
+        },
         { headers: NO_STORE_HEADERS },
       );
     }

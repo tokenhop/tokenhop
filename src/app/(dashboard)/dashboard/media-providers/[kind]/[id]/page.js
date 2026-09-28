@@ -4,19 +4,22 @@ import { useParams, notFound, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import {
-  Card,
-  Badge,
   Button,
+  Callout,
+  ConfirmDialog,
+  ProviderTile,
+  Skeleton,
+  StatusPill,
   AddCustomEmbeddingModal,
   NoAuthProxyCard,
   ProviderInfoCard,
 } from "@/shared/components";
-import ProviderIcon from "@/shared/components/ProviderIcon";
 import {
   MEDIA_PROVIDER_KINDS,
   AI_PROVIDERS,
   isCustomEmbeddingProvider,
 } from "@/shared/constants/providers";
+import { getProviderBrand } from "@/shared/constants/providerBrands";
 import ConnectionsCard from "@/app/(dashboard)/dashboard/providers/components/ConnectionsCard";
 import ModelsCard from "@/app/(dashboard)/dashboard/providers/components/ModelsCard";
 import { KIND_EXAMPLE_CONFIG } from "./components/exampleShared";
@@ -32,19 +35,20 @@ export default function MediaProviderDetailPage() {
   const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kind);
   const isCustom = isCustomEmbeddingProvider(id) && kind === "embedding";
 
-  const handleDeleteCustom = async () => {
-    if (!confirm("Delete this Custom Embedding node?")) return;
-    try {
-      const res = await fetch(`/api/provider-nodes/${id}`, { method: "DELETE" });
-      if (res.ok) router.push(`/dashboard/media-providers/${kind}`);
-    } catch (error) {
-      console.log("Error deleting custom embedding node:", error);
-    }
-  };
-
   const [customNode, setCustomNode] = useState(null);
   const [customLoading, setCustomLoading] = useState(isCustom);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Throws on failure so ConfirmDialog shows the error inline and stays open.
+  const handleDeleteCustom = async () => {
+    const res = await fetch(`/api/provider-nodes/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data?.error?.message || data?.error || `Delete failed (HTTP ${res.status})`);
+    }
+    router.push(`/dashboard/media-providers/${kind}`);
+  };
 
   // Fetch custom node info from API for custom embedding nodes
   useEffect(() => {
@@ -72,118 +76,131 @@ export default function MediaProviderDetailPage() {
   // For custom embedding nodes, build a synthetic provider object
   const provider = isCustom
     ? customNode
-      ? { id, name: customNode.name || "Custom Embedding", color: "#6366F1", textIcon: "CE" }
+      ? {
+          id,
+          name: customNode.name || "Custom Embedding",
+          color: getProviderBrand("custom-embedding").color,
+          textIcon: "CE",
+        }
       : null
     : builtInProvider;
 
   if (!isCustom && !builtInProvider) return notFound();
   if (isCustom && !customLoading && !customNode) return notFound();
   if (isCustom && customLoading) {
-    return <div className="text-text-muted text-sm py-12 text-center">Loading...</div>;
+    return (
+      <div className="flex flex-col gap-6" aria-busy="true">
+        <span className="sr-only" role="status">
+          Loading provider
+        </span>
+        <Skeleton className="h-5 w-32" />
+        <div className="flex items-center gap-4">
+          <Skeleton className="size-14 rounded-xl" />
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-9 w-64" />
+          </div>
+        </div>
+        <Skeleton className="h-48 w-full rounded-2xl" />
+      </div>
+    );
   }
 
   const kinds = isCustom ? ["embedding"] : (provider.serviceKinds ?? ["llm"]);
   if (!isCustom && !kinds.includes(kind)) return notFound();
 
   return (
-    <div className="flex flex-col gap-8">
-      {/* Back */}
-      <div>
+    <div className="flex flex-col gap-5">
+      <nav aria-label="Back to media providers">
         <Link
           href={`/dashboard/media-providers/${kind}`}
-          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
+          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg text-sm text-muted transition-colors hover:text-text focus-visible:shadow-focus"
         >
-          <span className="material-symbols-outlined text-lg">arrow_back</span>
+          <span className="material-symbols-outlined text-lg rtl:-scale-x-100" aria-hidden="true">
+            arrow_back
+          </span>
           {kindConfig.label}
         </Link>
+      </nav>
 
-        {/* Header */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-          <div
-            className="size-12 rounded-lg flex items-center justify-center shrink-0"
-            style={{ backgroundColor: `${provider.color}15` }}
-          >
-            <ProviderIcon
-              src={`/providers/${provider.id}.png`}
-              alt={provider.name}
-              size={48}
-              className="object-contain rounded-lg max-w-[48px] max-h-[48px]"
-              fallbackText={provider.textIcon || provider.id.slice(0, 2).toUpperCase()}
-              fallbackColor={provider.color}
-            />
-          </div>
-          <div className="flex-1">
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <h1 className="text-3xl font-semibold tracking-tight">{provider.name}</h1>
-              {!isCustom && provider.notice?.apiKeyUrl && (
-                <a
-                  href={provider.notice.apiKeyUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-                >
-                  <span className="material-symbols-outlined text-sm">open_in_new</span>
-                  Get API Key
-                </a>
-              )}
-            </div>
-            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-              {isCustom && (
-                <Badge variant="default" size="sm">
-                  Custom · {customNode?.prefix}
-                </Badge>
-              )}
-              {kinds.map((k) => (
-                <Badge key={k} variant={k === kind ? "primary" : "default"} size="sm">
-                  {k.toUpperCase()}
-                </Badge>
-              ))}
-            </div>
-          </div>
-          {isCustom && (
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-              <Button
-                size="sm"
-                variant="secondary"
-                icon="edit"
-                onClick={() => setShowEditModal(true)}
+      <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5">
+        <ProviderTile providerId={isCustom ? "custom-embedding" : provider.id} size="lg" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold tracking-[0.08em] text-muted uppercase">
+            {kindConfig.label} provider
+          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-2 sm:gap-3">
+            <h1 className="font-display text-[42px] leading-[1.05] font-bold text-text">
+              {provider.name}
+            </h1>
+            {!isCustom && provider.notice?.apiKeyUrl && (
+              <a
+                href={provider.notice.apiKeyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-10 items-center gap-1 text-sm text-coral-ink transition-colors hover:text-coral"
               >
-                Edit
-              </Button>
-              <Button size="sm" variant="secondary" icon="delete" onClick={handleDeleteCustom}>
-                Delete
-              </Button>
-            </div>
-          )}
+                <span className="material-symbols-outlined text-sm" aria-hidden="true">
+                  open_in_new
+                </span>
+                Get API Key
+                <span className="sr-only">(opens in a new tab)</span>
+              </a>
+            )}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {isCustom && (
+              <StatusPill variant="neutral" size="sm">
+                Custom · <span className="font-mono">{customNode?.prefix ?? id}</span>
+              </StatusPill>
+            )}
+            {kinds.map((k) => (
+              <StatusPill key={k} variant={k === kind ? "brand" : "neutral"} size="sm">
+                {k.toUpperCase()}
+              </StatusPill>
+            ))}
+          </div>
         </div>
-      </div>
+        {isCustom && (
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <Button
+              size="md"
+              variant="secondary"
+              icon="edit"
+              onClick={() => setShowEditModal(true)}
+            >
+              Edit
+            </Button>
+            <Button size="md" variant="danger" icon="delete" onClick={() => setConfirmDelete(true)}>
+              Delete
+            </Button>
+          </div>
+        )}
+      </header>
 
       {/* Kind-specific notice (e.g. codex/image requires Plus) */}
       {!isCustom && provider.kindNotice?.[kind] && (
-        <div className="flex items-start gap-3 px-4 py-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-400">
-          <span className="material-symbols-outlined text-[20px] mt-0.5">warning</span>
-          <p className="text-sm">{provider.kindNotice[kind]}</p>
-        </div>
+        <Callout variant="warn">{provider.kindNotice[kind]}</Callout>
       )}
 
       {/* Provider notice text (only when there's actual text content) */}
       {!isCustom && provider.notice?.text && !provider.deprecated && (
-        <div className="flex flex-col gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 sm:flex-row sm:items-center">
-          <span className="material-symbols-outlined text-[16px] text-blue-500 shrink-0">info</span>
-          <p className="min-w-0 flex-1 text-xs leading-relaxed text-blue-600 dark:text-blue-400">
-            {provider.notice.text}
-          </p>
+        <Callout variant="info">
+          <p className="min-w-0 flex-1 text-xs leading-relaxed">{provider.notice.text}</p>
           {provider.notice.apiKeyUrl && (
-            <a
+            <Button
+              size="sm"
+              variant="secondary"
+              iconRight="open_in_new"
               href={provider.notice.apiKeyUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex justify-center rounded bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-600 sm:py-0.5"
             >
-              Get API Key →
-            </a>
+              Get API Key
+              <span className="sr-only">(opens in a new tab)</span>
+            </Button>
           )}
-        </div>
+        </Callout>
       )}
 
       {/* Connections */}
@@ -241,15 +258,28 @@ export default function MediaProviderDetailPage() {
       {!isCustom && KIND_EXAMPLE_CONFIG[kind] && <GenericExampleCard providerId={id} kind={kind} />}
 
       {isCustom && (
-        <AddCustomEmbeddingModal
-          isOpen={showEditModal}
-          node={customNode}
-          onClose={() => setShowEditModal(false)}
-          onSaved={(updated) => {
-            setCustomNode(updated);
-            setShowEditModal(false);
-          }}
-        />
+        <>
+          <AddCustomEmbeddingModal
+            isOpen={showEditModal}
+            node={customNode}
+            onClose={() => setShowEditModal(false)}
+            onSaved={(updated) => {
+              setCustomNode(updated);
+              setShowEditModal(false);
+            }}
+          />
+          <ConfirmDialog
+            isOpen={confirmDelete}
+            onClose={() => setConfirmDelete(false)}
+            onConfirm={async () => {
+              await handleDeleteCustom();
+              setConfirmDelete(false);
+            }}
+            title="Delete custom provider"
+            message="Delete this Custom Embedding node?"
+            confirmText="Delete"
+          />
+        </>
       )}
     </div>
   );

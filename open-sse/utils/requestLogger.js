@@ -2,9 +2,29 @@
 const isNode =
   typeof process !== "undefined" && process.versions?.node && typeof window === "undefined";
 
-// Check if logging is enabled via environment variable (default: false)
-const LOGGING_ENABLED =
-  typeof process !== "undefined" && process.env?.ENABLE_REQUEST_LOGS === "true";
+// YAN-312: env var wins when set; otherwise the stored requestLogsEnabled
+// setting applies. Synchronous DB reads are unavailable in open-sse, so the
+// resolved value is cached per process and refreshed by notifyRequestLogsEnabled().
+const ENV_RAW = typeof process !== "undefined" ? process.env?.ENABLE_REQUEST_LOGS : undefined;
+const ENV_OVERRIDE = typeof ENV_RAW === "string" ? ENV_RAW.toLowerCase() === "true" : null;
+
+let settingsEnabled = false;
+
+function isLoggingEnabled() {
+  if (!isNode) return false;
+  if (ENV_OVERRIDE !== null) return ENV_OVERRIDE;
+  return settingsEnabled;
+}
+
+/**
+ * Refresh the stored-setting fallback for request logging.
+ * Called by the settings API after PATCH requestLogsEnabled; the env var
+ * always wins when set. No-op on non-Node runtimes.
+ * @param {boolean} value Stored requestLogsEnabled value.
+ */
+export function notifyRequestLogsEnabled(value) {
+  if (typeof value === "boolean") settingsEnabled = value;
+}
 
 let fs = null;
 let path = null;
@@ -12,7 +32,7 @@ let LOGS_DIR = null;
 
 // Lazy load Node.js modules (avoid top-level await)
 async function ensureNodeModules() {
-  if (!isNode || !LOGGING_ENABLED || fs) return;
+  if (!isNode || !isLoggingEnabled() || fs) return;
   try {
     fs = await import("fs");
     path = await import("path");
@@ -121,7 +141,7 @@ function createNoOpLogger() {
  */
 export async function createRequestLogger(sourceFormat, targetFormat, model) {
   // Return no-op logger if logging is disabled
-  if (!LOGGING_ENABLED) {
+  if (!isLoggingEnabled()) {
     return createNoOpLogger();
   }
 

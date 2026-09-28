@@ -1,14 +1,53 @@
 "use client";
 
+import PropTypes from "prop-types";
+
+/**
+ * Shared field chrome for the media example runner forms (YAN-305). A thin
+ * label + control Row with the Signal body size/weight; the control chroming
+ * (raised surface, line border, coral focus) lives in `controlClass`. Controls
+ * keep their own `aria-label`, so the Row span is visual only.
+ */
 export function Row({ label, children }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-      <span className="w-full text-xs font-medium text-text-muted sm:w-20 sm:shrink-0">
+      <span aria-hidden="true" className="w-full shrink-0 text-xs font-medium text-muted sm:w-20">
         {label}
       </span>
       <div className="w-full min-w-0 flex-1">{children}</div>
     </div>
   );
+}
+
+Row.propTypes = {
+  label: PropTypes.node.isRequired,
+  children: PropTypes.node,
+};
+
+/**
+ * Signal control chrome for the runner form fields: raised surface, line
+ * border, radius 12, coral focus ring + glow (design-system §6). Mono when
+ * the value is an identifier.
+ */
+export const controlClass =
+  "h-11 w-full rounded-lg border border-line bg-raised px-3 text-sm text-text transition-colors duration-150 placeholder:text-subtle focus:border-coral focus:shadow-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50";
+
+/** Read-only mono value in control chrome (endpoint URL, masked key). */
+export const readonlyClass =
+  "flex h-11 w-full min-w-0 items-center truncate rounded-lg border border-line bg-raised px-3 font-mono text-sm text-text";
+
+/** Code block for request snippets and responses (board `.code`). Always LTR. */
+export const codeBlockClass =
+  "m-0 overflow-x-auto rounded-xl border border-line bg-raised px-4 py-3 text-start font-mono text-xs leading-relaxed whitespace-pre-wrap break-all text-text";
+
+/** Eyebrow label above request/response blocks. */
+export const eyebrowClass = "text-xs font-semibold tracking-[0.08em] text-muted uppercase";
+
+/** Tunnel toggle chip classes (pressed = coral selection). */
+export function tunnelToggleClass(active) {
+  return `flex min-h-10 shrink-0 items-center gap-1 rounded-lg border px-3 text-xs font-medium transition-colors ${
+    active ? "border-coral/40 bg-coral-bg text-coral-ink" : "border-line text-muted hover:text-text"
+  }`;
 }
 
 export const KIND_EXAMPLE_CONFIG = {

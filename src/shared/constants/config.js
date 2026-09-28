@@ -20,7 +20,7 @@ export const UPDATER_CONFIG = {
 // Theme configuration
 export const THEME_CONFIG = {
   storageKey: "theme",
-  defaultTheme: "system", // "light" | "dark" | "system"
+  defaultTheme: "dark", // "light" | "dark" | "system" (Signal: dark-first for new installs)
 };
 
 // Subscription
@@ -80,6 +80,7 @@ export const QUOTA_AUTOPING_CONFIG = {
 // Re-export from providers.js for backward compatibility
 export {
   FREE_PROVIDERS,
+  FREE_TIER_PROVIDERS,
   OAUTH_PROVIDERS,
   APIKEY_PROVIDERS,
   WEB_COOKIE_PROVIDERS,

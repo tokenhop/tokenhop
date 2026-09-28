@@ -410,6 +410,10 @@ function retryAfterToIso(value) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @param {Object<string, number>} [options.comboWeights] - Per-model static weights (weighted strategy)
  * @param {Function} [options.headroomFn] - Live headroom lookup: (model) => number (weighted strategy)
+ * @param {Function} [options.onFallback] - Awaited before trying the next model: ({ model, status }) => void
+ * @param {Function} [options.onAttempt] - Attempt observer: (attempt) => void. Fail-open: any throw is swallowed.
+ *   Called after each step resolves (success, fallback-eligible failure, or non-fallback failure).
+ *   Normal traffic passes no observer, so routing behavior is unchanged.
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({
@@ -423,6 +427,8 @@ export async function handleComboChat({
   comboWeights,
   headroomFn,
   autoSwitch = true,
+  onFallback,
+  onAttempt,
 }) {
   // Apply rotation strategy if enabled
   let rotatedModels =
@@ -442,6 +448,17 @@ export async function handleComboChat({
     }
   }
 
+  // Fail-open attempt observer for the dry-run probe path. Normal traffic
+  // passes no observer; even when present it never alters routing.
+  const notifyAttempt = (attempt) => {
+    if (typeof onAttempt !== "function") return;
+    try {
+      onAttempt(attempt);
+    } catch {
+      // observer must never break routing
+    }
+  };
+
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
@@ -449,12 +466,20 @@ export async function handleComboChat({
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
+    const attemptStartedAt = Date.now();
 
     try {
       const result = await handleSingleModel(body, modelStr);
 
       // Success (2xx) - return response
       if (result.ok) {
+        notifyAttempt({
+          model: modelStr,
+          status: result.status,
+          latencyMs: Date.now() - attemptStartedAt,
+          errorType: null,
+          outcome: "served",
+        });
         log.info("COMBO", `Model ${modelStr} succeeded`);
         return result;
       }
@@ -491,6 +516,13 @@ export async function handleComboChat({
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
       if (!shouldFallback) {
+        notifyAttempt({
+          model: modelStr,
+          status: result.status,
+          latencyMs: Date.now() - attemptStartedAt,
+          errorType: classifyProbeError(result.status, errorText),
+          outcome: "failed",
+        });
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
       }
@@ -511,15 +543,40 @@ export async function handleComboChat({
         await new Promise((r) => setTimeout(r, cooldownMs));
       }
 
-      // Fallback to next model
+      // Fallback to next model. The recorder is fail-open and off the hot
+      // path: a throwing recorder must never corrupt lastError/lastStatus.
       lastError = errorText || String(result.status);
       lastStatus = result.status;
+      notifyAttempt({
+        model: modelStr,
+        status: result.status,
+        latencyMs: Date.now() - attemptStartedAt,
+        errorType: classifyProbeError(result.status, errorText),
+        outcome: "skipped",
+      });
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
+      if (onFallback) {
+        try {
+          await onFallback({ model: modelStr, status: result.status });
+        } catch {}
+      }
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
       lastStatus = 500;
+      notifyAttempt({
+        model: modelStr,
+        status: null,
+        latencyMs: Date.now() - attemptStartedAt,
+        errorType: "exception",
+        outcome: "skipped",
+      });
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+      if (onFallback) {
+        try {
+          await onFallback({ model: modelStr, status: 500 });
+        } catch {}
+      }
     }
   }
 
@@ -692,6 +749,20 @@ function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs })
   });
 }
 
+// ponytail: keep classifyProbeError here until a shared error-type
+// taxonomy exists; upgrade to import from accountFallback.js then.
+/** Classify a failed probe step into a short error type for the timeline. */
+export function classifyProbeError(status, errorText) {
+  const text = typeof errorText === "string" ? errorText.toLowerCase() : "";
+  if (status === 429 || text.includes("rate limit") || text.includes("429")) return "rate limited";
+  if (status === 401 || status === 403 || text.includes("auth") || text.includes("unauthorized"))
+    return "auth error";
+  if (status === 408 || text.includes("timeout")) return "timeout";
+  if (status >= 500) return "upstream error";
+  if (status === 404 || text.includes("no active credentials")) return "unavailable";
+  return `error ${status ?? "unknown"}`;
+}
+
 /**
  * Handle a fusion combo: fan the prompt out to every panel model in parallel,
  * then a judge model synthesizes one final answer from all panel responses.
@@ -713,17 +784,59 @@ function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs })
  * @param {string} [options.comboName] - Combo name (logging)
  * @param {string} [options.judgeModel] - Judge model; falls back to panel[0]
  * @param {Object} [options.tuning] - Override FUSION_DEFAULTS (minPanel, grace, timeout)
+ * @param {Function} [options.onAttempt] - Fail-open attempt observer, called once per panel/judge
+ *   call with { model, status, latencyMs, errorType, outcome, role }. Absent for normal traffic.
  * @returns {Promise<Response>}
  */
 export async function handleFusionChat({
   body,
   models,
-  handleSingleModel,
+  handleSingleModel: rawHandleSingleModel,
   log,
   comboName,
   judgeModel,
   tuning,
+  onAttempt,
 }) {
+  // Observer wrapper: records each leaf call, never alters its result.
+  const handleSingleModel =
+    typeof onAttempt === "function"
+      ? async (b, m, isPanel) => {
+          const startedAt = Date.now();
+          const role = isPanel ? "panel" : "judge";
+          const notify = (attempt) => {
+            try {
+              onAttempt({ model: m, role, latencyMs: Date.now() - startedAt, ...attempt });
+            } catch {
+              // observer must never break routing
+            }
+          };
+          try {
+            const res = await rawHandleSingleModel(b, m, isPanel);
+            let errorText = "";
+            try {
+              const errJson = await res?.clone().json();
+              errorText =
+                errJson?.error?.message ||
+                errJson?.error ||
+                errJson?.message ||
+                res?.statusText ||
+                "";
+            } catch {
+              errorText = res?.statusText || "";
+            }
+            notify({
+              status: res?.status ?? null,
+              errorType: res?.ok ? null : classifyProbeError(res?.status, errorText),
+              outcome: res?.ok ? (isPanel ? "answered" : "served") : "skipped",
+            });
+            return res;
+          } catch (error) {
+            notify({ status: null, errorType: "exception", outcome: "skipped" });
+            throw error;
+          }
+        }
+      : rawHandleSingleModel;
   const panel = Array.isArray(models) ? models.filter(Boolean) : [];
   if (panel.length === 0) {
     return new Response(JSON.stringify({ error: { message: "Fusion combo has no models" } }), {

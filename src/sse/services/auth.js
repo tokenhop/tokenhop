@@ -13,7 +13,7 @@ import {
   buildModelLockUpdate,
   getModelLockUntil,
 } from "open-sse/services/accountFallback.js";
-import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { getActiveReliabilityPolicy } from "open-sse/config/reliabilityPolicy.js";
 import { getExhaustedUntil, getSnapshot } from "open-sse/services/quotaSnapshot.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { extractClientApiKey } from "@/lib/auth/clientApiKey.js";
@@ -365,10 +365,11 @@ export async function markAccountUnavailable(
   } else if (resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;
     // Antigravity quota API provides exact per-model resetAt. Do not truncate it.
+    const capMs = getActiveReliabilityPolicy().cooldowns.rateLimitCapMs;
     cooldownMs =
       resolveProviderId(provider) === "antigravity"
         ? resetsAtMs - Date.now()
-        : Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
+        : Math.min(resetsAtMs - Date.now(), capMs);
     newBackoffLevel = 0;
   } else {
     ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(

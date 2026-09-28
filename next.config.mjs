@@ -24,6 +24,10 @@ const nextConfig = {
     root: tracingRoot,
   },
   outputFileTracingRoot: tracingRoot,
+  // Gateway-hosted agent skills are read from disk by /skills/[...slug]; trace them into standalone.
+  outputFileTracingIncludes: {
+    "/skills/[...slug]": ["./skills/**/*.md"],
+  },
   outputFileTracingExcludes: {
     "*": ["./gitbook/**/*"],
   },

@@ -1,0 +1,145 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import HomeHeader from "./HomeHeader";
+import { EndpointHeroCard } from "./EndpointHero";
+import { KeysSummaryCard } from "./KeysSummary";
+import HomeStats from "./HomeStats";
+import { LiveRoutesCard } from "./LiveRoutesCard";
+import { RecentRequestsCard } from "./RecentRequests";
+import { QuotaWatchCard } from "./QuotaWatch";
+import { CombosTopCard, comboUsageFromByEndpoint } from "./CombosTop";
+import { ProviderHealthCard } from "./ProviderHealth";
+import {
+  useHomeChart,
+  useHomeCombos,
+  useHomeKeys,
+  useHomeLiveRoutes,
+  useHomeProviders,
+  useHomeQuota,
+  useHomeRecentDetails,
+  useHomeSavings,
+  useHomeSummary,
+  useHomeUsage,
+  useHomeWaysIn,
+} from "./useHomeData";
+
+/**
+ * Home command center: endpoint hero, keys, 4 stat tiles, live routes,
+ * recent requests, quota watch, top combos, provider health.
+ */
+export default function HomePageClient() {
+  const [period, setPeriod] = useState("today");
+  const [origin, setOrigin] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") setOrigin(window.location.origin);
+  }, []);
+
+  const bump = () => setRefreshKey((value) => value + 1);
+
+  const usage = useHomeUsage(period, refreshKey);
+  const chart = useHomeChart(period, refreshKey);
+  const {
+    savings,
+    loading: savingsLoading,
+    savingsUnavailable,
+  } = useHomeSavings(period, refreshKey);
+  const summary = useHomeSummary(period, refreshKey);
+  const keys = useHomeKeys(refreshKey);
+  const waysIn = useHomeWaysIn(refreshKey);
+  const providers = useHomeProviders(refreshKey);
+  const combos = useHomeCombos(refreshKey);
+  const quota = useHomeQuota(refreshKey);
+  const liveRoutes = useHomeLiveRoutes(refreshKey);
+  const recent = useHomeRecentDetails(refreshKey);
+
+  const summaryCombos =
+    summary.summary && Array.isArray(summary.summary.topCombos)
+      ? Object.fromEntries(summary.summary.topCombos.map((entry) => [entry.name, entry.requests]))
+      : null;
+  const usageByCombo =
+    summaryCombos ?? (usage.current ? comboUsageFromByEndpoint(usage.current.byEndpoint) : null);
+
+  return (
+    <div className="flex min-w-0 flex-col gap-5 pb-8">
+      <HomeHeader
+        connections={providers.connections}
+        providersLoading={providers.loading}
+        period={period}
+        onPeriodChange={setPeriod}
+      />
+
+      <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-3">
+        <EndpointHeroCard
+          origin={origin}
+          tunnel={waysIn.tunnel}
+          loading={waysIn.loading}
+          error={waysIn.error}
+          onRetry={bump}
+          onChanged={bump}
+        />
+        <KeysSummaryCard
+          keys={keys.keys}
+          loading={keys.loading}
+          error={keys.error}
+          onRetry={bump}
+          onChanged={bump}
+        />
+      </div>
+
+      <div className="grid min-w-0 grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <HomeStats
+          current={usage.current}
+          previousRequests={summary.summary?.previousRequests}
+          buckets={chart.buckets}
+          savings={savings}
+          savingsUnavailable={savingsUnavailable}
+          loading={usage.loading || chart.loading || savingsLoading || summary.loading}
+          error={usage.error || chart.error}
+          onRetry={bump}
+        />
+      </div>
+
+      <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-3">
+        <LiveRoutesCard
+          routes={liveRoutes.routes}
+          loading={liveRoutes.loading}
+          error={liveRoutes.error}
+          onRetry={bump}
+        />
+        <RecentRequestsCard
+          details={recent.details}
+          fallback={usage.current?.recentRequests}
+          loading={usage.loading || recent.loading}
+          error={usage.error && recent.error ? usage.error : null}
+          onRetry={bump}
+        />
+      </div>
+
+      <div className="grid min-w-0 grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <QuotaWatchCard
+          accounts={quota.accounts}
+          loading={quota.loading}
+          error={quota.error}
+          onRetry={bump}
+        />
+        <CombosTopCard
+          combos={combos.combos}
+          strategies={combos.strategies}
+          usageByCombo={usageByCombo}
+          loading={combos.loading || usage.loading || summary.loading}
+          error={combos.error || usage.error || summary.error}
+          onRetry={bump}
+        />
+        <ProviderHealthCard
+          connections={providers.connections}
+          loading={providers.loading}
+          error={providers.error}
+          onRetry={bump}
+        />
+      </div>
+    </div>
+  );
+}

@@ -1,7 +1,9 @@
 import { getMachineId } from "@/shared/utils/machine";
 import CLIToolsPageClient from "./CLIToolsPageClient";
 
-export default async function CLIToolsPage() {
+export default async function CLIToolsPage({ searchParams }) {
   const machineId = await getMachineId();
-  return <CLIToolsPageClient machineId={machineId} />;
+  const params = await searchParams;
+  const initialTool = params?.tool || "claude";
+  return <CLIToolsPageClient machineId={machineId} initialTool={initialTool} />;
 }

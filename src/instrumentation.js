@@ -10,5 +10,12 @@ export async function register() {
 
     const { startModelCatalogSync } = await import("@/lib/modelCatalog/sync.js");
     startModelCatalogSync();
+
+    // YAN-311: warm reliability overrides from the store for API-only servers
+    // serving /v1 traffic (layout.js never mounts when no dashboard page is loaded).
+    const { bootstrapReliabilityPolicy } = await import(
+      "@/lib/reliability/initReliabilityPolicy.js"
+    );
+    await bootstrapReliabilityPolicy();
   }
 }

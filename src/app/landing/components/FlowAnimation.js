@@ -1,4 +1,5 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 
@@ -10,159 +11,171 @@ const CLI_TOOLS = [
 ];
 
 const PROVIDERS = [
-  {
-    id: "openai",
-    name: "OpenAI",
-    color: "bg-emerald-500",
-    textColor: "text-white",
-  },
-  {
-    id: "anthropic",
-    name: "Anthropic",
-    color: "bg-orange-400",
-    textColor: "text-white",
-  },
-  {
-    id: "gemini",
-    name: "Gemini",
-    color: "bg-blue-500",
-    textColor: "text-white",
-  },
-  {
-    id: "github",
-    name: "GitHub Copilot",
-    color: "bg-gray-700",
-    textColor: "text-white",
-  },
+  { id: "openai", name: "OpenAI" },
+  { id: "anthropic", name: "Anthropic" },
+  { id: "gemini", name: "Gemini" },
+  { id: "github", name: "GitHub Copilot" },
 ];
 
+const IN_PATHS = [
+  "M 60 50 C 250 70, 250 180, 360 180",
+  "M 60 140 C 250 140, 250 180, 360 180",
+  "M 60 210 C 250 210, 250 180, 360 180",
+  "M 60 300 C 250 280, 250 180, 360 180",
+];
+
+const OUT_PATHS = [
+  "M 440 180 C 550 180, 550 50, 740 50",
+  "M 440 180 C 550 180, 550 130, 740 130",
+  "M 440 180 C 550 180, 550 230, 740 230",
+  "M 440 180 C 550 180, 550 310, 740 310",
+];
+
+const chipClass = (active) =>
+  active
+    ? "border-lime-ink bg-lime-bg text-lime-ink ring-2 ring-lime-ink"
+    : "border-line bg-raised text-text";
+
+/**
+ * Live routing diagram: CLI tools flow into the 9Router hub and out to one
+ * lime-highlighted provider at a time. The rotation stops under reduced motion.
+ * A screen-reader list describes the flow; phones get a stacked text diagram.
+ */
 export default function FlowAnimation() {
   const [activeFlow, setActiveFlow] = useState(0);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setActiveFlow((prev) => (prev + 1) % PROVIDERS.length);
-    }, 2000);
-    return () => clearInterval(interval);
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let interval = null;
+    const sync = () => {
+      clearInterval(interval);
+      interval = media.matches
+        ? null
+        : setInterval(() => setActiveFlow((prev) => (prev + 1) % PROVIDERS.length), 2000);
+    };
+    sync();
+    media.addEventListener("change", sync);
+    return () => {
+      clearInterval(interval);
+      media.removeEventListener("change", sync);
+    };
   }, []);
 
   return (
-    <div className="mt-16 w-full max-w-4xl relative h-[360px] hidden md:flex items-center justify-center animate-[float_6s_ease-in-out_infinite]">
-      {/* 9Router Hub - Center */}
-      <div className="relative z-20 w-32 h-32 rounded-full bg-[#23180f] border-2 border-[#f97815] shadow-[0_0_40px_rgba(249,120,21,0.3)] flex flex-col items-center justify-center gap-1 group cursor-pointer hover:scale-105 transition-transform duration-500">
-        <span className="material-symbols-outlined text-4xl text-[#f97815]">hub</span>
-        <span className="text-xs font-bold text-white tracking-widest uppercase">9Router</span>
-        <div className="absolute inset-0 rounded-full border border-[#f97815]/30 animate-ping opacity-20"></div>
+    <div className="w-full max-w-4xl">
+      <ul className="sr-only">
+        <li>Requests from Claude Code, OpenAI Codex, Cline and Cursor go to the 9Router hub.</li>
+        <li>The hub routes each request to OpenAI, Anthropic, Gemini or GitHub Copilot.</li>
+      </ul>
+
+      {/* Mobile: stacked text diagram (the sr-only list above is the text alternative) */}
+      <div aria-hidden="true" className="mx-auto flex max-w-md flex-col gap-2 px-4 md:hidden">
+        <div className="grid grid-cols-2 gap-2">
+          {CLI_TOOLS.map((tool) => (
+            <span
+              key={tool.id}
+              className="rounded-lg border border-line bg-raised px-3 py-2 text-center text-sm font-medium text-text"
+            >
+              {tool.name}
+            </span>
+          ))}
+        </div>
+        <span
+          className="material-symbols-outlined self-center text-[22px] text-subtle"
+          aria-hidden="true"
+        >
+          arrow_downward
+        </span>
+        <span className="rounded-xl border-2 border-coral bg-panel px-4 py-3 text-center font-display text-base font-bold text-text">
+          9Router hub
+        </span>
+        <span
+          className="material-symbols-outlined self-center text-[22px] text-lime-ink"
+          aria-hidden="true"
+        >
+          arrow_downward
+        </span>
+        <div className="grid grid-cols-2 gap-2">
+          {PROVIDERS.map((provider, idx) => (
+            <span
+              key={provider.id}
+              className={`rounded-lg border px-3 py-2 text-center text-sm font-semibold ${chipClass(activeFlow === idx)}`}
+            >
+              {provider.name}
+            </span>
+          ))}
+        </div>
       </div>
 
-      {/* CLI Tools - Left side */}
-      <div className="absolute left-0 top-1/2 -translate-y-1/2 flex flex-col gap-7">
-        {CLI_TOOLS.map((tool) => (
-          <div
-            key={tool.id}
-            className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity group"
-          >
-            <div className="w-16 h-16 rounded-2xl bg-[#23180f] border border-[#3a2f27] flex items-center justify-center overflow-hidden p-2 hover:border-[#f97815]/50 transition-all hover:scale-105">
+      {/* Desktop diagram */}
+      <div
+        aria-hidden="true"
+        className="relative mt-16 hidden h-[360px] w-full items-center justify-center md:flex"
+      >
+        <div className="relative z-20 flex size-32 flex-col items-center justify-center gap-1 rounded-full border-2 border-coral bg-panel shadow-card">
+          <span className="material-symbols-outlined text-4xl text-coral">hub</span>
+          <span className="text-xs font-bold tracking-widest text-text uppercase">9Router</span>
+          <span className="absolute inset-0 rounded-full border border-coral opacity-40 motion-safe:animate-ping" />
+        </div>
+
+        <div className="absolute start-0 top-1/2 flex -translate-y-1/2 flex-col gap-7">
+          {CLI_TOOLS.map((tool) => (
+            <div
+              key={tool.id}
+              className="flex size-16 items-center justify-center overflow-hidden rounded-2xl border border-line bg-raised p-2"
+            >
               <ProviderIcon
                 src={tool.image}
-                alt={tool.name}
+                alt=""
                 size={48}
-                className="object-contain rounded-xl max-w-[48px] max-h-[48px]"
+                className="max-h-12 max-w-12 rounded-xl object-contain"
                 fallbackText={tool.name.slice(0, 2).toUpperCase()}
               />
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      {/* SVG Lines from CLI to 9Router */}
-      <svg
-        className="absolute inset-0 w-full h-full z-10 pointer-events-none stroke-yellow-700"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path
-          className="animate-[dash_2s_linear_infinite]"
-          d="M 60 50 C 250 70, 250 180, 360 180"
-          fill="none"
-          strokeDasharray="5,5"
-          strokeWidth="2"
-        ></path>
-        <path
-          className="animate-[dash_2s_linear_infinite]"
-          d="M 60 140 C 250 140, 250 180, 360 180"
-          fill="none"
-          strokeDasharray="5,5"
-          strokeWidth="2"
-        ></path>
-        <path
-          className="animate-[dash_2s_linear_infinite]"
-          d="M 60 210 C 250 210, 250 180, 360 180"
-          fill="none"
-          strokeDasharray="5,5"
-          strokeWidth="2"
-        ></path>
-        <path
-          className="animate-[dash_2s_linear_infinite]"
-          d="M 60 300 C 250 280, 250 180, 360 180"
-          fill="none"
-          strokeDasharray="5,5"
-          strokeWidth="2"
-        ></path>
-      </svg>
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-10 size-full rtl:-scale-x-100"
+          viewBox="0 0 896 360"
+          preserveAspectRatio="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          {IN_PATHS.map((d) => (
+            <path
+              key={d}
+              d={d}
+              fill="none"
+              strokeDasharray="5 9"
+              strokeWidth="2"
+              className="stroke-subtle motion-safe:animate-flow"
+            />
+          ))}
+          {OUT_PATHS.map((d, idx) => (
+            <path
+              key={d}
+              d={d}
+              fill="none"
+              strokeDasharray={activeFlow === idx ? "5 9" : undefined}
+              strokeWidth={activeFlow === idx ? 3 : 2}
+              className={
+                activeFlow === idx ? "stroke-lime-ink motion-safe:animate-flow" : "stroke-line"
+              }
+            />
+          ))}
+        </svg>
 
-      {/* SVG Lines from 9Router to Providers */}
-      <svg
-        className="absolute inset-0 w-full h-full z-10 pointer-events-none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path
-          d="M 440 180 C 550 180, 550 50, 740 50"
-          fill="none"
-          stroke={activeFlow === 0 ? "#f97815" : "rgb(75, 85, 99)"}
-          strokeWidth={activeFlow === 0 ? "3" : "2"}
-          className={activeFlow === 0 ? "animate-pulse" : ""}
-        ></path>
-        <path
-          d="M 440 180 C 550 180, 550 130, 740 130"
-          fill="none"
-          stroke={activeFlow === 1 ? "#f97815" : "rgb(75, 85, 99)"}
-          strokeWidth={activeFlow === 1 ? "3" : "2"}
-          className={activeFlow === 1 ? "animate-pulse" : ""}
-        ></path>
-        <path
-          d="M 440 180 C 550 180, 550 230, 740 230"
-          fill="none"
-          stroke={activeFlow === 2 ? "#f97815" : "rgb(75, 85, 99)"}
-          strokeWidth={activeFlow === 2 ? "3" : "2"}
-          className={activeFlow === 2 ? "animate-pulse" : ""}
-        ></path>
-        <path
-          d="M 440 180 C 550 180, 550 310, 740 310"
-          fill="none"
-          stroke={activeFlow === 3 ? "#f97815" : "rgb(75, 85, 99)"}
-          strokeWidth={activeFlow === 3 ? "3" : "2"}
-          className={activeFlow === 3 ? "animate-pulse" : ""}
-        ></path>
-      </svg>
-
-      {/* AI Providers - Right side */}
-      <div className="absolute right-0 top-0 bottom-0 flex flex-col justify-between py-6">
-        {PROVIDERS.map((provider, idx) => (
-          <div
-            key={provider.id}
-            className={`px-4 py-2 rounded-lg ${provider.color} ${provider.textColor} flex items-center justify-center font-bold text-xs shadow-lg hover:scale-110 transition-all cursor-help min-w-[140px] ${
-              activeFlow === idx ? "ring-4 ring-[#f97815]/50 scale-110" : ""
-            }`}
-            title={provider.name}
-          >
-            {provider.name}
-          </div>
-        ))}
-      </div>
-
-      {/* Mobile fallback */}
-      <div className="md:hidden mt-8 w-full p-4 rounded-lg bg-[#23180f] border border-[#3a2f27]">
-        <p className="text-sm text-center text-gray-400">Interactive diagram visible on desktop</p>
+        <div className="absolute end-0 top-0 bottom-0 flex flex-col justify-between py-6">
+          {PROVIDERS.map((provider, idx) => (
+            <span
+              key={provider.id}
+              className={`flex min-w-[140px] items-center justify-center rounded-lg border px-4 py-2 text-xs font-bold transition-colors ${chipClass(activeFlow === idx)}`}
+            >
+              {provider.name}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Card } from "@/shared/components";
+import { Card, StatusPill } from "@/shared/components";
 import Image from "next/image";
 
 /**
@@ -9,17 +9,17 @@ import Image from "next/image";
  */
 export default function MitmLinkCard({ tool }) {
   return (
-    <Link href="/dashboard/mitm" className="block">
+    <Link href="/dashboard/mitm" className="block" aria-label={`${tool.name} — open MITM setup`}>
       <Card
         padding="sm"
-        className="overflow-hidden hover:border-primary/50 transition-colors cursor-pointer"
+        className="overflow-hidden hover:border-coral/50 transition-colors cursor-pointer"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="size-8 flex items-center justify-center shrink-0">
               <Image
                 src={tool.image}
-                alt={tool.name}
+                alt=""
                 width={32}
                 height={32}
                 className="size-8 object-contain rounded-lg"
@@ -33,17 +33,15 @@ export default function MitmLinkCard({ tool }) {
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="font-medium text-sm">{tool.name}</h3>
-                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-full">
+                <span className="font-medium text-sm">{tool.name}</span>
+                <StatusPill variant="info" size="sm">
                   MITM
-                </span>
+                </StatusPill>
               </div>
-              <p className="text-xs text-text-muted truncate">{tool.description}</p>
+              <p className="text-xs text-muted truncate">{tool.description}</p>
             </div>
           </div>
-          <span className="material-symbols-outlined text-text-muted text-[20px]">
-            chevron_right
-          </span>
+          <span className="material-symbols-outlined text-muted text-[20px]">chevron_right</span>
         </div>
       </Card>
     </Link>

@@ -52,6 +52,9 @@ export {
   validateApiKey,
 } from "./repos/apiKeysRepo.js";
 
+// API key usage (from usageHistory)
+export { getApiKeyUsage } from "./repos/apiKeyUsageRepo.js";
+
 // Combos
 export {
   getCombos,
@@ -78,9 +81,11 @@ export {
 export {
   getPricing,
   getPricingForModel,
+  getUserPricing,
   updatePricing,
   resetPricing,
   resetAllPricing,
+  invalidatePricingCache,
 } from "./repos/pricingRepo.js";
 
 // Disabled models
@@ -100,6 +105,10 @@ export {
   getUsageHistory,
   getUsageStats,
   getChartData,
+  getUsageSavings,
+  getHomeSummary,
+  getLiveRoutesFeed,
+  recordFallbackHop,
   appendRequestLog,
   getRecentLogs,
 } from "./repos/usageRepo.js";

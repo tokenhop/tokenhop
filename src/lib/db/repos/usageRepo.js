@@ -301,6 +301,13 @@ export async function saveRequestUsage(entry) {
 
     // All 3 writes (history insert, daily upsert, lifetime counter) in ONE transaction.
     // better-sqlite3 is sync → no JS yield mid-transaction → no race in same process.
+    const metaObj = entry.meta && typeof entry.meta === "object" ? { ...entry.meta } : {};
+    if (entry.savings) metaObj.savings = entry.savings;
+    if (entry.comboName && typeof entry.comboName === "string")
+      metaObj.comboName = entry.comboName.slice(0, 128);
+    if (entry.userAgent && typeof entry.userAgent === "string")
+      metaObj.userAgent = entry.userAgent.slice(0, 256);
+
     db.transaction(() => {
       db.run(
         `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -316,7 +323,7 @@ export async function saveRequestUsage(entry) {
           entry.cost || 0,
           entry.status || "ok",
           stringifyJson(tokens),
-          stringifyJson({}),
+          stringifyJson(metaObj),
         ],
       );
 
@@ -381,7 +388,7 @@ export async function getUsageHistory(filter = {}) {
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   const rows = db.all(
-    `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ${where} ORDER BY id ASC`,
+    `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens, meta FROM usageHistory ${where} ORDER BY id ASC`,
     params,
   );
 
@@ -395,6 +402,8 @@ export async function getUsageHistory(filter = {}) {
     cost: r.cost,
     status: r.status,
     tokens: parseJson(r.tokens, {}),
+    savings: parseJson(r.meta, {})?.savings || null,
+    comboName: parseJson(r.meta, {})?.comboName || null,
   }));
 }
 
@@ -870,12 +879,15 @@ export async function getChartData(period = "7d") {
       });
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({
       label: labelFn(startTime + i * bucketMs),
+      input: 0,
+      cached: 0,
+      output: 0,
       tokens: 0,
       cost: 0,
     }));
 
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
       [new Date(startTime).toISOString()],
     );
     for (const r of rows) {
@@ -883,7 +895,17 @@ export async function getChartData(period = "7d") {
       if (t < startTime || t >= endTime) continue;
       const idx = Math.floor((t - startTime) / bucketMs);
       if (idx >= 0 && idx < bucketCount) {
-        buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+        const tk = parseJson(r.tokens, {}) || {};
+        const input = Math.max(
+          tk.prompt_tokens || tk.input_tokens || r.promptTokens || 0,
+          tk.cached_tokens || tk.cache_read_input_tokens || 0,
+        );
+        const cached = tk.cached_tokens || tk.cache_read_input_tokens || 0;
+        const output = tk.completion_tokens || tk.output_tokens || r.completionTokens || 0;
+        buckets[idx].input += input;
+        buckets[idx].cached += cached;
+        buckets[idx].output += output;
+        buckets[idx].tokens += input + output;
         buckets[idx].cost += r.cost || 0;
       }
     }
@@ -902,19 +924,32 @@ export async function getChartData(period = "7d") {
     const startTime = now - bucketCount * bucketMs;
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({
       label: labelFn(startTime + i * bucketMs),
+      input: 0,
+      cached: 0,
+      output: 0,
       tokens: 0,
       cost: 0,
     }));
 
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
       [new Date(startTime).toISOString()],
     );
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
       if (t < startTime || t > now) continue;
       const idx = Math.min(Math.floor((t - startTime) / bucketMs), bucketCount - 1);
-      buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+      const tk = parseJson(r.tokens, {}) || {};
+      const input = Math.max(
+        tk.prompt_tokens || tk.input_tokens || r.promptTokens || 0,
+        tk.cached_tokens || tk.cache_read_input_tokens || 0,
+      );
+      const cached = tk.cached_tokens || tk.cache_read_input_tokens || 0;
+      const output = tk.completion_tokens || tk.output_tokens || r.completionTokens || 0;
+      buckets[idx].input += input;
+      buckets[idx].cached += cached;
+      buckets[idx].output += output;
+      buckets[idx].tokens += input + output;
       buckets[idx].cost += r.cost || 0;
     }
     return buckets;
@@ -934,9 +969,15 @@ export async function getChartData(period = "7d") {
     d.setDate(d.getDate() - (bucketCount - 1 - i));
     const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const dayData = dayMap[dateKey];
+    const input = dayData ? Math.max(dayData.promptTokens || 0, dayData.cachedTokens || 0) : 0;
+    const cached = dayData ? dayData.cachedTokens || 0 : 0;
+    const output = dayData ? dayData.completionTokens || 0 : 0;
     return {
       label: labelFn(d),
-      tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
+      input,
+      cached,
+      output,
+      tokens: input + output,
       cost: dayData ? dayData.cost || 0 : 0,
     };
   });
@@ -981,4 +1022,257 @@ export async function getRecentLogs(limit = 200) {
     console.error("[usageRepo] getRecentLogs failed:", e.message);
     return [];
   }
+}
+
+export const SAVINGS_PERIODS = ["today", "7d", "30d"];
+
+const SAVINGS_DAY_MS = 24 * 60 * 60 * 1000;
+
+function savingsPeriodRange(period, now) {
+  if (period === "today") {
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    return { start: startOfToday.toISOString(), end: new Date(now).toISOString() };
+  }
+  const days = period === "30d" ? 30 : 7;
+  return {
+    start: new Date(now - days * SAVINGS_DAY_MS).toISOString(),
+    end: new Date(now).toISOString(),
+  };
+}
+
+/**
+ * Period savings from recorded per-request meta (usageHistory.meta.savings).
+ * Estimated only — RTK bytes/4, real Headroom tokens, PXPIPE estimates.
+ * PXPIPE uses the same meta source (recorded once per successful request),
+ * never the JSONL events file, so there is no double counting.
+ */
+export async function getUsageSavings(period = "7d") {
+  if (!SAVINGS_PERIODS.includes(period)) throw new Error(`Invalid period: ${period}`);
+  const db = await getAdapter();
+  const now = Date.now();
+  const { start, end } = savingsPeriodRange(period, now);
+
+  const rows = db.all(
+    `SELECT timestamp, provider, model, meta FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
+    [start, end],
+  );
+
+  const byMethod = {};
+  let tokensSavedEst = 0;
+  let tokensBeforeEst = 0;
+  let requestsWithSavings = 0;
+  let costSavedEst = 0;
+  let pricedRequests = 0;
+
+  for (const row of rows) {
+    const meta = parseJson(row.meta, {});
+    const savings = meta?.savings;
+    if (!savings || typeof savings !== "object") continue;
+    // Guard against partially-shaped legacy rows
+    const methods =
+      savings.byMethod && typeof savings.byMethod === "object" ? savings.byMethod : {};
+    if (Object.keys(methods).length === 0) continue;
+
+    let rowSaved = 0;
+    for (const [method, m] of Object.entries(methods)) {
+      if (typeof m !== "object" || !m) continue;
+      const saved = Number(m.tokensSavedEst) || 0;
+      const before = Number(m.tokensBeforeEst) || 0;
+      if (saved <= 0) continue;
+      if (!byMethod[method])
+        byMethod[method] = { tokensSavedEst: 0, tokensBeforeEst: 0, requests: 0 };
+      byMethod[method].tokensSavedEst += saved;
+      byMethod[method].tokensBeforeEst += before;
+      byMethod[method].requests += 1;
+      rowSaved += saved;
+    }
+    if (rowSaved <= 0) continue;
+    tokensSavedEst += rowSaved;
+    tokensBeforeEst += Number(savings.tokensBeforeEst) || 0;
+    requestsWithSavings += 1;
+
+    const rowCost = await savedTokensCost(row.provider, row.model, rowSaved);
+    if (rowCost > 0) {
+      costSavedEst += rowCost;
+      pricedRequests += 1;
+    }
+  }
+
+  const methods = Object.keys(byMethod);
+  const percentage =
+    tokensBeforeEst > 0 ? +((tokensSavedEst / tokensBeforeEst) * 100).toFixed(2) : 0;
+
+  return {
+    period,
+    estimated: true,
+    tokensSavedEst,
+    tokensBeforeEst,
+    percentage,
+    requestsWithSavings,
+    // $ at list prices: each request's saved tokens priced with its own model.
+    // null when no request in the period had resolvable pricing.
+    costSavedEst: pricedRequests > 0 ? +costSavedEst.toFixed(6) : null,
+    pricedRequests,
+    methods,
+    byMethod,
+  };
+}
+
+/**
+ * List-price value of a request's saved tokens. Every counted saver (RTK,
+ * Headroom, PXPIPE) shrinks the prompt, so saved tokens are priced as
+ * uncached input for the request's own provider/model — the same pricing
+ * tables and math as usage cost. Unknown pricing returns 0 (never a guess).
+ * @param {string|null} provider
+ * @param {string|null} model
+ * @param {number} savedTokens
+ * @returns {Promise<number>} dollars
+ */
+async function savedTokensCost(provider, model, savedTokens) {
+  if (!model || !(savedTokens > 0)) return 0;
+  try {
+    const { getPricingForModel } = await import("./pricingRepo.js");
+    const pricing = await getPricingForModel(provider, model);
+    if (!pricing || !(Number(pricing.input) > 0)) return 0;
+    const { calculateCostFromTokens } = await import("open-sse/providers/pricing.js");
+    return calculateCostFromTokens({ prompt_tokens: savedTokens }, pricing);
+  } catch (e) {
+    console.error("[usageRepo] savings pricing failed:", e.message);
+    return 0;
+  }
+}
+
+/**
+ * Previous-period request counts + period buckets + top combo usage for the
+ * Home command center. Combos come from meta.comboName recorded at save time.
+ */
+// ponytail: fallback hops live in an in-memory ring (lost on restart, capped at
+// 200). Enough for the 5-minute live-routes window; persist to usageHistory
+// meta if a longer fallback history is ever needed.
+if (!global._fallbackHops) global._fallbackHops = [];
+const FALLBACK_RING_CAP = 200;
+
+/**
+ * Record one combo fallback hop (a step failed, the combo moved on).
+ * @param {{ comboName: string, provider: string, model: string, status: number|null }} hop
+ */
+export function recordFallbackHop(hop) {
+  if (!hop?.comboName || !hop?.provider) return;
+  global._fallbackHops.push({
+    timestamp: new Date().toISOString(),
+    comboName: String(hop.comboName).slice(0, 128),
+    provider: String(hop.provider).slice(0, 128),
+    model: hop.model ? String(hop.model).slice(0, 256) : null,
+    status: Number(hop.status) || null,
+  });
+  if (global._fallbackHops.length > FALLBACK_RING_CAP) {
+    global._fallbackHops.splice(0, global._fallbackHops.length - FALLBACK_RING_CAP);
+  }
+}
+
+/**
+ * Windowed live-routes feed for the Home map: successful requests from
+ * usageHistory, failed attempts from requestDetails, and recorded combo
+ * fallback hops, all inside the rolling window. Key names are resolved server-side (raw keys never leave);
+ * rows are capped so the response stays small.
+ * @param {object} [options]
+ * @param {number} [options.windowMs] rolling window, default 5 minutes
+ * @param {number} [options.limit] max rows per source, default 500
+ * @returns {Promise<{ usageRows: Array<object>, errorRows: Array<object>, fallbackHops: Array<object> }>}
+ */
+export async function getLiveRoutesFeed({ windowMs = 5 * 60 * 1000, limit = 500 } = {}) {
+  const db = await getAdapter();
+  const since = new Date(Date.now() - windowMs).toISOString();
+
+  const { getApiKeys } = await import("./apiKeysRepo.js");
+  const keyNames = {};
+  try {
+    const keys = await getApiKeys();
+    for (const key of keys || []) keyNames[key.key] = key.name || "Unnamed key";
+  } catch {}
+
+  const capped = Math.max(1, Math.min(Number(limit) || 500, 2000));
+  const usage = db.all(
+    `SELECT timestamp, provider, model, apiKey, meta FROM usageHistory WHERE timestamp > ? ORDER BY id DESC LIMIT ?`,
+    [since, capped],
+  );
+  // Failed attempts only reach requestDetails (usageHistory records successes);
+  // the upstream status code sits in the detail JSON (response.status).
+  const errors = db.all(
+    `SELECT timestamp, provider, model, data FROM requestDetails WHERE timestamp > ? AND status = 'error' ORDER BY timestamp DESC LIMIT ?`,
+    [since, capped],
+  );
+
+  const parseMeta = (raw) => parseJson(raw, {}) || {};
+  return {
+    usageRows: usage
+      .map((row) => {
+        const meta = parseMeta(row.meta);
+        return {
+          timestamp: row.timestamp,
+          provider: row.provider,
+          model: row.model,
+          keyName: keyNames[row.apiKey] || null,
+          userAgent: typeof meta.userAgent === "string" && meta.userAgent ? meta.userAgent : null,
+          comboName: typeof meta.comboName === "string" && meta.comboName ? meta.comboName : null,
+        };
+      })
+      .filter((row) => row.provider),
+    errorRows: errors
+      .map((row) => ({
+        timestamp: row.timestamp,
+        provider: row.provider,
+        model: row.model,
+        status: parseJson(row.data, {})?.response?.status ?? null,
+      }))
+      .filter((row) => row.provider),
+    fallbackHops: global._fallbackHops.filter((hop) => hop.timestamp > since),
+  };
+}
+
+export async function getHomeSummary(period = "7d") {
+  if (!SAVINGS_PERIODS.includes(period)) throw new Error(`Invalid period: ${period}`);
+  const db = await getAdapter();
+  const now = Date.now();
+
+  const current = savingsPeriodRange(period, now);
+  const spanMs = new Date(current.end).getTime() - new Date(current.start).getTime();
+  const prev = {
+    start: new Date(new Date(current.start).getTime() - spanMs).toISOString(),
+    end: current.start,
+  };
+
+  const countIn = (start, end) => {
+    const row = db.get(
+      `SELECT COUNT(*) AS n FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
+      [start, end],
+    );
+    return row?.n || 0;
+  };
+
+  const requests = countIn(current.start, current.end);
+  const previousRequests = countIn(prev.start, prev.end);
+
+  const rows = db.all(
+    `SELECT timestamp, meta FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
+    [current.start, current.end],
+  );
+  const comboCounts = {};
+  for (const row of rows) {
+    const meta = parseJson(row.meta, {});
+    const name = typeof meta?.comboName === "string" && meta.comboName ? meta.comboName : null;
+    if (name) comboCounts[name] = (comboCounts[name] || 0) + 1;
+  }
+  const topCombos = Object.entries(comboCounts)
+    .map(([name, count]) => ({ name, requests: count }))
+    .sort((a, b) => b.requests - a.requests)
+    .slice(0, 5);
+
+  return {
+    period,
+    requests,
+    previousRequests,
+    topCombos,
+  };
 }

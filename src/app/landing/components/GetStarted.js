@@ -1,115 +1,124 @@
 "use client";
-import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+
+import { CopyField } from "@/shared/components";
 
 // Published by this project on GHCR. (The `9router` package on npm is not ours.)
 const INSTALL_COMMAND =
   "docker run -d -p 20128:20128 -v ~/.9router:/app/data -e INITIAL_PASSWORD=change-me ghcr.io/yandy-r/9router";
 
+const STEPS = [
+  {
+    title: "Install 9Router",
+    desc: "Run the Docker image to start the server instantly",
+  },
+  {
+    title: "Open dashboard",
+    desc: "Configure providers and API keys via web interface",
+  },
+  {
+    title: "Route requests",
+    desc: "Point your CLI tools to http://localhost:20128",
+  },
+];
+
+const LOG_LINES = [
+  { text: "Starting 9Router...", tone: "signal-terminal-log" },
+  { text: "Server running on http://localhost:20128", tone: "signal-terminal-info" },
+  { text: "Dashboard: http://localhost:20128/dashboard", tone: "signal-terminal-info" },
+  { text: "Ready to route", tone: "signal-terminal-log" },
+];
+
+/**
+ * Get-started section: three install steps beside a dark terminal card with a
+ * copyable `docker run` command for this project's GHCR image.
+ */
 export default function GetStarted() {
-  const { copied, copy } = useCopyToClipboard();
-
-  const handleCopy = (text) => {
-    copy(text, "landing");
-  };
-
   return (
-    <section className="py-24 px-6 bg-[#120f0d]">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col lg:flex-row gap-16 items-start">
-          {/* Left: Steps */}
+    <section className="px-4 py-24 sm:px-6" id="get-started">
+      <div className="mx-auto max-w-7xl">
+        <div className="flex flex-col items-start gap-16 lg:flex-row">
           <div className="flex-1">
-            <h2 className="text-3xl md:text-4xl font-bold mb-6">Get Started in 30 Seconds</h2>
-            <p className="text-gray-400 text-lg mb-8">
+            <p className="mb-2 text-xs font-semibold tracking-[0.08em] text-subtle uppercase">
+              Get started
+            </p>
+            <h2 className="mb-6 font-display text-3xl font-bold tracking-[-0.02em] text-text md:text-4xl">
+              Get started in 30 seconds
+            </h2>
+            <p className="mb-8 text-lg text-muted">
               Install 9Router, configure your providers via web dashboard, and start routing AI
               requests.
             </p>
 
-            <div className="flex flex-col gap-6">
-              <div className="flex gap-4">
-                <div className="flex-none w-8 h-8 rounded-full bg-[#f97815]/20 text-[#f97815] flex items-center justify-center font-bold">
-                  1
-                </div>
-                <div>
-                  <h4 className="font-bold text-lg">Install 9Router</h4>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Run the Docker image to start the server instantly
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <div className="flex-none w-8 h-8 rounded-full bg-[#f97815]/20 text-[#f97815] flex items-center justify-center font-bold">
-                  2
-                </div>
-                <div>
-                  <h4 className="font-bold text-lg">Open Dashboard</h4>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Configure providers and API keys via web interface
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <div className="flex-none w-8 h-8 rounded-full bg-[#f97815]/20 text-[#f97815] flex items-center justify-center font-bold">
-                  3
-                </div>
-                <div>
-                  <h4 className="font-bold text-lg">Route Requests</h4>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Point your CLI tools to http://localhost:20128
-                  </p>
-                </div>
-              </div>
-            </div>
+            <ol className="flex list-none flex-col gap-6 p-0">
+              {STEPS.map((step, idx) => (
+                <li key={step.title} className="flex gap-4">
+                  <span
+                    aria-hidden="true"
+                    className="flex size-8 flex-none items-center justify-center rounded-full bg-coral-bg font-semibold text-coral-ink"
+                  >
+                    {idx + 1}
+                  </span>
+                  <div>
+                    <h3 className="text-lg font-bold text-text">{step.title}</h3>
+                    <p className="mt-1 text-sm text-muted">{step.desc}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
           </div>
 
-          {/* Right: Code block */}
-          <div className="flex-1 w-full">
-            <div className="rounded-xl overflow-hidden bg-[#1e1e1e] border border-[#3a2f27] shadow-2xl">
-              {/* Terminal header */}
-              <div className="flex items-center gap-2 px-4 py-3 bg-[#252526] border-b border-gray-700">
-                <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                <div className="ml-2 text-xs text-gray-500 font-mono">terminal</div>
+          {/* `dark` pins Signal tokens to dark values: the terminal is dark in both themes. */}
+          <div className="dark w-full min-w-0 flex-1">
+            <div className="signal-terminal overflow-hidden rounded-2xl border border-line shadow-card">
+              <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+                <span aria-hidden="true" className="flex gap-2">
+                  <span className="size-3 rounded-full bg-line" />
+                  <span className="size-3 rounded-full bg-line" />
+                  <span className="size-3 rounded-full bg-line" />
+                </span>
+                <span className="ms-2 font-mono text-xs text-muted">terminal</span>
               </div>
 
-              {/* Terminal content */}
-              <div className="p-6 font-mono text-sm leading-relaxed overflow-x-auto">
-                <div
-                  className="flex items-center gap-2 mb-4 group cursor-pointer"
-                  onClick={() => handleCopy(INSTALL_COMMAND)}
-                >
-                  <span className="text-green-400">$</span>
-                  <span className="text-white">{INSTALL_COMMAND}</span>
-                  <span className="ml-auto text-gray-500 text-xs opacity-0 group-hover:opacity-100">
-                    {copied === "landing" ? "✓ Copied" : "Copy"}
+              <div className="overflow-x-auto p-6 font-mono text-sm leading-relaxed">
+                <CopyField
+                  value={`$ ${INSTALL_COMMAND}`}
+                  copyValue={INSTALL_COMMAND}
+                  label="Copy install command"
+                  className="mb-6"
+                />
+
+                <p className="sr-only">
+                  Starting 9Router. Server running on http://localhost:20128. Dashboard at
+                  http://localhost:20128/dashboard. Ready to route.
+                </p>
+                <div aria-hidden="true" className="mb-6 flex flex-col gap-1">
+                  {LOG_LINES.map((line) => (
+                    <span key={line.text} className={line.tone}>
+                      <span className="signal-terminal-time me-2">&gt;</span>
+                      {line.text}
+                    </span>
+                  ))}
+                </div>
+
+                <p className="mb-2 border-t border-line pt-4 text-xs">
+                  <span
+                    className="material-symbols-outlined me-1 inline-block align-[-2px] text-[14px]"
+                    aria-hidden="true"
+                  >
+                    edit_note
                   </span>
-                </div>
+                  Configure providers in dashboard or use environment variables
+                </p>
 
-                <div className="text-gray-400 mb-6">
-                  <span className="text-[#f97815]">&gt;</span> Starting 9Router...
+                <p className="text-xs">
+                  <span className="signal-terminal-debug">Data location:</span>
                   <br />
-                  <span className="text-[#f97815]">&gt;</span> Server running on{" "}
-                  <span className="text-blue-400">http://localhost:20128</span>
+                  <span className="signal-terminal-time">macOS/Linux:</span>{" "}
+                  ~/.9router/db/data.sqlite
                   <br />
-                  <span className="text-[#f97815]">&gt;</span> Dashboard:{" "}
-                  <span className="text-blue-400">http://localhost:20128/dashboard</span>
-                  <br />
-                  <span className="text-green-400">&gt;</span> Ready to route! ✓
-                </div>
-
-                <div className="text-xs text-gray-500 mb-2 border-t border-gray-700 pt-4">
-                  📝 Configure providers in dashboard or use environment variables
-                </div>
-
-                <div className="text-gray-400 text-xs">
-                  <span className="text-purple-400">Data Location:</span>
-                  <br />
-                  <span className="text-gray-500"> macOS/Linux:</span> ~/.9router/db/data.sqlite
-                  <br />
-                  <span className="text-gray-500"> Windows:</span> %APPDATA%/9router/db/data.sqlite
-                </div>
+                  <span className="signal-terminal-time">Windows:</span>{" "}
+                  %APPDATA%/9router/db/data.sqlite
+                </p>
               </div>
             </div>
           </div>

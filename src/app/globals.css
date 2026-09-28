@@ -13,112 +13,142 @@
 }
 
 /* ============================================================
-   9Router palette — adopted from 9remote_private/web
-   Brand orange (dark) / soft coral (light), neutral warm bases
+   Signal design tokens — docs/redesign/tokens.css (YAN-275)
+   Light on :root, dark on .dark (existing class strategy).
+
+   Approved-token adjustments (WCAG 2.2 AA fixes, both <1% hue drift):
+   - light --signal-subtle #6C7080 -> #696D7C (4.35 -> 4.55 on ground)
+   - light --signal-ok     #0A7F4F -> #0A7C4D (4.40 -> 4.58 on ok-bg/panel)
+   - light --signal-warn   #9A6205 -> #986105 (4.50 -> 4.58 on warn-bg/panel)
    ============================================================ */
 :root {
-  /* Brand scale (light) - centered on #E56A4A */
-  --color-brand-50: #fdf1ed;
-  --color-brand-100: #fadccf;
-  --color-brand-200: #f4b59c;
-  --color-brand-300: #ee8d6a;
-  --color-brand-400: #ea7855;
-  --color-brand-500: #e56a4a;
-  --color-brand-600: #cc5236;
-  --color-brand-700: #a64027;
-  --color-brand-800: #7a2f1d;
-  --color-brand-900: #4d1e12;
+  /* Surfaces & text (light) */
+  --signal-bg: #f3f1ea;
+  --signal-panel: #ffffff;
+  --signal-raised: #f7f5ef;
+  --signal-line: #e2ded3;
+  --signal-text: #16171c;
+  --signal-muted: #545968;
+  --signal-subtle: #696d7c;
 
-  /* Primary (legacy alias for backward compat with existing components) */
-  --color-primary: var(--color-brand-500);
-  --color-primary-hover: var(--color-brand-600);
+  /* Coral: brand, links, focus, current selection (YAN-314: link/text roles
+     use the ink so axe color-contrast passes on raised #f7f5ef). */
+  --signal-coral: #b93a1d;
+  --signal-coral-ink: #b93a1d;
+  --signal-coral-bg: rgba(207, 67, 35, 0.09);
+  --signal-on-coral: #ffffff;
 
-  /* Surfaces & backgrounds (light) */
-  --color-bg: #fdfaf6;
-  --color-bg-alt: #f7f3ee;
-  --color-surface: #ffffff;
-  --color-surface-2: #f4f4f5;
-  --color-surface-3: #e7e7e9;
-  --color-sidebar: rgba(244, 241, 236, 0.85);
+  /* Lime: live traffic, savings, the one primary action */
+  --signal-lime: #cff24a;
+  --signal-lime-ink: #4a6600;
+  --signal-lime-bg: rgba(143, 184, 0, 0.15);
+  --signal-on-lime: #12140a;
 
-  /* Borders */
-  --color-border: #e5e7eb;
-  --color-border-subtle: #f1f1f3;
+  /* Sky: info and OAuth */
+  --signal-sky: #1f6bc2;
+  --signal-sky-ink: #1b62b3;
+  --signal-sky-bg: rgba(31, 107, 194, 0.09);
 
-  /* Text */
-  --color-text: #0a0a0a;
-  --color-text-main: #0a0a0a;
-  --color-text-muted: #6b7280;
-  --color-text-subtle: #9ca3af;
+  /* Status only: OK / Warn / Error */
+  --signal-ok: #0a7c4d;
+  --signal-ok-bg: rgba(10, 127, 79, 0.1);
+  --signal-warn: #986105;
+  --signal-warn-bg: rgba(196, 130, 10, 0.12);
+  --signal-err: #c4284a;
+  --signal-err-bg: rgba(196, 40, 74, 0.09);
 
-  /* Status */
-  --color-danger: #cf222e;
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-info: #3b82f6;
+  /* Overlay backdrop (design-system §4) */
+  --signal-scrim: rgba(22, 23, 28, 0.35);
 
-  /* Radius */
-  --radius-brand: 10px;
-  --radius-brand-lg: 14px;
+  /* Toggle "on": ink track with lime knob (>= 3:1) */
+  --signal-toggle-on: #16171c;
+  --signal-toggle-knob-on: #cff24a;
 
-  /* Shadows */
-  --shadow-soft: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
-  --shadow-warm: 0 2px 12px -2px rgba(229, 106, 74, 0.18);
-  --shadow-elevated: 0 12px 28px -4px rgba(60, 50, 45, 0.06);
-  --shadow-elev:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.8), 0 1px 2px rgba(15, 23, 42, 0.04),
-    0 12px 36px -8px rgba(15, 23, 42, 0.1);
-  --shadow-focus: 0 0 0 3px rgba(229, 106, 74, 0.18);
+  /* Signal card shadow */
+  --signal-shadow-card: 0 1px 2px rgba(22, 23, 28, 0.05), 0 16px 40px -24px rgba(22, 23, 28, 0.22);
 
   color-scheme: light;
 }
 
 .dark {
-  /* Brand scale (dark) - centered on #E56A4A, same as light for consistency */
-  --color-brand-50: #fdf1ed;
-  --color-brand-100: #fadccf;
-  --color-brand-200: #f4b59c;
-  --color-brand-300: #ee8d6a;
-  --color-brand-400: #ea7855;
-  --color-brand-500: #e56a4a;
-  --color-brand-600: #cc5236;
-  --color-brand-700: #a64027;
-  --color-brand-800: #7a2f1d;
-  --color-brand-900: #4d1e12;
+  /* Surfaces & text (dark) */
+  --signal-bg: #0d0e12;
+  --signal-panel: #15171d;
+  --signal-raised: #1c1f27;
+  --signal-line: #2a2e39;
+  --signal-text: #f3f2ee;
+  --signal-muted: #a3a8b5;
+  --signal-subtle: #838898;
 
-  --color-primary: #e56a4a;
-  --color-primary-hover: #cc5236;
+  /* Coral */
+  --signal-coral: #ff6a48;
+  --signal-coral-ink: #ff8b70;
+  --signal-coral-bg: rgba(255, 106, 72, 0.14);
+  /* Glyphs on a coral fill: white is 2.84:1 on dark coral, so use ink */
+  --signal-on-coral: #12140a;
 
-  /* Surfaces (dark - Claude-like neutral warm) */
-  --color-bg: #1a1a1a;
-  --color-bg-alt: #1f1f1e;
-  --color-surface: #262626;
-  --color-surface-2: #303030;
-  --color-surface-3: #3a3a3a;
-  --color-sidebar: rgba(30, 30, 30, 0.85);
+  /* Lime */
+  --signal-lime: #d5f84b;
+  --signal-lime-ink: #d5f84b;
+  --signal-lime-bg: rgba(213, 248, 75, 0.1);
+  --signal-on-lime: #12140a;
 
-  --color-border: #333333;
-  --color-border-subtle: #2a2a2a;
+  /* Sky */
+  --signal-sky: #72b7ff;
+  --signal-sky-ink: #72b7ff;
+  --signal-sky-bg: rgba(114, 183, 255, 0.12);
 
-  --color-text: #ededed;
-  --color-text-main: #ededed;
-  --color-text-muted: #9ca3af;
-  --color-text-subtle: #6b7280;
+  /* Status */
+  --signal-ok: #3ddc97;
+  --signal-ok-bg: rgba(61, 220, 151, 0.12);
+  --signal-warn: #ffc24b;
+  --signal-warn-bg: rgba(255, 194, 75, 0.12);
+  --signal-err: #ff6384;
+  --signal-err-bg: rgba(255, 99, 132, 0.13);
 
-  --color-danger: #ef4444;
-  --color-success: #22c55e;
-  --color-warning: #fbbf24;
-  --color-info: #60a5fa;
+  /* Toggle "on": lime track with dark knob (>= 3:1) */
+  --signal-toggle-on: #d5f84b;
+  --signal-toggle-knob-on: #12140a;
 
-  --shadow-soft: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
-  --shadow-warm: 0 2px 12px -2px rgba(229, 106, 74, 0.25);
-  --shadow-elevated: 0 12px 28px -4px rgba(0, 0, 0, 0.45);
-  --shadow-elev:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.4),
-    0 16px 48px -8px rgba(0, 0, 0, 0.55);
-  --shadow-focus: 0 0 0 3px rgba(229, 106, 74, 0.18);
+  /* Overlay backdrop (design-system §4) */
+  --signal-scrim: rgba(0, 0, 0, 0.5);
+
+  /* Signal card shadow */
+  --signal-shadow-card:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 16px 40px -20px rgba(0, 0, 0, 0.7);
 
   color-scheme: dark;
+}
+
+/* Theme-independent Signal tokens */
+:root {
+  /* Radius scale: 6 kbd / 8 chip / 10 tile / 12 control / 16 inner card / 20 page card */
+  --signal-radius-xs: 6px;
+  --signal-radius-sm: 8px;
+  --signal-radius-md: 10px;
+  --signal-radius-lg: 12px;
+  --signal-radius-xl: 16px;
+  --signal-radius-2xl: 20px;
+  --signal-radius-pill: 999px;
+
+  /* Fonts (next/font variables are defined on <html> by layout.js) */
+  --signal-font-display: var(--font-bricolage), "Bricolage Grotesque", system-ui, sans-serif;
+  --signal-font-sans: var(--font-geist), "Geist", system-ui, sans-serif;
+  --signal-font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
+
+  /* Coral focus-visible ring */
+  --signal-focus-ring: 0 0 0 3px var(--signal-coral-bg), 0 0 0 1px var(--signal-coral);
+
+  /* Terminal/console (design-system §2): the surface is dark in BOTH themes,
+     so every text color on it is fixed-light and never theme-scoped. */
+  --signal-terminal-bg: #0a0b0e;
+  --signal-terminal-text: #e4e6eb;
+  --signal-terminal-time: #8a8f9e;
+  --signal-terminal-log: #3ddc97;
+  --signal-terminal-info: #72b7ff;
+  --signal-terminal-warn: #ffc24b;
+  --signal-terminal-error: #ff6384;
+  --signal-terminal-debug: #c4a1ff;
 }
 
 /* ============================================================
@@ -133,103 +163,247 @@ select {
 }
 
 .dark select option {
-  background-color: var(--color-surface);
-  color: var(--color-text-main);
+  background-color: var(--signal-panel);
+  color: var(--signal-text);
 }
 
 @theme inline {
-  /* Brand scale */
-  --color-brand-50: var(--color-brand-50);
-  --color-brand-100: var(--color-brand-100);
-  --color-brand-200: var(--color-brand-200);
-  --color-brand-300: var(--color-brand-300);
-  --color-brand-400: var(--color-brand-400);
-  --color-brand-500: var(--color-brand-500);
-  --color-brand-600: var(--color-brand-600);
-  --color-brand-700: var(--color-brand-700);
-  --color-brand-800: var(--color-brand-800);
-  --color-brand-900: var(--color-brand-900);
+  /* Signal semantic roles */
+  --color-bg: var(--signal-bg);
+  --color-panel: var(--signal-panel);
+  --color-raised: var(--signal-raised);
+  --color-line: var(--signal-line);
+  --color-text: var(--signal-text);
+  --color-muted: var(--signal-muted);
+  --color-subtle: var(--signal-subtle);
+  --color-coral: var(--signal-coral);
+  --color-coral-ink: var(--signal-coral-ink);
+  --color-coral-bg: var(--signal-coral-bg);
+  --color-on-coral: var(--signal-on-coral);
+  --color-lime: var(--signal-lime);
+  --color-lime-ink: var(--signal-lime-ink);
+  --color-lime-bg: var(--signal-lime-bg);
+  --color-on-lime: var(--signal-on-lime);
+  --color-sky: var(--signal-sky);
+  --color-sky-ink: var(--signal-sky-ink);
+  --color-sky-bg: var(--signal-sky-bg);
+  --color-ok: var(--signal-ok);
+  --color-ok-bg: var(--signal-ok-bg);
+  --color-warn: var(--signal-warn);
+  --color-warn-bg: var(--signal-warn-bg);
+  --color-err: var(--signal-err);
+  --color-err-bg: var(--signal-err-bg);
+  --color-scrim: var(--signal-scrim);
+  --color-toggle-on: var(--signal-toggle-on);
+  --color-toggle-knob-on: var(--signal-toggle-knob-on);
+  --color-terminal-bg: var(--signal-terminal-bg);
 
-  /* Primary aliases */
-  --color-primary: var(--color-primary);
-  --color-primary-hover: var(--color-primary-hover);
-
-  /* Semantic */
-  --color-bg: var(--color-bg);
-  --color-bg-alt: var(--color-bg-alt);
-  --color-surface: var(--color-surface);
-  --color-surface-2: var(--color-surface-2);
-  --color-surface-3: var(--color-surface-3);
-  --color-sidebar: var(--color-sidebar);
-  --color-border: var(--color-border);
-  --color-border-subtle: var(--color-border-subtle);
-  --color-text: var(--color-text);
-  --color-text-main: var(--color-text-main);
-  --color-text-muted: var(--color-text-muted);
-  --color-text-subtle: var(--color-text-subtle);
-  --color-accent: var(--color-brand-500);
-  --color-danger: var(--color-danger);
-  --color-success: var(--color-success);
-  --color-warning: var(--color-warning);
-  --color-info: var(--color-info);
-
-  /* Static fallbacks (explicit per-mode usage if needed) */
-  --color-bg-light: #fcfbf9;
-  --color-bg-dark: #1a1a1a;
-  --color-surface-light: #ffffff;
-  --color-surface-dark: #262626;
-  --color-sidebar-light: #f4f1ec;
-  --color-sidebar-dark: #1f1f1e;
-  --color-border-light: #e5e7eb;
-  --color-border-dark: #333333;
-  --color-text-main-light: #0a0a0a;
-  --color-text-main-dark: #ededed;
-  --color-text-muted-light: #6b7280;
-  --color-text-muted-dark: #9ca3af;
-
-  /* Radius */
-  --radius-brand: var(--radius-brand);
-  --radius-brand-lg: var(--radius-brand-lg);
+  /* Signal radius scale (overrides the Tailwind defaults) */
+  --radius-xs: var(--signal-radius-xs);
+  --radius-sm: var(--signal-radius-sm);
+  --radius-md: var(--signal-radius-md);
+  --radius-lg: var(--signal-radius-lg);
+  --radius-xl: var(--signal-radius-xl);
+  --radius-2xl: var(--signal-radius-2xl);
+  --radius-pill: var(--signal-radius-pill);
 
   /* Shadows */
-  --shadow-soft: var(--shadow-soft);
-  --shadow-warm: var(--shadow-warm);
-  --shadow-elevated: var(--shadow-elevated);
-  --shadow-elev: var(--shadow-elev);
-  --shadow-focus: var(--shadow-focus);
+  --shadow-card: var(--signal-shadow-card);
+  --shadow-focus: var(--signal-focus-ring);
 
-  /* Font - Inter primary, Apple system fallback */
-  --font-sans:
-    "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui,
-    sans-serif;
+  /* Signal fonts */
+  --font-sans: var(--signal-font-sans);
+  --font-display: var(--signal-font-display);
+  --font-mono: var(--signal-font-mono);
+}
+
+/* Signal live motion (design-system §8): flowing route dashes + gateway pulse.
+   Declared in @theme so they replace Tailwind's default `pulse` keyframes. */
+@theme {
+  --animate-flow: flow 1.1s linear infinite;
+  --animate-pulse: pulse 1.8s ease-in-out infinite;
+
+  @keyframes flow {
+    to {
+      stroke-dashoffset: -28;
+    }
+  }
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+}
+
+/* Signal overlays (design-system §4/§8): themed backdrop + 280ms ease-out
+   entry on transform/opacity only. Placement is logical (inset-inline). */
+.signal-backdrop {
+  background-color: var(--signal-scrim);
+  animation: signalFade 0.28s ease-out;
+}
+
+.signal-overlay,
+.signal-overlay-drawer,
+.signal-overlay-menu,
+.signal-overlay-pop,
+.signal-overlay-tip {
+  animation: signalFade 0.28s ease-out;
+}
+
+.signal-overlay-modal {
+  transform-origin: center;
+  animation:
+    signalFade 0.28s ease-out,
+    signalZoom 0.28s ease-out;
+}
+
+@keyframes signalFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes signalZoom {
+  from {
+    transform: scale(0.97);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+/* Must follow every overlay/motion rule above: same specificity, so the
+   later declaration wins. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-flow,
+  .animate-pulse {
+    animation: none;
+  }
+  /* Signal overlays: no backdrop fade or panel entry under reduced motion. */
+  .signal-backdrop,
+  .signal-overlay,
+  .signal-overlay-drawer,
+  .signal-overlay-modal,
+  .signal-overlay-menu,
+  .signal-overlay-pop,
+  .signal-overlay-tip {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Compact density (uiDensity setting): tighten spacing tokens + row heights
+   consistently. Applied via a root class so every page inherits it; set early
+   (layout no-flash script + DensityApplier) to avoid a flash on reload. */
+.compact-density {
+  --spacing: 0.225rem;
+}
+.compact-density .py-4 {
+  padding-block: calc(var(--spacing) * 3);
+}
+.compact-density .p-5 {
+  padding: calc(var(--spacing) * 3.5);
+}
+.compact-density .gap-6 {
+  gap: calc(var(--spacing) * 4);
+}
+.compact-density .space-y-6 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: calc(var(--spacing) * 4);
+}
+.compact-density .space-y-4 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: calc(var(--spacing) * 3);
+}
+.compact-density .h-11 {
+  height: calc(var(--spacing) * 9);
+  min-height: 2.25rem;
+}
+.compact-density .size-12 {
+  width: calc(var(--spacing) * 10);
+  height: calc(var(--spacing) * 10);
+}
+
+/* Terminal surface + line colors. Plain classes (not theme utilities) so the
+   fixed-light text can never fall back to the inherited theme text color. */
+.signal-terminal {
+  background-color: var(--signal-terminal-bg);
+  color: var(--signal-terminal-text);
+  color-scheme: dark;
+}
+.signal-terminal-time {
+  color: var(--signal-terminal-time);
+}
+.signal-terminal-log {
+  color: var(--signal-terminal-log);
+}
+.signal-terminal-info {
+  color: var(--signal-terminal-info);
+}
+.signal-terminal-warn {
+  color: var(--signal-terminal-warn);
+}
+.signal-terminal-error {
+  color: var(--signal-terminal-error);
+}
+.signal-terminal-debug {
+  color: var(--signal-terminal-debug);
+}
+.signal-terminal-cursor {
+  color: var(--signal-lime);
+}
+@media (prefers-reduced-motion: reduce) {
+  .signal-terminal-cursor {
+    animation: none;
+  }
 }
 
 /* Base */
 body {
-  background-color: var(--color-bg);
-  color: var(--color-text-main);
-  font-family: var(--font-sans);
+  background-color: var(--signal-bg);
+  color: var(--signal-text);
+  font-family: var(--signal-font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Selection - brand-tinted */
+/* Signal focus-visible ring (coral) on interactive elements.
+   Unlayered on purpose so it wins over Tailwind ring utilities. */
+:where(
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  summary,
+  [role="button"],
+  [role="switch"],
+  [tabindex]:not([tabindex="-1"])
+):focus-visible {
+  outline: 2px solid transparent; /* forced-colors fallback */
+  box-shadow: var(--signal-focus-ring);
+}
+
+/* Selection - coral tint; text color untouched for readability */
 ::selection {
-  background-color: rgba(229, 106, 74, 0.25);
-  color: var(--color-primary);
+  background-color: rgba(207, 67, 35, 0.2);
 }
 .dark ::selection {
-  background-color: rgba(229, 106, 74, 0.3);
-  color: var(--color-brand-300);
+  background-color: rgba(255, 106, 72, 0.28);
 }
 
 /* iOS keyboard accent */
 input,
 textarea {
-  accent-color: var(--color-primary);
+  accent-color: var(--signal-coral);
 }
 
-/* Scrollbar (custom-scrollbar utility kept for compat) */
+/* Scrollbar (custom-scrollbar utility) */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
@@ -241,29 +415,7 @@ textarea {
   border-radius: 20px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: var(--color-primary);
-}
-
-/* Thin horizontal scrollbar - brand colored */
-.scroll-thin-x {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(229, 106, 74, 0.55) transparent;
-}
-.dark .scroll-thin-x {
-  scrollbar-color: rgba(229, 106, 74, 0.55) transparent;
-}
-.scroll-thin-x::-webkit-scrollbar {
-  height: 3px;
-}
-.scroll-thin-x::-webkit-scrollbar-track {
-  background: transparent;
-}
-.scroll-thin-x::-webkit-scrollbar-thumb {
-  background: rgba(229, 106, 74, 0.55);
-  border-radius: 3px;
-}
-.dark .scroll-thin-x::-webkit-scrollbar-thumb {
-  background: rgba(229, 106, 74, 0.55);
+  background-color: var(--signal-coral-ink);
 }
 
 /* Global thin mac-like scrollbars (overrides clunky Windows/Linux default) */
@@ -297,54 +449,7 @@ textarea {
   background-color: rgba(180, 180, 180, 0.5);
 }
 
-/* Reusable elevated card */
-.card-soft {
-  background-color: var(--color-surface);
-  box-shadow: var(--shadow-soft);
-  border-radius: var(--radius-brand-lg);
-}
-.card-elev {
-  background-color: var(--color-surface);
-  box-shadow: var(--shadow-elev);
-  border-radius: var(--radius-brand-lg);
-}
-
-/* Hero gradient (compat) */
-.bg-hero-gradient {
-  background: linear-gradient(180deg, var(--color-bg-alt) 0%, var(--color-bg) 100%);
-}
-
-/* macOS Vibrancy */
-.bg-vibrancy {
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  background: rgba(255, 255, 255, 0.72);
-}
-.dark .bg-vibrancy {
-  background: rgba(38, 38, 38, 0.72);
-}
-
-/* macOS Traffic Lights */
-.traffic-lights {
-  display: flex;
-  gap: 8px;
-}
-.traffic-light {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-.traffic-light.red {
-  background: #ff5f56;
-}
-.traffic-light.yellow {
-  background: #ffbd2e;
-}
-.traffic-light.green {
-  background: #27c93f;
-}
-
-/* Material Symbols */
+/* Material Symbols (design-system §7: thin strokes; .fill-1 = active state) */
 .material-symbols-outlined {
   font-family: "Material Symbols Outlined", sans-serif;
   font-weight: normal;
@@ -362,16 +467,16 @@ textarea {
   -webkit-font-smoothing: antialiased;
   font-variation-settings:
     "FILL" 0,
-    "wght" 400,
+    "wght" 300,
     "GRAD" 0,
-    "opsz" 24;
+    "opsz" 20;
 }
 .material-symbols-outlined.fill-1 {
   font-variation-settings:
     "FILL" 1,
-    "wght" 400,
+    "wght" 300,
     "GRAD" 0,
-    "opsz" 24;
+    "opsz" 20;
 }
 
 /* Disable text selection on buttons */
@@ -408,155 +513,17 @@ button:disabled,
 .animate-spin {
   animation: spin 1s linear infinite;
 }
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin {
+    animation: none;
   }
-  50% {
-    opacity: 0.5;
-  }
-}
-.animate-pulse {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-@keyframes border-glow {
-  0%,
-  100% {
-    box-shadow:
-      0 0 5px rgba(229, 106, 74, 0.3),
-      0 0 10px rgba(229, 106, 74, 0.2);
-    border-color: rgba(229, 106, 74, 0.5);
-  }
-  50% {
-    box-shadow:
-      0 0 10px rgba(229, 106, 74, 0.5),
-      0 0 20px rgba(229, 106, 74, 0.3);
-    border-color: rgba(229, 106, 74, 0.8);
-  }
-}
-.animate-border-glow {
-  animation: border-glow 2s ease-in-out infinite;
-}
-
-@keyframes slideInFromRight {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes slideInFromTop {
-  from {
-    transform: translateY(-10px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-.slide-in-right {
-  animation: slideInFromRight 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-.fade-in {
-  animation: fadeIn 0.2s ease-out forwards;
-}
-.slide-in-top {
-  animation: slideInFromTop 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-@keyframes pulseGlow {
-  0%,
-  100% {
-    opacity: 0.4;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.7;
-    transform: scale(1.05);
-  }
-}
-.animate-pulse-glow {
-  animation: pulseGlow 3s ease-in-out infinite;
-}
-
-/* CTA shimmer + glow pulse */
-@keyframes ctaShimmer {
-  0% {
-    transform: translateX(-120%) skewX(-20deg);
-  }
-  100% {
-    transform: translateX(220%) skewX(-20deg);
-  }
-}
-@keyframes ctaGlowPulse {
-  0%,
-  100% {
-    box-shadow:
-      0 8px 24px -8px rgba(229, 106, 74, 0.45),
-      0 0 0 0 rgba(229, 106, 74, 0.5);
-  }
-  50% {
-    box-shadow:
-      0 12px 32px -8px rgba(229, 106, 74, 0.6),
-      0 0 0 8px rgba(229, 106, 74, 0);
-  }
-}
-.btn-cta {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-  animation: ctaGlowPulse 2.4s ease-in-out infinite;
-}
-.btn-cta::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
-  animation: ctaShimmer 2.8s ease-in-out infinite;
-  pointer-events: none;
-  z-index: 1;
-}
-.btn-cta > * {
-  position: relative;
-  z-index: 2;
-}
-
-/* Dot Grid Background Pattern */
-.dot-grid-bg {
-  background-color: var(--color-bg);
-  background-image:
-    radial-gradient(circle at 15% 20%, rgba(229, 106, 74, 0.1) 0%, transparent 40%),
-    radial-gradient(circle at 85% 80%, rgba(229, 106, 74, 0.06) 0%, transparent 40%);
-}
-.dark .dot-grid-bg {
-  background-image:
-    radial-gradient(circle at 15% 20%, rgba(229, 106, 74, 0.18) 0%, transparent 40%),
-    radial-gradient(circle at 85% 80%, rgba(229, 106, 74, 0.1) 0%, transparent 40%);
 }
 
 /* Landing-style faint grid overlay (use absolute pos inside relative parent) */
 .landing-grid {
   background-image:
-    linear-gradient(to right, var(--color-accent) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--color-accent) 1px, transparent 1px);
+    linear-gradient(to right, var(--signal-coral) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--signal-coral) 1px, transparent 1px);
   background-size: 40px 40px;
   opacity: 0.08;
 }
@@ -564,117 +531,35 @@ button:disabled,
   opacity: 0.04;
 }
 
-/* Topology: router card pulse (no flying rings) + electric edge beam */
-@keyframes topology-router-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-    box-shadow:
-      0 0 8px #fde047,
-      0 0 20px color-mix(in srgb, var(--color-primary) 65%, transparent),
-      0 0 32px rgba(34, 211, 238, 0.4),
-      inset 0 0 10px rgba(253, 224, 71, 0.3);
-  }
-  50% {
-    transform: scale(1.06);
-    box-shadow:
-      0 0 14px #fef08a,
-      0 0 28px #facc15,
-      0 0 44px rgba(34, 211, 238, 0.6),
-      inset 0 0 14px rgba(255, 255, 255, 0.25);
-  }
-}
-@keyframes topology-router-icon-shake {
-  0%,
-  100% {
-    transform: rotate(0deg) scale(1);
-    filter: drop-shadow(0 0 2px #fde047);
-  }
-  25% {
-    transform: rotate(-5deg) scale(1.08);
-    filter: drop-shadow(0 0 6px #facc15);
-  }
-  75% {
-    transform: rotate(5deg) scale(1.08);
-    filter: drop-shadow(0 0 6px #22d3ee);
-  }
-}
-@keyframes topology-router-label-flicker {
-  0%,
-  100% {
-    text-shadow:
-      0 0 6px #fde047,
-      0 0 12px #22d3ee;
-  }
-  50% {
-    text-shadow:
-      0 0 10px #fff,
-      0 0 18px #facc15;
-  }
-}
-@keyframes topology-edge-dash {
+/* Usage topology: a steady dashed route remains legible when animation stops. */
+@keyframes topology-edge-flow {
   to {
-    stroke-dashoffset: -36;
+    stroke-dashoffset: -28;
   }
 }
-@keyframes topology-edge-flicker {
-  0%,
-  100% {
-    opacity: 0.85;
+.topology-edge-flow {
+  animation: topology-edge-flow 1.1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .topology-edge-flow {
+    animation: none;
   }
-  40% {
-    opacity: 1;
-  }
-  55% {
-    opacity: 0.55;
-  }
-  70% {
-    opacity: 1;
-  }
-}
-.topology-router-core {
-  animation: topology-router-pulse 0.75s ease-in-out infinite;
-  border-color: #fde047 !important;
-}
-.topology-router-icon {
-  animation: topology-router-icon-shake 0.45s ease-in-out infinite;
-}
-.topology-router-label {
-  animation: topology-router-label-flicker 0.7s ease-in-out infinite;
-}
-.topology-router-badge {
-  box-shadow:
-    0 0 10px #fde047,
-    0 0 16px rgba(34, 211, 238, 0.6);
-}
-.topology-edge-kame {
-  stroke-dasharray: 8 6;
-  animation: topology-edge-dash 0.22s linear infinite;
-}
-.topology-edge-halo {
-  animation: topology-edge-flicker 0.18s steps(2) infinite;
-}
-.topology-edge-plasma {
-  stroke-dasharray: 14 10;
-  animation:
-    topology-edge-dash 0.18s linear infinite,
-    topology-edge-flicker 0.22s steps(3) infinite;
 }
 
 /* React Flow controls: match app theme */
 .react-flow-controls-custom {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-soft);
+  background: var(--signal-panel);
+  border: 1px solid var(--signal-line);
+  border-radius: var(--signal-radius-md);
+  box-shadow: var(--signal-shadow-card);
   overflow: hidden;
 }
 
 .react-flow-controls-custom button {
-  background: var(--color-surface);
-  color: var(--color-text-main);
+  background: var(--signal-panel);
+  color: var(--signal-text);
   border: 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--signal-line);
 }
 
 .react-flow-controls-custom button:last-child {
@@ -682,7 +567,7 @@ button:disabled,
 }
 
 .react-flow-controls-custom button:hover {
-  background: var(--color-bg-alt);
+  background: var(--signal-raised);
 }
 
 /* Changelog markdown body */
@@ -691,7 +576,7 @@ button:disabled,
   font-weight: 700;
   margin: 1.5rem 0 0.75rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--signal-line);
 }
 .changelog-body h1:first-child {
   margin-top: 0;
@@ -700,7 +585,7 @@ button:disabled,
   font-size: 1.05rem;
   font-weight: 600;
   margin: 1rem 0 0.5rem;
-  color: var(--color-primary);
+  color: var(--signal-coral-ink);
 }
 .changelog-body h3 {
   font-size: 0.95rem;
@@ -721,18 +606,18 @@ button:disabled,
   line-height: 1.6;
 }
 .changelog-body code {
-  background: var(--color-bg-alt);
+  background: var(--signal-raised);
   padding: 0.1rem 0.35rem;
   border-radius: 4px;
   font-size: 0.875em;
-  font-family: ui-monospace, monospace;
+  font-family: var(--signal-font-mono);
 }
 .changelog-body a {
-  color: var(--color-primary);
+  color: var(--signal-coral-ink);
   text-decoration: underline;
 }
 .changelog-body hr {
   border: none;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--signal-line);
   margin: 1.5rem 0;
 }

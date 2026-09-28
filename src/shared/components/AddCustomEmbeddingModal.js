@@ -2,11 +2,17 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { Modal, Input, Button, Badge } from "@/shared/components";
+import Modal from "./Modal";
+import Input from "./Input";
+import Button from "./Button";
+import Badge from "./Badge";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
-// Dual-mode modal: edit when `node` provided, add otherwise
+/**
+ * Dual-mode custom embedding node dialog: edit when `node` is provided, add
+ * otherwise. Validates against `/api/provider-nodes/validate` before saving.
+ */
 export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, onSaved, node }) {
   const isEdit = !!node;
   const [formData, setFormData] = useState({
@@ -95,14 +101,14 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
       return (
         <>
           <Badge variant="success">Valid</Badge>
-          {dimensions && <span className="text-sm text-text-muted">{dimensions} dims</span>}
+          {dimensions && <span className="text-sm text-muted">{dimensions} dims</span>}
         </>
       );
     }
     return (
       <div className="flex flex-col gap-1">
         <Badge variant="error">Invalid</Badge>
-        {error && <span className="text-sm text-red-500">{error}</span>}
+        {error && <span className="text-sm text-err">{error}</span>}
       </div>
     );
   };

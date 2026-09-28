@@ -1,11 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card } from "@/shared/components";
+import PropTypes from "prop-types";
+import { Button, Card, IconButton, Callout } from "@/shared/components";
 import { getProviderAlias, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { Row } from "./exampleShared";
+import CopyStatus from "@/shared/components/CopyStatus";
+import {
+  Row,
+  controlClass,
+  codeBlockClass,
+  eyebrowClass,
+  tunnelToggleClass,
+} from "./exampleShared";
+import { maskPreviewApiKey, previewAuthHeader } from "@/shared/constants/previewAuth";
 
 const DEFAULT_RESPONSE_EXAMPLE = `{
   "object": "list",
@@ -28,22 +37,25 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
   const [selectedModel, setSelectedModel] = useState(embeddingModels[0]?.id ?? "");
   const [input, setInput] = useState("The quick brown fox jumps over the lazy dog");
   const [dimensions, setDimensions] = useState("");
-  const [apiKey, setApiKey] = useState("");
+  // Loaded key never enters the DOM: the input only holds a manual override.
+  const [loadedKey, setLoadedKey] = useState("");
+  const [keyOverride, setKeyOverride] = useState("");
+  const apiKey = keyOverride || loadedKey;
   const [useTunnel, setUseTunnel] = useState(false);
   const [localEndpoint, setLocalEndpoint] = useState("");
   const [tunnelEndpoint, setTunnelEndpoint] = useState("");
   const [result, setResult] = useState(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
-  const { copied: copiedCurl, copy: copyCurl } = useCopyToClipboard();
-  const { copied: copiedRes, copy: copyRes } = useCopyToClipboard();
+  const { copied: copiedCurl, error: errorCurl, copy: copyCurl } = useCopyToClipboard();
+  const { copied: copiedRes, error: errorRes, copy: copyRes } = useCopyToClipboard();
 
   useEffect(() => {
     setLocalEndpoint(window.location.origin);
     fetch("/api/keys")
       .then((r) => r.json())
       .then((d) => {
-        setApiKey((d.keys || []).find((k) => k.isActive !== false)?.key || "");
+        setLoadedKey((d.keys || []).find((k) => k.isActive !== false)?.key || "");
       })
       .catch(() => {});
     fetch("/api/tunnel/status")
@@ -65,9 +77,11 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
     return body;
   };
 
+  // Preview-safe: rendered/copied cURL always shows Bearer YOUR_KEY.
+  // The live key is only sent in the fetch Authorization header below.
   const curlSnippet = `curl -X POST ${endpoint}/v1/embeddings \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer ${apiKey || "YOUR_KEY"}" \\
+  -H "Authorization: ${previewAuthHeader(apiKey)}" \\
   -d '${JSON.stringify(buildBody())}'`;
 
   const handleRun = async () => {
@@ -116,9 +130,11 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
   const resultJson = result ? JSON.stringify(result.data, null, 2) : "";
 
   return (
-    <Card>
-      <h2 className="text-lg font-semibold mb-4">Example</h2>
-
+    <Card
+      title={`${providerAlias} example`}
+      subtitle="Run a live embeddings request against this provider."
+      icon="labs"
+    >
       <div className="flex flex-col gap-2.5">
         {/* Model — text input for custom node, dropdown otherwise */}
         <Row label="Model">
@@ -127,13 +143,15 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
               placeholder="e.g. voyage-3, embed-english-v3.0, text-embedding-3-small"
-              className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary font-mono"
+              aria-label="Model"
+              className={`${controlClass} font-mono`}
             />
           ) : (
             <select
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
-              className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+              aria-label="Model"
+              className={controlClass}
             >
               {embeddingModels.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -152,21 +170,22 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
               onChange={(e) =>
                 useTunnel ? setTunnelEndpoint(e.target.value) : setLocalEndpoint(e.target.value)
               }
-              className="w-full min-w-0 flex-1 px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary font-mono"
+              aria-label="Endpoint"
+              className={`${controlClass} min-w-0 flex-1 font-mono`}
               placeholder="http://localhost:3000"
             />
             {/* Tunnel toggle — only show if tunnel URL is available */}
             {tunnelEndpoint && (
               <button
+                type="button"
                 onClick={() => setUseTunnel((v) => !v)}
                 title={useTunnel ? "Using tunnel" : "Using local"}
-                className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border shrink-0 transition-colors ${
-                  useTunnel
-                    ? "border-primary/40 bg-primary/10 text-primary"
-                    : "border-border text-text-muted hover:text-primary"
-                }`}
+                aria-pressed={useTunnel}
+                className={tunnelToggleClass(useTunnel)}
               >
-                <span className="material-symbols-outlined text-[14px]">wifi_tethering</span>
+                <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                  wifi_tethering
+                </span>
                 Tunnel
               </button>
             )}
@@ -177,10 +196,12 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
         <Row label="API Key">
           <input
             type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="sk-..."
-            className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary font-mono"
+            value={keyOverride}
+            onChange={(e) => setKeyOverride(e.target.value)}
+            placeholder={loadedKey ? maskPreviewApiKey(loadedKey) : "sk-..."}
+            aria-label="API Key"
+            autoComplete="off"
+            className={`${controlClass} font-mono`}
           />
         </Row>
 
@@ -190,16 +211,16 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+              aria-label="Input"
+              className={`${controlClass} pe-11`}
             />
             {input && (
-              <button
-                type="button"
+              <IconButton
+                icon="close"
+                label="Clear input"
                 onClick={() => setInput("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
-              >
-                <span className="material-symbols-outlined text-[14px]">close</span>
-              </button>
+                className="absolute end-1 top-1/2 size-9 -translate-y-1/2 border-0 bg-transparent"
+              />
             )}
           </div>
         </Row>
@@ -212,71 +233,73 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
             value={dimensions}
             onChange={(e) => setDimensions(e.target.value)}
             placeholder="optional, e.g. 512, 1024 (leave empty for default)"
-            className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+            aria-label="Dimensions"
+            className={controlClass}
           />
         </Row>
 
         {/* Curl + Run */}
         <div className="mt-1">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-1.5">
-            <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">
-              Request
-            </span>
+          <div className="mb-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <span className={eyebrowClass}>Request</span>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-              <button
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={copiedCurl ? "check" : errorCurl ? "error" : "content_copy"}
                 onClick={() => copyCurl(curlSnippet)}
-                className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
               >
-                <span className="material-symbols-outlined text-[14px]">
-                  {copiedCurl ? "check" : "content_copy"}
-                </span>
-                {copiedCurl ? "Copied" : "Copy"}
-              </button>
-              <button
+                {copiedCurl ? "Copied" : errorCurl ? "Couldn't copy" : "Copy"}
+              </Button>
+              <CopyStatus copied={copiedCurl} error={errorCurl} />
+              <Button
+                size="sm"
+                variant="primary"
+                icon="play_arrow"
                 onClick={handleRun}
                 disabled={running || !input.trim() || !modelFull}
-                className="flex w-full sm:w-auto items-center justify-center gap-1.5 px-3 py-1 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                loading={running}
               >
-                <span
-                  className="material-symbols-outlined text-[14px]"
-                  style={running ? { animation: "spin 1s linear infinite" } : undefined}
-                >
-                  play_arrow
-                </span>
                 {running ? "Running..." : "Run"}
-              </button>
+              </Button>
             </div>
           </div>
-          <pre className="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all">
+          <pre className={codeBlockClass} dir="ltr">
             {curlSnippet}
           </pre>
         </div>
 
         {/* Error */}
-        {error && <p className="text-xs text-red-500 break-words">{error}</p>}
+        {error && (
+          <Callout variant="err" title="Request failed">
+            {error}
+          </Callout>
+        )}
 
         {/* Response — default example or real result */}
         <div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-1.5">
-            <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+          <div className="mb-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <span className={eyebrowClass}>
               Response{" "}
               {result && (
-                <span className="font-normal normal-case">&#9889; {result.latencyMs}ms</span>
+                <span className="font-mono text-xs font-normal normal-case text-muted">
+                  ⚡ {result.latencyMs}ms
+                </span>
               )}
             </span>
             {result && (
-              <button
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={copiedRes ? "check" : errorRes ? "error" : "content_copy"}
                 onClick={() => copyRes(resultJson)}
-                className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
               >
-                <span className="material-symbols-outlined text-[14px]">
-                  {copiedRes ? "check" : "content_copy"}
-                </span>
-                {copiedRes ? "Copied" : "Copy"}
-              </button>
+                {copiedRes ? "Copied" : errorRes ? "Couldn't copy" : "Copy"}
+              </Button>
             )}
+            <CopyStatus copied={copiedRes} error={errorRes} />
           </div>
-          <pre className="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all opacity-70">
+          <pre className={`${codeBlockClass} opacity-80`} dir="ltr">
             {formatResultJson(result?.data)}
           </pre>
         </div>
@@ -284,3 +307,8 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
     </Card>
   );
 }
+
+EmbeddingExampleCard.propTypes = {
+  providerId: PropTypes.string.isRequired,
+  customAlias: PropTypes.string,
+};

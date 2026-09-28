@@ -1,108 +1,142 @@
 "use client";
 
+import Link from "next/link";
+
+const PRODUCT_LINKS = [
+  { label: "Features", href: "#features" },
+  { label: "Dashboard", href: "/dashboard" },
+  {
+    label: "Changelog",
+    href: "https://github.com/yandy-r/9router",
+    target: "_blank",
+    rel: "noopener noreferrer",
+  },
+];
+
+const RESOURCE_LINKS = [
+  {
+    label: "Documentation",
+    href: "https://github.com/yandy-r/9router#readme",
+    target: "_blank",
+    rel: "noopener noreferrer",
+  },
+  {
+    label: "GitHub",
+    href: "https://github.com/yandy-r/9router",
+    target: "_blank",
+    rel: "noopener noreferrer",
+  },
+  {
+    label: "Docker",
+    href: "https://github.com/yandy-r/9router/pkgs/container/9router",
+    target: "_blank",
+    rel: "noopener noreferrer",
+  },
+];
+
+const LEGAL_LINKS = [
+  {
+    label: "MIT License",
+    href: "https://github.com/yandy-r/9router/blob/main/LICENSE",
+    target: "_blank",
+    rel: "noopener noreferrer",
+  },
+];
+
+/**
+ * Landing footer: brand mark, links, license and copyright.
+ */
 export default function Footer() {
   return (
-    <footer className="border-t border-[#3a2f27] bg-[#120f0d] pt-16 pb-8 px-6">
-      <div className="max-w-7xl mx-auto">
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 mb-16">
-          {/* Brand */}
+    <footer className="border-t border-line bg-raised/30 px-4 pt-16 pb-8 sm:px-6">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-16 grid grid-cols-2 gap-8 md:grid-cols-4 lg:grid-cols-5">
           <div className="col-span-2 lg:col-span-2">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="size-6 rounded bg-[#f97815] flex items-center justify-center text-white">
-                <span className="material-symbols-outlined text-[16px]">hub</span>
-              </div>
-              <h3 className="text-white text-lg font-bold">9Router</h3>
-            </div>
-            <p className="text-gray-500 text-sm max-w-xs mb-6">
+            <Link
+              href="/"
+              aria-label="9Router home"
+              className="mb-6 inline-flex min-h-[44px] items-center gap-3 rounded-lg"
+            >
+              <span
+                className="-rotate-[8deg] flex size-9 items-center justify-center rounded-[11px] bg-coral font-display text-[22px] font-extrabold text-on-coral shadow-card"
+                aria-hidden="true"
+              >
+                9
+              </span>
+              <span className="font-display text-[22px] font-bold tracking-[-0.02em] text-text">
+                router
+              </span>
+            </Link>
+            <p className="mb-6 max-w-xs text-sm leading-relaxed text-muted">
               The unified endpoint for AI generation. Connect, route, and manage your AI providers
               with ease.
             </p>
             <div className="flex gap-4">
               <a
-                className="text-gray-400 hover:text-white transition-colors"
+                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-muted transition-colors hover:text-text focus-visible:shadow-focus"
                 href="https://github.com/yandy-r/9router"
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <span className="material-symbols-outlined">code</span>
+                <span className="sr-only">9Router on GitHub</span>
+                <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                  code
+                </span>
               </a>
             </div>
           </div>
 
-          {/* Product */}
           <div className="flex flex-col gap-4">
-            <h4 className="font-bold text-white">Product</h4>
-            <a
-              className="text-gray-400 hover:text-[#f97815] text-sm transition-colors"
-              href="#features"
-            >
-              Features
-            </a>
-            <a
-              className="text-gray-400 hover:text-[#f97815] text-sm transition-colors"
-              href="/dashboard"
-            >
-              Dashboard
-            </a>
-            <a
-              className="text-gray-400 hover:text-[#f97815] text-sm transition-colors"
-              href="https://github.com/yandy-r/9router"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Changelog
-            </a>
+            <h2 className="font-sans text-sm font-semibold text-text">Product</h2>
+            {PRODUCT_LINKS.map((link) => (
+              <a
+                key={link.label}
+                className="inline-flex min-h-[44px] items-center text-sm text-muted transition-colors hover:text-coral focus-visible:shadow-focus"
+                href={link.href}
+                target={link.target}
+                rel={link.rel}
+              >
+                {link.label}
+              </a>
+            ))}
           </div>
 
-          {/* Resources */}
           <div className="flex flex-col gap-4">
-            <h4 className="font-bold text-white">Resources</h4>
-            <a
-              className="text-gray-400 hover:text-[#f97815] text-sm transition-colors"
-              href="https://github.com/yandy-r/9router#readme"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Documentation
-            </a>
-            <a
-              className="text-gray-400 hover:text-[#f97815] text-sm transition-colors"
-              href="https://github.com/yandy-r/9router"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              GitHub
-            </a>
-            <a
-              className="text-gray-400 hover:text-[#f97815] text-sm transition-colors"
-              href="https://github.com/yandy-r/9router/pkgs/container/9router"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Docker
-            </a>
+            <h2 className="font-sans text-sm font-semibold text-text">Resources</h2>
+            {RESOURCE_LINKS.map((link) => (
+              <a
+                key={link.label}
+                className="inline-flex min-h-[44px] items-center text-sm text-muted transition-colors hover:text-coral focus-visible:shadow-focus"
+                href={link.href}
+                target={link.target}
+                rel={link.rel}
+              >
+                {link.label}
+              </a>
+            ))}
           </div>
 
-          {/* Legal */}
           <div className="flex flex-col gap-4">
-            <h4 className="font-bold text-white">Legal</h4>
-            <a
-              className="text-gray-400 hover:text-[#f97815] text-sm transition-colors"
-              href="https://github.com/yandy-r/9router/blob/main/LICENSE"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              MIT License
-            </a>
+            <h2 className="font-sans text-sm font-semibold text-text">Legal</h2>
+            {LEGAL_LINKS.map((link) => (
+              <a
+                key={link.label}
+                className="inline-flex min-h-[44px] items-center text-sm text-muted transition-colors hover:text-coral focus-visible:shadow-focus"
+                href={link.href}
+                target={link.target}
+                rel={link.rel}
+              >
+                {link.label}
+              </a>
+            ))}
           </div>
         </div>
 
-        {/* Bottom */}
-        <div className="border-t border-[#3a2f27] pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-gray-600 text-sm">© 2025 9Router. All rights reserved.</p>
+        <div className="flex flex-col items-center justify-between gap-4 border-t border-line pt-8 sm:flex-row">
+          <p className="text-sm text-muted">© 2025 9Router. All rights reserved.</p>
           <div className="flex gap-6">
             <a
-              className="text-gray-600 hover:text-white text-sm transition-colors"
+              className="inline-flex min-h-[44px] items-center text-sm text-muted transition-colors hover:text-text focus-visible:shadow-focus"
               href="https://github.com/yandy-r/9router"
               target="_blank"
               rel="noopener noreferrer"
@@ -110,7 +144,7 @@ export default function Footer() {
               GitHub
             </a>
             <a
-              className="text-gray-600 hover:text-white text-sm transition-colors"
+              className="inline-flex min-h-[44px] items-center text-sm text-muted transition-colors hover:text-text focus-visible:shadow-focus"
               href="https://github.com/yandy-r/9router/pkgs/container/9router"
               target="_blank"
               rel="noopener noreferrer"

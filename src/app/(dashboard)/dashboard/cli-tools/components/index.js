@@ -16,5 +16,14 @@ export { default as GrokBuildToolCard } from "./GrokBuildToolCard";
 export { default as MitmServerCard } from "./MitmServerCard";
 export { default as MitmToolCard } from "./MitmToolCard";
 export { default as MitmLinkCard } from "./MitmLinkCard";
-export { default as EndpointPresetControl } from "./EndpointPresetControl";
-export { default as BaseUrlSelect } from "./BaseUrlSelect";
+export { default as ToolSetupPanel } from "./ToolSetupPanel";
+export { default as ToolGridCard } from "./ToolGridCard";
+export { default as InterceptTools } from "./InterceptTools";
+export { default as EndpointSegmentedPicker } from "./EndpointSegmentedPicker";
+export {
+  default as SetupScaffold,
+  NotInstalledBlock,
+  SetupRow,
+  ModelRow,
+  SingleModelRow,
+} from "./SetupScaffold";

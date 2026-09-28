@@ -1,12 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Card, Button } from "@/shared/components";
-import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import dynamic from "next/dynamic";
-
-const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
-
+import { useState, useRef } from "react";
+import { Card, Button, StatusPill, Callout, ProviderTile } from "@/shared/components";
+import TranslatorStep from "./TranslatorStep";
 // 7 steps matching requestLogger files exactly
 const STEPS = [
   {
@@ -60,57 +56,68 @@ const STEPS = [
   },
 ];
 
-const EDITOR_OPTIONS = {
-  minimap: { enabled: false },
-  fontSize: 12,
-  lineNumbers: "on",
-  scrollBeyondLastLine: false,
-  wordWrap: "on",
-  automaticLayout: true,
+const META_VARIANTS = {
+  sourceFormat: "info",
+  targetFormat: "brand",
+  provider: "live",
+  model: "neutral",
 };
 
+/**
+ * Translator debug page: replay the request pipeline step by step against the
+ * translator log files. Request flow and log filenames are unchanged.
+ */
 export default function TranslatorPage() {
   const [contents, setContents] = useState({});
   const [expanded, setExpanded] = useState({ 1: true });
   const [loading, setLoading] = useState({});
+  const [pageError, setPageError] = useState("");
   // Detected from step 1: { provider, model, sourceFormat, targetFormat }
   const [meta, setMeta] = useState(null);
 
   const setLoad = (key, val) => setLoading((prev) => ({ ...prev, [key]: val }));
-  const setContent = (id, val) => setContents((prev) => ({ ...prev, [id]: val }));
+  const detectMetaRef = useRef(0);
+  const detectTimerRef = useRef(null);
+  const setContent = (id, val) => {
+    setContents((prev) => ({ ...prev, [id]: val }));
+    // Debounced meta detection for step 1: only the latest keystroke batch resolves.
+    if (id === 1) {
+      detectMetaRef.current += 1;
+      const seq = detectMetaRef.current;
+      clearTimeout(detectTimerRef.current);
+      detectTimerRef.current = setTimeout(() => {
+        void detectMeta(val, seq);
+      }, 400);
+    }
+  };
   const toggle = (id) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const openNext = (nextId) =>
-    setExpanded((prev) => {
-      const next = {};
-      STEPS.forEach((s) => {
-        next[s.id] = false;
-      });
-      next[nextId] = true;
-      return next;
-    });
+    setExpanded(Object.fromEntries(STEPS.map((s) => [s.id, s.id === nextId])));
 
   // Load file from logs/translator/
   const handleLoad = async (stepId) => {
     const step = STEPS.find((s) => s.id === stepId);
+
+    setPageError("");
     setLoad(`load-${stepId}`, true);
     try {
       const res = await fetch(`/api/translator/load?file=${step.file}`);
       const data = await res.json();
       if (data.success) {
         setContent(stepId, data.content);
-        if (stepId === 1) await detectMeta(data.content);
       } else {
-        alert(data.error || "File not found");
+        setPageError(data.error || "File not found");
       }
     } catch (e) {
-      alert(e.message);
+      setPageError(e.message);
     }
     setLoad(`load-${stepId}`, false);
   };
 
-  // Step 1: detect provider/format from model field
-  const detectMeta = async (rawContent) => {
+  // Step 1: detect provider/format from model field. `seq` guards against
+  // stale responses: only the latest debounced call may update meta.
+  const detectMeta = async (rawContent, seq) => {
     try {
       const body = typeof rawContent === "string" ? JSON.parse(rawContent) : rawContent;
       const res = await fetch("/api/translator/translate", {
@@ -119,7 +126,8 @@ export default function TranslatorPage() {
         body: JSON.stringify({ step: 1, body }),
       });
       const data = await res.json();
-      if (data.success) setMeta(data.result);
+      if (data.success && (seq === undefined || seq === detectMetaRef.current))
+        setMeta(data.result);
     } catch {
       /* ignore */
     }
@@ -134,6 +142,7 @@ export default function TranslatorPage() {
 
   // Step 1 → Step 3: source → OpenAI intermediate
   const handleToOpenAI = async () => {
+    setPageError("");
     setLoad("toOpenAI", true);
     try {
       const raw = contents[1];
@@ -156,20 +165,21 @@ export default function TranslatorPage() {
       });
       const data = await res.json();
       if (!data.success) {
-        alert(data.error);
+        setPageError(data.error);
         return;
       }
       const str = JSON.stringify(data.result.body, null, 2);
       setContent(3, str);
       openNext(3);
     } catch (e) {
-      alert(e.message);
+      setPageError(e.message);
     }
     setLoad("toOpenAI", false);
   };
 
   // Step 3 → Step 4: OpenAI → target + build URL/headers
   const handleToTarget = async () => {
+    setPageError("");
     setLoad("toTarget", true);
     try {
       const raw = contents[3];
@@ -187,7 +197,7 @@ export default function TranslatorPage() {
       });
       const data = await res.json();
       if (!data.success) {
-        alert(data.error);
+        setPageError(data.error);
         return;
       }
       // Embed provider + model so Send works even without meta
@@ -195,13 +205,14 @@ export default function TranslatorPage() {
       setContent(4, JSON.stringify(step4Content, null, 2));
       openNext(4);
     } catch (e) {
-      alert(e.message);
+      setPageError(e.message);
     }
     setLoad("toTarget", false);
   };
 
   // Step 4 → Step 5: send to provider via executor
   const handleSend = async () => {
+    setPageError("");
     setLoad("send", true);
     try {
       const raw = contents[4];
@@ -214,7 +225,7 @@ export default function TranslatorPage() {
       const model = step4.model || meta?.model;
 
       if (!provider || !model) {
-        alert("Missing provider or model. Please run step 1 first to detect them.");
+        setPageError("Missing provider or model. Please run step 1 first to detect them.");
         return;
       }
 
@@ -226,7 +237,7 @@ export default function TranslatorPage() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
-        alert(err.error || "Send failed");
+        setPageError(err.error || "Send failed");
         return;
       }
 
@@ -250,25 +261,9 @@ export default function TranslatorPage() {
         body: JSON.stringify({ file: "5_res_provider.txt", content: full }),
       });
     } catch (e) {
-      alert(e.message);
+      setPageError(e.message);
     } finally {
       setLoad("send", false);
-    }
-  };
-
-  const { copy } = useCopyToClipboard();
-
-  const handleCopy = async (id) => {
-    if (!contents[id]) return;
-    copy(contents[id], `translator-step-${id}`);
-  };
-
-  const handleFormat = (id) => {
-    try {
-      const obj = JSON.parse(contents[id]);
-      setContent(id, JSON.stringify(obj, null, 2));
-    } catch {
-      /* not JSON, skip */
     }
   };
 
@@ -276,29 +271,19 @@ export default function TranslatorPage() {
   const getAction = (stepId) => {
     if (stepId === 1)
       return (
-        <Button
-          size="sm"
-          icon="arrow_forward"
-          loading={loading["toOpenAI"]}
-          onClick={handleToOpenAI}
-        >
-          → OpenAI
+        <Button size="sm" icon="arrow_forward" loading={loading.toOpenAI} onClick={handleToOpenAI}>
+          To OpenAI
         </Button>
       );
     if (stepId === 3)
       return (
-        <Button
-          size="sm"
-          icon="arrow_forward"
-          loading={loading["toTarget"]}
-          onClick={handleToTarget}
-        >
-          → Target
+        <Button size="sm" icon="arrow_forward" loading={loading.toTarget} onClick={handleToTarget}>
+          To target
         </Button>
       );
     if (stepId === 4)
       return (
-        <Button size="sm" icon="send" loading={loading["send"]} onClick={handleSend}>
+        <Button size="sm" icon="send" loading={loading.send} onClick={handleSend}>
           Send
         </Button>
       );
@@ -306,131 +291,50 @@ export default function TranslatorPage() {
   };
 
   return (
-    <div className="p-8 space-y-3">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-2">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-text-main">Translator Debug</h1>
-          <p className="text-sm text-text-muted mt-1">Replay request flow — matches log files</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-subtle">Debug</p>
+          <h2 className="font-display text-[28px] font-bold tracking-[-0.02em] text-text">
+            Translator debug
+          </h2>
+          <p className="mt-1 text-sm text-muted">Replay request flow — matches log files</p>
         </div>
         {meta && (
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <MetaBadge label="src" value={meta.sourceFormat} color="blue" />
-            <span className="material-symbols-outlined text-text-muted text-[14px]">
-              arrow_forward
-            </span>
-            <MetaBadge label="dst" value={meta.targetFormat} color="orange" />
-            <MetaBadge label="provider" value={meta.provider} color="green" />
-            <MetaBadge label="model" value={meta.model} color="purple" />
-          </div>
+          <Card padding="xs" className="flex flex-wrap items-center gap-2" role="status">
+            {["sourceFormat", "targetFormat", "provider", "model"].map((key) => (
+              <span key={key} className="inline-flex items-center gap-1.5">
+                {key === "provider" && meta.provider && (
+                  <ProviderTile providerId={meta.provider} size="sm" />
+                )}
+                <StatusPill variant={META_VARIANTS[key]} size="sm">
+                  <span className="opacity-70">{key}:</span> {meta[key]}
+                </StatusPill>
+              </span>
+            ))}
+          </Card>
         )}
       </div>
 
-      {STEPS.map((step) => {
-        const action = getAction(step.id);
-        const isExpanded = !!expanded[step.id];
-        const content = contents[step.id] || "";
+      {pageError && (
+        <Callout variant="err" title="Translator step failed">
+          {pageError}
+        </Callout>
+      )}
 
-        return (
-          <Card key={step.id}>
-            <div className="p-4 space-y-3">
-              {/* Step header */}
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => toggle(step.id)}
-                  className="flex items-center gap-2 flex-1 text-left group"
-                >
-                  <span className="material-symbols-outlined text-[20px] text-text-muted group-hover:text-primary transition-colors">
-                    {isExpanded ? "expand_more" : "chevron_right"}
-                  </span>
-                  <span className="text-xs font-mono text-text-muted/60 w-4">{step.id}</span>
-                  <h3 className="text-sm font-semibold text-text-main">{step.label}</h3>
-                  <span className="text-xs text-text-muted/60 font-mono">{step.file}</span>
-                  {content && (
-                    <span className="text-xs text-green-500">({content.length} chars)</span>
-                  )}
-                </button>
-                {!isExpanded && (
-                  <div className="flex gap-1 shrink-0">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon="folder_open"
-                      loading={loading[`load-${step.id}`]}
-                      onClick={() => handleLoad(step.id)}
-                    />
-                    {action}
-                  </div>
-                )}
-              </div>
-
-              {/* Expanded content */}
-              {isExpanded && (
-                <>
-                  <div className="border border-border rounded-lg overflow-hidden">
-                    <Editor
-                      height="400px"
-                      defaultLanguage={step.lang === "text" ? "plaintext" : "json"}
-                      value={content}
-                      onChange={(v) => {
-                        setContent(step.id, v || "");
-                        if (step.id === 1) detectMeta(v || "");
-                      }}
-                      theme="vs-dark"
-                      options={EDITOR_OPTIONS}
-                    />
-                  </div>
-                  <div className="flex gap-2 flex-wrap">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      icon="folder_open"
-                      loading={loading[`load-${step.id}`]}
-                      onClick={() => handleLoad(step.id)}
-                    >
-                      Load
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      icon="data_object"
-                      onClick={() => handleFormat(step.id)}
-                    >
-                      Format
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      icon="content_copy"
-                      onClick={() => handleCopy(step.id)}
-                    >
-                      Copy
-                    </Button>
-                    {action}
-                  </div>
-                </>
-              )}
-            </div>
-          </Card>
-        );
-      })}
+      {STEPS.map((step) => (
+        <TranslatorStep
+          key={step.id}
+          step={step}
+          isExpanded={!!expanded[step.id]}
+          content={contents[step.id] || ""}
+          onToggle={toggle}
+          onContentChange={setContent}
+          onLoad={() => handleLoad(step.id)}
+          loadLoading={loading[`load-${step.id}`]}
+          action={getAction(step.id)}
+        />
+      ))}
     </div>
-  );
-}
-
-function MetaBadge({ label, value, color }) {
-  const colors = {
-    blue: "bg-blue-500/10 text-blue-500",
-    orange: "bg-orange-500/10 text-orange-500",
-    green: "bg-green-500/10 text-green-500",
-    purple: "bg-purple-500/10 text-purple-500",
-  };
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono ${colors[color]}`}
-    >
-      <span className="text-text-muted/70 font-sans text-[10px]">{label}:</span>
-      {value}
-    </span>
   );
 }

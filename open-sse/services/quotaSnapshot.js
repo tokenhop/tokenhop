@@ -1,4 +1,4 @@
-import { MAX_RATE_LIMIT_COOLDOWN_MS, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { getActiveReliabilityPolicy } from "../config/reliabilityPolicy.js";
 import { PLAN_CAPACITY, QUOTA_SNAPSHOT } from "../config/quotaSnapshot.js";
 import { isDurationString } from "../utils/duration.js";
 
@@ -309,8 +309,8 @@ const SHORT_WINDOW_KINDS = new Set(QUOTA_SNAPSHOT.shortWindowKinds);
 
 /**
  * Epoch ms until which the snapshot shows the model's quota exhausted (0 = not
- * known exhausted). Each exhausted window is capped at observedAt +
- * MAX_RATE_LIMIT_COOLDOWN_MS so a stale zero gets re-probed. Never throws.
+ * known exhausted). Each exhausted window is capped at observedAt + the
+ * configured rate-limit cap so a stale zero gets re-probed. Never throws.
  */
 export function getExhaustedUntil(snapshot, model, nowMs = Date.now()) {
   try {
@@ -329,10 +329,12 @@ export function getExhaustedUntil(snapshot, model, nowMs = Date.now()) {
         continue;
       }
 
-      const cap = observedAt + MAX_RATE_LIMIT_COOLDOWN_MS;
+      const policy = getActiveReliabilityPolicy();
+      const cap = observedAt + policy.cooldowns.rateLimitCapMs;
       let windowUntil = cap;
       if (resetsAt > 0) windowUntil = Math.min(resetsAt, cap);
-      else if (SHORT_WINDOW_KINDS.has(kind)) windowUntil = observedAt + TRANSIENT_COOLDOWN_MS;
+      else if (SHORT_WINDOW_KINDS.has(kind))
+        windowUntil = observedAt + policy.cooldowns.transientMs;
       if (windowUntil > now && windowUntil > until) until = windowUntil;
     }
     return until;

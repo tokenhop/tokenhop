@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { resolveFlagSetting, resolveStartPage } from "@/lib/settingsFlags";
 import { extractClientApiKey } from "@/lib/auth/clientApiKey";
 import { hasValidCliToken } from "@/lib/auth/cliToken";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
@@ -21,6 +22,11 @@ const PUBLIC_API_PATHS = [
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
 // Keep root-level rewrites here too: middleware runs before Next.js rewrites.
 const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex", "/responses"];
+
+// Skill markdown reads: static content any network peer may fetch (the URL is
+// pasted to AI agents), so /skills never requires auth or an API key. Still
+// only exact allowlisted ids resolve; traversal/unknown ids 404 in the route.
+const PUBLIC_PAGE_PREFIXES = ["/skills"];
 
 // Always require JWT token regardless of requireLogin setting
 const ALWAYS_PROTECTED = [
@@ -176,10 +182,24 @@ export const __test__ = {
   extractApiKey,
   canAccessPublicLlmApi,
   canAccessLocalOnlyRoute,
+  isTranslatorPath,
 };
+
+function isPublicPage(pathname) {
+  return PUBLIC_PAGE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+// YAN-312: the Translator debug page honors the resolved flag — page and
+// subpaths. The /api/translator debug API is intentionally NOT gated: it is
+// auth-protected and other pages (console-log) share it.
+function isTranslatorPath(pathname) {
+  return pathname === "/dashboard/translator" || pathname.startsWith("/dashboard/translator/");
+}
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
+
+  if (isPublicPage(pathname)) return NextResponse.next();
 
   // Local-only gate for spawn-capable / host-secret routes.
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
@@ -212,12 +232,18 @@ export async function proxy(request) {
   if (pathname.startsWith("/dashboard")) {
     let requireLogin = true;
     let tunnelDashboardAccess = true;
+    let translatorEnabled = false;
 
     try {
       const settings = await loadSettings();
       if (settings) {
         requireLogin = settings.requireLogin !== false;
         tunnelDashboardAccess = settings.tunnelDashboardAccess === true;
+        translatorEnabled = resolveFlagSetting(
+          "ENABLE_TRANSLATOR",
+          settings.translatorEnabled,
+          false,
+        ).value;
 
         // Block tunnel/tailscale access if disabled (redirect to login)
         if (!tunnelDashboardAccess) {
@@ -238,12 +264,21 @@ export async function proxy(request) {
     }
 
     // If login not required, allow through
-    if (!requireLogin) return NextResponse.next();
+    if (!requireLogin) {
+      if (isTranslatorPath(pathname) && !translatorEnabled) {
+        return NextResponse.redirect(new URL("/dashboard", request.url));
+      }
+      return NextResponse.next();
+    }
 
     // Verify JWT token
     const token = request.cookies.get("auth_token")?.value;
     if (token) {
       if (await verifyDashboardAuthToken(token)) {
+        // YAN-312: the Translator debug page honors the resolved flag.
+        if (isTranslatorPath(pathname) && !translatorEnabled) {
+          return NextResponse.redirect(new URL("/dashboard", request.url));
+        }
         return NextResponse.next();
       } else {
         return NextResponse.redirect(new URL("/login", request.url));
@@ -253,9 +288,17 @@ export async function proxy(request) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Redirect / to /dashboard if logged in, or /dashboard if it's the root
+  // Redirect / to the configured start page when logged in, else to it anyway
+  // (dashboardGuard forces login on /dashboard/*): never trap users — an
+  // invalid stored value falls back to /dashboard (resolveStartPage).
   if (pathname === "/") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    try {
+      const settings = await loadSettings();
+      const startPage = resolveStartPage(settings?.startPage);
+      return NextResponse.redirect(new URL(startPage, request.url));
+    } catch {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
   }
 
   return NextResponse.next();

@@ -29,7 +29,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
-import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { getActiveReliabilityPolicy } from "../config/reliabilityPolicy.js";
 import {
   QODER_CHAT_SIG_PATH,
   QODER_CONTEXT_TIER_ENV,
@@ -729,7 +729,8 @@ export class QoderExecutor extends BaseExecutor {
     };
 
     // Abort if upstream doesn't return response headers within connect timeout.
-    const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
+    const timeoutMs =
+      this.config?.timeoutMs || getActiveReliabilityPolicy().streamTimeouts.connectMs;
     const connectCtrl = new AbortController();
     const connectTimer = setTimeout(
       () => connectCtrl.abort(new Error("fetch connect timeout")),

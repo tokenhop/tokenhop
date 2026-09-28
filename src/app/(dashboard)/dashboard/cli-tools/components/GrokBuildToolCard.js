@@ -1,13 +1,23 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
+import { useState } from "react";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
-import Image from "next/image";
-import BaseUrlSelect from "./BaseUrlSelect";
-import { rememberEndpoint } from "./cliEndpointPresets";
-import ApiKeySelect from "./ApiKeySelect";
-import { matchKnownEndpoint } from "./cliEndpointMatch";
+import {
+  useSetupCard,
+  setupCardPropTypes,
+  keyFallback,
+  manualKeyFallback,
+  ApiKeySelect,
+  EndpointSegmentedPicker,
+  SetupScaffold,
+  NotInstalledBlock,
+  SetupRow,
+  SingleModelRow,
+  ModelSelectModal,
+  ManualConfigModal,
+  rememberEndpoint,
+  deriveToolStatus,
+} from "./setupCard";
 
 const ENDPOINT = "/api/cli-tools/grok-build-settings";
 const MODEL_SLOT = "9router";
@@ -21,180 +31,76 @@ const SUBAGENT_TYPES = [
   { id: "plan", label: "Plan", help: "Architecture and implementation planning" },
 ];
 
-function ModelField({ label, value, placeholder, onChange, onSelect, disabled, help }) {
-  return (
-    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
-      <div className="sm:text-right">
-        <span className="text-xs font-semibold text-text-main sm:text-sm">{label}</span>
-        {help && <p className="mt-0.5 text-[10px] leading-tight text-text-muted">{help}</p>}
-      </div>
-      <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">
-        arrow_forward
-      </span>
-      <div className="relative w-full min-w-0">
-        <input
-          type="text"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
-          className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
-        />
-        {value && (
-          <button
-            type="button"
-            onClick={() => onChange("")}
-            className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
-            title="Clear (inherit main model for subagents)"
-          >
-            <span className="material-symbols-outlined text-[14px]">close</span>
-          </button>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={onSelect}
-        disabled={disabled}
-        className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${
-          !disabled
-            ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer"
-            : "opacity-50 cursor-not-allowed border-border"
-        }`}
-      >
-        Select
-      </button>
-    </div>
-  );
-}
-
+/**
+ * Grok Build setup panel: main model + three subagent model overrides with
+ * per-model context windows. Writes ~/.grok/config.toml.
+ */
 export default function GrokBuildToolCard({
   tool,
-  isExpanded,
-  onToggle,
-  hasActiveProviders,
-  apiKeys,
-  activeProviders,
-  cloudEnabled,
-  initialStatus,
-  tunnelEnabled,
-  tunnelPublicUrl,
-  tailscaleEnabled,
-  tailscaleUrl,
+  baseUrl,
+  apiKeys = [],
+  activeProviders = [],
+  cloudEnabled = false,
+  cloudUrl = "",
+  tunnelEnabled = false,
+  tunnelPublicUrl = "",
+  tailscaleEnabled = false,
+  tailscaleUrl = "",
+  onStatusUpdate,
 }) {
   const { getCaps } = useModelCaps();
   const getContextWindow = (model) => getCaps(model)?.contextWindow || null;
-  const initialModel = initialStatus?.settings?.model?.model || "";
-  const initialSubagents = Object.fromEntries(
-    SUBAGENT_TYPES.map((type) => [
-      type.id,
-      initialStatus?.settings?.subagentModels?.[type.id]?.model,
-    ]).filter(([, model]) => Boolean(model)),
+  const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "grok-build" });
+  const { status } = card;
+  const [selectedModel, setSelectedModel] = useState(status?.settings?.model?.model || "");
+  const [subagentModels, setSubagentModels] = useState(() =>
+    Object.fromEntries(
+      SUBAGENT_TYPES.map((t) => [t.id, status?.settings?.subagentModels?.[t.id]?.model]).filter(
+        ([, m]) => Boolean(m),
+      ),
+    ),
   );
-  const [grokStatus, setGrokStatus] = useState(initialStatus || null);
-  const [checking, setChecking] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const [restoring, setRestoring] = useState(false);
-  const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState(apiKeys?.[0]?.key || "");
-  const [selectedModel, setSelectedModel] = useState(initialModel);
-  const [subagentModels, setSubagentModels] = useState(initialSubagents);
-  const [modelTarget, setModelTarget] = useState(null); // "main" or subagent type
-  const [modelAliases, setModelAliases] = useState({});
-  const [showManualConfigModal, setShowManualConfigModal] = useState(false);
-  const [customBaseUrl, setCustomBaseUrl] = useState("");
-  const hasFetchedStatus = useRef(Boolean(initialStatus));
+  const [modelTarget, setModelTarget] = useState(null);
 
-  const configuredModel = grokStatus?.settings?.model;
-  const currentBaseUrl = configuredModel?.base_url || "";
-  const configStatus = !grokStatus?.installed
-    ? null
-    : !configuredModel?.base_url
-      ? "not_configured"
-      : matchKnownEndpoint(configuredModel.base_url, { tunnelPublicUrl, tailscaleUrl })
-        ? "configured"
-        : "other";
-
-  const hydrateForm = useCallback((status) => {
-    const mainModel = status?.settings?.model?.model || "";
-    const configuredSubagents = Object.fromEntries(
-      SUBAGENT_TYPES.map((type) => [
-        type.id,
-        status?.settings?.subagentModels?.[type.id]?.model,
-      ]).filter(([, model]) => Boolean(model)),
+  const hydrate = (next) => {
+    setSelectedModel(next?.settings?.model?.model || "");
+    setSubagentModels(
+      Object.fromEntries(
+        SUBAGENT_TYPES.map((t) => [t.id, next?.settings?.subagentModels?.[t.id]?.model]).filter(
+          ([, m]) => Boolean(m),
+        ),
+      ),
     );
-    setSelectedModel(mainModel);
-    setSubagentModels(configuredSubagents);
-  }, []);
+  };
 
-  const fetchModelAliases = useCallback(async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  }, []);
-
-  const checkStatus = useCallback(
-    async ({ hydrate = false } = {}) => {
-      setChecking(true);
-      try {
-        const res = await fetch(ENDPOINT);
-        const status = await res.json();
-        setGrokStatus(status);
-        hasFetchedStatus.current = true;
-        if (hydrate) hydrateForm(status);
-      } catch (error) {
-        setGrokStatus({ installed: false, error: error.message });
-      } finally {
-        setChecking(false);
-      }
-    },
-    [hydrateForm],
-  );
-
-  useEffect(() => {
-    if (!isExpanded) return;
-    let cancelled = false;
-    const synchronize = async () => {
-      if (!hasFetchedStatus.current) await checkStatus({ hydrate: true });
-      if (!cancelled) await fetchModelAliases();
-    };
-    synchronize();
-    return () => {
-      cancelled = true;
-    };
-  }, [isExpanded, checkStatus, fetchModelAliases]);
+  const configuredModel = status?.settings?.model;
+  const currentBaseUrl = configuredModel?.base_url || "";
 
   const getEffectiveBaseUrl = () => {
-    const url =
-      customBaseUrl ||
+    const u =
+      card.customBaseUrl ||
+      baseUrl ||
       (typeof window !== "undefined"
         ? window.location.origin.replace("://localhost", "://127.0.0.1")
         : "http://127.0.0.1:20128");
-    return url.endsWith("/v1") ? url : `${url}/v1`;
+    return u.endsWith("/v1") ? u : `${u}/v1`;
   };
 
   const handleApply = async () => {
-    setApplying(true);
-    setMessage(null);
+    card.setApplying(true);
+    card.setMessage(null);
     try {
-      const keyToUse =
-        selectedApiKey?.trim() ||
-        (apiKeys?.length > 0 ? apiKeys[0].key : null) ||
-        (!cloudEnabled ? "sk_9router" : null);
       const mappedSubagents = {};
-      for (const type of SUBAGENT_TYPES) {
-        const model = subagentModels[type.id]?.trim();
-        if (model) mappedSubagents[type.id] = { model, contextWindow: getContextWindow(model) };
+      for (const t of SUBAGENT_TYPES) {
+        const model = subagentModels[t.id]?.trim();
+        if (model) mappedSubagents[t.id] = { model, contextWindow: getContextWindow(model) };
       }
-
       const res = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyToUse,
+          apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
           model: selectedModel,
           contextWindow: getContextWindow(selectedModel),
           subagentModels: mappedSubagents,
@@ -202,67 +108,64 @@ export default function GrokBuildToolCard({
       });
       const data = await res.json();
       if (res.ok) {
-        // Remember the endpoint so it stays selectable next time
         rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
-        setMessage({ type: "success", text: "Main and subagent models applied successfully!" });
-        checkStatus();
+        card.setMessage({
+          type: "success",
+          text: "Main and subagent models applied successfully.",
+        });
+        const fresh = await (await fetch(ENDPOINT)).json();
+        card.setStatus(fresh);
+        hydrate(fresh);
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to apply settings" });
+        card.setMessage({ type: "error", text: data.error || "Failed to apply settings." });
       }
-    } catch (error) {
-      setMessage({ type: "error", text: error.message });
+    } catch (err) {
+      card.setMessage({ type: "error", text: err.message });
     } finally {
-      setApplying(false);
+      card.setApplying(false);
     }
   };
 
   const handleReset = async () => {
-    setRestoring(true);
-    setMessage(null);
+    card.setRestoring(true);
+    card.setMessage(null);
     try {
       const res = await fetch(ENDPOINT, { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
-        setMessage({ type: "success", text: "Settings reset successfully!" });
+        card.setMessage({ type: "success", text: "Settings reset successfully." });
         setSelectedModel("");
         setSubagentModels({});
-        checkStatus();
+        const fresh = await (await fetch(ENDPOINT)).json();
+        card.setStatus(fresh);
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to reset settings" });
+        card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
       }
-    } catch (error) {
-      setMessage({ type: "error", text: error.message });
+      return res.ok;
+    } catch (err) {
+      card.setMessage({ type: "error", text: err.message });
+      return false;
     } finally {
-      setRestoring(false);
+      card.setRestoring(false);
     }
-  };
-
-  const handleModelSelect = (model) => {
-    if (modelTarget === "main") {
-      setSelectedModel(model.value);
-    } else if (modelTarget) {
-      setSubagentModels((current) => ({ ...current, [modelTarget]: model.value }));
-    }
-    setModelTarget(null);
   };
 
   const getManualConfigs = () => {
-    const keyToUse =
-      selectedApiKey?.trim() || (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
-    const baseUrl = getEffectiveBaseUrl();
+    const keyToUse = manualKeyFallback(card.selectedApiKey, cloudEnabled);
+    const effective = getEffectiveBaseUrl();
     const mainModel = selectedModel || "provider/model-id";
     const blocks = [
       `[models]\ndefault = "${MODEL_SLOT}"`,
-      `[model.${MODEL_SLOT}]\nmodel = "${mainModel}"\nbase_url = "${baseUrl}"\nname = "9Router"\ndescription = "Routed via 9Router gateway"\napi_backend = "chat_completions"\napi_key = "${keyToUse}"\ncontext_window = ${getContextWindow(mainModel) || 200000}`,
+      `[model.${MODEL_SLOT}]\nmodel = "${mainModel}"\nbase_url = "${effective}"\nname = "9Router"\ndescription = "Routed via 9Router gateway"\napi_backend = "chat_completions"\napi_key = "${keyToUse}"\ncontext_window = ${getContextWindow(mainModel) || 200000}`,
     ];
     const mappings = [];
-    for (const type of SUBAGENT_TYPES) {
-      const model = subagentModels[type.id]?.trim();
+    for (const t of SUBAGENT_TYPES) {
+      const model = subagentModels[t.id]?.trim();
       if (!model) continue;
-      const slot = `${MODEL_SLOT}-${type.id}`;
-      mappings.push(`${type.id} = "${slot}"`);
+      const slot = `${MODEL_SLOT}-${t.id}`;
+      mappings.push(`${t.id} = "${slot}"`);
       blocks.push(
-        `[model.${slot}]\nmodel = "${model}"\nbase_url = "${baseUrl}"\nname = "9Router ${type.id}"\ndescription = "Routed via 9Router gateway"\napi_backend = "chat_completions"\napi_key = "${keyToUse}"\ncontext_window = ${getContextWindow(model) || 200000}`,
+        `[model.${slot}]\nmodel = "${model}"\nbase_url = "${effective}"\nname = "9Router ${t.id}"\ndescription = "Routed via 9Router gateway"\napi_backend = "chat_completions"\napi_key = "${keyToUse}"\ncontext_window = ${getContextWindow(model) || 200000}`,
       );
     }
     if (mappings.length) blocks.splice(1, 0, `[subagents.models]\n${mappings.join("\n")}`);
@@ -270,270 +173,121 @@ export default function GrokBuildToolCard({
   };
 
   return (
-    <Card padding="xs" className="overflow-hidden">
-      <div
-        className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center"
-        onClick={onToggle}
-      >
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="size-8 flex items-center justify-center shrink-0">
-            <Image
-              src={tool.image || "/providers/grok-cli.png"}
-              alt={tool.name}
-              width={32}
-              height={32}
-              className="size-8 object-contain rounded-lg"
-              sizes="32px"
-              onError={(e) => {
-                e.target.style.display = "none";
-              }}
-              loading="lazy"
-              decoding="async"
+    <>
+      <SetupScaffold
+        tool={tool}
+        status={deriveToolStatus(tool, card.status)}
+        checking={card.checking}
+        checkingLabel="Checking Grok Build..."
+        notInstalled={
+          !card.checking && status && !status.installed && !status.error ? (
+            <NotInstalledBlock
+              toolName="Grok Build"
+              onManualConfig={() => card.setShowManualModal(true)}
+              installCommand="curl -fsSL https://x.ai/cli/install.sh | bash"
+              guideOpen={card.showInstallGuide}
+              onToggleGuide={() => card.setShowInstallGuide((v) => !v)}
             />
-          </div>
-          <div className="min-w-0">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <h3 className="font-medium text-sm">{tool.name}</h3>
-              {configStatus === "configured" && (
-                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-500/10 text-green-600 dark:text-green-400 rounded-full">
-                  Connected
-                </span>
-              )}
-              {configStatus === "not_configured" && (
-                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-full">
-                  Not configured
-                </span>
-              )}
-              {configStatus === "other" && (
-                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full">
-                  Other
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-text-muted truncate">{tool.description}</p>
-          </div>
+          ) : null
+        }
+        message={card.message}
+        onApply={handleApply}
+        applyDisabled={!selectedModel}
+        applying={card.applying}
+        onReset={handleReset}
+        resetDisabled={!status?.has9Router}
+        resetting={card.restoring}
+        onManualConfig={() => card.setShowManualModal(true)}
+        fileHint="~/.grok/config.toml"
+      >
+        <EndpointSegmentedPicker
+          value={card.customBaseUrl || baseUrl}
+          onChange={card.setCustomBaseUrl}
+          currentUrl={currentBaseUrl}
+          tunnelEnabled={tunnelEnabled}
+          tunnelPublicUrl={tunnelPublicUrl}
+          tailscaleEnabled={tailscaleEnabled}
+          tailscaleUrl={tailscaleUrl}
+          cloudEnabled={cloudEnabled}
+          cloudUrl={cloudUrl}
+          requiresExternalUrl={tool.requiresExternalUrl}
+        />
+        {tool.notes?.length > 0 && (
+          <p className="text-xs text-muted">{tool.notes.map((n) => n.text).join(" ")}</p>
+        )}
+        <SetupRow label="API key">
+          <ApiKeySelect
+            value={card.selectedApiKey}
+            onChange={card.setSelectedApiKey}
+            apiKeys={apiKeys}
+            cloudEnabled={cloudEnabled}
+          />
+        </SetupRow>
+        <SetupRow label="Main model">
+          <SingleModelRow
+            value={selectedModel}
+            onChange={setSelectedModel}
+            onPick={() => {
+              setModelTarget("main");
+              card.setModalOpen(true);
+            }}
+            pickDisabled={!activeProviders?.length}
+          />
+        </SetupRow>
+
+        <div className="flex flex-col gap-2 pt-2 border-t border-line">
+          <span className="text-[13px] font-semibold text-text">Subagent model overrides</span>
+          <p className="text-xs text-muted">
+            Leave blank to inherit the main model. Each override keeps its own context window.
+          </p>
+          {SUBAGENT_TYPES.map((t) => (
+            <SetupRow key={t.id} label={t.label} hint={t.help}>
+              <SingleModelRow
+                value={subagentModels[t.id] || ""}
+                onChange={(val) => setSubagentModels((cur) => ({ ...cur, [t.id]: val }))}
+                onPick={() => {
+                  setModelTarget(t.id);
+                  card.setModalOpen(true);
+                }}
+                pickDisabled={!activeProviders?.length}
+                placeholder={`${selectedModel || "Main model"} (inherit)`}
+              />
+            </SetupRow>
+          ))}
         </div>
-        <span
-          className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}
-        >
-          expand_more
-        </span>
-      </div>
+      </SetupScaffold>
 
-      {isExpanded && (
-        <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-          {checking && (
-            <div className="flex items-center gap-2 text-text-muted">
-              <span className="material-symbols-outlined animate-spin">progress_activity</span>
-              <span>Checking Grok Build...</span>
-            </div>
-          )}
-
-          {!checking && grokStatus && !grokStatus.installed && (
-            <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-              <div className="flex items-start gap-3">
-                <span className="material-symbols-outlined text-yellow-500">warning</span>
-                <div className="flex-1">
-                  <p className="font-medium text-yellow-600 dark:text-yellow-400">
-                    Grok Build not detected locally
-                  </p>
-                  <code className="block mt-2 p-2 bg-black/20 rounded text-xs font-mono">
-                    curl -fsSL https://x.ai/cli/install.sh | bash
-                  </code>
-                </div>
-              </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowManualConfigModal(true)}
-                className="w-full sm:w-auto"
-              >
-                <span className="material-symbols-outlined text-[18px] mr-1">content_copy</span>
-                Manual Config
-              </Button>
-            </div>
-          )}
-
-          {!checking && grokStatus?.installed && (
-            <>
-              <div className="flex flex-col gap-2">
-                {tool.notes?.length > 0 && (
-                  <div className="mb-2 flex flex-col gap-2">
-                    {tool.notes.map((note, index) => (
-                      <div
-                        key={index}
-                        className={`flex items-start gap-2 rounded p-2 text-xs ${note.type === "warning" ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" : "bg-blue-500/10 text-blue-600 dark:text-blue-400"}`}
-                      >
-                        <span className="material-symbols-outlined mt-0.5 text-[14px]">
-                          {note.type === "warning" ? "warning" : "info"}
-                        </span>
-                        <span>{note.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
-                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">
-                    Select Endpoint
-                  </span>
-                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">
-                    arrow_forward
-                  </span>
-                  <BaseUrlSelect
-                    value={customBaseUrl || getEffectiveBaseUrl()}
-                    onChange={setCustomBaseUrl}
-                    requiresExternalUrl={tool.requiresExternalUrl}
-                    tunnelEnabled={tunnelEnabled}
-                    tunnelPublicUrl={tunnelPublicUrl}
-                    tailscaleEnabled={tailscaleEnabled}
-                    tailscaleUrl={tailscaleUrl}
-                    currentUrl={currentBaseUrl}
-                  />
-                </div>
-
-                {configuredModel?.base_url && (
-                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
-                    <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">
-                      Current
-                    </span>
-                    <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">
-                      arrow_forward
-                    </span>
-                    <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
-                      {configuredModel.base_url} · {configuredModel.model}
-                      {configuredModel.context_window
-                        ? ` · ${(configuredModel.context_window / 1000).toLocaleString()}K ctx`
-                        : ""}
-                    </span>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
-                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">
-                    API Key
-                  </span>
-                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">
-                    arrow_forward
-                  </span>
-                  <ApiKeySelect
-                    value={selectedApiKey}
-                    onChange={setSelectedApiKey}
-                    apiKeys={apiKeys}
-                    cloudEnabled={cloudEnabled}
-                  />
-                </div>
-
-                <ModelField
-                  label="Main Model"
-                  value={selectedModel}
-                  onChange={setSelectedModel}
-                  placeholder="provider/model-id"
-                  onSelect={() => setModelTarget("main")}
-                  disabled={!hasActiveProviders}
-                />
-
-                <div className="my-1 border-t border-border pt-3">
-                  <div className="mb-2 flex items-start gap-2">
-                    <span className="material-symbols-outlined text-primary text-[16px]">
-                      account_tree
-                    </span>
-                    <div>
-                      <p className="text-xs font-semibold text-text-main">
-                        Subagent model overrides
-                      </p>
-                      <p className="text-[10px] text-text-muted">
-                        Leave blank to inherit Main Model. Each override keeps its own context
-                        window.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {SUBAGENT_TYPES.map((type) => (
-                  <ModelField
-                    key={type.id}
-                    label={type.label}
-                    help={type.help}
-                    value={subagentModels[type.id] || ""}
-                    onChange={(value) =>
-                      setSubagentModels((current) => ({ ...current, [type.id]: value }))
-                    }
-                    placeholder={`${selectedModel || "Main Model"} (inherit)`}
-                    onSelect={() => setModelTarget(type.id)}
-                    disabled={!hasActiveProviders}
-                  />
-                ))}
-              </div>
-
-              {message && (
-                <div
-                  className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}
-                >
-                  <span className="material-symbols-outlined text-[14px]">
-                    {message.type === "success" ? "check_circle" : "error"}
-                  </span>
-                  <span>{message.text}</span>
-                </div>
-              )}
-
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleApply}
-                  disabled={!selectedModel}
-                  loading={applying}
-                  className="w-full sm:w-auto"
-                >
-                  <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleReset}
-                  disabled={!grokStatus?.has9Router}
-                  loading={restoring}
-                  className="w-full sm:w-auto"
-                >
-                  <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowManualConfigModal(true)}
-                  className="w-full sm:w-auto"
-                >
-                  <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>
-                  Manual Config
-                </Button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {modelTarget && (
+      {card.modalOpen && (
         <ModelSelectModal
-          isOpen={Boolean(modelTarget)}
-          onClose={() => setModelTarget(null)}
-          onSelect={handleModelSelect}
-          selectedModel={modelTarget === "main" ? selectedModel : subagentModels[modelTarget] || ""}
+          isOpen={card.modalOpen}
+          onClose={() => {
+            card.setModalOpen(false);
+            setModelTarget(null);
+          }}
+          onSelect={(m) => {
+            if (modelTarget === "main") setSelectedModel(m.value);
+            else if (modelTarget) setSubagentModels((cur) => ({ ...cur, [modelTarget]: m.value }));
+            card.setModalOpen(false);
+            setModelTarget(null);
+          }}
+          selectedModel={modelTarget === "main" ? selectedModel : subagentModels[modelTarget]}
           activeProviders={activeProviders}
-          modelAliases={modelAliases}
+          modelAliases={card.modelAliases}
           title={
             modelTarget === "main"
-              ? "Select Main Model for Grok Build"
-              : `Select ${SUBAGENT_TYPES.find((type) => type.id === modelTarget)?.label || "Subagent"} Model`
+              ? "Select main model for Grok Build"
+              : `Select ${modelTarget} model`
           }
         />
       )}
-
       <ManualConfigModal
-        isOpen={showManualConfigModal}
-        onClose={() => setShowManualConfigModal(false)}
-        title="Grok Build - Manual Configuration"
+        isOpen={card.showManualModal}
+        onClose={() => card.setShowManualModal(false)}
+        title="Grok Build — Manual Configuration"
         configs={getManualConfigs()}
       />
-    </Card>
+    </>
   );
 }
+
+GrokBuildToolCard.propTypes = setupCardPropTypes;

@@ -11,7 +11,7 @@ name: PR title
 
 on:
   pull_request_target:
-    branches: [master]
+    branches: [master, re-design]
     types: [opened, edited, reopened, synchronize]
 
 permissions:

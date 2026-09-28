@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Card, Button, Input, Select, Toggle } from "@/shared/components";
+import { Card, Button, Callout, Input, Select, Toggle } from "@/shared/components";
 import { AI_PROVIDERS, AUTH_METHODS } from "@/shared/constants/config";
 
 const providerOptions = Object.values(AI_PROVIDERS).map((p) => ({
@@ -78,15 +78,11 @@ export default function NewProviderPage() {
       <div className="mb-8">
         <Link
           href="/dashboard/providers"
-          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
+          className="inline-flex items-center gap-1 text-sm text-muted hover:text-coral-ink transition-colors mb-4"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
           Back to Providers
         </Link>
-        <h1 className="text-3xl font-semibold tracking-tight">Add New Provider</h1>
-        <p className="text-text-muted mt-2">
-          Configure a new AI provider to use with your applications.
-        </p>
       </div>
 
       {/* Form */}
@@ -106,7 +102,7 @@ export default function NewProviderPage() {
           {/* Provider Info */}
           {selectedProvider && (
             <Card.Section className="flex items-center gap-3">
-              <div className="size-10 rounded-lg flex items-center justify-center bg-bg border border-border">
+              <div className="size-10 rounded-lg flex items-center justify-center bg-panel border border-line">
                 <span
                   className="material-symbols-outlined text-xl"
                   style={{ color: selectedProvider.color }}
@@ -116,7 +112,7 @@ export default function NewProviderPage() {
               </div>
               <div>
                 <p className="font-medium">{selectedProvider.name}</p>
-                <p className="text-sm text-text-muted">Selected provider</p>
+                <p className="text-sm text-muted">Selected provider</p>
               </div>
             </Card.Section>
           )}
@@ -124,7 +120,7 @@ export default function NewProviderPage() {
           {/* Auth Method */}
           <div className="flex flex-col gap-3">
             <label className="text-sm font-medium">
-              Authentication Method <span className="text-red-500">*</span>
+              Authentication Method <span className="text-err">*</span>
             </label>
             <div className="flex gap-3">
               {authMethodOptions.map((method) => (
@@ -134,8 +130,8 @@ export default function NewProviderPage() {
                   onClick={() => handleChange("authMethod", method.value)}
                   className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-lg border transition-all ${
                     formData.authMethod === method.value
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:border-primary/50"
+                      ? "border-coral bg-coral-bg text-coral-ink"
+                      : "border-line hover:border-coral/50"
                   }`}
                 >
                   <span className="material-symbols-outlined">
@@ -164,7 +160,7 @@ export default function NewProviderPage() {
           {/* OAuth2 Button */}
           {formData.authMethod === "oauth2" && (
             <Card.Section>
-              <p className="text-sm text-text-muted mb-4">
+              <p className="text-sm text-muted mb-4">
                 Connect your account using OAuth2 authentication.
               </p>
               <Button type="button" variant="secondary" icon="link">
@@ -191,14 +187,10 @@ export default function NewProviderPage() {
           />
 
           {/* Error Message */}
-          {errors.submit && (
-            <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm">
-              {errors.submit}
-            </div>
-          )}
+          {errors.submit && <Callout variant="err">{errors.submit}</Callout>}
 
           {/* Actions */}
-          <div className="flex gap-3 pt-4 border-t border-border">
+          <div className="flex gap-3 pt-4 border-t border-line">
             <Link href="/dashboard/providers" className="flex-1">
               <Button type="button" variant="ghost" fullWidth>
                 Cancel

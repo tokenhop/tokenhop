@@ -1,38 +1,45 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
-import Image from "next/image";
-import BaseUrlSelect from "./BaseUrlSelect";
-import { rememberEndpoint } from "./cliEndpointPresets";
-import ApiKeySelect from "./ApiKeySelect";
-import { matchKnownEndpoint } from "./cliEndpointMatch";
+import Callout from "@/shared/components/Callout";
+import {
+  useSetupCard,
+  setupCardPropTypes,
+  keyFallback,
+  manualKeyFallback,
+  ApiKeySelect,
+  EndpointSegmentedPicker,
+  SetupScaffold,
+  SetupRow,
+  ModelSelectModal,
+  ManualConfigModal,
+  rememberEndpoint,
+  deriveToolStatus,
+} from "./setupCard";
 
+const ENDPOINT = "/api/cli-tools/copilot-settings";
+
+/**
+ * GitHub Copilot setup panel: multi-model chips written to VS Code's
+ * chatLanguageModels.json. No install gate — the config lives in the
+ * editor, not on this machine.
+ */
 export default function CopilotToolCard({
   tool,
-  isExpanded,
-  onToggle,
   baseUrl,
-  apiKeys,
-  activeProviders,
-  cloudEnabled,
-  initialStatus,
-  tunnelEnabled,
-  tunnelPublicUrl,
-  tailscaleEnabled,
-  tailscaleUrl,
+  apiKeys = [],
+  activeProviders = [],
+  cloudEnabled = false,
+  cloudUrl = "",
+  tunnelEnabled = false,
+  tunnelPublicUrl = "",
+  tailscaleEnabled = false,
+  tailscaleUrl = "",
+  onStatusUpdate,
 }) {
-  const [status, setStatus] = useState(initialStatus || null);
-  const [checking, setChecking] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const [restoring, setRestoring] = useState(false);
-  const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [customBaseUrl, setCustomBaseUrl] = useState("");
-  const [modelAliases, setModelAliases] = useState({});
-  const [showManualConfigModal, setShowManualConfigModal] = useState(false);
+  const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "copilot" });
+  const { status } = card;
   const [selectedModels, setSelectedModels] = useState([]);
-  const [modalOpen, setModalOpen] = useState(false);
   const selectedModelsRef = useRef([]);
 
   useEffect(() => {
@@ -40,159 +47,88 @@ export default function CopilotToolCard({
   }, [selectedModels]);
 
   useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
+    if (apiKeys?.length > 0 && !card.selectedApiKey) card.setSelectedApiKey(apiKeys[0].key);
+  }, [apiKeys, card]);
 
-  useEffect(() => {
-    if (initialStatus) setStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded) {
-      if (!status) checkStatus();
-      fetchModelAliases();
-    }
-  }, [isExpanded]);
-
-  // Pre-fill from existing config
   useEffect(() => {
     if (status?.config && Array.isArray(status.config) && selectedModels.length === 0) {
       const entry = status.config.find((e) => e.name === "9Router");
-      if (entry?.models?.length > 0) {
-        setSelectedModels(entry.models.map((m) => m.id));
-      }
+      if (entry?.models?.length > 0) setSelectedModels(entry.models.map((m) => m.id));
     }
-  }, [status]);
-
-  const fetchModelAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      const data = await res.json();
-      if (res.ok) setModelAliases(data.aliases || {});
-    } catch (error) {
-      console.log("Error fetching model aliases:", error);
-    }
-  };
-
-  const saveModels = async (models) => {
-    try {
-      const keyToUse =
-        selectedApiKey && selectedApiKey.trim()
-          ? selectedApiKey
-          : !cloudEnabled
-            ? "sk_9router"
-            : selectedApiKey;
-      await fetch("/api/cli-tools/copilot-settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: getEffectiveBaseUrl(), apiKey: keyToUse, models }),
-      });
-    } catch (error) {
-      console.log("Error saving models:", error);
-    }
-  };
-
-  const currentBaseUrl = status?.currentUrl || "";
-
-  const getConfigStatus = () => {
-    if (!status) return null;
-    if (!status.has9Router) return "not_configured";
-    const url = status.currentUrl || "";
-    return matchKnownEndpoint(url, { tunnelPublicUrl, tailscaleUrl }) ? "configured" : "other";
-  };
-
-  const configStatus = getConfigStatus();
+  }, [status, selectedModels.length]);
 
   const getEffectiveBaseUrl = () => {
-    const url = customBaseUrl || baseUrl;
-    return url.endsWith("/v1") ? url : `${url}/v1`;
+    const fallback = card.customBaseUrl || baseUrl || "http://localhost:20128/v1";
+    return fallback.endsWith("/v1") ? fallback : `${fallback}/v1`;
   };
 
-  const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
-
-  const removeModel = (id) => setSelectedModels((prev) => prev.filter((m) => m !== id));
-
-  const checkStatus = async () => {
-    setChecking(true);
-    try {
-      const res = await fetch("/api/cli-tools/copilot-settings");
-      const data = await res.json();
-      setStatus(data);
-    } catch (error) {
-      setStatus({ error: error.message });
-    } finally {
-      setChecking(false);
-    }
+  const postModels = async (models) => {
+    await fetch(ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        baseUrl: getEffectiveBaseUrl(),
+        apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
+        models,
+      }),
+    }).catch(() => {});
   };
 
   const handleApply = async () => {
-    setApplying(true);
-    setMessage(null);
+    card.setApplying(true);
+    card.setMessage(null);
     try {
-      const keyToUse =
-        selectedApiKey && selectedApiKey.trim()
-          ? selectedApiKey
-          : !cloudEnabled
-            ? "sk_9router"
-            : selectedApiKey;
-
-      const res = await fetch("/api/cli-tools/copilot-settings", {
+      const res = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyToUse,
+          apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
           models: selectedModels,
         }),
       });
       const data = await res.json();
       if (res.ok) {
-        // Remember the endpoint so it stays selectable next time
         rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
-        setMessage({ type: "success", text: data.message || "Settings applied! Reload VS Code." });
-        checkStatus();
+        card.setMessage({
+          type: "success",
+          text: data.message || "Settings applied. Reload VS Code.",
+        });
+        card.fetchStatus();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to apply settings" });
+        card.setMessage({ type: "error", text: data.error || "Failed to apply settings." });
       }
-    } catch (error) {
-      setMessage({ type: "error", text: error.message });
+    } catch (err) {
+      card.setMessage({ type: "error", text: err.message });
     } finally {
-      setApplying(false);
+      card.setApplying(false);
     }
   };
 
   const handleReset = async () => {
-    setRestoring(true);
-    setMessage(null);
+    card.setRestoring(true);
+    card.setMessage(null);
     try {
-      const res = await fetch("/api/cli-tools/copilot-settings", { method: "DELETE" });
+      const res = await fetch(ENDPOINT, { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
-        setMessage({ type: "success", text: "Settings reset successfully!" });
+        card.setMessage({ type: "success", text: "Settings reset successfully." });
         setSelectedModels([]);
-        checkStatus();
+        card.fetchStatus();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to reset settings" });
+        card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
       }
-    } catch (error) {
-      setMessage({ type: "error", text: error.message });
+      return res.ok;
+    } catch (err) {
+      card.setMessage({ type: "error", text: err.message });
+      return false;
     } finally {
-      setRestoring(false);
+      card.setRestoring(false);
     }
   };
 
   const getManualConfigs = () => {
-    const keyToUse =
-      selectedApiKey && selectedApiKey.trim()
-        ? selectedApiKey
-        : !cloudEnabled
-          ? "sk_9router"
-          : "<API_KEY_FROM_DASHBOARD>";
-    const effectiveBaseUrl = getEffectiveBaseUrl();
-    const modelsToShow = selectedModels.length > 0 ? selectedModels : ["provider/model-id"];
-
+    const modelsShown = selectedModels.length > 0 ? selectedModels : ["provider/model-id"];
     return [
       {
         filename: "~/Library/Application Support/Code/User/chatLanguageModels.json",
@@ -201,11 +137,11 @@ export default function CopilotToolCard({
             {
               name: "9Router",
               vendor: "azure",
-              apiKey: keyToUse,
-              models: modelsToShow.map((id) => ({
+              apiKey: manualKeyFallback(card.selectedApiKey, cloudEnabled),
+              models: modelsShown.map((id) => ({
                 id,
                 name: id,
-                url: `${effectiveBaseUrl}/chat/completions#models.ai.azure.com`,
+                url: `${getEffectiveBaseUrl()}/chat/completions#models.ai.azure.com`,
                 toolCalling: true,
                 vision: false,
                 maxInputTokens: 128000,
@@ -221,239 +157,117 @@ export default function CopilotToolCard({
   };
 
   return (
-    <Card padding="xs" className="overflow-hidden">
-      <div
-        className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center"
-        onClick={onToggle}
+    <>
+      <SetupScaffold
+        tool={tool}
+        status={status ? deriveToolStatus(tool, status) : null}
+        checking={card.checking}
+        checkingLabel="Checking Copilot config..."
+        message={card.message}
+        onApply={handleApply}
+        applyDisabled={selectedModels.length === 0}
+        applying={card.applying}
+        onReset={handleReset}
+        resetDisabled={!status?.has9Router}
+        resetting={card.restoring}
+        onManualConfig={() => card.setShowManualModal(true)}
+        manualDisabled={selectedModels.length === 0}
+        fileHint="chatLanguageModels.json"
       >
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="size-8 flex items-center justify-center shrink-0">
-            <Image
-              src="/providers/copilot.png"
-              alt={tool.name}
-              width={32}
-              height={32}
-              className="size-8 object-contain rounded-lg"
-              sizes="32px"
-              onError={(e) => {
-                e.target.style.display = "none";
-              }}
-              loading="lazy"
-              decoding="async"
-            />
-          </div>
-          <div className="min-w-0">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <h3 className="font-medium text-sm">{tool.name}</h3>
-              {configStatus === "configured" && (
-                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-500/10 text-green-600 dark:text-green-400 rounded-full">
-                  Connected
-                </span>
-              )}
-              {configStatus === "not_configured" && (
-                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-full">
-                  Not configured
-                </span>
-              )}
-              {configStatus === "other" && (
-                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full">
-                  Other
-                </span>
+        <Callout variant="info" title="VS Code extension">
+          Writes to chatLanguageModels.json. Reload VS Code after applying for changes to take
+          effect.
+        </Callout>
+        <EndpointSegmentedPicker
+          value={card.customBaseUrl || baseUrl}
+          onChange={card.setCustomBaseUrl}
+          tunnelEnabled={tunnelEnabled}
+          tunnelPublicUrl={tunnelPublicUrl}
+          tailscaleEnabled={tailscaleEnabled}
+          tailscaleUrl={tailscaleUrl}
+          cloudEnabled={cloudEnabled}
+          cloudUrl={cloudUrl}
+          requiresExternalUrl={tool.requiresExternalUrl}
+        />
+        <SetupRow label="API key">
+          <ApiKeySelect
+            value={card.selectedApiKey}
+            onChange={card.setSelectedApiKey}
+            apiKeys={apiKeys}
+            cloudEnabled={cloudEnabled}
+          />
+        </SetupRow>
+        <SetupRow label="Models">
+          <div className="flex flex-col gap-1.5">
+            <div
+              className="flex min-h-11 flex-wrap items-center gap-1.5 rounded-xl border border-line bg-raised px-2 py-1.5"
+              role="listbox"
+              aria-label="Selected models"
+            >
+              {selectedModels.length === 0 ? (
+                <span className="text-xs text-muted">No models selected</span>
+              ) : (
+                selectedModels.map((m) => (
+                  <span
+                    key={m}
+                    className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-transparent bg-panel px-2 py-0.5 font-mono text-xs text-muted"
+                  >
+                    {m}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedModels((prev) => prev.filter((x) => x !== m))}
+                      aria-label={`Remove ${m}`}
+                      className="flex size-6 items-center justify-center rounded-md transition-colors hover:text-err"
+                    >
+                      <span className="material-symbols-outlined text-[12px]" aria-hidden="true">
+                        close
+                      </span>
+                    </button>
+                  </span>
+                ))
               )}
             </div>
-            <p className="text-xs text-text-muted truncate">{tool.description}</p>
+            <button
+              type="button"
+              onClick={() => card.setModalOpen(true)}
+              disabled={!activeProviders?.length}
+              className="w-fit rounded-xl border border-line bg-raised px-3 py-2 text-xs font-semibold text-text transition-colors hover:border-coral disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Add model
+            </button>
           </div>
-        </div>
-        <span
-          className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}
-        >
-          expand_more
-        </span>
-      </div>
+        </SetupRow>
+      </SetupScaffold>
 
-      {isExpanded && (
-        <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-          {checking && (
-            <div className="flex items-center gap-2 text-text-muted">
-              <span className="material-symbols-outlined animate-spin">progress_activity</span>
-              <span>Checking Copilot config...</span>
-            </div>
-          )}
-
-          {!checking && (
-            <>
-              <div className="flex items-start gap-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                <span className="material-symbols-outlined text-blue-500 text-lg">info</span>
-                <div className="text-xs text-blue-700 dark:text-blue-300">
-                  <p className="font-medium">
-                    Writes to{" "}
-                    <code className="px-1 bg-black/5 dark:bg-white/10 rounded">
-                      chatLanguageModels.json
-                    </code>
-                  </p>
-                  <p className="mt-0.5 opacity-80">
-                    Reload VS Code after applying for changes to take effect.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                {/* Endpoint */}
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
-                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">
-                    Select Endpoint
-                  </span>
-                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">
-                    arrow_forward
-                  </span>
-                  <BaseUrlSelect
-                    value={customBaseUrl || getDisplayUrl()}
-                    onChange={setCustomBaseUrl}
-                    requiresExternalUrl={tool.requiresExternalUrl}
-                    tunnelEnabled={tunnelEnabled}
-                    tunnelPublicUrl={tunnelPublicUrl}
-                    tailscaleEnabled={tailscaleEnabled}
-                    tailscaleUrl={tailscaleUrl}
-                    currentUrl={currentBaseUrl}
-                  />
-                </div>
-
-                {/* API Key */}
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
-                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">
-                    API Key
-                  </span>
-                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">
-                    arrow_forward
-                  </span>
-                  <ApiKeySelect
-                    value={selectedApiKey}
-                    onChange={setSelectedApiKey}
-                    apiKeys={apiKeys}
-                    cloudEnabled={cloudEnabled}
-                  />
-                </div>
-
-                {/* Models */}
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">
-                    Models
-                  </span>
-                  <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">
-                    arrow_forward
-                  </span>
-                  <div className="flex-1 flex flex-col gap-2">
-                    <div className="flex flex-wrap gap-1.5 min-h-[28px] px-2 py-1.5 bg-surface rounded border border-border">
-                      {selectedModels.length === 0 ? (
-                        <span className="text-xs text-text-muted">No models selected</span>
-                      ) : (
-                        selectedModels.map((model) => (
-                          <span
-                            key={model}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border"
-                          >
-                            {model}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeModel(model);
-                              }}
-                              className="ml-0.5 hover:text-red-500"
-                            >
-                              <span className="material-symbols-outlined text-[12px]">close</span>
-                            </button>
-                          </span>
-                        ))
-                      )}
-                    </div>
-                    <div>
-                      <button
-                        onClick={() => setModalOpen(true)}
-                        disabled={!activeProviders?.length}
-                        className={`px-2 py-1 rounded border text-xs transition-colors ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
-                      >
-                        Add Model
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {message && (
-                <div
-                  className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}
-                >
-                  <span className="material-symbols-outlined text-[14px]">
-                    {message.type === "success" ? "check_circle" : "error"}
-                  </span>
-                  <span>{message.text}</span>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleApply}
-                  disabled={selectedModels.length === 0}
-                  loading={applying}
-                >
-                  <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleReset}
-                  disabled={!status?.has9Router}
-                  loading={restoring}
-                >
-                  <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowManualConfigModal(true)}
-                  disabled={selectedModels.length === 0}
-                >
-                  <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>
-                  Manual Config
-                </Button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {modalOpen && (
+      {card.modalOpen && (
         <ModelSelectModal
-          isOpen={modalOpen}
+          isOpen={card.modalOpen}
           onClose={() => {
-            setModalOpen(false);
-            saveModels(selectedModelsRef.current);
+            card.setModalOpen(false);
+            postModels(selectedModelsRef.current);
           }}
-          onSelect={(model) => {
-            if (!selectedModels.includes(model.value)) {
-              setSelectedModels([...selectedModels, model.value]);
-            }
+          onSelect={(m) => {
+            if (!selectedModels.includes(m.value)) setSelectedModels((prev) => [...prev, m.value]);
           }}
-          onDeselect={(model) => {
-            setSelectedModels(selectedModels.filter((m) => m !== model.value));
+          onDeselect={(m) => {
+            setSelectedModels((prev) => prev.filter((x) => x !== m.value));
           }}
           selectedModel={null}
           activeProviders={activeProviders}
-          modelAliases={modelAliases}
+          modelAliases={card.modelAliases}
           addedModelValues={selectedModels}
           closeOnSelect={false}
-          title="Add Model for GitHub Copilot"
+          title="Add model for GitHub Copilot"
         />
       )}
-
       <ManualConfigModal
-        isOpen={showManualConfigModal}
-        onClose={() => setShowManualConfigModal(false)}
-        title="GitHub Copilot - Manual Configuration"
+        isOpen={card.showManualModal}
+        onClose={() => card.setShowManualModal(false)}
+        title="GitHub Copilot — Manual Configuration"
         configs={getManualConfigs()}
       />
-    </Card>
+    </>
   );
 }
+
+CopilotToolCard.propTypes = setupCardPropTypes;

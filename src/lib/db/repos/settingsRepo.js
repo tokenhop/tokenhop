@@ -4,7 +4,7 @@ import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
 
-const DEFAULT_SETTINGS = {
+export const DEFAULT_SETTINGS = {
   cloudEnabled: false,
   tunnelEnabled: false,
   tunnelUrl: "",
@@ -26,6 +26,10 @@ const DEFAULT_SETTINGS = {
   requireLogin: true,
   requireApiKey: true,
   tunnelDashboardAccess: true,
+  requestLogsEnabled: false,
+  translatorEnabled: false,
+  startPage: "/dashboard",
+  uiDensity: "comfortable",
   authMode: "password",
   ssoType: "oidc",
   oidcIssuerUrl: "",
@@ -62,6 +66,22 @@ const DEFAULT_SETTINGS = {
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,
+  // YAN-311 reliability policy. Defaults mirror open-sse/config/reliabilityPolicy.js
+  // RELIABILITY_DEFAULTS (today's hardcoded constants); the resolver merges
+  // stored values over defaults, so absent keys behave identically to today.
+  retryPolicy: {
+    502: { tries: 3, delayMs: 3000 },
+    503: { tries: 3, delayMs: 2000 },
+    504: { tries: 2, delayMs: 3000 },
+  },
+  cooldowns: {
+    rateLimitCapMs: 1800000,
+    longMs: 120000,
+    shortMs: 5000,
+    transientMs: 30000,
+  },
+  backoff: { startMs: 2000, maxMs: 300000, levels: 15 },
+  streamTimeouts: { firstChunkMs: 200000, stallMs: 360000, connectMs: 60000 },
 };
 
 async function readRaw() {
@@ -70,9 +90,32 @@ async function readRaw() {
   return row ? parseJson(row.data, {}) : {};
 }
 
-// Merge raw settings with defaults; backward-compat for missing keys
+// Merge raw settings with defaults; backward-compat for missing keys.
+// Reliability keys merge allowlisted leaves only: raw DB JSON bypasses PATCH
+// validation, so crafted stored JSON can't pollute prototypes or persist junk.
+const RELIABILITY_LEAF_KEYS = {
+  retryPolicy: ["502", "503", "504"],
+  cooldowns: ["rateLimitCapMs", "longMs", "shortMs", "transientMs"],
+  backoff: ["startMs", "maxMs", "levels"],
+  streamTimeouts: ["firstChunkMs", "stallMs", "connectMs"],
+};
 export function mergeWithDefaults(raw) {
   const merged = { ...DEFAULT_SETTINGS, ...(raw || {}) };
+  for (const [key, leaves] of Object.entries(RELIABILITY_LEAF_KEYS)) {
+    const stored = (raw || {})[key];
+    if (stored && typeof stored === "object" && !Array.isArray(stored)) {
+      const next = { ...DEFAULT_SETTINGS[key] };
+      for (const leaf of leaves) {
+        if (!Object.hasOwn(stored, leaf)) continue;
+        const value = stored[leaf];
+        next[leaf] =
+          value && typeof value === "object" && !Array.isArray(value)
+            ? { ...(next[leaf] || {}), ...value }
+            : value;
+      }
+      merged[key] = next;
+    }
+  }
   for (const [key, defVal] of Object.entries(DEFAULT_SETTINGS)) {
     if (merged[key] === undefined) {
       if (

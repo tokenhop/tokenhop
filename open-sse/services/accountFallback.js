@@ -1,15 +1,18 @@
-import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { ERROR_RULES } from "../config/errorConfig.js";
+import { getActiveReliabilityPolicy, RELIABILITY_DEFAULTS } from "../config/reliabilityPolicy.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
  * Level 1: 1s, Level 2: 2s, Level 3: 4s... → max 4 min
  * @param {number} backoffLevel - Current backoff level
+ * @param {object} [policy] - Resolved policy (defaults to the active policy)
  * @returns {number} Cooldown in milliseconds
  */
-export function getQuotaCooldown(backoffLevel = 0) {
+export function getQuotaCooldown(backoffLevel = 0, policy = null) {
+  const backoff = (policy || getActiveReliabilityPolicy()).backoff;
   const level = Math.max(0, backoffLevel - 1);
-  const cooldown = BACKOFF_CONFIG.base * 2 ** level;
-  return Math.min(cooldown, BACKOFF_CONFIG.max);
+  const cooldown = backoff.startMs * 2 ** level;
+  return Math.min(cooldown, backoff.maxMs);
 }
 
 /**
@@ -18,38 +21,56 @@ export function getQuotaCooldown(backoffLevel = 0) {
  * @param {number} status - HTTP status code
  * @param {string} errorText - Error message text
  * @param {number} backoffLevel - Current backoff level for exponential backoff
+ * @param {object} [policy] - Resolved policy (defaults to the active policy)
  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
  */
-export function checkFallbackError(status, errorText, backoffLevel = 0) {
+export function checkFallbackError(status, errorText, backoffLevel = 0, policy = null) {
+  const resolved = policy || getActiveReliabilityPolicy();
+  const { backoff, cooldowns } = resolved;
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
+
+  // Policy-aware cooldowns for the fixed rules: text rules keep their shape
+  // (backoff vs fixed), but fixed durations come from the resolved policy.
+  // ERROR_RULES stays the semantic source of truth for classification; the
+  // comparison is against RELIABILITY_DEFAULTS (frozen copies of today's
+  // constants) so a configured policy can never shift the mapping itself.
+  const ruleCooldown = (rule) => {
+    if (rule.cooldownMs === RELIABILITY_DEFAULTS.cooldowns.rateLimitCapMs)
+      return cooldowns.rateLimitCapMs;
+    if (rule.cooldownMs === RELIABILITY_DEFAULTS.cooldowns.transientMs)
+      return cooldowns.transientMs;
+    if (rule.cooldownMs === RELIABILITY_DEFAULTS.cooldowns.longMs) return cooldowns.longMs;
+    if (rule.cooldownMs === RELIABILITY_DEFAULTS.cooldowns.shortMs) return cooldowns.shortMs;
+    return rule.cooldownMs;
+  };
 
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
     if (rule.text && lowerError && lowerError.includes(rule.text)) {
       if (rule.backoff) {
-        const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
+        const newLevel = Math.min(backoffLevel + 1, backoff.levels);
         return {
           shouldFallback: true,
-          cooldownMs: getQuotaCooldown(newLevel),
+          cooldownMs: getQuotaCooldown(newLevel, resolved),
           newBackoffLevel: newLevel,
         };
       }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
+      return { shouldFallback: true, cooldownMs: ruleCooldown(rule) };
     }
 
     // Status-based rule: match HTTP status code
     if (rule.status && rule.status === status) {
       if (rule.backoff) {
-        const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
+        const newLevel = Math.min(backoffLevel + 1, backoff.levels);
         return {
           shouldFallback: true,
-          cooldownMs: getQuotaCooldown(newLevel),
+          cooldownMs: getQuotaCooldown(newLevel, resolved),
           newBackoffLevel: newLevel,
         };
       }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
+      return { shouldFallback: true, cooldownMs: ruleCooldown(rule) };
     }
   }
 
@@ -75,7 +96,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   }
 
   // Default: transient cooldown for any unmatched error
-  return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
+  return { shouldFallback: true, cooldownMs: resolved.cooldowns.transientMs };
 }
 
 /**

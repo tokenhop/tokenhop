@@ -1,8 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, Button, Input } from "@/shared/components";
+import Link from "next/link";
+import { Card, Button, Input, Callout, SkeletonText } from "@/shared/components";
+import { resolveLoginVisibility } from "./loginVisibility";
 
+/**
+ * Login page: password form, SSO buttons per auth mode, must-change flow,
+ * first-run default-password warning, and rate-limit states.
+ * Auth/session logic is unchanged; only presentation uses Signal primitives.
+ */
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -27,6 +34,7 @@ export default function LoginPage() {
   }, [retryAfter]);
 
   useEffect(() => {
+    let cancelled = false;
     async function checkAuth() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -37,6 +45,7 @@ export default function LoginPage() {
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
+        if (cancelled) return;
 
         if (res.ok) {
           const data = await res.json();
@@ -55,12 +64,15 @@ export default function LoginPage() {
           // Safe fallback on non-OK response to avoid infinite loading state.
           setHasPassword(true);
         }
-      } catch (err) {
+      } catch {
         clearTimeout(timeoutId);
-        setHasPassword(true);
+        if (!cancelled) setHasPassword(true);
       }
     }
     checkAuth();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleLogin = async (e) => {
@@ -82,14 +94,14 @@ export default function LoginPage() {
           setMustChange(true);
           return;
         }
-        window.location.assign("/dashboard");
+        window.location.assign(data.startPage || "/dashboard");
       } else {
         const data = await res.json();
         setError(data.error || "Invalid password");
         if (data.resetHint) setResetHint(data.resetHint);
         if (data.retryAfter) setRetryAfter(Number(data.retryAfter));
       }
-    } catch (err) {
+    } catch {
       setError("An error occurred. Please try again.");
     } finally {
       setLoading(false);
@@ -108,12 +120,14 @@ export default function LoginPage() {
         body: JSON.stringify({ currentPassword: password, newPassword }),
       });
       if (res.ok) {
-        window.location.assign("/dashboard");
+        // YAN-312: honor the configured start page after the forced reset too.
+        const data = await res.json().catch(() => ({}));
+        window.location.assign(data.startPage || "/dashboard");
       } else {
         const data = await res.json();
         setError(data.error || "Failed to set password");
       }
-    } catch (err) {
+    } catch {
       setError("An error occurred. Please try again.");
     } finally {
       setLoading(false);
@@ -128,35 +142,50 @@ export default function LoginPage() {
     window.location.href = "/api/auth/saml/start";
   };
 
+  const { samlAvailable, oidcAvailable, passwordAvailable } = resolveLoginVisibility({
+    authMode,
+    ssoType,
+    oidc: oidcConfigured,
+    saml: samlConfigured,
+  });
   const isSsoEnabled = ["sso", "oidc", "saml", "both"].includes(authMode);
-  const activeSsoType = ssoType || (authMode === "saml" ? "saml" : "oidc");
-
-  const samlAvailable = isSsoEnabled && activeSsoType === "saml" && samlConfigured;
-  const oidcAvailable = isSsoEnabled && activeSsoType === "oidc" && oidcConfigured;
   const ssoAvailable = samlAvailable || oidcAvailable;
-
-  const passwordAvailable = authMode === "password" || authMode === "both" || !ssoAvailable;
+  const activeSsoType = ssoType || (authMode === "saml" ? "saml" : "oidc");
 
   // Show loading state while checking password
   if (hasPassword === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-bg p-4">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          <p className="text-text-muted mt-4">Loading...</p>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-bg p-4">
+        <Card className="w-full max-w-md">
+          <div role="status" aria-label="Loading sign-in">
+            <SkeletonText lines={3} />
+          </div>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg p-4 relative overflow-hidden">
-      {/* Faint grid background */}
-      <div className="landing-grid absolute inset-0 pointer-events-none" aria-hidden="true" />
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-bg p-4">
       <div className="relative z-10 w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-primary mb-2">9Router</h1>
-          <p className="text-text-muted">
+        <div className="mb-8 text-center">
+          <h1 className="sr-only">Login to 9Router</h1>
+          <Link
+            href="/landing"
+            className="inline-flex items-center gap-2.5 focus-visible:outline-none focus-visible:shadow-focus"
+            aria-label="9Router home"
+          >
+            <span
+              className="flex size-11 -rotate-[8deg] items-center justify-center rounded-[11px] bg-coral font-display text-2xl font-extrabold text-on-coral shadow-card"
+              aria-hidden="true"
+            >
+              9
+            </span>
+            <span className="font-display text-[26px] font-bold tracking-[-0.02em] text-text">
+              router
+            </span>
+          </Link>
+          <p className="mt-4 text-sm text-muted">
             {samlAvailable
               ? "Sign in with SAML 2.0 Single Sign-On"
               : oidcAvailable
@@ -168,25 +197,24 @@ export default function LoginPage() {
         <Card>
           {mustChange ? (
             <form onSubmit={handleSetNewPassword} className="flex flex-col gap-4">
-              <p className="text-sm text-amber-600 dark:text-amber-400 text-center">
+              <Callout variant="warn" title="Password change required">
                 Set a new password before accessing the dashboard remotely.
-              </p>
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium">New password</label>
-                <Input
-                  type="password"
-                  placeholder="Enter new password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                  autoFocus
-                />
-                {error && <p className="text-xs text-red-500">{error}</p>}
-              </div>
+              </Callout>
+              <Input
+                label="New password"
+                required
+                type="password"
+                autoComplete="new-password"
+                placeholder="Enter new password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                error={error || undefined}
+                autoFocus
+              />
               <Button
                 type="submit"
                 variant="primary"
-                className="w-full"
+                fullWidth
                 loading={loading}
                 disabled={!newPassword}
               >
@@ -196,97 +224,88 @@ export default function LoginPage() {
           ) : (
             <div className="flex flex-col gap-4">
               {samlAvailable && (
-                <Button
-                  type="button"
-                  variant="primary"
-                  className="w-full"
-                  onClick={handleSamlLogin}
-                >
+                <Button type="button" variant="secondary" fullWidth onClick={handleSamlLogin}>
                   {samlLoginLabel}
                 </Button>
               )}
 
               {oidcAvailable && (
-                <Button
-                  type="button"
-                  variant="primary"
-                  className="w-full"
-                  onClick={handleOidcLogin}
-                >
+                <Button type="button" variant="secondary" fullWidth onClick={handleOidcLogin}>
                   {oidcLoginLabel}
                 </Button>
               )}
 
-              {ssoAvailable && passwordAvailable && <div className="h-px bg-border/60" />}
+              {ssoAvailable && passwordAvailable && <div className="h-px bg-line" />}
 
               {passwordAvailable ? (
                 <form onSubmit={handleLogin} className="flex flex-col gap-4">
                   {isSsoEnabled && !ssoAvailable && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
+                    <Callout variant="warn">
                       {activeSsoType === "saml" ? "SAML SSO" : "OIDC"} login is enabled, but
                       configuration is incomplete. Password login is still available for recovery.
-                    </p>
+                    </Callout>
                   )}
 
                   {authMode === "both" && ssoAvailable && (
-                    <p className="text-xs text-text-muted text-center">
+                    <p className="text-center text-xs text-muted">
                       Password and {activeSsoType === "saml" ? "SAML SSO" : "OIDC"} login are both
                       enabled.
                     </p>
                   )}
 
-                  <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium">Password</label>
-                    <Input
-                      type="password"
-                      placeholder="Enter password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      autoFocus={!oidcAvailable}
-                    />
-                    {error && <p className="text-xs text-red-500">{error}</p>}
-                    {retryAfter > 0 && (
-                      <p className="text-xs text-amber-600 dark:text-amber-400">
-                        Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
-                      </p>
-                    )}
-                    {resetHint && (
-                      <p className="text-xs text-text-muted">
-                        Forgot password? Open{" "}
-                        <code className="bg-sidebar px-1 rounded">9router</code> CLI on the host →{" "}
-                        <b>Settings</b> → <b>Reset Password to Default</b>.
-                      </p>
-                    )}
-                  </div>
+                  <Input
+                    label="Password"
+                    required
+                    type="password"
+                    autoComplete="current-password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    error={error || undefined}
+                    autoFocus={!oidcAvailable}
+                  />
+                  {retryAfter > 0 && (
+                    <p className="text-xs text-warn" role="status">
+                      Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
+                    </p>
+                  )}
+                  {resetHint && (
+                    <p className="text-xs text-muted">
+                      Forgot password? Open <code className="font-mono">9router</code> CLI on the
+                      host → <b>Settings</b> → <b>Reset Password to Default</b>.
+                    </p>
+                  )}
 
                   <Button
                     type="submit"
                     variant="primary"
-                    className="w-full"
+                    fullWidth
                     loading={loading}
                     disabled={retryAfter > 0}
                   >
                     {retryAfter > 0 ? `Wait ${retryAfter}s` : "Login"}
                   </Button>
 
-                  <p className="text-xs text-center text-text-muted mt-2">
-                    Default password is <code className="bg-sidebar px-1 rounded">123456</code>
+                  <p className="mt-2 text-center text-xs text-muted">
+                    Default password is <code className="font-mono">123456</code>
                   </p>
                   {hasPassword === false && (
-                    <p className="text-xs text-center text-amber-600 dark:text-amber-400">
-                      Security risk: no password set. You will be asked to set one when logging in
-                      remotely.
-                    </p>
+                    <Callout variant="warn" title="Security risk">
+                      No password set. You will be asked to set one when logging in remotely.
+                    </Callout>
                   )}
                 </form>
               ) : (
-                error && <p className="text-xs text-red-500">{error}</p>
+                error && (
+                  <Callout variant="err" title="Sign-in failed">
+                    {error}
+                  </Callout>
+                )
               )}
             </div>
           )}
         </Card>
       </div>
-    </div>
+    </main>
   );
 }

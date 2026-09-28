@@ -1,41 +1,51 @@
 "use client";
 
-import { useState } from "react";
 import PropTypes from "prop-types";
+import { useState } from "react";
+import { getProviderBrand } from "@/shared/constants/providerBrands";
 import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
 
 function resolveSrc(src, providerId) {
   if (providerId) return getProviderIconSrc(providerId);
   if (!src) return null;
-  const m = String(src).match(/^\/providers\/([^/]+)\.png$/i);
+  const m = String(src).match(/^\/providers\/([^/]+)\.(?:png|svg)$/i);
   if (m) return getProviderIconSrc(m[1]);
   return src;
 }
 
+/**
+ * Provider logo from `/public/providers/{id}.png|svg` with a Signal monogram tile
+ * (brand color, white text) as the fallback when the logo is missing.
+ */
 export default function ProviderIcon({
   src,
   providerId,
   alt,
   size = 32,
   className = "",
-  fallbackText = "?",
+  fallbackText,
   fallbackColor,
 }) {
   const effectiveSrc = resolveSrc(src, providerId);
   const [errored, setErrored] = useState(false);
+  const idFromSrc = effectiveSrc?.match(/^\/providers\/([^/]+)\.(?:png|svg)$/i)?.[1];
+  const brand = getProviderBrand(providerId ?? idFromSrc);
+  const background = fallbackColor ?? brand.color;
 
   if (!effectiveSrc || errored) {
     return (
       <span
-        className={`inline-flex items-center justify-center font-bold rounded-lg ${className}`.trim()}
+        role="img"
+        aria-label={alt ?? providerId ?? "provider"}
+        className={`inline-flex shrink-0 items-center justify-center rounded-lg font-display font-bold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] ${className}`.trim()}
         style={{
           width: size,
           height: size,
-          color: fallbackColor,
+          backgroundColor: background,
           fontSize: Math.max(10, Math.floor(size * 0.38)),
         }}
       >
-        {fallbackText}
+        {fallbackText ?? brand.monogram}
       </span>
     );
   }
@@ -50,8 +60,7 @@ export default function ProviderIcon({
       loading="lazy"
       decoding="async"
       onError={() => {
-        const m = effectiveSrc.match(/^\/providers\/([^/]+)\.png$/i);
-        if (m) markProviderIconMissing(m[1]);
+        if (idFromSrc) markProviderIconMissing(idFromSrc);
         if (providerId) markProviderIconMissing(providerId);
         setErrored(true);
       }}

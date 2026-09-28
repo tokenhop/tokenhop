@@ -67,6 +67,15 @@ describe("dashboard guard public LLM API access", () => {
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
   });
 
+  it("allows public skill markdown on remote hosts without an API key", async () => {
+    const response = await proxy(
+      request("/skills/9router/SKILL.md", { host: "router.example.com" }),
+    );
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
   it("allows loopback public LLM API without API key", async () => {
     const response = await proxy(localRequest("/v1/chat/completions", { host: "localhost:20128" }));
 
@@ -357,5 +366,61 @@ describe("dashboard guard helpers", () => {
     });
 
     expect(__test__.extractApiKey(apiRequest)).toBe("header-key");
+  });
+});
+
+describe("dashboard guard translator gate (YAN-312)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
+    mocks.validateApiKey.mockResolvedValue(false);
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+  });
+
+  function authedRequest(pathname) {
+    return {
+      nextUrl: { pathname, searchParams: new URL(`http://localhost${pathname}`).searchParams },
+      headers: new Headers({ host: "localhost:20128" }),
+      cookies: { get: vi.fn(() => ({ value: "jwt" })) },
+      url: `http://localhost${pathname}`,
+    };
+  }
+
+  it("redirects /dashboard/translator to /dashboard when the flag is off", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, translatorEnabled: false });
+    const response = await proxy(authedRequest("/dashboard/translator"));
+    expect(response.status).toBe(307);
+    expect(String(response.url)).toBe("http://localhost/dashboard");
+  });
+
+  it("redirects translator subpaths too", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, translatorEnabled: false });
+    const response = await proxy(authedRequest("/dashboard/translator/foo"));
+    expect(response.status).toBe(307);
+  });
+
+  it("exposes the translator-path matcher for tests", () => {
+    expect(__test__.isTranslatorPath("/dashboard/translator")).toBe(true);
+    expect(__test__.isTranslatorPath("/dashboard/translator/")).toBe(true);
+    expect(__test__.isTranslatorPath("/dashboard/usage")).toBe(false);
+  });
+
+  it("allows /dashboard/translator when the stored setting is on", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, translatorEnabled: true });
+    const response = await proxy(authedRequest("/dashboard/translator"));
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("redirects / to the configured startPage with fallback to /dashboard", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, startPage: "/dashboard/usage" });
+    const response = await proxy(request("/", { host: "localhost:20128" }));
+    expect(response.status).toBe(307);
+    expect(String(response.url)).toBe("http://localhost/dashboard/usage");
+
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, startPage: "/login" });
+    const fallback = await proxy(request("/", { host: "localhost:20128" }));
+    expect(String(fallback.url)).toBe("http://localhost/dashboard");
   });
 });

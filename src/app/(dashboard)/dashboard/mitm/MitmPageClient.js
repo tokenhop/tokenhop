@@ -8,7 +8,14 @@ import {
   isAnthropicCompatibleProvider,
 } from "@/shared/constants/providers";
 import { MitmServerCard, MitmToolCard } from "@/app/(dashboard)/dashboard/cli-tools/components";
+import { Callout } from "@/shared/components";
+import { useNotificationStore } from "@/store/notificationStore";
 
+/**
+ * MITM setup page shell: page-owned risk warning plus the shared server card
+ * and per-tool DNS cards (owned by the CLI-tools redesign). Parity: provider,
+ * key, alias and settings fetches; running/cert/DNS status; one expanded tool.
+ */
 export default function MitmPageClient() {
   const [connections, setConnections] = useState([]);
   const [apiKeys, setApiKeys] = useState([]);
@@ -21,61 +28,37 @@ export default function MitmPageClient() {
     dnsStatus: {},
     hasCachedPassword: false,
   });
-
+  // Independent reads keep the other MITM controls usable when one endpoint fails.
   useEffect(() => {
-    fetchConnections();
-    fetchApiKeys();
-    fetchAliases();
-    fetchCloudSettings();
+    let cancelled = false;
+    const load = async (url, label, apply, fallback) => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!cancelled) apply(data);
+      } catch {
+        if (!cancelled) {
+          apply(fallback);
+          useNotificationStore
+            .getState()
+            .error(`Couldn't load ${label}. MITM options may be incomplete.`);
+        }
+      }
+    };
+    load("/api/providers", "providers", (data) => setConnections(data.connections || []), {});
+    load("/api/keys", "API keys", (data) => setApiKeys(data.keys || []), {});
+    load("/api/models/alias", "model aliases", (data) => setModelAliases(data.aliases || {}), {});
+    load(
+      "/api/settings",
+      "cloud settings",
+      (data) => setCloudEnabled(data.cloudEnabled || false),
+      {},
+    );
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  const fetchConnections = async () => {
-    try {
-      const res = await fetch("/api/providers");
-      if (res.ok) {
-        const data = await res.json();
-        setConnections(data.connections || []);
-      }
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const fetchApiKeys = async () => {
-    try {
-      const res = await fetch("/api/keys");
-      if (res.ok) {
-        const data = await res.json();
-        setApiKeys(data.keys || []);
-      }
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const fetchAliases = async () => {
-    try {
-      const res = await fetch("/api/models/alias");
-      if (res.ok) {
-        const data = await res.json();
-        setModelAliases(data.aliases || {});
-      }
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const fetchCloudSettings = async () => {
-    try {
-      const res = await fetch("/api/settings");
-      if (res.ok) {
-        const data = await res.json();
-        setCloudEnabled(data.cloudEnabled || false);
-      }
-    } catch {
-      /* ignore */
-    }
-  };
 
   const getActiveProviders = () => connections.filter((c) => c.isActive !== false);
 
@@ -92,17 +75,12 @@ export default function MitmPageClient() {
   const mitmTools = Object.entries(MITM_TOOLS);
 
   return (
-    <div className="flex w-full flex-col gap-6">
-      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-        <span className="material-symbols-outlined text-[16px] text-yellow-500 mt-0.5 shrink-0">
-          warning
-        </span>
-        <p className="text-xs text-red-600 dark:text-yellow-400 leading-relaxed">
-          ⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local
-          CA to redirect requests to your providers. May violate ToS → account ban. Use at your own
-          risk.
-        </p>
-      </div>
+    <div className="flex w-full flex-col gap-5">
+      <Callout variant="warn" title="MITM intercepts HTTPS traffic of IDE tools">
+        Antigravity, GitHub Copilot and Kiro requests are redirected via a local CA to your
+        providers. This may violate their terms of service and risk an account ban. Use at your own
+        risk.
+      </Callout>
 
       {/* MITM Server Card */}
       <MitmServerCard
@@ -112,7 +90,7 @@ export default function MitmPageClient() {
       />
 
       {/* Tool Cards */}
-      <div className="grid gap-3 sm:gap-4">
+      <div className="grid gap-4">
         {mitmTools.map(([toolId, tool]) => (
           <MitmToolCard
             key={toolId}

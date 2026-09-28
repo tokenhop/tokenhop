@@ -9,7 +9,7 @@ import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
-import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { getActiveReliabilityPolicy } from "../config/reliabilityPolicy.js";
 
 const KIRO_REPAIR_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 const KIRO_REPAIR_HEARTBEAT_MS = 10_000;
@@ -410,7 +410,7 @@ export class KiroExecutor extends BaseExecutor {
     );
     const legacyTimeout = envPositiveInt(
       "KIRO_TOOL_CALL_REPAIR_TIMEOUT_MS",
-      STREAM_FIRST_CHUNK_TIMEOUT_MS,
+      getActiveReliabilityPolicy().streamTimeouts.firstChunkMs,
     );
     const ttftTimeoutMs = envPositiveInt("KIRO_TOOL_CALL_REPAIR_TTFT_TIMEOUT_MS", legacyTimeout);
     const stallTimeoutMs = envPositiveInt("KIRO_TOOL_CALL_REPAIR_STALL_TIMEOUT_MS", legacyTimeout);

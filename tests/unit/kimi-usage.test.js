@@ -11,7 +11,7 @@ import {
   USAGE_APIKEY_PROVIDERS,
 } from "../../src/shared/constants/providers.js";
 import { PROVIDERS } from "../../open-sse/providers/index.js";
-import { parseQuotaData } from "../../src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { parseQuotaData } from "../../src/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 
 const KIMI_USAGE_URL = "https://api.kimi.com/coding/v1/usages";
 

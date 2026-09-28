@@ -1,7 +1,10 @@
 "use client";
 
+import PropTypes from "prop-types";
 import { cn } from "@/shared/utils/cn";
+import Field from "./Field";
 
+/** Signal text input wired to a Field (label/hint/error ids, aria-describedby, aria-invalid). */
 export default function Input({
   label,
   type = "text",
@@ -15,49 +18,69 @@ export default function Input({
   required = false,
   className,
   inputClassName,
+  id,
   ...props
 }) {
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
-      {label && (
-        <label className="text-sm font-medium text-text-main">
-          {label}
-          {required && <span className="text-red-500 ml-1">*</span>}
-        </label>
-      )}
-      <div className="relative">
-        {icon && (
-          <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-text-muted">
-            <span className="material-symbols-outlined text-[20px]">{icon}</span>
-          </div>
-        )}
-        <input
-          type={type}
-          placeholder={placeholder}
-          value={value}
-          onChange={onChange}
-          disabled={disabled}
-          className={cn(
-            "w-full py-2.5 px-3 text-sm text-text-main bg-surface-2 rounded-[10px]",
-            "border border-transparent placeholder-text-muted/70",
-            "focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40",
-            "transition-all duration-150 ease-out disabled:opacity-50 disabled:cursor-not-allowed",
-            // iOS zoom fix
-            "text-[16px] sm:text-sm",
-            icon && "pl-10",
-            error && "ring-1 ring-red-500 focus:ring-2 focus:ring-red-500/40 border-red-500/40",
-            inputClassName,
+    <Field
+      id={id}
+      label={label}
+      hint={hint}
+      error={error}
+      required={required}
+      className={className}
+    >
+      {({ inputId, describedBy, invalid }) => (
+        <div className="relative">
+          {icon && (
+            <div
+              className="absolute inset-y-0 start-0 flex items-center ps-3 pointer-events-none text-muted"
+              aria-hidden="true"
+            >
+              <span className="material-symbols-outlined text-[20px]">{icon}</span>
+            </div>
           )}
-          {...props}
-        />
-      </div>
-      {error && (
-        <p className="text-xs text-red-500 flex items-center gap-1">
-          <span className="material-symbols-outlined text-[14px]">error</span>
-          {error}
-        </p>
+          <input
+            {...props}
+            id={inputId}
+            type={type}
+            placeholder={placeholder}
+            value={value}
+            onChange={onChange}
+            disabled={disabled}
+            aria-describedby={describedBy}
+            aria-invalid={invalid || undefined}
+            className={cn(
+              "w-full py-2.5 px-3 text-sm text-text bg-raised rounded-lg",
+              "border border-line placeholder:text-subtle",
+              "focus:outline-none focus:border-coral focus:shadow-focus",
+              "transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed",
+              // iOS zoom fix
+              "text-[16px] sm:text-sm",
+              icon && "ps-10",
+              invalid && "border-err focus:border-err",
+              inputClassName,
+            )}
+          />
+        </div>
       )}
-      {hint && !error && <p className="text-xs text-text-muted">{hint}</p>}
-    </div>
+    </Field>
   );
 }
+
+Input.propTypes = {
+  label: PropTypes.node,
+  type: PropTypes.string,
+  placeholder: PropTypes.string,
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  onChange: PropTypes.func,
+  error: PropTypes.node,
+  hint: PropTypes.node,
+  icon: PropTypes.string,
+  disabled: PropTypes.bool,
+  required: PropTypes.bool,
+  className: PropTypes.string,
+  inputClassName: PropTypes.string,
+  id: PropTypes.string,
+  "aria-label": PropTypes.string,
+};

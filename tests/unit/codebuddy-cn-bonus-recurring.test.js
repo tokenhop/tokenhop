@@ -3,7 +3,7 @@
 // shows "Expires in" instead of implying a monthly refill. The usage handler
 // tags the flag and parseQuotaData must forward it.
 import { describe, it, expect } from "vitest";
-import { parseQuotaData } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { parseQuotaData } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 
 describe("parseQuotaData codebuddy-cn recurring flag", () => {
   it("forwards recurring:false for bonus packs and true for refill packs", () => {

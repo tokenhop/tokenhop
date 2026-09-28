@@ -6,7 +6,8 @@ import {
 } from "../../utils/stream.js";
 import { pipeWithDisconnect } from "../../utils/streamHandler.js";
 import { PROVIDERS } from "../../config/providers.js";
-import { HTTP_STATUS, STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
+import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import { getActiveReliabilityPolicy } from "../../config/reliabilityPolicy.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
 import { buildStreamErrorBytes } from "../../utils/streamHelpers.js";
 import {
@@ -208,7 +209,8 @@ export async function handleStreamingResponse({
   const onAbortTerminal = isResponsesPassthrough
     ? buildAbortedResponsesTerminalBytes
     : (message) => buildStreamErrorBytes(HTTP_STATUS.GATEWAY_TIMEOUT, message, sourceFormat);
-  const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
+  const stallTimeoutMs =
+    PROVIDERS[provider]?.stallTimeoutMs || getActiveReliabilityPolicy().streamTimeouts.stallMs;
   const transformedBody = pipeWithDisconnect(
     providerResponse,
     transformStream,
@@ -259,6 +261,8 @@ export function buildOnStreamComplete({
   translatedBody,
   clientRawRequest,
   pxpipe,
+  savings,
+  comboName,
   reqTag,
   log,
 }) {
@@ -301,6 +305,9 @@ export function buildOnStreamComplete({
       connectionId,
       apiKey,
       endpoint: clientRawRequest?.endpoint,
+      userAgent: clientRawRequest?.headers?.["user-agent"],
+      savings,
+      comboName,
       label: "STREAM USAGE",
       silent: true,
     });

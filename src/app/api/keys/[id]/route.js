@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
+import { validateKeyName } from "@/app/(dashboard)/dashboard/endpoint/endpointLogic";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
@@ -21,7 +22,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, name } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,6 +31,11 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (name !== undefined) {
+      const nameError = validateKeyName(name);
+      if (nameError) return NextResponse.json({ error: nameError }, { status: 400 });
+      updateData.name = name.trim();
+    }
 
     const updated = await updateApiKey(id, updateData);
 

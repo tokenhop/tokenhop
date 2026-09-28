@@ -6,12 +6,14 @@ import { Card, Button, Modal } from "@/shared/components";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import CopyStatus from "@/shared/components/CopyStatus";
 
 // ── ModelRow ───────────────────────────────────────────────────
 export function ModelRow({
   model,
   fullModel,
   copied,
+  copyError,
   onCopy,
   testStatus,
   isCustom,
@@ -25,12 +27,12 @@ export function ModelRow({
       ? "border-green-500/40"
       : testStatus === "error"
         ? "border-red-500/40"
-        : "border-border";
+        : "border-line";
   const iconColor =
     testStatus === "ok" ? "#22c55e" : testStatus === "error" ? "#ef4444" : undefined;
 
   return (
-    <div className={`group px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
+    <div className={`group px-3 py-2 rounded-lg border ${borderColor} hover:bg-raised`}>
       <div className="flex items-center gap-2">
         <span
           className="material-symbols-outlined text-base"
@@ -39,19 +41,17 @@ export function ModelRow({
           {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
         </span>
         <div className="flex flex-col gap-1">
-          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">
+          <code className="text-xs text-muted font-mono bg-panel px-1.5 py-0.5 rounded">
             {fullModel}
           </code>
-          {model.name && (
-            <span className="text-[9px] text-text-muted/70 italic pl-1">{model.name}</span>
-          )}
+          {model.name && <span className="text-[9px] text-muted italic pl-1">{model.name}</span>}
         </div>
         {onTest && (
           <div className="relative group/btn">
             <button
               onClick={onTest}
               disabled={isTesting}
-              className={`p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+              className={`p-0.5 hover:bg-raised rounded text-muted hover:text-coral-ink transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
             >
               <span
                 className="material-symbols-outlined text-sm"
@@ -60,7 +60,7 @@ export function ModelRow({
                 {isTesting ? "progress_activity" : "science"}
               </span>
             </button>
-            <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+            <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
               {isTesting ? "Testing..." : "Test"}
             </span>
           </div>
@@ -68,15 +68,24 @@ export function ModelRow({
         <div className="relative group/btn">
           <button
             onClick={() => onCopy(fullModel, `model-${model.id}`)}
-            className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
+            className="p-0.5 hover:bg-raised rounded text-muted hover:text-coral-ink"
           >
             <span className="material-symbols-outlined text-sm">
-              {copied === `model-${model.id}` ? "check" : "content_copy"}
+              {copied === `model-${model.id}`
+                ? "check"
+                : copyError === `model-${model.id}`
+                  ? "error"
+                  : "content_copy"}
             </span>
           </button>
-          <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
-            {copied === `model-${model.id}` ? "Copied!" : "Copy"}
+          <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+            {copied === `model-${model.id}`
+              ? "Copied!"
+              : copyError === `model-${model.id}`
+                ? "Couldn't copy"
+                : "Copy"}
           </span>
+          <CopyStatus copied={copied} error={copyError} id={`model-${model.id}`} />
         </div>
         {isFree && (
           <span className="text-[10px] font-bold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">
@@ -86,7 +95,7 @@ export function ModelRow({
         {isCustom && (
           <button
             onClick={onDeleteAlias}
-            className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity ml-auto"
+            className="p-0.5 hover:bg-red-500/10 rounded text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity ml-auto"
             title="Remove custom model"
           >
             <span className="material-symbols-outlined text-sm">close</span>
@@ -101,6 +110,7 @@ ModelRow.propTypes = {
   model: PropTypes.shape({ id: PropTypes.string.isRequired }).isRequired,
   fullModel: PropTypes.string.isRequired,
   copied: PropTypes.string,
+  copyError: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
   testStatus: PropTypes.oneOf(["ok", "error"]),
   isCustom: PropTypes.bool,
@@ -124,9 +134,9 @@ function AddCustomModelModal({ isOpen, onSave, onClose }) {
     <Modal isOpen={isOpen} title="Add Custom Model" onClose={onClose}>
       <div className="flex flex-col gap-4">
         <div>
-          <label className="text-xs text-text-muted mb-1 block">Model ID</label>
+          <label className="text-xs text-muted mb-1 block">Model ID</label>
           <input
-            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+            className="w-full px-3 py-2 text-sm border border-line rounded-lg bg-raised focus:outline-none focus:border-coral"
             value={modelId}
             onChange={(e) => setModelId(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSave()}
@@ -157,7 +167,7 @@ AddCustomModelModal.propTypes = {
 // Self-contained card: shows models for a provider, filtered by optional `kindFilter`.
 // kindFilter: if provided, only shows models with matching type/kinds field.
 export default function ModelsCard({ providerId, kindFilter, providerAliasOverride }) {
-  const { copied, copy } = useCopyToClipboard();
+  const { copied, error: copyError, copy } = useCopyToClipboard();
   const [modelAliases, setModelAliases] = useState({});
   const [customModels, setCustomModels] = useState([]);
   const [modelTestResults, setModelTestResults] = useState({});
@@ -303,6 +313,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
                 fullModel={`${providerAlias}/${model.id}`}
                 alias={existingAlias}
                 copied={copied}
+                copyError={copyError}
                 onCopy={copy}
                 onSetAlias={(alias) => handleSetAlias(model.id, alias)}
                 onDeleteAlias={() => handleDeleteAlias(existingAlias)}
@@ -320,6 +331,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
               model={{ id: model.id, name: model.name }}
               fullModel={`${providerAlias}/${model.id}`}
               copied={copied}
+              copyError={copyError}
               onCopy={copy}
               onSetAlias={() => {}}
               onDeleteAlias={() => handleDeleteCustomModel(model.id)}
@@ -332,7 +344,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
 
           <button
             onClick={() => setShowAddCustomModel(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-black/15 dark:border-white/15 text-xs text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-line text-xs text-muted hover:text-coral-ink hover:border-coral/40 transition-colors"
           >
             <span className="material-symbols-outlined text-sm">add</span>
             Add Model

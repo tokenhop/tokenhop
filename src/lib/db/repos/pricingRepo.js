@@ -11,7 +11,7 @@ function invalidate() {
   cache = { value: null, expiresAt: 0 };
 }
 
-async function getUserPricing() {
+export async function getUserPricing() {
   return await pricingKv.getAll();
 }
 
@@ -108,4 +108,8 @@ export async function resetAllPricing() {
   await pricingKv.clear();
   invalidate();
   return {};
+}
+
+export function invalidatePricingCache() {
+  invalidate();
 }

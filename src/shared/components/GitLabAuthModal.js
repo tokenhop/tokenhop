@@ -2,7 +2,11 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Modal, Button, Input, OAuthModal } from "@/shared/components";
+import Modal from "./Modal";
+import Button from "./Button";
+import Callout from "./Callout";
+import Input from "./Input";
+import OAuthModal from "./OAuthModal";
 
 const GITLAB_COM = "https://gitlab.com";
 
@@ -13,10 +17,8 @@ function getRedirectUri() {
 }
 
 /**
- * GitLab Duo Authentication Modal
- * Supports two modes:
- * - OAuth (PKCE): requires OAuth App Client ID (and optional Client Secret)
- * - PAT: requires Personal Access Token
+ * GitLab Duo auth: OAuth app (PKCE, hands off to OAuthModal with the app
+ * credentials) or a Personal Access Token.
  */
 export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClose }) {
   const [mode, setMode] = useState(null); // null | "oauth" | "pat"
@@ -106,53 +108,52 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
     );
   }
 
+  const modeCard =
+    "flex flex-col items-center gap-2 rounded-xl border border-line p-4 text-start transition-colors hover:border-coral hover:bg-coral-bg focus-visible:outline-none focus-visible:shadow-focus";
+
   return (
     <Modal isOpen={isOpen} title="Connect GitLab Duo" onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
-        {/* Mode selection */}
         {!mode && (
           <>
-            <p className="text-sm text-text-muted">Choose how to authenticate with GitLab Duo:</p>
+            <p className="text-sm text-muted">Choose how to authenticate with GitLab Duo:</p>
             <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => setMode("oauth")}
-                className="flex flex-col items-center gap-2 p-4 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-left"
-              >
-                <span className="material-symbols-outlined text-2xl text-primary">lock_open</span>
-                <div>
-                  <p className="text-sm font-medium">OAuth App</p>
-                  <p className="text-xs text-text-muted">Use a GitLab OAuth application</p>
-                </div>
+              <button type="button" onClick={() => setMode("oauth")} className={modeCard}>
+                <span className="material-symbols-outlined text-2xl text-coral" aria-hidden="true">
+                  lock_open
+                </span>
+                <span>
+                  <span className="block text-sm font-medium">OAuth App</span>
+                  <span className="block text-xs text-muted">Use a GitLab OAuth application</span>
+                </span>
               </button>
-              <button
-                onClick={() => setMode("pat")}
-                className="flex flex-col items-center gap-2 p-4 rounded-lg border border-border hover:border-primary hover:bg-primary/5 transition-colors text-left"
-              >
-                <span className="material-symbols-outlined text-2xl text-primary">key</span>
-                <div>
-                  <p className="text-sm font-medium">Personal Access Token</p>
-                  <p className="text-xs text-text-muted">Use a GitLab PAT with api scope</p>
-                </div>
+              <button type="button" onClick={() => setMode("pat")} className={modeCard}>
+                <span className="material-symbols-outlined text-2xl text-coral" aria-hidden="true">
+                  key
+                </span>
+                <span>
+                  <span className="block text-sm font-medium">Personal Access Token</span>
+                  <span className="block text-xs text-muted">Use a GitLab PAT with api scope</span>
+                </span>
               </button>
             </div>
           </>
         )}
 
-        {/* OAuth mode */}
         {mode === "oauth" && (
           <>
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted">
               Create an OAuth app at{" "}
               <a
                 href={`${baseUrl.trim() || GITLAB_COM}/-/profile/applications`}
                 target="_blank"
                 rel="noreferrer"
-                className="text-primary underline"
+                className="text-coral underline"
               >
                 GitLab Applications
               </a>{" "}
               with redirect URI{" "}
-              <code className="bg-sidebar px-1 rounded text-xs">{getRedirectUri()}</code>
+              <code className="rounded bg-raised px-1 text-xs">{getRedirectUri()}</code>
             </p>
             <Input
               label="GitLab Base URL"
@@ -172,7 +173,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
               onChange={(e) => setClientSecret(e.target.value)}
               placeholder="Leave empty for public PKCE app"
             />
-            {error && <p className="text-sm text-red-500">{error}</p>}
+            {error && <Callout variant="err">{error}</Callout>}
             <div className="flex gap-2">
               <Button onClick={handleOAuthStart} fullWidth disabled={!clientId.trim()}>
                 Authorize
@@ -191,22 +192,21 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
           </>
         )}
 
-        {/* PAT mode */}
         {mode === "pat" && (
           <>
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-muted">
               Create a PAT at{" "}
               <a
                 href={`${baseUrl.trim() || GITLAB_COM}/-/user_settings/personal_access_tokens`}
                 target="_blank"
                 rel="noreferrer"
-                className="text-primary underline"
+                className="text-coral underline"
               >
                 GitLab Access Tokens
               </a>{" "}
-              with scopes: <code className="bg-sidebar px-1 rounded text-xs">api</code>,{" "}
-              <code className="bg-sidebar px-1 rounded text-xs">read_user</code>, and{" "}
-              <code className="bg-sidebar px-1 rounded text-xs">ai_features</code>.
+              with scopes: <code className="rounded bg-raised px-1 text-xs">api</code>,{" "}
+              <code className="rounded bg-raised px-1 text-xs">read_user</code>, and{" "}
+              <code className="rounded bg-raised px-1 text-xs">ai_features</code>.
             </p>
             <Input
               label="GitLab Base URL"
@@ -216,12 +216,12 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
             />
             <Input
               label="Personal Access Token"
+              type="password"
               value={pat}
               onChange={(e) => setPat(e.target.value)}
               placeholder="glpat-xxxxxxxxxxxxxxxxxxxx"
-              type="password"
             />
-            {error && <p className="text-sm text-red-500">{error}</p>}
+            {error && <Callout variant="err">{error}</Callout>}
             <div className="flex gap-2">
               <Button
                 onClick={handlePATSubmit}

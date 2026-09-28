@@ -2,40 +2,40 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Modal, Button, Input } from "@/shared/components";
+import Modal from "./Modal";
+import Button from "./Button";
+import Callout from "./Callout";
+import Textarea from "./Textarea";
 
-/**
- * iFlow Cookie Authentication Modal
- * User pastes browser cookie to get fresh API key
- */
+/** iFlow cookie auth: paste a platform.iflow.cn browser cookie to mint a fresh API key. */
 export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
   const [cookie, setCookie] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
 
+  const handleClose = () => {
+    setCookie("");
+    setError(null);
+    setSuccess(false);
+    onClose?.();
+  };
+
   const handleSubmit = async () => {
     if (!cookie.trim()) {
       setError("Please paste your cookie");
       return;
     }
-
     setLoading(true);
     setError(null);
-
     try {
       const res = await fetch("/api/oauth/iflow/cookie", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cookie: cookie.trim() }),
       });
-
       const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Authentication failed");
-      }
-
+      if (!res.ok) throw new Error(data.error || "Authentication failed");
       setSuccess(true);
       setTimeout(() => {
         onSuccess?.();
@@ -48,39 +48,36 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
     }
   };
 
-  const handleClose = () => {
-    setCookie("");
-    setError(null);
-    setSuccess(false);
-    onClose?.();
-  };
-
   return (
     <Modal isOpen={isOpen} onClose={handleClose} title="iFlow Cookie Authentication">
       <div className="space-y-4">
         {success ? (
-          <div className="text-center py-8">
-            <div className="text-6xl mb-4">✅</div>
-            <p className="text-lg font-medium text-text-primary">Authentication Successful!</p>
-            <p className="text-sm text-text-muted mt-2">Fresh API key obtained</p>
+          <div role="status" className="py-8 text-center">
+            <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-ok-bg">
+              <span className="material-symbols-outlined text-3xl text-ok" aria-hidden="true">
+                check_circle
+              </span>
+            </div>
+            <p className="text-lg font-medium text-text">Authentication Successful!</p>
+            <p className="mt-2 text-sm text-muted">Fresh API key obtained</p>
           </div>
         ) : (
           <>
             <div className="space-y-2">
-              <p className="text-sm text-text-muted">
+              <p className="text-sm text-muted">
                 To get a fresh API key, paste your browser cookie from{" "}
                 <a
                   href="https://platform.iflow.cn"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-primary hover:underline"
+                  className="text-coral hover:underline"
                 >
                   platform.iflow.cn
                 </a>
               </p>
-              <div className="bg-surface-secondary p-3 rounded-lg text-xs space-y-2">
-                <p className="font-medium text-text-primary">How to get cookie:</p>
-                <ol className="list-decimal list-inside space-y-1 text-text-muted">
+              <div className="space-y-2 rounded-xl bg-raised p-3 text-xs">
+                <p className="font-medium text-text">How to get cookie:</p>
+                <ol className="list-inside list-decimal space-y-1 text-muted">
                   <li>Open platform.iflow.cn in your browser</li>
                   <li>Login to your account</li>
                   <li>Open DevTools (F12) → Application/Storage → Cookies</li>
@@ -90,23 +87,17 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-text-primary">Cookie String</label>
-              <textarea
-                value={cookie}
-                onChange={(e) => setCookie(e.target.value)}
-                placeholder="BXAuth=xxx; ..."
-                className="w-full px-3 py-2 bg-surface-secondary border border-border rounded-lg text-sm text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-                rows={4}
-                disabled={loading}
-              />
-            </div>
+            <Textarea
+              label="Cookie String"
+              rows={4}
+              value={cookie}
+              onChange={(e) => setCookie(e.target.value)}
+              placeholder="BXAuth=xxx; ..."
+              disabled={loading}
+              textareaClassName="resize-none"
+            />
 
-            {error && (
-              <div className="p-3 bg-error/10 border border-error/20 rounded-lg">
-                <p className="text-sm text-error">{error}</p>
-              </div>
-            )}
+            {error && <Callout variant="err">{error}</Callout>}
 
             <div className="flex gap-3 pt-2">
               <Button variant="secondary" onClick={handleClose} disabled={loading} fullWidth>

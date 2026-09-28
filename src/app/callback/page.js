@@ -1,7 +1,70 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import PropTypes from "prop-types";
 import { useSearchParams } from "next/navigation";
+import { Card, CopyField } from "@/shared/components";
+
+const STATE_VIEWS = {
+  processing: {
+    icon: "progress_activity",
+    tile: "bg-coral-bg text-coral-ink",
+    spin: true,
+    title: "Processing...",
+    body: "Please wait while we complete the authorization.",
+  },
+  success: {
+    icon: "check_circle",
+    tile: "bg-ok-bg text-ok",
+    title: "Authorization successful",
+    body: "This window will close automatically...",
+  },
+  done: {
+    icon: "check_circle",
+    tile: "bg-ok-bg text-ok",
+    title: "Authorization successful",
+    body: "You can close this tab now.",
+  },
+  manual: {
+    icon: "info",
+    tile: "bg-sky-bg text-sky",
+    title: "Copy this URL",
+    body: "Please copy the URL from the address bar and paste it in the application.",
+  },
+};
+
+/** Centered Signal status card for the OAuth callback states. */
+function CallbackStatus({ state, children }) {
+  const view = STATE_VIEWS[state];
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-bg p-4">
+      <Card className="w-full max-w-md text-center" padding="lg">
+        <div role="status" aria-live="polite" className="flex flex-col items-center gap-3">
+          <span
+            className={`flex size-14 items-center justify-center rounded-2xl ${view.tile}`}
+            aria-hidden="true"
+          >
+            <span
+              className={`material-symbols-outlined text-[28px]${view.spin ? " motion-safe:animate-spin" : ""}`}
+            >
+              {view.icon}
+            </span>
+          </span>
+          <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-text">
+            {view.title}
+          </h1>
+          <p className="text-sm text-muted">{view.body}</p>
+        </div>
+        {children}
+      </Card>
+    </main>
+  );
+}
+
+CallbackStatus.propTypes = {
+  state: PropTypes.oneOf(Object.keys(STATE_VIEWS)).isRequired,
+  children: PropTypes.node,
+};
 
 /**
  * OAuth Callback Page Content
@@ -26,8 +89,8 @@ function CallbackContent() {
       fullUrl: window.location.href,
     };
 
-    let relayed = false;
-
+    // Relay the callback to the opener/other tabs. Each channel is best-effort;
+    // the manual copy-URL state below covers the case where none reach a listener.
     // Trusted origins that may receive this callback. The OAuth code/state
     // must only be relayed to the dashboard window we expect to be the opener
     // (same origin) or the Codex helper that listens on a fixed loopback port.
@@ -47,7 +110,6 @@ function CallbackContent() {
       for (const origin of expectedOrigins) {
         try {
           window.opener.postMessage({ type: "oauth_callback", data: callbackData }, origin);
-          relayed = true;
         } catch (e) {
           console.log("postMessage failed:", e);
         }
@@ -59,7 +121,6 @@ function CallbackContent() {
       const channel = new BroadcastChannel("oauth_callback");
       channel.postMessage(callbackData);
       channel.close();
-      relayed = true;
     } catch (e) {
       console.log("BroadcastChannel failed:", e);
     }
@@ -70,7 +131,6 @@ function CallbackContent() {
         "oauth_callback",
         JSON.stringify({ ...callbackData, timestamp: Date.now() }),
       );
-      relayed = true;
     } catch (e) {
       console.log("localStorage failed:", e);
     }
@@ -88,54 +148,15 @@ function CallbackContent() {
   }, [searchParams]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg">
-      <div className="text-center p-8 max-w-md">
-        {status === "processing" && (
-          <>
-            <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-primary animate-spin">
-                progress_activity
-              </span>
-            </div>
-            <h1 className="text-xl font-semibold mb-2">Processing...</h1>
-            <p className="text-text-muted">Please wait while we complete the authorization.</p>
-          </>
-        )}
-
-        {(status === "success" || status === "done") && (
-          <>
-            <div className="size-16 mx-auto mb-4 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-green-600">
-                check_circle
-              </span>
-            </div>
-            <h1 className="text-xl font-semibold mb-2">Authorization Successful!</h1>
-            <p className="text-text-muted">
-              {status === "success"
-                ? "This window will close automatically..."
-                : "You can close this tab now."}
-            </p>
-          </>
-        )}
-
-        {status === "manual" && (
-          <>
-            <div className="size-16 mx-auto mb-4 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-yellow-600">info</span>
-            </div>
-            <h1 className="text-xl font-semibold mb-2">Copy This URL</h1>
-            <p className="text-text-muted mb-4">
-              Please copy the URL from the address bar and paste it in the application.
-            </p>
-            <div className="bg-surface border border-border rounded-lg p-3 text-left">
-              <code className="text-xs break-all">
-                {typeof window !== "undefined" ? window.location.href : ""}
-              </code>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+    <CallbackStatus state={status}>
+      {status === "manual" && (
+        <CopyField
+          className="mt-5 text-start"
+          value={typeof window !== "undefined" ? window.location.href : ""}
+          label="Copy callback URL"
+        />
+      )}
+    </CallbackStatus>
   );
 }
 
@@ -145,20 +166,7 @@ function CallbackContent() {
  */
 export default function CallbackPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center bg-bg">
-          <div className="text-center p-8">
-            <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-primary animate-spin">
-                progress_activity
-              </span>
-            </div>
-            <p className="text-text-muted">Loading...</p>
-          </div>
-        </div>
-      }
-    >
+    <Suspense fallback={<CallbackStatus state="processing" />}>
       <CallbackContent />
     </Suspense>
   );

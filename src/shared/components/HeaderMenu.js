@@ -1,124 +1,136 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import PropTypes from "prop-types";
+import { APP_CONFIG } from "@/shared/constants/config";
 import { useTheme } from "@/shared/hooks/useTheme";
+import { resolveVersionChip } from "@/shared/utils/shell";
 import ChangelogModal from "./ChangelogModal";
-import { ConfirmModal } from "./Modal";
+import LanguageSwitcher from "./LanguageSwitcher";
+import { ConfirmDialog } from "./Modal";
+import Menu, { MenuItem } from "./Menu";
+import IconButton from "./IconButton";
 
-function MenuItem({ icon, label, onClick, trailing, danger }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm transition-colors ${
-        danger
-          ? "text-red-500 hover:bg-red-500/10"
-          : "text-text-main hover:bg-black/5 dark:hover:bg-white/5"
-      }`}
-    >
-      <span className={`material-symbols-outlined text-[20px] ${danger ? "" : "text-text-muted"}`}>
-        {icon}
-      </span>
-      <span className="flex-1 text-left">{label}</span>
-      {trailing && <span className="text-base">{trailing}</span>}
-    </button>
-  );
-}
-
-MenuItem.propTypes = {
-  icon: PropTypes.string.isRequired,
-  label: PropTypes.string.isRequired,
-  onClick: PropTypes.func.isRequired,
-  trailing: PropTypes.node,
-  danger: PropTypes.bool,
-};
-
-export default function HeaderMenu({ onLogout }) {
-  const [isOpen, setIsOpen] = useState(false);
+/**
+ * Header app menus, switched by CSS breakpoint (no JS media query, so server
+ * and client markup always match):
+ * - from `sm` up: the grid menu (Change Log, Theme, Shutdown, Logout)
+ * - below `sm`: a ⋮ menu that also holds Support and Language, which the
+ *   header hides inline at that width
+ * Both use the shared Menu pattern (roving focus, typeahead, Esc close). The
+ * Change Log entry shows the full version.
+ *
+ * @param {object} props
+ * @param {() => void} props.onLogout
+ * @param {() => void} props.onDonate Opens the support dialog (owned by Header).
+ */
+export default function HeaderMenu({ onLogout, onDonate }) {
   const [changelogOpen, setChangelogOpen] = useState(false);
+  const [languageOpen, setLanguageOpen] = useState(false);
   const [shutdownOpen, setShutdownOpen] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const { toggleTheme, isDark } = useTheme();
-  const menuRef = useRef(null);
+  const { full } = resolveVersionChip(APP_CONFIG.version);
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);
     try {
       await fetch("/api/version/shutdown", { method: "POST" });
-    } catch (e) {
-      // Expected to fail as server shuts down; ignore error
+    } catch {
+      // Expected: the server is shutting down, so the fetch fails.
     }
     setIsShuttingDown(false);
     setShutdownOpen(false);
   };
 
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setIsOpen(false);
-      }
-    };
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [isOpen]);
-
-  const close = () => setIsOpen(false);
+  const changelogItem = (keyPrefix) => (
+    <MenuItem
+      key={`${keyPrefix}-changelog`}
+      icon="history"
+      label="Change Log"
+      trailing={full ? <span data-i18n-skip="true">{full}</span> : undefined}
+      onSelect={() => setChangelogOpen(true)}
+    />
+  );
+  const themeItem = (keyPrefix) => (
+    <MenuItem
+      key={`${keyPrefix}-theme`}
+      icon={isDark ? "light_mode" : "dark_mode"}
+      label="Theme"
+      onSelect={() => toggleTheme()}
+    />
+  );
+  const shutdownItem = (keyPrefix) => (
+    <MenuItem
+      key={`${keyPrefix}-shutdown`}
+      icon="power_settings_new"
+      label="Shutdown"
+      danger
+      onSelect={() => setShutdownOpen(true)}
+    />
+  );
+  const logoutItem = (keyPrefix) => (
+    <MenuItem
+      key={`${keyPrefix}-logout`}
+      icon="logout"
+      label="Logout"
+      danger
+      onSelect={() => onLogout()}
+    />
+  );
 
   return (
     <>
-      <div className="relative" ref={menuRef}>
-        <button
-          onClick={() => setIsOpen((v) => !v)}
-          className="flex items-center justify-center p-2 rounded-lg text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-all"
-          title="Menu"
+      <span className="hidden sm:inline-flex">
+        <Menu
+          trigger={
+            <IconButton
+              icon="grid_view"
+              label="Menu"
+              className="border-transparent bg-transparent hover:bg-raised"
+            />
+          }
+          align="end"
         >
-          <span className="material-symbols-outlined">grid_view</span>
-        </button>
-
-        {isOpen && (
-          <div className="absolute right-0 top-full mt-2 w-60 bg-surface border border-black/10 dark:border-white/10 rounded-xl shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 overflow-hidden py-1">
-            <MenuItem
-              icon="history"
-              label="Change Log"
-              onClick={() => {
-                close();
-                setChangelogOpen(true);
-              }}
+          {changelogItem("desktop")}
+          {themeItem("desktop")}
+          {shutdownItem("desktop")}
+          {logoutItem("desktop")}
+        </Menu>
+      </span>
+      <span className="inline-flex sm:hidden">
+        <Menu
+          trigger={
+            <IconButton
+              icon="more_vert"
+              label="Menu"
+              className="border-transparent bg-transparent hover:bg-raised"
             />
-            <MenuItem
-              icon={isDark ? "light_mode" : "dark_mode"}
-              label="Theme"
-              onClick={() => {
-                toggleTheme();
-                close();
-              }}
-            />
-            <MenuItem
-              icon="power_settings_new"
-              label="Shutdown"
-              danger
-              onClick={() => {
-                close();
-                setShutdownOpen(true);
-              }}
-            />
-            <MenuItem
-              icon="logout"
-              label="Logout"
-              danger
-              onClick={() => {
-                close();
-                onLogout();
-              }}
-            />
-          </div>
-        )}
-      </div>
+          }
+          align="end"
+        >
+          <MenuItem
+            key="mobile-support"
+            icon="volunteer_activism"
+            label="Support 9router"
+            onSelect={onDonate}
+          />
+          <MenuItem
+            key="mobile-language"
+            icon="translate"
+            label="Language"
+            onSelect={() => setLanguageOpen(true)}
+          />
+          {themeItem("mobile")}
+          {changelogItem("mobile")}
+          {shutdownItem("mobile")}
+          {logoutItem("mobile")}
+        </Menu>
+      </span>
 
       <ChangelogModal isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
-      <ConfirmModal
+      <LanguageSwitcher hideTrigger isOpen={languageOpen} onClose={() => setLanguageOpen(false)} />
+      <ConfirmDialog
         isOpen={shutdownOpen}
         onClose={() => setShutdownOpen(false)}
         onConfirm={handleShutdown}
@@ -135,4 +147,5 @@ export default function HeaderMenu({ onLogout }) {
 
 HeaderMenu.propTypes = {
   onLogout: PropTypes.func.isRequired,
+  onDonate: PropTypes.func.isRequired,
 };

@@ -42,10 +42,19 @@ export { parseModel, resolveModelAliasFromMap, getModelInfoCore } from "./servic
 
 export {
   checkFallbackError,
+  getQuotaCooldown,
   isAccountUnavailable,
   getUnavailableUntil,
   filterAvailableAccounts,
 } from "./services/accountFallback.js";
+
+export {
+  getActiveReliabilityPolicy,
+  getReliabilityPolicy,
+  RELIABILITY_DEFAULTS,
+  resolveRetryForStatus,
+  setReliabilityOverrides,
+} from "./config/reliabilityPolicy.js";
 
 export {
   TOKEN_EXPIRY_BUFFER_MS,

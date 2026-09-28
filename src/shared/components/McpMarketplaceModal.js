@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import PropTypes from "prop-types";
 import Modal from "./Modal";
+import Select from "./Select";
+import Checkbox from "./Checkbox";
+import Callout from "./Callout";
+import EmptyState from "./EmptyState";
+import Button from "./Button";
+import { LoadingState } from "./StateViews";
 
 const REGISTRY_ENDPOINT = "/api/cli-tools/cowork-mcp-registry";
 const TOOLS_ENDPOINT = "/api/cli-tools/cowork-mcp-tools";
@@ -17,6 +24,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
   const [toolsLoading, setToolsLoading] = useState({});
   const [toolSelection, setToolSelection] = useState({});
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: registry is fetched once while open by design
   useEffect(() => {
     if (!isOpen) return;
     if (servers.length > 0) return;
@@ -116,43 +124,46 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
     <Modal isOpen={isOpen} onClose={onClose} title="Browse MCP Marketplace" size="lg">
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or description..."
-            className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
-          />
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
-          >
-            <option value="all">All</option>
-            <option value="authless">Authless</option>
-            <option value="oauth">OAuth</option>
-          </select>
+          <div className="flex-1">
+            <label className="sr-only" htmlFor="mcp-search">
+              Search servers
+            </label>
+            <input
+              id="mcp-search"
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name or description..."
+              className="w-full rounded border border-line bg-raised px-2 py-1.5 text-xs text-text placeholder:text-subtle focus:border-coral focus:shadow-focus focus:outline-none"
+            />
+          </div>
+          <div className="w-32 shrink-0">
+            <Select
+              aria-label="Filter by auth type"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              options={[
+                { value: "all", label: "All" },
+                { value: "authless", label: "Authless" },
+                { value: "oauth", label: "OAuth" },
+              ]}
+              className="[&>div>div>select]:h-8 [&>div>div>select]:py-0 [&>div>div>select]:text-xs"
+            />
+          </div>
         </div>
 
         {error && (
-          <div className="px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600">{error}</div>
+          <p role="alert" className="rounded bg-err-bg px-2 py-1.5 text-xs text-err">
+            {error}
+          </p>
         )}
 
-        {loading && (
-          <div className="flex items-center gap-2 text-text-muted text-xs py-4 justify-center">
-            <span className="material-symbols-outlined animate-spin text-[18px]">
-              progress_activity
-            </span>
-            <span>Loading registry...</span>
-          </div>
-        )}
+        {loading && <LoadingState lines={3} label="Loading registry" className="py-2" />}
 
         {!loading && (
           <div className="flex flex-col gap-1 max-h-[60vh] overflow-y-auto">
             {filtered.length === 0 && (
-              <div className="text-center text-xs text-text-muted py-6">
-                No servers match filter
-              </div>
+              <EmptyState icon="search_off" title="No servers match filter" className="py-6" />
             )}
             {filtered.map((s) => {
               const added = addedSet.has(s.slug || s.name);
@@ -163,8 +174,8 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
               const toolKeys = Object.keys(sel);
               const selectedCount = Object.values(sel).filter(Boolean).length;
               return (
-                <div key={s.url} className="rounded border border-transparent hover:border-border">
-                  <div className="flex items-start gap-2 px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5">
+                <div key={s.url} className="rounded border border-transparent hover:border-line">
+                  <div className="flex items-start gap-2 px-2 py-2 hover:bg-raised">
                     {s.iconUrl ? (
                       // biome-ignore lint/performance/noImgElement: raw img with onError fallback for dynamic icons
                       <img
@@ -178,7 +189,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                         decoding="async"
                       />
                     ) : (
-                      <div className="size-7 rounded bg-surface shrink-0" />
+                      <div className="size-7 shrink-0 rounded bg-raised" />
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -193,104 +204,98 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                           </span>
                         )}
                         {s.toolCount > 0 && (
-                          <span className="text-[10px] text-text-muted">{s.toolCount} tools</span>
+                          <span className="text-[10px] text-muted">{s.toolCount} tools</span>
                         )}
                       </div>
                       {s.description && (
-                        <p className="text-[10px] text-text-muted line-clamp-2 mt-0.5">
+                        <p className="mt-0.5 line-clamp-2 text-[10px] text-muted">
                           {s.description}
                         </p>
                       )}
                     </div>
-                    <button
+                    <Button
                       onClick={() => (added ? null : expandServer(s))}
                       disabled={added}
-                      className={`shrink-0 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
-                        added
-                          ? "bg-green-500/10 text-green-600 cursor-default"
-                          : expanded
-                            ? "bg-surface border border-border text-text-muted hover:bg-black/5"
-                            : "bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20"
-                      }`}
+                      size="sm"
+                      variant={added ? "success" : expanded ? "secondary" : "ghost"}
+                      className={added ? "cursor-default" : ""}
                     >
                       {added ? "Added" : expanded ? "Cancel" : "+ Add"}
-                    </button>
+                    </Button>
                   </div>
                   {expanded && (
-                    <div className="px-3 py-2 bg-surface/40 border-t border-border flex flex-col gap-2">
+                    <div className="flex flex-col gap-2 border-t border-line bg-raised/40 px-3 py-2">
                       {isLoadingTools && (
-                        <div className="flex items-center gap-2 text-text-muted text-[10px] py-1">
-                          <span className="material-symbols-outlined animate-spin text-[14px]">
-                            progress_activity
-                          </span>
-                          <span>Probing server for tools...</span>
-                        </div>
+                        <LoadingState lines={1} label="Probing server for tools" />
                       )}
                       {!isLoadingTools && cache?.requiresAuth && (
-                        <p className="text-[10px] text-amber-600 bg-amber-500/10 px-2 py-1 rounded">
-                          🔐 OAuth required. Add now and authenticate after Apply; tool list will be
-                          discovered after first connect.
-                        </p>
+                        <Callout variant="warn" className="p-2 text-[10px]">
+                          OAuth required. Add now and authenticate after Apply; the tool list will
+                          be discovered after the first connect.
+                        </Callout>
                       )}
                       {!isLoadingTools && cache?.error && !cache?.requiresAuth && (
-                        <p className="text-[10px] text-red-600 bg-red-500/10 px-2 py-1 rounded">
+                        <Callout variant="err" className="p-2 text-[10px]">
                           Probe failed: {cache.error}
-                        </p>
+                        </Callout>
                       )}
                       {!isLoadingTools &&
                         toolKeys.length === 0 &&
                         !cache?.requiresAuth &&
                         !cache?.error && (
-                          <p className="text-[10px] text-text-muted">
-                            No tools advertised by server.
-                          </p>
+                          <p className="text-[10px] text-muted">No tools advertised by server.</p>
                         )}
                       {!isLoadingTools && toolKeys.length > 0 && (
                         <>
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-text-muted">
+                            <span className="text-[10px] text-muted">
                               {selectedCount}/{toolKeys.length} tools enabled
                             </span>
                             <div className="flex gap-1">
                               <button
+                                type="button"
                                 onClick={() => setAllTools(s.url, true)}
-                                className="text-[10px] text-primary hover:underline"
+                                className="text-[10px] text-coral hover:underline"
                               >
                                 All
                               </button>
-                              <span className="text-[10px] text-text-muted">·</span>
+                              <span className="text-[10px] text-muted" aria-hidden="true">
+                                ·
+                              </span>
                               <button
+                                type="button"
                                 onClick={() => setAllTools(s.url, false)}
-                                className="text-[10px] text-primary hover:underline"
+                                className="text-[10px] text-coral hover:underline"
                               >
                                 None
                               </button>
                             </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-1 max-h-40 overflow-y-auto">
+                          <div className="grid max-h-40 grid-cols-2 gap-1 overflow-y-auto">
                             {toolKeys.map((t) => (
-                              <label
+                              <Checkbox
                                 key={t}
-                                className="flex items-center gap-1.5 text-[10px] cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 px-1 rounded"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={!!sel[t]}
-                                  onChange={() => toggleTool(s.url, t)}
-                                  className="size-3"
-                                />
-                                <span className="truncate">{t}</span>
-                              </label>
+                                checked={!!sel[t]}
+                                onChange={() => toggleTool(s.url, t)}
+                                label={
+                                  <span className="block max-w-full truncate text-[10px]" title={t}>
+                                    {t}
+                                  </span>
+                                }
+                                className="gap-1 [&>span:first-child]:size-6 [&>span:first-child]:-ms-0 [&>span:first-child>span]:size-3.5 [&>span:first-child>span>span]:text-[10px] [&>label]:pt-0"
+                              />
                             ))}
                           </div>
                         </>
                       )}
-                      <button
+                      <Button
+                        size="sm"
+                        icon="check"
                         onClick={() => confirmAdd(s)}
-                        className="self-end px-2 py-1 rounded text-[10px] font-medium bg-primary text-white hover:bg-primary/90"
+                        className="self-end"
                       >
-                        ✓ Confirm Add
-                      </button>
+                        Confirm Add
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -299,10 +304,17 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
           </div>
         )}
 
-        <div className="text-[10px] text-text-muted text-right">
+        <div className="text-end text-[10px] text-muted">
           {filtered.length} of {servers.length} servers
         </div>
       </div>
     </Modal>
   );
 }
+
+McpMarketplaceModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  onAdd: PropTypes.func,
+  addedNames: PropTypes.arrayOf(PropTypes.string),
+};

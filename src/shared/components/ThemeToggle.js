@@ -9,15 +9,15 @@ export default function ThemeToggle({ className, variant = "default" }) {
   const variants = {
     default: cn(
       "flex items-center justify-center size-10 rounded-full",
-      "text-text-muted hover:text-text-main",
-      "hover:bg-surface-2 transition-colors",
+      "text-muted hover:text-text",
+      "hover:bg-raised transition-colors",
     ),
     card: cn(
       "flex items-center justify-center size-11 rounded-full",
-      "bg-surface/60 hover:bg-surface",
-      "border border-border",
-      "backdrop-blur-md shadow-sm hover:shadow-[var(--shadow-warm)]",
-      "text-text-muted hover:text-brand-500",
+      "bg-panel/60 hover:bg-panel",
+      "border border-line",
+      "backdrop-blur-md shadow-sm hover:shadow-card",
+      "text-muted hover:text-coral-ink",
       "transition-all group",
     ),
   };

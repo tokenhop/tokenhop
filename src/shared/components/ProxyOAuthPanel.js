@@ -2,7 +2,10 @@
 
 import PropTypes from "prop-types";
 import Button from "./Button";
+import Callout from "./Callout";
+import CopyField from "./CopyField";
 import Input from "./Input";
+import { Spinner } from "./Loading";
 
 // Providers offering a paste-token fallback (import-token flow).
 // UX warns if the IDE (which issues the token) is not installed.
@@ -25,11 +28,16 @@ export const PASTE_TOKEN_PROVIDERS = {
   },
 };
 
+const MODE_TAB = {
+  browser: { icon: "language", label: "Sign in with browser" },
+  "paste-token": { icon: "key", label: "Paste token" },
+};
+
 function modeTabClass(active) {
-  return `flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
+  return `inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:shadow-focus ${
     active
-      ? "border-primary bg-primary/10 text-primary"
-      : "border-border text-text-muted hover:text-primary"
+      ? "border-coral bg-coral-bg text-coral-ink"
+      : "border-line text-muted hover:bg-raised hover:text-text"
   }`;
 }
 
@@ -53,86 +61,76 @@ export default function ProxyOAuthPanel({
   onSelectPasteToken,
   onSubmit,
   onCancel,
-  copied,
-  onCopy,
 }) {
   const pasteConfig = PASTE_TOKEN_PROVIDERS[provider];
 
   return (
     <>
       {pasteConfig && (
-        <div className="flex gap-2">
+        <fieldset className="flex gap-2">
+          <legend className="sr-only">Sign-in method</legend>
           <button
             type="button"
             onClick={onSelectBrowser}
             className={modeTabClass(authMode === "browser")}
+            aria-pressed={authMode === "browser"}
           >
-            🌐 Sign in with browser
+            <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+              {MODE_TAB.browser.icon}
+            </span>
+            {MODE_TAB.browser.label}
           </button>
           <button
             type="button"
             onClick={onSelectPasteToken}
             className={modeTabClass(authMode === "paste-token")}
+            aria-pressed={authMode === "paste-token"}
           >
-            🔑 Paste token
+            <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+              {MODE_TAB["paste-token"].icon}
+            </span>
+            {MODE_TAB["paste-token"].label}
           </button>
-        </div>
+        </fieldset>
       )}
 
       {authMode === "browser" && (step === "waiting" || step === "input") && (
         <>
           {step === "waiting" ? (
-            <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
-              <span className="material-symbols-outlined text-base text-primary animate-spin">
-                progress_activity
-              </span>
-              <span className="text-sm">Waiting for browser authorization…</span>
+            <div
+              role="status"
+              className="flex items-center gap-2 rounded-xl border border-line bg-sky-bg px-3 py-2 text-sm text-text"
+            >
+              <Spinner size="sm" className="text-sky" />
+              Waiting for browser authorization…
             </div>
           ) : (
-            <p className="text-sm text-text-muted">
+            <p className="text-sm text-muted">
               Popup was blocked. Open the sign-in URL below in your browser.
             </p>
           )}
 
-          <div className="flex items-center gap-3 my-1">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-text-muted uppercase tracking-wider">
+          <div className="flex items-center gap-3 py-1">
+            <div className="h-px flex-1 bg-line" />
+            <span className="text-xs uppercase tracking-wider text-muted">
               Or paste callback URL manually
             </span>
-            <div className="flex-1 h-px bg-border" />
+            <div className="h-px flex-1 bg-line" />
           </div>
 
           <div className="space-y-4">
-            <div>
-              <p className="text-sm font-medium mb-2">
-                Step 1: Open this sign-in URL in your browser
-              </p>
-              <div className="flex gap-2">
-                <Input value={authUrl || ""} readOnly className="flex-1 font-mono text-xs" />
-                <Button
-                  variant="secondary"
-                  icon={copied === "proxy_auth_url" ? "check" : "content_copy"}
-                  onClick={() => onCopy(authUrl, "proxy_auth_url")}
-                  disabled={!authUrl}
-                >
-                  Copy
-                </Button>
-              </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Step 1: Open this sign-in URL in your browser</p>
+              <CopyField value={authUrl || ""} label="Copy sign-in URL" />
             </div>
-            <div>
-              <p className="text-sm font-medium mb-2">Step 2: Paste the callback URL here</p>
-              <p className="text-xs text-text-muted mb-2">
-                After signing in, the browser is sent to a http://127.0.0.1:… address. If that page
-                does not load (for example when 9router runs in Docker or on another machine), copy
-                the full URL from the address bar and paste it here.
-              </p>
-              <Input
-                value={callbackUrl}
-                onChange={(e) => onCallbackUrlChange(e.target.value)}
-                placeholder="http://127.0.0.1:.../?user_id=...&access_token=..."
-                className="font-mono text-xs"
-              />
-            </div>
+            <Input
+              label="Step 2: Paste the callback URL here"
+              hint="After signing in, the browser is sent to a http://127.0.0.1:… address. If that page does not load (for example when 9router runs in Docker or on another machine), copy the full URL from the address bar and paste it here."
+              value={callbackUrl}
+              onChange={(e) => onCallbackUrlChange(e.target.value)}
+              placeholder="http://127.0.0.1:.../?user_id=...&access_token=..."
+              inputClassName="font-mono text-xs"
+            />
           </div>
 
           <div className="flex gap-2">
@@ -149,21 +147,20 @@ export default function ProxyOAuthPanel({
       {authMode === "paste-token" && pasteConfig && (
         <div className="space-y-3">
           {ideStatus && !ideStatus.installed && (
-            <div
-              className={`px-3 py-2 rounded-lg text-sm ${pasteConfig.ideOptional ? "bg-blue-500/10 text-blue-700 dark:text-blue-300" : "bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"}`}
-            >
+            <Callout variant={pasteConfig.ideOptional ? "info" : "warn"} icon="info">
               {pasteConfig.ideName} IDE not detected.
               {pasteConfig.ideOptional
                 ? " You can still grab the token from DevTools."
                 : ` Install ${pasteConfig.ideName} IDE to get the token, or use "Sign in with browser".`}
-            </div>
+            </Callout>
           )}
-          <p className="text-sm text-text-muted">{pasteConfig.instructions}</p>
+          <p className="text-sm text-muted">{pasteConfig.instructions}</p>
           <Input
             value={pasteToken}
             onChange={(e) => onPasteTokenChange(e.target.value)}
             placeholder={pasteConfig.placeholder}
-            className="font-mono text-xs"
+            inputClassName="font-mono text-xs"
+            aria-label={pasteConfig.label}
           />
           <div className="flex gap-2">
             <Button onClick={onSubmit} fullWidth disabled={!pasteToken.trim()}>
@@ -193,6 +190,4 @@ ProxyOAuthPanel.propTypes = {
   onSelectPasteToken: PropTypes.func.isRequired,
   onSubmit: PropTypes.func.isRequired,
   onCancel: PropTypes.func.isRequired,
-  copied: PropTypes.string,
-  onCopy: PropTypes.func.isRequired,
 };

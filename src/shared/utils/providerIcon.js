@@ -8,6 +8,13 @@ const ICON_ALIASES = {
   "ollama-search": "ollama",
 };
 
+// User-created compatible nodes (`openai-compatible-<uuid>`) share their family's logo.
+function compatibleIconId(id) {
+  if (id.startsWith("openai-compatible")) return "oai-cc";
+  if (id.startsWith("anthropic-compatible")) return "anthropic-m";
+  return "";
+}
+
 // Runtime only — first 404 remembers id for the whole session
 const failedIds = new Set();
 
@@ -21,21 +28,25 @@ export function resolveProviderIconId(providerId) {
   const id = normalizeId(providerId);
   if (!id) return "";
   if (failedIds.has(id)) return "";
-  const aliased = ICON_ALIASES[id] || id;
+  const aliased = ICON_ALIASES[id] || compatibleIconId(id) || id;
   if (failedIds.has(aliased)) return "";
   return aliased;
 }
 
-/** `/providers/{id}.png` or null when previously failed. */
+// Logos shipped as vector (no PNG). ponytail: explicit list; switch to a manifest if many land.
+const SVG_ICONS = new Set(["meta-code"]);
+
+/** `/providers/{id}.png` (or `.svg` for vector logos), null when previously failed. */
 export function getProviderIconSrc(providerId) {
   const id = resolveProviderIconId(providerId);
-  return id ? `/providers/${id}.png` : null;
+  if (!id) return null;
+  return `/providers/${id}.${SVG_ICONS.has(id) ? "svg" : "png"}`;
 }
 
 /** Call from img onError so later mounts skip the request. */
 export function markProviderIconMissing(providerId) {
   const id = normalizeId(providerId);
   if (id) failedIds.add(id);
-  const aliased = ICON_ALIASES[id];
+  const aliased = ICON_ALIASES[id] || compatibleIconId(id);
   if (aliased) failedIds.add(aliased);
 }

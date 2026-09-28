@@ -1,5 +1,6 @@
 // Provider definitions
 import REGISTRY from "open-sse/providers/registry/index.js";
+import { getProviderBrand } from "@/shared/constants/providerBrands";
 import { RISK_NOTICE } from "@/shared/constants/providersDisplay";
 
 const MEDIA_ENTRY_KEYS = [
@@ -29,6 +30,8 @@ function buildProviderEntry(r) {
   }
   const display = { ...(r.display || {}) };
   if (display.deprecationNotice === "RISK_NOTICE") display.deprecationNotice = RISK_NOTICE;
+  // Tile color: registry color darkened for white-monogram contrast (providerBrands).
+  if (display.color) display.color = getProviderBrand(r.id).color;
   return {
     ...display,
     id: r.id,

@@ -5,6 +5,7 @@ import {
   resolveRetryEntry,
   FETCH_CONNECT_TIMEOUT_MS,
 } from "../config/runtimeConfig.js";
+import { getActiveReliabilityPolicy, resolveRetryForStatus } from "../config/reliabilityPolicy.js";
 import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
@@ -125,8 +126,16 @@ export class BaseExecutor {
     let lastStatus = 0;
     const retryAttemptsByUrl = {};
 
-    // Merge default retry config with provider-specific config
-    const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
+    // Merge default retry config with provider-specific config.
+    // Injected reliability overrides (from 9router settings) win over the
+    // provider registry entry; provider entries win over built-in defaults.
+    // 429 never retries (resolveRetryForStatus), only advances baseUrls.
+    const policy = getActiveReliabilityPolicy();
+    const globalRetry = {};
+    for (const status of [502, 503, 504]) {
+      globalRetry[status] = resolveRetryForStatus(policy, status);
+    }
+    const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...globalRetry, ...this.config.retry };
 
     // Schedule retry via retryConfig[statusKey]. Returns true when caller should `urlIndex--; continue`
     // response (optional) lets a subclass hook compute a dynamic delay (e.g. antigravity Retry-After).
@@ -162,7 +171,8 @@ export class BaseExecutor {
 
       // Abort if upstream doesn't return response headers within connection timeout
       const connectCtrl = new AbortController();
-      const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
+      const timeoutMs =
+        this.config?.timeoutMs || getActiveReliabilityPolicy().streamTimeouts.connectMs;
       const connectTimer = setTimeout(
         () => connectCtrl.abort(new Error("fetch connect timeout")),
         timeoutMs,

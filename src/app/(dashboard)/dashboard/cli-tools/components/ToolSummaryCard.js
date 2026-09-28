@@ -2,26 +2,28 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Card } from "@/shared/components";
+import { Card, StatusPill } from "@/shared/components";
 
 // Derive simple connected/configured/not-installed status from API payload
 function getStatus(status, tool) {
-  if (tool?.configType === "guide")
-    return { label: "Guide", cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400" };
-  if (!status) return { label: "Unknown", cls: "bg-gray-500/10 text-gray-500" };
-  if (!status.installed) return { label: "Not installed", cls: "bg-gray-500/10 text-gray-500" };
-  if (status.has9Router)
-    return { label: "Connected", cls: "bg-green-500/10 text-green-600 dark:text-green-400" };
-  return { label: "Not configured", cls: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" };
+  if (tool?.configType === "guide") return { label: "Guide", variant: "info" };
+  if (!status) return { label: "Unknown", variant: "neutral" };
+  if (!status.installed) return { label: "Not installed", variant: "neutral" };
+  if (status.has9Router) return { label: "Connected", variant: "ok" };
+  return { label: "Not configured", variant: "warn" };
 }
 
 export default function ToolSummaryCard({ toolId, tool, status }) {
   const s = getStatus(status, tool);
   return (
-    <Link href={`/dashboard/cli-tools/${toolId}`} className="block">
+    <Link
+      href={`/dashboard/cli-tools/${toolId}`}
+      className="block"
+      aria-label={`${tool.name} — ${s.label}`}
+    >
       <Card
         padding="sm"
-        className="h-full overflow-hidden hover:border-primary/50 transition-colors cursor-pointer"
+        className="h-full overflow-hidden hover:border-coral/50 transition-colors cursor-pointer"
       >
         <div className="flex h-full flex-col gap-2">
           <div className="flex items-center gap-3">
@@ -29,7 +31,7 @@ export default function ToolSummaryCard({ toolId, tool, status }) {
               {tool.image ? (
                 <Image
                   src={tool.image}
-                  alt={tool.name}
+                  alt=""
                   width={32}
                   height={32}
                   className="size-8 object-contain rounded-lg"
@@ -50,14 +52,14 @@ export default function ToolSummaryCard({ toolId, tool, status }) {
               ) : null}
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="font-medium text-sm truncate">{tool.name}</h3>
-              <span
-                className={`inline-block mt-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full ${s.cls}`}
-              >
-                {s.label}
-              </span>
+              <span className="font-medium text-sm truncate">{tool.name}</span>
+              <div className="mt-1">
+                <StatusPill variant={s.variant} size="sm">
+                  {s.label}
+                </StatusPill>
+              </div>
             </div>
-            <span className="material-symbols-outlined text-text-muted text-[18px] shrink-0">
+            <span className="material-symbols-outlined text-muted text-[18px] shrink-0">
               chevron_right
             </span>
           </div>

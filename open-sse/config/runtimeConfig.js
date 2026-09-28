@@ -14,6 +14,10 @@ export const HTTP_STATUS = {
   GATEWAY_TIMEOUT: 504,
 };
 
+// Dashboard endpoint tag for combo dry-run probes (YAN-299). Probe usage rows
+// carry this endpoint and are excluded from aggregated stats/cost.
+export const COMBO_PROBE_ENDPOINT = "/api/combos/probe";
+
 // Re-export error config (backward compat)
 export { ERROR_TYPES, DEFAULT_ERROR_MESSAGES, BACKOFF_CONFIG, COOLDOWN_MS } from "./errorConfig.js";
 
@@ -90,7 +94,7 @@ export function resolveRetryEntry(entry) {
   if (entry == null) return { attempts: 0, delayMs: RETRY_CONFIG.delayMs };
   if (typeof entry === "number") return { attempts: entry, delayMs: RETRY_CONFIG.delayMs };
   return {
-    attempts: entry.attempts || 0,
+    attempts: entry.attempts != null ? entry.attempts : entry.tries || 0,
     delayMs: entry.delayMs != null ? entry.delayMs : RETRY_CONFIG.delayMs,
   };
 }

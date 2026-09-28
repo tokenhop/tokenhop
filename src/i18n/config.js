@@ -38,6 +38,9 @@ export const LOCALES = [
 export const DEFAULT_LOCALE = "en";
 export const LOCALE_COOKIE = "locale";
 
+/** Locales rendered right-to-left (also mirrored in the no-flash script in src/app/layout.js). */
+export const RTL_LOCALES = ["ar", "he", "fa", "ur"];
+
 export const LOCALE_NAMES = {
   en: "English",
   vi: "Tiếng Việt",

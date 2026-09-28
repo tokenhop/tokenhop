@@ -1,12 +1,22 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card } from "@/shared/components";
+import PropTypes from "prop-types";
+import { Button, Card, Callout } from "@/shared/components";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { getModelKind } from "@/shared/constants/models";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { Row } from "./exampleShared";
+import CopyStatus from "@/shared/components/CopyStatus";
+import {
+  Row,
+  controlClass,
+  readonlyClass,
+  codeBlockClass,
+  eyebrowClass,
+  tunnelToggleClass,
+} from "./exampleShared";
+import { maskPreviewApiKey, previewAuthHeader } from "@/shared/constants/previewAuth";
 
 export function SttExampleCard({ providerId }) {
   const providerAlias = getProviderAlias(providerId);
@@ -33,8 +43,8 @@ export function SttExampleCard({ providerId }) {
   const [latency, setLatency] = useState(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
-  const { copied: copiedCurl, copy: copyCurl } = useCopyToClipboard();
-  const { copied: copiedRes, copy: copyRes } = useCopyToClipboard();
+  const { copied: copiedCurl, error: errorCurl, copy: copyCurl } = useCopyToClipboard();
+  const { copied: copiedRes, error: errorRes, copy: copyRes } = useCopyToClipboard();
 
   useEffect(() => {
     setLocalEndpoint(window.location.origin);
@@ -73,8 +83,10 @@ export function SttExampleCard({ providerId }) {
   const endpoint = useTunnel ? tunnelEndpoint : localEndpoint;
   const modelFull = selectedModel ? `${providerAlias}/${selectedModel}` : "";
 
+  // Preview-safe: rendered/copied cURL always shows Bearer YOUR_KEY.
+  // The live key is only sent in the fetch Authorization header below.
   const curlSnippet = `curl -X POST ${endpoint}/v1/audio/transcriptions \\
-  -H "Authorization: Bearer ${apiKey || "YOUR_KEY"}" \\
+  -H "Authorization: ${previewAuthHeader(apiKey)}" \\
   -F "file=@${audioFile?.name || "audio.mp3"}" \\
   -F "model=${modelFull}"${allowedParams.includes("language") && language ? ` \\\n  -F "language=${language}"` : ""}${allowedParams.includes("response_format") ? ` \\\n  -F "response_format=${responseFormat}"` : ""}${allowedParams.includes("temperature") && temperature ? ` \\\n  -F "temperature=${temperature}"` : ""}${allowedParams.includes("prompt") && prompt ? ` \\\n  -F "prompt=${prompt}"` : ""}`;
 
@@ -124,8 +136,11 @@ export function SttExampleCard({ providerId }) {
         : `{\n  "text": "Hello world..."\n}`;
 
   return (
-    <Card>
-      <h2 className="text-lg font-semibold mb-4">Example</h2>
+    <Card
+      title={`${providerAlias} example`}
+      subtitle="Upload audio and run a live transcription against this provider."
+      icon="labs"
+    >
       <div className="flex flex-col gap-2.5">
         {/* Model */}
         {sttModels.length > 0 ? (
@@ -133,7 +148,8 @@ export function SttExampleCard({ providerId }) {
             <select
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
-              className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+              aria-label="Model"
+              className={controlClass}
             >
               {sttModels.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -148,7 +164,8 @@ export function SttExampleCard({ providerId }) {
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
               placeholder="Enter model id"
-              className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary font-mono"
+              aria-label="Model"
+              className={`${controlClass} font-mono`}
             />
           </Row>
         )}
@@ -156,20 +173,20 @@ export function SttExampleCard({ providerId }) {
         {/* Endpoint */}
         <Row label="Endpoint">
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-            <span className="w-full min-w-0 flex-1 px-3 py-1.5 text-sm font-mono text-text-main bg-sidebar rounded-lg truncate">
+            <span className={readonlyClass} dir="ltr">
               {endpoint}/v1/audio/transcriptions
             </span>
             {tunnelEndpoint && (
               <button
+                type="button"
                 onClick={() => setUseTunnel((v) => !v)}
                 title={useTunnel ? "Using tunnel" : "Using local"}
-                className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border shrink-0 transition-colors ${
-                  useTunnel
-                    ? "border-primary/40 bg-primary/10 text-primary"
-                    : "border-border text-text-muted hover:text-primary"
-                }`}
+                aria-pressed={useTunnel}
+                className={tunnelToggleClass(useTunnel)}
               >
-                <span className="material-symbols-outlined text-[14px]">wifi_tethering</span>
+                <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                  wifi_tethering
+                </span>
                 Tunnel
               </button>
             )}
@@ -178,11 +195,11 @@ export function SttExampleCard({ providerId }) {
 
         {/* API Key */}
         <Row label="API Key">
-          <span className="px-3 py-1.5 text-sm font-mono text-text-main bg-sidebar rounded-lg truncate block">
+          <span className={readonlyClass} dir="ltr">
             {apiKey ? (
-              `${apiKey.slice(0, 8)}${"\u2022".repeat(Math.min(20, Math.max(0, apiKey.length - 8)))}`
+              maskPreviewApiKey(apiKey)
             ) : (
-              <span className="text-text-muted italic">No key configured</span>
+              <span className="text-subtle italic">No key configured</span>
             )}
           </span>
         </Row>
@@ -194,10 +211,11 @@ export function SttExampleCard({ providerId }) {
               type="file"
               accept="audio/*,video/mp4,.m4a,.mp3,.wav,.ogg,.flac,.webm,.opus"
               onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
-              className="w-full text-xs text-text-muted file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border file:border-border file:bg-background file:text-text-main hover:file:bg-sidebar file:cursor-pointer"
+              aria-label="Audio File"
+              className="w-full text-xs text-muted file:me-2 file:cursor-pointer file:rounded-lg file:border file:border-line file:bg-raised file:px-2.5 file:py-1 file:text-text hover:file:bg-line/60"
             />
             {audioFile && (
-              <span className="text-xs text-text-muted font-mono">
+              <span className="font-mono text-xs text-muted" dir="ltr">
                 {audioFile.name} · {(audioFile.size / 1024).toFixed(1)} KB
               </span>
             )}
@@ -211,7 +229,8 @@ export function SttExampleCard({ providerId }) {
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
               placeholder="e.g. en, vi, ja (auto-detect if empty)"
-              className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary font-mono"
+              aria-label="Language"
+              className={`${controlClass} font-mono`}
             />
           </Row>
         )}
@@ -223,7 +242,8 @@ export function SttExampleCard({ providerId }) {
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="optional context to improve accuracy"
-              className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+              aria-label="Prompt"
+              className={controlClass}
             />
           </Row>
         )}
@@ -239,7 +259,8 @@ export function SttExampleCard({ providerId }) {
               value={temperature}
               onChange={(e) => setTemperature(e.target.value)}
               placeholder="0 - 1 (default 0)"
-              className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+              aria-label="Temperature"
+              className={controlClass}
             />
           </Row>
         )}
@@ -250,7 +271,8 @@ export function SttExampleCard({ providerId }) {
             <select
               value={responseFormat}
               onChange={(e) => setResponseFormat(e.target.value)}
-              className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+              aria-label="Response Format"
+              className={controlClass}
             >
               <option value="json">json</option>
               <option value="text">text</option>
@@ -263,64 +285,65 @@ export function SttExampleCard({ providerId }) {
 
         {/* Curl + Run */}
         <div className="mt-1">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-1.5">
-            <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">
-              Request
-            </span>
+          <div className="mb-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <span className={eyebrowClass}>Request</span>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-              <button
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={copiedCurl ? "check" : errorCurl ? "error" : "content_copy"}
                 onClick={() => copyCurl(curlSnippet)}
-                className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
               >
-                <span className="material-symbols-outlined text-[14px]">
-                  {copiedCurl ? "check" : "content_copy"}
-                </span>
-                {copiedCurl ? "Copied" : "Copy"}
-              </button>
-              <button
+                {copiedCurl ? "Copied" : errorCurl ? "Couldn't copy" : "Copy"}
+              </Button>
+              <CopyStatus copied={copiedCurl} error={errorCurl} />
+              <Button
+                size="sm"
+                variant="primary"
+                icon="play_arrow"
                 onClick={handleRun}
                 disabled={running || !audioFile || !modelFull}
-                className="flex w-full sm:w-auto items-center justify-center gap-1.5 px-3 py-1 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                loading={running}
               >
-                <span
-                  className="material-symbols-outlined text-[14px]"
-                  style={running ? { animation: "spin 1s linear infinite" } : undefined}
-                >
-                  play_arrow
-                </span>
                 {running ? "Transcribing..." : "Run"}
-              </button>
+              </Button>
             </div>
           </div>
-          <pre className="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all">
+          <pre className={codeBlockClass} dir="ltr">
             {curlSnippet}
           </pre>
         </div>
 
-        {error && <p className="text-xs text-red-500 break-words">{error}</p>}
+        {error && (
+          <Callout variant="err" title="Request failed">
+            {error}
+          </Callout>
+        )}
 
         {/* Response */}
         <div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-1.5">
-            <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+          <div className="mb-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <span className={eyebrowClass}>
               Response{" "}
               {result && latency && (
-                <span className="font-normal normal-case">&#9889; {latency}ms</span>
+                <span className="font-mono text-xs font-normal normal-case text-muted">
+                  ⚡ {latency}ms
+                </span>
               )}
             </span>
             {result && (
-              <button
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={copiedRes ? "check" : errorRes ? "error" : "content_copy"}
                 onClick={() => copyRes(resultStr)}
-                className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
               >
-                <span className="material-symbols-outlined text-[14px]">
-                  {copiedRes ? "check" : "content_copy"}
-                </span>
-                {copiedRes ? "Copied" : "Copy"}
-              </button>
+                {copiedRes ? "Copied" : errorRes ? "Couldn't copy" : "Copy"}
+              </Button>
             )}
+            <CopyStatus copied={copiedRes} error={errorRes} />
           </div>
-          <pre className="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all opacity-70">
+          <pre className={`${codeBlockClass} opacity-80`} dir="ltr">
             {resultStr}
           </pre>
         </div>
@@ -328,3 +351,7 @@ export function SttExampleCard({ providerId }) {
     </Card>
   );
 }
+
+SttExampleCard.propTypes = {
+  providerId: PropTypes.string.isRequired,
+};

@@ -1,7 +1,26 @@
 import { describe, it, expect } from "vitest";
-import { parseQuotaData } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { parseQuotaData } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 
 describe("Codex Spark Quota Tracking (#3431)", () => {
+  it("labels a business primary weekly window as Weekly, not 5h", () => {
+    const quotas = parseQuotaData("codex", {
+      plan: "business",
+      quotas: {
+        session: {
+          used: 0,
+          total: 100,
+          remaining: 100,
+          windowMinutes: 10080,
+          resetAt: "2026-10-03T00:00:00.000Z",
+        },
+      },
+    });
+
+    expect(quotas).toHaveLength(1);
+    expect(quotas[0].name).toBe("Weekly");
+    expect(quotas[0].resetAt).toBe("2026-10-03T00:00:00.000Z");
+  });
+
   it("correctly normalizes spark_session and spark_weekly quotas with display labels", () => {
     const mockCodexUsage = {
       plan: "team",

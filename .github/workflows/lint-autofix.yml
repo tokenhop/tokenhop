@@ -2,7 +2,7 @@ name: Lint autofix
 
 on:
   pull_request:
-    branches: [master]
+    branches: [master, re-design]
 
 permissions:
   contents: write

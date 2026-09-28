@@ -143,6 +143,8 @@ export async function handleForcedSSEToJson({
   customToolNames,
   trackDone,
   appendLog,
+  savings,
+  comboName,
   reqTag,
   log,
 }) {
@@ -189,6 +191,9 @@ export async function handleForcedSSEToJson({
         connectionId,
         apiKey,
         endpoint: clientRawRequest?.endpoint,
+        userAgent: clientRawRequest?.headers?.["user-agent"],
+        savings,
+        comboName,
         silent: true,
       });
       if (log?.line)
@@ -357,6 +362,9 @@ export async function handleForcedSSEToJson({
       connectionId,
       apiKey,
       endpoint: clientRawRequest?.endpoint,
+      userAgent: clientRawRequest?.headers?.["user-agent"],
+      savings,
+      comboName,
       silent: true,
     });
     if (log?.line)
