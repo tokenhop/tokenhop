@@ -85,7 +85,7 @@ function normalizeOrigin(text) {
 export const SKILLS = [
   {
     id: "9router",
-    name: "9Router (Entry)",
+    name: "9router entry skill",
     description:
       "Setup + index of all capabilities. Start here — covers base URL, auth, model discovery, and links to every capability skill.",
     endpoint: null,
@@ -103,7 +103,7 @@ export const SKILLS = [
   },
   {
     id: "9router-image",
-    name: "Image Generation",
+    name: "Image generation",
     description: "Text-to-image via DALL-E, Imagen, FLUX, MiniMax, SDWebUI…",
     endpoint: "/v1/images/generations",
     icon: "image",
@@ -111,7 +111,7 @@ export const SKILLS = [
   },
   {
     id: "9router-tts",
-    name: "Text-to-Speech",
+    name: "Text to speech",
     description: "OpenAI / ElevenLabs / Edge / Google / Deepgram voices.",
     endpoint: "/v1/audio/speech",
     icon: "record_voice_over",
@@ -119,7 +119,7 @@ export const SKILLS = [
   },
   {
     id: "9router-stt",
-    name: "Speech-to-Text",
+    name: "Speech to text",
     description: "Transcribe audio via OpenAI Whisper, Groq, Gemini, Deepgram, AssemblyAI…",
     endpoint: "/v1/audio/transcriptions",
     icon: "mic",
@@ -135,7 +135,7 @@ export const SKILLS = [
   },
   {
     id: "9router-video",
-    name: "Video Generation",
+    name: "Video generation",
     description: "Text-to-video via xAI Grok Imagine and other video providers.",
     endpoint: "/v1/videos/generations",
     icon: "movie",
@@ -143,7 +143,7 @@ export const SKILLS = [
   },
   {
     id: "9router-web-search",
-    name: "Web Search",
+    name: "Web search",
     description:
       "Web and X search via Tavily / Exa / Brave / Serper / SearXNG / Google PSE / You.com / Xquik.",
     endpoint: "/v1/search",
@@ -152,7 +152,7 @@ export const SKILLS = [
   },
   {
     id: "9router-web-fetch",
-    name: "Web Fetch",
+    name: "Web fetch",
     description: "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa.",
     endpoint: "/v1/web/fetch",
     icon: "language",

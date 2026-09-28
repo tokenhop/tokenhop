@@ -5,7 +5,6 @@ import PropTypes from "prop-types";
 import {
   Button,
   Card,
-  CopyField,
   EmptyState,
   SegmentedControl,
   Skeleton,
@@ -233,11 +232,12 @@ export default function SkillsPageClient() {
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {active ? (
             <>
-              <CopyField
-                className="min-w-0 flex-1"
-                value={heroValue}
-                label="Copy entry skill line"
-              />
+              <code
+                dir="ltr"
+                className="flex h-11 min-w-0 flex-1 items-center rounded-lg border border-line bg-raised px-3 font-mono text-sm text-text"
+              >
+                <span className="truncate">{heroValue}</span>
+              </code>
               <HeroCopyButton value={heroValue} />
             </>
           ) : (

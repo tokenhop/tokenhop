@@ -524,6 +524,7 @@
   "Couldn't load part of this page": "このページの一部を読み込めませんでした",
   "Couldn't load proxy pools": "プロキシプールを読み込めませんでした",
   "Couldn't load usage stats": "使用統計を読み込めませんでした",
+  "Couldn't reach Headroom at": "Headroom に接続できませんでした:",
   "Count": "カウント",
   "Country": "国",
   "Counts show lines, not grouped rows": "件数は行を示し、グループ化された行ではありません",

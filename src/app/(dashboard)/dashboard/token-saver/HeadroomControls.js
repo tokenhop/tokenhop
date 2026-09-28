@@ -149,11 +149,13 @@ export function headroomPillProps(status) {
   const running = label === "Running";
   const pill = running
     ? { variant: "ok", dot: true }
-    : label === "External"
-      ? { variant: "info", dot: true }
-      : label === "Checking…"
-        ? { variant: "neutral" }
-        : { variant: "warn", dot: true };
+    : label === "Unreachable"
+      ? { variant: "err", dot: true }
+      : label === "External"
+        ? { variant: "info", dot: true }
+        : label === "Checking…"
+          ? { variant: "neutral" }
+          : { variant: "warn", dot: true };
   return { ...pill, label, running };
 }
 

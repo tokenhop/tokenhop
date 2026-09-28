@@ -4,13 +4,32 @@
  * savings share + $ estimate are driven by the YAN-292 aggregation.
  */
 
+/** The status route shells out to `which`/`pip`; never let the pill wait longer than this. */
+export const HEADROOM_STATUS_TIMEOUT_MS = 3000;
+
+/**
+ * Probe `/api/headroom/status` with a hard timeout. A slow, failing or
+ * unreachable probe resolves to `{ unreachable: true }` instead of hanging.
+ * @param {(url: string, init: RequestInit) => Promise<object>} fetcher fetchJson-compatible
+ * @param {number} [timeoutMs]
+ * @returns {Promise<object>} status payload, or `{ unreachable: true, error }`
+ */
+export async function probeHeadroomStatus(fetcher, timeoutMs = HEADROOM_STATUS_TIMEOUT_MS) {
+  try {
+    return await fetcher("/api/headroom/status", { signal: AbortSignal.timeout(timeoutMs) });
+  } catch (error) {
+    return { unreachable: true, error: error?.message || "Headroom status check failed" };
+  }
+}
+
 /**
  * Map headroom probe status to the board pill label.
- * @param {{ loading?: boolean, running?: boolean, installed?: boolean, localUrl?: boolean }|null|undefined} status
- * @returns {"Checking…"|"Running"|"Not installed"|"Stopped"|"External"}
+ * @param {{ loading?: boolean, unreachable?: boolean, running?: boolean, installed?: boolean, localUrl?: boolean }|null|undefined} status
+ * @returns {"Checking…"|"Unreachable"|"Running"|"Not installed"|"Stopped"|"External"}
  */
 export function headroomStatusLabel(status) {
   if (!status || status.loading) return "Checking…";
+  if (status.unreachable) return "Unreachable";
   if (status.running) return "Running";
   if (status.localUrl === false) return "External";
   return status.installed ? "Stopped" : "Not installed";

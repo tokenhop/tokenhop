@@ -148,7 +148,7 @@ export const getPageInfo = (pathname) => {
     };
   if (pathname.includes("/token-saver"))
     return {
-      title: "Token Saver",
+      title: "Token saver",
       description: "Send fewer tokens, get the same answers.",
       icon: "savings",
       breadcrumbs: [],
@@ -169,8 +169,8 @@ export const getPageInfo = (pathname) => {
     };
   if (pathname.includes("/proxy-pools"))
     return {
-      title: "Proxy Pools",
-      description: "Manage your proxy pool configurations",
+      title: "Proxy pools",
+      description: "Send provider traffic out through your proxies or free relays.",
       icon: "lan",
       breadcrumbs: [],
     };

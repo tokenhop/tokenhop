@@ -521,6 +521,7 @@
   "Couldn't load part of this page": "Bu sayfanın bir bölümü yüklenemedi",
   "Couldn't load proxy pools": "Proxy havuzları yüklenemedi",
   "Couldn't load usage stats": "Kullanım istatistikleri yüklenemedi",
+  "Couldn't reach Headroom at": "Headroom'a şu adresten ulaşılamadı:",
   "Count": "Sayı",
   "Country": "Ülke",
   "Counts show lines, not grouped rows": "Sayılar satırları gösterir, gruplanmış satırları değil",

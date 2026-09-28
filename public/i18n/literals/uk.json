@@ -523,6 +523,7 @@
   "Couldn't load part of this page": "Не вдалося завантажити частину цієї сторінки",
   "Couldn't load proxy pools": "Не вдалося завантажити пули проксі",
   "Couldn't load usage stats": "Не вдалося завантажити статистику використання",
+  "Couldn't reach Headroom at": "Не вдалося підключитися до Headroom за адресою",
   "Count": "Кількість",
   "Country": "Країна",
   "Counts show lines, not grouped rows": "Лічильники показують рядки, а не згруповані рядки",

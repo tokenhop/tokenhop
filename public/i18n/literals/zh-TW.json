@@ -523,6 +523,7 @@
   "Couldn't load part of this page": "無法載入此頁面的部分內容",
   "Couldn't load proxy pools": "無法載入代理池",
   "Couldn't load usage stats": "無法載入用量統計",
+  "Couldn't reach Headroom at": "無法連線到 Headroom：",
   "Count": "計數",
   "Country": "國家",
   "Counts show lines, not grouped rows": "計數顯示行，而非分組列",

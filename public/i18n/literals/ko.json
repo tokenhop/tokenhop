@@ -523,6 +523,7 @@
   "Couldn't load part of this page": "이 페이지의 일부를 불러올 수 없습니다",
   "Couldn't load proxy pools": "프록시 풀을 불러올 수 없습니다",
   "Couldn't load usage stats": "사용 통계를 불러올 수 없습니다",
+  "Couldn't reach Headroom at": "Headroom에 연결할 수 없습니다:",
   "Count": "개수",
   "Country": "국가",
   "Counts show lines, not grouped rows": "개수는 그룹화된 행이 아닌 줄을 표시합니다",

@@ -638,6 +638,7 @@
   "Couldn't load part of this page": "无法加载页面部分内容",
   "Couldn't load proxy pools": "无法加载代理池",
   "Couldn't load usage stats": "无法加载使用统计",
+  "Couldn't reach Headroom at": "无法连接到 Headroom：",
   "Country": "国家/地区",
   "Counts show lines, not grouped rows": "计数显示行数，而非分组行",
   "Create": "创建",

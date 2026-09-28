@@ -643,6 +643,7 @@
   "Couldn't load part of this page": "بارگذاری بخشی از این صفحه ممکن نشد",
   "Couldn't load proxy pools": "بارگذاری استخرهای پروکسی ممکن نشد",
   "Couldn't load usage stats": "بارگذاری آمار استفاده ممکن نشد",
+  "Couldn't reach Headroom at": "دسترسی به Headroom ممکن نشد در",
   "Country": "کشور",
   "Counts show lines, not grouped rows": "شمارش‌ها خطوط را نشان می‌دهند، نه ردیف‌های گروه‌بندی شده",
   "Create": "ایجاد",

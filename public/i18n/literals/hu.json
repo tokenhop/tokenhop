@@ -524,6 +524,7 @@
   "Couldn't load part of this page": "Nem sikerült betölteni az oldal egy részét",
   "Couldn't load proxy pools": "Nem sikerült betölteni a proxy-készleteket",
   "Couldn't load usage stats": "Nem sikerült betölteni a használati statisztikákat",
+  "Couldn't reach Headroom at": "Nem érhető el a Headroom itt:",
   "Count": "Darabszám",
   "Country": "Ország",
   "Counts show lines, not grouped rows": "A számok sorokat mutatnak, nem csoportosított sorokat",

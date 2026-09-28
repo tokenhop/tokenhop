@@ -521,6 +521,7 @@
   "Couldn't load part of this page": "Nie można załadować części tej strony",
   "Couldn't load proxy pools": "Nie można załadować pul proxy",
   "Couldn't load usage stats": "Nie można załadować statystyk użycia",
+  "Couldn't reach Headroom at": "Nie można połączyć się z Headroom pod adresem",
   "Count": "Liczba",
   "Country": "Kraj",
   "Counts show lines, not grouped rows": "Liczby pokazują linie, nie pogrupowane wiersze",

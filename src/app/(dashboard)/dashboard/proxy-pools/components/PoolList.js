@@ -87,13 +87,14 @@ export default function PoolList({
   return (
     <Card padding="md">
       <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <Checkbox
-          checked={allSelected}
-          indeterminate={someSelected}
-          onChange={onToggleSelectAll}
-          aria-label="Select all pools"
-          disabled={pools.length === 0}
-        />
+        {pools.length > 0 ? (
+          <Checkbox
+            checked={allSelected}
+            indeterminate={someSelected}
+            onChange={onToggleSelectAll}
+            aria-label="Select all pools"
+          />
+        ) : null}
         <h2 className="font-display text-xl font-bold text-text">Pools</h2>
         <StatusPill variant="neutral" size="sm">
           {pools.length} total
@@ -111,7 +112,7 @@ export default function PoolList({
           title="No proxies yet"
           body="Add a proxy pool, deploy a free relay, or batch-import a list. Then bind it from any provider connection."
           action={
-            <Button variant="primary" size="sm" icon="add" onClick={onAdd}>
+            <Button variant="secondary" size="sm" icon="add" onClick={onAdd}>
               Add proxy
             </Button>
           }

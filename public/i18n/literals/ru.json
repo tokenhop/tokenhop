@@ -523,6 +523,7 @@
   "Couldn't load part of this page": "Не удалось загрузить часть этой страницы",
   "Couldn't load proxy pools": "Не удалось загрузить пулы прокси",
   "Couldn't load usage stats": "Не удалось загрузить статистику использования",
+  "Couldn't reach Headroom at": "Не удалось подключиться к Headroom по адресу",
   "Count": "Количество",
   "Country": "Страна",
   "Counts show lines, not grouped rows": "Счетчики показывают линии, а не сгруппированные строки",
