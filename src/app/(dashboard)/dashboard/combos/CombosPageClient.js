@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Button,
@@ -429,6 +430,7 @@ export default function CombosPageClient() {
     // Refetch first so the new combo is in the list, then select it and drop
     // ?create=1 in one navigation so the two URL writes can't race.
     await fetchData();
+    refreshShellStatus();
     setShowCreateModal(false);
     if (created?.id) {
       setSelectedId(created.id);
@@ -594,6 +596,7 @@ export default function CombosPageClient() {
           if (selectedComboId === deleteId) navigate(nextId, "replace");
           setCombos(rest);
           setSelectedId(nextId);
+          refreshShellStatus();
         } catch (error) {
           setSaveError(error?.message || "Failed to delete combo");
         }

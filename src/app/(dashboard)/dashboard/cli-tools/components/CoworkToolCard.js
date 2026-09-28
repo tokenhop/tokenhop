@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import Button from "@/shared/components/Button";
 import Checkbox from "@/shared/components/Checkbox";
 import ComboFormModal from "@/shared/components/ComboFormModal";
@@ -157,6 +158,7 @@ export default function CoworkToolCard({
         card.setMessage({ type: "error", text: err.error || "Failed to create combo." });
         return;
       }
+      refreshShellStatus();
       if (!selectedModels.includes(name)) setSelectedModels((prev) => [...prev, name]);
       setComboModalOpen(false);
       card.setMessage({ type: "success", text: `Combo "${name}" created and added.` });
