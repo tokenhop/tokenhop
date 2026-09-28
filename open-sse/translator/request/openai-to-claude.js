@@ -6,7 +6,9 @@ import { safeParseJSON } from "../concerns/json.js";
 import { parseDataUri } from "../concerns/image.js";
 import { extractTextContent } from "../formats/gemini.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
+import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { extractThinking as captureThinkingIntent } from "../concerns/thinkingUnified.js";
 
 // Empty prefix matches real Claude Code behavior (no tool name prefix).
 // Previously "proxy_" was used but this is a detectable fingerprint difference.
@@ -20,6 +22,11 @@ export function openaiToClaudeRequest(model, body, stream) {
   // not the conservative 64000 default — otherwise a high-output model is
   // pre-clamped here before prepareClaudeRequest's model-aware step runs.
   const modelCeiling = getCapabilitiesForModel(null, model).maxOutput || undefined;
+  // Capture thinking intent once from the OpenAI-style body (reasoning_effort /
+  // reasoning.effort / thinking). Assistant reasoning_content from DeepSeek/GLM/
+  // Qwen/Kimi is mapped to a thinking block only when the request actually asks
+  // for thinking — Anthropic rejects history thinking blocks otherwise.
+  const thinkingIntent = captureThinkingIntent(body);
   const result = {
     model: model,
     max_tokens: adjustMaxTokens(body, modelCeiling),
@@ -64,7 +71,7 @@ export function openaiToClaudeRequest(model, body, stream) {
 
     for (const msg of nonSystemMessages) {
       const newRole = msg.role === ROLE.USER || msg.role === ROLE.TOOL ? ROLE.USER : ROLE.ASSISTANT;
-      const blocks = getContentBlocksFromMessage(msg, toolNameMap);
+      const blocks = getContentBlocksFromMessage(msg, toolNameMap, thinkingIntent);
       const hasToolUse = blocks.some((b) => b.type === CLAUDE_BLOCK.TOOL_USE);
       const hasToolResult = blocks.some((b) => b.type === CLAUDE_BLOCK.TOOL_RESULT);
 
@@ -218,7 +225,7 @@ Respond ONLY with the JSON object, no other text.`);
 }
 
 // Get content blocks from single message
-function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
+function getContentBlocksFromMessage(msg, toolNameMap = new Map(), thinkingIntent = null) {
   const blocks = [];
 
   if (msg.role === ROLE.TOOL) {
@@ -276,6 +283,29 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
       }
     }
   } else if (msg.role === ROLE.ASSISTANT) {
+    // DeepSeek/GLM/Qwen/Kimi carry assistant reasoning in reasoning_content.
+    // With thinking intent, map it to a leading Claude thinking block so it
+    // survives the bridge (Anthropic rejects history thinking blocks when
+    // thinking is disabled, so never invent one for a no-intent request).
+    // Without intent, fold it into a leading text block so the context is not
+    // silently dropped. Signed so the native-Claude pass (formats/claude.js)
+    // keeps it; skipped when the content array already carries a thinking
+    // block (no duplicates).
+    const thinkingRequested = !!thinkingIntent && thinkingIntent.mode !== "none";
+    const hasThinkingBlock =
+      Array.isArray(msg.content) && msg.content.some((p) => p?.type === CLAUDE_BLOCK.THINKING);
+    const rc = msg.reasoning_content || msg.thought || msg.reasoning;
+    if (!hasThinkingBlock && typeof rc === "string" && rc) {
+      if (thinkingRequested) {
+        blocks.push({
+          type: CLAUDE_BLOCK.THINKING,
+          thinking: rc,
+          signature: DEFAULT_THINKING_CLAUDE_SIGNATURE,
+        });
+      } else {
+        blocks.push({ type: CLAUDE_BLOCK.TEXT, text: rc });
+      }
+    }
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
         if (part.type === OPENAI_BLOCK.TEXT && part.text) {

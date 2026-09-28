@@ -44,7 +44,7 @@ async function chatWith(jwt, ua) {
 }
 
 describe("MiMo Free bootstrap (live)", () => {
-  it("bootstrap returns 200 with JWT", async () => {
+  it.runIf(!!process.env.RUN_REAL)("bootstrap returns 200 with JWT", async () => {
     const { status, jwt } = await bootstrapWith(CHROME_UA);
     expect(status).toBe(200);
     expect(jwt).toBeTruthy();
@@ -52,7 +52,7 @@ describe("MiMo Free bootstrap (live)", () => {
 });
 
 describe("MiMo Free anti-abuse gate (live)", () => {
-  it("chat WITH Chrome User-Agent → 200", async () => {
+  it.runIf(!!process.env.RUN_REAL)("chat WITH Chrome User-Agent → 200", async () => {
     const { jwt } = await bootstrapWith(CHROME_UA);
     const r = await chatWith(jwt, CHROME_UA);
     expect(r.status).toBe(200);

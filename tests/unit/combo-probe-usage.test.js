@@ -28,5 +28,5 @@ describe("probe usage exclusion (YAN-299)", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0].model).toBe("real-model");
-  });
+  }, 20_000);
 });

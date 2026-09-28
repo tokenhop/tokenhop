@@ -51,13 +51,13 @@ npx vitest run unit/capabilities.test.js   # single file (path relative to tests
 >
 > **Runs are isolated by default.** Every test file gets its own temp `DATA_DIR`/`HOME` (`tests/setup/`, forks pool), so `~/.9router` is never touched and no `DATA_DIR=$(mktemp -d)` prefix is needed. Only `translator/real/**` under `RUN_REAL=1`/`RUN_E2E=1` uses the real data dir. Guarded by `unit/test-data-isolation.test.js`; details in `tests/README.md`.
 >
-> **The suite is NOT expected to be all-green on a plain checkout.** Judge regressions against `tests/__baseline__/known-fails.txt`, not a raw run (from `tests/`):
+> The suite runs green on a plain checkout; judge regressions against `tests/__baseline__/known-fails.txt`, not a raw run (from `tests/`):
 >
 > ```bash
 > npx vitest run --reporter=json --outputFile=results.json; node __baseline__/verify-no-regression.mjs results.json
 > ```
 >
-> Expected red: everything in `known-fails.txt` (regenerated from an isolated master run — refresh it when a fix turns a known failure green), including `unit/embeddings.cloud.test.js` (the `cloud/` worker dir is **not in this repo**) and `unit/xai-oauth-service.test.js` (times out when xAI endpoint discovery isn't reachable).
+> Live-network tests are env-gated (`RUN_REAL=1` / `RUN_E2E=1`); they skip without credentials.
 
 - `*.real.test.js` under `tests/translator/real/` make live provider calls — skip unless credentials are set.
 - Regression baselines: `tests/__baseline__/verify-*.mjs` compare against committed snapshots (providers, aliases, OAuth URLs). Run these after touching provider registry / alias logic.

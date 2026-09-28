@@ -355,6 +355,10 @@ export class KiroExecutor extends BaseExecutor {
 
     const amazon = baseUrls.filter((u) => u.includes("amazonaws.com")).map(regionalize);
     const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
+    // External IdP (Microsoft Entra) tokens bind to CodeWhisperer profiles via
+    // TokenType: EXTERNAL_IDP, so codewhisperer.* (registry order) is their
+    // contract surface; the q.* surface is the API-key path.
+    if (authMethod === "external_idp") return [...amazon, ...others];
     const q = amazon.filter((u) => u.includes("://q."));
     const remaining = amazon.filter((u) => !u.includes("://q."));
     return q.length > 0 ? [...q, ...remaining, ...others] : [...amazon, ...others];
@@ -500,7 +504,22 @@ export class KiroExecutor extends BaseExecutor {
       ? appendRepairInstruction(args.body, repairKind === "invalid_tool" ? "tool" : repairKind)
       : structuredClone(args.body || {});
 
-    const retry = await BaseExecutor.prototype.execute.call(this, {
+    // One bounded retry on the first surface only. BaseExecutor's endpoint
+    // walk (401/403/404 fallback) and network-error fallback belong to the
+    // initial request; behind the heartbeat they would burn tens of seconds
+    // of backoff before the gate can surface the failure as SSE. A non-OK
+    // retry response must reach readResponsePrefix immediately. Transient
+    // failures (5xx, network) still get their normal in-place retry — only
+    // the endpoint-walk statuses are pinned to the single surface.
+    const baseShouldRetry = this.shouldRetry.bind(this);
+    const singleSurfaceExecutor = Object.create(this, {
+      shouldRetry: {
+        value: (status, attempt) =>
+          !KIRO_ENDPOINT_FALLBACK_STATUSES.has(status) && baseShouldRetry(status, attempt),
+      },
+      getFallbackCount: { value: () => 1 },
+    });
+    const retry = await BaseExecutor.prototype.execute.call(singleSurfaceExecutor, {
       ...args,
       body: repairBody,
       signal: options.signal,
