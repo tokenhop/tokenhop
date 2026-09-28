@@ -2,7 +2,11 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Card, Button, Input, Callout, SkeletonText } from "@/shared/components";
+import Button from "@/shared/components/Button";
+import Callout from "@/shared/components/Callout";
+import Card from "@/shared/components/Card";
+import Input from "@/shared/components/Input";
+import { SkeletonText } from "@/shared/components/Loading";
 import { resolveLoginVisibility } from "./loginVisibility";
 
 /**
