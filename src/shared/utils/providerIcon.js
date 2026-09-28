@@ -33,14 +33,14 @@ export function resolveProviderIconId(providerId) {
   return aliased;
 }
 
-// Logos shipped as vector (no PNG). ponytail: explicit list; switch to a manifest if many land.
+// Logos shipped as vector (no WebP). ponytail: explicit list; switch to a manifest if many land.
 const SVG_ICONS = new Set(["meta-code"]);
 
-/** `/providers/{id}.png` (or `.svg` for vector logos), null when previously failed. */
+/** `/providers/{id}.webp` (or `.svg` for vector logos), null when previously failed. */
 export function getProviderIconSrc(providerId) {
   const id = resolveProviderIconId(providerId);
   if (!id) return null;
-  return `/providers/${id}.${SVG_ICONS.has(id) ? "svg" : "png"}`;
+  return `/providers/${id}.${SVG_ICONS.has(id) ? "svg" : "webp"}`;
 }
 
 /** Call from img onError so later mounts skip the request. */
