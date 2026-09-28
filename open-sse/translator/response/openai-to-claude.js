@@ -232,22 +232,37 @@ export function openaiToClaudeResponse(chunk, state) {
     }
   }
 
+  // Emit complete tool JSON before finish_reason; keep partial chunks buffered
+  // until the next argument chunk (or finish) so sanitization sees full args.
+  if (state.toolArgBuffers?.size) {
+    for (const [idx, buffered] of state.toolArgBuffers) {
+      if (!choice.finish_reason) {
+        try {
+          JSON.parse(buffered);
+        } catch {
+          continue;
+        }
+      }
+      const toolInfo = state.toolCalls.get(idx);
+      if (!toolInfo) continue;
+      results.push({
+        type: "content_block_delta",
+        index: toolInfo.blockIndex,
+        delta: {
+          type: "input_json_delta",
+          partial_json: sanitizeToolArgs(toolInfo.name, buffered),
+        },
+      });
+      state.toolArgBuffers.delete(idx);
+    }
+  }
+
   // Finish
   if (choice.finish_reason) {
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
-    for (const [idx, toolInfo] of state.toolCalls) {
-      // Emit buffered + sanitized args as single delta before stop
-      const buffered = state.toolArgBuffers?.get(idx);
-      if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
-        results.push({
-          type: "content_block_delta",
-          index: toolInfo.blockIndex,
-          delta: { type: "input_json_delta", partial_json: sanitized },
-        });
-      }
+    for (const [, toolInfo] of state.toolCalls) {
       results.push({
         type: "content_block_stop",
         index: toolInfo.blockIndex,

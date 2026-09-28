@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
-import { normalizeKiroExternalIdpAuth } from "@/lib/oauth/kiroExternalIdp";
+import { normalizeKiroExternalIdpAuth } from "@/lib/oauth/kiroExternalIdp.js";
 
 /**
  * POST /api/oauth/kiro/import-cli-proxy
