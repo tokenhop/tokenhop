@@ -7,6 +7,11 @@ import {
   default as WindsurfExecutor,
 } from "open-sse/executors/windsurf.js";
 import { PROVIDERS } from "open-sse/config/providers.js";
+import windsurfRegistry from "open-sse/providers/registry/windsurf.js";
+
+// Registry chat endpoint (open-sse/providers/registry/windsurf.js:21-23). The
+// self-serve host (auth1ApiServerUrl) is only for the Devin auth chain.
+const WS_CHAT_URL = windsurfRegistry.transport.baseUrl;
 
 // ─── Protobuf helpers for building expected wire bytes in tests ──────────────
 
@@ -173,11 +178,14 @@ describe("decodeCompletionChunk", () => {
 });
 
 describe("WindsurfExecutor class", () => {
-  it("constructor wires config from PROVIDERS.windsurf", () => {
+  it("constructor wires config with the registry chat endpoint", () => {
     const ex = new WindsurfExecutor();
     expect(ex.provider).toBe("windsurf");
     expect(ex.config).toBeDefined();
-    expect(ex.config.baseUrl).toContain("server.self-serve.windsurf.com");
+    // windsurf is hidden from the PROVIDERS barrel (registry/index.js — no tool
+    // calling), so the executor falls back to the same chat URL as the registry.
+    expect(ex.config.baseUrl).toBe(WS_CHAT_URL);
+    expect(ex.config.baseUrl).toContain("server.codeium.com");
     expect(typeof ex.execute).toBe("function");
   });
 
@@ -199,14 +207,23 @@ describe("WindsurfExecutor class", () => {
 
   it("buildUrl returns the GetChatMessage endpoint", () => {
     const ex = new WindsurfExecutor();
+    expect(ex.buildUrl()).toBe(WS_CHAT_URL);
     expect(ex.buildUrl()).toBe(
-      "https://server.self-serve.windsurf.com/exa.language_server_pb.LanguageServerService/GetChatMessage",
+      "https://server.codeium.com/exa.language_server_pb.LanguageServerService/GetChatMessage",
     );
   });
 
-  it("PROVIDERS.windsurf baseUrl is the chat endpoint (registry in sync)", () => {
-    expect(PROVIDERS.windsurf.baseUrl).toBe(
-      "https://server.self-serve.windsurf.com/exa.language_server_pb.LanguageServerService/GetChatMessage",
+  it("registry windsurf baseUrl is the chat endpoint (registry in sync)", () => {
+    // Self-serve host must NOT be the chat baseUrl — it is auth-only
+    // (registry windsurf.js:45 auth1ApiServerUrl).
+    expect(windsurfRegistry.transport.baseUrl).toBe(
+      "https://server.codeium.com/exa.language_server_pb.LanguageServerService/GetChatMessage",
     );
+    expect(windsurfRegistry.oauth.auth1ApiServerUrl).toBe("https://server.self-serve.windsurf.com");
+    expect(windsurfRegistry.oauth.apiServerUrl).toBe("https://server.codeium.com");
+    // windsurf is currently hidden from the PROVIDERS barrel (registry/index.js);
+    // the executor falls back to the registry chat URL in that case.
+    expect(PROVIDERS.windsurf).toBeUndefined();
+    expect(new WindsurfExecutor().buildUrl()).toBe(windsurfRegistry.transport.baseUrl);
   });
 });

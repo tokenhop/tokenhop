@@ -17,8 +17,9 @@ describe("OpenAI → Claude context mapping", () => {
     expect(JSON.stringify(out.system), "Claude Code prompt injected").not.toContain("Claude Code");
   });
 
-  it("assistant reasoning_content becomes a thinking block", () => {
+  it("assistant reasoning_content becomes a thinking block when thinking is requested", () => {
     const out = T({
+      reasoning_effort: "high",
       messages: [
         { role: "user", content: "q" },
         { role: "assistant", content: "a", reasoning_content: "my hidden reasoning" },
@@ -33,6 +34,20 @@ describe("OpenAI → Claude context mapping", () => {
         thinking: "my hidden reasoning",
       }),
     );
+  });
+
+  // Anthropic 400s on history thinking blocks when thinking is disabled — the
+  // mapping must not invent a thinking block for a no-intent request.
+  it("reasoning_content is not turned into a thinking block without thinking intent", () => {
+    const out = T({
+      messages: [
+        { role: "user", content: "q" },
+        { role: "assistant", content: "a", reasoning_content: "my hidden reasoning" },
+        { role: "user", content: "next" },
+      ],
+    });
+    const assistant = out.messages.find((m) => m.role === "assistant");
+    expect(assistant.content.some((b) => b.type === "thinking")).toBe(false);
   });
 
   // openai-to-claude.js convertOpenAIToolChoice — "none" must keep its "do not call" intent

@@ -1,7 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fsPromises from "fs/promises";
+import { join } from "path";
 
-// Mock next/server
+// The route loads better-sqlite3 via a runtime `require("better-sqlite3")`,
+// which vi.mock cannot intercept (it only handles ESM imports). Tests patch
+// Node's Module._load instead — see installBetterSqlite below.
+//
+// child_process IS imported by the route, so vi.mock works. But the route
+// promisifies execFile, and util.promisify only produces { stdout, stderr }
+// via the custom promisify symbol — attach one to the mock so execFileAsync
+// behaves like the real one.
+const execState = vi.hoisted(() => ({ calls: [], handler: null }));
+
 vi.mock("next/server", () => ({
   NextResponse: {
     json: vi.fn((body, init) => ({
@@ -12,173 +22,319 @@ vi.mock("next/server", () => ({
   },
 }));
 
-// Mock os
 vi.mock("os", () => ({
   default: { homedir: vi.fn(() => "/mock/home") },
   homedir: vi.fn(() => "/mock/home"),
 }));
 
-// Mock fs/promises
 vi.mock("fs/promises", () => ({
   access: vi.fn(),
   constants: { R_OK: 4 },
 }));
 
-// Shared mock db instance
-const mockDbInstance = {
-  prepare: vi.fn(),
-  close: vi.fn(),
-  __throwOnConstruct: false,
-};
+vi.mock("child_process", () => {
+  const execFile = vi.fn();
+  execFile[Symbol.for("nodejs.util.promisify.custom")] = (cmd, args) => {
+    execState.calls.push({ cmd, args: args ?? [] });
+    // Default: every command fails, like a host without sqlite3/cursor.
+    return execState.handler
+      ? execState.handler(cmd, args ?? [])
+      : Promise.reject(new Error(`${cmd}: command not found`));
+  };
+  return { execFile };
+});
 
-// Mock better-sqlite3 as a class so `new Database(...)` works
-vi.mock("better-sqlite3", () => ({
-  default: class MockDatabase {
-    constructor() {
-      if (mockDbInstance.__throwOnConstruct) {
-        throw new Error("SQLITE_CANTOPEN");
-      }
-      return mockDbInstance;
+const nodeModule = require("module");
+
+const SQL = "SELECT value FROM itemTable WHERE key=? LIMIT 1";
+
+const DARWIN_CANDIDATES = [
+  join("/mock/home", "Library/Application Support/Cursor/User/globalStorage/state.vscdb"),
+  join(
+    "/mock/home",
+    "Library/Application Support/Cursor - Insiders/User/globalStorage/state.vscdb",
+  ),
+];
+
+const LINUX_CANDIDATES = [
+  join("/mock/home", ".config/Cursor/User/globalStorage/state.vscdb"),
+  join("/mock/home", ".config/cursor/User/globalStorage/state.vscdb"),
+];
+
+const sqliteRestores = [];
+
+/**
+ * Patch Module._load so the route's `require("better-sqlite3")` returns a
+ * controllable fake Database. `rows` maps itemTable key → { value } row;
+ * a key missing from `rows` is a lookup miss (get → undefined).
+ */
+function installBetterSqlite({ rows = {}, ctorError = null } = {}) {
+  const instances = [];
+  class FakeDatabase {
+    constructor(dbPath, options) {
+      this.dbPath = dbPath;
+      this.options = options;
+      this.queries = [];
+      this.getKeys = [];
+      this.closed = false;
+      instances.push(this);
+      if (ctorError) throw ctorError;
     }
-  },
-}));
-
-// We need to dynamically import after mocks are registered
-let GET;
+    prepare(sql) {
+      this.queries.push(sql);
+      const db = this;
+      return {
+        get(key) {
+          db.getKeys.push(key);
+          return rows[key];
+        },
+      };
+    }
+    close() {
+      this.closed = true;
+    }
+  }
+  const originalLoad = nodeModule._load;
+  nodeModule._load = function interceptedLoad(request, ...rest) {
+    if (request === "better-sqlite3") return FakeDatabase;
+    return originalLoad.apply(this, [request, ...rest]);
+  };
+  const restore = () => {
+    nodeModule._load = originalLoad;
+  };
+  sqliteRestores.push(restore);
+  return { instances, restore };
+}
 
 describe("GET /api/oauth/cursor/auto-import", () => {
   const originalPlatform = process.platform;
+  let GET;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    mockDbInstance.__throwOnConstruct = false;
-    // Force darwin so macOS-specific logic is exercised
+    execState.calls.length = 0;
+    execState.handler = null;
     Object.defineProperty(process, "platform", { value: "darwin", writable: true });
-    // Re-import to pick up fresh mocks each run
     const mod = await import("../../src/app/api/oauth/cursor/auto-import/route.js");
     GET = mod.GET;
   });
 
   afterEach(() => {
+    for (const restore of sqliteRestores.splice(0)) restore();
     Object.defineProperty(process, "platform", { value: originalPlatform, writable: true });
   });
 
-  // ── macOS path probing ────────────────────────────────────────────────
+  // ── Not-found ─────────────────────────────────────────────────────────
 
-  it("returns not-found when no macOS cursor db paths are accessible", async () => {
+  it("returns not-found error listing every checked darwin location", async () => {
     vi.mocked(fsPromises.access).mockRejectedValue(new Error("ENOENT"));
 
     const response = await GET();
 
-    expect(response.body.found).toBe(false);
-    expect(response.body.error).toContain("Cursor database not found in known macOS locations");
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      found: false,
+      error: `Cursor database not found. Checked locations:\n${DARWIN_CANDIDATES.join("\n")}\n\nMake sure Cursor IDE is installed and opened at least once.`,
+    });
+    expect(fsPromises.access).toHaveBeenCalledTimes(2);
   });
 
-  it("returns descriptive error if macOS db file exists but cannot be opened", async () => {
+  // ── Token extraction via better-sqlite3 ───────────────────────────────
+
+  it("extracts tokens via better-sqlite3 using exact keys in priority order", async () => {
     vi.mocked(fsPromises.access).mockResolvedValue();
-    mockDbInstance.__throwOnConstruct = true;
+    const { instances } = installBetterSqlite({
+      rows: {
+        "cursorAuth/accessToken": { value: "test-access-token" },
+        "cursorAuth/refreshToken": { value: "test-refresh-token" },
+        "storage.serviceMachineId": { value: "test-machine-id" },
+      },
+    });
 
     const response = await GET();
 
-    expect(response.body.found).toBe(false);
-    expect(response.body.error).toContain("could not open it");
-    expect(response.body.error).toContain("SQLITE_CANTOPEN");
+    expect(response.body).toEqual({
+      found: true,
+      accessToken: "test-access-token",
+      refreshToken: "test-refresh-token",
+      machineId: "test-machine-id",
+    });
+
+    const db = instances[0];
+    expect(db.dbPath).toBe(DARWIN_CANDIDATES[0]);
+    expect(db.options).toEqual({ readonly: true, fileMustExist: true });
+    expect(db.queries).toHaveLength(3);
+    expect(db.queries.every((sql) => sql === SQL)).toBe(true);
+    // firstValue stops at the first hit per key group
+    expect(db.getKeys).toEqual([
+      "cursorAuth/accessToken",
+      "cursorAuth/refreshToken",
+      "storage.serviceMachineId",
+    ]);
+    expect(db.closed).toBe(true);
   });
 
-  // ── Token extraction ──────────────────────────────────────────────────
-
-  it("extracts tokens using exact keys", async () => {
+  it("unwraps JSON-encoded string values but keeps non-string JSON verbatim", async () => {
     vi.mocked(fsPromises.access).mockResolvedValue();
-    mockDbInstance.prepare.mockReturnValue({
-      all: vi.fn().mockReturnValue([
-        { key: "cursorAuth/accessToken", value: "test-token" },
-        { key: "storage.serviceMachineId", value: "test-machine-id" },
-      ]),
+    installBetterSqlite({
+      rows: {
+        "cursorAuth/accessToken": { value: '"json-access-token"' },
+        "cursorAuth/refreshToken": { value: '"json-refresh-token"' },
+        "storage.serviceMachineId": { value: '{"machineId":"opaque"}' },
+      },
     });
 
     const response = await GET();
 
     expect(response.body.found).toBe(true);
-    expect(response.body.accessToken).toBe("test-token");
-    expect(response.body.machineId).toBe("test-machine-id");
-    expect(mockDbInstance.close).toHaveBeenCalled();
+    expect(response.body.accessToken).toBe("json-access-token");
+    expect(response.body.refreshToken).toBe("json-refresh-token");
+    // JSON.parse succeeds but result is not a string → original value kept
+    expect(response.body.machineId).toBe('{"machineId":"opaque"}');
   });
 
-  it("unwraps JSON-encoded string values", async () => {
+  it("falls through to lower-priority keys when primary keys miss", async () => {
     vi.mocked(fsPromises.access).mockResolvedValue();
-    mockDbInstance.prepare.mockReturnValue({
-      all: vi.fn().mockReturnValue([
-        { key: "cursorAuth/accessToken", value: '"json-token"' },
-        { key: "storage.serviceMachineId", value: '"json-machine-id"' },
-      ]),
+    const { instances } = installBetterSqlite({
+      rows: {
+        "cursorAuth/token": { value: "alt-access-token" },
+        "cursorAuth/refreshToken": { value: "alt-refresh-token" },
+        "storage.machineId": { value: "alt-machine-id" },
+      },
     });
 
     const response = await GET();
 
     expect(response.body.found).toBe(true);
-    expect(response.body.accessToken).toBe("json-token");
-    expect(response.body.machineId).toBe("json-machine-id");
+    expect(response.body.accessToken).toBe("alt-access-token");
+    expect(response.body.machineId).toBe("alt-machine-id");
+    expect(instances[0].getKeys).toEqual([
+      "cursorAuth/accessToken",
+      "cursorAuth/token",
+      "cursorAuth/refreshToken",
+      "storage.serviceMachineId",
+      "storage.machineId",
+    ]);
   });
 
-  // ── Fuzzy fallback (macOS only) ───────────────────────────────────────
+  // ── Extraction failures → manual fallback ─────────────────────────────
 
-  it("falls back to fuzzy key matching on macOS when exact keys are missing", async () => {
+  it("db-open failure falls back to sqlite3 CLI, then windowsManual", async () => {
     vi.mocked(fsPromises.access).mockResolvedValue();
-    mockDbInstance.prepare.mockImplementation((query) => {
-      if (query.includes("IN (")) {
-        return { all: vi.fn().mockReturnValue([]) };
-      }
-      // Fuzzy LIKE query
-      return {
-        all: vi.fn().mockReturnValue([
-          { key: "cursorAuth/someOtherAccessTokenKey", value: "fallback-token" },
-          { key: "storage.someMachineId", value: "fallback-machine" },
-        ]),
-      };
+    const { instances } = installBetterSqlite({
+      ctorError: new Error("SqliteError: unable to open database file"),
     });
 
     const response = await GET();
 
-    expect(response.body.found).toBe(true);
-    expect(response.body.accessToken).toBe("fallback-token");
-    expect(response.body.machineId).toBe("fallback-machine");
+    expect(response.body).toEqual({
+      found: false,
+      windowsManual: true,
+      dbPath: DARWIN_CANDIDATES[0],
+    });
+    expect(instances[0].closed).toBe(false); // ctor threw before close()
+    // CLI fallback was attempted against the same dbPath
+    const cliCalls = execState.calls.filter((c) => c.cmd === "sqlite3");
+    expect(cliCalls.length).toBeGreaterThan(0);
+    expect(cliCalls[0].args[0]).toBe(DARWIN_CANDIDATES[0]);
   });
 
-  it("returns login-prompt error when tokens are missing even after fallback", async () => {
+  it("opened db with no token rows ends at windowsManual", async () => {
     vi.mocked(fsPromises.access).mockResolvedValue();
-    mockDbInstance.prepare.mockReturnValue({
-      all: vi.fn().mockReturnValue([]),
-    });
+    const { instances } = installBetterSqlite({ rows: {} });
 
     const response = await GET();
 
-    expect(response.body.found).toBe(false);
-    expect(response.body.error).toContain("Please login to Cursor IDE first");
+    expect(response.body).toEqual({
+      found: false,
+      windowsManual: true,
+      dbPath: DARWIN_CANDIDATES[0],
+    });
+    expect(instances[0].closed).toBe(true);
   });
 
-  // ── Backwards-compatible: linux/win32 keep original single-path logic ─
+  // ── Linux install check ───────────────────────────────────────────────
 
-  it("linux uses single hardcoded path and original error message", async () => {
+  it("linux: leftover config without cursor binary or desktop file skips auto-import", async () => {
     Object.defineProperty(process, "platform", { value: "linux", writable: true });
-    vi.mocked(fsPromises.access).mockRejectedValue(new Error("ENOENT"));
-    mockDbInstance.__throwOnConstruct = true;
+    vi.mocked(fsPromises.access).mockImplementation(async (p) => {
+      if (p === LINUX_CANDIDATES[0]) return;
+      throw new Error("ENOENT");
+    });
 
     const response = await GET();
 
-    expect(response.body.found).toBe(false);
-    expect(response.body.error).toBe(
-      "Cursor database not found. Make sure Cursor IDE is installed and you are logged in.",
-    );
-    // fs/promises.access should NOT have been called (linux skips probing)
-    expect(fsPromises.access).not.toHaveBeenCalled();
+    expect(response.body).toEqual({
+      found: false,
+      error:
+        "Cursor config files found but Cursor IDE does not appear to be installed. Skipping auto-import.",
+    });
+    const which = execState.calls.find((c) => c.cmd === "which");
+    expect(which?.args).toEqual(["cursor"]);
   });
 
-  it("unsupported platform returns 400", async () => {
-    Object.defineProperty(process, "platform", { value: "freebsd", writable: true });
+  it("linux: `which cursor` success continues to extraction", async () => {
+    Object.defineProperty(process, "platform", { value: "linux", writable: true });
+    vi.mocked(fsPromises.access).mockImplementation(async (p) => {
+      if (p === LINUX_CANDIDATES[0]) return;
+      throw new Error("ENOENT");
+    });
+    execState.handler = (cmd) =>
+      cmd === "which"
+        ? Promise.resolve({ stdout: "/usr/bin/cursor\n" })
+        : Promise.reject(new Error("not found"));
+    installBetterSqlite({
+      rows: {
+        "cursorAuth/accessToken": { value: "linux-token" },
+        "storage.serviceMachineId": { value: "linux-machine" },
+      },
+    });
 
     const response = await GET();
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toBe("Unsupported platform");
+    expect(response.body.found).toBe(true);
+    expect(response.body.accessToken).toBe("linux-token");
+    expect(response.body.machineId).toBe("linux-machine");
+  });
+
+  // ── Windows candidate probing ─────────────────────────────────────────
+
+  it("win32: probes APPDATA/LOCALAPPDATA candidates in order", async () => {
+    Object.defineProperty(process, "platform", { value: "win32", writable: true });
+    const savedEnv = {
+      APPDATA: process.env.APPDATA,
+      LOCALAPPDATA: process.env.LOCALAPPDATA,
+    };
+    process.env.APPDATA = "/mock/appdata";
+    process.env.LOCALAPPDATA = "/mock/localappdata";
+    const candidates = [
+      join("/mock/appdata", "Cursor", "User", "globalStorage", "state.vscdb"),
+      join("/mock/appdata", "Cursor - Insiders", "User", "globalStorage", "state.vscdb"),
+      join("/mock/localappdata", "Cursor", "User", "globalStorage", "state.vscdb"),
+      join("/mock/localappdata", "Programs", "Cursor", "User", "globalStorage", "state.vscdb"),
+    ];
+    vi.mocked(fsPromises.access).mockImplementation(async (p) => {
+      if (p === candidates[3]) return;
+      throw new Error("ENOENT");
+    });
+    const { instances } = installBetterSqlite({
+      rows: {
+        "cursorAuth/accessToken": { value: "win-token" },
+        "storage.serviceMachineId": { value: "win-machine" },
+      },
+    });
+
+    try {
+      const response = await GET();
+
+      expect(response.body.found).toBe(true);
+      expect(instances[0].dbPath).toBe(candidates[3]);
+      expect(fsPromises.access).toHaveBeenCalledTimes(4);
+    } finally {
+      for (const [key, value] of Object.entries(savedEnv)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 });
