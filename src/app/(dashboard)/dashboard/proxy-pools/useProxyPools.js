@@ -287,11 +287,14 @@ export default function useProxyPools() {
     async (form) => {
       setDeploying(true);
       try {
-        const { res, data } = await apiJson(DEPLOY_ENDPOINTS[deployModal], {
-          method: "POST",
-          headers: JSON_HEADERS,
-          body: JSON.stringify(form),
-        });
+        const { res, data } = await apiJson(
+          DEPLOY_ENDPOINTS[deployModal] ?? DEPLOY_ENDPOINTS.deno,
+          {
+            method: "POST",
+            headers: JSON_HEADERS,
+            body: JSON.stringify(form),
+          },
+        );
         if (res.ok) {
           await fetchPools();
           setDeployModal(null);
@@ -312,12 +315,20 @@ export default function useProxyPools() {
   const someSelected =
     selection.selectedIds.length > 0 && selection.selectedIds.length < pools.length;
 
-  const toggleSelect = (id) => dispatchSelection({ type: "toggle", id });
-  const toggleSelectAll = () =>
-    dispatchSelection({ type: allSelected ? "clear" : "select-all", ids: pools.map((p) => p.id) });
-  const clearSelection = () => dispatchSelection({ type: "clear" });
-  const requestBulkDelete = () =>
-    setDeleteState({ count: selection.selectedIds.length, ids: selection.selectedIds });
+  const toggleSelect = useCallback((id) => dispatchSelection({ type: "toggle", id }), []);
+  const toggleSelectAll = useCallback(
+    () =>
+      dispatchSelection({
+        type: allSelected ? "clear" : "select-all",
+        ids: pools.map((p) => p.id),
+      }),
+    [allSelected, pools],
+  );
+  const clearSelection = useCallback(() => dispatchSelection({ type: "clear" }), []);
+  const requestBulkDelete = useCallback(
+    () => setDeleteState({ count: selection.selectedIds.length, ids: selection.selectedIds }),
+    [selection.selectedIds],
+  );
 
   return {
     pools,
