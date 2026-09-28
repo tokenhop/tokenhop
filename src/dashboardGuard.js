@@ -5,6 +5,7 @@ import { resolveFlagSetting, resolveStartPage } from "@/lib/settingsFlags";
 import { extractClientApiKey } from "@/lib/auth/clientApiKey";
 import { hasValidCliToken } from "@/lib/auth/cliToken";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
+import { LOCAL_ONLY_CODE } from "@/shared/utils/localOnly";
 
 // Public API paths — no auth required (LLM API has its own key auth inside handler).
 const PUBLIC_API_PATHS = [
@@ -204,7 +205,10 @@ export async function proxy(request) {
   // Local-only gate for spawn-capable / host-secret routes.
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
     if (!(await canAccessLocalOnlyRoute(request))) {
-      return NextResponse.json({ error: "Local only: CLI token required" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Local only: CLI token required", code: LOCAL_ONLY_CODE },
+        { status: 403 },
+      );
     }
   }
 

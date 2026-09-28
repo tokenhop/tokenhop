@@ -10,6 +10,8 @@ import {
 import { MitmServerCard, MitmToolCard } from "@/app/(dashboard)/dashboard/cli-tools/components";
 import { Callout } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
+import { useCliAccessStore } from "@/store/cliAccessStore";
+import LocalOnlyNotice from "@/app/(dashboard)/dashboard/cli-tools/components/LocalOnlyNotice";
 
 /**
  * MITM setup page shell: page-owned risk warning plus the shared server card
@@ -22,6 +24,7 @@ export default function MitmPageClient() {
   const [modelAliases, setModelAliases] = useState({});
   const [cloudEnabled, setCloudEnabled] = useState(false);
   const [expandedTool, setExpandedTool] = useState(null);
+  const localOnly = useCliAccessStore((s) => s.localOnly);
   const [mitmStatus, setMitmStatus] = useState({
     running: false,
     certExists: false,
@@ -82,36 +85,41 @@ export default function MitmPageClient() {
         risk.
       </Callout>
 
-      {/* MITM Server Card */}
-      <MitmServerCard
-        apiKeys={apiKeys}
-        cloudEnabled={cloudEnabled}
-        onStatusChange={setMitmStatus}
-      />
+      {/* MITM Server Card: its status GET is what detects local-only access */}
+      {localOnly ? (
+        <LocalOnlyNotice />
+      ) : (
+        <MitmServerCard
+          apiKeys={apiKeys}
+          cloudEnabled={cloudEnabled}
+          onStatusChange={setMitmStatus}
+        />
+      )}
 
       {/* Tool Cards */}
       <div className="grid gap-4">
-        {mitmTools.map(([toolId, tool]) => (
-          <MitmToolCard
-            key={toolId}
-            tool={tool}
-            isExpanded={expandedTool === toolId}
-            onToggle={() => setExpandedTool(expandedTool === toolId ? null : toolId)}
-            serverRunning={mitmStatus.running}
-            dnsActive={mitmStatus.dnsStatus?.[toolId] || false}
-            hasCachedPassword={mitmStatus.hasCachedPassword || false}
-            needsSudoPassword={mitmStatus.needsSudoPassword !== false}
-            isWin={mitmStatus.isWin === true}
-            apiKeys={apiKeys}
-            activeProviders={getActiveProviders()}
-            hasActiveProviders={hasActiveProviders()}
-            modelAliases={modelAliases}
-            cloudEnabled={cloudEnabled}
-            onDnsChange={(data) =>
-              setMitmStatus((prev) => ({ ...prev, dnsStatus: data.dnsStatus ?? prev.dnsStatus }))
-            }
-          />
-        ))}
+        {!localOnly &&
+          mitmTools.map(([toolId, tool]) => (
+            <MitmToolCard
+              key={toolId}
+              tool={tool}
+              isExpanded={expandedTool === toolId}
+              onToggle={() => setExpandedTool(expandedTool === toolId ? null : toolId)}
+              serverRunning={mitmStatus.running}
+              dnsActive={mitmStatus.dnsStatus?.[toolId] || false}
+              hasCachedPassword={mitmStatus.hasCachedPassword || false}
+              needsSudoPassword={mitmStatus.needsSudoPassword !== false}
+              isWin={mitmStatus.isWin === true}
+              apiKeys={apiKeys}
+              activeProviders={getActiveProviders()}
+              hasActiveProviders={hasActiveProviders()}
+              modelAliases={modelAliases}
+              cloudEnabled={cloudEnabled}
+              onDnsChange={(data) =>
+                setMitmStatus((prev) => ({ ...prev, dnsStatus: data.dnsStatus ?? prev.dnsStatus }))
+              }
+            />
+          ))}
       </div>
     </div>
   );

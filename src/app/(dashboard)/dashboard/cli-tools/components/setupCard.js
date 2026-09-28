@@ -10,6 +10,10 @@ import SetupScaffold, { NotInstalledBlock, SetupRow, SingleModelRow } from "./Se
 import { rememberEndpoint } from "./cliEndpointPresets";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { deriveToolStatus } from "../lib/toolStatus";
+import { markLocalOnly } from "@/store/cliAccessStore";
+import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
+
+const LOCAL_ONLY = Symbol("localOnly");
 
 /**
  * Shared hook for the panel-style setup cards. Owns status fetching,
@@ -47,6 +51,7 @@ export function useSetupCard({
     setChecking(true);
     try {
       const res = await fetch(statusUrl);
+      if (await isLocalOnlyResponse(res)) return markLocalOnly();
       const data = await res.json();
       setStatus(data);
       onStatusUpdateRef.current?.(toolId, data);
@@ -60,9 +65,10 @@ export function useSetupCard({
   useEffect(() => {
     let cancelled = false;
     fetch(statusUrl)
-      .then((res) => res.json())
+      .then(async (res) => ((await isLocalOnlyResponse(res)) ? LOCAL_ONLY : res.json()))
       .then((data) => {
         if (cancelled) return;
+        if (data === LOCAL_ONLY) return markLocalOnly();
         setStatus(data);
         onStatusUpdateRef.current?.(toolId, data);
       })
