@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, Button, Badge, Input, Modal } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
+import { markLocalOnly } from "@/store/cliAccessStore";
+import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 import { readMitmResponse } from "./mitmToolActions";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
@@ -37,6 +39,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/cli-tools/antigravity-mitm");
+      if (await isLocalOnlyResponse(res)) return markLocalOnly();
       const data = await readMitmResponse(res, "Failed to load MITM status");
       setStatus(data);
       if (data.mitmRouterBaseUrl) {

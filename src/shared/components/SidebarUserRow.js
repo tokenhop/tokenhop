@@ -2,10 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { resolveUserRow } from "@/shared/utils/shell";
+import dynamic from "next/dynamic";
 import ThemeToggle from "./ThemeToggle";
 import Menu, { MenuItem } from "./Menu";
-import LanguageSwitcher from "./LanguageSwitcher";
 import IconButton from "./IconButton";
+
+// Lazy popover: the dialog loads on first open, not with the shell. The
+// `languageMounted` latch keeps it mounted across close so the shared Modal
+// still returns focus and handles Esc.
+const LanguageSwitcher = dynamic(() => import("./LanguageSwitcher"), { ssr: false });
 
 /**
  * Sidebar user row per the Signal board: avatar initial, name (SSO name when
@@ -16,6 +21,7 @@ import IconButton from "./IconButton";
 export default function SidebarUserRow() {
   const [status, setStatus] = useState({});
   const [languageOpen, setLanguageOpen] = useState(false);
+  const [languageMounted, setLanguageMounted] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,11 +70,24 @@ export default function SidebarUserRow() {
           trigger={<IconButton icon="more_vert" label="Account menu" className="size-11" />}
           align="end"
         >
-          <MenuItem icon="translate" label="Language" onSelect={() => setLanguageOpen(true)} />
+          <MenuItem
+            icon="translate"
+            label="Language"
+            onSelect={() => {
+              setLanguageMounted(true);
+              setLanguageOpen(true);
+            }}
+          />
           <MenuItem icon="logout" label="Logout" danger onSelect={handleLogout} />
         </Menu>
       </div>
-      <LanguageSwitcher hideTrigger isOpen={languageOpen} onClose={() => setLanguageOpen(false)} />
+      {languageMounted && (
+        <LanguageSwitcher
+          hideTrigger
+          isOpen={languageOpen}
+          onClose={() => setLanguageOpen(false)}
+        />
+      )}
     </>
   );
 }

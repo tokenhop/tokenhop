@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@/shared/components";
+import Button from "@/shared/components/Button";
 import Navigation from "./components/Navigation";
 import HeroSection from "./components/HeroSection";
 import FlowAnimation from "./components/FlowAnimation";

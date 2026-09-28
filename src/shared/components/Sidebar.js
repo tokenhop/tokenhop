@@ -2,8 +2,8 @@
 
 import PropTypes from "prop-types";
 import Link from "next/link";
-import { APP_CONFIG } from "@/shared/constants/config";
-import { useShellStatus } from "@/shared/hooks";
+import { APP_CONFIG } from "@/shared/constants/appConfig";
+import useShellStatus from "@/shared/hooks/useShellStatus";
 import { resolveVersionChip } from "@/shared/utils/shell";
 import SidebarNav from "./SidebarNav";
 import GatewayStatusCard from "./GatewayStatusCard";

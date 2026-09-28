@@ -21,7 +21,7 @@ const STATUS_RING = {
 };
 
 /**
- * Signal provider tile. Shows the provider logo (`/public/providers/{id}.png|svg`)
+ * Signal provider tile. Shows the provider logo (`/public/providers/{id}.webp|svg`)
  * edge to edge on a near-white plate washed with the brand color, so every logo —
  * dark glyphs, transparent marks, full-bleed app icons — reads in both themes.
  * Falls back to the white-on-brand monogram when no logo exists.

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   headroomStatusLabel,
+  probeHeadroomStatus,
   savingsDollarLine,
   savingsShare,
 } from "../../src/app/(dashboard)/dashboard/token-saver/tokenSaverUtils.js";
@@ -22,10 +23,40 @@ describe("headroomStatusLabel", () => {
       headroomStatusLabel({ loading: false, running: false, localUrl: true, installed: true }),
     ).toBe("Stopped");
   });
+  it("maps Unreachable when the probe failed or timed out", () => {
+    expect(headroomStatusLabel({ loading: false, unreachable: true, installed: true })).toBe(
+      "Unreachable",
+    );
+  });
   it("maps External for remote URL", () => {
     expect(
       headroomStatusLabel({ loading: false, running: false, localUrl: false, installed: true }),
     ).toBe("External");
+  });
+});
+
+describe("probeHeadroomStatus", () => {
+  it("returns the payload when the probe answers in time", async () => {
+    const fetcher = async () => ({ running: true });
+    await expect(probeHeadroomStatus(fetcher, 50)).resolves.toEqual({ running: true });
+  });
+  it("resolves unreachable when the probe outlives the timeout", async () => {
+    const fetcher = (_url, { signal }) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason));
+      });
+    const out = await probeHeadroomStatus(fetcher, 20);
+    expect(out.unreachable).toBe(true);
+    expect(headroomStatusLabel(out)).toBe("Unreachable");
+  });
+  it("resolves unreachable when the route errors", async () => {
+    const fetcher = async () => {
+      throw new Error("Request failed (500)");
+    };
+    await expect(probeHeadroomStatus(fetcher, 50)).resolves.toEqual({
+      unreachable: true,
+      error: "Request failed (500)",
+    });
   });
 });
 

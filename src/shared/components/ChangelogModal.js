@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import { marked } from "marked";
-import { GITHUB_CONFIG } from "@/shared/constants/config";
+import { GITHUB_CONFIG } from "@/shared/constants/appConfig";
 import Modal from "./Modal";
 import { LoadingState } from "./StateViews";
 

@@ -12,6 +12,8 @@ import EndpointSegmentedPicker from "./EndpointSegmentedPicker";
 import SetupScaffold, { NotInstalledBlock, ModelRow } from "./SetupScaffold";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import { deriveToolStatus } from "../lib/toolStatus";
+import { markLocalOnly } from "@/store/cliAccessStore";
+import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 
 // Auto-compact window presets (CLAUDE_CODE_AUTO_COMPACT_WINDOW, valid 100K–1M).
@@ -70,6 +72,7 @@ export default function ClaudeToolCard({
     setChecking(true);
     try {
       const res = await fetch("/api/cli-tools/claude-settings");
+      if (await isLocalOnlyResponse(res)) return markLocalOnly();
       const data = await res.json();
       setClaudeStatus(data);
       setExaMcpEnabled(Boolean(data?.exaMcpEnabled));

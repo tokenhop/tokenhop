@@ -270,6 +270,23 @@ describe("dashboard guard local-only access", () => {
 
     expect(response.status).toBe(403);
     expect(response.body.error).toBe("Local only: CLI token required");
+    expect(response.body.code).toBe("LOCAL_ONLY");
+  });
+
+  it("tags a proxied /api/cli-tools request with the LOCAL_ONLY code (YAN-415)", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    const response = await proxy(
+      localRequest("/api/cli-tools/all-statuses", {
+        host: "localhost:20128",
+        "x-9r-via-proxy": "1",
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({
+      error: "Local only: CLI token required",
+      code: "LOCAL_ONLY",
+    });
   });
 
   it("rejects local-only route on loopback when requireLogin=true and no JWT", async () => {

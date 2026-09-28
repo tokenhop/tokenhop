@@ -5,7 +5,9 @@ import { CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { useToolSetupData } from "../hooks/useToolSetupData";
 import { deriveToolStatus } from "../lib/toolStatus";
+import { useCliAccessStore } from "@/store/cliAccessStore";
 import ToolSetupPanel from "../components/ToolSetupPanel";
+import LocalOnlyNotice from "../components/LocalOnlyNotice";
 
 /**
  * Narrow-screen + deep-link route: back link, tool title and the same
@@ -14,6 +16,7 @@ import ToolSetupPanel from "../components/ToolSetupPanel";
 export default function ToolDetailClient({ toolId }) {
   const tool = CLI_TOOLS[toolId];
   const data = useToolSetupData();
+  const localOnly = useCliAccessStore((s) => s.localOnly);
 
   if (!tool) {
     return (
@@ -43,7 +46,9 @@ export default function ToolDetailClient({ toolId }) {
         </span>
         Back to CLI tools
       </Link>
-      {data.loading ? (
+      {localOnly ? (
+        <LocalOnlyNotice />
+      ) : data.loading ? (
         <CardSkeleton />
       ) : (
         <ToolSetupPanel toolId={toolId} data={data} onStatusUpdate={() => {}} />

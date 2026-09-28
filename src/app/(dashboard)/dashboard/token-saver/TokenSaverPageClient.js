@@ -306,6 +306,26 @@ export default function TokenSaverPageClient() {
               )}
             </Field>
           </div>
+          {extras.headroom.unreachable && (
+            <div
+              role="alert"
+              className="mt-3 flex flex-wrap items-center gap-2 text-[13px] text-err"
+            >
+              <span className="me-auto min-w-0">
+                Couldn't reach Headroom at{" "}
+                <code className="font-mono" dir="ltr">
+                  {settings.headroomUrl || "http://localhost:8787"}
+                </code>
+                .
+              </span>
+              <Button variant="secondary" size="sm" icon="refresh" onClick={extras.refresh}>
+                Retry
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowHeadroomModal(true)}>
+                Manage Headroom
+              </Button>
+            </div>
+          )}
           <HeadroomControls
             headroom={extras.headroom}
             available={extras.available}

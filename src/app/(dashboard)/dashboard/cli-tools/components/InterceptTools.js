@@ -8,6 +8,8 @@ import Button from "@/shared/components/Button";
 import StatusPill from "@/shared/components/StatusPill";
 import ToolTile from "./ToolTile";
 import { readInterceptStatus } from "../lib/interceptStatus";
+import { markLocalOnly } from "@/store/cliAccessStore";
+import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 
 // Client-side ceiling; the route success path already sets real data.
 const INTERCEPT_TIMEOUT_MS = 8000;
@@ -41,6 +43,7 @@ function InterceptToolsSection({ tools, onRetry }) {
         const res = await fetch("/api/cli-tools/antigravity-mitm", {
           signal: controller.signal,
         });
+        if (await isLocalOnlyResponse(res)) return markLocalOnly();
         const status = await readInterceptStatus(
           res,
           tools.map(([toolId]) => toolId),
