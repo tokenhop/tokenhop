@@ -93,9 +93,3 @@ export const SAVINGS_METHOD_LABELS = {
  * Stacked-bar segment opacities (darkest = largest share), board order.
  */
 export const SAVINGS_SEGMENT_ORDER = ["rtk", "headroom", "pxpipe"];
-
-export const SAVINGS_PERIODS = [
-  { value: "today", label: "Today" },
-  { value: "7d", label: "7d" },
-  { value: "30d", label: "30d" },
-];
