@@ -2098,6 +2098,7 @@
   "terminal": "টার্মিনাল",
   "tested": "পরীক্ষিত",
   "the database.": "ডাটাবেস।",
+  "this provider uses a subscription/OAuth session not officially licensed for proxy/router use. The account may be restricted or banned. Use at your own risk.": "এই প্রদানকারী একটি সাবস্ক্রিপশন/OAuth সেশন ব্যবহার করে যা প্রক্সি/রাউটার ব্যবহারের জন্য আনুষ্ঠানিকভাবে লাইসেন্সপ্রাপ্ত নয়। অ্যাকাউন্ট সীমাবদ্ধ বা নিষিদ্ধ হতে পারে। নিজের ঝুঁকিতে ব্যবহার করুন।",
   "timeout": "টাইমআউট",
   "to localhost": "লোকালহোস্টে",
   "to search": "অনুসন্ধান করতে",

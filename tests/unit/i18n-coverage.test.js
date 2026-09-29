@@ -36,6 +36,15 @@ describe("i18n locale coverage (YAN-409 guard)", () => {
     expect(problems).toEqual([]);
   });
 
+  it("the stripped provider risk notice has a translation in every locale", () => {
+    const rendered =
+      "this provider uses a subscription/OAuth session not officially licensed for proxy/router use. The account may be restricted or banned. Use at your own risk.";
+    const missing = [...locales.entries()]
+      .filter(([, map]) => !(rendered in map))
+      .map(([locale]) => locale);
+    expect(missing).toEqual([]);
+  });
+
   it("every translation keeps the source placeholders", () => {
     const { mismatches } = diffAgainstLocales(literals, locales);
     expect(mismatches).toEqual([]);
