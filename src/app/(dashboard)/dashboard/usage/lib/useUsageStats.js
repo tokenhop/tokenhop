@@ -158,7 +158,12 @@ export default function useUsageStats(period, { tab = "overview" } = {}) {
         console.error("[SSE CLIENT] parse error:", err);
       }
     };
-    return () => es.close();
+    return () => {
+      es.close();
+      // A closed stream must not keep lighting the routes map: drop the
+      // in-flight overlay so the window model speaks alone (YAN-412).
+      setLive((current) => (sameLive(current, EMPTY_LIVE) ? current : EMPTY_LIVE));
+    };
   }, [stream.open]);
 
   return { stats, statsPeriod, live, loading, fetching, error, catchUpKey, retry };

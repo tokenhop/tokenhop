@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -11,14 +11,21 @@ import {
   QuietPeriod,
   Tabs,
 } from "@/shared/components";
+import { RoutesMapCard } from "@/shared/components/routesMap/RoutesMapCard";
 import useLastActivity from "@/shared/hooks/useLastActivity";
+import useLiveRoutes from "@/shared/hooks/useLiveRoutes";
 import usePeriod from "@/shared/hooks/usePeriod";
+import {
+  isIdle as routesAreIdle,
+  mergeRoutes,
+  overlayLiveSignal,
+  updateActiveSince,
+} from "@/shared/utils/routesMap";
 import useUsageStats from "./lib/useUsageStats";
 import { useChartBuckets } from "./lib/useChartBuckets";
 import useProviders from "./lib/useProviders";
 import UsageStatsCards from "./components/UsageStatsCards";
 import UsageBreakdown from "./components/UsageBreakdown";
-import UsageTopology from "./components/UsageTopology";
 import RequestLog from "./components/RequestLog";
 
 const UsageTokensChart = dynamic(() => import("./components/UsageTokensChart"), {
@@ -62,9 +69,37 @@ function UsageContent() {
     tab: activeTab,
   });
   const providers = useProviders();
+  // Shared live-routes map (YAN-412): the window model from Home plus the
+  // connected-provider universe, with in-flight SSE frames layered on top.
+  // The merge stays null until the window model lands so loading and error
+  // states render instead of a false "no providers" map.
+  const [routesRetryKey, setRoutesRetryKey] = useState(0);
+  const liveRoutes = useLiveRoutes(routesRetryKey);
+  // Stale-active guard: first-seen per in-flight provider; a 1s tick runs only
+  // while something is in flight so a stuck provider stops lighting the map.
+  const activeSinceRef = useRef(new Map());
+  const [overlayTick, setOverlayTick] = useState(0);
+  const liveBusy = live.activeRequests.length > 0;
+  useEffect(() => {
+    if (!liveBusy) return undefined;
+    const id = setInterval(() => setOverlayTick((tick) => tick + 1), 1_000);
+    return () => clearInterval(id);
+  }, [liveBusy]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: overlayTick re-checks the stale guard once per second while traffic is in flight.
+  const routesModel = useMemo(() => {
+    if (!liveRoutes.routes) return null;
+    activeSinceRef.current = updateActiveSince(live.activeRequests, activeSinceRef.current);
+    return overlayLiveSignal(
+      mergeRoutes(liveRoutes.routes, providers),
+      live,
+      activeSinceRef.current,
+    );
+  }, [liveRoutes.routes, providers, live, overlayTick]);
+  const routesIdle =
+    routesModel && routesModel.providers.length > 0 ? routesAreIdle(routesModel) : false;
   const quiet =
     Boolean(stats) && statsPeriod === period && !loading && !error && !stats.totalRequests;
-  const activity = useLastActivity(quiet);
+  const activity = useLastActivity(quiet || routesIdle);
   // One chart fetch feeds both the tile sparklines and the tokens chart. It
   // stays off until the stats fetch proved the period isn't quiet; catchUpKey
   // re-fetches after a live-stream catch-up without flashing the skeleton.
@@ -153,11 +188,15 @@ function UsageContent() {
               ) : null}
             </>
           )}
-          <UsageTopology
-            providers={providers}
-            activeRequests={live.activeRequests}
-            lastProvider={live.lastProvider}
-            errorProvider={live.errorProvider}
+          <RoutesMapCard
+            variant="full"
+            routes={routesModel}
+            loading={liveRoutes.loading}
+            error={liveRoutes.error}
+            onRetry={() => setRoutesRetryKey((value) => value + 1)}
+            lastRequestAt={activity.lastRequestAt}
+            lastActivityError={activity.error}
+            onRetryLastActivity={activity.retry}
           />
           {!quiet &&
             (statsPeriod === period && stats ? <UsageBreakdown stats={stats} /> : <CardSkeleton />)}

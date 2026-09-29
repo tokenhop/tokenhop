@@ -1,6 +1,6 @@
 /**
  * Live routes map geometry: three columns (clients → 9router → providers)
- * rendered as one plain SVG. Plain SVG wins over @xyflow/react here: the
+ * rendered as one plain SVG. Plain SVG wins over a graph library here: the
  * board is a static three-column flow with bezier edges, no pan/zoom or node
  * dragging, and SVG keeps the text alternative trivially in sync.
  *
@@ -11,6 +11,8 @@ export const NODE_W = { client: 170, hub: 96, provider: 190 };
 export const NODE_H = 34;
 export const HUB_H = 96;
 export const ROW_GAP = 12;
+/** Maximum provider rows in the compact Home map; active states never get cut. */
+export const COMPACT_PROVIDER_CAP = 4;
 export const TOP_PAD = 8;
 export const GUTTER = 40;
 export const SVG_W = NODE_W.client + GUTTER + NODE_W.hub + GUTTER + NODE_W.provider;

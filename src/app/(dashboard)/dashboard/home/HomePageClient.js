@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useLastActivity from "@/shared/hooks/useLastActivity";
+import useLiveRoutes from "@/shared/hooks/useLiveRoutes";
 import usePeriod from "@/shared/hooks/usePeriod";
+import { isIdle as routesAreIdle, mergeRoutes } from "@/shared/utils/routesMap";
 import { SUMMARY_PERIODS } from "@/shared/utils/period";
 import HomeHeader from "./HomeHeader";
 import { EndpointHeroCard } from "./EndpointHero";
 import { KeysSummaryCard } from "./KeysSummary";
 import HomeStats from "./HomeStats";
-import { LiveRoutesCard } from "./LiveRoutesCard";
+import { RoutesMapCard } from "@/shared/components/routesMap/RoutesMapCard";
 import { RecentRequestsCard } from "./RecentRequests";
 import { QuotaWatchCard } from "./QuotaWatch";
 import { CombosTopCard, comboUsageFromByEndpoint } from "./CombosTop";
@@ -18,7 +20,6 @@ import {
   useHomeChart,
   useHomeCombos,
   useHomeKeys,
-  useHomeLiveRoutes,
   useHomeProviders,
   useHomeQuota,
   useHomeRecentDetails,
@@ -64,8 +65,18 @@ export default function HomePageClient() {
   const providers = useHomeProviders(refreshKey);
   const combos = useHomeCombos(refreshKey);
   const quota = useHomeQuota(refreshKey);
-  const liveRoutes = useHomeLiveRoutes(refreshKey);
+  const liveRoutes = useLiveRoutes(refreshKey);
   const recent = useHomeRecentDetails(refreshKey);
+  // Idle edges for quiet providers come from mergeRoutes (no traffic in the
+  // window still leaves a hub-side edge per connected provider). Memoized so
+  // unrelated poll ticks keep the SVG props referentially stable.
+  const routesModel = useMemo(
+    () =>
+      liveRoutes.routes && providers.connections.length > 0
+        ? mergeRoutes(liveRoutes.routes, providers.connections)
+        : liveRoutes.routes,
+    [liveRoutes.routes, providers.connections],
+  );
 
   const summaryCombos =
     summary.summary && Array.isArray(summary.summary.topCombos)
@@ -83,7 +94,10 @@ export default function HomePageClient() {
     !usage.loading &&
     !usage.error &&
     !usage.current.totalRequests;
-  const activity = useLastActivity(quiet);
+  // One last-activity fetch serves the quiet-period row and the idle map
+  // (skipped when there are no providers at all — the true empty state).
+  const idle = routesModel && routesModel.providers.length > 0 ? routesAreIdle(routesModel) : false;
+  const activity = useLastActivity(quiet || idle);
 
   return (
     <div className="flex min-w-0 flex-col gap-5 pb-8">
@@ -133,11 +147,15 @@ export default function HomePageClient() {
       </div>
 
       <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-3">
-        <LiveRoutesCard
-          routes={liveRoutes.routes}
+        <RoutesMapCard
+          routes={routesModel}
           loading={liveRoutes.loading}
           error={liveRoutes.error}
           onRetry={bump}
+          lastRequestAt={activity.lastRequestAt}
+          lastActivityError={activity.error}
+          onRetryLastActivity={activity.retry}
+          className="lg:col-span-2"
         />
         <RecentRequestsCard
           details={recent.details}
