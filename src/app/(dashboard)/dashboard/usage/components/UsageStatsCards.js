@@ -2,13 +2,15 @@
 
 import { memo } from "react";
 import PropTypes from "prop-types";
+import CountUp from "@/shared/components/CountUp";
 import StatTile from "@/shared/components/StatTile";
 import { Skeleton } from "@/shared/components/Loading";
 import { bucketSeries, NO_PRIOR, PRIOR_LABELS, trendDelta } from "../lib/tileTrends";
 
-const fmt = (n) => new Intl.NumberFormat().format(n || 0);
+const fmt = (n) => new Intl.NumberFormat().format(Math.round(n) || 0);
 const trim = (n) => String(Math.round(n * 10) / 10);
 // B/M/K so the headline stays short at any window size (usage can reach billions).
+// Math.round on the small branch keeps mid-animation floats (CountUp) integer.
 const fmtShort = (n) =>
   n >= 1e9
     ? `${trim(n / 1e9)}B`
@@ -16,7 +18,7 @@ const fmtShort = (n) =>
       ? `${trim(n / 1e6)}M`
       : n >= 1e3
         ? `${trim(n / 1e3)}K`
-        : String(n || 0);
+        : String(Math.round(n) || 0);
 // $1.2k / $3.4M / $5.6B for large totals; exact cents below $1k.
 const fmtCost = (n) =>
   n >= 1e9
@@ -118,7 +120,7 @@ function UsageStatsCards({
   const tiles = [
     {
       eyebrow: "Requests",
-      value: fmtShort(requests),
+      value: <CountUp value={requests} format={fmtShort} />,
       delta: "In this period",
       field: "requests",
       current: currentTotals?.requests,
@@ -126,7 +128,11 @@ function UsageStatsCards({
     },
     {
       eyebrow: "Input tokens",
-      value: <span className="text-sky">{fmtShort(input)}</span>,
+      value: (
+        <span className="text-sky">
+          <CountUp value={input} format={fmtShort} />
+        </span>
+      ),
       delta: "After token saver",
       field: "input",
       current: currentTotals?.promptTokens,
@@ -134,7 +140,11 @@ function UsageStatsCards({
     },
     {
       eyebrow: "Cached",
-      value: <span className="text-lime-ink">{fmtShort(cached)}</span>,
+      value: (
+        <span className="text-lime-ink">
+          <CountUp value={cached} format={fmtShort} />
+        </span>
+      ),
       delta: `${cachedShare}% of input`,
       field: "cached",
       current: currentTotals?.cachedTokens,
@@ -142,7 +152,11 @@ function UsageStatsCards({
     },
     {
       eyebrow: "Output tokens",
-      value: <span className="text-coral-ink">{fmtShort(output)}</span>,
+      value: (
+        <span className="text-coral-ink">
+          <CountUp value={output} format={fmtShort} />
+        </span>
+      ),
       delta: `Avg ${fmt(avgOut)} per request`,
       field: "output",
       current: currentTotals?.completionTokens,
@@ -150,7 +164,7 @@ function UsageStatsCards({
     },
     {
       eyebrow: "Est. cost",
-      value: fmtCost(stats.totalCost),
+      value: <CountUp value={stats.totalCost} format={fmtCost} />,
       delta: "List prices, not your bill",
       field: "cost",
       current: currentTotals?.cost,

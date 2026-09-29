@@ -3,6 +3,7 @@
 import Link from "next/link";
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
+import CountUp from "@/shared/components/CountUp";
 import QuietPeriod from "@/shared/components/QuietPeriod";
 import StatTile from "@/shared/components/StatTile";
 import { periodDelta } from "@/shared/utils/commandCenter";
@@ -135,13 +136,10 @@ export default function HomeStats({
   const saved = savings && savings.tokensSavedEst > 0 ? savings : null;
   const methods = saved ? saved.methods.map((method) => METHOD_LABELS[method] || method) : [];
 
-  let savingsValue = "0 tokens";
   let savingsLine = "Nothing saved yet in this period";
   if (saved) {
-    savingsValue = `${formatCompact(saved.tokensSavedEst)} tokens`;
     savingsLine = `${Math.round(saved.percentage)}% lighter${methods.length ? ` · ${methods.join(" + ")}` : ""}`;
   } else if (savingsUnavailable) {
-    savingsValue = "—";
     savingsLine = "Savings data unavailable";
   }
 
@@ -149,7 +147,7 @@ export default function HomeStats({
     <>
       <StatTile
         eyebrow="Requests"
-        value={formatInt(requests)}
+        value={<CountUp value={requests} format={formatInt} />}
         delta={deltaLine(requests, previousRequests)}
         sparkline={requestsSparkline(buckets)}
         className="min-w-0 text-sky"
@@ -158,8 +156,11 @@ export default function HomeStats({
         eyebrow="Tokens in / out"
         value={
           <span>
-            {formatCompact(prompt)}
-            <span className="text-[22px] text-muted"> / {formatCompact(completion)}</span>
+            <CountUp value={prompt} format={formatCompact} />
+            <span className="text-[22px] text-muted">
+              {" "}
+              / <CountUp value={completion} format={formatCompact} />
+            </span>
           </span>
         }
         delta={
@@ -176,7 +177,7 @@ export default function HomeStats({
       />
       <StatTile
         eyebrow="Est. cost"
-        value={formatMoney(current.totalCost)}
+        value={<CountUp value={current.totalCost} format={formatMoney} />}
         delta={<span className="text-muted">Estimate at list prices, not your bill</span>}
         sparkline={costSparkline(buckets)}
         className="min-w-0 text-coral-ink"
@@ -184,7 +185,15 @@ export default function HomeStats({
       <StatTile
         hero
         eyebrow="Saved by token saver"
-        value={savingsValue}
+        value={
+          saved ? (
+            <CountUp value={saved.tokensSavedEst} format={formatCompact} suffix=" tokens" />
+          ) : savingsUnavailable ? (
+            "—"
+          ) : (
+            "0 tokens"
+          )
+        }
         delta={
           <span>
             {savingsLine}

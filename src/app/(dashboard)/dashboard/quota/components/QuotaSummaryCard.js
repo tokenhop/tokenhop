@@ -3,9 +3,15 @@
 import PropTypes from "prop-types";
 import { formatResetTime } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 import Card from "@/shared/components/Card";
+import CountUp from "@/shared/components/CountUp";
 import IconButton from "@/shared/components/IconButton";
 import Popover from "@/shared/components/Popover";
 import QuotaForecastLine from "@/shared/components/QuotaForecastLine";
+
+// Quota counts are plain integers; rounding keeps mid-animation floats (the
+// value eases between counts) at integer display, and a stable formatter keeps
+// CountUp from restarting when the page re-renders for countdown ticks (YAN-398).
+const COUNT_FORMAT = (value) => String(Math.round(Number(value) || 0));
 
 /**
  * Signal Quota runway summary card:
@@ -54,7 +60,7 @@ export default function QuotaSummaryCard({
               Healthy
             </span>
             <span className="font-display text-3xl lg:text-4xl font-bold leading-none text-ok tabular-nums">
-              {loading ? "-" : healthy}
+              {loading ? "-" : <CountUp value={healthy} format={COUNT_FORMAT} />}
             </span>
           </div>
 
@@ -63,7 +69,7 @@ export default function QuotaSummaryCard({
               Running low
             </span>
             <span className="font-display text-3xl lg:text-4xl font-bold leading-none text-warn tabular-nums">
-              {loading ? "-" : low}
+              {loading ? "-" : <CountUp value={low} format={COUNT_FORMAT} />}
             </span>
           </div>
 
@@ -72,7 +78,7 @@ export default function QuotaSummaryCard({
               Empty
             </span>
             <span className="font-display text-3xl lg:text-4xl font-bold leading-none text-err tabular-nums">
-              {loading ? "-" : empty}
+              {loading ? "-" : <CountUp value={empty} format={COUNT_FORMAT} />}
             </span>
           </div>
         </div>
