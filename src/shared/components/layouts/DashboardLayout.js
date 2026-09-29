@@ -8,6 +8,7 @@ import Sidebar from "../Sidebar";
 import Header from "../Header";
 import Drawer from "../Drawer";
 import CommandPalette from "../CommandPalette";
+import SavingsMilestoneWatcher from "../SavingsMilestoneWatcher";
 import { CommandPaletteProvider } from "../CommandPaletteProvider";
 
 function getToastStyle(type) {
@@ -23,8 +24,14 @@ function getToastStyle(type) {
   return { wrapper: "border-sky/30 bg-sky-bg text-sky", icon: "info" };
 }
 
+/** Toast accent keys; "lime" marks savings (design-system: lime = savings). */
+const TOAST_ACCENTS = {
+  lime: { wrapper: "border-lime/40", icon: "savings", iconClass: "bg-lime-bg text-lime-ink" },
+};
+
 function Toast({ notification, onDismiss }) {
   const style = getToastStyle(notification.type);
+  const accent = TOAST_ACCENTS[notification.accent] || null;
   const isError = notification.type === "error";
   const onAction = () => {
     notification.action.onSelect();
@@ -33,12 +40,23 @@ function Toast({ notification, onDismiss }) {
   return (
     <div
       role={isError ? "alert" : "status"}
-      className={`rounded-xl border px-3 py-2 shadow-card backdrop-blur-sm ${style.wrapper}`}
+      className={`rounded-xl border px-3 py-2 shadow-card backdrop-blur-sm ${style.wrapper}${
+        accent ? ` ${accent.wrapper}` : ""
+      }`}
     >
       <div className="flex items-start gap-2">
-        <span className="material-symbols-outlined text-[18px] leading-5" aria-hidden="true">
-          {style.icon}
-        </span>
+        {accent ? (
+          <span
+            aria-hidden="true"
+            className={`flex size-6 shrink-0 items-center justify-center rounded-md ${accent.iconClass}`}
+          >
+            <span className="material-symbols-outlined text-[16px]">{accent.icon}</span>
+          </span>
+        ) : (
+          <span className="material-symbols-outlined text-[18px] leading-5" aria-hidden="true">
+            {style.icon}
+          </span>
+        )}
         <div className="min-w-0 flex-1">
           {notification.title ? (
             <p className="mb-0.5 text-xs font-semibold">{notification.title}</p>
@@ -75,6 +93,7 @@ Toast.propTypes = {
   notification: PropTypes.shape({
     id: PropTypes.number,
     type: PropTypes.string,
+    accent: PropTypes.string,
     title: PropTypes.string,
     message: PropTypes.string,
     action: PropTypes.shape({
@@ -120,6 +139,9 @@ export default function DashboardLayout({ children }) {
             <Toast key={n.id} notification={n} onDismiss={() => removeNotification(n.id)} />
           ))}
         </div>
+
+        {/* Savings milestone toast (YAN-408) */}
+        <SavingsMilestoneWatcher />
 
         {/* Desktop sidebar */}
         <div className="hidden lg:flex">

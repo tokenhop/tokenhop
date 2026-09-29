@@ -23,8 +23,16 @@ import IconButton from "./IconButton";
  * @param {boolean} [props.inDrawer=false] Adjusts container styling when rendered inside a Drawer.
  */
 export default function Sidebar({ onClose, inDrawer = false }) {
-  const { loading, gatewayOnline, port, startedAt, badges, providerAttention, enableTranslator } =
-    useShellStatus();
+  const {
+    loading,
+    gatewayOnline,
+    port,
+    startedAt,
+    badges,
+    providerAttention,
+    enableTranslator,
+    traffic,
+  } = useShellStatus();
   const chip = resolveVersionChip(APP_CONFIG.version);
 
   return (
@@ -71,6 +79,7 @@ export default function Sidebar({ onClose, inDrawer = false }) {
         online={gatewayOnline}
         port={port}
         startedAt={startedAt}
+        traffic={traffic}
       />
 
       {/* Grouped navigation */}

@@ -55,6 +55,12 @@ export {
 // API key usage (from usageHistory)
 export { getApiKeyUsage } from "./repos/apiKeyUsageRepo.js";
 
+export {
+  rowSavedFromSavings,
+  backfillSavingsLifetime,
+  SAVINGS_LIFETIME_KEY,
+} from "./repos/usageRepo.js";
+
 // Combos
 export {
   getCombos,
@@ -110,6 +116,8 @@ export {
   getLastActivity,
   getHomeSummary,
   getLiveRoutesFeed,
+  getRequestRateSeries,
+  getSavingsLifetime,
   recordFallbackHop,
   appendRequestLog,
   getRecentLogs,

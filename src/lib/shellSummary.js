@@ -32,13 +32,34 @@ export function countLowQuota(accounts, threshold = LOW_QUOTA_THRESHOLD) {
 }
 
 /**
+ * Shape the heartbeat traffic payload (YAN-408): 15 integer req/min buckets
+ * plus their total. Anything that isn't a numeric series is null (absent
+ * heartbeat), never a fake flat line.
+ * @param {Array<number>|null|undefined} series
+ * @returns {{ series: number[], total: number }|null}
+ */
+export function shapeHeartbeatTraffic(series) {
+  if (!Array.isArray(series)) return null;
+  const counts = series.map((value) =>
+    Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0,
+  );
+  return { series: counts, total: counts.reduce((sum, value) => sum + value, 0) };
+}
+
+/**
  * Build the shell summary. Pure: IO results and the snapshot lookup are injected.
+ * `traffic` is the 15-bucket req/min series for the gateway heartbeat; it rides
+ * the existing summary poll (no extra requests). `savingsMilestone` is the
+ * pending milestone toast value (number or null); `undefined` means the lookup
+ * failed and the block is omitted entirely so clients keep their last state.
  * @param {{
  *   connections: Array<object>,
  *   combos: Array<object>,
  *   translatorEnabled: boolean,
  *   gateway: { ok: boolean, uptimeSeconds: number, startedAt: string, port: number|null },
  *   getSnapshotView: (connectionId: string) => object|null,
+ *   traffic?: Array<number>|null,
+ *   savingsMilestone?: number|null,
  *   nowMs?: number,
  * }} input
  */
@@ -48,6 +69,8 @@ export function buildShellSummary({
   translatorEnabled,
   gateway,
   getSnapshotView,
+  traffic,
+  savingsMilestone,
   nowMs = Date.now(),
 }) {
   const rows = Array.isArray(connections) ? connections : [];
@@ -59,5 +82,16 @@ export function buildShellSummary({
       .length,
     lowQuota: countLowQuota(deriveQuotaAccounts(active, getSnapshotView)),
     enableTranslator: Boolean(translatorEnabled),
+    traffic: shapeHeartbeatTraffic(traffic),
+    // Savings lookup failure omits the block (clients keep their last state);
+    // a computed value — including "nothing pending" — is always sent.
+    ...(savingsMilestone === undefined
+      ? {}
+      : {
+          savings: {
+            pendingMilestone:
+              Number.isInteger(savingsMilestone) && savingsMilestone > 0 ? savingsMilestone : null,
+          },
+        }),
   };
 }

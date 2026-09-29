@@ -2,7 +2,66 @@ import { createHash } from "node:crypto";
 import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
-import { getMeta, setMeta } from "../helpers/metaStore.js";
+import { getMetaSync, setMetaSync } from "../helpers/metaStore.js";
+
+/** _meta keys for the YAN-408 lifetime savings counter. */
+export const SAVINGS_LIFETIME_KEY = "savingsTokensLifetime";
+
+/**
+ * Sum the saved tokens of every usageHistory row (YAN-408). One SQL aggregate
+ * using JSON1 (`json_each`/`json_extract` ship with every supported driver —
+ * `getUsageTotals` already relies on them), so JS never sees the rows. Sums
+ * only positive per-method `tokensSavedEst`, matching rowSavedFromSavings.
+ * Runs at most once per install, before any incremental counter write.
+ * @param {object} adapter sync DB adapter (inside a transaction)
+ * @returns {number} lifetime saved tokens across all recorded rows
+ */
+export function backfillSavingsLifetime(adapter) {
+  const row = adapter.get(
+    `SELECT COALESCE(SUM(CAST(json_extract(j.value, '$.tokensSavedEst') AS REAL)), 0) AS lifetime
+     FROM usageHistory u, json_each(u.meta, '$.savings.byMethod') j
+     WHERE u.meta IS NOT NULL AND json_valid(u.meta)
+       AND CAST(json_extract(j.value, '$.tokensSavedEst') AS REAL) > 0`,
+  );
+  return Number(row?.lifetime) || 0;
+}
+
+/**
+ * Total tokens saved by the token savers across all recorded requests (YAN-408
+ * milestone toast). On first read the counter is backfilled from history
+ * exactly once; after that it is a point lookup.
+ * @returns {Promise<number>}
+ */
+export async function getSavingsLifetime() {
+  const db = await getAdapter();
+  const stored = getMetaSync(db, SAVINGS_LIFETIME_KEY, null);
+  if (stored !== null) return Number(stored) || 0;
+  let lifetime = 0;
+  db.transaction(() => {
+    lifetime = backfillSavingsLifetime(db);
+    setMetaSync(db, SAVINGS_LIFETIME_KEY, lifetime);
+  });
+  return lifetime;
+}
+
+/**
+ * Requests per minute over the last 15 minutes as 15 integer buckets (YAN-408
+ * heartbeat). One indexed timestamp query plus a JS bucketing pass; no
+ * aggregation of the full table, so it stays cheap on large histories.
+ * @returns {Promise<number[]>} 15 request counts, oldest first
+ */
+export async function getRequestRateSeries() {
+  const db = await getAdapter();
+  const { buildMinuteBuckets } = await import("@/lib/gatewayStatus.js");
+  const now = Date.now();
+  const rows = db.all(`SELECT timestamp FROM usageHistory WHERE timestamp >= ?`, [
+    new Date(now - 15 * 60_000).toISOString(),
+  ]);
+  return buildMinuteBuckets(
+    (rows || []).map((row) => row?.timestamp),
+    now,
+  );
+}
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -264,6 +323,26 @@ export async function getLiveSnapshot() {
   };
 }
 
+/**
+ * Saved tokens in one recorded request row. Sums only positive per-method
+ * deltas (a method entry is never negative by construction, but legacy rows
+ * can't be trusted), so a phantom/partial row can't inflate the lifetime
+ * counter or push savings over a milestone.
+ * @param {{ byMethod?: Record<string, { tokensSavedEst?: number }> }|null|undefined} savings
+ * @returns {number}
+ */
+export function rowSavedFromSavings(savings) {
+  if (!savings || typeof savings !== "object") return 0;
+  const methods = savings.byMethod;
+  if (!methods || typeof methods !== "object") return 0;
+  let saved = 0;
+  for (const method of Object.values(methods)) {
+    const value = Number(method?.tokensSavedEst) || 0;
+    if (value > 0) saved += value;
+  }
+  return saved;
+}
+
 export async function saveRequestUsage(entry) {
   try {
     const db = await getAdapter();
@@ -283,6 +362,9 @@ export async function saveRequestUsage(entry) {
       metaObj.comboName = entry.comboName.slice(0, 128);
     if (entry.userAgent && typeof entry.userAgent === "string")
       metaObj.userAgent = entry.userAgent.slice(0, 256);
+
+    // YAN-408: lifetime saved-tokens counter feeds the savings milestone toast.
+    const savedTokens = rowSavedFromSavings(metaObj.savings);
 
     db.transaction(() => {
       db.run(
@@ -331,6 +413,18 @@ export async function saveRequestUsage(entry) {
         `INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
         [String(next)],
       );
+
+      // YAN-408: increment the lifetime saved-tokens counter in the same
+      // transaction as the history row. The one-time backfill lives on the
+      // background summary path (getSavingsLifetime), never on the request
+      // path: before the counter exists this row is simply skipped and the
+      // later backfill scan counts it too, so nothing is lost either way.
+      if (savedTokens > 0) {
+        const baseline = getMetaSync(db, SAVINGS_LIFETIME_KEY, null);
+        if (baseline !== null) {
+          setMetaSync(db, SAVINGS_LIFETIME_KEY, Number(baseline) + savedTokens);
+        }
+      }
     });
 
     pushToRing(entry);

@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { Button, Callout, Card, EmptyState, Skeleton } from "@/shared/components";
+import { Button, Callout, Card, CountUp, EmptyState, Skeleton } from "@/shared/components";
 import PeriodControl from "@/shared/components/PeriodControl";
 import { SUMMARY_PERIODS, periodOptions } from "@/shared/utils/period";
 import { formatCompact, formatMoney } from "../home/format";
@@ -90,7 +90,7 @@ function FilledHero({ savings, eyebrow, note = null }) {
       <div className="flex shrink-0 flex-col gap-1">
         <span className="text-xs font-semibold tracking-[0.08em] uppercase">{eyebrow}</span>
         <span className="font-display text-5xl font-extrabold tabular-nums">
-          {formatCompact(saved)} tokens
+          <CountUp value={saved} format={formatCompact} suffix=" tokens" />
         </span>
         <span className="text-sm font-medium">
           {Math.round(Number(savings.percentage) || 0)}% lighter than raw requests

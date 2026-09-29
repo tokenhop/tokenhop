@@ -46,6 +46,7 @@ export { default as GatewayStatusCard } from "./GatewayStatusCard";
 export { default as SidebarUserRow } from "./SidebarUserRow";
 export { ThemeProvider } from "./ThemeProvider";
 export { default as Sidebar } from "./Sidebar";
+export { default as CountUp } from "./CountUp";
 export { default as Header } from "./Header";
 export { default as OAuthModal } from "./OAuthModal";
 export { default as ModelSelectModal } from "./ModelSelectModal";
