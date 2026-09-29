@@ -3,18 +3,30 @@
 import PropTypes from "prop-types";
 import { formatResetTime } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 import Card from "@/shared/components/Card";
+import IconButton from "@/shared/components/IconButton";
+import Popover from "@/shared/components/Popover";
+import QuotaForecastLine from "@/shared/components/QuotaForecastLine";
 
 /**
  * Signal Quota runway summary card:
  * Displays Healthy, Running low, Empty counts in status colors,
- * a stacked status bar with proportional widths, and the next-reset line.
+ * a stacked status bar with proportional widths, the next-reset line,
+ * the worst at-risk forecast, and a "How forecasts work" popover.
  *
  * @param {object} props
  * @param {{healthy: number, low: number, empty: number, total: number}} props.summary
  * @param {{connectionId: string, label: string, resetAt: string}|null} props.nextReset
+ * @param {{label: string, forecast: object}|null} [props.forecast] Most urgent known forecast.
+ * @param {boolean} [props.hasForecasts] True when any visible row has a known forecast.
  * @param {boolean} [props.loading]
  */
-export default function QuotaSummaryCard({ summary, nextReset, loading = false }) {
+export default function QuotaSummaryCard({
+  summary,
+  nextReset,
+  forecast,
+  hasForecasts = false,
+  loading = false,
+}) {
   const { healthy = 0, low = 0, empty = 0, total = 0 } = summary || {};
   const hasAccounts = total > 0;
 
@@ -23,6 +35,8 @@ export default function QuotaSummaryCard({ summary, nextReset, loading = false }
     nextReset && resetCountdown && resetCountdown !== "-"
       ? `Next reset: ${nextReset.label} in ${resetCountdown}. Empty accounts are skipped automatically.`
       : "Empty accounts are skipped automatically.";
+  const worstState = forecast?.forecast?.state;
+  const worstAtRisk = worstState === "will-run-out" || worstState === "tight";
 
   return (
     <Card
@@ -104,6 +118,40 @@ export default function QuotaSummaryCard({ summary, nextReset, loading = false }
           </div>
 
           <p className="text-xs text-muted leading-relaxed">{resetText}</p>
+
+          <div className="flex min-w-0 items-center gap-2">
+            {!loading && hasForecasts && (
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                {worstAtRisk ? (
+                  <>
+                    <span className="truncate text-xs font-medium text-text" title={forecast.label}>
+                      {forecast.label}
+                    </span>
+                    <QuotaForecastLine forecast={forecast.forecast} showReset />
+                  </>
+                ) : (
+                  <span className="text-xs text-muted">Every forecast is on track</span>
+                )}
+              </div>
+            )}
+            <Popover
+              placement="top"
+              aria-label="How forecasts work"
+              trigger={<IconButton icon="info" aria-label="How forecasts work" />}
+            >
+              <p className="text-sm font-semibold text-text">How forecasts work</p>
+              <div className="mt-2 flex flex-col gap-1.5 text-xs text-muted">
+                <p>Forecasts use how fast each quota dropped over the last two hours.</p>
+                <p>
+                  We need at least 3 readings over 10 minutes. Until then, no forecast is shown.
+                </p>
+                <p>
+                  Readings come from quota checks that already run. Nothing extra is sent to
+                  providers.
+                </p>
+              </div>
+            </Popover>
+          </div>
         </div>
       </div>
     </Card>
@@ -122,5 +170,7 @@ QuotaSummaryCard.propTypes = {
     label: PropTypes.string,
     resetAt: PropTypes.string,
   }),
+  forecast: PropTypes.shape({ label: PropTypes.string, forecast: PropTypes.object }),
+  hasForecasts: PropTypes.bool,
   loading: PropTypes.bool,
 };

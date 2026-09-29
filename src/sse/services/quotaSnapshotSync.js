@@ -9,6 +9,7 @@ import {
   sanitizePlanTier,
 } from "open-sse/services/quotaSnapshot.js";
 import { QUOTA_SNAPSHOT } from "open-sse/config/quotaSnapshot.js";
+import { recordQuotaSample } from "@/lib/quota/forecastStore.js";
 import { fetchClaudePlanTier } from "open-sse/services/usage/claude.js";
 import { cursorPlanTier } from "open-sse/services/usage/cursor.js";
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
@@ -221,6 +222,24 @@ export async function recordUsageSnapshot({
 } = {}) {
   try {
     if (!connectionId || !provider || !usage || typeof usage !== "object") return null;
+
+    // Forecast samples (probe only): per raw quota key, regardless of kind
+    // mapping — kind mapping is irrelevant for forecasts. Own try/catch so it
+    // never breaks the snapshot.
+    try {
+      if (source === "probe") {
+        for (const [quotaKey, quota] of Object.entries(usage.quotas || {})) {
+          const usedFraction = usedFractionFor(quota);
+          if (usedFraction === null) continue;
+          recordQuotaSample(connectionId, quotaKey, {
+            remaining: (1 - usedFraction) * 100,
+            resetAt: quota.resetAt ?? null,
+          });
+        }
+      }
+    } catch (error) {
+      console.warn(`[QuotaSnapshot] forecast sample failed for ${provider}: ${error?.message}`);
+    }
 
     // One window per kind; keep the tightest (highest used) when keys collapse.
     const byKind = new Map();

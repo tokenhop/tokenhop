@@ -13,6 +13,7 @@ import {
   parseQuotaData,
   setQuotaCache,
 } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
+import { attachForecasts } from "@/app/(dashboard)/dashboard/quota/lib/quotaForecastJoin.js";
 
 /**
  * useQuotaData — fetching + refresh state extracted from QuotaPageClient.
@@ -170,7 +171,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
         }
 
         const data = await response.json();
-        const parsedQuotas = parseQuotaData(provider, data);
+        const parsedQuotas = attachForecasts(parseQuotaData(provider, data), data.forecasts);
 
         const quotaEntry = {
           quotas: parsedQuotas,

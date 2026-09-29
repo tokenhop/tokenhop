@@ -1,4 +1,8 @@
-import { getRemainingPercentage } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
+import {
+  getConnectionLabel,
+  getRemainingPercentage,
+} from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
+import { worstForecast } from "@/shared/utils/quotaForecast.js";
 
 /**
  * Health bucket for one quota reading. The account-level summary uses
@@ -165,4 +169,31 @@ export function getBulkActionTargets(connections, quotaData, action) {
     if (action === "on" && !active && !depleted) targets.push(connection.id);
   }
   return targets;
+}
+
+const KNOWN_FORECAST_STATES = new Set(["will-run-out", "tight", "on-track", "idle"]);
+
+/**
+ * Find the most urgent known forecast across visible accounts for the
+ * summary card. Items are labeled "Account · Window" so the card can name
+ * the window that needs attention. Unknown/missing forecasts and
+ * unlimited/credit rows are ignored.
+ *
+ * @param {Array<object>} connections visible connections ({ id, provider, ... })
+ * @param {Record<string, {quotas?: Array<object>}>} quotaData quotas keyed by connection id
+ * @returns {{ best: ({label: string, forecast: object}|null), hasForecasts: boolean }}
+ */
+export function getWorstForecast(connections, quotaData) {
+  const items = [];
+  for (const connection of connections || []) {
+    const quotas = quotaData?.[connection?.id]?.quotas;
+    if (!Array.isArray(quotas)) continue;
+    const accountLabel = getConnectionLabel(connection) || connection?.provider || connection?.id;
+    for (const quota of quotas) {
+      if (quota.unlimited === true || quota.isCreditBalance === true) continue;
+      if (!KNOWN_FORECAST_STATES.has(quota?.forecast?.state)) continue;
+      items.push({ label: `${accountLabel} · ${quota.name}`, forecast: quota.forecast });
+    }
+  }
+  return { best: worstForecast(items), hasForecasts: items.length > 0 };
 }

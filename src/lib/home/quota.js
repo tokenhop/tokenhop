@@ -2,6 +2,8 @@
 // Reads server-side in-memory quota snapshots (open-sse/services/quotaSnapshot.js)
 // — no upstream probes, so nothing here is rate-limited or slow.
 
+import { pickUrgentForecast } from "@/lib/quota/forecastStore.js";
+
 function finite(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -38,9 +40,10 @@ export function remainingFromWindows(windows) {
  *
  * @param {Array<object>} connections provider connection rows ({ id, provider, name, email })
  * @param {(connectionId: string) => object|null} getSnapshotView snapshot view lookup
- * @returns {Array<{ id: string, provider: string, name: string, remaining: number|null, resetsAt: string|null, kind: string|null }>}
+ * @param {(connectionId: string) => object} [getForecast] forecast map lookup (quotaKey → Forecast)
+ * @returns {Array<{ id: string, provider: string, name: string, remaining: number|null, resetsAt: string|null, kind: string|null, forecast: (object & { window: string })|null }>}
  */
-export function deriveQuotaAccounts(connections, getSnapshotView) {
+export function deriveQuotaAccounts(connections, getSnapshotView, getForecast) {
   if (!Array.isArray(connections)) return [];
   return connections.map((connection) => {
     const id = connection?.id ?? "";
@@ -53,6 +56,7 @@ export function deriveQuotaAccounts(connections, getSnapshotView) {
     let remaining = null;
     let resetsAt = null;
     const kind = null;
+    let forecast = null;
     try {
       const windows = getSnapshotView?.(id)?.windows;
       const best = primaryWindow(windows);
@@ -68,7 +72,12 @@ export function deriveQuotaAccounts(connections, getSnapshotView) {
     } catch {
       /* a broken snapshot row degrades this account, not the whole widget */
     }
+    try {
+      forecast = getForecast ? pickUrgentForecast(getForecast(id)) : null;
+    } catch {
+      /* a broken forecast lookup degrades this account only */
+    }
 
-    return { id, provider, name, remaining, resetsAt, kind };
+    return { id, provider, name, remaining, resetsAt, kind, forecast };
   });
 }
