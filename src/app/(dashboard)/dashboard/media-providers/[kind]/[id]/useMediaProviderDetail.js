@@ -17,8 +17,9 @@ import { useProviderStrategy } from "@/app/(dashboard)/dashboard/providers/detai
  * @param {string} args.id provider id from the route
  * @param {string} args.kind media kind from the route ("llm" is never used here)
  * @param {boolean} args.isCustom custom embedding node detail
+ * @param {boolean} [args.noAuth] no-auth provider: no connections or strategy to load
  */
-export function useMediaProviderDetail({ id, kind, isCustom }) {
+export function useMediaProviderDetail({ id, kind, isCustom, noAuth = false }) {
   const notifyError = useCallback((message) => useNotificationStore.getState().error(message), []);
   const [customNode, setCustomNode] = useState(null);
   const [customLoading, setCustomLoading] = useState(isCustom);
@@ -43,27 +44,25 @@ export function useMediaProviderDetail({ id, kind, isCustom }) {
 
   // Fetch the custom embedding node first: its prefix is the storage alias
   // models must load with. Failures surface as an error state, never 404.
-  useEffect(() => {
+  const loadNode = useCallback(async () => {
     if (!isCustom) return;
-    let cancelled = false;
-    const loadNode = async () => {
-      try {
-        const res = await fetch("/api/provider-nodes", { cache: "no-store" });
-        if (!res.ok) throw new Error("Could not load custom provider");
-        const data = await res.json();
-        if (!cancelled) setCustomNode((data.nodes || []).find((node) => node.id === id) || null);
-      } catch (error) {
-        if (!cancelled)
-          setFetchError(error instanceof Error ? error.message : "Could not load custom provider");
-      } finally {
-        if (!cancelled) setCustomLoading(false);
-      }
-    };
-    loadNode();
-    return () => {
-      cancelled = true;
-    };
+    setCustomLoading(true);
+    setFetchError("");
+    try {
+      const res = await fetch("/api/provider-nodes", { cache: "no-store" });
+      if (!res.ok) throw new Error("Could not load custom provider");
+      const data = await res.json();
+      setCustomNode((data.nodes || []).find((node) => node.id === id) || null);
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : "Could not load custom provider");
+    } finally {
+      setCustomLoading(false);
+    }
   }, [id, isCustom]);
+
+  useEffect(() => {
+    loadNode();
+  }, [loadNode]);
 
   const { fetchConnections } = conn;
   const { load: loadStrategy } = strategy;
@@ -72,6 +71,10 @@ export function useMediaProviderDetail({ id, kind, isCustom }) {
     setLoading(true);
     setFetchError("");
     try {
+      if (noAuth) {
+        await loadModels();
+        return;
+      }
       await fetchConnections();
       // Both loaders report their own failures (toast/inline); loadStrategy
       // resolves undefined, so only a thrown error fails the page.
@@ -81,13 +84,19 @@ export function useMediaProviderDetail({ id, kind, isCustom }) {
     } finally {
       setLoading(false);
     }
-  }, [fetchConnections, loadStrategy, loadModels]);
+  }, [noAuth, fetchConnections, loadStrategy, loadModels]);
 
   // The custom prefix (storage alias) is only known after the node loads, so
   // the sections wait for it; a later prefix change reloads the models.
   const loadedPrefix = isCustom ? customNode?.prefix : undefined;
   useEffect(() => {
-    if (customLoading || (isCustom && !customNode)) return;
+    if (customLoading) return;
+    // Missing or failed custom node: stop loading so the page shows a 404
+    // (not found) or the error state with Retry (fetch failed).
+    if (isCustom && !customNode) {
+      setLoading(false);
+      return;
+    }
     fetchDetail();
   }, [customLoading, customNode, loadedPrefix, fetchDetail, isCustom]);
 
@@ -151,6 +160,7 @@ export function useMediaProviderDetail({ id, kind, isCustom }) {
     loading,
     fetchError,
     fetchDetail,
+    loadNode,
     addConnectionError,
     setAddConnectionError,
     showAddApiKey,

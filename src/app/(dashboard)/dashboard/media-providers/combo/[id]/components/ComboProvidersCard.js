@@ -23,20 +23,20 @@ function ProviderRow({ entry, idx, total, onMove, onRemove }) {
           label={`Move ${model || providerId} up`}
           onClick={() => onMove(idx, -1)}
           disabled={idx === 0}
-          className="size-8 border-0 bg-transparent p-1 text-muted hover:bg-raised hover:text-coral-ink disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+          className="size-11 border-0 bg-transparent p-1 text-muted hover:bg-raised hover:text-coral-ink disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
         />
         <IconButton
           icon="arrow_downward"
           label={`Move ${model || providerId} down`}
           onClick={() => onMove(idx, 1)}
           disabled={idx === total - 1}
-          className="size-8 border-0 bg-transparent p-1 text-muted hover:bg-raised hover:text-coral-ink disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+          className="size-11 border-0 bg-transparent p-1 text-muted hover:bg-raised hover:text-coral-ink disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
         />
         <IconButton
           icon="close"
           label={`Remove ${model || providerId}`}
           onClick={() => onRemove(idx)}
-          className="size-8 border-0 bg-transparent p-1 text-muted hover:bg-err-bg hover:text-err"
+          className="size-11 border-0 bg-transparent p-1 text-muted hover:bg-err-bg hover:text-err"
         />
       </div>
     </div>

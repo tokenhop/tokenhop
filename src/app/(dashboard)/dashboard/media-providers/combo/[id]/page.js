@@ -45,6 +45,7 @@ export default function ComboDetailPage() {
     saveError,
     setSaveError,
     saveStatus,
+    setSaveStatus,
     handleSaveName,
     handleAddModel,
     handleDeselectModel,
@@ -89,6 +90,7 @@ export default function ComboDetailPage() {
         saveStatus={saveStatus}
         onNameChange={(value) => {
           setName(value);
+          setSaveStatus("");
           validateName(value);
         }}
         onNameBlur={handleSaveName}

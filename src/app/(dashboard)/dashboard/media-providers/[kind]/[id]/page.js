@@ -50,6 +50,7 @@ export default function MediaProviderDetailPage() {
     loading,
     fetchError,
     fetchDetail,
+    loadNode,
     addConnectionError,
     setAddConnectionError,
     showAddApiKey,
@@ -64,7 +65,12 @@ export default function MediaProviderDetailPage() {
     saveApiKey,
     updateConnection,
     saveCustomModel,
-  } = useMediaProviderDetail({ id, kind, isCustom });
+  } = useMediaProviderDetail({
+    id,
+    kind,
+    isCustom,
+    noAuth: !isCustom && !!AI_PROVIDERS[id]?.noAuth,
+  });
 
   // Throws on failure so ConfirmDialog shows the error inline and stays open.
   const handleDeleteCustom = async () => {
@@ -126,7 +132,7 @@ export default function MediaProviderDetailPage() {
         <Callout variant="err" title="Could not load provider">
           <span className="flex flex-wrap items-center gap-2">
             {fetchError}
-            <Button size="sm" variant="secondary" onClick={fetchDetail}>
+            <Button size="sm" variant="secondary" onClick={loadNode}>
               Retry
             </Button>
           </span>
@@ -366,6 +372,17 @@ export default function MediaProviderDetailPage() {
           providerDisplayAlias={storageAlias}
           onSave={saveCustomModel}
           onClose={() => models.setShowAddCustomModel(false)}
+        />
+      )}
+      {/* ConnectionsSection owns this dialog; noAuth pages render NoAuthProxyCard instead. */}
+      {noAuth && (
+        <ConfirmDialog
+          isOpen={!!conn.confirmState}
+          onClose={() => conn.setConfirmState(null)}
+          onConfirm={conn.confirmState?.onConfirm}
+          title={conn.confirmState?.title || "Confirm"}
+          message={conn.confirmState?.message}
+          variant="danger"
         />
       )}
       {isCustom && (

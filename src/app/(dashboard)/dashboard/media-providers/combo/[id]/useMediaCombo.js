@@ -251,6 +251,7 @@ export function useMediaCombo(id) {
     saveError,
     setSaveError,
     saveStatus,
+    setSaveStatus,
     handleSaveName,
     handleAddModel,
     handleDeselectModel,

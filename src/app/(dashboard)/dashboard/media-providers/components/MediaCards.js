@@ -301,24 +301,24 @@ export function MediaProviderGrid({
 
   return (
     <div className="flex flex-col gap-5">
-      <section aria-labelledby="media-connected-heading">
+      <section aria-labelledby={`media-connected-${kind}`}>
         <h2
-          id="media-connected-heading"
+          id={`media-connected-${kind}`}
           className="mb-3.5 font-display text-[22px] font-bold tracking-tight text-text"
         >
           Connected
         </h2>
-        {grid(connected, "media-connected-heading")}
+        {grid(connected, `media-connected-${kind}`)}
       </section>
       {others.length > 0 && (
-        <section aria-labelledby="media-all-heading">
+        <section aria-labelledby={`media-all-${kind}`}>
           <h2
-            id="media-all-heading"
+            id={`media-all-${kind}`}
             className="mb-3.5 font-display text-[22px] font-bold tracking-tight text-text"
           >
             All providers
           </h2>
-          {grid(others, "media-all-heading")}
+          {grid(others, `media-all-${kind}`)}
         </section>
       )}
     </div>
