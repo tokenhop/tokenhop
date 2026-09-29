@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import useLastActivity from "@/shared/hooks/useLastActivity";
+import usePeriod from "@/shared/hooks/usePeriod";
+import { SUMMARY_PERIODS } from "@/shared/utils/period";
 import HomeHeader from "./HomeHeader";
 import { EndpointHeroCard } from "./EndpointHero";
 import { KeysSummaryCard } from "./KeysSummary";
@@ -29,7 +32,7 @@ import {
  * recent requests, quota watch, top combos, provider health.
  */
 export default function HomePageClient() {
-  const [period, setPeriod] = useState("today");
+  const { period, setPeriod, options } = usePeriod(SUMMARY_PERIODS);
   const [origin, setOrigin] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -62,12 +65,19 @@ export default function HomePageClient() {
   const usageByCombo =
     summaryCombos ?? (usage.current ? comboUsageFromByEndpoint(usage.current.byEndpoint) : null);
 
+  // Quiet = stats answered for the period but no requests in it; fetch the
+  // real last-activity time only then. A fetch error shows the tiles, not the
+  // quiet row, so a flaky endpoint cannot blank the stats.
+  const quiet = Boolean(usage.current) && !usage.current.totalRequests && !usage.error;
+  const activity = useLastActivity(quiet);
+
   return (
     <div className="flex min-w-0 flex-col gap-5 pb-8">
       <HomeHeader
         connections={providers.connections}
         providersLoading={providers.loading}
         period={period}
+        options={options}
         onPeriodChange={setPeriod}
       />
 
@@ -99,6 +109,10 @@ export default function HomePageClient() {
           loading={usage.loading || chart.loading || savingsLoading || summary.loading}
           error={usage.error || chart.error}
           onRetry={bump}
+          period={period}
+          lastRequestAt={activity.lastRequestAt}
+          lastActivityLoading={activity.loading}
+          onSelectPeriod={setPeriod}
         />
       </div>
 
