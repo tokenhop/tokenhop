@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { comboShares, effectiveComboWeight } from "../../open-sse/services/comboWeights.js";
-import { explainWeightedShares } from "../../src/shared/components/combos/comboBuilder.js";
+import {
+  explainWeightedShares,
+  shareDetailText,
+} from "../../src/shared/components/combos/comboBuilder.js";
+import { METER_FILLS } from "../../src/shared/components/displayPrimitives.js";
 import { probeTrackEvents } from "../../src/shared/components/combos/routeTestFormat.js";
 
 describe("effective weighted shares (router math)", () => {
@@ -36,6 +40,31 @@ describe("effective weighted shares (router math)", () => {
     expect(out[1]).toMatchObject({ base: 1, quota: 1, quotaSource: "static", share: 83.3 });
     expect(out[2].fallbackOnly).toBe(true);
     expect(out[3]).toMatchObject({ outOfQuota: true, quotaSource: "probe", share: 0 });
+  });
+
+  it("writes fallback-only, exhausted and split explanation copy", () => {
+    const [fallbackOnly, exhausted, split] = explainWeightedShares(
+      ["c", "d", "a"],
+      { c: 0, d: 2, a: 1 },
+      { d: 0, a: 0.4 },
+      { a: "probe" },
+    );
+    expect(shareDetailText(fallbackOnly)).toBe(
+      "Weight 0 — fallback only: no traffic until the others fail.",
+    );
+    expect(shareDetailText(exhausted)).toBe(
+      "No quota left (no quota data yet) — paused until quota resets.",
+    );
+    expect(shareDetailText(split)).toBe(
+      `Weight 1 × 40% quota left (from the last quota probe) → about ${split.share}% of traffic.`,
+    );
+    expect(shareDetailText(null)).toBeNull();
+  });
+
+  it("renders weighted shares through the brand (coral) meter fill", () => {
+    expect(METER_FILLS.brand).toBe("bg-coral");
+    expect(METER_FILLS.neutral).toBe("bg-subtle");
+    expect(METER_FILLS.ok).toBe("bg-ok");
   });
 });
 

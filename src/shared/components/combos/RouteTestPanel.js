@@ -103,11 +103,11 @@ export default function RouteTestPanel({ comboId, models, onTrackStatesChange })
       if (event.index === null || i > progress) return;
       states[event.index] = { state: event.state, reason: event.reason };
     });
-    if (progress < total && events[progress] && events[progress].index !== null) {
+    if (!reducedMotion && progress < total && events[progress] && events[progress].index !== null) {
       states[events[progress].index] = { state: "attempted", reason: "" };
     }
     onTrackStatesChange(states);
-  }, [events, progress, result, routeModels, total, onTrackStatesChange]);
+  }, [events, progress, reducedMotion, result, routeModels, total, onTrackStatesChange]);
 
   const lastRun = probeLastRunLabel(ranAt);
   const visible = events.slice(0, reducedMotion ? total : progress + 1);

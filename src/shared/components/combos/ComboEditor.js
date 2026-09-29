@@ -460,10 +460,12 @@ export default function ComboEditor({
         confirmText="Delete"
         variant="danger"
       />
+      {/* Keyed by the route contents: any model edit remounts the panel so a
+          recorded run can never remap onto steps it wasn't recorded against. */}
       <RouteTestPanel
+        key={models.join("\n")}
         comboId={combo.id}
         models={models}
-        comboName={combo.name}
         onTrackStatesChange={setTrackStates}
       />
     </section>
@@ -481,9 +483,6 @@ ComboEditor.propTypes = {
   judgeModel: PropTypes.string,
   headroom: PropTypes.objectOf(PropTypes.number),
   headroomQuotaSource: PropTypes.objectOf(PropTypes.string),
-  quotaByModel: PropTypes.objectOf(
-    PropTypes.shape({ headroom: PropTypes.number, source: PropTypes.string }),
-  ),
   healthByProvider: PropTypes.object,
   providerLabelById: PropTypes.object,
   saving: PropTypes.bool,
