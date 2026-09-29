@@ -42,11 +42,19 @@ export default function useUsageStats(period, { tab = "overview" } = {}) {
   const [reload, setReload] = useState(0);
   const hasStats = useRef(false);
 
-  // REST owns `stats`. Runs on a period change, on retry, and once per stream
-  // reopen (hidden tab or logs tab came back). Only the very first load flips
-  // the skeleton; later ones are background refreshes (`fetching`).
-  const catchUp = stream.needsCatchUp;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reload and catchUp are re-fetch triggers.
+  // A stream reopen (hidden tab or logs tab came back) asks for one catch-up
+  // fetch: bump the reload trigger and clear the flag in the same pass, so
+  // clearing it can't re-run the fetch.
+  useEffect(() => {
+    if (!stream.needsCatchUp) return;
+    setReload((value) => value + 1);
+    dispatchStream({ type: "caughtUp" });
+  }, [stream.needsCatchUp]);
+
+  // REST owns `stats`. Runs on a period change, on retry and on a catch-up.
+  // Only the very first load flips the skeleton; later ones are background
+  // refreshes (`fetching`).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload is the re-fetch trigger.
   useEffect(() => {
     // Null period: usePeriod has not resolved yet, so hold the loading state
     // instead of fetching a placeholder window.
@@ -71,10 +79,9 @@ export default function useUsageStats(period, { tab = "overview" } = {}) {
         if (controller.signal.aborted) return;
         setLoading(false);
         setFetching(false);
-        if (catchUp) dispatchStream({ type: "caughtUp" });
       });
     return () => controller.abort();
-  }, [period, reload, catchUp]);
+  }, [period, reload]);
 
   const retry = useCallback(() => setReload((value) => value + 1), []);
 
