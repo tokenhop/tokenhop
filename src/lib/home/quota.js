@@ -23,6 +23,12 @@ function primaryWindow(windows) {
   return best;
 }
 
+/** Remaining percentage for the tightest measurable window, or null. */
+export function remainingFromWindows(windows) {
+  const best = primaryWindow(windows);
+  return best ? Math.max(0, Math.min(100, Math.round((1 - best.used) * 100))) : null;
+}
+
 /**
  * Derive quota accounts from provider connections and a snapshot lookup.
  * Pure (no IO): `getSnapshotView` is injected so tests can stub it.
@@ -48,9 +54,10 @@ export function deriveQuotaAccounts(connections, getSnapshotView) {
     let resetsAt = null;
     const kind = null;
     try {
-      const best = primaryWindow(getSnapshotView?.(id)?.windows);
+      const windows = getSnapshotView?.(id)?.windows;
+      const best = primaryWindow(windows);
       if (best) {
-        remaining = Math.max(0, Math.min(100, Math.round((1 - best.used) * 100)));
+        remaining = remainingFromWindows(windows);
         resetsAt =
           typeof best.resetsAt === "string" && best.resetsAt
             ? best.resetsAt

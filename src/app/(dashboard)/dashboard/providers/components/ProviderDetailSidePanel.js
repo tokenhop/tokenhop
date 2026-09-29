@@ -137,7 +137,8 @@ export default function ProviderDetailSidePanel({
   testingAccounts = false,
   inline = false,
 }) {
-  const notify = useNotificationStore();
+  const notifySuccess = useNotificationStore((s) => s.success);
+  const notifyError = useNotificationStore((s) => s.error);
   const [strategy, setStrategy] = useState(null);
   const [globalStrategy, setGlobalStrategy] = useState("fill-first");
   const [strategySaving, setStrategySaving] = useState(false);
@@ -222,13 +223,13 @@ export default function ProviderDetailSidePanel({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        notify.error(data.error || "Failed to save strategy");
+        notifyError(data.error || "Failed to save strategy");
         return;
       }
       setStrategy(value);
-      notify.success("Account strategy saved");
+      notifySuccess("Account strategy saved");
     } catch {
-      notify.error("Failed to save strategy");
+      notifyError("Failed to save strategy");
     } finally {
       setStrategySaving(false);
     }
@@ -243,7 +244,7 @@ export default function ProviderDetailSidePanel({
       });
       onChanged?.();
     } catch {
-      notify.error("Failed to toggle connection");
+      notifyError("Failed to toggle connection");
     }
   };
 
@@ -260,13 +261,13 @@ export default function ProviderDetailSidePanel({
         body: JSON.stringify({ action: "clearCooldown", provider: entry.id, model }),
       });
       if (res.ok) {
-        notify.success("Cooldown cleared");
+        notifySuccess("Cooldown cleared");
         onChanged?.();
       } else {
-        notify.error("Failed to clear cooldown");
+        notifyError("Failed to clear cooldown");
       }
     } catch {
-      notify.error("Failed to clear cooldown");
+      notifyError("Failed to clear cooldown");
     }
   };
 
