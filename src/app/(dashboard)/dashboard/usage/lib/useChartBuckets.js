@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { shapeChartSeries } from "./usageShapes";
 
 /**
@@ -20,10 +20,15 @@ export function useChartBuckets(period, enabled, refreshKey) {
   const [attempt, setAttempt] = useState(0);
 
   const retry = useCallback(() => setAttempt((count) => count + 1), []);
+  // Last fetch that completed: re-enabling for the same period and trigger
+  // values (logs tab → overview) must not re-fetch, only a real trigger does.
+  const lastFetch = useRef("");
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt re-runs the fetch on retry; refreshKey re-runs it on catch-up.
   useEffect(() => {
     if (!enabled || !period) return;
+    const key = `${period}|${attempt}|${refreshKey ?? 0}`;
+    if (lastFetch.current === key) return;
     const controller = new AbortController();
     // Only a first fetch (or a new period) flips the skeleton; background
     // refreshes keep the current buckets on screen.
@@ -36,6 +41,7 @@ export function useChartBuckets(period, enabled, refreshKey) {
         response.ok ? response.json() : Promise.reject(new Error(`chart ${response.status}`)),
       )
       .then((json) => {
+        lastFetch.current = key;
         setBuckets(shapeChartSeries(json));
         setBucketsPeriod(period);
       })
