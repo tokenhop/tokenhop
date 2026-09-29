@@ -2,15 +2,17 @@
 
 import { useParams, notFound, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   Button,
   Callout,
+  CardSkeleton,
   ConfirmDialog,
+  PageTitle,
   ProviderTile,
-  Skeleton,
   StatusPill,
   AddCustomEmbeddingModal,
+  EditConnectionModal,
   NoAuthProxyCard,
   ProviderInfoCard,
 } from "@/shared/components";
@@ -20,25 +22,49 @@ import {
   isCustomEmbeddingProvider,
 } from "@/shared/constants/providers";
 import { getProviderBrand } from "@/shared/constants/providerBrands";
-import ConnectionsCard from "@/app/(dashboard)/dashboard/providers/components/ConnectionsCard";
-import ModelsCard from "@/app/(dashboard)/dashboard/providers/components/ModelsCard";
+import ConnectionsSection from "@/app/(dashboard)/dashboard/providers/detail/ConnectionsSection";
+import ModelsSection from "@/app/(dashboard)/dashboard/providers/detail/ModelsSection";
+import { connectionLabels } from "@/app/(dashboard)/dashboard/providers/detail/providerDetailMeta";
+import AddApiKeyModal from "@/app/(dashboard)/dashboard/providers/[id]/AddApiKeyModal";
+import AddCustomModelModal from "@/app/(dashboard)/dashboard/providers/[id]/AddCustomModelModal";
 import { KIND_EXAMPLE_CONFIG } from "./components/exampleShared";
 import { EmbeddingExampleCard } from "./components/EmbeddingExampleCard";
 import { TtsExampleCard } from "./components/TtsExampleCard";
 import { GenericExampleCard } from "./components/GenericExampleCard";
 import { SttExampleCard } from "./components/SttExampleCard";
+import { useMediaProviderDetail } from "./useMediaProviderDetail";
 
-// MediaProviderDetailPage
+// MediaProviderDetailPage — Signal sections on the media detail route.
 export default function MediaProviderDetailPage() {
   const { kind, id } = useParams();
   const router = useRouter();
   const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kind);
   const isCustom = isCustomEmbeddingProvider(id) && kind === "embedding";
-
-  const [customNode, setCustomNode] = useState(null);
-  const [customLoading, setCustomLoading] = useState(isCustom);
   const [showEditModal, setShowEditModal] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const {
+    notifyError,
+    customNode,
+    setCustomNode,
+    loading,
+    fetchError,
+    fetchDetail,
+    addConnectionError,
+    setAddConnectionError,
+    showAddApiKey,
+    setShowAddApiKey,
+    selectedConnection,
+    setSelectedConnection,
+    conn,
+    strategy,
+    models,
+    storageAlias,
+    staticModels,
+    saveApiKey,
+    updateConnection,
+    saveCustomModel,
+  } = useMediaProviderDetail({ id, kind, isCustom });
 
   // Throws on failure so ConfirmDialog shows the error inline and stays open.
   const handleDeleteCustom = async () => {
@@ -50,28 +76,12 @@ export default function MediaProviderDetailPage() {
     router.push(`/dashboard/media-providers/${kind}`);
   };
 
-  // Fetch custom node info from API for custom embedding nodes
-  useEffect(() => {
-    if (!isCustom) return;
-    let cancelled = false;
-    fetch("/api/provider-nodes", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d) => {
-        if (cancelled) return;
-        setCustomNode((d.nodes || []).find((n) => n.id === id) || null);
-        setCustomLoading(false);
-      })
-      .catch(() => {
-        if (!cancelled) setCustomLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, isCustom]);
-
   if (!kindConfig) return notFound();
 
   const builtInProvider = AI_PROVIDERS[id];
+  if (!isCustom && !builtInProvider) return notFound();
+  const kinds = isCustom ? ["embedding"] : (builtInProvider.serviceKinds ?? ["llm"]);
+  if (!isCustom && !kinds.includes(kind)) return notFound();
 
   // For custom embedding nodes, build a synthetic provider object
   const provider = isCustom
@@ -85,29 +95,49 @@ export default function MediaProviderDetailPage() {
       : null
     : builtInProvider;
 
-  if (!isCustom && !builtInProvider) return notFound();
-  if (isCustom && !customLoading && !customNode) return notFound();
-  if (isCustom && customLoading) {
+  if (loading) {
     return (
-      <div className="flex flex-col gap-6" aria-busy="true">
+      <div className="flex flex-col gap-5" aria-busy="true">
         <span className="sr-only" role="status">
           Loading provider
         </span>
-        <Skeleton className="h-5 w-32" />
-        <div className="flex items-center gap-4">
-          <Skeleton className="size-14 rounded-xl" />
-          <div className="flex flex-col gap-2">
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="h-9 w-64" />
-          </div>
-        </div>
-        <Skeleton className="h-48 w-full rounded-2xl" />
+        <CardSkeleton />
+        <CardSkeleton />
       </div>
     );
   }
 
-  const kinds = isCustom ? ["embedding"] : (provider.serviceKinds ?? ["llm"]);
-  if (!isCustom && !kinds.includes(kind)) return notFound();
+  // Custom node fetch failures surface as an error state, not a 404.
+  if (isCustom && !provider) {
+    if (!fetchError) return notFound();
+    return (
+      <div className="flex flex-col gap-4">
+        <nav aria-label="Back to media providers">
+          <Link
+            href={`/dashboard/media-providers/${kind}`}
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg text-sm text-muted transition-colors hover:text-text focus-visible:shadow-focus"
+          >
+            <span className="material-symbols-outlined text-lg rtl:-scale-x-100" aria-hidden="true">
+              arrow_back
+            </span>
+            {kindConfig.label}
+          </Link>
+        </nav>
+        <Callout variant="err" title="Could not load provider">
+          <span className="flex flex-wrap items-center gap-2">
+            {fetchError}
+            <Button size="sm" variant="secondary" onClick={fetchDetail}>
+              Retry
+            </Button>
+          </span>
+        </Callout>
+      </div>
+    );
+  }
+
+  // Models hidden for tts/webSearch/webFetch (the provider IS the model).
+  const showModels = kind !== "tts" && kind !== "webSearch" && kind !== "webFetch";
+  const noAuth = !isCustom && provider.noAuth;
 
   return (
     <div className="flex flex-col gap-5">
@@ -130,9 +160,7 @@ export default function MediaProviderDetailPage() {
             {kindConfig.label} provider
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-2 sm:gap-3">
-            <h1 className="font-display text-[42px] leading-[1.05] font-bold text-text">
-              {provider.name}
-            </h1>
+            <PageTitle>{provider.name}</PageTitle>
             {!isCustom && provider.notice?.apiKeyUrl && (
               <a
                 href={provider.notice.apiKeyUrl}
@@ -203,19 +231,66 @@ export default function MediaProviderDetailPage() {
         </Callout>
       )}
 
-      {/* Connections */}
-      {!isCustom && provider.noAuth ? (
+      {fetchError ? (
+        <Callout variant="err" title="Could not load provider">
+          <span className="flex flex-wrap items-center gap-2">
+            {fetchError}
+            <Button size="sm" variant="secondary" onClick={fetchDetail}>
+              Retry
+            </Button>
+          </span>
+        </Callout>
+      ) : null}
+
+      {/* Connections — media providers are API-key only */}
+      {noAuth ? (
         <NoAuthProxyCard providerId={id} />
       ) : (
-        <ConnectionsCard providerId={id} isOAuth={false} />
+        <ConnectionsSection
+          providerId={id}
+          auth={{ isOAuth: false, hasDualAuthModes: false, labels: connectionLabels(id) }}
+          strategy={strategy}
+          conn={conn}
+          autoPing={{ enabled: false, connections: {}, toggle: () => {} }}
+          actions={{
+            addButtons: (
+              <Button
+                size="sm"
+                icon="key"
+                variant="primary"
+                onClick={() => {
+                  setAddConnectionError("");
+                  setShowAddApiKey(true);
+                }}
+              >
+                Add connection
+              </Button>
+            ),
+            edit: (entry) => {
+              setSelectedConnection(entry);
+            },
+            notifyError,
+          }}
+        />
       )}
 
-      {/* Models - hidden for tts/webSearch/webFetch (provider IS the model); custom uses prefix as alias */}
-      {kind !== "tts" && kind !== "webSearch" && kind !== "webFetch" && (
-        <ModelsCard
+      {/* Models — custom embedding uses its node prefix as the alias */}
+      {showModels && !fetchError && (
+        <ModelsSection
           providerId={id}
-          kindFilter={kind}
-          providerAliasOverride={isCustom ? customNode?.prefix : undefined}
+          kind={kind}
+          title={`Models — ${kind.toUpperCase()}`}
+          storageAlias={storageAlias}
+          displayAlias={storageAlias}
+          isLiveCatalog={false}
+          isCompatible={false}
+          isAnthropic={false}
+          isFreeNoAuth={!!noAuth}
+          connections={conn.connections}
+          catalogModels={staticModels}
+          staticModels={staticModels}
+          models={models}
+          onDisableAll={(state) => conn.setConfirmState(state)}
         />
       )}
 
@@ -257,6 +332,42 @@ export default function MediaProviderDetailPage() {
       {kind === "stt" && !isCustom && <SttExampleCard providerId={id} />}
       {!isCustom && KIND_EXAMPLE_CONFIG[kind] && <GenericExampleCard providerId={id} kind={kind} />}
 
+      {!noAuth && (
+        <AddApiKeyModal
+          isOpen={showAddApiKey}
+          provider={id}
+          providerName={provider.name}
+          isCompatible={false}
+          isAnthropic={false}
+          proxyPools={conn.proxyPools}
+          error={addConnectionError}
+          existingNames={conn.connections.map((entry) => entry.name).filter(Boolean)}
+          onSave={saveApiKey}
+          onClose={() => {
+            setAddConnectionError("");
+            setShowAddApiKey(false);
+          }}
+        />
+      )}
+      {!noAuth && (
+        <EditConnectionModal
+          isOpen={!!selectedConnection}
+          connection={selectedConnection}
+          proxyPools={conn.proxyPools}
+          onSave={updateConnection}
+          onClose={() => setSelectedConnection(null)}
+        />
+      )}
+      {showModels && (
+        <AddCustomModelModal
+          kind={kind}
+          isOpen={models.showAddCustomModel}
+          providerAlias={storageAlias}
+          providerDisplayAlias={storageAlias}
+          onSave={saveCustomModel}
+          onClose={() => models.setShowAddCustomModel(false)}
+        />
+      )}
       {isCustom && (
         <>
           <AddCustomEmbeddingModal

@@ -16,9 +16,17 @@ import { getModelsFetcher } from "./providerDetailMeta";
  * @param {string} args.storageAlias
  * @param {Array<object>} args.staticModels
  * @param {Array<object>} args.catalogModels
+ * @param {string} [args.kind="llm"] model kind filter ("llm" keeps LLM behaviour)
  * @param {(message: string) => void} [args.notifyError]
  */
-export function useModels({ providerId, storageAlias, staticModels, catalogModels, notifyError }) {
+export function useModels({
+  providerId,
+  storageAlias,
+  staticModels,
+  catalogModels,
+  kind = "llm",
+  notifyError,
+}) {
   const [modelAliases, setModelAliases] = useState({});
   const [customModels, setCustomModels] = useState([]);
   const [suggestedModels, setSuggestedModels] = useState([]);
@@ -111,12 +119,13 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
   }, [providerId, report, request]);
 
   useEffect(() => {
+    if (kind !== "llm") return;
     const fetcher = getModelsFetcher(providerId);
     if (!fetcher) return;
     fetchSuggestedModels(fetcher)
       .then(setSuggestedModels)
       .catch((error) => report(error, "Failed to fetch suggested models"));
-  }, [providerId, report]);
+  }, [kind, providerId, report]);
 
   const loadThinking = useCallback(async () => {
     try {
@@ -176,12 +185,14 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
       });
       if (!started) return false;
       try {
+        const body = { model: `${storageAlias}/${modelId}` };
+        if (kind && kind !== "llm") body.kind = kind;
         const res = await request(
           "/api/models/test",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: `${storageAlias}/${modelId}` }),
+            body: JSON.stringify(body),
           },
           "Model not reachable",
         );
@@ -202,7 +213,7 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
         });
       }
     },
-    [report, request, storageAlias],
+    [kind, report, request, storageAlias],
   );
 
   const saveAlias = useCallback(
@@ -411,8 +422,13 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
     ...catalogModels,
     ...kiloFreeModels.filter((free) => !catalogModels.some((model) => model.id === free.id)),
   ].filter((model) => {
-    const kind = getModelKind(model);
-    return !kind || kind === "llm";
+    if (kind && kind !== "llm") {
+      // Media kind filter, mirroring the legacy media-detail branching exactly.
+      if (model.kinds) return model.kinds.includes(kind);
+      return getModelKind(model, "llm") === kind;
+    }
+    const modelKind = getModelKind(model);
+    return !modelKind || modelKind === "llm";
   });
   const disabledSet = new Set(disabledModelIds);
   const enabledModels = allModels.filter((model) => !disabledSet.has(model.id));
@@ -422,7 +438,7 @@ export function useModels({ providerId, storageAlias, staticModels, catalogModel
     modelAliases,
     providerAlias: storageAlias,
     builtInModels: staticModels,
-    type: "llm",
+    type: kind || "llm",
   });
 
   return {

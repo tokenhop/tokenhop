@@ -179,3 +179,40 @@ describe("provider model failures", () => {
     expect(notifyError).toHaveBeenCalledWith("test blocked");
   });
 });
+
+describe("media kind models", () => {
+  const renderMedia = (kind, catalogModels) => {
+    index = 0;
+    return useModels({
+      providerId: "openai",
+      storageAlias: "openai",
+      staticModels: [],
+      catalogModels,
+      kind,
+      notifyError,
+    });
+  };
+
+  it("keeps only models of the requested kind", () => {
+    const models = [
+      { id: "chat" },
+      { id: "embed-a", kinds: ["embedding"] },
+      { id: "embed-b", type: "embedding" },
+      { id: "img", kinds: ["image"] },
+    ];
+    expect(renderMedia("embedding", models).enabledModels.map((m) => m.id)).toEqual([
+      "embed-a",
+      "embed-b",
+    ]);
+    expect(renderMedia("image", models).enabledModels.map((m) => m.id)).toEqual(["img"]);
+  });
+
+  it("sends the media kind with model tests", async () => {
+    queue(response({ ok: true }));
+    await renderMedia("embedding", []).testModel("embed-a");
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+      model: "openai/embed-a",
+      kind: "embedding",
+    });
+  });
+});
