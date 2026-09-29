@@ -64,6 +64,8 @@ export default function NetworkSection({ settings, onSettingsChange }) {
   const [netError, setNetError] = useState("");
   const [tunnelBusy, setTunnelBusy] = useState(false);
   const [tailscaleBusy, setTailscaleBusy] = useState(false);
+  const [tunnelPending, setTunnelPending] = useState(null);
+  const [tailscalePending, setTailscalePending] = useState(null);
   const [actionError, setActionError] = useState("");
 
   const loadNetStatus = useCallback(async () => {
@@ -137,6 +139,7 @@ export default function NetworkSection({ settings, onSettingsChange }) {
   const handleTunnelToggle = async (next) => {
     setActionError("");
     setTunnelBusy(true);
+    setTunnelPending(next);
     try {
       const res = await fetch(next ? "/api/tunnel/enable" : "/api/tunnel/disable", {
         method: "POST",
@@ -149,12 +152,14 @@ export default function NetworkSection({ settings, onSettingsChange }) {
       setActionError(err.message || "Failed to update tunnel");
     } finally {
       setTunnelBusy(false);
+      setTunnelPending(null);
     }
   };
 
   const handleTailscaleToggle = async (next) => {
     setActionError("");
     setTailscaleBusy(true);
+    setTailscalePending(next);
     try {
       const res = await fetch(
         next ? "/api/tunnel/tailscale-enable" : "/api/tunnel/tailscale-disable",
@@ -168,13 +173,14 @@ export default function NetworkSection({ settings, onSettingsChange }) {
       setActionError(err.message || "Failed to update Tailscale");
     } finally {
       setTailscaleBusy(false);
+      setTailscalePending(null);
     }
   };
 
   const tunnel = tunnelDisplay(netStatus.tunnel);
   const tailscale = tailscaleDisplay(netStatus.tailscale);
-  const tunnelChecked = netStatus.tunnel?.settingsEnabled === true;
-  const tailscaleChecked = netStatus.tailscale?.settingsEnabled === true;
+  const tunnelChecked = tunnelPending ?? netStatus.tunnel?.settingsEnabled === true;
+  const tailscaleChecked = tailscalePending ?? netStatus.tailscale?.settingsEnabled === true;
   const tunnelGate = tunnelGateReason({
     requireLogin: settings.requireLogin !== false,
     hasPassword: settings.hasPassword === true,
@@ -267,8 +273,8 @@ export default function NetworkSection({ settings, onSettingsChange }) {
           control={
             <div className="flex items-center gap-2">
               {!netLoading && !netError && (
-                <StatusPill variant={tunnel.variant} size="sm" dot>
-                  {tunnel.label}
+                <StatusPill variant={tunnelBusy ? "info" : tunnel.variant} size="sm" dot>
+                  {tunnelBusy ? (tunnelPending ? "Starting…" : "Stopping…") : tunnel.label}
                 </StatusPill>
               )}
               <Toggle
@@ -294,8 +300,8 @@ export default function NetworkSection({ settings, onSettingsChange }) {
           control={
             <div className="flex items-center gap-2">
               {!netLoading && !netError && (
-                <StatusPill variant={tailscale.variant} size="sm" dot>
-                  {tailscale.label}
+                <StatusPill variant={tailscaleBusy ? "info" : tailscale.variant} size="sm" dot>
+                  {tailscaleBusy ? (tailscalePending ? "Starting…" : "Stopping…") : tailscale.label}
                 </StatusPill>
               )}
               <Toggle
