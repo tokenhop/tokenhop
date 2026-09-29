@@ -195,7 +195,7 @@ LatencyBadge.propTypes = {
 };
 
 /**
- * Shared Request block (copy + Run + cURL `<pre>`) used by the TTS, generic,
+ * Shared Request block (copy + Run + cURL `<pre dir="ltr">`) used by the TTS, generic,
  * STT and embedding example cards (YAN-402). Markup mirrors the original
  * blocks so cards using it render identically.
  */

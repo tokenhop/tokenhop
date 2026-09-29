@@ -27,7 +27,10 @@ export default function ComboTestCard({
         </Button>
       </div>
       {curlExample && (
-        <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-raised p-3 font-mono text-xs">
+        <pre
+          dir="ltr"
+          className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-raised p-3 font-mono text-xs"
+        >
           {curlExample}
         </pre>
       )}
@@ -91,7 +94,10 @@ export default function ComboTestCard({
               </div>
             )}
             {testResult.json && (
-              <pre className="max-h-[300px] overflow-auto whitespace-pre-wrap break-all rounded-lg bg-raised p-3 font-mono text-xs">
+              <pre
+                dir="ltr"
+                className="max-h-[300px] overflow-auto whitespace-pre-wrap break-all rounded-lg bg-raised p-3 font-mono text-xs"
+              >
                 {testResult.json}
               </pre>
             )}

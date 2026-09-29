@@ -11,10 +11,10 @@ export default function ComboHeader({ kindLabel, comboName, backHref, onDelete }
       <div className="flex min-w-0 items-center gap-3">
         <Link
           href={backHref}
-          className="text-muted hover:text-coral-ink"
-          aria-label={`Back to ${kindLabel} providers`}
+          className="inline-flex size-11 items-center justify-center rounded-lg text-muted hover:text-coral-ink focus-visible:shadow-focus focus-visible:outline-none"
+          aria-label="Back"
         >
-          <span className="material-symbols-outlined" aria-hidden="true">
+          <span className="material-symbols-outlined rtl:-scale-x-100" aria-hidden="true">
             arrow_back
           </span>
         </Link>
@@ -24,8 +24,10 @@ export default function ComboHeader({ kindLabel, comboName, backHref, onDelete }
           </span>
         </div>
         <div className="min-w-0">
-          <p className="text-xs text-muted">{kindLabel} combo</p>
-          <code className="font-mono text-lg font-semibold">{comboName}</code>
+          <p className="text-xs text-muted">
+            <span>{kindLabel}</span> · <span>Combo</span>
+          </p>
+          <h1 className="truncate font-mono text-lg font-semibold">{comboName}</h1>
         </div>
       </div>
       <Button variant="danger" icon="delete" onClick={onDelete}>

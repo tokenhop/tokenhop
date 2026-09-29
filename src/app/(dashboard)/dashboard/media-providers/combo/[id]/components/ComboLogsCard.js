@@ -11,7 +11,10 @@ export default function ComboLogsCard({ logs }) {
       {logs.length === 0 ? (
         <EmptyState compact icon="receipt_long" title="No usage yet." as="p" />
       ) : (
-        <pre className="max-h-[400px] overflow-auto whitespace-pre-wrap rounded-lg bg-raised p-3 font-mono text-[11px]">
+        <pre
+          dir="ltr"
+          className="max-h-[400px] overflow-auto whitespace-pre-wrap rounded-lg bg-raised p-3 font-mono text-[11px]"
+        >
           {logs.join("\n")}
         </pre>
       )}

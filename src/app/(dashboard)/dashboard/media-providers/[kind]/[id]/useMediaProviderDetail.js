@@ -73,8 +73,9 @@ export function useMediaProviderDetail({ id, kind, isCustom }) {
     setFetchError("");
     try {
       await fetchConnections();
-      const results = await Promise.all([loadStrategy(), loadModels()]);
-      if (results.some((ok) => !ok)) throw new Error("Could not load provider");
+      // Both loaders report their own failures (toast/inline); loadStrategy
+      // resolves undefined, so only a thrown error fails the page.
+      await Promise.all([loadStrategy(), loadModels()]);
     } catch (error) {
       setFetchError(error instanceof Error ? error.message : "Could not load provider");
     } finally {
