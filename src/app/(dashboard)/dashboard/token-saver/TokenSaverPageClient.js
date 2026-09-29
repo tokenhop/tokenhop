@@ -1,6 +1,5 @@
 "use client";
 
-import PropTypes from "prop-types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
@@ -13,6 +12,8 @@ import {
   Toggle,
 } from "@/shared/components";
 import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
+import { SUMMARY_PERIODS } from "@/shared/utils/period";
+import usePeriod from "@/shared/hooks/usePeriod";
 import { WENYAN_LOCALES, CAVEMAN_LEVELS, PONYTAIL_LEVELS } from "../endpoint/endpointConstants";
 import { TokenSaverHeader, SavingsHero, MethodFooter } from "./SavingsHero";
 import {
@@ -22,6 +23,7 @@ import {
   headroomPillProps,
 } from "./HeadroomControls";
 import { useHeadroomExtras } from "./useHeadroomExtras";
+import { useSavingsWithFallback } from "./useSavingsWithFallback";
 import { fetchJson } from "./tokenSaverApi";
 
 const RTK_CHIPS = ["git log", "git diff", "grep / rg", "ls / tree", "test output", "logs"];
@@ -33,18 +35,24 @@ const RTK_CHIPS = ["git log", "git diff", "grep / rg", "ls / tree", "test output
 // savings still count in the hero total and method breakdown.
 
 /**
- * Token saver page: lime savings hero (YAN-292 aggregation), four method
- * cards with parity controls, experimental PXPIPE row. Every field writes
- * through /api/settings — the same store the Settings page uses.
+ * Token saver page: lime savings hero (YAN-292 aggregation, best non-empty
+ * period via useSavingsWithFallback), four method cards with parity
+ * controls, experimental PXPIPE row. Period is shared through the URL +
+ * localStorage (usePeriod). Every field writes through /api/settings — the
+ * same store the Settings page uses.
  */
 export default function TokenSaverPageClient() {
-  const [period, setPeriod] = useState("today");
+  const { period, setPeriod } = usePeriod(SUMMARY_PERIODS);
   const [refreshKey, setRefreshKey] = useState(0);
   const bump = useCallback(() => setRefreshKey((value) => value + 1), []);
 
-  const [savings, setSavings] = useState(null);
-  const [savingsLoading, setSavingsLoading] = useState(true);
-  const [savingsError, setSavingsError] = useState(null);
+  const {
+    savings,
+    loading: savingsLoading,
+    error: savingsError,
+    fallback,
+    neverSaved,
+  } = useSavingsWithFallback(period, refreshKey);
 
   const [settings, setSettings] = useState(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
@@ -74,28 +82,6 @@ export default function TokenSaverPageClient() {
     : CAVEMAN_LEVELS.filter((lvl) => !lvl.wenyan);
 
   const extras = useHeadroomExtras(bump);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setSavingsLoading(true);
-      setSavingsError(null);
-      try {
-        const data = await fetchJson(`/api/usage/savings?period=${period}`);
-        if (!cancelled) setSavings(data);
-      } catch (error) {
-        if (!cancelled) {
-          setSavings(null);
-          setSavingsError(error.message);
-        }
-      } finally {
-        if (!cancelled) setSavingsLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [period, refreshKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -203,6 +189,8 @@ export default function TokenSaverPageClient() {
         error={savingsError}
         period={period}
         onRetry={bump}
+        fallback={fallback}
+        neverSaved={neverSaved}
       />
 
       <div className="grid min-w-0 grid-cols-1 gap-5 md:grid-cols-2">

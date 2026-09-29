@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import useLastActivity from "@/shared/hooks/useLastActivity";
+import usePeriod from "@/shared/hooks/usePeriod";
+import { SUMMARY_PERIODS } from "@/shared/utils/period";
 import HomeHeader from "./HomeHeader";
 import { EndpointHeroCard } from "./EndpointHero";
 import { KeysSummaryCard } from "./KeysSummary";
@@ -29,7 +32,7 @@ import {
  * recent requests, quota watch, top combos, provider health.
  */
 export default function HomePageClient() {
-  const [period, setPeriod] = useState("today");
+  const { period, setPeriod, options } = usePeriod(SUMMARY_PERIODS);
   const [origin, setOrigin] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -62,12 +65,24 @@ export default function HomePageClient() {
   const usageByCombo =
     summaryCombos ?? (usage.current ? comboUsageFromByEndpoint(usage.current.byEndpoint) : null);
 
+  // Quiet = stats answered for the *selected* period with no requests in it
+  // (a period switch keeps the old payload until the refetch lands). Only then
+  // is the real last-activity time fetched; its errors render inside the row.
+  const quiet =
+    Boolean(usage.current) &&
+    usage.currentPeriod === period &&
+    !usage.loading &&
+    !usage.error &&
+    !usage.current.totalRequests;
+  const activity = useLastActivity(quiet);
+
   return (
     <div className="flex min-w-0 flex-col gap-5 pb-8">
       <HomeHeader
         connections={providers.connections}
         providersLoading={providers.loading}
         period={period}
+        options={options}
         onPeriodChange={setPeriod}
       />
 
@@ -99,6 +114,12 @@ export default function HomePageClient() {
           loading={usage.loading || chart.loading || savingsLoading || summary.loading}
           error={usage.error || chart.error}
           onRetry={bump}
+          period={period}
+          lastRequestAt={activity.lastRequestAt}
+          lastActivityLoading={activity.loading}
+          lastActivityError={activity.error}
+          onRetryLastActivity={activity.retry}
+          onSelectPeriod={setPeriod}
         />
       </div>
 

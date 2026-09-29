@@ -8,6 +8,7 @@ export {
   getUsageStats,
   getChartData,
   getUsageSavings,
+  getLastActivity,
   getHomeSummary,
   recordFallbackHop,
   appendRequestLog,

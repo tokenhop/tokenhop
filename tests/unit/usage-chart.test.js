@@ -1,7 +1,8 @@
-// getChartData bucket split: {label,input,cached,output,tokens,cost}.
+// getChartData bucket split: {label,input,cached,output,tokens,cost,requests}.
 // Prompt is cache-INCLUSIVE (open-sse/handlers/chatCore/requestDetail.js
 // canonicalizeUsage), so tokens = input + output and cached is a subset of
-// input. `tokens`+`cost` keys preserved; cost untouched.
+// input. `tokens`+`cost` keys preserved; cost untouched. `requests` counts
+// rows in each bucket (daily: dayData.requests || 0).
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -46,8 +47,9 @@ function sumBuckets(buckets) {
       cached: a.cached + (b.cached || 0),
       output: a.output + (b.output || 0),
       tokens: a.tokens + (b.tokens || 0),
+      requests: a.requests + (b.requests || 0),
     }),
-    { input: 0, cached: 0, output: 0, tokens: 0 },
+    { input: 0, cached: 0, output: 0, tokens: 0, requests: 0 },
   );
 }
 
@@ -59,6 +61,8 @@ function expectBucketShape(buckets) {
     expect(b).toHaveProperty("output");
     expect(b).toHaveProperty("tokens");
     expect(b).toHaveProperty("cost");
+    expect(b).toHaveProperty("requests");
+    expect(Number.isInteger(b.requests)).toBe(true);
     // tokens sum unchanged: prompt (cache-inclusive) + completion
     expect(b.tokens).toBe((b.input || 0) + (b.output || 0));
   }
@@ -69,14 +73,26 @@ describe("getChartData bucket split", () => {
     const buckets = await db.getChartData("today");
     expect(buckets).toHaveLength(24);
     expectBucketShape(buckets);
-    expect(sumBuckets(buckets)).toEqual({ input: 300, cached: 70, output: 110, tokens: 410 });
+    expect(sumBuckets(buckets)).toEqual({
+      input: 300,
+      cached: 70,
+      output: 110,
+      tokens: 410,
+      requests: 2,
+    });
   });
 
   it("24h: same split via tokens JSON aliases", async () => {
     const buckets = await db.getChartData("24h");
     expect(buckets).toHaveLength(24);
     expectBucketShape(buckets);
-    expect(sumBuckets(buckets)).toEqual({ input: 300, cached: 70, output: 110, tokens: 410 });
+    expect(sumBuckets(buckets)).toEqual({
+      input: 300,
+      cached: 70,
+      output: 110,
+      tokens: 410,
+      requests: 2,
+    });
   });
 
   it("7d: day-JSON path carries the split", async () => {
@@ -88,6 +104,7 @@ describe("getChartData bucket split", () => {
       cached: 70,
       output: 110,
       tokens: 410,
+      requests: 2,
     });
   });
 });

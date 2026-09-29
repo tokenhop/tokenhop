@@ -105,13 +105,30 @@ describe("shapeChartSeries", () => {
       output: 0,
       cost: 0.1,
       tokens: 100,
+      requests: 0,
     });
     expect(basic.reduce((n, r) => n + r.tokens, 0)).toBe(150);
     expect(basic.reduce((n, r) => n + r.cost, 0)).toBeCloseTo(0.3);
 
     const ext = shapeChartSeries([{ label: "c", input: 10, cached: 5, output: 7, cost: 0.5 }]);
-    expect(ext[0]).toEqual({ label: "c", input: 10, cached: 5, output: 7, cost: 0.5, tokens: 17 });
+    expect(ext[0]).toEqual({
+      label: "c",
+      input: 10,
+      cached: 5,
+      output: 7,
+      cost: 0.5,
+      tokens: 17,
+      requests: 0,
+    });
     expect(shapeChartSeries(null)).toEqual([]);
+  });
+
+  it("passes requests through in both branches (default 0)", () => {
+    const basic = shapeChartSeries([{ label: "a", tokens: 100, cost: 0.1, requests: 4 }]);
+    expect(basic[0].requests).toBe(4);
+    const ext = shapeChartSeries([{ label: "c", input: 10, output: 7, cost: 0.5, requests: 9 }]);
+    expect(ext[0].requests).toBe(9);
+    expect(shapeChartSeries([{ label: "z", tokens: 1, cost: 0 }])[0].requests).toBe(0);
   });
 });
 
