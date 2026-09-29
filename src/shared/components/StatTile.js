@@ -51,7 +51,9 @@ export default function StatTile({
       >
         {eyebrow}
       </span>
-      <span className="font-display text-4xl font-bold tabular-nums">{value}</span>
+      <span className="min-w-0 font-display text-4xl font-bold tabular-nums [word-break:break-word]">
+        {value}
+      </span>
       {delta && mutedLine(hero, delta)}
       {trend && mutedLine(hero, trend)}
       {sparkline && sparkline.length > 1 && (

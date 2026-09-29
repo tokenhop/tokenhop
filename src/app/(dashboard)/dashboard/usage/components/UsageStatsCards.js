@@ -7,9 +7,25 @@ import { Skeleton } from "@/shared/components/Loading";
 import { bucketSeries, NO_PRIOR, PRIOR_LABELS, trendDelta } from "../lib/tileTrends";
 
 const fmt = (n) => new Intl.NumberFormat().format(n || 0);
+const trim = (n) => String(Math.round(n * 10) / 10);
+// B/M/K so the headline stays short at any window size (usage can reach billions).
 const fmtShort = (n) =>
-  n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n || 0);
-const fmtCost = (n) => `$${(n || 0).toFixed(2)}`;
+  n >= 1e9
+    ? `${trim(n / 1e9)}B`
+    : n >= 1e6
+      ? `${trim(n / 1e6)}M`
+      : n >= 1e3
+        ? `${trim(n / 1e3)}K`
+        : String(n || 0);
+// $1.2k / $3.4M / $5.6B for large totals; exact cents below $1k.
+const fmtCost = (n) =>
+  n >= 1e9
+    ? `$${trim(n / 1e9)}B`
+    : n >= 1e6
+      ? `$${trim(n / 1e6)}M`
+      : n >= 1e3
+        ? `$${trim(n / 1e3)}k`
+        : `$${(n || 0).toFixed(2)}`;
 
 // Sparkline stroke inherits currentColor, so a tile's className text color
 // doubles as the sparkline color (mirrors the value accents).
@@ -102,7 +118,7 @@ function UsageStatsCards({
   const tiles = [
     {
       eyebrow: "Requests",
-      value: fmt(requests),
+      value: fmtShort(requests),
       delta: "In this period",
       field: "requests",
       current: currentTotals?.requests,
