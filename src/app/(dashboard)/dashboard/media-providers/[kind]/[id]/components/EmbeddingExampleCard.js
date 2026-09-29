@@ -283,7 +283,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
               Response{" "}
               {result && (
                 <span className="font-mono text-xs font-normal normal-case text-muted">
-                  ⚡ {result.latencyMs}ms
+                  {result.latencyMs}ms
                 </span>
               )}
             </span>

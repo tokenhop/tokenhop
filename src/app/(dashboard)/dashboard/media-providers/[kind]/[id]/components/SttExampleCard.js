@@ -327,7 +327,7 @@ export function SttExampleCard({ providerId }) {
               Response{" "}
               {result && latency && (
                 <span className="font-mono text-xs font-normal normal-case text-muted">
-                  ⚡ {latency}ms
+                  {latency}ms
                 </span>
               )}
             </span>

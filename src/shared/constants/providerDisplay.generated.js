@@ -76,7 +76,7 @@ export const PROVIDER_DISPLAY = {
   mistral: {"category":"apikey","name":"Mistral","color":"#FF7000","textIcon":"MI"},
   mmf: {"category":"apikey","name":"MMF","color":"#6366F1","textIcon":"MF"},
   morph: {"category":"apikey","name":"Morph","color":"#14B8A6","textIcon":"MP"},
-  nanobanana: {"category":"apikey","name":"NanoBanana API","color":"#FFD700","textIcon":"🍌"},
+  nanobanana: {"category":"apikey","name":"NanoBanana API","color":"#FFD700","textIcon":"NB"},
   nebius: {"category":"apikey","name":"Nebius AI","color":"#6C5CE7","textIcon":"NB"},
   nvidia: {"category":"freeTier","name":"NVIDIA NIM","color":"#76B900","textIcon":"NV"},
   ollama: {"category":"freeTier","name":"Ollama Cloud","color":"#ffffffff","textIcon":"OL"},
