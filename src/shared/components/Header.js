@@ -207,8 +207,9 @@ export const getPageInfo = (pathname) => {
       breadcrumbs: [],
     };
   if (pathname === "/dashboard")
+    // Home renders its own in-page H1 with the status line above it, like provider detail YAN-314.
     return {
-      title: "Command center",
+      title: "",
       description: "",
       breadcrumbs: [],
     };

@@ -6,7 +6,7 @@ import ModelChip from "@/shared/components/ModelChip";
 import StatusPill from "@/shared/components/StatusPill";
 import { pickTopCombos } from "@/shared/utils/commandCenter";
 import { formatCompact } from "./format";
-import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
+import { CardLink, WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
 
 /** Fallback strategies the routing layer understands: anything else falls back to Fallback. */
 export const KNOWN_FALLBACK_STRATEGIES = new Set(["fallback", "round-robin", "weighted", "fusion"]);
@@ -150,14 +150,7 @@ export function CombosTopCard(props) {
     <Card
       className="min-w-0"
       title="Combos"
-      action={
-        <a
-          href="/dashboard/combos"
-          className="text-[13px] font-semibold text-coral-ink hover:text-coral"
-        >
-          All combos →
-        </a>
-      }
+      action={<CardLink href="/dashboard/combos">All combos</CardLink>}
     >
       <CombosTop {...props} />
     </Card>

@@ -13,6 +13,7 @@ import { RecentRequestsCard } from "./RecentRequests";
 import { QuotaWatchCard } from "./QuotaWatch";
 import { CombosTopCard, comboUsageFromByEndpoint } from "./CombosTop";
 import { ProviderHealthCard } from "./ProviderHealth";
+import { onHomeFocus } from "./homeResourceStore";
 import {
   useHomeChart,
   useHomeCombos,
@@ -38,6 +39,14 @@ export default function HomePageClient() {
 
   useEffect(() => {
     if (typeof window !== "undefined") setOrigin(window.location.origin);
+  }, []);
+
+  // One focus listener for the whole page: re-reads only data older than
+  // STALE_MS, at most once per FOCUS_THROTTLE_MS.
+  useEffect(() => {
+    const onVisible = () => onHomeFocus();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
   const bump = () => setRefreshKey((value) => value + 1);
@@ -139,7 +148,7 @@ export default function HomePageClient() {
         />
       </div>
 
-      <div className="grid min-w-0 grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid min-w-0 grid-cols-1 items-start gap-5 md:grid-cols-2 xl:grid-cols-3">
         <QuotaWatchCard
           accounts={quota.accounts}
           loading={quota.loading}

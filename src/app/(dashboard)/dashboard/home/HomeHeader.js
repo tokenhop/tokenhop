@@ -35,10 +35,17 @@ export default function HomeHeader({
         statuses.map((item) => ({ status: item.status === "off" ? "idle" : item.status })),
       );
 
-  // Shell Header owns the page title; this is the page toolbar.
+  // Home owns the page title in-page (status line above the H1), like provider detail (YAN-314).
   return (
-    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm font-medium text-muted">{statusLine}</p>
+    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex min-w-0 flex-col gap-1">
+        <p aria-live="polite" className="text-sm font-medium text-muted">
+          {statusLine}
+        </p>
+        <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-text lg:text-[42px] lg:leading-[1.05]">
+          Command center
+        </h1>
+      </div>
       <PeriodControl
         aria-label="Stats period"
         options={options}

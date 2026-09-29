@@ -7,8 +7,8 @@ import Button from "@/shared/components/Button";
 import StatusPill from "@/shared/components/StatusPill";
 import EmptyState from "@/shared/components/EmptyState";
 import Pagination from "@/shared/components/Pagination";
-import RequestDetailDrawer from "./RequestDetailDrawer";
-import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
+import RequestDetailDrawer, { providerLabel } from "./RequestDetailDrawer";
+import { AI_PROVIDERS } from "@/shared/constants/providers";
 
 const getCached = (t) => t?.cached_tokens || t?.cache_read_input_tokens || 0;
 const getInput = (t) => {
@@ -16,13 +16,6 @@ const getInput = (t) => {
   const cache = getCached(t);
   return prompt < cache ? cache : prompt;
 };
-
-function providerLabel(id, cache) {
-  if (!id) return "—";
-  if (cache && typeof cache[id] === "string") return cache[id];
-  if (cache?.[id]?.name) return cache[id].name;
-  return getProviderByAlias(id)?.name || AI_PROVIDERS[id]?.name || id;
-}
 
 /**
  * Request log: same /api/usage/request-details + /api/usage/providers

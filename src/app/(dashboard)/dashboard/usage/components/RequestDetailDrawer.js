@@ -7,6 +7,7 @@ import StatusPill from "@/shared/components/StatusPill";
 import ProviderTile from "@/shared/components/ProviderTile";
 import EmptyState from "@/shared/components/EmptyState";
 import CopyField from "@/shared/components/CopyField";
+import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
 import { buildCurl } from "../lib/usageShapes";
 
 const getCached = (t) => t?.cached_tokens || t?.cache_read_input_tokens || 0;
@@ -17,6 +18,14 @@ const getInput = (t) => {
   return prompt < cache ? cache : prompt;
 };
 const getOutput = (t) => t?.completion_tokens || t?.output_tokens || 0;
+
+/** Resolve a provider ID to its display name, using cached names when available. */
+export function providerLabel(id, cache) {
+  if (!id) return "—";
+  if (cache && typeof cache[id] === "string") return cache[id];
+  if (cache?.[id]?.name) return cache[id].name;
+  return getProviderByAlias(id)?.name || AI_PROVIDERS[id]?.name || id;
+}
 
 const SECTIONS = [
   { key: "request", title: "1 · Client request" },

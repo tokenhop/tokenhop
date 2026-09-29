@@ -6,7 +6,7 @@ import Meter from "@/shared/components/Meter";
 import ProviderTile from "@/shared/components/ProviderTile";
 import { pickLowestQuotaAccounts } from "@/shared/utils/commandCenter";
 import { formatReset } from "./format";
-import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
+import { CardLink, WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
 
 /**
  * Quota watch: 3 lowest cached accounts (no upstream probes). Each shows
@@ -100,14 +100,7 @@ export function QuotaWatchCard(props) {
     <Card
       className="min-w-0"
       title="Quota watch"
-      action={
-        <a
-          href="/dashboard/quota"
-          className="text-[13px] font-semibold text-coral-ink hover:text-coral"
-        >
-          All quotas →
-        </a>
-      }
+      action={<CardLink href="/dashboard/quota">All quotas</CardLink>}
     >
       <QuotaWatch {...props} />
     </Card>

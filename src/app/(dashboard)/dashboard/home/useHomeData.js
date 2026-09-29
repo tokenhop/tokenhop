@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useHomeResource } from "./useHomeResource";
-import { useHomePollingResource } from "./useHomePollingResource";
 
 /** Live-routes poll cadence: 60s, matching the quota snapshot poller tick. */
 export const LIVE_ROUTES_POLL_MS = 60_000;
@@ -177,11 +176,9 @@ export function useHomeQuota(refreshKey = 0) {
  * @returns {{ routes: object|null, loading: boolean, error: string|null }}
  */
 export function useHomeLiveRoutes(refreshKey = 0) {
-  const { data, loading, error } = useHomePollingResource(
-    "/api/home/live-routes",
-    refreshKey,
-    LIVE_ROUTES_POLL_MS,
-  );
+  const { data, loading, error } = useHomeResource("/api/home/live-routes", refreshKey, {
+    intervalMs: LIVE_ROUTES_POLL_MS,
+  });
   const valid = data && Array.isArray(data.clients) && Array.isArray(data.providers) ? data : null;
   return { routes: valid, loading, error };
 }
