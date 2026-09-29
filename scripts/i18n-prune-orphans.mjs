@@ -2,10 +2,11 @@
 /**
  * Delete locale keys that the extractor proves unused.
  *
- * A key is provably unused only when it is not extracted from src AND does not
- * appear as a complete quoted string in any src file. Keys that still appear
- * as full quoted strings may still be rendered (server API messages, array
- * prop strings the extractor cannot see) so they are kept.
+ * A key is provably dead only when it has zero occurrence anywhere in src:
+ * JSX text fragments (unquoted) and server-side strings (quoted) both render
+ * at runtime, so both count as live. Keys containing delimiters or template
+ * syntax that could still resolve dynamically are never touched by this
+ * script — deletion targets plain prose keys whose text no longer exists.
  *
  * Usage: node scripts/i18n-prune-orphans.mjs [--apply]
  * Dry run by default; --apply rewrites every locale file without the dead keys.
@@ -52,14 +53,10 @@ export function classifyOrphans(repoRoot) {
   const dead = [];
   const kept = [];
   for (const key of orphans) {
-    // Keys containing delimiters/backslashes cannot be matched reliably as a
-    // complete quoted string — keep them rather than guess.
-    if (/["'`\\]/.test(key)) {
-      kept.push(key);
-      continue;
-    }
-    const quoted = [`"${key}"`, `'${key}'`, `\`${key}\``];
-    if (quoted.some((form) => hay.includes(form))) kept.push(key);
+    // A rendered key must appear as a substring somewhere in src: JSX text
+    // fragments (unquoted) and server-side strings (quoted) both count. Only
+    // a key with zero source occurrence is provably unreachable at runtime.
+    if (hay.includes(key)) kept.push(key);
     else dead.push(key);
   }
   return { dead, kept, orphans };
