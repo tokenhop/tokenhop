@@ -32,7 +32,7 @@ const rowDomId = (id) => `req-${String(id).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
  * Request log: paginated /api/usage/request-details table built on the shared
  * primitives — Select/Input filters (provider + a From/To datetime range with
  * a client-side start ≤ end check), LoadingState/ErrorState/EmptyState and
- * one TABLE_HEAD header style with logical alignment. Each row's Details
+ * one TABLE_HEAD header style with logical alignment. Each row's Detail
  * button is described by that row's model and timestamp cells, so screen
  * readers announce which request it opens without a composed sentence.
  * Filter changes reset the page to 1; fetches are sequenced with an
@@ -299,7 +299,7 @@ export default function RequestLog() {
                               setDrawerOpen(true);
                             }}
                           >
-                            Details
+                            Detail
                           </Button>
                         </td>
                       </tr>
