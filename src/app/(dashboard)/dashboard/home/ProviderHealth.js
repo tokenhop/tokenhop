@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
+import CardLink from "@/shared/components/CardLink";
 import ProviderTile from "@/shared/components/ProviderTile";
 import { deriveCommandCenterStatus } from "@/shared/utils/commandCenter";
 import { summarizeProviders } from "@/shared/utils/providerHealth";
@@ -70,14 +72,14 @@ export default function ProviderHealth({ connections, loading, error, onRetry })
         ))}
       </ul>
       {attention > 0 ? (
-        <a
+        <Link
           href="/dashboard/providers"
           className="flex items-center gap-2.5 rounded-xl bg-err-bg px-3 py-2.5 text-[13px] text-text"
         >
           <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-err" />
           {attention} {attention === 1 ? "needs" : "need"} attention
           <span className="ms-auto font-semibold text-err">Review</span>
-        </a>
+        </Link>
       ) : null}
     </div>
   );
@@ -96,14 +98,7 @@ export function ProviderHealthCard(props) {
     <Card
       className="min-w-0"
       title="Providers"
-      action={
-        <a
-          href="/dashboard/providers"
-          className="text-[13px] font-semibold text-coral-ink hover:text-coral"
-        >
-          Manage →
-        </a>
-      }
+      action={<CardLink href="/dashboard/providers">Manage</CardLink>}
     >
       <ProviderHealth {...props} />
     </Card>

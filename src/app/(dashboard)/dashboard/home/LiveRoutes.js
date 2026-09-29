@@ -1,5 +1,6 @@
 "use client";
 
+import CardLink from "@/shared/components/CardLink";
 import PropTypes from "prop-types";
 import Callout from "@/shared/components/Callout";
 import { useState } from "react";
@@ -391,12 +392,12 @@ export default function LiveRoutes({ routes, loading, error, onRetry }) {
             <span className="min-w-0 flex-1" dir="auto">
               {fallbackText(fallback)}
             </span>
-            <a
+            <CardLink
               href="/dashboard/providers"
               className="shrink-0 font-semibold whitespace-nowrap text-warn hover:underline"
             >
-              Inspect →
-            </a>
+              Inspect
+            </CardLink>
           </span>
         </Callout>
       ) : null}

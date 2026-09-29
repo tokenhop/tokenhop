@@ -1,15 +1,16 @@
 "use client";
 
 import PropTypes from "prop-types";
+import PageTitle from "@/shared/components/PageTitle";
 import PeriodControl from "@/shared/components/PeriodControl";
 import { deriveCommandCenterStatus } from "@/shared/utils/commandCenter";
 import { SUMMARY_PERIODS } from "@/shared/utils/period";
 import { summarizeProviders } from "@/shared/utils/providerHealth";
 
 /**
- * Home toolbar: derived status line and the period control. The status text
- * is plain English translated at render; the control labels come from the
- * shared period model (zh override lives in PeriodControl).
+ * Home page header: derived status line above the in-page H1, plus the period
+ * control. The status text is plain English translated at render; the control
+ * labels come from the shared period model (zh override lives in PeriodControl).
  *
  * @param {object} props
  * @param {Array<object>} props.connections provider connections for the status line
@@ -35,10 +36,15 @@ export default function HomeHeader({
         statuses.map((item) => ({ status: item.status === "off" ? "idle" : item.status })),
       );
 
-  // Shell Header owns the page title; this is the page toolbar.
+  // Home owns the page title in-page (status line above the H1), like provider detail (YAN-314).
   return (
-    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm font-medium text-muted">{statusLine}</p>
+    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex min-w-0 flex-col gap-1">
+        <p aria-live="polite" className="text-sm font-medium text-muted">
+          {statusLine}
+        </p>
+        <PageTitle>Command center</PageTitle>
+      </div>
       <PeriodControl
         aria-label="Stats period"
         options={options}

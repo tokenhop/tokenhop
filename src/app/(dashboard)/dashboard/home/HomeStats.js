@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
 import QuietPeriod from "@/shared/components/QuietPeriod";
@@ -188,9 +189,9 @@ export default function HomeStats({
           <span>
             {savingsLine}
             {" · "}
-            <a href="/dashboard/token-saver" className="font-semibold underline">
+            <Link href="/dashboard/token-saver" className="font-semibold underline">
               Tune
-            </a>
+            </Link>
           </span>
         }
         className="min-w-0"

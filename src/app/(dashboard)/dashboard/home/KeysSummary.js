@@ -140,17 +140,23 @@ export default function KeysSummary({ keys, loading, error, onRetry, onChanged }
       <ul className="flex min-w-0 flex-col">
         {recentKeys(keys).map((key) => {
           const enabled = key.isActive !== false;
+          const label = duplicateKeyLabel(key, keys);
           return (
             <li key={key.id} className="flex items-center gap-2.5 border-t border-line py-2">
-              <span className="truncate text-sm font-semibold text-text">
-                {duplicateKeyLabel(key, keys)}
+              <span
+                className="min-w-0 max-w-[60%] shrink-0 truncate text-sm font-semibold text-text"
+                title={label}
+              >
+                {label}
               </span>
-              <span className="truncate font-mono text-xs text-muted">{maskApiKey(key.key)}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted">
+                {maskApiKey(key.key)}
+              </span>
               <Toggle
                 checked={enabled}
                 disabled={toggling === key.id}
                 onChange={() => toggle(key)}
-                aria-label={`${duplicateKeyLabel(key, keys)} key ${enabled ? "enabled" : "paused"}`}
+                aria-label={`${label} key ${enabled ? "enabled" : "paused"}`}
                 className="ms-auto"
               />
             </li>
