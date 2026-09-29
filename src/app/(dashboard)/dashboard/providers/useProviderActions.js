@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import { useNotificationStore } from "@/store/notificationStore";
 
@@ -25,9 +25,12 @@ export default function useProviderActions({ connections, setConnections, refres
   // Latest values without destabilizing callback identities: `connections`
   // changes on every list reload, and the in-flight flags flip during tests.
   const connectionsRef = useRef(connections);
-  connectionsRef.current = connections;
   const testingModeRef = useRef(null);
   const testAccountsModeRef = useRef(null);
+
+  useEffect(() => {
+    connectionsRef.current = connections;
+  }, [connections]);
 
   const handleToggleProvider = useCallback(
     async (providerId, authType, newActive) => {
@@ -45,13 +48,14 @@ export default function useProviderActions({ connections, setConnections, refres
           }),
         ),
       );
-      if (outcomes.some((o) => o.status === "rejected")) {
+      if (outcomes.some((o) => o.status === "rejected" || !o.value.ok)) {
         setConnections(previous);
         notifyError("Failed to update provider. Please try again.");
+        refreshData();
       }
       refreshShellStatus();
     },
-    [setConnections, notifyError],
+    [setConnections, notifyError, refreshData],
   );
 
   const handleBatchTest = useCallback(
@@ -101,11 +105,12 @@ export default function useProviderActions({ connections, setConnections, refres
       testAccountsModeRef.current = entry.id;
       setTestAccountsMode(entry.id);
       try {
-        await fetch("/api/providers/test-batch", {
+        const res = await fetch("/api/providers/test-batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ mode: "provider", providerId: entry.id }),
         });
+        if (!res.ok) notifyError("Account test failed");
         refreshData();
       } catch {
         notifyError("Account test failed");

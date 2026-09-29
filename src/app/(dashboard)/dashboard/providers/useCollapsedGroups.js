@@ -16,7 +16,7 @@ export default function useCollapsedGroups() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       const parsed = saved ? JSON.parse(saved) : null;
-      setCollapsed(parsed && typeof parsed === "object" ? parsed : {});
+      setCollapsed(parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {});
     } catch {
       setCollapsed({});
     }

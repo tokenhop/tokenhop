@@ -171,6 +171,14 @@ function ProvidersListShell({ initialProviderId = null }) {
     router.push(writeSelectedProvider(searchParams?.toString(), null), { scroll: false });
   }, [router, searchParams]);
 
+  const selectProvider = useCallback(
+    (entry) => {
+      if (entry.id === selectedProvider) closeProvider();
+      else openProvider(entry);
+    },
+    [selectedProvider, closeProvider, openProvider],
+  );
+
   const modelCountFor = useCallback(
     (entry) =>
       entry.authGroup === "compatible"
@@ -349,7 +357,8 @@ function ProvidersListShell({ initialProviderId = null }) {
               selectedProvider={selectedProvider}
               testingMode={testingMode ?? undefined}
               testAccountsMode={testAccountsMode ?? undefined}
-              onOpen={openProvider}
+              onOpen={selectProvider}
+              onClose={closeProvider}
               onTest={onTestAccounts}
               onTestAll={onTestAll}
             />
@@ -374,7 +383,7 @@ function ProvidersListShell({ initialProviderId = null }) {
                 forceOpen={forceOpen}
                 selectedProvider={selectedProvider}
                 modelCountFor={modelCountFor}
-                openProvider={openProvider}
+                openProvider={selectProvider}
                 handleToggleProvider={handleToggleProvider}
               />
             ))}
@@ -383,7 +392,7 @@ function ProvidersListShell({ initialProviderId = null }) {
               connectionsFor={connectionsFor}
               selectedProvider={selectedProvider}
               modelCountFor={modelCountFor}
-              openProvider={openProvider}
+              openProvider={selectProvider}
               handleToggleProvider={handleToggleProvider}
               onAddOpenAI={openAddOpenAI}
               onAddAnthropic={openAddAnthropic}

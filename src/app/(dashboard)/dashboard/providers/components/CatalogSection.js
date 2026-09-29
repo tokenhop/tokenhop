@@ -106,9 +106,21 @@ function CatalogSection({
             type="button"
             onClick={() => setShowAllApikey((v) => !v)}
             aria-expanded={showAllApikey || forceOpen}
-            className="ms-auto inline-flex min-h-11 items-center px-1 text-[13px] font-semibold text-coral-ink hover:text-coral focus-visible:outline-none focus-visible:shadow-focus"
+            className="ms-auto inline-flex min-h-11 items-center gap-1 px-1 text-[13px] font-semibold text-coral-ink hover:text-coral focus-visible:outline-none focus-visible:shadow-focus"
           >
-            {showAllApikey || forceOpen ? "Show less" : `Show all ${section.catalogCount} →`}
+            {showAllApikey || forceOpen ? (
+              "Show less"
+            ) : (
+              <>
+                {`Show all ${section.catalogCount}`}
+                <span
+                  className="material-symbols-outlined text-[16px] rtl:-scale-x-100"
+                  aria-hidden="true"
+                >
+                  arrow_forward
+                </span>
+              </>
+            )}
           </button>
         )}
       </div>

@@ -18,15 +18,12 @@ import {
 import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
 import { getSnapshot } from "open-sse/services/quotaSnapshot.js";
 import { effectiveWeightFor } from "@/sse/services/accountSelection";
-import { deriveQuotaAccounts } from "@/lib/home/quota.js";
-import { buildQuotaSnapshotView } from "@/sse/services/quotaSnapshotSync.js";
+import { remainingFromWindows } from "@/lib/home/quota.js";
 
 /** Quota left (0-100) from the in-memory snapshot, null when none or on failure. */
-function quotaRemainingFor(connection) {
+function quotaRemainingFor(snapshot) {
   try {
-    return (
-      deriveQuotaAccounts([connection], (id) => buildQuotaSnapshotView(id))[0]?.remaining ?? null
-    );
+    return remainingFromWindows(snapshot?.windows);
   } catch {
     return null;
   }
@@ -94,11 +91,12 @@ export async function GET() {
       const name = isCompatible
         ? c.name || nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider
         : c.name;
+      const snapshot = getSnapshot(c.id);
       return {
         ...c,
         name,
-        effectiveWeight: effectiveWeightFor(c, { snapshot: getSnapshot(c.id) }),
-        quotaRemaining: quotaRemainingFor(c),
+        effectiveWeight: effectiveWeightFor(c, { snapshot }),
+        quotaRemaining: quotaRemainingFor(snapshot),
         apiKey: undefined,
         accessToken: undefined,
         refreshToken: undefined,

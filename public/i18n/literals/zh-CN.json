@@ -2601,7 +2601,7 @@
   "Your OAuth application client ID": "您的 OAuth 应用客户端 ID",
   "Your endpoint": "你的终结点",
   "Your organization's AWS IAM Identity Center URL": "您组织的 AWS IAM Identity Center URL",
-  "Your providers": "你的提供商",
+  "Your providers": "您的提供商",
   "Your relay URL will be https://my-relay.your-org.deno.net.": "你的中继 URL 将为 https://my-relay.your-org.deno.net。",
   "Your requests start from your favorite tools or our unified SDK. Just change the base URL.": "您的请求从您最熟悉的工具或我们的统一 SDK 发起。只需更改基础 URL。",
   "Your requests start from your favorite tools — Cursor, Claude, Copilot, or any OpenAI-compatible SDK.": "请求从您常用的工具发起——Cursor、Claude、Copilot 或任何 OpenAI 兼容的 SDK。",

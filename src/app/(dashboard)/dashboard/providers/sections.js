@@ -3,8 +3,6 @@ import {
   APIKEY_PROVIDERS,
   FREE_PROVIDERS,
   FREE_TIER_PROVIDERS,
-  OPENAI_COMPATIBLE_PREFIX,
-  ANTHROPIC_COMPATIBLE_PREFIX,
   AI_PROVIDERS,
 } from "@/shared/constants/providers";
 import { getProviderStats } from "./utils";
@@ -191,5 +189,3 @@ export function PROVIDER_SECTIONS({ connections, providerNodes, statsFor }) {
     },
   ];
 }
-
-export { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX };

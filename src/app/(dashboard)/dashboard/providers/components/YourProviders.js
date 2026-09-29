@@ -37,27 +37,29 @@ function tileStatus(entry, health) {
   return health.connected ? "ok" : "neutral";
 }
 
-/** One compact pinned row: full-row open button plus a sibling Test button. */
+/** One compact pinned row: full-row toggle button plus a sibling Test button. */
 const YourProviderRow = memo(function YourProviderRow({
   entry,
   connections,
   selected,
   testing,
+  batchTesting,
   onOpen,
+  onClose,
   onTest,
 }) {
   const enabled = connections.filter((c) => c.isActive !== false);
   const health = providerHealth(enabled);
   const reason = entry.stats.allDisabled ? "Disabled" : health.reason || "Ready";
   const status = rowStatus(entry, health);
-  const quota = quotaLeft(connections);
+  const quota = quotaLeft(enabled);
   const name = entry.info.name;
 
   return (
     <li className="grid grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2 sm:items-center">
       <button
         type="button"
-        onClick={() => onOpen(entry)}
+        onClick={() => (selected ? onClose() : onOpen(entry))}
         aria-expanded={selected}
         aria-label={selected ? `Close ${name} details` : `Open ${name} details`}
         className={`flex min-w-0 flex-col gap-2 rounded-2xl border bg-panel p-4 text-start shadow-card transition-colors hover:border-subtle focus-visible:outline-none focus-visible:shadow-focus sm:flex-row sm:items-center sm:gap-3 ${
@@ -85,7 +87,7 @@ const YourProviderRow = memo(function YourProviderRow({
         size="sm"
         variant="secondary"
         loading={testing}
-        disabled={testing}
+        disabled={testing || batchTesting}
         onClick={() => onTest(entry)}
         aria-label={`Test ${name} accounts`}
       >
@@ -100,7 +102,9 @@ YourProviderRow.propTypes = {
   connections: PropTypes.array.isRequired,
   selected: PropTypes.bool,
   testing: PropTypes.bool,
+  batchTesting: PropTypes.bool,
   onOpen: PropTypes.func.isRequired,
+  onClose: PropTypes.func.isRequired,
   onTest: PropTypes.func.isRequired,
 };
 
@@ -146,6 +150,7 @@ function ConnectFirstGuide() {
  * @param {string|null} props.testingMode
  * @param {string|null} props.testAccountsMode
  * @param {(entry: object) => void} props.onOpen
+ * @param {() => void} props.onClose
  * @param {(entry: object) => void} props.onTest
  * @param {() => void} props.onTestAll
  */
@@ -157,6 +162,7 @@ function YourProviders({
   testingMode,
   testAccountsMode,
   onOpen,
+  onClose,
   onTest,
   onTestAll,
 }) {
@@ -178,7 +184,7 @@ function YourProviders({
           icon="play_arrow"
           className="ms-auto"
           loading={testingMode === "all"}
-          disabled={!!testingMode}
+          disabled={!!testingMode || !!testAccountsMode}
           onClick={onTestAll}
           title="Test all connections"
         >
@@ -193,7 +199,9 @@ function YourProviders({
             connections={connectionsFor(entry)}
             selected={selectedProvider === entry.id}
             testing={testAccountsMode === entry.id}
+            batchTesting={!!testingMode}
             onOpen={onOpen}
+            onClose={onClose}
             onTest={onTest}
           />
         ))}
@@ -210,6 +218,7 @@ YourProviders.propTypes = {
   testingMode: PropTypes.string,
   testAccountsMode: PropTypes.string,
   onOpen: PropTypes.func.isRequired,
+  onClose: PropTypes.func.isRequired,
   onTest: PropTypes.func.isRequired,
   onTestAll: PropTypes.func.isRequired,
 };

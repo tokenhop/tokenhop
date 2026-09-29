@@ -2137,7 +2137,7 @@
   "Your OAuth application client ID": "معرف عميل تطبيق OAuth الخاص بك",
   "Your endpoint": "نقطة نهايةك",
   "Your organization's AWS IAM Identity Center URL": "عنوان URL لمركز هوية AWS IAM الخاص بمؤسستك",
-  "Your providers": "الموفرون لديك",
+  "Your providers": "المزودون لديك",
   "Your relay URL will be https://my-relay.your-org.deno.net.": "سيكون عنوان URL للترحيل الخاص بك https://my-relay.your-org.deno.net.",
   "Your requests start from your favorite tools or our unified SDK. Just change the base URL.": "تبدأ طلباتك من أدواتك المفضلة أو SDK الموحد الخاص بنا. فقط غيّر عنوان URL الأساسي.",
   "Your tools lose their endpoint until you start it again.": "تفقد أدواتك نقطة نهايةها حتى تبدأها مرة أخرى.",
