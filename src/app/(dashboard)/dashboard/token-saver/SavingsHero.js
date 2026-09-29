@@ -40,23 +40,23 @@ TokenSaverHeader.propTypes = {
 
 const SEGMENT_OPACITY = ["bg-on-lime/90", "bg-on-lime/55", "bg-on-lime/30"];
 
-/** Eyebrow copy for the selected period when it holds savings. */
-const SAVED_EYEBROWS = {
-  today: "Saved today",
-  "7d": "Saved last 7d",
-  "30d": "Saved last 30d",
+/**
+ * Hero copy (keys the i18n extractor reads). `eyebrow` for the selected period
+ * when it holds savings; `FALLBACK_COPY` when a larger period stands in, with
+ * a `caption` note about the empty selected period.
+ */
+const SAVED_COPY = {
+  today: { eyebrow: "Saved today" },
+  "7d": { eyebrow: "Saved last 7d" },
+  "30d": { eyebrow: "Saved last 30d" },
 };
-
-/** Eyebrow copy for a fallback period when the selected period is empty. */
-const FALLBACK_EYEBROWS = {
-  "7d": "Saved in the last 7d",
-  "30d": "Saved in the last 30d",
+const FALLBACK_COPY = {
+  "7d": { eyebrow: "Saved in the last 7d" },
+  "30d": { eyebrow: "Saved in the last 30d" },
 };
-
-/** Quiet note under the hero totals when the selected period is empty. */
 const QUIET_NOTES = {
-  today: "None today",
-  "7d": "None in the last 7d",
+  today: { caption: "None today" },
+  "7d": { caption: "None in the last 7d" },
 };
 
 /**
@@ -185,15 +185,18 @@ export function SavingsHero({
   const saved = Number(savings.tokensSavedEst) || 0;
   if (saved > 0) {
     return (
-      <FilledHero savings={savings} eyebrow={SAVED_EYEBROWS[period] || "Saved in this period"} />
+      <FilledHero
+        savings={savings}
+        eyebrow={SAVED_COPY[period]?.eyebrow ?? "Saved in this period"}
+      />
     );
   }
   if (fallback) {
     return (
       <FilledHero
         savings={fallback.savings}
-        eyebrow={FALLBACK_EYEBROWS[fallback.period] || "Saved in this period"}
-        note={QUIET_NOTES[period]}
+        eyebrow={FALLBACK_COPY[fallback.period]?.eyebrow ?? "Saved in this period"}
+        note={QUIET_NOTES[period]?.caption ?? null}
       />
     );
   }

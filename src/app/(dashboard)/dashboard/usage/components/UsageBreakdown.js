@@ -27,25 +27,25 @@ const VIEWS = {
     key: "rawModel",
     label: "Model",
     source: "byModel",
-    empty: "No usage by model in this period.",
+    emptyTitle: "No usage by model in this period.",
   },
   account: {
     key: "accountName",
     label: "Account",
     source: "byAccount",
-    empty: "No account usage in this period.",
+    emptyTitle: "No account usage in this period.",
   },
   apiKey: {
     key: "keyName",
     label: "API key",
     source: "byApiKey",
-    empty: "No API key usage in this period.",
+    emptyTitle: "No API key usage in this period.",
   },
   endpoint: {
     key: "endpoint",
     label: "Endpoint",
     source: "byEndpoint",
-    empty: "No endpoint usage in this period.",
+    emptyTitle: "No endpoint usage in this period.",
   },
 };
 
@@ -200,7 +200,7 @@ export default function UsageBreakdown({ stats }) {
         }
       />
       {!stats || groups.length === 0 ? (
-        <EmptyState icon="table_rows" title={config.empty} />
+        <EmptyState icon="table_rows" title={config.emptyTitle} />
       ) : (
         <section
           className="overflow-x-auto focus-visible:shadow-focus"

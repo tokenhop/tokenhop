@@ -165,22 +165,17 @@ export function saveStoredPeriod(value, storage = defaultStorage()) {
   }
 }
 
-/** Title copy per period for the shared quiet empty state. */
-export const QUIET_TITLES = {
-  today: "Quiet today",
-  "24h": "Quiet in the last 24h",
-  "7d": "Quiet in the last 7d",
-  "30d": "Quiet in the last 30d",
-  "60d": "Quiet in the last 60d",
-};
-
-/** Button copy per period for the "jump to a period with data" action. */
-export const SHOW_PERIOD_LABELS = {
-  today: "Show today",
-  "24h": "Show 24h",
-  "7d": "Show 7d",
-  "30d": "Show 30d",
-  "60d": "Show 60d",
+/**
+ * Per-period copy for the shared quiet empty state: `title` when the period is
+ * quiet, `actionLabel` for the "jump to a period with data" button. The keys
+ * are ones the i18n extractor reads, so the locale coverage guard checks them.
+ */
+export const QUIET_COPY = {
+  today: { title: "Quiet today", actionLabel: "Show today" },
+  "24h": { title: "Quiet in the last 24h", actionLabel: "Show 24h" },
+  "7d": { title: "Quiet in the last 7d", actionLabel: "Show 7d" },
+  "30d": { title: "Quiet in the last 30d", actionLabel: "Show 30d" },
+  "60d": { title: "Quiet in the last 60d", actionLabel: "Show 60d" },
 };
 
 /**

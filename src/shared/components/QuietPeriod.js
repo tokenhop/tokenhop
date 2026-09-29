@@ -12,8 +12,7 @@ import { useLocalBaseUrl } from "@/shared/hooks/useEndpointShell";
 import {
   formatRelativeFromNow,
   PERIOD_VALUES,
-  QUIET_TITLES,
-  SHOW_PERIOD_LABELS,
+  QUIET_COPY,
   smallestPeriodWithData,
 } from "@/shared/utils/period";
 
@@ -92,7 +91,7 @@ export default function QuietPeriod({
       compact={compact}
       className={className}
       icon="bedtime"
-      title={QUIET_TITLES[period] || "Quiet in this period"}
+      title={QUIET_COPY[period]?.title ?? "Quiet in this period"}
       body={
         <>
           <span>Last request</span> <time dateTime={lastRequestAt}>{relative}</time>
@@ -101,7 +100,7 @@ export default function QuietPeriod({
       action={
         jump && onSelectPeriod ? (
           <Button variant="secondary" size="sm" onClick={() => onSelectPeriod(target)}>
-            {SHOW_PERIOD_LABELS[target]}
+            {QUIET_COPY[target].actionLabel}
           </Button>
         ) : undefined
       }
