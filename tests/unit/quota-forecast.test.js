@@ -198,6 +198,21 @@ describe("forecast store", () => {
     expect(getQuotaForecasts("c1", NOW)["5h"].remainingPct).toBe(90);
   });
 
+  it("a late sample never clears history or moves resetAt", () => {
+    const record = (remaining, t, resetAt = NOW + 5 * HOUR) =>
+      recordQuotaSample("c1", "5h", { remaining, resetAt }, t);
+    record(90, NOW - 30 * MIN);
+    record(85, NOW - 20 * MIN);
+    record(80, NOW - 10 * MIN);
+    record(95, NOW - 25 * MIN); // stale higher remaining (would look like a reset)
+    record(80, NOW - 15 * MIN, NOW + 10 * HOUR); // stale shifted resetAt
+    record(75, NOW);
+    const f = getQuotaForecasts("c1", NOW)["5h"];
+    expect(f.sampleCount).toBe(4);
+    expect(f.remainingPct).toBe(75);
+    expect(f.resetAt).toBe(new Date(NOW + 5 * HOUR).toISOString());
+  });
+
   it("bounds samples per key and keys store-wide", () => {
     const reset = new Date(NOW + HOUR).toISOString();
     // 45s spacing beats the 30s dedupe and stays inside the lookback window.

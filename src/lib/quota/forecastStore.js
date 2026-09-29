@@ -70,8 +70,11 @@ export function recordQuotaSample(connectionId, quotaKey, { remaining, resetAt }
       map.set(key, entry);
     }
 
-    // New window: remaining jumped back up, or the reset moved.
+    // Reject out-of-order samples before touching history or resetAt.
     const last = entry.samples[entry.samples.length - 1];
+    if (last && t < last.t) return;
+
+    // New window: remaining jumped back up, or the reset moved.
     if (last && clamped > last.remaining + RESET_JUMP_PTS) {
       entry.samples = [];
     } else if (
@@ -86,7 +89,6 @@ export function recordQuotaSample(connectionId, quotaKey, { remaining, resetAt }
 
     const tail = entry.samples[entry.samples.length - 1];
     if (tail) {
-      if (t < tail.t) return;
       if (t - tail.t < DEDUPE_MS) {
         entry.samples[entry.samples.length - 1] = { t, remaining: clamped };
         entry.touched = t;

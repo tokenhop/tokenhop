@@ -5,7 +5,6 @@ import {
   AUTO_REFRESH_STORAGE_KEY,
   CLAUDE_REFRESH_INTERVAL_MS,
   REFRESH_INTERVAL_MS,
-  attachForecasts,
   buildLoadingState,
   filterQuotaStateByConnections,
   getProviderOptions,
@@ -14,6 +13,7 @@ import {
   parseQuotaData,
   setQuotaCache,
 } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
+import { attachForecasts } from "@/app/(dashboard)/dashboard/quota/lib/quotaForecastJoin.js";
 
 /**
  * useQuotaData — fetching + refresh state extracted from QuotaPageClient.

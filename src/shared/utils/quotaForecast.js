@@ -19,13 +19,6 @@ const ICON_BY_STATE = {
   idle: "bedtime",
 };
 
-const LEAD_BY_STATE = {
-  "will-run-out": "At this pace, empty in",
-  tight: "Cutting it close, empty in",
-  "on-track": "On track",
-  idle: "Idle lately",
-};
-
 /**
  * Approximate a duration for forecast display: "<1m", "~Nm", "~Nh",
  * "~Nd Nh" (< 7d, drops "0h"), "~Nd" (>= 7d). Null for non-finite/negative.
@@ -36,15 +29,15 @@ const LEAD_BY_STATE = {
 export function formatApproxDuration(ms) {
   if (!Number.isFinite(ms) || ms < 0) return null;
   if (ms < MINUTE_MS) return "<1m";
-  if (ms < HOUR_MS) return `~${Math.round(ms / MINUTE_MS)}m`;
-  if (ms < DAY_MS) return `~${Math.round(ms / HOUR_MS)}h`;
-  if (ms < WEEK_MS) {
-    const days = Math.floor(ms / DAY_MS);
-    const hours = Math.round((ms - days * DAY_MS) / HOUR_MS);
-    if (hours === 0) return `~${days}d`;
-    return `~${days}d ${hours}h`;
-  }
-  return `~${Math.round(ms / DAY_MS)}d`;
+  // Round to the displayed unit first so 59.6m reads "~1h", not "~60m".
+  const minutes = Math.round(ms / MINUTE_MS);
+  if (minutes < 60) return `~${minutes}m`;
+  const hours = Math.round(ms / HOUR_MS);
+  if (hours < 24) return `~${hours}h`;
+  if (ms >= WEEK_MS) return `~${Math.round(ms / DAY_MS)}d`;
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  return rest === 0 ? `~${days}d` : `~${days}d ${rest}h`;
 }
 
 function toTime(value) {
@@ -67,14 +60,13 @@ function burnText(burn) {
  *
  * @param {object|null|undefined} forecast Forecast object from the server contract.
  * @param {number} [now=Date.now()] Reference time in ms.
- * @returns {{ state: string, tone: string, icon: string, lead: string, emptyIn: string|null, resetsIn: string|null, burnRate: string, sampleWindow: string }|null}
+ * @returns {{ state: string, tone: string, icon: string, emptyIn: string|null, resetsIn: string|null, burnRate: string, sampleWindow: string }|null}
  */
 export function describeForecast(forecast, now = Date.now()) {
   if (!forecast || forecast.state === "unknown" || !(forecast.state in TONE_BY_STATE)) return null;
   const { state } = forecast;
   const tone = TONE_BY_STATE[state];
   const icon = ICON_BY_STATE[state];
-  const lead = LEAD_BY_STATE[state];
   const showsEmpty = state === "will-run-out" || state === "tight";
   const emptyAt = showsEmpty ? toTime(forecast.emptyAt) : null;
   const emptyIn = emptyAt == null ? null : formatApproxDuration(emptyAt - now);
@@ -83,7 +75,7 @@ export function describeForecast(forecast, now = Date.now()) {
   const burn = Number.isFinite(forecast.burnPctPerHour) ? forecast.burnPctPerHour : null;
   const burnRate = burnText(burn);
   const sampleWindow = formatApproxDuration(Number(forecast.sampleSpanMs)) ?? "<1m";
-  return { state, tone, icon, lead, emptyIn, resetsIn, burnRate, sampleWindow };
+  return { state, tone, icon, emptyIn, resetsIn, burnRate, sampleWindow };
 }
 
 /**

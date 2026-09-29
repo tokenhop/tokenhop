@@ -29,13 +29,16 @@ describe("formatApproxDuration", () => {
     expect(formatApproxDuration(Number.NaN)).toBeNull();
     expect(formatApproxDuration(Number.POSITIVE_INFINITY)).toBeNull();
     expect(formatApproxDuration(-5)).toBeNull();
+    // Rounding carries into the next unit instead of "~60m" / "~2d 24h".
+    expect(formatApproxDuration(59.6 * 60_000)).toBe("~1h");
+    expect(formatApproxDuration((2 * 24 + 23.7) * 3_600_000)).toBe("~3d");
   });
 
   it("formats minutes and hours", () => {
     expect(formatApproxDuration(60_000)).toBe("~1m");
     expect(formatApproxDuration(45 * 60_000)).toBe("~45m");
     expect(formatApproxDuration(9 * 3600_000)).toBe("~9h");
-    expect(formatApproxDuration(23.6 * 3600_000)).toBe("~24h");
+    expect(formatApproxDuration(23.6 * 3600_000)).toBe("~1d");
   });
 
   it("formats day ranges and drops a zero hour", () => {
@@ -64,7 +67,6 @@ describe("describeForecast", () => {
       state: "will-run-out",
       tone: "err",
       icon: "warning",
-      lead: "At this pace, empty in",
       emptyIn: "~9h",
       resetsIn: "~1d 18h",
     });
@@ -81,7 +83,6 @@ describe("describeForecast", () => {
     expect(described).toMatchObject({
       tone: "warn",
       icon: "hourglass_top",
-      lead: "Cutting it close, empty in",
       emptyIn: "~1d 17h",
     });
   });
@@ -91,7 +92,6 @@ describe("describeForecast", () => {
     expect(described).toMatchObject({
       tone: "muted",
       icon: "check_circle",
-      lead: "On track",
       emptyIn: null,
     });
     expect(described.burnRate).toBe("~1.1%/h");
@@ -105,7 +105,6 @@ describe("describeForecast", () => {
     expect(described).toMatchObject({
       tone: "muted",
       icon: "bedtime",
-      lead: "Idle lately",
       emptyIn: null,
     });
     expect(described.burnRate).toBe("~0%/h");

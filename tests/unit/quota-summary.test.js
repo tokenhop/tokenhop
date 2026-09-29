@@ -7,10 +7,8 @@ import {
   getWorstForecast,
   summarizeQuotaHealth,
 } from "@/app/(dashboard)/dashboard/quota/quotaSummary.js";
-import {
-  attachForecasts,
-  sortVisibleConnections,
-} from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
+import { sortVisibleConnections } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
+import { attachForecasts } from "@/app/(dashboard)/dashboard/quota/lib/quotaForecastJoin.js";
 
 const quota = (remaining, resetAt = null) => ({
   name: "Window",

@@ -49,7 +49,7 @@ export default function QuotaForecastLine({ forecast, showReset = false, classNa
         // biome-ignore lint/a11y/noNoninteractiveTabindex: tooltip anchor must be keyboard-focusable so the tip opens on focus (WCAG 2.1.1, YAN-401).
         tabIndex={0}
         className={cn(
-          "flex min-w-0 items-center gap-1.5 text-xs rounded focus-visible:shadow-focus",
+          "-my-3 flex min-w-0 items-center gap-1.5 rounded py-3 text-xs focus-visible:shadow-focus",
           TONE_CLASS[tone],
           className,
         )}
@@ -60,13 +60,13 @@ export default function QuotaForecastLine({ forecast, showReset = false, classNa
         {state === "will-run-out" && (
           <>
             <span className={leadClass}>At this pace, empty in</span>{" "}
-            <span className="tabular-nums">{emptyIn}</span>
+            {emptyIn && <span className="tabular-nums">{emptyIn}</span>}
           </>
         )}
         {state === "tight" && (
           <>
             <span className={leadClass}>Cutting it close, empty in</span>{" "}
-            <span className="tabular-nums">{emptyIn}</span>
+            {emptyIn && <span className="tabular-nums">{emptyIn}</span>}
           </>
         )}
         {state === "on-track" && <span className={leadClass}>On track</span>}
