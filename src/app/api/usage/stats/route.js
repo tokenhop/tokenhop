@@ -27,11 +27,11 @@ export async function GET(request) {
       const now = Date.now();
       const currentRange = { start: periodStart(period, now), end: now };
       const previousRange = previousPeriodRange(period, now);
-      return NextResponse.json({
-        ...stats,
-        currentTotals: await getUsageTotals(currentRange),
-        previous: await getUsageTotals(previousRange),
-      });
+      const [currentTotals, previous] = await Promise.all([
+        getUsageTotals(currentRange),
+        getUsageTotals(previousRange),
+      ]);
+      return NextResponse.json({ ...stats, currentTotals, previous });
     }
     return NextResponse.json(stats);
   } catch (error) {

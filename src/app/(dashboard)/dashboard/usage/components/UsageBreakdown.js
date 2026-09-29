@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
 import SegmentedControl from "@/shared/components/SegmentedControl";
@@ -62,7 +62,7 @@ const VIEWS = {
  * @param {object} props
  * @param {object|null} props.stats stats shape from /api/usage/stats
  */
-export default function UsageBreakdown({ stats }) {
+function UsageBreakdown({ stats }) {
   const [view, setView] = useState("model");
   const [mode, setMode] = useState("costs");
   const [sortBy, setSortBy] = useState("totalCost");
@@ -348,3 +348,5 @@ export default function UsageBreakdown({ stats }) {
 UsageBreakdown.propTypes = {
   stats: PropTypes.object,
 };
+
+export default memo(UsageBreakdown);

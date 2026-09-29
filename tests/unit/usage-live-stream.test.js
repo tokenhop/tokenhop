@@ -48,7 +48,7 @@ describe("buildLivePayload", () => {
         { model: "gpt-5", provider: "openai", account: "Work", count: 1 },
         { model: "gpt-5-mini", provider: "openai", account: "Home", count: 2 },
       ],
-      recentRequests: [{ provider: "anthropic" }],
+      lastProvider: "anthropic",
       errorProvider: "openai",
     });
     expect(payload).toEqual({
@@ -64,7 +64,7 @@ describe("buildLivePayload", () => {
     );
     const payload = buildLivePayload({
       activeRequests: worstActive.map((a, i) => ({ ...a, count: i + 1 })),
-      recentRequests: worstRecent,
+      lastProvider: worstRecent[0].provider,
     });
     expect(payload.activeRequests).toHaveLength(LIVE_ACTIVE_CAP);
     expect(payload.activeRequests[0].count).toBe(worstActive.length);
@@ -72,20 +72,46 @@ describe("buildLivePayload", () => {
     expect(payload.lastProvider).toBe(worstRecent[0].provider);
   });
 
-  it("stays under 2048 bytes for the worst case", async () => {
+  it("stays under 2048 bytes in the true worst case", async () => {
     const { buildLivePayload } = await import("../../src/lib/usage/livePayload.js");
     const huge = "p".repeat(500);
     const payload = buildLivePayload({
       activeRequests: Array.from({ length: 500 }, (_, i) => ({
-        provider: `${huge}-${i}`,
+        provider: `${String(i).padStart(3, "0")}${huge}`,
         model: huge,
         account: huge,
-        count: 999999,
+        count: 9_999_999,
       })),
-      recentRequests: [{ provider: huge }],
+      lastProvider: huge,
       errorProvider: huge,
     });
     expect(JSON.stringify(payload).length).toBeLessThan(2048);
+  });
+
+  it("keeps providers sharing a long prefix separate (clip happens after aggregation)", async () => {
+    const { buildLivePayload } = await import("../../src/lib/usage/livePayload.js");
+    const prefix = "p".repeat(60);
+    const payload = buildLivePayload({
+      activeRequests: [
+        { provider: `${prefix}-a`, count: 1 },
+        { provider: `${prefix}-b`, count: 2 },
+      ],
+      lastProvider: `${prefix}-a`,
+    });
+    // Two distinct ids never merge into one count, even though both clip to
+    // the same 40-char string on the wire.
+    expect(payload.activeRequests).toEqual([
+      { provider: "p".repeat(40), count: 2 },
+      { provider: "p".repeat(40), count: 1 },
+    ]);
+  });
+
+  it("skips null or malformed active entries", async () => {
+    const { buildLivePayload } = await import("../../src/lib/usage/livePayload.js");
+    const payload = buildLivePayload({
+      activeRequests: [null, undefined, { count: 7 }, { provider: "openai", count: 1 }],
+    });
+    expect(payload.activeRequests).toEqual([{ provider: "openai", count: 1 }]);
   });
 
   it("defaults empty live fields", async () => {
@@ -155,16 +181,39 @@ describe("streamReducer", () => {
       streamReducer(initialStreamState({ hidden: false, tab: "overview" }), { type: "bogus" }),
     ).toThrow();
   });
+
+  it("a reconnect after an error asks for one catch-up only while open", async () => {
+    const { initialStreamState, streamReducer } = await load();
+    const open = initialStreamState({ hidden: false, tab: "overview" });
+    const reconnected = streamReducer(open, { type: "reconnected" });
+    expect(reconnected.needsCatchUp).toBe(true);
+    expect(reconnected.open).toBe(true);
+    // Not a catch-up trigger on its own: it can't stack while one is pending.
+    expect(streamReducer(reconnected, { type: "reconnected" })).toBe(reconnected);
+
+    // A closed stream (hidden or logs tab) reconnects silently.
+    const closed = streamReducer(open, { type: "visibility", hidden: true });
+    expect(streamReducer(closed, { type: "reconnected" })).toBe(closed);
+  });
 });
 
 describe("/api/usage/stream", () => {
-  it("sends exactly one slim frame per event and never calls getUsageStats", async () => {
-    const routePath = new URL("../../src/app/api/usage/stream/route.js", import.meta.url);
-    // The route must not import the full-history aggregator at all.
-    expect(fs.readFileSync(routePath, "utf8")).not.toMatch(/getUsageStats/);
-
-    const { GET } = await import("../../src/app/api/usage/stream/route.js");
+  it("sends slim frames built from getLiveSnapshot", async () => {
+    vi.resetModules();
+    vi.doMock("@/lib/usageDb", async (original) => {
+      const actual = await original();
+      return { ...actual, getLiveSnapshot: vi.fn() };
+    });
+    const route = await import("../../src/app/api/usage/stream/route.js");
+    const { GET } = route;
     const { statsEmitter } = await import("@/lib/db/index.js");
+    const usageDb = await import("@/lib/usageDb");
+    usageDb.getLiveSnapshot.mockResolvedValue({
+      activeRequests: [{ provider: "openai", count: 1 }],
+      lastProvider: "openai",
+      errorProvider: "",
+    });
+
     const res = await GET(new Request("http://localhost/api/usage/stream"));
     expect(res.headers.get("Content-Type")).toBe("text/event-stream");
 
@@ -186,24 +235,54 @@ describe("/api/usage/stream", () => {
         "lastProvider",
       ]);
       expect(first).not.toHaveProperty("totalRequests");
+      // The whole frame comes from getLiveSnapshot alone.
+      expect(usageDb.getLiveSnapshot).toHaveBeenCalled();
+      expect(first).toEqual({
+        activeRequests: [{ provider: "openai", count: 1 }],
+        lastProvider: "openai",
+        errorProvider: "",
+      });
 
       statsEmitter.emit("pending");
       const second = await readFrame();
+      expect(usageDb.getLiveSnapshot.mock.calls.length).toBeGreaterThan(1);
       expect(Object.keys(second).sort()).toEqual([
         "activeRequests",
         "errorProvider",
         "lastProvider",
       ]);
       expect(second).not.toHaveProperty("totalRequests");
-
-      // A live pending request shows up in the next frame.
-      db.trackPendingRequest("gpt-5", "openai", "conn-live-1", true);
-      statsEmitter.emit("pending");
-      const third = await readFrame();
-      expect(third.activeRequests).toEqual([{ provider: "openai", count: 1 }]);
     } finally {
-      db.trackPendingRequest("gpt-5", "openai", "conn-live-1", false);
       await reader.cancel();
     }
+  });
+
+  it("getLiveSnapshot aggregates pending requests and reuses the newest ring entry", async () => {
+    db.trackPendingRequest("gpt-5", "openai", "conn-live-1", true);
+    try {
+      const snapshot = await db.getLiveSnapshot();
+      expect(snapshot.activeRequests).toEqual([{ provider: "openai", count: 1 }]);
+    } finally {
+      db.trackPendingRequest("gpt-5", "openai", "conn-live-1", false);
+    }
+
+    await db.saveRequestUsage({
+      timestamp: new Date().toISOString(),
+      provider: "ringlive",
+      model: "ring-live-model",
+      tokens: { prompt_tokens: 5 },
+      status: "ok",
+    });
+    expect((await db.getLiveSnapshot()).lastProvider).toBe("ringlive");
+
+    // Zero-token entries are not last usage, only inflight ring padding.
+    await db.saveRequestUsage({
+      timestamp: new Date().toISOString(),
+      provider: "zeroring",
+      model: "zero-ring-model",
+      tokens: {},
+      status: "ok",
+    });
+    expect((await db.getLiveSnapshot()).lastProvider).toBe("ringlive");
   });
 });

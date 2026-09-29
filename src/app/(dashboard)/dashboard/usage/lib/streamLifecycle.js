@@ -1,5 +1,5 @@
 /**
- * Initial stream state. The caller passes visibility after mounting; SSR starts visible.
+ * Initial stream state. Caller passes visibility at initialization; SSR assumes visible.
  * @param {{hidden: boolean, tab: "overview"|"logs"}} options
  * @returns {{hidden: boolean, tab: "overview"|"logs", open: boolean, needsCatchUp: boolean}}
  */
@@ -10,7 +10,7 @@ export function initialStreamState({ hidden, tab }) {
 /**
  * Track tab and document visibility; reopening requires one REST catch-up.
  * @param {ReturnType<typeof initialStreamState>} state
- * @param {{type: "visibility", hidden: boolean}|{type: "tab", tab: "overview"|"logs"}|{type: "caughtUp"}} action
+ * @param {{type: "visibility", hidden: boolean}|{type: "tab", tab: "overview"|"logs"}|{type: "caughtUp"}|{type: "reconnected"}} action
  * @returns {ReturnType<typeof initialStreamState>}
  */
 export function streamReducer(state, action) {
@@ -25,6 +25,11 @@ export function streamReducer(state, action) {
     }
     case "caughtUp":
       return state.needsCatchUp ? { ...state, needsCatchUp: false } : state;
+    case "reconnected":
+      // An EventSource reopen after an error replays the backlog, but the
+      // REST stats may have moved on: ask for one catch-up when the stream
+      // is actually open.
+      return state.open && !state.needsCatchUp ? { ...state, needsCatchUp: true } : state;
     default:
       throw new Error(`streamReducer: unknown action "${action?.type}"`);
   }

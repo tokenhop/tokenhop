@@ -3,7 +3,6 @@ import {
   sortRows,
   groupRows,
   sharePct,
-  periodDelta,
   shapeChartSeries,
   buildCurl,
 } from "@/app/(dashboard)/dashboard/usage/lib/usageShapes.js";
@@ -80,15 +79,6 @@ describe("groupRows + sharePct", () => {
     expect(sharePct(x.summary.requests, total)).toBe(50);
     expect(sharePct(5, 0)).toBe(0);
     expect(groupRows(null, "rawModel")).toEqual([]);
-  });
-});
-
-describe("periodDelta", () => {
-  it("up", () => expect(periodDelta(150, 100)).toEqual({ pct: 50, up: true }));
-  it("down", () => expect(periodDelta(50, 100)).toEqual({ pct: -50, up: false }));
-  it("zero previous → null pct", () => {
-    expect(periodDelta(10, 0)).toEqual({ pct: null, up: true });
-    expect(periodDelta(0, 0)).toEqual({ pct: null, up: false });
   });
 });
 

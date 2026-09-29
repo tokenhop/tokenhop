@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import PropTypes from "prop-types";
 import StatTile from "@/shared/components/StatTile";
 import { Skeleton } from "@/shared/components/Loading";
@@ -72,15 +73,15 @@ TrendLine.propTypes = {
  * @param {object|null} [props.previous] previous-window totals (same source as currentTotals)
  * @param {object|null} [props.currentTotals] current-window totals from getUsageTotals
  * @param {Array|null} [props.buckets] chart buckets shaped by shapeChartSeries (sparklines)
- * @param {string} [props.period] selected period (trend caption)
+ * @param {string} props.period selected period (trend caption)
  */
-export default function UsageStatsCards({
+function UsageStatsCards({
   stats,
   loading = false,
   previous = null,
   currentTotals = null,
   buckets = null,
-  period = "",
+  period,
 }) {
   if (loading || !stats) {
     return (
@@ -164,5 +165,7 @@ UsageStatsCards.propTypes = {
   previous: PropTypes.object,
   currentTotals: PropTypes.object,
   buckets: PropTypes.array,
-  period: PropTypes.string,
+  period: PropTypes.string.isRequired,
 };
+
+export default memo(UsageStatsCards);

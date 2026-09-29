@@ -142,6 +142,8 @@ Pure reducer tests follow `tests/unit/console-log.test.js`. The node env has no 
 
 ---
 
+> **As shipped (post-review):** the live payload is `{ activeRequests: [{provider, count}], lastProvider, errorProvider }`, aggregated per provider, capped at 24 and with ids clipped to 40 chars (worst case 1,865 B), built from `getLiveSnapshot()` (replaces `getActiveRequests`). The reducer adds a `reconnected` action for EventSource auto-reconnects. `useUsageStats` also returns `retry` and `catchUpKey`, and `useChartBuckets(period, enabled, refreshKey)` returns `bucketsPeriod`. The row button reuses the existing "Detail" key. The contracts below are the original design.
+
 ## Contracts (all tasks code against these; do not deviate)
 
 **`src/lib/usage/livePayload.js`** (pure, new):

@@ -86,12 +86,21 @@ describe("getUsageTotals", () => {
     seed(start, 10, 5, 0.5, { prompt_tokens: 10, cached_tokens: 3 });
     seed(start + 1, 0, 0, 1.25, { input_tokens: 20, output_tokens: 8, cache_read_input_tokens: 4 });
     seed(end - 1, 2, 3, 0.25, { prompt_tokens: 2, cached_tokens: 1 });
+    seed(end - 1, 0, 0, 0, {
+      prompt_tokens: 0,
+      input_tokens: 500,
+      cached_tokens: 0,
+      cache_read_input_tokens: 40,
+    });
     seed(end, 99, 99, 99, { cached_tokens: 99 });
+    // The second fallback aliases count even when earlier fields hold 0:
+    // prompt_tokens 0 falls through to input_tokens, cached_tokens 0 to
+    // cache_read_input_tokens — the zero-prefixed row's aliases stay.
     expect(await db.getUsageTotals({ start, end })).toEqual({
-      requests: 3,
-      promptTokens: 32,
+      requests: 4,
+      promptTokens: 532,
       completionTokens: 8,
-      cachedTokens: 8,
+      cachedTokens: 48,
       cost: 2,
     });
   });

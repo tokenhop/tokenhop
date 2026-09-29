@@ -2,7 +2,7 @@
 export {
   statsEmitter,
   trackPendingRequest,
-  getActiveRequests,
+  getLiveSnapshot,
   saveRequestUsage,
   getUsageHistory,
   getUsageStats,

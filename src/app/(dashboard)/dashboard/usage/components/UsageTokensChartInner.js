@@ -22,6 +22,20 @@ const fmtTokens = (n) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n || 0);
 const fmtCost = (n) => `$${(n || 0).toFixed(4)}`;
 
+// Shaped chart bucket (shapeChartSeries output). Every field is optional:
+// buckets may lack a field entirely, which the 0-default formatters handle.
+const BUCKETS_PROP = PropTypes.arrayOf(
+  PropTypes.shape({
+    label: PropTypes.string,
+    input: PropTypes.number,
+    cached: PropTypes.number,
+    output: PropTypes.number,
+    tokens: PropTypes.number,
+    cost: PropTypes.number,
+    requests: PropTypes.number,
+  }),
+);
+
 function cssVar(name, fallback) {
   if (typeof window === "undefined") return fallback;
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
@@ -190,8 +204,8 @@ export default function UsageTokensChartInner({
                   </tr>
                 </thead>
                 <tbody>
-                  {buckets.map((d) => (
-                    <tr key={d.label}>
+                  {buckets.map((d, i) => (
+                    <tr key={`${d.label}-${i}`}>
                       <th scope="row">{d.label}</th>
                       <td>{fmtTokens(d.input)}</td>
                       <td>{fmtTokens(d.cached)}</td>
@@ -210,7 +224,7 @@ export default function UsageTokensChartInner({
 }
 
 UsageTokensChartInner.propTypes = {
-  buckets: PropTypes.array,
+  buckets: BUCKETS_PROP,
   loading: PropTypes.bool,
   error: PropTypes.string,
   onRetry: PropTypes.func,

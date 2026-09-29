@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Card,
@@ -16,10 +17,13 @@ import useUsageStats from "./lib/useUsageStats";
 import { useChartBuckets } from "./lib/useChartBuckets";
 import useProviders from "./lib/useProviders";
 import UsageStatsCards from "./components/UsageStatsCards";
-import UsageTokensChart from "./components/UsageTokensChart";
 import UsageBreakdown from "./components/UsageBreakdown";
 import UsageTopology from "./components/UsageTopology";
 import RequestLog from "./components/RequestLog";
+
+const UsageTokensChart = dynamic(() => import("./components/UsageTokensChart"), {
+  loading: () => <CardSkeleton />,
+});
 
 // The "Request log" tab is now RequestLog. Sorting is local state inside
 // UsageBreakdown (old ?sortBy= URL sync removed — it fought the tab router).
@@ -54,15 +58,21 @@ function UsageContent() {
       : tabFromUrl === "overview"
         ? "overview"
         : "overview";
-  const { stats, statsPeriod, live, loading, error, retry } = useUsageStats(period, {
+  const { stats, statsPeriod, live, loading, error, retry, catchUpKey } = useUsageStats(period, {
     tab: activeTab,
   });
   const providers = useProviders();
   const quiet =
     Boolean(stats) && statsPeriod === period && !loading && !error && !stats.totalRequests;
   const activity = useLastActivity(quiet);
-  // One chart fetch feeds both the tile sparklines and the tokens chart.
-  const chart = useChartBuckets(period, activeTab === "overview" && !quiet);
+  // One chart fetch feeds both the tile sparklines and the tokens chart. It
+  // stays off until the stats fetch proved the period isn't quiet; catchUpKey
+  // re-fetches after a live-stream catch-up without flashing the skeleton.
+  const chart = useChartBuckets(
+    period,
+    activeTab === "overview" && stats !== null && statsPeriod === period && !quiet,
+    catchUpKey,
+  );
 
   // Params come from useSearchParams, which already carries ?period= once a
   // period is chosen, so the period survives tab switches.
@@ -129,14 +139,14 @@ function UsageContent() {
                   loading={period === null || loading || statsPeriod !== period}
                   previous={statsPeriod === period ? stats?.previous : null}
                   currentTotals={statsPeriod === period ? stats?.currentTotals : null}
-                  buckets={chart.buckets}
+                  buckets={chart.bucketsPeriod === period ? chart.buckets : null}
                   period={period ?? ""}
                 />
               </Suspense>
               {period ? (
                 <UsageTokensChart
                   buckets={chart.buckets}
-                  loading={chart.loading}
+                  loading={chart.loading || (chart.bucketsPeriod !== period && !chart.error)}
                   error={chart.error}
                   onRetry={chart.retry}
                 />
@@ -149,7 +159,8 @@ function UsageContent() {
             lastProvider={live.lastProvider}
             errorProvider={live.errorProvider}
           />
-          {!quiet && (stats ? <UsageBreakdown stats={stats} /> : <CardSkeleton />)}
+          {!quiet &&
+            (statsPeriod === period && stats ? <UsageBreakdown stats={stats} /> : <CardSkeleton />)}
         </div>
       ) : (
         <RequestLog />

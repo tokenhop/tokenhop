@@ -23,10 +23,11 @@ const getInput = (t) => {
 /**
  * Stable DOM id for one request row: the Details button points
  * `aria-describedby` at the row's model and timestamp cells. Request ids can
- * contain characters that are hostile to CSS id selectors, so anything
- * outside [A-Za-z0-9_-] collapses to a single dash.
+ * contain characters that are hostile to CSS id selectors, so runs of
+ * disallowed characters collapse to a single dash. The row index is suffixed
+ * so duplicate request ids still yield unique DOM ids.
  */
-const rowDomId = (id) => `req-${String(id).replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+const rowDomId = (id, index) => `req-${String(id).replace(/[^A-Za-z0-9_-]+/g, "-")}-${index}`;
 
 /**
  * Request log: paginated /api/usage/request-details table built on the shared
@@ -57,18 +58,20 @@ export default function RequestLog() {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     (async () => {
       try {
-        const res = await fetch("/api/usage/providers");
+        const res = await fetch("/api/usage/providers", { signal: controller.signal });
         const data = await res.json();
         if (!cancelled) setProviders(data.providers || []);
-        const nodesRes = await fetch("/api/provider-nodes");
+        const nodesRes = await fetch("/api/provider-nodes", { signal: controller.signal });
         const nodesData = await nodesRes.json();
         if (cancelled) return;
         const nodeNames = {};
         for (const node of nodesData.nodes || []) nodeNames[node.id] = node.name;
         setNameCache({ ...AI_PROVIDERS, ...nodeNames });
       } catch (e) {
+        if (e?.name === "AbortError") return;
         // Non-fatal: without this list the table still renders raw provider
         // ids, so the log keeps working.
         console.error("Failed to fetch providers:", e);
@@ -76,6 +79,7 @@ export default function RequestLog() {
     })();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, []);
 
@@ -118,8 +122,14 @@ export default function RequestLog() {
 
   useEffect(() => {
     // An invalid range keeps the current data instead of querying a window
-    // the API cannot satisfy; fixing the dates refetches.
-    if (dateRangeError) return;
+    // the API cannot satisfy; fixing the dates refetches. Abort any
+    // in-flight request so it cannot overwrite the kept data — its finally
+    // skips setLoading(false) on abort, so clear it here (idempotent).
+    if (dateRangeError) {
+      requestRef.current?.abort();
+      setLoading(false);
+      return;
+    }
     fetchDetails();
   }, [fetchDetails, dateRangeError]);
 
@@ -249,8 +259,8 @@ export default function RequestLog() {
                   </tr>
                 </thead>
                 <tbody>
-                  {details.map((d) => {
-                    const rowId = rowDomId(d.id);
+                  {details.map((d, index) => {
+                    const rowId = rowDomId(d.id, index);
                     return (
                       <tr
                         key={`${d.id}|${d.timestamp}`}
