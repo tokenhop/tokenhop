@@ -15,6 +15,7 @@ import {
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { getProviderBrand } from "@/shared/constants/providerBrands";
 import { getMediaProviderStatus, resolveToggleAction } from "@/shared/constants/mediaStatus";
+import { partitionMediaProviders } from "./mediaProviderSections";
 
 /**
  * Media provider card with Signal styling: provider tile, name, status pill,
@@ -199,6 +200,9 @@ ComboList.propTypes = {
 
 /**
  * Media provider grid with loading/empty/error states (YAN-305).
+ * Connected providers (any stored connection) come first under a labelled
+ * "Connected" heading, then the rest under "All providers" (YAN-402).
+ * When nothing is connected the two sections collapse into one plain grid.
  */
 export function MediaProviderGrid({
   providers,
@@ -212,6 +216,30 @@ export function MediaProviderGrid({
   emptyBody,
   emptyAction,
 }) {
+  const { connected, others } = partitionMediaProviders(providers, connections);
+
+  const gridItems = (entries) =>
+    entries.map((provider) => (
+      <li key={provider.id} className="min-w-0">
+        <MediaProviderCard
+          provider={provider}
+          kind={kind}
+          connections={connections}
+          isCustom={!!provider.isCustom}
+          onToggle={onToggle}
+        />
+      </li>
+    ));
+
+  const grid = (entries, labelledBy) => (
+    <ul
+      className="grid list-none grid-cols-1 gap-3.5 p-0 sm:grid-cols-2"
+      {...(labelledBy ? { "aria-labelledby": labelledBy } : { "aria-label": "Providers" })}
+    >
+      {gridItems(entries)}
+    </ul>
+  );
+
   if (loading) {
     return (
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2" aria-busy="true">
@@ -266,20 +294,34 @@ export function MediaProviderGrid({
     );
   }
 
+  // Nothing owned yet: one flat grid, no section headings (YAN-402).
+  if (connected.length === 0) {
+    return grid(others);
+  }
+
   return (
-    <ul className="grid list-none grid-cols-1 gap-3.5 p-0 sm:grid-cols-2" aria-label="Providers">
-      {providers.map((provider) => (
-        <li key={provider.id} className="min-w-0">
-          <MediaProviderCard
-            provider={provider}
-            kind={kind}
-            connections={connections}
-            isCustom={!!provider.isCustom}
-            onToggle={onToggle}
-          />
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-5">
+      <section aria-labelledby="media-connected-heading">
+        <h2
+          id="media-connected-heading"
+          className="mb-3.5 font-display text-[22px] font-bold tracking-tight text-text"
+        >
+          Connected
+        </h2>
+        {grid(connected, "media-connected-heading")}
+      </section>
+      {others.length > 0 && (
+        <section aria-labelledby="media-all-heading">
+          <h2
+            id="media-all-heading"
+            className="mb-3.5 font-display text-[22px] font-bold tracking-tight text-text"
+          >
+            All providers
+          </h2>
+          {grid(others, "media-all-heading")}
+        </section>
+      )}
+    </div>
   );
 }
 

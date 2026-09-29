@@ -111,11 +111,22 @@ describe("formatBadge", () => {
 });
 
 describe("media tabs", () => {
-  it("lists visible kinds plus web fetch & search", () => {
+  it("lists visible kinds plus web fetch and search", () => {
     expect(VISIBLE_MEDIA_KINDS[0]).toBe("embedding");
     const last = MEDIA_TABS[MEDIA_TABS.length - 1];
     expect(last).toMatchObject({ id: "web", href: "/dashboard/media-providers/web" });
     expect(getMediaTabHref("embedding")).toBe("/dashboard/media-providers/embedding");
+  });
+
+  it("labels every tab sentence case (YAN-402)", () => {
+    expect(MEDIA_TABS.map((tab) => tab.label)).toEqual([
+      "Embedding",
+      "Text to image",
+      "Video",
+      "Text to speech",
+      "Speech to text",
+      "Web fetch and search",
+    ]);
   });
 });
 

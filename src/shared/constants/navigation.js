@@ -10,11 +10,11 @@ import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/mediaProviderKinds";
 export const VISIBLE_MEDIA_KINDS = ["embedding", "image", "video", "tts", "stt"];
 
 /**
- * Combined web entry item (Web Search & Fetch share one page).
+ * Combined web entry item (web search and fetch share one page).
  */
 export const COMBINED_WEB_ITEM = {
   id: "web",
-  label: "Web fetch & search",
+  label: "Web fetch and search",
   icon: "travel_explore",
   href: "/dashboard/media-providers/web",
 };

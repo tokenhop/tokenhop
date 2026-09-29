@@ -266,8 +266,10 @@ export function MediaPlayground({ kind, connections = [], className = "" }) {
         </div>
       ) : (
         <div className="flex flex-col gap-3.5">
-          {/* Model and Connection Selects */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {/* Model and Connection selects: stacked full width so the model
+              optgroup labels (provider) and full model ids stay readable
+              in the narrow aside (YAN-402). */}
+          <div className="flex flex-col gap-3">
             <Select
               label="Model"
               value={model}
