@@ -106,6 +106,7 @@ export {
   getUsageStats,
   getChartData,
   getUsageSavings,
+  getLastActivity,
   getHomeSummary,
   getLiveRoutesFeed,
   recordFallbackHop,

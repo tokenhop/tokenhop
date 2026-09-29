@@ -884,6 +884,7 @@ export async function getChartData(period = "7d") {
       output: 0,
       tokens: 0,
       cost: 0,
+      requests: 0,
     }));
 
     const rows = db.all(
@@ -907,6 +908,7 @@ export async function getChartData(period = "7d") {
         buckets[idx].output += output;
         buckets[idx].tokens += input + output;
         buckets[idx].cost += r.cost || 0;
+        buckets[idx].requests += 1;
       }
     }
     return buckets;
@@ -929,6 +931,7 @@ export async function getChartData(period = "7d") {
       output: 0,
       tokens: 0,
       cost: 0,
+      requests: 0,
     }));
 
     const rows = db.all(
@@ -951,6 +954,7 @@ export async function getChartData(period = "7d") {
       buckets[idx].output += output;
       buckets[idx].tokens += input + output;
       buckets[idx].cost += r.cost || 0;
+      buckets[idx].requests += 1;
     }
     return buckets;
   }
@@ -979,8 +983,15 @@ export async function getChartData(period = "7d") {
       output,
       tokens: input + output,
       cost: dayData ? dayData.cost || 0 : 0,
+      requests: dayData?.requests || 0,
     };
   });
+}
+
+export async function getLastActivity() {
+  const db = await getAdapter();
+  const row = db.get(`SELECT timestamp FROM usageHistory ORDER BY timestamp DESC LIMIT 1`);
+  return row?.timestamp ?? null;
 }
 
 function formatLogDate(date = new Date()) {

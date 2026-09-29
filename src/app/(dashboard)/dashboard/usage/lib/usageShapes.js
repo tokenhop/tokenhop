@@ -120,9 +120,10 @@ export function periodDelta(current, previous) {
 
 // Map API chart buckets to recharts rows.
 // Basic bucket {label,tokens,cost} (legacy shape) → tokens land in input.
-// Extended bucket {label,input,cached,output,tokens,cost}
+// Extended bucket {label,input,cached,output,tokens,cost,requests}
 // (from getChartData): input is cache-inclusive, cached is a subset of input,
-// tokens = input + output. cost passes through unchanged.
+// tokens = input + output. cost passes through unchanged; requests passes
+// through in both branches (default 0).
 export function shapeChartSeries(buckets) {
   return (buckets || []).map((b) => {
     const bucket = b || {};
@@ -137,6 +138,7 @@ export function shapeChartSeries(buckets) {
         output,
         cost: bucket.cost || 0,
         tokens: input + output,
+        requests: bucket.requests || 0,
       };
     }
     return {
@@ -146,6 +148,7 @@ export function shapeChartSeries(buckets) {
       output: 0,
       cost: bucket.cost || 0,
       tokens: bucket.tokens || 0,
+      requests: bucket.requests || 0,
     };
   });
 }
