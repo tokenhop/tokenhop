@@ -57,6 +57,22 @@ describe("Home resource store", () => {
     expect(onHomeFocus(stale + FOCUS_THROTTLE_MS)).toBe(2);
   });
 
+  it("never lets a superseded response overwrite a newer one", async () => {
+    const pending = [];
+    fetchMock.mockImplementation(
+      () => new Promise((resolve) => pending.push((body) => resolve(ok(body)))),
+    );
+    subscribe("/api/keys", () => {});
+    const stale = loadResource("/api/keys", { key: 0 });
+    const fresh = loadResource("/api/keys", { key: 1 }); // mutation bump mid-flight
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    pending[1]("fresh");
+    await fresh;
+    pending[0]("stale");
+    await stale;
+    expect(getSnapshot("/api/keys").data).toBe("fresh");
+  });
+
   it("keeps the last good data when a refresh fails", async () => {
     subscribe("/api/providers", () => {});
     await loadResource("/api/providers");

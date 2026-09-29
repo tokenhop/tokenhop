@@ -3,16 +3,17 @@
 import PropTypes from "prop-types";
 import { useState } from "react";
 import Card from "@/shared/components/Card";
+import CardLink from "@/shared/components/CardLink";
 import ProviderTile from "@/shared/components/ProviderTile";
 import RequestDetailDrawer, { providerLabel } from "../usage/components/RequestDetailDrawer";
 import { formatCompact, formatLatency, timeAgo } from "./format";
-import { CardLink, WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
+import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
 
 /**
  * Normalize either a requestDetails row or a usageStats recentRequests row
  * into the shape the Home recent-requests list expects.
  * @param {object} item
- * @returns {{ id: string, model: string, via: string, status: "ok"|"warn"|"err", tok: string, isErr: boolean, lat: string, t: string }}
+ * @returns {{ id: string, model: string, provider: string, via: string, status: "ok"|"warn"|"err", tok: string, isErr: boolean, lat: string, t: string }}
  */
 export function normalizeRecentRequest(item) {
   const statusStr = String(item?.status || "ok").toLowerCase();
@@ -67,10 +68,18 @@ export function normalizeRecentRequest(item) {
  * @param {Array<object>|null} props.details from /api/usage/request-details
  * @param {Array<object>|null} props.fallback from /api/usage/stats recentRequests
  * @param {boolean} props.loading
- * @param {string|null} props.error
+ * @param {string|null} props.error shown only when no rows can be rendered
+ * @param {string|null} [props.detailsError] request-details failure while fallback rows render
  * @param {() => void} props.onRetry
  */
-export default function RecentRequests({ details, fallback, loading, error, onRetry }) {
+export default function RecentRequests({
+  details,
+  fallback,
+  loading,
+  error,
+  detailsError,
+  onRetry,
+}) {
   const [selected, setSelected] = useState(null);
   const [open, setOpen] = useState(false);
 
@@ -95,9 +104,9 @@ export default function RecentRequests({ details, fallback, loading, error, onRe
         />
       ) : (
         <ul className="flex min-w-0 flex-col" aria-label="Recent requests">
-          {list.map((raw) => {
+          {list.map((raw, index) => {
             const item = normalizeRecentRequest(raw);
-            const errText = /err/i.test(item.tok) ? item.tok : `Error ${item.tok}`;
+            const errText = /^err/i.test(item.tok) ? "Error" : `Error ${item.tok}`;
             const row = (
               <>
                 <span
@@ -125,7 +134,10 @@ export default function RecentRequests({ details, fallback, loading, error, onRe
               </>
             );
             return (
-              <li key={item.id} className="border-t border-line first:border-t-0">
+              <li
+                key={raw?.id || `${item.id}-${index}`}
+                className="border-t border-line first:border-t-0"
+              >
                 {fromDetails ? (
                   <button
                     type="button"
@@ -134,7 +146,7 @@ export default function RecentRequests({ details, fallback, loading, error, onRe
                       setOpen(true);
                     }}
                     aria-haspopup="dialog"
-                    className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-lg px-2 py-2.5 text-start outline-none hover:bg-raised/60 focus-visible:shadow-focus"
+                    className="flex w-full items-center gap-3 rounded-lg py-2.5 text-start outline-none hover:bg-raised/60 focus-visible:shadow-focus"
                   >
                     {row}
                     <span className="sr-only">Request detail</span>
@@ -147,6 +159,16 @@ export default function RecentRequests({ details, fallback, loading, error, onRe
           })}
         </ul>
       );
+    if (!fromDetails && detailsError && list.length > 0) {
+      body = (
+        <>
+          {body}
+          <p className="mt-2 text-xs text-muted" aria-live="polite">
+            Couldn't load part of this page
+          </p>
+        </>
+      );
+    }
   }
 
   return (
@@ -167,6 +189,7 @@ RecentRequests.propTypes = {
   fallback: PropTypes.arrayOf(PropTypes.object),
   loading: PropTypes.bool,
   error: PropTypes.string,
+  detailsError: PropTypes.string,
   onRetry: PropTypes.func.isRequired,
 };
 

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import PropTypes from "prop-types";
 import Button from "@/shared/components/Button";
 import { LoadingState, ErrorState } from "@/shared/components/StateViews";
@@ -14,20 +13,6 @@ export function WidgetError({ message, onRetry }) {
 }
 
 WidgetError.propTypes = { message: PropTypes.string, onRetry: PropTypes.func.isRequired };
-
-/** Card header text link: client-side navigation with an arrow that mirrors in RTL. */
-export function CardLink({ href, children }) {
-  return (
-    <Link href={href} className="text-[13px] font-semibold text-coral-ink hover:text-coral">
-      {children}{" "}
-      <span aria-hidden="true" className="inline-block rtl:-scale-x-100">
-        →
-      </span>
-    </Link>
-  );
-}
-
-CardLink.propTypes = { href: PropTypes.string.isRequired, children: PropTypes.node.isRequired };
 
 /** Compact guided empty state with a link to the page that fixes the gap. */
 export function WidgetEmpty({ icon, title, body, actionLabel, actionHref }) {

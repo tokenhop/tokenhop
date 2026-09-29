@@ -3,10 +3,11 @@
 import Link from "next/link";
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
+import CardLink from "@/shared/components/CardLink";
 import ProviderTile from "@/shared/components/ProviderTile";
 import { deriveCommandCenterStatus } from "@/shared/utils/commandCenter";
 import { summarizeProviders } from "@/shared/utils/providerHealth";
-import { WidgetEmpty, WidgetError, WidgetSkeleton, CardLink } from "./WidgetStates";
+import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
 
 /**
  * Provider health: monogram tile grid with status dots plus a

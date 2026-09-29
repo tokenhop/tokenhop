@@ -1,15 +1,16 @@
 "use client";
 
 import PropTypes from "prop-types";
+import PageTitle from "@/shared/components/PageTitle";
 import PeriodControl from "@/shared/components/PeriodControl";
 import { deriveCommandCenterStatus } from "@/shared/utils/commandCenter";
 import { SUMMARY_PERIODS } from "@/shared/utils/period";
 import { summarizeProviders } from "@/shared/utils/providerHealth";
 
 /**
- * Home toolbar: derived status line and the period control. The status text
- * is plain English translated at render; the control labels come from the
- * shared period model (zh override lives in PeriodControl).
+ * Home page header: derived status line above the in-page H1, plus the period
+ * control. The status text is plain English translated at render; the control
+ * labels come from the shared period model (zh override lives in PeriodControl).
  *
  * @param {object} props
  * @param {Array<object>} props.connections provider connections for the status line
@@ -42,9 +43,7 @@ export default function HomeHeader({
         <p aria-live="polite" className="text-sm font-medium text-muted">
           {statusLine}
         </p>
-        <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-text lg:text-[42px] lg:leading-[1.05]">
-          Command center
-        </h1>
+        <PageTitle>Command center</PageTitle>
       </div>
       <PeriodControl
         aria-label="Stats period"

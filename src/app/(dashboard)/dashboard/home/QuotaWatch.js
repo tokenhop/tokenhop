@@ -2,11 +2,12 @@
 
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
+import CardLink from "@/shared/components/CardLink";
 import Meter from "@/shared/components/Meter";
 import ProviderTile from "@/shared/components/ProviderTile";
 import { pickLowestQuotaAccounts } from "@/shared/utils/commandCenter";
 import { formatReset } from "./format";
-import { CardLink, WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
+import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
 
 /**
  * Quota watch: 3 lowest cached accounts (no upstream probes). Each shows

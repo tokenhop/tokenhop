@@ -144,6 +144,7 @@ export default function HomePageClient() {
           fallback={usage.current?.recentRequests}
           loading={usage.loading || recent.loading}
           error={usage.error && recent.error ? usage.error : null}
+          detailsError={recent.error}
           onRetry={bump}
         />
       </div>

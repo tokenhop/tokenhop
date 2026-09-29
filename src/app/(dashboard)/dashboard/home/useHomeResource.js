@@ -18,7 +18,11 @@ const IDLE = { data: null, loading: false, error: null };
  * @returns {{ data: unknown, loading: boolean, error: string|null }}
  */
 export function useHomeResource(url, refreshKey = 0, { intervalMs = 0 } = {}) {
-  const [state, setState] = useState(() => (url ? { ...getSnapshot(url), loading: true } : IDLE));
+  const [state, setState] = useState(() => {
+    if (!url) return IDLE;
+    const snapshot = getSnapshot(url);
+    return { ...snapshot, loading: snapshot.data == null };
+  });
 
   useEffect(() => {
     if (!url) {
@@ -40,7 +44,7 @@ export function useHomeResource(url, refreshKey = 0, { intervalMs = 0 } = {}) {
   useEffect(() => {
     if (!url || intervalMs <= 0) return undefined;
     const timer = setInterval(() => {
-      if (!document.hidden) loadResource(url, { key: `poll:${Date.now()}` });
+      if (!document.hidden) loadResource(url, { key: "poll" });
     }, intervalMs);
     return () => clearInterval(timer);
   }, [url, intervalMs]);

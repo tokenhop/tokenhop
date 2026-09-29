@@ -2,11 +2,12 @@
 
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
+import CardLink from "@/shared/components/CardLink";
 import ModelChip from "@/shared/components/ModelChip";
 import StatusPill from "@/shared/components/StatusPill";
 import { pickTopCombos } from "@/shared/utils/commandCenter";
 import { formatCompact } from "./format";
-import { CardLink, WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
+import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
 
 /** Fallback strategies the routing layer understands: anything else falls back to Fallback. */
 export const KNOWN_FALLBACK_STRATEGIES = new Set(["fallback", "round-robin", "weighted", "fusion"]);

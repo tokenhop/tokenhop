@@ -85,20 +85,22 @@ export function loadResource(url, { key = 0 } = {}) {
         const payload = await response.json().catch(() => null);
         throw new Error(payload?.error || `Request failed (${response.status})`);
       }
-      entry.data = await response.json();
+      const data = await response.json();
+      // A newer request superseded this one: its result wins, never ours.
+      if (entry.inflight !== request) return;
+      entry.data = data;
       entry.error = null;
     } catch (error) {
+      if (entry.inflight !== request) return;
       entry.error = error?.message || "Unable to load data";
     } finally {
-      entry.at = Date.now();
       if (entry.inflight === request) {
+        entry.at = Date.now();
         entry.inflight = null;
         entry.inflightKey = null;
+        if (entry.subs.size === 0 && entries.get(url) === entry) entries.delete(url);
+        notify(entry);
       }
-      if (entry.subs.size === 0 && !entry.inflight && entries.get(url) === entry) {
-        entries.delete(url);
-      }
-      notify(entry);
     }
   })();
 
@@ -109,14 +111,16 @@ export function loadResource(url, { key = 0 } = {}) {
 }
 
 /**
- * Re-read every watched URL whose data is older than STALE_MS.
- * @param {number} [now]
+ * Re-read every live URL whose data is older than STALE_MS. Entries whose
+ * last listener just left are still in the map until the deferred delete, so
+ * a refreshKey re-subscribe in the same commit is never skipped.
+ * @param {number} now
  * @returns {number} how many requests started
  */
-export function refreshStaleResources(now = Date.now()) {
+function refreshStaleResources(now = Date.now()) {
   let started = 0;
   for (const [url, entry] of entries) {
-    if (entry.subs.size === 0 || entry.inflight || now - entry.at < STALE_MS) continue;
+    if (entry.inflight || now - entry.at < STALE_MS) continue;
     loadResource(url, { key: `stale:${now}` });
     started += 1;
   }

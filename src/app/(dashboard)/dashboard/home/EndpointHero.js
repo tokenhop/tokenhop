@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import PropTypes from "prop-types";
 import Button from "@/shared/components/Button";
 import Callout from "@/shared/components/Callout";
 import Card from "@/shared/components/Card";
+import CardLink from "@/shared/components/CardLink";
+import CopyField from "@/shared/components/CopyField";
 import StatusPill from "@/shared/components/StatusPill";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import CopyStatus from "@/shared/components/CopyStatus";
@@ -91,17 +92,17 @@ export default function EndpointHero({ origin, tunnel, loading, error, onRetry, 
         <StatusPill variant="ok" dot>
           OpenAI-compatible
         </StatusPill>
-        <Link
-          href="/dashboard/endpoint"
-          className="ms-auto shrink-0 text-[13px] font-semibold text-coral-ink hover:text-coral"
-        >
-          Endpoint settings
-        </Link>
+        <span className="ms-auto shrink-0">
+          <CardLink href="/dashboard/endpoint" showArrow={false}>
+            Endpoint settings
+          </CardLink>
+        </span>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="flex h-11 min-w-0 flex-1 items-center rounded-lg border border-dashed border-line bg-raised px-3">
-          <code className="min-w-0 flex-1 truncate font-mono text-sm text-text">{endpoint}</code>
+        <div className="min-w-0 flex-1">
+          {/* The lime Copy button is the one copy control for this value. */}
+          <CopyField value={endpoint} showCopyButton={false} className="border-dashed" />
         </div>
         <Button
           variant="primary"

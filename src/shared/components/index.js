@@ -10,6 +10,8 @@ export { default as Field } from "./Field";
 export { default as NumberStepper } from "./NumberStepper";
 export { default as UnitInput } from "./UnitInput";
 export { default as CopyField } from "./CopyField";
+export { default as CardLink } from "./CardLink";
+export { default as PageTitle } from "./PageTitle";
 export { default as CopyStatus } from "./CopyStatus";
 export { default as Kbd } from "./Kbd";
 export { default as Tabs } from "./Tabs";
