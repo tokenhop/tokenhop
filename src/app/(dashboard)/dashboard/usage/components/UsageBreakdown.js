@@ -1,12 +1,13 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
 import SegmentedControl from "@/shared/components/SegmentedControl";
 import EmptyState from "@/shared/components/EmptyState";
 import Meter from "@/shared/components/Meter";
 import ProviderTile from "@/shared/components/ProviderTile";
+import { TABLE_HEAD_CELL, TABLE_HEAD_ROW } from "@/shared/components/displayPrimitives";
 import { groupRows, sharePct, sortRows } from "../lib/usageShapes";
 
 const fmt = (n) => new Intl.NumberFormat().format(n || 0);
@@ -61,7 +62,7 @@ const VIEWS = {
  * @param {object} props
  * @param {object|null} props.stats stats shape from /api/usage/stats
  */
-export default function UsageBreakdown({ stats }) {
+function UsageBreakdown({ stats }) {
   const [view, setView] = useState("model");
   const [mode, setMode] = useState("costs");
   const [sortBy, setSortBy] = useState("totalCost");
@@ -209,8 +210,8 @@ export default function UsageBreakdown({ stats }) {
           tabIndex={0}
         >
           <table className="w-full text-start text-sm">
-            <thead className="bg-raised/30 text-xs uppercase text-muted">
-              <tr>
+            <thead>
+              <tr className={TABLE_HEAD_ROW}>
                 {headers.map((h) => (
                   <th
                     key={h.field}
@@ -222,7 +223,7 @@ export default function UsageBreakdown({ stats }) {
                           : "descending"
                         : undefined
                     }
-                    className={`px-6 py-3 font-semibold ${h.numeric ? "text-end" : ""}`}
+                    className={`${TABLE_HEAD_CELL} px-6 py-3 ${h.numeric ? "text-end" : "text-start"}`}
                   >
                     {h.field === "__label" || h.field === "__share" ? (
                       h.label
@@ -347,3 +348,5 @@ export default function UsageBreakdown({ stats }) {
 UsageBreakdown.propTypes = {
   stats: PropTypes.object,
 };
+
+export default memo(UsageBreakdown);

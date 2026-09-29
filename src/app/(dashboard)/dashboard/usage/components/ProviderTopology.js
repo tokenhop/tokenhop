@@ -437,8 +437,7 @@ ProviderTopology.propTypes = {
   activeRequests: PropTypes.arrayOf(
     PropTypes.shape({
       provider: PropTypes.string,
-      model: PropTypes.string,
-      account: PropTypes.string,
+      count: PropTypes.number,
     }),
   ),
   lastProvider: PropTypes.string,

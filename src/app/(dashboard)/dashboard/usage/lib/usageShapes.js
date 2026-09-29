@@ -109,15 +109,6 @@ export function sharePct(value, total) {
   return ((value || 0) / total) * 100;
 }
 
-// Period-over-period delta. pct is null when previous is 0 (no baseline);
-// up is false only when current strictly dropped below previous.
-export function periodDelta(current, previous) {
-  const cur = current || 0;
-  const prev = previous || 0;
-  if (!prev) return { pct: null, up: cur > 0 };
-  return { pct: ((cur - prev) / Math.abs(prev)) * 100, up: cur >= prev };
-}
-
 // Map API chart buckets to recharts rows.
 // Basic bucket {label,tokens,cost} (legacy shape) → tokens land in input.
 // Extended bucket {label,input,cached,output,tokens,cost,requests}

@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Card from "@/shared/components/Card";
 import ProviderTile from "@/shared/components/ProviderTile";
 import Button from "@/shared/components/Button";
+import Select from "@/shared/components/Select";
+import Input from "@/shared/components/Input";
 import StatusPill from "@/shared/components/StatusPill";
-import EmptyState from "@/shared/components/EmptyState";
+import { EmptyState, ErrorState, LoadingState } from "@/shared/components/StateViews";
+import { TABLE_HEAD_CELL, TABLE_HEAD_ROW } from "@/shared/components/displayPrimitives";
 import Pagination from "@/shared/components/Pagination";
 import RequestDetailDrawer, { providerLabel } from "./RequestDetailDrawer";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
@@ -18,10 +21,23 @@ const getInput = (t) => {
 };
 
 /**
- * Request log: same /api/usage/request-details + /api/usage/providers
- * fetch/filter/pagination logic as the old RequestDetailsTab, restyled with
- * Signal Card, semantic table, StatusPill status and Pagination. Row action
- * opens RequestDetailDrawer.
+ * Stable DOM id for one request row: the Details button points
+ * `aria-describedby` at the row's model and timestamp cells. Request ids can
+ * contain characters that are hostile to CSS id selectors, so runs of
+ * disallowed characters collapse to a single dash. The row index is suffixed
+ * so duplicate request ids still yield unique DOM ids.
+ */
+const rowDomId = (id, index) => `req-${String(id).replace(/[^A-Za-z0-9_-]+/g, "-")}-${index}`;
+
+/**
+ * Request log: paginated /api/usage/request-details table built on the shared
+ * primitives — Select/Input filters (provider + a From/To datetime range with
+ * a client-side start ≤ end check), LoadingState/ErrorState/EmptyState and
+ * one TABLE_HEAD header style with logical alignment. Each row's Detail
+ * button is described by that row's model and timestamp cells, so screen
+ * readers announce which request it opens without a composed sentence.
+ * Filter changes reset the page to 1; fetches are sequenced with an
+ * AbortController so a stale response never overwrites a newer one.
  */
 export default function RequestLog() {
   const [details, setDetails] = useState([]);
@@ -31,7 +47,9 @@ export default function RequestLog() {
     totalItems: 0,
     totalPages: 0,
   });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const requestRef = useRef(null);
   const [selected, setSelected] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [providers, setProviders] = useState([]);
@@ -40,27 +58,41 @@ export default function RequestLog() {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     (async () => {
       try {
-        const res = await fetch("/api/usage/providers");
+        const res = await fetch("/api/usage/providers", { signal: controller.signal });
         const data = await res.json();
         if (!cancelled) setProviders(data.providers || []);
-        const nodesRes = await fetch("/api/provider-nodes");
+        const nodesRes = await fetch("/api/provider-nodes", { signal: controller.signal });
         const nodesData = await nodesRes.json();
         if (cancelled) return;
         const nodeNames = {};
         for (const node of nodesData.nodes || []) nodeNames[node.id] = node.name;
         setNameCache({ ...AI_PROVIDERS, ...nodeNames });
       } catch (e) {
+        if (e?.name === "AbortError") return;
+        // Non-fatal: without this list the table still renders raw provider
+        // ids, so the log keeps working.
         console.error("Failed to fetch providers:", e);
       }
     })();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, []);
 
+  // datetime-local values sort lexicographically like their instants.
+  const dateRangeError =
+    filters.startDate && filters.endDate && filters.startDate > filters.endDate
+      ? "Start must be before end"
+      : "";
+
   const fetchDetails = useCallback(async () => {
+    requestRef.current?.abort();
+    const request = new AbortController();
+    requestRef.current = request;
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -70,89 +102,115 @@ export default function RequestLog() {
       if (filters.provider) params.append("provider", filters.provider);
       if (filters.startDate) params.append("startDate", filters.startDate);
       if (filters.endDate) params.append("endDate", filters.endDate);
-      const res = await fetch(`/api/usage/request-details?${params}`);
+      const res = await fetch(`/api/usage/request-details?${params}`, {
+        signal: request.signal,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setDetails(data.details || []);
       setPagination((prev) => ({ ...prev, ...data.pagination }));
+      setError("");
     } catch (e) {
+      // A superseded or unmounted request must not overwrite a newer one.
+      if (request.signal.aborted) return;
       console.error("Failed to fetch request details:", e);
+      setError(e instanceof Error && e.message ? e.message : "Unknown error");
     } finally {
-      setLoading(false);
+      if (!request.signal.aborted) setLoading(false);
     }
   }, [pagination.page, pagination.pageSize, filters]);
 
   useEffect(() => {
+    // An invalid range keeps the current data instead of querying a window
+    // the API cannot satisfy; fixing the dates refetches. Abort any
+    // in-flight request so it cannot overwrite the kept data — its finally
+    // skips setLoading(false) on abort, so clear it here (idempotent).
+    if (dateRangeError) {
+      requestRef.current?.abort();
+      setLoading(false);
+      return;
+    }
     fetchDetails();
-  }, [fetchDetails]);
+  }, [fetchDetails, dateRangeError]);
+
+  useEffect(
+    () => () => {
+      requestRef.current?.abort();
+    },
+    [],
+  );
+
+  /** Any filter edit restarts from page 1 (an old page may not exist). */
+  const updateFilter = (key, value) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+    setPagination((prev) => (prev.page === 1 ? prev : { ...prev, page: 1 }));
+  };
+
+  const clearFilters = () => {
+    setFilters({ provider: "", startDate: "", endDate: "" });
+    setPagination((prev) => (prev.page === 1 ? prev : { ...prev, page: 1 }));
+  };
 
   const ok = (d) => !d.status || d.status === "ok" || d.status === "success";
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <Card>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="flex min-w-0 flex-col gap-2">
-            <label htmlFor="provider-filter" className="text-sm font-medium">
-              Provider
-            </label>
-            <select
-              id="provider-filter"
-              value={filters.provider}
-              onChange={(e) => setFilters({ ...filters, provider: e.target.value })}
-              className="h-11 w-full min-w-0 cursor-pointer rounded-lg border border-line bg-raised px-3 text-sm focus:outline-none"
-            >
-              <option value="">All Providers</option>
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                  {p.name !== p.id ? ` (${p.id.slice(0, 18)}…)` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex min-w-0 flex-col gap-2">
-            <label htmlFor="start-date-filter" className="text-sm font-medium">
-              Start Date
-            </label>
-            <input
-              id="start-date-filter"
-              type="datetime-local"
-              value={filters.startDate}
-              onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-              className="h-11 w-full min-w-0 rounded-lg border border-line bg-raised px-3 text-sm focus:outline-none"
-            />
-          </div>
-          <div className="flex min-w-0 flex-col gap-2">
-            <label htmlFor="end-date-filter" className="text-sm font-medium">
-              End Date
-            </label>
-            <input
-              id="end-date-filter"
-              type="datetime-local"
-              value={filters.endDate}
-              onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-              className="h-11 w-full min-w-0 rounded-lg border border-line bg-raised px-3 text-sm focus:outline-none"
-            />
-          </div>
-          <div className="flex min-w-0 flex-col justify-end">
-            <Button
-              variant="ghost"
-              onClick={() => setFilters({ provider: "", startDate: "", endDate: "" })}
-              disabled={!filters.provider && !filters.startDate && !filters.endDate}
-            >
-              Clear Filters
-            </Button>
-          </div>
+        <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end">
+          <Select
+            id="provider-filter"
+            label="Provider"
+            // A real "All providers" option with value "" must stay
+            // selectable, so Select's disabled placeholder is omitted.
+            placeholder={null}
+            options={[
+              { value: "", label: "All providers" },
+              ...providers.map((p) => ({
+                value: p.id,
+                // Ids stay visible when the display name differs (data, not copy).
+                label: p.name !== p.id ? `${p.name} (${p.id.slice(0, 18)}…)` : p.name,
+              })),
+            ]}
+            value={filters.provider}
+            onChange={(e) => updateFilter("provider", e.target.value)}
+            className="min-w-0 lg:w-60"
+          />
+          <fieldset className="min-w-0 flex-1">
+            <legend className="text-sm font-medium">Date range</legend>
+            <div className="mt-1.5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+              <Input
+                id="start-date-filter"
+                type="datetime-local"
+                label="From"
+                value={filters.startDate}
+                onChange={(e) => updateFilter("startDate", e.target.value)}
+              />
+              <Input
+                id="end-date-filter"
+                type="datetime-local"
+                label="To"
+                error={dateRangeError}
+                value={filters.endDate}
+                onChange={(e) => updateFilter("endDate", e.target.value)}
+              />
+            </div>
+          </fieldset>
+          <Button
+            variant="ghost"
+            onClick={clearFilters}
+            disabled={!filters.provider && !filters.startDate && !filters.endDate}
+          >
+            Clear filters
+          </Button>
         </div>
       </Card>
 
       <Card padding="none">
         {loading ? (
-          <div className="flex items-center justify-center gap-2 p-8 text-sm text-muted">
-            <span className="material-symbols-outlined animate-spin text-[20px]" aria-hidden="true">
-              progress_activity
-            </span>
-            Loading…
+          <LoadingState label="Loading requests" lines={5} className="p-6" />
+        ) : error ? (
+          <div className="p-6">
+            <ErrorState title="Couldn't load requests" message={error} onRetry={fetchDetails} />
           </div>
         ) : details.length === 0 ? (
           <EmptyState
@@ -170,87 +228,93 @@ export default function RequestLog() {
             >
               <table className="w-full min-w-[880px] text-sm">
                 <thead>
-                  <tr className="border-b border-line text-left">
-                    <th scope="col" className="p-4 font-semibold">
+                  <tr className={TABLE_HEAD_ROW}>
+                    <th scope="col" className={`${TABLE_HEAD_CELL} p-4 text-start`}>
                       Timestamp
                     </th>
-                    <th scope="col" className="p-4 font-semibold">
+                    <th scope="col" className={`${TABLE_HEAD_CELL} p-4 text-start`}>
                       Model
                     </th>
-                    <th scope="col" className="p-4 font-semibold">
+                    <th scope="col" className={`${TABLE_HEAD_CELL} p-4 text-start`}>
                       Provider
                     </th>
-                    <th scope="col" className="p-4 text-right font-semibold">
+                    <th scope="col" className={`${TABLE_HEAD_CELL} p-4 text-end`}>
                       Input
                     </th>
-                    <th scope="col" className="p-4 text-right font-semibold">
+                    <th scope="col" className={`${TABLE_HEAD_CELL} p-4 text-end`}>
                       Cached
                     </th>
-                    <th scope="col" className="p-4 text-right font-semibold">
+                    <th scope="col" className={`${TABLE_HEAD_CELL} p-4 text-end`}>
                       Output
                     </th>
-                    <th scope="col" className="p-4 font-semibold">
+                    <th scope="col" className={`${TABLE_HEAD_CELL} p-4 text-start`}>
                       Latency
                     </th>
-                    <th scope="col" className="p-4 font-semibold">
+                    <th scope="col" className={`${TABLE_HEAD_CELL} p-4 text-start`}>
                       Status
                     </th>
-                    <th scope="col" className="p-4 text-center font-semibold">
-                      Action
+                    <th scope="col" className={`${TABLE_HEAD_CELL} p-4 text-start`}>
+                      <span className="sr-only">Actions</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {details.map((d) => (
-                    <tr
-                      key={`${d.id}|${d.timestamp}`}
-                      className="border-b border-line transition-colors last:border-b-0 hover:bg-raised"
-                    >
-                      <td className="whitespace-nowrap p-4">
-                        {d.timestamp ? new Date(d.timestamp).toLocaleString() : "—"}
-                      </td>
-                      <td className="max-w-[260px] truncate p-4 font-mono">{d.model}</td>
-                      <td className="max-w-[180px] p-4">
-                        <span className="flex min-w-0 items-center gap-2">
-                          {d.provider && <ProviderTile providerId={d.provider} size="sm" />}
-                          <span className="truncate">{providerLabel(d.provider, nameCache)}</span>
-                        </span>
-                      </td>
-                      <td className="p-4 text-right font-mono">
-                        {getInput(d.tokens).toLocaleString()}
-                      </td>
-                      <td className="p-4 text-right font-mono">
-                        {getCached(d.tokens) > 0 ? getCached(d.tokens).toLocaleString() : "—"}
-                      </td>
-                      <td className="p-4 text-right font-mono">
-                        {(
-                          d.tokens?.completion_tokens ??
-                          d.tokens?.output_tokens ??
-                          0
-                        ).toLocaleString()}
-                      </td>
-                      <td className="whitespace-nowrap p-4 font-mono text-muted">
-                        {d.latency?.total ?? 0}ms
-                      </td>
-                      <td className="p-4">
-                        <StatusPill variant={ok(d) ? "ok" : "err"} size="sm">
-                          {d.status || "ok"}
-                        </StatusPill>
-                      </td>
-                      <td className="p-4 text-center">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelected(d);
-                            setDrawerOpen(true);
-                          }}
-                        >
-                          Detail
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
+                  {details.map((d, index) => {
+                    const rowId = rowDomId(d.id, index);
+                    return (
+                      <tr
+                        key={`${d.id}|${d.timestamp}`}
+                        className="border-b border-line transition-colors last:border-b-0 hover:bg-raised"
+                      >
+                        <td id={`${rowId}-time`} className="whitespace-nowrap p-4">
+                          {d.timestamp ? new Date(d.timestamp).toLocaleString() : "—"}
+                        </td>
+                        <td id={`${rowId}-model`} className="max-w-[260px] truncate p-4 font-mono">
+                          {d.model}
+                        </td>
+                        <td className="max-w-[180px] p-4">
+                          <span className="flex min-w-0 items-center gap-2">
+                            {d.provider && <ProviderTile providerId={d.provider} size="sm" />}
+                            <span className="truncate">{providerLabel(d.provider, nameCache)}</span>
+                          </span>
+                        </td>
+                        <td className="p-4 text-end font-mono">
+                          {getInput(d.tokens).toLocaleString()}
+                        </td>
+                        <td className="p-4 text-end font-mono">
+                          {getCached(d.tokens) > 0 ? getCached(d.tokens).toLocaleString() : "—"}
+                        </td>
+                        <td className="p-4 text-end font-mono">
+                          {(
+                            d.tokens?.completion_tokens ??
+                            d.tokens?.output_tokens ??
+                            0
+                          ).toLocaleString()}
+                        </td>
+                        <td className="whitespace-nowrap p-4 font-mono text-muted">
+                          {d.latency?.total ?? 0}ms
+                        </td>
+                        <td className="p-4">
+                          <StatusPill variant={ok(d) ? "ok" : "err"} size="sm">
+                            {d.status || "ok"}
+                          </StatusPill>
+                        </td>
+                        <td className="p-4 text-center">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            aria-describedby={`${rowId}-model ${rowId}-time`}
+                            onClick={() => {
+                              setSelected(d);
+                              setDrawerOpen(true);
+                            }}
+                          >
+                            Detail
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </section>

@@ -5,9 +5,15 @@ import { cn } from "@/shared/utils/cn";
 import Field from "./Field";
 
 /**
- * Signal styled native select wired to a Field. Always renders a disabled
+ * Signal styled native select wired to a Field. By default renders a disabled
  * empty placeholder option first (existing contract: callers rely on it when
- * the value isn't in `options`).
+ * the value isn't in `options`). Pass `placeholder={null}` to omit that
+ * option, so a real option with `value: ""` (e.g. "All providers") stays
+ * selectable.
+ *
+ * @param {object} props
+ * @param {string|null} [props.placeholder="Select an option"] `null` omits the
+ *   disabled placeholder option.
  */
 export default function Select({
   label,
@@ -52,9 +58,11 @@ export default function Select({
               selectClassName,
             )}
           >
-            <option value="" disabled>
-              {placeholder}
-            </option>
+            {placeholder !== null && (
+              <option value="" disabled>
+                {placeholder}
+              </option>
+            )}
             {options.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -83,7 +91,8 @@ Select.propTypes = {
   ),
   value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   onChange: PropTypes.func,
-  placeholder: PropTypes.string,
+  // null omits the disabled placeholder option (see JSDoc).
+  placeholder: PropTypes.oneOfType([PropTypes.string, PropTypes.oneOf([null])]),
   error: PropTypes.node,
   hint: PropTypes.node,
   disabled: PropTypes.bool,
