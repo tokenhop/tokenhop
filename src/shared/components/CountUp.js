@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { COUNT_UP_MS, formatCount, interpolateCount } from "./countUpMath.js";
 
 /**
  * Animate a number from its previous value to `value` over 600ms. Reuses the
  * caller's formatter for every frame and the settled value; reduced motion
- * updates instantly. Two invisible grid cells reserve both old/new formatted
- * widths while the number changes (no animation-induced layout shift).
+ * updates instantly. Two invisible grid cells reserve both the starting and
+ * target formatted widths while the number changes (no animation-induced
+ * layout shift). Animations always continue from the value currently shown,
+ * so rapid successive updates never jump.
  *
  * @param {object} props
  * @param {number} props.value Target value.
@@ -17,16 +19,18 @@ import { COUNT_UP_MS, formatCount, interpolateCount } from "./countUpMath.js";
  * @param {string} [props.className] Additional styling.
  */
 export default function CountUp({ value, format, suffix = "", className = "" }) {
-  const [display, setDisplay] = useState(value);
-  const previous = useRef(value);
-  const formatRef = useRef(format);
-  formatRef.current = format;
+  const [display, setDisplayState] = useState(value);
   const [from, setFrom] = useState(value);
+  // Live mirror of `display`: the animation continues from wherever it is.
+  const displayRef = useRef(value);
+  const setDisplay = useCallback((next) => {
+    displayRef.current = next;
+    setDisplayState(next);
+  }, []);
 
   useEffect(() => {
-    if (Object.is(previous.current, value)) return undefined;
-    const old = previous.current;
-    previous.current = value;
+    if (Object.is(displayRef.current, value)) return undefined;
+    const old = displayRef.current;
     setFrom(old);
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     if (media.matches || !Number.isFinite(old) || !Number.isFinite(value)) {
@@ -57,7 +61,7 @@ export default function CountUp({ value, format, suffix = "", className = "" }) 
       cancelAnimationFrame(frame);
       media.removeEventListener("change", onMotion);
     };
-  }, [value]);
+  }, [value, setDisplay]);
 
   const target = `${formatCount(value, format)}${suffix}`;
   return (

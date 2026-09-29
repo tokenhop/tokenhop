@@ -51,8 +51,20 @@ describe("buildShellSummary", () => {
       enableTranslator: true,
       // No traffic input: heartbeat absent, not a fake flat line.
       traffic: null,
-      savings: null,
     });
+    expect(summary).not.toHaveProperty("savings");
+  });
+
+  it("omits the savings block when the lookup failed (undefined)", () => {
+    const summary = buildShellSummary({
+      connections,
+      combos: [],
+      translatorEnabled: false,
+      gateway,
+      getSnapshotView: () => null,
+      savingsMilestone: undefined,
+    });
+    expect(summary).not.toHaveProperty("savings");
   });
 
   it("shapes the heartbeat traffic and pending milestone additively", () => {
@@ -173,10 +185,15 @@ describe("applyShellSummary", () => {
     });
   });
 
-  it("keeps the last heartbeat when the body omits or mangles it", () => {
+  it("keeps the last heartbeat and milestone when the body omits them", () => {
     for (const traffic of [undefined, null, {}, { series: "nope", total: 3 }]) {
       const next = applyShellSummary(prev, 200, { gateway, traffic });
       expect(next.traffic).toEqual(prev.traffic);
+    }
+    // Savings lookup failure (block absent or empty) keeps the last milestone.
+    for (const savings of [undefined, null, {}]) {
+      const next = applyShellSummary(prev, 200, { gateway, savings });
+      expect(next.savingsMilestone).toBe(prev.savingsMilestone);
     }
   });
 

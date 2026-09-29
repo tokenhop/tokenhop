@@ -17,26 +17,6 @@ export function pendingSavingsMilestone(total, acknowledged) {
   return SAVINGS_MILESTONES.findLast((milestone) => total >= milestone && ack < milestone) ?? null;
 }
 
-/** Persist a milestone acknowledgement monotonically across clients. */
-export async function acknowledgeSavingsMilestone(milestone) {
-  if (!SAVINGS_MILESTONES.includes(milestone)) throw new RangeError("Invalid savings milestone");
-  const db = await getAdapter();
-  let acknowledgedMilestone;
-  db.transaction(() => {
-    const row = db.get("SELECT data FROM settings WHERE id = 1");
-    const current = row ? parseJson(row.data, {}) : {};
-    acknowledgedMilestone = Math.max(
-      normalizeAckedMilestone(current.savingsMilestoneAck),
-      milestone,
-    );
-    db.run(
-      "INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
-      [stringifyJson({ ...current, savingsMilestoneAck: acknowledgedMilestone })],
-    );
-  });
-  return { acknowledgedMilestone };
-}
-
 /**
  * Claim a crossed-but-unacknowledged milestone for display (YAN-408): the
  * acknowledgment write happens first, atomically, inside one transaction that

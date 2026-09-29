@@ -70,11 +70,15 @@ export function applyShellSummary(prev, status, body) {
       total: traffic.total,
     };
   }
-  const pendingMilestone = body.savings?.pendingMilestone ?? null;
-  if (pendingMilestone === null) {
-    next.savingsMilestone = null;
-  } else if (Number.isInteger(pendingMilestone) && pendingMilestone > 0) {
-    next.savingsMilestone = pendingMilestone;
+  // Savings: only a body that carries the block may change the client state —
+  // an omitted block (lookup failed) keeps the last value, mirroring traffic.
+  if (body.savings && typeof body.savings === "object" && "pendingMilestone" in body.savings) {
+    const pendingMilestone = body.savings.pendingMilestone;
+    if (pendingMilestone === null) {
+      next.savingsMilestone = null;
+    } else if (Number.isInteger(pendingMilestone) && pendingMilestone > 0) {
+      next.savingsMilestone = pendingMilestone;
+    }
   }
   return next;
 }

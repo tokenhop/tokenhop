@@ -8,19 +8,22 @@ import { getMetaSync, setMetaSync } from "../helpers/metaStore.js";
 export const SAVINGS_LIFETIME_KEY = "savingsTokensLifetime";
 
 /**
- * Sum the saved tokens of every usageHistory row and mark the backfill done
- * (YAN-408). One full-table scan, run at most once per install, before any
- * incremental counter write.
+ * Sum the saved tokens of every usageHistory row (YAN-408). One SQL aggregate
+ * using JSON1 (`json_each`/`json_extract` ship with every supported driver —
+ * `getUsageTotals` already relies on them), so JS never sees the rows. Sums
+ * only positive per-method `tokensSavedEst`, matching rowSavedFromSavings.
+ * Runs at most once per install, before any incremental counter write.
  * @param {object} adapter sync DB adapter (inside a transaction)
  * @returns {number} lifetime saved tokens across all recorded rows
  */
 export function backfillSavingsLifetime(adapter) {
-  const rows = adapter.all(`SELECT meta FROM usageHistory`);
-  let lifetime = 0;
-  for (const row of rows || []) {
-    lifetime += rowSavedFromSavings(parseJson(row?.meta, {})?.savings);
-  }
-  return lifetime;
+  const row = adapter.get(
+    `SELECT COALESCE(SUM(CAST(json_extract(j.value, '$.tokensSavedEst') AS REAL)), 0) AS lifetime
+     FROM usageHistory u, json_each(u.meta, '$.savings.byMethod') j
+     WHERE u.meta IS NOT NULL AND json_valid(u.meta)
+       AND CAST(json_extract(j.value, '$.tokensSavedEst') AS REAL) > 0`,
+  );
+  return Number(row?.lifetime) || 0;
 }
 
 /**
@@ -364,11 +367,6 @@ export async function saveRequestUsage(entry) {
     const savedTokens = rowSavedFromSavings(metaObj.savings);
 
     db.transaction(() => {
-      // Backfill BEFORE inserting this row so the one-time history scan never
-      // counts the new row; the increment after the insert adds it exactly once.
-      if (savedTokens > 0 && getMetaSync(db, SAVINGS_LIFETIME_KEY, null) === null) {
-        setMetaSync(db, SAVINGS_LIFETIME_KEY, backfillSavingsLifetime(db));
-      }
       db.run(
         `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -417,10 +415,15 @@ export async function saveRequestUsage(entry) {
       );
 
       // YAN-408: increment the lifetime saved-tokens counter in the same
-      // transaction as the history row (baseline ensured above).
+      // transaction as the history row. The one-time backfill lives on the
+      // background summary path (getSavingsLifetime), never on the request
+      // path: before the counter exists this row is simply skipped and the
+      // later backfill scan counts it too, so nothing is lost either way.
       if (savedTokens > 0) {
-        const baseline = Number(getMetaSync(db, SAVINGS_LIFETIME_KEY, "0")) || 0;
-        setMetaSync(db, SAVINGS_LIFETIME_KEY, baseline + savedTokens);
+        const baseline = getMetaSync(db, SAVINGS_LIFETIME_KEY, null);
+        if (baseline !== null) {
+          setMetaSync(db, SAVINGS_LIFETIME_KEY, Number(baseline) + savedTokens);
+        }
       }
     });
 

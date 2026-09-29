@@ -50,8 +50,8 @@ export function shapeHeartbeatTraffic(series) {
  * Build the shell summary. Pure: IO results and the snapshot lookup are injected.
  * `traffic` is the 15-bucket req/min series for the gateway heartbeat; it rides
  * the existing summary poll (no extra requests). `savingsMilestone` is the
- * pending milestone toast value (number or null); `undefined` means "could not
- * be computed" and omits the block so clients keep their last state.
+ * pending milestone toast value (number or null); `undefined` means the lookup
+ * failed and the block is omitted entirely so clients keep their last state.
  * @param {{
  *   connections: Array<object>,
  *   combos: Array<object>,
@@ -83,12 +83,15 @@ export function buildShellSummary({
     lowQuota: countLowQuota(deriveQuotaAccounts(active, getSnapshotView)),
     enableTranslator: Boolean(translatorEnabled),
     traffic: shapeHeartbeatTraffic(traffic),
-    savings:
-      savingsMilestone === undefined
-        ? null
-        : {
+    // Savings lookup failure omits the block (clients keep their last state);
+    // a computed value — including "nothing pending" — is always sent.
+    ...(savingsMilestone === undefined
+      ? {}
+      : {
+          savings: {
             pendingMilestone:
               Number.isInteger(savingsMilestone) && savingsMilestone > 0 ? savingsMilestone : null,
           },
+        }),
   };
 }

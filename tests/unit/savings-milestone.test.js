@@ -172,21 +172,9 @@ describe("milestone state with the real DB", () => {
   it("acknowledges a milestone once and persists it in settings", async () => {
     await db.updateSettings({ savingsMilestoneAck: 100_000 });
 
-    const result = await milestones.acknowledgeSavingsMilestone(1_000_000);
-    expect(result).toEqual({ acknowledgedMilestone: 1_000_000 });
-    expect((await db.getSettings()).savingsMilestoneAck).toBe(1_000_000);
-
-    // Re-acknowledging the same or a lower milestone is a no-op.
-    expect(await milestones.acknowledgeSavingsMilestone(1_000_000)).toEqual({
-      acknowledgedMilestone: 1_000_000,
-    });
-    expect(await milestones.acknowledgeSavingsMilestone(100_000)).toEqual({
-      acknowledgedMilestone: 1_000_000,
-    });
-    expect((await db.getSettings()).savingsMilestoneAck).toBe(1_000_000);
-
-    // Invalid milestones are rejected.
-    await expect(milestones.acknowledgeSavingsMilestone(500)).rejects.toThrow(/milestone/i);
+    const result = await milestones.claimSavingsMilestone(1_000_000);
+    expect(result).toBeNull(); // nothing pending: lifetime 225_005 < 1M
+    expect((await db.getSettings()).savingsMilestoneAck).toBe(100_000);
   });
 
   it("POST validates the milestone input server-side", async () => {
@@ -221,5 +209,30 @@ describe("milestone state with the real DB", () => {
     expect(res.status).toBe(200);
     expect(res.body.savings).toEqual({ pendingMilestone: null });
     expect(res.body.traffic.total).toBeTypeOf("number");
+  });
+});
+
+describe("claimSavingsMilestoneOnServer", () => {
+  let claim;
+  beforeAll(async () => {
+    ({ claimSavingsMilestoneOnServer: claim } = await import(
+      "../../src/shared/components/SavingsMilestoneWatcher.js"
+    ));
+  });
+
+  it("resolves true only when the server claims the milestone for this client", async () => {
+    const claimFetch = () =>
+      Promise.resolve({ ok: true, json: async () => ({ claimedMilestone: 100_000 }) });
+    expect(await claim(100_000, claimFetch)).toBe(true);
+    const claimedElsewhere = () =>
+      Promise.resolve({ ok: true, json: async () => ({ claimedMilestone: null }) });
+    expect(await claim(100_000, claimedElsewhere)).toBe(false);
+  });
+
+  it("rejects on a failed request so the caller retries", async () => {
+    const notOk = () => Promise.resolve({ ok: false, status: 500 });
+    await expect(claim(100_000, notOk)).rejects.toThrow(/claim failed: 500/);
+    const offline = () => Promise.reject(new Error("network down"));
+    await expect(claim(100_000, offline)).rejects.toThrow(/network down/);
   });
 });
