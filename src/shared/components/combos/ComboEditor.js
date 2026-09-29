@@ -48,6 +48,7 @@ export default function ComboEditor({
   judgeModel,
   headroom,
   headroomQuotaSource,
+  savedModels,
   healthByProvider,
   providerLabelById,
   saving,
@@ -79,6 +80,7 @@ export default function ComboEditor({
   const prevStepsRef = useRef([]);
 
   const models = combo.models || [];
+  const modelsDirty = JSON.stringify(models) !== JSON.stringify(savedModels || []);
   const isWeighted = strategy === "weighted";
   const isFusion = strategy === "fusion";
   const sensors = useSensors(
@@ -461,11 +463,15 @@ export default function ComboEditor({
         variant="danger"
       />
       {/* Keyed by the route contents: any model edit remounts the panel so a
-          recorded run can never remap onto steps it wasn't recorded against. */}
+          recorded run can never remap onto steps it wasn't recorded against.
+          While models differ from the saved route the probe (which runs the
+          saved combo server-side) stays disabled: its attempts would light
+          the wrong draft steps. */}
       <RouteTestPanel
         key={models.join("\n")}
         comboId={combo.id}
         models={models}
+        disabled={modelsDirty}
         onTrackStatesChange={setTrackStates}
       />
     </section>
@@ -483,6 +489,7 @@ ComboEditor.propTypes = {
   judgeModel: PropTypes.string,
   headroom: PropTypes.objectOf(PropTypes.number),
   headroomQuotaSource: PropTypes.objectOf(PropTypes.string),
+  savedModels: PropTypes.arrayOf(PropTypes.string),
   healthByProvider: PropTypes.object,
   providerLabelById: PropTypes.object,
   saving: PropTypes.bool,

@@ -6,12 +6,17 @@ import { useReducedMotion } from "@/shared/hooks";
 import Button from "@/shared/components/Button";
 import ProviderTile from "@/shared/components/ProviderTile";
 import StatusPill from "@/shared/components/StatusPill";
-import {
-  formatProbeLatency,
-  probeLastRunLabel,
-  probeTrackEvents,
-  PROBE_STEP_MS,
-} from "./routeTestFormat";
+import { probeLastRunLabel, probeTrackEvents, PROBE_STEP_MS } from "./routeTestFormat";
+
+/**
+ * Replay trailing labels (YAN-411). `label:` object keys are literal-extractor
+ * visible, so these are tracked for the next i18n copy batch (YAN-414).
+ */
+const OUTCOME_LABELS = {
+  served: { label: "Served" },
+  answered: { label: "Answered" },
+  skipped: { label: "Skipped" },
+};
 
 /**
  * Test-this-route panel: runs a dry-run probe through the real combo pipeline
@@ -24,10 +29,13 @@ import {
  * @param {object} props
  * @param {string} props.comboId - Combo id for POST /api/combos/[id]/test.
  * @param {string[]} props.models - Combo member models (the route track).
+ * @param {boolean} [props.disabled] - True while the route has unsaved model
+ *   edits: the probe runs the saved combo, so replaying it against the draft
+ *   track would light the wrong steps.
  * @param {(states: Array<{state: string, reason: string}|null>)} [props.onTrackStatesChange]
  *   Called whenever the per-step replay states change (also with [] when cleared).
  */
-export default function RouteTestPanel({ comboId, models, onTrackStatesChange }) {
+export default function RouteTestPanel({ comboId, models, disabled, onTrackStatesChange }) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -46,7 +54,7 @@ export default function RouteTestPanel({ comboId, models, onTrackStatesChange })
   // the second into a confusing 429). Client-side timeout (~65s) just past
   // the server 60s timeout surfaces the real 504 instead of hanging.
   const runTest = async () => {
-    if (running || !comboId) return;
+    if (running || disabled || !comboId) return;
     setRunning(true);
     setError("");
     setResult(null);
@@ -126,12 +134,13 @@ export default function RouteTestPanel({ comboId, models, onTrackStatesChange })
           icon="play_arrow"
           onClick={runTest}
           loading={running}
-          disabled={!comboId}
+          disabled={!comboId || disabled}
+          aria-describedby={disabled ? "combo-route-test-disabled-hint" : undefined}
           className="ms-auto"
         >
           Run test
         </Button>
-        {total > 0 && !running && !reducedMotion && (
+        {total > 0 && !running && !disabled && !reducedMotion && (
           <Button
             size="sm"
             variant="ghost"
@@ -146,6 +155,11 @@ export default function RouteTestPanel({ comboId, models, onTrackStatesChange })
       <p className="m-0 text-xs text-muted">
         Uses a tiny amount of quota. Runs the real route, so it also advances rotation.
       </p>
+      {disabled && (
+        <p id="combo-route-test-disabled-hint" className="m-0 text-xs text-warn">
+          Save the route to test it.
+        </p>
+      )}
 
       {error && (
         <p role="alert" className="m-0 text-sm text-err">
@@ -169,7 +183,6 @@ export default function RouteTestPanel({ comboId, models, onTrackStatesChange })
           {visible.map((step, index) => {
             const attempting = !reducedMotion && index === progress && index < total;
             const ok = step.status != null && step.status >= 200 && step.status < 300;
-            const isServed = step.outcome === "served";
             return (
               // biome-ignore lint/suspicious/noArrayIndexKey: probe replay has no step ids from the API; model+position is the stable key.
               <li key={`${step.model}-${index}`} className="flex items-center gap-3 text-[13px]">
@@ -192,7 +205,7 @@ export default function RouteTestPanel({ comboId, models, onTrackStatesChange })
                 <ProviderTile providerId={step.model} size="sm" />
                 <span className="min-w-0 truncate font-mono">{step.model}</span>
                 <span className="truncate text-muted">
-                  {attempting ? "Trying…" : step.reason} · {formatProbeLatency(step.latencyMs)}
+                  {attempting ? "Trying…" : `${step.reason} · ${step.latency}`}
                   {step.account ? ` · ${step.account}` : ""}
                   {step.role === "panel" ? " · panel" : ""}
                   {step.role === "judge" ? " · judge" : ""}
@@ -204,7 +217,7 @@ export default function RouteTestPanel({ comboId, models, onTrackStatesChange })
                       step.state === "answered" ? "text-lime-ink" : "text-muted"
                     }`}
                   >
-                    {isServed ? "Served" : step.state === "answered" ? "Answered" : "Skipped"}
+                    {OUTCOME_LABELS[step.outcome]?.label ?? OUTCOME_LABELS.skipped.label}
                   </span>
                 )}
               </li>
@@ -221,7 +234,7 @@ export default function RouteTestPanel({ comboId, models, onTrackStatesChange })
           .join(" ")}
       </p>
 
-      {result?.summary && progress >= total && (
+      {result?.summary && (reducedMotion || progress >= total) && (
         <p className="m-0 border-t border-line pt-2.5 text-[13px]">
           <strong>{result.summary}</strong>
         </p>
@@ -233,5 +246,6 @@ export default function RouteTestPanel({ comboId, models, onTrackStatesChange })
 RouteTestPanel.propTypes = {
   comboId: PropTypes.string,
   models: PropTypes.arrayOf(PropTypes.string),
+  disabled: PropTypes.bool,
   onTrackStatesChange: PropTypes.func,
 };

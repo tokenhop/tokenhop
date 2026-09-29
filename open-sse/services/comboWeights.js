@@ -21,11 +21,9 @@ export function comboBaseWeight(model, weights) {
     : 1;
 }
 
-/** Headroom clamped to the router's rules: finite >= 0, else 1. */
+/** Headroom clamped to the router's rules: a finite number >= 0, else 1. */
 export function comboQuotaHeadroom(raw) {
-  if (raw === null || raw === undefined) return 1;
-  const n = Number(raw);
-  return Number.isFinite(n) && n >= 0 ? n : 1;
+  return typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : 1;
 }
 
 /** Read the effective weight the router uses for one combo member. */

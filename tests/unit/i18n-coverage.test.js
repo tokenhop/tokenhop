@@ -13,12 +13,21 @@ const UNTRANSLATED_LITERALS = new Map([
   // Raw log-stream marker chip: literal source tag, not prose (ConsoleLogRows).
   ["browser", "log-source marker chip, literal source tag"],
   // YAN-411 route-probe replay copy: translations land with the next i18n
-  // copy batch (see scripts/translate-literals.mjs; precedent #338). The
-  // runtime falls back to the English literal for these four keys.
-  ["Answered", "YAN-411 probe replay; pending i18n copy batch"],
-  ["Replay", "YAN-411 probe replay; pending i18n copy batch"],
-  ["Replay the last run on the route track", "YAN-411 probe replay; pending i18n copy batch"],
-  ["Trying…", "YAN-411 probe replay; pending i18n copy batch"],
+  // copy batch (YAN-414; see scripts/translate-literals.mjs; precedent #338).
+  // The runtime falls back to the English literal for these keys.
+  ["Answered", "YAN-411 probe replay; pending i18n copy batch (YAN-414)"],
+  ["Replay", "YAN-411 probe replay; pending i18n copy batch (YAN-414)"],
+  [
+    "Replay the last run on the route track",
+    "YAN-411 probe replay; pending i18n copy batch (YAN-414)",
+  ],
+  ["Trying…", "YAN-411 probe replay; pending i18n copy batch (YAN-414)"],
+  ["Served", "probe outcome label, previously untranslated; i18n copy batch (YAN-414)"],
+  ["Skipped", "YAN-411 probe replay; pending i18n copy batch (YAN-414)"],
+  [
+    "Save the route to test it.",
+    "YAN-411 dirty-route probe gate; pending i18n copy batch (YAN-414)",
+  ],
 ]);
 
 describe("i18n locale coverage (YAN-409 guard)", () => {

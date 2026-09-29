@@ -132,7 +132,15 @@ describe("probe route-track replay", () => {
       expect(events.map((event) => event.tone)).toEqual(["warn", "live", "live"]);
       expect(events[0].state).toBe("skipped");
       expect(events[0].text).toContain("rate limited");
+      // the panel renders `event.latency` directly — it must never be "—"
+      expect(events[0].latency).toBe("—");
+      expect(events[1].latency).toBe("—");
       expect(events[1].state).toBe("answered");
+      const withLatency = probeTrackEvents(
+        ["a"],
+        [{ model: "a", outcome: "served", status: 200, latencyMs: 1250 }],
+      );
+      expect(withLatency[0].latency).toBe("1.25s");
     },
   );
 

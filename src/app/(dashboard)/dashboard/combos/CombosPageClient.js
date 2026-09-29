@@ -722,6 +722,7 @@ export default function CombosPageClient() {
               judgeModel={draftJudge}
               headroom={headroom}
               headroomQuotaSource={headroomQuotaSource}
+              savedModels={selected.models || []}
               healthByProvider={healthByProvider}
               providerLabelById={providerLabelById}
               saving={saving}

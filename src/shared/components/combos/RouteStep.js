@@ -92,7 +92,9 @@ export default function RouteStep({
             {health}
           </StatusPill>
           {replayPill && (
-            <StatusPill variant={replayPill.variant} size="sm">
+            // Long server-supplied reasons truncate visually at 390px; the
+            // full text stays in the DOM for screen readers.
+            <StatusPill variant={replayPill.variant} size="sm" className="max-w-40 truncate">
               {replayPill.label}
             </StatusPill>
           )}
