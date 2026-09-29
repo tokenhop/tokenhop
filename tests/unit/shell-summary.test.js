@@ -49,7 +49,41 @@ describe("buildShellSummary", () => {
       // d is ≤ 20% but disabled; c has no snapshot.
       lowQuota: 1,
       enableTranslator: true,
+      // No traffic input: heartbeat absent, not a fake flat line.
+      traffic: null,
+      savings: null,
     });
+  });
+
+  it("shapes the heartbeat traffic and pending milestone additively", () => {
+    const summary = buildShellSummary({
+      connections,
+      combos: [],
+      translatorEnabled: false,
+      gateway,
+      getSnapshotView: () => null,
+      traffic: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2],
+      savingsMilestone: 1_000_000,
+    });
+    expect(summary.traffic).toEqual({
+      series: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2],
+      total: 3,
+    });
+    expect(summary.savings).toEqual({ pendingMilestone: 1_000_000 });
+  });
+
+  it("rejects non-integer heartbeat values without inventing counts", () => {
+    const withAbsent = buildShellSummary({
+      connections,
+      combos: [],
+      translatorEnabled: false,
+      gateway,
+      getSnapshotView: () => null,
+      traffic: [1, null, Number.NaN, -2, undefined],
+      savingsMilestone: 0,
+    });
+    expect(withAbsent.traffic).toEqual({ series: [1, 0, 0, 0, 0], total: 1 });
+    expect(withAbsent.savings).toEqual({ pendingMilestone: null });
   });
 
   it("treats the threshold as inclusive and ignores unknown quota", () => {
@@ -69,6 +103,9 @@ describe("GET /api/shell/summary", () => {
     expect(res.init.headers["Cache-Control"]).toBe("no-store");
     expect(res.body).toMatchObject({ combos: 1, lowQuota: 0, enableTranslator: false });
     expect(JSON.stringify(res.body)).not.toContain("sk-secret");
+    // Heartbeat and milestone ride the same response (empty isolated DB).
+    expect(res.body.traffic).toEqual({ series: Array(15).fill(0), total: 0 });
+    expect(res.body.savings).toEqual({ pendingMilestone: null });
   });
 
   it("returns a typed 500 when the store fails", async () => {
@@ -88,6 +125,8 @@ describe("applyShellSummary", () => {
     badges: { providers: 4, combos: 2, quota: 1 },
     providerAttention: { count: 1, status: "warn" },
     enableTranslator: true,
+    traffic: { series: [0, 1], total: 1 },
+    savingsMilestone: 100_000,
   };
 
   it("maps a 2xx body onto shell state", () => {
@@ -97,6 +136,8 @@ describe("applyShellSummary", () => {
       combos: 5,
       lowQuota: 0,
       enableTranslator: false,
+      traffic: { series: [0, 0, 2], total: 2 },
+      savings: { pendingMilestone: null },
     });
     expect(next).toEqual({
       loading: false,
@@ -106,13 +147,20 @@ describe("applyShellSummary", () => {
       badges: { providers: 3, combos: 5, quota: 0 },
       providerAttention: { count: 0, status: null },
       enableTranslator: false,
+      traffic: { series: [0, 0, 2], total: 2 },
+      savingsMilestone: null,
     });
   });
 
-  it("marks offline on network failure or 5xx and keeps the last badges", () => {
+  it("marks offline on network failure or 5xx and keeps the last badges and heartbeat", () => {
     for (const status of [null, 503]) {
       const next = applyShellSummary(prev, status, null);
-      expect(next).toMatchObject({ gatewayOnline: false, badges: prev.badges });
+      expect(next).toMatchObject({
+        gatewayOnline: false,
+        badges: prev.badges,
+        traffic: prev.traffic,
+        savingsMilestone: prev.savingsMilestone,
+      });
       expect(next.enableTranslator).toBe(true);
     }
   });
@@ -121,7 +169,26 @@ describe("applyShellSummary", () => {
     expect(applyShellSummary(prev, 401, null)).toMatchObject({
       gatewayOnline: true,
       badges: prev.badges,
+      traffic: prev.traffic,
     });
+  });
+
+  it("keeps the last heartbeat when the body omits or mangles it", () => {
+    for (const traffic of [undefined, null, {}, { series: "nope", total: 3 }]) {
+      const next = applyShellSummary(prev, 200, { gateway, traffic });
+      expect(next.traffic).toEqual(prev.traffic);
+    }
+  });
+
+  it("maps a pending milestone and clears it on a body that carries savings", () => {
+    const crossed = applyShellSummary(prev, 200, {
+      gateway,
+      savings: { pendingMilestone: 1_000_000 },
+    });
+    expect(crossed.savingsMilestone).toBe(1_000_000);
+    // Garbage milestone values keep the last state instead of reaching the toast.
+    const garbage = applyShellSummary(prev, 200, { gateway, savings: { pendingMilestone: "1M" } });
+    expect(garbage.savingsMilestone).toBe(prev.savingsMilestone);
   });
 });
 

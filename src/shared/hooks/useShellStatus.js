@@ -14,6 +14,9 @@ const INITIAL_STATE = {
   badges: { providers: null, combos: null, quota: null },
   providerAttention: { count: 0, status: null },
   enableTranslator: false,
+  // YAN-408: heartbeat sparkline series and pending savings milestone toast.
+  traffic: null,
+  savingsMilestone: null,
 };
 
 const count = (value, prev) => (Number.isInteger(value) && value >= 0 ? value : prev);
@@ -21,8 +24,9 @@ const count = (value, prev) => (Number.isInteger(value) && value >= 0 ? value : 
 /**
  * Next shell state from a GET /api/shell/summary result. A network failure
  * (null) or a 5xx means the gateway is offline; any other response proves it
- * answered. Badges and the translator gate keep their previous values unless
- * a 2xx body carries them, so a failed poll never flashes fake zeros.
+ * answered. Badges, heartbeat traffic and the milestone keep their previous
+ * values unless a 2xx body carries them, so a failed poll never flashes fake
+ * zeros.
  * @param {object} prev Current shell state.
  * @param {number|null} status HTTP status, or null on network failure.
  * @param {object|null} body Parsed 2xx body.
@@ -50,6 +54,28 @@ export function applyShellSummary(prev, status, body) {
     };
   }
   if (typeof body.enableTranslator === "boolean") next.enableTranslator = body.enableTranslator;
+  // Heartbeat: keep the last series unless the body carries a fresh one, so a
+  // failed poll never drops the sparkline.
+  const traffic = body.traffic ?? null;
+  if (
+    traffic !== null &&
+    Array.isArray(traffic.series) &&
+    Number.isInteger(traffic.total) &&
+    traffic.total >= 0
+  ) {
+    next.traffic = {
+      series: traffic.series.map((value) =>
+        Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0,
+      ),
+      total: traffic.total,
+    };
+  }
+  const pendingMilestone = body.savings?.pendingMilestone ?? null;
+  if (pendingMilestone === null) {
+    next.savingsMilestone = null;
+  } else if (Number.isInteger(pendingMilestone) && pendingMilestone > 0) {
+    next.savingsMilestone = pendingMilestone;
+  }
   return next;
 }
 
@@ -131,9 +157,10 @@ function stop() {
  * Shared shell status from one authenticated GET /api/shell/summary: gateway
  * reachability, uptime start and listen port, nav badge counts (connected
  * providers and their attention status, LLM combos, accounts at ≤ 20% quota
- * from server snapshots) and the translator gate. Polls every 60s while
- * visible; tab focus refreshes at most once per FOCUS_THROTTLE_MS; mutations
- * call refreshShellStatus() for an immediate update.
+ * from server snapshots), the translator gate, the 15-minute heartbeat series
+ * and the pending savings milestone. Polls every 60s while visible; tab focus
+ * refreshes at most once per FOCUS_THROTTLE_MS; mutations call
+ * refreshShellStatus() for an immediate update.
  *
  * @returns {{
  *   loading: boolean,
@@ -143,6 +170,8 @@ function stop() {
  *   badges: { providers: number|null, combos: number|null, quota: number|null },
  *   providerAttention: { count: number, status: "warn"|"err"|null },
  *   enableTranslator: boolean,
+ *   traffic: { series: number[], total: number }|null,
+ *   savingsMilestone: number|null,
  * }}
  */
 export default function useShellStatus() {
