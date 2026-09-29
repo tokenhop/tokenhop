@@ -13,7 +13,9 @@ export default function AddCustomModelModal({
   providerDisplayAlias,
   onSave,
   onClose,
+  kind = "llm",
 }) {
+  const isLlm = kind === "llm";
   const [modelId, setModelId] = useState("");
   const [caps, setCaps] = useState(defaultCaps);
   const [testStatus, setTestStatus] = useState(null); // null | "testing" | "ok" | "error"
@@ -45,7 +47,11 @@ export default function AddCustomModelModal({
       const res = await fetch("/api/models/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: `${providerAlias}/${cleanId}` }),
+        body: JSON.stringify(
+          isLlm
+            ? { model: `${providerAlias}/${cleanId}` }
+            : { model: `${providerAlias}/${cleanId}`, kind },
+        ),
       });
       const data = await res.json();
       setTestStatus(res.ok && data.ok ? "ok" : "error");
@@ -61,7 +67,7 @@ export default function AddCustomModelModal({
     if (!cleanId || saving) return;
     setSaving(true);
     try {
-      await onSave(cleanId, caps);
+      await onSave(cleanId, isLlm ? caps : undefined);
     } finally {
       setSaving(false);
     }
@@ -108,21 +114,23 @@ export default function AddCustomModelModal({
           </p>
         </div>
 
-        <div>
-          <label className="text-sm font-medium mb-1.5 block">Capabilities</label>
-          <div className="flex flex-wrap gap-4">
-            {Object.entries(CAPACITY_META).map(([key, meta]) => (
-              <Toggle
-                key={key}
-                checked={!!caps[key]}
-                onChange={(v) => setCaps((prev) => ({ ...prev, [key]: v }))}
-                label={meta.label}
-                description={meta.desc}
-                size="sm"
-              />
-            ))}
+        {isLlm && (
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Capabilities</label>
+            <div className="flex flex-wrap gap-4">
+              {Object.entries(CAPACITY_META).map(([key, meta]) => (
+                <Toggle
+                  key={key}
+                  checked={!!caps[key]}
+                  onChange={(v) => setCaps((prev) => ({ ...prev, [key]: v }))}
+                  label={meta.label}
+                  description={meta.desc}
+                  size="sm"
+                />
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Test result */}
         {testStatus === "ok" && <Callout variant="ok">Model is reachable</Callout>}
@@ -149,4 +157,5 @@ AddCustomModelModal.propTypes = {
   providerDisplayAlias: PropTypes.string.isRequired,
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
+  kind: PropTypes.string,
 };

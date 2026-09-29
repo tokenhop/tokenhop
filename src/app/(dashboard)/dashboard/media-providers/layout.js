@@ -8,7 +8,8 @@ import { cn } from "@/shared/utils/cn";
 
 /**
  * Signal media providers layout (YAN-305).
- * Kind tabs: Embedding, Image, Video, Text to speech, Speech to text, Web search & fetch.
+ * Kind tabs: Embedding, Text to image, Video, Text to speech, Speech to text,
+ * Web fetch and search (sentence case, YAN-402).
  * Tabs are deep routes with arrow-key navigation between links, and a
  * Signal SegmentedControl-style container matching Media.dc.html.
  *

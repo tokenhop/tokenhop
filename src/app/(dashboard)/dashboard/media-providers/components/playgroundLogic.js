@@ -54,9 +54,18 @@ export function playgroundDefaults(kind) {
 }
 
 /**
- * Build model dropdown options for a kind from registry providers + static models.
+ * Build model dropdown options for a kind from registry providers + static
+ * models, grouped by provider for an optgrouped select (YAN-402):
+ * - each option's label is the full model id, so long ids never truncate to
+ *   an unreadable prefix in the narrow playground aside
+ * - the provider name rides along as `group` (rendered by Select as an
+ *   `<optgroup label>`); providers without models (web kinds) become a
+ *   single option labelled with the provider name under their own group
+ * - option values are unchanged (`alias/modelId`, or the bare alias for
+ *   providers without models), so existing selections keep resolving
+ *
  * @param {string} kind
- * @returns {Array<{ value: string, label: string }>}
+ * @returns {Array<{ value: string, label: string, group: string }>}
  */
 export function playgroundModelOptions(kind) {
   const options = [];
@@ -65,10 +74,10 @@ export function playgroundModelOptions(kind) {
     const pModels = getModelsByProviderId(p.id).filter((m) => getModelKind(m) === kind);
     if (pModels.length > 0) {
       for (const m of pModels) {
-        options.push({ value: `${pAlias}/${m.id}`, label: `${p.name} · ${m.name || m.id}` });
+        options.push({ value: `${pAlias}/${m.id}`, label: m.id, group: p.name });
       }
     } else {
-      options.push({ value: pAlias, label: p.name });
+      options.push({ value: pAlias, label: p.name, group: p.name });
     }
   }
   return options;

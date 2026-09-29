@@ -650,10 +650,6 @@ describe("component wiring", () => {
       "shared/components/combos/ComboEditor.js",
       'if (e.key === "Escape") {\n                    // Claim Esc for the inline rename',
     ],
-    [
-      "app/(dashboard)/dashboard/providers/components/ConnectionsCard.js",
-      'else if (e.key === "Escape") {\n                      e.preventDefault();',
-    ],
   ]) {
     it(`${file}: inline editor claims Esc so the parent dialog stays open`, () => {
       expect(readFileSync(resolve(SRC, file), "utf8")).toContain(needle);

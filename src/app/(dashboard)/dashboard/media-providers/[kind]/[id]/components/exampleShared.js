@@ -1,6 +1,8 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { Button } from "@/shared/components";
+import CopyStatus from "@/shared/components/CopyStatus";
 
 /**
  * Shared field chrome for the media example runner forms (YAN-305). A thin
@@ -169,4 +171,113 @@ export const KIND_EXAMPLE_CONFIG = {
     bodyKey: "prompt",
     defaultResponse: `{\n  "data": [\n    { "url": "...", "format": "mp3" }\n  ]\n}`,
   },
+};
+
+/**
+ * Latency badge next to Response headings. Replaces the old emoji marker
+ * with a Material Symbol (`bolt`, the same glyph used for token/usage
+ * elsewhere).
+ */
+export function LatencyBadge({ ms }) {
+  if (ms == null) return null;
+  return (
+    <span className="font-mono text-xs font-normal normal-case text-muted">
+      <span className="material-symbols-outlined text-[12px] align-middle" aria-hidden="true">
+        bolt
+      </span>{" "}
+      {ms}ms
+    </span>
+  );
+}
+
+LatencyBadge.propTypes = {
+  ms: PropTypes.number,
+};
+
+/**
+ * Shared Request block (copy + Run + cURL `<pre dir="ltr">`) used by the TTS, generic,
+ * STT and embedding example cards (YAN-402). Markup mirrors the original
+ * blocks so cards using it render identically.
+ */
+export function ExampleRequestBlock({
+  curlSnippet,
+  running,
+  runningLabel,
+  canRun,
+  onRun,
+  copied,
+  copyError,
+  onCopy,
+}) {
+  return (
+    <div className="mt-1">
+      <div className="mb-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <span className={eyebrowClass}>Request</span>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={copied ? "check" : copyError ? "error" : "content_copy"}
+            onClick={onCopy}
+          >
+            {copied ? "Copied" : copyError ? "Couldn't copy" : "Copy"}
+          </Button>
+          <CopyStatus copied={copied} error={copyError} />
+          <Button
+            size="sm"
+            variant="primary"
+            icon="play_arrow"
+            onClick={onRun}
+            disabled={running || !canRun}
+            loading={running}
+          >
+            {running ? runningLabel : "Run"}
+          </Button>
+        </div>
+      </div>
+      <pre className={codeBlockClass} dir="ltr">
+        {curlSnippet}
+      </pre>
+    </div>
+  );
+}
+
+ExampleRequestBlock.propTypes = {
+  curlSnippet: PropTypes.string.isRequired,
+  running: PropTypes.bool.isRequired,
+  runningLabel: PropTypes.string.isRequired,
+  canRun: PropTypes.bool.isRequired,
+  onRun: PropTypes.func.isRequired,
+  copied: PropTypes.string,
+  copyError: PropTypes.string,
+  onCopy: PropTypes.func.isRequired,
+};
+
+/**
+ * Download link with the download Material Symbol. `className` overrides the
+ * default anchor classes so call sites keep their exact markup (YAN-402).
+ */
+export function DownloadLink({ href, filename, className, children }) {
+  return (
+    <a
+      href={href}
+      download={filename}
+      className={
+        className ??
+        "inline-flex min-h-10 items-center gap-1 rounded-lg text-xs text-muted transition-colors hover:text-text"
+      }
+    >
+      <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+        download
+      </span>
+      {children}
+    </a>
+  );
+}
+
+DownloadLink.propTypes = {
+  href: PropTypes.string,
+  filename: PropTypes.string,
+  className: PropTypes.string,
+  children: PropTypes.node,
 };

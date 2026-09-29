@@ -11,9 +11,8 @@ import dynamic from "next/dynamic";
 import IconButton from "@/shared/components/IconButton";
 import CommandPaletteTrigger from "@/shared/components/CommandPaletteTrigger";
 import useAuthStatus from "@/shared/hooks/useAuthStatus";
-import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/mediaProviderKinds";
+import { getMediaRouteInfo } from "@/shared/utils/mediaPageInfo";
 import { PROVIDER_DISPLAY } from "@/shared/constants/providerDisplay.generated";
-import { COMBINED_WEB_ITEM } from "@/shared/constants/navigation";
 import { onLocaleChange, translate } from "@/i18n/runtime";
 
 // Lazy shell dialog: the chunk loads on first open, not with the shell.
@@ -21,7 +20,9 @@ const DonateModal = dynamic(() => import("@/shared/components/DonateModal"), { s
 
 /**
  * Maps pathname to page title, description (subtitle line), icon and breadcrumbs.
- * Preserves every route mapping from the legacy Header.
+ * Media routes delegate to the pure {@link getMediaRouteInfo} helper (YAN-402):
+ * list routes use the stable "Media providers" H1 + board subtitle; detail and
+ * combo pages render their own in-page H1, so the shell only shows breadcrumbs.
  *
  * @param {string} pathname
  * @returns {{ title: string, description: string, icon?: string, breadcrumbs: Array<object> }}
@@ -29,52 +30,9 @@ const DonateModal = dynamic(() => import("@/shared/components/DonateModal"), { s
 export const getPageInfo = (pathname) => {
   if (!pathname) return { title: "", description: "", breadcrumbs: [] };
 
-  // Media provider detail: /dashboard/media-providers/[kind]/[id]
-  const mediaDetailMatch = pathname.match(/\/media-providers\/([^/]+)\/([^/]+)$/);
-  if (mediaDetailMatch) {
-    const kindId = mediaDetailMatch[1];
-    const providerId = mediaDetailMatch[2];
-    if (kindId === "combo") {
-      return {
-        title: "",
-        description: "",
-        breadcrumbs: [
-          { label: "Media Providers", href: "/dashboard/media-providers" },
-          { label: "Combo", href: "/dashboard/media-providers" },
-          { label: providerId },
-        ],
-      };
-    }
-    const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kindId);
-    const provider = PROVIDER_DISPLAY[providerId];
-    // Detail page renders its own in-page h1 (YAN-314); shell shows breadcrumb only.
-    return {
-      title: "",
-      description: "",
-      breadcrumbs: [
-        { label: "Media Providers", href: `/dashboard/media-providers/${kindId}` },
-        { label: kindConfig?.label || kindId, href: `/dashboard/media-providers/${kindId}` },
-        { label: provider?.name || providerId, providerId },
-      ],
-    };
-  }
-
-  // Media provider kind: /dashboard/media-providers/[kind]
-  const mediaKindMatch = pathname.match(/\/media-providers\/([^/]+)$/);
-  if (mediaKindMatch) {
-    const kindId = mediaKindMatch[1];
-    // The combined web page has no MEDIA_PROVIDER_KINDS entry; legacy showed the raw "web" id.
-    const kindConfig =
-      kindId === COMBINED_WEB_ITEM.id
-        ? COMBINED_WEB_ITEM
-        : MEDIA_PROVIDER_KINDS.find((k) => k.id === kindId);
-    return {
-      title: kindConfig?.label || kindId,
-      description: `Manage your ${kindConfig?.label || kindId} providers`,
-      icon: kindConfig?.icon || "perm_media",
-      breadcrumbs: [],
-    };
-  }
+  // Media provider routes: /dashboard/media-providers[/[kind][/[id]]]
+  const mediaInfo = getMediaRouteInfo(pathname);
+  if (mediaInfo) return mediaInfo;
 
   // Provider detail page: /dashboard/providers/[id]
   const providerMatch = pathname.match(/\/providers\/([^/]+)$/);
