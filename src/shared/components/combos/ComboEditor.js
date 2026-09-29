@@ -25,7 +25,8 @@ import ModelSelectModal from "@/shared/components/ModelSelectModal";
 import { ConfirmDialog } from "@/shared/components/Modal";
 import {
   roleLabel,
-  weightShare,
+  explainWeightedShares,
+  shareDetailText,
   parseWeight,
   validateComboName,
   assignStepIds,
@@ -46,6 +47,8 @@ export default function ComboEditor({
   weights,
   judgeModel,
   headroom,
+  headroomQuotaSource,
+  savedModels,
   healthByProvider,
   providerLabelById,
   saving,
@@ -73,9 +76,11 @@ export default function ComboEditor({
   const [drafts, setDrafts] = useState({});
   const [weightErrors, setWeightErrors] = useState({});
   const [announcement, setAnnouncement] = useState("");
+  const [trackStates, setTrackStates] = useState([]);
   const prevStepsRef = useRef([]);
 
   const models = combo.models || [];
+  const modelsDirty = JSON.stringify(models) !== JSON.stringify(savedModels || []);
   const isWeighted = strategy === "weighted";
   const isFusion = strategy === "fusion";
   const sensors = useSensors(
@@ -85,13 +90,21 @@ export default function ComboEditor({
   const steps = assignStepIds(models, prevStepsRef.current);
   prevStepsRef.current = steps;
   const modelById = (id) => steps.find((s) => s.id === id)?.model;
-  const shares = weightShare(
-    steps.map((s) => {
-      const parsed = parseWeight(drafts[s.id]);
-      return parsed.ok ? parsed.value : (weights[s.model] ?? 1);
-    }),
-    steps.map((s) => headroom[s.model]),
-  );
+  // Effective shares come from the router's own math (comboWeights.js via
+  // explainWeightedShares): unsaved weight drafts preview like saved ones.
+  const weightByModel = {};
+  for (const { id, model } of steps) {
+    const parsed = parseWeight(drafts[id]);
+    weightByModel[model] = parsed.ok ? parsed.value : (weights[model] ?? 1);
+  }
+  const explanations = isWeighted
+    ? explainWeightedShares(
+        steps.map((s) => s.model),
+        weightByModel,
+        headroom,
+        headroomQuotaSource,
+      )
+    : [];
 
   const commitRename = () => {
     const result = validateComboName(nameDraft);
@@ -311,6 +324,8 @@ export default function ComboEditor({
                     label: "No data",
                     variant: "neutral",
                   };
+                  const explanation = explanations[index];
+                  const track = trackStates[index];
                   return (
                     <RouteStep
                       key={id}
@@ -323,7 +338,10 @@ export default function ComboEditor({
                       healthVariant={health.variant}
                       showWeight={isWeighted}
                       weight={drafts[id] ?? String(weights[model] ?? 1)}
-                      share={shares[index] ?? 0}
+                      weightDetail={explanation ? shareDetailText(explanation) : undefined}
+                      share={explanation?.share ?? 0}
+                      replayState={track?.state}
+                      replayReason={track?.reason}
                       weightError={weightErrors[id]}
                       onWeightChange={(v) => {
                         setDrafts((prev) => ({ ...prev, [id]: v }));
@@ -444,7 +462,18 @@ export default function ComboEditor({
         confirmText="Delete"
         variant="danger"
       />
-      <RouteTestPanel comboId={combo.id} />
+      {/* Keyed by the route contents: any model edit remounts the panel so a
+          recorded run can never remap onto steps it wasn't recorded against.
+          While models differ from the saved route the probe (which runs the
+          saved combo server-side) stays disabled: its attempts would light
+          the wrong draft steps. */}
+      <RouteTestPanel
+        key={models.join("\n")}
+        comboId={combo.id}
+        models={models}
+        disabled={modelsDirty}
+        onTrackStatesChange={setTrackStates}
+      />
     </section>
   );
 }
@@ -458,7 +487,9 @@ ComboEditor.propTypes = {
   strategy: PropTypes.string.isRequired,
   weights: PropTypes.object,
   judgeModel: PropTypes.string,
-  headroom: PropTypes.object,
+  headroom: PropTypes.objectOf(PropTypes.number),
+  headroomQuotaSource: PropTypes.objectOf(PropTypes.string),
+  savedModels: PropTypes.arrayOf(PropTypes.string),
   healthByProvider: PropTypes.object,
   providerLabelById: PropTypes.object,
   saving: PropTypes.bool,

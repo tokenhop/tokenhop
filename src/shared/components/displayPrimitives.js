@@ -110,6 +110,8 @@ export const METER_FILLS = {
   err: "bg-err",
   live: "bg-lime",
   info: "bg-sky",
+  brand: "bg-coral",
+  neutral: "bg-subtle",
 };
 
 const METER_KINDS = new Set(["unlimited", "credits"]);

@@ -9,7 +9,10 @@ import ProviderTile from "@/shared/components/ProviderTile";
 import StatusPill from "@/shared/components/StatusPill";
 import { isFallbackOnly } from "./comboBuilder";
 
-/** One numbered route step: bubble, ProviderTile, health pill, drag handle, remove, weight row. */
+/**
+ * One numbered route step: bubble, ProviderTile, health pill, optional
+ * replay pill, drag handle, remove, weight row.
+ */
 export default function RouteStep({
   uid,
   index,
@@ -20,11 +23,14 @@ export default function RouteStep({
   healthVariant,
   showWeight,
   weight,
+  weightDetail,
   share,
   weightError,
   onWeightChange,
   onWeightBlur,
   onRemove,
+  replayState, // null | "attempted" | "answered" | "failed" | "skipped"
+  replayReason,
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: uid,
@@ -41,6 +47,26 @@ export default function RouteStep({
     zIndex: isDragging ? 10 : undefined,
   };
   const providerId = model.includes("/") ? model.slice(0, model.indexOf("/")) : model;
+  // Replay pill (YAN-411): attempted = sky, answered = lime, failed/skipped =
+  // warn with the reason. Plain text alongside the border ring, never color-only.
+  const replayPill =
+    replayState === "attempted"
+      ? { variant: "info", label: "Trying…" }
+      : replayState === "answered"
+        ? { variant: "live", label: "Answered" }
+        : replayState === "failed"
+          ? { variant: "warn", label: `Failed — ${replayReason || "unknown"}` }
+          : replayState === "skipped"
+            ? { variant: "warn", label: `Skipped — ${replayReason || "unknown"}` }
+            : null;
+  const replayRing =
+    replayState === "answered"
+      ? "border-lime"
+      : replayState === "attempted"
+        ? "border-sky"
+        : replayState === "failed" || replayState === "skipped"
+          ? "border-warn"
+          : null;
   return (
     <li style={style} ref={setNodeRef} className="flex list-none gap-3.5">
       <div className="flex w-8 shrink-0 flex-col items-center" aria-hidden="true">
@@ -50,8 +76,8 @@ export default function RouteStep({
         <span className="my-1.5 w-0.5 flex-1 bg-[repeating-linear-gradient(var(--signal-subtle)_0_5px,transparent_5px_11px)]" />
       </div>
       <div
-        className={`mb-3 flex min-w-0 flex-1 flex-col gap-3 rounded-xl border border-line bg-raised p-3.5 sm:p-4 ${
-          isDragging ? "border-coral shadow-card" : ""
+        className={`mb-3 flex min-w-0 flex-1 flex-col gap-3 rounded-xl border bg-raised p-3.5 sm:p-4 ${
+          isDragging ? "border-coral shadow-card" : replayRing || "border-line"
         }`}
       >
         <div className="flex min-w-0 items-center gap-3">
@@ -65,6 +91,13 @@ export default function RouteStep({
           <StatusPill variant={healthVariant} size="sm">
             {health}
           </StatusPill>
+          {replayPill && (
+            // Long server-supplied reasons truncate visually at 390px; the
+            // full text stays in the DOM for screen readers.
+            <StatusPill variant={replayPill.variant} size="sm" className="max-w-40 truncate">
+              {replayPill.label}
+            </StatusPill>
+          )}
           <button
             type="button"
             {...attributes}
@@ -80,7 +113,7 @@ export default function RouteStep({
           <IconButton icon="close" label={`Remove ${model} from route`} onClick={onRemove} />
         </div>
         {showWeight && (
-          <div className="flex items-center gap-3 ps-12">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 ps-12">
             <label htmlFor={`${uid}-weight`} className="shrink-0 text-xs text-muted">
               Weight
             </label>
@@ -105,6 +138,7 @@ export default function RouteStep({
             />
             <Meter
               value={share}
+              variant="brand"
               label={`Traffic share for ${model}`}
               valueText={
                 isFallbackOnly(Number(weight)) && weight !== ""
@@ -116,8 +150,9 @@ export default function RouteStep({
             <span className="w-20 shrink-0 text-end font-mono text-xs text-muted">
               {isFallbackOnly(Number(weight)) && weight !== "" ? "Fallback only" : `≈${share}%`}
             </span>
+            {weightDetail && <p className="m-0 basis-full text-xs text-muted">{weightDetail}</p>}
             {weightError && (
-              <span id={`${uid}-weight-error`} role="alert" className="w-full text-xs text-err">
+              <span id={`${uid}-weight-error`} role="alert" className="basis-full text-xs text-err">
                 {weightError}
               </span>
             )}
@@ -138,9 +173,12 @@ RouteStep.propTypes = {
   healthVariant: PropTypes.string.isRequired,
   showWeight: PropTypes.bool,
   weight: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  weightDetail: PropTypes.string,
   share: PropTypes.number,
   weightError: PropTypes.string,
   onWeightChange: PropTypes.func,
   onWeightBlur: PropTypes.func,
   onRemove: PropTypes.func,
+  replayState: PropTypes.oneOf(["attempted", "answered", "failed", "skipped"]),
+  replayReason: PropTypes.string,
 };

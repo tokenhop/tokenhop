@@ -3,9 +3,71 @@
  *
  * Pure module: no React, no imports from src/. Mirrors the semantics of
  * `src/app/(dashboard)/dashboard/combos/page.js` (parseWeight 0-1000,
- * weightOf fallback to saved ?? 1, headroom-scaled shares) and the board
- * copy in `docs/redesign/boards/project/Combos.dc.html`.
+ * weightOf fallback to saved ?? 1) and the board copy in
+ * `docs/redesign/boards/project/Combos.dc.html`. Weighted-share math comes
+ * from `open-sse/services/comboWeights.js` — the same pure helper the router
+ * uses (YAN-411), never re-implemented here.
  */
+
+import {
+  comboBaseWeight,
+  comboQuotaHeadroom,
+  comboShares,
+  effectiveComboWeight,
+} from "open-sse/services/comboWeights.js";
+
+/** Where the remaining-quota number came from → plain-English label. */
+export const QUOTA_SOURCE_LABELS = {
+  static: "no quota data yet",
+  header: "provider-reported",
+  probe: "from the last quota probe",
+};
+
+/**
+ * Per-step effective-share explanation for the weighted strategy, derived
+ * from the router's own math (comboWeights.js). Returns one entry per model:
+ * `{ base, quota, quotaSource, share, fallbackOnly, outOfQuota }` — the
+ * configured weight, remaining quota (0–1) and its source, and the effective
+ * traffic share in percent. Shares are per model: duplicate rows show the
+ * same share because the router dedupes weighted candidates.
+ * @param {string[]} models
+ * @param {Object<string, number>} weights
+ * @param {Object<string, number>} headroomByModel
+ * @param {Object<string, string>} [quotaSourceByModel]
+ */
+export function explainWeightedShares(models, weights, headroomByModel, quotaSourceByModel) {
+  const list = Array.isArray(models) ? models : [];
+  const shares = comboShares(list, weights, headroomByModel);
+  return list.map((model, index) => {
+    const quota = comboQuotaHeadroom(headroomByModel?.[model]);
+    const base = comboBaseWeight(model, weights);
+    return {
+      base,
+      quota,
+      quotaSource: quotaSourceByModel?.[model] || "static",
+      share: shares[index] ?? 0,
+      fallbackOnly: base === 0,
+      outOfQuota: base > 0 && effectiveComboWeight(model, weights, quota) === 0,
+    };
+  });
+}
+
+/**
+ * One-line effective-share explanation for a weighted step (YAN-411):
+ * configured weight, remaining quota with its source, effective share.
+ */
+export function shareDetailText(explanation) {
+  if (!explanation) return null;
+  const source = QUOTA_SOURCE_LABELS[explanation.quotaSource] || QUOTA_SOURCE_LABELS.static;
+  if (explanation.fallbackOnly) {
+    return "Weight 0 — fallback only: no traffic until the others fail.";
+  }
+  if (explanation.outOfQuota) {
+    return `No quota left (${source}) — paused until quota resets.`;
+  }
+  const quotaPct = Math.round(explanation.quota * 100);
+  return `Weight ${explanation.base} × ${quotaPct}% quota left (${source}) → about ${explanation.share}% of traffic.`;
+}
 
 export const STRATEGIES = [
   {
@@ -59,32 +121,9 @@ export function roleLabel(strategy, index) {
   return index === 0 ? "Primary" : "Backup";
 }
 
-function numOr(raw, fallback) {
-  if (raw === undefined || raw === null || raw === "") return fallback;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : fallback;
-}
-
 /**
- * Headroom-scaled traffic shares, one per weight, in percent to 1 decimal.
- * Matches page behavior: weight 0 → share 0; total 0 → all 0.
- * Missing weights default to 1; non-finite/negative headroom defaults to 1.
+ * Weight 0 means the model is fallback-only (never picked first).
  */
-export function weightShare(weights = [], headroom = []) {
-  const len = Math.max(weights?.length || 0, headroom?.length || 0);
-  const effective = Array.from({ length: len }, (_, i) => {
-    const w = numOr(weights?.[i], 1);
-    const rawH = headroom?.[i];
-    const h = rawH === undefined || rawH === null ? 1 : Number(rawH);
-    const hh = Number.isFinite(h) && h >= 0 ? h : 1;
-    return w * hh;
-  });
-  const total = effective.reduce((s, v) => s + v, 0);
-  if (!(total > 0)) return effective.map(() => 0);
-  return effective.map((v) => Math.round((v / total) * 1000) / 10);
-}
-
-/** Weight 0 means the model is fallback-only (never picked first). */
 export function isFallbackOnly(weight) {
   return weight === 0;
 }
