@@ -10,6 +10,7 @@ import {
   capProviders,
   mergeRoutes,
   overlayLiveSignal,
+  updateActiveSince,
 } from "@/shared/utils/routesMap.js";
 
 const NOW = new Date("2026-09-29T12:00:00Z").getTime();
@@ -158,6 +159,49 @@ describe("overlayLiveSignal", () => {
     edges: [{ from: null, to: "claude", state: "idle", count: 0 }],
   });
 
+  it("stops promoting an in-flight provider after the 60s stale guard", () => {
+    const activeSince = new Map([["claude", NOW - 61_000]]);
+    const overlaid = overlayLiveSignal(
+      base,
+      { activeRequests: [{ provider: "claude", count: 2 }] },
+      activeSince,
+      NOW,
+    );
+    expect(overlaid.providers.find((p) => p.id === "claude").state).toBe("idle");
+    expect(overlaid.edges[0].state).toBe("idle");
+  });
+
+  it("keeps promoting an in-flight provider inside the stale guard", () => {
+    const activeSince = new Map([["claude", NOW - 59_000]]);
+    const overlaid = overlayLiveSignal(
+      base,
+      { activeRequests: [{ provider: "claude", count: 2 }] },
+      activeSince,
+      NOW,
+    );
+    expect(overlaid.providers.find((p) => p.id === "claude").state).toBe("flowing");
+  });
+
+  it("treats a never-seen provider as fresh (backwards compatible)", () => {
+    const overlaid = overlayLiveSignal(
+      base,
+      { activeRequests: [{ provider: "claude", count: 1 }] },
+      new Map(),
+      NOW,
+    );
+    expect(overlaid.providers.find((p) => p.id === "claude").state).toBe("flowing");
+  });
+
+  it("updateActiveSince records first-seen timestamps and drops departed providers", () => {
+    const previous = new Map([["claude", NOW - 30_000]]);
+    const grown = updateActiveSince([{ provider: "Claude" }, { provider: "kimi" }], previous, NOW);
+    expect(grown.get("claude")).toBe(NOW - 30_000);
+    expect(grown.get("kimi")).toBe(NOW);
+    const shrunk = updateActiveSince([{ provider: "kimi" }], grown, NOW);
+    expect(shrunk.has("claude")).toBe(false);
+    expect(shrunk.get("kimi")).toBe(NOW);
+  });
+
   it("promotes idle providers with in-flight requests to flowing", () => {
     const overlaid = overlayLiveSignal(base, {
       activeRequests: [{ provider: "Claude", count: 2 }],
@@ -299,6 +343,12 @@ describe("routes map CSS guards", async () => {
   it("shows edge labels on hover and keyboard focus", () => {
     expect(css).toMatch(/\.routes-map-edge:hover [^{]*\.routes-map-edge-label/);
     expect(css).toMatch(/\.routes-map-edge:focus-visible [^{]*\.routes-map-edge-label/);
+  });
+
+  it("outlines the focused edge hit path in coral without recoloring state lines", () => {
+    expect(css).toMatch(
+      /\.routes-map-edge:focus-visible \.routes-map-edge-hit\s*\{\s*stroke: var\(--signal-coral\);/,
+    );
   });
 
   it("removes the legacy topology flow and React Flow control CSS", () => {

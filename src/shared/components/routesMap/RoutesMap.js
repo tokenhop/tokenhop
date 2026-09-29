@@ -140,9 +140,10 @@ export default function RoutesMap({
       </div>
       <figure aria-describedby="routes-map-table" className="min-w-0 overflow-x-auto" dir="ltr">
         {/* Absolute geometry stays LTR; on narrow screens scroll instead of shrinking labels. */}
+        {/* biome-ignore lint/a11y/useSemanticElements: SVG is not a fieldset; role="group" (not "img") exposes the focusable per-edge img groups (YAN-412 review). */}
         <svg
           viewBox={`0 0 ${SVG_W} ${height}`}
-          role="img"
+          role="group"
           aria-label={`Routes over the last 5 minutes: ${clients.length} clients, ${providers.length} providers.`}
           className="block h-auto w-full min-w-[560px]"
           style={{ minHeight: height, direction: "ltr" }}

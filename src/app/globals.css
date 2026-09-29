@@ -540,6 +540,13 @@ button:disabled,
 .routes-map-edge:focus-visible .routes-map-edge-line {
   stroke-width: 4;
 }
+/* Focus indicator on the transparent hit path: coral, the fixed meaning for
+   focus (design-system §2 + Signal focus ring). State lines stay untouched so
+   lime/warn/line/err keep carrying edge state. */
+.routes-map-edge:focus-visible .routes-map-edge-hit {
+  stroke: var(--signal-coral);
+  stroke-opacity: 0.85;
+}
 .routes-map-node text {
   transition: fill 300ms ease-out;
 }

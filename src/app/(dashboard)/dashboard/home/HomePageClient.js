@@ -94,8 +94,9 @@ export default function HomePageClient() {
     !usage.loading &&
     !usage.error &&
     !usage.current.totalRequests;
-  // One last-activity fetch serves the quiet-period row and the idle map.
-  const idle = routesModel ? routesAreIdle(routesModel) : false;
+  // One last-activity fetch serves the quiet-period row and the idle map
+  // (skipped when there are no providers at all — the true empty state).
+  const idle = routesModel && routesModel.providers.length > 0 ? routesAreIdle(routesModel) : false;
   const activity = useLastActivity(quiet || idle);
 
   return (

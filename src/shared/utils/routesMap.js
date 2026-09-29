@@ -16,6 +16,13 @@ import { formatReset, timeAgo } from "./format";
 
 export { EDGE_STATE_LABEL };
 
+/**
+ * In-flight frames older than this stop lighting the map. A stream that dies
+ * silently (or a stuck upstream call) must not show "flowing" forever — the
+ * 60s REST window refresh takes over as the source of truth.
+ */
+export const ACTIVE_TIMEOUT_MS = 60_000;
+
 const EDGE_STYLE = {
   flowing: { stroke: "var(--signal-lime-ink)", dash: "6 8", animated: true },
   cooling: { stroke: "var(--signal-warn)", dash: "3 6", animated: false },
@@ -104,19 +111,46 @@ export function mergeRoutes(routes, extraProviders = []) {
 }
 
 /**
+ * Track when each in-flight provider was first seen, so the overlay can drop
+ * stuck frames (see `ACTIVE_TIMEOUT_MS`). Providers that left the stream are
+ * dropped; new ones start at `nowMs`; returning ones keep their first-seen.
+ * @param {Array<{ provider?: string }>} activeRequests current stream frame
+ * @param {Map<string, number>} [previous] previous first-seen map (keyed lowercase)
+ * @param {number} [nowMs]
+ * @returns {Map<string, number>} next first-seen map
+ */
+export function updateActiveSince(activeRequests, previous = new Map(), nowMs = Date.now()) {
+  const next = new Map();
+  for (const entry of activeRequests || []) {
+    const key = entry?.provider?.toLowerCase();
+    if (!key) continue;
+    next.set(key, previous.get(key) ?? nowMs);
+  }
+  return next;
+}
+
+/**
  * Overlay the in-flight SSE frames (`/api/usage/stream`) onto the window
  * model. Conservative: an in-flight provider promotes only an idle node to
  * flowing, a reported error wins outright, and cooling is never masked by a
- * retry in flight. Returns the same object when nothing changes so callers
- * skip a re-render.
+ * retry in flight. Frames first seen more than `ACTIVE_TIMEOUT_MS` ago are
+ * ignored (stale-stream guard; callers re-tick while anything is in flight
+ * so a stuck provider actually stops). Returns the same object when nothing
+ * changes so callers skip a re-render.
  * @param {{ providers: Array, edges: Array }} routes
  * @param {{ activeRequests?: Array<{ provider: string, count: number }>, lastProvider?: string, errorProvider?: string }} [live]
+ * @param {Map<string, number>} [activeSince] first-seen ms per provider (keyed lowercase)
+ * @param {number} [nowMs]
  * @returns {{ providers: Array, edges: Array }}
  */
-export function overlayLiveSignal(routes, live) {
-  const active = new Set(
-    (live?.activeRequests || []).map((r) => r.provider?.toLowerCase()).filter(Boolean),
-  );
+export function overlayLiveSignal(routes, live, activeSince = new Map(), nowMs = Date.now()) {
+  const active = new Set();
+  for (const entry of live?.activeRequests || []) {
+    const key = entry?.provider?.toLowerCase();
+    if (!key) continue;
+    const since = activeSince.get(key) ?? nowMs;
+    if (nowMs - since < ACTIVE_TIMEOUT_MS) active.add(key);
+  }
   const errorKey = live?.errorProvider?.toLowerCase() || "";
   let changed = false;
 

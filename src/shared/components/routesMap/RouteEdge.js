@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { EDGE_STATE_LABEL, edgeLabel, edgeStyle } from "@/shared/utils/routesMap";
+import { edgeLabel, edgeStyle } from "@/shared/utils/routesMap";
 
 /**
  * One route edge: a wide transparent hit path, the visible styled line(s) and
@@ -21,12 +21,21 @@ export function RouteEdge({ edge, segments, labelX, labelY }) {
   const lineClass = style.animated
     ? "routes-map-edge-line motion-safe:animate-flow"
     : "routes-map-edge-line";
-  const visible = edge.from || EDGE_STATE_LABEL[edge.state] || edge.state;
+  const visible = edge.from || edge.to;
   return (
     // biome-ignore lint/a11y/noInteractiveElementToNoninteractiveRole: the SVG edge must be keyboard-focusable so its label is reachable on focus (WCAG 2.1.1, YAN-412); role="img" carries the route description as its accessible name.
     <g className="routes-map-edge" tabIndex={0} role="img" aria-label={edgeLabel(edge)}>
       {segments.map((d) => (
-        <path key={d} d={d} fill="none" stroke="transparent" strokeWidth={16} />
+        // biome-ignore lint/a11y/noAriaHiddenOnFocusable: decorative hit-area paths inside the labeled edge group; group stays announced via aria-label.
+        <path
+          key={d}
+          className="routes-map-edge-hit"
+          d={d}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={16}
+          aria-hidden="true"
+        />
       ))}
       {segments.map((d) => (
         <path

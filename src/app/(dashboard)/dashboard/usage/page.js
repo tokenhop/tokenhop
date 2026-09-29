@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -15,7 +15,12 @@ import { RoutesMapCard } from "@/shared/components/routesMap/RoutesMapCard";
 import useLastActivity from "@/shared/hooks/useLastActivity";
 import useLiveRoutes from "@/shared/hooks/useLiveRoutes";
 import usePeriod from "@/shared/hooks/usePeriod";
-import { isIdle as routesAreIdle, mergeRoutes, overlayLiveSignal } from "@/shared/utils/routesMap";
+import {
+  isIdle as routesAreIdle,
+  mergeRoutes,
+  overlayLiveSignal,
+  updateActiveSince,
+} from "@/shared/utils/routesMap";
 import useUsageStats from "./lib/useUsageStats";
 import { useChartBuckets } from "./lib/useChartBuckets";
 import useProviders from "./lib/useProviders";
@@ -70,11 +75,26 @@ function UsageContent() {
   // states render instead of a false "no providers" map.
   const [routesRetryKey, setRoutesRetryKey] = useState(0);
   const liveRoutes = useLiveRoutes(routesRetryKey);
-  const routesModel = useMemo(
-    () =>
-      liveRoutes.routes ? overlayLiveSignal(mergeRoutes(liveRoutes.routes, providers), live) : null,
-    [liveRoutes.routes, providers, live],
-  );
+  // Stale-active guard: first-seen per in-flight provider; a 1s tick runs only
+  // while something is in flight so a stuck provider stops lighting the map.
+  const activeSinceRef = useRef(new Map());
+  const [overlayTick, setOverlayTick] = useState(0);
+  const liveBusy = live.activeRequests.length > 0;
+  useEffect(() => {
+    if (!liveBusy) return undefined;
+    const id = setInterval(() => setOverlayTick((tick) => tick + 1), 1_000);
+    return () => clearInterval(id);
+  }, [liveBusy]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: overlayTick re-checks the stale guard once per second while traffic is in flight.
+  const routesModel = useMemo(() => {
+    if (!liveRoutes.routes) return null;
+    activeSinceRef.current = updateActiveSince(live.activeRequests, activeSinceRef.current);
+    return overlayLiveSignal(
+      mergeRoutes(liveRoutes.routes, providers),
+      live,
+      activeSinceRef.current,
+    );
+  }, [liveRoutes.routes, providers, live, overlayTick]);
   const routesIdle =
     routesModel && routesModel.providers.length > 0 ? routesAreIdle(routesModel) : false;
   const quiet =
