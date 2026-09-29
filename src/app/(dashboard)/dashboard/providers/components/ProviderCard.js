@@ -1,6 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { memo } from "react";
 import { ProviderTile, StatusPill, Toggle } from "@/shared/components";
 import { providerHealth } from "@/shared/utils/providerHealth";
 import { getAccountSegments } from "../utils";
@@ -90,7 +91,8 @@ SegmentedHealthBarDisplay.propTypes = {
   ).isRequired,
 };
 
-export default function ProviderCard({
+/** Compact catalog card for one provider entry. Memoised: props stay stable across list re-renders. */
+const ProviderCard = memo(function ProviderCard({
   entry,
   connections,
   selected = false,
@@ -170,9 +172,11 @@ export default function ProviderCard({
       {/* Bottom counts and status */}
       <div className="pointer-events-none flex min-w-0 items-center gap-1.5 text-xs text-muted">
         <span>
-          {connections.length} {connections.length === 1 ? "account" : "accounts"}
+          {connections.length === 0
+            ? "Not connected"
+            : `${connections.length} ${connections.length === 1 ? "account" : "accounts"}`}
         </span>
-        {modelCount !== null && (
+        {modelCount > 0 && (
           <>
             <span aria-hidden="true">·</span>
             <span>
@@ -192,7 +196,7 @@ export default function ProviderCard({
       )}
     </div>
   );
-}
+});
 
 ProviderCard.propTypes = {
   entry: PropTypes.shape({
@@ -211,3 +215,5 @@ ProviderCard.propTypes = {
   onSelect: PropTypes.func.isRequired,
   onToggle: PropTypes.func.isRequired,
 };
+
+export default ProviderCard;
