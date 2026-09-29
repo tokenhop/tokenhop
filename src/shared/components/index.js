@@ -20,6 +20,8 @@ export { default as StatTile } from "./StatTile";
 export { default as ModelChip } from "./ModelChip";
 export { default as SettingRow } from "./SettingRow";
 export { default as EmptyState } from "./EmptyState";
+export { default as PeriodControl } from "./PeriodControl";
+export { default as QuietPeriod } from "./QuietPeriod";
 export { default as Callout } from "./Callout";
 export { LoadingState, ErrorState } from "./StateViews";
 export { default as Terminal } from "./Terminal";

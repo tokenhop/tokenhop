@@ -22,7 +22,7 @@ import AccessCard from "./components/AccessCard";
 import QuickConnectCard from "./components/QuickConnectCard";
 import { useTunnelControls } from "./hooks/useTunnelControls";
 import { useApiKeys } from "./hooks/useApiKeys";
-import { useRemoteHost, useLocalBaseUrl } from "./hooks/useEndpointShell";
+import { useRemoteHost, useLocalBaseUrl } from "@/shared/hooks/useEndpointShell";
 
 /**
  * Endpoint & keys page (Signal redesign): three ways in, API keys with
