@@ -1998,7 +1998,7 @@
   "Tunnel": "Tunneli",
   "Tunnel created but not reachable. Please try again.": "Tunneli luotiin, mutta siihen ei saada yhteyttä. Yritä uudelleen.",
   "Tunnel disabled": "Tunneli poistettu käytöstä",
-  "Tunnel live at": "Tunneli toimii osoitteessa",
+  "Tunnel live": "Tunneli toiminnassa",
   "Tunnel process stopped unexpectedly.": "Tunneliprosessi pysähtyi odottamatta.",
   "Tunnel provider": "Tunnelin palveluntarjoaja",
   "Turn off Empty": "Poista Empty käytöstä",

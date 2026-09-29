@@ -2045,7 +2045,7 @@
   "Tunnel": "隧道",
   "Tunnel created but not reachable. Please try again.": "隧道已建立但無法連線。請重試。",
   "Tunnel disabled": "隧道已停用",
-  "Tunnel live at": "隧道運作於",
+  "Tunnel live": "隧道運作中",
   "Tunnel process stopped unexpectedly.": "隧道程序意外停止。",
   "Tunnel provider": "隧道供應商",
   "Turn off Empty": "關閉空值",

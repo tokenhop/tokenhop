@@ -2044,7 +2044,7 @@
   "Tunnel": "Туннель",
   "Tunnel created but not reachable. Please try again.": "Туннель создан, но недоступен. Попробуйте ещё раз.",
   "Tunnel disabled": "Туннель отключён",
-  "Tunnel live at": "Туннель активен по адресу",
+  "Tunnel live": "Туннель активен",
   "Tunnel process stopped unexpectedly.": "Процесс туннеля неожиданно остановился.",
   "Tunnel provider": "Провайдер туннеля",
   "Turn off Empty": "Отключить Empty",

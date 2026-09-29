@@ -2047,7 +2047,7 @@
   "Tunnel": "টানেল",
   "Tunnel created but not reachable. Please try again.": "টানেল তৈরি হয়েছে কিন্তু প্রবেশযোগ্য নয়। অনুগ্রহ করে আবার চেষ্টা করুন।",
   "Tunnel disabled": "টানেল নিষ্ক্রিয়",
-  "Tunnel live at": "টানেল চালু আছে",
+  "Tunnel live": "টানেল চালু আছে",
   "Tunnel process stopped unexpectedly.": "টানেল প্রক্রিয়া অপ্রত্যাশিতভাবে থেমে গেছে।",
   "Tunnel provider": "টানেল প্রদানকারী",
   "Turn off Empty": "খালি বন্ধ করুন",

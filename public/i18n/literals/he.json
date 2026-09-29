@@ -2045,7 +2045,7 @@
   "Tunnel": "מנהרה",
   "Tunnel created but not reachable. Please try again.": "המנהרה נוצרה אך אינה נגישה. נא לנסות שוב.",
   "Tunnel disabled": "המנהרה מושבתת",
-  "Tunnel live at": "המנהרה פעילה בכתובת",
+  "Tunnel live": "המנהרה פעילה",
   "Tunnel process stopped unexpectedly.": "תהליך המנהרה נעצר באופן בלתי צפוי.",
   "Tunnel provider": "ספק מנהרה",
   "Turn off Empty": "כיבוי ריק",

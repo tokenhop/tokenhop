@@ -2045,7 +2045,7 @@
   "Tunnel": "터널",
   "Tunnel created but not reachable. Please try again.": "터널이 생성되었지만 연결할 수 없습니다. 다시 시도해 주세요.",
   "Tunnel disabled": "터널 비활성화",
-  "Tunnel live at": "터널 실행 중:",
+  "Tunnel live": "터널 실행 중",
   "Tunnel process stopped unexpectedly.": "터널 프로세스가 예기치 않게 종료되었습니다.",
   "Tunnel provider": "터널 제공자",
   "Turn off Empty": "빈 계정 끄기",

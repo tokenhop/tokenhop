@@ -2037,7 +2037,7 @@
   "Tunnel": "Đường hầm",
   "Tunnel created but not reachable. Please try again.": "Đã tạo tunnel nhưng không thể truy cập. Vui lòng thử lại.",
   "Tunnel disabled": "Tunnel đã tắt",
-  "Tunnel live at": "Tunnel đang hoạt động tại",
+  "Tunnel live": "Tunnel đang hoạt động",
   "Tunnel process stopped unexpectedly.": "Tiến trình tunnel đã dừng đột ngột.",
   "Tunnel provider": "Nhà cung cấp tunnel",
   "Turn off Empty": "Tắt Empty",

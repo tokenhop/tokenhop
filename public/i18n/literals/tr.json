@@ -2039,7 +2039,7 @@
   "Tunnel": "Tünel",
   "Tunnel created but not reachable. Please try again.": "Tünel oluşturuldu ancak erişilebilir değil. Lütfen tekrar deneyin.",
   "Tunnel disabled": "Tünel devre dışı",
-  "Tunnel live at": "Tünel şu adreste çalışıyor",
+  "Tunnel live": "Tünel çalışıyor",
   "Tunnel process stopped unexpectedly.": "Tünel süreci beklenmedik şekilde durdu.",
   "Tunnel provider": "Tünel sağlayıcısı",
   "Turn off Empty": "Boş olanları kapat",

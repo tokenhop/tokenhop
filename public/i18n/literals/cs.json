@@ -2033,7 +2033,7 @@
   "Tunnel": "Tunel",
   "Tunnel created but not reachable. Please try again.": "Tunel byl vytvořen, ale není dosažitelný. Zkuste to znovu.",
   "Tunnel disabled": "Tunel zakázán",
-  "Tunnel live at": "Tunel aktivní na",
+  "Tunnel live": "Tunel aktivní",
   "Tunnel process stopped unexpectedly.": "Proces tunelu byl neočekávaně zastaven.",
   "Tunnel provider": "Poskytovatel tunelu",
   "Turn off Empty": "Vypnout prázdné",

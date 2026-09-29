@@ -2477,7 +2477,7 @@
   "Tunnel connected!": "Tunnel เชื่อมต่อแล้ว!",
   "Tunnel created but not reachable. Please try again.": "สร้าง Tunnel แล้วแต่เข้าไม่ถึง กรุณาลองอีกครั้ง",
   "Tunnel disabled": "ปิด Tunnel แล้ว",
-  "Tunnel live at": "Tunnel ทำงานอยู่ที่",
+  "Tunnel live": "Tunnel ทำงานอยู่",
   "Tunnel process stopped unexpectedly.": "กระบวนการ Tunnel หยุดโดยไม่คาดคิด",
   "Tunnel provider": "ผู้ให้บริการทันเนล",
   "Turn off Empty": "ปิด Empty",

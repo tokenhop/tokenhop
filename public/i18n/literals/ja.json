@@ -2047,7 +2047,7 @@
   "Tunnel": "トンネル",
   "Tunnel created but not reachable. Please try again.": "トンネルは作成されましたが到達できません。もう一度お試しください。",
   "Tunnel disabled": "トンネル無効",
-  "Tunnel live at": "トンネルの稼働先:",
+  "Tunnel live": "トンネル稼働中",
   "Tunnel process stopped unexpectedly.": "トンネルプロセスが予期せず停止しました。",
   "Tunnel provider": "トンネル プロバイダー",
   "Turn off Empty": "Emptyをオフ",

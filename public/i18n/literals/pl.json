@@ -2035,7 +2035,7 @@
   "Tunnel": "Tunel",
   "Tunnel created but not reachable. Please try again.": "Tunnel utworzony, ale nieosiągalny. Spróbuj ponownie.",
   "Tunnel disabled": "Tunnel wyłączony",
-  "Tunnel live at": "Tunnel aktywny pod",
+  "Tunnel live": "Tunnel aktywny",
   "Tunnel process stopped unexpectedly.": "Proces tunelu nieoczekiwanie się zatrzymał.",
   "Tunnel provider": "Dostawca tunelu",
   "Turn off Empty": "Wyłącz puste",

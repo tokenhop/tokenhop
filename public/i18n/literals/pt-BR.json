@@ -2386,7 +2386,7 @@
   "Tunnel": "Túnel",
   "Tunnel created but not reachable. Please try again.": "Túnel criado, mas não acessível. Tente novamente.",
   "Tunnel disabled": "Túnel desativado",
-  "Tunnel live at": "Túnel ativo em",
+  "Tunnel live": "Túnel ativo",
   "Tunnel process stopped unexpectedly.": "O processo do túnel foi encerrado inesperadamente.",
   "Tunnel provider": "Provedor de túnel",
   "Turn off Empty": "Desligar Vazio",

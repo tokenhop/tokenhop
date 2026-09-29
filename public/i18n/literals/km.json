@@ -2473,7 +2473,7 @@
   "Tunnel connected!": "បានភ្ជាប់ Tunnel!",
   "Tunnel created but not reachable. Please try again.": "ធ្យូនែលត្រូវបានបង្កើត ប៉ុន្តែមិនអាចចូលបានទេ។ សូមព្យាយាមម្តងទៀត។",
   "Tunnel disabled": "Tunnel បានបិទ",
-  "Tunnel live at": "ធ្យូនែលដំណើរការនៅ",
+  "Tunnel live": "ធ្យូនែលកំពុងដំណើរការ",
   "Tunnel process stopped unexpectedly.": "ដំណើរការធ្យូនែលបានបញ្ឈប់ដោយមិនបានរំពឹងទុក។",
   "Tunnel provider": "អ្នកផ្តល់សេវាធ្យូនែល",
   "Turn off Empty": "បិទធាតុដែលអស់",

@@ -2491,7 +2491,7 @@
   "Tunnel connected!": "تونل متصل شد!",
   "Tunnel created but not reachable. Please try again.": "تونل ساخته شد اما قابل دسترسی نیست. لطفاً دوباره تلاش کنید.",
   "Tunnel disabled": "تونل غیرفعال شد",
-  "Tunnel live at": "تونل فعال است در",
+  "Tunnel live": "تونل فعال است",
   "Tunnel process stopped unexpectedly.": "فرآیند تونل به‌طور غیرمنتظره متوقف شد.",
   "Tunnel provider": "ارائه‌دهنده تونل",
   "Turn off Empty": "خاموش کردن حساب‌های خالی",

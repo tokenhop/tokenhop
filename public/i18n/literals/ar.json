@@ -2047,7 +2047,7 @@
   "Tunnel": "نفق",
   "Tunnel created but not reachable. Please try again.": "تم إنشاء النفق ولكن لا يمكن الوصول إليه. يرجى المحاولة مرة أخرى.",
   "Tunnel disabled": "النفق معطّل",
-  "Tunnel live at": "النفق نشط على",
+  "Tunnel live": "النفق نشط",
   "Tunnel process stopped unexpectedly.": "توقفت عملية النفق بشكل غير متوقع.",
   "Tunnel provider": "مزود النفق",
   "Turn off Empty": "إيقاف الفارغ",

@@ -2042,7 +2042,7 @@
   "Tunnel": "Alagút",
   "Tunnel created but not reachable. Please try again.": "Az alagút létrejött, de nem érhető el. Próbálja újra.",
   "Tunnel disabled": "Alagút letiltva",
-  "Tunnel live at": "Az alagút elérhető itt:",
+  "Tunnel live": "Az alagút elérhető",
   "Tunnel process stopped unexpectedly.": "Az alagút folyamat váratlanul leállt.",
   "Tunnel provider": "Alagút szolgáltató",
   "Turn off Empty": "Empty kikapcsolása",

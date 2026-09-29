@@ -2480,7 +2480,7 @@
   "Tunnel connected!": "隧道连通！",
   "Tunnel created but not reachable. Please try again.": "隧道已创建但无法连接。请重试。",
   "Tunnel disabled": "隧道已禁用",
-  "Tunnel live at": "隧道已上线于",
+  "Tunnel live": "隧道已上线",
   "Tunnel process stopped unexpectedly.": "隧道进程意外停止。",
   "Tunnel provider": "隧道提供商",
   "Turn off Empty": "关闭空账号",
