@@ -4,9 +4,13 @@ import {
   getBulkActionTargets,
   getHealthBucket,
   getSoonestReset,
+  getWorstForecast,
   summarizeQuotaHealth,
 } from "@/app/(dashboard)/dashboard/quota/quotaSummary.js";
-import { sortVisibleConnections } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
+import {
+  attachForecasts,
+  sortVisibleConnections,
+} from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 
 const quota = (remaining, resetAt = null) => ({
   name: "Window",
@@ -155,5 +159,93 @@ describe("getBulkActionTargets", () => {
   it("returns empty lists when nothing matches", () => {
     expect(getBulkActionTargets([], {}, "off")).toEqual([]);
     expect(getBulkActionTargets([], {}, "on")).toEqual([]);
+  });
+});
+
+describe("attachForecasts", () => {
+  const rows = [
+    { name: "5h limit", quotaType: "5h", remaining: 40 },
+    { name: "Gemini 2.5 Pro", modelKey: "gemini-2.5-pro", remaining: 80 },
+    { name: "Legacy window", remaining: 50 },
+    { name: "Chat", remaining: 100, unlimited: true },
+    { name: "Credits", remaining: 90, isCreditBalance: true },
+  ];
+  const forecasts = { "5h": { state: "tight" }, "gemini-2.5-pro": { state: "on-track" } };
+
+  it("joins forecasts by quotaType, then modelKey, then name", () => {
+    const attached = attachForecasts(rows, forecasts);
+    expect(attached[0].forecast).toEqual({ state: "tight" });
+    expect(attached[1].forecast).toEqual({ state: "on-track" });
+    expect(attached[2].forecast).toBeNull();
+  });
+
+  it("never forecasts unlimited or credit rows", () => {
+    const attached = attachForecasts(rows, {
+      Chat: { state: "idle" },
+      Credits: { state: "idle" },
+    });
+    expect(attached[3].forecast).toBeNull();
+    expect(attached[4].forecast).toBeNull();
+  });
+
+  it("ignores a malformed forecasts payload", () => {
+    expect(attachForecasts(rows, "oops").every((row) => row.forecast === null)).toBe(true);
+    expect(attachForecasts(rows, null).every((row) => row.forecast === null)).toBe(true);
+    expect(attachForecasts(null, forecasts)).toEqual([]);
+  });
+});
+
+describe("getWorstForecast", () => {
+  const NOW = Date.parse("2026-09-26T12:00:00Z");
+  const iso = (hours) => new Date(NOW + hours * 3600_000).toISOString();
+  const forecastAt = (state, hours) => ({
+    state,
+    reason: null,
+    remainingPct: 20,
+    burnPctPerHour: 4.2,
+    emptyAt: state === "will-run-out" || state === "tight" ? iso(hours) : null,
+    resetAt: iso(42),
+    sampleCount: 12,
+    sampleSpanMs: 58 * 60_000,
+  });
+  const connections = [
+    { id: "a", provider: "claude", name: "Claude Work" },
+    { id: "b", provider: "codex", name: "Codex Main" },
+  ];
+
+  it("labels the most urgent forecast as 'Account · Window'", () => {
+    const quotaData = {
+      a: {
+        quotas: [quota(20, null), { ...quota(20, null), forecast: forecastAt("on-track", 9) }],
+      },
+      b: {
+        quotas: [{ ...quota(15, null), name: "5h limit", forecast: forecastAt("will-run-out", 6) }],
+      },
+    };
+    const { best, hasForecasts } = getWorstForecast(connections, quotaData);
+    expect(hasForecasts).toBe(true);
+    expect(best.label).toBe("Codex Main · 5h limit");
+    expect(best.forecast.state).toBe("will-run-out");
+  });
+
+  it("ignores unknown forecasts and unlimited/credit rows", () => {
+    const quotaData = {
+      a: {
+        quotas: [
+          { name: "Chat", unlimited: true, forecast: forecastAt("will-run-out", 1) },
+          { name: "Credits", isCreditBalance: true, forecast: forecastAt("tight", 2) },
+          { ...quota(10, null), forecast: { state: "unknown" } },
+        ],
+      },
+    };
+    expect(getWorstForecast(connections, quotaData)).toEqual({
+      best: null,
+      hasForecasts: false,
+    });
+  });
+
+  it("handles missing quota data", () => {
+    expect(getWorstForecast(connections, {})).toEqual({ best: null, hasForecasts: false });
+    expect(getWorstForecast(null, null)).toEqual({ best: null, hasForecasts: false });
   });
 });

@@ -10,7 +10,12 @@ import {
   shouldResetPage,
   sortVisibleConnections,
 } from "./lib/quotaUtils.js";
-import { getBulkActionTargets, getSoonestReset, summarizeQuotaHealth } from "./quotaSummary";
+import {
+  getBulkActionTargets,
+  getSoonestReset,
+  getWorstForecast,
+  summarizeQuotaHealth,
+} from "./quotaSummary";
 import { getConnectionLabel } from "./quotaLabels";
 import QuotaSummaryCard from "./components/QuotaSummaryCard";
 import QuotaFilters from "./components/QuotaFilters";
@@ -190,6 +195,12 @@ export default function QuotaPageClient() {
     return getSoonestReset(connectionItems, quotaData);
   }, [sortedConnections, quotaData]);
 
+  // Worst quota forecast across visible connections
+  const worstForecastResult = useMemo(
+    () => getWorstForecast(sortedConnections, quotaData),
+    [sortedConnections, quotaData],
+  );
+
   // Bulk action target calculation
   const emptyTargetIds = useMemo(
     () => getBulkActionTargets(sortedConnections, quotaData, "off"),
@@ -255,6 +266,8 @@ export default function QuotaPageClient() {
         summary={healthSummary}
         nextReset={nextReset}
         loading={connectionsLoading}
+        forecast={worstForecastResult.best}
+        hasForecasts={worstForecastResult.hasForecasts}
       />
 
       {/* Filters bar */}

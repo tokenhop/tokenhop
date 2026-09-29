@@ -5,6 +5,7 @@ import {
   AUTO_REFRESH_STORAGE_KEY,
   CLAUDE_REFRESH_INTERVAL_MS,
   REFRESH_INTERVAL_MS,
+  attachForecasts,
   buildLoadingState,
   filterQuotaStateByConnections,
   getProviderOptions,
@@ -170,7 +171,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
         }
 
         const data = await response.json();
-        const parsedQuotas = parseQuotaData(provider, data);
+        const parsedQuotas = attachForecasts(parseQuotaData(provider, data), data.forecasts);
 
         const quotaEntry = {
           quotas: parsedQuotas,
