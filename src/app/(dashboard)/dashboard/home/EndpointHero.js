@@ -183,7 +183,7 @@ export function EndpointHeroCard(props) {
           icon="api"
           title="Endpoint is starting"
           body="Open this page from the running dashboard to see the real endpoint URL."
-          actionLabel="Open Endpoint settings"
+          actionLabel="Open endpoint settings"
           actionHref="/dashboard/endpoint"
         />
       ) : (

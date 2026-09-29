@@ -26,12 +26,12 @@ export function connectionLabels(providerId) {
             : "OAuth",
     apiKey:
       providerId === "xai"
-        ? "xAI API Key"
+        ? "xAI API key"
         : providerId === "kimi"
-          ? "Kimi API Key"
+          ? "Kimi API key"
           : providerId === "qoder"
             ? "PAT"
-            : "API Key",
+            : "API key",
   };
 }
 

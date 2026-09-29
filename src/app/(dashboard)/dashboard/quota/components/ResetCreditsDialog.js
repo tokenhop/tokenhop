@@ -11,7 +11,7 @@ export default function ResetCreditsDialog({ state, onClose }) {
     <Modal
       isOpen={Boolean(state)}
       onClose={onClose}
-      title="Codex Reset Credit Expiry"
+      title="Codex reset credit expiry"
       description={state ? getConnectionLabel(state.connection) || "Codex account" : undefined}
       size="xl"
     >
@@ -39,8 +39,8 @@ export default function ResetCreditsDialog({ state, onClose }) {
               <thead className="bg-raised text-xs uppercase tracking-wide text-muted">
                 <tr>
                   <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 font-medium">Granted At</th>
-                  <th className="px-3 py-2 font-medium">Expires At</th>
+                  <th className="px-3 py-2 font-medium">Granted at</th>
+                  <th className="px-3 py-2 font-medium">Expires at</th>
                   <th className="px-3 py-2 font-medium">Remaining</th>
                 </tr>
               </thead>

@@ -37,7 +37,7 @@ export default function CompatibleDetailsCard({
       action={
         <div className="flex flex-wrap gap-2">
           <Button size="sm" icon="add" onClick={onAddKey}>
-            Add API Key
+            Add API key
           </Button>
           <Button size="sm" variant="secondary" icon="edit" onClick={onEdit}>
             Edit

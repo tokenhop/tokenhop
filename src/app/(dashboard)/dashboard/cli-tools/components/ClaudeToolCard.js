@@ -409,7 +409,7 @@ export default function ClaudeToolCard({
       <ManualConfigModal
         isOpen={showManualModal}
         onClose={() => setShowManualModal(false)}
-        title="Claude Code — Manual Configuration"
+        title="Claude Code — Manual configuration"
         configs={getManualConfigs()}
       />
     </>

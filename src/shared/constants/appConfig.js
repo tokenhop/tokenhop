@@ -4,7 +4,7 @@ import pkg from "../../../package.json" with { type: "json" };
 /** Dashboard shell identity + version. */
 export const APP_CONFIG = {
   name: "9Router Proxy",
-  description: "AI Infrastructure Management",
+  description: "AI infrastructure management",
   version: pkg.version,
 };
 

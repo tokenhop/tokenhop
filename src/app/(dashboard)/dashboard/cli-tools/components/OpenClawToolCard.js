@@ -272,7 +272,7 @@ export default function OpenClawToolCard({
       <ManualConfigModal
         isOpen={card.showManualModal}
         onClose={() => card.setShowManualModal(false)}
-        title="Open Claw — Manual Configuration"
+        title="Open Claw — Manual configuration"
         configs={getManualConfigs()}
       />
     </>

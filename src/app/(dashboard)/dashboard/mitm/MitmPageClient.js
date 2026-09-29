@@ -85,7 +85,7 @@ export default function MitmPageClient() {
         risk.
       </Callout>
 
-      {/* MITM Server Card: its status GET is what detects local-only access */}
+      {/* MITM server Card: its status GET is what detects local-only access */}
       {localOnly ? (
         <LocalOnlyNotice />
       ) : (

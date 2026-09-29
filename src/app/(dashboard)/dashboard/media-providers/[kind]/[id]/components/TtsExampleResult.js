@@ -43,11 +43,11 @@ export function TtsExampleResult({ audioUrl, latency, jsonResponse }) {
         className="w-full rounded-xl border border-line bg-raised p-2"
       />
 
-      {/* JSON Response (if format is json) */}
+      {/* JSON response (if format is json) */}
       {jsonResponse && (
         <div className="mt-3">
           <div className="mb-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <span className={eyebrowClass}>JSON Response</span>
+            <span className={eyebrowClass}>JSON response</span>
           </div>
           <pre className={codeBlockClass} dir="ltr">
             {JSON.stringify(

@@ -111,14 +111,14 @@ export function getConnectionsEmptyMessage(totals, providerFilter, accountFilter
   if (!totals.eligibleConnections) {
     return {
       icon: "cloud_off",
-      title: "No Providers Connected",
+      title: "No providers connected",
       description: "Connect to providers with OAuth to track your API quota limits and usage.",
     };
   }
   if (!totals.providerFilteredConnections) {
     return {
       icon: "filter_alt_off",
-      title: "No Accounts Match Current Filters",
+      title: "No accounts match current filters",
       description:
         providerFilter === "all"
           ? "Try changing the account status filter to see more quota trackers."
@@ -127,7 +127,7 @@ export function getConnectionsEmptyMessage(totals, providerFilter, accountFilter
   }
   return {
     icon: "filter_alt_off",
-    title: "No Accounts On This Page",
+    title: "No accounts on this page",
     description: "Try moving to another page or refreshing the current filters.",
   };
 }

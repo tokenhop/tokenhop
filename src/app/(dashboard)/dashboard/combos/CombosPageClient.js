@@ -582,7 +582,7 @@ export default function CombosPageClient() {
     // still switch selection, so the confirm must not read live `selected`.
     const { id: deleteId, name: deleteName } = selected;
     setConfirmState({
-      title: "Delete Combo",
+      title: "Delete combo",
       message: `Delete combo "${deleteName}"? This cannot be undone.`,
       onConfirm: async () => {
         setConfirmState(null);

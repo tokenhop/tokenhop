@@ -20,7 +20,7 @@ export default function OAuthResultStep({
             check_circle
           </span>
         </div>
-        <h3 className="mb-2 text-lg font-semibold">Connected Successfully!</h3>
+        <h3 className="mb-2 text-lg font-semibold">Connected successfully.</h3>
         <p className="mb-4 text-sm text-muted">
           {successMessage || `Your ${providerName} account has been connected.`}
         </p>
@@ -37,11 +37,11 @@ export default function OAuthResultStep({
           error
         </span>
       </div>
-      <h3 className="mb-2 text-lg font-semibold">Connection Failed</h3>
+      <h3 className="mb-2 text-lg font-semibold">Connection failed</h3>
       <p className="mb-4 text-sm text-err">{error}</p>
       <div className="flex gap-2">
         <Button onClick={onRetry} variant="secondary" fullWidth>
-          Try Again
+          Try again
         </Button>
         <Button onClick={onClose} variant="ghost" fullWidth>
           Cancel

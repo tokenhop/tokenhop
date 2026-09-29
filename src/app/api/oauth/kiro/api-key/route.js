@@ -37,7 +37,7 @@ export async function POST(request) {
         ...(credential.profileArn ? { profileArn: credential.profileArn } : {}),
         region: credential.region,
         authMethod: "api_key",
-        provider: "API Key",
+        provider: "API key",
       },
       testStatus: "active",
     });

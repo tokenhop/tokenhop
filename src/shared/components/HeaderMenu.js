@@ -19,11 +19,11 @@ const LanguageSwitcher = dynamic(() => import("./LanguageSwitcher"), { ssr: fals
 /**
  * Header app menus, switched by CSS breakpoint (no JS media query, so server
  * and client markup always match):
- * - from `sm` up: the grid menu (Change Log, Theme, Shutdown, Logout)
+ * - from `sm` up: the grid menu (Change log, Theme, Shutdown, Logout)
  * - below `sm`: a ⋮ menu that also holds Support and Language, which the
  *   header hides inline at that width
  * Both use the shared Menu pattern (roving focus, typeahead, Esc close). The
- * Change Log entry shows the full version.
+ * Change log entry shows the full version.
  *
  * @param {object} props
  * @param {() => void} props.onLogout
@@ -62,7 +62,7 @@ export default function HeaderMenu({ onLogout, onDonate }) {
     <MenuItem
       key={`${keyPrefix}-changelog`}
       icon="history"
-      label="Change Log"
+      label="Change log"
       trailing={full ? <span data-i18n-skip="true">{full}</span> : undefined}
       onSelect={openChangelog}
     />
@@ -157,7 +157,7 @@ export default function HeaderMenu({ onLogout, onDonate }) {
         isOpen={shutdownOpen}
         onClose={() => setShutdownOpen(false)}
         onConfirm={handleShutdown}
-        title="Close Proxy"
+        title="Close proxy"
         message="Are you sure you want to close the proxy server?"
         confirmText="Close"
         cancelText="Cancel"

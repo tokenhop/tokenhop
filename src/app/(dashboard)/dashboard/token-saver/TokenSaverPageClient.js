@@ -388,8 +388,8 @@ export default function TokenSaverPageClient() {
               <p className="mb-1 text-xs font-semibold tracking-[0.08em] uppercase">
                 Before · illustrative
               </p>
-              Sure! I would be happy to help. It looks like the issue is that your function returns
-              before the loop has a chance to finish, so…
+              Sure, happy to help. It looks like the issue is that your function returns before the
+              loop has a chance to finish, so…
             </div>
             <div className="rounded-xl bg-lime-bg p-3">
               <p className="mb-1 text-xs font-semibold tracking-[0.08em] text-lime-ink uppercase">

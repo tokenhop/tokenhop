@@ -134,7 +134,7 @@ export const KIND_EXAMPLE_CONFIG = {
       },
       {
         key: "image_detail",
-        label: "Image Detail",
+        label: "Image detail",
         type: "select",
         default: "high",
         options: ["auto", "low", "high", "original"],

@@ -155,7 +155,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               >
                 security
               </span>
-              <span className="font-semibold text-sm text-text">MITM Server</span>
+              <span className="font-semibold text-sm text-text">MITM server</span>
               {isRunning ? (
                 <Badge variant="success" size="sm">
                   Running
@@ -201,11 +201,11 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
             </p>
           </div>
 
-          {/* Base URL + API Key — same row pattern as Claude Code / cli-tools */}
+          {/* Base URL + API key — same row pattern as Claude Code / cli-tools */}
           <div className="flex flex-col gap-2">
             <div className="grid gap-1 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
               <span className="text-xs font-semibold text-text sm:text-right sm:text-sm">
-                9Router Base URL
+                9Router base URL
               </span>
               <span
                 className="material-symbols-outlined hidden text-muted text-[14px] sm:inline"
@@ -225,7 +225,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
             {!isRunning && (
               <div className="grid gap-1 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
                 <span className="text-xs font-semibold text-text sm:text-right sm:text-sm">
-                  API Key
+                  API key
                 </span>
                 <span
                   className="material-symbols-outlined hidden text-muted text-[14px] sm:inline"
@@ -336,7 +336,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           setSudoPassword("");
           setModalError(null);
         }}
-        title="Sudo Password Required"
+        title="Sudo password required"
         size="sm"
         closeOnOverlay={!loading}
         closeOnEscape={!loading}
@@ -393,7 +393,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           setPort443Conflict(null);
           setLoading(false);
         }}
-        title="Port 443 Already In Use"
+        title="Port 443 already in use"
         closeOnOverlay={false}
         closeOnEscape={!loading}
       >
@@ -408,7 +408,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
                 <p className="font-mono text-text" data-i18n-skip="true">
                   {port443Conflict.owner.name} (PID {port443Conflict.owner.pid})
                 </p>
-                <p>Kill this process to start MITM Server?</p>
+                <p>Kill this process to start MITM server?</p>
               </div>
             </div>
             <div className="flex items-center justify-end gap-2">
@@ -424,7 +424,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
                 Cancel
               </Button>
               <Button variant="primary" size="sm" onClick={handleKillAndStart} loading={loading}>
-                Kill & Start
+                Kill & start
               </Button>
             </div>
           </div>

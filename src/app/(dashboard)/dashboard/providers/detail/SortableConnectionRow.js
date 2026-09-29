@@ -101,7 +101,7 @@ export default function SortableConnectionRow({
 
   const rowAuthType = connection.authType || (isOAuth ? "oauth" : "apikey");
   const authLabel =
-    rowAuthType === "oauth" ? "OAuth" : rowAuthType === "cookie" ? "Cookie" : "API Key";
+    rowAuthType === "oauth" ? "OAuth" : rowAuthType === "cookie" ? "Cookie" : "API key";
   const displayName =
     connection.name?.trim() ||
     connection.email?.trim() ||
@@ -110,7 +110,7 @@ export default function SortableConnectionRow({
       ? "OAuth Account"
       : rowAuthType === "cookie"
         ? "Cookie Account"
-        : "API Key");
+        : "API key");
   const secondaryDisplayName =
     connection.name?.trim() &&
     connection.email?.trim() &&

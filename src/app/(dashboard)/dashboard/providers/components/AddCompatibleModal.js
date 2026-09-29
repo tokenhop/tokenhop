@@ -6,7 +6,7 @@ import { Badge, Button, Input, Modal, Select } from "@/shared/components";
 
 const VARIANT_CONFIG = {
   openai: {
-    title: "Add OpenAI Compatible",
+    title: "Add OpenAI-compatible",
     type: "openai-compatible",
     defaultBaseUrl: "https://api.openai.com/v1",
     namePlaceholder: "OpenAI Compatible (Prod)",
@@ -17,7 +17,7 @@ const VARIANT_CONFIG = {
     hasApiType: true,
   },
   anthropic: {
-    title: "Add Anthropic Compatible",
+    title: "Add Anthropic-compatible",
     type: "anthropic-compatible",
     defaultBaseUrl: "https://api.anthropic.com/v1",
     namePlaceholder: "Anthropic Compatible (Prod)",
@@ -151,7 +151,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
         />
         {config.hasApiType && (
           <Select
-            label="API Type"
+            label="API type"
             options={API_TYPE_OPTIONS}
             value={formData.apiType}
             onChange={(e) => setFormData({ ...formData, apiType: e.target.value })}
@@ -165,7 +165,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           hint={config.baseUrlHint}
         />
         <Input
-          label="API Key (for Check)"
+          label="API key (for check)"
           type="password"
           value={checkKey}
           onChange={(e) => setCheckKey(e.target.value)}

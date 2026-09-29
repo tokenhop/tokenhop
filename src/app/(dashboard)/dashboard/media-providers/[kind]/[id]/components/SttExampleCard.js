@@ -193,8 +193,8 @@ export function SttExampleCard({ providerId }) {
           </div>
         </Row>
 
-        {/* API Key */}
-        <Row label="API Key">
+        {/* API key */}
+        <Row label="API key">
           <span className={readonlyClass} dir="ltr">
             {apiKey ? (
               maskPreviewApiKey(apiKey)
@@ -205,13 +205,13 @@ export function SttExampleCard({ providerId }) {
         </Row>
 
         {/* Audio file */}
-        <Row label="Audio File">
+        <Row label="Audio file">
           <div className="flex flex-col gap-2">
             <input
               type="file"
               accept="audio/*,video/mp4,.m4a,.mp3,.wav,.ogg,.flac,.webm,.opus"
               onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
-              aria-label="Audio File"
+              aria-label="Audio file"
               className="w-full text-xs text-muted file:me-2 file:cursor-pointer file:rounded-lg file:border file:border-line file:bg-raised file:px-2.5 file:py-1 file:text-text hover:file:bg-line/60"
             />
             {audioFile && (
@@ -267,11 +267,11 @@ export function SttExampleCard({ providerId }) {
 
         {/* Response format (if model supports) */}
         {allowedParams.includes("response_format") && (
-          <Row label="Response Format">
+          <Row label="Response format">
             <select
               value={responseFormat}
               onChange={(e) => setResponseFormat(e.target.value)}
-              aria-label="Response Format"
+              aria-label="Response format"
               className={controlClass}
             >
               <option value="json">json</option>

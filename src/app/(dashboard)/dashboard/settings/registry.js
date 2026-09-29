@@ -121,17 +121,17 @@ export const SETTINGS_SECTIONS = [
       { key: "oidcLoginLabel", label: "Button label", keywords: "oidc button label" },
       {
         key: "samlEntryPoint",
-        label: "Single Sign-On Service URL",
+        label: "Single sign-on service URL",
         keywords: "saml sso url entry point idp",
       },
       {
         key: "samlIssuer",
-        label: "SP Entity ID / Audience",
+        label: "SP entity ID / audience",
         keywords: "saml issuer entity audience sp",
       },
       {
         key: "samlCert",
-        label: "IdP X.509 Certificate",
+        label: "IdP X.509 certificate",
         keywords: "saml cert certificate x509 pem",
       },
       { key: "samlLoginLabel", label: "Login button label", keywords: "saml login button label" },

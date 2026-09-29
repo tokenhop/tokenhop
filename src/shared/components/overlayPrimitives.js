@@ -187,7 +187,7 @@ export const TYPEAHEAD_TIMEOUT_MS = 500;
  * a later key starts a new one. The first key searches from the item after
  * `currentIndex`; extending keys match the whole buffer as a prefix starting
  * at the session's last match, so `s` then `h` on
- * [Change Log, Theme, Shutdown, Logout] lands on Shutdown even if focus has
+ * [Change log, Theme, Shutdown, Logout] lands on Shutdown even if focus has
  * not caught up yet.
  * @param {{buffer: string, at: number, index: number} | null} session Previous state (null to start).
  * @param {string} key Printable key (`event.key`, length 1).

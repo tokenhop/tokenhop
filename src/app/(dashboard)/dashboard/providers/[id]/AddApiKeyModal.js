@@ -31,8 +31,8 @@ export default function AddApiKeyModal({
   const credentialLabel = isCookie
     ? "Cookie Value"
     : provider === "qoder"
-      ? "Personal Access Token (PAT)"
-      : "API Key";
+      ? "Personal access token (PAT)"
+      : "API key";
   const credentialPlaceholder = isCookie
     ? provider === "grok-web"
       ? "sso=xxxxx... or just the raw value"
@@ -286,7 +286,7 @@ export default function AddApiKeyModal({
               setBulkResult(null);
             }}
           >
-            Bulk Add
+            Bulk add
           </Button>
         </div>
 
@@ -344,12 +344,12 @@ export default function AddApiKeyModal({
               label="Name"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder={isOllamaLocal ? "Ollama Local" : "Production Key"}
+              placeholder={isOllamaLocal ? "Ollama Local" : "Production key"}
             />
             {isOllamaLocal && (
               <div className="flex gap-2">
                 <Input
-                  label="Ollama Host URL"
+                  label="Ollama host URL"
                   value={formData.ollamaHostUrl}
                   onChange={(e) => setFormData({ ...formData, ollamaHostUrl: e.target.value })}
                   placeholder="http://localhost:11434"
@@ -420,7 +420,7 @@ export default function AddApiKeyModal({
             )}
             {isCompatible && (
               <Input
-                label="Default Model"
+                label="Default model"
                 value={formData.defaultModel}
                 onChange={(e) => setFormData({ ...formData, defaultModel: e.target.value })}
                 placeholder={isAnthropic ? "claude-3-5-sonnet-latest" : "gpt-4o-mini"}
@@ -474,22 +474,22 @@ export default function AddApiKeyModal({
             )}
             {isAzure && (
               <div className="bg-raised p-4 rounded-lg border border-coral/20">
-                <h3 className="font-semibold mb-3 text-sm">Azure OpenAI Configuration</h3>
+                <h3 className="font-semibold mb-3 text-sm">Azure OpenAI configuration</h3>
                 <div className="flex flex-col gap-3">
                   <Input
-                    label="Azure Endpoint"
+                    label="Azure endpoint"
                     value={azureData.azureEndpoint}
                     onChange={(e) => setAzureData({ ...azureData, azureEndpoint: e.target.value })}
                     placeholder="https://your-resource.openai.azure.com"
                   />
                   <Input
-                    label="Deployment Name"
+                    label="Deployment name"
                     value={azureData.deployment}
                     onChange={(e) => setAzureData({ ...azureData, deployment: e.target.value })}
                     placeholder="gpt-4"
                   />
                   <Input
-                    label="API Version"
+                    label="API version"
                     value={azureData.apiVersion}
                     onChange={(e) => setAzureData({ ...azureData, apiVersion: e.target.value })}
                     placeholder="2024-10-01-preview"
@@ -514,7 +514,7 @@ export default function AddApiKeyModal({
             />
 
             <Select
-              label="Proxy Pool"
+              label="Proxy pool"
               value={formData.proxyPoolId}
               onChange={(e) => setFormData({ ...formData, proxyPoolId: e.target.value })}
               options={[
@@ -526,7 +526,7 @@ export default function AddApiKeyModal({
 
             {(proxyPools || []).length === 0 && (
               <p className="text-xs text-muted">
-                No active proxy pools available. Create one in Proxy Pools page first.
+                No active proxy pools available. Create one in Proxy pools page first.
               </p>
             )}
 

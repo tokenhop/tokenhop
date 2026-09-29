@@ -82,7 +82,7 @@ export const getPageInfo = (pathname) => {
     };
   if (pathname.includes("/auth-files"))
     return {
-      title: "Auth Files",
+      title: "Auth files",
       description: "Map provider credentials stored in the local database",
       icon: "vpn_key",
       breadcrumbs: [],
@@ -96,7 +96,7 @@ export const getPageInfo = (pathname) => {
     };
   if (pathname.includes("/mitm"))
     return {
-      title: "MITM Proxy",
+      title: "MITM proxy",
       description: "Intercept CLI tool traffic and route through 9Router",
       icon: "security",
       breadcrumbs: [],

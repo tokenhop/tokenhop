@@ -177,9 +177,7 @@ export default function CursorAuthModal({ isOpen, providerInfo, onSuccess, onClo
 
         {!autoDetecting && (
           <>
-            {autoDetected && (
-              <Callout variant="ok">Tokens auto-detected from Cursor IDE successfully!</Callout>
-            )}
+            {autoDetected && <Callout variant="ok">Tokens auto-detected from Cursor IDE.</Callout>}
 
             {windowsManual && (
               <Callout
@@ -202,7 +200,7 @@ export default function CursorAuthModal({ isOpen, providerInfo, onSuccess, onClo
             )}
 
             <Textarea
-              label="Access Token"
+              label="Access token"
               required
               rows={3}
               value={accessToken}
@@ -232,7 +230,7 @@ export default function CursorAuthModal({ isOpen, providerInfo, onSuccess, onClo
                 fullWidth
                 disabled={importing || !accessToken.trim() || !machineId.trim()}
               >
-                {importing ? "Importing..." : "Import Token"}
+                {importing ? "Importing..." : "Import token"}
               </Button>
               <Button onClick={handleBack} variant="ghost" icon="arrow_back" fullWidth>
                 Back

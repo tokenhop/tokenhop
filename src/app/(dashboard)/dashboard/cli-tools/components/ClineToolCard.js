@@ -229,7 +229,7 @@ export default function ClineToolCard({
       <ManualConfigModal
         isOpen={card.showManualModal}
         onClose={() => card.setShowManualModal(false)}
-        title="Cline — Manual Configuration"
+        title="Cline — Manual configuration"
         configs={getManualConfigs()}
       />
     </>

@@ -205,7 +205,7 @@ export default function DeepSeekTuiToolCard({
       <ManualConfigModal
         isOpen={card.showManualModal}
         onClose={() => card.setShowManualModal(false)}
-        title="DeepSeek TUI — Manual Configuration"
+        title="DeepSeek TUI — Manual configuration"
         configs={getManualConfigs()}
       />
     </>

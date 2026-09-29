@@ -62,7 +62,7 @@ export async function POST(request) {
       if (info.chatgptPlanType) providerSpecificData.chatgptPlanType = info.chatgptPlanType;
     }
 
-    const connectionName = name || email || "ChatGPT Access Token";
+    const connectionName = name || email || "ChatGPT Access token";
 
     // Save to database as access_token authType (no refresh token)
     const connection = await createProviderConnection({

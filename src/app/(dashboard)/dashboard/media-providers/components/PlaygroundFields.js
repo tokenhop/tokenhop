@@ -50,7 +50,7 @@ export function PlaygroundKindFields({
           aria-label="Image size"
         />
         <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-2">
-          <Field label="Reference Image URL">
+          <Field label="Reference image URL">
             {({ inputId }) => (
               <input
                 id={inputId}
@@ -61,7 +61,7 @@ export function PlaygroundKindFields({
               />
             )}
           </Field>
-          <Field label="Mask Image URL">
+          <Field label="Mask image URL">
             {({ inputId }) => (
               <input
                 id={inputId}

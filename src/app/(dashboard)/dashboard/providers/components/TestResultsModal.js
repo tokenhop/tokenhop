@@ -18,13 +18,13 @@ export default function TestResultsModal({ isOpen, onClose, results }) {
     {
       oauth: "OAuth",
       free: "Free",
-      apikey: "API Key",
+      apikey: "API key",
       provider: "Provider",
       all: "All",
     }[mode] || mode;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Test Results" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="Test results" size="lg">
       {error && !items.length ? (
         <div className="py-6 text-center">
           <span

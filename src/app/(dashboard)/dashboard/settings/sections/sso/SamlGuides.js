@@ -38,7 +38,7 @@ export default function SamlGuides({ acsUrl, entityId }) {
             Assertion Consumer Service (ACS) URL: <Code>{acsUrl}</Code>
           </li>
           <li>
-            SP Entity ID / Audience URI: <Code>{entityId}</Code>
+            SP entity ID / audience URI: <Code>{entityId}</Code>
           </li>
           <li>
             NameID format: <Code>EmailAddress</Code> or <Code>Unspecified</Code>
@@ -51,10 +51,10 @@ export default function SamlGuides({ acsUrl, entityId }) {
           steps={[
             "Applications → Add application → Add custom SAML 2.0 application.",
             <>
-              Set Application ACS URL to <Code>{acsUrl}</Code>.
+              Set application ACS URL to <Code>{acsUrl}</Code>.
             </>,
             <>
-              Set Application SAML audience to <Code>{entityId}</Code>.
+              Set application SAML audience to <Code>{entityId}</Code>.
             </>,
             <>
               Under Attribute mappings, map <Code>Subject</Code> or <Code>email</Code> to{" "}

@@ -294,7 +294,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                         onClick={() => confirmAdd(s)}
                         className="self-end"
                       >
-                        Confirm Add
+                        Confirm add
                       </Button>
                     </div>
                   )}

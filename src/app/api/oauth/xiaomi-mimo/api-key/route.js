@@ -101,7 +101,7 @@ export async function POST(request) {
         uid: uid || null,
         baseUrl: effectiveBaseUrl,
         authMethod: "api_key",
-        provider: "API Key",
+        provider: "API key",
         modelCount,
         // Per-account session credential — enables multi-account rotation.
         mimoPassToken: mimoPassToken || null,

@@ -130,7 +130,7 @@ export default function LanguageSwitcher({
       <Modal
         isOpen={isOpen}
         onClose={() => close()}
-        title="Select Language"
+        title="Select language"
         size="full"
         className="max-w-2xl"
       >

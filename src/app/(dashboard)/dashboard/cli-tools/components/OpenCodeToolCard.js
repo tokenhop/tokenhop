@@ -401,7 +401,7 @@ export default function OpenCodeToolCard({
       <ManualConfigModal
         isOpen={card.showManualModal}
         onClose={() => card.setShowManualModal(false)}
-        title="OpenCode — Manual Configuration"
+        title="OpenCode — Manual configuration"
         configs={getManualConfigs()}
       />
     </>

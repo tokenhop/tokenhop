@@ -100,7 +100,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         />
         {!isAnthropic && (
           <Select
-            label="API Type"
+            label="API type"
             options={apiTypeOptions}
             value={formData.apiType}
             onChange={(e) => setFormData({ ...formData, apiType: e.target.value })}
@@ -115,7 +115,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         />
         <div className="flex gap-2">
           <Input
-            label="API Key (for Check)"
+            label="API key (for check)"
             type="password"
             value={checkKey}
             onChange={(e) => setCheckKey(e.target.value)}
