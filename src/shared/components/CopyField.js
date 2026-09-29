@@ -47,7 +47,12 @@ export default function CopyField({
       )}
       {...props}
     >
-      <code className="min-w-0 flex-1 truncate font-mono text-sm text-text">{value}</code>
+      <code
+        title={String(copyValue ?? value)}
+        className="min-w-0 flex-1 truncate font-mono text-sm text-text"
+      >
+        {value}
+      </code>
       {showCopyButton ? (
         <button
           type="button"

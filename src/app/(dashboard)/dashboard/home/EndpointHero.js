@@ -146,9 +146,18 @@ export default function EndpointHero({ origin, tunnel, loading, error, onRetry, 
       </ul>
 
       {tunnelOn && tunnelUrl ? (
-        <p className="truncate font-mono text-xs text-muted">
-          Tunnel live at <span className="text-text">{tunnelUrl}</span>
-        </p>
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <span className="inline-flex items-center gap-2 text-xs font-medium text-muted">
+            <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-ok" />
+            Tunnel live
+          </span>
+          {/* Scheme dropped for display only so the hostname gets the room; copy keeps full URL. */}
+          <CopyField
+            value={tunnelUrl.replace(/^https?:\/\//, "")}
+            copyValue={tunnelUrl}
+            label="Copy tunnel URL"
+          />
+        </div>
       ) : null}
       {enableError ? <Callout variant="err">{enableError}</Callout> : null}
     </div>
