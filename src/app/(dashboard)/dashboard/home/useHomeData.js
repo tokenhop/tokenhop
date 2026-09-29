@@ -3,9 +3,6 @@
 import { useEffect, useState } from "react";
 import { useHomeResource } from "./useHomeResource";
 
-/** Live-routes poll cadence: 60s, matching the quota snapshot poller tick. */
-export const LIVE_ROUTES_POLL_MS = 60_000;
-
 /** Builds the period-scoped endpoint URL; null while the period is unresolved. */
 const periodUrl = (path, period) => (period ? `${path}?period=${period}` : null);
 
@@ -168,19 +165,6 @@ export function useHomeQuota(refreshKey = 0) {
   const { data, loading, error } = useHomeResource("/api/home/quota", refreshKey);
   const accounts = Array.isArray(data?.accounts) ? data.accounts : [];
   return { accounts, loading, error };
-}
-
-/**
- * Live routes flow model: polling at the quota cadence, paused when hidden.
- * @param {number} [refreshKey] bump to re-read
- * @returns {{ routes: object|null, loading: boolean, error: string|null }}
- */
-export function useHomeLiveRoutes(refreshKey = 0) {
-  const { data, loading, error } = useHomeResource("/api/home/live-routes", refreshKey, {
-    intervalMs: LIVE_ROUTES_POLL_MS,
-  });
-  const valid = data && Array.isArray(data.clients) && Array.isArray(data.providers) ? data : null;
-  return { routes: valid, loading, error };
 }
 
 /**
