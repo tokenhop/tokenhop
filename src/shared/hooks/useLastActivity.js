@@ -1,21 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 /**
- * Fetch most recent request only while the containing period is quiet.
+ * Most recent request time, fetched the first time the page turns quiet.
+ * The value is period-independent, so later quiet periods reuse it instead of
+ * refetching; `retry` re-reads after a failure.
  * @param {boolean} enabled
- * @returns {{lastRequestAt: string|null|undefined, loading: boolean, error: string|null}}
+ * @returns {{lastRequestAt: string|null|undefined, loading: boolean, error: string|null, retry: () => void}}
+ *   `lastRequestAt` is undefined until loaded and null when there was never a request.
  */
 export default function useLastActivity(enabled) {
   const [lastRequestAt, setLastRequestAt] = useState(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
+  const loaded = lastRequestAt !== undefined;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the retry trigger.
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || loaded) return;
     const controller = new AbortController();
-    setLastRequestAt(undefined);
     setLoading(true);
     setError(null);
 
@@ -37,7 +42,9 @@ export default function useLastActivity(enabled) {
     }
     load();
     return () => controller.abort();
-  }, [enabled]);
+  }, [enabled, loaded, attempt]);
 
-  return { lastRequestAt, loading, error };
+  const retry = useCallback(() => setAttempt((value) => value + 1), []);
+
+  return { lastRequestAt, loading, error, retry };
 }

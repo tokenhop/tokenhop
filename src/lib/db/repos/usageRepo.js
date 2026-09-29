@@ -1035,6 +1035,7 @@ export async function getRecentLogs(limit = 200) {
   }
 }
 
+// Mirrored client-side as SUMMARY_PERIODS in src/shared/utils/period.js (YAN-428 unifies them).
 export const SAVINGS_PERIODS = ["today", "7d", "30d"];
 
 const SAVINGS_DAY_MS = 24 * 60 * 60 * 1000;

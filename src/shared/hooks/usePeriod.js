@@ -40,7 +40,8 @@ export default function usePeriod(allowed = PERIOD_VALUES) {
   const setPeriod = useCallback(
     (value) => {
       const next = coercePeriod(value, stableAllowed);
-      if (next === period) return;
+      // Still rewrite when the URL holds a non-canonical value (e.g. 60d coerced to 30d).
+      if (next === period && searchParams.get("period") === next) return;
       saveStoredPeriod(next);
       setStored(next);
       const params = new URLSearchParams(searchParams.toString());

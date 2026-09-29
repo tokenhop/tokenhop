@@ -65,10 +65,15 @@ export default function HomePageClient() {
   const usageByCombo =
     summaryCombos ?? (usage.current ? comboUsageFromByEndpoint(usage.current.byEndpoint) : null);
 
-  // Quiet = stats answered for the period but no requests in it; fetch the
-  // real last-activity time only then. A fetch error shows the tiles, not the
-  // quiet row, so a flaky endpoint cannot blank the stats.
-  const quiet = Boolean(usage.current) && !usage.current.totalRequests && !usage.error;
+  // Quiet = stats answered for the *selected* period with no requests in it
+  // (a period switch keeps the old payload until the refetch lands). Only then
+  // is the real last-activity time fetched; its errors render inside the row.
+  const quiet =
+    Boolean(usage.current) &&
+    usage.currentPeriod === period &&
+    !usage.loading &&
+    !usage.error &&
+    !usage.current.totalRequests;
   const activity = useLastActivity(quiet);
 
   return (
@@ -112,6 +117,8 @@ export default function HomePageClient() {
           period={period}
           lastRequestAt={activity.lastRequestAt}
           lastActivityLoading={activity.loading}
+          lastActivityError={activity.error}
+          onRetryLastActivity={activity.retry}
           onSelectPeriod={setPeriod}
         />
       </div>

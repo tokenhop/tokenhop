@@ -18,7 +18,10 @@ export const PERIODS = [
 /** Every valid period value, in ascending range order. */
 export const PERIOD_VALUES = PERIODS.map((p) => p.value);
 
-/** Periods whose APIs the Home and Token saver summaries accept. */
+/**
+ * Periods whose APIs the Home and Token saver summaries accept. Must match
+ * `SAVINGS_PERIODS` in src/lib/db/repos/usageRepo.js (YAN-428 unifies them).
+ */
 export const SUMMARY_PERIODS = ["today", "7d", "30d"];
 
 /** Safe-storage key for the remembered period. */
@@ -82,7 +85,7 @@ export function periodOptions(allowed) {
   return PERIODS.filter((p) => allowed.includes(p.value));
 }
 
-const DAY_COUNTS = { today: 0, "24h": 0, "7d": 7, "30d": 30, "60d": 60 };
+const DAY_COUNTS = { "7d": 7, "30d": 30, "60d": 60 };
 
 /**
  * Inclusive start (ms) of `period`.
@@ -105,7 +108,9 @@ export function periodStart(period, now = Date.now()) {
     case "7d":
     case "30d":
     case "60d":
-      return midnight.getTime() - (DAY_COUNTS[period] - 1) * 24 * 60 * 60 * 1000;
+      // Calendar days (setDate), not 24h multiples, so DST shifts keep local midnight.
+      midnight.setDate(midnight.getDate() - (DAY_COUNTS[period] - 1));
+      return midnight.getTime();
     default:
       throw new Error(`Unknown period: ${period}`);
   }
@@ -167,7 +172,8 @@ export function saveStoredPeriod(value, storage = defaultStorage()) {
 
 /**
  * Per-period copy for the shared quiet empty state: `title` when the period is
- * quiet, `actionLabel` for the "jump to a period with data" button. The keys
+ * quiet, `actionLabel` for the "jump to a period with data" button (`default`
+ * covers an unmapped period). The keys
  * are ones the i18n extractor reads, so the locale coverage guard checks them.
  */
 export const QUIET_COPY = {
@@ -176,6 +182,7 @@ export const QUIET_COPY = {
   "7d": { title: "Quiet in the last 7d", actionLabel: "Show 7d" },
   "30d": { title: "Quiet in the last 30d", actionLabel: "Show 30d" },
   "60d": { title: "Quiet in the last 60d", actionLabel: "Show 60d" },
+  default: { title: "Quiet in this period" },
 };
 
 /**

@@ -112,6 +112,8 @@ function UsageContent() {
                 lastRequestAt={activity.lastRequestAt}
                 loading={activity.loading}
                 onSelectPeriod={setPeriod}
+                error={activity.error}
+                onRetry={activity.retry}
               />
             </Card>
           ) : (

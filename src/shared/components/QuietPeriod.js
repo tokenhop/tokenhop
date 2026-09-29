@@ -26,7 +26,9 @@ import {
  * @param {string|null|undefined} props.lastRequestAt ISO timestamp of the last request,
  *   undefined until loaded, null when there was never one.
  * @param {boolean} [props.loading] True while last-activity loads.
- * @param {string[]} [props.allowed] Periods this page offers (jump target must be one).
+ * @param {string[]} [props.allowed] Periods this page offers (jump target must be one; any order).
+ * @param {string|null} [props.error] Last-activity fetch error: shows the quiet copy with a retry.
+ * @param {() => void} [props.onRetry] Re-read last activity after an error.
  * @param {(value: string) => void} [props.onSelectPeriod] Called with the jump target.
  * @param {boolean} [props.compact] Horizontal row instead of the centered card.
  * @param {string} [props.className]
@@ -38,6 +40,8 @@ export default function QuietPeriod({
   loading,
   allowed = PERIOD_VALUES,
   onSelectPeriod,
+  error = null,
+  onRetry,
   compact = false,
   className,
   headingAs = "h2",
@@ -52,6 +56,28 @@ export default function QuietPeriod({
     update();
     return onLocaleChange(update);
   }, [lastRequestAt]);
+
+  const title = (QUIET_COPY[period] ?? QUIET_COPY.default).title;
+
+  if (error && lastRequestAt === undefined) {
+    return (
+      <EmptyState
+        as={headingAs}
+        compact={compact}
+        className={className}
+        icon="bedtime"
+        title={title}
+        body="Couldn't load the last request time."
+        action={
+          onRetry ? (
+            <Button variant="secondary" size="sm" icon="refresh" onClick={onRetry}>
+              Retry
+            </Button>
+          ) : undefined
+        }
+      />
+    );
+  }
 
   if (loading || lastRequestAt === undefined) {
     if (compact) {
@@ -82,8 +108,10 @@ export default function QuietPeriod({
     );
   }
 
-  const target = smallestPeriodWithData(lastRequestAt, allowed);
-  const jump = target && allowed.indexOf(target) > allowed.indexOf(period);
+  // Canonical ascending order: the first match is the smallest period with data.
+  const ordered = PERIOD_VALUES.filter((value) => allowed.includes(value));
+  const target = smallestPeriodWithData(lastRequestAt, ordered);
+  const jump = target && ordered.indexOf(target) > ordered.indexOf(period);
 
   return (
     <EmptyState
@@ -91,7 +119,7 @@ export default function QuietPeriod({
       compact={compact}
       className={className}
       icon="bedtime"
-      title={QUIET_COPY[period]?.title ?? "Quiet in this period"}
+      title={title}
       body={
         <>
           <span>Last request</span> <time dateTime={lastRequestAt}>{relative}</time>
@@ -114,6 +142,8 @@ QuietPeriod.propTypes = {
   loading: PropTypes.bool,
   allowed: PropTypes.arrayOf(PropTypes.oneOf(PERIOD_VALUES)),
   onSelectPeriod: PropTypes.func,
+  error: PropTypes.string,
+  onRetry: PropTypes.func,
   compact: PropTypes.bool,
   className: PropTypes.string,
   headingAs: PropTypes.oneOf(["h1", "h2", "h3", "h4", "p", "div"]),

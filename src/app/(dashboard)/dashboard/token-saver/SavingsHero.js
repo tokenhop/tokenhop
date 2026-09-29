@@ -12,6 +12,8 @@ import {
   savingsShare,
 } from "./tokenSaverUtils";
 
+const SAVINGS_OPTIONS = periodOptions(SUMMARY_PERIODS);
+
 /**
  * Page toolbar: Today/7d/30d control. Shell Header owns the title. Renders
  * with no selection while the shared period resolves after mount.
@@ -24,7 +26,7 @@ export function TokenSaverHeader({ period, onPeriodChange }) {
     <div className="flex min-w-0 justify-end">
       <PeriodControl
         aria-label="Savings period"
-        options={periodOptions(SUMMARY_PERIODS)}
+        options={SAVINGS_OPTIONS}
         value={period}
         onChange={onPeriodChange}
         className="w-full sm:w-auto"
@@ -41,18 +43,25 @@ TokenSaverHeader.propTypes = {
 const SEGMENT_OPACITY = ["bg-on-lime/90", "bg-on-lime/55", "bg-on-lime/30"];
 
 /**
- * Hero copy (keys the i18n extractor reads). `eyebrow` for the selected period
- * when it holds savings; `FALLBACK_COPY` when a larger period stands in, with
- * a `caption` note about the empty selected period.
+ * Hero copy, keyed so the i18n extractor reads every literal. SAVED_COPY is
+ * the heading for the selected period when it holds savings; FALLBACK_COPY
+ * when a larger period stands in, with a QUIET_NOTES caption about the empty
+ * selected period. Each is a standalone phrase in its own element.
  */
 const SAVED_COPY = {
   today: { eyebrow: "Saved today" },
   "7d": { eyebrow: "Saved last 7d" },
   "30d": { eyebrow: "Saved last 30d" },
+  default: { eyebrow: "Saved in this period" },
 };
 const FALLBACK_COPY = {
   "7d": { eyebrow: "Saved in the last 7d" },
   "30d": { eyebrow: "Saved in the last 30d" },
+  default: { eyebrow: "Saved in this period" },
+};
+const EMPTY_COPY = {
+  never: { title: "No savings recorded yet" },
+  period: { title: "No savings in this period" },
 };
 const QUIET_NOTES = {
   today: { caption: "None today" },
@@ -61,8 +70,8 @@ const QUIET_NOTES = {
 
 /**
  * Filled lime hero: total saved, % lighter, $ estimate at list prices and a
- * stacked bar by method. `eyebrow` and `note` arrive as full static
- * sentences so the runtime i18n can translate them.
+ * stacked bar by method. The heading and caption arrive as full static
+ * phrases so the runtime i18n can translate them.
  * @param {object} props
  * @param {object} props.savings YAN-292 aggregation
  * @param {string} props.eyebrow
@@ -185,17 +194,14 @@ export function SavingsHero({
   const saved = Number(savings.tokensSavedEst) || 0;
   if (saved > 0) {
     return (
-      <FilledHero
-        savings={savings}
-        eyebrow={SAVED_COPY[period]?.eyebrow ?? "Saved in this period"}
-      />
+      <FilledHero savings={savings} eyebrow={(SAVED_COPY[period] ?? SAVED_COPY.default).eyebrow} />
     );
   }
   if (fallback) {
     return (
       <FilledHero
         savings={fallback.savings}
-        eyebrow={FALLBACK_COPY[fallback.period]?.eyebrow ?? "Saved in this period"}
+        eyebrow={(FALLBACK_COPY[fallback.period] ?? FALLBACK_COPY.default).eyebrow}
         note={QUIET_NOTES[period]?.caption ?? null}
       />
     );
@@ -208,7 +214,7 @@ export function SavingsHero({
         <EmptyState
           compact
           icon="bolt"
-          title={neverSaved ? "No savings recorded yet" : "No savings in this period"}
+          title={EMPTY_COPY[neverSaved ? "never" : "period"].title}
           body="Send traffic with a saver enabled — tool-output compression, Headroom, or prompts-as-images — and the totals land here."
           action={
             <Button variant="secondary" size="sm" href="/dashboard/usage">

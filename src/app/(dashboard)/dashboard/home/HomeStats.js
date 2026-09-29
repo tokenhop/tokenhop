@@ -75,6 +75,8 @@ export function deltaLine(current, previous) {
  * @param {"today"|"7d"|"30d"|null} props.period selected period for the quiet state
  * @param {string|null|undefined} props.lastRequestAt ISO time of the last request (undefined until loaded)
  * @param {boolean} [props.lastActivityLoading] true while last-activity loads
+ * @param {string|null} [props.lastActivityError] last-activity fetch error
+ * @param {() => void} [props.onRetryLastActivity] re-read last activity
  * @param {(period: string) => void} props.onSelectPeriod jump to a period with data
  */
 export default function HomeStats({
@@ -89,6 +91,8 @@ export default function HomeStats({
   period,
   lastRequestAt,
   lastActivityLoading = false,
+  lastActivityError = null,
+  onRetryLastActivity,
   onSelectPeriod,
 }) {
   if (loading) {
@@ -113,6 +117,8 @@ export default function HomeStats({
           period={period}
           lastRequestAt={lastRequestAt}
           loading={lastActivityLoading}
+          error={lastActivityError}
+          onRetry={onRetryLastActivity}
           allowed={SUMMARY_PERIODS}
           onSelectPeriod={onSelectPeriod}
           headingAs="h2"
@@ -209,5 +215,7 @@ HomeStats.propTypes = {
   period: PropTypes.oneOf(SUMMARY_PERIODS),
   lastRequestAt: PropTypes.string,
   lastActivityLoading: PropTypes.bool,
+  lastActivityError: PropTypes.string,
+  onRetryLastActivity: PropTypes.func,
   onSelectPeriod: PropTypes.func,
 };

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useHomeResource } from "./useHomeResource";
 import { useHomePollingResource } from "./useHomePollingResource";
 
@@ -14,14 +15,19 @@ const periodUrl = (path, period) => (period ? `${path}?period=${period}` : null)
  * storage not resolved yet) keeps the tiles on skeletons without fetching.
  * @param {"today"|"7d"|"30d"|null} period
  * @param {number} [refreshKey] bump to re-read
- * @returns {{ current: object|null, loading: boolean, error: string|null }}
+ * @returns {{ current: object|null, currentPeriod: string|null, loading: boolean, error: string|null }}
+ *   `currentPeriod` is the period `current` was fetched for (it lags a switch until the refetch lands).
  */
 export function useHomeUsage(period, refreshKey = 0) {
+  const [currentPeriod, setCurrentPeriod] = useState(null);
   const { data, loading, error } = useHomeResource(
     periodUrl("/api/usage/stats", period),
     refreshKey,
   );
-  return { current: data, loading: loading || period === null, error };
+  useEffect(() => {
+    if (data && !loading) setCurrentPeriod(period);
+  }, [data, loading, period]);
+  return { current: data, currentPeriod, loading: loading || period === null, error };
 }
 
 /**

@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   coercePeriod,
@@ -14,6 +16,7 @@ import {
 } from "@/shared/utils/period.js";
 
 const DAY = 24 * 60 * 60 * 1000;
+const PERIOD_MODULE = fileURLToPath(new URL("../../src/shared/utils/period.js", import.meta.url));
 const now = new Date(2026, 8, 29, 12).getTime();
 
 describe("period selection", () => {
@@ -59,6 +62,18 @@ describe("period boundaries", () => {
     expect(periodStart("7d", now)).toBe(new Date(2026, 8, 23).getTime());
     expect(periodStart("30d", now)).toBe(new Date(2026, 7, 31).getTime());
     expect(periodStart("60d", now)).toBe(new Date(2026, 7, 1).getTime());
+  });
+
+  it("keeps local midnight across a DST change", () => {
+    // TZ is fixed per process, so run the check in a child with a DST zone.
+    const script = `import { periodStart } from ${JSON.stringify(PERIOD_MODULE)};
+      const d = new Date(periodStart("7d", new Date(2026, 10, 6, 12).getTime()));
+      process.stdout.write([d.getDate(), d.getHours(), d.getMinutes()].join(":"));`;
+    const out = execFileSync(process.execPath, ["--input-type=module", "-e", script], {
+      env: { ...process.env, TZ: "America/New_York" },
+      encoding: "utf8",
+    });
+    expect(out).toBe("31:0:0");
   });
 
   it("picks the first period containing the last request", () => {

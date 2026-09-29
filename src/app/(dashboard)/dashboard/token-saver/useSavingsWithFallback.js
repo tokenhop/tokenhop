@@ -4,81 +4,68 @@ import { useEffect, useState } from "react";
 import { SUMMARY_PERIODS } from "@/shared/utils/period";
 import { fetchJson } from "./tokenSaverApi";
 
+const hasSavings = (data) => Number(data?.tokensSavedEst) > 0;
+
 /**
  * Current-period savings with a best-period fallback. Fetches
  * `/api/usage/savings?period=` for `period`; when it holds no savings the
- * larger SUMMARY_PERIODS are tried in order, stopping at the first hit.
- * `neverSaved` is true only when every larger period loads empty — a failed
- * fallback fetch is not fatal: it leaves `neverSaved` false (the selected period is still known empty). No fetch runs
- * while `period` is null (loading stays true). Cancels on unmount or change.
+ * larger SUMMARY_PERIODS are fetched in parallel and the smallest non-empty
+ * one wins. `neverSaved` is true only when every larger period loads empty.
+ * A failed fallback fetch is not fatal: it leaves `neverSaved` false (the
+ * selected period is still known empty). No fetch runs while `period` is
+ * null (loading stays true). In-flight requests abort on unmount or change.
  *
  * @param {string|null} period Current summary period.
  * @param {number} [refreshKey] Bump to re-read.
  * @returns {{ savings: object|null, loading: boolean, error: string|null, fallback: { period: string, savings: object }|null, neverSaved: boolean }}
  */
 export function useSavingsWithFallback(period, refreshKey = 0) {
-  const [savings, setSavings] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [fallback, setFallback] = useState(null);
-  const [neverSaved, setNeverSaved] = useState(false);
+  const [state, setState] = useState({
+    savings: null,
+    loading: true,
+    error: null,
+    fallback: null,
+    neverSaved: false,
+  });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshKey intentionally re-fetches on Retry/settings save.
   useEffect(() => {
-    if (!period) {
-      setSavings(null);
-      setError(null);
-      setFallback(null);
-      setNeverSaved(false);
-      setLoading(true);
-      return;
-    }
-    let cancelled = false;
+    setState({ savings: null, loading: true, error: null, fallback: null, neverSaved: false });
+    if (!period) return;
+    const controller = new AbortController();
+    const get = (value) =>
+      fetchJson(`/api/usage/savings?period=${value}`, { signal: controller.signal });
+
     (async () => {
-      setLoading(true);
-      setError(null);
-      setFallback(null);
-      setNeverSaved(false);
+      let savings;
       try {
-        const data = await fetchJson(`/api/usage/savings?period=${period}`);
-        if (cancelled) return;
-        setSavings(data);
-        if (Number(data?.tokensSavedEst) > 0) {
-          setLoading(false);
-          return;
-        }
+        savings = await get(period);
       } catch (fetchError) {
-        if (!cancelled) {
-          setSavings(null);
-          setError(fetchError.message);
-          setLoading(false);
+        if (!controller.signal.aborted) {
+          setState((s) => ({ ...s, loading: false, error: fetchError.message }));
         }
         return;
       }
-      let hit = false;
-      let failed = false;
-      for (const candidate of SUMMARY_PERIODS.slice(SUMMARY_PERIODS.indexOf(period) + 1)) {
-        try {
-          const candidateSavings = await fetchJson(`/api/usage/savings?period=${candidate}`);
-          if (cancelled) return;
-          if (Number(candidateSavings?.tokensSavedEst) > 0) {
-            setFallback({ period: candidate, savings: candidateSavings });
-            hit = true;
-            break;
-          }
-        } catch {
-          if (cancelled) return;
-          failed = true;
-        }
+      if (controller.signal.aborted) return;
+      if (hasSavings(savings)) {
+        setState((s) => ({ ...s, savings, loading: false }));
+        return;
       }
-      if (cancelled) return;
-      setNeverSaved(!hit && !failed);
-      setLoading(false);
+      const candidates = SUMMARY_PERIODS.slice(SUMMARY_PERIODS.indexOf(period) + 1);
+      const results = await Promise.allSettled(candidates.map(get));
+      if (controller.signal.aborted) return;
+      const hit = results.findIndex((r) => r.status === "fulfilled" && hasSavings(r.value));
+      const failed = results.some((r) => r.status === "rejected");
+      setState((s) => ({
+        ...s,
+        savings,
+        loading: false,
+        fallback: hit >= 0 ? { period: candidates[hit], savings: results[hit].value } : null,
+        neverSaved: hit < 0 && !failed,
+      }));
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [period, refreshKey]);
 
-  return { savings, loading, error, fallback, neverSaved };
+  return state;
 }
