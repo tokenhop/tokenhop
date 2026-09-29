@@ -994,6 +994,45 @@ export async function getLastActivity() {
   return row?.timestamp ?? null;
 }
 
+/**
+ * Per-request usage totals for a [start, end) window of usageHistory.
+ *
+ * A single indexed timestamp range aggregate: requests are the row count,
+ * prompt/completion tokens and cost come from the columns, and cached
+ * tokens from the tokens JSON (both cache aliases). promptTokens
+ * falls back to the JSON prompt/input aliases, matching the
+ * saveRequestUsage column conventions (legacy rows wrote 0 there).
+ * Both sides of a comparison use the same source (route contract).
+ * @param {{ start?: unknown, end?: unknown }} input
+ * @param {number} input.start start timestamp (ms, inclusive)
+ * @param {number} input.end end timestamp (ms, exclusive)
+ * @returns {Promise<{ requests: number, promptTokens: number, completionTokens: number, cachedTokens: number, cost: number }>}
+ */
+export async function getUsageTotals({ start, end } = {}) {
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) {
+    throw new Error("getUsageTotals requires finite ms start ≤ end");
+  }
+  const db = await getAdapter();
+  // Aggregated in SQLite (JSON1 ships with every supported driver) so long
+  // windows don't parse each row's tokens JSON in JS.
+  const row = db.get(
+    `SELECT COUNT(*) AS requests,
+       COALESCE(SUM(COALESCE(NULLIF(promptTokens, 0), json_extract(tokens, '$.prompt_tokens'), json_extract(tokens, '$.input_tokens'), 0)), 0) AS promptTokens,
+       COALESCE(SUM(completionTokens), 0) AS completionTokens,
+       COALESCE(SUM(COALESCE(NULLIF(json_extract(tokens, '$.cached_tokens'), 0), json_extract(tokens, '$.cache_read_input_tokens'), 0)), 0) AS cachedTokens,
+       COALESCE(SUM(cost), 0) AS cost
+     FROM usageHistory WHERE timestamp >= ? AND timestamp < ?`,
+    [new Date(start).toISOString(), new Date(end).toISOString()],
+  );
+  return {
+    requests: Number(row?.requests) || 0,
+    promptTokens: Number(row?.promptTokens) || 0,
+    completionTokens: Number(row?.completionTokens) || 0,
+    cachedTokens: Number(row?.cachedTokens) || 0,
+    cost: Number(row?.cost) || 0,
+  };
+}
+
 function formatLogDate(date = new Date()) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;

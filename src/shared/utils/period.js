@@ -117,6 +117,28 @@ export function periodStart(period, now = Date.now()) {
 }
 
 /**
+ * Window of equal length immediately before the current `period` window
+ * `[periodStart(period, now), now)` — the baseline for tile trends.
+ *
+ * `today` compares the same elapsed time slice of yesterday (midnight
+ * shifted back one calendar day via setDate, so DST days stay at local
+ * midnight); `24h` is the preceding rolling 24h; `7d/30d/60d` end at the
+ * current start.
+ * @param {string} period
+ * @param {number} [now]
+ * @returns {{start: number, end: number}}
+ */
+export function previousPeriodRange(period, now = Date.now()) {
+  const currentStart = periodStart(period, now);
+  if (period === "today") {
+    const yesterday = new Date(currentStart);
+    yesterday.setDate(yesterday.getDate() - 1);
+    return { start: yesterday.getTime(), end: yesterday.getTime() + (now - currentStart) };
+  }
+  return { start: currentStart - (now - currentStart), end: currentStart };
+}
+
+/**
  * Smallest allowed period whose start is at or before `lastAt` (the most
  * recent request). Future timestamps count as "today". Null/invalid input,
  * or no allowed period matching, yields null.

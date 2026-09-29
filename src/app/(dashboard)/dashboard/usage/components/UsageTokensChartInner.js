@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import PropTypes from "prop-types";
 import {
   Area,
@@ -15,7 +15,7 @@ import {
 import Card from "@/shared/components/Card";
 import SegmentedControl from "@/shared/components/SegmentedControl";
 import EmptyState from "@/shared/components/EmptyState";
-import { shapeChartSeries } from "../lib/usageShapes";
+import { ErrorState, LoadingState } from "@/shared/components/StateViews";
 import { useReducedMotion } from "@/shared/hooks/useOverlay";
 
 const fmtTokens = (n) =>
@@ -31,39 +31,24 @@ function cssVar(name, fallback) {
  * Chart body: recharts AreaChart with input (sky solid), cached (lime
  * dashed), output (coral solid). Colors read from CSS vars at runtime so
  * both themes work. Accessible <table> fallback inside <details>.
+ * Buckets arrive already shaped by the page's shared chart fetch.
  *
  * @param {object} props
- * @param {string} [props.period="7d"]
+ * @param {Array<object>} [props.buckets] shaped chart buckets
+ * @param {boolean} [props.loading]
+ * @param {string|null} [props.error] fetch error message
+ * @param {() => void} [props.onRetry]
  */
-export default function UsageTokensChartInner({ period = "7d" }) {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function UsageTokensChartInner({
+  buckets = [],
+  loading = false,
+  error = null,
+  onRetry,
+}) {
   const [viewMode, setViewMode] = useState("tokens");
   const reducedMotion = useReducedMotion();
 
-  const [fetchError, setFetchError] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setFetchError(null);
-    fetch(`/api/usage/chart?period=${encodeURIComponent(period)}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`chart ${r.status}`))))
-      .then((json) => {
-        if (!cancelled && json) setData(shapeChartSeries(json));
-      })
-      .catch((e) => {
-        if (!cancelled) setFetchError(e);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [period]);
-
-  const hasData = data.some((d) => (d.tokens || 0) > 0 || (d.cost || 0) > 0);
+  const hasData = buckets.some((d) => (d.tokens || 0) > 0 || (d.cost || 0) > 0);
   const sky = cssVar("--signal-sky", "#72b7ff");
   const lime = cssVar("--signal-lime-ink", "#d5f84b");
   const coral = cssVar("--signal-coral-ink", "#ff8b70");
@@ -85,19 +70,15 @@ export default function UsageTokensChartInner({ period = "7d" }) {
       }
     >
       {loading ? (
-        <div className="flex h-48 items-center justify-center text-sm text-muted">Loading…</div>
-      ) : fetchError ? (
-        <EmptyState
-          icon="error"
-          title="Couldn't load chart data"
-          body="Try switching period or reloading the page."
-        />
+        <LoadingState label="Loading chart" lines={3} />
+      ) : error ? (
+        <ErrorState title="Couldn't load chart data" message={error} onRetry={onRetry} />
       ) : !hasData ? (
         <EmptyState icon="show_chart" title="No data for this period" />
       ) : (
         <>
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            <AreaChart data={buckets} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="usageSky" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={sky} stopOpacity={0.25} />
@@ -209,7 +190,7 @@ export default function UsageTokensChartInner({ period = "7d" }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((d) => (
+                  {buckets.map((d) => (
                     <tr key={d.label}>
                       <th scope="row">{d.label}</th>
                       <td>{fmtTokens(d.input)}</td>
@@ -229,5 +210,8 @@ export default function UsageTokensChartInner({ period = "7d" }) {
 }
 
 UsageTokensChartInner.propTypes = {
-  period: PropTypes.string,
+  buckets: PropTypes.array,
+  loading: PropTypes.bool,
+  error: PropTypes.string,
+  onRetry: PropTypes.func,
 };

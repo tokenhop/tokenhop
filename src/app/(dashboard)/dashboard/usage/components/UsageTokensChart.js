@@ -7,14 +7,24 @@ const UsageTokensChartInner = dynamic(() => import("./UsageTokensChartInner"), {
 
 /**
  * Tokens-over-time chart (client-only recharts). Keeps recharts out of SSR.
+ * Data comes from the page's shared chart fetch (useChartBuckets) — the
+ * chart no longer fetches on its own.
  *
  * @param {object} props
- * @param {string} [props.period="7d"]
+ * @param {Array<object>} props.buckets shaped chart buckets
+ * @param {boolean} props.loading
+ * @param {string|null} props.error
+ * @param {() => void} [props.onRetry]
  */
-export default function UsageTokensChart({ period = "7d" }) {
-  return <UsageTokensChartInner period={period} />;
+export default function UsageTokensChart({ buckets, loading, error, onRetry }) {
+  return (
+    <UsageTokensChartInner buckets={buckets} loading={loading} error={error} onRetry={onRetry} />
+  );
 }
 
 UsageTokensChart.propTypes = {
-  period: PropTypes.string,
+  buckets: PropTypes.array,
+  loading: PropTypes.bool,
+  error: PropTypes.string,
+  onRetry: PropTypes.func,
 };
