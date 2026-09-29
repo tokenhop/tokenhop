@@ -7,6 +7,7 @@ import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { pickSmoothWeighted } from "./weightedRoundRobin.js";
+import { effectiveComboWeight } from "./comboWeights.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -274,18 +275,14 @@ export function getWeightedModels(models, comboName, weights, headroomFn, sticky
   for (const m of models) {
     if (typeof m !== "string" || seen.has(m)) continue;
     seen.add(m);
-    const base =
-      weights && Object.hasOwn(weights, m) && Number.isFinite(weights[m]) && weights[m] >= 0
-        ? weights[m]
-        : 1;
     let headroom = 1;
     try {
       const h = headroomFn?.(m);
-      if (Number.isFinite(h) && h >= 0) headroom = h;
+      if (Number.isFinite(h)) headroom = h;
     } catch {
       headroom = 1;
     }
-    const weight = base * headroom;
+    const weight = effectiveComboWeight(m, weights, headroom);
     if (weight > 0) candidates.push({ id: m, weight });
   }
 

@@ -1,24 +1,46 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
+import { useReducedMotion } from "@/shared/hooks";
 import Button from "@/shared/components/Button";
 import ProviderTile from "@/shared/components/ProviderTile";
 import StatusPill from "@/shared/components/StatusPill";
-import { formatProbeLatency, probeLastRunLabel } from "./routeTestFormat";
+import {
+  formatProbeLatency,
+  probeLastRunLabel,
+  probeTrackEvents,
+  PROBE_STEP_MS,
+} from "./routeTestFormat";
 
 /**
  * Test-this-route panel: runs a dry-run probe through the real combo pipeline
- * and shows the per-step timeline (status pill in mono, model, reason +
- * latency, skipped/served), the served step, total time and a summary line.
+ * and replays the attempts step by step (~250ms each): attempted (sky),
+ * failed/skipped (warn + reason), answered (lime). Matching route-track steps
+ * light up through `onTrackStatesChange`; under prefers-reduced-motion every
+ * step shows its final state instantly. An sr-only aria-live region narrates
+ * the timeline for screen readers.
+ *
  * @param {object} props
  * @param {string} props.comboId - Combo id for POST /api/combos/[id]/test.
+ * @param {string[]} props.models - Combo member models (the route track).
+ * @param {(states: Array<{state: string, reason: string}|null>)} [props.onTrackStatesChange]
+ *   Called whenever the per-step replay states change (also with [] when cleared).
  */
-export default function RouteTestPanel({ comboId }) {
+export default function RouteTestPanel({ comboId, models, onTrackStatesChange }) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [ranAt, setRanAt] = useState(null);
+  const [progress, setProgress] = useState(0); // steps fully resolved so far
+  const reducedMotion = useReducedMotion();
+
+  const routeModels = Array.isArray(models) ? models : [];
+  const events = useMemo(
+    () => probeTrackEvents(routeModels, result?.attempts),
+    [routeModels, result],
+  );
+  const total = events.length;
 
   // Disable while running to prevent duplicate POSTs (rate limit would turn
   // the second into a confusing 429). Client-side timeout (~65s) just past
@@ -27,6 +49,8 @@ export default function RouteTestPanel({ comboId }) {
     if (running || !comboId) return;
     setRunning(true);
     setError("");
+    setResult(null);
+    setProgress(0);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 65_000);
     try {
@@ -43,6 +67,7 @@ export default function RouteTestPanel({ comboId }) {
       }
       setResult(json);
       setRanAt(json.ranAt || new Date().toISOString());
+      setProgress(reducedMotion ? (json.attempts || []).length : 0);
     } catch (err) {
       setError(
         err?.name === "AbortError"
@@ -55,8 +80,37 @@ export default function RouteTestPanel({ comboId }) {
     }
   };
 
-  const attempts = result?.attempts || [];
+  // Replay clock: resolve one step per PROBE_STEP_MS; the step at `progress`
+  // is the one being attempted (sky). Reduced motion (or a fresh replay
+  // without results) skips straight to the final states.
+  useEffect(() => {
+    if (!result || reducedMotion || progress >= total) return undefined;
+    const timer = setTimeout(() => setProgress((p) => Math.min(total, p + 1)), PROBE_STEP_MS);
+    return () => clearTimeout(timer);
+  }, [result, reducedMotion, progress, total]);
+
+  // Route-track states: step at `progress` is attempting, earlier ones hold
+  // their final state. Cleared whenever the result, the route or the combo
+  // changes so stale highlights never outlive an edit.
+  useEffect(() => {
+    if (!onTrackStatesChange) return;
+    if (!result) {
+      onTrackStatesChange([]);
+      return;
+    }
+    const states = routeModels.map(() => null);
+    events.forEach((event, i) => {
+      if (event.index === null || i > progress) return;
+      states[event.index] = { state: event.state, reason: event.reason };
+    });
+    if (progress < total && events[progress] && events[progress].index !== null) {
+      states[events[progress].index] = { state: "attempted", reason: "" };
+    }
+    onTrackStatesChange(states);
+  }, [events, progress, result, routeModels, total, onTrackStatesChange]);
+
   const lastRun = probeLastRunLabel(ranAt);
+  const visible = events.slice(0, reducedMotion ? total : progress + 1);
 
   return (
     <section
@@ -77,6 +131,17 @@ export default function RouteTestPanel({ comboId }) {
         >
           Run test
         </Button>
+        {total > 0 && !running && !reducedMotion && (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon="restart_alt"
+            onClick={() => setProgress(0)}
+            aria-label="Replay the last run on the route track"
+          >
+            Replay
+          </Button>
+        )}
       </div>
       <p className="m-0 text-xs text-muted">
         Uses a tiny amount of quota. Runs the real route, so it also advances rotation.
@@ -99,45 +164,64 @@ export default function RouteTestPanel({ comboId }) {
         </p>
       )}
 
-      {attempts.length > 0 && (
-        <ul aria-label="Probe steps" className="m-0 flex list-none flex-col p-0">
-          {attempts.map((step, index) => {
+      {visible.length > 0 && (
+        <ul aria-label="Probe steps" className="m-0 flex list-none flex-col gap-1 p-0">
+          {visible.map((step, index) => {
+            const attempting = !reducedMotion && index === progress && index < total;
             const ok = step.status != null && step.status >= 200 && step.status < 300;
             const isServed = step.outcome === "served";
-            const reason =
-              step.outcome === "served" || step.outcome === "answered"
-                ? "answered"
-                : (step.errorType ?? `error ${step.status ?? "unknown"}`);
             return (
+              // biome-ignore lint/suspicious/noArrayIndexKey: probe replay has no step ids from the API; model+position is the stable key.
               <li key={`${step.model}-${index}`} className="flex items-center gap-3 text-[13px]">
-                <StatusPill
-                  variant={ok ? "ok" : "err"}
-                  size="sm"
-                  className="min-w-10 justify-center"
-                >
-                  <span className="font-mono">{step.status ?? "—"}</span>
-                </StatusPill>
+                {attempting ? (
+                  <StatusPill variant="info" size="sm" className="min-w-10 justify-center">
+                    <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                      progress_activity
+                    </span>
+                    <span className="sr-only">Trying…</span>
+                  </StatusPill>
+                ) : (
+                  <StatusPill
+                    variant={ok ? "ok" : "err"}
+                    size="sm"
+                    className="min-w-10 justify-center"
+                  >
+                    <span className="font-mono">{step.status ?? "—"}</span>
+                  </StatusPill>
+                )}
                 <ProviderTile providerId={step.model} size="sm" />
                 <span className="min-w-0 truncate font-mono">{step.model}</span>
                 <span className="truncate text-muted">
-                  {reason} · {formatProbeLatency(step.latencyMs)}
+                  {attempting ? "Trying…" : step.reason} · {formatProbeLatency(step.latencyMs)}
                   {step.account ? ` · ${step.account}` : ""}
                   {step.role === "panel" ? " · panel" : ""}
                   {step.role === "judge" ? " · judge" : ""}
                   {step.role === "nested" && step.via ? ` · via ${step.via}` : ""}
                 </span>
-                <span
-                  className={`ms-auto shrink-0 font-semibold ${isServed ? "text-ok" : "text-muted"}`}
-                >
-                  {isServed ? "Served" : step.outcome === "answered" ? "OK" : "skipped"}
-                </span>
+                {!attempting && (
+                  <span
+                    className={`ms-auto shrink-0 font-semibold ${
+                      step.state === "answered" ? "text-lime-ink" : "text-muted"
+                    }`}
+                  >
+                    {isServed ? "Served" : step.state === "answered" ? "Answered" : "Skipped"}
+                  </span>
+                )}
               </li>
             );
           })}
         </ul>
       )}
 
-      {result?.summary && (
+      {/* Screen-reader timeline: narrates each step as it resolves. */}
+      <p aria-live="polite" className="sr-only m-0">
+        {events
+          .slice(0, reducedMotion ? total : progress)
+          .map((step) => step.text)
+          .join(" ")}
+      </p>
+
+      {result?.summary && progress >= total && (
         <p className="m-0 border-t border-line pt-2.5 text-[13px]">
           <strong>{result.summary}</strong>
         </p>
@@ -148,4 +232,6 @@ export default function RouteTestPanel({ comboId }) {
 
 RouteTestPanel.propTypes = {
   comboId: PropTypes.string,
+  models: PropTypes.arrayOf(PropTypes.string),
+  onTrackStatesChange: PropTypes.func,
 };

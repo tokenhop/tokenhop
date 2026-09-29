@@ -5,7 +5,9 @@ import { METER_FILLS, meterValue, meterVariant } from "./displayPrimitives";
 
 /**
  * Signal meter. 8px track, fill colored by level (>45 ok, 21–45 warn, ≤20 err).
- * `unlimited` = lime, `credits` = sky. Exposes `role="meter"`.
+ * `unlimited` = lime, `credits` = sky. `brand`/`neutral` variants override
+ * the fill for non-status shares (e.g. weighted combo traffic splits).
+ * Exposes `role="meter"`.
  *
  * @param {object} props
  * @param {number} props.value 0–100.
@@ -14,10 +16,12 @@ import { METER_FILLS, meterValue, meterVariant } from "./displayPrimitives";
  * @param {string} [props.valueText] Human-readable value for screen readers.
  * @param {string} [props.className]
  */
-export default function Meter({ value, kind, label, valueText, className }) {
+export default function Meter({ value, kind, variant, label, valueText, className }) {
   if (!label) throw new Error("Meter: `label` is required for the meter accessible name");
   const clamped = meterValue(value);
-  const fill = meterVariant(clamped, kind);
+  const key = variant ?? meterVariant(clamped, kind);
+  const fill = METER_FILLS[key];
+  if (!fill) throw new Error(`Meter: unknown variant "${key}"`);
   return (
     // biome-ignore lint/a11y/useSemanticElements: native <meter> cannot take the Signal track/fill styling cross-browser; ARIA meter carries the same semantics.
     <div
@@ -29,10 +33,7 @@ export default function Meter({ value, kind, label, valueText, className }) {
       aria-label={label}
       className={`h-2 w-full overflow-hidden rounded-pill bg-raised shadow-[inset_0_0_0_1px_var(--signal-line)]${className ? ` ${className}` : ""}`}
     >
-      <div
-        className={`h-full rounded-pill ${METER_FILLS[fill]}`}
-        style={{ width: `${clamped}%` }}
-      />
+      <div className={`h-full rounded-pill ${fill}`} style={{ width: `${clamped}%` }} />
     </div>
   );
 }
@@ -40,6 +41,7 @@ export default function Meter({ value, kind, label, valueText, className }) {
 Meter.propTypes = {
   value: PropTypes.number.isRequired,
   kind: PropTypes.oneOf(["unlimited", "credits"]),
+  variant: PropTypes.oneOf(["brand", "neutral"]),
   label: PropTypes.string.isRequired,
   valueText: PropTypes.string,
   className: PropTypes.string,

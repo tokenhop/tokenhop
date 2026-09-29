@@ -12,6 +12,13 @@ import {
 const UNTRANSLATED_LITERALS = new Map([
   // Raw log-stream marker chip: literal source tag, not prose (ConsoleLogRows).
   ["browser", "log-source marker chip, literal source tag"],
+  // YAN-411 route-probe replay copy: translations land with the next i18n
+  // copy batch (see scripts/translate-literals.mjs; precedent #338). The
+  // runtime falls back to the English literal for these four keys.
+  ["Answered", "YAN-411 probe replay; pending i18n copy batch"],
+  ["Replay", "YAN-411 probe replay; pending i18n copy batch"],
+  ["Replay the last run on the route track", "YAN-411 probe replay; pending i18n copy batch"],
+  ["Trying…", "YAN-411 probe replay; pending i18n copy batch"],
 ]);
 
 describe("i18n locale coverage (YAN-409 guard)", () => {

@@ -152,6 +152,7 @@ export default function CombosPageClient() {
   const [draftWeights, setDraftWeights] = useState({});
   const [draftJudge, setDraftJudge] = useState("");
   const [headroom, setHeadroom] = useState({});
+  const [headroomQuotaSource, setHeadroomQuotaSource] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [adapterError, setAdapterError] = useState("");
@@ -378,17 +379,25 @@ export default function CombosPageClient() {
 
   // Headroom re-fetches when models change; an effect-local cancelled flag
   // drops stale responses so an older request never overwrites a newer one.
+  // quotaByModel (additive YAN-411 detail) carries the remaining-quota source
+  // so weighted shares can explain which numbers shifted them.
   const selectedIdForHeadroom = selected?.id;
   useEffect(() => {
     if (!selectedIdForHeadroom || draftStrategy !== "weighted" || !draftModels?.length) {
       setHeadroom({});
+      setHeadroomQuotaSource({});
       return;
     }
     let cancelled = false;
     fetch(`/api/combos/${selectedIdForHeadroom}/headroom`)
       .then((res) => (res.ok ? res.json() : {}))
       .then((data) => {
-        if (!cancelled) setHeadroom(data.headroom || {});
+        if (cancelled) return;
+        setHeadroom(data.headroom || {});
+        const detail = data.quotaByModel || {};
+        setHeadroomQuotaSource(
+          Object.fromEntries(Object.entries(detail).map(([m, d]) => [m, d?.source || "static"])),
+        );
       })
       .catch(() => {});
     return () => {
@@ -712,6 +721,7 @@ export default function CombosPageClient() {
               weights={draftWeights}
               judgeModel={draftJudge}
               headroom={headroom}
+              headroomQuotaSource={headroomQuotaSource}
               healthByProvider={healthByProvider}
               providerLabelById={providerLabelById}
               saving={saving}
