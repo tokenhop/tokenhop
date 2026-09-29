@@ -14,7 +14,7 @@ const ProviderTopology = dynamic(() => import("./ProviderTopology"), { ssr: fals
  *
  * @param {object} props
  * @param {Array<object>} [props.providers]
- * @param {Array<object>} [props.activeRequests]
+ * @param {Array<{provider: string, count: number}>} [props.activeRequests] in-flight counts per provider (live stream)
  * @param {string} [props.lastProvider]
  * @param {string} [props.errorProvider]
  */
