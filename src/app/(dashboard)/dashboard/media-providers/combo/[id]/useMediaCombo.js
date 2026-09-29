@@ -19,6 +19,8 @@ export function useMediaCombo(id) {
   const [providers, setProviders] = useState([]);
   const [roundRobin, setRoundRobin] = useState(false);
   const [savingStrategy, setSavingStrategy] = useState(false);
+  const [savingModels, setSavingModels] = useState(false);
+  const savingModelsRef = useRef(false);
   const savingStrategyRef = useRef(false);
   // Serializes rename + strategy toggle so the toggle PATCH never targets a stale name.
   const opQueueRef = useRef(Promise.resolve());
@@ -32,6 +34,7 @@ export function useMediaCombo(id) {
   const [saveStatus, setSaveStatus] = useState("");
 
   const fetchAll = useCallback(async () => {
+    setLoading(true);
     setLoadError("");
     setMissing(false);
     try {
@@ -127,42 +130,55 @@ export function useMediaCombo(id) {
     }).catch(() => setSaveError("Failed to save — network error"));
   };
 
+  const saveComboModels = async (next) => {
+    savingModelsRef.current = true;
+    setSavingModels(true);
+    try {
+      return await saveCombo({ models: next });
+    } finally {
+      savingModelsRef.current = false;
+      setSavingModels(false);
+    }
+  };
+
   const handleAddModel = async (model) => {
     const value = model?.value || model;
-    if (!value || providers.includes(value)) return;
+    if (!value || providers.includes(value) || savingModelsRef.current) return;
     const previous = providers;
     const next = [...providers, value];
     setProviders(next);
-    const ok = await saveCombo({ models: next });
+    const ok = await saveComboModels(next);
     if (!ok) setProviders(previous);
   };
 
   const handleDeselectModel = async (model) => {
     const value = model?.value || model;
-    if (!value || !providers.includes(value)) return;
+    if (!value || !providers.includes(value) || savingModelsRef.current) return;
     const previous = providers;
     const next = providers.filter((p) => p !== value);
     setProviders(next);
-    const ok = await saveCombo({ models: next });
+    const ok = await saveComboModels(next);
     if (!ok) setProviders(previous);
   };
 
   const handleRemoveProvider = async (idx) => {
+    if (savingModelsRef.current) return;
     const previous = providers;
     const next = providers.filter((_, i) => i !== idx);
     setProviders(next);
-    const ok = await saveCombo({ models: next });
+    const ok = await saveComboModels(next);
     if (!ok) setProviders(previous);
   };
 
   const handleMove = async (idx, dir) => {
+    if (savingModelsRef.current) return;
     const next = [...providers];
     const swap = idx + dir;
     if (swap < 0 || swap >= next.length) return;
     [next[idx], next[swap]] = [next[swap], next[idx]];
     const previous = providers;
     setProviders(next);
-    const ok = await saveCombo({ models: next });
+    const ok = await saveComboModels(next);
     if (!ok) setProviders(previous);
   };
 
@@ -242,6 +258,7 @@ export function useMediaCombo(id) {
     providers,
     roundRobin,
     savingStrategy,
+    savingModels,
     logs,
     apiKey,
     connections,

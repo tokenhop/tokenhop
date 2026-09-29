@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import { useNotificationStore } from "@/store/notificationStore";
 import { getModelsByProviderId } from "@/shared/constants/models";
@@ -44,24 +44,34 @@ export function useMediaProviderDetail({ id, kind, isCustom, noAuth = false }) {
 
   // Fetch the custom embedding node first: its prefix is the storage alias
   // models must load with. Failures surface as an error state, never 404.
+  // Each call bumps the sequence ref; only the latest call may set state,
+  // so stale responses (Retry races, post-unmount) are ignored.
+  const nodeReqSeq = useRef(0);
   const loadNode = useCallback(async () => {
     if (!isCustom) return;
+    const reqId = ++nodeReqSeq.current;
     setCustomLoading(true);
     setFetchError("");
     try {
       const res = await fetch("/api/provider-nodes", { cache: "no-store" });
       if (!res.ok) throw new Error("Could not load custom provider");
       const data = await res.json();
+      if (reqId !== nodeReqSeq.current) return;
       setCustomNode((data.nodes || []).find((node) => node.id === id) || null);
     } catch (error) {
+      if (reqId !== nodeReqSeq.current) return;
       setFetchError(error instanceof Error ? error.message : "Could not load custom provider");
     } finally {
-      setCustomLoading(false);
+      if (reqId === nodeReqSeq.current) setCustomLoading(false);
     }
   }, [id, isCustom]);
 
   useEffect(() => {
     loadNode();
+    // Invalidate any in-flight request on unmount/id change.
+    return () => {
+      nodeReqSeq.current += 1;
+    };
   }, [loadNode]);
 
   const { fetchConnections } = conn;

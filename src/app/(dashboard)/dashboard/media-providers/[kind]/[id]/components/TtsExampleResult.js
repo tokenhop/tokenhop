@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { codeBlockClass, eyebrowClass, LatencyBadge } from "./exampleShared";
+import { codeBlockClass, eyebrowClass, DownloadLink, LatencyBadge } from "./exampleShared";
 
 export const DEFAULT_TTS_RESPONSE_EXAMPLE = `// Audio will appear here after running.
 // Example JSON response (response_format=json):
@@ -32,17 +32,11 @@ export function TtsExampleResult({ audioUrl, latency, jsonResponse }) {
         <span className={eyebrowClass}>
           Response <LatencyBadge ms={latency} />
         </span>
-        <a
-          href={audioUrl}
-          download="speech.mp3"
-          className="inline-flex min-h-10 items-center gap-1 rounded-lg text-xs text-muted transition-colors hover:text-text"
-        >
-          <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
-            download
-          </span>
+        <DownloadLink href={audioUrl} filename="speech.mp3">
           Download
-        </a>
+        </DownloadLink>
       </div>
+      {/* biome-ignore lint/a11y/useMediaCaption: generated speech playback has no captions */}
       <audio
         controls
         src={audioUrl}

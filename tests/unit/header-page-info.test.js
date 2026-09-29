@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getMediaRouteInfo } from "@/app/(dashboard)/dashboard/media-providers/components/mediaPageInfo.js";
+import { getMediaRouteInfo } from "@/shared/utils/mediaPageInfo.js";
 
 describe("getMediaRouteInfo (YAN-402)", () => {
   const LIST_INFO = {

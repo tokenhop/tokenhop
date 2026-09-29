@@ -36,6 +36,7 @@ export default function ComboDetailPage() {
     providers,
     roundRobin,
     savingStrategy,
+    savingModels,
     logs,
     apiKey,
     connections,
@@ -101,6 +102,7 @@ export default function ComboDetailPage() {
       <ComboProvidersCard
         providers={providers}
         roundRobin={roundRobin}
+        savingModels={savingModels}
         onAdd={() => setShowPicker(true)}
         onMove={handleMove}
         onRemove={handleRemoveProvider}

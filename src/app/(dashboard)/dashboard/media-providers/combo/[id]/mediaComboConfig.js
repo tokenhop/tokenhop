@@ -1,20 +1,21 @@
 /**
  * Pure config/helpers for the media combo detail page (YAN-402).
- * No React, no imports from src/: unit-testable under node.
+ * No React; only plain shared constants and the generic example logic.
+ * Unit-testable under node.
  */
 import { previewAuthHeader } from "@/shared/constants/previewAuth.js";
+import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/mediaProviderKinds.js";
+
+// Single maskB64 implementation lives in genericExampleLogic; re-exported
+// so combo consumers keep one import site.
+export { maskB64 } from "@/app/(dashboard)/dashboard/media-providers/[kind]/[id]/components/genericExampleLogic.js";
 
 export const VALID_NAME_REGEX = /^[a-zA-Z0-9_.-]+$/;
 
-export const KIND_LABELS = {
-  webSearch: "Web search",
-  webFetch: "Web fetch",
-  image: "Text to image",
-  video: "Video",
-  tts: "Text to speech",
-  stt: "Speech to text",
-  embedding: "Embedding",
-};
+/** Kind labels derived from the shared registry (single source of truth). */
+export const KIND_LABELS = Object.fromEntries(
+  MEDIA_PROVIDER_KINDS.map(({ id, label }) => [id, label]),
+);
 
 export const EXAMPLE_PATHS = {
   webSearch: "/v1/search",
@@ -48,7 +49,7 @@ export function getListingHref(kind) {
 }
 
 /** Sentence-case kind label with the same fallbacks as the page. */
-export function kindLabelFor(kind, kinds = []) {
+export function kindLabelFor(kind, kinds = MEDIA_PROVIDER_KINDS) {
   if (KIND_LABELS[kind]) return KIND_LABELS[kind];
   return kinds.find((k) => k.id === kind)?.label || "Combo";
 }
@@ -70,20 +71,6 @@ export function validateMediaComboName(value) {
   if (!VALID_NAME_REGEX.test(value))
     return { ok: false, error: "Only letters, numbers, -, _ and ." };
   return { ok: true, value };
-}
-
-/** Mask large b64_json strings to keep the JSON view readable. */
-export function maskB64(obj) {
-  if (!obj || typeof obj !== "object") return obj;
-  if (Array.isArray(obj)) return obj.map(maskB64);
-  const out = {};
-  for (const [k, v] of Object.entries(obj)) {
-    out[k] =
-      k === "b64_json" && typeof v === "string" && v.length > 100
-        ? `<${v.length} chars base64>`
-        : maskB64(v);
-  }
-  return out;
 }
 
 /** Build the example request body for a combo kind, or null when unknown. */

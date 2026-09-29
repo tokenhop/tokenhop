@@ -2,6 +2,10 @@
 
 import PropTypes from "prop-types";
 import { Button, Card } from "@/shared/components";
+import {
+  DownloadLink,
+  LatencyBadge,
+} from "@/app/(dashboard)/dashboard/media-providers/[kind]/[id]/components/exampleShared";
 
 /** cURL preview plus the kind-specific probe result (image, audio or JSON). */
 export default function ComboTestCard({
@@ -43,27 +47,17 @@ export default function ComboTestCard({
         {testing && <p className="text-xs text-muted">Testing</p>}
         {testResult && (
           <>
-            {testResult.latencyMs != null && (
-              <span className="inline-flex items-center gap-1 text-[11px] text-muted">
-                <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
-                  bolt
-                </span>
-                {testResult.latencyMs}ms
-              </span>
-            )}
+            {testResult.latencyMs != null && <LatencyBadge ms={testResult.latencyMs} />}
             {testResult.imageUrl && (
               <div>
                 <div className="mb-1.5 flex items-center justify-end">
-                  <a
+                  <DownloadLink
                     href={testResult.imageUrl}
-                    download="image.png"
+                    filename="image.png"
                     className="inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-coral-ink"
                   >
-                    <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
-                      download
-                    </span>
                     Download
-                  </a>
+                  </DownloadLink>
                 </div>
                 {/* biome-ignore lint/performance/noImgElement: generated-image preview from object/blob URLs */}
                 <img
@@ -78,16 +72,13 @@ export default function ComboTestCard({
             {testResult.audioUrl && (
               <div>
                 <div className="mb-1.5 flex items-center justify-end">
-                  <a
+                  <DownloadLink
                     href={testResult.audioUrl}
-                    download="speech.mp3"
+                    filename="speech.mp3"
                     className="inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-coral-ink"
                   >
-                    <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
-                      download
-                    </span>
                     Download
-                  </a>
+                  </DownloadLink>
                 </div>
                 {/* biome-ignore lint/a11y/useMediaCaption: generated speech playback has no captions */}
                 <audio controls src={testResult.audioUrl} className="w-full" />

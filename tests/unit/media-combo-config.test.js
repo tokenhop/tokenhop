@@ -4,7 +4,6 @@ import {
   kindLabelFor,
   parseModelEntry,
   validateMediaComboName,
-  maskB64,
   exampleBodyFor,
   buildCurl,
   EXAMPLE_PATHS,
@@ -24,12 +23,15 @@ describe("getListingHref", () => {
 });
 
 describe("kindLabelFor", () => {
-  it("uses the known sentence-case label first", () => {
+  it("derives labels from the shared registry, no-arg included", () => {
     expect(kindLabelFor("tts")).toBe("Text to speech");
     expect(kindLabelFor("webSearch")).toBe("Web search");
+    expect(kindLabelFor("imageToText")).toBe("Image to text");
+    expect(kindLabelFor("music")).toBe("Music");
+    expect(kindLabelFor("video")).toBe("Video");
   });
 
-  it("falls back to the kind registry, then Combo", () => {
+  it("falls back to the passed kinds, then Combo", () => {
     const kinds = [{ id: "custom", label: "Custom" }];
     expect(kindLabelFor("custom", kinds)).toBe("Custom");
     expect(kindLabelFor("unknown", kinds)).toBe("Combo");
@@ -59,23 +61,6 @@ describe("validateMediaComboName", () => {
       ok: false,
       error: "Only letters, numbers, -, _ and .",
     });
-  });
-});
-
-describe("maskB64", () => {
-  it("masks long b64_json strings, keeps everything else", () => {
-    const long = "x".repeat(150);
-    expect(maskB64({ data: [{ b64_json: long }], ok: true })).toEqual({
-      data: [{ b64_json: `<150 chars base64>` }],
-      ok: true,
-    });
-    const short = "abc";
-    expect(maskB64({ b64_json: short })).toEqual({ b64_json: short });
-  });
-
-  it("passes through non-objects", () => {
-    expect(maskB64(null)).toBe(null);
-    expect(maskB64("s")).toBe("s");
   });
 });
 

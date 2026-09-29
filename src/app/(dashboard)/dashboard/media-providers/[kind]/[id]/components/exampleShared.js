@@ -252,3 +252,32 @@ ExampleRequestBlock.propTypes = {
   copyError: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
 };
+
+/**
+ * Download link with the download Material Symbol. `className` overrides the
+ * default anchor classes so call sites keep their exact markup (YAN-402).
+ */
+export function DownloadLink({ href, filename, className, children }) {
+  return (
+    <a
+      href={href}
+      download={filename}
+      className={
+        className ??
+        "inline-flex min-h-10 items-center gap-1 rounded-lg text-xs text-muted transition-colors hover:text-text"
+      }
+    >
+      <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+        download
+      </span>
+      {children}
+    </a>
+  );
+}
+
+DownloadLink.propTypes = {
+  href: PropTypes.string,
+  filename: PropTypes.string,
+  className: PropTypes.string,
+  children: PropTypes.node,
+};

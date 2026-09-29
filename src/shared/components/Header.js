@@ -11,7 +11,7 @@ import dynamic from "next/dynamic";
 import IconButton from "@/shared/components/IconButton";
 import CommandPaletteTrigger from "@/shared/components/CommandPaletteTrigger";
 import useAuthStatus from "@/shared/hooks/useAuthStatus";
-import { getMediaRouteInfo } from "@/app/(dashboard)/dashboard/media-providers/components/mediaPageInfo";
+import { getMediaRouteInfo } from "@/shared/utils/mediaPageInfo";
 import { PROVIDER_DISPLAY } from "@/shared/constants/providerDisplay.generated";
 import { onLocaleChange, translate } from "@/i18n/runtime";
 

@@ -2,29 +2,11 @@
 
 import PropTypes from "prop-types";
 import { cn } from "@/shared/utils/cn";
+import { groupSelectOptions } from "@/shared/utils/selectOptions";
 import Field from "./Field";
 
-/**
- * Group an options array by each option's `group` in first-seen order.
- * Options without `group` share the ungrouped run. Pure, so callers can unit
- * test grouping without rendering.
- * @param {Array<{ group?: string }>} options
- * @returns {Array<{ label: string|null, options: Array }>}
- */
-export function groupSelectOptions(options) {
-  const groups = [];
-  const groupByKey = new Map();
-  for (const option of options) {
-    const key = option.group || null;
-    if (!groupByKey.has(key)) {
-      const group = { label: key, options: [] };
-      groupByKey.set(key, group);
-      groups.push(group);
-    }
-    groupByKey.get(key).options.push(option);
-  }
-  return groups;
-}
+// Kept as a re-export so existing importers of Select.js don't move.
+export { groupSelectOptions };
 
 /**
  * Signal styled native select wired to a Field. By default renders a disabled
@@ -33,9 +15,10 @@ export function groupSelectOptions(options) {
  * option, so a real option with `value: ""` (e.g. "All providers") stays
  * selectable.
  *
- * Options may carry an optional `group` string; options sharing a group render
- * inside one `<optgroup label={group}>` in first-seen order. Grouping is
- * additive — options without `group` render exactly as before.
+ * Options may carry an optional `group` string; consecutive options sharing
+ * a group render inside one `<optgroup label={group}>`. A label that reappears
+ * after a different label starts another run, preserving original order.
+ * Options without `group` render exactly as before.
  *
  * @param {object} props
  * @param {string|null} [props.placeholder="Select an option"] `null` omits the
@@ -90,7 +73,7 @@ export default function Select({
                 {placeholder}
               </option>
             )}
-            {groupSelectOptions(options).map((group, index) =>
+            {groupSelectOptions(options).map((group, runIndex) =>
               group.label === null ? (
                 group.options.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -98,7 +81,7 @@ export default function Select({
                   </option>
                 ))
               ) : (
-                <optgroup key={group.label || index} label={group.label}>
+                <optgroup key={`${group.label}-${runIndex}`} label={group.label}>
                   {group.options.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}

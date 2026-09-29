@@ -89,6 +89,21 @@ export default function MediaProviderDetailPage() {
   const kinds = isCustom ? ["embedding"] : (builtInProvider.serviceKinds ?? ["llm"]);
   if (!isCustom && !kinds.includes(kind)) return notFound();
 
+  // Back link to the kind list, shared by the error state and the main layout.
+  const BackNav = () => (
+    <nav aria-label="Back to media providers">
+      <Link
+        href={`/dashboard/media-providers/${kind}`}
+        className="inline-flex min-h-10 items-center gap-1.5 rounded-lg text-sm text-muted transition-colors hover:text-text focus-visible:shadow-focus"
+      >
+        <span className="material-symbols-outlined text-lg rtl:-scale-x-100" aria-hidden="true">
+          arrow_back
+        </span>
+        {kindConfig.label}
+      </Link>
+    </nav>
+  );
+
   // For custom embedding nodes, build a synthetic provider object
   const provider = isCustom
     ? customNode
@@ -118,17 +133,7 @@ export default function MediaProviderDetailPage() {
     if (!fetchError) return notFound();
     return (
       <div className="flex flex-col gap-4">
-        <nav aria-label="Back to media providers">
-          <Link
-            href={`/dashboard/media-providers/${kind}`}
-            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg text-sm text-muted transition-colors hover:text-text focus-visible:shadow-focus"
-          >
-            <span className="material-symbols-outlined text-lg rtl:-scale-x-100" aria-hidden="true">
-              arrow_back
-            </span>
-            {kindConfig.label}
-          </Link>
-        </nav>
+        <BackNav />
         <Callout variant="err" title="Could not load provider">
           <span className="flex flex-wrap items-center gap-2">
             {fetchError}
@@ -147,17 +152,7 @@ export default function MediaProviderDetailPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <nav aria-label="Back to media providers">
-        <Link
-          href={`/dashboard/media-providers/${kind}`}
-          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg text-sm text-muted transition-colors hover:text-text focus-visible:shadow-focus"
-        >
-          <span className="material-symbols-outlined text-lg rtl:-scale-x-100" aria-hidden="true">
-            arrow_back
-          </span>
-          {kindConfig.label}
-        </Link>
-      </nav>
+      <BackNav />
 
       <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-5">
         <ProviderTile providerId={isCustom ? "custom-embedding" : provider.id} size="lg" />

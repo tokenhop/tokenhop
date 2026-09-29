@@ -4,7 +4,7 @@ import PropTypes from "prop-types";
 import { Button, Callout } from "@/shared/components";
 import CopyStatus from "@/shared/components/CopyStatus";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { codeBlockClass, eyebrowClass, LatencyBadge } from "./exampleShared";
+import { DownloadLink, codeBlockClass, eyebrowClass, LatencyBadge } from "./exampleShared";
 import { resultImageSrc } from "./genericExampleLogic";
 
 /**
@@ -95,16 +95,9 @@ export function GenericExampleResult({
         {kind === "image" && (binaryImageUrl || result?.data?.data?.[0]) && (
           <div className="mt-2">
             <div className="mb-1.5 flex items-center justify-end">
-              <a
-                href={imageSrc}
-                download="image.png"
-                className="inline-flex min-h-10 items-center gap-1 rounded-lg text-xs text-muted transition-colors hover:text-text"
-              >
-                <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
-                  download
-                </span>
+              <DownloadLink href={imageSrc} filename="image.png">
                 Download
-              </a>
+              </DownloadLink>
             </div>
             <img
               src={imageSrc}

@@ -150,6 +150,7 @@ export function useGenericExample(providerId, kind) {
     setResult(null);
     setProgress(null);
     setPartialImage(null);
+    setBinaryImageUrl("");
     binaryUrls.clear();
     const start = Date.now();
     try {

@@ -6,7 +6,7 @@ import ProviderTile from "@/shared/components/ProviderTile";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { parseModelEntry } from "../mediaComboConfig";
 
-function ProviderRow({ entry, idx, total, onMove, onRemove }) {
+function ProviderRow({ entry, idx, total, busy = false, onMove, onRemove }) {
   const { providerId, model } = parseModelEntry(entry);
   const p = AI_PROVIDERS[providerId];
   return (
@@ -22,21 +22,22 @@ function ProviderRow({ entry, idx, total, onMove, onRemove }) {
           icon="arrow_upward"
           label={`Move ${model || providerId} up`}
           onClick={() => onMove(idx, -1)}
-          disabled={idx === 0}
+          disabled={busy || idx === 0}
           className="size-11 border-0 bg-transparent p-1 text-muted hover:bg-raised hover:text-coral-ink disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
         />
         <IconButton
           icon="arrow_downward"
           label={`Move ${model || providerId} down`}
           onClick={() => onMove(idx, 1)}
-          disabled={idx === total - 1}
+          disabled={busy || idx === total - 1}
           className="size-11 border-0 bg-transparent p-1 text-muted hover:bg-raised hover:text-coral-ink disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
         />
         <IconButton
           icon="close"
           label={`Remove ${model || providerId}`}
           onClick={() => onRemove(idx)}
-          className="size-11 border-0 bg-transparent p-1 text-muted hover:bg-err-bg hover:text-err"
+          disabled={busy}
+          className="size-11 border-0 bg-transparent p-1 text-muted hover:bg-err-bg hover:text-err disabled:cursor-not-allowed disabled:opacity-30"
         />
       </div>
     </div>
@@ -47,12 +48,23 @@ ProviderRow.propTypes = {
   entry: PropTypes.string.isRequired,
   idx: PropTypes.number.isRequired,
   total: PropTypes.number.isRequired,
+  busy: PropTypes.bool,
   onMove: PropTypes.func.isRequired,
   onRemove: PropTypes.func.isRequired,
 };
 
-/** Ordered provider list with move/remove actions and the Add provider entry point. */
-export default function ComboProvidersCard({ providers, roundRobin, onAdd, onMove, onRemove }) {
+/**
+ * Ordered provider list with move/remove actions and the Add provider entry
+ * point. Mutations are disabled while a models save is in flight.
+ */
+export default function ComboProvidersCard({
+  providers,
+  roundRobin,
+  savingModels = false,
+  onAdd,
+  onMove,
+  onRemove,
+}) {
   return (
     <Card>
       <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -64,7 +76,7 @@ export default function ComboProvidersCard({ providers, roundRobin, onAdd, onMov
               : "Tried in order, top to bottom."}
           </p>
         </div>
-        <Button size="sm" icon="add" onClick={onAdd}>
+        <Button size="sm" icon="add" onClick={onAdd} disabled={savingModels}>
           Add provider
         </Button>
       </div>
@@ -79,6 +91,7 @@ export default function ComboProvidersCard({ providers, roundRobin, onAdd, onMov
               entry={entry}
               idx={idx}
               total={providers.length}
+              busy={savingModels}
               onMove={onMove}
               onRemove={onRemove}
             />
@@ -92,6 +105,7 @@ export default function ComboProvidersCard({ providers, roundRobin, onAdd, onMov
 ComboProvidersCard.propTypes = {
   providers: PropTypes.arrayOf(PropTypes.string).isRequired,
   roundRobin: PropTypes.bool.isRequired,
+  savingModels: PropTypes.bool,
   onAdd: PropTypes.func.isRequired,
   onMove: PropTypes.func.isRequired,
   onRemove: PropTypes.func.isRequired,
