@@ -23,24 +23,29 @@ const fmtTime = (iso) => {
 };
 
 const VIEWS = {
-  model: { key: "rawModel", label: "Model", source: "byModel", empty: "No usage recorded yet." },
+  model: {
+    key: "rawModel",
+    label: "Model",
+    source: "byModel",
+    empty: "No usage by model in this period.",
+  },
   account: {
     key: "accountName",
     label: "Account",
     source: "byAccount",
-    empty: "No account-specific usage recorded yet.",
+    empty: "No account usage in this period.",
   },
   apiKey: {
     key: "keyName",
     label: "API key",
     source: "byApiKey",
-    empty: "No API key usage recorded yet.",
+    empty: "No API key usage in this period.",
   },
   endpoint: {
     key: "endpoint",
     label: "Endpoint",
     source: "byEndpoint",
-    empty: "No endpoint usage recorded yet.",
+    empty: "No endpoint usage in this period.",
   },
 };
 
@@ -127,29 +132,27 @@ export default function UsageBreakdown({ stats }) {
   const cells = (s) =>
     mode === "costs" ? (
       <>
-        <td className="px-6 py-3 text-right font-mono">{fmt(s.requests)}</td>
-        <td className="px-6 py-3 text-right font-mono text-muted">
+        <td className="px-6 py-3 text-end font-mono">{fmt(s.requests)}</td>
+        <td className="px-6 py-3 text-end font-mono text-muted">
           {fmtCost(
             ((s.cost || s.totalCost || 0) * nonCached(s)) /
               Math.max(1, (s.promptTokens || 0) + (s.completionTokens || 0)),
           )}
         </td>
-        <td className="px-6 py-3 text-right font-mono text-muted">
+        <td className="px-6 py-3 text-end font-mono text-muted">
           {fmtCost(
             ((s.cost || s.totalCost || 0) * (s.completionTokens || 0)) /
               Math.max(1, (s.promptTokens || 0) + (s.completionTokens || 0)),
           )}
         </td>
-        <td className="px-6 py-3 text-right font-mono">{fmtCost(s.cost ?? s.totalCost)}</td>
+        <td className="px-6 py-3 text-end font-mono">{fmtCost(s.cost ?? s.totalCost)}</td>
       </>
     ) : (
       <>
-        <td className="px-6 py-3 text-right font-mono">{fmt(s.requests)}</td>
-        <td className="px-6 py-3 text-right font-mono text-muted">{fmtShort(s.promptTokens)}</td>
-        <td className="px-6 py-3 text-right font-mono text-muted">
-          {fmtShort(s.completionTokens)}
-        </td>
-        <td className="px-6 py-3 text-right font-mono">
+        <td className="px-6 py-3 text-end font-mono">{fmt(s.requests)}</td>
+        <td className="px-6 py-3 text-end font-mono text-muted">{fmtShort(s.promptTokens)}</td>
+        <td className="px-6 py-3 text-end font-mono text-muted">{fmtShort(s.completionTokens)}</td>
+        <td className="px-6 py-3 text-end font-mono">
           {fmtShort((s.promptTokens || 0) + (s.completionTokens || 0))}
         </td>
       </>
@@ -205,7 +208,7 @@ export default function UsageBreakdown({ stats }) {
           // biome-ignore lint/a11y/noNoninteractiveTabindex: scrollable table region is keyboard-focusable with a label (WCAG 2.1.1, YAN-314).
           tabIndex={0}
         >
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-start text-sm">
             <thead className="bg-raised/30 text-xs uppercase text-muted">
               <tr>
                 {headers.map((h) => (
@@ -219,7 +222,7 @@ export default function UsageBreakdown({ stats }) {
                           : "descending"
                         : undefined
                     }
-                    className={`px-6 py-3 font-semibold ${h.numeric ? "text-right" : ""}`}
+                    className={`px-6 py-3 font-semibold ${h.numeric ? "text-end" : ""}`}
                   >
                     {h.field === "__label" || h.field === "__share" ? (
                       h.label

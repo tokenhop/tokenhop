@@ -12,8 +12,10 @@ import { useEffect, useRef, useState } from "react";
  * endpoint, and a second stats call could not align calendar windows like
  * "today" vs yesterday, so tiles show in-period context lines instead.
  *
- * @param {string} period "today"|"24h"|"7d"|"30d"|"60d"
- * @returns {{stats: object|null, loading: boolean, fetching: boolean, error: Error|null}}
+ * @param {string|null} period "today"|"24h"|"7d"|"30d"|"60d"; null until
+ *   usePeriod resolves after hydration — no fetch happens and `loading`
+ *   stays true so callers keep their skeletons.
+ * @returns {{stats: object|null, statsPeriod: string|null, loading: boolean, fetching: boolean, error: Error|null}}
  */
 export default function useUsageStats(period) {
   const [stats, setStats] = useState(null);
@@ -25,6 +27,9 @@ export default function useUsageStats(period) {
   const hasLoaded = useRef(false);
 
   useEffect(() => {
+    // Null period: usePeriod has not resolved yet — hold the loading state
+    // instead of fetching a placeholder window.
+    if (!period) return;
     if (isInitial.current) {
       isInitial.current = false;
       setLoading(true);

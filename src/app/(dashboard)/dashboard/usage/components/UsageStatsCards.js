@@ -2,7 +2,6 @@
 
 import PropTypes from "prop-types";
 import StatTile from "@/shared/components/StatTile";
-import EmptyState from "@/shared/components/EmptyState";
 import { Skeleton } from "@/shared/components/Loading";
 
 const fmt = (n) => new Intl.NumberFormat().format(n || 0);
@@ -16,6 +15,10 @@ const fmtCost = (n) => `$${(n || 0).toFixed(2)}`;
  * bill"). No period-over-period delta: there is no previous-window endpoint
  * and calendar windows like "today" have no clean baseline, so tiles show
  * in-period context instead (see useUsageStats).
+ *
+ * The page owns the empty state: a period with no requests never reaches
+ * these tiles (the page renders the shared QuietPeriod instead), so this
+ * component only handles loading and filled snapshots.
  *
  * @param {object} props
  * @param {object|null} props.stats stats shape from /api/usage/stats
@@ -35,15 +38,6 @@ export default function UsageStatsCards({ stats, loading = false }) {
   const cached = stats.totalCachedTokens || 0;
   const output = stats.totalCompletionTokens || 0;
   const requests = stats.totalRequests || 0;
-  if (input === 0 && output === 0 && requests === 0) {
-    return (
-      <EmptyState
-        icon="bar_chart"
-        title="No usage in this period"
-        body="Make a request through the gateway and it will show up here."
-      />
-    );
-  }
   const cachedShare = input > 0 ? Math.round((cached / input) * 100) : 0;
   const avgOut = requests > 0 ? Math.round(output / requests) : 0;
   return (

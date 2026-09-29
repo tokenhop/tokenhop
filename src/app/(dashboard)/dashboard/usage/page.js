@@ -1,8 +1,17 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Card, CardSkeleton, EmptyState, SegmentedControl, Tabs } from "@/shared/components";
+import {
+  Card,
+  CardSkeleton,
+  EmptyState,
+  PeriodControl,
+  QuietPeriod,
+  Tabs,
+} from "@/shared/components";
+import useLastActivity from "@/shared/hooks/useLastActivity";
+import usePeriod from "@/shared/hooks/usePeriod";
 import useUsageStats from "./lib/useUsageStats";
 import useProviders from "./lib/useProviders";
 import UsageStatsCards from "./components/UsageStatsCards";
@@ -11,21 +20,16 @@ import UsageBreakdown from "./components/UsageBreakdown";
 import UsageTopology from "./components/UsageTopology";
 import RequestLog from "./components/RequestLog";
 
-const PERIODS = [
-  { value: "today", label: "Today" },
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7D" },
-  { value: "30d", label: "30D" },
-  { value: "60d", label: "60D" },
-];
-
 // The "Request log" tab is now RequestLog. Sorting is local state inside
 // UsageBreakdown (old ?sortBy= URL sync removed — it fought the tab router).
 
 /**
- * Usage page: header + Tabs (Overview/Request log) + period selector.
+ * Usage page: header + Tabs (Overview/Request log) + shared period control.
  * `?tab=` accepts overview|logs, plus `details` as an alias of `logs`
- * (old tab name preserved as a contract).
+ * (old tab name preserved as a contract). The period lives in `?period=` via
+ * usePeriod (URL first, remembered default after hydration). A quiet period
+ * renders one shared QuietPeriod card in place of stats tiles, chart and
+ * breakdown; topology always stays.
  *
  * @returns {React.ReactElement}
  */
@@ -40,9 +44,12 @@ export default function UsagePage() {
 function UsageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [period, setPeriod] = useState("today");
+  const { period, setPeriod, options } = usePeriod();
   const { stats, statsPeriod, loading, error } = useUsageStats(period);
   const providers = useProviders();
+  const quiet =
+    Boolean(stats) && statsPeriod === period && !loading && !error && !stats.totalRequests;
+  const activity = useLastActivity(quiet);
 
   const tabFromUrl = searchParams.get("tab");
   const activeTab =
@@ -52,6 +59,8 @@ function UsageContent() {
         ? "overview"
         : "overview";
 
+  // Params come from useSearchParams, which already carries ?period= once a
+  // period is chosen, so the period survives tab switches.
   const handleTabChange = (value) => {
     if (value === activeTab) return;
     const params = new URLSearchParams(searchParams);
@@ -73,9 +82,9 @@ function UsageContent() {
             ]}
           />
           {activeTab === "overview" && (
-            <SegmentedControl
+            <PeriodControl
               aria-label="Stats period"
-              options={PERIODS}
+              options={options}
               value={period}
               onChange={setPeriod}
               size="sm"
@@ -96,20 +105,33 @@ function UsageContent() {
               />
             </Card>
           ) : null}
-          <Suspense fallback={<CardSkeleton />}>
-            <UsageStatsCards
-              stats={statsPeriod === period ? stats : null}
-              loading={loading || statsPeriod !== period}
-            />
-          </Suspense>
-          <UsageTokensChart period={period} />
+          {quiet ? (
+            <Card>
+              <QuietPeriod
+                period={period}
+                lastRequestAt={activity.lastRequestAt}
+                loading={activity.loading}
+                onSelectPeriod={setPeriod}
+              />
+            </Card>
+          ) : (
+            <>
+              <Suspense fallback={<CardSkeleton />}>
+                <UsageStatsCards
+                  stats={statsPeriod === period ? stats : null}
+                  loading={period === null || loading || statsPeriod !== period}
+                />
+              </Suspense>
+              {period ? <UsageTokensChart period={period} /> : null}
+            </>
+          )}
           <UsageTopology
             providers={providers}
             activeRequests={stats?.activeRequests || []}
             lastProvider={stats?.recentRequests?.[0]?.provider || ""}
             errorProvider={stats?.errorProvider || ""}
           />
-          <UsageBreakdown stats={stats} />
+          {!quiet && (stats ? <UsageBreakdown stats={stats} /> : <CardSkeleton />)}
         </div>
       ) : (
         <RequestLog />
