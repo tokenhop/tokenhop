@@ -1,3 +1,20 @@
+# v0.4.2 (2026-09-29)
+
+## Features
+- **Dashboard**: shared period control across Usage pages and smart quiet-period empty states (#356).
+
+## Fixes
+- **Home**: one primary, clickable recent requests with client-side links and one focus refresh (#354).
+- **Providers**: pin "Your providers" on top and remove duplicate list controls (#355).
+- **Tests**: triage and repair all ~86 known-failing tests behind the regression gate (YAN-416) (#353).
+- **i18n**: translate the combo editor Discard button (#350).
+- **Combos**: stabilize editor header actions.
+
+## Changes
+- **Usage**: lighter live stream and stat-tile trends consistent with the request log (#357).
+- **Shell**: consolidate badge and auth polling behind a summary endpoint (#352).
+- **i18n**: skip English DOM translation and cache locale maps (#349).
+
 # v0.4.1 (2026-09-28)
 
 ## Features
