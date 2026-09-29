@@ -41,7 +41,6 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@monaco-editor/react": "^4.7.0",
     "@node-saml/node-saml": "^5.1.0",
-    "@xyflow/react": "^12.10.1",
     "bcryptjs": "^3.0.3",
     "chalk": "^6.0.0",
     "confbox": "^0.3.1",
