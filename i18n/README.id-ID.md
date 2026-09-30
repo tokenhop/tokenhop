@@ -894,7 +894,7 @@ docker run -d \
   -v 9router-data:/app/data \
   -e PORT=20128 \
   -e BASE_URL=http://localhost:20128 \
-  ghcr.io/yandy-r/9router:latest
+  ghcr.io/tokenhop/tokenhop:latest
 ```
 
 Dashboard: `http://localhost:20128/dashboard`

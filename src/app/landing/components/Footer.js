@@ -28,7 +28,7 @@ const RESOURCE_LINKS = [
   },
   {
     label: "Docker",
-    href: "https://github.com/yandy-r/9router/pkgs/container/9router",
+    href: "https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop",
     target: "_blank",
     rel: "noopener noreferrer",
   },
@@ -145,7 +145,7 @@ export default function Footer() {
             </a>
             <a
               className="inline-flex min-h-[44px] items-center text-sm text-muted transition-colors hover:text-text focus-visible:shadow-focus"
-              href="https://github.com/yandy-r/9router/pkgs/container/9router"
+              href="https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop"
               target="_blank"
               rel="noopener noreferrer"
             >

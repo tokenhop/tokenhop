@@ -4,7 +4,7 @@ import { CopyField } from "@/shared/components";
 
 // Published by this project on GHCR. (The `9router` package on npm is not ours.)
 const INSTALL_COMMAND =
-  "docker run -d -p 20128:20128 -v ~/.9router:/app/data -e INITIAL_PASSWORD=change-me ghcr.io/yandy-r/9router";
+  "docker run -d -p 20128:20128 -v ~/.9router:/app/data -e INITIAL_PASSWORD=change-me ghcr.io/tokenhop/tokenhop";
 
 const STEPS = [
   {

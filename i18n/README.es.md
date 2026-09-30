@@ -9,7 +9,7 @@
 
 [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
 [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-[![GHCR](https://img.shields.io/badge/GHCR-yandy-r%2F9router-blue?logo=github)](https://github.com/yandy-r/9router/pkgs/container/9router)
+[![GHCR](https://img.shields.io/badge/GHCR-tokenhop%2Ftokenhop-blue?logo=github)](https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop)
 [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
 [🚀 Inicio rápido](#-inicio-rápido) • [💡 Características](#-características-principales) • [📖 Configuración](#-guía-de-instalación) • [🌐 Sitio web](https://9router.com)
@@ -1155,7 +1155,7 @@ pm2 startup
 
 Imágenes publicadas (multi-plataforma `linux/amd64` + `linux/arm64`):
 
-- GHCR: [`ghcr.io/yandy-r/9router`](https://github.com/yandy-r/9router/pkgs/container/9router)
+- GHCR: [`ghcr.io/tokenhop/tokenhop`](https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop)
 
 **Inicio rápido (usa la imagen publicada):**
 
@@ -1165,7 +1165,7 @@ docker run -d \
   -p 20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
-  ghcr.io/yandy-r/9router:latest
+  ghcr.io/tokenhop/tokenhop:latest
 ```
 
 → Abre <http://localhost:20128>
@@ -1191,7 +1191,7 @@ docker run -d --name 9router -p 20128:20128 \
 docker logs -f 9router
 docker restart 9router
 docker stop 9router && docker rm 9router
-docker pull ghcr.io/yandy-r/9router:latest   # actualiza a la última versión
+docker pull ghcr.io/tokenhop/tokenhop:latest   # actualiza a la última versión
 ```
 
 **Persistencia de datos:** `$HOME/.9router/db/data.sqlite` en el host ↔ `/app/data/db/data.sqlite` en el contenedor.
