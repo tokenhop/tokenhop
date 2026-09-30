@@ -111,6 +111,20 @@ describe("provider connection tests for OAuth and imported keys", () => {
   });
 
   it.each([
+    [200, { valid: true, error: null }, "active"],
+    [401, { valid: false, error: "Invalid API key" }, "error"],
+  ])("probes ClinePass API keys via /users/me (%i)", async (status, expected, testStatus) => {
+    const { result, updates, fetchMock } = await testConnection(
+      { id: "clinepass-1", provider: "clinepass", authType: "apikey", apiKey: "clp_key" },
+      () => Promise.resolve(Response.json({}, { status })),
+    );
+    expect(result).toMatchObject(expected);
+    expect(updates[0].testStatus).toBe(testStatus);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.cline.bot/api/v1/users/me");
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer clp_key");
+  });
+
+  it.each([
     [
       "codebuddy-intl",
       {
