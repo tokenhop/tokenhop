@@ -13,6 +13,9 @@ import {
 import { syncReliabilityAfterPatch } from "@/lib/reliability/initReliabilityPolicy";
 import { SECRET_SETTING_KEYS } from "@/lib/settingsConfigDoc";
 import bcrypt from "bcryptjs";
+import { isOidcConfigured } from "@/lib/auth/oidc";
+import { isSamlConfigured } from "@/lib/auth/saml.js";
+import { resolveAuthModes } from "@/lib/auth/authModes";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -201,6 +204,42 @@ function validSecuritySettings(body) {
   return "";
 }
 
+/** Keys whose PATCH could turn on SSO-only; triggers the lockout guard. */
+const AUTH_PATCH_KEYS = [
+  "authMode",
+  "ssoType",
+  "oidcIssuerUrl",
+  "oidcClientId",
+  "oidcClientSecret",
+  "samlEntryPoint",
+  "samlCert",
+];
+
+/**
+ * Lockout guard, shared with config import: reject a settings patch that
+ * leaves an SSO-only mode whose protocol is not fully configured, which would
+ * close both sign-in paths at once. A blank `oidcClientSecret` keeps the
+ * stored one (PATCH drops it before saving; import never carries secrets).
+ * @param {object} current Stored settings.
+ * @param {object} patch Incoming settings keys.
+ * @returns {string} Error message, or "" when the result stays reachable.
+ */
+export function ssoLockoutError(current, patch) {
+  if (!AUTH_PATCH_KEYS.some((key) => Object.hasOwn(patch, key))) return "";
+  const next = { ...current, ...patch };
+  if (!String(patch.oidcClientSecret ?? "").trim())
+    next.oidcClientSecret = current.oidcClientSecret;
+  const modes = resolveAuthModes(next);
+  if (!modes.ssoOnly) return "";
+  if (modes.saml && !isSamlConfigured(next)) {
+    return 'Cannot enable SSO-only sign-in: SAML is not fully configured (entry point and certificate are required). Configure and test it with "Password + SSO" first.';
+  }
+  if (modes.oidc && !isOidcConfigured(next)) {
+    return 'Cannot enable SSO-only sign-in: OIDC is not fully configured (issuer URL, client ID and client secret are required). Configure and test it with "Password + SSO" first.';
+  }
+  return "";
+}
+
 function isPlainObject(value) {
   return (
     value !== null &&
@@ -355,6 +394,8 @@ export async function PATCH(request) {
     if (reliabilityError) {
       return NextResponse.json({ error: reliabilityError }, { status: 400 });
     }
+    const lockoutError = ssoLockoutError(currentReliability, body);
+    if (lockoutError) return NextResponse.json({ error: lockoutError }, { status: 400 });
     if (RELIABILITY_KEYS.some((key) => Object.hasOwn(body, key))) {
       for (const key of RELIABILITY_KEYS) {
         if (Object.hasOwn(body, key))

@@ -21,6 +21,7 @@ export async function GET(request) {
   const url = new URL(request.url);
   const error = url.searchParams.get("error");
   if (error) {
+    console.warn("[OIDC] provider returned error:", error);
     return NextResponse.redirect(
       new URL(`/login?error=${encodeURIComponent(error)}`, getPublicOrigin(request)),
     );
@@ -77,6 +78,8 @@ export async function GET(request) {
       audience: config.clientId,
       jwksUri: discovery.jwks_uri,
       nonce: storedNonce,
+      clientSecret: config.clientSecret,
+      allowedAlgs: discovery.id_token_signing_alg_values_supported,
     });
 
     clearOidcCookies(cookieStore);
@@ -89,12 +92,10 @@ export async function GET(request) {
 
     return NextResponse.redirect(new URL("/dashboard", getPublicOrigin(request)));
   } catch (error) {
+    console.warn("[OIDC] callback failed:", error?.message || error);
     clearOidcCookies(cookieStore);
     return NextResponse.redirect(
-      new URL(
-        `/login?error=${encodeURIComponent(error.message || "oidc_callback_failed")}`,
-        getPublicOrigin(request),
-      ),
+      new URL("/login?error=oidc_callback_failed", getPublicOrigin(request)),
     );
   }
 }

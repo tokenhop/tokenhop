@@ -7,6 +7,7 @@ import SettingRow from "@/shared/components/SettingRow";
 import SegmentedControl from "@/shared/components/SegmentedControl";
 import Callout from "@/shared/components/Callout";
 import { saveSettings } from "./sso/ssoApi";
+import { resolveAuthModes } from "@/lib/auth/authModes";
 import OidcForm from "./sso/OidcForm";
 import SamlForm from "./sso/SamlForm";
 
@@ -81,7 +82,7 @@ export default function SsoSection({ settings, onSettingsChange }) {
   };
 
   const storedMode = settings.authMode;
-  const ssoOnly = storedMode === "sso" || storedMode === "saml" || storedMode === "oidc";
+  const ssoOnly = resolveAuthModes({ authMode: storedMode, ssoType: settings.ssoType }).ssoOnly;
 
   return (
     <div id="sso" className="scroll-mt-24 space-y-4">
