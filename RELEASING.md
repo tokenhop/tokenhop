@@ -9,14 +9,36 @@ commits picked from somewhere else after the fact.
 
 ## Current state
 
-Keep this table up to date; it is the only part of this file that changes often.
+The block below is read by the ycc skills (`/ycc:git-workflow`, `/ycc:releaser`,
+`/ycc:backport`, …); the table is generated from it. Change both with
+`release-state-update.sh` (or `/ycc:release-model`), never by hand.
 
-| Role                        | Branch            | Notes                                                 |
-| --------------------------- | ----------------- | ----------------------------------------------------- |
-| Trunk (next release)        | `master`          | Since v0.5.0 (2026-09-30)                             |
-| Maintenance (shipped minor) | `release/0.5`     | v0.5.x patches, via `backport:0.5`                    |
-| Next minor                  | `master` → v0.6.0 | New features                                          |
-| Next major                  | `master` → v1.0.0 | tokenhop rebrand, on `master` behind the brand switch |
+<!-- ycc-release-state
+model: release-branches
+trunk: master
+maintenance: release/0.5
+support: latest-minor
+backport_label: backport:{X.Y}
+tracker: linear-labels
+tracker_ref: tokenhop release
+-->
+
+<!-- ycc-release-state:table:begin -->
+
+Model: **release-branches**. Support window: latest-minor.
+
+| Role        | Branch        | Notes                       |
+| ----------- | ------------- | --------------------------- |
+| Trunk       | `master`      | Next minor or major release |
+| Maintenance | `release/0.5` | Patches via `backport:0.5`  |
+
+<!-- ycc-release-state:table:end -->
+
+`master` has been the trunk since v0.5.0 (2026-09-30). Planned releases, both from
+`master`:
+
+- **v0.6.0** — new features.
+- **v1.0.0** — the tokenhop rebrand, on `master` behind the brand switch.
 
 ## Rules
 
@@ -100,7 +122,8 @@ line is safe. It also publishes floating `:X.Y` tags.
    ```
 
 5. Freeze the previous `release/X.(Y-1)` (security fixes only, at maintainer
-   discretion) and update [Current state](#current-state).
+   discretion) with `release-state-update.sh --add-maintenance release/X.Y`, which also
+   re-renders [Current state](#current-state).
 
 Pre-releases of the next minor are tagged `vX.Y.0-beta.N` from the trunk.
 
