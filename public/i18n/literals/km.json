@@ -825,6 +825,7 @@
   "Granted at": "បានផ្តល់នៅ",
   "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.": "Grok Build ប្រើ ~/.grok/config.toml។ 9Router សរសេរគំរូផ្ទាល់ខ្លួន [model.9router] ហើយកំណត់វាជាលំនាំដើម។",
   "Grok Build — Manual configuration": "Grok Build — ការកំណត់ដោយដៃ",
+  "Grok CLI": "Grok CLI",
   "Ground": "ការផ្តល់មូលដ្ឋាន",
   "Grows with each repeated failure.": "កើនឡើងជាមួយនឹងការបរាជ័យដែលធ្វើម្តងទៀតនីមួយៗ",
   "Guide": "មគ្គុទ្ទេសក៍",

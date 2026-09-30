@@ -770,6 +770,7 @@
   "Granted at": "발급 시각",
   "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.": "Grok Build는 ~/.grok/config.toml을 사용합니다. 9Router는 [model.9router] 사용자 정의 모델을 작성하고 이를 기본값으로 설정합니다.",
   "Grok Build — Manual configuration": "Grok Build — 수동 구성",
+  "Grok CLI": "Grok CLI",
   "Ground": "그라운드",
   "Grows with each repeated failure.": "반복된 실패마다 증가합니다.",
   "Guide": "가이드",

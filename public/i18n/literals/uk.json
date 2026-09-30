@@ -770,6 +770,7 @@
   "Granted at": "Надано о",
   "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.": "Grok Build використовує ~/.grok/config.toml. 9Router записує власну модель [model.9router] і встановлює її як типовою.",
   "Grok Build — Manual configuration": "Grok Build — Ручна конфігурація",
+  "Grok CLI": "Grok CLI",
   "Ground": "Ґраунд",
   "Grows with each repeated failure.": "Зростає з кожним повторним збоєм.",
   "Guide": "Посібник",
