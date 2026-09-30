@@ -81,7 +81,7 @@ describe("web model ids from /v1/models/web", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(mocks.handleFetchCore).toHaveBeenCalledOnce();
+    expect(mocks.handleFetchCore.mock.calls[0][0].provider).toBe("tavily");
     expect(mocks.getProviderCredentials.mock.calls[0][0]).toBe("tavily");
   });
 
