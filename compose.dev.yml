@@ -27,6 +27,7 @@ services:
       CLAUDE_CLI_SDK_VERSION: 0.112.1
       CLAUDE_CLI_RUNTIME_VERSION: v26.3.0
       CODEX_CLI_VERSION: 0.155.1
+      GROK_CLI_VERSION: 1.0.44
     volumes:
       - .:/app
       - 9router-dev-node-modules:/app/node_modules

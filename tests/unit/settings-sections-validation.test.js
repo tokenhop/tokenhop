@@ -173,6 +173,7 @@ describe("YAN-310 network validation", () => {
     await expect400({ SEARXNG_URL: "https://x" });
     await expect400({ CLAUDE_CLI_VERSION: "1.0.0" });
     await expect400({ CODEX_CLI_VERSION: "1.0.0" });
+    await expect400({ GROK_CLI_VERSION: "1.0.0" });
     await expect400({ ZED_CLIENT_VERSION: "1.0.0" });
   });
 });

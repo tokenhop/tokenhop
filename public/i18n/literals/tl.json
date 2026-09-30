@@ -764,6 +764,7 @@
   "Granted at": "Naibigay sa",
   "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.": "Grok Build ay gumagamit ng ~/.grok/config.toml. Sinusulat ng 9Router ang [model.9router] custom model at itinatakda ito bilang default.",
   "Grok Build — Manual configuration": "Grok Build — Manual na Pag-configure",
+  "Grok CLI": "Grok CLI",
   "Ground": "Lupa",
   "Grows with each repeated failure.": "Lumalaki sa bawat paulit-ulit na pagkabigo.",
   "Guide": "Gabay",

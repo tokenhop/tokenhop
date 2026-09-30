@@ -770,6 +770,7 @@
   "Granted at": "ניתן ב",
   "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.": "Grok Build משתמש ב-~/.grok/config.toml. 9Router כותב מודל מותאם אישית [model.9router] ומגדיר אותו כברירת מחדל.",
   "Grok Build — Manual configuration": "Grok Build — הגדרה ידנית",
+  "Grok CLI": "Grok CLI",
   "Ground": "אדמה",
   "Grows with each repeated failure.": "גדל עם כל כשלון חוזר.",
   "Guide": "מדריך",

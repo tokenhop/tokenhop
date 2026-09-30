@@ -769,6 +769,7 @@
   "Granted at": "Cấp lúc",
   "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.": "Grok Build dùng ~/.grok/config.toml. 9Router ghi một model tùy chỉnh [model.9router] và đặt làm mặc định.",
   "Grok Build — Manual configuration": "Grok Build — Cấu hình thủ công",
+  "Grok CLI": "Grok CLI",
   "Ground": "Mặt đất",
   "Grows with each repeated failure.": "Tăng lên với mỗi lần thất bại lặp lại.",
   "Guide": "Hướng dẫn",

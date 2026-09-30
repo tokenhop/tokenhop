@@ -6,6 +6,7 @@ vi.mock("../../open-sse/services/oauthCredentialManager.js", () => ({
 
 import { refreshProviderCredentials } from "../../open-sse/services/oauthCredentialManager.js";
 import { parseGrokCliModels, resolveGrokCliModels } from "../../open-sse/services/grokCliModels.js";
+import { GROK_CLI_VERSION } from "../../open-sse/config/grokCli.js";
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -80,6 +81,6 @@ describe("Grok CLI live models", () => {
     expect(fetchFn).toHaveBeenCalledTimes(2);
     expect(fetchFn.mock.calls[0][2]).toBe(proxyOptions);
     expect(fetchFn.mock.calls[1][1].headers.Authorization).toBe("Bearer new-token");
-    expect(fetchFn.mock.calls[1][1].headers["x-grok-client-version"]).toBe("0.2.99");
+    expect(fetchFn.mock.calls[1][1].headers["x-grok-client-version"]).toBe(GROK_CLI_VERSION);
   });
 });
