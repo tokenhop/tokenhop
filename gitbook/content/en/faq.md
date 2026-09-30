@@ -188,7 +188,7 @@ Cursor Settings → Models → Advanced:
 
 ```bash
 # Deploy to VPS
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router/app
 npm install && npm run build
 npm start
@@ -225,7 +225,7 @@ npm install -g 9router
 ### VPS/Cloud
 
 ```bash
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router/app
 npm install && npm run build
 
@@ -349,7 +349,7 @@ docker run -d \
 
 **Breaking changes:**
 
-- Check [CHANGELOG.md](https://github.com/yandy-r/9router/blob/main/CHANGELOG.md)
+- Check [CHANGELOG.md](https://github.com/tokenhop/tokenhop/blob/master/CHANGELOG.md)
 - Backup `~/.9router` before major updates
 - Review migration guides for major versions
 
@@ -362,11 +362,11 @@ docker run -d \
 ### Ways to contribute
 
 1. **Report bugs:**
-   - [GitHub Issues](https://github.com/yandy-r/9router/issues)
+   - [GitHub Issues](https://github.com/tokenhop/tokenhop/issues)
    - Include error logs, steps to reproduce
 
 2. **Request features:**
-   - [GitHub Discussions](https://github.com/yandy-r/9router/discussions)
+   - [GitHub Discussions](https://github.com/tokenhop/tokenhop/discussions)
    - Describe use case and benefits
 
 3. **Submit code:**
@@ -410,13 +410,13 @@ docker run -d \
 - Update documentation
 - Keep commits atomic and descriptive
 
-See [CONTRIBUTING.md](https://github.com/yandy-r/9router/blob/main/CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](https://github.com/tokenhop/tokenhop/blob/main/CONTRIBUTING.md) for details.
 
 ---
 
 ## Need More Help?
 
 - **Documentation:** [9router.com/docs](https://9router.com/docs)
-- **GitHub:** [github.com/yandy-r/9router](https://github.com/yandy-r/9router)
-- **Issues:** [github.com/yandy-r/9router/issues](https://github.com/yandy-r/9router/issues)
+- **GitHub:** [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
+- **Issues:** [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 - **Troubleshooting:** [troubleshooting.md](troubleshooting.md)

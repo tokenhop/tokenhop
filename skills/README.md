@@ -6,24 +6,24 @@ Drop-in skills for any AI agent (Claude, Cursor, ChatGPT, custom SDK). Just **co
 
 ## Skills
 
-| Capability                          | Copy link below and paste to your AI                                                                     |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| **Entry / Setup** (start here)      | <https://raw.githubusercontent.com/yandy-r/9router/refs/heads/master/skills/9router/SKILL.md>            |
-| Chat / code-gen                     | <https://raw.githubusercontent.com/yandy-r/9router/refs/heads/master/skills/9router-chat/SKILL.md>       |
-| Image generation                    | <https://raw.githubusercontent.com/yandy-r/9router/refs/heads/master/skills/9router-image/SKILL.md>      |
-| Video generation (xAI Grok Imagine) | <https://raw.githubusercontent.com/yandy-r/9router/refs/heads/master/skills/9router-video/SKILL.md>      |
-| Text-to-speech                      | <https://raw.githubusercontent.com/yandy-r/9router/refs/heads/master/skills/9router-tts/SKILL.md>        |
-| Speech-to-text                      | <https://raw.githubusercontent.com/yandy-r/9router/refs/heads/master/skills/9router-stt/SKILL.md>        |
-| Embeddings                          | <https://raw.githubusercontent.com/yandy-r/9router/refs/heads/master/skills/9router-embeddings/SKILL.md> |
-| Web search                          | <https://raw.githubusercontent.com/yandy-r/9router/refs/heads/master/skills/9router-web-search/SKILL.md> |
-| Web fetch (URL → markdown)          | <https://raw.githubusercontent.com/yandy-r/9router/refs/heads/master/skills/9router-web-fetch/SKILL.md>  |
+| Capability                          | Copy link below and paste to your AI                                                                       |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Entry / Setup** (start here)      | <https://raw.githubusercontent.com/tokenhop/tokenhop/refs/heads/master/skills/9router/SKILL.md>            |
+| Chat / code-gen                     | <https://raw.githubusercontent.com/tokenhop/tokenhop/refs/heads/master/skills/9router-chat/SKILL.md>       |
+| Image generation                    | <https://raw.githubusercontent.com/tokenhop/tokenhop/refs/heads/master/skills/9router-image/SKILL.md>      |
+| Video generation (xAI Grok Imagine) | <https://raw.githubusercontent.com/tokenhop/tokenhop/refs/heads/master/skills/9router-video/SKILL.md>      |
+| Text-to-speech                      | <https://raw.githubusercontent.com/tokenhop/tokenhop/refs/heads/master/skills/9router-tts/SKILL.md>        |
+| Speech-to-text                      | <https://raw.githubusercontent.com/tokenhop/tokenhop/refs/heads/master/skills/9router-stt/SKILL.md>        |
+| Embeddings                          | <https://raw.githubusercontent.com/tokenhop/tokenhop/refs/heads/master/skills/9router-embeddings/SKILL.md> |
+| Web search                          | <https://raw.githubusercontent.com/tokenhop/tokenhop/refs/heads/master/skills/9router-web-search/SKILL.md> |
+| Web fetch (URL → markdown)          | <https://raw.githubusercontent.com/tokenhop/tokenhop/refs/heads/master/skills/9router-web-fetch/SKILL.md>  |
 
 ## How to use
 
 Paste to your AI (Claude, Cursor, ChatGPT, …):
 
 ```
-Read this skill and use it: https://raw.githubusercontent.com/yandy-r/9router/refs/heads/master/skills/9router/SKILL.md
+Read this skill and use it: https://raw.githubusercontent.com/tokenhop/tokenhop/refs/heads/master/skills/9router/SKILL.md
 ```
 
 Then ask normally — _"generate an image of a cat"_, _"transcribe this URL"_, etc.
@@ -39,5 +39,5 @@ Verify: `curl $NINEROUTER_URL/api/health` → `{"ok":true}`.
 
 ## Links
 
-- Source: <https://github.com/yandy-r/9router>
+- Source: <https://github.com/tokenhop/tokenhop>
 - Dashboard: <https://9router.com>

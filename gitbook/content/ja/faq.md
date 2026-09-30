@@ -188,7 +188,7 @@ Cursor Settings → Models → Advanced:
 
 ```bash
 # VPSへデプロイ
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router/app
 npm install && npm run build
 npm start
@@ -225,7 +225,7 @@ npm install -g 9router
 ### VPS/クラウド
 
 ```bash
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router/app
 npm install && npm run build
 
@@ -349,7 +349,7 @@ docker run -d \
 
 **破壊的変更:**
 
-- [CHANGELOG.md](https://github.com/yandy-r/9router/blob/main/CHANGELOG.md)を確認
+- [CHANGELOG.md](https://github.com/tokenhop/tokenhop/blob/master/CHANGELOG.md)を確認
 - メジャー更新前に`~/.9router`をバックアップ
 - メジャーバージョンの移行ガイドを確認
 
@@ -362,11 +362,11 @@ docker run -d \
 ### 貢献方法
 
 1. **バグを報告:**
-   - [GitHub Issues](https://github.com/yandy-r/9router/issues)
+   - [GitHub Issues](https://github.com/tokenhop/tokenhop/issues)
    - エラーログ、再現手順を含める
 
 2. **機能をリクエスト:**
-   - [GitHub Discussions](https://github.com/yandy-r/9router/discussions)
+   - [GitHub Discussions](https://github.com/tokenhop/tokenhop/discussions)
    - ユースケースと利点を説明
 
 3. **コードを提出:**
@@ -410,13 +410,13 @@ docker run -d \
 - ドキュメントを更新
 - コミットは小さく、わかりやすく
 
-詳細は[CONTRIBUTING.md](https://github.com/yandy-r/9router/blob/main/CONTRIBUTING.md)を参照。
+詳細は[CONTRIBUTING.md](https://github.com/tokenhop/tokenhop/blob/main/CONTRIBUTING.md)を参照。
 
 ---
 
 ## さらにヘルプが必要?
 
 - **ドキュメント:** [9router.com/docs](https://9router.com/docs)
-- **GitHub:** [github.com/yandy-r/9router](https://github.com/yandy-r/9router)
-- **Issues:** [github.com/yandy-r/9router/issues](https://github.com/yandy-r/9router/issues)
+- **GitHub:** [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
+- **Issues:** [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 - **トラブルシューティング:** [troubleshooting.md](troubleshooting.md)
