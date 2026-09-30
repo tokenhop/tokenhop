@@ -2,7 +2,7 @@
 
 ## Changes
 - **Repository**: the project moved to [`tokenhop/tokenhop`](https://github.com/tokenhop/tokenhop). Repo, docs, skill, badge and dashboard links point at the new home; old `yandy-r/9router` URLs keep redirecting (#375, #378).
-- **Container image**: images now publish to `ghcr.io/tokenhop/tokenhop`. `docker-compose.yml`, the Docker docs and the landing page use the new path; `ghcr.io/yandy-r/9router` stays at v0.5.0 and gets no new images (#376, #378).
+- **Container image**: images now publish to `ghcr.io/tokenhop/tokenhop`. `compose.yml`, the Docker docs and the landing page use the new path; `ghcr.io/yandy-r/9router` stays at v0.5.0 and gets no new images (#376, #378).
 
 ## Fixes
 - **Docs**: LICENSE, CHANGELOG and README links that pointed at a non-existent `main` branch now resolve (#375).
@@ -220,7 +220,7 @@
 - **Zed**: you can now finish sign-in by pasting the callback URL. While it waits, the Connect Zed modal always shows the sign-in URL and a field for the callback URL, so login works even when the browser can't reach 9router's `127.0.0.1` callback (Docker, a remote host, or another machine). The callback listener now accepts the redirect on any path, as the Zed client does, and the "Paste token" tab, which crashed for Zed, is no longer shown for it (#1).
 
 ## Changes
-- **Links**: the dashboard's changelog, README link and skill links now point to `yandy-r/9router` instead of upstream. `docker-compose.yml` now uses `ghcr.io/yandy-r/9router:latest`.
+- **Links**: the dashboard's changelog, README link and skill links now point to `yandy-r/9router` instead of upstream. `compose.yml` now uses `ghcr.io/yandy-r/9router:latest`.
 - **Docs**: the README explains where to get the Google OAuth client IDs and secrets.
 
 # v0.1.0 (2026-09-22)
@@ -819,7 +819,7 @@ First release of this fork, which restarts version numbers at 0.1.0. It is based
 - CodeBuddy: only send reasoning params when client requests reasoning (#2071) — Rex
 - CodeBuddy CN: show one-shot bonus packs as expiring, not monthly-replenishing
 - Show custom provider models in combo picker — Sapto
-- Docker: add docker-compose.yml with headroom enabled by default — nitsuahlabs
+- Docker: add compose.yml with headroom enabled by default — nitsuahlabs
 - Clarify token diagnostics vs provider billing (headroom, #1998) — Sutarto Jordan Chrisfivo
 - Translate openai-responses input through OpenAI for compression (#1998) — Ankit
 - Kiro: report 1M context window for claude-opus-4.8 — EdisonPVE

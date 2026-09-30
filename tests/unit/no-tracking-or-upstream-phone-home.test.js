@@ -17,7 +17,7 @@ const RUNTIME_FILES = [
   "cli/package.json",
   "package.json",
   "Dockerfile",
-  "docker-compose.yml",
+  "compose.yml",
   "compose.dev.yml",
 ];
 const SCANNED_EXT = new Set([".js", ".mjs", ".cjs", ".jsx", ".json", ".html", ".css", ".svg"]);
@@ -95,7 +95,7 @@ describe("Headroom sidecar never sends telemetry or update checks", () => {
     );
   });
 
-  it.each(["docker-compose.yml", "compose.dev.yml"])("%s disables Headroom telemetry", (file) => {
+  it.each(["compose.yml", "compose.dev.yml"])("%s disables Headroom telemetry", (file) => {
     const text = fs.readFileSync(path.join(ROOT, file), "utf8");
     const headroomService = text.slice(text.indexOf("  headroom:"));
     expect(headroomService).toMatch(/HEADROOM_TELEMETRY: "off"/);

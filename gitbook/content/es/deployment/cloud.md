@@ -162,7 +162,7 @@ docker run -d \
 
 ### Opción 2: Docker Compose
 
-Crea `docker-compose.yml`:
+Crea `compose.yml`:
 
 ```yaml
 version: "3.8"
@@ -191,16 +191,16 @@ volumes:
 
 ```bash
 # Iniciar servicios
-docker-compose up -d
+compose up -d
 
 # Ver logs
-docker-compose logs -f
+compose logs -f
 
 # Detener servicios
-docker-compose down
+compose down
 
 # Reconstruir y reiniciar
-docker-compose up -d --build
+compose up -d --build
 ```
 
 ---

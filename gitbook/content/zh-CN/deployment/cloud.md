@@ -162,7 +162,7 @@ docker run -d \
 
 ### 方式 2:Docker Compose
 
-创建 `docker-compose.yml`:
+创建 `compose.yml`:
 
 ```yaml
 version: "3.8"
@@ -191,16 +191,16 @@ volumes:
 
 ```bash
 # 启动服务
-docker-compose up -d
+compose up -d
 
 # 查看日志
-docker-compose logs -f
+compose logs -f
 
 # 停止服务
-docker-compose down
+compose down
 
 # 重新构建并重启
-docker-compose up -d --build
+compose up -d --build
 ```
 
 ---

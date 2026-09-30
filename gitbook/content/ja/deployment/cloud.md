@@ -162,7 +162,7 @@ docker run -d \
 
 ### オプション2: Docker Compose
 
-`docker-compose.yml` を作成:
+`compose.yml` を作成:
 
 ```yaml
 version: "3.8"
@@ -191,16 +191,16 @@ volumes:
 
 ```bash
 # サービスを起動
-docker-compose up -d
+compose up -d
 
 # ログを表示
-docker-compose logs -f
+compose logs -f
 
 # サービスを停止
-docker-compose down
+compose down
 
 # 再ビルドして再起動
-docker-compose up -d --build
+compose up -d --build
 ```
 
 ---
