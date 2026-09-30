@@ -1,3 +1,26 @@
+# v0.5.0 (2026-09-30)
+
+## Features
+- **Gateway heartbeat**: sidebar gateway card shows a 15-minute requests-per-minute sparkline with an accessible summary; the pulse follows live traffic (#360).
+- **Count-up numbers**: hero numbers on Home, Token saver, Quota and Usage animate to new values without layout shift, instant under reduced motion (#360).
+- **Savings milestones**: a one-time toast when lifetime token savings pass 100k, 1M and 10M, once per install (#360).
+- **Routes map**: one idle-aware routes map shared by Home and Usage, showing your real providers when idle and live flow when traffic arrives (#364).
+- **Combos**: weighted steps explain configured weight, effective share and quota source using the router's own math; route tests replay step by step on the track (#363).
+- **Quota**: runway forecast, "at this pace, empty in ~9h · resets in 1d 18h" (#358).
+- **Home**: copyable tunnel URL with a full-value tooltip.
+
+## Fixes
+- **Tunnel**: target the port the server actually bound and refresh status after toggling.
+- **Settings**: show pending states for network toggles.
+- **Usage**: compact usage statistics display.
+- **i18n**: translate the "Tunnel live" label in all locales.
+
+## Changes
+- **Media**: media provider detail and combo pages move onto the Signal sections (#359).
+- **i18n**: copy-tone sweep with a guard test, re-keyed and newly translated literals across 34 locales, and unused keys pruned (#366).
+- **Dependencies**: drop `@xyflow/react`; bump material-symbols, monaco-editor, undici and uuid (#361, #362, #364).
+- **Process**: branching and release rules in `RELEASING.md` (#368).
+
 # v0.4.2 (2026-09-29)
 
 ## Features
