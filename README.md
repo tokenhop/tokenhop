@@ -49,7 +49,7 @@ docker run -d --name 9router \
   -v "$HOME/.9router:/app/data" \
   -e JWT_SECRET="$(openssl rand -hex 32)" \
   -e INITIAL_PASSWORD="change-me" \
-  ghcr.io/yandy-r/9router:latest
+  ghcr.io/tokenhop/tokenhop:latest
 ```
 
 - Dashboard: <http://localhost:20128/dashboard> (log in with `INITIAL_PASSWORD`)
@@ -60,7 +60,7 @@ Or with Compose, pinned to a version:
 ```yaml
 services:
   9router:
-    image: ghcr.io/yandy-r/9router:1.0.0 # or :latest
+    image: ghcr.io/tokenhop/tokenhop:1.0.0 # or :latest
     restart: unless-stopped
     ports:
       - "20128:20128"
@@ -182,7 +182,7 @@ hold an older pair.
 ## Releases and images
 
 Pushing a `v*` tag runs [`docker-publish.yml`](.github/workflows/docker-publish.yml),
-which builds `linux/amd64` + `linux/arm64` and pushes to `ghcr.io/yandy-r/9router`.
+which builds `linux/amd64` + `linux/arm64` and pushes to `ghcr.io/tokenhop/tokenhop`.
 Branch pushes run nothing, and nothing is published to npm.
 
 | Tag              | When                                                                                                                                     |
