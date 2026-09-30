@@ -71,6 +71,8 @@ with `[WIP]` or `Draft:` — both are rejected by the title workflow.
   (multiple unrelated features, refactors, and bug fixes in one branch) are
   harder to review and harder to revert. Split into smaller PRs with clear
   dependencies when the scope grows.
+- Pick the base branch and any backport label per
+  [`RELEASING.md`](../RELEASING.md). Never open "sync master into …" PRs.
 
 ## Commits inside the PR
 

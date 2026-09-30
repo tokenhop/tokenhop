@@ -13,6 +13,10 @@ Two published artifacts live in this one repo:
 
 The code lives in `src/` (Next.js app + dashboard/compat APIs), `open-sse/` (the provider-agnostic routing/translation engine), `cli/` (the launcher package), and `tests/`.
 
+## Branching & releases
+
+**Read [`RELEASING.md`](RELEASING.md) before creating a branch, opening a PR, or cutting a release.** It defines the current trunk, which branch each change targets, backports, and the release steps. Never open "sync master into …" PRs.
+
 ## Commands
 
 Dashboard/gateway (run from repo root):
@@ -109,4 +113,4 @@ Pre-translate hooks that compress `tool_result` content in-place to cut tokens. 
 - `custom-server.js` wraps the Next standalone server to derive client IP from the TCP socket and strip attacker-controlled `X-Forwarded-For` — trusting forwarding headers only from a loopback reverse proxy, and then only the rightmost XFF hop (appending proxies like cloudflared/nginx leave the leftmost entries client-controlled). Preserve this when touching request/IP/rate-limit code.
 - Security-sensitive env: `JWT_SECRET` (session cookie), `INITIAL_PASSWORD` (default `123456` — must override), `API_KEY_SECRET`, `MACHINE_ID_SALT`. Full env contract in `.env.example` and ARCHITECTURE.md's env matrix.
 - Binary/protobuf upstreams (kiro EventStream, cursor protobuf, commandcode NDJSON) don't round-trip through OpenAI — they're handled inside their own executor, not the translator.
-- Versioning: root and `cli/` are versioned independently; changes are logged in `CHANGELOG.md`. Commit style is Conventional Commits (`fix(translator): …`, `feat(...)`).
+- Versioning, CHANGELOG, and tagging: see [`RELEASING.md`](RELEASING.md). Commit style is Conventional Commits (`fix(translator): …`, `feat(...)`).
