@@ -129,6 +129,18 @@ Pre-releases of the next minor are tagged `vX.Y.0-beta.N` from the trunk.
 
 ### Patch release (vX.Y.Z) — from `release/X.Y`
 
+0. **No pending backports.** Every trunk PR with the `backport:X.Y` label must
+   already have a merged `release/X.Y` backport PR. Check before tagging:
+
+   ```bash
+   gh pr list --state merged --label backport:X.Y --limit 100
+   # each PR in that list needs a matching merged PR whose body says "Backport of #N"
+   ```
+
+   If any are missing, backport them first (`/backport --pending`) or decide
+   they wait for the next patch. Never tag around a labeled-but-unbackported
+   fix — that is how v0.5.2 shipped without #386.
+
 1. On `release/X.Y`, commit `chore(release): vX.Y.Z` (CHANGELOG.md, root and
    `cli/` versions).
 2. Push an annotated tag `vX.Y.Z`; wait for the image on GHCR.
