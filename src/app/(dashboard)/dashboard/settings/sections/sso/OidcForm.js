@@ -19,10 +19,18 @@ function successMessage(authMode) {
 
 function testMessage(data) {
   const base = `Connection OK. Discovery loaded from ${data.issuerUrl}.`;
-  if (!data.clientSecretTested) return base;
-  return data.clientSecretValid === true
-    ? `${base} Client secret validated too.`
-    : `${base} Client secret was not checked.`;
+  let message = !data.clientSecretTested
+    ? base
+    : data.clientSecretValid === true
+      ? `${base} Client secret validated too.`
+      : `${base} Client secret was not checked.`;
+  if (Array.isArray(data.signingAlgs) && data.signingAlgs.length > 0) {
+    message += ` Signing: ${data.signingAlgs.join(", ")}.`;
+  }
+  if (Array.isArray(data.warnings) && data.warnings.length > 0) {
+    message += ` ${data.warnings.join(" ")}`;
+  }
+  return message;
 }
 
 /**

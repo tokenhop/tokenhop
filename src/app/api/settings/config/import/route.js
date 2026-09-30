@@ -4,7 +4,7 @@ import { getSettings } from "@/lib/localDb";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import { hasValidCliToken } from "@/lib/auth/cliToken";
 import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";
-import { validateSettingsBody } from "../../route.js";
+import { ssoLockoutError, validateSettingsBody } from "../../route.js";
 import {
   applyConfig,
   exportConfig,
@@ -91,7 +91,9 @@ export async function POST(request) {
 
     // An import must never store what the settings UI could not save: run the
     // same boundary validators as PATCH /api/settings.
-    const settingsError = validateSettingsBody(checked.doc.settings);
+    const settingsError =
+      validateSettingsBody(checked.doc.settings) ||
+      ssoLockoutError(await getSettings(), checked.doc.settings);
     if (settingsError) {
       return NextResponse.json(
         { error: settingsError, errors: [settingsError], warnings: checked.warnings },

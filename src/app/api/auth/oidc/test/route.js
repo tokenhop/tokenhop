@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getSettings } from "@/lib/localDb";
-import { fetchOidcDiscovery, getPublicOrigin, probeOidcClientSecret } from "@/lib/auth/oidc";
+import {
+  fetchOidcDiscovery,
+  getPublicOrigin,
+  probeOidcClientSecret,
+  summarizeOidcSigning,
+} from "@/lib/auth/oidc";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 
 async function canAccessTestRoute() {
@@ -11,6 +16,21 @@ async function canAccessTestRoute() {
   const cookieStore = await cookies();
   const token = cookieStore.get("auth_token")?.value;
   return await verifyDashboardAuthToken(token);
+}
+
+async function countJwksKeys(jwksUri) {
+  if (!jwksUri) return null;
+  try {
+    const response = await fetch(jwksUri, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return null;
+    const jwks = await response.json();
+    return Array.isArray(jwks?.keys) ? jwks.keys.length : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(request) {
@@ -47,6 +67,9 @@ export async function POST(request) {
       redirectUri,
     });
 
+    const jwksKeyCount = await countJwksKeys(discovery.jwks_uri);
+    const signing = summarizeOidcSigning(discovery, jwksKeyCount);
+
     if (secretProbe.tested && secretProbe.valid === false) {
       return NextResponse.json({
         ok: false,
@@ -60,6 +83,9 @@ export async function POST(request) {
         authorizationEndpoint: discovery.authorization_endpoint || "",
         tokenEndpoint: discovery.token_endpoint || "",
         jwksUri: discovery.jwks_uri || "",
+        signingAlgs: signing.signingAlgs,
+        jwksKeyCount,
+        warnings: signing.warnings,
         error: `Discovery loaded, but the client secret is not valid: ${secretProbe.message}`,
       });
     }
@@ -76,6 +102,9 @@ export async function POST(request) {
       authorizationEndpoint: discovery.authorization_endpoint || "",
       tokenEndpoint: discovery.token_endpoint || "",
       jwksUri: discovery.jwks_uri || "",
+      signingAlgs: signing.signingAlgs,
+      jwksKeyCount,
+      warnings: signing.warnings,
       message: secretProbe.message,
     });
   } catch (error) {

@@ -383,6 +383,21 @@ Common issues and solutions when using 9Router.
 
 ---
 
+## Locked Out After Enabling Single Sign-On
+
+**Problem:** Password sign-in is unavailable, and OIDC or SAML sign-in fails or redirects back to `/login` with an error.
+
+**Cause:** SSO-only sign-in was enabled before the selected OIDC or SAML protocol was fully configured, or the identity provider stopped working.
+
+**Solutions:**
+
+1. **Recover password sign-in on the host:** Run the `9router` CLI on the machine running 9Router, then select **Settings → Reset Auth Mode to Password**. The CLI sends a PATCH to `/api/settings` with its machine-bound `x-9r-cli-token` header. This recovery action works only on the host, not from a remote browser.
+2. **Fix and test SSO:** Sign in with a password, open **Settings → Single sign-on**, select **Password + SSO**, complete the OIDC or SAML configuration, and use **Test**. Switch to **SSO only** only after sign-in works.
+
+The dashboard now refuses to save SSO-only sign-in when the selected protocol is not fully configured, and `/login` displays the SSO error when a sign-in attempt fails.
+
+---
+
 ## Need More Help?
 
 - **GitHub Issues:** [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
