@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [master, re-design]
+    branches: [master]
 
 permissions:
   contents: read
@@ -15,11 +15,20 @@ concurrency:
 env:
   NEXT_TELEMETRY_DISABLED: "1"
 
+# test and build run once per brand (src/shared/brand). The default-brand legs keep
+# their original names because those are required checks on master.
 jobs:
   test:
-    name: Tests (vs known-fails baseline)
+    name: ${{ matrix.brand == 'tokenhop' && 'Tests (vs known-fails baseline, tokenhop brand)' || 'Tests (vs known-fails baseline)' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        brand: [default, tokenhop]
+    env:
+      # Empty means unset, so the default leg runs exactly as before.
+      NEXT_PUBLIC_BRAND: ${{ matrix.brand == 'tokenhop' && 'tokenhop' || '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -44,9 +53,15 @@ jobs:
         run: node tests/__baseline__/verify-oauth-urls.mjs
 
   build:
-    name: Next.js build
+    name: ${{ matrix.brand == 'tokenhop' && 'Next.js build (tokenhop brand)' || 'Next.js build' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        brand: [default, tokenhop]
+    env:
+      NEXT_PUBLIC_BRAND: ${{ matrix.brand == 'tokenhop' && 'tokenhop' || '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
