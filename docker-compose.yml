@@ -1,6 +1,6 @@
 services:
   9router:
-    image: ghcr.io/yandy-r/9router:latest
+    image: ghcr.io/tokenhop/tokenhop:latest
     container_name: 9router
     restart: always
     ports:
