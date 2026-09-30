@@ -167,7 +167,7 @@ function copyBrandModule(appDir, cliDir) {
 function buildCliPackage() {
   console.log("📦 Building 9Router CLI package with Next.js...\n");
 
-  console.log("0️⃣  Copying brand module...");
+  console.log("0️⃣  Copying brand module into the CLI package...");
   console.log(`✅ Copied ${path.relative(appDir, copyBrandModule(appDir, cliDir))}\n`);
 
   fs.mkdirSync(buildHomeDir, { recursive: true });

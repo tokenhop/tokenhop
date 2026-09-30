@@ -136,11 +136,16 @@ describe("CLI build server artifacts", () => {
       fs.readFileSync(path.join(repoRoot, BRAND_MODULE_PATH), "utf8"),
     );
 
-    const out = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
-      cwd: cliDir,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    });
+    const out = execFileSync(
+      process.platform === "win32" ? "npm.cmd" : "npm",
+      ["pack", "--dry-run", "--json", "--ignore-scripts"],
+      {
+        cwd: cliDir,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        shell: process.platform === "win32",
+      },
+    );
     // npm ≤10 prints an array, npm 11 an object keyed by package name.
     const [pack] = Object.values(JSON.parse(out));
     assert.ok(pack.files.some((f) => f.path === BRAND_MODULE_PATH.split(path.sep).join("/")));

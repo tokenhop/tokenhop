@@ -18,6 +18,7 @@ const EXPECTED_BRAND = {
   slug: "tokenhop",
   envPrefix: "TOKENHOP_",
   headerPrefix: "x-tokenhop-",
+  jcodeApiKeyEnv: "JCODE_TOKENHOP_API_KEY",
   defaultApiKey: "sk_tokenhop",
   dataDirName: "tokenhop",
   samlIssuerDefault: "urn:tokenhop:sp",
@@ -47,6 +48,7 @@ const EXPECTED_LEGACY = {
   slug: "9router",
   envPrefixes: ["NINEROUTER_", "NINE_ROUTER_"],
   headerPrefix: "x-9router-",
+  jcodeApiKeyEnv: "JCODE_9ROUTER_API_KEY",
   defaultApiKey: "sk_9router",
   dataDirName: "9router",
   samlIssuerDefault: "urn:9router:sp",
@@ -108,6 +110,7 @@ describe("brand constants", () => {
   it("ACTIVE is the primary legacy value per key under the default brand", () => {
     const { ACTIVE, BRAND } = load();
     expect(Object.keys(ACTIVE)).toEqual(Object.keys(BRAND));
+    for (const key of Object.keys(BRAND)) expect(ACTIVE[key], key).toEqual(expect.any(String));
     expect(ACTIVE.name).toBe("9Router");
     expect(ACTIVE.envPrefix).toBe("NINEROUTER_");
     expect(ACTIVE.clientConfigKey).toBe("9router");

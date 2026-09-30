@@ -55,7 +55,7 @@ Decisions:
    brands, `readEnv` precedence and once-only warnings, `import` + `require`,
    `LEGACY` ∩ `BRAND` = ∅.
 2. Implement in `index.cjs`, re-export in `index.js`.
-3. `build-cli.js`: `copyBrandModule`; root `.gitignore`; artifacts test.
+3. `build-cli.js`: `copyBrandModule`; `cli/.gitignore`; artifacts test.
 4. Prove four consumers (throwaway server/client imports, `npm run build`,
    `require` from `cli/`, `npm --prefix cli run pack:cli`), then revert.
 5. Verify: lint, test and build for both brands.
