@@ -1,0 +1,242 @@
+name: i18n translate
+
+# Translates new dashboard UI strings after they land on master and opens (or
+# refreshes) one short-lived bot PR, so feature PRs never carry locale-file
+# changes and never wait on translation. Missing keys fall back to English at
+# runtime (src/i18n/runtime.js), so merging a feature before this finishes is safe.
+#
+# Required configuration (Settings → Secrets and variables → Actions):
+#   secrets.TRANSLATE_BASE_URL  OpenAI-compatible base URL, e.g. https://<gateway>/v1
+#   secrets.TRANSLATE_API_KEY   bearer key for that endpoint
+#   secrets.TRANSLATE_MODEL     model or combo name on that endpoint
+#   secrets.I18N_BOT_TOKEN      fine-grained PAT (or GitHub App token) with
+#                               contents + pull-requests write on this repo.
+#     GITHUB_TOKEN can't be used: this repo doesn't let Actions open PRs, and
+#     PRs it opens would not trigger the required CI checks.
+
+on:
+  push:
+    branches: [master]
+    # Only source that can add/change extracted literals (scripts/i18n-literals.mjs).
+    # Locale files are excluded so merging the bot PR doesn't re-trigger this.
+    paths:
+      - "src/app/**"
+      - "src/shared/**"
+      - "src/dashboardGuard.js"
+      - "scripts/i18n-literals.mjs"
+      - "scripts/translate-literals.mjs"
+      - "scripts/lib/i18n-*.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time; a newer push queues behind the running one (and replaces
+# any older queued run) instead of cancelling it, so long batches finish.
+concurrency:
+  group: i18n-translate
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Find untranslated strings
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      locales: ${{ steps.plan.outputs.locales }}
+    steps:
+      - name: Check configuration
+        env:
+          TRANSLATE_BASE_URL: ${{ secrets.TRANSLATE_BASE_URL }}
+          TRANSLATE_API_KEY: ${{ secrets.TRANSLATE_API_KEY }}
+          TRANSLATE_MODEL: ${{ secrets.TRANSLATE_MODEL }}
+          I18N_BOT_TOKEN: ${{ secrets.I18N_BOT_TOKEN }}
+        run: |
+          missing=()
+          for name in TRANSLATE_BASE_URL TRANSLATE_API_KEY TRANSLATE_MODEL I18N_BOT_TOKEN; do
+            [ -n "${!name}" ] || missing+=("$name")
+          done
+          if ((${#missing[@]})); then
+            echo "::error::Missing Actions secrets: ${missing[*]} (see the header of .github/workflows/i18n-translate.yml)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # The extractor parses JSX with Next's bundled Babel.
+      - run: npm ci --no-audit --no-fund
+
+      - name: Diff source literals against locale files
+        id: plan
+        run: |
+          node scripts/i18n-literals.mjs --json > i18n-report.json
+          failures=$(jq '.failures | length' i18n-report.json)
+          if [ "$failures" -gt 0 ]; then
+            echo "::warning::Extractor could not parse $failures file(s): $(jq -c .failures i18n-report.json)"
+          fi
+          jq -c '[.missing[][]] | unique' i18n-report.json > need.json
+          locales=$(jq -c '.missing | keys' i18n-report.json)
+          echo "locales=$locales" >> "$GITHUB_OUTPUT"
+          echo "Untranslated: $(jq length need.json) string(s) in $(jq length <<<"$locales") locale(s)." >> "$GITHUB_STEP_SUMMARY"
+
+      - if: steps.plan.outputs.locales != '[]'
+        uses: actions/upload-artifact@v7
+        with:
+          name: i18n-need
+          path: need.json
+          retention-days: 7
+
+  translate:
+    name: Translate (${{ matrix.locale }})
+    needs: plan
+    if: needs.plan.outputs.locales != '[]'
+    runs-on: ubuntu-latest
+    # Under the 6h job cap. On timeout the cache + delta steps below still run,
+    # so the next run resumes instead of starting over.
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      # Concurrent locales hitting the gateway; lower it if the model rate-limits.
+      max-parallel: 6
+      matrix:
+        locale: ${{ fromJSON(needs.plan.outputs.locales) }}
+    env:
+      LOCALE: ${{ matrix.locale }}
+      CACHE_KEY: i18n-llm-${{ matrix.locale }}-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v7
+      # No npm ci: translate-literals.mjs only uses node builtins.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v8
+        with:
+          name: i18n-need
+
+      - name: Restore translation cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .i18n-cache.json
+          key: ${{ env.CACHE_KEY }}
+          restore-keys: i18n-llm-${{ matrix.locale }}-
+
+      - name: Translate
+        env:
+          TRANSLATE_BASE_URL: ${{ secrets.TRANSLATE_BASE_URL }}
+          TRANSLATE_API_KEY: ${{ secrets.TRANSLATE_API_KEY }}
+          TRANSLATE_MODEL: ${{ secrets.TRANSLATE_MODEL }}
+        run: |
+          mkdir -p deltas
+          node scripts/translate-literals.mjs \
+            --need need.json \
+            --locales public/i18n/literals \
+            --locales-list "$LOCALE" \
+            --cache .i18n-cache.json \
+            --apply \
+            --delta "deltas/$LOCALE.json" | tee "deltas/$LOCALE.log"
+
+      - name: Save translation cache
+        if: always() && hashFiles('.i18n-cache.json') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: .i18n-cache.json
+          key: ${{ env.CACHE_KEY }}
+
+      - name: Upload delta
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: i18n-delta-${{ matrix.locale }}
+          path: deltas/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  open-pr:
+    name: Open translation PR
+    needs: [plan, translate]
+    # Runs after partial failures too: whatever translated is worth shipping,
+    # and untranslated keys are picked up again by the next run.
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.locales != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Newest master, not the triggering commit: deltas are merged on top so
+      # translations that landed meanwhile are kept.
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: i18n-delta-*
+          path: deltas
+          merge-multiple: true
+
+      - name: Merge translations
+        id: merge
+        run: |
+          mkdir -p deltas
+          summary=$(node scripts/i18n-apply-deltas.mjs --locales public/i18n/literals --deltas deltas)
+          echo "$summary"
+          echo "added=$(jq '[.[]] | add // 0' <<<"$summary")" >> "$GITHUB_OUTPUT"
+          echo "$summary" > deltas/summary.json
+
+      - name: Validate placeholders
+        run: |
+          node scripts/i18n-literals.mjs --json > i18n-report.json
+          count=$(jq '.mismatches | length' i18n-report.json)
+          if [ "$count" -gt 0 ]; then
+            jq '.mismatches[:20]' i18n-report.json
+            echo "::error::$count placeholder mismatch(es) in locale files"
+            exit 1
+          fi
+          echo "remaining=$(jq '[.missing[][]] | length' i18n-report.json)" >> "$GITHUB_ENV"
+
+      - name: Write PR body
+        if: steps.merge.outputs.added != '0'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "Automated translation of new dashboard strings ([workflow run]($RUN_URL))."
+            echo
+            echo "| Locale | Added |"
+            echo "| ------ | ----- |"
+            jq -r 'to_entries[] | select(.value > 0) | "| \(.key) | \(.value) |"' deltas/summary.json
+            echo
+            echo "Still untranslated after this PR (locale × key): **$remaining**. They show in English and are retried on the next run."
+            fails=$(grep -h '^  FAIL ' deltas/*.log 2>/dev/null | head -30 || true)
+            if [ -n "$fails" ]; then
+              echo
+              echo "<details><summary>Rejected translations (first 30)</summary>"
+              echo
+              echo '```'
+              echo "$fails"
+              echo '```'
+              echo
+              echo "</details>"
+            fi
+          } > pr-body.md
+
+      - name: Open or update PR
+        if: steps.merge.outputs.added != '0'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.I18N_BOT_TOKEN }}
+          base: master
+          branch: i18n/auto-translate
+          delete-branch: true
+          add-paths: public/i18n/literals/*.json
+          commit-message: "chore(i18n): translate new dashboard strings"
+          title: "chore(i18n): translate new dashboard strings"
+          body-path: pr-body.md
+          labels: |
+            type:chore
+            area:dashboard

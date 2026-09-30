@@ -32,7 +32,7 @@ npm run build && PORT=20128 HOSTNAME=0.0.0.0 npm run start           # productio
 - Default runtime port is **20128** (dashboard at `/dashboard`, API at `/v1`).
 - Lint/format: `npm run lint` (Biome for JS/JSON/CSS, markdownlint + Prettier for Markdown/YAML, ShellCheck), `npm run lint:fix`, `npm run format`. Config: `biome.json`, `.markdownlint.json`, `.prettierrc`. Many legacy a11y/React rules are warnings, not errors — don't add new ones. Import sorting is off on purpose: translators self-register via import side effects, so import order matters.
 - Git hooks (lefthook, auto-installed by `npm install`): pre-commit formats + lints staged files, commit-msg runs commitlint (Conventional Commits), pre-push runs full lint. Bypass once with `--no-verify`.
-- CI: `.github/workflows/ci.yml` (tests vs known-fails baseline, alias/OAuth baselines, `next build`), `lint.yml`, `pr-title.yml`. Node version pinned in `.nvmrc`.
+- CI: `.github/workflows/ci.yml` (tests vs known-fails baseline, alias/OAuth baselines, `next build`), `lint.yml`, `pr-title.yml`, `i18n-translate.yml` (after dashboard strings land on master, translates them via `scripts/translate-literals.mjs` and opens/refreshes the `i18n/auto-translate` bot PR — feature PRs don't touch `public/i18n/literals/`). Node version pinned in `.nvmrc`.
 
 CLI package (`cli/`):
 
