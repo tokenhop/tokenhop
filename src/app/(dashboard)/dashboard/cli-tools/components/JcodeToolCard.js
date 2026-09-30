@@ -158,6 +158,7 @@ export default function JcodeToolCard({
         resetDisabled={!status?.has9Router}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
+        manualConfigs={getManualConfigs()}
         fileHint="~/.jcode/config.toml"
       >
         <EndpointSegmentedPicker

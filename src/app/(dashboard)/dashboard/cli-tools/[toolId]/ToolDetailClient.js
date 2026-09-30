@@ -46,9 +46,8 @@ export default function ToolDetailClient({ toolId }) {
         </span>
         Back to CLI tools
       </Link>
-      {localOnly ? (
-        <LocalOnlyNotice />
-      ) : data.loading ? (
+      {localOnly && <LocalOnlyNotice manualBelow />}
+      {data.loading ? (
         <CardSkeleton />
       ) : (
         <ToolSetupPanel toolId={toolId} data={data} onStatusUpdate={() => {}} />

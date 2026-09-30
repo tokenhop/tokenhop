@@ -9,6 +9,8 @@ import Input from "@/shared/components/Input";
 import IconButton from "@/shared/components/IconButton";
 import StatusPill from "@/shared/components/StatusPill";
 import Callout from "@/shared/components/Callout";
+import { ManualConfigList } from "@/shared/components/ManualConfigModal";
+import { useCliAccessStore } from "@/store/cliAccessStore";
 import ToolTile from "./ToolTile";
 import { LoadingState } from "@/shared/components/StateViews";
 
@@ -37,11 +39,20 @@ export default function SetupScaffold({
   resetLabel = "Reset",
   onManualConfig,
   manualDisabled = false,
+  manualConfigs = null,
   fileHint = "",
   confirmReset = true,
   hideActions = false,
   children,
 }) {
+  const localOnly = useCliAccessStore((s) => s.localOnly);
+  const installedBlock = localOnly ? null : notInstalled;
+  const showWriteActions = !hideActions && !localOnly;
+  // Detection never runs off the host, so a missing CLI is not "Not installed".
+  const pill =
+    localOnly && status?.label === "Not installed"
+      ? { label: "Manual setup", variant: "info" }
+      : status;
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [resetError, setResetError] = useState(null);
   // Reset rewrites the named user config file, so confirm first. Cards with no
@@ -76,9 +87,9 @@ export default function SetupScaffold({
             {tool.name}
           </span>
           <div className="flex flex-wrap items-center gap-1.5">
-            {status && !checking && (
-              <StatusPill variant={status.variant} size="sm" dot={status.variant === "ok"}>
-                {status.label}
+            {pill && !checking && (
+              <StatusPill variant={pill.variant} size="sm" dot={pill.variant === "ok"}>
+                {pill.label}
               </StatusPill>
             )}
             {version && <span className="font-mono text-xs text-muted">{version}</span>}
@@ -88,11 +99,14 @@ export default function SetupScaffold({
 
       {checking ? (
         <LoadingState lines={2} label={checkingLabel} />
-      ) : notInstalled ? (
-        notInstalled
+      ) : installedBlock ? (
+        installedBlock
       ) : (
         <>
           <div className="flex flex-col gap-4">{children}</div>
+          {localOnly && manualConfigs?.length > 0 && (
+            <ManualConfigList configs={manualConfigs} idPrefix="manualinline" />
+          )}
           {message && (
             <p
               role="status"
@@ -107,8 +121,8 @@ export default function SetupScaffold({
               {message.text}
             </p>
           )}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            {!hideActions && (
+          {showWriteActions && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <Button
                 variant="primary"
                 size="sm"
@@ -120,8 +134,6 @@ export default function SetupScaffold({
               >
                 {applyLabel}
               </Button>
-            )}
-            {!hideActions && (
               <Button
                 variant="secondary"
                 size="sm"
@@ -132,8 +144,6 @@ export default function SetupScaffold({
               >
                 Manual config
               </Button>
-            )}
-            {!hideActions && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -145,9 +155,11 @@ export default function SetupScaffold({
               >
                 {resetLabel}
               </Button>
-            )}
-          </div>
-          {fileHint && <p className="font-mono text-xs text-muted">Writes {fileHint}</p>}
+            </div>
+          )}
+          {fileHint && !localOnly && (
+            <p className="font-mono text-xs text-muted">Writes {fileHint}</p>
+          )}
         </>
       )}
       {needsConfirm && (
@@ -198,6 +210,9 @@ SetupScaffold.propTypes = {
   resetting: PropTypes.bool,
   onManualConfig: PropTypes.func,
   manualDisabled: PropTypes.bool,
+  manualConfigs: PropTypes.arrayOf(
+    PropTypes.shape({ filename: PropTypes.string, content: PropTypes.string }),
+  ),
   fileHint: PropTypes.string,
   confirmReset: PropTypes.bool,
   hideActions: PropTypes.bool,

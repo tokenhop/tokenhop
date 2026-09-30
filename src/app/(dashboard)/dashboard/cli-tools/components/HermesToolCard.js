@@ -151,6 +151,7 @@ export default function HermesToolCard({
         resetDisabled={!status?.has9Router}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
+        manualConfigs={getManualConfigs()}
         fileHint="~/.hermes/config.yaml"
       >
         <EndpointSegmentedPicker

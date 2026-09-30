@@ -242,6 +242,7 @@ export default function OpenCodeToolCard({
         resetDisabled={!status?.has9Router}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
+        manualConfigs={getManualConfigs()}
         fileHint="~/.config/opencode/opencode.json"
       >
         <EndpointSegmentedPicker

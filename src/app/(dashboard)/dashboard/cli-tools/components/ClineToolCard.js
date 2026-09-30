@@ -175,6 +175,7 @@ export default function ClineToolCard({
         onReset={handleReset}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
+        manualConfigs={getManualConfigs()}
         fileHint="~/.cline/data/globalState.json"
       >
         <EndpointSegmentedPicker
