@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/localDb";
 
+// Public (no session): expose only what the login flow needs. Tunnel/Tailscale
+// URLs and other settings stay behind the authenticated /api/settings.
 export async function GET() {
   try {
     const settings = await getSettings();
-    const requireLogin = settings.requireLogin !== false;
-    const tunnelDashboardAccess = settings.tunnelDashboardAccess !== false;
-    const tunnelUrl = settings.tunnelUrl || "";
-    const tailscaleUrl = settings.tailscaleUrl || "";
-    return NextResponse.json({ requireLogin, tunnelDashboardAccess, tunnelUrl, tailscaleUrl });
-  } catch (error) {
+    return NextResponse.json({ requireLogin: settings.requireLogin !== false });
+  } catch {
     return NextResponse.json({ requireLogin: true }, { status: 200 });
   }
 }
