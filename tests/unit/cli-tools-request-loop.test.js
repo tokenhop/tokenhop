@@ -33,7 +33,7 @@ describe("CLI tool status fetch stability", () => {
 
   it("useSetupCard status effect depends only on real inputs", () => {
     const shared = read("components/setupCard.js");
-    expect(depsAfter(shared, "fetch(statusUrl)\n      .then")).toEqual([
+    expect(depsAfter(shared, "fetch(statusUrl)\n        .then")).toEqual([
       "statusUrl",
       "aliasesUrl",
       "toolId",
@@ -80,5 +80,21 @@ describe("setup panels pass the real detection payload", () => {
   it("CopilotToolCard derives its pill from the fetched status", () => {
     const source = read("components/CopilotToolCard.js");
     expect(source).toMatch(/status=\{status \? deriveToolStatus\(tool, status\) : null\}/);
+  });
+});
+
+describe("remote CLI tools stay on the page", () => {
+  it("keeps the grid under one local-only notice", () => {
+    const page = read("CLIToolsPageClient.js");
+    expect(page).not.toMatch(/if \(localOnly\) return <LocalOnlyNotice/);
+    expect(page).toMatch(/\{localOnly && <LocalOnlyNotice manualBelow \/>\}/);
+    expect(page).toMatch(/remote=\{localOnly\}/);
+  });
+
+  it("keeps the tool detail panel under the notice", () => {
+    const detail = read("[toolId]/ToolDetailClient.js");
+    expect(detail).toMatch(/\{localOnly && <LocalOnlyNotice manualBelow \/>\}/);
+    expect(detail).toMatch(/<ToolSetupPanel/);
+    expect(detail).not.toMatch(/localOnly \? \(/);
   });
 });

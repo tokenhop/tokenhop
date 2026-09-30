@@ -171,6 +171,7 @@ default_subagent_model = "${effectiveSubagentModel}"
         onReset={handleReset}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
+        manualConfigs={getManualConfigs()}
         fileHint="~/.codex/config.toml"
       >
         <EndpointSegmentedPicker

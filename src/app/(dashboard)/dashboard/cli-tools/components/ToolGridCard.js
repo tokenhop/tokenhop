@@ -21,8 +21,15 @@ import { deriveToolStatus } from "../lib/toolStatus";
  * @param {boolean} [props.selected] Coral selected ring.
  * @param {(toolId: string) => void} [props.onSelect] In-place selection (wide screens).
  */
-export default function ToolGridCard({ toolId, tool, status, selected = false, onSelect }) {
-  const derived = deriveToolStatus(tool, status);
+export default function ToolGridCard({
+  toolId,
+  tool,
+  status,
+  remote = false,
+  selected = false,
+  onSelect,
+}) {
+  const derived = deriveToolStatus(tool, status, { remote });
 
   const handleClick = useCallback(
     (event) => {
@@ -77,6 +84,7 @@ ToolGridCard.propTypes = {
     installed: PropTypes.bool,
     has9Router: PropTypes.bool,
   }),
+  remote: PropTypes.bool,
   selected: PropTypes.bool,
   onSelect: PropTypes.func,
 };
