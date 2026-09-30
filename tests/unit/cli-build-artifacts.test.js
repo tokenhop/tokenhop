@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import os from "node:os";
@@ -16,9 +17,12 @@ const { afterEach, describe, it } = testApi;
 const require = createRequire(import.meta.url);
 const {
   assertRequiredApiArtifacts,
+  BRAND_MODULE_PATH,
+  copyBrandModule,
   copyStandaloneBuild,
   mergeServerArtifacts,
 } = require("../../cli/scripts/build-cli.js");
+const repoRoot = path.resolve(import.meta.dirname, "../..");
 
 const tempDirs = [];
 
@@ -117,6 +121,34 @@ describe("CLI build server artifacts", () => {
       fs.readFileSync(path.join(packagedServer, "app/api/v1/messages/route.js"), "utf8"),
       "messages route",
     );
+  });
+
+  it("ships the brand module inside the packed CLI", () => {
+    const cliDir = createTempDir();
+    for (const file of ["package.json", ".npmignore", ".gitignore"]) {
+      fs.copyFileSync(path.join(repoRoot, "cli", file), path.join(cliDir, file));
+    }
+
+    const dest = copyBrandModule(repoRoot, cliDir);
+    assert.equal(dest, path.join(cliDir, BRAND_MODULE_PATH));
+    assert.equal(
+      fs.readFileSync(dest, "utf8"),
+      fs.readFileSync(path.join(repoRoot, BRAND_MODULE_PATH), "utf8"),
+    );
+
+    const out = execFileSync(
+      process.platform === "win32" ? "npm.cmd" : "npm",
+      ["pack", "--dry-run", "--json", "--ignore-scripts"],
+      {
+        cwd: cliDir,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        shell: process.platform === "win32",
+      },
+    );
+    // npm ≤10 prints an array, npm 11 an object keyed by package name.
+    const [pack] = Object.values(JSON.parse(out));
+    assert.ok(pack.files.some((f) => f.path === BRAND_MODULE_PATH.split(path.sep).join("/")));
   });
 
   it("reports the missing required API route artifact path", () => {
