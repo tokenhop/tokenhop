@@ -1,3 +1,9 @@
+# v0.5.2 (2026-09-30)
+
+## Fixes
+- **Security**: settings routes no longer leak credentials or trust any CLI token header. `/api/settings/database` only skips password re-auth with a valid machine-bound CLI token, the public require-login response returns only `requireLogin`, and `GET`/`PATCH /api/settings` strip every secret setting, including `mitmSudoEncrypted` (#387, #388).
+- **Auth**: HS256/384/512 OIDC id_tokens signed with the client secret are verified (algorithms restricted to discovery, `none` rejected, nonce enforced), `authMode: "sso"` now starts OIDC, settings refuse SSO-only when the protocol is not configured, and SSO lockouts are recoverable via fixed `/login` error codes and a new troubleshooting section (#392, #393).
+
 # v0.5.1 (2026-09-30)
 
 ## Changes
