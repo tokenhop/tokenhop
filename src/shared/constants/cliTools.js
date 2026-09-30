@@ -300,7 +300,7 @@ export const CLI_TOOLS = {
       {
         step: 5,
         title: "Add custom model",
-        desc: "Open the full model list, then add a custom model",
+        desc: 'Click "View All Model" → "Add Custom Model"',
       },
       { step: 6, title: "Select model", type: "modelSelector" },
     ],

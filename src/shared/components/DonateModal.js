@@ -43,7 +43,7 @@ export default function DonateModal({ isOpen, onClose }) {
           <span className="material-symbols-outlined text-coral" aria-hidden="true">
             volunteer_activism
           </span>
-          Support 9Router
+          Support 9router
         </span>
       }
       size="full"

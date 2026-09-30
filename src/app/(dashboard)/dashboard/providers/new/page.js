@@ -81,7 +81,7 @@ export default function NewProviderPage() {
           className="inline-flex items-center gap-1 text-sm text-muted hover:text-coral-ink transition-colors mb-4"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
-          Back to Providers
+          Back to providers
         </Link>
       </div>
 
