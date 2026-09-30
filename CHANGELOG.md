@@ -1,3 +1,9 @@
+# v0.5.3 (2026-09-30)
+
+## Fixes
+- **CLI tools**: the CLI tools page no longer goes blank behind a reverse proxy. Opened remotely, the page keeps the tool grid and shows each tool's manual configuration inline; Intercept IDEs list their hosts-file lines. Apply/Reset remain host-only — security is unchanged (#386, #398).
+- **Grok CLI**: `GROK_CLI_VERSION` is env-configurable with default `1.0.44`, fixing HTTP 426 from `cli-chat-proxy.grok.com`, which now requires CLI 1.0.13+; the OAuth device-code flow no longer sends a stale version fingerprint (#396, #397).
+
 # v0.5.2 (2026-09-30)
 
 ## Fixes
