@@ -10,10 +10,12 @@
  * Usage:
  *   node scripts/translate-literals.mjs --need /tmp/need.json \
  *     --locales public/i18n/literals --locales-list de,fr \
- *     --cache /tmp/llm-cache.json [--limit N] [--apply]
+ *     --cache /tmp/llm-cache.json [--limit N] [--apply] [--delta <file>]
  *
  * Without --apply this is a dry run that only reports counts. --apply writes
- * sorted locale JSON atomically (tmp + rename).
+ * sorted locale JSON atomically (tmp + rename). --delta writes just the
+ * entries this run added ({key: value}, one locale per run) so CI can merge
+ * them onto a newer checkout (scripts/i18n-apply-deltas.mjs).
  *
  * Validation per key (a failing key is retried, then reported as failed):
  * - identifiers matching KEEP stay verbatim (key == value)
@@ -24,10 +26,11 @@
  *   verbatim English echoes for translatable prose are rejected
  */
 
-import { readFileSync, writeFileSync, renameSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { randomUUID } from "node:crypto";
-import { placeholdersOf } from "./i18n-literals.mjs";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { parseArgs } from "node:util";
+import { placeholdersOf } from "./lib/i18n-placeholders.mjs";
+import { sortByKey, writeJsonAtomic } from "./lib/i18n-json.mjs";
 
 const BATCH_SIZE = 20;
 const REQUEST_PAUSE_MS = 1000;
@@ -309,24 +312,28 @@ async function callLlm(cfg, langName, items) {
   return null;
 }
 
-function parseArgs(argv) {
-  const options = {
-    need: null,
-    locales: null,
-    localesList: null,
-    cache: null,
-    limit: 0,
-    apply: false,
+function parseCliArgs(args) {
+  const { values } = parseArgs({
+    args,
+    options: {
+      need: { type: "string" },
+      locales: { type: "string" },
+      "locales-list": { type: "string" },
+      cache: { type: "string" },
+      limit: { type: "string" },
+      apply: { type: "boolean", default: false },
+      delta: { type: "string" },
+    },
+  });
+  return {
+    need: values.need ?? null,
+    locales: values.locales ?? null,
+    localesList: values["locales-list"] ?? null,
+    cache: values.cache ?? null,
+    limit: Number.parseInt(values.limit ?? "", 10) || 0,
+    apply: values.apply,
+    delta: values.delta ?? null,
   };
-  for (let i = 0; i < argv.length; i += 1) {
-    if (argv[i] === "--need") options.need = argv[(i += 1)];
-    else if (argv[i] === "--locales") options.locales = argv[(i += 1)];
-    else if (argv[i] === "--locales-list") options.localesList = argv[(i += 1)];
-    else if (argv[i] === "--cache") options.cache = argv[(i += 1)];
-    else if (argv[i] === "--limit") options.limit = Number.parseInt(argv[(i += 1)], 10) || 0;
-    else if (argv[i] === "--apply") options.apply = true;
-  }
-  return options;
 }
 
 function readJsonFile(path, fallback) {
@@ -337,23 +344,16 @@ function readJsonFile(path, fallback) {
   }
 }
 
-/** Sort locale entries by key only (stable across value changes). */
-function sortByKey(data) {
-  return Object.fromEntries(Object.entries(data).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
-}
-
-function writeJsonAtomic(path, data) {
-  const tmp = join(dirname(path), `.${randomUUID()}.json`);
-  writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n", "utf8");
-  renameSync(tmp, path);
-}
-
 async function main() {
-  const options = parseArgs(process.argv.slice(2));
+  const options = parseCliArgs(process.argv.slice(2));
   if (!options.need || !options.locales || !options.localesList || !options.cache) {
     console.error(
-      "Usage: node scripts/translate-literals.mjs --need <file> --locales <dir> --locales-list <csv> --cache <file> [--limit N] [--apply]",
+      "Usage: node scripts/translate-literals.mjs --need <file> --locales <dir> --locales-list <csv> --cache <file> [--limit N] [--apply] [--delta <file>]",
     );
+    process.exit(1);
+  }
+  if (options.delta && options.localesList.includes(",")) {
+    console.error("--delta takes exactly one locale in --locales-list");
     process.exit(1);
   }
 
@@ -373,6 +373,7 @@ async function main() {
   const locales = options.localesList.split(",");
   const cache = readJsonFile(options.cache, {});
   const allFailures = [];
+  const added = {};
 
   for (const locale of locales) {
     if (!TARGET_NAMES[locale]) {
@@ -398,6 +399,7 @@ async function main() {
       const kept = batch.filter((k) => isVerbatim(k));
       for (const k of kept) {
         data[k] = k;
+        added[k] = k;
         keep += 1;
       }
       if (!translatable.length) continue;
@@ -434,11 +436,15 @@ async function main() {
           continue;
         }
         data[k] = out;
+        added[k] = out;
         ok += 1;
       }
       if (options.apply) writeJsonAtomic(path, sortByKey(data));
+      // Rewritten per batch so a cancelled/timed-out CI job still keeps progress.
+      if (options.delta) writeJsonAtomic(options.delta, sortByKey(added));
     }
     if (options.apply) writeJsonAtomic(path, sortByKey(data));
+    if (options.delta) writeJsonAtomic(options.delta, sortByKey(added));
     console.log(`[${locale}] done ok=${ok} keep=${keep} fail=${fail}`);
     for (const [loc, key, why] of failures.slice(0, 10)) {
       console.log(`  FAIL ${loc} ${JSON.stringify(key)} (${why})`);

@@ -33,6 +33,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { placeholdersOf } from "./lib/i18n-placeholders.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(join(here, "..", "package.json"));
@@ -374,16 +375,7 @@ export function readLocaleFiles(localesDir) {
   return locales;
 }
 
-const PLACEHOLDER_RE = /({\d+}|%[sd]|\{[^}\s]+\}|\[[a-z]+\])/gi;
-
-/**
- * Placeholder/format tokens inside a literal (e.g. {count}, %s, [code]).
- * @param {string} text
- * @returns {string[]} Lower-cased tokens in order.
- */
-export function placeholdersOf(text) {
-  return [...String(text).matchAll(PLACEHOLDER_RE)].map((match) => match[0].toLowerCase());
-}
+export { placeholdersOf };
 
 /**
  * Diff extracted literals against every locale file.
