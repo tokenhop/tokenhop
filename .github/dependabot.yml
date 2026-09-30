@@ -2,8 +2,6 @@ version: 2
 updates:
   - package-ecosystem: npm
     directories: ["/", "/tests", "/cli"]
-    # Trunk is re-design until v0.5.0; remove at the cut-over (RELEASING.md).
-    target-branch: re-design
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
@@ -21,8 +19,6 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
-    # Trunk is re-design until v0.5.0; remove at the cut-over (RELEASING.md).
-    target-branch: re-design
     schedule:
       interval: weekly
     commit-message:
@@ -33,8 +29,6 @@ updates:
 
   - package-ecosystem: docker
     directory: /
-    # Trunk is re-design until v0.5.0; remove at the cut-over (RELEASING.md).
-    target-branch: re-design
     schedule:
       interval: weekly
     commit-message:
