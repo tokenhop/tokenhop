@@ -3,7 +3,7 @@ name: Lint
 on:
   pull_request:
   push:
-    branches: [master, re-design]
+    branches: [master]
 
 permissions:
   contents: read
