@@ -102,7 +102,8 @@ export async function handleSearch(request) {
 
 async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings) {
   const query = body.query;
-  const providerId = resolveProviderId(providerInput);
+  // /v1/models/web advertises search providers as "{alias}/search".
+  const providerId = resolveProviderId(providerInput.replace(/\/search$/, ""));
   const resolvedProvider = AI_PROVIDERS[providerId];
 
   if (!resolvedProvider) {
