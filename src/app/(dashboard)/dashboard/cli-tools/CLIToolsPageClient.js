@@ -37,6 +37,10 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
   const localOnly = useCliAccessStore((s) => s.localOnly);
 
   useEffect(() => {
+    if (useCliAccessStore.getState().localOnly) {
+      setStatusesLoading(false);
+      return;
+    }
     let mounted = true;
     (async () => {
       try {
@@ -63,13 +67,19 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
   }, []);
 
   const entries = useMemo(() => Object.entries(CLI_TOOLS), []);
-  const counts = useMemo(() => countToolsByFilter(entries, statuses), [entries, statuses]);
+  const listedFilter = localOnly && filter !== "all" && filter !== "guides" ? "all" : filter;
+  const counts = useMemo(
+    () => countToolsByFilter(entries, statuses, { remote: localOnly }),
+    [entries, statuses, localOnly],
+  );
   const visible = useMemo(
-    () => filterToolEntries(entries, statuses, filter, query),
-    [entries, statuses, filter, query],
+    () => filterToolEntries(entries, statuses, listedFilter, query, { remote: localOnly }),
+    [entries, statuses, listedFilter, query, localOnly],
   );
 
-  const filterOptions = FILTER_OPTIONS.map((o) => ({
+  const filterOptions = FILTER_OPTIONS.filter(
+    (o) => !localOnly || o.value === "all" || o.value === "guides",
+  ).map((o) => ({
     ...o,
     count:
       o.value === "all"
@@ -95,32 +105,33 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
     [],
   );
 
-  // Over a reverse proxy every /api/cli-tools/* call is refused, so one
-  // notice replaces the grid, intercept section and panel.
-  if (localOnly) return <LocalOnlyNotice />;
-
   return (
     <Suspense fallback={<CardSkeleton />}>
-      <CLIToolsView
-        filter={filter}
-        setFilter={setFilter}
-        filterOptions={filterOptions}
-        query={query}
-        setQuery={setQuery}
-        statusesError={statusesError}
-        statusesLoading={statusesLoading}
-        visible={visible}
-        statuses={statuses}
-        selectedTool={CLI_TOOLS[selected] ? selected : null}
-        onSelect={handleSelect}
-        onStatusUpdate={handleStatusUpdate}
-        data={data}
-      />
+      <div className="flex flex-col gap-5">
+        {localOnly && <LocalOnlyNotice />}
+        <CLIToolsView
+          remote={localOnly}
+          filter={listedFilter}
+          setFilter={setFilter}
+          filterOptions={filterOptions}
+          query={query}
+          setQuery={setQuery}
+          statusesError={statusesError}
+          statusesLoading={statusesLoading}
+          visible={visible}
+          statuses={statuses}
+          selectedTool={CLI_TOOLS[selected] ? selected : null}
+          onSelect={handleSelect}
+          onStatusUpdate={handleStatusUpdate}
+          data={data}
+        />
+      </div>
     </Suspense>
   );
 }
 
 function CLIToolsView({
+  remote = false,
   filter,
   setFilter,
   filterOptions,
@@ -196,6 +207,7 @@ function CLIToolsView({
                     toolId={toolId}
                     tool={tool}
                     status={statuses[toolId]}
+                    remote={remote}
                     selected={selectedTool === toolId}
                     onSelect={onSelect}
                   />

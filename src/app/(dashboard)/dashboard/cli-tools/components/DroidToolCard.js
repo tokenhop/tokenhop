@@ -188,6 +188,7 @@ export default function DroidToolCard({
         resetDisabled={!status?.has9Router}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
+        manualConfigs={getManualConfigs()}
         fileHint="~/.factory/settings.json"
       >
         <EndpointSegmentedPicker

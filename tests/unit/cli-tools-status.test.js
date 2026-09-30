@@ -49,6 +49,15 @@ describe("deriveToolStatus", () => {
     expect(deriveToolStatus(cliTool, null).key).toBe("notInstalled");
     expect(deriveToolStatus(cliTool, { installed: false }).key).toBe("notInstalled");
   });
+  it("remote mode reports manual for writers and guide for guides", () => {
+    expect(deriveToolStatus(cliTool, null, { remote: true })).toMatchObject({
+      key: "manual",
+      label: "Manual",
+      variant: "info",
+    });
+    expect(deriveToolStatus(cliTool, { error: "boom" }, { remote: true }).key).toBe("manual");
+    expect(deriveToolStatus(guideTool, null, { remote: true }).key).toBe("guide");
+  });
 });
 
 describe("countToolsByFilter + filterToolEntries", () => {
@@ -69,7 +78,23 @@ describe("countToolsByFilter + filterToolEntries", () => {
       connected: 1,
       needsSetup: 2,
       guides: 1,
+      manual: 0,
     });
+  });
+  it("remote mode buckets writers as manual and leaves guides", () => {
+    expect(countToolsByFilter(entries, statuses, { remote: true })).toEqual({
+      all: 4,
+      connected: 0,
+      needsSetup: 0,
+      guides: 1,
+      manual: 3,
+    });
+    expect(
+      filterToolEntries(entries, statuses, "guides", "", { remote: true }).map(([id]) => id),
+    ).toEqual(["cursor"]);
+    expect(
+      filterToolEntries(entries, statuses, "all", "cl", { remote: true }).map(([id]) => id),
+    ).toEqual(["claude", "cline"]);
   });
   it("filters needsSetup as notConfigured + notInstalled", () => {
     expect(filterToolEntries(entries, statuses, "needsSetup", "").map(([id]) => id)).toEqual([
@@ -115,7 +140,7 @@ describe("status buckets stay consistent (YAN-388 merge gate)", () => {
   it("TOOL_STATUS_KEYS lists every key deriveToolStatus can return", () => {
     const derived = entries.map(([id, tool]) => deriveToolStatus(tool, statuses[id]).key);
     expect(derived).toEqual(KEYS);
-    expect([...TOOL_STATUS_KEYS].sort()).toEqual([...KEYS].sort());
+    expect([...TOOL_STATUS_KEYS].sort()).toEqual([...KEYS, "manual"].sort());
   });
 
   it("each filter's count equals its filtered list length for every status", () => {

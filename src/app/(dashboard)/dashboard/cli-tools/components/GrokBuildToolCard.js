@@ -198,6 +198,7 @@ export default function GrokBuildToolCard({
         resetDisabled={!status?.has9Router}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
+        manualConfigs={getManualConfigs()}
         fileHint="~/.grok/config.toml"
       >
         <EndpointSegmentedPicker

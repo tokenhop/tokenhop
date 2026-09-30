@@ -6,7 +6,8 @@ import Callout from "@/shared/components/Callout";
 export default function LocalOnlyNotice() {
   return (
     <Callout variant="warn" icon="lock" title="CLI tools require local access">
-      Open the dashboard on the host (localhost) to manage them.
+      Open the dashboard on the host (localhost) to manage them. Manual configuration for each tool
+      is below.
     </Callout>
   );
 }

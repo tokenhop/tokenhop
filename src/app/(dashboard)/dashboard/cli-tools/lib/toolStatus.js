@@ -9,20 +9,34 @@
  * notInstalled: CLI not detected on this machine.
  * error: detection request failed, so install state is unknown.
  * guide: configType "guide" tools are docs, not detection.
+ * manual: remote dashboard, where install detection never runs.
  */
-export const TOOL_STATUS_KEYS = ["connected", "notConfigured", "notInstalled", "error", "guide"];
+export const TOOL_STATUS_KEYS = [
+  "connected",
+  "notConfigured",
+  "notInstalled",
+  "error",
+  "guide",
+  "manual",
+];
 
 /**
  * Derive a grid status from a tool def and its detection payload.
  * A failed detection always reports "error", even for guide tools that own a
  * writer card (Copilot), so a real failure is never masked. Otherwise guide
  * tools report "guide" regardless of detection.
+ * Remote mode skips detection: writer tools are "manual", guide tools stay "guide".
  *
  * @param {object} tool CLI_TOOLS entry (may carry configType)
  * @param {object|null|undefined} status Detection payload (installed, has9Router, error)
- * @returns {{ key: "connected"|"notConfigured"|"notInstalled"|"error"|"guide", label: string, variant: "ok"|"warn"|"info"|"neutral"|"err" }}
+ * @param {{ remote?: boolean }} [options]
+ * @returns {{ key: "connected"|"notConfigured"|"notInstalled"|"error"|"guide"|"manual", label: string, variant: "ok"|"warn"|"info"|"neutral"|"err" }}
  */
-export function deriveToolStatus(tool, status) {
+export function deriveToolStatus(tool, status, { remote = false } = {}) {
+  if (remote) {
+    if (tool?.configType === "guide") return { key: "guide", label: "Guide", variant: "info" };
+    return { key: "manual", label: "Manual", variant: "info" };
+  }
   if (status?.error) return { key: "error", label: "Detection failed", variant: "err" };
   if (tool?.configType === "guide") return { key: "guide", label: "Guide", variant: "info" };
   if (!status) return { key: "notInstalled", label: "Not installed", variant: "neutral" };
@@ -42,13 +56,15 @@ const NEEDS_SETUP_KEYS = new Set(["notConfigured", "notInstalled", "error"]);
  *
  * @param {Array<[string, object]>} entries [toolId, tool] pairs
  * @param {Record<string, object>} statuses Detection payloads by toolId
- * @returns {{ all: number, connected: number, needsSetup: number, guides: number }}
+ * @param {{ remote?: boolean }} [options]
+ * @returns {{ all: number, connected: number, needsSetup: number, guides: number, manual: number }}
  */
-export function countToolsByFilter(entries, statuses = {}) {
-  const counts = { all: entries.length, connected: 0, needsSetup: 0, guides: 0 };
+export function countToolsByFilter(entries, statuses = {}, options = {}) {
+  const counts = { all: entries.length, connected: 0, needsSetup: 0, guides: 0, manual: 0 };
   for (const [toolId, tool] of entries) {
-    const { key } = deriveToolStatus(tool, statuses[toolId]);
+    const { key } = deriveToolStatus(tool, statuses[toolId], options);
     if (key === "guide") counts.guides += 1;
+    else if (key === "manual") counts.manual += 1;
     else if (key === "connected") counts.connected += 1;
     else if (NEEDS_SETUP_KEYS.has(key)) counts.needsSetup += 1;
     else throw new Error(`countToolsByFilter: unbucketed status "${key}"`);
@@ -63,14 +79,21 @@ export function countToolsByFilter(entries, statuses = {}) {
  * @param {Record<string, object>} statuses Detection payloads by toolId
  * @param {"all"|"connected"|"needsSetup"|"guides"} filter Active bucket
  * @param {string} query Free-text match against tool name
+ * @param {{ remote?: boolean }} [options]
  * @returns {Array<[string, object]>} Matching entries
  */
-export function filterToolEntries(entries, statuses = {}, filter = "all", query = "") {
+export function filterToolEntries(
+  entries,
+  statuses = {},
+  filter = "all",
+  query = "",
+  options = {},
+) {
   const q = (query || "").trim().toLowerCase();
   return entries.filter(([toolId, tool]) => {
     if (q && !(tool?.name || "").toLowerCase().includes(q)) return false;
     if (filter === "all") return true;
-    const { key } = deriveToolStatus(tool, statuses[toolId]);
+    const { key } = deriveToolStatus(tool, statuses[toolId], options);
     if (filter === "connected") return key === "connected";
     if (filter === "needsSetup") return NEEDS_SETUP_KEYS.has(key);
     if (filter === "guides") return key === "guide";

@@ -10,7 +10,7 @@ import SetupScaffold, { NotInstalledBlock, SetupRow, SingleModelRow } from "./Se
 import { rememberEndpoint } from "./cliEndpointPresets";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { deriveToolStatus } from "../lib/toolStatus";
-import { markLocalOnly } from "@/store/cliAccessStore";
+import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 
 const LOCAL_ONLY = Symbol("localOnly");
@@ -27,7 +27,7 @@ export function useSetupCard({
   toolId,
 }) {
   const [status, setStatus] = useState(null);
-  const [checking, setChecking] = useState(true);
+  const [checking, setChecking] = useState(() => !useCliAccessStore.getState().localOnly);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
@@ -48,6 +48,10 @@ export function useSetupCard({
   }, [onStatusUpdate]);
 
   const fetchStatus = async () => {
+    if (useCliAccessStore.getState().localOnly) {
+      setChecking(false);
+      return;
+    }
     setChecking(true);
     try {
       const res = await fetch(statusUrl);
@@ -64,20 +68,24 @@ export function useSetupCard({
 
   useEffect(() => {
     let cancelled = false;
-    fetch(statusUrl)
-      .then(async (res) => ((await isLocalOnlyResponse(res)) ? LOCAL_ONLY : res.json()))
-      .then((data) => {
-        if (cancelled) return;
-        if (data === LOCAL_ONLY) return markLocalOnly();
-        setStatus(data);
-        onStatusUpdateRef.current?.(toolId, data);
-      })
-      .catch((err) => {
-        if (!cancelled) setStatus({ installed: false, error: err.message });
-      })
-      .finally(() => {
-        if (!cancelled) setChecking(false);
-      });
+    if (useCliAccessStore.getState().localOnly) {
+      setChecking(false);
+    } else {
+      fetch(statusUrl)
+        .then(async (res) => ((await isLocalOnlyResponse(res)) ? LOCAL_ONLY : res.json()))
+        .then((data) => {
+          if (cancelled) return;
+          if (data === LOCAL_ONLY) return markLocalOnly();
+          setStatus(data);
+          onStatusUpdateRef.current?.(toolId, data);
+        })
+        .catch((err) => {
+          if (!cancelled) setStatus({ installed: false, error: err.message });
+        })
+        .finally(() => {
+          if (!cancelled) setChecking(false);
+        });
+    }
     fetch(aliasesUrl)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {

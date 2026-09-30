@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Callout from "@/shared/components/Callout";
+import { useCliAccessStore } from "@/store/cliAccessStore";
 import {
   useSetupCard,
   setupCardPropTypes,
@@ -171,6 +172,7 @@ export default function CopilotToolCard({
         resetDisabled={!status?.has9Router}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
+        manualConfigs={getManualConfigs()}
         manualDisabled={selectedModels.length === 0}
         fileHint="chatLanguageModels.json"
       >
@@ -244,7 +246,7 @@ export default function CopilotToolCard({
           isOpen={card.modalOpen}
           onClose={() => {
             card.setModalOpen(false);
-            postModels(selectedModelsRef.current);
+            if (!useCliAccessStore.getState().localOnly) postModels(selectedModelsRef.current);
           }}
           onSelect={(m) => {
             if (!selectedModels.includes(m.value)) setSelectedModels((prev) => [...prev, m.value]);
