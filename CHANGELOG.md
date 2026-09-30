@@ -1,3 +1,12 @@
+# v0.5.1 (2026-09-30)
+
+## Changes
+- **Repository**: the project moved to [`tokenhop/tokenhop`](https://github.com/tokenhop/tokenhop). Repo, docs, skill, badge and dashboard links point at the new home; old `yandy-r/9router` URLs keep redirecting (#375, #378).
+- **Container image**: images now publish to `ghcr.io/tokenhop/tokenhop`. `docker-compose.yml`, the Docker docs and the landing page use the new path; `ghcr.io/yandy-r/9router` stays at v0.5.0 and gets no new images (#376, #378).
+
+## Fixes
+- **Docs**: LICENSE, CHANGELOG and README links that pointed at a non-existent `main` branch now resolve (#375).
+
 # v0.5.0 (2026-09-30)
 
 ## Features
