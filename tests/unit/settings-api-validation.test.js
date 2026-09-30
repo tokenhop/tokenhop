@@ -145,3 +145,39 @@ describe("PATCH /api/settings validation for YAN-309 keys", () => {
     }
   });
 });
+
+describe("PATCH /api/settings SSO-only lockout guard (YAN-349)", () => {
+  it("rejects SSO-only when the chosen protocol is not configured", async () => {
+    // Earlier cases leave OIDC/SAML fields stored; clear the ones the guard checks.
+    await settingsPatch({ authMode: "password", oidcIssuerUrl: "", samlEntryPoint: "" });
+    for (const body of [
+      { authMode: "sso", ssoType: "oidc" },
+      { authMode: "sso", ssoType: "saml" },
+      { authMode: "oidc" },
+    ]) {
+      const res = await settingsPatch(body);
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toMatch(/Cannot enable SSO-only/);
+    }
+  });
+
+  it("always accepts password and Password + SSO", async () => {
+    expect((await settingsPatch({ authMode: "both", ssoType: "oidc" })).status).toBe(200);
+    expect((await settingsPatch({ authMode: "password" })).status).toBe(200);
+  });
+
+  it("accepts SSO-only once OIDC is configured, keeping a stored secret on blank input", async () => {
+    const configured = await settingsPatch({
+      authMode: "both",
+      ssoType: "oidc",
+      oidcIssuerUrl: "https://idp.test",
+      oidcClientId: "client",
+      oidcClientSecret: "secret",
+    });
+    expect(configured.status).toBe(200);
+    const res = await settingsPatch({ authMode: "sso", oidcClientSecret: "" });
+    expect(res.status).toBe(200);
+    expect((await res.json()).authMode).toBe("sso");
+    await settingsPatch({ authMode: "password" });
+  });
+});

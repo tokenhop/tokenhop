@@ -8,6 +8,8 @@ import Card from "@/shared/components/Card";
 import Input from "@/shared/components/Input";
 import { SkeletonText } from "@/shared/components/Loading";
 import { resolveLoginVisibility } from "./loginVisibility";
+import { resolveAuthModes } from "@/lib/auth/authModes";
+import { describeLoginError } from "./loginErrors";
 
 /**
  * Login page: password form, SSO buttons per auth mode, must-change flow,
@@ -29,6 +31,15 @@ export default function LoginPage() {
   const [samlLoginLabel, setSamlLoginLabel] = useState("Sign in with SAML SSO");
   const [mustChange, setMustChange] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [ssoError, setSsoError] = useState("");
+
+  // Show the SSO redirect's ?error= once, then strip it from the URL.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("error");
+    if (!code) return;
+    setSsoError(describeLoginError(code));
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
 
   // Countdown for rate-limit
   useEffect(() => {
@@ -152,9 +163,10 @@ export default function LoginPage() {
     oidc: oidcConfigured,
     saml: samlConfigured,
   });
-  const isSsoEnabled = ["sso", "oidc", "saml", "both"].includes(authMode);
+  const modes = resolveAuthModes({ authMode, ssoType });
+  const isSsoEnabled = modes.oidc || modes.saml;
+  const activeSsoType = modes.protocol;
   const ssoAvailable = samlAvailable || oidcAvailable;
-  const activeSsoType = ssoType || (authMode === "saml" ? "saml" : "oidc");
 
   // Show loading state while checking password
   if (hasPassword === null) {
@@ -227,6 +239,12 @@ export default function LoginPage() {
             </form>
           ) : (
             <div className="flex flex-col gap-4">
+              {ssoError && (
+                <Callout variant="err" title="Sign-in failed">
+                  {ssoError}
+                </Callout>
+              )}
+
               {samlAvailable && (
                 <Button type="button" variant="secondary" fullWidth onClick={handleSamlLogin}>
                   {samlLoginLabel}

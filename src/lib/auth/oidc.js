@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, decodeProtectedHeader, jwtVerify } from "jose";
 import { getSettings } from "@/lib/localDb";
+import { resolveAuthModes } from "@/lib/auth/authModes";
 
 export const OIDC_COOKIE_NAMES = {
   state: "oidc_state",
@@ -47,7 +48,7 @@ export function isOidcConfigured(settings) {
 
 export async function getOidcRuntimeConfig() {
   const settings = await getSettings();
-  if (!["oidc", "both"].includes(settings.authMode) || !isOidcConfigured(settings)) return null;
+  if (!resolveAuthModes(settings).oidc || !isOidcConfigured(settings)) return null;
 
   const issuerUrl = trimTrailingSlashes(settings.oidcIssuerUrl);
   return {
@@ -216,14 +217,79 @@ export async function probeOidcClientSecret({
   };
 }
 
-export async function verifyOidcIdToken({ idToken, issuer, audience, jwksUri, nonce }) {
-  const jwks = createRemoteJWKSet(new URL(jwksUri));
-  const { payload } = await jwtVerify(idToken, jwks, {
-    issuer,
-    audience,
-    nonce,
-  });
+const DEFAULT_ID_TOKEN_ALGS = [
+  "RS256",
+  "RS384",
+  "RS512",
+  "PS256",
+  "PS384",
+  "PS512",
+  "ES256",
+  "ES384",
+  "ES512",
+  "EdDSA",
+];
+const HMAC_ALGS = ["HS256", "HS384", "HS512"];
+
+// Advertised algs minus "none"; asymmetric default when discovery says nothing usable.
+function resolveAllowedAlgs(advertised) {
+  const algs = Array.isArray(advertised)
+    ? advertised.filter((a) => typeof a === "string" && a.toLowerCase() !== "none")
+    : [];
+  return algs.length > 0 ? algs : DEFAULT_ID_TOKEN_ALGS;
+}
+
+export async function verifyOidcIdToken({
+  idToken,
+  issuer,
+  audience,
+  jwksUri,
+  nonce,
+  clientSecret,
+  allowedAlgs,
+}) {
+  const allowed = resolveAllowedAlgs(allowedAlgs);
+  const { alg } = decodeProtectedHeader(idToken);
+  if (!alg || alg.toLowerCase() === "none" || !allowed.includes(alg)) {
+    throw new Error(`id_token alg "${alg}" is not allowed (advertised: ${allowed.join(", ")})`);
+  }
+
+  let key;
+  if (HMAC_ALGS.includes(alg)) {
+    if (!clientSecret) throw new Error(`id_token alg "${alg}" requires a client secret`);
+    key = new TextEncoder().encode(clientSecret);
+  } else {
+    if (!jwksUri) throw new Error("OIDC discovery document has no jwks_uri");
+    key = createRemoteJWKSet(new URL(jwksUri));
+  }
+
+  // jose has no nonce option: enforce it ourselves.
+  const { payload } = await jwtVerify(idToken, key, { issuer, audience, algorithms: [alg] });
+  if (nonce && payload.nonce !== nonce) throw new Error("id_token nonce mismatch");
   return payload;
+}
+
+// Pure summary of a discovery doc (+ JWKS key count) for the settings "Test" route.
+export function summarizeOidcSigning(discovery, jwksKeyCount) {
+  const signingAlgs = Array.isArray(discovery?.id_token_signing_alg_values_supported)
+    ? discovery.id_token_signing_alg_values_supported.filter((a) => typeof a === "string")
+    : [];
+  const hmacOnly = signingAlgs.length > 0 && signingAlgs.every((a) => HMAC_ALGS.includes(a));
+  const hasAsymmetric = signingAlgs.some(
+    (a) => a.toLowerCase() !== "none" && !HMAC_ALGS.includes(a),
+  );
+  const warnings = [];
+  if (hmacOnly) {
+    warnings.push(
+      "The provider signs id_tokens only with HS* (client secret). Sign-in works, but selecting a signing key in the IdP (RS256) is recommended.",
+    );
+  } else if (jwksKeyCount === 0 && hasAsymmetric) {
+    warnings.push("The provider's JWKS has no keys, so RS/ES-signed id_tokens cannot be verified.");
+  }
+  if (signingAlgs.some((a) => a.toLowerCase() === "none")) {
+    warnings.push('The provider advertises alg "none"; unsigned id_tokens are always rejected.');
+  }
+  return { signingAlgs, warnings };
 }
 
 export function pickOidcDisplayName(payload = {}) {

@@ -9,6 +9,7 @@ import {
   validateSamlResponse,
 } from "@/lib/auth/saml.js";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { resolveAuthModes } from "@/lib/auth/authModes";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 
 export async function POST(request) {
@@ -41,7 +42,8 @@ export async function POST(request) {
       return NextResponse.redirect(new URL("/login?error=saml_missing_response", origin));
     }
 
-    if (!isSamlConfigured(settings)) {
+    if (!resolveAuthModes(settings).saml || !isSamlConfigured(settings)) {
+      console.warn("[SAML] ACS failed: saml_not_configured");
       recordFail(ip);
       return NextResponse.redirect(new URL("/login?error=saml_not_configured", origin));
     }
@@ -66,6 +68,7 @@ export async function POST(request) {
 
     return NextResponse.redirect(new URL("/dashboard", origin));
   } catch (error) {
+    console.warn("[SAML] ACS failed:", error?.message || error);
     recordFail(ip);
     return NextResponse.redirect(
       new URL(`/login?error=${encodeURIComponent(error.message || "saml_acs_failed")}`, origin),
