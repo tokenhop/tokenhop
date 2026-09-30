@@ -184,23 +184,37 @@ export async function getProviderCredentials(
 
     if (availableConnections.length === 0) {
       // Find earliest persistent lock or lazy Antigravity quota-cache reset for retry timing.
-      const lockedConns = connections.filter((c) => isModelLockActive(c, model));
-      const expiries = [
-        ...lockedConns.map((c) => getModelLockUntil(c, model)).filter(Boolean),
-        ...quotaExpiries,
+      // Each blocker carries its owner so lastError/lastErrorCode describe the account that
+      // actually unblocks first. Quota-snapshot/Antigravity-cache entries own no connection.
+      const blockers = [
+        ...connections
+          .filter((c) => isModelLockActive(c, model))
+          .map((c) => ({ until: getModelLockUntil(c, model), conn: c })),
+        ...quotaExpiries.map((until) => ({ until })),
       ];
       if (isAntigravity && model && antigravityQuotaCache) {
         connections.forEach((c) => {
           const resetAt = antigravityQuotaCache.get(c.id)?.[model]?.resetAt;
-          if (resetAt && new Date(resetAt).getTime() > Date.now()) expiries.push(resetAt);
+          if (resetAt && new Date(resetAt).getTime() > Date.now())
+            blockers.push({ until: resetAt });
         });
       }
-      const earliest = expiries.sort()[0] || null;
-      if (earliest) {
-        const earliestConn = lockedConns[0];
+      // Compare by parsed time: lock ISO and Antigravity resetAt formats may differ.
+      let earliestBlocker = null;
+      for (const b of blockers) {
+        if (!b.until) continue;
+        if (!earliestBlocker || Date.parse(b.until) < Date.parse(earliestBlocker.until)) {
+          earliestBlocker = b;
+        }
+      }
+      if (earliestBlocker) {
+        const earliest = earliestBlocker.until;
+        const lastError = earliestBlocker.conn
+          ? earliestBlocker.conn.lastError || null
+          : "Quota exhausted";
         log.warn(
           "AUTH",
-          `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50) ?? (quotaExpiries.length ? "Quota exhausted" : "none")}`,
+          `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${lastError?.slice(0, 50) ?? "none"}`,
         );
         return {
           allRateLimited: true,
@@ -208,8 +222,8 @@ export async function getProviderCredentials(
           retryAfterHuman: formatRetryAfter(earliest),
           // Deliberately not "rate limit"/"quota exceeded": those text rules
           // back off, which would delay combo fallthrough to the next member.
-          lastError: earliestConn?.lastError || (quotaExpiries.length ? "Quota exhausted" : null),
-          lastErrorCode: earliestConn?.errorCode || null,
+          lastError,
+          lastErrorCode: earliestBlocker.conn?.errorCode || null,
         };
       }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
