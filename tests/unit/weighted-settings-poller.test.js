@@ -240,4 +240,21 @@ describe("alias combo members (YAN-386)", () => {
     );
     expect(getProviderConnections).toHaveBeenCalledWith({ provider: "claude", isActive: true });
   });
+
+  it("sync keeps a running scheduler when the aliases read fails", async () => {
+    const fillFirst = async () => ({ fallbackStrategy: "fill-first" });
+    const aliasOnly = async () => [{ name: "c", models: ["my-opus"] }];
+    await syncQuotaSnapshotPoller({
+      getSettings: fillFirst,
+      getCombos: aliasOnly,
+      getModelAliases: async () => aliases,
+    });
+    expect(vi.getTimerCount()).toBe(1);
+    await syncQuotaSnapshotPoller({
+      getSettings: fillFirst,
+      getCombos: aliasOnly,
+      getModelAliases: () => Promise.reject(new Error("db down")),
+    });
+    expect(vi.getTimerCount()).toBe(1);
+  });
 });

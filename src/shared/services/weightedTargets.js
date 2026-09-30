@@ -14,10 +14,10 @@ function comboIsWeighted(combo, settings) {
 // All combo member providers, regardless of strategy. Never throws on malformed
 // models: one bad entry must not abort resolution. Bare alias members resolve
 // through `aliases` (YAN-386); a member matching a combo name is a nested combo,
-// resolved from its own entry.
-export function comboMemberProviders(combos, aliases = {}) {
+// resolved from its own entry (routing checks combo names before aliases).
+export function comboMemberProviders(combos, aliases = {}, allCombos = combos) {
   const members = new Set();
-  const comboNames = new Set((combos || []).map((combo) => combo?.name));
+  const comboNames = new Set((allCombos || []).map((combo) => combo?.name));
   for (const combo of combos || []) {
     for (const model of combo?.models || []) {
       try {
@@ -54,7 +54,7 @@ export function weightedProviders(settings, combos, providerIds = [], aliases = 
     }
   }
   const weightedCombos = (combos || []).filter((combo) => comboIsWeighted(combo, settings));
-  for (const provider of comboMemberProviders(weightedCombos, aliases)) {
+  for (const provider of comboMemberProviders(weightedCombos, aliases, combos)) {
     direct.add(provider);
   }
   return direct;

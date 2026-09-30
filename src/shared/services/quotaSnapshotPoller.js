@@ -209,9 +209,10 @@ export function configureQuotaSnapshotPoller(settings, combos = [], aliases = {}
   else stopQuotaSnapshotPoller();
 }
 
-// Read settings + combos from the DB and (re)configure the scheduler. Never
-// throws. A combos read failure keeps a running scheduler (a DB blip must not
-// stop polling); a stopped one starts only for weighted settings.
+// Read settings + combos + model aliases from the DB and (re)configure the
+// scheduler. Never throws. A combos or aliases read failure keeps a running
+// scheduler (a DB blip must not stop polling); a stopped one starts only for
+// weighted settings.
 export async function syncQuotaSnapshotPoller({
   getSettings: readSettings = getSettings,
   getCombos: readCombos = getCombos,
@@ -219,17 +220,13 @@ export async function syncQuotaSnapshotPoller({
 } = {}) {
   try {
     const settings = await readSettings();
-    const aliases = readAliases
-      ? await readAliases().catch((error) => {
-          console.warn(`[QuotaSnapshotPoller] sync: aliases read failed: ${error?.message}`);
-          return {};
-        })
-      : {};
     let combos;
+    let aliases;
     try {
       combos = readCombos ? await readCombos() : [];
+      aliases = readAliases ? await readAliases() : {};
     } catch (error) {
-      console.warn(`[QuotaSnapshotPoller] sync: combos read failed: ${error?.message}`);
+      console.warn(`[QuotaSnapshotPoller] sync: combos/aliases read failed: ${error?.message}`);
       if (!g.timer) configureQuotaSnapshotPoller(settings);
       return;
     }
