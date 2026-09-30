@@ -136,6 +136,14 @@ live model list can silently miss new models. Bump this with your Codex CLI
 | ------------------- | --------- | ------------------------------------------------------------------------ |
 | `CODEX_CLI_VERSION` | `0.155.1` | `User-Agent: codex_cli_rs/<v>` and `client_version` on the model catalog |
 
+**Grok CLI version** — xAI rejects Grok CLI clients older than its minimum with HTTP 426,
+so a stale version breaks every `grok-cli` request. Bump this with your Grok CLI
+(`grok --version`). A malformed value fails startup.
+
+| Variable           | Default  | Sent as                                                  |
+| ------------------ | -------- | -------------------------------------------------------- |
+| `GROK_CLI_VERSION` | `1.0.44` | `x-grok-client-version` and `User-Agent: grok-shell/<v>` |
+
 **Google OAuth clients** — required only for OAuth login and token refresh on these
 providers. Official Docker images and the npm package ship these built in, so login
 just works. Set the env vars only to override the built-in pair, or when running from

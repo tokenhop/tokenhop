@@ -828,6 +828,7 @@
   "Granted at": "ให้สิทธิ์เมื่อ",
   "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.": "Grok Build ใช้ ~/.grok/config.toml 9Router จะเขียนโมเดลที่กำหนดเองแบบ [model.9router] และตั้งเป็นค่าเริ่มต้น",
   "Grok Build — Manual configuration": "Grok Build — การกำหนดค่าด้วยตนเอง",
+  "Grok CLI": "Grok CLI",
   "Ground": "พื้นฐาน",
   "Grows with each repeated failure.": "เพิ่มขึ้นตามจำนวนครั้งที่ล้มเหลวซ้ำ",
   "Guide": "คู่มือ",

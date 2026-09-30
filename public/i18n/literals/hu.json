@@ -770,6 +770,7 @@
   "Granted at": "Engedélyezés",
   "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.": "A Grok Build a ~/.grok/config.toml fájlt használja. A 9Router egy [model.9router] egyéni modellt ír, és alapértelmezettként állítja be.",
   "Grok Build — Manual configuration": "Grok Build — Kézi konfiguráció",
+  "Grok CLI": "Grok CLI",
   "Ground": "Alap",
   "Grows with each repeated failure.": "Minden ismételt hibával növekszik.",
   "Guide": "Útmutató",

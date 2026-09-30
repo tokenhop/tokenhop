@@ -770,6 +770,7 @@
   "Granted at": "ممنوحة في",
   "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.": "يستخدم Grok Build المسار ~/.grok/config.toml. يكتب 9Router نموذجًا مخصصًا [model.9router] ويعيّنه كافتراضي.",
   "Grok Build — Manual configuration": "Grok Build — تكوين يدوي",
+  "Grok CLI": "Grok CLI",
   "Ground": "الأساس",
   "Grows with each repeated failure.": "ينمو مع كل فشل متكرر.",
   "Guide": "دليل",

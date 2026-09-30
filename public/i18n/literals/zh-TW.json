@@ -770,6 +770,7 @@
   "Granted at": "授予時間",
   "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.": "Grok Build 使用 ~/.grok/config.toml。9Router 會寫入 [model.9router] 自訂模型，並將其設為預設。",
   "Grok Build — Manual configuration": "Grok Build — 手動設定",
+  "Grok CLI": "Grok CLI",
   "Ground": "依據",
   "Grows with each repeated failure.": "每次重複失敗都會持續成長。",
   "Guide": "指南",

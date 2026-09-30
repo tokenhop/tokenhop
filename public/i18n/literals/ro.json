@@ -767,6 +767,7 @@
   "Granted at": "Acordat la",
   "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.": "Grok Build folosește ~/.grok/config.toml. 9Router scrie un model personalizat [model.9router] și îl setează ca implicit.",
   "Grok Build — Manual configuration": "Grok Build — Configurare manuală",
+  "Grok CLI": "Grok CLI",
   "Ground": "Ancorare",
   "Grows with each repeated failure.": "Crește cu fiecare eșec repetat.",
   "Guide": "Ghid",
