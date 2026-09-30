@@ -4,10 +4,10 @@
 #
 # Usage: npm run dev:docker   (or: docker compose -f compose.dev.yml up)
 services:
-  9router-dev:
+  tokenhop-dev:
     # Full (non-slim) image ships python3/make/g++ so better-sqlite3's node-gyp build succeeds.
     image: node:22-bookworm
-    container_name: 9router-dev
+    container_name: tokenhop-dev
     # dotenvx needs the private key at runtime; host file is gitignored (never committed).
     env_file:
       - .env.keys
@@ -27,6 +27,7 @@ services:
       CLAUDE_CLI_SDK_VERSION: 0.112.1
       CLAUDE_CLI_RUNTIME_VERSION: v26.3.0
       CODEX_CLI_VERSION: 0.155.1
+      NEXT_PUBLIC_BRAND: tokenhop
     volumes:
       - .:/app
       - 9router-dev-node-modules:/app/node_modules
