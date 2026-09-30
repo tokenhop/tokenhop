@@ -58,7 +58,7 @@ export default function LandingPage() {
               <Button
                 variant="secondary"
                 size="md"
-                href="https://github.com/yandy-r/9router#readme"
+                href="https://github.com/tokenhop/tokenhop#readme"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-full sm:w-auto"

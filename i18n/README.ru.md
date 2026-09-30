@@ -13,7 +13,7 @@
 
 [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
 [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/yandy-r/9router/blob/main/LICENSE)
+[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
 [🚀 Быстрый старт](#-quick-start) • [💡 Возможности](#-key-features) • [📖 Установка](#-setup-guide) • [🌐 Сайт](https://9router.com)
 </div>
@@ -966,7 +966,7 @@ Model: cc/claude-opus-4-6
 
 ```bash
 # Clone and install
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router
 npm install
 npm run build
@@ -1298,8 +1298,8 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 ## 📧 Поддержка
 
 - **Сайт**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/yandy-r/9router](https://github.com/yandy-r/9router)
-- **Issues**: [github.com/yandy-r/9router/issues](https://github.com/yandy-r/9router/issues)
+- **GitHub**: [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
+- **Issues**: [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 
 ---
 
@@ -1307,13 +1307,13 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 
 Спасибо всем, кто помогает делать 9Router лучше!
 
-[![Contributors](https://contrib.rocks/image?repo=yandy-r/9router&max=100&columns=20&anon=1)](https://github.com/yandy-r/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=tokenhop/tokenhop&max=100&columns=20&anon=1)](https://github.com/tokenhop/tokenhop/graphs/contributors)
 
 ---
 
 ## 📊 Star Chart
 
-[![Star Chart](https://starchart.cc/yandy-r/9router.svg?variant=adaptive)](https://starchart.cc/yandy-r/9router)
+[![Star Chart](https://starchart.cc/tokenhop/tokenhop.svg?variant=adaptive)](https://starchart.cc/tokenhop/tokenhop)
 
 ### Как внести вклад
 
@@ -1323,7 +1323,7 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 4. Запушьте в ветку (`git push origin feature/amazing-feature`)
 5. Откройте Pull Request
 
-См. [Pull Requests](https://github.com/yandy-r/9router/pulls) для подробных инструкций.
+См. [Pull Requests](https://github.com/tokenhop/tokenhop/pulls) для подробных инструкций.
 
 ---
 

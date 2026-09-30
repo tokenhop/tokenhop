@@ -10,7 +10,7 @@
 [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
 [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
 [![GHCR](https://img.shields.io/badge/GHCR-yandy-r%2F9router-blue?logo=github)](https://github.com/yandy-r/9router/pkgs/container/9router)
-[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/yandy-r/9router/blob/main/LICENSE)
+[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
 [🚀 Inicio rápido](#-inicio-rápido) • [💡 Características](#-características-principales) • [📖 Configuración](#-guía-de-instalación) • [🌐 Sitio web](https://9router.com)
 
@@ -210,7 +210,7 @@ URLs por defecto:
 
 </div>
 
-> 🎬 **¿Has hecho un video sobre 9Router?** Envía una [Pull Request](https://github.com/yandy-r/9router/pulls) añadiendo tu video a esta sección — ¡lo fusionaremos!
+> 🎬 **¿Has hecho un video sobre 9Router?** Envía una [Pull Request](https://github.com/tokenhop/tokenhop/pulls) añadiendo tu video a esta sección — ¡lo fusionaremos!
 
 ---
 
@@ -1124,7 +1124,7 @@ Model: cc/claude-opus-4-7
 
 ```bash
 # Clona e instala
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router
 npm install
 npm run build
@@ -1173,7 +1173,7 @@ docker run -d \
 **Compilar desde el código fuente (dev):**
 
 ```bash
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router/app
 docker build -t 9router .
 docker run -d --name 9router -p 20128:20128 \
@@ -1393,8 +1393,8 @@ Authorization: Bearer tu-clave-api
 ## 📧 Soporte
 
 - **Sitio web**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/yandy-r/9router](https://github.com/yandy-r/9router)
-- **Problemas**: [github.com/yandy-r/9router/issues](https://github.com/yandy-r/9router/issues)
+- **GitHub**: [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
+- **Problemas**: [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 
 ---
 
@@ -1402,13 +1402,13 @@ Authorization: Bearer tu-clave-api
 
 ¡Gracias a todos los colaboradores que ayudaron a mejorar 9Router!
 
-[![Contributors](https://contrib.rocks/image?repo=yandy-r/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/yandy-r/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=tokenhop/tokenhop&max=150&columns=15&anon=1&v=20260309)](https://github.com/tokenhop/tokenhop/graphs/contributors)
 
 ---
 
 ## 📊 Gráfico de estrellas
 
-[![Star Chart](https://starchart.cc/yandy-r/9router.svg?variant=adaptive)](https://starchart.cc/yandy-r/9router)
+[![Star Chart](https://starchart.cc/tokenhop/tokenhop.svg?variant=adaptive)](https://starchart.cc/tokenhop/tokenhop)
 
 ## 🔀 Forks
 

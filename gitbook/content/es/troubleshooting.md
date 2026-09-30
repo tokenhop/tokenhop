@@ -385,6 +385,6 @@ Problemas comunes y soluciones al usar 9Router.
 
 ## ¿Necesitas más ayuda?
 
-- **GitHub Issues:** [github.com/yandy-r/9router/issues](https://github.com/yandy-r/9router/issues)
+- **GitHub Issues:** [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 - **Documentación:** [9router.com/docs](https://9router.com/docs)
 - **FAQ:** [faq.md](faq.md)

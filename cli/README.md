@@ -7,9 +7,9 @@
 [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
 [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
 [![GHCR](https://img.shields.io/badge/GHCR-yandy-r%2F9router-blue?logo=github)](https://github.com/yandy-r/9router/pkgs/container/9router)
-[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/yandy-r/9router/blob/main/LICENSE)
+[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
-[🌐 Website](https://9router.com) • [📖 Full Docs](https://github.com/yandy-r/9router)
+[🌐 Website](https://9router.com) • [📖 Full Docs](https://github.com/tokenhop/tokenhop)
 
 ---
 
@@ -109,8 +109,8 @@ Any tool supporting OpenAI/Claude-compatible API works.
 
 Full docs, advanced setup, video tutorials & development guide:
 
-- **GitHub**: <https://github.com/yandy-r/9router>
-- **Full README**: <https://github.com/yandy-r/9router/blob/main/app/README.md>
+- **GitHub**: <https://github.com/tokenhop/tokenhop>
+- **Full README**: <https://github.com/tokenhop/tokenhop/blob/master/README.md>
 - **Website**: <https://9router.com>
 
 ---
