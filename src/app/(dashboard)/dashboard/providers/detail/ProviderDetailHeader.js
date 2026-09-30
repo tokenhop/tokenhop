@@ -5,6 +5,7 @@ import {
   Button,
   Callout,
   CopyField,
+  PageTitle,
   ProviderTile,
   StatusPill,
   Skeleton,
@@ -49,9 +50,7 @@ export default function ProviderDetailHeader({
           status={status.variant === "neutral" ? undefined : status.variant}
         />
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-text lg:text-[42px] lg:leading-[1.05]">
-            {providerInfo?.name || providerId}
-          </h1>
+          <PageTitle>{providerInfo?.name || providerId}</PageTitle>
           <div className="flex flex-wrap items-center gap-1.5" aria-live="polite">
             <StatusPill variant={authVariant}>{authLabel}</StatusPill>
             <StatusPill variant={status.variant} dot={status.variant !== "neutral"}>

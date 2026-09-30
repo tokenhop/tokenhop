@@ -1,20 +1,15 @@
 import { NextResponse } from "next/server";
 import { getTunnelStatus, getTailscaleStatus, getDownloadStatus } from "@/lib/tunnel";
-
-const STATUS_CACHE_TTL_MS = 3000; // coalesce rapid polls; underlying probes already cache 10s
-
-// Survive hot reload; one cache per process. Only tunnel/tailscale probes are cached —
-// download progress stays live so the enable/download UI updates smoothly.
-const statusCache = (global.__tunnelStatusCache ??= { value: null, fetchedAt: 0 });
+import { peekTunnelStatus, storeTunnelStatus } from "@/lib/tunnel/statusCache.js";
 
 export async function GET() {
   try {
-    let probes = statusCache.value;
-    if (!probes || Date.now() - statusCache.fetchedAt >= STATUS_CACHE_TTL_MS) {
+    // Coalesce rapid polls; mutation routes invalidate after changing state.
+    let probes = peekTunnelStatus();
+    if (!probes) {
       const [tunnel, tailscale] = await Promise.all([getTunnelStatus(), getTailscaleStatus()]);
       probes = { tunnel, tailscale };
-      statusCache.value = probes;
-      statusCache.fetchedAt = Date.now();
+      storeTunnelStatus(probes);
     }
     const download = getDownloadStatus();
     return NextResponse.json({ ...probes, download });

@@ -178,7 +178,7 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
   const failedItems = result?.results?.filter((r) => !r.ok) || [];
 
   return (
-    <Modal isOpen={isOpen} title={translate("Bulk Add Grok CLI Accounts")} onClose={handleClose}>
+    <Modal isOpen={isOpen} title={translate("Bulk add Grok CLI accounts")} onClose={handleClose}>
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-muted">
@@ -200,7 +200,7 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
             onClick={() => fileInputRef.current?.click()}
             disabled={submitting}
           >
-            {translate("Upload JSON Files")}
+            {translate("Upload JSON files")}
           </Button>
         </div>
 
@@ -269,7 +269,7 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
 
         <div className="flex gap-2">
           <Button onClick={handleSubmit} fullWidth disabled={submitting || !jsonText.trim()}>
-            {submitting ? translate("Importing...") : translate("Import All")}
+            {submitting ? translate("Importing...") : translate("Import all")}
           </Button>
           <Button onClick={handleClose} variant="ghost" fullWidth disabled={submitting}>
             {translate("Close")}

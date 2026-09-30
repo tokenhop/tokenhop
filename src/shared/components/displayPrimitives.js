@@ -110,6 +110,8 @@ export const METER_FILLS = {
   err: "bg-err",
   live: "bg-lime",
   info: "bg-sky",
+  brand: "bg-coral",
+  neutral: "bg-subtle",
 };
 
 const METER_KINDS = new Set(["unlimited", "credits"]);
@@ -146,6 +148,15 @@ export function meterValue(value) {
   }
   return Math.min(100, Math.max(0, value));
 }
+
+/**
+ * Shared table header styles (YAN-407, from the boards' `th` spec): 12px
+ * semibold muted labels, sentence case (no upper-casing), no background tint.
+ * `TABLE_HEAD_ROW` only draws the bottom border; cell padding and alignment
+ * stay on each table (`text-end` on numeric columns, `text-start` elsewhere).
+ */
+export const TABLE_HEAD_ROW = "border-b border-line";
+export const TABLE_HEAD_CELL = "whitespace-nowrap text-xs font-semibold text-muted";
 
 /** Terminal line level → text color utility. */
 export const TERMINAL_LEVELS = {

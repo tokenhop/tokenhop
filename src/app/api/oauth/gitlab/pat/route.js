@@ -5,7 +5,7 @@ const GITLAB_DEFAULT_BASE = "https://gitlab.com";
 
 /**
  * POST /api/oauth/gitlab/pat
- * Authenticate GitLab Duo with a Personal Access Token (PAT)
+ * Authenticate GitLab Duo with a Personal access token (PAT)
  */
 export async function POST(request) {
   try {
@@ -18,7 +18,7 @@ export async function POST(request) {
 
     const { token, baseUrl } = body;
     if (!token?.trim()) {
-      return NextResponse.json({ error: "Personal Access Token is required" }, { status: 400 });
+      return NextResponse.json({ error: "Personal access token is required" }, { status: 400 });
     }
 
     const base = (baseUrl?.trim() || GITLAB_DEFAULT_BASE).replace(/\/$/, "");

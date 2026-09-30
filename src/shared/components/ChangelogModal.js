@@ -37,7 +37,7 @@ export default function ChangelogModal({ isOpen, onClose }) {
   }, [isOpen, html]);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Change Log" size="full">
+    <Modal isOpen={isOpen} onClose={onClose} title="Change log" size="full">
       <div aria-live="polite">
         {loading && <LoadingState lines={6} label="Loading changelog" className="py-4" />}
         {error && (

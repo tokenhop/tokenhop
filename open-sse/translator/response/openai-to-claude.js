@@ -232,22 +232,42 @@ export function openaiToClaudeResponse(chunk, state) {
     }
   }
 
+  // Emit tool deltas early ONLY when the buffer is a complete JSON object —
+  // tool args are objects, so the closing brace marks exact completeness.
+  // Scalars ("12" of a split "1234") never early-emit and keep accumulating
+  // until finish, so sanitization always sees full args and no partial is
+  // ever emitted twice.
+  if (state.toolArgBuffers?.size) {
+    for (const [idx, buffered] of state.toolArgBuffers) {
+      if (!choice.finish_reason) {
+        const trimmed = buffered.trimStart();
+        if (!trimmed.startsWith("{")) continue;
+        try {
+          JSON.parse(trimmed);
+        } catch {
+          continue;
+        }
+      }
+      const toolInfo = state.toolCalls.get(idx);
+      if (!toolInfo) continue;
+      results.push({
+        type: "content_block_delta",
+        index: toolInfo.blockIndex,
+        delta: {
+          type: "input_json_delta",
+          partial_json: sanitizeToolArgs(toolInfo.name, buffered),
+        },
+      });
+      state.toolArgBuffers.delete(idx);
+    }
+  }
+
   // Finish
   if (choice.finish_reason) {
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
-    for (const [idx, toolInfo] of state.toolCalls) {
-      // Emit buffered + sanitized args as single delta before stop
-      const buffered = state.toolArgBuffers?.get(idx);
-      if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
-        results.push({
-          type: "content_block_delta",
-          index: toolInfo.blockIndex,
-          delta: { type: "input_json_delta", partial_json: sanitized },
-        });
-      }
+    for (const [, toolInfo] of state.toolCalls) {
       results.push({
         type: "content_block_stop",
         index: toolInfo.blockIndex,

@@ -1,6 +1,6 @@
 export default function manifest() {
   return {
-    name: "9Router - AI Infrastructure Management",
+    name: "9Router - AI infrastructure management",
     short_name: "9Router",
     description:
       "One endpoint for all your AI providers. Manage keys, monitor usage, and scale effortlessly.",

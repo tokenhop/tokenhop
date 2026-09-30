@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Input from "@/shared/components/Input";
+import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import EmptyState from "@/shared/components/EmptyState";
+import ToolbarSearch from "@/shared/components/ToolbarSearch";
 import { Skeleton } from "@/shared/components/Loading";
 import Button from "@/shared/components/Button";
 import ConfigTransfer from "./sections/ConfigTransfer";
@@ -82,19 +83,6 @@ export default function SettingsPage() {
     document.querySelector("main .custom-scrollbar")?.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
-  // `/` focuses search from anywhere on the page
-  useEffect(() => {
-    const onKey = (e) => {
-      const tag = document.activeElement?.tagName;
-      if (e.key === "/" && tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") {
-        e.preventDefault();
-        document.getElementById("settings-search")?.focus();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
-
   const onSettingsChange = useCallback(
     (patch) => {
       if (!patch) {
@@ -102,6 +90,7 @@ export default function SettingsPage() {
         // An import may have changed pricing overrides or combos, which live
         // outside the settings GET — bump the key so PricingSection reloads.
         setDataVersion((v) => v + 1);
+        refreshShellStatus();
         return;
       }
       setSettings((prev) => ({ ...prev, ...patch }));
@@ -147,13 +136,12 @@ export default function SettingsPage() {
           </div>
           <ConfigTransfer onSettingsChange={onSettingsChange} />
         </div>
-        <Input
+        <ToolbarSearch
           id="settings-search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search settings… (press / to focus)"
-          icon="search"
-          aria-label="Search settings"
+          placeholder="Search settings"
+          ariaLabel="Search settings"
         />
       </div>
 

@@ -6,12 +6,12 @@ import {
   Button,
   Callout,
   EmptyState,
-  Input,
   SegmentedControl,
   SkeletonText,
   StatusPill,
   Terminal,
   Toggle,
+  ToolbarSearch,
 } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
 import { CONSOLE_LOG_CONFIG } from "@/shared/constants/config";
@@ -280,10 +280,9 @@ export default function ConsoleLogClient() {
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-[200px] flex-1 sm:max-w-[440px]">
-          <Input
+          <ToolbarSearch
             id="console-log-filter"
-            icon="search"
-            aria-label="Filter lines"
+            ariaLabel="Filter lines"
             placeholder="Filter by model, provider or status"
             value={query}
             onChange={(event) => setQuery(event.target.value)}

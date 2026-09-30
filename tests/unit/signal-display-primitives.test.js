@@ -8,6 +8,8 @@ import {
   pillClasses,
   resolvePillVariant,
   statusVariant,
+  TABLE_HEAD_CELL,
+  TABLE_HEAD_ROW,
   TERMINAL_LEVELS,
   terminalLevelClass,
 } from "../../src/shared/components/displayPrimitives.js";
@@ -150,4 +152,16 @@ describe("terminal level classes", () => {
     expect(Object.keys(TERMINAL_LEVELS)).toHaveLength(5);
   });
   it("rejects unknown levels", () => expect(() => terminalLevelClass("TRACE")).toThrow());
+});
+
+describe("table header", () => {
+  it("stays sentence case with no background tint", () => {
+    expect(TABLE_HEAD_ROW).toBe("border-b border-line");
+    for (const classes of [TABLE_HEAD_ROW, TABLE_HEAD_CELL]) {
+      expect(classes).not.toContain("uppercase");
+      expect(classes).not.toContain("bg-");
+    }
+    expect(TABLE_HEAD_CELL).toContain("text-muted");
+    expect(TABLE_HEAD_CELL).toContain("font-semibold");
+  });
 });

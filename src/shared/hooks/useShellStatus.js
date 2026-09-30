@@ -1,224 +1,170 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { summarizeProviders } from "@/shared/utils/providerHealth";
 
 const REFRESH_MS = 60_000;
-const LOW_QUOTA_THRESHOLD = 20;
+// Tab focus refreshes only when the last summary is older than this.
+export const FOCUS_THROTTLE_MS = 15_000;
+
+const INITIAL_STATE = {
+  loading: true,
+  gatewayOnline: null,
+  startedAt: null,
+  serverPort: null,
+  badges: { providers: null, combos: null, quota: null },
+  providerAttention: { count: 0, status: null },
+  enableTranslator: false,
+  // YAN-408: heartbeat sparkline series and pending savings milestone toast.
+  traffic: null,
+  savingsMilestone: null,
+};
+
+const count = (value, prev) => (Number.isInteger(value) && value >= 0 ? value : prev);
 
 /**
- * Count distinct connected providers (not raw connections), using the shared
- * provider-health rule: a provider is connected when it has at least one
- * enabled connection, even if that connection needs attention.
- * @param {Array<object>} connections
+ * Next shell state from a GET /api/shell/summary result. A network failure
+ * (null) or a 5xx means the gateway is offline; any other response proves it
+ * answered. Badges, heartbeat traffic and the milestone keep their previous
+ * values unless a 2xx body carries them, so a failed poll never flashes fake
+ * zeros.
+ * @param {object} prev Current shell state.
+ * @param {number|null} status HTTP status, or null on network failure.
+ * @param {object|null} body Parsed 2xx body.
  */
-export function countConnectedProviders(connections) {
-  if (!Array.isArray(connections)) return 0;
-  return summarizeProviders([], connections).connected;
-}
-
-/**
- * Providers that need attention under the shared health rule, plus the worst
- * status among them, for the Providers badge tint and label.
- * @param {Array<object>} connections
- * @returns {{ count: number, status: "warn"|"err"|null }}
- */
-export function providerAttention(connections) {
-  if (!Array.isArray(connections)) return { count: 0, status: null };
-  const flagged = summarizeProviders([], connections).providers.filter((p) => p.needsAttention);
-  const status = flagged.some((p) => p.status === "err")
-    ? "err"
-    : flagged.length > 0
-      ? "warn"
-      : null;
-  return { count: flagged.length, status };
-}
-
-/**
- * Count accounts whose lowest visible quota is at or below `threshold` percent.
- * Reads the same localStorage cache the quota page writes (`quotaCacheData`),
- * so the badge matches what the quota page shows without extra polling.
- * @param {Record<string, { quotas?: Array<object> }>} quotaData
- * @param {number} [threshold=20]
- */
-export function countLowQuotaAccounts(quotaData, threshold = LOW_QUOTA_THRESHOLD) {
-  if (!quotaData || typeof quotaData !== "object") return 0;
-  let count = 0;
-  for (const entry of Object.values(quotaData)) {
-    const quotas = Array.isArray(entry?.quotas) ? entry.quotas : [];
-    if (quotas.length === 0) continue;
-    const remaining = quotas.map((quota) => {
-      if (typeof quota?.remaining === "number") return quota.remaining;
-      if (typeof quota?.remainingPercentage === "number") return quota.remainingPercentage;
-      if (quota?.total > 0) {
-        return Math.round(((quota.total - (quota.used || 0)) / quota.total) * 100);
-      }
-      return Number.POSITIVE_INFINITY;
-    });
-    if (Math.min(...remaining) <= threshold) count += 1;
+export function applyShellSummary(prev, status, body) {
+  const next = { ...prev, loading: false };
+  if (status === null || status >= 500) {
+    return { ...next, gatewayOnline: false, startedAt: null, serverPort: null };
   }
-  return count;
-}
-
-/**
- * Gateway reachability from the status fetch. A network failure (no response)
- * or a 5xx means offline; any other response proves the gateway answered.
- * Only a 2xx carries uptime/port data.
- * @param {Response|null} res
- */
-function readGatewayStatus(res) {
-  if (!res || res.status >= 500) {
-    return { gatewayOnline: false, startedAt: null, serverPort: null };
-  }
-  return {
-    gatewayOnline: true,
-    startedAt: null,
-    serverPort: null,
-    statusBody: res.ok ? res.json().catch(() => null) : null,
+  next.gatewayOnline = true;
+  if (!body || typeof body !== "object") return next;
+  const gateway = body.gateway || {};
+  next.startedAt = typeof gateway.startedAt === "string" ? gateway.startedAt : null;
+  next.serverPort = Number.isInteger(gateway.port) ? gateway.port : null;
+  next.badges = {
+    providers: count(body.providers?.connected, prev.badges.providers),
+    combos: count(body.combos, prev.badges.combos),
+    quota: count(body.lowQuota, prev.badges.quota),
   };
-}
-
-/**
- * Two-way translator gate: a successful settings fetch sets the flag from the
- * payload (on or off); a failed fetch keeps the previous value.
- * @param {PromiseSettledResult<Response>|undefined} settingsRes
- * @param {boolean} prev
- * @returns {Promise<boolean>}
- */
-export async function readTranslatorGate(settingsRes, prev) {
-  if (settingsRes?.status === "fulfilled" && settingsRes.value?.ok) {
-    const data = await settingsRes.value.json().catch(() => null);
-    return Boolean(data?.enableTranslator);
+  const attention = body.providers?.attention;
+  if (attention && Number.isInteger(attention.count)) {
+    next.providerAttention = {
+      count: attention.count,
+      status: attention.status === "warn" || attention.status === "err" ? attention.status : null,
+    };
   }
-  return prev;
-}
-
-function readQuotaCache() {
-  if (typeof window === "undefined") return {};
-  try {
-    const cached = window.localStorage.getItem("quotaCacheData");
-    return cached ? JSON.parse(cached) : {};
-  } catch {
-    return {};
+  if (typeof body.enableTranslator === "boolean") next.enableTranslator = body.enableTranslator;
+  // Heartbeat: keep the last series unless the body carries a fresh one, so a
+  // failed poll never drops the sparkline.
+  const traffic = body.traffic ?? null;
+  if (
+    traffic !== null &&
+    Array.isArray(traffic.series) &&
+    Number.isInteger(traffic.total) &&
+    traffic.total >= 0
+  ) {
+    next.traffic = {
+      series: traffic.series.map((value) =>
+        Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0,
+      ),
+      total: traffic.total,
+    };
   }
+  // Savings: only a body that carries the block may change the client state —
+  // an omitted block (lookup failed) keeps the last value, mirroring traffic.
+  if (body.savings && typeof body.savings === "object" && "pendingMilestone" in body.savings) {
+    const pendingMilestone = body.savings.pendingMilestone;
+    if (pendingMilestone === null) {
+      next.savingsMilestone = null;
+    } else if (Number.isInteger(pendingMilestone) && pendingMilestone > 0) {
+      next.savingsMilestone = pendingMilestone;
+    }
+  }
+  return next;
 }
 
 // Module-level shared store: one poller for all hook instances (desktop
 // sidebar + mobile drawer), so fetches are deduped across mounts.
 const store = {
-  state: {
-    loading: true,
-    gatewayOnline: null,
-    startedAt: null,
-    serverPort: null,
-    badges: { providers: null, combos: null, quota: null },
-    providerAttention: { count: 0, status: null },
-    enableTranslator: false,
-  },
+  state: INITIAL_STATE,
   listeners: new Set(),
   timer: null,
-  inFlight: false,
+  inFlight: null,
+  queued: false,
+  lastRefreshAt: 0,
 };
 
-function notify() {
+async function fetchSummary() {
+  let status = null;
+  let body = null;
+  // Stamped at attempt time: an in-flight request already carries fresh data,
+  // so tab-focus bursts during it add nothing (mutations still queue one).
+  store.lastRefreshAt = Date.now();
+  try {
+    const res = await fetch("/api/shell/summary", { cache: "no-store" });
+    status = res.status;
+    if (res.ok) body = await res.json().catch(() => null);
+  } catch {
+    /* network failure: status stays null (offline) */
+  }
+  store.state = applyShellSummary(store.state, status, body);
   for (const listener of store.listeners) listener(store.state);
 }
 
-function setState(partial) {
-  store.state = { ...store.state, ...partial };
-  notify();
-}
-
-async function refreshShellStatus() {
-  if (typeof window === "undefined" || store.inFlight) return;
-  store.inFlight = true;
-  try {
-    const [statusRes, settingsRes, providersRes, combosRes] = await Promise.allSettled([
-      fetch("/api/gateway/status", { cache: "no-store" }),
-      fetch("/api/settings", { cache: "no-store" }),
-      fetch("/api/providers", { cache: "no-store" }),
-      fetch("/api/combos", { cache: "no-store" }),
-    ]);
-
-    const next = {
-      ...readGatewayStatus(statusRes.status === "fulfilled" ? statusRes.value : null),
-      badges: { ...store.state.badges },
-      providerAttention: store.state.providerAttention,
-    };
-    if (next.statusBody) {
-      const body = await next.statusBody;
-      next.startedAt = typeof body?.startedAt === "string" ? body.startedAt : null;
-      next.serverPort = Number.isInteger(body?.port) ? body.port : null;
-    }
-    delete next.statusBody;
-
-    next.enableTranslator = await readTranslatorGate(settingsRes, store.state.enableTranslator);
-
-    // Quota badge: only active connections count toward the low-quota total.
-    let activeProviderIds = null;
-    if (providersRes.status === "fulfilled" && providersRes.value.ok) {
-      const data = await providersRes.value.json();
-      if (Array.isArray(data?.connections)) {
-        next.badges.providers = countConnectedProviders(data.connections);
-        next.providerAttention = providerAttention(data.connections);
-        activeProviderIds = new Set(
-          data.connections.filter((c) => c?.isActive !== false).map((c) => c.id),
-        );
-      }
-    }
-
-    if (combosRes.status === "fulfilled" && combosRes.value.ok) {
-      const data = await combosRes.value.json();
-      if (Array.isArray(data?.combos)) {
-        next.badges.combos = data.combos.filter((c) => !c.kind || c.kind === "llm").length;
-      }
-    }
-
-    // The quota cache is only trustworthy once we know which connections are
-    // active; until then the badge stays hidden (null) instead of guessing.
-    if (activeProviderIds) {
-      const cached = readQuotaCache();
-      next.badges.quota = countLowQuotaAccounts(
-        Object.fromEntries(Object.entries(cached).filter(([id]) => activeProviderIds.has(id))),
-      );
-    }
-    setState({ ...next, loading: false });
-  } finally {
-    store.inFlight = false;
+/**
+ * Refresh the shell badges and gateway status now. Call after any mutation
+ * that changes provider, combo, quota or translator state. A call during an
+ * in-flight request queues exactly one follow-up so the result is never stale.
+ * @returns {Promise<void>}
+ */
+export function refreshShellStatus() {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (store.inFlight) {
+    store.queued = true;
+    return store.inFlight;
   }
-}
-
-function startPolling() {
-  if (store.timer || typeof window === "undefined") return;
-  store.timer = window.setInterval(() => {
-    if (!document.hidden) refreshShellStatus();
-  }, REFRESH_MS);
-}
-
-function stopPolling() {
-  if (store.timer) {
-    window.clearInterval(store.timer);
-    store.timer = null;
-  }
+  store.inFlight = fetchSummary().finally(() => {
+    store.inFlight = null;
+    if (store.queued) {
+      store.queued = false;
+      refreshShellStatus();
+    }
+  });
+  return store.inFlight;
 }
 
 function onVisibilityChange() {
-  if (!document.hidden) refreshShellStatus();
+  if (
+    !document.hidden &&
+    !store.inFlight &&
+    Date.now() - store.lastRefreshAt >= FOCUS_THROTTLE_MS
+  ) {
+    refreshShellStatus();
+  }
+}
+
+function start() {
+  refreshShellStatus();
+  store.timer = window.setInterval(() => {
+    if (!document.hidden) refreshShellStatus();
+  }, REFRESH_MS);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+}
+
+function stop() {
+  window.clearInterval(store.timer);
+  store.timer = null;
+  document.removeEventListener("visibilitychange", onVisibilityChange);
 }
 
 /**
- * Shared shell status: gateway reachability, uptime start and listen port
- * (authenticated GET /api/gateway/status), the translator
- * gate (GET /api/settings), and nav badge counts. Polls every 60s (the quota
- * page cadence), pauses while the tab is hidden, and dedupes concurrent
- * refreshes via a module-level store.
- *
- * Badge counts:
- * - providers: distinct providers with at least one enabled connection
- *   (shared provider-health rule)
- * - combos: LLM combos from GET /api/combos
- * - quota: active connections whose lowest quota is ≤ 20% remaining,
- *   computed from the quota page's localStorage cache (no new polling)
+ * Shared shell status from one authenticated GET /api/shell/summary: gateway
+ * reachability, uptime start and listen port, nav badge counts (connected
+ * providers and their attention status, LLM combos, accounts at ≤ 20% quota
+ * from server snapshots), the translator gate, the 15-minute heartbeat series
+ * and the pending savings milestone. Polls every 60s while visible; tab focus
+ * refreshes at most once per FOCUS_THROTTLE_MS; mutations call
+ * refreshShellStatus() for an immediate update.
  *
  * @returns {{
  *   loading: boolean,
@@ -228,6 +174,8 @@ function onVisibilityChange() {
  *   badges: { providers: number|null, combos: number|null, quota: number|null },
  *   providerAttention: { count: number, status: "warn"|"err"|null },
  *   enableTranslator: boolean,
+ *   traffic: { series: number[], total: number }|null,
+ *   savingsMilestone: number|null,
  * }}
  */
 export default function useShellStatus() {
@@ -236,17 +184,10 @@ export default function useShellStatus() {
   useEffect(() => {
     const listener = (next) => setLocalState(next);
     store.listeners.add(listener);
-    if (store.listeners.size === 1) {
-      refreshShellStatus();
-      startPolling();
-      document.addEventListener("visibilitychange", onVisibilityChange);
-    }
+    if (store.listeners.size === 1) start();
     return () => {
       store.listeners.delete(listener);
-      if (store.listeners.size === 0) {
-        stopPolling();
-        document.removeEventListener("visibilitychange", onVisibilityChange);
-      }
+      if (store.listeners.size === 0) stop();
     };
   }, []);
 

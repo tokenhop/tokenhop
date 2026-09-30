@@ -1,12 +1,13 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
 import SegmentedControl from "@/shared/components/SegmentedControl";
 import EmptyState from "@/shared/components/EmptyState";
 import Meter from "@/shared/components/Meter";
 import ProviderTile from "@/shared/components/ProviderTile";
+import { TABLE_HEAD_CELL, TABLE_HEAD_ROW } from "@/shared/components/displayPrimitives";
 import { groupRows, sharePct, sortRows } from "../lib/usageShapes";
 
 const fmt = (n) => new Intl.NumberFormat().format(n || 0);
@@ -23,24 +24,29 @@ const fmtTime = (iso) => {
 };
 
 const VIEWS = {
-  model: { key: "rawModel", label: "Model", source: "byModel", empty: "No usage recorded yet." },
+  model: {
+    key: "rawModel",
+    label: "Model",
+    source: "byModel",
+    emptyTitle: "No usage by model in this period.",
+  },
   account: {
     key: "accountName",
     label: "Account",
     source: "byAccount",
-    empty: "No account-specific usage recorded yet.",
+    emptyTitle: "No account usage in this period.",
   },
   apiKey: {
     key: "keyName",
     label: "API key",
     source: "byApiKey",
-    empty: "No API key usage recorded yet.",
+    emptyTitle: "No API key usage in this period.",
   },
   endpoint: {
     key: "endpoint",
     label: "Endpoint",
     source: "byEndpoint",
-    empty: "No endpoint usage recorded yet.",
+    emptyTitle: "No endpoint usage in this period.",
   },
 };
 
@@ -56,7 +62,7 @@ const VIEWS = {
  * @param {object} props
  * @param {object|null} props.stats stats shape from /api/usage/stats
  */
-export default function UsageBreakdown({ stats }) {
+function UsageBreakdown({ stats }) {
   const [view, setView] = useState("model");
   const [mode, setMode] = useState("costs");
   const [sortBy, setSortBy] = useState("totalCost");
@@ -127,29 +133,27 @@ export default function UsageBreakdown({ stats }) {
   const cells = (s) =>
     mode === "costs" ? (
       <>
-        <td className="px-6 py-3 text-right font-mono">{fmt(s.requests)}</td>
-        <td className="px-6 py-3 text-right font-mono text-muted">
+        <td className="px-6 py-3 text-end font-mono">{fmt(s.requests)}</td>
+        <td className="px-6 py-3 text-end font-mono text-muted">
           {fmtCost(
             ((s.cost || s.totalCost || 0) * nonCached(s)) /
               Math.max(1, (s.promptTokens || 0) + (s.completionTokens || 0)),
           )}
         </td>
-        <td className="px-6 py-3 text-right font-mono text-muted">
+        <td className="px-6 py-3 text-end font-mono text-muted">
           {fmtCost(
             ((s.cost || s.totalCost || 0) * (s.completionTokens || 0)) /
               Math.max(1, (s.promptTokens || 0) + (s.completionTokens || 0)),
           )}
         </td>
-        <td className="px-6 py-3 text-right font-mono">{fmtCost(s.cost ?? s.totalCost)}</td>
+        <td className="px-6 py-3 text-end font-mono">{fmtCost(s.cost ?? s.totalCost)}</td>
       </>
     ) : (
       <>
-        <td className="px-6 py-3 text-right font-mono">{fmt(s.requests)}</td>
-        <td className="px-6 py-3 text-right font-mono text-muted">{fmtShort(s.promptTokens)}</td>
-        <td className="px-6 py-3 text-right font-mono text-muted">
-          {fmtShort(s.completionTokens)}
-        </td>
-        <td className="px-6 py-3 text-right font-mono">
+        <td className="px-6 py-3 text-end font-mono">{fmt(s.requests)}</td>
+        <td className="px-6 py-3 text-end font-mono text-muted">{fmtShort(s.promptTokens)}</td>
+        <td className="px-6 py-3 text-end font-mono text-muted">{fmtShort(s.completionTokens)}</td>
+        <td className="px-6 py-3 text-end font-mono">
           {fmtShort((s.promptTokens || 0) + (s.completionTokens || 0))}
         </td>
       </>
@@ -197,7 +201,7 @@ export default function UsageBreakdown({ stats }) {
         }
       />
       {!stats || groups.length === 0 ? (
-        <EmptyState icon="table_rows" title={config.empty} />
+        <EmptyState icon="table_rows" title={config.emptyTitle} />
       ) : (
         <section
           className="overflow-x-auto focus-visible:shadow-focus"
@@ -205,9 +209,9 @@ export default function UsageBreakdown({ stats }) {
           // biome-ignore lint/a11y/noNoninteractiveTabindex: scrollable table region is keyboard-focusable with a label (WCAG 2.1.1, YAN-314).
           tabIndex={0}
         >
-          <table className="w-full text-left text-sm">
-            <thead className="bg-raised/30 text-xs uppercase text-muted">
-              <tr>
+          <table className="w-full text-start text-sm">
+            <thead>
+              <tr className={TABLE_HEAD_ROW}>
                 {headers.map((h) => (
                   <th
                     key={h.field}
@@ -219,7 +223,7 @@ export default function UsageBreakdown({ stats }) {
                           : "descending"
                         : undefined
                     }
-                    className={`px-6 py-3 font-semibold ${h.numeric ? "text-right" : ""}`}
+                    className={`${TABLE_HEAD_CELL} px-6 py-3 ${h.numeric ? "text-end" : "text-start"}`}
                   >
                     {h.field === "__label" || h.field === "__share" ? (
                       h.label
@@ -344,3 +348,5 @@ export default function UsageBreakdown({ stats }) {
 UsageBreakdown.propTypes = {
   stats: PropTypes.object,
 };
+
+export default memo(UsageBreakdown);

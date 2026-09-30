@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { enableTunnel } from "@/lib/tunnel";
+import { invalidateTunnelStatusCache } from "@/lib/tunnel/statusCache.js";
 import { getSettings } from "@/lib/localDb";
 import { configureTunnelMonitoring } from "@/shared/services/initializeApp";
 
@@ -8,6 +9,7 @@ const DNS_WARMUP_DELAY_MS = 8000;
 export async function POST() {
   try {
     const result = await enableTunnel();
+    invalidateTunnelStatusCache();
     getSettings()
       .then(configureTunnelMonitoring)
       .catch((error) => console.warn("Tunnel monitor start failed:", error.message));

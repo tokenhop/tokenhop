@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import { reorderConnections, selectionReducer, sortByPriority } from "../detailUtils";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
@@ -92,6 +93,7 @@ export function useConnections({ providerId, notifyError }) {
           setConnections((prev) =>
             prev.map((entry) => (entry.id === id ? { ...entry, isActive } : entry)),
           );
+          refreshShellStatus();
         } else {
           fail("Failed to update connection.");
         }
@@ -225,6 +227,7 @@ export function useConnections({ providerId, notifyError }) {
         }),
       );
       if (failed > 0) fail(`Deleted ${ids.length - failed} connection(s), ${failed} failed.`);
+      refreshShellStatus();
     },
     [connections, fail],
   );
@@ -232,7 +235,7 @@ export function useConnections({ providerId, notifyError }) {
   const confirmDelete = useCallback(
     (id) => {
       setConfirmState({
-        title: "Delete Connection",
+        title: "Delete connection",
         message: "Delete this connection?",
         onConfirm: async () => {
           setConfirmState(null);
@@ -337,6 +340,7 @@ export function useConnections({ providerId, notifyError }) {
     } finally {
       stopRef.current = false;
       setOneByOne((prev) => ({ ...prev, running: false, stopping: false, currentId: null }));
+      refreshShellStatus();
     }
   }, [connections, oneByOne.running]);
 

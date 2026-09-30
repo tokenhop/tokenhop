@@ -440,4 +440,11 @@ describe("dashboard guard translator gate (YAN-312)", () => {
     const fallback = await proxy(request("/", { host: "localhost:20128" }));
     expect(String(fallback.url)).toBe("http://localhost/dashboard");
   });
+
+  it("requires dashboard auth for /api/shell/summary (YAN-410)", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    const response = await proxy(localRequest("/api/shell/summary", { host: "localhost:20128" }));
+    expect(response.status).toBe(401);
+  });
 });

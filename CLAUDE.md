@@ -13,6 +13,10 @@ Two published artifacts live in this one repo:
 
 The code lives in `src/` (Next.js app + dashboard/compat APIs), `open-sse/` (the provider-agnostic routing/translation engine), `cli/` (the launcher package), and `tests/`.
 
+## Branching & releases
+
+**Read [`RELEASING.md`](RELEASING.md) before creating a branch, opening a PR, or cutting a release.** It defines the current trunk, which branch each change targets, backports, and the release steps. Never open "sync master into …" PRs.
+
 ## Commands
 
 Dashboard/gateway (run from repo root):
@@ -51,13 +55,13 @@ npx vitest run unit/capabilities.test.js   # single file (path relative to tests
 >
 > **Runs are isolated by default.** Every test file gets its own temp `DATA_DIR`/`HOME` (`tests/setup/`, forks pool), so `~/.9router` is never touched and no `DATA_DIR=$(mktemp -d)` prefix is needed. Only `translator/real/**` under `RUN_REAL=1`/`RUN_E2E=1` uses the real data dir. Guarded by `unit/test-data-isolation.test.js`; details in `tests/README.md`.
 >
-> **The suite is NOT expected to be all-green on a plain checkout.** Judge regressions against `tests/__baseline__/known-fails.txt`, not a raw run (from `tests/`):
+> The suite runs green on a plain checkout; judge regressions against `tests/__baseline__/known-fails.txt`, not a raw run (from `tests/`):
 >
 > ```bash
 > npx vitest run --reporter=json --outputFile=results.json; node __baseline__/verify-no-regression.mjs results.json
 > ```
 >
-> Expected red: everything in `known-fails.txt` (regenerated from an isolated master run — refresh it when a fix turns a known failure green), including `unit/embeddings.cloud.test.js` (the `cloud/` worker dir is **not in this repo**) and `unit/xai-oauth-service.test.js` (times out when xAI endpoint discovery isn't reachable).
+> Live-network tests are env-gated (`RUN_REAL=1` / `RUN_E2E=1`); they skip without credentials.
 
 - `*.real.test.js` under `tests/translator/real/` make live provider calls — skip unless credentials are set.
 - Regression baselines: `tests/__baseline__/verify-*.mjs` compare against committed snapshots (providers, aliases, OAuth URLs). Run these after touching provider registry / alias logic.
@@ -109,4 +113,4 @@ Pre-translate hooks that compress `tool_result` content in-place to cut tokens. 
 - `custom-server.js` wraps the Next standalone server to derive client IP from the TCP socket and strip attacker-controlled `X-Forwarded-For` — trusting forwarding headers only from a loopback reverse proxy, and then only the rightmost XFF hop (appending proxies like cloudflared/nginx leave the leftmost entries client-controlled). Preserve this when touching request/IP/rate-limit code.
 - Security-sensitive env: `JWT_SECRET` (session cookie), `INITIAL_PASSWORD` (default `123456` — must override), `API_KEY_SECRET`, `MACHINE_ID_SALT`. Full env contract in `.env.example` and ARCHITECTURE.md's env matrix.
 - Binary/protobuf upstreams (kiro EventStream, cursor protobuf, commandcode NDJSON) don't round-trip through OpenAI — they're handled inside their own executor, not the translator.
-- Versioning: root and `cli/` are versioned independently; changes are logged in `CHANGELOG.md`. Commit style is Conventional Commits (`fix(translator): …`, `feat(...)`).
+- Versioning, CHANGELOG, and tagging: see [`RELEASING.md`](RELEASING.md). Commit style is Conventional Commits (`fix(translator): …`, `feat(...)`).

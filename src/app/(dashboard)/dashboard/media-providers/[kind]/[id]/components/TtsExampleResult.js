@@ -1,0 +1,72 @@
+"use client";
+
+import PropTypes from "prop-types";
+import { codeBlockClass, eyebrowClass, DownloadLink, LatencyBadge } from "./exampleShared";
+
+export const DEFAULT_TTS_RESPONSE_EXAMPLE = `// Audio will appear here after running.
+// Example JSON response (response_format=json):
+{
+  "format": "mp3",
+  "audio": "//NExAANaAIIAUAAANNNNNNNN..." // base64 encoded MP3
+}`;
+
+/**
+ * TTS example result view (YAN-402): audio player + download + JSON excerpt,
+ * or the default example before the first run.
+ */
+export function TtsExampleResult({ audioUrl, latency, jsonResponse }) {
+  if (!audioUrl) {
+    return (
+      <div>
+        <span className={eyebrowClass}>Response</span>
+        <pre className={`mt-1.5 ${codeBlockClass} opacity-80`} dir="ltr">
+          {DEFAULT_TTS_RESPONSE_EXAMPLE}
+        </pre>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <span className={eyebrowClass}>
+          Response <LatencyBadge ms={latency} />
+        </span>
+        <DownloadLink href={audioUrl} filename="speech.mp3">
+          Download
+        </DownloadLink>
+      </div>
+      {/* biome-ignore lint/a11y/useMediaCaption: generated speech playback has no captions */}
+      <audio
+        controls
+        src={audioUrl}
+        className="w-full rounded-xl border border-line bg-raised p-2"
+      />
+
+      {/* JSON response (if format is json) */}
+      {jsonResponse && (
+        <div className="mt-3">
+          <div className="mb-1.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <span className={eyebrowClass}>JSON response</span>
+          </div>
+          <pre className={codeBlockClass} dir="ltr">
+            {JSON.stringify(
+              {
+                format: jsonResponse.format,
+                audio: jsonResponse.audio ? `${jsonResponse.audio.substring(0, 100)}...` : "",
+              },
+              null,
+              2,
+            )}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+TtsExampleResult.propTypes = {
+  audioUrl: PropTypes.string,
+  latency: PropTypes.number,
+  jsonResponse: PropTypes.object,
+};

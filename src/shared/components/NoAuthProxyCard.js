@@ -106,7 +106,7 @@ export default function NoAuthProxyCard({ providerId }) {
       </div>
 
       <Select
-        label="Proxy Pool"
+        label="Proxy pool"
         value={proxyPoolId}
         onChange={(e) => handlePoolChange(e.target.value)}
         disabled={saving || isRotation}
@@ -122,7 +122,7 @@ export default function NoAuthProxyCard({ providerId }) {
       />
 
       <div className="flex flex-col gap-2 mt-4">
-        <label className="text-sm font-medium text-text">Rotation Strategy</label>
+        <label className="text-sm font-medium text-text">Rotation strategy</label>
         <select
           value={rotateStrategy}
           onChange={(e) => handleStrategyChange(e.target.value)}

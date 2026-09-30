@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
-import { getProvidersByKind } from "@/shared/constants/providers";
+import { getProvidersByKind, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { MediaKindSection } from "../components/MediaKindSection";
 import { MediaPlayground } from "../components/MediaPlayground";
 
 /**
- * Signal web search & fetch tab (YAN-305): two kind sections plus one shared
- * playground. Web search + Web fetch share this tab per the board.
+ * Signal web fetch and search tab (YAN-305): two kind sections plus one
+ * shared playground. Web search + web fetch share this tab per the board.
  */
 export default function WebProvidersPage() {
   const [connections, setConnections] = useState([]);
@@ -31,7 +31,7 @@ export default function WebProvidersPage() {
     <div className="flex min-w-0 flex-col gap-8 lg:flex-row lg:items-start">
       <div className="flex min-w-0 flex-1 flex-col gap-8">
         <section aria-labelledby="web-search-section">
-          <SectionHeader title="Web Search" icon="search" kindId="webSearch" />
+          <SectionHeader kindId="webSearch" icon="search" headingId="web-search-section" />
           <MediaKindSection
             kind="webSearch"
             supportsCombo
@@ -43,7 +43,7 @@ export default function WebProvidersPage() {
         <div className="border-t border-line" />
 
         <section aria-labelledby="web-fetch-section">
-          <SectionHeader title="Web Fetch" icon="travel_explore" kindId="webFetch" />
+          <SectionHeader kindId="webFetch" icon="travel_explore" headingId="web-fetch-section" />
           <MediaKindSection
             kind="webFetch"
             supportsCombo
@@ -67,8 +67,8 @@ export default function WebProvidersPage() {
   );
 }
 
-function SectionHeader({ title, icon, kindId }) {
-  const id = title === "Web Search" ? "web-search-section" : "web-fetch-section";
+function SectionHeader({ icon, kindId, headingId }) {
+  const title = MEDIA_PROVIDER_KINDS.find((kind) => kind.id === kindId)?.label || kindId;
   const count = getProvidersByKind(kindId).length;
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -77,7 +77,7 @@ function SectionHeader({ title, icon, kindId }) {
           {icon}
         </span>
       </span>
-      <h2 id={id} className="font-display text-xl font-bold text-text">
+      <h2 id={headingId} className="font-display text-xl font-bold text-text">
         {title}
       </h2>
       <span className="font-mono text-xs text-muted">{count} providers</span>
@@ -86,9 +86,9 @@ function SectionHeader({ title, icon, kindId }) {
 }
 
 SectionHeader.propTypes = {
-  title: PropTypes.string.isRequired,
   icon: PropTypes.string.isRequired,
   kindId: PropTypes.string.isRequired,
+  headingId: PropTypes.string.isRequired,
 };
 
 WebProvidersPage.propTypes = {};
@@ -104,7 +104,7 @@ function WebPlaygroundDrawer({ open, onClose, kind, connections }) {
     <DrawerComponent
       isOpen={open}
       onClose={onClose}
-      title={`${kind === "webFetch" ? "Web Fetch" : "Web Search"} playground`}
+      title={`${kind === "webFetch" ? "Web fetch" : "Web search"} playground`}
       width="lg"
     >
       <MediaPlayground kind={kind} connections={connections} />

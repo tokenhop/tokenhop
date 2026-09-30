@@ -23,7 +23,7 @@ export function badgeTint(badgeKey, count, attention = null) {
 
 /**
  * One-line version chip: "0.4.0-beta.7" → "0.4.0 β7". The full version goes
- * in the tooltip and the Change Log menu entry.
+ * in the tooltip and the Change log menu entry.
  * @param {string} version
  * @returns {{ label: string, full: string }}
  */

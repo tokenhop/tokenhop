@@ -111,14 +111,14 @@ export function getConnectionsEmptyMessage(totals, providerFilter, accountFilter
   if (!totals.eligibleConnections) {
     return {
       icon: "cloud_off",
-      title: "No Providers Connected",
+      title: "No providers connected",
       description: "Connect to providers with OAuth to track your API quota limits and usage.",
     };
   }
   if (!totals.providerFilteredConnections) {
     return {
       icon: "filter_alt_off",
-      title: "No Accounts Match Current Filters",
+      title: "No accounts match current filters",
       description:
         providerFilter === "all"
           ? "Try changing the account status filter to see more quota trackers."
@@ -127,7 +127,7 @@ export function getConnectionsEmptyMessage(totals, providerFilter, accountFilter
   }
   return {
     icon: "filter_alt_off",
-    title: "No Accounts On This Page",
+    title: "No accounts on this page",
     description: "Try moving to another page or refreshing the current filters.",
   };
 }
@@ -255,18 +255,6 @@ export function getStatusColor(percentage) {
   if (percentage >= 30) return "yellow";
   return "red"; // 0-29% including 0% (out of quota) - show red
 }
-
-/**
- * Get status emoji based on percentage
- * @param {number} percentage - Remaining percentage (0-100)
- * @returns {string} Emoji: "🟢" | "🟡" | "🔴"
- */
-export function getStatusEmoji(percentage) {
-  if (percentage > 70) return "🟢";
-  if (percentage >= 30) return "🟡";
-  return "🔴"; // 0-29% including 0% (out of quota) - show red
-}
-
 /**
  * Calculate remaining percentage
  * @param {number} used - Used amount

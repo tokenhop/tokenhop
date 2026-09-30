@@ -29,11 +29,17 @@ export default function ModelsSection({
   models,
   compatibleSection,
   onDisableAll,
+  kind = "llm",
+  title,
 }) {
   const { getCaps } = useModelCaps();
   const { copied, error: copyError, copy } = useCopyToClipboard();
+  const effectiveKind = kind || "llm";
 
   const hasActiveConnection = connections.some((entry) => entry.isActive !== false);
+  // Legacy media card always showed Test; Signal gates on connections. Keep
+  // the gate for llm, preserve legacy behaviour for media kinds.
+  const showTestButton = effectiveKind === "llm" ? connections.length > 0 || isFreeNoAuth : true;
 
   const thinkingLevels = (() => {
     const levels = new Set();
@@ -84,7 +90,7 @@ export default function ModelsSection({
 
   return (
     <Card
-      title="Available models"
+      title={title || "Available models"}
       subtitle={
         isCompatible
           ? `Manual ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible catalog`
@@ -165,15 +171,13 @@ export default function ModelsSection({
                   onCopy={copy}
                   onDeleteAlias={() => {
                     if (row.source === "custom") {
-                      models.deleteCustomModel(row.id, "llm", storageAlias);
+                      models.deleteCustomModel(row.id, effectiveKind, storageAlias);
                     } else if (row.alias) {
                       models.deleteAlias(row.alias);
                     }
                   }}
                   testStatus={models.testResults[row.id]}
-                  onTest={
-                    connections.length > 0 || isFreeNoAuth ? () => testModel(row.id) : undefined
-                  }
+                  onTest={showTestButton ? () => testModel(row.id) : undefined}
                   isTesting={models.testingIds.has(row.id)}
                   isCustom
                   caps={getCaps(`${providerId}/${row.id}`)}
@@ -200,9 +204,7 @@ export default function ModelsSection({
                       existingAlias ? () => models.deleteAlias(existingAlias) : undefined
                     }
                     testStatus={models.testResults[model.id]}
-                    onTest={
-                      connections.length > 0 || isFreeNoAuth ? () => testModel(model.id) : undefined
-                    }
+                    onTest={showTestButton ? () => testModel(model.id) : undefined}
                     isTesting={models.testingIds.has(model.id)}
                     isFree={model.isFree}
                     onDisable={() => models.disableModel(model.id)}
@@ -230,7 +232,9 @@ export default function ModelsSection({
                 customModels={models.customModels}
                 modelAliases={models.modelAliases}
                 providerStorageAlias={storageAlias}
-                onAddModel={(modelId) => models.addCustomModel(modelId, "llm", storageAlias)}
+                onAddModel={(modelId) =>
+                  models.addCustomModel(modelId, effectiveKind, storageAlias)
+                }
               />
             ) : null}
           </div>
@@ -242,7 +246,7 @@ export default function ModelsSection({
                   <button
                     key={model.id}
                     type="button"
-                    onClick={() => models.addCustomModel(model.id, "llm", storageAlias)}
+                    onClick={() => models.addCustomModel(model.id, effectiveKind, storageAlias)}
                     className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-coral hover:text-text"
                     title={`${model.name} · ${(model.contextLength / 1000).toFixed(0)}k ctx`}
                   >
@@ -300,4 +304,6 @@ ModelsSection.propTypes = {
   models: PropTypes.object.isRequired,
   compatibleSection: PropTypes.node,
   onDisableAll: PropTypes.func.isRequired,
+  kind: PropTypes.string,
+  title: PropTypes.string,
 };

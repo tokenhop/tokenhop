@@ -30,6 +30,7 @@ Apply these labels to keep issues and pull requests consistently categorized. La
 | `duplicate`           | standalone | Already reported               |
 | `wontfix`             | standalone | Intentionally not addressed    |
 | `regression`          | standalone | Broke something that worked    |
+| `backport:X.Y`        | backport   | Cherry-pick to `release/X.Y`   |
 | `area:translator`     | area       | Request/response translation   |
 | `area:executors`      | area       | Request execution and routing  |
 | `area:providers`      | area       | Upstream provider integrations |
@@ -71,6 +72,8 @@ gh label create "area:oauth"      --color "5319e7" --description "OAuth and cred
 gh label create "area:docker"     --color "5319e7" --description "Docker images and runtime"
 gh label create "area:ci"         --color "5319e7" --description "CI/CD workflows"
 gh label create "area:docs"       --color "5319e7" --description "Documentation"
+# One per maintenance branch, created when release/X.Y is cut (see RELEASING.md)
+gh label create "backport:X.Y"    --color "fbca04" --description "Cherry-pick to release/X.Y"
 ```
 
 > **Note:** Use only labels defined in this taxonomy.

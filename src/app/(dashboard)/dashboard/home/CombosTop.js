@@ -2,6 +2,7 @@
 
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
+import CardLink from "@/shared/components/CardLink";
 import ModelChip from "@/shared/components/ModelChip";
 import StatusPill from "@/shared/components/StatusPill";
 import { pickTopCombos } from "@/shared/utils/commandCenter";
@@ -150,14 +151,7 @@ export function CombosTopCard(props) {
     <Card
       className="min-w-0"
       title="Combos"
-      action={
-        <a
-          href="/dashboard/combos"
-          className="text-[13px] font-semibold text-coral-ink hover:text-coral"
-        >
-          All combos →
-        </a>
-      }
+      action={<CardLink href="/dashboard/combos">All combos</CardLink>}
     >
       <CombosTop {...props} />
     </Card>

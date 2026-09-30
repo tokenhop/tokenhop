@@ -207,7 +207,7 @@ export default function ComboFormModal({
                   htmlFor="combo-name-input"
                   className="mb-1 block text-sm font-medium text-text"
                 >
-                  Combo Name
+                  Combo name
                 </label>
                 <div className="flex items-stretch">
                   <span className="inline-flex items-center rounded-s border border-e-0 border-line bg-raised px-2 font-mono text-sm text-muted">
@@ -229,7 +229,7 @@ export default function ComboFormModal({
               </>
             ) : (
               <Input
-                label="Combo Name"
+                label="Combo name"
                 value={name}
                 onChange={handleNameChange}
                 placeholder="my-combo"
@@ -281,7 +281,7 @@ export default function ComboFormModal({
               onClick={() => setShowModelSelect(true)}
               className="mt-2 border-dashed"
             >
-              Add Model
+              Add model
             </Button>
           </div>
 
@@ -310,7 +310,7 @@ export default function ComboFormModal({
           onDeselect={handleDeselectModel}
           activeProviders={activeProviders}
           modelAliases={modelAliases}
-          title="Add Model to Combo"
+          title="Add model to combo"
           kindFilter={kindFilter}
           addedModelValues={models}
           closeOnSelect={false}

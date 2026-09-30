@@ -14,6 +14,7 @@ import {
 } from "@/sse/services/quotaSnapshotSync";
 import { effectiveWeightFor } from "@/sse/services/accountSelection";
 import { isWeightedProvider } from "@/shared/services/weightedTargets";
+import { getQuotaForecasts } from "@/lib/quota/forecastStore.js";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -224,7 +225,14 @@ export async function GET(request, { params }) {
     };
     // Same tier rule as routing (manual psd.planTier wins over detected snapshot tier).
     quotaSnapshot.effectiveWeight = effectiveWeightFor(connection, { snapshot });
-    return Response.json({ ...usage, quotaSnapshot });
+    // Forecast keys mirror `usage.quotas` keys (additive; never fails the response).
+    let forecasts = {};
+    try {
+      forecasts = getQuotaForecasts(connection.id);
+    } catch {
+      /* in-memory store read must not break the usage response */
+    }
+    return Response.json({ ...usage, quotaSnapshot, forecasts });
   } catch (error) {
     const provider = connection?.provider ?? "unknown";
     console.warn(`[Usage] ${provider}: ${error.message}`);

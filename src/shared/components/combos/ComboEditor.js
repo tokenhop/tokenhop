@@ -25,7 +25,8 @@ import ModelSelectModal from "@/shared/components/ModelSelectModal";
 import { ConfirmDialog } from "@/shared/components/Modal";
 import {
   roleLabel,
-  weightShare,
+  explainWeightedShares,
+  shareDetailText,
   parseWeight,
   validateComboName,
   assignStepIds,
@@ -46,6 +47,8 @@ export default function ComboEditor({
   weights,
   judgeModel,
   headroom,
+  headroomQuotaSource,
+  savedModels,
   healthByProvider,
   providerLabelById,
   saving,
@@ -56,6 +59,7 @@ export default function ComboEditor({
   onRename,
   onDelete,
   onSave,
+  onDiscard,
   onStrategyChange,
   onWeightSave,
   onJudgeChange,
@@ -72,9 +76,11 @@ export default function ComboEditor({
   const [drafts, setDrafts] = useState({});
   const [weightErrors, setWeightErrors] = useState({});
   const [announcement, setAnnouncement] = useState("");
+  const [trackStates, setTrackStates] = useState([]);
   const prevStepsRef = useRef([]);
 
   const models = combo.models || [];
+  const modelsDirty = JSON.stringify(models) !== JSON.stringify(savedModels || []);
   const isWeighted = strategy === "weighted";
   const isFusion = strategy === "fusion";
   const sensors = useSensors(
@@ -84,13 +90,21 @@ export default function ComboEditor({
   const steps = assignStepIds(models, prevStepsRef.current);
   prevStepsRef.current = steps;
   const modelById = (id) => steps.find((s) => s.id === id)?.model;
-  const shares = weightShare(
-    steps.map((s) => {
-      const parsed = parseWeight(drafts[s.id]);
-      return parsed.ok ? parsed.value : (weights[s.model] ?? 1);
-    }),
-    steps.map((s) => headroom[s.model]),
-  );
+  // Effective shares come from the router's own math (comboWeights.js via
+  // explainWeightedShares): unsaved weight drafts preview like saved ones.
+  const weightByModel = {};
+  for (const { id, model } of steps) {
+    const parsed = parseWeight(drafts[id]);
+    weightByModel[model] = parsed.ok ? parsed.value : (weights[model] ?? 1);
+  }
+  const explanations = isWeighted
+    ? explainWeightedShares(
+        steps.map((s) => s.model),
+        weightByModel,
+        headroom,
+        headroomQuotaSource,
+      )
+    : [];
 
   const commitRename = () => {
     const result = validateComboName(nameDraft);
@@ -156,8 +170,7 @@ export default function ComboEditor({
 
       {/* Header: name + rename, CopyField, Delete/Save */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="text-xs font-semibold tracking-wider text-muted uppercase">Combo</span>
+        <div className="flex shrink-0 flex-col gap-1">
           {renaming ? (
             <div className="flex max-w-sm flex-col gap-1">
               <Input
@@ -207,10 +220,8 @@ export default function ComboEditor({
               </div>
             </div>
           ) : (
-            <div className="flex min-w-0 items-center gap-2">
-              <h2 className="min-w-0 truncate font-mono text-2xl font-semibold text-text sm:text-[32px]">
-                {combo.name}
-              </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xs font-semibold tracking-wider text-muted uppercase">Combo</h2>
               <IconButton
                 icon="edit"
                 label={`Rename combo ${combo.name}`}
@@ -219,6 +230,7 @@ export default function ComboEditor({
                   setNameError("");
                   setRenaming(true);
                 }}
+                className="size-8 rounded-md"
               />
             </div>
           )}
@@ -227,22 +239,45 @@ export default function ComboEditor({
           value={`"model": "${combo.name}"`}
           copyValue={combo.name}
           label="Copy combo model name"
-          className="w-full sm:w-auto sm:min-w-52"
+          className="w-full min-w-0 sm:w-auto sm:min-w-52 sm:flex-1"
         />
-        <Button variant="danger" icon="delete" onClick={() => setConfirmDelete(true)}>
-          Delete
-        </Button>
-        {dirty && <span className="text-sm font-medium text-warn">Unsaved changes</span>}
-        <Button
-          variant="primary"
-          icon="save"
-          loading={saving}
-          disabled={!dirty || saving}
-          onClick={onSave}
-        >
-          Save
-        </Button>
+        <div className="ms-auto flex flex-wrap items-center gap-2">
+          <Button variant="danger" icon="delete" onClick={() => setConfirmDelete(true)}>
+            Delete
+          </Button>
+          <Button
+            variant="secondary"
+            icon="undo"
+            disabled={!dirty || saving}
+            onClick={() => {
+              setDrafts({});
+              setWeightErrors({});
+              onDiscard?.();
+            }}
+          >
+            Discard
+          </Button>
+          <Button
+            variant="primary"
+            icon="save"
+            loading={saving}
+            disabled={!dirty || saving}
+            onClick={onSave}
+          >
+            Save
+          </Button>
+        </div>
       </div>
+      <p
+        aria-live="polite"
+        className={`-mt-2 flex items-center gap-2 text-xs font-medium ${dirty ? "text-warn" : "text-muted"}`}
+      >
+        <span
+          aria-hidden="true"
+          className={`size-2 rounded-full ${dirty ? "bg-warn" : "bg-subtle"}`}
+        />
+        {dirty ? "Unsaved changes" : "No changes"}
+      </p>
       {saveError && (
         <p role="alert" className="text-sm text-err">
           {saveError}
@@ -289,6 +324,8 @@ export default function ComboEditor({
                     label: "No data",
                     variant: "neutral",
                   };
+                  const explanation = explanations[index];
+                  const track = trackStates[index];
                   return (
                     <RouteStep
                       key={id}
@@ -301,7 +338,10 @@ export default function ComboEditor({
                       healthVariant={health.variant}
                       showWeight={isWeighted}
                       weight={drafts[id] ?? String(weights[model] ?? 1)}
-                      share={shares[index] ?? 0}
+                      weightDetail={explanation ? shareDetailText(explanation) : undefined}
+                      share={explanation?.share ?? 0}
+                      replayState={track?.state}
+                      replayReason={track?.reason}
                       weightError={weightErrors[id]}
                       onWeightChange={(v) => {
                         setDrafts((prev) => ({ ...prev, [id]: v }));
@@ -390,7 +430,7 @@ export default function ComboEditor({
           }}
           activeProviders={activeProviders}
           modelAliases={modelAliases}
-          title="Add Model to Route"
+          title="Add model to route"
           addedModelValues={models}
           closeOnSelect={false}
         />
@@ -405,7 +445,7 @@ export default function ComboEditor({
           }}
           activeProviders={activeProviders}
           modelAliases={modelAliases}
-          title="Select Judge Model"
+          title="Select judge model"
           addedModelValues={judgeModel ? [judgeModel] : []}
           closeOnSelect
         />
@@ -417,12 +457,23 @@ export default function ComboEditor({
           setConfirmDelete(false);
           onDelete?.();
         }}
-        title="Delete Combo"
+        title="Delete combo"
         message={`Delete combo "${combo.name}"? This cannot be undone.`}
         confirmText="Delete"
         variant="danger"
       />
-      <RouteTestPanel comboId={combo.id} />
+      {/* Keyed by the route contents: any model edit remounts the panel so a
+          recorded run can never remap onto steps it wasn't recorded against.
+          While models differ from the saved route the probe (which runs the
+          saved combo server-side) stays disabled: its attempts would light
+          the wrong draft steps. */}
+      <RouteTestPanel
+        key={models.join("\n")}
+        comboId={combo.id}
+        models={models}
+        disabled={modelsDirty}
+        onTrackStatesChange={setTrackStates}
+      />
     </section>
   );
 }
@@ -436,7 +487,9 @@ ComboEditor.propTypes = {
   strategy: PropTypes.string.isRequired,
   weights: PropTypes.object,
   judgeModel: PropTypes.string,
-  headroom: PropTypes.object,
+  headroom: PropTypes.objectOf(PropTypes.number),
+  headroomQuotaSource: PropTypes.objectOf(PropTypes.string),
+  savedModels: PropTypes.arrayOf(PropTypes.string),
   healthByProvider: PropTypes.object,
   providerLabelById: PropTypes.object,
   saving: PropTypes.bool,
@@ -447,6 +500,7 @@ ComboEditor.propTypes = {
   onRename: PropTypes.func,
   onDelete: PropTypes.func,
   onSave: PropTypes.func,
+  onDiscard: PropTypes.func,
   onStrategyChange: PropTypes.func,
   onWeightSave: PropTypes.func,
   onJudgeChange: PropTypes.func,

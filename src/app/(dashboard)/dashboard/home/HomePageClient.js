@@ -1,20 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import useLastActivity from "@/shared/hooks/useLastActivity";
+import useLiveRoutes from "@/shared/hooks/useLiveRoutes";
+import usePeriod from "@/shared/hooks/usePeriod";
+import { isIdle as routesAreIdle, mergeRoutes } from "@/shared/utils/routesMap";
+import { SUMMARY_PERIODS } from "@/shared/utils/period";
 import HomeHeader from "./HomeHeader";
 import { EndpointHeroCard } from "./EndpointHero";
 import { KeysSummaryCard } from "./KeysSummary";
 import HomeStats from "./HomeStats";
-import { LiveRoutesCard } from "./LiveRoutesCard";
+import { RoutesMapCard } from "@/shared/components/routesMap/RoutesMapCard";
 import { RecentRequestsCard } from "./RecentRequests";
 import { QuotaWatchCard } from "./QuotaWatch";
 import { CombosTopCard, comboUsageFromByEndpoint } from "./CombosTop";
 import { ProviderHealthCard } from "./ProviderHealth";
+import { onHomeFocus } from "./homeResourceStore";
 import {
   useHomeChart,
   useHomeCombos,
   useHomeKeys,
-  useHomeLiveRoutes,
   useHomeProviders,
   useHomeQuota,
   useHomeRecentDetails,
@@ -29,12 +34,20 @@ import {
  * recent requests, quota watch, top combos, provider health.
  */
 export default function HomePageClient() {
-  const [period, setPeriod] = useState("today");
+  const { period, setPeriod, options } = usePeriod(SUMMARY_PERIODS);
   const [origin, setOrigin] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (typeof window !== "undefined") setOrigin(window.location.origin);
+  }, []);
+
+  // One focus listener for the whole page: re-reads only data older than
+  // STALE_MS, at most once per FOCUS_THROTTLE_MS.
+  useEffect(() => {
+    const onVisible = () => onHomeFocus();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
   const bump = () => setRefreshKey((value) => value + 1);
@@ -52,8 +65,18 @@ export default function HomePageClient() {
   const providers = useHomeProviders(refreshKey);
   const combos = useHomeCombos(refreshKey);
   const quota = useHomeQuota(refreshKey);
-  const liveRoutes = useHomeLiveRoutes(refreshKey);
+  const liveRoutes = useLiveRoutes(refreshKey);
   const recent = useHomeRecentDetails(refreshKey);
+  // Idle edges for quiet providers come from mergeRoutes (no traffic in the
+  // window still leaves a hub-side edge per connected provider). Memoized so
+  // unrelated poll ticks keep the SVG props referentially stable.
+  const routesModel = useMemo(
+    () =>
+      liveRoutes.routes && providers.connections.length > 0
+        ? mergeRoutes(liveRoutes.routes, providers.connections)
+        : liveRoutes.routes,
+    [liveRoutes.routes, providers.connections],
+  );
 
   const summaryCombos =
     summary.summary && Array.isArray(summary.summary.topCombos)
@@ -62,12 +85,27 @@ export default function HomePageClient() {
   const usageByCombo =
     summaryCombos ?? (usage.current ? comboUsageFromByEndpoint(usage.current.byEndpoint) : null);
 
+  // Quiet = stats answered for the *selected* period with no requests in it
+  // (a period switch keeps the old payload until the refetch lands). Only then
+  // is the real last-activity time fetched; its errors render inside the row.
+  const quiet =
+    Boolean(usage.current) &&
+    usage.currentPeriod === period &&
+    !usage.loading &&
+    !usage.error &&
+    !usage.current.totalRequests;
+  // One last-activity fetch serves the quiet-period row and the idle map
+  // (skipped when there are no providers at all — the true empty state).
+  const idle = routesModel && routesModel.providers.length > 0 ? routesAreIdle(routesModel) : false;
+  const activity = useLastActivity(quiet || idle);
+
   return (
     <div className="flex min-w-0 flex-col gap-5 pb-8">
       <HomeHeader
         connections={providers.connections}
         providersLoading={providers.loading}
         period={period}
+        options={options}
         onPeriodChange={setPeriod}
       />
 
@@ -99,26 +137,37 @@ export default function HomePageClient() {
           loading={usage.loading || chart.loading || savingsLoading || summary.loading}
           error={usage.error || chart.error}
           onRetry={bump}
+          period={period}
+          lastRequestAt={activity.lastRequestAt}
+          lastActivityLoading={activity.loading}
+          lastActivityError={activity.error}
+          onRetryLastActivity={activity.retry}
+          onSelectPeriod={setPeriod}
         />
       </div>
 
       <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-3">
-        <LiveRoutesCard
-          routes={liveRoutes.routes}
+        <RoutesMapCard
+          routes={routesModel}
           loading={liveRoutes.loading}
           error={liveRoutes.error}
           onRetry={bump}
+          lastRequestAt={activity.lastRequestAt}
+          lastActivityError={activity.error}
+          onRetryLastActivity={activity.retry}
+          className="lg:col-span-2"
         />
         <RecentRequestsCard
           details={recent.details}
           fallback={usage.current?.recentRequests}
           loading={usage.loading || recent.loading}
           error={usage.error && recent.error ? usage.error : null}
+          detailsError={recent.error}
           onRetry={bump}
         />
       </div>
 
-      <div className="grid min-w-0 grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid min-w-0 grid-cols-1 items-start gap-5 md:grid-cols-2 xl:grid-cols-3">
         <QuotaWatchCard
           accounts={quota.accounts}
           loading={quota.loading}

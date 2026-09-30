@@ -6,6 +6,8 @@ import { getDefaultPricing } from "open-sse/providers/pricing.js";
 import Modal, { ConfirmDialog } from "./Modal";
 import Button from "./Button";
 import ProviderTile from "@/shared/components/ProviderTile";
+import { LoadingState } from "./StateViews";
+import { TABLE_HEAD_CELL, TABLE_HEAD_ROW } from "./displayPrimitives";
 
 const PRICING_FIELDS = ["input", "output", "cached", "reasoning", "cache_creation"];
 const FIELD_LABELS = {
@@ -13,7 +15,7 @@ const FIELD_LABELS = {
   output: "Output",
   cached: "Cached",
   reasoning: "Reasoning",
-  cache_creation: "Cache Creation",
+  cache_creation: "Cache creation",
 };
 
 /**
@@ -106,7 +108,7 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
       <Modal
         isOpen={isOpen}
         onClose={onClose}
-        title="Pricing Configuration"
+        title="Pricing configuration"
         size="full"
         className="max-w-6xl"
         closeOnOverlay={!saving}
@@ -114,7 +116,7 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
         footer={
           <div className="flex w-full flex-wrap items-center justify-between gap-2">
             <Button variant="danger" onClick={() => setConfirmReset(true)} disabled={saving}>
-              Reset to Defaults
+              Reset to defaults
             </Button>
             <div className="flex gap-2">
               <Button variant="ghost" onClick={onClose} disabled={saving}>
@@ -135,11 +137,11 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
           )}
         </div>
         {loading ? (
-          <div className="py-8 text-center text-muted">Loading pricing data...</div>
+          <LoadingState label="Loading pricing" lines={4} />
         ) : (
           <div className="space-y-6">
             <div className="rounded-lg border border-line bg-raised p-3 text-sm">
-              <p className="mb-1 font-medium text-text">Pricing Rates Format</p>
+              <p className="mb-1 font-medium text-text">Pricing rates format</p>
               <p className="text-muted">
                 All rates are in <strong>dollars per million tokens</strong> ($/1M tokens). Example:
                 Input rate of 2.50 means $2.50 per 1,000,000 input tokens.
@@ -165,7 +167,7 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
         onConfirm={handleReset}
         title="Reset pricing"
         message="Reset all pricing to defaults? This cannot be undone."
-        confirmText="Reset to Defaults"
+        confirmText="Reset to defaults"
       />
     </>
   );
@@ -191,11 +193,13 @@ function ProviderPricingTable({ provider, models, onChange }) {
         tabIndex={0}
       >
         <table className="w-full text-sm">
-          <thead className="bg-line/40 text-xs uppercase text-muted">
-            <tr>
-              <th className="px-3 py-2 text-start">Model</th>
+          <thead>
+            <tr className={TABLE_HEAD_ROW}>
+              <th scope="col" className={`${TABLE_HEAD_CELL} px-3 py-2 text-start`}>
+                Model
+              </th>
               {PRICING_FIELDS.map((field) => (
-                <th key={field} className="px-3 py-2 text-end">
+                <th key={field} scope="col" className={`${TABLE_HEAD_CELL} px-3 py-2 text-end`}>
                   {FIELD_LABELS[field]}
                 </th>
               ))}

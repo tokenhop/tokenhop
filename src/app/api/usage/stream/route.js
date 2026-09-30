@@ -1,65 +1,71 @@
-import { getUsageStats, statsEmitter, getActiveRequests } from "@/lib/usageDb";
+import { statsEmitter, getLiveSnapshot } from "@/lib/usageDb";
+import { buildLivePayload } from "@/lib/usage/livePayload";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+// YAN-407 stream diet: one slim frame per event (connect, "update", "pending"),
+// built from the in-memory snapshot — the full-history stats aggregate is never
+// computed here. Cleanup runs on send failure, cancel and request abort.
+export async function GET(request) {
   const encoder = new TextEncoder();
   const state = {
     closed: false,
+    clientCancelled: false,
     keepalive: null,
     send: null,
-    sendPending: null,
-    cachedStats: null,
+    stalled: 0,
+    abortCleanup: null,
+    controller: null,
+  };
+
+  const cleanup = () => {
+    if (state.closed) return;
+    state.closed = true;
+    if (state.send) {
+      statsEmitter.off("update", state.send);
+      statsEmitter.off("pending", state.send);
+    }
+    clearInterval(state.keepalive);
+    if (state.abortCleanup) {
+      request.signal.removeEventListener("abort", state.abortCleanup);
+      state.abortCleanup = null;
+    }
+    try {
+      // Client-cancel close is already torn down by cancel(); closing again
+      // throws, so only close here for server-side cleanup.
+      if (!state.clientCancelled) state.controller?.close();
+    } catch {}
   };
 
   const stream = new ReadableStream({
     async start(controller) {
-      // Full stats refresh (heavy) + immediate lightweight push
+      state.controller = controller;
       state.send = async () => {
         if (state.closed) return;
         try {
-          // Push lightweight update immediately so UI reflects changes fast
-          if (state.cachedStats) {
-            const { activeRequests, recentRequests, errorProvider } = await getActiveRequests();
-            const quickStats = {
-              ...state.cachedStats,
-              activeRequests,
-              recentRequests,
-              errorProvider,
-            };
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(quickStats)}\n\n`));
+          const payload = buildLivePayload(await getLiveSnapshot());
+          if (controller.desiredSize !== null && controller.desiredSize <= 0) {
+            if (++state.stalled >= 3) {
+              cleanup();
+              return;
+            }
+          } else {
+            state.stalled = 0;
           }
-          // Then do full recalc and update cache
-          const stats = await getUsageStats();
-          state.cachedStats = stats;
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
         } catch {
-          state.closed = true;
-          statsEmitter.off("update", state.send);
-          statsEmitter.off("pending", state.sendPending);
-          clearInterval(state.keepalive);
+          cleanup();
         }
       };
 
-      // Lightweight push: only refresh activeRequests + recentRequests on pending changes
-      state.sendPending = async () => {
-        if (state.closed || !state.cachedStats) return;
-        try {
-          const { activeRequests, recentRequests, errorProvider } = await getActiveRequests();
-          const stats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
-        } catch {
-          state.closed = true;
-          statsEmitter.off("update", state.send);
-          statsEmitter.off("pending", state.sendPending);
-          clearInterval(state.keepalive);
-        }
-      };
-
+      // One frame on connect so a fresh client paints live fields immediately.
       await state.send();
+      if (state.closed) return;
 
       statsEmitter.on("update", state.send);
-      statsEmitter.on("pending", state.sendPending);
+      statsEmitter.on("pending", state.send);
+      state.abortCleanup = cleanup;
+      request.signal.addEventListener("abort", cleanup);
 
       state.keepalive = setInterval(() => {
         if (state.closed) {
@@ -69,17 +75,14 @@ export async function GET() {
         try {
           controller.enqueue(encoder.encode(": ping\n\n"));
         } catch {
-          state.closed = true;
-          clearInterval(state.keepalive);
+          cleanup();
         }
       }, 25000);
     },
 
     cancel() {
-      state.closed = true;
-      statsEmitter.off("update", state.send);
-      statsEmitter.off("pending", state.sendPending);
-      clearInterval(state.keepalive);
+      state.clientCancelled = true;
+      cleanup();
     },
   });
 

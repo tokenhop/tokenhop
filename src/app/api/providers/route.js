@@ -18,6 +18,16 @@ import {
 import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
 import { getSnapshot } from "open-sse/services/quotaSnapshot.js";
 import { effectiveWeightFor } from "@/sse/services/accountSelection";
+import { remainingFromWindows } from "@/lib/home/quota.js";
+
+/** Quota left (0-100) from the in-memory snapshot, null when none or on failure. */
+function quotaRemainingFor(snapshot) {
+  try {
+    return remainingFromWindows(snapshot?.windows);
+  } catch {
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 
@@ -81,10 +91,12 @@ export async function GET() {
       const name = isCompatible
         ? c.name || nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider
         : c.name;
+      const snapshot = getSnapshot(c.id);
       return {
         ...c,
         name,
-        effectiveWeight: effectiveWeightFor(c, { snapshot: getSnapshot(c.id) }),
+        effectiveWeight: effectiveWeightFor(c, { snapshot }),
+        quotaRemaining: quotaRemainingFor(snapshot),
         apiKey: undefined,
         accessToken: undefined,
         refreshToken: undefined,
@@ -99,7 +111,7 @@ export async function GET() {
   }
 }
 
-// POST /api/providers - Create new connection (API Key only, OAuth via separate flow)
+// POST /api/providers - Create new connection (API key only, OAuth via separate flow)
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -135,7 +147,7 @@ export async function POST(request) {
     }
     if (!apiKey && provider !== "ollama-local") {
       return NextResponse.json(
-        { error: `${isWebCookieProvider ? "Cookie value" : "API Key"} is required` },
+        { error: `${isWebCookieProvider ? "Cookie value" : "API key"} is required` },
         { status: 400 },
       );
     }

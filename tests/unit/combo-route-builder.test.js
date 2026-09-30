@@ -4,7 +4,6 @@ import {
   roleLabel,
   STRATEGY_EXPLAINERS,
   STRATEGIES,
-  weightShare,
   isFallbackOnly,
   parseWeight,
   validateComboName,
@@ -83,41 +82,6 @@ describe("STRATEGIES", () => {
       "bar_chart",
       "gavel",
     ]);
-  });
-});
-
-describe("weightShare", () => {
-  it("splits 50/30/20 like the board example", () => {
-    expect(weightShare([50, 30, 20], [1, 1, 1])).toEqual([50, 30, 20]);
-  });
-
-  it("weight 0 → share 0", () => {
-    expect(weightShare([1, 0], [1, 1])).toEqual([100, 0]);
-  });
-
-  it("scales by headroom", () => {
-    // 3*0.2=0.6 vs 1*1=1 → 37.5 / 62.5
-    expect(weightShare([3, 1], [0.2, 1])).toEqual([37.5, 62.5]);
-  });
-
-  it("missing weights default to 1", () => {
-    expect(weightShare([], [])).toEqual([]);
-    expect(weightShare([2], [])).toEqual([100]);
-    expect(weightShare([undefined, undefined], [1, 1])).toEqual([50, 50]);
-  });
-
-  it("non-finite/negative headroom → 1", () => {
-    expect(weightShare([1, 1], [NaN, 1])).toEqual([50, 50]);
-    expect(weightShare([1, 1], [-0.5, 1])).toEqual([50, 50]);
-    expect(weightShare([1, 1], [Infinity, 1])).toEqual([50, 50]);
-  });
-
-  it("total 0 → all 0", () => {
-    expect(weightShare([0, 0], [1, 1])).toEqual([0, 0]);
-  });
-
-  it("rounds to 1 decimal", () => {
-    expect(weightShare([1, 1, 1], [1, 1, 1])).toEqual([33.3, 33.3, 33.3]);
   });
 });
 

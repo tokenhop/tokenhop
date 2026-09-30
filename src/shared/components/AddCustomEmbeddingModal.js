@@ -142,13 +142,13 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
           hint="Most embedding APIs are OpenAI-compatible: Voyage, Cohere, Jina, Mistral, Together..."
         />
         <Input
-          label="API Key (for Check)"
+          label="API key (for check)"
           type="password"
           value={checkKey}
           onChange={(e) => setCheckKey(e.target.value)}
         />
         <Input
-          label="Model ID (for Check)"
+          label="Model ID (for check)"
           value={checkModelId}
           onChange={(e) => setCheckModelId(e.target.value)}
           placeholder="e.g. voyage-3, embed-english-v3.0, text-embedding-3-small"

@@ -19,6 +19,11 @@ npm test            # vitest + known-fails regression gate (needs tests/ deps)
 
 Commits follow Conventional Commits 1.0.0 (commitlint-enforced, see `.gitmessage`).
 
+## Branching & releases
+
+Follow [`RELEASING.md`](RELEASING.md) for the base branch of every change,
+backports, and releases.
+
 ## Before editing `open-sse/`
 
 Read [`open-sse/AGENTS.md`](open-sse/AGENTS.md) — the routing/translation

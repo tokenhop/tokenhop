@@ -292,11 +292,26 @@ describe("playgroundPreviews", () => {
 });
 
 describe("playgroundModelOptions", () => {
-  it("returns selectable options for a kind", () => {
+  it("uses full model ids grouped by provider, keeping wire values unchanged", () => {
     const options = playgroundModelOptions("embedding");
     expect(Array.isArray(options)).toBe(true);
     expect(options.length).toBeGreaterThan(0);
     expect(options[0]).toHaveProperty("value");
+    expect(options[0]).toHaveProperty("group");
     expect(options[0]).toHaveProperty("label");
+    for (const option of options.filter(({ value }) => value.includes("/"))) {
+      expect(option.label).toBe(option.value.slice(option.value.indexOf("/") + 1));
+      expect(option.group).toBeTruthy();
+    }
+  });
+
+  it("keeps provider-only web models selectable in a named group", () => {
+    const options = playgroundModelOptions("webSearch");
+    expect(options.length).toBeGreaterThan(0);
+    for (const option of options) {
+      expect(option.value).toBeTruthy();
+      expect(option.group).toBeTruthy();
+      expect(option.label).toBeTruthy();
+    }
   });
 });

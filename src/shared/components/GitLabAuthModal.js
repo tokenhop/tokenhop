@@ -18,7 +18,7 @@ function getRedirectUri() {
 
 /**
  * GitLab Duo auth: OAuth app (PKCE, hands off to OAuthModal with the app
- * credentials) or a Personal Access Token.
+ * credentials) or a Personal access token.
  */
 export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClose }) {
   const [mode, setMode] = useState(null); // null | "oauth" | "pat"
@@ -64,7 +64,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
 
   const handlePATSubmit = async () => {
     if (!pat.trim()) {
-      setError("Personal Access Token is required");
+      setError("Personal access token is required");
       return;
     }
     setLoading(true);
@@ -123,7 +123,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
                   lock_open
                 </span>
                 <span>
-                  <span className="block text-sm font-medium">OAuth App</span>
+                  <span className="block text-sm font-medium">OAuth app</span>
                   <span className="block text-xs text-muted">Use a GitLab OAuth application</span>
                 </span>
               </button>
@@ -132,7 +132,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
                   key
                 </span>
                 <span>
-                  <span className="block text-sm font-medium">Personal Access Token</span>
+                  <span className="block text-sm font-medium">Personal access token</span>
                   <span className="block text-xs text-muted">Use a GitLab PAT with api scope</span>
                 </span>
               </button>
@@ -150,13 +150,13 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
                 rel="noreferrer"
                 className="text-coral underline"
               >
-                GitLab Applications
+                GitLab applications
               </a>{" "}
               with redirect URI{" "}
               <code className="rounded bg-raised px-1 text-xs">{getRedirectUri()}</code>
             </p>
             <Input
-              label="GitLab Base URL"
+              label="GitLab base URL"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder={GITLAB_COM}
@@ -168,7 +168,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
               placeholder="Your OAuth application client ID"
             />
             <Input
-              label="Client Secret (optional for PKCE)"
+              label="Client secret (optional for PKCE)"
               value={clientSecret}
               onChange={(e) => setClientSecret(e.target.value)}
               placeholder="Leave empty for public PKCE app"
@@ -202,20 +202,20 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
                 rel="noreferrer"
                 className="text-coral underline"
               >
-                GitLab Access Tokens
+                GitLab access tokens
               </a>{" "}
               with scopes: <code className="rounded bg-raised px-1 text-xs">api</code>,{" "}
               <code className="rounded bg-raised px-1 text-xs">read_user</code>, and{" "}
               <code className="rounded bg-raised px-1 text-xs">ai_features</code>.
             </p>
             <Input
-              label="GitLab Base URL"
+              label="GitLab base URL"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder={GITLAB_COM}
             />
             <Input
-              label="Personal Access Token"
+              label="Personal access token"
               type="password"
               value={pat}
               onChange={(e) => setPat(e.target.value)}

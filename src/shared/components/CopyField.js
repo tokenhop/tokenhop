@@ -6,13 +6,15 @@ import { cn } from "@/shared/utils/cn";
 import { copyTextToClipboard } from "./formPrimitives";
 
 /**
- * Signal mono value with a copy button. Announces "Copied" (or the failure)
+ * Signal mono value with a copy button (`showCopyButton={false}` when a
+ * page-level primary already copies the same value). Announces "Copied" (or the failure)
  * via a polite live region; the clipboard failure path keeps the button honest.
  */
 export default function CopyField({
   value,
   copyValue,
   label = "Copy to clipboard",
+  showCopyButton = true,
   className,
   ...props
 }) {
@@ -45,20 +47,29 @@ export default function CopyField({
       )}
       {...props}
     >
-      <code className="min-w-0 flex-1 truncate font-mono text-sm text-text">{value}</code>
-      <button
-        type="button"
-        aria-label={label}
-        onClick={onCopy}
-        className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-line/60 hover:text-text focus-visible:shadow-focus"
+      <code
+        title={String(copyValue ?? value)}
+        className="min-w-0 flex-1 truncate font-mono text-sm text-text"
       >
-        <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
-          {status === "copied" ? "check" : status === "error" ? "error" : "content_copy"}
+        {value}
+      </code>
+      {showCopyButton ? (
+        <button
+          type="button"
+          aria-label={label}
+          onClick={onCopy}
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-line/60 hover:text-text focus-visible:shadow-focus"
+        >
+          <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+            {status === "copied" ? "check" : status === "error" ? "error" : "content_copy"}
+          </span>
+        </button>
+      ) : null}
+      {showCopyButton ? (
+        <span aria-live="polite" className="sr-only">
+          {status === "copied" ? "Copied" : status === "error" ? "Copy failed" : ""}
         </span>
-      </button>
-      <span aria-live="polite" className="sr-only">
-        {status === "copied" ? "Copied" : status === "error" ? "Copy failed" : ""}
-      </span>
+      ) : null}
     </div>
   );
 }
@@ -67,5 +78,6 @@ CopyField.propTypes = {
   value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
   copyValue: PropTypes.string,
   label: PropTypes.string,
+  showCopyButton: PropTypes.bool,
   className: PropTypes.string,
 };

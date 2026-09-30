@@ -245,7 +245,8 @@ describe("proxyAwareFetch — api.anthropic.com routing", () => {
     vi.restoreAllMocks();
   });
 
-  it("routes api.anthropic.com to gotScraping (non-streaming) and returns ok response", async () => {
+  // got-scraping JA3 path disabled in proxyFetch.js; re-enable when restored
+  it.skip("routes api.anthropic.com to gotScraping (non-streaming) and returns ok response", async () => {
     // Mock got-scraping before module load
     vi.doMock("got-scraping", () => {
       const mockGotScraping = vi.fn().mockResolvedValue({

@@ -10,18 +10,19 @@ import HeaderLanguage from "@/shared/components/HeaderLanguage";
 import dynamic from "next/dynamic";
 import IconButton from "@/shared/components/IconButton";
 import CommandPaletteTrigger from "@/shared/components/CommandPaletteTrigger";
-import { useHeaderSearchStore } from "@/store/headerSearchStore";
-import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/mediaProviderKinds";
+import useAuthStatus from "@/shared/hooks/useAuthStatus";
+import { getMediaRouteInfo } from "@/shared/utils/mediaPageInfo";
 import { PROVIDER_DISPLAY } from "@/shared/constants/providerDisplay.generated";
-import { COMBINED_WEB_ITEM } from "@/shared/constants/navigation";
-import { translate } from "@/i18n/runtime";
+import { onLocaleChange, translate } from "@/i18n/runtime";
 
 // Lazy shell dialog: the chunk loads on first open, not with the shell.
 const DonateModal = dynamic(() => import("@/shared/components/DonateModal"), { ssr: false });
 
 /**
  * Maps pathname to page title, description (subtitle line), icon and breadcrumbs.
- * Preserves every route mapping from the legacy Header.
+ * Media routes delegate to the pure {@link getMediaRouteInfo} helper (YAN-402):
+ * list routes use the stable "Media providers" H1 + board subtitle; detail and
+ * combo pages render their own in-page H1, so the shell only shows breadcrumbs.
  *
  * @param {string} pathname
  * @returns {{ title: string, description: string, icon?: string, breadcrumbs: Array<object> }}
@@ -29,52 +30,9 @@ const DonateModal = dynamic(() => import("@/shared/components/DonateModal"), { s
 export const getPageInfo = (pathname) => {
   if (!pathname) return { title: "", description: "", breadcrumbs: [] };
 
-  // Media provider detail: /dashboard/media-providers/[kind]/[id]
-  const mediaDetailMatch = pathname.match(/\/media-providers\/([^/]+)\/([^/]+)$/);
-  if (mediaDetailMatch) {
-    const kindId = mediaDetailMatch[1];
-    const providerId = mediaDetailMatch[2];
-    if (kindId === "combo") {
-      return {
-        title: "",
-        description: "",
-        breadcrumbs: [
-          { label: "Media Providers", href: "/dashboard/media-providers" },
-          { label: "Combo", href: "/dashboard/media-providers" },
-          { label: providerId },
-        ],
-      };
-    }
-    const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kindId);
-    const provider = PROVIDER_DISPLAY[providerId];
-    // Detail page renders its own in-page h1 (YAN-314); shell shows breadcrumb only.
-    return {
-      title: "",
-      description: "",
-      breadcrumbs: [
-        { label: "Media Providers", href: `/dashboard/media-providers/${kindId}` },
-        { label: kindConfig?.label || kindId, href: `/dashboard/media-providers/${kindId}` },
-        { label: provider?.name || providerId, providerId },
-      ],
-    };
-  }
-
-  // Media provider kind: /dashboard/media-providers/[kind]
-  const mediaKindMatch = pathname.match(/\/media-providers\/([^/]+)$/);
-  if (mediaKindMatch) {
-    const kindId = mediaKindMatch[1];
-    // The combined web page has no MEDIA_PROVIDER_KINDS entry; legacy showed the raw "web" id.
-    const kindConfig =
-      kindId === COMBINED_WEB_ITEM.id
-        ? COMBINED_WEB_ITEM
-        : MEDIA_PROVIDER_KINDS.find((k) => k.id === kindId);
-    return {
-      title: kindConfig?.label || kindId,
-      description: `Manage your ${kindConfig?.label || kindId} providers`,
-      icon: kindConfig?.icon || "perm_media",
-      breadcrumbs: [],
-    };
-  }
+  // Media provider routes: /dashboard/media-providers[/[kind][/[id]]]
+  const mediaInfo = getMediaRouteInfo(pathname);
+  if (mediaInfo) return mediaInfo;
 
   // Provider detail page: /dashboard/providers/[id]
   const providerMatch = pathname.match(/\/providers\/([^/]+)$/);
@@ -124,7 +82,7 @@ export const getPageInfo = (pathname) => {
     };
   if (pathname.includes("/auth-files"))
     return {
-      title: "Auth Files",
+      title: "Auth files",
       description: "Map provider credentials stored in the local database",
       icon: "vpn_key",
       breadcrumbs: [],
@@ -138,7 +96,7 @@ export const getPageInfo = (pathname) => {
     };
   if (pathname.includes("/mitm"))
     return {
-      title: "MITM Proxy",
+      title: "MITM proxy",
       description: "Intercept CLI tool traffic and route through 9Router",
       icon: "security",
       breadcrumbs: [],
@@ -207,8 +165,9 @@ export const getPageInfo = (pathname) => {
       breadcrumbs: [],
     };
   if (pathname === "/dashboard")
+    // Home renders its own in-page H1 with the status line above it, like provider detail YAN-314.
     return {
-      title: "Command center",
+      title: "",
       description: "",
       breadcrumbs: [],
     };
@@ -239,44 +198,22 @@ export default function Header({
   sidebarOpen = false,
 }) {
   const pathname = usePathname();
-  const [displayName, setDisplayName] = useState("");
-  const [loginMethod, setLoginMethod] = useState("");
+  const authStatus = useAuthStatus();
   const [donateOpen, setDonateOpen] = useState(false);
+  // translate() output is rendered by React, so re-render when the locale switches.
+  const [, setLocaleTick] = useState(0);
+  useEffect(() => onLocaleChange(() => setLocaleTick((n) => n + 1)), []);
 
-  const searchVisible = useHeaderSearchStore((s) => s.visible);
   const pageInfo = useMemo(() => getPageInfo(pathname), [pathname]);
   const { title, description, breadcrumbs } = pageInfo;
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadAuthStatus() {
-      try {
-        const res = await fetch("/api/auth/status", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) {
-          setDisplayName(
-            data?.displayName ||
-              data?.samlName ||
-              data?.samlEmail ||
-              data?.oidcName ||
-              data?.oidcEmail ||
-              "",
-          );
-          setLoginMethod(data?.loginMethod || "");
-        }
-      } catch {
-        if (!cancelled) {
-          setDisplayName("");
-          setLoginMethod("");
-        }
-      }
-    }
-    loadAuthStatus();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const displayName =
+    authStatus.displayName ||
+    authStatus.samlName ||
+    authStatus.samlEmail ||
+    authStatus.oidcName ||
+    authStatus.oidcEmail ||
+    "";
+  const loginMethod = authStatus.loginMethod || "";
 
   const handleLogout = async () => {
     try {
@@ -372,8 +309,6 @@ export default function Header({
         <CommandPaletteTrigger />
 
         <div className="hidden min-w-0 items-center gap-2 sm:contents">
-          <HeaderSearch />
-
           {/* Support heart icon button (in the ⋮ menu below sm) */}
           <IconButton
             icon="volunteer_activism"
@@ -386,13 +321,6 @@ export default function Header({
         </div>
         <HeaderMenu onLogout={handleLogout} onDonate={() => setDonateOpen(true)} />
       </div>
-
-      {/* Below sm: page search on its own full-width row */}
-      {searchVisible ? (
-        <div className="flex w-full min-w-0 items-center gap-2 sm:hidden">
-          <HeaderSearch />
-        </div>
-      ) : null}
 
       {/* Page-injected actions, mounted once: a full-width row below sm,
           inline at the end from sm up */}
@@ -411,43 +339,3 @@ Header.propTypes = {
   actions: PropTypes.node,
   sidebarOpen: PropTypes.bool,
 };
-
-function HeaderSearch() {
-  const visible = useHeaderSearchStore((s) => s.visible);
-  const query = useHeaderSearchStore((s) => s.query);
-  const placeholder = useHeaderSearchStore((s) => s.placeholder);
-  const setQuery = useHeaderSearchStore((s) => s.setQuery);
-
-  if (!visible) return null;
-
-  return (
-    <div className="relative min-w-[120px] max-w-[240px] flex-1">
-      <span
-        className="material-symbols-outlined pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-[18px] text-muted"
-        aria-hidden="true"
-      >
-        search
-      </span>
-      <input
-        type="search"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder={placeholder}
-        aria-label={placeholder || "Search"}
-        className="h-10 w-full rounded-xl border border-line bg-raised pe-8 ps-8 text-sm text-text placeholder:text-subtle focus-visible:outline-none focus-visible:shadow-focus"
-      />
-      {query && (
-        <button
-          type="button"
-          onClick={() => setQuery("")}
-          className="absolute end-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted hover:text-text"
-          aria-label="Clear search"
-        >
-          <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
-            close
-          </span>
-        </button>
-      )}
-    </div>
-  );
-}

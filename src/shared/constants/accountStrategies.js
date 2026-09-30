@@ -1,6 +1,6 @@
 export const ACCOUNT_STRATEGY_OPTIONS = [
-  { value: "fill-first", label: "Fill First — priority order" },
-  { value: "round-robin", label: "Round Robin — equal rotation" },
+  { value: "fill-first", label: "Fill first — priority order" },
+  { value: "round-robin", label: "Round robin — equal rotation" },
   { value: "weighted", label: "Weighted — by plan & remaining quota" },
 ];
 

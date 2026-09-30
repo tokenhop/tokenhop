@@ -56,7 +56,7 @@ export async function POST(request) {
 
     if (!accountId || !apiToken) {
       return NextResponse.json(
-        { error: "Cloudflare Account ID and API Token are required" },
+        { error: "Cloudflare Account ID and API token are required" },
         { status: 400 },
       );
     }

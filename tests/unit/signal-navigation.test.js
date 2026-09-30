@@ -1,10 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  countConnectedProviders,
-  countLowQuotaAccounts,
-  providerAttention,
-  readTranslatorGate,
-} from "@/shared/hooks/useShellStatus.js";
+import { summarizeProviderBadges } from "@/lib/shellSummary";
 import {
   NAV_GROUPS,
   VISIBLE_MEDIA_KINDS,
@@ -116,15 +111,26 @@ describe("formatBadge", () => {
 });
 
 describe("media tabs", () => {
-  it("lists visible kinds plus web fetch & search", () => {
+  it("lists visible kinds plus web fetch and search", () => {
     expect(VISIBLE_MEDIA_KINDS[0]).toBe("embedding");
     const last = MEDIA_TABS[MEDIA_TABS.length - 1];
     expect(last).toMatchObject({ id: "web", href: "/dashboard/media-providers/web" });
     expect(getMediaTabHref("embedding")).toBe("/dashboard/media-providers/embedding");
   });
+
+  it("labels every tab sentence case (YAN-402)", () => {
+    expect(MEDIA_TABS.map((tab) => tab.label)).toEqual([
+      "Embedding",
+      "Text to image",
+      "Video",
+      "Text to speech",
+      "Speech to text",
+      "Web fetch and search",
+    ]);
+  });
 });
 
-describe("shell status helpers", () => {
+describe("shell provider badges", () => {
   it("counts distinct providers with an enabled connection (shared health rule)", () => {
     const connections = [
       { provider: "openai", testStatus: "active" },
@@ -134,37 +140,28 @@ describe("shell status helpers", () => {
       { provider: "codex", testStatus: "error" },
       { provider: "disabled-one", testStatus: "active", isActive: false },
     ];
-    expect(countConnectedProviders(connections)).toBe(3);
+    expect(summarizeProviderBadges(connections).connected).toBe(3);
   });
 
   it("reports how many providers need attention and the worst status", () => {
-    expect(providerAttention([{ provider: "openai", testStatus: "active" }])).toEqual({
+    const attention = (rows) => summarizeProviderBadges(rows).attention;
+    expect(attention([{ provider: "openai", testStatus: "active" }])).toEqual({
       count: 0,
       status: null,
     });
     expect(
-      providerAttention([
+      attention([
         { provider: "openai", testStatus: "active" },
         { provider: "codex", testStatus: "error" },
         { provider: "gemini", testStatus: "mystery" },
         { provider: "off", testStatus: "error", isActive: false },
       ]),
     ).toEqual({ count: 2, status: "err" });
-    expect(providerAttention([{ provider: "gemini", testStatus: "mystery" }])).toEqual({
+    expect(attention([{ provider: "gemini", testStatus: "mystery" }])).toEqual({
       count: 1,
       status: "warn",
     });
-    expect(providerAttention(null)).toEqual({ count: 0, status: null });
-  });
-
-  it("counts accounts at or below the low-quota threshold", () => {
-    const quotaData = {
-      c1: { quotas: [{ remainingPercentage: 15 }] },
-      c2: { quotas: [{ remainingPercentage: 80 }] },
-      c3: { quotas: [{ total: 100, used: 95 }] }, // 5% left <= 20%
-      c4: { quotas: [{ total: 100, used: 50 }] }, // 50% left
-    };
-    expect(countLowQuotaAccounts(quotaData, 20)).toBe(2);
+    expect(attention(null)).toEqual({ count: 0, status: null });
   });
 });
 
@@ -185,24 +182,5 @@ describe("badgeAriaLabel", () => {
   it("returns null for empty counts or unknown keys", () => {
     expect(badgeAriaLabel("providers", 0)).toBeNull();
     expect(badgeAriaLabel("unknown", 3)).toBeNull();
-  });
-});
-
-describe("readTranslatorGate", () => {
-  const ok = (body) => ({ status: "fulfilled", value: { ok: true, json: async () => body } });
-
-  it("follows the settings payload both ways", async () => {
-    expect(await readTranslatorGate(ok({ enableTranslator: true }), false)).toBe(true);
-    expect(await readTranslatorGate(ok({ enableTranslator: false }), true)).toBe(false);
-    expect(await readTranslatorGate(ok({}), true)).toBe(false);
-  });
-
-  it("keeps the previous value when the fetch fails", async () => {
-    expect(await readTranslatorGate({ status: "rejected", reason: new Error("x") }, true)).toBe(
-      true,
-    );
-    expect(await readTranslatorGate({ status: "fulfilled", value: { ok: false } }, false)).toBe(
-      false,
-    );
   });
 });

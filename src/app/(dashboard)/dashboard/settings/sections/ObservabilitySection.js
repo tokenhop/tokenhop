@@ -8,6 +8,7 @@ import NumberStepper from "@/shared/components/NumberStepper";
 import UnitInput from "@/shared/components/UnitInput";
 import Callout from "@/shared/components/Callout";
 import { useSettingsField } from "../useSettingsField";
+import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 
 function FieldError({ error }) {
   if (!error) return null;
@@ -73,7 +74,12 @@ export default function ObservabilitySection({ settings, onSettingsChange }) {
   const translatorField = useSettingsField(
     "translatorEnabled",
     settings.translatorEnabled === true,
-    { onSaved: onSaved("translatorEnabled") },
+    {
+      onSaved: (value) => {
+        onSaved("translatorEnabled")(value);
+        refreshShellStatus();
+      },
+    },
   );
 
   const off = !enabled.value;

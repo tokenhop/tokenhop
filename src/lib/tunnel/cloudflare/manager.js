@@ -53,7 +53,8 @@ function throwIfCancelled(token) {
   if (token.cancelled) throw new Error("tunnel cancelled");
 }
 
-export async function enableTunnel(localPort = 20128) {
+// Next's start-server sets process.env.PORT to the port it actually bound (dev uses 20127).
+export async function enableTunnel(localPort = Number(process.env.PORT) || 20128) {
   console.log(`[Tunnel] enable start (port=${localPort})`);
   const relay = getTunnelRelay();
   svc.cancelToken = { cancelled: false };

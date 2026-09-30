@@ -2,9 +2,8 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CardSkeleton, EmptyState, SegmentedControl } from "@/shared/components";
+import { CardSkeleton, EmptyState, SegmentedControl, ToolbarSearch } from "@/shared/components";
 import { CLI_TOOLS, MITM_TOOLS } from "@/shared/constants/cliTools";
-import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 import { useToolSetupData } from "./hooks/useToolSetupData";
@@ -28,9 +27,7 @@ const FILTER_OPTIONS = [
  */
 export default function CLIToolsPageClient({ initialTool = "claude" }) {
   const router = useRouter();
-  const registerSearch = useHeaderSearchStore((s) => s.register);
-  const unregisterSearch = useHeaderSearchStore((s) => s.unregister);
-  const query = useHeaderSearchStore((s) => s.query);
+  const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [statuses, setStatuses] = useState({});
   const [statusesLoading, setStatusesLoading] = useState(true);
@@ -38,11 +35,6 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
   const [selected, setSelected] = useState(initialTool);
   const data = useToolSetupData();
   const localOnly = useCliAccessStore((s) => s.localOnly);
-
-  useEffect(() => {
-    registerSearch("Find a tool");
-    return () => unregisterSearch();
-  }, [registerSearch, unregisterSearch]);
 
   useEffect(() => {
     let mounted = true;
@@ -113,6 +105,8 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
         filter={filter}
         setFilter={setFilter}
         filterOptions={filterOptions}
+        query={query}
+        setQuery={setQuery}
         statusesError={statusesError}
         statusesLoading={statusesLoading}
         visible={visible}
@@ -130,6 +124,8 @@ function CLIToolsView({
   filter,
   setFilter,
   filterOptions,
+  query,
+  setQuery,
   statusesError,
   statusesLoading,
   visible,
@@ -148,6 +144,13 @@ function CLIToolsView({
           onChange={setFilter}
           aria-label="Filter tools"
           size="sm"
+        />
+        <ToolbarSearch
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter tools"
+          ariaLabel="Filter tools"
+          className="ms-auto w-full sm:w-[220px]"
         />
         {statusesError && (
           <p className="text-xs text-warn" role="status">

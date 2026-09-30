@@ -22,7 +22,7 @@ import AccessCard from "./components/AccessCard";
 import QuickConnectCard from "./components/QuickConnectCard";
 import { useTunnelControls } from "./hooks/useTunnelControls";
 import { useApiKeys } from "./hooks/useApiKeys";
-import { useRemoteHost, useLocalBaseUrl } from "./hooks/useEndpointShell";
+import { useRemoteHost, useLocalBaseUrl } from "@/shared/hooks/useEndpointShell";
 
 /**
  * Endpoint & keys page (Signal redesign): three ways in, API keys with
@@ -220,7 +220,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
             onDeleteKey={(id) => {
               const target = apiKeys.keys.find((k) => k.id === id);
               apiKeys.setConfirmState({
-                title: "Delete API Key",
+                title: "Delete API key",
                 message: `Delete API key "${target?.name ?? ""}"? This cannot be undone.`,
                 onConfirm: async () => {
                   apiKeys.setConfirmState(null);
@@ -264,7 +264,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
       <Modal
         isOpen={apiKeys.showAddModal}
         onClose={closeCreate}
-        title="Create API Key"
+        title="Create API key"
         footer={
           <>
             <Button variant="ghost" onClick={closeCreate}>
@@ -288,10 +288,10 @@ export default function EndpointPageClient({ machineId: _machineId }) {
           }}
         >
           <Input
-            label="Key Name"
+            label="Key name"
             value={apiKeys.newKeyName}
             onChange={(e) => apiKeys.setNewKeyName(e.target.value)}
-            placeholder="Production Key"
+            placeholder="Production key"
             error={apiKeys.createError}
             maxLength={64}
           />
@@ -303,18 +303,18 @@ export default function EndpointPageClient({ machineId: _machineId }) {
         </form>
       </Modal>
 
-      {/* Enable Tunnel modal */}
+      {/* Enable tunnel modal */}
       <Modal
         isOpen={tunnel.showEnableTunnelModal}
         onClose={() => tunnel.setShowEnableTunnelModal(false)}
-        title="Enable Tunnel"
+        title="Enable tunnel"
         footer={
           <>
             <Button variant="ghost" onClick={() => tunnel.setShowEnableTunnelModal(false)}>
               Cancel
             </Button>
             <Button variant="secondary" onClick={tunnel.handleEnableTunnel}>
-              Start Tunnel
+              Start tunnel
             </Button>
           </>
         }
@@ -356,12 +356,12 @@ export default function EndpointPageClient({ machineId: _machineId }) {
         </div>
       </Modal>
 
-      {/* Disable Tunnel confirm */}
+      {/* Disable tunnel confirm */}
       <ConfirmDialog
         isOpen={tunnel.showDisableTunnelModal}
         onClose={() => !tunnel.tunnelLoading && tunnel.setShowDisableTunnelModal(false)}
         onConfirm={tunnel.handleDisableTunnel}
-        title="Disable Tunnel"
+        title="Disable tunnel"
         message="The Cloudflare tunnel will be disconnected. Remote access via tunnel URL will stop working."
         confirmText={tunnel.tunnelLoading ? "Disabling..." : "Disable"}
         cancelText="Cancel"

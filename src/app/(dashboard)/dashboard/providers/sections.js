@@ -3,8 +3,6 @@ import {
   APIKEY_PROVIDERS,
   FREE_PROVIDERS,
   FREE_TIER_PROVIDERS,
-  OPENAI_COMPATIBLE_PREFIX,
-  ANTHROPIC_COMPATIBLE_PREFIX,
   AI_PROVIDERS,
 } from "@/shared/constants/providers";
 import { getProviderStats } from "./utils";
@@ -165,37 +163,29 @@ export function PROVIDER_SECTIONS({ connections, providerNodes, statsFor }) {
       id: "oauth",
       title: "Subscriptions & OAuth",
       subtitle: "Sign in once. 9router refreshes tokens for you.",
-      testMode: "oauth",
       entries: [...oauthEntries, ...connectedHiddenEntries],
       totalCount: oauthEntries.length + connectedHiddenEntries.length,
     },
     {
       id: "free",
-      title: "Free Tier Providers",
+      title: "Free tier providers",
       subtitle: "Free quotas and no-key proxies.",
-      testMode: "free",
       entries: [...freeEntries, ...freeTierEntries],
       totalCount: freeEntries.length + freeTierEntries.length,
-      actions: true,
     },
     {
       id: "apikey",
       title: "API keys & free tiers",
       subtitle: "Paste a key, pick models, done.",
-      testMode: "apikey",
       entries: apikeyEntries,
       totalCount: apikeyEntries.length,
-      actions: true,
     },
     {
       id: "custom",
-      title: "Custom Providers",
+      title: "Custom providers",
       subtitle: "OpenAI- or Anthropic-compatible endpoints.",
-      testMode: "compatible",
       entries: [...compatibleEntries, ...anthropicEntries],
       totalCount: compatibleEntries.length + anthropicEntries.length,
     },
   ];
 }
-
-export { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX };

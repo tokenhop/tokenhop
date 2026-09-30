@@ -1,42 +1,31 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
-import SegmentedControl from "@/shared/components/SegmentedControl";
+import PageTitle from "@/shared/components/PageTitle";
+import PeriodControl from "@/shared/components/PeriodControl";
 import { deriveCommandCenterStatus } from "@/shared/utils/commandCenter";
+import { SUMMARY_PERIODS } from "@/shared/utils/period";
 import { summarizeProviders } from "@/shared/utils/providerHealth";
 
-/** Home periods: the segmented control drives every stat. */
-export const HOME_PERIODS = [
-  { value: "today", label: "Today" },
-  { value: "7d", label: "7d" },
-  { value: "30d", label: "30d" },
-];
-
 /**
- * Home toolbar: derived status line and the Today/7d/30d control. The status text is plain English translated at render.
+ * Home page header: derived status line above the in-page H1, plus the period
+ * control. The status text is plain English translated at render; the control
+ * labels come from the shared period model (zh override lives in PeriodControl).
  *
  * @param {object} props
  * @param {Array<object>} props.connections provider connections for the status line
  * @param {boolean} props.providersLoading true while connections load ("…" line)
- * @param {"today"|"7d"|"30d"} props.period
+ * @param {"today"|"7d"|"30d"|null} props.period null while the period is unresolved
+ * @param {Array<{value: string, label: string}>} props.options period choices from usePeriod
  * @param {(period: string) => void} props.onPeriodChange
  */
-export default function HomeHeader({ connections, providersLoading, period, onPeriodChange }) {
-  const [labels, setLabels] = useState(null);
-
-  useEffect(() => {
-    setLabels(
-      document.documentElement.lang.startsWith("zh")
-        ? { today: "今天", "7d": "7天", "30d": "30天" }
-        : null,
-    );
-  }, []);
-
-  const options = labels
-    ? HOME_PERIODS.map((item) => ({ ...item, label: labels[item.value] }))
-    : HOME_PERIODS;
-
+export default function HomeHeader({
+  connections,
+  providersLoading,
+  period,
+  options,
+  onPeriodChange,
+}) {
   // One status per provider (worst enabled connection), not one per connection.
   const statuses = Array.isArray(connections)
     ? summarizeProviders([], connections).providers.map(({ status }) => ({ status }))
@@ -47,11 +36,16 @@ export default function HomeHeader({ connections, providersLoading, period, onPe
         statuses.map((item) => ({ status: item.status === "off" ? "idle" : item.status })),
       );
 
-  // Shell Header owns the page title; this is the page toolbar.
+  // Home owns the page title in-page (status line above the H1), like provider detail (YAN-314).
   return (
-    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm font-medium text-muted">{statusLine}</p>
-      <SegmentedControl
+    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex min-w-0 flex-col gap-1">
+        <p aria-live="polite" className="text-sm font-medium text-muted">
+          {statusLine}
+        </p>
+        <PageTitle>Command center</PageTitle>
+      </div>
+      <PeriodControl
         aria-label="Stats period"
         options={options}
         value={period}
@@ -65,6 +59,7 @@ export default function HomeHeader({ connections, providersLoading, period, onPe
 HomeHeader.propTypes = {
   connections: PropTypes.arrayOf(PropTypes.object),
   providersLoading: PropTypes.bool,
-  period: PropTypes.oneOf(["today", "7d", "30d"]).isRequired,
+  period: PropTypes.oneOf(SUMMARY_PERIODS),
+  options: PropTypes.arrayOf(PropTypes.shape({ value: PropTypes.string, label: PropTypes.string })),
   onPeriodChange: PropTypes.func.isRequired,
 };

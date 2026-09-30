@@ -103,7 +103,7 @@ describe("SAML 2.0 Auth Engine Utilities", () => {
       const rawXml = Buffer.from('<Response ID="123"></Response>').toString("base64");
       await expect(
         validateSamlResponse(null, { SAMLResponse: rawXml }, "req-123", {}),
-      ).rejects.toThrow(/Certificate/);
+      ).rejects.toThrow(/certificate/);
     });
   });
 

@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import Button from "@/shared/components/Button";
 import Callout from "@/shared/components/Callout";
 import Card from "@/shared/components/Card";
+import CardLink from "@/shared/components/CardLink";
 import CopyField from "@/shared/components/CopyField";
 import StatusPill from "@/shared/components/StatusPill";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -91,17 +92,17 @@ export default function EndpointHero({ origin, tunnel, loading, error, onRetry, 
         <StatusPill variant="ok" dot>
           OpenAI-compatible
         </StatusPill>
-        <a
-          href="/dashboard/endpoint"
-          className="ms-auto text-[13px] font-semibold text-coral-ink hover:text-coral"
-        >
-          Endpoint settings
-        </a>
+        <span className="ms-auto shrink-0">
+          <CardLink href="/dashboard/endpoint" showArrow={false}>
+            Endpoint settings
+          </CardLink>
+        </span>
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="min-w-0 flex-1">
-          <CopyField value={endpoint} label="Copy endpoint URL" />
+          {/* The lime Copy button is the one copy control for this value. */}
+          <CopyField value={endpoint} showCopyButton={false} className="border-dashed" />
         </div>
         <Button
           variant="primary"
@@ -118,7 +119,7 @@ export default function EndpointHero({ origin, tunnel, loading, error, onRetry, 
         {items.map((item) => (
           <li
             key={item.id}
-            className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-raised px-3 text-[13px] font-medium text-text"
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line bg-raised px-3 text-[13px] font-medium text-text"
           >
             <span
               aria-hidden="true"
@@ -126,13 +127,7 @@ export default function EndpointHero({ origin, tunnel, loading, error, onRetry, 
             />
             {item.label}
             {item.id === "cloudflare" && !tunnelOn ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                loading={enabling}
-                onClick={enableTunnel}
-                className="h-6 px-2.5 text-xs"
-              >
+              <Button variant="outline" size="sm" loading={enabling} onClick={enableTunnel}>
                 Enable
               </Button>
             ) : (
@@ -142,7 +137,7 @@ export default function EndpointHero({ origin, tunnel, loading, error, onRetry, 
             )}
           </li>
         ))}
-        <li className="inline-flex h-10 items-center gap-2 rounded-lg border border-line bg-raised px-3 text-[13px] font-medium text-text">
+        <li className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line bg-raised px-3 text-[13px] font-medium text-text">
           <span className="material-symbols-outlined text-[16px] text-ok" aria-hidden="true">
             {requireApiKey ? "verified_user" : "lock_open"}
           </span>
@@ -151,9 +146,18 @@ export default function EndpointHero({ origin, tunnel, loading, error, onRetry, 
       </ul>
 
       {tunnelOn && tunnelUrl ? (
-        <p className="truncate font-mono text-xs text-muted">
-          Tunnel live at <span className="text-text">{tunnelUrl}</span>
-        </p>
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <span className="inline-flex items-center gap-2 text-xs font-medium text-muted">
+            <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-ok" />
+            Tunnel live
+          </span>
+          {/* Scheme dropped for display only so the hostname gets the room; copy keeps full URL. */}
+          <CopyField
+            value={tunnelUrl.replace(/^https?:\/\//, "")}
+            copyValue={tunnelUrl}
+            label="Copy tunnel URL"
+          />
+        </div>
       ) : null}
       {enableError ? <Callout variant="err">{enableError}</Callout> : null}
     </div>
@@ -179,7 +183,7 @@ export function EndpointHeroCard(props) {
           icon="api"
           title="Endpoint is starting"
           body="Open this page from the running dashboard to see the real endpoint URL."
-          actionLabel="Open Endpoint settings"
+          actionLabel="Open endpoint settings"
           actionHref="/dashboard/endpoint"
         />
       ) : (

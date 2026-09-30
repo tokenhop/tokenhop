@@ -82,7 +82,7 @@ export default function Navigation() {
         <div className="flex items-center gap-2">
           <ThemeToggle className="min-h-[44px] min-w-[44px]" />
           <Button variant="primary" size="md" href="/dashboard" className="hidden sm:inline-flex">
-            Get Started
+            Get started
           </Button>
           <IconButton
             icon={mobileMenuOpen ? "close" : "menu"}
@@ -114,7 +114,7 @@ export default function Navigation() {
               </a>
             ))}
             <Button variant="primary" size="md" href="/dashboard" fullWidth className="mt-2">
-              Get Started
+              Get started
             </Button>
           </div>
         </div>

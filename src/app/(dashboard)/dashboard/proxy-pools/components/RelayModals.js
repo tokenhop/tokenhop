@@ -63,12 +63,12 @@ export function CloudflareDeployModal({ isOpen, onClose, deploying, onDeploy }) 
       <Modal.Body>
         <div className="flex flex-col gap-4">
           <Explainer
-            title="What is Cloudflare Relay?"
+            title="What is the Cloudflare relay?"
             body="Deploys a Cloudflare Worker as a proxy relay. All AI provider requests will be forwarded through Cloudflare's global edge network."
             points={[
               "High performance global routing and IP masking via Cloudflare Workers",
               "Free tier: 100,000 requests per day",
-              "Requires Cloudflare Account ID and a Workers API Token (Edit Workers permission)",
+              "Requires Cloudflare Account ID and a Workers API token (Edit Workers permission)",
             ]}
             steps={[
               "Go to My Profile → API Tokens → Create Token",
@@ -87,7 +87,7 @@ export function CloudflareDeployModal({ isOpen, onClose, deploying, onDeploy }) 
             hint="Found on the right side of the Cloudflare dashboard overview page."
           />
           <Input
-            label="API Token"
+            label="API token"
             required
             type="password"
             value={apiToken}
@@ -96,7 +96,7 @@ export function CloudflareDeployModal({ isOpen, onClose, deploying, onDeploy }) 
             hint="Requires Workers Scripts: Edit permission. Token is used once and not stored."
           />
           <Input
-            label="Worker Name"
+            label="Worker name"
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
             placeholder="my-relay"
@@ -144,7 +144,7 @@ export function VercelDeployModal({ isOpen, onClose, deploying, onDeploy }) {
       <Modal.Body>
         <div className="flex flex-col gap-4">
           <Explainer
-            title="What is Vercel Relay?"
+            title="What is the Vercel relay?"
             body="Deploys an edge relay function to Vercel. All AI provider requests will be forwarded through Vercel's edge network, masking your real IP from providers."
             points={[
               "Your IP is replaced by Vercel's dynamic edge IPs across 20+ global regions",
@@ -154,7 +154,7 @@ export function VercelDeployModal({ isOpen, onClose, deploying, onDeploy }) {
             ]}
           />
           <Input
-            label="Vercel API Token"
+            label="Vercel API token"
             required
             type="password"
             value={vercelToken}
@@ -163,7 +163,7 @@ export function VercelDeployModal({ isOpen, onClose, deploying, onDeploy }) {
             hint="Token is used once for deployment and not stored. Get one at vercel.com/account/tokens."
           />
           <Input
-            label="Project Name"
+            label="Project name"
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
             placeholder="my-relay"
@@ -213,7 +213,7 @@ export function DenoDeployModal({ isOpen, onClose, deploying, onDeploy }) {
       <Modal.Body>
         <div className="flex flex-col gap-4">
           <Explainer
-            title="What is Deno Relay?"
+            title="What is the Deno relay?"
             body="Deploys a relay worker to Deno Deploy's global edge network. All AI provider requests are forwarded through Deno's edge, masking your real IP."
             points={[
               "Deno Deploy v2 runs on a high-performance global edge network",
@@ -229,7 +229,7 @@ export function DenoDeployModal({ isOpen, onClose, deploying, onDeploy }) {
             ]}
           />
           <Input
-            label="Deno Deploy API Token"
+            label="Deno Deploy API token"
             required
             type="password"
             value={denoToken}
@@ -238,7 +238,7 @@ export function DenoDeployModal({ isOpen, onClose, deploying, onDeploy }) {
             hint="Token is used once for deployment, not stored. Found in Organization Settings."
           />
           <Input
-            label="Organization Domain"
+            label="Organization domain"
             required
             value={orgDomain}
             onChange={(e) => setOrgDomain(e.target.value)}
@@ -246,7 +246,7 @@ export function DenoDeployModal({ isOpen, onClose, deploying, onDeploy }) {
             hint="Your relay URL will be https://my-relay.your-org.deno.net."
           />
           <Input
-            label="App Name"
+            label="App name"
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
             placeholder="deno-relay"

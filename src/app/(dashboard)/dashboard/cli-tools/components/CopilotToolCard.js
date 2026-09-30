@@ -263,7 +263,7 @@ export default function CopilotToolCard({
       <ManualConfigModal
         isOpen={card.showManualModal}
         onClose={() => card.setShowManualModal(false)}
-        title="GitHub Copilot — Manual Configuration"
+        title="GitHub Copilot — Manual configuration"
         configs={getManualConfigs()}
       />
     </>

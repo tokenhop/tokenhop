@@ -74,3 +74,48 @@ export function uptimeSecondsSince(startedAt, nowMs) {
   if (!Number.isFinite(start)) return null;
   return Math.max(0, Math.floor((nowMs - start) / 1000));
 }
+
+// Gateway heartbeat (YAN-408): 15 one-minute request buckets ending at now,
+// and the pulse-dot duration that follows live traffic.
+export const HEARTBEAT_BUCKETS = 15;
+const HEARTBEAT_MINUTE_MS = 60_000;
+const HEARTBEAT_WINDOW_MS = HEARTBEAT_BUCKETS * HEARTBEAT_MINUTE_MS;
+
+/**
+ * Requests per minute over the last 15 minutes as 15 integer buckets, oldest
+ * first, ending at the current (partial) minute. Timestamps outside the
+ * window, in the future, or unparsable are dropped.
+ * @param {Array<string>} timestamps ISO timestamps
+ * @param {number} nowMs
+ * @returns {number[]} 15 request counts
+ */
+export function buildMinuteBuckets(timestamps, nowMs) {
+  const buckets = new Array(HEARTBEAT_BUCKETS).fill(0);
+  const startMs = nowMs - HEARTBEAT_WINDOW_MS;
+  for (const timestamp of timestamps || []) {
+    const ms = Date.parse(timestamp ?? "");
+    if (!Number.isFinite(ms) || ms < startMs || ms > nowMs) continue;
+    const index = Math.min(HEARTBEAT_BUCKETS - 1, Math.floor((ms - startMs) / HEARTBEAT_MINUTE_MS));
+    buckets[index] += 1;
+  }
+  return buckets;
+}
+
+/** Pulse-dot bounds: slow when idle, fast when busy (ms per cycle). */
+export const PULSE_IDLE_MS = 2400;
+export const PULSE_BUSY_MS = 900;
+/** Requests in the newest minute that count as fully busy. */
+export const PULSE_BUSY_RPM = 60;
+
+/**
+ * Pulse-dot duration for a given requests-per-minute: 2.4s idle → 0.9s busy,
+ * linear in between, clamped at both ends. Non-numeric/negative input is idle.
+ * @param {number} requestsPerMinute requests in the newest heartbeat bucket
+ * @returns {number} milliseconds per pulse cycle
+ */
+export function pulseDurationMs(requestsPerMinute) {
+  const rpm = Number(requestsPerMinute);
+  if (!Number.isFinite(rpm) || rpm <= 0) return PULSE_IDLE_MS;
+  if (rpm >= PULSE_BUSY_RPM) return PULSE_BUSY_MS;
+  return Math.round(PULSE_IDLE_MS - ((PULSE_IDLE_MS - PULSE_BUSY_MS) / PULSE_BUSY_RPM) * rpm);
+}

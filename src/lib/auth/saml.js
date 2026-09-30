@@ -157,7 +157,7 @@ export async function validateSamlResponse(request, body, expectedRequestId, set
   }
 
   if (!settings?.samlCert) {
-    throw new Error("IdP X.509 Certificate (samlCert) is missing or not configured");
+    throw new Error("IdP X.509 certificate (samlCert) is missing or not configured");
   }
 
   const origin = getSamlBaseUrl(request, settings);

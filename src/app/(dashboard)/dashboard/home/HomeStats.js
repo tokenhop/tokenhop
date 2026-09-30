@@ -1,24 +1,29 @@
 "use client";
 
+import Link from "next/link";
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
+import CountUp from "@/shared/components/CountUp";
+import QuietPeriod from "@/shared/components/QuietPeriod";
 import StatTile from "@/shared/components/StatTile";
 import { periodDelta } from "@/shared/utils/commandCenter";
+import { SUMMARY_PERIODS } from "@/shared/utils/period";
 import { cachedShare, formatCompact, formatInt, formatMoney } from "./format";
-import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
+import { WidgetError, WidgetSkeleton } from "./WidgetStates";
 
 /** Human names for recorded token-saver methods. */
 const METHOD_LABELS = { rtk: "RTK", headroom: "Headroom", pxpipe: "PXPIPE" };
 
 /**
- * Requests sparkline from per-minute request buckets (last 10 minutes).
- * Chart buckets hold tokens/cost, not request counts, so they drive the cost line instead.
- * @param {Array<{ requests?: number }>|null|undefined} last10Minutes
+ * Requests sparkline from /api/usage/chart buckets: the same window as the
+ * cost sparkline, so the line follows the selected period instead of the
+ * old fixed last-10-minutes window.
+ * @param {Array<{ requests?: number }>|null|undefined} buckets
  * @returns {Array<number>|undefined}
  */
-export function requestsSparkline(last10Minutes) {
-  if (!Array.isArray(last10Minutes) || last10Minutes.length < 2) return undefined;
-  return last10Minutes.map((bucket) => Number(bucket?.requests) || 0);
+export function requestsSparkline(buckets) {
+  if (!Array.isArray(buckets) || buckets.length < 2) return undefined;
+  return buckets.map((bucket) => Number(bucket?.requests) || 0);
 }
 
 /**
@@ -57,16 +62,24 @@ export function deltaLine(current, previous) {
 /**
  * Four StatTiles: requests (+delta +sparkline), tokens in/out (cached %),
  * est. cost, saved-by-token-saver lime hero. Driven by Today/7d/30d.
+ * A quiet period collapses to one compact QuietPeriod row that names the
+ * real last-request time and can jump to the smallest period with data.
  *
  * @param {object} props
  * @param {object|null} props.current usage stats for the period
  * @param {number|null} [props.previousRequests] previous-period request count from /api/home/summary
- * @param {Array|null} props.buckets /api/usage/chart buckets (cost sparkline)
+ * @param {Array|null} props.buckets /api/usage/chart buckets (requests + cost sparklines)
  * @param {object|null} props.savings /api/usage/savings aggregation
  * @param {boolean} [props.savingsUnavailable] savings endpoint failed
  * @param {boolean} props.loading
  * @param {string|null} props.error
  * @param {() => void} props.onRetry
+ * @param {"today"|"7d"|"30d"|null} props.period selected period for the quiet state
+ * @param {string|null|undefined} props.lastRequestAt ISO time of the last request (undefined until loaded)
+ * @param {boolean} [props.lastActivityLoading] true while last-activity loads
+ * @param {string|null} [props.lastActivityError] last-activity fetch error
+ * @param {() => void} [props.onRetryLastActivity] re-read last activity
+ * @param {(period: string) => void} props.onSelectPeriod jump to a period with data
  */
 export default function HomeStats({
   current,
@@ -77,6 +90,12 @@ export default function HomeStats({
   loading,
   error,
   onRetry,
+  period,
+  lastRequestAt,
+  lastActivityLoading = false,
+  lastActivityError = null,
+  onRetryLastActivity,
+  onSelectPeriod,
 }) {
   if (loading) {
     return [0, 1, 2, 3].map((index) => (
@@ -94,13 +113,17 @@ export default function HomeStats({
   }
   if (!current?.totalRequests) {
     return (
-      <Card className="min-w-0 sm:col-span-2 lg:col-span-4">
-        <WidgetEmpty
-          icon="bar_chart"
-          title="No traffic in this period"
-          body="Send your first request through the endpoint above, then watch the numbers land here."
-          actionLabel="View Usage"
-          actionHref="/dashboard/usage"
+      <Card className="min-w-0 sm:col-span-2 lg:col-span-4" padding="none">
+        <QuietPeriod
+          compact
+          period={period}
+          lastRequestAt={lastRequestAt}
+          loading={lastActivityLoading}
+          error={lastActivityError}
+          onRetry={onRetryLastActivity}
+          allowed={SUMMARY_PERIODS}
+          onSelectPeriod={onSelectPeriod}
+          headingAs="h2"
         />
       </Card>
     );
@@ -113,13 +136,10 @@ export default function HomeStats({
   const saved = savings && savings.tokensSavedEst > 0 ? savings : null;
   const methods = saved ? saved.methods.map((method) => METHOD_LABELS[method] || method) : [];
 
-  let savingsValue = "0 tokens";
   let savingsLine = "Nothing saved yet in this period";
   if (saved) {
-    savingsValue = `${formatCompact(saved.tokensSavedEst)} tokens`;
     savingsLine = `${Math.round(saved.percentage)}% lighter${methods.length ? ` · ${methods.join(" + ")}` : ""}`;
   } else if (savingsUnavailable) {
-    savingsValue = "—";
     savingsLine = "Savings data unavailable";
   }
 
@@ -127,17 +147,20 @@ export default function HomeStats({
     <>
       <StatTile
         eyebrow="Requests"
-        value={formatInt(requests)}
+        value={<CountUp value={requests} format={formatInt} />}
         delta={deltaLine(requests, previousRequests)}
-        sparkline={requestsSparkline(current.last10Minutes)}
+        sparkline={requestsSparkline(buckets)}
         className="min-w-0 text-sky"
       />
       <StatTile
         eyebrow="Tokens in / out"
         value={
           <span>
-            {formatCompact(prompt)}
-            <span className="text-[22px] text-muted"> / {formatCompact(completion)}</span>
+            <CountUp value={prompt} format={formatCompact} />
+            <span className="text-[22px] text-muted">
+              {" "}
+              / <CountUp value={completion} format={formatCompact} />
+            </span>
           </span>
         }
         delta={
@@ -154,7 +177,7 @@ export default function HomeStats({
       />
       <StatTile
         eyebrow="Est. cost"
-        value={formatMoney(current.totalCost)}
+        value={<CountUp value={current.totalCost} format={formatMoney} />}
         delta={<span className="text-muted">Estimate at list prices, not your bill</span>}
         sparkline={costSparkline(buckets)}
         className="min-w-0 text-coral-ink"
@@ -162,14 +185,22 @@ export default function HomeStats({
       <StatTile
         hero
         eyebrow="Saved by token saver"
-        value={savingsValue}
+        value={
+          saved ? (
+            <CountUp value={saved.tokensSavedEst} format={formatCompact} suffix=" tokens" />
+          ) : savingsUnavailable ? (
+            "—"
+          ) : (
+            "0 tokens"
+          )
+        }
         delta={
           <span>
             {savingsLine}
             {" · "}
-            <a href="/dashboard/token-saver" className="font-semibold underline">
+            <Link href="/dashboard/token-saver" className="font-semibold underline">
               Tune
-            </a>
+            </Link>
           </span>
         }
         className="min-w-0"
@@ -191,4 +222,10 @@ HomeStats.propTypes = {
   loading: PropTypes.bool,
   error: PropTypes.string,
   onRetry: PropTypes.func.isRequired,
+  period: PropTypes.oneOf(SUMMARY_PERIODS),
+  lastRequestAt: PropTypes.string,
+  lastActivityLoading: PropTypes.bool,
+  lastActivityError: PropTypes.string,
+  onRetryLastActivity: PropTypes.func,
+  onSelectPeriod: PropTypes.func,
 };

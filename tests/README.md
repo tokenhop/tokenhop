@@ -52,7 +52,7 @@ Antigravity connection with a refresh token and project ID.
 
 ## Regression check
 
-The suite is not all-green on a plain checkout. Compare a run against the known failures in `__baseline__/known-fails.txt` instead of reading raw results:
+The suite runs green on a plain checkout. Compare a run against the known failures in `__baseline__/known-fails.txt` (empty since YAN-416 triaged all ~86 pinned failures) instead of reading raw results:
 
 ```bash
 npx vitest run --reporter=json --outputFile=results.json; node __baseline__/verify-no-regression.mjs results.json
@@ -66,12 +66,11 @@ Unit tests for the `/v1/embeddings` endpoint implementation.
 
 ### Test Files
 
-| File                            | What it tests                                                                                                                                                               |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `unit/embeddingsCore.test.js`   | `open-sse/handlers/embeddingsCore.js` — core logic: body builder, URL router, headers, handler flow                                                                         |
-| `unit/embeddings.cloud.test.js` | `cloud/src/handlers/embeddings.js` — cloud worker handler: auth, validation, rate limits, CORS. The `cloud/` directory is not in this repo, so this file always fails here. |
+| File                          | What it tests                                                                                       |
+| ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| `unit/embeddingsCore.test.js` | `open-sse/handlers/embeddingsCore.js` — core logic: body builder, URL router, headers, handler flow |
 
-### Coverage Summary (59 tests)
+### Coverage Summary (36 tests)
 
 #### `embeddingsCore.test.js` (36 tests)
 
@@ -82,13 +81,3 @@ Unit tests for the `/v1/embeddings` endpoint implementation.
 - `handleEmbeddingsCore` success: response format, CORS, Content-Type, callbacks
 - `handleEmbeddingsCore` errors: 400/429/500, network error, invalid JSON
 - `handleEmbeddingsCore` token refresh: 401 retry, graceful fallback
-
-#### `embeddings.cloud.test.js` (23 tests)
-
-- CORS OPTIONS: 200 response, empty body, correct headers
-- Authentication: missing key, bad format, old-format key, wrong key value, valid key
-- Body validation: invalid JSON, missing model, missing input, bad model
-- Happy path: single string, array, correct delegation, CORS header, machineId override
-- Rate limiting: all accounts rate-limited → 503 + Retry-After, no credentials → 400
-- Error propagation: non-fallback errors passed through, 429 exhausts accounts
-- machineId override: validates key, rejects wrong key

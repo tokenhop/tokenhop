@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import {
   QUOTA_CACHE_KEY,
   getQuotaCache,
@@ -106,6 +107,7 @@ export function useQuotaActions({
     async (what) => {
       try {
         await reconcileConnectionsPage(fetchConnections, page);
+        refreshShellStatus();
       } catch (error) {
         console.error(`Error refreshing after ${what}:`, error);
         // retryLoad reloads list + quotas, same path as the page ErrorState Retry.

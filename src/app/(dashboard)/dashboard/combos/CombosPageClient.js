@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Button,
@@ -151,6 +152,7 @@ export default function CombosPageClient() {
   const [draftWeights, setDraftWeights] = useState({});
   const [draftJudge, setDraftJudge] = useState("");
   const [headroom, setHeadroom] = useState({});
+  const [headroomQuotaSource, setHeadroomQuotaSource] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [adapterError, setAdapterError] = useState("");
@@ -377,17 +379,25 @@ export default function CombosPageClient() {
 
   // Headroom re-fetches when models change; an effect-local cancelled flag
   // drops stale responses so an older request never overwrites a newer one.
+  // quotaByModel (additive YAN-411 detail) carries the remaining-quota source
+  // so weighted shares can explain which numbers shifted them.
   const selectedIdForHeadroom = selected?.id;
   useEffect(() => {
     if (!selectedIdForHeadroom || draftStrategy !== "weighted" || !draftModels?.length) {
       setHeadroom({});
+      setHeadroomQuotaSource({});
       return;
     }
     let cancelled = false;
     fetch(`/api/combos/${selectedIdForHeadroom}/headroom`)
       .then((res) => (res.ok ? res.json() : {}))
       .then((data) => {
-        if (!cancelled) setHeadroom(data.headroom || {});
+        if (cancelled) return;
+        setHeadroom(data.headroom || {});
+        const detail = data.quotaByModel || {};
+        setHeadroomQuotaSource(
+          Object.fromEntries(Object.entries(detail).map(([m, d]) => [m, d?.source || "static"])),
+        );
       })
       .catch(() => {});
     return () => {
@@ -429,6 +439,7 @@ export default function CombosPageClient() {
     // Refetch first so the new combo is in the list, then select it and drop
     // ?create=1 in one navigation so the two URL writes can't race.
     await fetchData();
+    refreshShellStatus();
     setShowCreateModal(false);
     if (created?.id) {
       setSelectedId(created.id);
@@ -571,7 +582,7 @@ export default function CombosPageClient() {
     // still switch selection, so the confirm must not read live `selected`.
     const { id: deleteId, name: deleteName } = selected;
     setConfirmState({
-      title: "Delete Combo",
+      title: "Delete combo",
       message: `Delete combo "${deleteName}"? This cannot be undone.`,
       onConfirm: async () => {
         setConfirmState(null);
@@ -594,6 +605,7 @@ export default function CombosPageClient() {
           if (selectedComboId === deleteId) navigate(nextId, "replace");
           setCombos(rest);
           setSelectedId(nextId);
+          refreshShellStatus();
         } catch (error) {
           setSaveError(error?.message || "Failed to delete combo");
         }
@@ -709,6 +721,8 @@ export default function CombosPageClient() {
               weights={draftWeights}
               judgeModel={draftJudge}
               headroom={headroom}
+              headroomQuotaSource={headroomQuotaSource}
+              savedModels={selected.models || []}
               healthByProvider={healthByProvider}
               providerLabelById={providerLabelById}
               saving={saving}
@@ -719,6 +733,7 @@ export default function CombosPageClient() {
               onRename={handleRename}
               onDelete={handleDelete}
               onSave={handleSaveRoute}
+              onDiscard={() => applyServerState(selected, strategiesRef.current)}
               onStrategyChange={(s) => {
                 editGenerationRef.current += 1;
                 setDraftStrategy(s);

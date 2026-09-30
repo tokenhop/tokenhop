@@ -1,49 +1,62 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useHomeResource } from "./useHomeResource";
-import { useHomePollingResource } from "./useHomePollingResource";
 
-/** Live-routes poll cadence: 60s, matching the quota snapshot poller tick. */
-export const LIVE_ROUTES_POLL_MS = 60_000;
+/** Builds the period-scoped endpoint URL; null while the period is unresolved. */
+const periodUrl = (path, period) => (period ? `${path}?period=${period}` : null);
 
 /**
- * Usage stats for a Home period (today/7d/30d).
- * @param {"today"|"7d"|"30d"} period
+ * Usage stats for a Home period (today/7d/30d). A null period (URL and
+ * storage not resolved yet) keeps the tiles on skeletons without fetching.
+ * @param {"today"|"7d"|"30d"|null} period
  * @param {number} [refreshKey] bump to re-read
- * @returns {{ current: object|null, loading: boolean, error: string|null }}
+ * @returns {{ current: object|null, currentPeriod: string|null, loading: boolean, error: string|null }}
+ *   `currentPeriod` is the period `current` was fetched for (it lags a switch until the refetch lands).
  */
 export function useHomeUsage(period, refreshKey = 0) {
-  const { data, loading, error } = useHomeResource(`/api/usage/stats?period=${period}`, refreshKey);
-  return { current: data, loading, error };
+  const [currentPeriod, setCurrentPeriod] = useState(null);
+  const { data, loading, error } = useHomeResource(
+    periodUrl("/api/usage/stats", period),
+    refreshKey,
+  );
+  useEffect(() => {
+    if (data && !loading) setCurrentPeriod(period);
+  }, [data, loading, period]);
+  return { current: data, currentPeriod, loading: loading || period === null, error };
 }
 
 /**
- * Chart buckets for the cost sparkline (token series are not request counts).
- * @param {"today"|"7d"|"30d"} period
+ * Chart buckets for the cost and requests sparklines.
+ * @param {"today"|"7d"|"30d"|null} period
  * @param {number} [refreshKey] bump to re-read
- * @returns {{ buckets: Array<{ tokens: number, cost: number }>|null, loading: boolean, error: string|null }}
+ * @returns {{ buckets: Array<{ tokens: number, cost: number, requests?: number }>|null, loading: boolean, error: string|null }}
  */
 export function useHomeChart(period, refreshKey = 0) {
-  const { data, loading, error } = useHomeResource(`/api/usage/chart?period=${period}`, refreshKey);
-  return { buckets: Array.isArray(data) ? data : null, loading, error };
+  const { data, loading, error } = useHomeResource(
+    periodUrl("/api/usage/chart", period),
+    refreshKey,
+  );
+  return { buckets: Array.isArray(data) ? data : null, loading: loading || period === null, error };
 }
 
 /**
  * Token-saver savings for a period. Only recorded aggregation is shown:
  * an endpoint failure or malformed payload surfaces `savingsUnavailable`
  * so the tile can say "Savings data unavailable" instead of inventing numbers.
- * @param {"today"|"7d"|"30d"} period
+ * @param {"today"|"7d"|"30d"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ savings: object|null, loading: boolean, error: null, savingsUnavailable: boolean }}
  */
 export function useHomeSavings(period, refreshKey = 0) {
-  const { data, loading } = useHomeResource(`/api/usage/savings?period=${period}`, refreshKey);
+  const { data, loading } = useHomeResource(periodUrl("/api/usage/savings", period), refreshKey);
+  const waiting = loading || period === null;
   const valid =
     data && typeof data.tokensSavedEst === "number" && Array.isArray(data.methods) ? data : null;
-  const savingsUnavailable = !loading && !valid;
+  const savingsUnavailable = !waiting && !valid;
   return {
     savings: valid,
-    loading,
+    loading: waiting,
     error: null,
     savingsUnavailable,
   };
@@ -53,14 +66,14 @@ export function useHomeSavings(period, refreshKey = 0) {
  * Previous-period request count + top-combo counts for a Home period.
  * Failures degrade gracefully: delta text and combo counts fall back to
  * "unavailable", derived from /api/usage/stats instead of erroring.
- * @param {"today"|"7d"|"30d"} period
+ * @param {"today"|"7d"|"30d"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ summary: object|null, loading: boolean, error: null }}
  */
 export function useHomeSummary(period, refreshKey = 0) {
-  const { data, loading } = useHomeResource(`/api/home/summary?period=${period}`, refreshKey);
+  const { data, loading } = useHomeResource(periodUrl("/api/home/summary", period), refreshKey);
   const valid = data && typeof data === "object" ? data : null;
-  return { summary: valid, loading, error: null };
+  return { summary: valid, loading: loading || period === null, error: null };
 }
 
 /**
@@ -152,21 +165,6 @@ export function useHomeQuota(refreshKey = 0) {
   const { data, loading, error } = useHomeResource("/api/home/quota", refreshKey);
   const accounts = Array.isArray(data?.accounts) ? data.accounts : [];
   return { accounts, loading, error };
-}
-
-/**
- * Live routes flow model: polling at the quota cadence, paused when hidden.
- * @param {number} [refreshKey] bump to re-read
- * @returns {{ routes: object|null, loading: boolean, error: string|null }}
- */
-export function useHomeLiveRoutes(refreshKey = 0) {
-  const { data, loading, error } = useHomePollingResource(
-    "/api/home/live-routes",
-    refreshKey,
-    LIVE_ROUTES_POLL_MS,
-  );
-  const valid = data && Array.isArray(data.clients) && Array.isArray(data.providers) ? data : null;
-  return { routes: valid, loading, error };
 }
 
 /**

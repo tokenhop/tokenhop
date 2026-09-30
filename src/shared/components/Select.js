@@ -2,12 +2,28 @@
 
 import PropTypes from "prop-types";
 import { cn } from "@/shared/utils/cn";
+import { groupSelectOptions } from "@/shared/utils/selectOptions";
 import Field from "./Field";
 
+// Kept as a re-export so existing importers of Select.js don't move.
+export { groupSelectOptions };
+
 /**
- * Signal styled native select wired to a Field. Always renders a disabled
+ * Signal styled native select wired to a Field. By default renders a disabled
  * empty placeholder option first (existing contract: callers rely on it when
- * the value isn't in `options`).
+ * the value isn't in `options`). Pass `placeholder={null}` to omit that
+ * option, so a real option with `value: ""` (e.g. "All providers") stays
+ * selectable.
+ *
+ * Options may carry an optional `group` string; consecutive options sharing
+ * a group render inside one `<optgroup label={group}>`. A label that reappears
+ * after a different label starts another run, preserving original order.
+ * Options without `group` render exactly as before.
+ *
+ * @param {object} props
+ * @param {string|null} [props.placeholder="Select an option"] `null` omits the
+ *   disabled placeholder option.
+ * @param {Array<{ value: string|number, label: React.ReactNode, group?: string }>} [props.options]
  */
 export default function Select({
   label,
@@ -52,14 +68,28 @@ export default function Select({
               selectClassName,
             )}
           >
-            <option value="" disabled>
-              {placeholder}
-            </option>
-            {options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
+            {placeholder !== null && (
+              <option value="" disabled>
+                {placeholder}
               </option>
-            ))}
+            )}
+            {groupSelectOptions(options).map((group, runIndex) =>
+              group.label === null ? (
+                group.options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))
+              ) : (
+                <optgroup key={`${group.label}-${runIndex}`} label={group.label}>
+                  {group.options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ),
+            )}
           </select>
           <div
             className="absolute inset-y-0 end-0 flex items-center pe-3 pointer-events-none text-muted"
@@ -79,11 +109,13 @@ Select.propTypes = {
     PropTypes.shape({
       value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
       label: PropTypes.node.isRequired,
+      group: PropTypes.string,
     }),
   ),
   value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   onChange: PropTypes.func,
-  placeholder: PropTypes.string,
+  // null omits the disabled placeholder option (see JSDoc).
+  placeholder: PropTypes.oneOfType([PropTypes.string, PropTypes.oneOf([null])]),
   error: PropTypes.node,
   hint: PropTypes.node,
   disabled: PropTypes.bool,

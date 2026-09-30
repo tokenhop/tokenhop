@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button, Callout, CardSkeleton, NoAuthProxyCard } from "@/shared/components";
@@ -192,6 +193,7 @@ export default function ProviderDetailPage() {
 
   const refreshConnections = async () => {
     await conn.fetchConnections();
+    refreshShellStatus();
   };
 
   const handleSaveApiKey = async (formData) => {

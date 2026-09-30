@@ -1,24 +1,9 @@
 /**
- * Pure formatting helpers for the Home command center (YAN-292).
- * No React/DOM. All output is plain English literals (translated at render).
+ * Shared plain-English formatters live in `@/shared/utils/format` (moved there
+ * for the shared routes map, YAN-412); this module keeps the Home-only
+ * helpers and re-exports the shared ones so existing imports stay stable.
  */
-
-/**
- * Compact number: 2481 -> "2,481" locale grouped is formatInt; compact is 12.4K style.
- * @param {number} value
- * @returns {string}
- */
-export function formatCompact(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return "0";
-  if (Math.abs(num) >= 1_000_000) return `${trimZero(num / 1_000_000)}M`;
-  if (Math.abs(num) >= 1_000) return `${trimZero(num / 1_000)}k`;
-  return String(Math.round(num));
-}
-
-function trimZero(num) {
-  return String(Math.round(num * 10) / 10);
-}
+export { formatCompact, timeAgo, formatReset } from "@/shared/utils/format";
 
 /**
  * Grouped integer: 2481 -> "2,481".
@@ -50,27 +35,8 @@ export function formatMoney(value) {
 export function formatLatency(ms) {
   const num = Number(ms);
   if (!Number.isFinite(num) || num < 0) return "—";
-  if (num >= 1000) return `${trimZero(num / 1000)}s`;
+  if (num >= 1000) return `${Math.round((num / 1000) * 10) / 10}s`;
   return `${Math.round(num)}ms`;
-}
-
-/**
- * Timestamp -> relative "now" / "12s" / "1m" / "2h" / "3d".
- * @param {string|number|Date} timestamp
- * @param {number} [nowMs]
- * @returns {string}
- */
-export function timeAgo(timestamp, nowMs = Date.now()) {
-  const then = new Date(timestamp).getTime();
-  if (Number.isNaN(then)) return "—";
-  const diffSec = Math.max(0, Math.floor((nowMs - then) / 1000));
-  if (diffSec < 5) return "now";
-  if (diffSec < 60) return `${diffSec}s`;
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h`;
-  return `${Math.floor(diffHr / 24)}d`;
 }
 
 /**
@@ -83,29 +49,6 @@ export function maskApiKey(fullKey) {
   if (!fullKey || typeof fullKey !== "string") return "—";
   if (fullKey.length <= 10) return `${fullKey.charAt(0)}••••`;
   return `${fullKey.slice(0, 6)}${"•".repeat(fullKey.length - 10)}${fullKey.slice(-4)}`;
-}
-
-/**
- * Reset timestamp -> "Resets in 3h 12m" / "Resets Oct 1" / "" when unknown.
- * @param {string|number|null|undefined} resetsAt
- * @param {number} [nowMs]
- * @returns {string}
- */
-export function formatReset(resetsAt, nowMs = Date.now()) {
-  if (!resetsAt) return "";
-  const then = new Date(resetsAt).getTime();
-  if (Number.isNaN(then)) return "";
-  const diffMs = then - nowMs;
-  if (diffMs <= 0) return "Reset pending";
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 60) return `Resets in ${diffMin}m`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 48) {
-    const rest = diffMin % 60;
-    return rest > 0 ? `Resets in ${diffHr}h ${rest}m` : `Resets in ${diffHr}h`;
-  }
-  const label = new Date(then).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return `Resets ${label}`;
 }
 
 /**

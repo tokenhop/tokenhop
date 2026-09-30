@@ -22,7 +22,7 @@ import {
   liveCatalogRequestKey,
 } from "./modelSelectHelpers";
 
-// Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
+// Provider order: OAuth first, then Free Tier, then API key (matches dashboard/providers)
 const PROVIDER_ORDER = [
   ...Object.keys(OAUTH_PROVIDERS),
   ...Object.keys(FREE_PROVIDERS),

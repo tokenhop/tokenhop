@@ -1,13 +1,27 @@
 "use client";
 
+import { memo } from "react";
 import PropTypes from "prop-types";
 import { Button, ProviderTile } from "@/shared/components";
 import CooldownTimer from "@/shared/components/CooldownTimer";
 import { getRelativeTime } from "@/shared/utils";
 import { connectionHealth, cooldownUntil, providerHealth } from "@/shared/utils/providerHealth";
 
-/** Attention card explains why a provider is flagged and links to its fix. */
-export default function NeedsAttentionCard({
+/**
+ * Attention card explains why a provider is flagged and links to its fix.
+ * Memoized: the shell passes stable entry-scoped callbacks so list
+ * re-renders skip cards whose props did not change.
+ *
+ * @param {object} props
+ * @param {object} props.entry
+ * @param {object[]} props.connections
+ * @param {boolean} props.testing
+ * @param {(entry: object) => void} props.onRetry
+ * @param {(entry: object, connection: object) => void} props.onRepair
+ * @param {(entry: object) => void} props.onOpen
+ * @param {() => void} [props.onCooldownExpired]
+ */
+function NeedsAttentionCard({
   entry,
   connections,
   testing,
@@ -38,7 +52,7 @@ export default function NeedsAttentionCard({
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <button
           type="button"
-          onClick={onOpen}
+          onClick={() => onOpen(entry)}
           className="truncate text-start text-[15px] font-semibold focus-visible:outline-none focus-visible:shadow-focus"
         >
           {entry.info.name} {health.status === "warn" ? "is cooling down" : "needs attention"}
@@ -54,7 +68,13 @@ export default function NeedsAttentionCard({
         variant={showRepair ? "primary" : "secondary"}
         loading={testing}
         disabled={testing}
-        onClick={showRepair ? () => onRepair(repairConn) : showOpen ? onOpen : onRetry}
+        onClick={
+          showRepair
+            ? () => onRepair(entry, repairConn)
+            : showOpen
+              ? () => onOpen(entry)
+              : () => onRetry(entry)
+        }
         aria-label={
           showRepair
             ? `Reconnect ${repairConn.name || repairConn.email || entry.info.name}`
@@ -82,3 +102,5 @@ NeedsAttentionCard.propTypes = {
   onOpen: PropTypes.func.isRequired,
   onCooldownExpired: PropTypes.func,
 };
+
+export default memo(NeedsAttentionCard);

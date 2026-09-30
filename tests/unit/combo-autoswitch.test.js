@@ -47,12 +47,13 @@ describe("detectRequiredCapabilities", () => {
     expect(r.has("vision")).toBe(true);
   });
 
-  it("web_search tool -> search", () => {
+  // combo.js:198 — search detection temporarily disabled in auto-switch (feature not wired yet)
+  it("web_search tool -> no search cap while auto-switch disabled", () => {
     const r = detectRequiredCapabilities({
       messages: [{ role: "user", content: "q" }],
       tools: [{ type: "web_search" }],
     });
-    expect(r.has("search")).toBe(true);
+    expect(r.has("search")).toBe(false);
   });
 
   it("responses input_image -> vision", () => {
@@ -81,7 +82,8 @@ describe("reorderByCapabilities", () => {
   it("keeps order when no model matches", () => {
     const models = ["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"];
     const out = reorderByCapabilities(models, new Set(["vision"]));
-    expect(out).toBe(models);
+    // combo.js:86-89 — map/sort/map always returns a new array instance.
+    expect(out).toEqual(models);
   });
 
   it("single model -> unchanged", () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import Button from "@/shared/components/Button";
 import Checkbox from "@/shared/components/Checkbox";
 import ComboFormModal from "@/shared/components/ComboFormModal";
@@ -157,6 +158,7 @@ export default function CoworkToolCard({
         card.setMessage({ type: "error", text: err.error || "Failed to create combo." });
         return;
       }
+      refreshShellStatus();
       if (!selectedModels.includes(name)) setSelectedModels((prev) => [...prev, name]);
       setComboModalOpen(false);
       card.setMessage({ type: "success", text: `Combo "${name}" created and added.` });
@@ -361,7 +363,7 @@ export default function CoworkToolCard({
                   setPlugins((prev) => [...prev.filter((p) => p.name !== "exa"), exaDef]);
                 else setPlugins((prev) => prev.filter((p) => p.name !== "exa"));
               }}
-              label="Web Search & Fetch (Exa)"
+              label="Web search & fetch (Exa)"
               description="Replaces built-in WebSearch/WebFetch. Auto-strips duplicates."
             />
             {browserDef && (
@@ -372,7 +374,7 @@ export default function CoworkToolCard({
                     checked ? [...prev, "browsermcp"] : prev.filter((n) => n !== "browsermcp"),
                   );
                 }}
-                label="Browser Control (Browser MCP)"
+                label="Browser control (Browser MCP)"
                 description="Controls your running Chrome."
               />
             )}
@@ -403,7 +405,7 @@ export default function CoworkToolCard({
           onSave={handleCreateCombo}
           activeProviders={activeProviders}
           forcePrefix="claude-"
-          title="Create Cowork Combo"
+          title="Create Cowork combo"
         />
       )}
       <McpMarketplaceModal
@@ -417,7 +419,7 @@ export default function CoworkToolCard({
       <Modal
         isOpen={addMcpOpen}
         onClose={() => setAddMcpOpen(false)}
-        title="Add Custom MCP"
+        title="Add custom MCP"
         size="sm"
       >
         <div className="flex flex-col gap-3">
@@ -478,7 +480,7 @@ export default function CoworkToolCard({
       <ManualConfigModal
         isOpen={card.showManualModal}
         onClose={() => card.setShowManualModal(false)}
-        title="Claude Cowork — Manual Configuration"
+        title="Claude Cowork — Manual configuration"
         configs={getManualConfigs()}
       />
     </>

@@ -18,13 +18,13 @@ const METHODS = [
   {
     id: "api-key",
     icon: "key",
-    title: "API Key",
+    title: "API key",
     hint: "Use a long-lived Kiro/CodeWhisperer API key (headless auth).",
   },
   {
     id: "import",
     icon: "file_upload",
-    title: "Import Token",
+    title: "Import token",
     hint: "Paste refresh token from Kiro IDE.",
   },
   {

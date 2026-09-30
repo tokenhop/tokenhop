@@ -1145,7 +1145,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
           },
           effectiveProxy,
         );
-        return { valid: exRes.ok, error: exRes.ok ? null : "Invalid Personal Access Token" };
+        return { valid: exRes.ok, error: exRes.ok ? null : "Invalid personal access token" };
       }
       case "llm7": {
         const baseUrl = connection.providerSpecificData?.baseUrl || "https://api.llm7.io/v1";

@@ -1,31 +1,48 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Card, CardSkeleton, EmptyState, SegmentedControl, Tabs } from "@/shared/components";
+import {
+  Card,
+  CardSkeleton,
+  ErrorState,
+  PeriodControl,
+  QuietPeriod,
+  Tabs,
+} from "@/shared/components";
+import { RoutesMapCard } from "@/shared/components/routesMap/RoutesMapCard";
+import useLastActivity from "@/shared/hooks/useLastActivity";
+import useLiveRoutes from "@/shared/hooks/useLiveRoutes";
+import usePeriod from "@/shared/hooks/usePeriod";
+import {
+  isIdle as routesAreIdle,
+  mergeRoutes,
+  overlayLiveSignal,
+  updateActiveSince,
+} from "@/shared/utils/routesMap";
 import useUsageStats from "./lib/useUsageStats";
+import { useChartBuckets } from "./lib/useChartBuckets";
 import useProviders from "./lib/useProviders";
 import UsageStatsCards from "./components/UsageStatsCards";
-import UsageTokensChart from "./components/UsageTokensChart";
 import UsageBreakdown from "./components/UsageBreakdown";
-import UsageTopology from "./components/UsageTopology";
 import RequestLog from "./components/RequestLog";
 
-const PERIODS = [
-  { value: "today", label: "Today" },
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7D" },
-  { value: "30d", label: "30D" },
-  { value: "60d", label: "60D" },
-];
+const UsageTokensChart = dynamic(() => import("./components/UsageTokensChart"), {
+  loading: () => <CardSkeleton />,
+});
 
 // The "Request log" tab is now RequestLog. Sorting is local state inside
 // UsageBreakdown (old ?sortBy= URL sync removed — it fought the tab router).
 
 /**
- * Usage page: header + Tabs (Overview/Request log) + period selector.
+ * Usage page: header + Tabs (Overview/Request log) + shared period control.
  * `?tab=` accepts overview|logs, plus `details` as an alias of `logs`
- * (old tab name preserved as a contract).
+ * (old tab name preserved as a contract). The period lives in `?period=` via
+ * usePeriod (URL first, remembered default after hydration). A quiet period
+ * renders one shared QuietPeriod card in place of stats tiles, chart and
+ * breakdown; topology always stays. The live stream only runs on the
+ * visible Overview tab (see useUsageStats).
  *
  * @returns {React.ReactElement}
  */
@@ -40,10 +57,7 @@ export default function UsagePage() {
 function UsageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [period, setPeriod] = useState("today");
-  const { stats, statsPeriod, loading, error } = useUsageStats(period);
-  const providers = useProviders();
-
+  const { period, setPeriod, options } = usePeriod();
   const tabFromUrl = searchParams.get("tab");
   const activeTab =
     tabFromUrl === "details" || tabFromUrl === "logs"
@@ -51,7 +65,52 @@ function UsageContent() {
       : tabFromUrl === "overview"
         ? "overview"
         : "overview";
+  const { stats, statsPeriod, live, loading, error, retry, catchUpKey } = useUsageStats(period, {
+    tab: activeTab,
+  });
+  const providers = useProviders();
+  // Shared live-routes map (YAN-412): the window model from Home plus the
+  // connected-provider universe, with in-flight SSE frames layered on top.
+  // The merge stays null until the window model lands so loading and error
+  // states render instead of a false "no providers" map.
+  const [routesRetryKey, setRoutesRetryKey] = useState(0);
+  const liveRoutes = useLiveRoutes(routesRetryKey);
+  // Stale-active guard: first-seen per in-flight provider; a 1s tick runs only
+  // while something is in flight so a stuck provider stops lighting the map.
+  const activeSinceRef = useRef(new Map());
+  const [overlayTick, setOverlayTick] = useState(0);
+  const liveBusy = live.activeRequests.length > 0;
+  useEffect(() => {
+    if (!liveBusy) return undefined;
+    const id = setInterval(() => setOverlayTick((tick) => tick + 1), 1_000);
+    return () => clearInterval(id);
+  }, [liveBusy]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: overlayTick re-checks the stale guard once per second while traffic is in flight.
+  const routesModel = useMemo(() => {
+    if (!liveRoutes.routes) return null;
+    activeSinceRef.current = updateActiveSince(live.activeRequests, activeSinceRef.current);
+    return overlayLiveSignal(
+      mergeRoutes(liveRoutes.routes, providers),
+      live,
+      activeSinceRef.current,
+    );
+  }, [liveRoutes.routes, providers, live, overlayTick]);
+  const routesIdle =
+    routesModel && routesModel.providers.length > 0 ? routesAreIdle(routesModel) : false;
+  const quiet =
+    Boolean(stats) && statsPeriod === period && !loading && !error && !stats.totalRequests;
+  const activity = useLastActivity(quiet || routesIdle);
+  // One chart fetch feeds both the tile sparklines and the tokens chart. It
+  // stays off until the stats fetch proved the period isn't quiet; catchUpKey
+  // re-fetches after a live-stream catch-up without flashing the skeleton.
+  const chart = useChartBuckets(
+    period,
+    activeTab === "overview" && stats !== null && statsPeriod === period && !quiet,
+    catchUpKey,
+  );
 
+  // Params come from useSearchParams, which already carries ?period= once a
+  // period is chosen, so the period survives tab switches.
   const handleTabChange = (value) => {
     if (value === activeTab) return;
     const params = new URLSearchParams(searchParams);
@@ -73,9 +132,9 @@ function UsageContent() {
             ]}
           />
           {activeTab === "overview" && (
-            <SegmentedControl
+            <PeriodControl
               aria-label="Stats period"
-              options={PERIODS}
+              options={options}
               value={period}
               onChange={setPeriod}
               size="sm"
@@ -89,27 +148,58 @@ function UsageContent() {
         <div className="flex min-w-0 flex-col gap-6">
           {error && !loading ? (
             <Card>
-              <EmptyState
-                icon="error"
+              <ErrorState
                 title="Couldn't load usage stats"
-                body={error.message || "Try switching period or reloading the page."}
+                message={error.message || "Try switching period or reloading the page."}
+                onRetry={retry}
               />
             </Card>
           ) : null}
-          <Suspense fallback={<CardSkeleton />}>
-            <UsageStatsCards
-              stats={statsPeriod === period ? stats : null}
-              loading={loading || statsPeriod !== period}
-            />
-          </Suspense>
-          <UsageTokensChart period={period} />
-          <UsageTopology
-            providers={providers}
-            activeRequests={stats?.activeRequests || []}
-            lastProvider={stats?.recentRequests?.[0]?.provider || ""}
-            errorProvider={stats?.errorProvider || ""}
+          {quiet ? (
+            <Card>
+              <QuietPeriod
+                period={period}
+                lastRequestAt={activity.lastRequestAt}
+                loading={activity.loading}
+                onSelectPeriod={setPeriod}
+                error={activity.error}
+                onRetry={activity.retry}
+              />
+            </Card>
+          ) : (
+            <>
+              <Suspense fallback={<CardSkeleton />}>
+                <UsageStatsCards
+                  stats={statsPeriod === period ? stats : null}
+                  loading={period === null || loading || statsPeriod !== period}
+                  previous={statsPeriod === period ? stats?.previous : null}
+                  currentTotals={statsPeriod === period ? stats?.currentTotals : null}
+                  buckets={chart.bucketsPeriod === period ? chart.buckets : null}
+                  period={period ?? ""}
+                />
+              </Suspense>
+              {period ? (
+                <UsageTokensChart
+                  buckets={chart.buckets}
+                  loading={chart.loading || (chart.bucketsPeriod !== period && !chart.error)}
+                  error={chart.error}
+                  onRetry={chart.retry}
+                />
+              ) : null}
+            </>
+          )}
+          <RoutesMapCard
+            variant="full"
+            routes={routesModel}
+            loading={liveRoutes.loading}
+            error={liveRoutes.error}
+            onRetry={() => setRoutesRetryKey((value) => value + 1)}
+            lastRequestAt={activity.lastRequestAt}
+            lastActivityError={activity.error}
+            onRetryLastActivity={activity.retry}
           />
-          <UsageBreakdown stats={stats} />
+          {!quiet &&
+            (statsPeriod === period && stats ? <UsageBreakdown stats={stats} /> : <CardSkeleton />)}
         </div>
       ) : (
         <RequestLog />

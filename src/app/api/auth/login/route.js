@@ -10,7 +10,7 @@ import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/lo
 import { isLocalRequest } from "@/dashboardGuard";
 
 const RESET_HINT =
-  "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
+  "Forgot password? Reset to default via 9Router CLI → Settings → Reset password to default.";
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
 
 function isTunnelRequest(request, settings) {

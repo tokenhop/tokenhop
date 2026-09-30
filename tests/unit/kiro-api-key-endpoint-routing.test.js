@@ -28,10 +28,10 @@ describe("Kiro auth-aware endpoint routing", () => {
     ]);
   });
 
-  it("routes external IdP through Amazon Q first", () => {
+  it("routes external IdP through CodeWhisperer first", () => {
     expect(executor.getOrderedBaseUrls(credentials("external_idp"))).toEqual([
-      Q,
       CODEWHISPERER,
+      Q,
       RUNTIME,
     ]);
   });

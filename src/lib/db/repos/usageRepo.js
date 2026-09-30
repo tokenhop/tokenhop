@@ -2,7 +2,66 @@ import { createHash } from "node:crypto";
 import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
-import { getMeta, setMeta } from "../helpers/metaStore.js";
+import { getMetaSync, setMetaSync } from "../helpers/metaStore.js";
+
+/** _meta keys for the YAN-408 lifetime savings counter. */
+export const SAVINGS_LIFETIME_KEY = "savingsTokensLifetime";
+
+/**
+ * Sum the saved tokens of every usageHistory row (YAN-408). One SQL aggregate
+ * using JSON1 (`json_each`/`json_extract` ship with every supported driver —
+ * `getUsageTotals` already relies on them), so JS never sees the rows. Sums
+ * only positive per-method `tokensSavedEst`, matching rowSavedFromSavings.
+ * Runs at most once per install, before any incremental counter write.
+ * @param {object} adapter sync DB adapter (inside a transaction)
+ * @returns {number} lifetime saved tokens across all recorded rows
+ */
+export function backfillSavingsLifetime(adapter) {
+  const row = adapter.get(
+    `SELECT COALESCE(SUM(CAST(json_extract(j.value, '$.tokensSavedEst') AS REAL)), 0) AS lifetime
+     FROM usageHistory u, json_each(u.meta, '$.savings.byMethod') j
+     WHERE u.meta IS NOT NULL AND json_valid(u.meta)
+       AND CAST(json_extract(j.value, '$.tokensSavedEst') AS REAL) > 0`,
+  );
+  return Number(row?.lifetime) || 0;
+}
+
+/**
+ * Total tokens saved by the token savers across all recorded requests (YAN-408
+ * milestone toast). On first read the counter is backfilled from history
+ * exactly once; after that it is a point lookup.
+ * @returns {Promise<number>}
+ */
+export async function getSavingsLifetime() {
+  const db = await getAdapter();
+  const stored = getMetaSync(db, SAVINGS_LIFETIME_KEY, null);
+  if (stored !== null) return Number(stored) || 0;
+  let lifetime = 0;
+  db.transaction(() => {
+    lifetime = backfillSavingsLifetime(db);
+    setMetaSync(db, SAVINGS_LIFETIME_KEY, lifetime);
+  });
+  return lifetime;
+}
+
+/**
+ * Requests per minute over the last 15 minutes as 15 integer buckets (YAN-408
+ * heartbeat). One indexed timestamp query plus a JS bucketing pass; no
+ * aggregation of the full table, so it stays cheap on large histories.
+ * @returns {Promise<number[]>} 15 request counts, oldest first
+ */
+export async function getRequestRateSeries() {
+  const db = await getAdapter();
+  const { buildMinuteBuckets } = await import("@/lib/gatewayStatus.js");
+  const now = Date.now();
+  const rows = db.all(`SELECT timestamp FROM usageHistory WHERE timestamp >= ?`, [
+    new Date(now - 15 * 60_000).toISOString(),
+  ]);
+  return buildMinuteBuckets(
+    (rows || []).map((row) => row?.timestamp),
+    now,
+  );
+}
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -17,7 +76,7 @@ function maskApiKey(key) {
  */
 function apiKeyIdentity(rawKey, apiKeyMap) {
   if (!rawKey || typeof rawKey !== "string") {
-    return { id: "local-no-key", keyName: "Local (No API Key)", apiKeyMasked: null };
+    return { id: "local-no-key", keyName: "Local (no API key)", apiKeyMasked: null };
   }
   const apiKeyMasked = maskApiKey(rawKey);
   const info = apiKeyMap[rawKey];
@@ -28,7 +87,6 @@ function apiKeyIdentity(rawKey, apiKeyMap) {
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
 const RING_CAP = 50;
-const CONN_CACHE_TTL_MS = 30 * 1000;
 const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
 
 // In-memory state shared across Next.js modules
@@ -40,14 +98,12 @@ if (!global._statsEmitter) {
 }
 if (!global._pendingTimers) global._pendingTimers = {};
 if (!global._recentRing) global._recentRing = { items: [], initialized: false };
-if (!global._connectionMapCache) global._connectionMapCache = { map: {}, ts: 0 };
 if (!global._statsEmitTimers) global._statsEmitTimers = { pending: null, update: null };
 
 const pendingRequests = global._pendingRequests;
 const lastErrorProvider = global._lastErrorProvider;
 const pendingTimers = global._pendingTimers;
 const recentRing = global._recentRing;
-const connCache = global._connectionMapCache;
 const statsEmitTimers = global._statsEmitTimers;
 
 export const statsEmitter = global._statsEmitter;
@@ -133,19 +189,6 @@ function pushToRing(entry) {
   if (recentRing.items.length > RING_CAP) {
     recentRing.items = recentRing.items.slice(-RING_CAP);
   }
-}
-
-async function getConnectionMapCached() {
-  if (Date.now() - connCache.ts < CONN_CACHE_TTL_MS) return connCache.map;
-  try {
-    const { getProviderConnections } = await import("./connectionsRepo.js");
-    const all = await getProviderConnections();
-    const map = {};
-    for (const c of all) map[c.id] = c.name || c.email || c.id;
-    connCache.map = map;
-    connCache.ts = Date.now();
-  } catch {}
-  return connCache.map;
 }
 
 async function ensureRingInitialized() {
@@ -240,52 +283,64 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
   scheduleStatsEvent("pending");
 }
 
-export async function getActiveRequests() {
-  const activeRequests = [];
-  const connectionMap = await getConnectionMapCached();
-
-  for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
+/**
+ * Slim live snapshot for `/api/usage/stream`: in-flight counts per provider,
+ * the newest ring entry with non-zero tokens, and a recently failing provider.
+ * Built straight from `pendingRequests.byAccount` (no connection lookup, no
+ * sort): items are appended in time order, so scanning from the end finds the
+ * newest entry. Ring init runs once, on first call.
+ * @returns {Promise<{activeRequests: {provider: string, count: number}[], lastProvider: string, errorProvider: string}>}
+ */
+export async function getLiveSnapshot() {
+  const counts = new Map();
+  for (const models of Object.values(pendingRequests.byAccount)) {
     for (const [modelKey, count] of Object.entries(models)) {
-      if (count > 0) {
-        const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
-        const match = modelKey.match(/^(.*) \((.*)\)$/);
-        activeRequests.push({
-          model: match ? match[1] : modelKey,
-          provider: match ? match[2] : "unknown",
-          account: accountName,
-          count,
-        });
-      }
+      if (!(count > 0)) continue;
+      const provider = modelKey.match(/^(.*) \((.*)\)$/)?.[2] || "unknown";
+      counts.set(provider, (counts.get(provider) || 0) + count);
     }
   }
 
   await ensureRingInitialized();
-  const seen = new Set();
-  const recentRequests = [...recentRing.items]
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-    .map((e) => {
-      const t = e.tokens || {};
-      return {
-        timestamp: e.timestamp,
-        model: e.model,
-        provider: e.provider || "",
-        promptTokens: t.prompt_tokens || t.input_tokens || 0,
-        completionTokens: t.completion_tokens || t.output_tokens || 0,
-        status: e.status || "ok",
-      };
-    })
-    .filter((e) => {
-      if (e.promptTokens === 0 && e.completionTokens === 0) return false;
-      const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
-      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 20);
+  let lastProvider = "";
+  for (let i = recentRing.items.length - 1; i >= 0; i--) {
+    const entry = recentRing.items[i];
+    const t = entry?.tokens || {};
+    if (
+      (t.prompt_tokens || t.input_tokens || 0) > 0 ||
+      (t.completion_tokens || t.output_tokens || 0) > 0
+    ) {
+      lastProvider = entry.provider || "";
+      break;
+    }
+  }
 
   const errorProvider = Date.now() - lastErrorProvider.ts < 10000 ? lastErrorProvider.provider : "";
-  return { activeRequests, recentRequests, errorProvider };
+  return {
+    activeRequests: [...counts].map(([provider, count]) => ({ provider, count })),
+    lastProvider,
+    errorProvider,
+  };
+}
+
+/**
+ * Saved tokens in one recorded request row. Sums only positive per-method
+ * deltas (a method entry is never negative by construction, but legacy rows
+ * can't be trusted), so a phantom/partial row can't inflate the lifetime
+ * counter or push savings over a milestone.
+ * @param {{ byMethod?: Record<string, { tokensSavedEst?: number }> }|null|undefined} savings
+ * @returns {number}
+ */
+export function rowSavedFromSavings(savings) {
+  if (!savings || typeof savings !== "object") return 0;
+  const methods = savings.byMethod;
+  if (!methods || typeof methods !== "object") return 0;
+  let saved = 0;
+  for (const method of Object.values(methods)) {
+    const value = Number(method?.tokensSavedEst) || 0;
+    if (value > 0) saved += value;
+  }
+  return saved;
 }
 
 export async function saveRequestUsage(entry) {
@@ -307,6 +362,9 @@ export async function saveRequestUsage(entry) {
       metaObj.comboName = entry.comboName.slice(0, 128);
     if (entry.userAgent && typeof entry.userAgent === "string")
       metaObj.userAgent = entry.userAgent.slice(0, 256);
+
+    // YAN-408: lifetime saved-tokens counter feeds the savings milestone toast.
+    const savedTokens = rowSavedFromSavings(metaObj.savings);
 
     db.transaction(() => {
       db.run(
@@ -355,6 +413,18 @@ export async function saveRequestUsage(entry) {
         `INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
         [String(next)],
       );
+
+      // YAN-408: increment the lifetime saved-tokens counter in the same
+      // transaction as the history row. The one-time backfill lives on the
+      // background summary path (getSavingsLifetime), never on the request
+      // path: before the counter exists this row is simply skipped and the
+      // later backfill scan counts it too, so nothing is lost either way.
+      if (savedTokens > 0) {
+        const baseline = getMetaSync(db, SAVINGS_LIFETIME_KEY, null);
+        if (baseline !== null) {
+          setMetaSync(db, SAVINGS_LIFETIME_KEY, Number(baseline) + savedTokens);
+        }
+      }
     });
 
     pushToRing(entry);
@@ -884,6 +954,7 @@ export async function getChartData(period = "7d") {
       output: 0,
       tokens: 0,
       cost: 0,
+      requests: 0,
     }));
 
     const rows = db.all(
@@ -907,6 +978,7 @@ export async function getChartData(period = "7d") {
         buckets[idx].output += output;
         buckets[idx].tokens += input + output;
         buckets[idx].cost += r.cost || 0;
+        buckets[idx].requests += 1;
       }
     }
     return buckets;
@@ -929,6 +1001,7 @@ export async function getChartData(period = "7d") {
       output: 0,
       tokens: 0,
       cost: 0,
+      requests: 0,
     }));
 
     const rows = db.all(
@@ -951,6 +1024,7 @@ export async function getChartData(period = "7d") {
       buckets[idx].output += output;
       buckets[idx].tokens += input + output;
       buckets[idx].cost += r.cost || 0;
+      buckets[idx].requests += 1;
     }
     return buckets;
   }
@@ -979,8 +1053,54 @@ export async function getChartData(period = "7d") {
       output,
       tokens: input + output,
       cost: dayData ? dayData.cost || 0 : 0,
+      requests: dayData?.requests || 0,
     };
   });
+}
+
+export async function getLastActivity() {
+  const db = await getAdapter();
+  const row = db.get(`SELECT timestamp FROM usageHistory ORDER BY timestamp DESC LIMIT 1`);
+  return row?.timestamp ?? null;
+}
+
+/**
+ * Per-request usage totals for a [start, end) window of usageHistory.
+ *
+ * A single indexed timestamp range aggregate: requests are the row count,
+ * prompt/completion tokens and cost come from the columns, and cached
+ * tokens from the tokens JSON (both cache aliases). promptTokens
+ * falls back to the JSON prompt/input aliases, matching the
+ * saveRequestUsage column conventions (legacy rows wrote 0 there).
+ * Both sides of a comparison use the same source (route contract).
+ * @param {{ start?: unknown, end?: unknown }} input
+ * @param {number} input.start start timestamp (ms, inclusive)
+ * @param {number} input.end end timestamp (ms, exclusive)
+ * @returns {Promise<{ requests: number, promptTokens: number, completionTokens: number, cachedTokens: number, cost: number }>}
+ */
+export async function getUsageTotals({ start, end } = {}) {
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) {
+    throw new Error("getUsageTotals requires finite ms start ≤ end");
+  }
+  const db = await getAdapter();
+  // Aggregated in SQLite (JSON1 ships with every supported driver) so long
+  // windows don't parse each row's tokens JSON in JS.
+  const row = db.get(
+    `SELECT COUNT(*) AS requests,
+       COALESCE(SUM(COALESCE(NULLIF(promptTokens, 0), NULLIF(json_extract(tokens, '$.prompt_tokens'), 0), json_extract(tokens, '$.input_tokens'), 0)), 0) AS promptTokens,
+       COALESCE(SUM(completionTokens), 0) AS completionTokens,
+       COALESCE(SUM(COALESCE(NULLIF(json_extract(tokens, '$.cached_tokens'), 0), json_extract(tokens, '$.cache_read_input_tokens'), 0)), 0) AS cachedTokens,
+       COALESCE(SUM(cost), 0) AS cost
+     FROM usageHistory WHERE timestamp >= ? AND timestamp < ?`,
+    [new Date(start).toISOString(), new Date(end).toISOString()],
+  );
+  return {
+    requests: Number(row?.requests) || 0,
+    promptTokens: Number(row?.promptTokens) || 0,
+    completionTokens: Number(row?.completionTokens) || 0,
+    cachedTokens: Number(row?.cachedTokens) || 0,
+    cost: Number(row?.cost) || 0,
+  };
 }
 
 function formatLogDate(date = new Date()) {
@@ -1024,6 +1144,7 @@ export async function getRecentLogs(limit = 200) {
   }
 }
 
+// Mirrored client-side as SUMMARY_PERIODS in src/shared/utils/period.js (YAN-428 unifies them).
 export const SAVINGS_PERIODS = ["today", "7d", "30d"];
 
 const SAVINGS_DAY_MS = 24 * 60 * 60 * 1000;

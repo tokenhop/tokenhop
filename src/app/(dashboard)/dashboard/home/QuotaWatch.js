@@ -2,9 +2,12 @@
 
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
+import CardLink from "@/shared/components/CardLink";
 import Meter from "@/shared/components/Meter";
 import ProviderTile from "@/shared/components/ProviderTile";
 import { pickLowestQuotaAccounts } from "@/shared/utils/commandCenter";
+import { describeForecast } from "@/shared/utils/quotaForecast";
+import QuotaForecastLine from "@/shared/components/QuotaForecastLine";
 import { formatReset } from "./format";
 import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
 
@@ -79,7 +82,11 @@ export default function QuotaWatch({ accounts, loading, error, onRetry }) {
               label={`${label} remaining quota`}
               valueText={leftText}
             />
-            <span className="text-xs text-muted">{reset || "Reset time unknown"}</span>
+            {describeForecast(account.forecast) ? (
+              <QuotaForecastLine forecast={account.forecast} showReset />
+            ) : (
+              <span className="text-xs text-muted">{reset || "Reset time unknown"}</span>
+            )}
           </li>
         );
       })}
@@ -100,14 +107,7 @@ export function QuotaWatchCard(props) {
     <Card
       className="min-w-0"
       title="Quota watch"
-      action={
-        <a
-          href="/dashboard/quota"
-          className="text-[13px] font-semibold text-coral-ink hover:text-coral"
-        >
-          All quotas →
-        </a>
-      }
+      action={<CardLink href="/dashboard/quota">All quotas</CardLink>}
     >
       <QuotaWatch {...props} />
     </Card>
