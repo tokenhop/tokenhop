@@ -7,6 +7,7 @@ vi.mock("@/lib/localDb", () => ({
   getProviderConnections: vi.fn(),
   getProviderConnectionById: vi.fn(),
   getCombos: vi.fn(),
+  getModelAliases: vi.fn(async () => ({})),
   updateProviderConnection: vi.fn(),
 }));
 

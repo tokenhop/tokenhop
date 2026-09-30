@@ -92,6 +92,9 @@ export async function PUT(request) {
 
     // Update alias
     await setModelAlias(model, alias);
+    import("@/shared/services/quotaSnapshotPoller")
+      .then(({ syncQuotaSnapshotPoller }) => syncQuotaSnapshotPoller())
+      .catch((error) => console.warn("[Models] quota poller sync failed:", error?.message));
 
     return NextResponse.json({ success: true, model, alias });
   } catch (error) {
