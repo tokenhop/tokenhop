@@ -6,6 +6,7 @@ import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { resolveStartPage } from "@/lib/settingsFlags";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
+import { resolveAuthModes } from "@/lib/auth/authModes";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 import { isLocalRequest } from "@/dashboardGuard";
 
@@ -51,19 +52,15 @@ export async function POST(request) {
     // Default password is '123456' if not set
     const storedHash = settings.password;
 
-    if (
-      settings.authMode === "sso" ||
-      settings.authMode === "saml" ||
-      settings.authMode === "oidc"
-    ) {
-      const ssoType = settings.ssoType || (settings.authMode === "saml" ? "saml" : "oidc");
-      if (ssoType === "saml" && isSamlConfigured(settings)) {
+    const modes = resolveAuthModes(settings);
+    if (modes.ssoOnly) {
+      if (modes.saml && isSamlConfigured(settings)) {
         return NextResponse.json(
           { error: "Password login is disabled. Use SAML SSO sign in." },
           { status: 403 },
         );
       }
-      if (ssoType === "oidc" && isOidcConfigured(settings)) {
+      if (modes.oidc && isOidcConfigured(settings)) {
         return NextResponse.json(
           { error: "Password login is disabled. Use OIDC sign in." },
           { status: 403 },

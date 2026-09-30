@@ -4,6 +4,7 @@ import { getSettings } from "@/lib/localDb";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
+import { resolveAuthModes } from "@/lib/auth/authModes";
 
 export async function GET() {
   try {
@@ -12,7 +13,7 @@ export async function GET() {
     const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
     const requireLogin = settings.requireLogin !== false;
     const authMode = settings.authMode || "password";
-    const ssoType = settings.ssoType || "oidc";
+    const ssoType = resolveAuthModes(settings).protocol;
     const oidcName = String(session?.oidcName || "").trim();
     const oidcEmail = String(session?.oidcEmail || "").trim();
     const samlName = String(session?.samlName || "").trim();

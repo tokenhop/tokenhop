@@ -1,11 +1,13 @@
+import { resolveAuthModes } from "@/lib/auth/authModes";
+
 /**
  * Pure visibility helper for login options based on authMode and configured SSO.
  *
  * @param {object} params
  * @param {string} [params.authMode="password"]
  * @param {string} [params.ssoType="oidc"]
- * @param {boolean} [params.oidc=false]
- * @param {boolean} [params.saml=false]
+ * @param {boolean} [params.oidc=false] OIDC is fully configured
+ * @param {boolean} [params.saml=false] SAML is fully configured
  * @returns {{ samlAvailable: boolean, oidcAvailable: boolean, passwordAvailable: boolean }}
  */
 export function resolveLoginVisibility({
@@ -14,18 +16,12 @@ export function resolveLoginVisibility({
   oidc = false,
   saml = false,
 } = {}) {
-  const isSsoEnabled = ["sso", "oidc", "saml", "both"].includes(authMode);
-  const activeSsoType = ssoType || (authMode === "saml" ? "saml" : "oidc");
+  const modes = resolveAuthModes({ authMode, ssoType });
+  const samlAvailable = modes.saml && Boolean(saml);
+  const oidcAvailable = modes.oidc && Boolean(oidc);
 
-  const samlAvailable = isSsoEnabled && activeSsoType === "saml" && Boolean(saml);
-  const oidcAvailable = isSsoEnabled && activeSsoType === "oidc" && Boolean(oidc);
-  const ssoAvailable = samlAvailable || oidcAvailable;
+  // Password stays available when SSO was chosen but is unconfigured (recovery).
+  const passwordAvailable = modes.password || !(samlAvailable || oidcAvailable);
 
-  const passwordAvailable = authMode === "password" || authMode === "both" || !ssoAvailable;
-
-  return {
-    samlAvailable,
-    oidcAvailable,
-    passwordAvailable,
-  };
+  return { samlAvailable, oidcAvailable, passwordAvailable };
 }
