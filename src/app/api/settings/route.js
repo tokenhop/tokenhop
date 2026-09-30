@@ -11,6 +11,7 @@ import {
   validateReliabilitySettings,
 } from "./validateReliabilitySettings.js";
 import { syncReliabilityAfterPatch } from "@/lib/reliability/initReliabilityPolicy";
+import { SECRET_SETTING_KEYS } from "@/lib/settingsConfigDoc";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -25,13 +26,21 @@ const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
 const VALID_COMBO_NAME = /^[a-zA-Z0-9_.-]+$/;
 const BLOCKED_COMBO_NAMES = new Set(["__proto__", "constructor", "prototype"]);
 
-function safeSettingsResponse(settings) {
-  const { password, oidcClientSecret, ...safeSettings } = settings;
-  safeSettings.oidcConfigured = !!(
-    safeSettings.oidcIssuerUrl &&
-    safeSettings.oidcClientId &&
-    oidcClientSecret
+// Credentials (hashes, encrypted sudo password, private keys, …) never leave the server.
+function omitSecrets(settings) {
+  const safeSettings = Object.fromEntries(
+    Object.entries(settings).filter(([key]) => !SECRET_SETTING_KEYS.has(key)),
   );
+  safeSettings.oidcConfigured = !!(
+    settings.oidcIssuerUrl &&
+    settings.oidcClientId &&
+    settings.oidcClientSecret
+  );
+  return safeSettings;
+}
+
+function safeSettingsResponse(settings) {
+  const safeSettings = omitSecrets(settings);
   safeSettings.startPage = resolveStartPage(safeSettings.startPage);
   safeSettings.uiDensity = resolveDensity(safeSettings.uiDensity);
   return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
@@ -256,12 +265,7 @@ export function validateSettingsBody(body) {
 export async function GET() {
   try {
     const settings = await getSettings();
-    const { password, oidcClientSecret, ...safeSettings } = settings;
-    safeSettings.oidcConfigured = !!(
-      safeSettings.oidcIssuerUrl &&
-      safeSettings.oidcClientId &&
-      oidcClientSecret
-    );
+    const safeSettings = omitSecrets(settings);
 
     const requestLogs = resolveFlagSetting(
       "ENABLE_REQUEST_LOGS",
@@ -299,7 +303,7 @@ export async function GET() {
         translatorOverridden: translator.overridden,
         startPage: resolveStartPage(settings.startPage),
         uiDensity: resolveDensity(settings.uiDensity),
-        hasPassword: !!password,
+        hasPassword: !!settings.password,
         searxngUrl: process.env.SEARXNG_URL?.trim() || "",
         headroomUrlFromEnv: !!process.env.HEADROOM_URL?.trim(),
         requestLogEnvOverride: requestLogs.overridden,
