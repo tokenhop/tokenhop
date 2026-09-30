@@ -161,6 +161,7 @@ export default function KiloToolCard({
         onReset={handleReset}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
+        manualConfigs={getManualConfigs()}
         fileHint="~/.local/share/kilo/auth.json"
       >
         <EndpointSegmentedPicker

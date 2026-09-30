@@ -214,6 +214,7 @@ export default function CoworkToolCard({
         resetDisabled={!status?.has9Router}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
+        manualConfigs={getManualConfigs()}
         fileHint="Claude-3p/configLibrary/<appliedId>.json"
       >
         <EndpointSegmentedPicker

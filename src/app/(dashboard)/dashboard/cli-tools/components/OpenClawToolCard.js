@@ -185,6 +185,7 @@ export default function OpenClawToolCard({
         resetDisabled={!status?.has9Router}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
+        manualConfigs={getManualConfigs()}
         fileHint="~/.openclaw/openclaw.json"
       >
         <EndpointSegmentedPicker

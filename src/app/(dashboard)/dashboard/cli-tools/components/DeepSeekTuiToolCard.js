@@ -148,6 +148,7 @@ export default function DeepSeekTuiToolCard({
         resetDisabled={!status?.has9Router}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
+        manualConfigs={getManualConfigs()}
         fileHint="~/.deepseek/config.toml"
       >
         <EndpointSegmentedPicker

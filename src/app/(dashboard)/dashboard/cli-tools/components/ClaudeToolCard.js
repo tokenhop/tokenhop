@@ -12,7 +12,7 @@ import EndpointSegmentedPicker from "./EndpointSegmentedPicker";
 import SetupScaffold, { NotInstalledBlock, ModelRow } from "./SetupScaffold";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import { deriveToolStatus } from "../lib/toolStatus";
-import { markLocalOnly } from "@/store/cliAccessStore";
+import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 
@@ -44,7 +44,7 @@ export default function ClaudeToolCard({
   onStatusUpdate,
 }) {
   const [claudeStatus, setClaudeStatus] = useState(null);
-  const [checking, setChecking] = useState(true);
+  const [checking, setChecking] = useState(() => !useCliAccessStore.getState().localOnly);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
@@ -69,6 +69,10 @@ export default function ClaudeToolCard({
   }, [onStatusUpdate]);
 
   const fetchStatus = useCallback(async () => {
+    if (useCliAccessStore.getState().localOnly) {
+      setChecking(false);
+      return;
+    }
     setChecking(true);
     try {
       const res = await fetch("/api/cli-tools/claude-settings");
@@ -280,6 +284,7 @@ export default function ClaudeToolCard({
         resetDisabled={!claudeStatus?.has9Router}
         resetting={restoring}
         onManualConfig={() => setShowManualModal(true)}
+        manualConfigs={getManualConfigs()}
         fileHint="~/.claude/settings.json"
       >
         <EndpointSegmentedPicker

@@ -6,9 +6,11 @@ import { useEffect, useState } from "react";
 import { CardSkeleton, EmptyState } from "@/shared/components";
 import Button from "@/shared/components/Button";
 import StatusPill from "@/shared/components/StatusPill";
+import { CLI_TOOLS, MITM_TOOLS } from "@/shared/constants/cliTools";
+import { TOOL_HOSTS } from "@/shared/constants/mitmToolHosts";
 import ToolTile from "./ToolTile";
 import { readInterceptStatus } from "../lib/interceptStatus";
-import { markLocalOnly } from "@/store/cliAccessStore";
+import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 
 // Client-side ceiling; the route success path already sets real data.
@@ -23,12 +25,64 @@ export default function InterceptTools({ tools }) {
   );
 }
 
+/** Hosts-file lines for IDEs that cannot point at a custom endpoint. */
+function RemoteInterceptSteps() {
+  const entries = Object.entries(TOOL_HOSTS).flatMap(([toolId, hosts]) => {
+    const tool = MITM_TOOLS[toolId] || CLI_TOOLS[toolId];
+    return tool ? [{ toolId, tool, hosts }] : [];
+  });
+
+  return (
+    <section aria-labelledby="intercept-tools-heading" className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+        <h2
+          id="intercept-tools-heading"
+          className="font-display text-xl font-bold tracking-[-0.02em] text-text"
+        >
+          Intercept tools
+        </h2>
+        <p className="text-[13px] text-muted">
+          For IDEs that can’t change their endpoint, 9router listens in (MITM) and reroutes.
+        </p>
+      </div>
+      <p className="text-[13px] text-muted">
+        These hosts entries only work when the IDE runs on the same machine as 9router. Turn DNS on
+        from the dashboard on the host.
+      </p>
+      <ul className="grid list-none grid-cols-1 gap-3 p-0 sm:grid-cols-2">
+        {entries.map(({ toolId, tool, hosts }) => (
+          <li
+            key={toolId}
+            className="flex flex-col gap-3 rounded-2xl border border-line bg-panel p-4 shadow-card"
+          >
+            <span className="flex min-w-0 items-center gap-3">
+              <ToolTile tool={tool} size="md" />
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="truncate text-[15px] font-semibold text-text">{tool.name}</span>
+                <span className="truncate text-[13px] text-muted">{tool.description}</span>
+              </span>
+            </span>
+            <pre className="overflow-x-auto rounded-xl border border-line bg-raised px-3 py-2 font-mono text-xs text-text">
+              {hosts.map((host) => `127.0.0.1 ${host}`).join("\n")}
+            </pre>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function InterceptToolsSection({ tools, onRetry }) {
+  const localOnly = useCliAccessStore((s) => s.localOnly);
   const [dnsStatus, setDnsStatus] = useState(null);
   const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !useCliAccessStore.getState().localOnly);
 
   useEffect(() => {
+    if (useCliAccessStore.getState().localOnly) {
+      setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     let unmounted = false;
     let timedOut = false;
@@ -65,6 +119,7 @@ function InterceptToolsSection({ tools, onRetry }) {
     };
   }, [tools]);
 
+  if (localOnly) return <RemoteInterceptSteps />;
   if (!tools?.length) return null;
 
   return (
@@ -103,7 +158,7 @@ function InterceptToolsSection({ tools, onRetry }) {
             }
           />
         </div>
-      ) : (
+      ) : dnsStatus ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {tools.map(([toolId, tool]) => {
             const on = dnsStatus[toolId] === true;
@@ -126,7 +181,7 @@ function InterceptToolsSection({ tools, onRetry }) {
             );
           })}
         </div>
-      )}
+      ) : null}
     </section>
   );
 }
