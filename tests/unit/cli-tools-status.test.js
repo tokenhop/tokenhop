@@ -52,7 +52,7 @@ describe("deriveToolStatus", () => {
   it("remote mode reports manual for writers and guide for guides", () => {
     expect(deriveToolStatus(cliTool, null, { remote: true })).toMatchObject({
       key: "manual",
-      label: "Manual",
+      label: "Manual setup",
       variant: "info",
     });
     expect(deriveToolStatus(cliTool, { error: "boom" }, { remote: true }).key).toBe("manual");

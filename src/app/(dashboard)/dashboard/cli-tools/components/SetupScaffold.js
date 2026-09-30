@@ -50,7 +50,9 @@ export default function SetupScaffold({
   const showWriteActions = !hideActions && !localOnly;
   // Detection never runs off the host, so a missing CLI is not "Not installed".
   const pill =
-    localOnly && status?.label === "Not installed" ? { label: "Manual", variant: "info" } : status;
+    localOnly && status?.label === "Not installed"
+      ? { label: "Manual setup", variant: "info" }
+      : status;
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [resetError, setResetError] = useState(null);
   // Reset rewrites the named user config file, so confirm first. Cards with no

@@ -66,6 +66,11 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
     };
   }, []);
 
+  // Detection buckets do not exist off the host; drop a stale selection.
+  useEffect(() => {
+    if (localOnly) setFilter((f) => (f === "connected" || f === "needsSetup" ? "all" : f));
+  }, [localOnly]);
+
   const entries = useMemo(() => Object.entries(CLI_TOOLS), []);
   const listedFilter = localOnly && filter !== "all" && filter !== "guides" ? "all" : filter;
   const counts = useMemo(
@@ -108,7 +113,7 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
   return (
     <Suspense fallback={<CardSkeleton />}>
       <div className="flex flex-col gap-5">
-        {localOnly && <LocalOnlyNotice />}
+        {localOnly && <LocalOnlyNotice manualBelow />}
         <CLIToolsView
           remote={localOnly}
           filter={listedFilter}

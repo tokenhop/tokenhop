@@ -46,7 +46,7 @@ export default function ToolDetailClient({ toolId }) {
         </span>
         Back to CLI tools
       </Link>
-      {localOnly && <LocalOnlyNotice />}
+      {localOnly && <LocalOnlyNotice manualBelow />}
       {data.loading ? (
         <CardSkeleton />
       ) : (

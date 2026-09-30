@@ -35,7 +35,7 @@ export const TOOL_STATUS_KEYS = [
 export function deriveToolStatus(tool, status, { remote = false } = {}) {
   if (remote) {
     if (tool?.configType === "guide") return { key: "guide", label: "Guide", variant: "info" };
-    return { key: "manual", label: "Manual", variant: "info" };
+    return { key: "manual", label: "Manual setup", variant: "info" };
   }
   if (status?.error) return { key: "error", label: "Detection failed", variant: "err" };
   if (tool?.configType === "guide") return { key: "guide", label: "Guide", variant: "info" };

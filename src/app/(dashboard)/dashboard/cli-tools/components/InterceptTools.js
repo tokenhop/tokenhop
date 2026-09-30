@@ -46,8 +46,8 @@ function RemoteInterceptSteps() {
         </p>
       </div>
       <p className="text-[13px] text-muted">
-        Turning DNS on still requires the dashboard on the host. Add these lines to the hosts file
-        on the machine that runs the IDE.
+        These hosts entries only work when the IDE runs on the same machine as 9router. Turn DNS on
+        from the dashboard on the host.
       </p>
       <ul className="grid list-none grid-cols-1 gap-3 p-0 sm:grid-cols-2">
         {entries.map(({ toolId, tool, hosts }) => (

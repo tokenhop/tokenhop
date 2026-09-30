@@ -87,13 +87,13 @@ describe("remote CLI tools stay on the page", () => {
   it("keeps the grid under one local-only notice", () => {
     const page = read("CLIToolsPageClient.js");
     expect(page).not.toMatch(/if \(localOnly\) return <LocalOnlyNotice/);
-    expect(page).toMatch(/\{localOnly && <LocalOnlyNotice \/>\}/);
+    expect(page).toMatch(/\{localOnly && <LocalOnlyNotice manualBelow \/>\}/);
     expect(page).toMatch(/remote=\{localOnly\}/);
   });
 
   it("keeps the tool detail panel under the notice", () => {
     const detail = read("[toolId]/ToolDetailClient.js");
-    expect(detail).toMatch(/\{localOnly && <LocalOnlyNotice \/>\}/);
+    expect(detail).toMatch(/\{localOnly && <LocalOnlyNotice manualBelow \/>\}/);
     expect(detail).toMatch(/<ToolSetupPanel/);
     expect(detail).not.toMatch(/localOnly \? \(/);
   });
