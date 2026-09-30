@@ -6,10 +6,10 @@
 
 [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
 [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-[![GHCR](https://img.shields.io/badge/GHCR-yandy-r%2F9router-blue?logo=github)](https://github.com/yandy-r/9router/pkgs/container/9router)
-[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/yandy-r/9router/blob/main/LICENSE)
+[![GHCR](https://img.shields.io/badge/GHCR-tokenhop%2Ftokenhop-blue?logo=github)](https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop)
+[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
-[🌐 Website](https://9router.com) • [📖 Full Docs](https://github.com/yandy-r/9router)
+[🌐 Website](https://9router.com) • [📖 Full Docs](https://github.com/tokenhop/tokenhop)
 
 ---
 
@@ -49,10 +49,10 @@ npx 9router
 ```bash
 docker run -d --name 9router -p 20128:20128 \
   -v "$HOME/.9router:/app/data" -e DATA_DIR=/app/data \
-  ghcr.io/yandy-r/9router:latest
+  ghcr.io/tokenhop/tokenhop:latest
 ```
 
-Published images: [GHCR](https://github.com/yandy-r/9router/pkgs/container/9router) (multi-platform amd64/arm64).
+Published images: [GHCR](https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop) (multi-platform amd64/arm64).
 
 Both the npm package and the Docker image ship with Google OAuth clients built in, so
 Gemini/Gemini CLI/Antigravity login works with no setup.
@@ -109,8 +109,8 @@ Any tool supporting OpenAI/Claude-compatible API works.
 
 Full docs, advanced setup, video tutorials & development guide:
 
-- **GitHub**: <https://github.com/yandy-r/9router>
-- **Full README**: <https://github.com/yandy-r/9router/blob/main/app/README.md>
+- **GitHub**: <https://github.com/tokenhop/tokenhop>
+- **Full README**: <https://github.com/tokenhop/tokenhop/blob/master/README.md>
 - **Website**: <https://9router.com>
 
 ---

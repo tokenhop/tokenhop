@@ -9,7 +9,7 @@
 
 [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
 [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/yandy-r/9router/blob/main/LICENSE)
+[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
 [🚀 快速开始](#-快速开始) • [💡 功能特点](#-主要功能) • [📖 设置指南](#-设置指南) • [🌐 网站](https://9router.com)
 
@@ -171,7 +171,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 </div>
 
-> 🎬 **制作了关于 9Router 的视频？** 提交 [Pull Request](https://github.com/yandy-r/9router/pulls)，将你的视频添加到此部分 — 我们会合并它！
+> 🎬 **制作了关于 9Router 的视频？** 提交 [Pull Request](https://github.com/tokenhop/tokenhop/pulls)，将你的视频添加到此部分 — 我们会合并它！
 
 ---
 
@@ -1037,7 +1037,7 @@ Model：cc/claude-opus-4-7
 
 ```bash
 # 克隆并安装
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router
 npm install
 npm run build
@@ -1301,8 +1301,8 @@ Authorization: Bearer your-api-key
 ## 📧 支持
 
 - **网站**：[9router.com](https://9router.com)
-- **GitHub**：[github.com/yandy-r/9router](https://github.com/yandy-r/9router)
-- **问题**：[github.com/yandy-r/9router/issues](https://github.com/yandy-r/9router/issues)
+- **GitHub**：[github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
+- **问题**：[github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 
 ---
 
@@ -1310,13 +1310,13 @@ Authorization: Bearer your-api-key
 
 感谢所有帮助改进 9Router 的贡献者！
 
-[![Contributors](https://contrib.rocks/image?repo=yandy-r/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/yandy-r/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=tokenhop/tokenhop&max=150&columns=15&anon=1&v=20260309)](https://github.com/tokenhop/tokenhop/graphs/contributors)
 
 ---
 
 ## 📊 Star 图表
 
-[![Star Chart](https://starchart.cc/yandy-r/9router.svg?variant=adaptive)](https://starchart.cc/yandy-r/9router)
+[![Star Chart](https://starchart.cc/tokenhop/tokenhop.svg?variant=adaptive)](https://starchart.cc/tokenhop/tokenhop)
 
 ## 🔀 分支
 

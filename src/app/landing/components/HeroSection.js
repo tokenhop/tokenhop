@@ -43,7 +43,7 @@ export default function HeroSection({ endpoint = "http://localhost:20128/v1" }) 
           <Button
             variant="secondary"
             size="md"
-            href="https://github.com/yandy-r/9router"
+            href="https://github.com/tokenhop/tokenhop"
             target="_blank"
             rel="noopener noreferrer"
             icon="code"

@@ -9,8 +9,8 @@
 
 [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
 [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-[![GHCR](https://img.shields.io/badge/GHCR-yandy-r%2F9router-blue?logo=github)](https://github.com/yandy-r/9router/pkgs/container/9router)
-[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/yandy-r/9router/blob/main/LICENSE)
+[![GHCR](https://img.shields.io/badge/GHCR-tokenhop%2Ftokenhop-blue?logo=github)](https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop)
+[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
 [🚀 شروع سریع](#-شروع-سریع) • [💡 ویژگی‌ها](#-ویژگی‌های-کلیدی) • [📖 راه‌اندازی](#-راهنمای-راه‌اندازی) • [🌐 وب‌سایت](https://9router.com)
 
@@ -210,7 +210,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 </div>
 
-> 🎬 **درباره 9Router ویدیو ساخته‌اید؟** یک [درخواست Pull](https://github.com/yandy-r/9router/pulls) برای افزودن ویدیوی خود به این بخش ارسال کنید — ما آن را ادغام خواهیم کرد!
+> 🎬 **درباره 9Router ویدیو ساخته‌اید؟** یک [درخواست Pull](https://github.com/tokenhop/tokenhop/pulls) برای افزودن ویدیوی خود به این بخش ارسال کنید — ما آن را ادغام خواهیم کرد!
 
 ---
 
@@ -1124,7 +1124,7 @@ codex "your prompt"
 
 ```bash
 # کلون و نصب
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router
 npm install
 npm run build
@@ -1155,7 +1155,7 @@ pm2 startup
 
 تصاویر منتشر شده (چند پلتفرم `linux/amd64` + `linux/arm64`):
 
-- GHCR: [`ghcr.io/yandy-r/9router`](https://github.com/yandy-r/9router/pkgs/container/9router)
+- GHCR: [`ghcr.io/tokenhop/tokenhop`](https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop)
 
 **شروع سریع (استفاده از تصویر منتشر شده):**
 
@@ -1165,7 +1165,7 @@ docker run -d \
   -p 20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
-  ghcr.io/yandy-r/9router:latest
+  ghcr.io/tokenhop/tokenhop:latest
 ```
 
 → باز کردن <http://localhost:20128>
@@ -1173,7 +1173,7 @@ docker run -d \
 **ساخت از سورس (توسعه):**
 
 ```bash
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router/app
 docker build -t 9router .
 docker run -d --name 9router -p 20128:20128 \
@@ -1191,7 +1191,7 @@ docker run -d --name 9router -p 20128:20128 \
 docker logs -f 9router
 docker restart 9router
 docker stop 9router && docker rm 9router
-docker pull ghcr.io/yandy-r/9router:latest   # به‌روزرسانی به آخرین نسخه
+docker pull ghcr.io/tokenhop/tokenhop:latest   # به‌روزرسانی به آخرین نسخه
 ```
 
 **ماندگاری داده:** `$HOME/.9router/db/data.sqlite` در میزبان ↔ `/app/data/db/data.sqlite` در کانتینر.
@@ -1393,8 +1393,8 @@ Authorization: Bearer your-api-key
 ## 📧 پشتیبانی
 
 - **وب‌سایت**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/yandy-r/9router](https://github.com/yandy-r/9router)
-- **مسائل**: [github.com/yandy-r/9router/issues](https://github.com/yandy-r/9router/issues)
+- **GitHub**: [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
+- **مسائل**: [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 
 ---
 
@@ -1402,13 +1402,13 @@ Authorization: Bearer your-api-key
 
 با تشکر از همه مشارکت‌کنندگانی که به بهتر شدن 9Router کمک کردند!
 
-[![Contributors](https://contrib.rocks/image?repo=yandy-r/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/yandy-r/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=tokenhop/tokenhop&max=150&columns=15&anon=1&v=20260309)](https://github.com/tokenhop/tokenhop/graphs/contributors)
 
 ---
 
 ## 📊 نمودار ستاره
 
-[![Star Chart](https://starchart.cc/yandy-r/9router.svg?variant=adaptive)](https://starchart.cc/yandy-r/9router)
+[![Star Chart](https://starchart.cc/tokenhop/tokenhop.svg?variant=adaptive)](https://starchart.cc/tokenhop/tokenhop)
 
 ## 🔀 فورک‌ها
 

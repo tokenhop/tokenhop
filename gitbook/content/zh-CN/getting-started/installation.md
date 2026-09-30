@@ -76,7 +76,7 @@ npx 9router
 从 GitHub 克隆并构建:
 
 ```bash
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router/app
 npm install
 npm run build
@@ -487,5 +487,5 @@ nano ~/.bashrc  # 或 ~/.zshrc
 ## 需要帮助?
 
 - **网站**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/yandy-r/9router](https://github.com/yandy-r/9router)
-- **Issues**: [github.com/yandy-r/9router/issues](https://github.com/yandy-r/9router/issues)
+- **GitHub**: [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
+- **Issues**: [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)

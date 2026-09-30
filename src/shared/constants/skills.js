@@ -2,7 +2,7 @@
 // Skills ship with the gateway, so the hosted URLs always resolve against the
 // selected access base (Local/Tunnel/Tailscale) plus SKILL_PATH.
 
-const REPO = "yandy-r/9router";
+const REPO = "tokenhop/tokenhop";
 const BRANCH = "master";
 const SKILL_PATH = "skills";
 

@@ -7,7 +7,7 @@ const PRODUCT_LINKS = [
   { label: "Dashboard", href: "/dashboard" },
   {
     label: "Changelog",
-    href: "https://github.com/yandy-r/9router",
+    href: "https://github.com/tokenhop/tokenhop",
     target: "_blank",
     rel: "noopener noreferrer",
   },
@@ -16,19 +16,19 @@ const PRODUCT_LINKS = [
 const RESOURCE_LINKS = [
   {
     label: "Documentation",
-    href: "https://github.com/yandy-r/9router#readme",
+    href: "https://github.com/tokenhop/tokenhop#readme",
     target: "_blank",
     rel: "noopener noreferrer",
   },
   {
     label: "GitHub",
-    href: "https://github.com/yandy-r/9router",
+    href: "https://github.com/tokenhop/tokenhop",
     target: "_blank",
     rel: "noopener noreferrer",
   },
   {
     label: "Docker",
-    href: "https://github.com/yandy-r/9router/pkgs/container/9router",
+    href: "https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop",
     target: "_blank",
     rel: "noopener noreferrer",
   },
@@ -37,7 +37,7 @@ const RESOURCE_LINKS = [
 const LEGAL_LINKS = [
   {
     label: "MIT License",
-    href: "https://github.com/yandy-r/9router/blob/main/LICENSE",
+    href: "https://github.com/tokenhop/tokenhop/blob/master/LICENSE",
     target: "_blank",
     rel: "noopener noreferrer",
   },
@@ -74,7 +74,7 @@ export default function Footer() {
             <div className="flex gap-4">
               <a
                 className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-muted transition-colors hover:text-text focus-visible:shadow-focus"
-                href="https://github.com/yandy-r/9router"
+                href="https://github.com/tokenhop/tokenhop"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -137,7 +137,7 @@ export default function Footer() {
           <div className="flex gap-6">
             <a
               className="inline-flex min-h-[44px] items-center text-sm text-muted transition-colors hover:text-text focus-visible:shadow-focus"
-              href="https://github.com/yandy-r/9router"
+              href="https://github.com/tokenhop/tokenhop"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -145,7 +145,7 @@ export default function Footer() {
             </a>
             <a
               className="inline-flex min-h-[44px] items-center text-sm text-muted transition-colors hover:text-text focus-visible:shadow-focus"
-              href="https://github.com/yandy-r/9router/pkgs/container/9router"
+              href="https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop"
               target="_blank"
               rel="noopener noreferrer"
             >

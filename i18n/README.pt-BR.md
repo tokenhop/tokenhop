@@ -9,8 +9,8 @@
 
 [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
 [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-[![GHCR](https://img.shields.io/badge/GHCR-yandy-r%2F9router-blue?logo=github)](https://github.com/yandy-r/9router/pkgs/container/9router)
-[![Licença](https://img.shields.io/npm/l/9router.svg)](https://github.com/yandy-r/9router/blob/main/LICENSE)
+[![GHCR](https://img.shields.io/badge/GHCR-tokenhop%2Ftokenhop-blue?logo=github)](https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop)
+[![Licença](https://img.shields.io/npm/l/9router.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
 [🚀 Início rápido](#-início-rápido) • [💡 Recursos](#-principais-recursos) • [📖 Configuração](#-guia-de-configuração) • [🌐 Site](https://9router.com)
 
@@ -220,7 +220,7 @@ URLs padrão:
 
 </div>
 
-> 🎬 **Fez um vídeo sobre o 9Router?** Envie um [Pull Request](https://github.com/yandy-r/9router/pulls) adicionando seu vídeo a esta seção - nós o mesclaremos!
+> 🎬 **Fez um vídeo sobre o 9Router?** Envie um [Pull Request](https://github.com/tokenhop/tokenhop/pulls) adicionando seu vídeo a esta seção - nós o mesclaremos!
 
 ---
 
@@ -1206,7 +1206,7 @@ Model: cc/claude-opus-4-7
 
 ```bash
 # Clonar e instalar
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router
 npm install
 npm run build
@@ -1237,7 +1237,7 @@ pm2 startup
 
 Imagens publicadas (multiplataforma `linux/amd64` + `linux/arm64`):
 
-- GHCR: [`ghcr.io/yandy-r/9router`](https://github.com/yandy-r/9router/pkgs/container/9router)
+- GHCR: [`ghcr.io/tokenhop/tokenhop`](https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop)
 
 **Início rápido (use imagem publicada):**
 
@@ -1247,7 +1247,7 @@ docker run -d \
   -p 20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
-  ghcr.io/yandy-r/9router:latest
+  ghcr.io/tokenhop/tokenhop:latest
 ```
 
 → Abra <http://localhost:20128>
@@ -1255,7 +1255,7 @@ docker run -d \
 **Compilar a partir do código-fonte (desenvolvedor):**
 
 ```bash
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router/app
 docker build -t 9router .
 docker run -d --name 9router -p 20128:20128 \
@@ -1273,7 +1273,7 @@ docker run -d --name 9router -p 20128:20128 \
 docker logs -f 9router
 docker restart 9router
 docker stop 9router && docker rm 9router
-docker pull ghcr.io/yandy-r/9router:latest   # atualizar para a versão mais recente
+docker pull ghcr.io/tokenhop/tokenhop:latest   # atualizar para a versão mais recente
 ```
 
 **Persistência de dados:** `$HOME/.9router/db/data.sqlite` no host ↔ `/app/data/db/data.sqlite` no contêiner.
@@ -1475,8 +1475,8 @@ Authorization: Bearer your-api-key
 ## 📧 Suporte
 
 - **Site**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/yandy-r/9router](https://github.com/yandy-r/9router)
-- **Issues**: [github.com/yandy-r/9router/issues](https://github.com/yandy-r/9router/issues)
+- **GitHub**: [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
+- **Issues**: [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 
 ---
 
@@ -1484,13 +1484,13 @@ Authorization: Bearer your-api-key
 
 Obrigado a todos os colaboradores que ajudaram a tornar o 9Router melhor!
 
-[![Contribuidores](https://contrib.rocks/image?repo=yandy-r/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/yandy-r/9router/graphs/contributors)
+[![Contribuidores](https://contrib.rocks/image?repo=tokenhop/tokenhop&max=150&columns=15&anon=1&v=20260309)](https://github.com/tokenhop/tokenhop/graphs/contributors)
 
 ---
 
 ## 📊 Gráfico de estrelas
 
-[![Gráfico de estrelas](https://starchart.cc/yandy-r/9router.svg?variant=adaptive)](https://starchart.cc/yandy-r/9router)
+[![Gráfico de estrelas](https://starchart.cc/tokenhop/tokenhop.svg?variant=adaptive)](https://starchart.cc/tokenhop/tokenhop)
 
 ## 🔀 Forks
 

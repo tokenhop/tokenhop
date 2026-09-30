@@ -9,13 +9,13 @@ const NAV_LINKS = [
   { label: "How it Works", href: "#how-it-works" },
   {
     label: "Docs",
-    href: "https://github.com/yandy-r/9router#readme",
+    href: "https://github.com/tokenhop/tokenhop#readme",
     target: "_blank",
     rel: "noopener noreferrer",
   },
   {
     label: "GitHub",
-    href: "https://github.com/yandy-r/9router",
+    href: "https://github.com/tokenhop/tokenhop",
     target: "_blank",
     rel: "noopener noreferrer",
     external: true,
