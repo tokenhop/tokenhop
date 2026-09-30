@@ -124,7 +124,8 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   const targetUrl = body.url;
   const format = body.format;
   const maxCharacters = body.max_characters;
-  const providerId = resolveProviderId(providerInput);
+  // /v1/models/web advertises fetch providers as "{alias}/fetch".
+  const providerId = resolveProviderId(providerInput.replace(/\/fetch$/, ""));
   const resolvedProvider = AI_PROVIDERS[providerId];
 
   if (!resolvedProvider) {
