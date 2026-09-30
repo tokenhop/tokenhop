@@ -163,6 +163,7 @@ describe("verbatim glossary", () => {
       "DNS",
       "Exa",
       "GitHub",
+      "Grok CLI",
       "ID",
       "JSON (Base64)",
       "Keycloak / Authentik",
@@ -204,6 +205,7 @@ describe("verbatim glossary", () => {
       "Claude CLI",
       "Claude Code",
       "Codex CLI",
+      "Grok CLI",
       "OpenAI Codex",
     ];
     for (const [locale, map] of locales) {

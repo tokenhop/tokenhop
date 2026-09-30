@@ -1,3 +1,4 @@
+import { GROK_CLI_USER_AGENT, GROK_CLI_VERSION } from "open-sse/config/grokCli.js";
 import { GROK_CLI_CONFIG } from "../constants/oauth.js";
 import {
   decodeXaiIdTokenEmail,
@@ -6,6 +7,15 @@ import {
 } from "../providerHelpers.js";
 
 // Grok CLI / Grok Build — device code flow to auth.x.ai, inference on cli-chat-proxy.grok.com
+
+// Official CLI sends its version on the auth.x.ai device-code and token calls too.
+const AUTH_HEADERS = {
+  "Content-Type": "application/x-www-form-urlencoded",
+  Accept: "application/json",
+  "User-Agent": GROK_CLI_USER_AGENT,
+  "x-grok-client-version": GROK_CLI_VERSION,
+};
+
 const grokCli = {
   config: GROK_CLI_CONFIG,
   flowType: "device_code",
@@ -19,11 +29,7 @@ const grokCli = {
 
     const response = await fetch(config.deviceCodeUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-        "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
-      },
+      headers: AUTH_HEADERS,
       body,
     });
 
@@ -37,11 +43,7 @@ const grokCli = {
   pollToken: async (config, deviceCode) => {
     const response = await fetch(config.tokenUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-        "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
-      },
+      headers: AUTH_HEADERS,
       body: new URLSearchParams({
         grant_type: "urn:ietf:params:oauth:grant-type:device_code",
         device_code: deviceCode,
@@ -65,9 +67,9 @@ const grokCli = {
         headers: {
           Authorization: `Bearer ${tokens.access_token}`,
           Accept: "application/json",
-          "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
+          "User-Agent": GROK_CLI_USER_AGENT,
           "x-xai-token-auth": "xai-grok-cli",
-          "x-grok-client-version": "0.2.93",
+          "x-grok-client-version": GROK_CLI_VERSION,
         },
       });
       if (res.ok) return { user: await res.json() };

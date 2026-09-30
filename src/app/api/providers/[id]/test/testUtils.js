@@ -153,12 +153,7 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
     extraHeaders: {
       Accept: "application/json",
-      ...(PROVIDERS["grok-cli"]?.headers || {
-        "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
-        "x-xai-token-auth": "xai-grok-cli",
-        "x-grok-client-identifier": "grok-pager",
-        "x-grok-client-version": "0.2.93",
-      }),
+      ...PROVIDERS["grok-cli"].headers,
     },
     refreshable: true,
     // Subscription spending-limit is not an auth failure — token is fine, credits aren't.

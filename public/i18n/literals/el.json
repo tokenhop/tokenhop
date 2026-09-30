@@ -770,6 +770,7 @@
   "Granted at": "Εκδόθηκε στις",
   "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.": "Το Grok Build χρησιμοποιεί το ~/.grok/config.toml. Το 9Router γράφει ένα προσαρμοσμένο μοντέλο [model.9router] και το ορίζει ως προεπιλογή.",
   "Grok Build — Manual configuration": "Grok Build — Χειροκίνητη διαμόρφωση",
+  "Grok CLI": "Grok CLI",
   "Ground": "Έδαφος",
   "Grows with each repeated failure.": "Μεγαλώνει με κάθε επαναλαμβανόμενη αποτυχία.",
   "Guide": "Οδηγός",

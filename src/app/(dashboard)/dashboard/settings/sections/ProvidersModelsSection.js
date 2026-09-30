@@ -44,6 +44,7 @@ const AUTO_PING_PROVIDERS = [
 const CLIENT_PINS = [
   { key: "CLAUDE_CLI_VERSION", label: "Claude CLI" },
   { key: "CODEX_CLI_VERSION", label: "Codex CLI" },
+  { key: "GROK_CLI_VERSION", label: "Grok CLI" },
   { key: "ZED_CLIENT_VERSION", label: "Zed client" },
 ];
 
@@ -372,7 +373,7 @@ export default function ProvidersModelsSection({ settings, onSettingsChange }) {
           <p className="mt-0.5 text-[13px] text-muted">
             Read from .env at startup. Read-only here.
           </p>
-          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {CLIENT_PINS.map(({ key, label }) => (
               <div key={key}>
                 <p className="mb-1 text-[13px] font-semibold text-text">{label}</p>

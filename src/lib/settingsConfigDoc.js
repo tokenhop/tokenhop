@@ -88,6 +88,7 @@ export const READ_ONLY_SETTING_KEYS = new Set([
   "CLAUDE_CLI_VERSION",
   "CODEX_CLI_VERSION",
   "ZED_CLIENT_VERSION",
+  "GROK_CLI_VERSION",
 ]);
 
 /** Keys that don't take effect until a restart or a manual re-enable. */

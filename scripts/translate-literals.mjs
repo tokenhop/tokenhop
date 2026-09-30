@@ -129,6 +129,7 @@ export const VERBATIM_KEYS = new Set([
   "Claude CLI",
   "Claude Code",
   "Codex CLI",
+  "Grok CLI",
   "OpenAI Codex",
   "DNS",
   "Python",

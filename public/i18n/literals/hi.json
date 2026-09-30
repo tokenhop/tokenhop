@@ -770,6 +770,7 @@
   "Granted at": "प्रदान करने का समय",
   "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.": "Grok Build ~/.grok/config.toml का उपयोग करता है। 9Router एक [model.9router] कस्टम मॉडल लिखता है और इसे डिफ़ॉल्ट के रूप में सेट करता है।",
   "Grok Build — Manual configuration": "Grok Build — मैनुअल कॉन्फ़िगरेशन",
+  "Grok CLI": "Grok CLI",
   "Ground": "ग्राउंड",
   "Grows with each repeated failure.": "प्रत्येक दोहराई गई विफलता के साथ बढ़ता है।",
   "Guide": "मार्गदर्शिका",
