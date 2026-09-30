@@ -25,7 +25,7 @@ export function TtsLanguageModal({
   const filteredLanguages = filterLanguages(languages, search);
 
   return (
-    <Modal isOpen={open} onClose={onClose} title="Select Language">
+    <Modal isOpen={open} onClose={onClose} title="Select language">
       <div className="flex flex-col">
         {/* Search */}
         <div className="border-b border-line px-4 py-2.5">

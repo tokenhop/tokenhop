@@ -430,7 +430,7 @@ export default function ComboEditor({
           }}
           activeProviders={activeProviders}
           modelAliases={modelAliases}
-          title="Add Model to Route"
+          title="Add model to route"
           addedModelValues={models}
           closeOnSelect={false}
         />
@@ -445,7 +445,7 @@ export default function ComboEditor({
           }}
           activeProviders={activeProviders}
           modelAliases={modelAliases}
-          title="Select Judge Model"
+          title="Select judge model"
           addedModelValues={judgeModel ? [judgeModel] : []}
           closeOnSelect
         />
@@ -457,7 +457,7 @@ export default function ComboEditor({
           setConfirmDelete(false);
           onDelete?.();
         }}
-        title="Delete Combo"
+        title="Delete combo"
         message={`Delete combo "${combo.name}"? This cannot be undone.`}
         confirmText="Delete"
         variant="danger"

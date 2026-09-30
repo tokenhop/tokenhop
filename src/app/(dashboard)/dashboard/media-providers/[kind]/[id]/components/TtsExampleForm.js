@@ -54,7 +54,7 @@ export function TtsExampleForm({
 
   return (
     <>
-      {/* Endpoint + API Key as read-only text */}
+      {/* Endpoint + API key as read-only text */}
       <Row label="Endpoint">
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <span className={readonlyClass} dir="ltr">
@@ -76,7 +76,7 @@ export function TtsExampleForm({
           )}
         </div>
       </Row>
-      <Row label="API Key">
+      <Row label="API key">
         <span className={readonlyClass} dir="ltr">
           {apiKey ? (
             maskPreviewApiKey(apiKey)
@@ -151,15 +151,15 @@ export function TtsExampleForm({
         </Row>
       )}
 
-      {/* Output Format */}
-      <Row label="Output Format">
+      {/* Output format */}
+      <Row label="Output format">
         <select
           value={responseFormat}
           onChange={(e) => onResponseFormatChange(e.target.value)}
-          aria-label="Output Format"
+          aria-label="Output format"
           className={controlClass}
         >
-          <option value="mp3">MP3 (Binary)</option>
+          <option value="mp3">MP3 (binary)</option>
           <option value="json">JSON (Base64)</option>
         </select>
       </Row>

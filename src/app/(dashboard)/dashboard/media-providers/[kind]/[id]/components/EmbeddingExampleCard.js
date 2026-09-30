@@ -192,14 +192,14 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
           </div>
         </Row>
 
-        {/* API Key */}
-        <Row label="API Key">
+        {/* API key */}
+        <Row label="API key">
           <input
             type="password"
             value={keyOverride}
             onChange={(e) => setKeyOverride(e.target.value)}
             placeholder={loadedKey ? maskPreviewApiKey(loadedKey) : "sk-..."}
-            aria-label="API Key"
+            aria-label="API key"
             autoComplete="off"
             className={`${controlClass} font-mono`}
           />
@@ -283,7 +283,7 @@ export function EmbeddingExampleCard({ providerId, customAlias }) {
               Response{" "}
               {result && (
                 <span className="font-mono text-xs font-normal normal-case text-muted">
-                  ⚡ {result.latencyMs}ms
+                  {result.latencyMs}ms
                 </span>
               )}
             </span>

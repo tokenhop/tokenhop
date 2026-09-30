@@ -274,7 +274,7 @@ export default function DroidToolCard({
       <ManualConfigModal
         isOpen={card.showManualModal}
         onClose={() => card.setShowManualModal(false)}
-        title="Factory Droid — Manual Configuration"
+        title="Factory Droid — Manual configuration"
         configs={getManualConfigs()}
       />
     </>

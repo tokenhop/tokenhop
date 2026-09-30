@@ -172,7 +172,7 @@ export default function MediaProviderDetailPage() {
                 <span className="material-symbols-outlined text-sm" aria-hidden="true">
                   open_in_new
                 </span>
-                Get API Key
+                Get API key
                 <span className="sr-only">(opens in a new tab)</span>
               </a>
             )}
@@ -225,7 +225,7 @@ export default function MediaProviderDetailPage() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              Get API Key
+              Get API key
               <span className="sr-only">(opens in a new tab)</span>
             </Button>
           )}
@@ -399,7 +399,7 @@ export default function MediaProviderDetailPage() {
               setConfirmDelete(false);
             }}
             title="Delete custom provider"
-            message="Delete this Custom Embedding node?"
+            message="Delete this custom embedding node?"
             confirmText="Delete"
           />
         </>

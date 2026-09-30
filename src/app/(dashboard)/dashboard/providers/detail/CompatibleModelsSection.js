@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, EmptyState, Input } from "@/shared/components";
+import { translate } from "@/i18n/runtime";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 import ModelRow from "../[id]/ModelRow";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -108,8 +109,13 @@ export default function CompatibleModelsSection({
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted">
-        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or import them from
-        the /models endpoint.
+        {isAnthropic
+          ? translate(
+              "Add Anthropic-compatible models manually or import them from the /models endpoint.",
+            )
+          : translate(
+              "Add OpenAI-compatible models manually or import them from the /models endpoint.",
+            )}
       </p>
       <div className="flex flex-wrap items-end gap-2">
         <Input

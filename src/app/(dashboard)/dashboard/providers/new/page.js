@@ -39,7 +39,7 @@ export default function NewProviderPage() {
     const newErrors = {};
     if (!formData.provider) newErrors.provider = "Please select a provider";
     if (formData.authMethod === "api_key" && !formData.apiKey) {
-      newErrors.apiKey = "API Key is required";
+      newErrors.apiKey = "API key is required";
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -81,7 +81,7 @@ export default function NewProviderPage() {
           className="inline-flex items-center gap-1 text-sm text-muted hover:text-coral-ink transition-colors mb-4"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
-          Back to Providers
+          Back to providers
         </Link>
       </div>
 
@@ -120,7 +120,7 @@ export default function NewProviderPage() {
           {/* Auth Method */}
           <div className="flex flex-col gap-3">
             <label className="text-sm font-medium">
-              Authentication Method <span className="text-err">*</span>
+              Authentication method <span className="text-err">*</span>
             </label>
             <div className="flex gap-3">
               {authMethodOptions.map((method) => (
@@ -143,10 +143,10 @@ export default function NewProviderPage() {
             </div>
           </div>
 
-          {/* API Key Input */}
+          {/* API key Input */}
           {formData.authMethod === "api_key" && (
             <Input
-              label="API Key"
+              label="API key"
               type="password"
               placeholder="Enter your API key"
               value={formData.apiKey}
@@ -169,10 +169,10 @@ export default function NewProviderPage() {
             </Card.Section>
           )}
 
-          {/* Display Name */}
+          {/* Display name */}
           <Input
-            label="Display Name"
-            placeholder="e.g., Production API, Dev Environment"
+            label="Display name"
+            placeholder="e.g., production API, dev environment"
             value={formData.displayName}
             onChange={(e) => handleChange("displayName", e.target.value)}
             hint="Optional. A friendly name to identify this configuration."
@@ -197,7 +197,7 @@ export default function NewProviderPage() {
               </Button>
             </Link>
             <Button type="submit" loading={loading} fullWidth className="flex-1">
-              Create Provider
+              Create provider
             </Button>
           </div>
         </form>

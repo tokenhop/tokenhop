@@ -205,7 +205,7 @@ export default function HermesToolCard({
       <ManualConfigModal
         isOpen={card.showManualModal}
         onClose={() => card.setShowManualModal(false)}
-        title="Hermes Agent — Manual Configuration"
+        title="Hermes Agent — Manual configuration"
         configs={getManualConfigs()}
       />
     </>

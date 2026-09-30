@@ -111,7 +111,7 @@ export async function GET() {
   }
 }
 
-// POST /api/providers - Create new connection (API Key only, OAuth via separate flow)
+// POST /api/providers - Create new connection (API key only, OAuth via separate flow)
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -147,7 +147,7 @@ export async function POST(request) {
     }
     if (!apiKey && provider !== "ollama-local") {
       return NextResponse.json(
-        { error: `${isWebCookieProvider ? "Cookie value" : "API Key"} is required` },
+        { error: `${isWebCookieProvider ? "Cookie value" : "API key"} is required` },
         { status: 400 },
       );
     }

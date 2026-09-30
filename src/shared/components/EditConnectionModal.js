@@ -266,13 +266,13 @@ export default function EditConnectionModal({ isOpen, connection, onSave, onClos
   if (!connection) return null;
 
   return (
-    <Modal isOpen={isOpen} title="Edit Connection" onClose={onClose}>
+    <Modal isOpen={isOpen} title="Edit connection" onClose={onClose}>
       <div className="flex flex-col gap-4">
         <Input
           label="Name"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder={isOAuth ? "Account name" : "Production Key"}
+          placeholder={isOAuth ? "Account name" : "Production key"}
         />
         {isOAuth && connection.email && (
           <div className="rounded-lg bg-raised p-3">
@@ -293,7 +293,7 @@ export default function EditConnectionModal({ isOpen, connection, onSave, onClos
           <>
             <div className="flex gap-2">
               <Input
-                label="API Key"
+                label="API key"
                 type="password"
                 value={formData.apiKey}
                 onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
@@ -321,24 +321,24 @@ export default function EditConnectionModal({ isOpen, connection, onSave, onClos
 
         {isAzure && (
           <div className="rounded-lg border border-coral/20 bg-raised p-4">
-            <h3 className="mb-3 text-sm font-semibold text-text">Azure OpenAI Configuration</h3>
+            <h3 className="mb-3 text-sm font-semibold text-text">Azure OpenAI configuration</h3>
             <div className="flex flex-col gap-3">
               <Input
-                label="Azure Endpoint"
+                label="Azure endpoint"
                 value={azureData.azureEndpoint}
                 onChange={(e) => setAzureData({ ...azureData, azureEndpoint: e.target.value })}
                 placeholder="https://your-resource.openai.azure.com"
                 hint="Your Azure OpenAI resource endpoint URL"
               />
               <Input
-                label="Deployment Name"
+                label="Deployment name"
                 value={azureData.deployment}
                 onChange={(e) => setAzureData({ ...azureData, deployment: e.target.value })}
                 placeholder="gpt-4"
                 hint="The deployment name in your Azure resource"
               />
               <Input
-                label="API Version"
+                label="API version"
                 value={azureData.apiVersion}
                 onChange={(e) => setAzureData({ ...azureData, apiVersion: e.target.value })}
                 placeholder="2024-10-01-preview"

@@ -209,7 +209,7 @@ export default function KiloToolCard({
       <ManualConfigModal
         isOpen={card.showManualModal}
         onClose={() => card.setShowManualModal(false)}
-        title="Kilo Code — Manual Configuration"
+        title="Kilo Code — Manual configuration"
         configs={getManualConfigs()}
       />
     </>

@@ -37,7 +37,7 @@ export default function ModelSelectModal({
   onDeselect,
   selectedModel,
   activeProviders = [],
-  title = "Select Model",
+  title = "Select model",
   modelAliases = {},
   kindFilter = null,
   capFilter = null,

@@ -49,7 +49,7 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="iFlow Cookie Authentication">
+    <Modal isOpen={isOpen} onClose={handleClose} title="iFlow cookie authentication">
       <div className="space-y-4">
         {success ? (
           <div role="status" className="py-8 text-center">
@@ -58,7 +58,7 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
                 check_circle
               </span>
             </div>
-            <p className="text-lg font-medium text-text">Authentication Successful!</p>
+            <p className="text-lg font-medium text-text">Authentication successful.</p>
             <p className="mt-2 text-sm text-muted">Fresh API key obtained</p>
           </div>
         ) : (
@@ -88,7 +88,7 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
             </div>
 
             <Textarea
-              label="Cookie String"
+              label="Cookie string"
               rows={4}
               value={cookie}
               onChange={(e) => setCookie(e.target.value)}

@@ -283,7 +283,7 @@ export default function GrokBuildToolCard({
       <ManualConfigModal
         isOpen={card.showManualModal}
         onClose={() => card.setShowManualModal(false)}
-        title="Grok Build — Manual Configuration"
+        title="Grok Build — Manual configuration"
         configs={getManualConfigs()}
       />
     </>

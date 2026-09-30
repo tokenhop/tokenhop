@@ -49,7 +49,7 @@ export default function ProviderInfoCard({ config, provider, title = "Provider I
             className="text-xs text-coral-ink hover:underline inline-flex items-center gap-1"
           >
             <span className="material-symbols-outlined text-sm">open_in_new</span>
-            Get API Key
+            Get API key
           </a>
         )}
       </div>

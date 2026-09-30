@@ -84,7 +84,7 @@ export default function BulkImportCodexModal({ isOpen, onClose, onSuccess }) {
   const failedItems = result?.results?.filter((r) => !r.ok) || [];
 
   return (
-    <Modal isOpen={isOpen} title={translate("Bulk Add Codex Accounts")} onClose={handleClose}>
+    <Modal isOpen={isOpen} title={translate("Bulk add Codex accounts")} onClose={handleClose}>
       <div className="flex flex-col gap-4">
         <p className="text-xs text-muted">
           {translate(
@@ -109,8 +109,8 @@ export default function BulkImportCodexModal({ isOpen, onClose, onSuccess }) {
                 result.failed > 0 ? "text-yellow-400" : "text-green-400"
               }`}
             >
-              ✓ {result.success} {translate("added")}
-              {result.failed > 0 ? `, ✗ ${result.failed} ${translate("failed")}` : ""}
+              {result.success} {translate("added")}
+              {result.failed > 0 ? `, ${result.failed} ${translate("failed")}` : ""}
             </div>
             {failedItems.length > 0 && (
               <ul className="rounded border border-coral/20 bg-raised p-2 text-xs font-mono max-h-40 overflow-y-auto">
@@ -126,7 +126,7 @@ export default function BulkImportCodexModal({ isOpen, onClose, onSuccess }) {
 
         <div className="flex gap-2">
           <Button onClick={handleSubmit} fullWidth disabled={submitting || !jsonText.trim()}>
-            {submitting ? translate("Importing...") : translate("Import All")}
+            {submitting ? translate("Importing...") : translate("Import all")}
           </Button>
           <Button onClick={handleClose} variant="ghost" fullWidth disabled={submitting}>
             {translate("Close")}

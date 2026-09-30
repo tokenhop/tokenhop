@@ -76,7 +76,7 @@ function maskApiKey(key) {
  */
 function apiKeyIdentity(rawKey, apiKeyMap) {
   if (!rawKey || typeof rawKey !== "string") {
-    return { id: "local-no-key", keyName: "Local (No API Key)", apiKeyMasked: null };
+    return { id: "local-no-key", keyName: "Local (no API key)", apiKeyMasked: null };
   }
   const apiKeyMasked = maskApiKey(rawKey);
   const info = apiKeyMap[rawKey];

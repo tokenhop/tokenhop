@@ -112,8 +112,8 @@ export function GenericExampleForm({
         </div>
       </Row>
 
-      {/* API Key */}
-      <Row label="API Key">
+      {/* API key */}
+      <Row label="API key">
         <span className={readonlyClass} dir="ltr">
           {apiKey ? (
             maskPreviewApiKey(apiKey)
@@ -171,7 +171,7 @@ export function GenericExampleForm({
       {/* Reference image (only for edit-capable image models) */}
       {supportsEdit && (
         <ImageUrlField
-          label="Ref Image (URL)"
+          label="Ref image (URL)"
           value={refImage}
           onChange={onRefImageChange}
           placeholder={imageEditDefaults.image || "https://example.com/source.png"}
@@ -204,17 +204,17 @@ export function GenericExampleForm({
         </Row>
       ))}
 
-      {/* Output Format toggle (image only) — last */}
+      {/* Output format toggle (image only) — last */}
       {kind === "image" && (
-        <Row label="Output Format">
+        <Row label="Output format">
           <select
             value={imageOutputFormat}
             onChange={(e) => onOutputFormatChange(e.target.value)}
-            aria-label="Output Format"
+            aria-label="Output format"
             className={controlClass}
           >
             <option value="json">JSON (Base64)</option>
-            <option value="binary">Binary File</option>
+            <option value="binary">Binary file</option>
           </select>
         </Row>
       )}

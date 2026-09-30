@@ -235,7 +235,7 @@ export function useConnections({ providerId, notifyError }) {
   const confirmDelete = useCallback(
     (id) => {
       setConfirmState({
-        title: "Delete Connection",
+        title: "Delete connection",
         message: "Delete this connection?",
         onConfirm: async () => {
           setConfirmState(null);

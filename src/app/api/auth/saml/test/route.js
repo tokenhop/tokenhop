@@ -30,7 +30,7 @@ export async function POST(request) {
 
     if (!samlEntryPoint) {
       return NextResponse.json(
-        { error: "Single Sign-On Service URL (samlEntryPoint) is required" },
+        { error: "Single sign-on service URL (samlEntryPoint) is required" },
         { status: 400 },
       );
     }
@@ -39,7 +39,7 @@ export async function POST(request) {
       new URL(samlEntryPoint);
     } catch {
       return NextResponse.json(
-        { error: "Single Sign-On Service URL must be a valid URL" },
+        { error: "Single sign-on service URL must be a valid URL" },
         { status: 400 },
       );
     }
@@ -53,14 +53,14 @@ export async function POST(request) {
 
     if (!samlCert) {
       return NextResponse.json(
-        { error: "IdP X.509 Certificate (samlCert) is required" },
+        { error: "IdP X.509 certificate (samlCert) is required" },
         { status: 400 },
       );
     }
 
     const formattedCert = formatX509Certificate(samlCert);
     if (!formattedCert) {
-      return NextResponse.json({ error: "Invalid IdP X.509 Certificate format" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid IdP X.509 certificate format" }, { status: 400 });
     }
 
     const origin = new URL(request.url).origin;

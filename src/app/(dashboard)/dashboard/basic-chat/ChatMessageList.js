@@ -19,7 +19,7 @@ export default function ChatMessageList({
         <EmptyState
           icon="chat"
           title="Start a conversation"
-          body="Simple chat interface to interact with any AI model from connected providers. Select a model and start chatting!"
+          body="Simple chat interface to interact with any AI model from connected providers. Select a model and start chatting."
         />
       </div>
     );

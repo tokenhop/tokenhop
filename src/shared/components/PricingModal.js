@@ -108,7 +108,7 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
       <Modal
         isOpen={isOpen}
         onClose={onClose}
-        title="Pricing Configuration"
+        title="Pricing configuration"
         size="full"
         className="max-w-6xl"
         closeOnOverlay={!saving}

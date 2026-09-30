@@ -39,7 +39,7 @@ export function KiroIdcForm({ startUrl, onStartUrl, region, onRegion, error, onC
         inputClassName="font-mono text-sm"
       />
       <Input
-        label="AWS Region"
+        label="AWS region"
         value={region}
         onChange={(e) => onRegion(e.target.value)}
         placeholder="us-east-1"
@@ -80,7 +80,7 @@ export function KiroApiKeyForm({
         directly as a bearer credential (no refresh).
       </Callout>
       <Input
-        label="API Key"
+        label="API key"
         required
         value={apiKey}
         onChange={(e) => onApiKey(e.target.value)}
@@ -88,7 +88,7 @@ export function KiroApiKeyForm({
         inputClassName="font-mono text-sm"
       />
       <Input
-        label="AWS Region"
+        label="AWS region"
         value={region}
         onChange={(e) => onRegion(e.target.value)}
         placeholder="us-east-1"
@@ -97,7 +97,7 @@ export function KiroApiKeyForm({
       />
       {error && <Callout variant="err">{error}</Callout>}
       <Actions
-        primary={importing ? "Validating..." : "Add API Key"}
+        primary={importing ? "Validating..." : "Add API key"}
         onPrimary={onSubmit}
         disabled={importing || !apiKey.trim()}
         onBack={onBack}
@@ -121,7 +121,7 @@ KiroApiKeyForm.propTypes = {
 export function KiroSocialInfo({ provider, onContinue, onBack }) {
   return (
     <div className="space-y-4">
-      <Callout variant="warn" icon="info" title="Manual Callback Required">
+      <Callout variant="warn" icon="info" title="Manual callback required">
         After login, you&apos;ll need to copy the callback URL from your browser and paste it back
         here.
       </Callout>

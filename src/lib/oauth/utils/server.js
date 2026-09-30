@@ -36,7 +36,7 @@ export function startLocalServer(onCallback, fixedPort = null) {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Authentication Successful</title>
+  <title>Authentication successful</title>
   <style>
     body { font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f5f5; }
     .container { text-align: center; padding: 2rem; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -49,7 +49,7 @@ export function startLocalServer(onCallback, fixedPort = null) {
 <body>
   <div class="container">
     <div class="success">&#10003;</div>
-    <h1>Authentication Successful</h1>
+    <h1>Authentication successful</h1>
     <p id="message">Closing in <span id="countdown">3</span> seconds...</p>
   </div>
   <script>
@@ -184,7 +184,7 @@ function escapeHtml(str) {
 function renderCodexResultPage(success, message) {
   const color = success ? "#22c55e" : "#ef4444";
   const icon = success ? "&#10003;" : "&#10007;";
-  const title = success ? "Authentication Successful" : "Authentication Failed";
+  const title = success ? "Authentication successful" : "Authentication failed";
   const safeMessage = escapeHtml(message);
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>${title}</title>
@@ -898,7 +898,7 @@ export function clearXiaomiMimoSession(state) {
 function renderXiaomiMimoResultPage(success, message) {
   const color = success ? "#22c55e" : "#ef4444";
   const icon = success ? "&#10003;" : "&#10007;";
-  const title = success ? "Authentication Successful" : "Authentication Failed";
+  const title = success ? "Authentication successful" : "Authentication failed";
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>${title}</title>

@@ -151,7 +151,7 @@ export default function SamlForm({ settings, authMode, acsUrl, metadataUrl, onSa
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-text">1-click IdP metadata XML import</p>
           <p className="text-xs text-muted">
-            Auto-fill SSO URL, Entity ID and cert from the IdP XML.
+            Auto-fill SSO URL, entity ID and cert from the IdP XML.
           </p>
         </div>
         <Button
@@ -174,14 +174,14 @@ export default function SamlForm({ settings, authMode, acsUrl, metadataUrl, onSa
       </div>
 
       <Input
-        label="Single Sign-On Service URL (samlEntryPoint)"
+        label="Single sign-on service URL (samlEntryPoint)"
         value={form.samlEntryPoint}
         onChange={update("samlEntryPoint")}
         placeholder="https://idp.example.com/app/saml/sso/..."
         disabled={disabled}
       />
       <Input
-        label="SP Entity ID / Audience (samlIssuer)"
+        label="SP entity ID / audience (samlIssuer)"
         value={form.samlIssuer}
         onChange={update("samlIssuer")}
         placeholder={DEFAULT_ISSUER}
@@ -189,7 +189,7 @@ export default function SamlForm({ settings, authMode, acsUrl, metadataUrl, onSa
       />
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-text">IdP X.509 Certificate (samlCert)</span>
+          <span className="text-sm font-medium text-text">IdP X.509 certificate (samlCert)</span>
           <Button
             type="button"
             variant="ghost"
@@ -209,7 +209,7 @@ export default function SamlForm({ settings, authMode, acsUrl, metadataUrl, onSa
           />
         </div>
         <Textarea
-          aria-label="IdP X.509 Certificate (samlCert)"
+          aria-label="IdP X.509 certificate (samlCert)"
           value={form.samlCert}
           onChange={update("samlCert")}
           placeholder="Paste raw Base64 certificate or PEM block"

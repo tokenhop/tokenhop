@@ -31,7 +31,7 @@ export default function OAuthDeviceStep({ deviceData, copied, error, copy, polli
         </div>
         {deviceData?.user_code && (
           <div className="rounded-xl bg-coral-bg p-4">
-            <p className="mb-1 text-xs text-muted">Your Code</p>
+            <p className="mb-1 text-xs text-muted">Your code</p>
             <div className="flex items-center justify-center gap-2">
               <p className="font-mono text-2xl font-bold text-coral-ink">{deviceData.user_code}</p>
               <IconButton

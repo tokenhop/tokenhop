@@ -36,7 +36,7 @@ export default function KitPills() {
           Failed
         </Badge>
         <Badge variant="primary" icon="key" size="sm">
-          API Key
+          API key
         </Badge>
         <Badge variant="default" size="sm">
           Total: 42

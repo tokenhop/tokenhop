@@ -34,16 +34,14 @@ export function KiroTokenImport({
   }
   return (
     <div className="space-y-4">
-      {autoDetected && (
-        <Callout variant="ok">Token auto-detected from Kiro IDE successfully!</Callout>
-      )}
+      {autoDetected && <Callout variant="ok">Token auto-detected from Kiro IDE.</Callout>}
       {!autoDetected && !error && (
         <Callout variant="info">
           Kiro IDE not detected. Please paste your refresh token manually.
         </Callout>
       )}
       <Input
-        label="Refresh Token"
+        label="Refresh token"
         required
         value={refreshToken}
         onChange={(e) => onRefreshToken(e.target.value)}
@@ -52,7 +50,7 @@ export function KiroTokenImport({
       />
       {error && <Callout variant="err">{error}</Callout>}
       <KiroFormActions
-        primary={importing ? "Importing..." : "Import Token"}
+        primary={importing ? "Importing..." : "Import token"}
         onPrimary={onSubmit}
         disabled={importing || !refreshToken.trim()}
         onBack={onBack}
@@ -81,7 +79,7 @@ export function KiroCliProxyImport({ json, onJson, error, importing, onSubmit, o
         login token endpoints are accepted.
       </Callout>
       <Textarea
-        label="CLIProxyAPI Auth JSON"
+        label="CLIProxyAPI auth JSON"
         required
         rows={7}
         value={json}

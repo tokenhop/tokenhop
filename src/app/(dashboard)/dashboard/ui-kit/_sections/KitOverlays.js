@@ -38,8 +38,8 @@ export default function KitOverlays() {
           Open drawer
         </Button>
         <Menu trigger={<Button variant="secondary">Open menu</Button>} align="start">
-          <MenuItem icon="history" label="Change Log" onSelect={() => {}}>
-            Change Log
+          <MenuItem icon="history" label="Change log" onSelect={() => {}}>
+            Change log
           </MenuItem>
           <MenuItem icon="dark_mode" label="Theme" selected onSelect={() => {}}>
             Theme

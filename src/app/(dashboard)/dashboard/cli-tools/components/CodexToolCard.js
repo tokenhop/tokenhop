@@ -247,7 +247,7 @@ default_subagent_model = "${effectiveSubagentModel}"
       <ManualConfigModal
         isOpen={card.showManualModal}
         onClose={() => card.setShowManualModal(false)}
-        title="Codex CLI — Manual Configuration"
+        title="Codex CLI — Manual configuration"
         configs={getManualConfigs()}
       />
     </>

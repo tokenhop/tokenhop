@@ -233,7 +233,7 @@ export function useApiKeys() {
    */
   const confirmPauseKey = (apiKey) => {
     setConfirmState({
-      title: "Pause API Key",
+      title: "Pause API key",
       message: `Pause API key "${apiKey.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
       onConfirm: async () => {
         setConfirmState(null);

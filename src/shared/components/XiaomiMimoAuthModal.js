@@ -23,7 +23,7 @@ BusyHero.propTypes = { title: PropTypes.string.isRequired, children: PropTypes.n
 
 /**
  * Xiaomi MiMo: imports credentials from the local MiMo Desktop auth.json,
- * with a browser OAuth fallback. The API-key path uses the standard Add API Key modal.
+ * with a browser OAuth fallback. The API-key path uses the standard Add API key modal.
  */
 export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
   const [phase, setPhase] = useState("detecting"); // detecting | found | not-found | importing
@@ -142,7 +142,7 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
       } else if (data.status === "error") {
         throw new Error(data.error || "OAuth failed");
       } else {
-        setError("Authorization not completed yet. Finish in the browser, then click Check Again.");
+        setError("Authorization not completed yet. Finish in the browser, then click Check again.");
       }
     } catch (err) {
       setError(err.message);
@@ -160,13 +160,13 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
 
         {phase === "found" && detectResult && (
           <>
-            <Callout variant="ok" title="Xiaomi MiMo Desktop credentials found!">
+            <Callout variant="ok" title="Xiaomi MiMo Desktop credentials found.">
               UID: {detectResult.uid || "—"} · Source: {detectResult.source?.split(/[\\/]/).pop()}
             </Callout>
             {error && <Callout variant="err">{error}</Callout>}
             <div className="flex gap-2">
               <Button onClick={handleImport} fullWidth>
-                Connect with Local Credentials
+                Connect with local credentials
               </Button>
               <Button onClick={onClose} variant="ghost" fullWidth>
                 Cancel
@@ -190,20 +190,20 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
             {!oauthUrl ? (
               <div className="flex gap-2">
                 <Button onClick={handleRetryDetect} variant="outline" fullWidth>
-                  Retry Local Detect
+                  Retry local detect
                 </Button>
                 <Button onClick={handleStartOAuth} fullWidth>
-                  Sign in via Browser
+                  Sign in via browser
                 </Button>
               </div>
             ) : (
               <div className="flex flex-col gap-2">
                 <Callout variant="info">
-                  Browser opened. Complete the Xiaomi sign-in, then click Check Again.
+                  Browser opened. Complete the Xiaomi sign-in, then click Check again.
                 </Callout>
                 <div className="flex gap-2">
                   <Button onClick={handlePollOAuth} fullWidth>
-                    Check Again
+                    Check again
                   </Button>
                   <Button onClick={onClose} variant="ghost" fullWidth>
                     Cancel

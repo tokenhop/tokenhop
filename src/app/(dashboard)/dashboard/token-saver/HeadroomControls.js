@@ -245,7 +245,7 @@ export function HeadroomModal({ open, onClose, headroom, running, label, onReche
             rel="noreferrer"
             className="w-full rounded-xl border border-line px-4 py-2 text-center text-sm hover:bg-raised"
           >
-            Open Headroom Dashboard
+            Open Headroom dashboard
           </a>
         )}
         <Field

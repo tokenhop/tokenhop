@@ -97,7 +97,7 @@ export async function GET() {
     requiredFields: [
       {
         name: "accessToken",
-        label: "Access Token",
+        label: "Access token",
         description: "From cursorAuth/accessToken in state.vscdb",
         type: "textarea",
       },
@@ -109,7 +109,7 @@ export async function GET() {
       },
       {
         name: "refreshToken",
-        label: "Refresh Token (optional)",
+        label: "Refresh token (optional)",
         description:
           "From cursorAuth/refreshToken in state.vscdb. Defaults to the access token when omitted.",
         type: "textarea",
