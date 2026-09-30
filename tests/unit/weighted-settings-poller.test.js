@@ -7,6 +7,7 @@ vi.mock("@/lib/localDb", () => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
   getCombos: vi.fn(),
+  getModelAliases: vi.fn(async () => ({})),
   getProviderConnections: vi.fn(),
   updateProviderConnection: vi.fn(),
 }));
@@ -211,5 +212,32 @@ describe("non-weighted combo members (YAN-384)", () => {
       syncQuotaSnapshotPoller({ getSettings: () => Promise.reject(new Error("db down")) }),
     ).resolves.toBeUndefined();
     expect(vi.getTimerCount()).toBe(1);
+  });
+});
+
+describe("alias combo members (YAN-386)", () => {
+  const aliases = { "my-opus": "claude/claude-opus-4-7" };
+  const combos = [
+    { name: "c", models: ["my-opus", "inner"] },
+    { name: "inner", models: ["cx/gpt-5"] },
+  ];
+
+  it("resolves bare alias members and skips nested combo names", () => {
+    expect([...comboMemberProviders(combos, aliases)].sort()).toEqual(["claude", "codex"]);
+    expect(comboMemberProviders([{ name: "c", models: ["my-opus"] }]).size).toBe(0);
+  });
+
+  it("tick polls the aliased provider", async () => {
+    const getProviderConnections = vi.fn(async () => []);
+    await runQuotaSnapshotTick(
+      {
+        getSettings: async () => ({ fallbackStrategy: "fill-first" }),
+        getCombos: async () => [{ name: "c", models: ["my-opus"] }],
+        getModelAliases: async () => aliases,
+        getProviderConnections,
+      },
+      { running: false, failureCache: {} },
+    );
+    expect(getProviderConnections).toHaveBeenCalledWith({ provider: "claude", isActive: true });
   });
 });

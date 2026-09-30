@@ -7,6 +7,7 @@ import {
   getSettings,
   getProviderConnections,
   getCombos,
+  getModelAliases,
   updateProviderConnection,
 } from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
@@ -55,6 +56,7 @@ export function createDefaultDeps() {
     getSettings,
     getProviderConnections,
     getCombos,
+    getModelAliases,
     updateProviderConnection,
     resolveConnectionProxyConfig,
     refreshAndUpdateCredentials,
@@ -130,9 +132,10 @@ export async function runQuotaSnapshotTick(deps = createDefaultDeps(), state = g
     pruneFailureCache(state.failureCache);
     const settings = await deps.getSettings();
     const combos = deps.getCombos ? await deps.getCombos().catch(() => []) : [];
+    const aliases = deps.getModelAliases ? await deps.getModelAliases().catch(() => ({})) : {};
     let providers = new Set([
-      ...weightedProviders(settings, combos),
-      ...comboMemberProviders(combos),
+      ...weightedProviders(settings, combos, [], aliases),
+      ...comboMemberProviders(combos, aliases),
     ]);
     if (settings?.fallbackStrategy === "weighted" && deps.getProviderConnections) {
       try {
@@ -142,8 +145,9 @@ export async function runQuotaSnapshotTick(deps = createDefaultDeps(), state = g
             settings,
             combos,
             all.map((connection) => connection.provider),
+            aliases,
           ),
-          ...comboMemberProviders(combos),
+          ...comboMemberProviders(combos, aliases),
         ]);
       } catch {
         // Keep the original provider set when the connection read fails.
@@ -191,7 +195,7 @@ export function stopQuotaSnapshotPoller() {
 // strategy, combo strategy, the global comboStrategy, or the global
 // fallbackStrategy is weighted, or when any combo names a provider member so
 // routing has quota data to skip 0%-quota providers.
-export function configureQuotaSnapshotPoller(settings, combos = []) {
+export function configureQuotaSnapshotPoller(settings, combos = [], aliases = {}) {
   const hasWeighted =
     settings?.fallbackStrategy === "weighted" ||
     Object.values(settings?.providerStrategies || {}).some(
@@ -201,7 +205,7 @@ export function configureQuotaSnapshotPoller(settings, combos = []) {
     Object.values(settings?.comboStrategies || {}).some(
       (strategy) => strategy?.fallbackStrategy === "weighted",
     );
-  if (hasWeighted || comboMemberProviders(combos).size > 0) startQuotaSnapshotPoller();
+  if (hasWeighted || comboMemberProviders(combos, aliases).size > 0) startQuotaSnapshotPoller();
   else stopQuotaSnapshotPoller();
 }
 
@@ -211,9 +215,16 @@ export function configureQuotaSnapshotPoller(settings, combos = []) {
 export async function syncQuotaSnapshotPoller({
   getSettings: readSettings = getSettings,
   getCombos: readCombos = getCombos,
+  getModelAliases: readAliases = getModelAliases,
 } = {}) {
   try {
     const settings = await readSettings();
+    const aliases = readAliases
+      ? await readAliases().catch((error) => {
+          console.warn(`[QuotaSnapshotPoller] sync: aliases read failed: ${error?.message}`);
+          return {};
+        })
+      : {};
     let combos;
     try {
       combos = readCombos ? await readCombos() : [];
@@ -222,7 +233,7 @@ export async function syncQuotaSnapshotPoller({
       if (!g.timer) configureQuotaSnapshotPoller(settings);
       return;
     }
-    configureQuotaSnapshotPoller(settings, combos);
+    configureQuotaSnapshotPoller(settings, combos, aliases);
   } catch (error) {
     console.warn(`[QuotaSnapshotPoller] sync: ${error?.message}`);
   }

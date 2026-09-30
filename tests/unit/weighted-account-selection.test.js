@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clearQuotaSnapshots, recordProbeWindows } from "open-sse/services/quotaSnapshot.js";
+import { MODEL_LOCK_ALL } from "open-sse/services/accountFallback.js";
 
 const mocks = vi.hoisted(() => ({
   getProviderConnections: vi.fn(),
@@ -264,5 +265,34 @@ describe("getProviderCredentials quota-exhausted skip", () => {
     expect(result).toMatchObject({ allRateLimited: true, lastError: "Quota exhausted" });
     expect(result.connectionId).toBeUndefined();
     expect(Date.parse(result.retryAfter)).toBeGreaterThan(Date.now());
+  });
+});
+
+// YAN-387: lastError/lastErrorCode come from the account that unblocks first.
+describe("getProviderCredentials allRateLimited error owner", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearQuotaSnapshots();
+    resetAccountSelection();
+  });
+
+  it("reports lastError from the earliest-expiring lock, not the first connection", async () => {
+    const soon = new Date(Date.now() + 30_000).toISOString();
+    mocks.getSettings.mockResolvedValue({});
+    mocks.getProviderConnections.mockResolvedValue([
+      {
+        id: "a",
+        [MODEL_LOCK_ALL]: new Date(Date.now() + 120_000).toISOString(),
+        lastError: "billing",
+        errorCode: 402,
+      },
+      { id: "b", [MODEL_LOCK_ALL]: soon, lastError: "rate limited", errorCode: 429 },
+    ]);
+    await expect(getProviderCredentials("claude")).resolves.toMatchObject({
+      allRateLimited: true,
+      retryAfter: soon,
+      lastError: "rate limited",
+      lastErrorCode: 429,
+    });
   });
 });
