@@ -31,23 +31,23 @@ None.
 ### LOW
 
 - **[F001]** `open-sse/config/grokCli.js:1` — The comment says the version is "reported to cli-chat-proxy.grok.com and auth.x.ai". In fact, only the device-code login calls send it to auth.x.ai. Token refresh (`refreshXaiToken`) sends no Grok fingerprint.
-  - **Status**: Open
+  - **Status**: Fixed
   - **Category**: Maintainability
   - **Suggested fix**: Say "auth.x.ai device-code login" and note that token refresh sends no client fingerprint. Also mention keeping the compose pins in step with the default (see F005).
 - **[F002]** `open-sse/providers/registry/grok-cli.js:4` — "re-verified by wire capture against 1.0.44" overstates it. Only the version was bumped; full 1.0.x header alignment is YAN-611.
-  - **Status**: Open
+  - **Status**: Fixed
   - **Category**: Maintainability
   - **Suggested fix**: Reword to "headers from an official CLI wire capture; version from GROK_CLI_VERSION (1.0.x header alignment: YAN-611)".
 - **[F003]** `src/app/api/settings/validateSectionSettings.js:35` — `GROK_CLI_VERSION` comes after `ZED_CLIENT_VERSION` here, in `settingsConfigDoc.js` `READ_ONLY_SETTING_KEYS`, and in the `route.js` GET import/response. `CLIENT_PINS` and the test list put it before Zed.
-  - **Status**: Open
+  - **Status**: Fixed
   - **Category**: Pattern Compliance
   - **Suggested fix**: Put `GROK_CLI_VERSION` before `ZED_CLIENT_VERSION` in both read-only sets and in the route import/response.
 - **[F004]** `src/lib/oauth/providers/grok-cli.js:66` — `postExchange` still hardcodes `https://cli-chat-proxy.grok.com/v1/user`. The `testUtils.js:150` `userUrl` fallback can never run, like the headers fallback this PR removed.
-  - **Status**: Open
+  - **Status**: Fixed
   - **Category**: Pattern Compliance
   - **Suggested fix**: Use `` `${GROK_CLI_BASE_URL}/user` `` in `postExchange`, and `PROVIDERS["grok-cli"].userUrl` without the fallback in `testUtils.js`.
 - **[F005]** `compose.yml:22` — `GROK_CLI_VERSION: 1.0.44` is duplicated in both compose files, so a later default bump can miss them and bring the 426 back for compose users. This matches the existing Claude/Codex pin convention.
-  - **Status**: Open
+  - **Status**: Fixed
   - **Category**: Maintainability
   - **Suggested fix**: Keep the pins, per the existing convention. Add a note in `grokCli.js` to bump the compose files together with the default.
 - **[F006]** `open-sse/services/tokenRefresh.js:166` — The Grok CLI refresh grant uses the shared xAI refresh (`User-Agent: grok-cli/9router`, no `x-grok-client-version`). Nothing shows auth.x.ai gates on it today.

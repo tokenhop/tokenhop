@@ -1,8 +1,9 @@
-// Grok CLI version reported to cli-chat-proxy.grok.com and auth.x.ai on
-// `grok-cli` traffic: User-Agent `grok-shell/<v>` + x-grok-client-version.
-// Upstream returns 426 for clients older than its minimum supported version.
-// Bump the default with `grok --version`, or set GROK_CLI_VERSION; a malformed
-// value throws at module load.
+// Grok CLI version sent as User-Agent `grok-shell/<v>` + x-grok-client-version
+// on cli-chat-proxy.grok.com calls and the auth.x.ai device-code login (token
+// refresh sends no client fingerprint). Upstream returns 426 for clients older
+// than its minimum. Bump the default with `grok --version` (and the pins in
+// compose.yml / compose.dev.yml), or set GROK_CLI_VERSION; a malformed value
+// throws at module load.
 
 import { envString } from "./envOverride.js";
 

@@ -1,9 +1,9 @@
 /**
  * Grok CLI / Grok Build (cli-chat-proxy.grok.com)
  *
- * Header set follows the official @xai-official/grok CLI talking to
- * https://cli-chat-proxy.grok.com (OpenAI Responses API), re-verified by wire
- * capture against 1.0.44. The version comes from GROK_CLI_VERSION.
+ * Header set from a wire capture of the official @xai-official/grok CLI
+ * talking to https://cli-chat-proxy.grok.com (OpenAI Responses API). The
+ * version comes from GROK_CLI_VERSION.
  *
  * Distinct from:
  *  - `xai`      → api.x.ai (API key / xAI API OAuth PKCE)

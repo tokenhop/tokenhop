@@ -331,8 +331,8 @@ export async function GET() {
     // YAN-310 read-only env values: surfaced, never writable (PATCH rejects them).
     const { CLAUDE_CLI_VERSION } = await import("open-sse/config/claudeCliFingerprint.js");
     const { CODEX_CLI_VERSION } = await import("open-sse/config/codexCliFingerprint.js");
-    const { ZED_CLIENT_VERSION } = await import("open-sse/config/zedClientFingerprint.js");
     const { GROK_CLI_VERSION } = await import("open-sse/config/grokCli.js");
+    const { ZED_CLIENT_VERSION } = await import("open-sse/config/zedClientFingerprint.js");
 
     return NextResponse.json(
       {
@@ -351,8 +351,8 @@ export async function GET() {
 
         CLAUDE_CLI_VERSION,
         CODEX_CLI_VERSION,
-        ZED_CLIENT_VERSION,
         GROK_CLI_VERSION,
+        ZED_CLIENT_VERSION,
       },
       { headers: SETTINGS_RESPONSE_HEADERS },
     );

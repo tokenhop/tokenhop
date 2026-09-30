@@ -147,7 +147,7 @@ const OAUTH_TEST_CONFIG = {
   },
   // Grok CLI / Grok Build — probe /v1/user (no inference quota). Headers mirror official CLI.
   "grok-cli": {
-    url: PROVIDERS["grok-cli"]?.userUrl || "https://cli-chat-proxy.grok.com/v1/user",
+    url: PROVIDERS["grok-cli"].userUrl,
     method: "GET",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
