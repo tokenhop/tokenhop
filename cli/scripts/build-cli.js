@@ -153,8 +153,22 @@ function assertRequiredApiArtifacts(cliAppDir) {
   }
 }
 
+// The CLI must not reach outside its package at runtime, so it ships its own copy
+// of the brand module at cli/src/shared/brand/index.cjs (gitignored).
+const BRAND_MODULE_PATH = path.join("src", "shared", "brand", "index.cjs");
+
+function copyBrandModule(appDir, cliDir) {
+  const dest = path.join(cliDir, BRAND_MODULE_PATH);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(path.join(appDir, BRAND_MODULE_PATH), dest);
+  return dest;
+}
+
 function buildCliPackage() {
   console.log("📦 Building 9Router CLI package with Next.js...\n");
+
+  console.log("0️⃣  Copying brand module...");
+  console.log(`✅ Copied ${path.relative(appDir, copyBrandModule(appDir, cliDir))}\n`);
 
   fs.mkdirSync(buildHomeDir, { recursive: true });
   fs.mkdirSync(path.join(buildHomeDir, "AppData", "Roaming"), { recursive: true });
@@ -350,6 +364,8 @@ function buildCliPackage() {
 
 module.exports = {
   assertRequiredApiArtifacts,
+  BRAND_MODULE_PATH,
+  copyBrandModule,
   copyStandaloneBuild,
   mergeServerArtifacts,
 };
