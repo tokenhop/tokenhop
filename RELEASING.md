@@ -138,7 +138,7 @@ Only the latest minor gets patch releases.
 - **Projects** are bodies of work (Re-design, Rebrand, Users & Teams). Each
   project has a target release.
 - **Every issue gets a target release at triage**, as a label from the
-  single-select **9router release** label group: the patch line (`v0.5.x`),
+  single-select **tokenhop release** label group: the patch line (`v0.5.x`),
   the next minor (`v0.6.0`) or a planned major (`v1.0.0`). Add a label to the
   group when a new version is planned. For bugs, triage also decides whether
   the fix needs a backport. (Linear's Releases feature needs a Business plan,
