@@ -3,6 +3,13 @@ import { getModelAliases, setModelAlias, deleteModelAlias } from "@/models";
 
 export const dynamic = "force-dynamic";
 
+// Combo members may be bare aliases (YAN-386): re-sync the poller's target set.
+function syncPoller() {
+  import("@/shared/services/quotaSnapshotPoller")
+    .then(({ syncQuotaSnapshotPoller }) => syncQuotaSnapshotPoller())
+    .catch((error) => console.warn("[Aliases] quota poller sync failed:", error?.message));
+}
+
 // GET /api/models/alias - Get all aliases
 export async function GET() {
   try {
@@ -25,6 +32,7 @@ export async function PUT(request) {
     }
 
     await setModelAlias(alias, model);
+    syncPoller();
 
     return NextResponse.json({ success: true, model, alias });
   } catch (error) {
@@ -44,6 +52,7 @@ export async function DELETE(request) {
     }
 
     await deleteModelAlias(alias);
+    syncPoller();
 
     return NextResponse.json({ success: true });
   } catch (error) {
