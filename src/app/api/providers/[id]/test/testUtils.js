@@ -1181,6 +1181,14 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         );
         return { valid: res.ok, error: res.ok ? null : "Invalid API key", refreshed: false };
       }
+      case "clinepass": {
+        // /users/me authenticates without spending quota; /models is public (200 for any key).
+        const res = await probeClineAccessToken(connection.apiKey, effectiveProxy);
+        if (res.ok) return { valid: true, error: null };
+        if (res.status === 401) return { valid: false, error: "Invalid API key" };
+        if (res.status === 403) return { valid: false, error: "Access denied" };
+        return { valid: false, error: `API returned ${res.status}` };
+      }
       default:
         return { valid: false, error: "Provider test not supported" };
     }
