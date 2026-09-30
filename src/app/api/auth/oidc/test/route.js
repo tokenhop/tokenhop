@@ -21,7 +21,10 @@ async function canAccessTestRoute() {
 async function countJwksKeys(jwksUri) {
   if (!jwksUri) return null;
   try {
-    const response = await fetch(jwksUri, { cache: "no-store" });
+    const response = await fetch(jwksUri, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+    });
     if (!response.ok) return null;
     const jwks = await response.json();
     return Array.isArray(jwks?.keys) ? jwks.keys.length : null;

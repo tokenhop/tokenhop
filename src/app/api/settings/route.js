@@ -215,8 +215,20 @@ const AUTH_PATCH_KEYS = [
   "samlCert",
 ];
 
-/** Reject SSO-only saves whose protocol is not fully configured (lockout guard). */
-function ssoLockoutError(next) {
+/**
+ * Lockout guard, shared with config import: reject a settings patch that
+ * leaves an SSO-only mode whose protocol is not fully configured, which would
+ * close both sign-in paths at once. A blank `oidcClientSecret` keeps the
+ * stored one (PATCH drops it before saving; import never carries secrets).
+ * @param {object} current Stored settings.
+ * @param {object} patch Incoming settings keys.
+ * @returns {string} Error message, or "" when the result stays reachable.
+ */
+export function ssoLockoutError(current, patch) {
+  if (!AUTH_PATCH_KEYS.some((key) => Object.hasOwn(patch, key))) return "";
+  const next = { ...current, ...patch };
+  if (!String(patch.oidcClientSecret ?? "").trim())
+    next.oidcClientSecret = current.oidcClientSecret;
   const modes = resolveAuthModes(next);
   if (!modes.ssoOnly) return "";
   if (modes.saml && !isSamlConfigured(next)) {
@@ -382,17 +394,8 @@ export async function PATCH(request) {
     if (reliabilityError) {
       return NextResponse.json({ error: reliabilityError }, { status: 400 });
     }
-    // Lockout guard: never save an SSO-only mode whose protocol is not
-    // configured — the user would lose both sign-in paths at once.
-    // (Only PATCH; config import is validated by validateSettingsBody alone.)
-    if (AUTH_PATCH_KEYS.some((key) => Object.hasOwn(body, key))) {
-      const next = { ...currentReliability, ...body };
-      // A blank oidcClientSecret means "keep current" (deleted below before save).
-      if (!(body.oidcClientSecret || "").trim())
-        next.oidcClientSecret = currentReliability.oidcClientSecret;
-      const lockoutError = ssoLockoutError(next);
-      if (lockoutError) return NextResponse.json({ error: lockoutError }, { status: 400 });
-    }
+    const lockoutError = ssoLockoutError(currentReliability, body);
+    if (lockoutError) return NextResponse.json({ error: lockoutError }, { status: 400 });
     if (RELIABILITY_KEYS.some((key) => Object.hasOwn(body, key))) {
       for (const key of RELIABILITY_KEYS) {
         if (Object.hasOwn(body, key))

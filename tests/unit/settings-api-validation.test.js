@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 
 const originalDataDir = process.env.DATA_DIR;
 let tempDir;
@@ -147,9 +147,12 @@ describe("PATCH /api/settings validation for YAN-309 keys", () => {
 });
 
 describe("PATCH /api/settings SSO-only lockout guard (YAN-349)", () => {
-  it("rejects SSO-only when the chosen protocol is not configured", async () => {
-    // Earlier cases leave OIDC/SAML fields stored; clear the ones the guard checks.
+  // Earlier cases leave OIDC/SAML fields stored; start every case from a clean base.
+  beforeEach(async () => {
     await settingsPatch({ authMode: "password", oidcIssuerUrl: "", samlEntryPoint: "" });
+  });
+
+  it("rejects SSO-only when the chosen protocol is not configured", async () => {
     for (const body of [
       { authMode: "sso", ssoType: "oidc" },
       { authMode: "sso", ssoType: "saml" },
@@ -178,6 +181,5 @@ describe("PATCH /api/settings SSO-only lockout guard (YAN-349)", () => {
     const res = await settingsPatch({ authMode: "sso", oidcClientSecret: "" });
     expect(res.status).toBe(200);
     expect((await res.json()).authMode).toBe("sso");
-    await settingsPatch({ authMode: "password" });
   });
 });

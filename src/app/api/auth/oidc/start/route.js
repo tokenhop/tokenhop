@@ -49,11 +49,10 @@ export async function GET(request) {
 
     return NextResponse.redirect(authUrl);
   } catch (error) {
+    // Details stay in the server log; /login only gets a fixed code.
+    console.warn("[OIDC] start failed:", error?.message || error);
     return NextResponse.redirect(
-      new URL(
-        `/login?error=${encodeURIComponent(error.message || "oidc_start_failed")}`,
-        getPublicOrigin(request),
-      ),
+      new URL("/login?error=oidc_start_failed", getPublicOrigin(request)),
     );
   }
 }

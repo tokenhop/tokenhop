@@ -95,10 +95,7 @@ export async function GET(request) {
     console.warn("[OIDC] callback failed:", error?.message || error);
     clearOidcCookies(cookieStore);
     return NextResponse.redirect(
-      new URL(
-        `/login?error=${encodeURIComponent(error.message || "oidc_callback_failed")}`,
-        getPublicOrigin(request),
-      ),
+      new URL("/login?error=oidc_callback_failed", getPublicOrigin(request)),
     );
   }
 }

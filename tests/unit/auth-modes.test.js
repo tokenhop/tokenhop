@@ -36,23 +36,35 @@ const login = (await import("@/app/api/auth/login/route.js")).POST;
 
 const OIDC = { oidcIssuerUrl: "https://idp.test", oidcClientId: "c", oidcClientSecret: "s" };
 const SAML = { samlEntryPoint: "https://idp.test/saml", samlCert: "MIIC" };
-const MODES = ["password", "both", "sso", "oidc", "saml", undefined];
-const TYPES = ["oidc", "saml", undefined];
-const MATRIX = MODES.flatMap((authMode) => TYPES.map((ssoType) => [authMode, ssoType]));
+// Hand-written truth table: [authMode, ssoType, password, oidc, saml, protocol].
+// Legacy "oidc"/"saml" modes name the protocol; otherwise ssoType decides (oidc by default).
+const TABLE = [
+  ["password", "oidc", true, false, false, "oidc"],
+  ["password", "saml", true, false, false, "saml"],
+  ["password", undefined, true, false, false, "oidc"],
+  ["both", "oidc", true, true, false, "oidc"],
+  ["both", "saml", true, false, true, "saml"],
+  ["both", undefined, true, true, false, "oidc"],
+  ["sso", "oidc", false, true, false, "oidc"],
+  ["sso", "saml", false, false, true, "saml"],
+  ["sso", undefined, false, true, false, "oidc"],
+  ["oidc", "oidc", false, true, false, "oidc"],
+  ["oidc", "saml", false, true, false, "oidc"],
+  ["oidc", undefined, false, true, false, "oidc"],
+  ["saml", "oidc", false, false, true, "saml"],
+  ["saml", "saml", false, false, true, "saml"],
+  ["saml", undefined, false, false, true, "saml"],
+  [undefined, "oidc", true, false, false, "oidc"],
+  [undefined, "saml", true, false, false, "saml"],
+  [undefined, undefined, true, false, false, "oidc"],
+];
+const MATRIX = TABLE.map(([authMode, ssoType]) => [authMode, ssoType]);
 
-// Expected per the helper contract: legacy modes name the protocol, else ssoType (default oidc).
 function expected(authMode, ssoType) {
-  const ssoOnly = ["sso", "oidc", "saml"].includes(authMode);
-  const sso = ssoOnly || authMode === "both";
-  const protocol =
-    authMode === "oidc" || authMode === "saml" ? authMode : ssoType === "saml" ? "saml" : "oidc";
-  return {
-    ssoOnly,
-    password: !ssoOnly,
-    oidc: sso && protocol === "oidc",
-    saml: sso && protocol === "saml",
-    protocol,
-  };
+  const [, , password, oidc, saml, protocol] = TABLE.find(
+    ([m, t]) => m === authMode && t === ssoType,
+  );
+  return { password, oidc, saml, protocol, ssoOnly: !password };
 }
 
 beforeEach(() => {
@@ -114,10 +126,11 @@ describe("SSO start routes and password login honor every authMode × ssoType", 
 });
 
 describe("describeLoginError", () => {
-  it("maps known codes, passes unknown text through truncated, ignores empty", () => {
+  it("maps known codes, never echoes unknown text, ignores empty", () => {
     expect(describeLoginError("oidc_invalid_state")).toMatch(/expired/);
     expect(describeLoginError("")).toBe("");
     expect(describeLoginError(null)).toBe("");
-    expect(describeLoginError("x".repeat(300))).toHaveLength(200);
+    expect(describeLoginError("<b>phishing</b> call +1-555")).toBe("Sign-in failed. Try again.");
+    expect(describeLoginError("__proto__")).toBe("Sign-in failed. Try again.");
   });
 });

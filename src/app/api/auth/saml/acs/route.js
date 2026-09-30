@@ -19,12 +19,7 @@ export async function POST(request) {
 
   const lock = checkLock(ip);
   if (lock.locked) {
-    return NextResponse.redirect(
-      new URL(
-        `/login?error=${encodeURIComponent(`Too many failed attempts. Try again in ${lock.retryAfter}s.`)}`,
-        origin,
-      ),
-    );
+    return NextResponse.redirect(new URL("/login?error=too_many_attempts", origin));
   }
 
   const cookieStore = await cookies();
@@ -70,8 +65,6 @@ export async function POST(request) {
   } catch (error) {
     console.warn("[SAML] ACS failed:", error?.message || error);
     recordFail(ip);
-    return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent(error.message || "saml_acs_failed")}`, origin),
-    );
+    return NextResponse.redirect(new URL("/login?error=saml_acs_failed", origin));
   }
 }

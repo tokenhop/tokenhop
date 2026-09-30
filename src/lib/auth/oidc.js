@@ -248,6 +248,7 @@ export async function verifyOidcIdToken({
   clientSecret,
   allowedAlgs,
 }) {
+  if (!nonce) throw new Error("id_token verification requires the login nonce");
   const allowed = resolveAllowedAlgs(allowedAlgs);
   const { alg } = decodeProtectedHeader(idToken);
   if (!alg || alg.toLowerCase() === "none" || !allowed.includes(alg)) {
@@ -265,7 +266,7 @@ export async function verifyOidcIdToken({
 
   // jose has no nonce option: enforce it ourselves.
   const { payload } = await jwtVerify(idToken, key, { issuer, audience, algorithms: [alg] });
-  if (nonce && payload.nonce !== nonce) throw new Error("id_token nonce mismatch");
+  if (payload.nonce !== nonce) throw new Error("id_token nonce mismatch");
   return payload;
 }
 
@@ -283,7 +284,7 @@ export function summarizeOidcSigning(discovery, jwksKeyCount) {
     warnings.push(
       "The provider signs id_tokens only with HS* (client secret). Sign-in works, but selecting a signing key in the IdP (RS256) is recommended.",
     );
-  } else if (jwksKeyCount === 0 && hasAsymmetric) {
+  } else if (jwksKeyCount === 0 && (hasAsymmetric || signingAlgs.length === 0)) {
     warnings.push("The provider's JWKS has no keys, so RS/ES-signed id_tokens cannot be verified.");
   }
   if (signingAlgs.some((a) => a.toLowerCase() === "none")) {

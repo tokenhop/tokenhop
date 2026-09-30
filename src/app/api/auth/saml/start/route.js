@@ -28,8 +28,6 @@ export async function GET(request) {
     return NextResponse.redirect(authorizeUrl);
   } catch (error) {
     console.warn("[SAML] start failed:", error?.message || error);
-    return NextResponse.redirect(
-      new URL(`/login?error=${encodeURIComponent(error.message || "saml_start_failed")}`, origin),
-    );
+    return NextResponse.redirect(new URL("/login?error=saml_start_failed", origin));
   }
 }

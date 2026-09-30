@@ -35,10 +35,13 @@ export default function LoginPage() {
 
   // Show the SSO redirect's ?error= once, then strip it from the URL.
   useEffect(() => {
-    const code = new URLSearchParams(window.location.search).get("error");
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("error");
     if (!code) return;
     setSsoError(describeLoginError(code));
-    window.history.replaceState(null, "", window.location.pathname);
+    params.delete("error");
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
   }, []);
 
   // Countdown for rate-limit

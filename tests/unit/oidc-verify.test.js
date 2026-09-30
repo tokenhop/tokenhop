@@ -89,4 +89,9 @@ describe("verifyOidcIdToken", () => {
     const token = await sign("RS256", privateKey, { nonce: "other" });
     await expect(verify(token)).rejects.toThrow(/nonce mismatch/);
   });
+
+  it("refuses to verify without the login nonce", async () => {
+    const token = await sign("RS256", privateKey);
+    await expect(verify(token, { nonce: "" })).rejects.toThrow(/requires the login nonce/);
+  });
 });
