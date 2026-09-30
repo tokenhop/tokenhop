@@ -2,11 +2,12 @@
 /**
  * Delete locale keys that the extractor proves unused.
  *
- * A key is provably dead only when it has zero occurrence anywhere in src:
- * JSX text fragments (unquoted) and server-side strings (quoted) both render
- * at runtime, so both count as live. Keys containing delimiters or template
- * syntax that could still resolve dynamically are never touched by this
- * script — deletion targets plain prose keys whose text no longer exists.
+ * A key is provably dead only when it has zero occurrence anywhere in src
+ * code: JSX text fragments (unquoted) and server-side strings (quoted) both
+ * render at runtime, so both count as live. The haystack is comment-stripped
+ * (comments never render) and whitespace-collapsed (JSX text spans line
+ * breaks, and the runtime looks up the collapsed text), and each orphan key
+ * is compared collapsed so multi-line JSX fragments are matched correctly.
  *
  * Usage: node scripts/i18n-prune-orphans.mjs [--apply]
  * Dry run by default; --apply rewrites every locale file without the dead keys.
@@ -31,8 +32,30 @@ function collectJsFiles(root, files = []) {
   return files;
 }
 
+/** Collapse runs of whitespace to single spaces (matches runtime DOM text). */
+function collapse(text) {
+  return String(text).replace(/\s+/g, " ");
+}
+
 /**
- * Split orphan keys into provably-dead vs. still-referenced (quoted in src).
+ * Strip line/block comments without touching string literals, then collapse
+ * runs of whitespace inside string values so they match the runtime's
+ * normalized lookup. Implemented on tokens: a token is kept verbatim when it
+ * sits inside a quoted literal or JSX text, otherwise every // or /* comment
+ * is skipped. Not a full parser, but the haystack only ever needs comment
+ * boundaries right when they do not cut through literals.
+ */
+export function uncomment(code) {
+  return code.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:"'\\])\/\/[^\n]*/g, "$1");
+}
+
+/** Test hook for the liveness probe (kept name-compatible with tests). */
+export function stripComments(code) {
+  return uncomment(code);
+}
+
+/**
+ * Split orphan keys into provably-dead vs. still-referenced in live code.
  * @param {string} repoRoot Absolute repo path.
  * @returns {{dead: string[], kept: string[], orphans: string[]}}
  */
@@ -46,17 +69,21 @@ export function classifyOrphans(repoRoot) {
   }
   const orphans = [...keyCounts.keys()].filter((key) => !extracted.has(key)).sort();
 
-  const hay = collectJsFiles(join(repoRoot, "src"))
-    .map((file) => readFileSync(file, "utf8"))
-    .join("\n");
+  // Comment-stripped, whitespace-collapsed haystack: comments never render,
+  // and the runtime walker looks up collapsed JSX text.
+  const hay = collapse(
+    collectJsFiles(join(repoRoot, "src"))
+      .map((file) => stripComments(readFileSync(file, "utf8")))
+      .join("\n"),
+  );
 
   const dead = [];
   const kept = [];
   for (const key of orphans) {
-    // A rendered key must appear as a substring somewhere in src: JSX text
-    // fragments (unquoted) and server-side strings (quoted) both count. Only
-    // a key with zero source occurrence is provably unreachable at runtime.
-    if (hay.includes(key)) kept.push(key);
+    // A rendered key must appear as a substring somewhere in live src code:
+    // JSX text fragments (unquoted) and server-side strings (quoted) both
+    // count. Only a key with zero live occurrence is provably unreachable.
+    if (hay.includes(collapse(key))) kept.push(key);
     else dead.push(key);
   }
   return { dead, kept, orphans };

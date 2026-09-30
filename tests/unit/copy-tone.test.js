@@ -40,6 +40,7 @@ const COPY_TONE_ALLOWLIST = new Map([
   ["Reset judge to Auto", "cites the Auto select option"],
   ["Public HTTPS URL. Needs Require API key.", "cites the Require API key setting"],
   ["more providers — open Edit pricing for full details.", "cites the Edit pricing button"],
+  ['Click "View All Model" → "Add Custom Model"', "quoted Cursor UI labels"],
   // Third-party UI labels quoted verbatim (VS Code, Claude Desktop, Okta…).
   [
     "Cursor routes requests through its own server, so local endpoint is not supported. Please enable Tunnel or Cloud Endpoint in Settings.",
