@@ -9,17 +9,36 @@ commits picked from somewhere else after the fact.
 
 ## Current state
 
-Keep this table up to date; it is the only part of this file that changes often.
+The block below is read by the ycc skills (`/ycc:git-workflow`, `/ycc:releaser`,
+`/ycc:backport`, …); the table is generated from it. Change both with
+`release-state-update.sh` (or `/ycc:release-model`), never by hand.
 
-| Role                        | Branch            | Notes                                                   |
-| --------------------------- | ----------------- | ------------------------------------------------------- |
-| Trunk (next release)        | `re-design`       | Until v0.5.0 ships. Becomes `master` after the cut-over |
-| Maintenance (shipped minor) | —                 | 0.4.x ships from `re-design`; no separate branch        |
-| Frozen                      | `master`          | Only the final `re-design` merge and process changes    |
-| Next minor after that       | `master` → v0.6.0 | Rebrand and new features                                |
+<!-- ycc-release-state
+model: release-branches
+trunk: master
+maintenance: release/0.5
+support: latest-minor
+backport_label: backport:{X.Y}
+tracker: linear-labels
+tracker_ref: tokenhop release
+-->
 
-Dependabot targets `re-design` while `master` is frozen (`target-branch` in
-`.github/dependabot.yml`), so nothing lands on `master` that would need syncing.
+<!-- ycc-release-state:table:begin -->
+
+Model: **release-branches**. Support window: latest-minor.
+
+| Role        | Branch        | Notes                       |
+| ----------- | ------------- | --------------------------- |
+| Trunk       | `master`      | Next minor or major release |
+| Maintenance | `release/0.5` | Patches via `backport:0.5`  |
+
+<!-- ycc-release-state:table:end -->
+
+`master` has been the trunk since v0.5.0 (2026-09-30). Planned releases, both from
+`master`:
+
+- **v0.6.0** — new features.
+- **v1.0.0** — the tokenhop rebrand, on `master` behind the brand switch.
 
 ## Rules
 
@@ -63,6 +82,12 @@ PR. When a change cannot be hidden (a rename, a data-dir move), prepare
 everything behind the scenes first and make the switch in one final PR shortly
 before the release.
 
+Two switches are planned for the large projects: the **brand switch** (the
+tokenhop rebrand; defaults to `9router` until the v1.0.0 release PR flips it)
+and the **Users & teams switch** (defaults to off). CI builds both states of
+each, so the hidden side stays green. The project handbooks list which issues
+ship anytime, which go behind the switch, and which wait for release day.
+
 ## Backporting
 
 After the trunk PR is squash-merged:
@@ -97,7 +122,8 @@ line is safe. It also publishes floating `:X.Y` tags.
    ```
 
 5. Freeze the previous `release/X.(Y-1)` (security fixes only, at maintainer
-   discretion) and update [Current state](#current-state).
+   discretion) with `release-state-update.sh --add-maintenance release/X.Y`, which also
+   re-renders [Current state](#current-state).
 
 Pre-releases of the next minor are tagged `vX.Y.0-beta.N` from the trunk.
 
@@ -113,25 +139,22 @@ Pre-releases of the next minor are tagged `vX.Y.0-beta.N` from the trunk.
 
 Only the latest minor gets patch releases.
 
-## Cut-over: `re-design` → `master` at v0.5.0 (one time)
+## Cut-over: `re-design` → `master` (done)
 
-1. Finish the re-design work on `re-design`. `master` stays frozen, so no sync
-   is needed.
-2. Merge `re-design` into `master` with a **merge commit** (never squash — that
-   would flatten 100+ commits of history).
-3. Release v0.5.0 from `master` as a [minor release](#minor-release-vxy0--from-the-trunk),
-   which also creates `release/0.5` and `backport:0.5`.
-4. Remove `target-branch` from `.github/dependabot.yml`.
-5. Update [Current state](#current-state): trunk = `master`, maintenance =
-   `release/0.5`. Rebase any open `redesign/*` branches onto `master`, then
-   delete `re-design`.
+Completed with v0.5.0 on 2026-09-30 (#370, #372). `master` is the trunk, and
+`release/0.5` is the maintenance branch. The redesign landed on `master` as a
+single squash commit; its individual commits are kept under the
+`archive/re-design` tag.
 
 ## Planning (Linear)
 
 - **Projects** are bodies of work (Re-design, Rebrand, Users & Teams). Each
   project has a target release.
-- **Every issue gets a target release at triage**: the patch line (`v0.5.x`) or
-  the next minor (`v0.6.0`), as a Linear release or milestone. For bugs, triage
-  also decides whether the fix needs a backport.
+- **Every issue gets a target release at triage**, as a label from the
+  single-select **tokenhop release** label group: the patch line (`v0.5.x`),
+  the next minor (`v0.6.0`) or a planned major (`v1.0.0`). Add a label to the
+  group when a new version is planned. For bugs, triage also decides whether
+  the fix needs a backport. (Linear's Releases feature needs a Business plan,
+  so labels stand in for it.)
 - Agents take issues by target. The target tells them the base branch and
   whether to add `backport:X.Y`; nobody sorts commits into releases afterwards.
