@@ -32,7 +32,7 @@ npm run build && PORT=20128 HOSTNAME=0.0.0.0 npm run start           # productio
 - Default runtime port is **20128** (dashboard at `/dashboard`, API at `/v1`).
 - Lint/format: `npm run lint` (Biome for JS/JSON/CSS, markdownlint + Prettier for Markdown/YAML, ShellCheck), `npm run lint:fix`, `npm run format`. Config: `biome.json`, `.markdownlint.json`, `.prettierrc`. Many legacy a11y/React rules are warnings, not errors — don't add new ones. Import sorting is off on purpose: translators self-register via import side effects, so import order matters.
 - Git hooks (lefthook, auto-installed by `npm install`): pre-commit formats + lints staged files, commit-msg runs commitlint (Conventional Commits), pre-push runs full lint. Bypass once with `--no-verify`.
-- CI: `.github/workflows/ci.yml` (tests vs known-fails baseline, alias/OAuth baselines, `next build`), `lint.yml`, `pr-title.yml`, `i18n-translate.yml` (after dashboard strings land on master, translates them via `scripts/translate-literals.mjs` and opens/refreshes the `i18n/auto-translate` bot PR — feature PRs don't touch `public/i18n/literals/`). Node version pinned in `.nvmrc`.
+- CI: `.github/workflows/ci.yml` (tests vs known-fails baseline, alias/OAuth baselines, `next build`), `lint.yml`, `pr-title.yml`, `i18n-translate.yml` (translation bot PR; see Dashboard i18n below). Node version pinned in `.nvmrc`.
 
 CLI package (`cli/`):
 
@@ -106,6 +106,12 @@ State is **no longer `db.json`**. It's a SQLite layer under `src/lib/db/` with a
 ### RTK token saver (`open-sse/rtk/`)
 
 Pre-translate hooks that compress `tool_result` content in-place to cut tokens. **Fail-open**: any error returns null and leaves the body untouched — never throw out of them. Skips `is_error`/`status:"error"` results to preserve traces.
+
+### Dashboard i18n (`public/i18n/literals/`)
+
+- `src/i18n/runtime.js` translates visible DOM text by exact lookup in `public/i18n/literals/<locale>.json`: 34 locales, keyed by the English source string, key-sorted. A missing key renders in English, so untranslated strings never break the UI. `scripts/i18n-literals.mjs` extracts the literals and reports missing keys, orphaned keys and placeholder drift.
+- **Don't translate in feature PRs.** After dashboard source lands on master, `.github/workflows/i18n-translate.yml` translates the missing keys through `scripts/translate-literals.mjs`, against the tokenhop gateway with a model combo. It then opens or refreshes the `i18n/auto-translate` bot PR, and only that bot writes the locale files. Config is the repo secrets `TRANSLATE_BASE_URL`, `TRANSLATE_API_KEY`, `TRANSLATE_MODEL` and `I18N_BOT_TOKEN` (a PAT: `GITHUB_TOKEN` can't open PRs here, and PRs it opens don't trigger the required checks).
+- **General Translation (generaltranslation.com) was piloted and rejected** (YAN-608). Its quality is good, it diffs per segment, and it imports existing translations for free. It bills per target locale, though: about $1 per 1K input tokens × 34 locales, so roughly $2 per fix PR and about $400 per redesign-sized batch. Its Locadex automations cost the same plus agent fees. Don't re-propose paid translation services unless pricing changes.
 
 ## Conventions & gotchas
 
