@@ -16,7 +16,8 @@ Keep this table up to date; it is the only part of this file that changes often.
 | Trunk (next release)        | `re-design`       | Until v0.5.0 ships. Becomes `master` after the cut-over |
 | Maintenance (shipped minor) | —                 | 0.4.x ships from `re-design`; no separate branch        |
 | Frozen                      | `master`          | Only the final `re-design` merge and process changes    |
-| Next minor after that       | `master` → v0.6.0 | Rebrand and new features                                |
+| Next minor after that       | `master` → v0.6.0 | New features                                            |
+| Next major                  | `master` → v1.0.0 | tokenhop rebrand, on `master` behind the brand switch   |
 
 Dependabot targets `re-design` while `master` is frozen (`target-branch` in
 `.github/dependabot.yml`), so nothing lands on `master` that would need syncing.
@@ -62,6 +63,12 @@ that defaults to off, or simply not wired into navigation/routes until the last
 PR. When a change cannot be hidden (a rename, a data-dir move), prepare
 everything behind the scenes first and make the switch in one final PR shortly
 before the release.
+
+Two switches are planned for the large projects: the **brand switch** (the
+tokenhop rebrand; defaults to `9router` until the v1.0.0 release PR flips it)
+and the **Users & teams switch** (defaults to off). CI builds both states of
+each, so the hidden side stays green. The project handbooks list which issues
+ship anytime, which go behind the switch, and which wait for release day.
 
 ## Backporting
 
@@ -130,8 +137,11 @@ Only the latest minor gets patch releases.
 
 - **Projects** are bodies of work (Re-design, Rebrand, Users & Teams). Each
   project has a target release.
-- **Every issue gets a target release at triage**: the patch line (`v0.5.x`) or
-  the next minor (`v0.6.0`), as a Linear release or milestone. For bugs, triage
-  also decides whether the fix needs a backport.
+- **Every issue gets a target release at triage**, as a label from the
+  single-select **9router release** label group: the patch line (`v0.5.x`),
+  the next minor (`v0.6.0`) or a planned major (`v1.0.0`). Add a label to the
+  group when a new version is planned. For bugs, triage also decides whether
+  the fix needs a backport. (Linear's Releases feature needs a Business plan,
+  so labels stand in for it.)
 - Agents take issues by target. The target tells them the base branch and
   whether to add `backport:X.Y`; nobody sorts commits into releases afterwards.
