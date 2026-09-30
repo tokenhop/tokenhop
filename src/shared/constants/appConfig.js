@@ -10,7 +10,8 @@ export const APP_CONFIG = {
 
 // GitHub configuration
 export const GITHUB_CONFIG = {
-  changelogUrl: "https://raw.githubusercontent.com/yandy-r/9router/refs/heads/master/CHANGELOG.md",
+  changelogUrl:
+    "https://raw.githubusercontent.com/tokenhop/tokenhop/refs/heads/master/CHANGELOG.md",
 };
 
 // Updater configuration

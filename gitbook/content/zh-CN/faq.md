@@ -188,7 +188,7 @@ Cursor Settings → Models → Advanced:
 
 ```bash
 # 部署到 VPS
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router/app
 npm install && npm run build
 npm start
@@ -225,7 +225,7 @@ npm install -g 9router
 ### VPS/云
 
 ```bash
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router/app
 npm install && npm run build
 
@@ -349,7 +349,7 @@ docker run -d \
 
 **破坏性变更:**
 
-- 查看 [CHANGELOG.md](https://github.com/yandy-r/9router/blob/main/CHANGELOG.md)
+- 查看 [CHANGELOG.md](https://github.com/tokenhop/tokenhop/blob/master/CHANGELOG.md)
 - 大版本更新前备份 `~/.9router`
 - 阅读大版本的迁移指南
 
@@ -362,11 +362,11 @@ docker run -d \
 ### 贡献方式
 
 1. **报告 bug:**
-   - [GitHub Issues](https://github.com/yandy-r/9router/issues)
+   - [GitHub Issues](https://github.com/tokenhop/tokenhop/issues)
    - 附上错误日志、复现步骤
 
 2. **功能请求:**
-   - [GitHub Discussions](https://github.com/yandy-r/9router/discussions)
+   - [GitHub Discussions](https://github.com/tokenhop/tokenhop/discussions)
    - 描述使用场景和价值
 
 3. **提交代码:**
@@ -410,13 +410,13 @@ docker run -d \
 - 更新文档
 - 提交保持原子化、描述清晰
 
-详情见 [CONTRIBUTING.md](https://github.com/yandy-r/9router/blob/main/CONTRIBUTING.md)。
+详情见 [CONTRIBUTING.md](https://github.com/tokenhop/tokenhop/blob/main/CONTRIBUTING.md)。
 
 ---
 
 ## 需要更多帮助?
 
 - **文档:** [9router.com/docs](https://9router.com/docs)
-- **GitHub:** [github.com/yandy-r/9router](https://github.com/yandy-r/9router)
-- **Issues:** [github.com/yandy-r/9router/issues](https://github.com/yandy-r/9router/issues)
+- **GitHub:** [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
+- **Issues:** [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 - **故障排除:** [troubleshooting.md](troubleshooting.md)

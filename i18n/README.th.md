@@ -15,7 +15,7 @@
 
 [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
 [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/yandy-r/9router/blob/main/LICENSE)
+[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
 [🚀 เริ่มต้นใช้งาน](#-quick-start) • [💡 ฟีเจอร์](#-key-features) • [📖 การตั้งค่า](#-setup-guide) • [🌐 เว็บไซต์](https://9router.com)
 </div>
@@ -718,8 +718,8 @@ Authorization: Bearer your-api-key
 ## 📧 สนับสนุน
 
 - **เว็บไซต์**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/yandy-r/9router](https://github.com/yandy-r/9router)
-- **Issues**: [github.com/yandy-r/9router/issues](https://github.com/yandy-r/9router/issues)
+- **GitHub**: [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
+- **Issues**: [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 
 ---
 
@@ -727,7 +727,7 @@ Authorization: Bearer your-api-key
 
 ขอขอบคุณผู้มีส่วนร่วมทุกคนที่ช่วยทำให้ 9Router ดียิ่งขึ้น!
 
-[![Contributors](https://contrib.rocks/image?repo=yandy-r/9router&max=150&columns=15&anon=1)](https://github.com/yandy-r/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=tokenhop/tokenhop&max=150&columns=15&anon=1)](https://github.com/tokenhop/tokenhop/graphs/contributors)
 
 ---
 

@@ -9,7 +9,7 @@
 
 [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
 [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/yandy-r/9router/blob/main/LICENSE)
+[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
 [🚀 Mulai Cepat](#-mulai-cepat) • [💡 Fitur](#-fitur-utama) • [📖 Setup](#-panduan-setup) • [🌐 Website](https://9router.com)
 
@@ -956,14 +956,14 @@ Kontribusi sangat diterima!
 
 ## 📄 Lisensi
 
-MIT License — lihat [LICENSE](https://github.com/yandy-r/9router/blob/main/LICENSE) untuk detailnya.
+MIT License — lihat [LICENSE](https://github.com/tokenhop/tokenhop/blob/master/LICENSE) untuk detailnya.
 
 ---
 
 <div align="center">
 
-**Kalau 9Router membantumu, kasih ⭐ di [GitHub](https://github.com/yandy-r/9router)!**
+**Kalau 9Router membantumu, kasih ⭐ di [GitHub](https://github.com/tokenhop/tokenhop)!**
 
-[🌐 Website](https://9router.com) • [📦 npm](https://www.npmjs.com/package/9router) • [🐛 Laporkan Bug](https://github.com/yandy-r/9router/issues)
+[🌐 Website](https://9router.com) • [📦 npm](https://www.npmjs.com/package/9router) • [🐛 Laporkan Bug](https://github.com/tokenhop/tokenhop/issues)
 
 </div>

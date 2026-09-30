@@ -16,7 +16,7 @@ Triển khai 9Router trên VPS hoặc Docker để truy cập từ xa và dùng 
 ### Bước 1: Clone Repository
 
 ```bash
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router/app
 ```
 

@@ -9,7 +9,7 @@
 
 [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
 [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-[![License](https://github.com/yandy-r/9router/blob/main/LICENSE)](https://github.com/yandy-r/9router/blob/main/LICENSE)
+[![License](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
 [🚀 Bắt đầu nhanh](#-quick-start) • [💡 Tính năng](#-key-features) • [📖 Cài đặt](#-setup-guide) • [🌐 Website](https://9router.com)
 </div>
@@ -962,7 +962,7 @@ Model: cc/claude-opus-4-6
 
 ```bash
 # Clone và cài đặt
-git clone https://github.com/yandy-r/9router.git
+git clone https://github.com/tokenhop/tokenhop.git
 cd 9router
 npm install
 npm run build
@@ -1294,8 +1294,8 @@ Tài liệu tham khảo kiến trúc đầy đủ: [`docs/ARCHITECTURE.md`](../d
 ## 📧 Hỗ trợ
 
 - **Website**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/yandy-r/9router](https://github.com/yandy-r/9router)
-- **Issues**: [github.com/yandy-r/9router/issues](https://github.com/yandy-r/9router/issues)
+- **GitHub**: [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
+- **Issues**: [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 
 ---
 
@@ -1303,13 +1303,13 @@ Tài liệu tham khảo kiến trúc đầy đủ: [`docs/ARCHITECTURE.md`](../d
 
 Cảm ơn tất cả những người đã đóng góp giúp 9Router tốt hơn!
 
-[![Contributors](https://contrib.rocks/image?repo=yandy-r/9router&max=100&columns=20&anon=1)](https://github.com/yandy-r/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=tokenhop/tokenhop&max=100&columns=20&anon=1)](https://github.com/tokenhop/tokenhop/graphs/contributors)
 
 ---
 
 ## 📊 Star Chart
 
-[![ Chart](https://starchart.cc/yandy-r/9router.svg?variant=adaptive)](https://starchart.cc/yandy-r/9router)
+[![ Chart](https://starchart.cc/tokenhop/tokenhop.svg?variant=adaptive)](https://starchart.cc/tokenhop/tokenhop)
 
 ### Cách Đóng góp
 
@@ -1319,7 +1319,7 @@ Cảm ơn tất cả những người đã đóng góp giúp 9Router tốt hơn!
 4. Push lên nhánh (`git push origin feature/amazing-feature`)
 5. Mở một Pull Request
 
-Xem [Pull Requests](https://github.com/yandy-r/9router/pulls) để biết hướng dẫn chi tiết.
+Xem [Pull Requests](https://github.com/tokenhop/tokenhop/pulls) để biết hướng dẫn chi tiết.
 
 ---
 
