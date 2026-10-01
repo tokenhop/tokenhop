@@ -113,7 +113,9 @@ rework for the older code, write it as its own PR against `release/X.Y`.
 
 The Docker workflow (`docker-publish.yml`) runs on every `v*` tag and only moves
 `:latest` when the tag is the highest stable version, so tagging an older patch
-line is safe. It also publishes floating `:X.Y` tags.
+line is safe. It also publishes floating `:X.Y` tags. Every push to `master`
+also builds the rolling `:dev` / `:develop` image (no git tag, no release), so
+the trunk's unreleased state is always installable.
 
 ### Minor release (vX.Y.0) — from the trunk
 

@@ -38,8 +38,8 @@ accounts are never included), Environment (read-only `.env` readout) and Danger 
   can be bumped with env vars instead of a code change (see [Configuration](#configuration)).
 - **No OAuth client credentials in source.** The Gemini / Gemini CLI and Antigravity
   OAuth clients are read from env; history was rewritten to remove the committed values.
-- **Images are built from `v*` tags** and published to GHCR
-  (see [Releases and images](#releases-and-images)).
+- **Images are built from `v*` tags**, plus a rolling `:dev` image from every
+  push to `master`, and published to GHCR (see [Releases and images](#releases-and-images)).
 
 ## Quick start (Docker)
 
@@ -189,15 +189,17 @@ hold an older pair.
 
 ## Releases and images
 
-Pushing a `v*` tag runs [`docker-publish.yml`](.github/workflows/docker-publish.yml),
-which builds `linux/amd64` + `linux/arm64` and pushes to `ghcr.io/tokenhop/tokenhop`.
-Branch pushes run nothing, and nothing is published to npm.
+Pushing a `v*` tag or pushing to `master` runs
+[`docker-publish.yml`](.github/workflows/docker-publish.yml), which builds
+`linux/amd64` + `linux/arm64` and pushes to `ghcr.io/tokenhop/tokenhop`. Other branch
+pushes run nothing, and nothing is published to npm.
 
-| Tag              | When                                                                                                                                     |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `:1.2.3`, `:1.2` | From the git tag `v1.2.3`                                                                                                                |
-| `:latest`        | Only when the tag is the highest stable `vX.Y.Z` in the repo — prerelease tags (`v1.3.0-rc.1`) and older-version backports don't move it |
-| `:sha-<commit>`  | Every build                                                                                                                              |
+| Tag                | When                                                                                                                                     |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `:1.2.3`, `:1.2`   | From the git tag `v1.2.3`                                                                                                                |
+| `:latest`          | Only when the tag is the highest stable `vX.Y.Z` in the repo — prerelease tags (`v1.3.0-rc.1`) and older-version backports don't move it |
+| `:dev`, `:develop` | Every push to `master` — the latest unreleased build, ahead of the betas and unsupported. No git tag or release is created               |
+| `:sha-<commit>`    | Every build                                                                                                                              |
 
 ```bash
 git tag v1.2.3 && git push origin v1.2.3        # builds and publishes the image
