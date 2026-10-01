@@ -1,3 +1,16 @@
+# v0.5.4 (2026-10-01)
+
+Last release of the 0.5 line: with v0.6.0, `release/0.5` is frozen (security fixes only).
+
+## Fixes
+- **Providers**: ClinePass API-key (`clp_…`) connections pass the connection test via `/users/me` instead of "Provider test not supported" (#401, #402).
+- **Quota**: the quota poller probes combo members written as model aliases, and a provider whose accounts are all locked reports the earliest lock's error (#405, #406).
+- **Models**: `/v1/search` and `/v1/web/fetch` accept the `{alias}/search` and `{alias}/fetch` ids `/v1/models/web` advertises, `webFetch` points at `/v1/web/fetch`, and catalog entries carry `created` (#410, #411).
+- **Search**: GLM Coding (Z.ai) web search runs over a proper MCP session instead of failing with HTTP 400 (#412, #413).
+- **Executors**: Qoder streams no longer hang when the first SSE line isn't `data:`, Windsurf gRPC-web trailers-only errors surface as errors instead of empty completions, and Devin keeps multi-byte UTF-8 intact across stdout chunks (#422, #423).
+- **TTS**: `/v1/audio/speech` honours the OpenAI `voice` and `response_format` body fields, and OpenRouter TTS sends `vendor/model` ids as the model rather than the voice (#426, #428, #433, #434).
+- **Kiro**: the CLIProxyAPI JSON import modal closes and refreshes after a successful import (#426, #428).
+
 # v0.5.3 (2026-09-30)
 
 ## Fixes
