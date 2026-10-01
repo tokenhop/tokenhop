@@ -2,7 +2,7 @@ import { ACTIVE, LEGACY } from "@/shared/brand";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 
 // Read the active key; otherwise copy the legacy key forward. Writes use only the active key.
-export function readStorageItem(storage, name) {
+function readStorageItem(storage, name) {
   const key = ACTIVE.storageKeyPrefix + name;
   const value = storage.getItem(key);
   if (value !== null) return value;

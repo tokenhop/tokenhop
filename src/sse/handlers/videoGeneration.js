@@ -114,7 +114,7 @@ function withConnectionHeader(response, connectionId) {
   const headers = new Headers(response.headers);
   // Video jobs are account-bound upstream — clients echo this back as
   // `x-connection-id` on GET polls so the same account is used.
-  // Emitted under every name until v2: older clients read the legacy one.
+  // Emitted under every name: older clients read the legacy one. legacy(9router): remove in v2
   for (const name of [header("connection-id"), ...legacyHeaderNames("connection-id")]) {
     headers.set(name, String(connectionId));
   }

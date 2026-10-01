@@ -8,7 +8,7 @@ const { getDataDir } = require("../../../hooks/sqliteRuntime");
 
 // The CLI build packs the brand module into cli/src/shared/; a repo checkout uses the source.
 const PACKED_BRAND_MODULE = path.join(__dirname, "..", "..", "shared", "brand", "index.cjs");
-const { ACTIVE, LEGACY } = require(
+const { ACTIVE, BRAND, LEGACY } = require(
   fs.existsSync(PACKED_BRAND_MODULE)
     ? PACKED_BRAND_MODULE
     : path.join(__dirname, "..", "..", "..", "..", "src", "shared", "brand", "index.cjs"),
@@ -72,7 +72,7 @@ function writePidFile({ launcher, server }) {
 
 // Only the launcher that wrote the file may remove it (a newer launcher may own it now).
 function removePidFileIfOwner(pid) {
-  if (readPidFile()?.launcher !== pid) return false;
+  if (readPidRecord(getPidFilePath())?.launcher !== pid) return false;
   try {
     fs.unlinkSync(getPidFilePath());
     return true;
@@ -108,14 +108,19 @@ function getCommandLine(pid) {
   }
 }
 
-// A 9router launcher is node running a script whose path ends in `9router` (npm bin
-// shim) or `9router/cli.js`. A bare "9router" substring is not enough: shells, editors
-// and test runners inside a 9router checkout contain it too.
+// A launcher is node running a script whose path ends in the package slug (npm bin
+// shim) or `<slug>/cli.js`. A bare slug substring is not enough: shells, editors and
+// test runners inside a checkout contain it too. Either slug matches, since an old
+// launcher may still be running. legacy(9router): remove in v2
+const LAUNCHER_SCRIPT = new RegExp(
+  `[\\\\/](?:${BRAND.slug}|${LEGACY.slug})(?:[\\\\/]cli\\.js)?"?(?:\\s|$)`,
+  "i",
+);
+
 function isLauncherCommandLine(cmd) {
   if (!cmd) return false;
   const runsNode = /^"?(?:[^"]*[\\/])?node(?:\.exe)?"?(?:\s|$)/i.test(cmd.trim());
-  const runs9router = /[\\/]9router(?:[\\/]cli\.js)?"?(?:\s|$)/i.test(cmd);
-  return runsNode && runs9router;
+  return runsNode && LAUNCHER_SCRIPT.test(cmd);
 }
 
 function getParentPid(pid) {
@@ -224,7 +229,6 @@ function killPid(pid, { graceful = true } = {}) {
 
 module.exports = {
   getPidFilePath,
-  getLegacyPidFilePath,
   readPidFile,
   readPidFiles,
   writePidFile,

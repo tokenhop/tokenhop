@@ -86,7 +86,7 @@ export function stripContinuityFields(body) {
 
 function readTokenSaverHeader(headers) {
   if (headers?.[TOKEN_SAVER_HEADER] !== undefined) return headers[TOKEN_SAVER_HEADER];
-  const legacy = headers?.[LEGACY_TOKEN_SAVER_HEADER];
+  const legacy = headers?.[LEGACY_TOKEN_SAVER_HEADER]; // legacy(9router): remove in v2
   if (legacy !== undefined) warnLegacyOnce("header", LEGACY_TOKEN_SAVER_HEADER, TOKEN_SAVER_HEADER);
   return legacy;
 }
