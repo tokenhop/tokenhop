@@ -320,7 +320,7 @@
   "tests/unit/combo-route-builder.test.js": 1,
   "tests/unit/combo-strategy-atomic.test.js": 1,
   "tests/unit/compatible-provider-connections.test.js": 2,
-  "tests/unit/copy-tone.test.js": 5,
+  "tests/unit/copy-tone.test.js": 4,
   "tests/unit/count-tokens.test.js": 1,
   "tests/unit/cursor-agent-exec-request.test.js": 2,
   "tests/unit/cursor-agent-proto.test.js": 1,

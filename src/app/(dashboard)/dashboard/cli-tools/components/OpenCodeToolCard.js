@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useCliAccessStore } from "@/store/cliAccessStore";
 import {
   useSetupCard,
   setupCardPropTypes,
@@ -86,7 +87,11 @@ export default function OpenCodeToolCard({
     }).catch(() => {});
   };
 
+  // Remotely these routes answer 403; edits only shape the manual snippet.
+  const isLocalOnly = () => useCliAccessStore.getState().localOnly;
+
   const clearActiveModel = async () => {
+    if (isLocalOnly()) return setActiveModel("");
     try {
       const res = await fetch(ENDPOINT, {
         method: "PATCH",
@@ -104,7 +109,14 @@ export default function OpenCodeToolCard({
     }
   };
 
+  const dropModel = (model) => {
+    const next = selectedModels.filter((m) => m !== model);
+    setSelectedModels(next);
+    if (activeModel === model) setActiveModel(next[0] || "");
+  };
+
   const removeServerModel = async (model) => {
+    if (isLocalOnly()) return dropModel(model);
     try {
       const res = await fetch(`${ENDPOINT}?model=${encodeURIComponent(model)}`, {
         method: "DELETE",
@@ -113,9 +125,7 @@ export default function OpenCodeToolCard({
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to remove model.");
       }
-      const next = selectedModels.filter((m) => m !== model);
-      setSelectedModels(next);
-      if (activeModel === model) setActiveModel(next[0] || "");
+      dropModel(model);
       card.fetchStatus();
     } catch (err) {
       card.setMessage({ type: "error", text: err.message });
@@ -359,7 +369,7 @@ export default function OpenCodeToolCard({
           isOpen={card.modalOpen}
           onClose={() => {
             card.setModalOpen(false);
-            postModels(selectedModelsRef.current);
+            if (!isLocalOnly()) postModels(selectedModelsRef.current);
           }}
           onSelect={(m) => {
             if (!selectedModels.includes(m.value)) {

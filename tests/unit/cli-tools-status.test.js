@@ -174,6 +174,10 @@ describe("buildEndpointOptions", () => {
     expect(opts[0].url).toBe("http://localhost:20149/v1");
     expect(opts[1].url).toBe("https://t.example/v1");
   });
+  it("labels the browser origin Dashboard when opened remotely", () => {
+    const opts = buildEndpointOptions({ localOrigin: "https://dash.example", remote: true });
+    expect(opts[0]).toMatchObject({ value: "local", label: "Dashboard" });
+  });
   it("hides local when an external url is required", () => {
     const opts = buildEndpointOptions({ requiresExternalUrl: true, localOrigin: "http://x" });
     expect(opts.map((o) => o.value)).toEqual(["__custom__"]);
