@@ -1,3 +1,5 @@
+import { ACTIVE } from "@/shared/brand";
+
 export default function manifest() {
   return {
     name: "9Router - AI infrastructure management",
@@ -11,17 +13,17 @@ export default function manifest() {
     orientation: "portrait-primary",
     icons: [
       {
-        src: "/icons/icon-192.svg",
+        src: ACTIVE.appIcon192,
         sizes: "192x192",
         type: "image/svg+xml",
       },
       {
-        src: "/icons/icon-512.svg",
+        src: ACTIVE.appIcon512,
         sizes: "512x512",
         type: "image/svg+xml",
       },
       {
-        src: "/icons/icon-512.svg",
+        src: ACTIVE.appIcon512,
         sizes: "512x512",
         type: "image/svg+xml",
         purpose: "maskable",
