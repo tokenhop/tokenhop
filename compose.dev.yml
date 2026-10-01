@@ -31,10 +31,10 @@ services:
       NEXT_PUBLIC_BRAND: tokenhop
     volumes:
       - .:/app
-      - 9router-dev-node-modules:/app/node_modules
+      - tokenhop-dev-node-modules:/app/node_modules
       # Keep container build cache off the host checkout (avoids root-owned .next).
-      - 9router-dev-next:/app/.next
-      - 9router-dev-data:/app/data
+      - tokenhop-dev-next:/app/.next
+      - tokenhop-dev-data:/app/data
     # npm ci keeps the mounted checkout reproducible; dev:env decrypts secrets before Next starts.
     command: sh -c "npm ci && npm run dev:env -- --hostname 0.0.0.0"
     depends_on:
@@ -54,9 +54,9 @@ services:
       - "8787:8787"
 
 volumes:
-  9router-dev-node-modules:
-    name: 9router-dev-node-modules
-  9router-dev-next:
-    name: 9router-dev-next
-  9router-dev-data:
-    name: 9router-dev-data
+  tokenhop-dev-node-modules:
+    name: tokenhop-dev-node-modules
+  tokenhop-dev-next:
+    name: tokenhop-dev-next
+  tokenhop-dev-data:
+    name: tokenhop-dev-data
