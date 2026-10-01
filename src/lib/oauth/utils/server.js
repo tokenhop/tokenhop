@@ -871,6 +871,7 @@ export function stopZedProxy() {
 let xiaomiMimoProxyServer = null;
 let xiaomiMimoProxyPort = null;
 let xiaomiMimoProxyTimeout = null;
+const XIAOMI_MIMO_PROXY_TIMEOUT_MS = 5 * 60 * 1000;
 
 const xiaomiMimoSessions = new Map();
 
@@ -925,9 +926,20 @@ function renderXiaomiMimoResultPage(success, message) {
  * Start the Xiaomi Desktop OAuth callback proxy.
  * @returns {Promise<{success: boolean, port?: number, callbackUrl?: string, reason?: string}>}
  */
+function armXiaomiMimoProxyTimeout() {
+  if (xiaomiMimoProxyTimeout) clearTimeout(xiaomiMimoProxyTimeout);
+  xiaomiMimoProxyTimeout = setTimeout(() => {
+    console.log("[xiaomi-mimo oauth] timeout, stopping");
+    stopXiaomiMimoProxy();
+  }, XIAOMI_MIMO_PROXY_TIMEOUT_MS);
+}
+
 export function startXiaomiMimoProxy() {
   return new Promise((resolve) => {
     if (xiaomiMimoProxyServer) {
+      // Reuse the live listener, but renew its idle timeout so a previous
+      // flow's deadline can never kill the flow that just adopted the port.
+      armXiaomiMimoProxyTimeout();
       resolve({
         success: true,
         port: xiaomiMimoProxyPort,
@@ -1026,10 +1038,7 @@ export function startXiaomiMimoProxy() {
     server.listen(0, "127.0.0.1", () => {
       xiaomiMimoProxyServer = server;
       xiaomiMimoProxyPort = server.address().port;
-      xiaomiMimoProxyTimeout = setTimeout(() => {
-        console.log("[xiaomi-mimo oauth] timeout, stopping");
-        stopXiaomiMimoProxy();
-      }, 300000);
+      armXiaomiMimoProxyTimeout();
       console.log(`[xiaomi-mimo oauth] listening on port ${xiaomiMimoProxyPort}`);
       resolve({
         success: true,

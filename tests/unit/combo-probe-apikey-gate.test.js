@@ -10,6 +10,7 @@ vi.mock("../../open-sse/executors/index.js", () => ({
 }));
 
 vi.mock("../../open-sse/utils/requestLogger.js", () => ({
+  notifyRequestLogsEnabled: vi.fn(),
   createRequestLogger: async () => ({
     logClientRawRequest: vi.fn(),
     logRawRequest: vi.fn(),

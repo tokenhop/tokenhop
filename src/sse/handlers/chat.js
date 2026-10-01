@@ -38,6 +38,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+import { notifyRequestLogsEnabled } from "open-sse/utils/requestLogger.js";
 import { ensureReliabilityPolicy } from "@/lib/reliability/initReliabilityPolicy.js";
 
 /**
@@ -104,6 +105,10 @@ export async function handleChat(request, clientRawRequest = null, options = nul
   // skipApiKeyCheck option — never from request content — so probes run under
   // default requireApiKey=true. /v1 routes pass no options and always enforce.
   const settings = await getSettings();
+  // The request logger caches the stored flag in memory and only the settings
+  // PATCH updates it, so a restart would forget the toggle. Sync it here from
+  // the settings we already read (ENABLE_REQUEST_LOGS still wins).
+  notifyRequestLogsEnabled(settings.requestLogsEnabled === true);
   if (settings.requireApiKey && options?.skipApiKeyCheck !== true) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
