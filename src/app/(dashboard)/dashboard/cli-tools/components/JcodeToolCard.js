@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from "react";
 import {
   useSetupCard,
   setupCardPropTypes,
-  keyFallback,
-  manualKeyFallback,
+  resolveApiKey,
+  manualApiKey,
+  toManualConfigs,
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,
@@ -17,7 +18,8 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
-import { CLIENT_KEY, findClientEntry, JCODE_API_KEY_ENV } from "@/lib/cliToolBrand";
+import { CLIENT_KEY, findClientEntry } from "@/lib/cliToolBrand";
+import { buildJcodeConfig, JCODE_DEFAULT_MODEL } from "@/lib/cliToolConfigs/jcode";
 
 const ENDPOINT = "/api/cli-tools/jcode-settings";
 
@@ -78,7 +80,7 @@ export default function JcodeToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
           models: selectedModel ? [selectedModel] : [],
         }),
       });
@@ -120,17 +122,14 @@ export default function JcodeToolCard({
     }
   };
 
-  const getManualConfigs = () => {
-    const model = selectedModel || "cc/claude-opus-4-7";
-    const toml = `[providers.${CLIENT_KEY}]\ntype = "openai-compatible"\nbase_url = "${getEffectiveBaseUrl()}"\nauth = "bearer"\napi_key_env = "${JCODE_API_KEY_ENV}"\nenv_file = "provider-${CLIENT_KEY}.env"\ndefault_model = "${model}"\nrequires_api_key = true\n\n[[providers.${CLIENT_KEY}.models]]\nid = "${model}"`;
-    return [
-      { filename: "~/.jcode/config.toml", content: toml },
-      {
-        filename: `~/.config/jcode/provider-${CLIENT_KEY}.env`,
-        content: `${JCODE_API_KEY_ENV}="${manualKeyFallback(card.selectedApiKey, cloudEnabled)}"`,
-      },
-    ];
-  };
+  const getManualConfigs = () =>
+    toManualConfigs(
+      buildJcodeConfig({
+        baseUrl: getEffectiveBaseUrl(),
+        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        model: selectedModel,
+      }),
+    );
 
   return (
     <>
@@ -193,7 +192,7 @@ export default function JcodeToolCard({
             onChange={setSelectedModel}
             onPick={() => card.setModalOpen(true)}
             pickDisabled={!activeProviders?.length}
-            placeholder="cc/claude-opus-4-7"
+            placeholder={JCODE_DEFAULT_MODEL}
           />
         </SetupRow>
         <p className="font-mono text-xs text-muted">

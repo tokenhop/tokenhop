@@ -18,6 +18,7 @@ import {
   LEGACY_CLIENT_KEYS,
   takeLegacyEntry,
 } from "@/lib/cliToolBrand";
+import { buildCodexConfig } from "@/lib/cliToolConfigs/codex";
 
 const execAsync = promisify(exec);
 
@@ -155,28 +156,33 @@ export async function POST(request) {
     // Read and parse existing config (unparseable file → 422, left untouched)
     const parsed = (await readTomlConfig(configPath)) ?? {};
 
+    const [fragment] = buildCodexConfig({ baseUrl, apiKey, model, subagentModel });
+
     // Update only our fields (api_key goes to auth.json, not config.toml)
-    parsed.model = model;
-    parsed.model_provider = CLIENT_KEY;
+    parsed.model = fragment.value.model;
+    parsed.model_provider = fragment.value.model_provider;
     repointProfiles(parsed);
 
-    // Ensure /v1 suffix is added only once
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
     // Migrating a legacy entry keeps its extra fields (e.g. request_max_retries);
     // otherwise the entry is rewritten exactly as before.
     const previous = takeLegacyEntry(parsed.model_providers) ?? {};
     // Custom providers ignore auth.json - the key must travel as a static header
     setNestedSection(parsed, `model_providers.${CLIENT_KEY}`, {
       ...previous,
-      name: CLIENT_NAME,
-      base_url: normalizedBaseUrl,
-      wire_api: "responses",
-      http_headers: { ...previous.http_headers, Authorization: `Bearer ${apiKey}` },
+      ...fragment.value.model_providers[CLIENT_KEY],
+      http_headers: {
+        ...previous.http_headers,
+        ...fragment.value.model_providers[CLIENT_KEY].http_headers,
+      },
     });
 
     // Subagent model is a scalar under [agents]; agents.<role> now means a custom role
     deleteNestedSection(parsed, "agents.subagent");
-    setNestedSection(parsed, "agents.default_subagent_model", subagentModel || model);
+    setNestedSection(
+      parsed,
+      "agents.default_subagent_model",
+      fragment.value.agents.default_subagent_model,
+    );
 
     // Write merged config
     const configContent = stringifyTOML(parsed);

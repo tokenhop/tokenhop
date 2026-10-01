@@ -11,15 +11,13 @@ import Tooltip from "@/shared/components/Tooltip";
 import ApiKeySelect from "./ApiKeySelect";
 import EndpointSegmentedPicker from "./EndpointSegmentedPicker";
 import SetupScaffold, { NotInstalledBlock, ModelRow } from "./SetupScaffold";
-import { ACTIVE } from "@/shared/brand";
+import { buildClaudeConfig } from "@/lib/cliToolConfigs/claude";
+import { resolveApiKey, manualApiKey, toManualConfigs } from "./setupCard";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import { deriveToolStatus } from "../lib/toolStatus";
 import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
-import { DEFAULT_PLUGINS } from "@/shared/constants/coworkPlugins";
-
-const EXA_PLUGIN = DEFAULT_PLUGINS.find((p) => p.name === "exa");
 
 // Auto-compact window presets (CLAUDE_CODE_AUTO_COMPACT_WINDOW, valid 100K–1M).
 // UI shows the round number; the value written is nudged down 2K to stay safely
@@ -186,27 +184,21 @@ export default function ClaudeToolCard({
     return u.endsWith("/v1") ? u : `${u}/v1`;
   };
 
+  const buildEnv = (apiKey) => {
+    const env = { ANTHROPIC_BASE_URL: getEffectiveBaseUrl() };
+    if (apiKey) env.ANTHROPIC_AUTH_TOKEN = apiKey;
+    tool.defaultModels?.forEach((m) => {
+      const target = modelMappings[m.alias];
+      if (target && m.envKey) env[m.envKey] = target;
+    });
+    return env;
+  };
+
   const handleApply = async () => {
     setApplying(true);
     setMessage(null);
     try {
-      const env = { ANTHROPIC_BASE_URL: getEffectiveBaseUrl() };
-      const keyToUse =
-        selectedApiKey?.trim() ||
-        (apiKeys?.length > 0 ? apiKeys[0].key : null) ||
-        (!cloudEnabled ? ACTIVE.defaultApiKey : null);
-
-      if (keyToUse) env.ANTHROPIC_AUTH_TOKEN = keyToUse;
-
-      tool.defaultModels?.forEach((m) => {
-        const target = modelMappings[m.alias];
-        if (target && m.envKey) env[m.envKey] = target;
-      });
-
-      if (autoCompactWindow) {
-        env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = autoCompactWindow;
-      }
-
+      const env = buildEnv(resolveApiKey(selectedApiKey, apiKeys, cloudEnabled));
       const res = await fetch("/api/cli-tools/claude-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -257,35 +249,14 @@ export default function ClaudeToolCard({
     }
   };
 
-  const getManualConfigs = () => {
-    const keyToUse =
-      selectedApiKey?.trim() || (!cloudEnabled ? ACTIVE.defaultApiKey : "<API_KEY_FROM_DASHBOARD>");
-    const env = { ANTHROPIC_BASE_URL: getEffectiveBaseUrl(), ANTHROPIC_AUTH_TOKEN: keyToUse };
-    tool.defaultModels?.forEach((m) => {
-      const t = modelMappings[m.alias];
-      if (t && m.envKey) env[m.envKey] = t;
-    });
-    if (autoCompactWindow) env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = autoCompactWindow;
-
-    const configs = [
-      {
-        filename: "~/.claude/settings.json",
-        content: JSON.stringify({ hasCompletedOnboarding: true, env }, null, 2),
-      },
-    ];
-    // Apply merges this into ~/.claude.json (see claude-settings route).
-    if (exaMcpEnabled && EXA_PLUGIN) {
-      configs.push({
-        filename: "~/.claude.json (merge into mcpServers)",
-        content: JSON.stringify(
-          { mcpServers: { exa: { type: EXA_PLUGIN.transport, url: EXA_PLUGIN.url } } },
-          null,
-          2,
-        ),
-      });
-    }
-    return configs;
-  };
+  const getManualConfigs = () =>
+    toManualConfigs(
+      buildClaudeConfig({
+        env: buildEnv(manualApiKey(selectedApiKey, apiKeys, cloudEnabled)),
+        exaMcpEnabled,
+        autoCompactWindow,
+      }),
+    );
 
   const derived = deriveToolStatus(tool, claudeStatus);
   const isCombo = (val) => {

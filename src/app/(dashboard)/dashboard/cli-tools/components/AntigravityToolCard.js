@@ -9,7 +9,7 @@ import Callout from "@/shared/components/Callout";
 import ModelSelectModal from "@/shared/components/ModelSelectModal";
 import ApiKeySelect from "./ApiKeySelect";
 import SetupScaffold, { ModelRow, SetupRow } from "./SetupScaffold";
-import { keyFallback } from "./setupCard";
+import { resolveApiKey } from "./setupCard";
 
 /**
  * Legacy Antigravity MITM interception card: start/stop the MITM proxy
@@ -109,7 +109,7 @@ export default function AntigravityToolCard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          apiKey: keyFallback(selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(selectedApiKey, apiKeys, cloudEnabled),
           sudoPassword: password,
         }),
       });

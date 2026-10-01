@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from "react";
 import {
   useSetupCard,
   setupCardPropTypes,
-  keyFallback,
-  manualKeyFallback,
+  resolveApiKey,
+  manualApiKey,
+  toManualConfigs,
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,
@@ -17,6 +18,7 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
+import { buildHermesConfig } from "@/lib/cliToolConfigs/hermes";
 
 const ENDPOINT = "/api/cli-tools/hermes-settings";
 
@@ -73,7 +75,7 @@ export default function HermesToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
           model: selectedModel,
         }),
       });
@@ -114,16 +116,14 @@ export default function HermesToolCard({
     }
   };
 
-  const getManualConfigs = () => [
-    {
-      filename: "~/.hermes/config.yaml",
-      content: `model:\n  default: "${selectedModel || "provider/model-id"}"\n  provider: "custom"\n  base_url: "${getEffectiveBaseUrl()}"\n  api_key: \${OPENAI_API_KEY}\n`,
-    },
-    {
-      filename: "~/.hermes/.env",
-      content: `OPENAI_API_KEY=${manualKeyFallback(card.selectedApiKey, cloudEnabled)}\n`,
-    },
-  ];
+  const getManualConfigs = () =>
+    toManualConfigs(
+      buildHermesConfig({
+        baseUrl: getEffectiveBaseUrl(),
+        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        model: selectedModel,
+      }),
+    );
 
   return (
     <>

@@ -6,8 +6,9 @@ import Input from "@/shared/components/Input";
 import {
   useSetupCard,
   setupCardPropTypes,
-  keyFallback,
-  manualKeyFallback,
+  resolveApiKey,
+  manualApiKey,
+  toManualConfigs,
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,
@@ -19,6 +20,7 @@ import {
   deriveToolStatus,
 } from "./setupCard";
 import { CUSTOM_MODEL_ID_PREFIX, isCustomModelId } from "@/lib/cliToolBrand";
+import { buildDroidConfig } from "@/lib/cliToolConfigs/droid";
 
 const ENDPOINT = "/api/cli-tools/droid-settings";
 
@@ -93,7 +95,7 @@ export default function DroidToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
           models: modelList,
           activeModel: modelList[0] || "",
         }),
@@ -135,34 +137,15 @@ export default function DroidToolCard({
     }
   };
 
-  const getManualConfigs = () => {
-    const settingsPath =
-      typeof navigator !== "undefined" && navigator.platform?.toLowerCase().includes("win")
-        ? "%USERPROFILE%\\.factory\\settings.json"
-        : "~/.factory/settings.json";
-    return [
-      {
-        filename: settingsPath,
-        content: JSON.stringify(
-          {
-            customModels: modelList.map((m, i) => ({
-              model: m,
-              id: `${CUSTOM_MODEL_ID_PREFIX}${i}`,
-              index: i,
-              baseUrl: getEffectiveBaseUrl(),
-              apiKey: manualKeyFallback(card.selectedApiKey, cloudEnabled),
-              displayName: m,
-              maxOutputTokens: 131072,
-              noImageSupport: false,
-              provider: "openai",
-            })),
-          },
-          null,
-          2,
-        ),
-      },
-    ];
-  };
+  const getManualConfigs = () =>
+    toManualConfigs(
+      buildDroidConfig({
+        baseUrl: getEffectiveBaseUrl(),
+        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        models: modelList,
+        activeModel: modelList[0] || "",
+      }),
+    );
 
   return (
     <>

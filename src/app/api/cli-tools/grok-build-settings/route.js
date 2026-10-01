@@ -8,8 +8,9 @@ import path from "path";
 import os from "os";
 import { ACTIVE } from "@/shared/brand";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { buildGrokBuildConfig } from "@/lib/cliToolConfigs/grokBuild";
+import { withV1 } from "@/lib/cliToolConfigs/shared";
 import {
-  applyGrokBuildConfig,
   GROK_MAIN_MODEL_SLOT,
   GROK_SUBAGENT_TYPES,
   parseGrokBuildConfig,
@@ -109,13 +110,13 @@ export async function POST(request) {
     }
 
     await fs.mkdir(getGrokDir(), { recursive: true });
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    const toml = applyGrokBuildConfig(await readConfigToml(), {
-      baseUrl: normalizedBaseUrl,
+    const [{ value: toml }] = buildGrokBuildConfig({
+      baseUrl: withV1(baseUrl),
       apiKey: apiKey || ACTIVE.defaultApiKey,
       model: selectedModel,
       contextWindow: normalizeContextWindow(contextWindow, selectedModel),
       subagentModels: normalizeSubagentModels(subagentModels),
+      existingToml: await readConfigToml(),
     });
     await fs.writeFile(getGrokConfigPath(), toml);
 

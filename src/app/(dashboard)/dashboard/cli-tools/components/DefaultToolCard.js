@@ -12,6 +12,7 @@ import ApiKeySelect from "./ApiKeySelect";
 import SetupScaffold, { SingleModelRow } from "./SetupScaffold";
 import { getToolBrand } from "../lib/toolStatus";
 import { ACTIVE } from "@/shared/brand";
+import { API_KEY_PLACEHOLDER } from "@/lib/cliToolConfigs/shared";
 
 const NOTE_VARIANT = { warning: "warn", cloudCheck: "err", info: "info" };
 
@@ -39,7 +40,7 @@ export default function DefaultToolCard({
 
   const replaceVars = (text) => {
     const keyToUse =
-      selectedApiKey?.trim() || (!cloudEnabled ? ACTIVE.defaultApiKey : "your-api-key");
+      selectedApiKey?.trim() || (!cloudEnabled ? ACTIVE.defaultApiKey : API_KEY_PLACEHOLDER);
     const normalized = baseUrl || "http://localhost:20128";
     const withV1 = normalized.endsWith("/v1") ? normalized : `${normalized}/v1`;
     return String(text)

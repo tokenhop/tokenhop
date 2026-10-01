@@ -6,8 +6,9 @@ import { useCliAccessStore } from "@/store/cliAccessStore";
 import {
   useSetupCard,
   setupCardPropTypes,
-  keyFallback,
-  manualKeyFallback,
+  resolveApiKey,
+  manualApiKey,
+  toManualConfigs,
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,
@@ -18,8 +19,17 @@ import {
   deriveToolStatus,
 } from "./setupCard";
 import { CLIENT_NAME, isClientKey } from "@/lib/cliToolBrand";
+import { buildCopilotConfig } from "@/lib/cliToolConfigs/copilot";
 
 const ENDPOINT = "/api/cli-tools/copilot-settings";
+
+// Best guess of the remote user's OS for the snippet's file path.
+const browserPlatform = () => {
+  if (typeof navigator === "undefined") return "linux";
+  if (navigator.userAgent.includes("Mac")) return "darwin";
+  if (navigator.userAgent.includes("Win")) return "win32";
+  return "linux";
+};
 
 /**
  * GitHub Copilot setup panel: multi-model chips written to VS Code's
@@ -72,7 +82,7 @@ export default function CopilotToolCard({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
         models,
       }),
     }).catch(() => {});
@@ -87,7 +97,7 @@ export default function CopilotToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
           models: selectedModels,
         }),
       });
@@ -131,34 +141,15 @@ export default function CopilotToolCard({
     }
   };
 
-  const getManualConfigs = () => {
-    const modelsShown = selectedModels.length > 0 ? selectedModels : ["provider/model-id"];
-    return [
-      {
-        filename: "~/Library/Application Support/Code/User/chatLanguageModels.json",
-        content: JSON.stringify(
-          [
-            {
-              name: CLIENT_NAME,
-              vendor: "azure",
-              apiKey: manualKeyFallback(card.selectedApiKey, cloudEnabled),
-              models: modelsShown.map((id) => ({
-                id,
-                name: id,
-                url: `${getEffectiveBaseUrl()}/chat/completions#models.ai.azure.com`,
-                toolCalling: true,
-                vision: false,
-                maxInputTokens: 128000,
-                maxOutputTokens: 16000,
-              })),
-            },
-          ],
-          null,
-          2,
-        ),
-      },
-    ];
-  };
+  const getManualConfigs = () =>
+    toManualConfigs(
+      buildCopilotConfig({
+        baseUrl: getEffectiveBaseUrl(),
+        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        models: selectedModels,
+        platform: browserPlatform(),
+      }),
+    );
 
   return (
     <>

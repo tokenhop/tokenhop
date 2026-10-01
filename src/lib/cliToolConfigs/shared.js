@@ -19,7 +19,8 @@ export const manualApiKey = (selectedApiKey, apiKeys, cloudEnabled) =>
   resolveApiKey(selectedApiKey, apiKeys, cloudEnabled) ?? API_KEY_PLACEHOLDER;
 
 /**
- * A builder fragment: `{ file, format: "json" | "toml" | "text", merge: "replace" | "merge", value }`.
+ * A builder fragment: `{ file, format: "json" | "toml" | "text", merge: boolean, value }`; merge
+ * means "merge into the existing file", otherwise the fragment replaces it.
  * `value` is an object for json/toml and a string for text; it is exactly what
  * Apply writes to `file` when the file does not exist yet.
  */
@@ -32,6 +33,6 @@ export const renderFragment = ({ format, value }) => {
 /** ManualConfigList entries for a builder result; `null` (missing input) → `[]`. */
 export const toManualConfigs = (fragments) =>
   (fragments || []).map((fragment) => ({
-    filename: fragment.merge === "merge" ? `${fragment.file} (merge into existing)` : fragment.file,
+    filename: fragment.merge ? `${fragment.file} (merge into existing)` : fragment.file,
     content: renderFragment(fragment),
   }));

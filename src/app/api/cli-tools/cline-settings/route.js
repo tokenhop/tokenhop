@@ -8,6 +8,7 @@ import path from "path";
 import os from "os";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
 import { CLIENT_NAME, urlNamesClient } from "@/lib/cliToolBrand";
+import { buildClineConfig } from "@/lib/cliToolConfigs/cline";
 
 const execAsync = promisify(exec);
 
@@ -93,20 +94,15 @@ export async function POST(request) {
 
     await fs.mkdir(getDataDir(), { recursive: true });
 
-    // Cline expects base WITHOUT /v1
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl.slice(0, -3) : baseUrl;
+    const [globalStateFragment, secretsFragment] = buildClineConfig({ baseUrl, apiKey, model });
 
     // Read both before writing either, so a parse error can't leave a half-applied config.
     const globalState = (await readJsonConfig(getGlobalStatePath())) || {};
     const secrets = (await readJsonConfig(getSecretsPath())) || {};
-    globalState.actModeApiProvider = "openai";
-    globalState.planModeApiProvider = "openai";
-    globalState.openAiBaseUrl = normalizedBaseUrl;
-    globalState.openAiModelId = model;
-    globalState.planModeOpenAiModelId = model;
+    Object.assign(globalState, globalStateFragment.value);
     await fs.writeFile(getGlobalStatePath(), JSON.stringify(globalState, null, 2));
 
-    secrets.openAiApiKey = apiKey;
+    Object.assign(secrets, secretsFragment.value);
     await fs.writeFile(getSecretsPath(), JSON.stringify(secrets, null, 2));
 
     return NextResponse.json({

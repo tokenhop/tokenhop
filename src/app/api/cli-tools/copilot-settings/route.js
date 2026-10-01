@@ -7,6 +7,7 @@ import os from "os";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
 import { ACTIVE } from "@/shared/brand";
 import { CLIENT_NAME, isClientKey, LEGACY_CLIENT_KEYS } from "@/lib/cliToolBrand";
+import { buildCopilotConfig } from "@/lib/cliToolConfigs/copilot";
 
 // Resolve chatLanguageModels.json path per OS
 const getConfigPath = () => {
@@ -90,23 +91,12 @@ export async function POST(request) {
     // Read existing config array
     let config = (await readJsonConfig(configPath, "array")) ?? [];
 
-    const endpointUrl = `${baseUrl}/chat/completions#models.ai.azure.com`;
-    const keyToUse = apiKey || ACTIVE.defaultApiKey;
-
-    const newEntry = {
-      name: CLIENT_NAME,
-      vendor: "azure",
-      apiKey: keyToUse,
-      models: models.map((id) => ({
-        id,
-        name: id,
-        url: endpointUrl,
-        toolCalling: true,
-        vision: false,
-        maxInputTokens: 128000,
-        maxOutputTokens: 16000,
-      })),
-    };
+    const newEntry = buildCopilotConfig({
+      baseUrl,
+      apiKey: apiKey || ACTIVE.defaultApiKey,
+      models,
+      platform: os.platform(),
+    })[0].value[0];
 
     // Replace our entry; otherwise migrate the first legacy one in place,
     // carrying its extra fields under ours. Other legacy duplicates are dropped.

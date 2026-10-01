@@ -7,17 +7,10 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
-import { DEFAULT_PLUGINS } from "@/shared/constants/coworkPlugins";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
+import { buildClaudeConfig } from "@/lib/cliToolConfigs/claude";
 
 const execAsync = promisify(exec);
-
-// Exa MCP def — reuse from coworkPlugins (DRY).
-const EXA_PLUGIN = DEFAULT_PLUGINS.find((p) => p.name === "exa");
-const buildExaMcpEntry = () => ({
-  type: EXA_PLUGIN.transport,
-  url: EXA_PLUGIN.url,
-});
 
 // Get claude settings path based on OS
 const getClaudeSettingsPath = () => {
@@ -134,41 +127,35 @@ export async function POST(request) {
     // Read current settings (unparseable file → 422, left untouched)
     const currentSettings = (await readJsonConfig(settingsPath)) ?? {};
 
-    // Normalize ANTHROPIC_BASE_URL to ensure /v1 suffix
-    if (env.ANTHROPIC_BASE_URL) {
-      env.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL.endsWith("/v1")
-        ? env.ANTHROPIC_BASE_URL
-        : `${env.ANTHROPIC_BASE_URL}/v1`;
-    }
+    // Builder normalises ANTHROPIC_BASE_URL (/v1) and sets/drops the auto-compact
+    // key in env. An omitted autoCompactWindow (e.g. terminal UI posts only env)
+    // leaves the existing key as-is.
+    const [settingsFragment, mcpFragment] = buildClaudeConfig({
+      env,
+      exaMcpEnabled,
+      autoCompactWindow,
+    });
 
     // Merge new env with existing settings
     const newSettings = {
       ...currentSettings,
-      hasCompletedOnboarding: true,
+      ...settingsFragment.value,
       env: {
         ...(currentSettings.env || {}),
-        ...env,
+        ...settingsFragment.value.env,
       },
     };
-
-    // CLAUDE_CODE_AUTO_COMPACT_WINDOW — the token threshold that triggers
-    // auto-compact. Only set when a concrete value is chosen; "Default" removes
-    // the key so Claude Code derives the window from the model. Omitted field
-    // (e.g. terminal UI posts only env) leaves the key as-is.
-    if ("autoCompactWindow" in body) {
-      if (autoCompactWindow) {
-        newSettings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(autoCompactWindow);
-      } else {
-        delete newSettings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
-      }
+    // "Default" (empty) removes the key so Claude Code derives the window from the model.
+    if ("autoCompactWindow" in body && !autoCompactWindow) {
+      delete newSettings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
     }
 
     // Exa MCP toggle — ~/.claude.json (CLI reads mcpServers from here). Prepared
     // before any write so an unparseable file aborts without a partial apply.
     // Omitted field leaves the existing MCP entry untouched.
     const writeMcp =
-      EXA_PLUGIN && "exaMcpEnabled" in body
-        ? await prepareClaudeJsonMcp(exaMcpEnabled ? { exa: buildExaMcpEntry() } : null)
+      "exaMcpEnabled" in body && (mcpFragment || !exaMcpEnabled)
+        ? await prepareClaudeJsonMcp(mcpFragment?.value.mcpServers ?? null)
         : null;
 
     // Write new settings

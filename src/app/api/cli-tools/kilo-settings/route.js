@@ -14,6 +14,7 @@ import {
   takeLegacyEntry,
   urlNamesClient,
 } from "@/lib/cliToolBrand";
+import { buildKiloConfig } from "@/lib/cliToolConfigs/kilo";
 
 const execAsync = promisify(exec);
 
@@ -92,26 +93,20 @@ export async function POST(request) {
 
     await fs.mkdir(getDataDir(), { recursive: true });
 
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+    const [authFragment, vscodeFragment] = buildKiloConfig({ baseUrl, apiKey, model });
 
     const auth = (await readJsonConfig(getAuthPath())) || {};
     // Drop legacy-named entries (tokenhop brand only): their type/apiKey/baseUrl/model are
     // all superseded by the openai-compatible entry written below
     takeLegacyEntry(auth);
-    auth["openai-compatible"] = {
-      type: "api-key",
-      apiKey,
-      baseUrl: normalizedBaseUrl,
-      model,
-    };
+    Object.assign(auth, authFragment.value);
     await fs.writeFile(getAuthPath(), JSON.stringify(auth, null, 2));
 
     // Best-effort: update VS Code extension settings. An unparseable (JSONC) file
     // throws before the write, so it is skipped rather than overwritten.
     try {
       const vscode = (await readJsonConfig(getVscodeSettingsPath())) || {};
-      vscode["kilocode.customProvider"] = { name: CLIENT_NAME, baseURL: normalizedBaseUrl, apiKey };
-      vscode["kilocode.defaultModel"] = model;
+      Object.assign(vscode, vscodeFragment.value);
       await fs.writeFile(getVscodeSettingsPath(), JSON.stringify(vscode, null, 2));
     } catch {
       /* VS Code settings not writable */

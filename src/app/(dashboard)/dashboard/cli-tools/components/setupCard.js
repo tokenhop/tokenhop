@@ -12,7 +12,6 @@ import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { deriveToolStatus } from "../lib/toolStatus";
 import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
-import { ACTIVE } from "@/shared/brand";
 
 const LOCAL_ONLY = Symbol("localOnly");
 
@@ -138,22 +137,6 @@ export const setupCardPropTypes = {
   modelAliases: PropTypes.object,
   onStatusUpdate: PropTypes.func,
 };
-
-/** Fallback API key: selected key, first key, or the brand default key for local. */
-export function keyFallback(selectedApiKey, apiKeys, cloudEnabled) {
-  return (
-    selectedApiKey?.trim() ||
-    (apiKeys?.length > 0 ? apiKeys[0].key : null) ||
-    (!cloudEnabled ? ACTIVE.defaultApiKey : null)
-  );
-}
-
-/** Manual-config fallback key when nothing is selected. */
-export function manualKeyFallback(selectedApiKey, cloudEnabled) {
-  return (
-    selectedApiKey?.trim() || (!cloudEnabled ? ACTIVE.defaultApiKey : "<API_KEY_FROM_DASHBOARD>")
-  );
-}
 
 export {
   API_KEY_PLACEHOLDER,

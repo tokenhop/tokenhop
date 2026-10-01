@@ -11,8 +11,8 @@ import IconButton from "@/shared/components/IconButton";
 import {
   useSetupCard,
   setupCardPropTypes,
-  keyFallback,
-  manualKeyFallback,
+  resolveApiKey,
+  manualApiKey,
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,
@@ -96,7 +96,7 @@ export default function CoworkToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
           models: selectedModels,
           plugins,
           localPlugins,
@@ -177,7 +177,7 @@ export default function CoworkToolCard({
     const cfg = {
       inferenceProvider: "gateway",
       inferenceGatewayBaseUrl: getEffectiveBaseUrl() || "https://your-public-host/v1",
-      inferenceGatewayApiKey: manualKeyFallback(card.selectedApiKey, cloudEnabled),
+      inferenceGatewayApiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
       inferenceModels: modelsShown.map((name) => ({ name })),
     };
     return [

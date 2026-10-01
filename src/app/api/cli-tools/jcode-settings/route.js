@@ -8,6 +8,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { parseTOML, stringifyTOML } from "confbox";
 import { configErrorResponse, readTomlConfig } from "@/lib/cliToolConfig";
+import { buildJcodeConfig, JCODE_DEFAULT_MODEL } from "@/lib/cliToolConfigs/jcode";
 import {
   ALL_CLIENT_KEYS,
   ALL_JCODE_API_KEY_ENVS,
@@ -159,24 +160,30 @@ export async function POST(request) {
       return NextResponse.json({ error: "baseUrl and apiKey are required" }, { status: 400 });
     }
 
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-
     const config = (await readTomlConfig(getConfigPath())) ?? {};
 
     config.providers ??= {};
+    const existing = config.providers[CLIENT_KEY];
     // Migrating a legacy entry keeps its models, extra fields and default model;
     // otherwise the entry is rewritten exactly as before.
     const legacy = takeLegacyEntry(config.providers) ?? {};
-    config.providers[CLIENT_KEY] = {
-      ...legacy,
-      type: "openai-compatible",
-      base_url: normalizedBaseUrl,
-      auth: "bearer",
-      api_key_env: JCODE_API_KEY_ENV,
-      env_file: envFileName(CLIENT_KEY),
-      default_model: models?.[0] || legacy.default_model || "cc/claude-opus-4-7",
-      requires_api_key: true,
-    };
+    const xdgConfigHome = process.env.XDG_CONFIG_HOME;
+    const [{ value: built }] = buildJcodeConfig({
+      baseUrl,
+      apiKey,
+      model: models?.[0] || legacy.default_model || JCODE_DEFAULT_MODEL,
+      envDir: xdgConfigHome ? `${xdgConfigHome}/jcode` : undefined,
+    });
+    const ours = built.providers[CLIENT_KEY];
+    // Models the replaced entries listed survive (by id); ours keeps a known
+    // entry's extra fields (e.g. context_window).
+    const byId = new Map();
+    for (const list of [existing?.models, legacy.models]) {
+      if (!Array.isArray(list)) continue;
+      for (const m of list) if (m?.id && !byId.has(m.id)) byId.set(m.id, m);
+    }
+    for (const m of ours.models) byId.set(m.id, { ...byId.get(m.id), ...m });
+    config.providers[CLIENT_KEY] = { ...legacy, ...ours, models: [...byId.values()] };
     if (LEGACY_CLIENT_KEYS.includes(config.provider?.default_provider)) {
       config.provider.default_provider = CLIENT_KEY;
     }

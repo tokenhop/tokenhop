@@ -7,12 +7,9 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
-import {
-  CLIENT_NAME,
-  CUSTOM_MODEL_ID_PREFIX,
-  isCustomModelId,
-  isOwnedCustomModelId,
-} from "@/lib/cliToolBrand";
+import { CLIENT_NAME, isCustomModelId, isOwnedCustomModelId } from "@/lib/cliToolBrand";
+import { buildDroidConfig } from "@/lib/cliToolConfigs/droid";
+import { ACTIVE } from "@/shared/brand";
 
 const execAsync = promisify(exec);
 
@@ -124,50 +121,17 @@ export async function POST(request) {
     // Remove all existing configs of ours (active brand, plus legacy under tokenhop)
     settings.customModels = settings.customModels.filter((m) => !isOwnedCustomModelId(m.id));
 
-    // Normalize baseUrl to ensure /v1 suffix
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    const keyToUse = apiKey || "your_api_key";
-
-    // Determine active model: prefer explicit activeModel, else first of modelsArray
-    // If activeModel is explicitly empty string, no model will be set as default
-    let defaultIndex = 0;
-    if (typeof activeModel === "string") {
-      if (activeModel === "") {
-        defaultIndex = -1; // signal: don't set a default
-      } else {
-        const idx = modelsArray.indexOf(activeModel);
-        defaultIndex = idx >= 0 ? idx : 0;
-      }
-    }
-
-    // Add entries for all requested models
-    // The first one (index 0) will be the default if defaultIndex >= 0
-    for (let i = 0; i < modelsArray.length; i++) {
-      const m = modelsArray[i];
-      if (!m || typeof m !== "string") continue;
-      settings.customModels.push({
-        model: m,
-        id: `${CUSTOM_MODEL_ID_PREFIX}${i}`,
-        index: i,
-        baseUrl: normalizedBaseUrl,
-        apiKey: keyToUse,
-        displayName: m,
-        maxOutputTokens: 131072,
-        noImageSupport: false,
-        provider: "openai",
-      });
-    }
-
-    // Set default model if applicable
-    if (defaultIndex >= 0 && settings.customModels[defaultIndex]) {
-      // Reorder so the default comes first
-      const [defaultEntry] = settings.customModels.splice(defaultIndex, 1);
-      settings.customModels.unshift({ ...defaultEntry, index: 0 });
-      // Re-index the rest
-      settings.customModels.forEach((m, i) => {
-        m.index = i;
-      });
-    }
+    // Our entries (active model first) come from the builder the manual snippet uses
+    const fragments = buildDroidConfig({
+      baseUrl,
+      apiKey: apiKey || ACTIVE.defaultApiKey,
+      models: modelsArray,
+      activeModel,
+    });
+    settings.customModels.push(...(fragments?.[0].value.customModels ?? []));
+    settings.customModels.forEach((m, i) => {
+      m.index = i;
+    });
 
     // Write settings
     await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
