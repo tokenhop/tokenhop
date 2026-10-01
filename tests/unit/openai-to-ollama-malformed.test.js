@@ -30,3 +30,18 @@ describe("openaiToOllamaRequest - tool_calls arguments parsing", () => {
     expect(out.messages[0].tool_calls[0].function.arguments).toEqual({ a: 1 });
   });
 });
+
+describe("openaiToOllamaRequest - image-only messages", () => {
+  it("image-only user message is kept with images array", () => {
+    const body = {
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } }],
+        },
+      ],
+    };
+    const out = openaiToOllamaRequest("m", body, true);
+    expect(out.messages[0]).toEqual({ role: "user", content: "", images: ["AAAA"] });
+  });
+});
