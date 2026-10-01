@@ -1,3 +1,13 @@
+# v0.6.1 (2026-10-01)
+
+Patch fixes on `release/0.6`.
+
+## Fixes
+- **CLI tools**: what every remote tool control card shows and its manual/Apply/Reset flow now match — DeepSeek TUI snippets start with `provider = "openai"`, remote intercept steps list only MITM-capable hosts, the Grok Build card fills saved model overrides, Claude Code Reset removes overridden env keys, and the jcode card preselects the saved API key (#445, #446).
+- **Usage**: the request-log date filter resolves dates in the browser's timezone instead of the server's, and the 7d/30d/60d/all "by account" stats split usage per model instead of collapsing an account into its last-used model (#450, #451).
+- **Config**: `.env.example` no longer ships `ENABLE_REQUEST_LOGS=false`, so new installs aren't pinned to off with locked Observability toggles, and the MiMo proxy renews its 5-minute timeout on reuse so later logins aren't killed by an earlier flow's deadline (#456, #459).
+- **Search**: Kimi Code OAuth search routes to the coding endpoint with the required device headers instead of failing auth against `api.moonshot.cn`; platform API-key connections keep the existing two-turn tool-echo path (#463, #464).
+
 # v0.6.0 (2026-10-01)
 
 Groundwork for the tokenhop rebrand (v1.0.0) lands behind the brand switch. Under the default 9router brand, names, paths, env vars, headers and output are unchanged. Includes every fix from v0.5.1–v0.5.4. With this release `release/0.6` becomes the maintenance branch and `release/0.5` is frozen.
