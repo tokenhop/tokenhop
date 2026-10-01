@@ -173,7 +173,7 @@ function migrateLegacySlots(toml) {
     next = next
       .replace(
         new RegExp(`^# ${escapeRegExp(legacy)}-prev-([a-z-]+)([^\\r\\n]*\\r?\\n?)`, "gm"),
-        (line, suffix, rest) =>
+        (_line, suffix, rest) =>
           next.includes(`# ${CLIENT_KEY}-prev-${suffix} `)
             ? ""
             : `# ${CLIENT_KEY}-prev-${suffix}${rest}`,
