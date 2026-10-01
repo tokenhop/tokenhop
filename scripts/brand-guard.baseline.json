@@ -257,7 +257,7 @@
   "src/app/api/cli-tools/droid-settings/route.js": 13,
   "src/app/api/cli-tools/grok-build-settings/route.js": 5,
   "src/app/api/cli-tools/hermes-settings/route.js": 5,
-  "src/app/api/cli-tools/jcode-settings/route.js": 14,
+  "src/app/api/cli-tools/jcode-settings/route.js": 12,
   "src/app/api/cli-tools/kilo-settings/route.js": 8,
   "src/app/api/cli-tools/openclaw-settings/route.js": 27,
   "src/app/api/cli-tools/opencode-settings/route.js": 28,

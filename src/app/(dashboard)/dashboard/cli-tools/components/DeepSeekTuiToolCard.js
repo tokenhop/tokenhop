@@ -117,7 +117,7 @@ export default function DeepSeekTuiToolCard({
   const getManualConfigs = () => [
     {
       filename: "~/.deepseek/config.toml",
-      content: `[providers.openai]\nbase_url = "${getEffectiveBaseUrl()}"\napi_key = "${manualKeyFallback(card.selectedApiKey, cloudEnabled)}"\nmodel = "${selectedModel || "provider/model-id"}"\n`,
+      content: `# Replaces the whole file, like Apply does.\nprovider = "openai"\n\n[providers.openai]\nbase_url = "${getEffectiveBaseUrl()}"\napi_key = "${manualKeyFallback(card.selectedApiKey, cloudEnabled)}"\nmodel = "${selectedModel || "provider/model-id"}"\n`,
     },
   ];
 
