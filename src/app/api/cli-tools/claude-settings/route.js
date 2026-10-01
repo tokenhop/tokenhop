@@ -6,6 +6,7 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { DEFAULT_PLUGINS } from "@/shared/constants/coworkPlugins";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
 
@@ -186,13 +187,11 @@ export async function POST(request) {
   }
 }
 
-// Fields to remove when resetting
+// Fields to remove when resetting: every model key Apply can write, plus the rest.
 const RESET_ENV_KEYS = [
   "ANTHROPIC_BASE_URL",
   "ANTHROPIC_AUTH_TOKEN",
-  "ANTHROPIC_DEFAULT_OPUS_MODEL",
-  "ANTHROPIC_DEFAULT_SONNET_MODEL",
-  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  ...CLI_TOOLS.claude.defaultModels.map((m) => m.envKey),
   "API_TIMEOUT_MS",
   "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
 ];
