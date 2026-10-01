@@ -353,12 +353,12 @@ function normalizeOllamaSearch(data, _query, _searchType) {
 
 function normalizeGlmSearch(data, _query, _searchType) {
   const now = new Date().toISOString();
-  // MCP envelope: { result: { content: [{ type: "text", text: "<json>" }] } }
-  let payload = data;
-  const textContent = data?.result?.content?.[0]?.text;
-  if (typeof textContent === "string") {
+  // MCP envelope: { result: { content: [{ type: "text", text: "<json>" }] } }.
+  // web_search_prime double-encodes text (a JSON string of a JSON string).
+  let payload = data?.result?.content?.[0]?.text ?? data;
+  for (let pass = 0; pass < 2 && typeof payload === "string"; pass++) {
     try {
-      payload = JSON.parse(textContent);
+      payload = JSON.parse(payload);
     } catch {
       payload = {};
     }

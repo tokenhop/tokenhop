@@ -10,7 +10,12 @@
 import { buildSearchRequest } from "./callers.js";
 import { normalizeSearchResponse } from "./normalizers.js";
 import { handleChatSearch } from "./chatSearch.js";
+import { runGlmMcpSearch } from "./glmMcp.js";
 import { fetchPublic } from "../../../src/shared/utils/ssrfGuard.js";
+
+// Providers whose built request needs more than one fetch + resp.json().
+// A runner returns the parsed body or throws an Error with `status`.
+const RUNNERS = { glm: runGlmMcpSearch };
 
 const GLOBAL_TIMEOUT_MS = 15000;
 const NON_RETRIABLE = new Set([400, 401, 403, 404]);
@@ -120,22 +125,30 @@ async function tryDedicatedProvider({
   );
 
   try {
-    const resp = await fetchPublic(url, {
+    const requestInit = {
       ...init,
       headers: sanitizeHeaders(init.headers),
       signal: controller.signal,
-    });
-    clearTimeout(timer);
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => "");
-      log?.error?.("SEARCH", `${provider.id} ${resp.status}: ${errText.slice(0, 200)}`);
-      return {
-        success: false,
-        status: resp.status,
-        error: `${provider.id} returned ${resp.status}: ${errText.slice(0, 200)}`,
-      };
+    };
+    let data;
+    const runner = RUNNERS[provider.id];
+    if (runner) {
+      data = await runner(url, requestInit);
+    } else {
+      const resp = await fetchPublic(url, requestInit);
+      if (!resp.ok) {
+        clearTimeout(timer);
+        const errText = await resp.text().catch(() => "");
+        log?.error?.("SEARCH", `${provider.id} ${resp.status}: ${errText.slice(0, 200)}`);
+        return {
+          success: false,
+          status: resp.status,
+          error: `${provider.id} returned ${resp.status}: ${errText.slice(0, 200)}`,
+        };
+      }
+      data = await resp.json();
     }
-    const data = await resp.json();
+    clearTimeout(timer);
     const normalized = normalizeSearchResponse(provider.id, data, params.query, params.searchType);
     const results = normalized.results.slice(0, params.maxResults);
     const duration = Date.now() - startTime;
@@ -166,6 +179,14 @@ async function tryDedicatedProvider({
     };
   } catch (err) {
     clearTimeout(timer);
+    if (err.status) {
+      log?.error?.("SEARCH", `${provider.id} ${err.status}: ${err.message}`);
+      return {
+        success: false,
+        status: err.status,
+        error: `${provider.id} returned ${err.status}: ${err.message}`,
+      };
+    }
     const isTimeout = err.name === "AbortError";
     const status = isTimeout ? 504 : 502;
     log?.error?.("SEARCH", `${provider.id} ${isTimeout ? "timeout" : "error"}: ${err.message}`);
