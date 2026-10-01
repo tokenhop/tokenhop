@@ -5,8 +5,9 @@ name: Docker Image
 #   :latest    only when the tag is the highest stable vX.Y.Z tag in the repo
 #   :sha-<sha>
 # Pushing to master builds and pushes :dev and :develop (the same image, the
-# rolling unreleased build) plus :sha-<sha>. It never creates a git tag or a
-# release, and a newer master push cancels a build still in progress.
+# rolling unreleased build) plus :sha-<sha>, but only when the push touches a
+# path that goes into the image (see `paths` below). It never creates a git tag
+# or a release, and a newer master push cancels a build still in progress.
 # Manual runs build the chosen ref without pushing unless `push` is checked.
 #
 # Brand (NEXT_PUBLIC_BRAND build arg): v1+ tags, including v1.0.0-beta.N, and
@@ -22,6 +23,24 @@ on:
   push:
     branches: [master]
     tags: ["v*"]
+    # Applies to the master push only: GitHub skips path filters for tag pushes,
+    # so every v* tag still builds. Keep this list in sync with what the
+    # Dockerfile copies and the Next build reads.
+    paths:
+      - src/**
+      - open-sse/**
+      - public/**
+      - skills/** # traced into the standalone build (next.config.mjs)
+      - package.json
+      - next.config.mjs
+      - jsconfig.json
+      - postcss.config.mjs
+      - custom-server.js
+      - scripts/copy-standalone-assets.mjs
+      - scripts/write-oauth-clients.cjs
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/docker-publish.yml
   workflow_dispatch:
     inputs:
       push:
