@@ -28,7 +28,7 @@ const FAILED_STATUSES = new Set(["failed", "error", "expired", "cancelled"]);
 const HELP = `
 Usage: ${ACTIVE.npmPackage} xai video --prompt "..." [options]
 
-Generate a Grok Imagine video via your local ${ACTIVE.name} gateway
+Generate a Grok Imagine video via your local ${ACTIVE.slug} gateway
 (requires a connected xAI account — Grok Build OAuth or API key).
 
 Options:
@@ -42,7 +42,7 @@ Options:
   --timeout <seconds>     Max wait for the job (default: ${DEFAULT_TIMEOUT_SEC})
   --port <port>           Gateway port (default: ${DEFAULT_PORT})
   --host <host>           Gateway host (default: ${DEFAULT_HOST})
-  --api-key <key>         ${ACTIVE.name} API key (or env ${ACTIVE.envPrefix}API_KEY)
+  --api-key <key>         ${ACTIVE.slug} API key (or env ${ACTIVE.envPrefix}API_KEY)
   -h, --help              Show this help
 `;
 

@@ -33,8 +33,10 @@ function launchOptionsFromEntry(content) {
   const host = content.match(/(?:^|[\s>])-H(?:<\/string>\s*<string>|\s+)([A-Za-z0-9.:%_-]+)/);
   return {
     ...(port ? { port: Number(port[1]) } : {}),
-    // .desktop Exec doubles `%`; undo it so launchArgs/desktopExecArg don't double it again.
-    ...(host ? { host: host[1].replace(/%%/g, "%") } : {}),
+    // .desktop Exec doubles `%`; undo it so desktopExecArg doesn't double it again.
+    ...(host
+      ? { host: content.startsWith("[Desktop Entry]") ? host[1].replace(/%%/g, "%") : host[1] }
+      : {}),
   };
 }
 
@@ -317,9 +319,12 @@ function disableMacOS(label) {
   // "Disable Auto-start" from the tray menu would lose their tray icon
   // instead of just flipping the menu label. Skip the unload — removing the
   // plist file is enough to prevent the agent from starting on next login.
-  if (fs.existsSync(plistPath) && !isAgentSelfMacOS(label)) {
+  // A migrated legacy agent is still loaded but its plist is gone, so unload by label.
+  if (!isAgentSelfMacOS(label)) {
     try {
-      execSync(`launchctl unload "${plistPath}"`, { stdio: "ignore" });
+      if (fs.existsSync(plistPath))
+        execSync(`launchctl unload "${plistPath}"`, { stdio: "ignore" });
+      else if (isLoadedMacOS(label)) execSync(`launchctl remove ${label}`, { stdio: "ignore" });
     } catch (e) {}
   }
 

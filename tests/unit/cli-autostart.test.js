@@ -1,5 +1,5 @@
-// Autostart entries (YAN-329): tokenhop builds replace a legacy 9router entry
-// with the same port/host; entries of both names count as enabled; disable
+// Autostart entries (YAN-329): tokenhop builds replace a legacy entry with the
+// same port/host; entries of both names count as enabled; disable
 // removes both. Temp HOME/APPDATA (tests/setup/isolateDataDir.js); launchctl is
 // faked.
 import childProcess from "node:child_process";
@@ -16,6 +16,8 @@ const { BRAND, LEGACY } = require(BRAND_CJS);
 const ORIGINAL_PLATFORM = process.platform;
 const saved = {};
 let loaded; // launchctl registry fake: labels currently loaded
+let selfLabel; // label whose job is this process
+let launchctl; // launchctl commands issued, minus `list`
 
 const dirs = {
   linux: () => path.join(process.env.HOME, ".config", "autostart"),
@@ -30,11 +32,11 @@ const file = {
 };
 const entryPath = (platform, names) => path.join(dirs[platform](), file[platform](names));
 
-// Entries as the 9router CLI wrote them, with port 21000 and host 127.0.0.1.
+// Entries as the legacy CLI wrote them, with port 21000 and host 127.0.0.1.
 const legacyEntry = {
-  linux: `[Desktop Entry]\nType=Application\nName=9Router\nExec=/usr/bin/node /old/9router/cli.js --tray -p 21000 -H 127.0.0.1\n`,
-  win32: `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run """C:\\node.exe"" ""C:\\npm\\9router\\cli.js"" --tray -p 21000 -H 127.0.0.1", 0, False\n`,
-  darwin: `<plist><dict><key>Label</key><string>${LEGACY.autostartLabel}</string><array>\n<string>/usr/bin/node</string>\n<string>/old/9router/cli.js</string>\n<string>--tray</string>\n<string>-p</string>\n<string>21000</string>\n<string>-H</string>\n<string>127.0.0.1</string>\n</array></dict></plist>`,
+  linux: `[Desktop Entry]\nType=Application\nName=${LEGACY.names[0]}\nExec=/usr/bin/node /old/${LEGACY.slug}/cli.js --tray -p 21000 -H 127.0.0.1\n`,
+  win32: `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run """C:\\node.exe"" ""C:\\npm\\${LEGACY.slug}\\cli.js"" --tray -p 21000 -H 127.0.0.1", 0, False\n`,
+  darwin: `<plist><dict><key>Label</key><string>${LEGACY.autostartLabel}</string><array>\n<string>/usr/bin/node</string>\n<string>/old/${LEGACY.slug}/cli.js</string>\n<string>--tray</string>\n<string>-p</string>\n<string>21000</string>\n<string>-H</string>\n<string>127.0.0.1</string>\n</array></dict></plist>`,
 };
 
 function load(brand, platform) {
@@ -58,14 +60,18 @@ beforeEach(() => {
   process.env.DISPLAY = ":0";
   fs.mkdirSync(dirs.win32(), { recursive: true });
   loaded = new Set();
+  selfLabel = null;
+  launchctl = [];
   vi.spyOn(childProcess, "execSync").mockImplementation((cmd) => {
-    const [, verb, arg] = cmd.match(/^launchctl (list|unload|load -w) "?([^"]+)"?$/) || [];
+    const [, verb, arg] = cmd.match(/^launchctl (list|unload|load -w|remove) "?([^"]+)"?$/) || [];
     const label = arg && path.basename(arg, ".plist");
     if (verb === "list") {
       if (!loaded.has(label)) throw new Error("not loaded");
-      return `{ "Label" = "${label}"; };`;
+      const pid = label === selfLabel ? process.pid : 1;
+      return `{ "Label" = "${label}"; "PID" = ${pid}; };`;
     }
-    if (verb === "unload") loaded.delete(label);
+    launchctl.push(`${verb} ${label}`);
+    if (verb === "unload" || verb === "remove") loaded.delete(label);
     if (verb === "load -w") loaded.add(label);
     return "";
   });
@@ -115,9 +121,9 @@ describe.each(["linux", "win32", "darwin"])("autostart on %s", (platform) => {
     expect(autostart.isAutoStartEnabled()).toBe(false);
   });
 
-  it("default brand: keeps writing the 9router entry and never migrates it", () => {
+  it("default brand: keeps writing the legacy-named entry and never migrates it", () => {
     seedLegacy(platform);
-    const autostart = load("9router", platform);
+    const autostart = load(LEGACY.slug, platform);
 
     expect(autostart.isAutoStartEnabled()).toBe(true);
     expect(fs.readFileSync(entryPath(platform, LEGACY), "utf8")).toBe(legacyEntry[platform]);
@@ -126,5 +132,33 @@ describe.each(["linux", "win32", "darwin"])("autostart on %s", (platform) => {
     expect(autostart.enableAutoStart(undefined, { port: 20130 })).toBe(true);
     expect(fs.readFileSync(entryPath(platform, LEGACY), "utf8")).toMatch(/20130/);
     expect(fs.existsSync(entryPath(platform, BRAND))).toBe(false);
+  });
+});
+
+describe("autostart on darwin: launchd jobs", () => {
+  it("disable after a migration unloads the still-running legacy job by label", () => {
+    seedLegacy("darwin");
+    const autostart = load("tokenhop", "darwin");
+    autostart.isAutoStartEnabled();
+    expect(launchctl).toEqual([]);
+
+    expect(autostart.disableAutoStart()).toBe(true);
+    expect(launchctl).toEqual([
+      `unload ${BRAND.autostartLabel}`,
+      `remove ${LEGACY.autostartLabel}`,
+    ]);
+    expect(loaded.size).toBe(0);
+  });
+
+  it("never unloads or reloads the job this process runs under", () => {
+    seedLegacy("darwin");
+    selfLabel = LEGACY.autostartLabel;
+    const autostart = load("tokenhop", "darwin");
+
+    expect(autostart.enableAutoStart()).toBe(true);
+    expect(fs.existsSync(entryPath("darwin", BRAND))).toBe(true);
+    expect(autostart.disableAutoStart()).toBe(true);
+    expect(launchctl.filter((c) => c.endsWith(LEGACY.autostartLabel))).toEqual([]);
+    expect(loaded.has(LEGACY.autostartLabel)).toBe(true);
   });
 });
