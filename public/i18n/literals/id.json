@@ -2095,6 +2095,7 @@
   "Your Kiro account via": "Akun Kiro Anda melalui",
   "Your OAuth application client ID": "ID klien aplikasi OAuth Anda",
   "Your code": "Kode Anda",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "Data Anda ada di folder lama. Hentikan server, lalu jalankan perintah ini untuk memindahkannya.",
   "Your endpoint": "Endpoint Anda",
   "Your organization's AWS IAM Identity Center URL": "URL Pusat Identitas AWS IAM organisasi Anda",
   "Your providers": "Penyedia Anda",

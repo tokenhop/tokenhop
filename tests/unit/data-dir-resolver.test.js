@@ -7,9 +7,10 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 const { getDataDir, defaultDataDir } = require("../../src/shared/dataDir/index.cjs");
-const { LEGACY } = require("../../src/shared/brand/index.cjs");
+const { ACTIVE } = require("../../src/shared/brand/index.cjs");
 
-const NAME = LEGACY.dataDirName;
+// CI runs this file under both brands; with no dirs on disk the active one wins.
+const NAME = ACTIVE.dataDirName;
 
 const tempDirs = [];
 
@@ -118,5 +119,111 @@ describe("getDataDir", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+// YAN-325: the active brand's dir, with the legacy dir as a fallback.
+describe("brand resolution order", () => {
+  const BRAND_CJS = require.resolve("../../src/shared/brand/index.cjs");
+  const DATA_DIR_CJS = require.resolve("../../src/shared/dataDir/index.cjs");
+  let savedBrand;
+
+  // Fresh modules so the active brand and the warn-once memory reset.
+  function load(brand) {
+    if (brand === undefined) delete process.env.NEXT_PUBLIC_BRAND;
+    else process.env.NEXT_PUBLIC_BRAND = brand;
+    delete require.cache[BRAND_CJS];
+    delete require.cache[DATA_DIR_CJS];
+    return { ...require(DATA_DIR_CJS), ...require(BRAND_CJS) };
+  }
+
+  beforeEach(() => {
+    savedBrand = process.env.NEXT_PUBLIC_BRAND;
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    if (savedBrand === undefined) delete process.env.NEXT_PUBLIC_BRAND;
+    else process.env.NEXT_PUBLIC_BRAND = savedBrand;
+    delete require.cache[BRAND_CJS];
+    delete require.cache[DATA_DIR_CJS];
+    vi.mocked(console.warn).mockRestore();
+  });
+
+  const PLATFORMS = {
+    linux: {
+      opts: { platform: "linux", env: {}, homedir: "/home/u" },
+      dir: (name) => path.posix.join("/home/u", `.${name}`),
+    },
+    win32: {
+      opts: {
+        platform: "win32",
+        env: { APPDATA: "C:\\Users\\u\\AppData\\Roaming" },
+        homedir: "C:\\Users\\u",
+      },
+      dir: (name) => path.win32.join("C:\\Users\\u\\AppData\\Roaming", name),
+    },
+  };
+
+  describe.each(Object.keys(PLATFORMS))("tokenhop brand on %s", (platform) => {
+    const { opts, dir } = PLATFORMS[platform];
+    const resolve = (present) => {
+      const mod = load("tokenhop");
+      const legacy = dir(mod.LEGACY.dataDirName);
+      const current = dir(mod.BRAND.dataDirName);
+      const onDisk = new Set(present.map((p) => (p === "legacy" ? legacy : current)));
+      const o = { ...opts, exists: (p) => onDisk.has(p) };
+      return { mod, legacy, current, o, warn: vi.mocked(console.warn) };
+    };
+
+    it("uses the legacy dir when only it exists, warning once", () => {
+      const { mod, legacy, o, warn } = resolve(["legacy"]);
+      expect(mod.getDataDir(o)).toBe(legacy);
+      expect(mod.getDataDir(o)).toBe(legacy);
+      expect(mod.isLegacyDataDir(o)).toBe(true);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain(`${mod.BRAND.npmPackage} data migrate`);
+    });
+
+    it("uses the new dir when only it exists, without a warning", () => {
+      const { mod, current, o, warn } = resolve(["new"]);
+      expect(mod.getDataDir(o)).toBe(current);
+      expect(mod.isLegacyDataDir(o)).toBe(false);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("uses the new dir when both exist, warning once that the legacy dir is ignored", () => {
+      const { mod, current, legacy, o, warn } = resolve(["new", "legacy"]);
+      expect(mod.getDataDir(o)).toBe(current);
+      expect(mod.getDataDir(o)).toBe(current);
+      expect(mod.isLegacyDataDir(o)).toBe(false);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain(legacy);
+    });
+
+    it("uses the new dir when neither exists", () => {
+      const { mod, current, o, warn } = resolve([]);
+      expect(mod.getDataDir(o)).toBe(current);
+      expect(mod.isLegacyDataDir(o)).toBe(false);
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
+  it("DATA_DIR wins without checking the defaults", () => {
+    const mod = load("tokenhop");
+    const target = path.join(makeTempDir(), "configured");
+    const exists = vi.fn(() => true);
+    const o = { env: { DATA_DIR: target }, exists };
+    expect(mod.getDataDir(o)).toBe(target);
+    expect(mod.isLegacyDataDir(o)).toBe(false);
+    expect(exists).not.toHaveBeenCalled();
+  });
+
+  it("keeps the legacy dir with no warning under the default brand", () => {
+    const mod = load(undefined);
+    const o = { ...PLATFORMS.linux.opts, exists: () => true };
+    expect(mod.getDataDir(o)).toBe(PLATFORMS.linux.dir(mod.LEGACY.dataDirName));
+    expect(mod.isLegacyDataDir(o)).toBe(false);
+    expect(console.warn).not.toHaveBeenCalled();
   });
 });

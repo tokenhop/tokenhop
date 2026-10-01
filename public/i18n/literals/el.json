@@ -1966,6 +1966,7 @@
   "Your Azure OpenAI resource endpoint URL": "Η διεύθυνση URL του endpoint του πόρου Azure OpenAI σας",
   "Your OAuth application client ID": "Το client ID της εφαρμογής OAuth σας",
   "Your code": "Ο κωδικός σας",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "Τα δεδομένα σας βρίσκονται στον παλιό φάκελο. Σταματήστε τον διακομιστή και, στη συνέχεια, εκτελέστε αυτήν την εντολή για να τα μετακινήσετε.",
   "Your endpoint": "Το endpoint σας",
   "Your organization's AWS IAM Identity Center URL": "Η διεύθυνση URL του AWS IAM Identity Center του οργανισμού σας",
   "Your providers": "Οι πάροχοί σας",

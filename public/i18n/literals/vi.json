@@ -1965,6 +1965,7 @@
   "Your Azure OpenAI resource endpoint URL": "URL endpoint resource Azure OpenAI của bạn",
   "Your OAuth application client ID": "Client ID ứng dụng OAuth của bạn",
   "Your code": "Mã của bạn",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "Dữ liệu của bạn đang ở thư mục cũ. Hãy dừng máy chủ, rồi chạy lệnh này để di chuyển dữ liệu.",
   "Your endpoint": "Endpoint của bạn",
   "Your organization's AWS IAM Identity Center URL": "URL AWS IAM Identity Center của tổ chức bạn",
   "Your providers": "Nhà cung cấp của bạn",

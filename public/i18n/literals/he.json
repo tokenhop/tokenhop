@@ -1968,6 +1968,7 @@
   "Your Azure OpenAI resource endpoint URL": "כתובת נקודת הקצה של משאב Azure OpenAI שלך",
   "Your OAuth application client ID": "מזהה לקוח של יישון ה-OAuth שלך",
   "Your code": "הקוד שלך",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "הנתונים שלך נמצאים בתיקייה הישנה. עצור את השרת ואז הרץ את הפקודה הזו כדי להעביר אותם.",
   "Your endpoint": "נקודת הקצה שלך",
   "Your organization's AWS IAM Identity Center URL": "כתובת AWS IAM Identity Center של הארגון שלך",
   "Your providers": "הספקים שלך",

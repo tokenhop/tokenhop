@@ -1958,6 +1958,7 @@
   "Your Azure OpenAI resource endpoint URL": "Ihre Azure OpenAI-Ressourcen-Endpunkt-URL",
   "Your OAuth application client ID": "Ihre OAuth-Anwendungs-Client-ID",
   "Your code": "Ihr Code",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "Ihre Daten liegen im alten Ordner. Stoppen Sie den Server und führen Sie dann diesen Befehl aus, um sie zu verschieben.",
   "Your endpoint": "Ihr Endpunkt",
   "Your organization's AWS IAM Identity Center URL": "Die AWS IAM Identity Center-URL Ihrer Organisation",
   "Your providers": "Ihre Anbieter",

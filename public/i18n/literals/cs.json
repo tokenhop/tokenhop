@@ -1963,6 +1963,7 @@
   "Your Azure OpenAI resource endpoint URL": "URL koncového bodu vašeho prostředku Azure OpenAI",
   "Your OAuth application client ID": "ID klienta vaší OAuth aplikace",
   "Your code": "Váš kód",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "Vaše data jsou ve staré složce. Zastavte server a potom je přesuňte tímto příkazem.",
   "Your endpoint": "Váš koncový bod",
   "Your organization's AWS IAM Identity Center URL": "URL vaší organizace pro AWS IAM Identity Center",
   "Your providers": "Vaši poskytovatelé",

@@ -1955,6 +1955,7 @@
   "Your Azure OpenAI resource endpoint URL": "Uw Azure OpenAI-resource-eindpunt-URL",
   "Your OAuth application client ID": "Uw OAuth-applicatie-client-ID",
   "Your code": "Uw code",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "Je gegevens staan in de oude map. Stop de server en voer daarna deze opdracht uit om ze te verplaatsen.",
   "Your endpoint": "Uw eindpunt",
   "Your organization's AWS IAM Identity Center URL": "De AWS IAM Identity Center-URL van uw organisatie",
   "Your providers": "Uw providers",

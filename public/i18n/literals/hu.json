@@ -1966,6 +1966,7 @@
   "Your Azure OpenAI resource endpoint URL": "Az Azure OpenAI erőforrás végpont URL-je",
   "Your OAuth application client ID": "Az OAuth-alkalmazás ügyfél-azonosítója",
   "Your code": "Az Ön kódja",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "Az adataid a régi mappában vannak. Állítsd le a szervert, majd futtasd ezt a parancsot az áthelyezésükhöz.",
   "Your endpoint": "Az Ön végpontja",
   "Your organization's AWS IAM Identity Center URL": "Szervezete AWS IAM Identity Center URL-je",
   "Your providers": "Az Ön szolgáltatói",

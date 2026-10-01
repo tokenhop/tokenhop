@@ -1960,6 +1960,7 @@
   "Your Azure OpenAI resource endpoint URL": "URL-ul endpointului resursei tale Azure OpenAI",
   "Your OAuth application client ID": "ID-ul de client al aplicației tale OAuth",
   "Your code": "Codul tău",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "Datele tale sunt în folderul vechi. Oprește serverul, apoi rulează această comandă pentru a le muta.",
   "Your endpoint": "Endpointul tău",
   "Your organization's AWS IAM Identity Center URL": "URL-ul AWS IAM Identity Center al organizației tale",
   "Your providers": "Furnizorii tăi",

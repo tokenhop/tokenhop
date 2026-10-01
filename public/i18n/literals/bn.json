@@ -1969,6 +1969,7 @@
   "Your Azure OpenAI resource endpoint URL": "আপনার Azure OpenAI রিসোর্স এন্ডপয়েন্ট URL",
   "Your OAuth application client ID": "আপনার OAuth অ্যাপ্লিকেশন ক্লায়েন্ট ID",
   "Your code": "আপনার কোড",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "আপনার ডেটা পুরোনো ফোল্ডারে আছে। সার্ভার বন্ধ করুন, তারপর এটি সরাতে এই কমান্ডটি চালান।",
   "Your endpoint": "আপনার এন্ডপয়েন্ট",
   "Your organization's AWS IAM Identity Center URL": "আপনার প্রতিষ্ঠানের AWS IAM Identity Center URL",
   "Your providers": "আপনার প্রদানকারীরা",

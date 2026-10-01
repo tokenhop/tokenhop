@@ -1969,6 +1969,7 @@
   "Your Azure OpenAI resource endpoint URL": "你的 Azure OpenAI 資源端點 URL",
   "Your OAuth application client ID": "你的 OAuth 應用程式用戶端 ID",
   "Your code": "你的代碼",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "你的資料仍在舊資料夾中。請先停止伺服器，然後執行此指令進行搬移。",
   "Your endpoint": "你的端點",
   "Your organization's AWS IAM Identity Center URL": "您的組織的 AWS IAM Identity Center 網址",
   "Your providers": "你的供應商",

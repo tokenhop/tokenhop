@@ -2106,6 +2106,7 @@
   "Your Kiro account via": "គណនី Kiro របស់អ្នកតាមរយៈ",
   "Your OAuth application client ID": "Client ID នៃ OAuth Application របស់អ្នក",
   "Your code": "Code របស់អ្នក",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "ទិន្នន័យរបស់អ្នកស្ថិតនៅក្នុងថតចាស់។ បញ្ឈប់ម៉ាស៊ីនមេ រួចដំណើរការពាក្យបញ្ជានេះដើម្បីផ្លាស់ទីវា។",
   "Your endpoint": "ចំណុចបញ្ចប់របស់អ្នក",
   "Your organization's AWS IAM Identity Center URL": "AWS IAM Identity Center URL របស់អង្គភាពអ្នក",
   "Your providers": "អ្នកផ្តល់សេវារបស់អ្នក",

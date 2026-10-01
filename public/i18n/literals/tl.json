@@ -1955,6 +1955,7 @@
   "Your Azure OpenAI resource endpoint URL": "Ang URL ng endpoint ng iyong Azure OpenAI resource",
   "Your OAuth application client ID": "Ang client ID ng iyong OAuth application",
   "Your code": "Ang iyong code",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "Nasa lumang folder ang iyong data. Ihinto ang server, pagkatapos ay patakbuhin ang command na ito para ilipat ito.",
   "Your endpoint": "Ang iyong endpoint",
   "Your organization's AWS IAM Identity Center URL": "Ang URL ng AWS IAM Identity Center ng iyong organisasyon",
   "Your providers": "Ang iyong mga provider",

@@ -2109,6 +2109,7 @@
   "Your Kiro account via": "حساب Kiro شما از طریق",
   "Your OAuth application client ID": "شناسه مشتری برنامه OAuth شما",
   "Your code": "کد شما",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "داده‌های شما در پوشهٔ قدیمی است. سرور را متوقف کنید، سپس این فرمان را برای انتقال آن اجرا کنید.",
   "Your endpoint": "نقطه پایان شما",
   "Your organization's AWS IAM Identity Center URL": "URL مرکز هویت AWS IAM سازمان شما",
   "Your providers": "ارائه‌دهندگان شما",

@@ -4,16 +4,17 @@
  * Data-dir resolver: one resolution for the app, the MITM server and the CLI.
  * Dependency-free CommonJS so every consumer can load it; the CLI build copies
  * this file into the CLI package next to the brand module (cli/scripts/build-cli.js).
- * YAN-325 switches the directory name to the new brand.
+ *
+ * With DATA_DIR unset: the active brand's dir if it exists, else the legacy dir
+ * if it exists (warning once), else the active brand's dir. Under the default
+ * brand both names match, so nothing changes. Options are injectable for tests.
  */
 
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const { LEGACY } = require("../brand/index.cjs");
-
-const DIR_NAME = LEGACY.dataDirName;
+const { ACTIVE, BRAND, LEGACY } = require("../brand/index.cjs");
 
 const warned = new Set();
 
@@ -24,15 +25,44 @@ function warnOnce(message) {
   console.warn(message);
 }
 
-function defaultDataDir({
-  platform = process.platform,
-  env = process.env,
-  homedir = os.homedir(),
-} = {}) {
+function dirFor(name, { platform = process.platform, env = process.env, homedir = os.homedir() }) {
   if (platform === "win32") {
-    return path.win32.join(env.APPDATA || path.win32.join(homedir, "AppData", "Roaming"), DIR_NAME);
+    return path.win32.join(env.APPDATA || path.win32.join(homedir, "AppData", "Roaming"), name);
   }
-  return path.posix.join(homedir, `.${DIR_NAME}`);
+  return path.posix.join(homedir, `.${name}`);
+}
+
+/** The active brand's default dir, whether or not it exists. */
+function brandDataDir(opts = {}) {
+  return dirFor(ACTIVE.dataDirName, opts);
+}
+
+/** The legacy default dir, whether or not it exists. legacy(9router): remove in v2 */
+function legacyDataDir(opts = {}) {
+  return dirFor(LEGACY.dataDirName, opts);
+}
+
+function resolveDefault(opts = {}) {
+  const { exists = fs.existsSync } = opts;
+  const dir = brandDataDir(opts);
+  const legacy = legacyDataDir(opts);
+  if (dir === legacy) return { dir, isLegacy: false };
+  if (exists(dir)) {
+    if (exists(legacy)) warnOnce(`[DATA_DIR] using ${dir}; legacy ${legacy} is ignored`);
+    return { dir, isLegacy: false };
+  }
+  if (exists(legacy)) {
+    // legacy(9router): remove in v2
+    warnOnce(
+      `[DATA_DIR] using legacy ${legacy}; move it to ${dir} with: ${BRAND.npmPackage} data migrate`,
+    );
+    return { dir: legacy, isLegacy: true };
+  }
+  return { dir, isLegacy: false };
+}
+
+function defaultDataDir(opts = {}) {
+  return resolveDefault(opts).dir;
 }
 
 function getDataDir(opts = {}) {
@@ -52,11 +82,20 @@ function getDataDir(opts = {}) {
     return configured;
   } catch (e) {
     if (e?.code === "EACCES" || e?.code === "EPERM") {
-      warnOnce(`[DATA_DIR] '${configured}' not writable → fallback ~/.${DIR_NAME}`);
+      warnOnce(`[DATA_DIR] '${configured}' not writable → fallback to default`);
       return defaultDataDir(opts);
     }
     throw e;
   }
 }
 
-module.exports = { getDataDir, defaultDataDir };
+/**
+ * True when DATA_DIR is unset and the legacy default is in use (tokenhop brand
+ * only). A DATA_DIR pointing at the legacy dir is the user's choice: false.
+ */
+function isLegacyDataDir(opts = {}) {
+  const { env = process.env } = opts;
+  return !env.DATA_DIR && resolveDefault(opts).isLegacy;
+}
+
+module.exports = { getDataDir, defaultDataDir, brandDataDir, legacyDataDir, isLegacyDataDir };

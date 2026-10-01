@@ -1967,6 +1967,7 @@
   "Your Azure OpenAI resource endpoint URL": "Azure OpenAI kaynak uç nokta URL'niz",
   "Your OAuth application client ID": "OAuth uygulama istemci kimliğiniz",
   "Your code": "Kodunuz",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "Verileriniz eski klasörde. Sunucuyu durdurun, ardından taşımak için bu komutu çalıştırın.",
   "Your endpoint": "Uç noktanız",
   "Your organization's AWS IAM Identity Center URL": "Kuruluşunuzun AWS IAM Identity Center URL'si",
   "Your providers": "Sağlayıcılarınız",

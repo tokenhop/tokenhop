@@ -1970,6 +1970,7 @@
   "Your Azure OpenAI resource endpoint URL": "Azure OpenAI リソースのエンドポイント URL",
   "Your OAuth application client ID": "OAuth アプリケーションのクライアント ID",
   "Your code": "コード",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "データは古いフォルダーにあります。サーバーを停止してから、このコマンドを実行して移動してください。",
   "Your endpoint": "エンドポイント",
   "Your organization's AWS IAM Identity Center URL": "組織の AWS IAM Identity Center URL",
   "Your providers": "接続済みのプロバイダー",

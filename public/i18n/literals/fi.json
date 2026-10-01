@@ -1951,6 +1951,7 @@
   "Your Azure OpenAI resource endpoint URL": "Azure OpenAI -resurssisi endpoint-URL",
   "Your OAuth application client ID": "OAuth-sovelluksesi client ID",
   "Your code": "Koodisi",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "Tietosi ovat vanhassa kansiossa. Pysäytä palvelin ja siirrä ne sitten tällä komennolla.",
   "Your endpoint": "Endpointtisi",
   "Your organization's AWS IAM Identity Center URL": "Organisaatiosi AWS IAM Identity Center -URL",
   "Your providers": "Omat palveluntarjoajasi",

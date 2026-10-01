@@ -1964,6 +1964,7 @@
   "Your Azure OpenAI resource endpoint URL": "Azure OpenAI-ressursens sluttpunkt-URL",
   "Your OAuth application client ID": "OAuth-applikasjonens klient-ID",
   "Your code": "Koden din",
+  "Your data is in the old folder. Stop the server, then run this command to move it.": "Dataene dine ligger i den gamle mappen. Stopp serveren, og kjør deretter denne kommandoen for å flytte dem.",
   "Your endpoint": "Sluttpunktet ditt",
   "Your organization's AWS IAM Identity Center URL": "Organisasjonens AWS IAM Identity Center-URL",
   "Your providers": "Dine leverandører",
