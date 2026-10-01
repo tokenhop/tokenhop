@@ -11,6 +11,9 @@ import { configErrorResponse, readTomlConfig } from "@/lib/cliToolConfig";
 
 const execAsync = promisify(exec);
 
+// Brand-aware name lands with YAN-331 (in-place migration).
+const API_KEY_ENV = "JCODE_9ROUTER_API_KEY";
+
 const getJcodeConfigDir = () => path.join(os.homedir(), ".jcode");
 const getConfigPath = () => path.join(getJcodeConfigDir(), "config.toml");
 
@@ -123,11 +126,14 @@ export async function GET() {
 
   const config = await readConfig();
   const has9Router = has9RouterConfig(config);
+  const env = await readProviderEnv();
 
   return NextResponse.json({
     installed: true,
     config,
     has9Router,
+    // The card preselects the saved key; local-only route, like claude-settings' env.
+    envApiKey: env[API_KEY_ENV] || null,
     configPath: getConfigPath(),
   });
 }
@@ -152,7 +158,7 @@ export async function POST(request) {
       type: "openai-compatible",
       base_url: normalizedBaseUrl,
       auth: "bearer",
-      api_key_env: "JCODE_9ROUTER_API_KEY",
+      api_key_env: API_KEY_ENV,
       env_file: "provider-9router.env",
       default_model: models && models.length > 0 ? models[0] : "cc/claude-opus-4-7",
       requires_api_key: true,
@@ -168,7 +174,7 @@ export async function POST(request) {
     await fs.mkdir(jcodeConfigDir, { recursive: true });
 
     const env = await readProviderEnv();
-    env.JCODE_9ROUTER_API_KEY = apiKey;
+    env[API_KEY_ENV] = apiKey;
     await writeProviderEnv(env);
 
     return NextResponse.json({
@@ -197,7 +203,7 @@ export async function DELETE() {
     await writeConfig(config);
 
     const env = await readProviderEnv();
-    delete env.JCODE_9ROUTER_API_KEY;
+    delete env[API_KEY_ENV];
     await writeProviderEnv(env);
 
     return NextResponse.json({

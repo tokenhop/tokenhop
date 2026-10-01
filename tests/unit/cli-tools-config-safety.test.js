@@ -10,6 +10,7 @@ import * as opencode from "@/app/api/cli-tools/opencode-settings/route.js";
 import * as codex from "@/app/api/cli-tools/codex-settings/route.js";
 import * as claude from "@/app/api/cli-tools/claude-settings/route.js";
 import { BRAND, LEGACY } from "@/shared/brand";
+import { CLI_TOOLS } from "@/shared/constants/cliTools";
 
 const home = os.homedir();
 const req = (body) =>
@@ -100,5 +101,15 @@ describe("claude-settings (GH #63)", () => {
     expect(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe("200000");
     expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("cc/sonnet");
     expect(Object.keys(JSON.parse(await read(claudeJson)).mcpServers)).toEqual(["exa", "github"]);
+  });
+
+  it("Reset removes every env key Apply can write (YAN-627)", async () => {
+    const settings = await write(".claude/settings.json", JSON.stringify({ env: { MINE: "1" } }));
+    const env = { ANTHROPIC_BASE_URL: "http://localhost:20128", ANTHROPIC_AUTH_TOKEN: "sk-x" };
+    for (const m of CLI_TOOLS.claude.defaultModels) env[m.envKey] = "cc/model";
+    const res = await claude.POST(req({ env, autoCompactWindow: 200000 }));
+    expect(res.status).toBe(200);
+    expect((await claude.DELETE()).status).toBe(200);
+    expect(JSON.parse(await read(settings)).env).toEqual({ MINE: "1" });
   });
 });
