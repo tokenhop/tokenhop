@@ -266,8 +266,6 @@ export function initState(sourceFormat) {
     model: null,
     textBlockStarted: false,
     thinkingBlockStarted: false,
-    inThinkingBlock: false,
-    currentBlockIndex: null,
     toolCalls: new Map(),
     finishReason: null,
     finishReasonSent: false,

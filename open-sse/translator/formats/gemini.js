@@ -183,29 +183,44 @@ export function generateProjectId() {
   return `${adj}-${noun}-${crypto.randomUUID().slice(0, 5)}`;
 }
 
+// Keys whose value is a map of names -> schemas. The map's own keys are user-chosen
+// names (e.g. a tool param called "format" or "const"), never schema keywords.
+const SCHEMA_NAME_MAPS = new Set([
+  "properties",
+  "patternProperties",
+  "$defs",
+  "definitions",
+  "dependentSchemas",
+]);
+
+// Call fn on every child schema of obj, descending through name maps without
+// ever treating the map itself as a schema.
+function forEachSubschema(obj, fn) {
+  for (const [key, value] of Object.entries(obj)) {
+    if (!value || typeof value !== "object") continue;
+    if (SCHEMA_NAME_MAPS.has(key) && !Array.isArray(value)) {
+      for (const sub of Object.values(value)) {
+        if (sub && typeof sub === "object") fn(sub);
+      }
+    } else {
+      fn(value);
+    }
+  }
+}
+
 // Helper: Remove unsupported keywords recursively from object/array
 // Also strips all vendor extension fields (x- prefixed) not supported by Gemini
 function removeUnsupportedKeywords(obj, keywords) {
   if (!obj || typeof obj !== "object") return;
 
-  if (Array.isArray(obj)) {
-    for (const item of obj) {
-      removeUnsupportedKeywords(item, keywords);
-    }
-    return;
-  }
-
-  for (const key of Object.keys(obj)) {
-    if (keywords.includes(key) || key.startsWith("x-")) {
-      delete obj[key];
-      continue;
-    }
-
-    const value = obj[key];
-    if (value && typeof value === "object") {
-      removeUnsupportedKeywords(value, keywords);
+  // Drop real keywords first; property names are only reached via forEachSubschema
+  if (!Array.isArray(obj)) {
+    for (const key of Object.keys(obj)) {
+      if (keywords.includes(key) || key.startsWith("x-")) delete obj[key];
     }
   }
+
+  forEachSubschema(obj, (sub) => removeUnsupportedKeywords(sub, keywords));
 }
 
 // Convert const to enum
@@ -217,11 +232,7 @@ function convertConstToEnum(obj) {
     delete obj.const;
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertConstToEnum(value);
-    }
-  }
+  forEachSubschema(obj, convertConstToEnum);
 }
 
 // Convert enum values to strings (Gemini requires string enum values + explicit type:"string")
@@ -236,11 +247,7 @@ function convertEnumValuesToStrings(obj) {
     }
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertEnumValuesToStrings(value);
-    }
-  }
+  forEachSubschema(obj, convertEnumValuesToStrings);
 }
 
 // Merge allOf schemas
@@ -270,11 +277,7 @@ function mergeAllOf(obj) {
     if (merged.required) obj.required = [...(obj.required || []), ...merged.required];
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      mergeAllOf(value);
-    }
-  }
+  forEachSubschema(obj, mergeAllOf);
 }
 
 // Select best schema from anyOf/oneOf
@@ -328,11 +331,7 @@ function flattenAnyOfOneOf(obj) {
     }
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      flattenAnyOfOneOf(value);
-    }
-  }
+  forEachSubschema(obj, flattenAnyOfOneOf);
 }
 
 // Flatten type arrays
@@ -344,18 +343,14 @@ function flattenTypeArrays(obj) {
     obj.type = nonNullTypes.length > 0 ? nonNullTypes[0] : "string";
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      flattenTypeArrays(value);
-    }
-  }
+  forEachSubschema(obj, flattenTypeArrays);
 }
 
 // Infer missing type=object when properties exist (Gemini requires explicit type)
 function ensureObjectType(obj) {
   if (!obj || typeof obj !== "object") return;
   if (obj.properties && !obj.type) obj.type = "object";
-  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureObjectType(v);
+  forEachSubschema(obj, ensureObjectType);
 }
 
 // Convert prefixItems (tuple validation) to items — Gemini cannot express tuples,
@@ -373,11 +368,7 @@ function convertPrefixItems(obj) {
     delete obj.prefixItems;
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertPrefixItems(value);
-    }
-  }
+  forEachSubschema(obj, convertPrefixItems);
 }
 
 // Gemini requires items on every type:"array" schema — fill a permissive placeholder
@@ -386,7 +377,7 @@ function ensureArrayItems(obj) {
   if (obj.type === "array" && !obj.items) {
     obj.items = { type: "string" };
   }
-  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureArrayItems(v);
+  forEachSubschema(obj, ensureArrayItems);
 }
 
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
@@ -427,11 +418,7 @@ export function cleanJSONSchemaForAntigravity(schema) {
     }
 
     // Recurse into nested objects
-    for (const value of Object.values(obj)) {
-      if (value && typeof value === "object") {
-        cleanupRequired(value);
-      }
-    }
+    forEachSubschema(obj, cleanupRequired);
   }
 
   cleanupRequired(cleaned);
@@ -466,11 +453,7 @@ export function cleanJSONSchemaForAntigravity(schema) {
     }
 
     // Recurse into nested objects
-    for (const value of Object.values(obj)) {
-      if (value && typeof value === "object") {
-        addPlaceholders(value);
-      }
-    }
+    forEachSubschema(obj, addPlaceholders);
   }
 
   addPlaceholders(cleaned);

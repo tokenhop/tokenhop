@@ -127,8 +127,8 @@ function normalizeMessages(messages) {
     const content = normalizeContent(msg.content);
     const images = extractImagesFromContent(msg.content);
 
-    // Skip empty messages (except assistant)
-    if (!content && role !== ROLE.ASSISTANT) continue;
+    // Skip empty messages (except assistant or ones carrying images)
+    if (!content && images.length === 0 && role !== ROLE.ASSISTANT) continue;
 
     const out = {
       role: role,
