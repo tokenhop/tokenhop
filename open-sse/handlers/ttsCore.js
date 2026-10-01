@@ -56,6 +56,8 @@ export async function handleTtsCore({
   responseFormat = "mp3",
   language,
   style,
+  voice,
+  format,
 }) {
   if (!input?.trim()) {
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
@@ -68,6 +70,8 @@ export async function handleTtsCore({
       const result = await adapter.synthesize(input.trim(), model, credentials, responseFormat, {
         language,
         style,
+        voice,
+        format,
       });
       // Adapter may return a full {success, response} (legacy) or {base64, format}
       if (result.success !== undefined) return result;
