@@ -5,6 +5,7 @@ const os = require("os");
 const { log, err } = require("../logger");
 const { TOOL_HOSTS } = require("../../shared/constants/mitmToolHosts.js");
 const { runElevatedPowerShell, isAdmin } = require("../winElevated.js");
+const { ACTIVE, BRAND, LEGACY } = require("../../shared/brand/index.cjs");
 
 /**
  * Atomic-ish write for Windows hosts file with rollback on failure.
@@ -12,15 +13,20 @@ const { runElevatedPowerShell, isAdmin } = require("../winElevated.js");
  * If anything fails mid-way, restore from `.bak`. Same-volume renames are atomic on NTFS.
  */
 function atomicWriteHostsWin(target, originalContent, newContent) {
-  const tmpNew = `${target}.9router.new`;
-  const tmpBak = `${target}.9router.bak`;
+  const tmpNew = `${target}.${ACTIVE.slug}.new`;
+  const tmpBak = `${target}.${ACTIVE.slug}.bak`;
+  // Leftovers from an interrupted write, under either name. legacy(9router): remove in v2
+  for (const slug of [BRAND.slug, LEGACY.slug]) {
+    for (const leftover of [`${target}.${slug}.new`, `${target}.${slug}.bak`]) {
+      try {
+        fs.unlinkSync(leftover);
+      } catch {
+        /* none */
+      }
+    }
+  }
   try {
     fs.writeFileSync(tmpNew, newContent, "utf8");
-    try {
-      fs.unlinkSync(tmpBak);
-    } catch {
-      /* none */
-    }
     fs.renameSync(target, tmpBak);
     try {
       fs.renameSync(tmpNew, target);
@@ -120,7 +126,7 @@ function execWithPassword(command, password) {
  * `cat >` keeps the inode, owner and mode, and follows the macOS symlink.
  */
 async function writeHostsFile(content, sudoPassword) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-hosts-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `${ACTIVE.slug}-hosts-`));
   try {
     const tmp = path.join(dir, "hosts");
     fs.writeFileSync(tmp, content, { mode: 0o600 });

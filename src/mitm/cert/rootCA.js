@@ -2,6 +2,7 @@ const path = require("path");
 const fs = require("fs");
 const forge = require("node-forge");
 const { MITM_DIR } = require("../paths");
+const { ACTIVE } = require("../../shared/brand/index.cjs");
 
 const ROOT_CA_KEY_PATH = path.join(MITM_DIR, "rootCA.key");
 const ROOT_CA_CERT_PATH = path.join(MITM_DIR, "rootCA.crt");
@@ -60,9 +61,10 @@ function generateRootCA() {
   cert.validity.notAfter = new Date();
   cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 10);
 
+  // Only new CAs get the active brand's name; an existing CA keeps its own.
   const attrs = [
-    { name: "commonName", value: "9Router MITM Root CA" },
-    { name: "organizationName", value: "9Router" },
+    { name: "commonName", value: ACTIVE.mitmCaCommonName },
+    { name: "organizationName", value: ACTIVE.mitmCaOrg },
     { name: "countryName", value: "US" },
   ];
 
