@@ -5,6 +5,7 @@
  */
 import { PROVIDER_MEDIA } from "../../providers/index.js";
 import { ANTIGRAVITY_IDE_USER_AGENT } from "../../providers/shared.js";
+import { buildKimiHeaders } from "../../config/appConstants.js";
 
 // Default search model + endpoint derive from registry searchViaChat (single source)
 const searchModel = (id) => PROVIDER_MEDIA[id]?.searchViaChat?.defaultModel;
@@ -254,15 +255,60 @@ const CHAT_SEARCH_CONFIG = {
   },
 
   kimi: {
-    endpoint: () => searchEndpoint("kimi"),
-    buildBody: (query, model) => ({
-      model,
-      messages: [{ role: "user", content: query }],
-      tools: [{ type: "builtin_function", function: { name: "$web_search" } }],
-    }),
+    // OAuth (Kimi Code) tokens are only valid on api.kimi.com/coding + X-Msh-* headers;
+    // API keys keep the platform endpoint.
+    endpoint: (_model, credentials) =>
+      credentials?.authType === "oauth"
+        ? PROVIDER_MEDIA.kimi.searchViaChat.oauthEndpoint
+        : searchEndpoint("kimi"),
+    model: (useModel, credentials) =>
+      credentials?.authType === "oauth"
+        ? PROVIDER_MEDIA.kimi.searchViaChat.oauthModel || useModel
+        : useModel,
+    extraHeaders: (credentials) =>
+      credentials?.authType === "oauth"
+        ? buildKimiHeaders(credentials?.providerSpecificData?.deviceId)
+        : {},
+    // OAuth (Kimi Code) path: k3 is search-native — no client-injected
+    // builtin_function, which the coding endpoint rejects ("tokenization failed").
+    // Citations/text arrive inline in a single turn.
+    buildBody: (query, model, credentials) => {
+      const body = { model, messages: [{ role: "user", content: query }] };
+      if (credentials?.authType !== "oauth") {
+        body.tools = [{ type: "builtin_function", function: { name: "$web_search" } }];
+      }
+      return body;
+    },
     buildHeaders: (token) => ({
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
+    }),
+    // Tool echo only runs for API-key (platform) connections.
+    executeTools: async (toolCalls, { credentials }) =>
+      credentials?.authType === "oauth"
+        ? null
+        : toolCalls.map((call) => ({
+            toolCallId: call.id,
+            content: call?.function?.arguments || "{}",
+          })),
+    followUp: (body, firstData, toolResults) => ({
+      ...body,
+      messages: [
+        ...body.messages,
+        // Echo only fields upstream accepts in a tool-calling assistant
+        // message; k3 thinking models reject a verbatim round-trip
+        // (reasoning_content) with "tokenization failed".
+        {
+          role: "assistant",
+          content: firstData.choices[0].message.content ?? "",
+          tool_calls: firstData.choices[0].message.tool_calls,
+        },
+        ...toolResults.map((t) => ({
+          role: "tool",
+          tool_call_id: t.toolCallId,
+          content: t.content,
+        })),
+      ],
     }),
     extractAnswer: (data) => {
       const msg = data?.choices?.[0]?.message || {};
@@ -278,7 +324,11 @@ const CHAT_SEARCH_CONFIG = {
         } catch {
           continue;
         }
-        const items = parsed?.search_results || parsed?.results || parsed?.references || [];
+        // Moonshot variants: {search_results:[...]}, {results:[...]}, or the
+        // bare results array as the arguments payload itself.
+        const items = Array.isArray(parsed)
+          ? parsed
+          : parsed?.search_results || parsed?.results || parsed?.references || [];
         if (Array.isArray(items)) {
           for (const it of items) {
             const url = it?.url || it?.link;
@@ -463,24 +513,35 @@ export async function handleChatSearch({ provider, query, maxResults, model, cre
 
   const limit =
     Number.isFinite(maxResults) && maxResults > 0 ? Math.floor(maxResults) : DEFAULT_MAX_RESULTS;
-  const useModel = model || searchModel(provider);
-  const url = cfg.endpoint(useModel);
+  const useModel = cfg.model
+    ? cfg.model(model || searchModel(provider), credentials)
+    : model || searchModel(provider);
+  const url = cfg.endpoint(useModel, credentials);
   const body = cfg.buildBody(query, useModel, credentials);
-  const headers = cfg.buildHeaders(token);
+  const headers = { ...cfg.buildHeaders(token), ...cfg.extraHeaders?.(credentials) };
 
+  // Covers direct + follow-up turns; cleared via fail() or the finally block.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  const upstreamStart = Date.now();
-  let resp;
-  try {
-    resp = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (err) {
+  // Single-turn request helper shared by direct + follow-up fetches
+  const doFetch = async (reqBody) => {
+    const upstreamStart = Date.now();
+    try {
+      const r = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(reqBody),
+        signal: controller.signal,
+      });
+      const d = await r.json().catch(() => null);
+      return { resp: r, data: d, latency: Date.now() - upstreamStart };
+    } catch (err) {
+      return { err };
+    }
+  };
+
+  const fail = (err) => {
     clearTimeout(timer);
     if (err?.name === "AbortError") {
       log?.warn?.(`[chatSearch] timeout provider=${provider}`);
@@ -492,14 +553,12 @@ export async function handleChatSearch({ provider, query, maxResults, model, cre
       status: 502,
       error: `Network error: ${err?.message || "unknown"}`,
     };
-  }
-  clearTimeout(timer);
-  const upstreamLatency = Date.now() - upstreamStart;
+  };
 
-  let data;
-  try {
-    data = await resp.json();
-  } catch {
+  const { resp, data, latency: upstreamLatency, err: fetchErr } = await doFetch(body);
+  if (fetchErr) return fail(fetchErr);
+
+  if (data === null) {
     return {
       success: false,
       status: 502,
@@ -518,28 +577,80 @@ export async function handleChatSearch({ provider, query, maxResults, model, cre
     };
   }
 
-  const { text, citations, tokens } = cfg.extractAnswer(data);
-  const retrievedAt = new Date().toISOString();
-  const limited = (citations || []).slice(0, limit);
-  const results = limited.map((c, i) => toResult(c, i, provider, retrievedAt));
+  // Tool-mediated search: the upstream usually answers in a single turn with
+  // results inline in the tool_call arguments. Only run the follow-up turn
+  // when turn 1 produced neither text nor citations (some hosts require the
+  // client to echo tool_calls back before searching server-side).
+  try {
+    let finalData = data;
+    let extraLatency = 0;
+    const first = cfg.extractAnswer(data);
+    if (cfg.executeTools && !first.text && !(first.citations || []).length) {
+      const toolCalls = finalData?.choices?.[0]?.message?.tool_calls;
+      if (Array.isArray(toolCalls) && toolCalls.length) {
+        const toolResults = await cfg.executeTools(toolCalls, {
+          query,
+          headers,
+          url,
+          log,
+          credentials,
+        });
+        if (toolResults?.length) {
+          const followUpBody = cfg.followUp(body, finalData, toolResults);
+          const second = await doFetch(followUpBody);
+          if (second.err) return fail(second.err);
+          if (second.data === null || !second.resp.ok) {
+            const msg =
+              second.data?.error?.message ||
+              second.data?.error ||
+              `Upstream HTTP ${second.resp.status}`;
+            return {
+              success: false,
+              status: second.resp.status,
+              error: typeof msg === "string" ? msg : JSON.stringify(msg),
+            };
+          }
+          finalData = second.data;
+          extraLatency = second.latency;
+        }
+      }
+    }
 
-  return {
-    success: true,
-    status: 200,
-    data: {
-      provider,
-      query,
-      results,
-      answer: { source: provider, text: text || "", model: useModel },
-      usage: { queries_used: 1, search_cost_usd: 0, llm_tokens: tokens || 0 },
-      metrics: {
-        response_time_ms: Date.now() - startTime,
-        upstream_latency_ms: upstreamLatency,
-        total_results_available: null,
+    // Citations live in turn-1 tool_call args, answer text in the final turn: merge.
+    const last = finalData === data ? first : cfg.extractAnswer(finalData);
+    const text = last.text || first.text;
+    const citations = last.citations?.length ? last.citations : first.citations;
+    if (!text && !(citations || []).length) {
+      // Surface the raw upstream payload so unparsed shapes are diagnosable.
+      log?.warn?.(
+        `[chatSearch] ${provider} returned no text/citations — raw: ${JSON.stringify(finalData).slice(0, 500)}`,
+      );
+    }
+    const tokens = finalData === data ? first.tokens : (first.tokens || 0) + (last.tokens || 0);
+    const retrievedAt = new Date().toISOString();
+    const limited = (citations || []).slice(0, limit);
+    const results = limited.map((c, i) => toResult(c, i, provider, retrievedAt));
+
+    return {
+      success: true,
+      status: 200,
+      data: {
+        provider,
+        query,
+        results,
+        answer: { source: provider, text: text || "", model: useModel },
+        usage: { queries_used: 1, search_cost_usd: 0, llm_tokens: tokens || 0 },
+        metrics: {
+          response_time_ms: Date.now() - startTime,
+          upstream_latency_ms: upstreamLatency + extraLatency,
+          total_results_available: null,
+        },
+        errors: [],
       },
-      errors: [],
-    },
-  };
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export { CHAT_SEARCH_CONFIG };

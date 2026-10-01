@@ -72,6 +72,9 @@ export default {
   searchViaChat: {
     defaultModel: "kimi-k3",
     endpoint: "https://api.moonshot.cn/v1/chat/completions",
+    // OAuth (Kimi Code) transport: different host + subscription model ids
+    oauthEndpoint: "https://api.kimi.com/coding/v1/chat/completions",
+    oauthModel: "k3",
     pricingUrl: "https://platform.kimi.ai/docs/pricing/chat",
   },
   oauth: {
