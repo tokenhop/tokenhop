@@ -22,6 +22,13 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # docker-publish.yml passes "tokenhop" for v1+ tags.
 ARG NEXT_PUBLIC_BRAND=
 ENV NEXT_PUBLIC_BRAND=${NEXT_PUBLIC_BRAND}
+# Unreleased builds only: the dashboard version chip shows "<channel> <short sha>"
+# instead of the package version. docker-publish.yml passes "dev" and the commit
+# for master pushes; release tags leave both empty.
+ARG NEXT_PUBLIC_BUILD_CHANNEL=
+ARG NEXT_PUBLIC_BUILD_SHA=
+ENV NEXT_PUBLIC_BUILD_CHANNEL=${NEXT_PUBLIC_BUILD_CHANNEL} \
+    NEXT_PUBLIC_BUILD_SHA=${NEXT_PUBLIC_BUILD_SHA}
 RUN npm run build
 
 # Public Google "installed app" OAuth clients, embedded for published images only.

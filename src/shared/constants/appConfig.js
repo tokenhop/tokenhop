@@ -6,6 +6,12 @@ export const APP_CONFIG = {
   name: "9Router Proxy",
   description: "AI infrastructure management",
   version: pkg.version,
+  // Set for unreleased images only (docker-publish.yml); empty in releases and
+  // local dev. Literal process.env reads so Next.js inlines them at build time.
+  build: {
+    channel: process.env.NEXT_PUBLIC_BUILD_CHANNEL || "",
+    sha: process.env.NEXT_PUBLIC_BUILD_SHA || "",
+  },
 };
 
 // GitHub configuration

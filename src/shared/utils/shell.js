@@ -21,16 +21,31 @@ export function badgeTint(badgeKey, count, attention = null) {
   return "neutral";
 }
 
+const SHORT_SHA_LENGTH = 7;
+
 /**
- * One-line version chip: "0.4.0-beta.7" → "0.4.0 β7". The full version goes
+ * One-line version chip: "0.4.0-beta.7" → "v0.4.0 β7". The full version goes
  * in the tooltip and the Change log menu entry.
+ *
+ * An unreleased build (the rolling `:dev` image) carries a build channel and
+ * commit, so the chip shows those rather than a package version the build was
+ * never released as: "dev 27bed71", full "v0.6.0+dev.27bed71".
  * @param {string} version
+ * @param {{ channel?: string, sha?: string }} [build] From the image build args.
  * @returns {{ label: string, full: string }}
  */
-export function resolveVersionChip(version) {
+export function resolveVersionChip(version, build = {}) {
   const raw = typeof version === "string" ? version.trim() : "";
+  const channel = typeof build.channel === "string" ? build.channel.trim() : "";
+  const sha = typeof build.sha === "string" ? build.sha.trim().slice(0, SHORT_SHA_LENGTH) : "";
+  if (channel) {
+    const label = sha ? `${channel} ${sha}` : channel;
+    const metadata = sha ? `${channel}.${sha}` : channel;
+    return { label, full: raw ? `v${raw}+${metadata}` : label };
+  }
   const match = raw.match(/^(\d+\.\d+\.\d+)-beta\.(\d+)$/);
-  return { label: match ? `${match[1]} β${match[2]}` : raw, full: raw ? `v${raw}` : "" };
+  if (!raw) return { label: "", full: "" };
+  return { label: match ? `v${match[1]} β${match[2]}` : `v${raw}`, full: `v${raw}` };
 }
 
 // Placeholders /api/auth/status returns when there is no real name.
