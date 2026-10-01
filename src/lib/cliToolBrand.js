@@ -37,13 +37,13 @@ export const modelRef = (model) => `${CLIENT_KEY}/${model}`;
 export const splitModelRef = (value) => {
   if (typeof value !== "string") return null;
   const slash = value.indexOf("/");
-  if (slash <= 0) return null;
+  if (slash <= 0 || slash === value.length - 1) return null;
   const key = value.slice(0, slash);
   return isClientKey(key) ? { key, model: value.slice(slash + 1) } : null;
 };
 
 /** True when value is a model reference under a key Apply migrates (tokenhop brand only). */
-export const isLegacyModelRef = (value) => LEGACY_CLIENT_KEYS.includes(splitModelRef(value)?.key);
+const isLegacyModelRef = (value) => LEGACY_CLIENT_KEYS.includes(splitModelRef(value)?.key);
 
 /** The same model under our active key; anything else unchanged. */
 export const repointModelRef = (value) =>

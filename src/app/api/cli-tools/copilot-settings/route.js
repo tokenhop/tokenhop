@@ -109,7 +109,7 @@ export async function POST(request) {
     };
 
     // Replace our entry; otherwise migrate the first legacy one in place,
-    // carrying its extra fields under ours, and drop other legacy duplicates.
+    // carrying its extra fields under ours. Other legacy duplicates are dropped.
     let idx = config.findIndex((e) => e.name === CLIENT_NAME);
     let migrating = false;
     if (idx < 0) {
@@ -118,9 +118,8 @@ export async function POST(request) {
     }
     if (idx >= 0) {
       config[idx] = migrating ? { ...config[idx], ...newEntry } : newEntry;
-      if (migrating) {
-        config = config.filter((e, i) => i === idx || !LEGACY_CLIENT_KEYS.includes(e.name));
-      }
+      // No-op under the default brand (no legacy names)
+      config = config.filter((e, i) => i === idx || !LEGACY_CLIENT_KEYS.includes(e.name));
     } else {
       config.push(newEntry);
     }

@@ -13,6 +13,7 @@ import {
   CLIENT_KEY,
   CLIENT_NAME,
   findClientEntry,
+  LEGACY_CLIENT_KEYS,
   modelRef,
   repointModelRef,
   splitModelRef,
@@ -130,20 +131,22 @@ export async function POST(request) {
     // Ensure provider object
     if (!config.provider) config.provider = {};
 
-    // Preserve any existing entry and its models; a legacy entry is migrated
-    // (taken even when an active one exists, so no model is lost)
-    const legacy = takeLegacyEntry(config.provider);
-    const active = config.provider[CLIENT_KEY];
+    // Preserve any existing entry and its models. Every legacy spelling is
+    // migrated and merged under ours (later entries win: other legacy spellings,
+    // the primary legacy one, then ours), so no model is lost.
+    const entries = [...[...LEGACY_CLIENT_KEYS].reverse(), CLIENT_KEY]
+      .map((key) => config.provider[key])
+      .filter(Boolean);
+    takeLegacyEntry(config.provider);
     const existingProvider =
-      active && legacy
-        ? {
-            ...legacy,
-            ...active,
-            options: { ...legacy.options, ...active.options },
-            models: { ...legacy.models, ...active.models },
-          }
-        : (active ??
-          legacy ?? {
+      entries.length > 1
+        ? entries.reduce((acc, e) => ({
+            ...acc,
+            ...e,
+            options: { ...acc.options, ...e.options },
+            models: { ...acc.models, ...e.models },
+          }))
+        : (entries[0] ?? {
             npm: "@ai-sdk/openai-compatible",
             options: {},
             models: {},

@@ -6,16 +6,16 @@ ids, prefixes and messages follow the active brand; detect and Reset accept ever
 
 ## Shared helpers — `src/lib/cliToolBrand.js` (additions)
 
-| Export                   | Purpose                                                             |
-| ------------------------ | ------------------------------------------------------------------- |
-| `modelRef(m)`            | `` `${CLIENT_KEY}/${m}` ``                                          |
-| `splitModelRef(v)`       | `{ key, model }` when `v` is `<any known key>/<model>`, else `null` |
-| `isLegacyModelRef(v)`    | ref under a key Apply migrates (tokenhop brand only)                |
-| `repointModelRef(v)`     | legacy ref → same model under `CLIENT_KEY`; anything else unchanged |
-| `urlNamesClient(url)`    | base URL contains any known key (Kilo / Cline detection)            |
-| `CUSTOM_MODEL_ID_PREFIX` | `ACTIVE.customModelIdPrefix` (Droid ids)                            |
-| `isCustomModelId(id)`    | ours under any brand (detect + Reset)                               |
-| `isOwnedCustomModelId`   | active prefix, plus legacy prefix under tokenhop (Apply replaces)   |
+| Export                          | Purpose                                                             |
+| ------------------------------- | ------------------------------------------------------------------- |
+| `modelRef(m)`                   | `` `${CLIENT_KEY}/${m}` ``                                          |
+| `splitModelRef(v)`              | `{ key, model }` when `v` is `<any known key>/<model>`, else `null` |
+| `isLegacyModelRef(v)` (private) | ref under a key Apply migrates (tokenhop brand only)                |
+| `repointModelRef(v)`            | legacy ref → same model under `CLIENT_KEY`; anything else unchanged |
+| `urlNamesClient(url)`           | base URL contains any known key (Kilo / Cline detection)            |
+| `CUSTOM_MODEL_ID_PREFIX`        | `ACTIVE.customModelIdPrefix` (Droid ids)                            |
+| `isCustomModelId(id)`           | ours under any brand (detect + Reset)                               |
+| `isOwnedCustomModelId`          | active prefix, plus legacy prefix under tokenhop (Apply replaces)   |
 
 Test harness shared with YAN-331: `tests/helpers/cliToolsBrand.js`.
 

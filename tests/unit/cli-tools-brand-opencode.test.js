@@ -120,6 +120,26 @@ describe("opencode", () => {
     expect(cfg.agent.explorer.model).toBe(`${OLD}/cc/claude-sonnet-5`);
   });
 
+  it("apply merges ours and every legacy spelling without losing a model", async () => {
+    const entry = (model) => ({ options: {}, models: { [model]: { name: model } } });
+    await write(
+      rel,
+      JSON.stringify({
+        provider: { [OLD]: entry("cc/a"), [OLD_NAME]: entry("cc/b"), tokenhop: entry("cc/c") },
+      }),
+    );
+    const route = await load("tokenhop", "opencode-settings");
+    expect((await apply(route)).status).toBe(200);
+    const cfg = await readJson(rel);
+    expect(Object.keys(cfg.provider)).toEqual(["tokenhop"]);
+    expect(Object.keys(cfg.provider.tokenhop.models).sort()).toEqual([
+      "cc/a",
+      "cc/b",
+      "cc/c",
+      "cc/gpt-5",
+    ]);
+  });
+
   it("partial delete removes one model under the legacy key, same namespace", async () => {
     await write(rel, await fixture("opencode.json"));
     const route = await load("tokenhop", "opencode-settings");
