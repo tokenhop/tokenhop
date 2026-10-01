@@ -209,7 +209,7 @@ export PORT="20128"
 export NODE_ENV="production"
 
 # ロギング
-export ENABLE_REQUEST_LOGS="false"
+# export ENABLE_REQUEST_LOGS="false"  # unset = Settings → Observability decides
 ```
 
 ### データディレクトリ

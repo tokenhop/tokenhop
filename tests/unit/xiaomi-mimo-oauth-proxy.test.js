@@ -7,11 +7,12 @@
  * without an explicit clear every login attempt would leak a private key for
  * the whole process lifetime.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   registerXiaomiMimoSession,
   getXiaomiMimoSessionStatus,
   clearXiaomiMimoSession,
+  startXiaomiMimoProxy,
   stopXiaomiMimoProxy,
 } from "../../src/lib/oauth/utils/server.js";
 
@@ -50,5 +51,29 @@ describe("xiaomi-mimo OAuth session store", () => {
     expect(view).toEqual({ status: "pending", result: null, error: null });
     expect(JSON.stringify(view)).not.toContain("privateKeyDer");
     clearXiaomiMimoSession("s1");
+  });
+
+  // YAN-113: reusing the live listener must renew its 5-minute timeout.
+  it("gives a login that reuses the listener a full timeout window", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const first = await startXiaomiMimoProxy();
+      expect(first.success).toBe(true);
+      registerXiaomiMimoSession({ state: "a", privateKeyDer: KEY });
+
+      vi.advanceTimersByTime(4 * 60_000 + 50_000);
+      const second = await startXiaomiMimoProxy();
+      expect(second.port).toBe(first.port);
+      registerXiaomiMimoSession({ state: "b", privateKeyDer: KEY });
+
+      vi.advanceTimersByTime(60_000);
+      expect(getXiaomiMimoSessionStatus("b")).not.toBeNull();
+
+      vi.advanceTimersByTime(4 * 60_000);
+      expect(getXiaomiMimoSessionStatus("b")).toBeNull();
+    } finally {
+      stopXiaomiMimoProxy();
+      vi.useRealTimers();
+    }
   });
 });
