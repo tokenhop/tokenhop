@@ -8,10 +8,10 @@
  * and the CLI can all load it. `index.js` is the ESM entry; the CLI build copies
  * this file into the CLI package (cli/scripts/build-cli.js).
  *
- * `NEXT_PUBLIC_BRAND` is a dev/CI-only override. Next.js inlines it into bundles
- * at build time, so keep the literal `process.env.NEXT_PUBLIC_BRAND` expression
- * (no destructuring) or the inlining stops working. Server code and the CLI read
- * it at runtime. The v1.0.0 release flips DEFAULT_BRAND_ID to "tokenhop".
+ * `NEXT_PUBLIC_BRAND` overrides the default for dev, CI and tokenhop beta images
+ * (the Dockerfile build arg). Next.js inlines it into bundles at build time, so
+ * keep the literal `process.env.NEXT_PUBLIC_BRAND` expression (no destructuring)
+ * or the inlining stops working. Server code and the CLI read it at runtime. The v1.0.0 release flips DEFAULT_BRAND_ID to "tokenhop".
  */
 
 const BRAND_IDS = Object.freeze(["9router", "tokenhop"]);
