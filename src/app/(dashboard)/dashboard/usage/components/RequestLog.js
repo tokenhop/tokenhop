@@ -100,8 +100,10 @@ export default function RequestLog() {
         pageSize: String(pagination.pageSize),
       });
       if (filters.provider) params.append("provider", filters.provider);
-      if (filters.startDate) params.append("startDate", filters.startDate);
-      if (filters.endDate) params.append("endDate", filters.endDate);
+      // datetime-local has no offset: resolve it in the browser's timezone so
+      // the server (often UTC in Docker) filters the window the table shows.
+      if (filters.startDate) params.append("startDate", new Date(filters.startDate).toISOString());
+      if (filters.endDate) params.append("endDate", new Date(filters.endDate).toISOString());
       const res = await fetch(`/api/usage/request-details?${params}`, {
         signal: request.signal,
       });

@@ -162,9 +162,12 @@ function aggregateEntryToDay(day, entry) {
   });
 
   if (entry.connectionId) {
-    addToCounter(day.byAccount, entry.connectionId, {
+    // One row per account+model, like the 24h path. Days saved before YAN-64
+    // keep the bare connectionId key and stay labelled by their last model.
+    const acctKey = `${entry.connectionId}|${entry.model}|${entry.provider || "unknown"}`;
+    addToCounter(day.byAccount, acctKey, {
       ...vals,
-      meta: { rawModel: entry.model, provider: entry.provider },
+      meta: { connectionId: entry.connectionId, rawModel: entry.model, provider: entry.provider },
     });
   }
 
@@ -660,7 +663,8 @@ export async function getUsageStats(period = "all") {
           stats.byModel[statsKey].lastUsed = dateKey;
       }
 
-      for (const [connId, a] of Object.entries(day.byAccount || {})) {
+      for (const [acctKey, a] of Object.entries(day.byAccount || {})) {
+        const connId = a.connectionId || acctKey.split("|")[0];
         const accountName = connectionMap[connId] || `Account ${connId.slice(0, 8)}...`;
         const rawModel = a.rawModel || "";
         const provider = a.provider || "";
