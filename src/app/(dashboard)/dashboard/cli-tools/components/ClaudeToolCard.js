@@ -288,7 +288,10 @@ export default function ClaudeToolCard({
   };
 
   const derived = deriveToolStatus(tool, claudeStatus);
-  const isCombo = (val) => Boolean(val && (modelAliases[val] || val.startsWith("claude-")));
+  const isCombo = (val) => {
+    const { model } = stripModelContextMarker(val || "");
+    return Boolean(model && (modelAliases[model] || model.startsWith("claude-")));
+  };
 
   return (
     <>
