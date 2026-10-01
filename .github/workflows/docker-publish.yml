@@ -111,6 +111,9 @@ jobs:
           fi
           echo "brand: ${brand:-default}"
           echo "value=${brand}" >> "$GITHUB_OUTPUT"
+          # The image title is the product name of the brand being built, not the repo name.
+          name=$(NEXT_PUBLIC_BRAND="$brand" node -p 'require("./src/shared/brand/index.cjs").ACTIVE.slug')
+          echo "title=${name}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -128,6 +131,8 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
+          labels: |
+            org.opencontainers.image.title=${{ steps.brand.outputs.title }}
 
       - name: Build and push by digest
         id: build

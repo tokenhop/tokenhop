@@ -55,7 +55,8 @@ ARG NEXT_PUBLIC_BRAND=
 ENV NEXT_PUBLIC_BRAND=${NEXT_PUBLIC_BRAND}
 
 # The title follows the brand; the fallback must equal DEFAULT_BRAND_ID in
-# src/shared/brand (tests/unit/docker-brand.test.js checks it).
+# src/shared/brand (tests/unit/docker-brand.test.js checks it). docker-publish.yml
+# sets the same title through docker/metadata-action, whose labels win.
 LABEL org.opencontainers.image.title="${NEXT_PUBLIC_BRAND:-9router}" \
   org.opencontainers.image.description="Self-hosted AI routing gateway with an OpenAI-compatible endpoint" \
   org.opencontainers.image.source="https://github.com/tokenhop/tokenhop"
@@ -87,7 +88,7 @@ COPY --from=builder /app/node_modules/node-machine-id ./node_modules/node-machin
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \
   ln -sf /app/data-home /root/.tokenhop && \
-  ln -sf /app/data-home /root/.9router 2>/dev/null || true # legacy(9router): remove in v2
+  { ln -sf /app/data-home /root/.9router 2>/dev/null || true; } # legacy(9router): remove in v2
 
 # Fix permissions at runtime (handles mounted volumes)
 RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
