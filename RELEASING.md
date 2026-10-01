@@ -176,8 +176,8 @@ Only the latest minor gets patch releases.
 
 ## Cut-over: `re-design` → `master` (done)
 
-Completed with v0.5.0 on 2026-09-30 (#370, #372). `master` is the trunk, and
-`release/0.5` is the maintenance branch. The redesign landed on `master` as a
+Completed with v0.5.0 on 2026-09-30 (#370, #372). `master` became the trunk, and
+`release/0.5` the maintenance branch until v0.6.0 froze it. The redesign landed on `master` as a
 single squash commit; its individual commits are kept under the
 `archive/re-design` tag.
 
