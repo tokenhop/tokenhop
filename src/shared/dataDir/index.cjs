@@ -46,19 +46,20 @@ function resolveDefault(opts = {}) {
   const { exists = fs.existsSync } = opts;
   const dir = brandDataDir(opts);
   const legacy = legacyDataDir(opts);
-  if (dir === legacy) return { dir, isLegacy: false };
+  if (dir === legacy) return { dir, isLegacy: false, ignoredLegacy: null };
   if (exists(dir)) {
-    if (exists(legacy)) warnOnce(`[DATA_DIR] using ${dir}; legacy ${legacy} is ignored`);
-    return { dir, isLegacy: false };
+    if (!exists(legacy)) return { dir, isLegacy: false, ignoredLegacy: null };
+    warnOnce(`[DATA_DIR] using ${dir}; legacy ${legacy} is ignored`);
+    return { dir, isLegacy: false, ignoredLegacy: legacy };
   }
   if (exists(legacy)) {
     // legacy(9router): remove in v2
     warnOnce(
       `[DATA_DIR] using legacy ${legacy}; move it to ${dir} with: ${BRAND.npmPackage} data migrate`,
     );
-    return { dir: legacy, isLegacy: true };
+    return { dir: legacy, isLegacy: true, ignoredLegacy: null };
   }
-  return { dir, isLegacy: false };
+  return { dir, isLegacy: false, ignoredLegacy: null };
 }
 
 function defaultDataDir(opts = {}) {
@@ -82,7 +83,7 @@ function getDataDir(opts = {}) {
     return configured;
   } catch (e) {
     if (e?.code === "EACCES" || e?.code === "EPERM") {
-      warnOnce(`[DATA_DIR] '${configured}' not writable → fallback to default`);
+      warnOnce(`[DATA_DIR] '${configured}' not writable → fallback ~/.${ACTIVE.dataDirName}`);
       return defaultDataDir(opts);
     }
     throw e;
@@ -98,4 +99,17 @@ function isLegacyDataDir(opts = {}) {
   return !env.DATA_DIR && resolveDefault(opts).isLegacy;
 }
 
-module.exports = { getDataDir, defaultDataDir, brandDataDir, legacyDataDir, isLegacyDataDir };
+/** The legacy dir when it exists but the new one wins (DATA_DIR unset), else null. */
+function ignoredLegacyDataDir(opts = {}) {
+  const { env = process.env } = opts;
+  return env.DATA_DIR ? null : resolveDefault(opts).ignoredLegacy;
+}
+
+module.exports = {
+  getDataDir,
+  defaultDataDir,
+  brandDataDir,
+  legacyDataDir,
+  isLegacyDataDir,
+  ignoredLegacyDataDir,
+};

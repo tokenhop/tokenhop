@@ -91,14 +91,18 @@ function runningReasons(dirs, port, deps) {
   return reasons;
 }
 
-// Files only (symlinks and dirs excluded): relative path → size.
+// Every entry: relative path → file size, "dir" or "link:<target>".
 function fileSizes(root) {
   const sizes = new Map();
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (entry.isFile()) sizes.set(path.relative(root, full), fs.statSync(full).size);
+      const rel = path.relative(root, full);
+      if (entry.isDirectory()) {
+        sizes.set(rel, "dir");
+        walk(full);
+      } else if (entry.isSymbolicLink()) sizes.set(rel, `link:${fs.readlinkSync(full)}`);
+      else sizes.set(rel, fs.statSync(full).size);
     }
   };
   walk(root);
@@ -108,16 +112,17 @@ function fileSizes(root) {
 function verifyCopy(from, to, deps) {
   const a = fileSizes(from);
   const b = fileSizes(to);
-  if (a.size !== b.size) throw new Error(`file count mismatch: ${a.size} vs ${b.size}`);
+  if (a.size !== b.size) throw new Error(`entry count mismatch: ${a.size} vs ${b.size}`);
   for (const [rel, size] of a) {
-    if (b.get(rel) !== size) throw new Error(`size mismatch: ${rel}`);
+    if (b.get(rel) !== size) throw new Error(`mismatch: ${rel}`);
   }
   const db = path.join(to, DB_FILE);
-  if (!fs.existsSync(db)) return `${a.size} files`;
+  if (!fs.existsSync(db)) return `${a.size} entries`;
   const result = deps.integrityCheck(db);
-  if (result === null) return `${a.size} files (integrity check skipped: node:sqlite unavailable)`;
+  if (result === null)
+    return `${a.size} entries (integrity check skipped: node:sqlite unavailable)`;
   if (result !== "ok") throw new Error(`PRAGMA integrity_check: ${result}`);
-  return `${a.size} files, database integrity ok`;
+  return `${a.size} entries, database integrity ok`;
 }
 
 // Opens the copy read-write: a WAL-mode DB left by a killed server needs its
@@ -153,8 +158,11 @@ function caEnvCommands(legacy, target, platform, deps) {
       return [];
     }
   } else return [];
-  const sep = platform === "win32" ? path.win32.sep : path.posix.sep;
-  if (!current?.startsWith(legacy + sep)) return [];
+  const win = platform === "win32";
+  const prefix = legacy + (win ? path.win32.sep : path.posix.sep);
+  // Windows paths are case-insensitive.
+  const fold = (s) => (win ? s.toLowerCase() : s);
+  if (!current || !fold(current).startsWith(fold(prefix))) return [];
   const next = target + current.slice(legacy.length);
   return [
     platform === "win32" ? ["setx", [CA_ENV, next]] : ["launchctl", ["setenv", CA_ENV, next]],
@@ -165,8 +173,10 @@ function stamp(now) {
   return now().toISOString().replace(/[:.]/g, "-");
 }
 
+// A file (not a dir) at the target counts as occupied.
 function isEmptyOrMissing(dir) {
-  return !fs.existsSync(dir) || fs.readdirSync(dir).length === 0;
+  if (!fs.existsSync(dir)) return true;
+  return fs.statSync(dir).isDirectory() && fs.readdirSync(dir).length === 0;
 }
 
 function notEmptyError(target) {
@@ -212,6 +222,7 @@ function migrate(opts, deps) {
     );
     return;
   }
+  if (!fs.statSync(legacy).isDirectory()) throw new Error(`${legacy} is not a directory`);
   const running = runningReasons([legacy, target], opts.port, deps);
   if (running.length) {
     throw new Error(

@@ -197,6 +197,7 @@ describe("brand resolution order", () => {
       expect(mod.getDataDir(o)).toBe(current);
       expect(mod.getDataDir(o)).toBe(current);
       expect(mod.isLegacyDataDir(o)).toBe(false);
+      expect(mod.ignoredLegacyDataDir(o)).toBe(legacy);
       expect(warn).toHaveBeenCalledTimes(1);
       expect(warn.mock.calls[0][0]).toContain(legacy);
     });
@@ -224,6 +225,7 @@ describe("brand resolution order", () => {
     const o = { ...PLATFORMS.linux.opts, exists: () => true };
     expect(mod.getDataDir(o)).toBe(PLATFORMS.linux.dir(mod.LEGACY.dataDirName));
     expect(mod.isLegacyDataDir(o)).toBe(false);
+    expect(mod.ignoredLegacyDataDir(o)).toBe(null);
     expect(console.warn).not.toHaveBeenCalled();
   });
 });

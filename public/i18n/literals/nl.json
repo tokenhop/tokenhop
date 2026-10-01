@@ -163,6 +163,7 @@
   "Also user messages": "Ook gebruikersberichten",
   "Always on while 9router runs.": "Altijd aan terwijl 9router draait.",
   "An error occurred while updating password": "Er is een fout opgetreden bij het bijwerken van het wachtwoord",
+  "An old data folder also exists and is not used. If your data is missing, check it before deleting anything.": "Er bestaat ook een oude gegevensmap die niet wordt gebruikt. Ontbreken er gegevens, controleer die map dan voordat je iets verwijdert.",
   "Another way to support": "Een andere manier om te steunen",
   "Answered": "Beantwoord",
   "Anthropic Claude Code CLI": "Anthropic Claude Code-commandoregel (CLI)",

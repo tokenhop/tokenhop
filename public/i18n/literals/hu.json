@@ -163,6 +163,7 @@
   "Also user messages": "A felhasználói üzenetek is",
   "Always on while 9router runs.": "Mindig bekapcsolva, amíg a 9router fut.",
   "An error occurred while updating password": "Hiba történt a jelszó frissítése közben",
+  "An old data folder also exists and is not used. If your data is missing, check it before deleting anything.": "Létezik egy régi, nem használt adatmappa is. Ha hiányoznak adatok, ellenőrizd, mielőtt bármit törölsz.",
   "Another way to support": "Másik mód a támogatásra",
   "Answered": "Megválaszolva",
   "Anthropic Claude Code CLI": "Anthropic Claude Code CLI",

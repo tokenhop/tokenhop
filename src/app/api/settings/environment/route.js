@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildEnvironmentReadout } from "@/lib/settingsFlags";
 import { shouldUseSecureCookie } from "@/lib/auth/dashboardSession";
-import { DATA_DIR, isLegacyDataDir } from "@/lib/dataDir";
+import { DATA_DIR, ignoredLegacyDataDir, isLegacyDataDir } from "@/lib/dataDir";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -19,6 +19,7 @@ export async function GET(request) {
         values: buildEnvironmentReadout(),
         dataDir: DATA_DIR,
         isLegacyDataDir: isLegacyDataDir(),
+        ignoredLegacyDataDir: ignoredLegacyDataDir(),
         cookieSecure: shouldUseSecureCookie(request),
         cookieSecureSource:
           process.env.AUTH_COOKIE_SECURE === "true"

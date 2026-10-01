@@ -17,6 +17,7 @@ const MIGRATE_COMMAND = `${BRAND.npmPackage} data migrate`;
 export default function EnvironmentSection() {
   const [values, setValues] = useState(null);
   const [legacyDataDir, setLegacyDataDir] = useState(null);
+  const [ignoredLegacyDataDir, setIgnoredLegacyDataDir] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -29,6 +30,7 @@ export default function EnvironmentSection() {
         if (cancelled) return;
         setValues(data.values || {});
         setLegacyDataDir(data.isLegacyDataDir ? data.dataDir : null);
+        setIgnoredLegacyDataDir(data.ignoredLegacyDataDir || null);
       } catch {
         if (!cancelled) setError("Could not load environment values");
       }
@@ -59,6 +61,17 @@ export default function EnvironmentSection() {
             <div className="mt-2 space-y-1">
               <CopyField value={legacyDataDir} label="Data directory" />
               <CopyField value={MIGRATE_COMMAND} label="Copy code" />
+            </div>
+          </Callout>
+        )}
+        {ignoredLegacyDataDir && (
+          <Callout variant="warn" title="Data directory">
+            <p>
+              An old data folder also exists and is not used. If your data is missing, check it
+              before deleting anything.
+            </p>
+            <div className="mt-2">
+              <CopyField value={ignoredLegacyDataDir} label="Data directory" />
             </div>
           </Callout>
         )}

@@ -197,7 +197,7 @@ describe("data migrate", () => {
   });
 
   it("moves a failed copy out of the way so the resolver keeps the legacy dir", async () => {
-    const cp = (from, to) => {
+    const cp = (_from, to) => {
       fs.mkdirSync(to);
       fs.writeFileSync(path.join(to, "partial"), "x");
       throw new Error("disk full");
@@ -243,8 +243,25 @@ describe("data migrate", () => {
     expect(cmd.caEnvCommands(legacy, target, "win32", env(`${legacy}\\mitm\\rootCA.crt`))).toEqual([
       ["setx", ["NODE_EXTRA_CA_CERTS", `${target}\\mitm\\rootCA.crt`]],
     ]);
+    expect(
+      cmd.caEnvCommands(legacy, target, "win32", env(`${legacy.toLowerCase()}\\mitm\\rootCA.crt`)),
+    ).toEqual([["setx", ["NODE_EXTRA_CA_CERTS", `${target}\\mitm\\rootCA.crt`]]]);
     expect(cmd.caEnvCommands(legacy, target, "win32", env("D:\\certs\\corp.crt"))).toEqual([]);
     expect(cmd.caEnvCommands(legacy, target, "win32", env(`${legacy}-other\\x.crt`))).toEqual([]);
+  });
+
+  it("refuses when the legacy path or the new path is a file", async () => {
+    const a = setup();
+    fs.writeFileSync(a.legacy, "stray");
+    expect(await a.cmd.run(["migrate"], a.deps)).toBe(1);
+    expect(fs.readFileSync(a.legacy, "utf8")).toBe("stray");
+    fs.rmSync(a.legacy);
+
+    const b = setup();
+    seedLegacy(b.legacy);
+    fs.writeFileSync(b.target, "stray");
+    expect(await b.cmd.run(["migrate"], b.deps)).toBe(1);
+    expect(fs.existsSync(path.join(b.legacy, "machine-id"))).toBe(true);
   });
 
   it("rejects unknown options", async () => {

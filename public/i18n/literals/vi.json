@@ -163,6 +163,7 @@
   "Also user messages": "Cũng tin nhắn người dùng",
   "Always on while 9router runs.": "Luôn bật khi 9Router chạy.",
   "An error occurred while updating password": "Đã xảy ra lỗi khi cập nhật mật khẩu",
+  "An old data folder also exists and is not used. If your data is missing, check it before deleting anything.": "Còn có một thư mục dữ liệu cũ không được sử dụng. Nếu thiếu dữ liệu, hãy kiểm tra thư mục đó trước khi xóa bất cứ thứ gì.",
   "Another way to support": "Một cách khác để hỗ trợ",
   "Answered": "Đã trả lời",
   "Anthropic Claude Code CLI": "Anthropic Claude Code CLI",

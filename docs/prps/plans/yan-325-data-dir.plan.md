@@ -23,7 +23,7 @@
 
 Under the default brand both names are the legacy name, so the result is the
 old `~/.9router` with no warning. New exports: `legacyDataDir(opts)`,
-`isLegacyDataDir(dir, opts)`. `exists` is injectable so the Win32 rows run on
+`isLegacyDataDir(opts)`, `ignoredLegacyDataDir(opts)`. `exists` is injectable so the Win32 rows run on
 any OS.
 
 Decision: the resolver does not create the default dir. Every consumer already
