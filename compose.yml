@@ -42,4 +42,6 @@ services:
 
 volumes:
   tokenhop-data:
-    name: tokenhop-data
+    # Renaming a named volume makes Compose create a new, empty one, which looks
+    # like data loss, so existing installs keep their volume.
+    name: 9router-data # legacy(9router): existing volume name
