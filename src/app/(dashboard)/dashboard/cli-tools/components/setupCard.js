@@ -156,6 +156,13 @@ export function manualKeyFallback(selectedApiKey, cloudEnabled) {
 }
 
 export {
+  API_KEY_PLACEHOLDER,
+  resolveApiKey,
+  manualApiKey,
+  toManualConfigs,
+} from "@/lib/cliToolConfigs/shared";
+
+export {
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,
