@@ -23,6 +23,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 import { BaseExecutor } from "./base.js";
 
 // ─── Binary discovery ────────────────────────────────────────────────────────
@@ -599,9 +600,11 @@ export class DevinCliExecutor extends BaseExecutor {
 
         // ── stdout reader (NDJSON) ──────────────────────────────────────────
         let buffer = "";
+        // Keeps a multi-byte character split across pipe chunks intact.
+        const stdoutDecoder = new StringDecoder("utf8");
 
         child.stdout.on("data", (chunk) => {
-          buffer += chunk.toString("utf8");
+          buffer += stdoutDecoder.write(chunk);
           let nl;
           // Each ACP message is a newline-terminated JSON line
           while ((nl = buffer.indexOf("\n")) !== -1) {

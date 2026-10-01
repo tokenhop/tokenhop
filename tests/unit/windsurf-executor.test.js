@@ -4,6 +4,7 @@ import {
   buildGetChatMessageRequest,
   grpcWebFrame,
   decodeCompletionChunk,
+  grpcHeaderErrorResponse,
   default as WindsurfExecutor,
 } from "open-sse/executors/windsurf.js";
 import { PROVIDERS } from "open-sse/config/providers.js";
@@ -225,5 +226,20 @@ describe("WindsurfExecutor class", () => {
     // the executor falls back to the registry chat URL in that case.
     expect(PROVIDERS.windsurf).toBeUndefined();
     expect(new WindsurfExecutor().buildUrl()).toBe(windsurfRegistry.transport.baseUrl);
+  });
+});
+
+describe("grpcHeaderErrorResponse (trailers-only replies)", () => {
+  it("maps a non-zero grpc-status header to an HTTP error", async () => {
+    const res = grpcHeaderErrorResponse(
+      new Headers({ "grpc-status": "16", "grpc-message": "api%20key%20expired" }),
+    );
+    expect(res.status).toBe(401);
+    expect((await res.json()).error.message).toBe("api key expired");
+  });
+
+  it("returns null for status 0 or no grpc-status header", () => {
+    expect(grpcHeaderErrorResponse(new Headers({ "grpc-status": "0" }))).toBeNull();
+    expect(grpcHeaderErrorResponse(new Headers())).toBeNull();
   });
 });

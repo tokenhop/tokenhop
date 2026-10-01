@@ -390,16 +390,22 @@ function isBillingBlock(inner) {
  */
 async function peekFirstQoderFrame(reader, decoder) {
   let consumed = "";
+  let scanned = 0; // offset of the first line not yet inspected
   while (true) {
     const { done, value } = await reader.read();
     if (done) return { isBilling: false, consumed, upstreamDone: true };
 
     consumed += decoder.decode(value, { stream: true });
-    const nl = consumed.indexOf("\n");
-    if (nl === -1) continue; // need a full line first
-
-    const line = consumed.slice(0, nl).replace(/\r$/, "").trim();
-    if (!line.startsWith("data:")) continue;
+    // Skip keepalive comments, event:/id: and blank lines until the first data: line.
+    let line = null;
+    let nl = consumed.indexOf("\n", scanned);
+    while (line === null && nl !== -1) {
+      const candidate = consumed.slice(scanned, nl).replace(/\r$/, "").trim();
+      scanned = nl + 1;
+      if (candidate.startsWith("data:")) line = candidate;
+      nl = consumed.indexOf("\n", scanned);
+    }
+    if (line === null) continue; // need a full data: line first
 
     const data = line.slice(5).trimStart();
     if (data === "[DONE]") return { isBilling: false, consumed };
