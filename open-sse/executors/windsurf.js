@@ -368,6 +368,40 @@ function openAIMessagesToWs(messages) {
   return out;
 }
 
+// gRPC status code → HTTP status, so chatCore's fallback / refresh logic sees
+// the real failure (16 UNAUTHENTICATED → 401, 8 RESOURCE_EXHAUSTED → 429, …).
+const GRPC_TO_HTTP_STATUS = {
+  3: 400,
+  4: 504,
+  5: 404,
+  7: 403,
+  8: 429,
+  12: 501,
+  14: 503,
+  16: 401,
+};
+
+// Error Response for a gRPC-web trailers-only reply (grpc-status in the HTTP
+// headers), or null when the headers carry no non-zero status.
+export function grpcHeaderErrorResponse(headers) {
+  const code = Number(headers?.get?.("grpc-status"));
+  if (!code) return null;
+  const raw = headers.get("grpc-message");
+  let message = `gRPC status ${code}`;
+  if (raw) {
+    try {
+      message = decodeURIComponent(raw);
+    } catch {
+      message = raw;
+    }
+  }
+  const status = GRPC_TO_HTTP_STATUS[code] || 502;
+  return new Response(
+    JSON.stringify({ error: { message, type: "windsurf_error", code: "upstream_error" } }),
+    { status, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 // ─── WindsurfExecutor ────────────────────────────────────────────────────────
 
 export class WindsurfExecutor extends BaseExecutor {
@@ -440,6 +474,13 @@ export class WindsurfExecutor extends BaseExecutor {
 
     if (!upstream.ok && upstream.status !== 200) {
       return { response: upstream, url, headers, transformedBody: protoPayload };
+    }
+
+    // Trailers-only gRPC-web reply: HTTP 200, status in the headers, empty body.
+    const trailersOnlyError = grpcHeaderErrorResponse(upstream.headers);
+    if (trailersOnlyError) {
+      await upstream.body?.cancel().catch(() => {});
+      return { response: trailersOnlyError, url, headers, transformedBody: protoPayload };
     }
 
     const sseResponse = this.transformToSSE(upstream, model);
