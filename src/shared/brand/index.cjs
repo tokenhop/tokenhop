@@ -118,6 +118,21 @@ const LEGACY = Object.freeze({
   trayIconTemplate: false,
 });
 
+/**
+ * Identifiers sent to third-party APIs, the same for every brand. Renaming one
+ * needs evidence the upstream ignores it plus a real provider smoke test, so
+ * they keep their 9router values (YAN-330 audit).
+ * legacy(9router): upstream-facing, keep
+ */
+const UPSTREAM_CLIENT_IDS = Object.freeze({
+  kimiPlatform: "9router", // Kimi X-Msh-Platform
+  clineUserAgentProduct: "9Router", // Cline User-Agent "<product>/<version>"
+  clineClientType: "9router", // Cline X-CLIENT-TYPE
+  devinMcpClientName: "9router", // devin acp initialize clientInfo.name
+  coworkMcpClientName: "9router", // Cowork MCP probe initialize clientInfo.name
+  cursorMcpProvider: "9router", // Cursor MCP server_name/identifier/provider_identifier
+});
+
 // The repo and image already moved, and the 9router site is upstream's, so
 // these stay on the tokenhop values whichever brand is active.
 const BRAND_INDEPENDENT_KEYS = new Set([
@@ -228,6 +243,7 @@ module.exports = {
   BRAND,
   LEGACY,
   ACTIVE,
+  UPSTREAM_CLIENT_IDS,
   envName,
   readEnv,
   warnLegacyOnce,

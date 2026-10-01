@@ -5,6 +5,7 @@
 
 import { v4 as uuidv4 } from "uuid";
 import zlib from "zlib";
+import { UPSTREAM_CLIENT_IDS } from "../../src/shared/brand/index.js";
 
 const DEBUG = process.env.CURSOR_PROTOBUF_DEBUG === "1";
 const log = (tag, ...args) => DEBUG && console.log(`[PROTOBUF:${tag}]`, ...args);
@@ -1012,7 +1013,7 @@ const MCP_TOOLS_TOOL = 1;
 
 // McpToolDefinition.provider_identifier for client tools; AgentService asks for
 // this server's state (mcp_state_exec) before calling its tools.
-export const CURSOR_MCP_PROVIDER = "9router";
+export const CURSOR_MCP_PROVIDER = UPSTREAM_CLIENT_IDS.cursorMcpProvider;
 
 const MCP_ARGS_NAME = 1;
 const MCP_ARGS_ENTRY = 2;

@@ -24,6 +24,7 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 import { StringDecoder } from "node:string_decoder";
+import { ACTIVE, UPSTREAM_CLIENT_IDS } from "../../src/shared/brand/index.js";
 import { BaseExecutor } from "./base.js";
 
 // ─── Binary discovery ────────────────────────────────────────────────────────
@@ -117,7 +118,7 @@ rl.on("line", (line) => {
 `.trimStart();
 
 function ensureClientToolsScript() {
-  const scriptPath = path.join(os.tmpdir(), "9router-devin-client-tools.mjs");
+  const scriptPath = path.join(os.tmpdir(), `${ACTIVE.slug}-devin-client-tools.mjs`);
   // Always rewrite so script upgrades land without a process restart.
   fs.writeFileSync(scriptPath, CLIENT_TOOLS_MCP_SCRIPT);
   return scriptPath;
@@ -803,7 +804,7 @@ export class DevinCliExecutor extends BaseExecutor {
         // ── Send initialize ───────────────────────────────────────────────
         sendRpc("initialize", {
           protocolVersion: "0.3",
-          clientInfo: { name: "9router", version: "1.0" },
+          clientInfo: { name: UPSTREAM_CLIENT_IDS.devinMcpClientName, version: "1.0" },
           capabilities: {},
         });
       },

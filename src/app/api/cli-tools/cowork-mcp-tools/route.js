@@ -1,6 +1,7 @@
 "use server";
 
 import { NextResponse } from "next/server";
+import { UPSTREAM_CLIENT_IDS } from "@/shared/brand";
 import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
 
@@ -28,7 +29,7 @@ async function probeMcp(url) {
         params: {
           protocolVersion: "2025-06-18",
           capabilities: {},
-          clientInfo: { name: "9router", version: "1" },
+          clientInfo: { name: UPSTREAM_CLIENT_IDS.coworkMcpClientName, version: "1" },
         },
       }),
       signal: ac.signal,
