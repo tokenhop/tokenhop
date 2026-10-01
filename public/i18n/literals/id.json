@@ -1390,6 +1390,7 @@
   "Permissions": "Izin",
   "Personal access token": "Token Akses Pribadi",
   "Personal account": "Akun pribadi",
+  "Pick a model to see the configuration.": "Pilih model untuk melihat konfigurasi.",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "Pilih penyedia di bawah ini, lalu masuk atau tempel kunci. Penyedia akan muncul di sini setelah terhubung.",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "Pilih model Devin CLI apa pun di tab Providers — tidak perlu kolom kunci API.",
   "Pick model for Factory Droid": "Pilih model untuk Factory Droid",

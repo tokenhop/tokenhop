@@ -1394,6 +1394,7 @@
   "Permissions": "សិទ្ធិ",
   "Personal access token": "Token ចូលដំណើរការផ្ទាល់ខ្លួន",
   "Personal account": "គណនីផ្ទាល់ខ្លួន",
+  "Pick a model to see the configuration.": "ជ្រើសរើសម៉ូដែលដើម្បីមើលការកំណត់",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "ជ្រើសរើសអ្នកផ្តល់សេវាខាងក្រោម ហើយចូលគណនី ឬបិទភ្ជាប់គន្លឹះ។ វានឹងបង្ហាញនៅទីនេះនៅពេលបានភ្ជាប់រួច។",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "ជ្រើសរើសគំរូ Devin CLI ណាមួយនៅក្រោ៘ផ្ទាំង Providers — មិនត្រូវការវាលសោ API ទេ។",
   "Pick model for Factory Droid": "ជ្រើសរើសគំរូសម្រាប់ Factory Droid",

@@ -1397,6 +1397,7 @@
   "Permissions": "权限",
   "Personal access token": "个人访问令牌",
   "Personal account": "个人账户",
+  "Pick a model to see the configuration.": "选择模型以查看配置。",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "在下方选择一个提供商，然后登录或粘贴密钥。连接成功后就会显示在这里。",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "在 Providers 标签页下选择任意 Devin CLI 模型 —— 无需填写 API 密钥。",
   "Pick model for Factory Droid": "为 Factory Droid 选择模型",

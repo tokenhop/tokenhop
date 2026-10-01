@@ -1298,6 +1298,7 @@
   "Period": "Período",
   "Personal access token": "Token de acceso personal",
   "Personal account": "Cuenta personal",
+  "Pick a model to see the configuration.": "Elige un modelo para ver la configuración.",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "Elige un proveedor a continuación e inicia sesión o pega una clave. Aparecerá aquí una vez conectado.",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "Elige cualquier modelo de Devin CLI en la pestaña Proveedores — no se necesita un campo de clave API.",
   "Pick model for Factory Droid": "Selecciona modelo para Factory Droid",

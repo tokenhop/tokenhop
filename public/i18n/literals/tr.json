@@ -1298,6 +1298,7 @@
   "Period": "Dönem",
   "Personal access token": "Kişisel Erişim Tokeni",
   "Personal account": "Kişisel hesap",
+  "Pick a model to see the configuration.": "Yapılandırmayı görmek için bir model seçin.",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "Aşağıdan bir sağlayıcı seçin ve oturum açın ya da bir anahtar yapıştırın. Bağlandığında burada görünür.",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "Providers sekmesi altında herhangi bir Devin CLI modeli seçin — API anahtarı alanı gerekmez.",
   "Pick model for Factory Droid": "Factory Droid için model seçin",

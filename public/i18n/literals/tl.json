@@ -1290,6 +1290,7 @@
   "Period": "Tagal",
   "Personal access token": "Token ng Personal na Pag-access",
   "Personal account": "Sariling account",
+  "Pick a model to see the configuration.": "Pumili ng model para makita ang configuration.",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "Pumili ng provider sa ibaba at mag-sign in o mag-paste ng key. Lalabas ito dito kapag nakakonekta na.",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "Pumili ng kahit anong Devin CLI model sa ilalim ng Providers tab — walang kailangang field ng API key.",
   "Pick model for Factory Droid": "Pumili ng modelo para sa Factory Droid",

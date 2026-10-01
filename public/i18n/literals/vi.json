@@ -1297,6 +1297,7 @@
   "Period": "Kỳ",
   "Personal access token": "Mã truy cập cá nhân",
   "Personal account": "Tài khoản cá nhân",
+  "Pick a model to see the configuration.": "Chọn một mô hình để xem cấu hình.",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "Chọn một nhà cung cấp bên dưới và đăng nhập hoặc dán khóa. Nhà cung cấp sẽ xuất hiện tại đây sau khi kết nối.",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "Chọn bất kỳ model Devin CLI nào trong tab Providers — không cần trường khóa API.",
   "Pick model for Factory Droid": "Chọn mô hình cho Factory Droid",

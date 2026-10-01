@@ -1300,6 +1300,7 @@
   "Period": "مدت",
   "Personal access token": "ذاتی رسائی ٹوکن",
   "Personal account": "ذاتی اکاؤنٹ",
+  "Pick a model to see the configuration.": "کنفیگریشن دیکھنے کے لیے ایک ماڈل منتخب کریں۔",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "نیچے سے کوئی فراہم کنندہ منتخب کریں اور سائن ان کریں یا کوئی کلید پیسٹ کریں۔ منسلک ہوتے ہی یہ یہاں ظاہر ہوگا۔",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "Providers ٹیب کے تحت کوئی بھی Devin CLI ماڈل منتخب کریں — API کلید فیلڈ کی ضرورت نہیں۔",
   "Pick model for Factory Droid": "Factory Droid کے لیے ماڈل منتخب کریں",
