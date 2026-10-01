@@ -31,7 +31,7 @@ const openclaw = (key) => ({
 
 // Under each brand, the menu reads the other brand's entries too.
 describe.each([
-  ["9router", "custom:tokenhop-", "tokenhop"],
+  [LEGACY.slug, "custom:tokenhop-", "tokenhop"],
   ["tokenhop", LEGACY.customModelIdPrefix, OLD],
 ])("CLI menu status under the %s brand", (brand, prefix, key) => {
   it("droid reads the other brand's ids", () => {
