@@ -4,25 +4,26 @@ import { PROVIDER_MEDIA } from "../../providers/index.js";
 const TTS_CFG = PROVIDER_MEDIA["openrouter"]?.ttsConfig || {};
 
 export default {
-  async synthesize(text, model, credentials) {
+  async synthesize(text, model, credentials, _responseFormat, options = {}) {
     if (!credentials?.apiKey) throw new Error("No OpenRouter API key configured");
 
-    // model format: "tts-model/voice" e.g. "openai/gpt-4o-mini-tts/alloy"
+    // OpenRouter model ids are "vendor/model" and voices have no "/", so:
+    // "openai/gpt-4o-mini-tts/alloy" = model + voice, "openai/gpt-4o-mini-tts" = model,
+    // "alloy" = voice.
     let ttsModel = TTS_CFG.defaultModel;
-    let voice = "alloy";
-    if (model && model.includes("/")) {
+    let voice = "";
+    const slashes = model ? model.split("/").length - 1 : 0;
+    if (slashes >= 2) {
       const lastSlash = model.lastIndexOf("/");
-      const maybVoice = model.slice(lastSlash + 1);
-      const maybeModel = model.slice(0, lastSlash);
-      if (maybeModel.includes("/")) {
-        ttsModel = maybeModel;
-        voice = maybVoice;
-      } else {
-        voice = model;
-      }
+      ttsModel = model.slice(0, lastSlash);
+      voice = model.slice(lastSlash + 1);
+    } else if (slashes === 1) {
+      ttsModel = model;
     } else if (model) {
       voice = model;
     }
+    // A voice in the model id wins; the OpenAI-style body `voice` fills the gap.
+    voice = voice || options.voice || "alloy";
 
     const res = await fetch(TTS_CFG.baseUrl, {
       method: "POST",
