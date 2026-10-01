@@ -6,6 +6,7 @@ import { useNotificationStore } from "@/store/notificationStore";
 import { markLocalOnly } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 import { readMitmResponse } from "./mitmToolActions";
+import { ACTIVE } from "@/shared/brand";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
@@ -87,7 +88,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
         const keyToUse =
           selectedApiKey?.trim() ||
           (apiKeys?.length > 0 ? apiKeys[0].key : null) ||
-          (!cloudEnabled ? "sk_9router" : null);
+          (!cloudEnabled ? ACTIVE.defaultApiKey : null);
         res = await fetch("/api/cli-tools/antigravity-mitm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -238,7 +239,9 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
                   list="mitm-api-keys"
                   value={selectedApiKey}
                   onChange={(e) => setSelectedApiKey(e.target.value)}
-                  placeholder={cloudEnabled ? "Enter or pick API key" : "sk_9router (default)"}
+                  placeholder={
+                    cloudEnabled ? "Enter or pick API key" : `${ACTIVE.defaultApiKey} (default)`
+                  }
                   className="flex-1 min-w-0 px-2 py-1.5 bg-panel rounded border border-line text-xs text-text focus:outline-none focus:ring-1 focus:ring-coral/50"
                 />
                 {apiKeys?.length > 0 && (

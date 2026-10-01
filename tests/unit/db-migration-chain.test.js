@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { LEGACY } from "@/shared/brand";
 
 let tempDir;
 const originalDataDir = process.env.DATA_DIR;
@@ -73,7 +74,8 @@ describe("Schema migrations", () => {
     expect(parseInt(row.value, 10)).toBe(latestVersion());
 
     const settings = db2.get(`SELECT data FROM settings WHERE id=1`);
-    expect(JSON.parse(settings.data)).toEqual({ foo: "bar" });
+    // Existing data is kept; migration #3 only adds the pinned SAML issuer.
+    expect(JSON.parse(settings.data)).toEqual({ foo: "bar", samlIssuer: LEGACY.samlIssuerDefault });
   });
 
   it("fresh DB + legacy db.json → imports data automatically", async () => {

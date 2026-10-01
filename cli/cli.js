@@ -30,7 +30,7 @@ function waitServerReady(port, { timeoutMs = 15000, intervalMs = 150 } = {}) {
 const pkg = require("./package.json");
 const { ensureSqliteRuntime, buildEnvWithRuntime, getDataDir } = require("./hooks/sqliteRuntime");
 const {
-  readPidFile,
+  readPidFiles,
   writePidFile,
   removePidFileIfOwner,
   getCommandLine,
@@ -223,22 +223,24 @@ function killAllAppProcesses(appPort) {
     try { killCloudflaredByAppPort(appPort); } catch {}
   });
 
-  const recorded = readPidFile();
-  if (!recorded) return Promise.resolve();
+  const records = readPidFiles();
+  if (!records.length) return Promise.resolve();
   let killed = false;
   // Only trust a PID if it still runs our launcher/server (PIDs get reused).
   const cmdOf = (pid) => (pid && pid !== process.pid && isAlive(pid) ? getCommandLine(pid) || "" : "");
-  const launcherCmd = cmdOf(recorded.launcher);
-  // The recorded PID plus a "9router" command line guards against PID reuse; a previous
-  // launcher may have been started via another path (npx, global bin symlink, source).
-  if (isLauncherCommandLine(launcherCmd)) {
-    killPid(recorded.launcher); // SIGTERM lets it stop its own tray/MITM/tunnel/server
-    killed = true;
-  }
-  const serverCmd = cmdOf(recorded.server);
-  if (serverCmd.includes(serverPath) || serverCmd.includes("next-server")) {
-    killPid(recorded.server, { graceful: false });
-    killed = true;
+  for (const recorded of records) {
+    const launcherCmd = cmdOf(recorded.launcher);
+    // The recorded PID plus a launcher command line guards against PID reuse; a previous
+    // launcher may have been started via another path (npx, global bin symlink, source).
+    if (isLauncherCommandLine(launcherCmd)) {
+      killPid(recorded.launcher); // SIGTERM lets it stop its own tray/MITM/tunnel/server
+      killed = true;
+    }
+    const serverCmd = cmdOf(recorded.server);
+    if (serverCmd.includes(serverPath) || serverCmd.includes("next-server")) {
+      killPid(recorded.server, { graceful: false });
+      killed = true;
+    }
   }
   return new Promise((resolve) => setTimeout(resolve, killed ? 500 : 0));
 }

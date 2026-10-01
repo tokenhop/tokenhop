@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getSettings } from "@/lib/localDb";
 import { formatX509Certificate } from "@/lib/auth/saml.js";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { ACTIVE } from "@/shared/brand";
 
 async function canAccessTestRoute() {
   const settings = await getSettings();
@@ -23,7 +24,9 @@ export async function POST(request) {
     const settings = await getSettings();
 
     const samlEntryPoint = String(body.samlEntryPoint || settings.samlEntryPoint || "").trim();
-    const samlIssuer = String(body.samlIssuer || settings.samlIssuer || "urn:9router:sp").trim();
+    const samlIssuer = String(
+      body.samlIssuer || settings.samlIssuer || ACTIVE.samlIssuerDefault,
+    ).trim();
     const samlCert = String(
       Object.hasOwn(body, "samlCert") ? body.samlCert : settings.samlCert || "",
     ).trim();

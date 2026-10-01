@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ACTIVE } from "@/shared/brand";
 import {
   readKeyPresets,
   upsertKeyPreset,
@@ -96,7 +97,9 @@ export default function ApiKeySelect({
       <span
         className={`min-w-0 rounded bg-panel/40 px-2 py-2 text-xs text-muted sm:py-1.5 ${className}`}
       >
-        {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
+        {cloudEnabled
+          ? "No API keys - Create one in Keys page"
+          : `${ACTIVE.defaultApiKey} (default)`}
       </span>
     );
   }

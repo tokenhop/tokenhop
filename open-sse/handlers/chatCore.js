@@ -20,7 +20,12 @@ import {
 } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
-import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
+import {
+  HTTP_STATUS,
+  LEGACY_TOKEN_SAVER_HEADER,
+  TOKEN_SAVER_HEADER,
+} from "../config/runtimeConfig.js";
+import { warnLegacyOnce } from "../../src/shared/brand/index.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
@@ -77,6 +82,13 @@ export function stripContinuityFields(body) {
     }
   }
   return body;
+}
+
+function readTokenSaverHeader(headers) {
+  if (headers?.[TOKEN_SAVER_HEADER] !== undefined) return headers[TOKEN_SAVER_HEADER];
+  const legacy = headers?.[LEGACY_TOKEN_SAVER_HEADER];
+  if (legacy !== undefined) warnLegacyOnce("header", LEGACY_TOKEN_SAVER_HEADER, TOKEN_SAVER_HEADER);
+  return legacy;
 }
 
 export async function handleChatCore({
@@ -181,7 +193,7 @@ export async function handleChatCore({
 
   // Per-request opt-out: client can bypass all token savers via header
   const tokenSaverEnabled =
-    clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
+    readTokenSaverHeader(clientRawRequest?.headers)?.toLowerCase() !== "off";
 
   // Cursor's translator rewrites tool_result into user text, so RTK must run on
   // the source body before translation. Every other pair translates the tool

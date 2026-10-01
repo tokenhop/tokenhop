@@ -5,7 +5,7 @@ const { spawn } = require("child_process");
 const crypto = require("crypto");
 const { LOCAL_STDIO_PLUGINS } = require("@/shared/constants/coworkPlugins");
 
-const G_KEY = "__9routerMcpBridges";
+const G_KEY = "__tokenhopMcpBridges";
 const MAX_TEXT_CHARS = 50000;
 const COLLAPSE_THRESHOLD = 30;
 const COLLAPSE_KEEP_HEAD = 10;

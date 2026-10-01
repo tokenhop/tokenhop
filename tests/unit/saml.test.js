@@ -8,6 +8,7 @@ import {
   validateSamlResponse,
 } from "../../src/lib/auth/saml.js";
 import { mergeWithDefaults } from "../../src/lib/db/repos/settingsRepo.js";
+import { ACTIVE, LEGACY } from "@/shared/brand";
 
 describe("SAML 2.0 Auth Engine Utilities", () => {
   describe("formatX509Certificate", () => {
@@ -63,11 +64,11 @@ describe("SAML 2.0 Auth Engine Utilities", () => {
     it("generates valid SP XML metadata with Entity ID and ACS binding", () => {
       const settings = {
         samlEntryPoint: "https://idp.example.com/sso",
-        samlIssuer: "urn:9router:sp",
+        samlIssuer: LEGACY.samlIssuerDefault,
         samlCert: "MIIC123456789012345678901234567890123456789012345678901234567890",
       };
       const xml = generateSamlMetadata("https://localhost:20127", settings);
-      expect(xml).toContain('entityID="urn:9router:sp"');
+      expect(xml).toContain(`entityID="${LEGACY.samlIssuerDefault}"`);
       expect(xml).toContain('Location="https://localhost:20127/api/auth/saml/acs"');
       expect(xml).toContain('WantAssertionsSigned="true"');
     });
@@ -147,7 +148,7 @@ describe("SAML 2.0 Auth Engine Utilities", () => {
     it("mergeWithDefaults safely populates SAML defaults for existing installations", () => {
       const merged = mergeWithDefaults({ authMode: "password" });
       expect(merged.ssoType).toBe("oidc");
-      expect(merged.samlIssuer).toBe("urn:9router:sp");
+      expect(merged.samlIssuer).toBe(ACTIVE.samlIssuerDefault);
       expect(merged.samlLoginLabel).toBe("Sign in with SAML SSO");
       expect(merged.samlAttributeEmail).toBe("email");
       expect(merged.samlAttributeName).toBe("name");

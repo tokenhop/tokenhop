@@ -67,7 +67,10 @@ describe("migration 002 cursor-refresh-backfill", () => {
     const { getAdapter: getAdapter2 } = await import("@/lib/db/driver.js");
     const db2 = await getAdapter2();
 
-    expect(db2.get(`SELECT value FROM _meta WHERE key='schemaVersion'`).value).toBe("2");
+    const { latestVersion } = await import("@/lib/db/migrations/index.js");
+    expect(db2.get(`SELECT value FROM _meta WHERE key='schemaVersion'`).value).toBe(
+      String(latestVersion()),
+    );
     expect(JSON.parse(readData(db2, "legacy"))).toEqual({
       accessToken: LEGACY_ACCESS,
       refreshToken: LEGACY_ACCESS,

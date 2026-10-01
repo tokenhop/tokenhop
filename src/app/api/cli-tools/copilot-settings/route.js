@@ -5,6 +5,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
+import { ACTIVE } from "@/shared/brand";
 
 // Resolve chatLanguageModels.json path per OS
 const getConfigPath = () => {
@@ -84,7 +85,7 @@ export async function POST(request) {
     const config = (await readJsonConfig(configPath, "array")) ?? [];
 
     const endpointUrl = `${baseUrl}/chat/completions#models.ai.azure.com`;
-    const keyToUse = apiKey || "sk_9router";
+    const keyToUse = apiKey || ACTIVE.defaultApiKey;
 
     const newEntry = {
       name: "9Router",

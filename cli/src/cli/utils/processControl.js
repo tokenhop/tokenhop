@@ -6,26 +6,68 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { getDataDir } = require("../../../hooks/sqliteRuntime");
 
+// The CLI build packs the brand module into cli/src/shared/; a repo checkout uses the source.
+const PACKED_BRAND_MODULE = path.join(__dirname, "..", "..", "shared", "brand", "index.cjs");
+const { ACTIVE, LEGACY } = require(
+  fs.existsSync(PACKED_BRAND_MODULE)
+    ? PACKED_BRAND_MODULE
+    : path.join(__dirname, "..", "..", "..", "..", "src", "shared", "brand", "index.cjs"),
+);
+
 const isPid = (pid) => Number.isInteger(pid) && pid > 0;
 
 // Resolved per call so DATA_DIR changes (tests, env) are honoured.
 function getPidFilePath() {
-  return path.join(getDataDir(), "9router.pid");
+  return path.join(getDataDir(), ACTIVE.pidFile);
 }
 
-function readPidFile() {
+// legacy(9router): remove in v2
+// An old launcher may still be running and recording itself here; null under the 9router brand.
+function getLegacyPidFilePath() {
+  const file = path.join(getDataDir(), LEGACY.pidFile);
+  return file === getPidFilePath() ? null : file;
+}
+
+function readPidRecord(file) {
   try {
-    const { launcher, server } = JSON.parse(fs.readFileSync(getPidFilePath(), "utf8"));
+    const { launcher, server } = JSON.parse(fs.readFileSync(file, "utf8"));
     return { launcher: isPid(launcher) ? launcher : null, server: isPid(server) ? server : null };
   } catch {
     return null;
   }
 }
 
+// Valid records from the active file, then the legacy one, without duplicates.
+function readPidFiles() {
+  const records = [];
+  for (const file of [getPidFilePath(), getLegacyPidFilePath()]) {
+    const rec = file && readPidRecord(file);
+    if (rec && !records.some((r) => r.launcher === rec.launcher && r.server === rec.server)) {
+      records.push(rec);
+    }
+  }
+  return records;
+}
+
+function readPidFile() {
+  return readPidFiles()[0] ?? null;
+}
+
 function writePidFile({ launcher, server }) {
   const file = getPidFilePath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify({ launcher, server }));
+  // legacy(9router): remove in v2
+  // Drop the legacy file once the launcher it recorded is gone.
+  const legacyFile = getLegacyPidFilePath();
+  const legacy = legacyFile && readPidRecord(legacyFile);
+  if (legacy && !(legacy.launcher && isAlive(legacy.launcher))) {
+    try {
+      fs.unlinkSync(legacyFile);
+    } catch {
+      /* best effort */
+    }
+  }
 }
 
 // Only the launcher that wrote the file may remove it (a newer launcher may own it now).
@@ -182,7 +224,9 @@ function killPid(pid, { graceful = true } = {}) {
 
 module.exports = {
   getPidFilePath,
+  getLegacyPidFilePath,
   readPidFile,
+  readPidFiles,
   writePidFile,
   removePidFileIfOwner,
   getCommandLine,
