@@ -8,10 +8,10 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 export default function setup() {
-  if (process.env.NINEROUTER_TEST_TMP_PARENT) return;
+  if (process.env.TOKENHOP_TEST_TMP_PARENT) return;
   // Workers inherit this env. Recorded here, before any worker overrides HOME.
-  process.env.NINEROUTER_TEST_REAL_HOME ??= homedir();
+  process.env.TOKENHOP_TEST_REAL_HOME ??= homedir();
   const parent = mkdtempSync(join(tmpdir(), "9router-test-"));
-  process.env.NINEROUTER_TEST_TMP_PARENT = parent;
+  process.env.TOKENHOP_TEST_TMP_PARENT = parent;
   return () => rmSync(parent, { recursive: true, force: true });
 }

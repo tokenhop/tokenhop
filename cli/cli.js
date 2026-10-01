@@ -409,7 +409,7 @@ function startServer() {
         PORT: port.toString(),
         HOSTNAME: host,
         // The server persists mitmEnabled=false itself (it owns the SQLite DB).
-        ...(mitmDisabled ? { NINE_ROUTER_DISABLE_MITM: "1" } : {})
+        ...(mitmDisabled ? { TOKENHOP_DISABLE_MITM: "1" } : {})
       }
     });
     // Lets the next launch / dashboard shutdown target exactly these processes.

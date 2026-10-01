@@ -12,8 +12,8 @@ import { DATA_FILE } from "@/lib/db/paths.js";
 const require = createRequire(import.meta.url);
 const mitmPaths = require("../../src/mitm/paths.js");
 
-const root = process.env.NINEROUTER_TEST_ROOT;
-const realHome = process.env.NINEROUTER_TEST_REAL_HOME;
+const root = process.env.TOKENHOP_TEST_ROOT;
+const realHome = process.env.TOKENHOP_TEST_REAL_HOME;
 
 const isInside = (child, parent) => {
   const rel = path.relative(parent, child);

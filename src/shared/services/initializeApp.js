@@ -2,6 +2,7 @@ import os from "os";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
+import { readEnv } from "@/shared/brand";
 import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
 import {
   enableTunnel,
@@ -145,7 +146,7 @@ async function runHeavyStartup() {
 
   if (settings.tunnelEnabled) ensureCloudflared().catch(() => {});
 
-  if (settings.mitmEnabled && process.env.NINE_ROUTER_DISABLE_MITM === "1") {
+  if (settings.mitmEnabled && readEnv("DISABLE_MITM") === "1") {
     // The CLI launcher sets this after repeated crashes. It can't safely write
     // SQLite while the server owns it, so the server persists the flag.
     console.log("[InitApp] MITM disabled by launcher after repeated crashes");

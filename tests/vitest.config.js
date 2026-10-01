@@ -42,7 +42,7 @@ export default defineConfig({
         test: {
           name: "real",
           include: [`${REAL_TESTS}/*.test.js`],
-          env: { NINEROUTER_TEST_REAL_PROJECT: "1" },
+          env: { TOKENHOP_TEST_REAL_PROJECT: "1" },
         },
       },
     ],
