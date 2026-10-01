@@ -11,7 +11,8 @@ const DEFAULT_MODEL = "kokoro";
 const DEFAULT_VOICE = "af_heart";
 
 export default {
-  async synthesize(text, model, credentials, responseFormat = "mp3") {
+  // The 4th arg is our json/binary envelope, not a codec; the codec is options.format.
+  async synthesize(text, model, credentials, _responseFormat, options = {}) {
     // Accept either providerSpecificData.baseUrl (how the custom embedding and
     // STT providers carry it) or a bare credentials.baseUrl (how the OpenAI TTS
     // adapter does), so a connection configured either way works.
@@ -36,7 +37,7 @@ export default {
     // address this provider — was the one form that did not work (verified
     // against a live Kokoro through 9router, 2026-08-03).
     let ttsModel = DEFAULT_MODEL;
-    let voice = DEFAULT_VOICE;
+    let voice = options.voice || DEFAULT_VOICE;
     if (model) {
       const parts = String(model).split("/").filter(Boolean);
       if (parts.length >= 2) {
@@ -47,6 +48,7 @@ export default {
       }
     }
 
+    const format = options.format || "mp3";
     const res = await fetch(`${base}/v1/audio/speech`, {
       method: "POST",
       headers: {
@@ -57,7 +59,7 @@ export default {
         model: ttsModel,
         voice,
         input: text,
-        response_format: responseFormat,
+        response_format: format,
       }),
     });
     if (!res.ok) {
@@ -65,6 +67,6 @@ export default {
       throw new Error(err?.error?.message || `Self-hosted TTS failed: ${res.status}`);
     }
     const buf = await res.arrayBuffer();
-    return { base64: Buffer.from(buf).toString("base64"), format: responseFormat };
+    return { base64: Buffer.from(buf).toString("base64"), format };
   },
 };

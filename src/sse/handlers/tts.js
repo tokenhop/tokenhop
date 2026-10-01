@@ -24,6 +24,10 @@ const CREDENTIALED_PROVIDERS = new Set(
     .map(([id]) => id),
 );
 
+// OpenAI /v1/audio/speech body `response_format` = audio codec. The query
+// `response_format` (mp3 | json) is our own envelope switch and stays separate.
+const AUDIO_FORMATS = new Set(["mp3", "opus", "aac", "flac", "wav", "pcm"]);
+
 export async function handleTts(request) {
   let body;
   try {
@@ -52,6 +56,13 @@ export async function handleTts(request) {
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.input) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
+  if (body.voice != null && (typeof body.voice !== "string" || !body.voice.trim()))
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "voice must be a non-empty string");
+  if (body.response_format != null && !AUDIO_FORMATS.has(body.response_format))
+    return errorResponse(
+      HTTP_STATUS.BAD_REQUEST,
+      `response_format must be one of: ${[...AUDIO_FORMATS].join(", ")}`,
+    );
 
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
   const comboModels = await getComboModels(modelStr);
@@ -98,6 +109,8 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
       responseFormat,
       language,
       style,
+      voice: body.voice,
+      format: body.response_format,
     });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
@@ -141,6 +154,8 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
       responseFormat,
       language,
       style,
+      voice: body.voice,
+      format: body.response_format,
     });
 
     if (result.success) return result.response;
