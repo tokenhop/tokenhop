@@ -127,12 +127,14 @@ export function buildEndpointOptions({
   savedPresets = [],
   withV1 = true,
   localOrigin = "",
+  remote = false,
 } = {}) {
   const wrap = (url) => (withV1 ? ensureV1(url) : stripSlash(url));
   const opts = [];
   if (!requiresExternalUrl && localOrigin) {
     const localUrl = wrap(localOrigin);
-    opts.push({ value: "local", label: "Local", url: localUrl });
+    // Opened remotely, the browser origin is the dashboard's address, not localhost.
+    opts.push({ value: "local", label: remote ? "Dashboard" : "Local", url: localUrl });
   }
   if (tunnelEnabled && tunnelPublicUrl) {
     opts.push({ value: "tunnel", label: "Tunnel", url: wrap(tunnelPublicUrl) });

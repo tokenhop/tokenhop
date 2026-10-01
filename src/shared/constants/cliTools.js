@@ -619,7 +619,7 @@ amp --model "{{model}}"
       },
       {
         type: "info",
-        text: "After Apply, run grok (or /model 9router) to use the routed model. Switch back anytime with /model grok-build.",
+        text: "Once the config is in place, run grok (or /model 9router) to use the routed model. Switch back anytime with /model grok-build.",
       },
       {
         type: "warning",

@@ -187,9 +187,11 @@ default_subagent_model = "${effectiveSubagentModel}"
           cloudUrl={cloudUrl}
           requiresExternalUrl={tool.requiresExternalUrl}
         />
-        <SetupRow label="Current" hint={currentBaseUrl || "not configured"}>
-          <span className="truncate font-mono text-xs text-muted">{currentBaseUrl}</span>
-        </SetupRow>
+        {currentBaseUrl && (
+          <SetupRow label="Current" hint={currentBaseUrl}>
+            <span className="truncate font-mono text-xs text-muted">{currentBaseUrl}</span>
+          </SetupRow>
+        )}
         <SetupRow label="API key">
           <ApiKeySelect
             value={card.selectedApiKey}

@@ -7,10 +7,12 @@ import Select from "@/shared/components/Select";
 import SegmentedControl from "@/shared/components/SegmentedControl";
 import { buildEndpointOptions, ENDPOINT_CUSTOM_VALUE } from "../lib/toolStatus";
 import { readPresets, subscribePresets, stripSlash } from "./cliEndpointPresets";
+import { useCliAccessStore } from "@/store/cliAccessStore";
 
 /**
  * Signal endpoint picker for CLI setup cards. Segmented choices
- * (Local / Tunnel / Tailscale / Custom) plus a saved-preset Select when
+ * (Local / Tunnel / Tailscale / Custom; "Local" reads "Dashboard" when the
+ * dashboard is opened remotely) plus a saved-preset Select when
  * presets exist; matches the old BaseUrlSelect option algebra exactly
  * (saved presets preserved, custom URL typed inline).
  *
@@ -46,6 +48,7 @@ export default function EndpointSegmentedPicker({
   const [customDraft, setCustomDraft] = useState("");
   const [savedPresets, setSavedPresets] = useState([]);
   const [mode, setMode] = useState(null);
+  const remote = useCliAccessStore((s) => s.localOnly);
 
   useEffect(() => {
     setLocalOrigin(window.location.origin);
@@ -67,6 +70,7 @@ export default function EndpointSegmentedPicker({
         savedPresets,
         withV1,
         localOrigin,
+        remote,
       }),
     [
       requiresExternalUrl,
@@ -79,6 +83,7 @@ export default function EndpointSegmentedPicker({
       savedPresets,
       withV1,
       localOrigin,
+      remote,
     ],
   );
 

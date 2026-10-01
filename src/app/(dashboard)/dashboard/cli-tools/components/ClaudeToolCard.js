@@ -2,6 +2,7 @@
 
 import PropTypes from "prop-types";
 import { useState, useEffect, useRef, useCallback } from "react";
+import Badge from "@/shared/components/Badge";
 import Checkbox from "@/shared/components/Checkbox";
 import SegmentedControl from "@/shared/components/SegmentedControl";
 import ModelSelectModal from "@/shared/components/ModelSelectModal";
@@ -16,6 +17,9 @@ import { deriveToolStatus } from "../lib/toolStatus";
 import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+import { DEFAULT_PLUGINS } from "@/shared/constants/coworkPlugins";
+
+const EXA_PLUGIN = DEFAULT_PLUGINS.find((p) => p.name === "exa");
 
 // Auto-compact window presets (CLAUDE_CODE_AUTO_COMPACT_WINDOW, valid 100K–1M).
 // UI shows the round number; the value written is nudged down 2K to stay safely
@@ -61,6 +65,7 @@ export default function ClaudeToolCard({
   const [oneMContext, setOneMContext] = useState(false);
   const [modelMappings, setModelMappings] = useState({});
   const hasInitializedModels = useRef(false);
+  const localOnly = useCliAccessStore((s) => s.localOnly);
 
   // Stable callback identity across renders — see setupCard.js. The latest
   // callback lives in a ref so the effect below runs once per mount.
@@ -105,6 +110,17 @@ export default function ClaudeToolCard({
     }
   }, [apiKeys, selectedApiKey]);
 
+  // Remotely status never loads, so seed the mappings from the tool defaults.
+  useEffect(() => {
+    if (!localOnly || hasInitializedModels.current) return;
+    hasInitializedModels.current = true;
+    const initial = {};
+    tool.defaultModels?.forEach((m) => {
+      if (m.envKey && m.defaultValue) initial[m.alias] = m.defaultValue;
+    });
+    setModelMappings(initial);
+  }, [localOnly, tool.defaultModels]);
+
   useEffect(() => {
     if (claudeStatus?.installed && !hasInitializedModels.current) {
       hasInitializedModels.current = true;
@@ -141,6 +157,11 @@ export default function ClaudeToolCard({
 
   const handleModelChange = (alias, val) => {
     setModelMappings((prev) => ({ ...prev, [alias]: val }));
+  };
+
+  // Picked models follow the [1m] toggle; typed values stay as typed.
+  const handleModelPick = (alias, val) => {
+    handleModelChange(alias, val ? withContextMarker(val, oneMContext) : val);
   };
 
   const handleCcFilterNamingToggle = async (checked) => {
@@ -246,16 +267,31 @@ export default function ClaudeToolCard({
     });
     if (autoCompactWindow) env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = autoCompactWindow;
 
-    return [
+    const configs = [
       {
         filename: "~/.claude/settings.json",
         content: JSON.stringify({ hasCompletedOnboarding: true, env }, null, 2),
       },
     ];
+    // Apply merges this into ~/.claude.json (see claude-settings route).
+    if (exaMcpEnabled && EXA_PLUGIN) {
+      configs.push({
+        filename: "~/.claude.json (merge into mcpServers)",
+        content: JSON.stringify(
+          { mcpServers: { exa: { type: EXA_PLUGIN.transport, url: EXA_PLUGIN.url } } },
+          null,
+          2,
+        ),
+      });
+    }
+    return configs;
   };
 
   const derived = deriveToolStatus(tool, claudeStatus);
-  const isCombo = (val) => Boolean(val && (modelAliases[val] || val.startsWith("claude-")));
+  const isCombo = (val) => {
+    const { model } = stripModelContextMarker(val || "");
+    return Boolean(model && (modelAliases[model] || model.startsWith("claude-")));
+  };
 
   return (
     <>
@@ -367,6 +403,9 @@ export default function ClaudeToolCard({
             label={
               <span className="inline-flex items-center gap-1.5">
                 <span>Filter naming requests</span>
+                <Badge variant="neutral" size="sm">
+                  Server setting
+                </Badge>
                 <Tooltip text="Returns a local response to topic-naming turns, saving tokens.">
                   <span
                     className="material-symbols-outlined text-[14px] text-subtle"
@@ -403,7 +442,7 @@ export default function ClaudeToolCard({
           isOpen={modalOpen}
           onClose={() => setModalOpen(false)}
           onSelect={(m) => {
-            if (currentEditingAlias) handleModelChange(currentEditingAlias, m.value);
+            if (currentEditingAlias) handleModelPick(currentEditingAlias, m.value);
           }}
           selectedModel={currentEditingAlias ? modelMappings[currentEditingAlias] : null}
           activeProviders={activeProviders}

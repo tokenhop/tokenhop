@@ -20,10 +20,6 @@ const COPY_TONE_ALLOWLIST = new Map([
   ],
   // Button/setting citations keep the label's own capitalization.
   [
-    "After Apply, run grok (or /model 9router) to use the routed model. Switch back anytime with /model grok-build.",
-    "cites the Apply button",
-  ],
-  [
     "OAuth required. Add now and authenticate after Apply; the tool list will be discovered after the first connect.",
     "cites the Apply button",
   ],
