@@ -41,12 +41,15 @@ function getCertFingerprint(certPath) {
   return crypto.createHash("sha1").update(der).digest("hex").toUpperCase().match(/.{2}/g).join(":");
 }
 
-/** The CN the CA on disk was issued with; an existing CA keeps its name. */
+/**
+ * The known CA name the cert on disk was issued with (an existing CA keeps its
+ * name), or the active brand's for an unknown CN. Only these constants reach a
+ * shell, never text read from the file.
+ */
 function getCertCommonName(certPath) {
   const { subject } = new crypto.X509Certificate(fs.readFileSync(certPath));
   const cn = subject.match(/^CN=(.*)$/m)?.[1];
-  if (!cn) throw new Error(`Certificate has no common name: ${certPath}`);
-  return cn;
+  return CA_NAMES.includes(cn) ? cn : ACTIVE.mitmCaCommonName;
 }
 
 /** Linux anchor filename for a CA with this CN; an unknown CN gets the active brand's. */
@@ -73,8 +76,9 @@ function macInstallCommand(certPath) {
 }
 
 function macUninstallCommand(fingerprint) {
+  // Both names go even when the fingerprint delete fails; its status is the result.
   const byFingerprint = `security delete-certificate -Z "${fingerprint}" ${MAC_KEYCHAIN}`;
-  return [byFingerprint, ...macDeleteByNames()].join(" && ");
+  return `${byFingerprint}; rc=$?; ${macDeleteByNames().join("; ")}; exit $rc`;
 }
 
 const windowsDeleteByNames = () =>
@@ -90,24 +94,32 @@ function windowsInstallScript(certPath) {
 }
 
 function windowsUninstallScript(fingerprint) {
-  // A name that isn't in the store fails harmlessly; success is the fingerprint being gone.
+  // Both names go even when the fingerprint delete fails; its status is the result.
   return `
+    certutil -delstore Root ${quotePs(fingerprint)} 2>$null | Out-Null
+    $rc = $LASTEXITCODE
     ${windowsDeleteByNames()}
-    certutil -store Root ${quotePs(fingerprint)} 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { throw "certificate still in Root store" }
-    exit 0
+    if ($rc -ne 0) { throw "certutil exit $rc" }
   `;
 }
 
+// Every anchor path of either name, in every known anchor dir.
+const allAnchorPaths = () =>
+  LINUX_CERT_PATHS.flatMap(({ dir }) => ANCHOR_FILES.map((f) => `${dir}/${f}`));
+
 function linuxInstallCommand(config, certPath, commonName) {
   const destFile = `${config.dir}/${linuxAnchorFile(commonName)}`;
-  const others = ANCHOR_FILES.map((f) => `${config.dir}/${f}`).filter((f) => f !== destFile);
-  const removeOthers = others.map((f) => `rm -f "${f}"`).join(" && ");
+  const removeOthers = allAnchorPaths()
+    .filter((f) => f !== destFile)
+    .map((f) => `rm -f "${f}"`)
+    .join(" && ");
   return `${removeOthers} && cp "${certPath}" "${destFile}" && (${config.cmd} 2>/dev/null || true)`;
 }
 
 function linuxUninstallCommand(config) {
-  const remove = ANCHOR_FILES.map((f) => `rm -f "${config.dir}/${f}"`).join(" && ");
+  const remove = allAnchorPaths()
+    .map((f) => `rm -f "${f}"`)
+    .join(" && ");
   return `${remove} && (${config.cmd} 2>/dev/null || true)`;
 }
 
@@ -202,10 +214,7 @@ function checkCertInstalledWindows(certPath) {
   });
 }
 
-/**
- * Installed when an anchor file of either name holds this exact cert. An anchor
- * we can't read counts by name alone.
- */
+/** Installed when an anchor file of either name holds this exact cert. */
 function checkCertInstalledLinux(certPath) {
   const config = getLinuxCertConfig();
   let fingerprint;
@@ -221,7 +230,7 @@ function checkCertInstalledLinux(certPath) {
       try {
         return getCertFingerprint(anchor) === fingerprint;
       } catch {
-        return true;
+        return false;
       }
     }),
   );
@@ -280,7 +289,7 @@ async function uninstallCert(sudoPassword, certPath) {
   const isInstalled =
     IS_WIN || IS_MAC
       ? await checkCertInstalled(certPath)
-      : ANCHOR_FILES.some((f) => fs.existsSync(`${getLinuxCertConfig().dir}/${f}`));
+      : allAnchorPaths().some((f) => fs.existsSync(f));
   if (!isInstalled) {
     log("🔐 Cert: not found in system store");
     return;
