@@ -1,6 +1,6 @@
 name: Docker Image
 
-# Pushing a v* tag builds and pushes ghcr.io/<owner>/<repo>:
+# Pushing a v* tag builds and pushes ghcr.io/<owner>/<repo> (ghcr.io/tokenhop/tokenhop):
 #   :<version> and :<major>.<minor> from the tag (e.g. v1.2.3 → 1.2.3, 1.2)
 #   :latest    only when the tag is the highest stable vX.Y.Z tag in the repo
 #   :sha-<sha>

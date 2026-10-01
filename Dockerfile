@@ -44,8 +44,6 @@ RUN --mount=type=secret,id=GEMINI_OAUTH_CLIENT_ID,env=GEMINI_OAUTH_CLIENT_ID \
 FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
 
-LABEL org.opencontainers.image.title="9router"
-
 ENV NODE_ENV=production
 ENV PORT=20128
 ENV HOSTNAME=0.0.0.0
@@ -55,6 +53,12 @@ ENV DATA_DIR=/app/data
 # the brand inlined into the bundles at build time.
 ARG NEXT_PUBLIC_BRAND=
 ENV NEXT_PUBLIC_BRAND=${NEXT_PUBLIC_BRAND}
+
+# The title follows the brand; the fallback must equal DEFAULT_BRAND_ID in
+# src/shared/brand (tests/unit/docker-brand.test.js checks it).
+LABEL org.opencontainers.image.title="${NEXT_PUBLIC_BRAND:-9router}" \
+  org.opencontainers.image.description="Self-hosted AI routing gateway with an OpenAI-compatible endpoint" \
+  org.opencontainers.image.source="https://github.com/tokenhop/tokenhop"
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static
@@ -79,9 +83,11 @@ COPY --from=builder /app/node_modules/sql.js ./node_modules/sql.js
 # node-machine-id is createRequire-loaded at runtime; tracing omits it.
 COPY --from=builder /app/node_modules/node-machine-id ./node_modules/node-machine-id
 
+# Root's tokenhop and legacy data dirs both point at the data home; users may mount either.
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \
-  ln -sf /app/data-home /root/.9router 2>/dev/null || true
+  ln -sf /app/data-home /root/.tokenhop && \
+  ln -sf /app/data-home /root/.9router 2>/dev/null || true # legacy(9router): remove in v2
 
 # Fix permissions at runtime (handles mounted volumes)
 RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
