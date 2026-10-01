@@ -144,4 +144,17 @@ describe("wrapQoderSSE billing detection", () => {
     expect(buf).toContain(`data: ${inner}`);
     expect(buf).toContain("data: [DONE]");
   });
+  it("finds the first data: frame after keepalive/event lines while the socket stays open", async () => {
+    const billingEnv = JSON.stringify({ statusCodeValue: 403, body: '{"code":"112"}' });
+    // Upstream never closes: a hang would time the test out.
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(`: keepalive\n\nevent: message\ndata: ${billingEnv}\n\n`),
+        );
+      },
+    });
+    const wrapped = await wrapQoderSSE(new Response(body), "qoder/ultimate");
+    expect(wrapped.status).toBe(403);
+  });
 });
