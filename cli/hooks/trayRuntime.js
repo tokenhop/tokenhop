@@ -15,6 +15,10 @@ const {
   runNpmInstall,
   summarizeNpmError,
 } = require("./sqliteRuntime");
+const { requireShared } = require("../src/cli/utils/requireShared");
+
+const { ACTIVE } = requireShared("brand");
+const LOG_PREFIX = `[${ACTIVE.slug}][runtime]`;
 
 const SYSTRAY_PKG = "systray2";
 const SYSTRAY_VERSION = "2.1.4";
@@ -28,8 +32,8 @@ function hasSystray() {
 // On Windows it was an AV false-positive risk; on macOS/Linux its bundled
 // binary is broken on modern OS versions.
 function cleanupLegacySystray({ silent = false } = {}) {
-  // 1) Runtime dir: ~/.9router/runtime/node_modules/systray (or %APPDATA% on Win)
-  // 2) npm global nested: <npm_prefix>/node_modules/9router/node_modules/systray
+  // 1) Runtime dir: <data dir>/runtime/node_modules/systray
+  // 2) npm global nested: <npm_prefix>/node_modules/<package>/node_modules/systray
   //    __dirname here = <pkg root>/hooks → up 1 = pkg root
   const targets = [
     path.join(getRuntimeNodeModules(), LEGACY_SYSTRAY_PKG),
@@ -39,9 +43,9 @@ function cleanupLegacySystray({ silent = false } = {}) {
     if (fs.existsSync(dir)) {
       try {
         fs.rmSync(dir, { recursive: true, force: true });
-        if (!silent) console.log(`[9router][runtime] removed legacy systray: ${dir}`);
+        if (!silent) console.log(`${LOG_PREFIX} removed legacy systray: ${dir}`);
       } catch (e) {
-        if (!silent) console.warn(`[9router][runtime] failed to remove ${dir}: ${e.message}`);
+        if (!silent) console.warn(`${LOG_PREFIX} failed to remove ${dir}: ${e.message}`);
       }
     }
   }
@@ -58,7 +62,7 @@ function chmodSystrayBin({ silent = false } = {}) {
   try {
     fs.chmodSync(binPath, 0o755);
   } catch (e) {
-    if (!silent) console.warn(`[9router][runtime] chmod tray bin failed: ${e.message}`);
+    if (!silent) console.warn(`${LOG_PREFIX} chmod tray bin failed: ${e.message}`);
   }
 }
 
@@ -71,7 +75,7 @@ function ensureRuntimeDir() {
       pkgPath,
       JSON.stringify(
         {
-          name: "9router-runtime",
+          name: `${ACTIVE.slug}-runtime`,
           version: "1.0.0",
           private: true,
         },
