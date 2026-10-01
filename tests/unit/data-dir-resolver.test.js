@@ -62,6 +62,8 @@ describe("getDataDir", () => {
     );
   });
 
+  // Warnings are deduplicated per message for the whole process, so every
+  // warning test uses its own DATA_DIR value.
   it("warns once and falls back for a Unix path on win32", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
