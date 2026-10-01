@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { BaseExecutor } from "../../open-sse/executors/base.js";
 import {
   GrokCliExecutor,
   countGrokCliUserTurns,
@@ -549,5 +550,34 @@ describe("GrokCliExecutor", () => {
     expect(err.status).toBe(402);
     expect(err.code).toBe("personal-team-blocked:spending-limit");
     expect(err.message).toMatch(/credits/i);
+  });
+
+  it("sends x-grok-agent-id without deviceId and never leaks another connection's id (YAN-26)", async () => {
+    // Mirror BaseExecutor.execute's order: transformRequest, then buildHeaders.
+    const spy = vi.spyOn(BaseExecutor.prototype, "execute").mockImplementation(function ({
+      model,
+      body,
+      stream,
+      credentials,
+    }) {
+      this.transformRequest(model, body, stream, credentials);
+      return this.buildHeaders(credentials, stream)["x-grok-agent-id"];
+    });
+    const run = (psd) =>
+      executor.execute({
+        model: "grok-4.5",
+        body: { input: "hi" },
+        stream: true,
+        credentials: { accessToken: "t", providerSpecificData: psd },
+      });
+
+    try {
+      const machineId = await run({});
+      expect(machineId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(await run({ deviceId: "dev-1" })).toBe("dev-1");
+      expect(await run({})).toBe(machineId);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
