@@ -74,8 +74,9 @@ function buildIco(pngBuffers) {
     directory.writeUInt8(dimensionByte(image.size), entry + 1); // height
     directory.writeUInt8(0, entry + 2); // palette
     directory.writeUInt8(0, entry + 3); // reserved
-    directory.writeUInt16LE(1, entry + 4); // color planes
-    directory.writeUInt16LE(32, entry + 6); // bits per pixel
+    // PNG-compressed entries carry no color info (per ICO spec these are 0).
+    directory.writeUInt16LE(0, entry + 4); // color planes
+    directory.writeUInt16LE(0, entry + 6); // bits per pixel
     directory.writeUInt32LE(image.buffer.length, entry + 8);
     directory.writeUInt32LE(offset, entry + 12);
     offset += image.buffer.length;

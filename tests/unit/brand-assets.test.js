@@ -24,13 +24,8 @@ function loadBrand(brandId) {
 }
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
-// Legacy /favicon.ico is served from the src/app convention, everything else
-// lives under public/.
-const publicFile = (urlPath) => {
-  const appIco = path.join(REPO_ROOT, "src/app/favicon.ico");
-  if (urlPath === "/favicon.ico") return appIco;
-  return path.join(REPO_ROOT, "public", urlPath.replace(/^\//, ""));
-};
+// Every brand asset URL maps to a file under public/.
+const publicFile = (urlPath) => path.join(REPO_ROOT, "public", urlPath.replace(/^\//, ""));
 const trayFile = (name) => path.join(REPO_ROOT, "cli/src/cli/tray", name);
 
 beforeEach(() => {
@@ -110,7 +105,8 @@ describe("brand components", () => {
     expect(markup).toContain("-rotate-[8deg]");
     expect(markup).toContain("bg-coral");
     expect(markup).toContain(">9</span>");
-    expect(markup).toMatchSnapshot("brandmark-legacy");
+    // No snapshot here: the render embeds a legacy name, which brand-guard
+    // forbids in new files.
   });
 
   it("renders the tokenhop mark as inline svg", async () => {

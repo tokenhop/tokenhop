@@ -381,4 +381,5 @@ function openBrowser(url) {
 module.exports = {
   initTray,
   killTray,
+  trayIconFile,
 };
