@@ -26,6 +26,11 @@ both branches, so the squash commit cherry-picks cleanly.
   unset means the dashboard setting applies. Same change in `gitbook/content/*/getting-started/installation.md`.
 - Existing installs that already copied `ENABLE_REQUEST_LOGS=false` see the ".env overrides" lock and its
   explanation, so the override is no longer silent. They remove the line to hand control back to the dashboard.
+- Found in review: with the env var unset, "Log every request to console" (`requestLogsEnabled`) was forgotten on
+  restart. `open-sse/utils/requestLogger.js` caches the stored flag in memory and only the settings PATCH updates it.
+  Seeding it from `instrumentation.js` doesn't reach the route bundle (separate module instance), so `handleChat`
+  syncs it from the settings it already reads per request. Verified on a production build: stored `true` logs after
+  a restart, `ENABLE_REQUEST_LOGS=false` and a live toggle-off both stop logging.
 
 ## YAN-113: Xiaomi MiMo callback proxy reuse doesn't renew its timeout
 
