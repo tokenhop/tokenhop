@@ -10,6 +10,7 @@ import { ACTIVE } from "@/shared/brand";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import {
   applyGrokBuildConfig,
+  GROK_MAIN_MODEL_SLOT,
   GROK_SUBAGENT_TYPES,
   parseGrokBuildConfig,
   resetGrokBuildConfig,
@@ -73,7 +74,7 @@ const normalizeSubagentModels = (value) => {
   return result;
 };
 
-const has9RouterConfig = (settings) => Boolean(settings?.model?.base_url);
+const hasTokenhopConfig = (settings) => Boolean(settings?.model?.base_url);
 
 export async function GET() {
   try {
@@ -90,7 +91,7 @@ export async function GET() {
     return NextResponse.json({
       installed: true,
       settings,
-      has9Router: has9RouterConfig(settings),
+      hasTokenhop: hasTokenhopConfig(settings),
       configPath: getGrokConfigPath(),
     });
   } catch (error) {
@@ -122,7 +123,7 @@ export async function POST(request) {
       success: true,
       message: "Grok Build settings applied successfully!",
       configPath: getGrokConfigPath(),
-      modelSlot: "9router",
+      modelSlot: GROK_MAIN_MODEL_SLOT,
     });
   } catch (error) {
     console.log("Error updating grok-build settings:", error);
@@ -146,7 +147,7 @@ export async function DELETE() {
     await fs.writeFile(configPath, resetGrokBuildConfig(toml));
     return NextResponse.json({
       success: true,
-      message: "9router model slots removed from Grok Build",
+      message: `${GROK_MAIN_MODEL_SLOT} model slots removed from Grok Build`,
     });
   } catch (error) {
     console.log("Error resetting grok-build settings:", error);

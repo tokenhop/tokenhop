@@ -185,7 +185,7 @@ export default function DroidToolCard({
         applyDisabled={modelList.length === 0}
         applying={card.applying}
         onReset={handleReset}
-        resetDisabled={!status?.has9Router}
+        resetDisabled={!status?.hasTokenhop}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}

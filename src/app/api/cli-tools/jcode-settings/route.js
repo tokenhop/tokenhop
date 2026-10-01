@@ -8,18 +8,29 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { parseTOML, stringifyTOML } from "confbox";
 import { configErrorResponse, readTomlConfig } from "@/lib/cliToolConfig";
+import {
+  ALL_CLIENT_KEYS,
+  ALL_JCODE_API_KEY_ENVS,
+  CLIENT_KEY,
+  findClientEntry,
+  isClientKey,
+  JCODE_API_KEY_ENV,
+  LEGACY_CLIENT_KEYS,
+  takeLegacyEntry,
+} from "@/lib/cliToolBrand";
 
 const execAsync = promisify(exec);
-
-// Brand-aware name lands with YAN-331 (in-place migration).
-const API_KEY_ENV = "JCODE_9ROUTER_API_KEY";
 
 const getJcodeConfigDir = () => path.join(os.homedir(), ".jcode");
 const getConfigPath = () => path.join(getJcodeConfigDir(), "config.toml");
 
-const getProviderEnvPath = () => {
+const envFileName = (key) => `provider-${key.toLowerCase()}.env`;
+// legacy(9router): remove in v2 — env files older versions wrote, migrated on Apply
+const LEGACY_ENV_FILES = [...new Set(LEGACY_CLIENT_KEYS.map(envFileName))];
+
+const getProviderEnvPath = (fileName = envFileName(CLIENT_KEY)) => {
   const configDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
-  return path.join(configDir, "jcode", "provider-9router.env");
+  return path.join(configDir, "jcode", fileName);
 };
 
 const checkJcodeInstalled = async () => {
@@ -48,20 +59,13 @@ const readConfig = async () => {
   }
 };
 
-const has9RouterConfig = (config) => {
-  if (!config || !config.providers) return false;
-
-  const providers = config.providers;
-
-  if (providers["9router"]) return true;
-
-  for (const [name, provider] of Object.entries(providers)) {
-    if (provider.base_url && provider.base_url.includes("localhost:20128")) {
-      return true;
-    }
-  }
-
-  return false;
+const hasTokenhopConfig = (config) => {
+  const providers = config?.providers;
+  if (!providers) return false;
+  if (findClientEntry(providers)) return true;
+  return Object.values(providers).some((provider) =>
+    provider?.base_url?.includes("localhost:20128"),
+  );
 };
 
 const writeConfig = async (config) => {
@@ -70,9 +74,9 @@ const writeConfig = async (config) => {
   await fs.writeFile(configPath, content, "utf-8");
 };
 
-const readProviderEnv = async () => {
+const readProviderEnv = async (fileName) => {
   try {
-    const envPath = getProviderEnvPath();
+    const envPath = getProviderEnvPath(fileName);
     const content = await fs.readFile(envPath, "utf-8");
     const env = {};
 
@@ -102,8 +106,8 @@ const readProviderEnv = async () => {
   }
 };
 
-const writeProviderEnv = async (env) => {
-  const envPath = getProviderEnvPath();
+const writeProviderEnv = async (env, fileName) => {
+  const envPath = getProviderEnvPath(fileName);
   let content = "# jcode provider environment variables\n";
 
   for (const [key, value] of Object.entries(env)) {
@@ -111,6 +115,16 @@ const writeProviderEnv = async (env) => {
   }
 
   await fs.writeFile(envPath, content, "utf-8");
+};
+
+// The saved key from our env file, else from a legacy one (not migrated yet)
+const readSavedApiKey = async () => {
+  for (const file of new Set(ALL_CLIENT_KEYS.map(envFileName))) {
+    const env = await readProviderEnv(file);
+    const name = ALL_JCODE_API_KEY_ENVS.find((n) => env[n]);
+    if (name) return env[name];
+  }
+  return null;
 };
 
 export async function GET() {
@@ -125,15 +139,13 @@ export async function GET() {
   }
 
   const config = await readConfig();
-  const has9Router = has9RouterConfig(config);
-  const env = await readProviderEnv();
 
   return NextResponse.json({
     installed: true,
     config,
-    has9Router,
+    hasTokenhop: hasTokenhopConfig(config),
     // The card preselects the saved key; local-only route, like claude-settings' env.
-    envApiKey: env[API_KEY_ENV] || null,
+    envApiKey: await readSavedApiKey(),
     configPath: getConfigPath(),
   });
 }
@@ -150,36 +162,50 @@ export async function POST(request) {
 
     const config = (await readTomlConfig(getConfigPath())) ?? {};
 
-    if (!config.providers) {
-      config.providers = {};
-    }
-
-    config.providers["9router"] = {
+    config.providers ??= {};
+    // A legacy entry keeps its models and extra fields; the new one wins on ours
+    const legacy = { ...takeLegacyEntry(config.providers), ...config.providers[CLIENT_KEY] };
+    config.providers[CLIENT_KEY] = {
+      ...legacy,
       type: "openai-compatible",
       base_url: normalizedBaseUrl,
       auth: "bearer",
-      api_key_env: API_KEY_ENV,
-      env_file: "provider-9router.env",
-      default_model: models && models.length > 0 ? models[0] : "cc/claude-opus-4-7",
+      api_key_env: JCODE_API_KEY_ENV,
+      env_file: envFileName(CLIENT_KEY),
+      default_model: models?.[0] || legacy.default_model || "cc/claude-opus-4-7",
       requires_api_key: true,
     };
+    if (LEGACY_CLIENT_KEYS.includes(config.provider?.default_provider)) {
+      config.provider.default_provider = CLIENT_KEY;
+    }
 
     const configDir = getJcodeConfigDir();
     await fs.mkdir(configDir, { recursive: true });
 
+    const xdgConfigDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+    await fs.mkdir(path.join(xdgConfigDir, "jcode"), { recursive: true });
+
+    // New env file first (keeping any other vars from the legacy one), then the
+    // config, and only then drop the legacy file, so a failure never strands the key.
+    const env = {};
+    for (const file of LEGACY_ENV_FILES) Object.assign(env, await readProviderEnv(file));
+    Object.assign(env, await readProviderEnv());
+    for (const name of ALL_JCODE_API_KEY_ENVS) delete env[name];
+    env[JCODE_API_KEY_ENV] = apiKey;
+    await writeProviderEnv(env);
+
     await writeConfig(config);
 
-    const xdgConfigDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
-    const jcodeConfigDir = path.join(xdgConfigDir, "jcode");
-    await fs.mkdir(jcodeConfigDir, { recursive: true });
-
-    const env = await readProviderEnv();
-    env[API_KEY_ENV] = apiKey;
-    await writeProviderEnv(env);
+    for (const file of LEGACY_ENV_FILES) {
+      // Apply already succeeded; a leftover legacy file is harmless, so only log it
+      await fs.rm(getProviderEnvPath(file), { force: true }).catch((error) => {
+        console.warn(`jcode: could not remove legacy ${file}:`, error.message);
+      });
+    }
 
     return NextResponse.json({
       success: true,
-      message: "jcode configured successfully. Use: jcode --provider-profile 9router",
+      message: `jcode configured successfully. Use: jcode --provider-profile ${CLIENT_KEY}`,
       configPath: getConfigPath(),
     });
   } catch (error) {
@@ -198,17 +224,21 @@ export async function DELETE() {
       return NextResponse.json({ success: true, message: "No configuration to remove" });
     }
 
-    delete config.providers["9router"];
+    for (const key of ALL_CLIENT_KEYS) delete config.providers[key];
+    if (isClientKey(config.provider?.default_provider)) delete config.provider.default_provider;
 
     await writeConfig(config);
 
-    const env = await readProviderEnv();
-    delete env[API_KEY_ENV];
-    await writeProviderEnv(env);
+    for (const file of new Set(ALL_CLIENT_KEYS.map(envFileName))) {
+      const env = await readProviderEnv(file);
+      if (!ALL_JCODE_API_KEY_ENVS.some((name) => name in env)) continue;
+      for (const name of ALL_JCODE_API_KEY_ENVS) delete env[name];
+      await writeProviderEnv(env, file);
+    }
 
     return NextResponse.json({
       success: true,
-      message: "9router configuration removed from jcode",
+      message: `${CLIENT_KEY} configuration removed from jcode`,
     });
   } catch (error) {
     const configRes = configErrorResponse(error);

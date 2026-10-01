@@ -28,7 +28,7 @@ export const TOOL_STATUS_KEYS = [
  * Remote mode skips detection: writer tools are "manual", guide tools stay "guide".
  *
  * @param {object} tool CLI_TOOLS entry (may carry configType)
- * @param {object|null|undefined} status Detection payload (installed, has9Router, error)
+ * @param {object|null|undefined} status Detection payload (installed, hasTokenhop, error)
  * @param {{ remote?: boolean }} [options]
  * @returns {{ key: "connected"|"notConfigured"|"notInstalled"|"error"|"guide"|"manual", label: string, variant: "ok"|"warn"|"info"|"neutral"|"err" }}
  */
@@ -41,7 +41,7 @@ export function deriveToolStatus(tool, status, { remote = false } = {}) {
   if (tool?.configType === "guide") return { key: "guide", label: "Guide", variant: "info" };
   if (!status) return { key: "notInstalled", label: "Not installed", variant: "neutral" };
   if (!status.installed) return { key: "notInstalled", label: "Not installed", variant: "neutral" };
-  if (status.has9Router) return { key: "connected", label: "Connected", variant: "ok" };
+  if (status.hasTokenhop) return { key: "connected", label: "Connected", variant: "ok" };
   return { key: "notConfigured", label: "Not configured", variant: "warn" };
 }
 

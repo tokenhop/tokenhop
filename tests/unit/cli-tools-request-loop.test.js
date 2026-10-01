@@ -64,7 +64,7 @@ describe("CLI tool status fetch stability", () => {
 });
 
 // Merge-gate regression: a card that rebuilt its own payload
-// (`{ installed: true, has9Router }`) dropped `status.error`, so the panel
+// (`{ installed: true, hasTokenhop }`) dropped `status.error`, so the panel
 // said "Not configured" while the grid said "Detection failed".
 describe("setup panels pass the real detection payload", () => {
   const cards = readdirSync(resolve(root, "components")).filter((f) => f.endsWith("ToolCard.js"));

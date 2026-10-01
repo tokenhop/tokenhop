@@ -66,7 +66,7 @@ export async function GET() {
     return NextResponse.json({
       installed: true,
       settings: { auth: auth ? Object.keys(auth) : [] },
-      has9Router: has9RouterConfig(auth),
+      hasTokenhop: has9RouterConfig(auth),
       authPath: getAuthPath(),
     });
   } catch (error) {

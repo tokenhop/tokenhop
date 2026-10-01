@@ -10,6 +10,14 @@ import { stringifyTOML } from "confbox";
 import { getApiKeys } from "@/lib/localDb";
 import { configErrorResponse, readTomlConfig } from "@/lib/cliToolConfig";
 import { BRAND, LEGACY } from "@/shared/brand";
+import {
+  ALL_CLIENT_KEYS,
+  CLIENT_KEY,
+  CLIENT_NAME,
+  isClientKey,
+  LEGACY_CLIENT_KEYS,
+  takeLegacyEntry,
+} from "@/lib/cliToolBrand";
 
 const execAsync = promisify(exec);
 
@@ -84,12 +92,19 @@ const readConfig = async () => {
   }
 };
 
-// Check if config has 9Router settings
-const has9RouterConfig = (config) => {
-  if (!config) return false;
-  return (
-    config.includes('model_provider = "9router"') || config.includes("[model_providers.9router]")
+// True when the config points at our provider under the current or a legacy key
+const hasTokenhopConfig = (config) =>
+  Boolean(config) &&
+  ALL_CLIENT_KEYS.some(
+    (key) =>
+      config.includes(`model_provider = "${key}"`) || config.includes(`[model_providers.${key}]`),
   );
+
+// Repoint per-profile `model_provider` from a legacy key to ours
+const repointProfiles = (parsed) => {
+  for (const profile of Object.values(parsed.profiles ?? {})) {
+    if (LEGACY_CLIENT_KEYS.includes(profile?.model_provider)) profile.model_provider = CLIENT_KEY;
+  }
 };
 
 // GET - Check codex CLI and read current settings
@@ -110,7 +125,7 @@ export async function GET() {
     return NextResponse.json({
       installed: true,
       config,
-      has9Router: has9RouterConfig(config),
+      hasTokenhop: hasTokenhopConfig(config),
       configPath: getCodexConfigPath(),
     });
   } catch (error) {
@@ -140,19 +155,25 @@ export async function POST(request) {
     // Read and parse existing config (unparseable file → 422, left untouched)
     const parsed = (await readTomlConfig(configPath)) ?? {};
 
-    // Update only 9Router related fields (api_key goes to auth.json, not config.toml)
+    // Update only our fields (api_key goes to auth.json, not config.toml)
     parsed.model = model;
-    parsed.model_provider = "9router";
+    parsed.model_provider = CLIENT_KEY;
+    repointProfiles(parsed);
 
-    // Update or create 9router provider section (no api_key - Codex reads from auth.json)
     // Ensure /v1 suffix is added only once
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+    // A legacy entry's extra fields (e.g. request_max_retries) carry over
+    const previous = {
+      ...takeLegacyEntry(parsed.model_providers),
+      ...parsed.model_providers?.[CLIENT_KEY],
+    };
     // Custom providers ignore auth.json - the key must travel as a static header
-    setNestedSection(parsed, "model_providers.9router", {
-      name: "9Router",
+    setNestedSection(parsed, `model_providers.${CLIENT_KEY}`, {
+      ...previous,
+      name: CLIENT_NAME,
       base_url: normalizedBaseUrl,
       wire_api: "responses",
-      http_headers: { Authorization: `Bearer ${apiKey}` },
+      http_headers: { ...previous.http_headers, Authorization: `Bearer ${apiKey}` },
     });
 
     // Subagent model is a scalar under [agents]; agents.<role> now means a custom role
@@ -190,14 +211,17 @@ export async function DELETE() {
       });
     }
 
-    // Remove 9Router related root fields only if they point to 9router
-    if (parsed.model_provider === "9router") {
+    // Remove root fields only if they point to our provider (any brand key)
+    if (isClientKey(parsed.model_provider)) {
       delete parsed.model;
       delete parsed.model_provider;
     }
 
-    // Remove 9router provider section
-    deleteNestedSection(parsed, "model_providers.9router");
+    for (const key of ALL_CLIENT_KEYS) deleteNestedSection(parsed, `model_providers.${key}`);
+    // A profile left pointing at a removed provider breaks Codex; let it use the default
+    for (const profile of Object.values(parsed.profiles ?? {})) {
+      if (isClientKey(profile?.model_provider)) delete profile.model_provider;
+    }
 
     // Remove subagent configuration (both the current key and the legacy role form)
     deleteNestedSection(parsed, "agents.default_subagent_model");
@@ -228,7 +252,7 @@ export async function DELETE() {
 
     return NextResponse.json({
       success: true,
-      message: "9Router settings removed successfully",
+      message: `${CLIENT_NAME} settings removed successfully`,
     });
   } catch (error) {
     console.log("Error resetting codex settings:", error);

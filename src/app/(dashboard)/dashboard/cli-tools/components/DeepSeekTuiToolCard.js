@@ -145,7 +145,7 @@ export default function DeepSeekTuiToolCard({
         applyDisabled={!selectedModel}
         applying={card.applying}
         onReset={handleReset}
-        resetDisabled={!status?.has9Router}
+        resetDisabled={!status?.hasTokenhop}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}

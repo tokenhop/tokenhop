@@ -82,7 +82,7 @@ ToolGridCard.propTypes = {
   }).isRequired,
   status: PropTypes.shape({
     installed: PropTypes.bool,
-    has9Router: PropTypes.bool,
+    hasTokenhop: PropTypes.bool,
   }),
   remote: PropTypes.bool,
   selected: PropTypes.bool,

@@ -75,7 +75,7 @@ export async function GET() {
     return NextResponse.json({
       installed: true,
       config,
-      has9Router: has9RouterConfig(config),
+      hasTokenhop: has9RouterConfig(config),
       configPath: getConfigPath(),
       opencode: {
         models: Object.keys(modelMap),

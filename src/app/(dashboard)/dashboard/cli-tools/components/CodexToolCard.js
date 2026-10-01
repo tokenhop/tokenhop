@@ -17,6 +17,7 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
+import { CLIENT_KEY, CLIENT_NAME } from "@/lib/cliToolBrand";
 
 /**
  * Codex CLI setup panel. Single model + subagent model override.
@@ -124,16 +125,16 @@ export default function CodexToolCard({
     return [
       {
         filename: "~/.codex/config.toml",
-        content: `# 9Router Configuration for Codex CLI
+        content: `# ${CLIENT_NAME} Configuration for Codex CLI
 model = "${selectedModel}"
-model_provider = "9router"
+model_provider = "${CLIENT_KEY}"
 
-[model_providers.9router]
-name = "9Router"
+[model_providers.${CLIENT_KEY}]
+name = "${CLIENT_NAME}"
 base_url = "${getEffectiveBaseUrl()}"
 wire_api = "responses"
 
-[model_providers.9router.http_headers]
+[model_providers.${CLIENT_KEY}.http_headers]
 Authorization = "Bearer ${keyToUse}"
 
 [agents]

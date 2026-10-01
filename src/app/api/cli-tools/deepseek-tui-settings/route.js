@@ -7,10 +7,9 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { ACTIVE } from "@/shared/brand";
+import { CLIENT_NAME } from "@/lib/cliToolBrand";
 
 const execAsync = promisify(exec);
-
-const PROVIDER_NAME = "9router";
 
 const getDeepSeekDir = () => path.join(os.homedir(), ".deepseek");
 const getDeepSeekConfigPath = () => path.join(getDeepSeekDir(), "config.toml");
@@ -52,8 +51,8 @@ const parseToml = (content) => {
   return result;
 };
 
-// Build TOML config for 9Router (openai provider mode)
-const build9RouterConfig = (baseUrl, apiKey, model) => {
+// Build TOML config for the gateway (openai provider mode)
+const buildTokenhopConfig = (baseUrl, apiKey, model) => {
   const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
   return `provider = "openai"
 
@@ -93,8 +92,8 @@ const readConfigToml = async () => {
   }
 };
 
-// Detect 9Router by checking if provider is "openai" and base_url points to localhost/127.0.0.1
-const has9RouterConfig = (config) => {
+// Detect our config by checking if provider is "openai" and base_url points to localhost/127.0.0.1
+const hasTokenhopConfig = (config) => {
   if (!config) return false;
   const provider = config.provider;
   if (provider !== "openai") return false;
@@ -118,7 +117,7 @@ export async function GET() {
     return NextResponse.json({
       installed: true,
       settings: config,
-      has9Router: has9RouterConfig(config),
+      hasTokenhop: hasTokenhopConfig(config),
       configPath: getDeepSeekConfigPath(),
     });
   } catch (error) {
@@ -137,7 +136,7 @@ export async function POST(request) {
     const dir = getDeepSeekDir();
     await fs.mkdir(dir, { recursive: true });
 
-    const newConfig = build9RouterConfig(baseUrl, apiKey || ACTIVE.defaultApiKey, model);
+    const newConfig = buildTokenhopConfig(baseUrl, apiKey || ACTIVE.defaultApiKey, model);
     await fs.writeFile(getDeepSeekConfigPath(), newConfig);
 
     return NextResponse.json({
@@ -163,7 +162,7 @@ export async function DELETE() {
     await fs.writeFile(configPath, DEFAULT_CONFIG);
     return NextResponse.json({
       success: true,
-      message: `${PROVIDER_NAME} config reset to DeepSeek defaults`,
+      message: `${CLIENT_NAME} config reset to DeepSeek defaults`,
     });
   } catch (error) {
     console.log("Error resetting deepseek-tui settings:", error);

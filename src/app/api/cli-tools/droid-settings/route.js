@@ -71,7 +71,7 @@ export async function GET() {
     return NextResponse.json({
       installed: true,
       settings,
-      has9Router: has9RouterConfig(settings),
+      hasTokenhop: has9RouterConfig(settings),
       settingsPath: getDroidSettingsPath(),
     });
   } catch (error) {

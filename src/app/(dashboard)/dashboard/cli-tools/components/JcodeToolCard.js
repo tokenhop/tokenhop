@@ -17,12 +17,13 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
+import { CLIENT_KEY, findClientEntry, JCODE_API_KEY_ENV } from "@/lib/cliToolBrand";
 
 const ENDPOINT = "/api/cli-tools/jcode-settings";
 
 /**
  * jcode setup panel. Single default model plus a usage hint.
- * Writes ~/.jcode/config.toml + ~/.config/jcode/provider-9router.env.
+ * Writes ~/.jcode/config.toml + ~/.config/jcode/provider-<brand>.env.
  */
 export default function JcodeToolCard({
   tool,
@@ -49,7 +50,7 @@ export default function JcodeToolCard({
   useEffect(() => {
     if (status?.installed && !hasInitializedModel.current) {
       hasInitializedModel.current = true;
-      const provider = status.config?.providers?.["9router"];
+      const provider = findClientEntry(status.config?.providers);
       if (provider) {
         if (provider.default_model) setSelectedModel(provider.default_model);
         const envKey = status.envApiKey;
@@ -58,7 +59,7 @@ export default function JcodeToolCard({
     }
   }, [status, apiKeys, card]);
 
-  const currentBaseUrl = status?.config?.providers?.["9router"]?.base_url || "";
+  const currentBaseUrl = findClientEntry(status?.config?.providers)?.base_url || "";
 
   const getEffectiveBaseUrl = () => {
     const u = (card.customBaseUrl || baseUrl || "http://127.0.0.1:20128/v1").replace(
@@ -121,12 +122,12 @@ export default function JcodeToolCard({
 
   const getManualConfigs = () => {
     const model = selectedModel || "cc/claude-opus-4-7";
-    const toml = `[providers.9router]\ntype = "openai-compatible"\nbase_url = "${getEffectiveBaseUrl()}"\nauth = "bearer"\napi_key_env = "JCODE_9ROUTER_API_KEY"\nenv_file = "provider-9router.env"\ndefault_model = "${model}"\nrequires_api_key = true\n\n[[providers.9router.models]]\nid = "${model}"`;
+    const toml = `[providers.${CLIENT_KEY}]\ntype = "openai-compatible"\nbase_url = "${getEffectiveBaseUrl()}"\nauth = "bearer"\napi_key_env = "${JCODE_API_KEY_ENV}"\nenv_file = "provider-${CLIENT_KEY}.env"\ndefault_model = "${model}"\nrequires_api_key = true\n\n[[providers.${CLIENT_KEY}.models]]\nid = "${model}"`;
     return [
       { filename: "~/.jcode/config.toml", content: toml },
       {
-        filename: "~/.config/jcode/provider-9router.env",
-        content: `JCODE_9ROUTER_API_KEY="${manualKeyFallback(card.selectedApiKey, cloudEnabled)}"`,
+        filename: `~/.config/jcode/provider-${CLIENT_KEY}.env`,
+        content: `${JCODE_API_KEY_ENV}="${manualKeyFallback(card.selectedApiKey, cloudEnabled)}"`,
       },
     ];
   };
@@ -155,7 +156,7 @@ export default function JcodeToolCard({
         applyDisabled={!selectedModel}
         applying={card.applying}
         onReset={handleReset}
-        resetDisabled={!status?.has9Router}
+        resetDisabled={!status?.hasTokenhop}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
@@ -196,7 +197,7 @@ export default function JcodeToolCard({
           />
         </SetupRow>
         <p className="font-mono text-xs text-muted">
-          jcode --provider-profile 9router
+          jcode --provider-profile {CLIENT_KEY}
           {selectedModel ? ` --model ${selectedModel}` : ""}
         </p>
       </SetupScaffold>
