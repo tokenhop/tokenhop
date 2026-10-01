@@ -23,6 +23,10 @@ const parseOpenAIStyleModels = (data) => {
 // and break recursive loops between 9router instances connected to each other.
 const INTERNAL_MODELS_FETCH_HEADER = "x-9r-internal-models-fetch";
 
+// OpenAI Model objects require `created` (Unix seconds). No catalog carries a
+// per-model date, so every entry reports when this process started.
+const MODELS_CREATED_AT = Math.floor(Date.now() / 1000);
+
 // LLM kind sentinel — combos/models with no explicit kind default to LLM
 const LLM_KIND = "llm";
 
@@ -420,7 +424,7 @@ export async function buildModelsList(kindFilter, options = {}) {
   for (const model of models) {
     if (!model?.id || seenModelIds.has(model.id)) continue;
     seenModelIds.add(model.id);
-    dedupedModels.push(model);
+    dedupedModels.push({ ...model, created: MODELS_CREATED_AT });
   }
 
   return dedupedModels;
