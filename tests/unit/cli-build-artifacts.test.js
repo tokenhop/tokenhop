@@ -17,10 +17,10 @@ const { afterEach, describe, it } = testApi;
 const require = createRequire(import.meta.url);
 const {
   assertRequiredApiArtifacts,
-  BRAND_MODULE_PATH,
-  copyBrandModule,
+  copySharedModules,
   copyStandaloneBuild,
   mergeServerArtifacts,
+  SHARED_MODULE_PATHS,
 } = require("../../cli/scripts/build-cli.js");
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 
@@ -123,18 +123,23 @@ describe("CLI build server artifacts", () => {
     );
   });
 
-  it("ships the brand module inside the packed CLI", () => {
+  it("ships the shared modules inside the packed CLI", () => {
     const cliDir = createTempDir();
     for (const file of ["package.json", ".npmignore", ".gitignore"]) {
       fs.copyFileSync(path.join(repoRoot, "cli", file), path.join(cliDir, file));
     }
 
-    const dest = copyBrandModule(repoRoot, cliDir);
-    assert.equal(dest, path.join(cliDir, BRAND_MODULE_PATH));
-    assert.equal(
-      fs.readFileSync(dest, "utf8"),
-      fs.readFileSync(path.join(repoRoot, BRAND_MODULE_PATH), "utf8"),
+    const dests = copySharedModules(repoRoot, cliDir);
+    assert.deepEqual(
+      dests,
+      SHARED_MODULE_PATHS.map((rel) => path.join(cliDir, rel)),
     );
+    for (const rel of SHARED_MODULE_PATHS) {
+      assert.equal(
+        fs.readFileSync(path.join(cliDir, rel), "utf8"),
+        fs.readFileSync(path.join(repoRoot, rel), "utf8"),
+      );
+    }
 
     const out = execFileSync(
       process.platform === "win32" ? "npm.cmd" : "npm",
@@ -148,7 +153,12 @@ describe("CLI build server artifacts", () => {
     );
     // npm ≤10 prints an array, npm 11 an object keyed by package name.
     const [pack] = Object.values(JSON.parse(out));
-    assert.ok(pack.files.some((f) => f.path === BRAND_MODULE_PATH.split(path.sep).join("/")));
+    for (const rel of SHARED_MODULE_PATHS) {
+      assert.ok(
+        pack.files.some((f) => f.path === rel.split(path.sep).join("/")),
+        rel,
+      );
+    }
   });
 
   it("reports the missing required API route artifact path", () => {
