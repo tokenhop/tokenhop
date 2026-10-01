@@ -26,15 +26,34 @@ describe("badgeTint", () => {
 describe("resolveVersionChip", () => {
   it("shortens a beta prerelease to one line and keeps the full version", () => {
     expect(resolveVersionChip("0.4.0-beta.7")).toEqual({
-      label: "0.4.0 β7",
+      label: "v0.4.0 β7",
       full: "v0.4.0-beta.7",
     });
   });
 
   it("leaves stable and other versions as-is", () => {
-    expect(resolveVersionChip("0.4.0")).toEqual({ label: "0.4.0", full: "v0.4.0" });
-    expect(resolveVersionChip("0.4.0-rc.1")).toEqual({ label: "0.4.0-rc.1", full: "v0.4.0-rc.1" });
+    expect(resolveVersionChip("0.4.0")).toEqual({ label: "v0.4.0", full: "v0.4.0" });
+    expect(resolveVersionChip("0.4.0-rc.1")).toEqual({ label: "v0.4.0-rc.1", full: "v0.4.0-rc.1" });
     expect(resolveVersionChip(undefined)).toEqual({ label: "", full: "" });
+  });
+
+  it("shows the channel and short commit for an unreleased build", () => {
+    const sha = "27bed7140fbebf6eb77d30440f4625972f91c91c";
+    expect(resolveVersionChip("0.6.0", { channel: "dev", sha })).toEqual({
+      label: "dev 27bed71",
+      full: "v0.6.0+dev.27bed71",
+    });
+    expect(resolveVersionChip("0.6.0", { channel: "dev" })).toEqual({
+      label: "dev",
+      full: "v0.6.0+dev",
+    });
+  });
+
+  it("ignores a commit without a channel, as in release and local builds", () => {
+    expect(resolveVersionChip("0.6.1", { channel: "", sha: "27bed71" })).toEqual({
+      label: "v0.6.1",
+      full: "v0.6.1",
+    });
   });
 });
 

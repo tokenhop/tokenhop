@@ -160,6 +160,8 @@ jobs:
             NPM_REGISTRY=https://registry.npmjs.org
             REQUIRE_OAUTH_DEFAULTS=1
             NEXT_PUBLIC_BRAND=${{ steps.brand.outputs.value }}
+            NEXT_PUBLIC_BUILD_CHANNEL=${{ github.ref_type != 'tag' && 'dev' || '' }}
+            NEXT_PUBLIC_BUILD_SHA=${{ github.ref_type != 'tag' && github.sha || '' }}
           # Cache keys ignore secret values; never reuse the OAuth-defaults layer.
           no-cache-filters: oauth-defaults
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ env.PUSH }}

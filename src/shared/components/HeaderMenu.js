@@ -37,7 +37,7 @@ export default function HeaderMenu({ onLogout, onDonate }) {
   const [shutdownOpen, setShutdownOpen] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const { toggleTheme, isDark } = useTheme();
-  const { full } = resolveVersionChip(APP_CONFIG.version);
+  const { full } = resolveVersionChip(APP_CONFIG.version, APP_CONFIG.build);
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);

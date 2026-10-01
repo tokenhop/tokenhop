@@ -33,7 +33,7 @@ export default function Sidebar({ onClose, inDrawer = false }) {
     enableTranslator,
     traffic,
   } = useShellStatus();
-  const chip = resolveVersionChip(APP_CONFIG.version);
+  const chip = resolveVersionChip(APP_CONFIG.version, APP_CONFIG.build);
 
   return (
     <aside
@@ -64,8 +64,9 @@ export default function Sidebar({ onClose, inDrawer = false }) {
           <span
             className="ms-auto max-w-[7.5rem] truncate rounded-md border border-line px-1.5 py-0.5 font-mono text-[11px] whitespace-nowrap text-muted"
             title={chip.full}
+            data-i18n-skip="true"
           >
-            v{chip.label}
+            {chip.label}
           </span>
         ) : null}
         {inDrawer && onClose ? (
