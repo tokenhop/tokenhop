@@ -5,6 +5,9 @@ import SectionCard from "@/shared/components/SectionCard";
 import CopyField from "@/shared/components/CopyField";
 import Callout from "@/shared/components/Callout";
 import { Skeleton } from "@/shared/components/Loading";
+import { BRAND } from "@/shared/brand";
+
+const MIGRATE_COMMAND = `${BRAND.npmPackage} data migrate`;
 
 /**
  * Environment section: read-only allowlisted non-secret env readout from
@@ -13,6 +16,8 @@ import { Skeleton } from "@/shared/components/Loading";
  */
 export default function EnvironmentSection() {
   const [values, setValues] = useState(null);
+  const [legacyDataDir, setLegacyDataDir] = useState(null);
+  const [ignoredLegacyDataDir, setIgnoredLegacyDataDir] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -22,7 +27,10 @@ export default function EnvironmentSection() {
         const res = await fetch("/api/settings/environment", { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if (!cancelled) setValues(data.values || {});
+        if (cancelled) return;
+        setValues(data.values || {});
+        setLegacyDataDir(data.isLegacyDataDir ? data.dataDir : null);
+        setIgnoredLegacyDataDir(data.ignoredLegacyDataDir || null);
       } catch {
         if (!cancelled) setError("Could not load environment values");
       }
@@ -45,6 +53,28 @@ export default function EnvironmentSection() {
         <Callout variant="info" title=".env · restart">
           Values come from the server environment. Change them in .env and restart 9router.
         </Callout>
+        {legacyDataDir && (
+          <Callout variant="warn" title="Data directory">
+            <p>
+              Your data is in the old folder. Stop the server, then run this command to move it.
+            </p>
+            <div className="mt-2 space-y-1">
+              <CopyField value={legacyDataDir} label="Data directory" />
+              <CopyField value={MIGRATE_COMMAND} label="Copy code" />
+            </div>
+          </Callout>
+        )}
+        {ignoredLegacyDataDir && (
+          <Callout variant="warn" title="Data directory">
+            <p>
+              An old data folder also exists and is not used. If your data is missing, check it
+              before deleting anything.
+            </p>
+            <div className="mt-2">
+              <CopyField value={ignoredLegacyDataDir} label="Data directory" />
+            </div>
+          </Callout>
+        )}
         {error ? (
           <p className="text-sm text-err" role="alert">
             {error}

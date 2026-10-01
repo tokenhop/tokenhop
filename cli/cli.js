@@ -56,6 +56,20 @@ if (args[0] === "xai" && args[1] === "video") {
   return;
 }
 
+// `data migrate` moves the legacy data dir; it must run before the self-heal
+// below writes into it. Offered only under the tokenhop brand.
+const dataMigrate = require("./src/cli/commands/dataMigrate");
+if (args[0] === "data") {
+  dataMigrate
+    .run(args.slice(1))
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(`❌ ${err?.message || err}`);
+      process.exit(1);
+    });
+  return;
+}
+
 // Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.9router/runtime
 // so the server can resolve them via NODE_PATH. Best-effort — sql.js is required,
 // better-sqlite3 is optional. Logs to stderr only on failure.
@@ -119,7 +133,13 @@ Options:
 Commands:
   xai video --prompt "..." --output video.mp4
                       Generate a Grok Imagine video via the running gateway
-                      (see: ${APP_NAME} xai video --help)
+                      (see: ${APP_NAME} xai video --help)${
+  dataMigrate.AVAILABLE
+    ? `
+  data migrate [--dry-run]
+                      Move the legacy data dir to the new one (stop the server first)`
+    : ""
+}
 `);
   process.exit(0);
 }
