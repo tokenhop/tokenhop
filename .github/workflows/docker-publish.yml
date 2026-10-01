@@ -4,11 +4,14 @@ name: Docker Image
 #   :<version> and :<major>.<minor> from the tag (e.g. v1.2.3 → 1.2.3, 1.2)
 #   :latest    only when the tag is the highest stable vX.Y.Z tag in the repo
 #   :sha-<sha>
-# Nothing runs on branch pushes. Manual runs build the chosen ref without pushing
-# unless `push` is checked.
+# Pushing to master builds and pushes :dev and :develop (the same image, the
+# rolling unreleased build) plus :sha-<sha>. It never creates a git tag or a
+# release, and a newer master push cancels a build still in progress.
+# Manual runs build the chosen ref without pushing unless `push` is checked.
 #
-# Brand (NEXT_PUBLIC_BRAND build arg): v1+ tags, including v1.0.0-beta.N, build
-# tokenhop; v0.* tags keep the default brand. Manual runs use the `brand` input.
+# Brand (NEXT_PUBLIC_BRAND build arg): v1+ tags, including v1.0.0-beta.N, and
+# master pushes build tokenhop; v0.* tags keep the default brand. Manual runs use
+# the `brand` input.
 #
 # Each platform builds natively on its own runner (arm64 on ubuntu-24.04-arm, free
 # for public repos), pushed by digest; `merge` then tags one multi-arch manifest.
@@ -17,6 +20,7 @@ name: Docker Image
 
 on:
   push:
+    branches: [master]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -32,7 +36,8 @@ on:
 
 concurrency:
   group: docker-${{ github.ref }}
-  cancel-in-progress: false
+  # Only the newest master build matters; release tag builds always finish.
+  cancel-in-progress: ${{ github.ref == 'refs/heads/master' }}
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
@@ -70,11 +75,15 @@ jobs:
         id: brand
         env:
           EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
           TAG: ${{ github.ref_name }}
           INPUT_BRAND: ${{ inputs.brand }}
         run: |
           brand=""
-          if [ "$EVENT" = "push" ]; then
+          if [ "$EVENT" = "push" ] && [ "$REF_TYPE" = "branch" ]; then
+            # master is the v1.0.0 trunk, like the v1.0.0-beta.N tags cut from it.
+            brand=tokenhop
+          elif [ "$EVENT" = "push" ]; then
             major="${TAG#v}"
             major="${major%%.*}"
             if [ "$major" -ge 1 ] 2>/dev/null; then brand=tokenhop; fi
@@ -170,7 +179,7 @@ jobs:
       # prereleases (v1.3.0-rc.1) and older-version backports never move it.
       - name: Resolve latest tag
         id: latest
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -204,7 +213,9 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ steps.latest.outputs.is_latest == 'true' }}
-            type=ref,event=branch
+            type=raw,value=dev,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+            type=raw,value=develop,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+            type=ref,event=branch,enable=${{ github.event_name == 'workflow_dispatch' }}
             type=sha
 
       - name: Create and push multi-arch manifest
