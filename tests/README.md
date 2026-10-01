@@ -1,6 +1,6 @@
 # 9Router Tests
 
-Vitest suite for the gateway (`src/`) and routing engine (`open-sse/`). `tests/` is an independent ESM package and is not wired into the root `npm test`.
+Vitest suite for the gateway (`src/`) and routing engine (`open-sse/`). `tests/` is an independent ESM package; the root `npm test` runs it plus the regression gate.
 
 ## Setup
 
@@ -22,6 +22,8 @@ npx vitest run unit/capabilities.test.js # single file (path relative to tests/)
 
 `npm test` runs the same thing with `--reporter=verbose`.
 
+> **Always load `tests/vitest.config.js`.** Run tests via `npm test`, from `tests/`, or with `npx vitest run -c tests/vitest.config.js`. Never point vitest at another config. Without this config the setup below never runs, `HOME` stays your real home, and the CLI-tool tests write to and delete under it (one such run deleted a real `~/.config`). The root `vitest.config.mjs` re-exports this config, so a bare `npx vitest` from the repo root is safe too.
+
 ## Data isolation
 
 Tests never read or write your real `~/.9router`. Two setup hooks in `vitest.config.js` handle it:
@@ -30,6 +32,8 @@ Tests never read or write your real `~/.9router`. Two setup hooks in `vitest.con
 - `setup/isolateDataDir.js` (`setupFiles`) runs before every test file's imports. It creates a fresh per-file root inside that parent, points `DATA_DIR` at `<root>/data`, and points `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA` and the `XDG_*` dirs inside `<root>/home`. It uses the `forks` pool, because a worker thread's `os.homedir()` ignores the override, and it throws if the override isn't honored.
 
 You don't need a `DATA_DIR=$(mktemp -d)` prefix. `unit/test-data-isolation.test.js` fails if the resolved data dir or home is outside the temp root.
+
+Tests that write to or delete under the home dir must get it from `helpers/isolatedHome.js`: use `assertIsolatedHome()` instead of a bare `os.homedir()`, and `removeUnderHome(dirs)` instead of `fs.rm`. Both throw `HOME is not isolated …` unless the home lies inside this file's temp root, so a run without the setup fails before it touches anything. `unit/isolated-home-guard.test.js` covers the guard.
 
 `vitest.config.js` splits the suite into two projects: `unit` (everything except `translator/real/**`) and `real` (`translator/real/**`). The live tests in `real` need your credentials. They skip isolation and use your real data dir only when their live gate (`RUN_REAL=1` or `RUN_E2E=1`) is set. `unit` stays isolated even then.
 

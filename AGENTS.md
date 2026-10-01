@@ -17,6 +17,10 @@ npm run format      # format everything
 npm test            # vitest + known-fails regression gate (needs tests/ deps)
 ```
 
+Run tests only via `npm test`, from `tests/`, or with
+`npx vitest run -c tests/vitest.config.js`. Without that config, `HOME` isn't
+isolated and the tests delete real files under your home dir.
+
 Commits follow Conventional Commits 1.0.0 (commitlint-enforced, see `.gitmessage`).
 
 ## Branching & releases

@@ -53,6 +53,8 @@ npx vitest run unit/capabilities.test.js   # single file (path relative to tests
 
 > `vitest.config.js` resolves the `open-sse`/`@/` aliases from the repo root regardless of where vitest lives.
 >
+> **Always run tests via `npm test`, from `tests/`, or with `-c tests/vitest.config.js`.** Never use another vitest config. That config's setup moves `HOME`/`DATA_DIR` to a temp dir; without it the CLI-tool tests write to and `rm -rf` under your real home (one run deleted a real `~/.config`). The root `vitest.config.mjs` re-exports it so a bare root `npx vitest` is safe, and tests that touch the home dir must go through `tests/helpers/isolatedHome.js`, which throws when `HOME` isn't isolated.
+>
 > **Runs are isolated by default.** Every test file gets its own temp `DATA_DIR`/`HOME` (`tests/setup/`, forks pool), so `~/.9router` is never touched and no `DATA_DIR=$(mktemp -d)` prefix is needed. Only `translator/real/**` under `RUN_REAL=1`/`RUN_E2E=1` uses the real data dir. Guarded by `unit/test-data-isolation.test.js`; details in `tests/README.md`.
 >
 > The suite runs green on a plain checkout; judge regressions against `tests/__baseline__/known-fails.txt`, not a raw run (from `tests/`):
