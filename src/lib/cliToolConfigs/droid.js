@@ -7,7 +7,7 @@ import { withV1 } from "@/lib/cliToolConfigs/shared";
  * the active model moved first, then indexed by position. An empty `activeModel`
  * means no default (list order kept). `null` without a usable model.
  */
-export const buildDroidConfig = ({ baseUrl, apiKey, models, activeModel }) => {
+export const buildDroidConfig = ({ baseUrl, apiKey, models, activeModel, platform }) => {
   const list = Array.isArray(models) ? models : [];
   const customModels = [];
   list.forEach((model, i) => {
@@ -41,7 +41,10 @@ export const buildDroidConfig = ({ baseUrl, apiKey, models, activeModel }) => {
 
   return [
     {
-      file: "~/.factory/settings.json",
+      file:
+        platform === "win32"
+          ? "%USERPROFILE%\\.factory\\settings.json"
+          : "~/.factory/settings.json",
       format: "json",
       merge: true,
       value: { customModels },

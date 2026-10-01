@@ -144,6 +144,8 @@ export default function DroidToolCard({
         apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
         models: modelList,
         activeModel: modelList[0] || "",
+        platform:
+          typeof navigator !== "undefined" && /win/i.test(navigator.platform) ? "win32" : "",
       }),
     );
 

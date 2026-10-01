@@ -1,6 +1,7 @@
 // YAN-617: what Apply writes on a clean HOME must equal the builder fragments the
 // manual snippet shows. A key added to a route but not to its builder fails here.
 import { mkdir } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { parseTOML } from "confbox";
 import { afterEach, describe, expect, it } from "vitest";
@@ -40,7 +41,9 @@ const TOOLS = [
     builder: "copilot",
     fn: "buildCopilotConfig",
     body: { baseUrl: base, apiKey, models: ["cx/gpt-5", "cc/claude-opus-5"] },
-    opts: { platform: "linux" },
+    // The route writes the host OS path; the win32 display path (%APPDATA%) has no ~ mapping.
+    opts: { platform: os.platform() },
+    skip: os.platform() === "win32",
   },
   {
     route: "cline-settings",
@@ -132,24 +135,27 @@ const homePath = (file) => (file.startsWith("~/") ? file.slice(2) : path.relativ
 afterEach(restoreBrand);
 
 describe.each(["", "tokenhop"])("brand %j", (brand) => {
-  it.each(TOOLS)("$route: Apply == builder", async ({ route, builder, fn, body, opts, dirs }) => {
-    await clearHome(HOME_DIRS);
-    for (const dir of dirs || []) await mkdir(path.join(home, dir), { recursive: true });
+  it.each(TOOLS.filter((t) => !t.skip))(
+    "$route: Apply == builder",
+    async ({ route, builder, fn, body, opts, dirs }) => {
+      await clearHome(HOME_DIRS);
+      for (const dir of dirs || []) await mkdir(path.join(home, dir), { recursive: true });
 
-    const res = await (await load(brand, route)).POST(post(body));
-    expect(res.status).toBe(200);
+      const res = await (await load(brand, route)).POST(post(body));
+      expect(res.status).toBe(200);
 
-    const build = (await loadModule(brand, `@/lib/cliToolConfigs/${builder}.js`))[fn];
-    const fragments = build({ ...body, ...opts });
-    expect(fragments?.length).toBeGreaterThan(0);
+      const build = (await loadModule(brand, `@/lib/cliToolConfigs/${builder}.js`))[fn];
+      const fragments = build({ ...body, ...opts });
+      expect(fragments?.length).toBeGreaterThan(0);
 
-    for (const { file, format, value } of fragments) {
-      const written = await read(homePath(file));
-      if (format === "json") expect(JSON.parse(written)).toEqual(value);
-      else if (format === "toml") expect(parseTOML(written)).toEqual(value);
-      else expect(written).toBe(value);
-    }
-  });
+      for (const { file, format, value } of fragments) {
+        const written = await read(homePath(file));
+        if (format === "json") expect(JSON.parse(written)).toEqual(value);
+        else if (format === "toml") expect(parseTOML(written)).toEqual(value);
+        else expect(written).toBe(value);
+      }
+    },
+  );
 
   it.each(TOOLS.filter((t) => t.route !== "claude-settings"))(
     "$route: no model → null",

@@ -24,7 +24,7 @@ vitest parity test compares Apply's output on a clean HOME with the builder's fr
 - **Source PRD**: N/A (Linear YAN-617, parent YAN-616; GitHub #465)
 - **PRD Phase**: N/A
 - **Estimated Files**: ~37
-- **Target**: `v0.6.x` → PR into `master`, then `backport:0.6` cherry-pick to `release/0.6`
+- **Target**: `v1.0.0` → PR into `master`, no backport (retargeted from `v0.6.x`: depends on v1.0.0-only code)
 - **Branch**: `feat/yan-617-cli-tool-config-builders`
 
 ## Batches
@@ -396,12 +396,11 @@ EXPECT: all pass; `verify-no-regression` reports 0 new failures.
 
 ## Risks
 
-| Risk                                                                                        | Likelihood | Impact | Mitigation                                                                                                                                  |
-| ------------------------------------------------------------------------------------------- | ---------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Route refactor changes behaviour on existing files                                          | M          | H      | Keep merge/migration code; existing brand tests are the guard                                                                               |
-| `confbox/toml` in the client bundle breaks the build                                        | L          | M      | Pure ESM, no node imports; both builds run in validation                                                                                    |
-| Backport to `release/0.6` conflicts heavily (no `cliToolBrand.js`, no #449/#455/#460 there) | H          | M      | `/ycc:backport` with minimal resolution; if it needs real rework, write it as its own PR against `release/0.6` (RELEASING.md "Backporting") |
-| 12 parallel tasks drift on the shared contract                                              | M          | M      | Contract fixed in this plan; parity test catches mismatches                                                                                 |
+| Risk                                                 | Likelihood | Impact | Mitigation                                                    |
+| ---------------------------------------------------- | ---------- | ------ | ------------------------------------------------------------- |
+| Route refactor changes behaviour on existing files   | M          | H      | Keep merge/migration code; existing brand tests are the guard |
+| `confbox/toml` in the client bundle breaks the build | L          | M      | Pure ESM, no node imports; both builds run in validation      |
+| 12 parallel tasks drift on the shared contract       | M          | M      | Contract fixed in this plan; parity test catches mismatches   |
 
 ## Notes
 

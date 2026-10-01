@@ -7,6 +7,8 @@ import { applyGrokBuildConfig } from "@/lib/grokBuildConfig";
  * `buildGrokBuildConfig({ baseUrl, apiKey, model, contextWindow, subagentModels, existingToml = "" })`
  * → a `~/.grok/config.toml` text fragment (merge), `null` when no model is
  * given. Arguments are the already-normalised values the route computes today.
+ * The card passes the browser's known context window; when it has none the
+ * snippet omits `context_window`, while Apply falls back to server capabilities.
  */
 export function buildGrokBuildConfig({
   baseUrl,

@@ -129,6 +129,7 @@ export async function POST(request) {
       activeModel,
     });
     settings.customModels.push(...(fragments?.[0].value.customModels ?? []));
+    // index mirrors array position across the whole list, so ours never collide with the user's.
     settings.customModels.forEach((m, i) => {
       m.index = i;
     });

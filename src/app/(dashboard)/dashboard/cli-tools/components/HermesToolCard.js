@@ -5,7 +5,6 @@ import {
   useSetupCard,
   setupCardPropTypes,
   resolveApiKey,
-  manualApiKey,
   toManualConfigs,
   ApiKeySelect,
   EndpointSegmentedPicker,
@@ -120,7 +119,8 @@ export default function HermesToolCard({
     toManualConfigs(
       buildHermesConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        // Same key Apply sends: no key, no .env (Apply skips it too).
+        apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
         model: selectedModel,
       }),
     );

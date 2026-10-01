@@ -34,12 +34,6 @@ const parseModelBlock = (yaml) => {
 
 const removeModelBlock = (yaml) => yaml.replace(MODEL_BLOCK_RE, "").replace(/^\n+/, "");
 
-// .env helper — remove single KEY=VALUE line
-const removeEnvVar = (envText, key) => {
-  const re = new RegExp(`^${key}=.*\\r?\\n?`, "m");
-  return envText.replace(re, "");
-};
-
 const checkHermesInstalled = async () => {
   try {
     const isWindows = os.platform() === "win32";
