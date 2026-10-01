@@ -58,11 +58,16 @@ describe("standalone build assets", () => {
   it("copies the request-sanitizing server wrapper into the standalone output", () => {
     const projectRoot = createBuildFixture(".next");
     writeFileSync(join(projectRoot, "custom-server.js"), "wrapper");
+    mkdirSync(join(projectRoot, "src", "shared", "brand"), { recursive: true });
+    writeFileSync(join(projectRoot, "src", "shared", "brand", "index.cjs"), "brand");
 
     copyStandaloneAssets({ projectRoot, distDir: ".next" });
 
-    expect(readFileSync(join(projectRoot, ".next", "standalone", "custom-server.js"), "utf8")).toBe(
-      "wrapper",
+    const standalone = join(projectRoot, ".next", "standalone");
+    expect(readFileSync(join(standalone, "custom-server.js"), "utf8")).toBe("wrapper");
+    // The wrapper requires it at boot; Next bundles it instead of tracing it.
+    expect(readFileSync(join(standalone, "src", "shared", "brand", "index.cjs"), "utf8")).toBe(
+      "brand",
     );
   });
 

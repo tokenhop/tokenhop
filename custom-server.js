@@ -4,6 +4,15 @@ const fs = require("fs");
 const crypto = require("crypto");
 const { pathToFileURL } = require("url");
 
+// Repo checkout and Docker keep the brand module beside this file; the CLI package
+// ships custom-server.js in app/ and its packed copy one level up.
+const BRAND_MODULE = path.join(__dirname, "src", "shared", "brand", "index.cjs");
+const { readEnv } = require(
+  fs.existsSync(BRAND_MODULE)
+    ? BRAND_MODULE
+    : path.join(__dirname, "..", "src", "shared", "brand", "index.cjs"),
+);
+
 function loadOAuthClientDefaults(file, env = process.env) {
   if (!fs.existsSync(file)) return [];
 
@@ -52,7 +61,7 @@ const origCreate = http.createServer.bind(http);
 // header even though the env var is inherited by child processes. Named like x-9r-cli-token
 // so the request-detail header sanitizer redacts it too.
 const PEER_TOKEN = crypto.randomBytes(24).toString("hex");
-process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
+process.env.TOKENHOP_PEER_TOKEN = PEER_TOKEN;
 
 // Same limit Next applies to normal requests (next.config.mjs proxyClientMaxBodySize), so the
 // h2c path below cannot buffer an unbounded body before auth runs.
@@ -64,7 +73,7 @@ function parseBodySizeLimit(value) {
   const bytes = Math.floor(Number(match[1]) * 1024 ** unit);
   return Number.isSafeInteger(bytes) ? bytes : DEFAULT_MAX_BODY_BYTES;
 }
-const MAX_H2C_BODY_BYTES = parseBodySizeLimit(process.env.NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE);
+const MAX_H2C_BODY_BYTES = parseBodySizeLimit(readEnv("PROXY_CLIENT_MAX_BODY_SIZE"));
 
 let backgroundRefreshStarted = false;
 

@@ -13,16 +13,16 @@ import { join } from "node:path";
 const LIVE_GATES = ["RUN_REAL", "RUN_E2E"];
 
 const usesRealData =
-  process.env.NINEROUTER_TEST_REAL_PROJECT === "1" &&
+  process.env.TOKENHOP_TEST_REAL_PROJECT === "1" &&
   LIVE_GATES.some((gate) => process.env[gate] === "1");
 
 if (!usesRealData) isolateDataDir();
 
 function isolateDataDir() {
-  const parent = process.env.NINEROUTER_TEST_TMP_PARENT;
+  const parent = process.env.TOKENHOP_TEST_TMP_PARENT;
   if (!parent) {
     throw new Error(
-      "NINEROUTER_TEST_TMP_PARENT is unset: tests/setup/tempRoot.js must be the vitest globalSetup",
+      "TOKENHOP_TEST_TMP_PARENT is unset: tests/setup/tempRoot.js must be the vitest globalSetup",
     );
   }
 
@@ -31,7 +31,7 @@ function isolateDataDir() {
   const home = join(root, "home");
   mkdirSync(home);
 
-  process.env.NINEROUTER_TEST_ROOT = root;
+  process.env.TOKENHOP_TEST_ROOT = root;
   process.env.DATA_DIR = join(root, "data");
   process.env.HOME = home;
   process.env.USERPROFILE = home;

@@ -29,14 +29,14 @@ export function applyOutboundProxyEnv({
 
   // If disabled, only clear env vars we previously managed.
   if (!enabled) {
-    if (process.env.NINE_ROUTER_PROXY_MANAGED === "1") {
+    if (process.env.TOKENHOP_PROXY_MANAGED === "1") {
       delete process.env.HTTP_PROXY;
       delete process.env.HTTPS_PROXY;
       delete process.env.ALL_PROXY;
       delete process.env.NO_PROXY;
-      delete process.env.NINE_ROUTER_PROXY_MANAGED;
-      delete process.env.NINE_ROUTER_PROXY_URL;
-      delete process.env.NINE_ROUTER_NO_PROXY;
+      delete process.env.TOKENHOP_PROXY_MANAGED;
+      delete process.env.TOKENHOP_PROXY_URL;
+      delete process.env.TOKENHOP_NO_PROXY;
     }
     return;
   }
@@ -45,7 +45,7 @@ export function applyOutboundProxyEnv({
   // - If values are provided, write them and mark as managed
   // - If values are empty, do not touch externally-provided env,
   //   but do clear values we previously managed.
-  const wasManaged = process.env.NINE_ROUTER_PROXY_MANAGED === "1";
+  const wasManaged = process.env.TOKENHOP_PROXY_MANAGED === "1";
   let managed = false;
 
   if (wasManaged) {
@@ -53,11 +53,11 @@ export function applyOutboundProxyEnv({
       delete process.env.HTTP_PROXY;
       delete process.env.HTTPS_PROXY;
       delete process.env.ALL_PROXY;
-      delete process.env.NINE_ROUTER_PROXY_URL;
+      delete process.env.TOKENHOP_PROXY_URL;
     }
     if (!noProxy) {
       delete process.env.NO_PROXY;
-      delete process.env.NINE_ROUTER_NO_PROXY;
+      delete process.env.TOKENHOP_NO_PROXY;
     }
   }
 
@@ -67,21 +67,21 @@ export function applyOutboundProxyEnv({
       process.env.HTTP_PROXY = validated;
       process.env.HTTPS_PROXY = validated;
       process.env.ALL_PROXY = validated;
-      process.env.NINE_ROUTER_PROXY_URL = validated;
+      process.env.TOKENHOP_PROXY_URL = validated;
       managed = true;
     }
   }
 
   if (noProxy) {
     process.env.NO_PROXY = noProxy;
-    process.env.NINE_ROUTER_NO_PROXY = noProxy;
+    process.env.TOKENHOP_NO_PROXY = noProxy;
     managed = true;
   }
 
   if (managed) {
-    process.env.NINE_ROUTER_PROXY_MANAGED = "1";
+    process.env.TOKENHOP_PROXY_MANAGED = "1";
   } else if (wasManaged) {
     // If we previously managed env but now cleared everything, drop the marker.
-    delete process.env.NINE_ROUTER_PROXY_MANAGED;
+    delete process.env.TOKENHOP_PROXY_MANAGED;
   }
 }

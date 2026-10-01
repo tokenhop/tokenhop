@@ -26,7 +26,7 @@ npx vitest run unit/capabilities.test.js # single file (path relative to tests/)
 
 Tests never read or write your real `~/.9router`. Two setup hooks in `vitest.config.js` handle it:
 
-- `setup/tempRoot.js` (`globalSetup`) records your real home in `NINEROUTER_TEST_REAL_HOME`, creates one parent temp dir (`<os.tmpdir()>/9router-test-XXXX`) and deletes it after the run, even when files are skipped or fail to load.
+- `setup/tempRoot.js` (`globalSetup`) records your real home in `TOKENHOP_TEST_REAL_HOME`, creates one parent temp dir (`<os.tmpdir()>/9router-test-XXXX`) and deletes it after the run, even when files are skipped or fail to load.
 - `setup/isolateDataDir.js` (`setupFiles`) runs before every test file's imports. It creates a fresh per-file root inside that parent, points `DATA_DIR` at `<root>/data`, and points `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA` and the `XDG_*` dirs inside `<root>/home`. It uses the `forks` pool, because a worker thread's `os.homedir()` ignores the override, and it throws if the override isn't honored.
 
 You don't need a `DATA_DIR=$(mktemp -d)` prefix. `unit/test-data-isolation.test.js` fails if the resolved data dir or home is outside the temp root.

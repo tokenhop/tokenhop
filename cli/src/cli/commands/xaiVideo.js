@@ -13,6 +13,14 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 
+// The CLI build packs the brand module into cli/src/shared/; a repo checkout uses the source.
+const PACKED_BRAND_MODULE = path.join(__dirname, "..", "..", "shared", "brand", "index.cjs");
+const { ACTIVE, readEnv } = require(
+  fs.existsSync(PACKED_BRAND_MODULE)
+    ? PACKED_BRAND_MODULE
+    : path.join(__dirname, "..", "..", "..", "..", "src", "shared", "brand", "index.cjs"),
+);
+
 const DEFAULT_PORT = 20128;
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_MODEL = "xai/grok-imagine-video";
@@ -39,7 +47,7 @@ Options:
   --timeout <seconds>     Max wait for the job (default: ${DEFAULT_TIMEOUT_SEC})
   --port <port>           Gateway port (default: ${DEFAULT_PORT})
   --host <host>           Gateway host (default: ${DEFAULT_HOST})
-  --api-key <key>         9router API key (or env NINE_ROUTER_API_KEY)
+  --api-key <key>         9router API key (or env ${ACTIVE.envPrefix}API_KEY)
   -h, --help              Show this help
 `;
 
@@ -54,7 +62,7 @@ function parseArgs(argv) {
     timeoutSec: DEFAULT_TIMEOUT_SEC,
     port: DEFAULT_PORT,
     host: DEFAULT_HOST,
-    apiKey: process.env.NINE_ROUTER_API_KEY || null,
+    apiKey: readEnv("API_KEY") || null,
     pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
   };
   for (let i = 0; i < argv.length; i++) {

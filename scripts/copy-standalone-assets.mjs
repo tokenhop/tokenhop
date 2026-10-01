@@ -42,6 +42,14 @@ export function copyStandaloneAssets({
     cpSync(serverWrapperSource, serverWrapperDestination, { force: true });
     console.log(`[standalone-assets] Copied custom-server.js to ${serverWrapperDestination}`);
   }
+
+  // custom-server.js requires the brand module, which Next bundles rather than traces.
+  const brandSource = resolve(projectRoot, "src", "shared", "brand", "index.cjs");
+  const brandDestination = resolve(standaloneDir, "src", "shared", "brand", "index.cjs");
+  if (existsSync(brandSource)) {
+    cpSync(brandSource, brandDestination, { force: true });
+    console.log(`[standalone-assets] Copied the brand module to ${brandDestination}`);
+  }
 }
 
 if (
