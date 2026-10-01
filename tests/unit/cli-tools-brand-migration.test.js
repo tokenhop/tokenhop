@@ -11,17 +11,23 @@ import { parseTOML } from "confbox";
 
 const require = createRequire(import.meta.url);
 const BRAND_CJS = require.resolve("../../src/shared/brand/index.cjs");
+// Legacy names come from the brand module; they don't depend on the active brand.
+const { LEGACY } = require(BRAND_CJS);
+const OLD = LEGACY.clientConfigKeys[0];
+const OLD_NAME = LEGACY.clientConfigKeys[1];
+const OLD_JCODE_ENV = LEGACY.jcodeApiKeyEnv;
 const FIXTURES = path.join(import.meta.dirname, "../fixtures/legacy/cli-tools");
 const home = os.homedir();
 const savedBrand = process.env.NEXT_PUBLIC_BRAND;
 
 // The brand resolves at load time, so every case loads fresh modules.
-async function load(brand, route) {
+async function loadModule(brand, specifier) {
   process.env.NEXT_PUBLIC_BRAND = brand;
   delete require.cache[BRAND_CJS];
   vi.resetModules();
-  return import(`@/app/api/cli-tools/${route}/route.js`);
+  return import(specifier);
 }
+const load = (brand, route) => loadModule(brand, `@/app/api/cli-tools/${route}/route.js`);
 
 const fixture = (name) => fs.readFile(path.join(FIXTURES, name), "utf-8");
 const write = async (rel, content) => {
@@ -72,7 +78,7 @@ describe("codex", () => {
 
     expect((await apply(codex)).status).toBe(200);
     const cfg = parseTOML(await read(rel));
-    expect(cfg.model_providers["9router"]).toBeUndefined();
+    expect(cfg.model_providers[OLD]).toBeUndefined();
     expect(cfg.model_provider).toBe("tokenhop");
     expect(cfg.profiles.fast.model_provider).toBe("tokenhop");
     expect(cfg.model_providers.tokenhop).toEqual({
@@ -101,18 +107,24 @@ describe("codex", () => {
     expect(cfg.profiles.direct.model_provider).toBe("openai-direct");
   });
 
-  it("default brand keeps writing the 9router provider", async () => {
+  it("default brand keeps writing the legacy provider", async () => {
     await write(rel, await fixture("codex-config.toml"));
     const codex = await load("", "codex-settings");
     expect((await apply(codex)).status).toBe(200);
     const cfg = parseTOML(await read(rel));
-    expect(cfg.model_provider).toBe("9router");
+    expect(cfg.model_provider).toBe(OLD);
     expect(cfg.model_providers.tokenhop).toBeUndefined();
-    expect(cfg.model_providers["9router"].name).toBe("9Router");
+    // Same entry as before this change: rewritten whole, no carry-over
+    expect(cfg.model_providers[OLD]).toEqual({
+      name: OLD_NAME,
+      base_url: "http://127.0.0.1:20128/v1",
+      wire_api: "responses",
+      http_headers: { Authorization: "Bearer sk-new" },
+    });
   });
 
   it("parse failure leaves the file untouched", async () => {
-    const bad = 'model_provider = "9router"\n[a]\nx = 1\nx = 2\n';
+    const bad = `model_provider = "${OLD}"\n[a]\nx = 1\nx = 2\n`;
     await write(rel, bad);
     const codex = await load("tokenhop", "codex-settings");
     const res = await apply(codex);
@@ -124,7 +136,7 @@ describe("codex", () => {
 
 describe("jcode", () => {
   const rel = ".jcode/config.toml";
-  const legacyEnv = ".config/jcode/provider-9router.env";
+  const legacyEnv = `.config/jcode/provider-${OLD}.env`;
   const newEnv = ".config/jcode/provider-tokenhop.env";
   const apply = (jcode, models = ["cc/claude-sonnet-5"]) =>
     jcode.POST(post({ baseUrl: "http://127.0.0.1:20128", apiKey: "sk-new", models }));
@@ -143,7 +155,7 @@ describe("jcode", () => {
 
     expect((await apply(jcode)).status).toBe(200);
     const cfg = parseTOML(await read(rel));
-    expect(cfg.providers["9router"]).toBeUndefined();
+    expect(cfg.providers[OLD]).toBeUndefined();
     expect(cfg.provider).toEqual({
       default_provider: "tokenhop",
       default_model: "cc/claude-opus-4-7",
@@ -162,7 +174,7 @@ describe("jcode", () => {
     const env = await read(newEnv);
     expect(env).toContain('JCODE_TOKENHOP_API_KEY="sk-new"');
     expect(env).toContain('HTTPS_PROXY="http://proxy.local:3128"');
-    expect(env).not.toContain("JCODE_9ROUTER_API_KEY");
+    expect(env).not.toContain(OLD_JCODE_ENV);
   });
 
   it("keeps the legacy default model when Apply sends none", async () => {
@@ -180,21 +192,21 @@ describe("jcode", () => {
     expect(Object.keys(cfg.providers)).toEqual(["local-vllm"]);
     expect(cfg.provider).toEqual({ default_model: "cc/claude-opus-4-7" });
     const env = await read(legacyEnv);
-    expect(env).not.toContain("JCODE_9ROUTER_API_KEY");
+    expect(env).not.toContain(OLD_JCODE_ENV);
     expect(env).toContain("HTTPS_PROXY");
   });
 
-  it("default brand writes the 9router entry and env file", async () => {
+  it("default brand writes the legacy entry and env file", async () => {
     const jcode = await load("", "jcode-settings");
     expect((await apply(jcode)).status).toBe(200);
     const cfg = parseTOML(await read(rel));
-    expect(cfg.providers["9router"].api_key_env).toBe("JCODE_9ROUTER_API_KEY");
-    expect(await read(legacyEnv)).toContain('JCODE_9ROUTER_API_KEY="sk-new"');
+    expect(cfg.providers[OLD].api_key_env).toBe(OLD_JCODE_ENV);
+    expect(await read(legacyEnv)).toContain(`${OLD_JCODE_ENV}="sk-new"`);
     expect(await exists(newEnv)).toBe(false);
   });
 
   it("parse failure leaves config and env file untouched", async () => {
-    const bad = "[providers.9router]\nx = 1\nx = 2\n";
+    const bad = `[providers.${OLD}]\nx = 1\nx = 2\n`;
     await write(rel, bad);
     await write(legacyEnv, await fixture("jcode-provider.env"));
     const jcode = await load("tokenhop", "jcode-settings");
@@ -207,12 +219,7 @@ describe("jcode", () => {
 
 describe("grok build", () => {
   const rel = ".grok/config.toml";
-  const loadLib = async (brand) => {
-    process.env.NEXT_PUBLIC_BRAND = brand;
-    delete require.cache[BRAND_CJS];
-    vi.resetModules();
-    return import("@/lib/grokBuildConfig.js");
-  };
+  const loadLib = (brand) => loadModule(brand, "@/lib/grokBuildConfig.js");
 
   it("legacy → apply renames slots and keeps models and markers", async () => {
     const grok = await loadLib("tokenhop");
@@ -222,7 +229,7 @@ describe("grok build", () => {
       model: "cx/gpt-5.6-sol",
       contextWindow: 400000,
     });
-    expect(out).not.toMatch(/9router/i);
+    expect(out).not.toMatch(new RegExp(OLD, "i"));
     const parsed = grok.parseGrokBuildConfig(out);
     expect(parsed.default).toBe("tokenhop");
     expect(parsed.model).toMatchObject({ name: "tokenhop", api_key: "sk-new" });
@@ -238,14 +245,14 @@ describe("grok build", () => {
   });
 
   it.each(["", "tokenhop"])(
-    "applied by 9router, reset by brand %j: previous values come back",
+    "applied by the legacy brand, reset by brand %j: previous values come back",
     async (brand) => {
       await write(rel, await fixture("grok-config.toml"));
       const route = await load(brand, "grok-build-settings");
       expect(await json(await route.GET())).toMatchObject({ hasTokenhop: true });
       expect((await route.DELETE()).status).toBe(200);
       const out = await read(rel);
-      expect(out).not.toMatch(/9router|tokenhop/i);
+      expect(out).not.toMatch(new RegExp(`${OLD}|tokenhop`, "i"));
       const cfg = parseTOML(out);
       expect(cfg.models.default).toBe("grok-4.5");
       expect(cfg.subagents.models).toEqual({ "general-purpose": "grok-4.5", plan: "grok-4.5" });

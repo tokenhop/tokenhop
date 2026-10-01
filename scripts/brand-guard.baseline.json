@@ -237,7 +237,7 @@
   "src/app/api/auth/login/route.js": 1,
   "src/app/api/cli-tools/antigravity-mitm/route.js": 2,
   "src/app/api/cli-tools/cline-settings/route.js": 4,
-  "src/app/api/cli-tools/codex-settings/route.js": 4,
+  "src/app/api/cli-tools/codex-settings/route.js": 2,
   "src/app/api/cli-tools/copilot-settings/route.js": 13,
   "src/app/api/cli-tools/cowork-mcp-tools/route.js": 1,
   "src/app/api/cli-tools/droid-settings/route.js": 12,

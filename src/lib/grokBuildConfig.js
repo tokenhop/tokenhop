@@ -168,12 +168,16 @@ function restorePreviousSubagent(toml, type) {
 function migrateLegacySlots(toml) {
   let next = toml;
   for (const legacy of LEGACY_CLIENT_KEYS) {
+    // Rename markers one at a time so a second legacy spelling of a marker that
+    // already exists under our key is dropped instead of duplicated.
     next = next
       .replace(
-        new RegExp(`^# ${escapeRegExp(legacy)}-prev-([a-z-]+) = [^\\r\\n]*\\r?\\n?`, "gm"),
-        (line, suffix) => (next.includes(`# ${CLIENT_KEY}-prev-${suffix} =`) ? "" : line),
+        new RegExp(`^# ${escapeRegExp(legacy)}-prev-([a-z-]+)([^\\r\\n]*\\r?\\n?)`, "gm"),
+        (line, suffix, rest) =>
+          next.includes(`# ${CLIENT_KEY}-prev-${suffix} `)
+            ? ""
+            : `# ${CLIENT_KEY}-prev-${suffix}${rest}`,
       )
-      .replace(new RegExp(`^# ${escapeRegExp(legacy)}-prev-`, "gm"), `# ${CLIENT_KEY}-prev-`)
       .replaceAll(tomlString(unsetSentinel(legacy)), tomlString(UNSET_SENTINEL));
     const slots = [[legacy, CLIENT_KEY, CLIENT_NAME]].concat(
       GROK_SUBAGENT_TYPES.map((type) => [

@@ -147,7 +147,7 @@ export async function DELETE() {
     await fs.writeFile(configPath, resetGrokBuildConfig(toml));
     return NextResponse.json({
       success: true,
-      message: `${GROK_MAIN_MODEL_SLOT} model slots removed from Grok Build`,
+      message: "Gateway model slots removed from Grok Build",
     });
   } catch (error) {
     console.log("Error resetting grok-build settings:", error);

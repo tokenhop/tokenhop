@@ -13,9 +13,6 @@ export const JCODE_API_KEY_ENV = ACTIVE.jcodeApiKeyEnv;
 export const LEGACY_CLIENT_KEYS = Object.freeze(
   CLIENT_KEY === BRAND.clientConfigKey ? [...LEGACY.clientConfigKeys] : [],
 );
-export const LEGACY_JCODE_API_KEY_ENVS = Object.freeze(
-  JCODE_API_KEY_ENV === BRAND.jcodeApiKeyEnv ? [LEGACY.jcodeApiKeyEnv] : [],
-);
 
 /** Every key detect and Reset accept, active key first. */
 export const ALL_CLIENT_KEYS = Object.freeze([

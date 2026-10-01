@@ -114,7 +114,8 @@ const writeProviderEnv = async (env, fileName) => {
     content += `${key}="${value}"\n`;
   }
 
-  await fs.writeFile(envPath, content, "utf-8");
+  // Holds an API key: owner-only, like the rest of the user's secrets.
+  await fs.writeFile(envPath, content, { encoding: "utf-8", mode: 0o600 });
 };
 
 // The saved key from our env file, else from a legacy one (not migrated yet)
@@ -163,8 +164,9 @@ export async function POST(request) {
     const config = (await readTomlConfig(getConfigPath())) ?? {};
 
     config.providers ??= {};
-    // A legacy entry keeps its models and extra fields; the new one wins on ours
-    const legacy = { ...takeLegacyEntry(config.providers), ...config.providers[CLIENT_KEY] };
+    // Migrating a legacy entry keeps its models, extra fields and default model;
+    // otherwise the entry is rewritten exactly as before.
+    const legacy = takeLegacyEntry(config.providers) ?? {};
     config.providers[CLIENT_KEY] = {
       ...legacy,
       type: "openai-compatible",

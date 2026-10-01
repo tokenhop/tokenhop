@@ -14,7 +14,8 @@ Trunk landing: behind the brand switch (handbook §5.1).
 | `JCODE_API_KEY_ENV`                      | `JCODE_9ROUTER_API_KEY`            | `JCODE_TOKENHOP_API_KEY`  |
 
 Helpers: `findClientEntry(map)`, `takeLegacyEntry(map)` (removes legacy keys, returns the
-first one found), `isClientKey(value)`.
+first one found), `isClientKey(value)`. Extra fields carry over only from a migrated legacy
+entry, so default-brand output is unchanged.
 
 - Detect: `hasTokenhop` true for any of `ALL_CLIENT_KEYS` (ships unconditionally).
 - Apply: write `CLIENT_KEY`, spread the legacy entry under ours, delete legacy, repoint
@@ -32,7 +33,7 @@ first one found), `isClientKey(value)`.
   copied first, so nothing is lost).
 - **DeepSeek TUI / Hermes** — files carry no brand key; rename `build9RouterConfig` /
   `has9RouterConfig`, messages from `CLIENT_NAME`.
-- **Grok Build** — `grokBuildConfig.js` functions take the slot key. Apply first migrates
+- **Grok Build** — `grokBuildConfig.js` reads the slot key from the brand at module load. Apply first migrates
   legacy markers (`# <legacy>-prev-*`, sentinel), section headers, `[models] default` and
   `[subagents.models]` mappings; Reset restores and removes for every known key, so a legacy
   apply + new reset returns the user's previous default.
@@ -48,10 +49,11 @@ tests. No alias (dashboard and CLI ship together).
 Fixtures in `tests/fixtures/legacy/cli-tools/`. Each case loads the routes fresh under an
 explicit brand, so results don't depend on CI's `NEXT_PUBLIC_BRAND`.
 
-- per tool: fresh file; legacy → apply (new entry, legacy gone, model kept, unrelated
-  content equal); legacy → reset (clean)
+- Codex, jcode, Grok: legacy → apply (new entry, legacy gone, model kept, unrelated
+  content equal); legacy → reset (clean). Codex also covers a fresh file.
+- DeepSeek TUI, Hermes: detection only (their files carry no brand key)
 - Grok: legacy markers restore the previous default and subagents
-- jcode: env-file migration and order
+- jcode: env-file migration (other vars kept, legacy file removed)
 - Codex/jcode: parse-failure file untouched
 - default brand: Apply output unchanged from today
 

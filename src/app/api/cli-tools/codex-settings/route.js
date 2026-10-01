@@ -134,7 +134,7 @@ export async function GET() {
   }
 }
 
-// POST - Update 9Router settings (merge with existing config)
+// POST - Write our provider settings (merge with existing config)
 export async function POST(request) {
   try {
     const { baseUrl, apiKey, model, subagentModel } = await request.json();
@@ -162,11 +162,9 @@ export async function POST(request) {
 
     // Ensure /v1 suffix is added only once
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    // A legacy entry's extra fields (e.g. request_max_retries) carry over
-    const previous = {
-      ...takeLegacyEntry(parsed.model_providers),
-      ...parsed.model_providers?.[CLIENT_KEY],
-    };
+    // Migrating a legacy entry keeps its extra fields (e.g. request_max_retries);
+    // otherwise the entry is rewritten exactly as before.
+    const previous = takeLegacyEntry(parsed.model_providers) ?? {};
     // Custom providers ignore auth.json - the key must travel as a static header
     setNestedSection(parsed, `model_providers.${CLIENT_KEY}`, {
       ...previous,
@@ -197,7 +195,7 @@ export async function POST(request) {
   }
 }
 
-// DELETE - Remove 9Router settings only (keep other settings)
+// DELETE - Remove our provider settings only (keep other settings)
 export async function DELETE() {
   try {
     const configPath = getCodexConfigPath();
