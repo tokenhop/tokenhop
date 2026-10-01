@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import {
   useSetupCard,
   setupCardPropTypes,
-  keyFallback,
-  manualKeyFallback,
+  resolveApiKey,
+  manualApiKey,
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,
@@ -87,7 +87,7 @@ export default function OpenClawToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
           model: selectedModel,
           agentModels,
         }),
@@ -134,7 +134,7 @@ export default function OpenClawToolCard({
   const agents = (status?.agents || []).filter((a) => a.agentDir);
 
   const getManualConfigs = () => {
-    const keyToUse = manualKeyFallback(card.selectedApiKey, cloudEnabled);
+    const keyToUse = manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled);
     const content = {
       agents: {
         defaults: {

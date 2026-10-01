@@ -7,14 +7,13 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
-import { ACTIVE } from "@/shared/brand";
+import { buildOpenCodeConfig } from "@/lib/cliToolConfigs/opencode";
 import {
   ALL_CLIENT_KEYS,
   CLIENT_KEY,
   CLIENT_NAME,
   findClientEntry,
   LEGACY_CLIENT_KEYS,
-  modelRef,
   repointModelRef,
   splitModelRef,
   takeLegacyEntry,
@@ -124,9 +123,14 @@ export async function POST(request) {
     // Read existing config or start fresh
     const config = (await readJsonConfig(configPath)) ?? {};
 
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    const keyToUse = apiKey || ACTIVE.defaultApiKey;
-    const effectiveSubagentModel = subagentModel || modelsArray[0];
+    const built = buildOpenCodeConfig({
+      baseUrl,
+      apiKey,
+      models: modelsArray,
+      activeModel,
+      subagentModel,
+    })[0].value;
+    const builtProvider = built.provider[CLIENT_KEY];
 
     // Ensure provider object
     if (!config.provider) config.provider = {};
@@ -155,20 +159,15 @@ export async function POST(request) {
     // Merge options (overwrite baseURL/apiKey)
     existingProvider.options = {
       ...existingProvider.options,
-      baseURL: normalizedBaseUrl,
-      apiKey: keyToUse,
+      ...builtProvider.options,
     };
 
     // Ensure models map exists
     existingProvider.models = existingProvider.models || {};
 
-    // Add or update entries for all requested models
-    for (const m of modelsArray) {
-      if (!m || typeof m !== "string") continue;
-      existingProvider.models[m] = {
-        name: m,
-        modalities: { input: ["text", "image"], output: ["text"] },
-      };
+    // Add or update entries for all requested models (existing ones kept)
+    for (const [m, entry] of Object.entries(builtProvider.models)) {
+      existingProvider.models[m] = entry;
     }
 
     // Save merged provider back
@@ -182,22 +181,10 @@ export async function POST(request) {
 
     // Set the active model: prefer explicit activeModel, else first of modelsArray
     // If activeModel is explicitly empty string, clear the model
-    if (activeModel === "") {
-      config.model = "";
-    } else {
-      const finalActive = activeModel || modelsArray[0];
-      if (finalActive) {
-        config.model = modelRef(finalActive);
-      }
-    }
+    config.model = built.model;
 
     // Add subagent configuration
-    if (!config.agent) config.agent = {};
-    config.agent.explorer = {
-      description: "Fast explorer subagent for codebase exploration",
-      mode: "subagent",
-      model: modelRef(effectiveSubagentModel),
-    };
+    config.agent = { ...config.agent, explorer: built.agent.explorer };
 
     await fs.writeFile(configPath, JSON.stringify(config, null, 2));
 

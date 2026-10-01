@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import {
   useSetupCard,
   setupCardPropTypes,
-  keyFallback,
-  manualKeyFallback,
+  resolveApiKey,
+  manualApiKey,
+  toManualConfigs,
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,
@@ -17,6 +18,7 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
+import { buildKiloConfig } from "@/lib/cliToolConfigs/kilo";
 
 /**
  * Kilo Code setup panel. Single model; status is binary (hasTokenhop).
@@ -61,7 +63,7 @@ export default function KiloToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
           model: selectedModel,
         }),
       });
@@ -102,23 +104,14 @@ export default function KiloToolCard({
     }
   };
 
-  const getManualConfigs = () => [
-    {
-      filename: "~/.local/share/kilo/auth.json",
-      content: JSON.stringify(
-        {
-          "openai-compatible": {
-            type: "api-key",
-            apiKey: manualKeyFallback(card.selectedApiKey, cloudEnabled),
-            baseUrl: getEffectiveBaseUrl(),
-            model: selectedModel || "provider/model-id",
-          },
-        },
-        null,
-        2,
-      ),
-    },
-  ];
+  const getManualConfigs = () =>
+    toManualConfigs(
+      buildKiloConfig({
+        baseUrl: getEffectiveBaseUrl(),
+        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        model: selectedModel,
+      }),
+    );
 
   return (
     <>

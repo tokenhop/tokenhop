@@ -13,6 +13,10 @@ import CopyStatus from "./CopyStatus";
 export function ManualConfigList({ configs = [], idPrefix = "manualconfig" }) {
   const { copied, error, copy } = useCopyToClipboard();
 
+  if (configs.length === 0) {
+    return <p className="text-[13px] text-muted">Pick a model to see the configuration.</p>;
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {configs.map((config, index) => {

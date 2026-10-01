@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import {
   useSetupCard,
   setupCardPropTypes,
-  keyFallback,
-  manualKeyFallback,
+  resolveApiKey,
+  manualApiKey,
+  toManualConfigs,
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,
@@ -17,7 +18,7 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
-import { CLIENT_KEY, CLIENT_NAME } from "@/lib/cliToolBrand";
+import { buildCodexConfig } from "@/lib/cliToolConfigs/codex";
 
 /**
  * Codex CLI setup panel. Single model + subagent model override.
@@ -70,7 +71,7 @@ export default function CodexToolCard({
     card.setApplying(true);
     card.setMessage(null);
     try {
-      const keyToUse = keyFallback(card.selectedApiKey, apiKeys, cloudEnabled);
+      const keyToUse = resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled);
       const res = await fetch("/api/cli-tools/codex-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -119,30 +120,15 @@ export default function CodexToolCard({
     }
   };
 
-  const getManualConfigs = () => {
-    const keyToUse = manualKeyFallback(card.selectedApiKey, cloudEnabled);
-    const effectiveSubagentModel = subagentModel || selectedModel;
-    return [
-      {
-        filename: "~/.codex/config.toml",
-        content: `# ${CLIENT_NAME} Configuration for Codex CLI
-model = "${selectedModel}"
-model_provider = "${CLIENT_KEY}"
-
-[model_providers.${CLIENT_KEY}]
-name = "${CLIENT_NAME}"
-base_url = "${getEffectiveBaseUrl()}"
-wire_api = "responses"
-
-[model_providers.${CLIENT_KEY}.http_headers]
-Authorization = "Bearer ${keyToUse}"
-
-[agents]
-default_subagent_model = "${effectiveSubagentModel}"
-`,
-      },
-    ];
-  };
+  const getManualConfigs = () =>
+    toManualConfigs(
+      buildCodexConfig({
+        baseUrl: getEffectiveBaseUrl(),
+        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        model: selectedModel,
+        subagentModel: subagentModel || selectedModel,
+      }),
+    );
 
   return (
     <>

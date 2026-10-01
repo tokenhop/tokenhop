@@ -5,8 +5,9 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import {
   useSetupCard,
   setupCardPropTypes,
-  keyFallback,
-  manualKeyFallback,
+  resolveApiKey,
+  manualApiKey,
+  toManualConfigs,
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,
@@ -18,7 +19,7 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
-import { CLIENT_KEY as MODEL_SLOT, CLIENT_NAME } from "@/lib/cliToolBrand";
+import { buildGrokBuildConfig } from "@/lib/cliToolConfigs/grokBuild";
 
 const ENDPOINT = "/api/cli-tools/grok-build-settings";
 const SUBAGENT_TYPES = [
@@ -91,24 +92,28 @@ export default function GrokBuildToolCard({
     return u.endsWith("/v1") ? u : `${u}/v1`;
   };
 
+  const mapSubagents = () => {
+    const mapped = {};
+    for (const t of SUBAGENT_TYPES) {
+      const model = subagentModels[t.id]?.trim();
+      if (model) mapped[t.id] = { model, contextWindow: getContextWindow(model) };
+    }
+    return mapped;
+  };
+
   const handleApply = async () => {
     card.setApplying(true);
     card.setMessage(null);
     try {
-      const mappedSubagents = {};
-      for (const t of SUBAGENT_TYPES) {
-        const model = subagentModels[t.id]?.trim();
-        if (model) mappedSubagents[t.id] = { model, contextWindow: getContextWindow(model) };
-      }
       const res = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
           model: selectedModel,
           contextWindow: getContextWindow(selectedModel),
-          subagentModels: mappedSubagents,
+          subagentModels: mapSubagents(),
         }),
       });
       const data = await res.json();
@@ -155,27 +160,16 @@ export default function GrokBuildToolCard({
     }
   };
 
-  const getManualConfigs = () => {
-    const keyToUse = manualKeyFallback(card.selectedApiKey, cloudEnabled);
-    const effective = getEffectiveBaseUrl();
-    const mainModel = selectedModel || "provider/model-id";
-    const blocks = [
-      `[models]\ndefault = "${MODEL_SLOT}"`,
-      `[model.${MODEL_SLOT}]\nmodel = "${mainModel}"\nbase_url = "${effective}"\nname = "${CLIENT_NAME}"\ndescription = "Routed via ${CLIENT_NAME} gateway"\napi_backend = "chat_completions"\napi_key = "${keyToUse}"\ncontext_window = ${getContextWindow(mainModel) || 200000}`,
-    ];
-    const mappings = [];
-    for (const t of SUBAGENT_TYPES) {
-      const model = subagentModels[t.id]?.trim();
-      if (!model) continue;
-      const slot = `${MODEL_SLOT}-${t.id}`;
-      mappings.push(`${t.id} = "${slot}"`);
-      blocks.push(
-        `[model.${slot}]\nmodel = "${model}"\nbase_url = "${effective}"\nname = "${CLIENT_NAME} ${t.id}"\ndescription = "Routed via ${CLIENT_NAME} gateway"\napi_backend = "chat_completions"\napi_key = "${keyToUse}"\ncontext_window = ${getContextWindow(model) || 200000}`,
-      );
-    }
-    if (mappings.length) blocks.splice(1, 0, `[subagents.models]\n${mappings.join("\n")}`);
-    return [{ filename: "~/.grok/config.toml", content: `${blocks.join("\n\n")}\n` }];
-  };
+  const getManualConfigs = () =>
+    toManualConfigs(
+      buildGrokBuildConfig({
+        baseUrl: getEffectiveBaseUrl(),
+        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        model: selectedModel,
+        contextWindow: getContextWindow(selectedModel),
+        subagentModels: mapSubagents(),
+      }),
+    );
 
   return (
     <>

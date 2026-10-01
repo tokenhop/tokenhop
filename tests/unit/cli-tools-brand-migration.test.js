@@ -133,7 +133,7 @@ describe("jcode", () => {
       api_key_env: "JCODE_TOKENHOP_API_KEY",
       env_file: "provider-tokenhop.env",
       default_model: "cc/claude-sonnet-5",
-      models: [{ id: "cc/claude-opus-4-7", context_window: 200000 }],
+      models: [{ id: "cc/claude-opus-4-7", context_window: 200000 }, { id: "cc/claude-sonnet-5" }],
     });
     expect(cfg.providers["local-vllm"]).toEqual({
       type: "openai-compatible",

@@ -7,20 +7,13 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { CLIENT_NAME } from "@/lib/cliToolBrand";
+import { buildHermesConfig, MODEL_BLOCK_RE } from "@/lib/cliToolConfigs/hermes";
 
 const execAsync = promisify(exec);
-
-const API_KEY_ENV = "OPENAI_API_KEY";
 
 const getHermesDir = () => path.join(os.homedir(), ".hermes");
 const getHermesConfigPath = () => path.join(getHermesDir(), "config.yaml");
 const getHermesEnvPath = () => path.join(getHermesDir(), ".env");
-
-// Match top-level "model:" block (until next non-indented, non-empty line)
-const MODEL_BLOCK_RE = /^model:[ \t]*\r?\n((?:[ \t]+.*\r?\n?|[ \t]*\r?\n)*)/m;
-
-const buildModelBlock = (model, baseUrl) =>
-  `model:\n  default: "${model}"\n  provider: "custom"\n  base_url: "${baseUrl}"\n  api_key: \${OPENAI_API_KEY}\n`;
 
 // Parse current model block back to fields (best-effort, simple key:value)
 const parseModelBlock = (yaml) => {
@@ -39,27 +32,7 @@ const parseModelBlock = (yaml) => {
   };
 };
 
-const upsertModelBlock = (yaml, newBlock) => {
-  if (MODEL_BLOCK_RE.test(yaml)) return yaml.replace(MODEL_BLOCK_RE, newBlock);
-  return yaml.length > 0 ? `${newBlock}\n${yaml}` : newBlock;
-};
-
 const removeModelBlock = (yaml) => yaml.replace(MODEL_BLOCK_RE, "").replace(/^\n+/, "");
-
-// .env helpers — upsert/remove single KEY=VALUE line
-const upsertEnvVar = (envText, key, value) => {
-  const re = new RegExp(`^${key}=.*$`, "m");
-  const line = `${key}=${value}`;
-  if (re.test(envText)) return envText.replace(re, line);
-  return envText.length > 0 && !envText.endsWith("\n")
-    ? `${envText}\n${line}\n`
-    : `${envText}${line}\n`;
-};
-
-const removeEnvVar = (envText, key) => {
-  const re = new RegExp(`^${key}=.*\\r?\\n?`, "m");
-  return envText.replace(re, "");
-};
 
 const checkHermesInstalled = async () => {
   try {
@@ -137,19 +110,20 @@ export async function POST(request) {
     const dir = getHermesDir();
     await fs.mkdir(dir, { recursive: true });
 
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-
-    // Update config.yaml — replace/insert model: block, keep everything else
-    const existingYaml = await readConfigYaml();
-    const newYaml = upsertModelBlock(existingYaml, buildModelBlock(model, normalizedBaseUrl));
-    await fs.writeFile(getHermesConfigPath(), newYaml);
-
-    // Update .env — upsert OPENAI_API_KEY only when caller provides one
-    if (apiKey) {
-      const existingEnv = await readEnvFile();
-      const newEnv = upsertEnvVar(existingEnv, API_KEY_ENV, apiKey);
-      await fs.writeFile(getHermesEnvPath(), newEnv);
-    }
+    // Update config.yaml (replace/insert model: block, keep everything else) and
+    // .env (upsert OPENAI_API_KEY only when caller provides one)
+    const fragments = buildHermesConfig({
+      baseUrl,
+      apiKey,
+      model,
+      existingYaml: await readConfigYaml(),
+      existingEnv: apiKey ? await readEnvFile() : "",
+    });
+    const paths = {
+      "~/.hermes/config.yaml": getHermesConfigPath(),
+      "~/.hermes/.env": getHermesEnvPath(),
+    };
+    for (const { file, value } of fragments) await fs.writeFile(paths[file], value);
 
     return NextResponse.json({
       success: true,

@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import {
   useSetupCard,
   setupCardPropTypes,
-  keyFallback,
-  manualKeyFallback,
+  resolveApiKey,
+  manualApiKey,
+  toManualConfigs,
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,
@@ -17,6 +18,7 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
+import { buildClineConfig } from "@/lib/cliToolConfigs/cline";
 
 /**
  * Cline setup panel. Single model; writes openAiBaseUrl without trailing
@@ -67,7 +69,7 @@ export default function ClineToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
           model: selectedModel,
         }),
       });
@@ -108,31 +110,14 @@ export default function ClineToolCard({
     }
   };
 
-  const getManualConfigs = () => {
-    const keyToUse = manualKeyFallback(card.selectedApiKey, cloudEnabled);
-    const effective = getEffectiveBaseUrl();
-    const baseWithoutV1 = effective.endsWith("/v1") ? effective.slice(0, -3) : effective;
-    return [
-      {
-        filename: "~/.cline/data/globalState.json",
-        content: JSON.stringify(
-          {
-            actModeApiProvider: "openai",
-            planModeApiProvider: "openai",
-            openAiBaseUrl: baseWithoutV1,
-            openAiModelId: selectedModel || "provider/model-id",
-            planModeOpenAiModelId: selectedModel || "provider/model-id",
-          },
-          null,
-          2,
-        ),
-      },
-      {
-        filename: "~/.cline/data/secrets.json",
-        content: JSON.stringify({ openAiApiKey: keyToUse }, null, 2),
-      },
-    ];
-  };
+  const getManualConfigs = () =>
+    toManualConfigs(
+      buildClineConfig({
+        baseUrl: getEffectiveBaseUrl(),
+        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        model: selectedModel,
+      }),
+    );
 
   return (
     <>

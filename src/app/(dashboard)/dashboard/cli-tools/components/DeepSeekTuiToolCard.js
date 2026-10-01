@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from "react";
 import {
   useSetupCard,
   setupCardPropTypes,
-  keyFallback,
-  manualKeyFallback,
+  resolveApiKey,
+  manualApiKey,
+  toManualConfigs,
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,
@@ -17,6 +18,7 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
+import { buildDeepSeekTuiConfig } from "@/lib/cliToolConfigs/deepseekTui";
 
 const ENDPOINT = "/api/cli-tools/deepseek-tui-settings";
 
@@ -73,7 +75,7 @@ export default function DeepSeekTuiToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
           model: selectedModel,
         }),
       });
@@ -114,12 +116,14 @@ export default function DeepSeekTuiToolCard({
     }
   };
 
-  const getManualConfigs = () => [
-    {
-      filename: "~/.deepseek/config.toml",
-      content: `# Replaces the whole file, like Apply does.\nprovider = "openai"\n\n[providers.openai]\nbase_url = "${getEffectiveBaseUrl()}"\napi_key = "${manualKeyFallback(card.selectedApiKey, cloudEnabled)}"\nmodel = "${selectedModel || "provider/model-id"}"\n`,
-    },
-  ];
+  const getManualConfigs = () =>
+    toManualConfigs(
+      buildDeepSeekTuiConfig({
+        baseUrl: getEffectiveBaseUrl(),
+        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        model: selectedModel,
+      }),
+    );
 
   return (
     <>

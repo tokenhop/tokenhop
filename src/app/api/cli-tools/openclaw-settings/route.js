@@ -7,6 +7,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
+import { ACTIVE } from "@/shared/brand";
 import {
   ALL_CLIENT_KEYS,
   CLIENT_KEY,
@@ -140,7 +141,7 @@ const writeAgentModels = async (agentDir, model, baseUrl, apiKey) => {
   existing.providers[CLIENT_KEY] = {
     ...legacy,
     baseUrl,
-    apiKey: apiKey || "your_api_key",
+    apiKey: apiKey || ACTIVE.defaultApiKey,
     api: "openai-completions",
     models: [{ id: model, name: model.split("/").pop() || model }],
   };
@@ -223,7 +224,7 @@ export async function POST(request) {
     settings.models.providers[CLIENT_KEY] = {
       ...legacyProvider,
       baseUrl: normalizedBaseUrl,
-      apiKey: apiKey || "your_api_key",
+      apiKey: apiKey || ACTIVE.defaultApiKey,
       api: "openai-completions",
       models: [...allModelIds].map((m) => ({ id: m, name: m.split("/").pop() || m })),
     };

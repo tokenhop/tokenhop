@@ -5,8 +5,9 @@ import { useCliAccessStore } from "@/store/cliAccessStore";
 import {
   useSetupCard,
   setupCardPropTypes,
-  keyFallback,
-  manualKeyFallback,
+  resolveApiKey,
+  manualApiKey,
+  toManualConfigs,
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,
@@ -18,7 +19,8 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
-import { CLIENT_KEY, findClientEntry, modelRef, splitModelRef } from "@/lib/cliToolBrand";
+import { findClientEntry, splitModelRef } from "@/lib/cliToolBrand";
+import { buildOpenCodeConfig } from "@/lib/cliToolConfigs/opencode";
 
 const ENDPOINT = "/api/cli-tools/opencode-settings";
 
@@ -79,7 +81,7 @@ export default function OpenCodeToolCard({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
         models,
         activeModel: validActive,
         subagentModel,
@@ -141,7 +143,7 @@ export default function OpenCodeToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyFallback(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
           models: selectedModels,
           activeModel: activeModel === "" ? "" : activeModel || selectedModels[0],
           subagentModel,
@@ -186,44 +188,16 @@ export default function OpenCodeToolCard({
     }
   };
 
-  const getManualConfigs = () => {
-    const modelsShown = selectedModels.length > 0 ? selectedModels : ["provider/model-id"];
-    const activeShown = activeModel || selectedModels[0] || modelsShown[0];
-    const subShown = subagentModel || activeShown;
-    const modelsObj = {};
-    modelsShown.forEach((m) => {
-      modelsObj[m] = { name: m, modalities: { input: ["text", "image"], output: ["text"] } };
-    });
-    return [
-      {
-        filename: "~/.config/opencode/opencode.json",
-        content: JSON.stringify(
-          {
-            provider: {
-              [CLIENT_KEY]: {
-                npm: "@ai-sdk/openai-compatible",
-                options: {
-                  baseURL: getEffectiveBaseUrl(),
-                  apiKey: manualKeyFallback(card.selectedApiKey, cloudEnabled),
-                },
-                models: modelsObj,
-              },
-            },
-            model: modelRef(activeShown),
-            agent: {
-              explorer: {
-                description: "Fast explorer subagent for codebase exploration",
-                mode: "subagent",
-                model: modelRef(subShown),
-              },
-            },
-          },
-          null,
-          2,
-        ),
-      },
-    ];
-  };
+  const getManualConfigs = () =>
+    toManualConfigs(
+      buildOpenCodeConfig({
+        baseUrl: getEffectiveBaseUrl(),
+        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        models: selectedModels,
+        activeModel: activeModel === "" ? "" : activeModel || selectedModels[0],
+        subagentModel,
+      }),
+    );
 
   return (
     <>

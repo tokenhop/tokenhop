@@ -6,8 +6,9 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import { ACTIVE } from "@/shared/brand";
 import { CLIENT_NAME } from "@/lib/cliToolBrand";
+import { buildDeepSeekTuiConfig } from "@/lib/cliToolConfigs/deepseekTui";
+import { renderFragment } from "@/lib/cliToolConfigs/shared";
 
 const execAsync = promisify(exec);
 
@@ -49,18 +50,6 @@ const parseToml = (content) => {
   }
 
   return result;
-};
-
-// Build TOML config for the gateway (openai provider mode)
-const buildTokenhopConfig = (baseUrl, apiKey, model) => {
-  const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-  return `provider = "openai"
-
-[providers.openai]
-base_url = "${normalizedBaseUrl}"
-api_key = "${apiKey}"
-model = "${model}"
-`;
 };
 
 // Default DeepSeek config (reset state)
@@ -136,8 +125,8 @@ export async function POST(request) {
     const dir = getDeepSeekDir();
     await fs.mkdir(dir, { recursive: true });
 
-    const newConfig = buildTokenhopConfig(baseUrl, apiKey || ACTIVE.defaultApiKey, model);
-    await fs.writeFile(getDeepSeekConfigPath(), newConfig);
+    const [fragment] = buildDeepSeekTuiConfig({ baseUrl, apiKey, model });
+    await fs.writeFile(getDeepSeekConfigPath(), renderFragment(fragment));
 
     return NextResponse.json({
       success: true,

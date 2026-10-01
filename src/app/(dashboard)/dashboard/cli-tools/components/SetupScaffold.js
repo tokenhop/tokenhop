@@ -104,7 +104,7 @@ export default function SetupScaffold({
       ) : (
         <>
           <div className="flex flex-col gap-4">{children}</div>
-          {localOnly && manualConfigs?.length > 0 && (
+          {localOnly && Array.isArray(manualConfigs) && (
             <ManualConfigList configs={manualConfigs} idPrefix="manualinline" />
           )}
           {message && (
