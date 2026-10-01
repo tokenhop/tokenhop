@@ -14,14 +14,10 @@ const USE_NAPI_BUILD = NODE_MAJOR >= 22;
 const BETTER_SQLITE3_VERSION = USE_NAPI_BUILD ? "13.0.3" : "12.6.2";
 const SQL_JS_VERSION = "1.14.1";
 
-// The CLI build copies the shared resolver into the package; a repo checkout
-// without a build uses the source.
-const PACKED_DATA_DIR_MODULE = path.join(__dirname, "..", "src", "shared", "dataDir", "index.cjs");
-const { getDataDir } = require(
-  fs.existsSync(PACKED_DATA_DIR_MODULE)
-    ? PACKED_DATA_DIR_MODULE
-    : path.join(__dirname, "..", "..", "src", "shared", "dataDir", "index.cjs"),
-);
+const { requireShared } = require("../src/cli/utils/requireShared");
+
+const { getDataDir } = requireShared("dataDir");
+const { ACTIVE } = requireShared("brand");
 
 function getRuntimeDir() {
   return path.join(getDataDir(), "runtime");
@@ -42,10 +38,10 @@ function ensureRuntimeDir() {
       pkgPath,
       JSON.stringify(
         {
-          name: "9router-runtime",
+          name: `${ACTIVE.slug}-runtime`,
           version: "1.0.0",
           private: true,
-          description: "User-writable runtime deps for 9router (better-sqlite3 native binary)",
+          description: `User-writable runtime deps for ${ACTIVE.slug} (better-sqlite3 native binary)`,
         },
         null,
         2,

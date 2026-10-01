@@ -1,6 +1,5 @@
 /**
- * `9router xai video` — generate a Grok Imagine video through the local
- * 9router gateway and save the result as an MP4 file.
+ * `xai video` — generate a Grok Imagine video through the local gateway and save the result as an MP4 file.
  *
  * Flow: POST /v1/videos/generations → poll GET /v1/videos/{request_id}
  * until done/failed/timeout → download video.url → atomic rename.
@@ -13,13 +12,9 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 
-// The CLI build packs the brand module into cli/src/shared/; a repo checkout uses the source.
-const PACKED_BRAND_MODULE = path.join(__dirname, "..", "..", "shared", "brand", "index.cjs");
-const { ACTIVE, BRAND, LEGACY, readEnv } = require(
-  fs.existsSync(PACKED_BRAND_MODULE)
-    ? PACKED_BRAND_MODULE
-    : path.join(__dirname, "..", "..", "..", "..", "src", "shared", "brand", "index.cjs"),
-);
+const { requireShared } = require("../utils/requireShared");
+
+const { ACTIVE, BRAND, LEGACY, readEnv } = requireShared("brand");
 
 const DEFAULT_PORT = 20128;
 const DEFAULT_HOST = "127.0.0.1";
@@ -31,9 +26,9 @@ const TERMINAL_STATUSES = new Set(["done", "failed", "completed", "error", "expi
 const FAILED_STATUSES = new Set(["failed", "error", "expired", "cancelled"]);
 
 const HELP = `
-Usage: 9router xai video --prompt "..." [options]
+Usage: ${ACTIVE.npmPackage} xai video --prompt "..." [options]
 
-Generate a Grok Imagine video via your local 9router gateway
+Generate a Grok Imagine video via your local ${ACTIVE.slug} gateway
 (requires a connected xAI account — Grok Build OAuth or API key).
 
 Options:
@@ -47,7 +42,7 @@ Options:
   --timeout <seconds>     Max wait for the job (default: ${DEFAULT_TIMEOUT_SEC})
   --port <port>           Gateway port (default: ${DEFAULT_PORT})
   --host <host>           Gateway host (default: ${DEFAULT_HOST})
-  --api-key <key>         9router API key (or env ${ACTIVE.envPrefix}API_KEY)
+  --api-key <key>         ${ACTIVE.slug} API key (or env ${ACTIVE.envPrefix}API_KEY)
   -h, --help              Show this help
 `;
 

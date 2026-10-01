@@ -1,6 +1,9 @@
 const { exec } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const { requireShared } = require("../utils/requireShared");
+
+const { ACTIVE } = requireShared("brand");
 
 let trayInstance = null;
 let isWinTray = false;
@@ -58,7 +61,7 @@ function initTray(options) {
  */
 function buildMenuItems(port, autostartEnabled) {
   return [
-    { title: `9Router (Port ${port})`, tooltip: "Server is running", enabled: false },
+    { title: `${ACTIVE.name} (Port ${port})`, tooltip: "Server is running", enabled: false },
     { title: "Open Dashboard", tooltip: "Open in browser", enabled: true },
     {
       title: autostartEnabled ? "✓ Auto-start Enabled" : "Enable Auto-start",
@@ -122,7 +125,7 @@ function initWindowsTray(options) {
 
     trayInstance = initWinTray({
       iconPath,
-      tooltip: `9Router - Port ${port}`,
+      tooltip: `${ACTIVE.name} - Port ${port}`,
       items,
       onClick: (index) => {
         handleClick(index, options, (newEnabled) => {
@@ -213,7 +216,7 @@ function initUnixTray(options) {
       // because template mode only uses the alpha channel.
       isTemplateIcon: false,
       title: "",
-      tooltip: `9Router - Port ${port}`,
+      tooltip: `${ACTIVE.name} - Port ${port}`,
       items,
     };
 
@@ -240,7 +243,7 @@ function initUnixTray(options) {
       // didn't appear instead of getting a misleading "running in tray" log.
       trayInstance.ready().catch((err) => {
         process.stderr.write(
-          `[9router] tray failed to start: ${err && err.message ? err.message : err}\n`,
+          `[${ACTIVE.slug}] tray failed to start: ${err && err.message ? err.message : err}\n`,
         );
       });
     } else {
@@ -250,7 +253,7 @@ function initUnixTray(options) {
 
     return trayInstance;
   } catch (err) {
-    process.stderr.write(`[9router] tray init error: ${err.message}\n`);
+    process.stderr.write(`[${ACTIVE.slug}] tray init error: ${err.message}\n`);
     return null;
   }
 }

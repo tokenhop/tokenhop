@@ -6,13 +6,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { getDataDir } = require("../../../hooks/sqliteRuntime");
 
-// The CLI build packs the brand module into cli/src/shared/; a repo checkout uses the source.
-const PACKED_BRAND_MODULE = path.join(__dirname, "..", "..", "shared", "brand", "index.cjs");
-const { ACTIVE, BRAND, LEGACY } = require(
-  fs.existsSync(PACKED_BRAND_MODULE)
-    ? PACKED_BRAND_MODULE
-    : path.join(__dirname, "..", "..", "..", "..", "src", "shared", "brand", "index.cjs"),
-);
+const { requireShared } = require("./requireShared");
+
+const { ACTIVE, BRAND, LEGACY } = requireShared("brand");
 
 const isPid = (pid) => Number.isInteger(pid) && pid > 0;
 
@@ -22,7 +18,7 @@ function getPidFilePath() {
 }
 
 // legacy(9router): remove in v2
-// An old launcher may still be running and recording itself here; null under the 9router brand.
+// An old launcher may still be running and recording itself here; null under the default brand.
 function getLegacyPidFilePath() {
   const file = path.join(getDataDir(), LEGACY.pidFile);
   return file === getPidFilePath() ? null : file;

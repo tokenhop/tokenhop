@@ -15,16 +15,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 const { findListeningPids, isAlive } = require("../utils/processControl");
 const { DEFAULT_PORT } = require("../utils/args");
-
-// The CLI build packs the shared modules into cli/src/shared/; a repo checkout uses the source.
-function requireShared(name) {
-  const packed = path.join(__dirname, "..", "..", "shared", name, "index.cjs");
-  return require(
-    fs.existsSync(packed)
-      ? packed
-      : path.join(__dirname, "..", "..", "..", "..", "src", "shared", name, "index.cjs"),
-  );
-}
+const { requireShared } = require("../utils/requireShared");
 
 const { ACTIVE_BRAND_ID, BRAND, LEGACY } = requireShared("brand");
 const { brandDataDir, legacyDataDir } = requireShared("dataDir");

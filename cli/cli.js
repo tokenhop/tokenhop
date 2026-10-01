@@ -41,9 +41,11 @@ const {
   killPid,
 } = require("./src/cli/utils/processControl");
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
+const { requireShared } = require("./src/cli/utils/requireShared");
+const { ACTIVE } = requireShared("brand");
 const args = process.argv.slice(2);
 
-// Subcommands (`9router xai video …`) run against an already-running gateway
+// Subcommands (`xai video …`) run against an already-running gateway
 // and bypass the launcher flow (no runtime self-heal, no server spawn).
 if (args[0] === "xai" && args[1] === "video") {
   const { run } = require("./src/cli/commands/xaiVideo");
@@ -70,7 +72,7 @@ if (args[0] === "data") {
   return;
 }
 
-// Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.9router/runtime
+// Self-heal SQLite runtime deps (sql.js + better-sqlite3) into <data dir>/runtime
 // so the server can resolve them via NODE_PATH. Best-effort — sql.js is required,
 // better-sqlite3 is optional. Logs to stderr only on failure.
 try { ensureSqliteRuntime({ silent: true }); } catch {}
@@ -210,9 +212,9 @@ function killCloudflaredByAppPort(appPort) {
   return pids;
 }
 
-// Stop a previous 9router launcher/server recorded in this install's PID file.
+// Stop a previous launcher/server recorded in this install's PID file.
 // Never matches by process name: `next-server` is every Next.js app's title and
-// "9router" appears in unrelated shells/test runners.
+// the package name appears in unrelated shells/test runners.
 function killAllAppProcesses(appPort) {
   // Background: MITM + tunnel/cloudflared run on separate ports/processes —
   // killing them doesn't free the app port, so don't block the critical path.
@@ -293,7 +295,7 @@ function killProxyByPidFile() {
 }
 
 // Kill whatever LISTENS on exactly this port (never clients connected to it).
-// If the listener was spawned by another 9router launcher (e.g. one without a PID
+// If the listener was spawned by another launcher (e.g. one without a PID
 // file), stop that launcher first so it doesn't respawn the server into a crash loop.
 function killProcessOnPort(port) {
   const pids = findListeningPids(port).filter((pid) => pid !== process.pid);
@@ -583,7 +585,7 @@ function startServer() {
             process.on("SIGHUP", () => {});
 
             console.log(`\n⏳ Switching to tray mode... (icon already visible in menu bar)`);
-            console.log(`🔔 9Router is running in tray (PID: ${process.pid})`);
+            console.log(`🔔 ${ACTIVE.name} is running in tray (PID: ${process.pid})`);
             console.log(`   Server: http://${displayHost}:${port}`);
             console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
 
@@ -602,7 +604,7 @@ function startServer() {
           });
           bgProcess.unref();
 
-          console.log(`🔔 9Router is now running in background (PID: ${bgProcess.pid})`);
+          console.log(`🔔 ${ACTIVE.name} is now running in background (PID: ${bgProcess.pid})`);
           console.log(`   Server: http://${displayHost}:${port}`);
           console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
 
