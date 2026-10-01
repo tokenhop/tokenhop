@@ -32,3 +32,18 @@ describe.each(["24h", "7d"])("getUsageStats(%s) byAccount", (period) => {
     expect(byModel).toEqual({ "gpt-4o": 2, "gpt-4o-mini": 1 });
   });
 });
+
+it("still reads day rows saved before YAN-64 (bare connectionId key)", async () => {
+  const { getAdapter } = await import("@/lib/db/driver.js");
+  const adapter = await getAdapter();
+  const day = {
+    byAccount: { "conn-legacy-0001": { requests: 4, rawModel: "gpt-4o", provider: "openai" } },
+  };
+  adapter.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?)`, [
+    "2000-01-01",
+    JSON.stringify(day),
+  ]);
+  const stats = await db.getUsageStats("all");
+  const row = Object.values(stats.byAccount).find((r) => r.connectionId === "conn-legacy-0001");
+  expect(row).toMatchObject({ rawModel: "gpt-4o", requests: 4 });
+});
