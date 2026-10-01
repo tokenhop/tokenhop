@@ -20,16 +20,9 @@ import {
 } from "./setupCard";
 import { CLIENT_NAME, isClientKey } from "@/lib/cliToolBrand";
 import { buildCopilotConfig } from "@/lib/cliToolConfigs/copilot";
+import { browserPlatform } from "@/lib/cliToolConfigs/shared";
 
 const ENDPOINT = "/api/cli-tools/copilot-settings";
-
-// Best guess of the remote user's OS for the snippet's file path.
-const browserPlatform = () => {
-  if (typeof navigator === "undefined") return "linux";
-  if (navigator.userAgent.includes("Mac")) return "darwin";
-  if (navigator.userAgent.includes("Win")) return "win32";
-  return "linux";
-};
 
 /**
  * GitHub Copilot setup panel: multi-model chips written to VS Code's

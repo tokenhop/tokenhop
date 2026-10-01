@@ -261,6 +261,30 @@ describe("dashboard guard local-only access", () => {
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
   });
 
+  it("lets a signed-in remote user GET the Cowork MCP registry, not POST the tool probe (YAN-618)", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+    const remote = (pathname, method) => ({
+      ...request(pathname, { host: "router.example.com" }),
+      method,
+      cookies: { get: vi.fn(() => ({ value: "jwt" })) },
+    });
+
+    const registry = await proxy(remote("/api/cli-tools/cowork-mcp-registry", "GET"));
+    expect(registry).toBe(mocks.nextResponse);
+
+    const probe = await proxy(remote("/api/cli-tools/cowork-mcp-tools", "POST"));
+    expect(probe.status).toBe(403);
+    expect(probe.body.code).toBe("LOCAL_ONLY");
+  });
+
+  it("still requires dashboard auth for the remote Cowork MCP registry", async () => {
+    const response = await proxy({
+      ...request("/api/cli-tools/cowork-mcp-registry", { host: "router.example.com" }),
+      method: "GET",
+    });
+    expect(response.status).toBe(401);
+  });
+
   it("rejects local-only route from non-loopback host without CLI token", async () => {
     const response = await proxy(
       request("/api/mcp/filesystem/sse", {

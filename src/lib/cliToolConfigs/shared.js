@@ -30,9 +30,23 @@ export const renderFragment = ({ format, value }) => {
   return value;
 };
 
-/** ManualConfigList entries for a builder result; `null` (missing input) → `[]`. */
+/**
+ * ManualConfigList entries for a builder result; `null` (missing input) → `[]`.
+ * An optional fragment note replaces the default "merge into existing" hint.
+ */
 export const toManualConfigs = (fragments) =>
-  (fragments || []).map((fragment) => ({
-    filename: fragment.merge ? `${fragment.file} (merge into existing)` : fragment.file,
-    content: renderFragment(fragment),
-  }));
+  (fragments || []).map((fragment) => {
+    const note = fragment.note || (fragment.merge ? "merge into existing" : "");
+    return {
+      filename: note ? `${fragment.file} (${note})` : fragment.file,
+      content: renderFragment(fragment),
+    };
+  });
+
+/** Best guess of the browser user's OS, for snippets whose paths differ per OS. */
+export const browserPlatform = () => {
+  if (typeof navigator === "undefined") return "linux";
+  if (navigator.userAgent.includes("Mac")) return "darwin";
+  if (navigator.userAgent.includes("Win")) return "win32";
+  return "linux";
+};

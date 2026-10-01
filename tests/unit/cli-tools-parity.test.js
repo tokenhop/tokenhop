@@ -165,3 +165,84 @@ describe.each(["", "tokenhop"])("brand %j", (brand) => {
     },
   );
 });
+
+// YAN-618: Cowork writes four files; the snippet shows the same four.
+describe.each(["", "tokenhop"])("brand %j: cowork-settings", (brand) => {
+  it.skipIf(os.platform() !== "linux")("Apply == builder", async () => {
+    await clearHome([".config"]);
+    const { DEFAULT_PLUGINS } = await import("@/shared/constants/coworkPlugins");
+    const body = {
+      baseUrl: `${base}/v1`,
+      apiKey,
+      models: ["cc/claude-opus-5"],
+      plugins: DEFAULT_PLUGINS.filter((p) => p.name === "exa"),
+      customPlugins: [{ name: "mine", url: "https://example.com/sse" }],
+    };
+    const res = await (await load(brand, "cowork-settings")).POST(post(body));
+    expect(res.status).toBe(200);
+
+    const { appliedId } = JSON.parse(await read(".config/Claude-3p/configLibrary/_meta.json"));
+    const cowork = await loadModule(brand, "@/lib/cliToolConfigs/cowork.js");
+    const fragments = cowork.buildCoworkConfig({
+      ...body,
+      managedMcpServers: cowork.buildCoworkMcpServers(body),
+      appliedId,
+      platform: "linux",
+    });
+    expect(fragments).toHaveLength(4);
+    for (const { file, value } of fragments) {
+      expect(JSON.parse(await read(homePath(file)))).toEqual(value);
+    }
+  });
+
+  it("no models → null", async () => {
+    const { buildCoworkConfig } = await loadModule(brand, "@/lib/cliToolConfigs/cowork.js");
+    expect(buildCoworkConfig({ baseUrl: base, apiKey, models: [] })).toBeNull();
+  });
+});
+
+// YAN-619: primary, allowlist, per-agent overrides and per-agent models.json.
+describe.each(["", "tokenhop"])("brand %j: openclaw-settings", (brand) => {
+  it("Apply == builder (primary + allowlist + two agents)", async () => {
+    await clearHome([".openclaw"]);
+    const agents = ["a1", "a2"].map((id) => ({
+      id,
+      agentDir: path.join(home, ".openclaw/agents", id),
+    }));
+    await mkdir(path.join(home, ".openclaw"), { recursive: true });
+    await import("node:fs/promises").then((fs) =>
+      fs.writeFile(
+        path.join(home, ".openclaw/openclaw.json"),
+        JSON.stringify({ agents: { list: agents } }),
+      ),
+    );
+    const body = {
+      baseUrl: base,
+      apiKey,
+      model: "cx/gpt-5",
+      agentModels: { a1: "cc/claude-opus-5" },
+    };
+    const res = await (await load(brand, "openclaw-settings")).POST(post(body));
+    expect(res.status).toBe(200);
+
+    const { buildOpenClawConfig } = await loadModule(brand, "@/lib/cliToolConfigs/openclaw.js");
+    const [main, ...agentFiles] = buildOpenClawConfig({ ...body, agents });
+    const written = JSON.parse(await read(".openclaw/openclaw.json"));
+    expect(written.agents.defaults).toEqual(main.value.agents.defaults);
+    expect(Object.keys(written.agents.defaults.models)).toHaveLength(2);
+    expect(written.models).toEqual(main.value.models);
+    expect(written.agents.list).toEqual([
+      { ...agents[0], ...main.value.agents.list[0] },
+      agents[1],
+    ]);
+    expect(agentFiles).toHaveLength(2);
+    for (const { file, value } of agentFiles) {
+      expect(JSON.parse(await read(homePath(file)))).toEqual(value);
+    }
+  });
+
+  it("no model → null", async () => {
+    const { buildOpenClawConfig } = await loadModule(brand, "@/lib/cliToolConfigs/openclaw.js");
+    expect(buildOpenClawConfig({ baseUrl: base, apiKey, agents: [] })).toBeNull();
+  });
+});

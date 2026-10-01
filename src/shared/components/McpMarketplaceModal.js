@@ -9,6 +9,7 @@ import Callout from "./Callout";
 import EmptyState from "./EmptyState";
 import Button from "./Button";
 import { LoadingState } from "./StateViews";
+import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 
 const REGISTRY_ENDPOINT = "/api/cli-tools/cowork-mcp-registry";
 const TOOLS_ENDPOINT = "/api/cli-tools/cowork-mcp-tools";
@@ -64,7 +65,8 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: server.url }),
       });
-      const d = await r.json();
+      // Remotely the probe is local-only (it fetches arbitrary URLs); use the registry's tool names.
+      const d = (await isLocalOnlyResponse(r)) ? {} : await r.json();
       const tools = d.tools || [];
       const fallback = Array.isArray(server.toolNames) ? server.toolNames : [];
       const toolNames = tools.length > 0 ? tools.map((t) => t.name) : fallback;

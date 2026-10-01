@@ -5,14 +5,16 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
-import {
-  DEFAULT_PLUGINS,
-  LOCAL_STDIO_PLUGINS,
-  buildManagedMcpServers,
-} from "@/shared/constants/coworkPlugins";
+import { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS } from "@/shared/constants/coworkPlugins";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { CLI_TOKEN_HEADER, getCliToken } from "@/lib/auth/cliToken";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
+import {
+  PROVIDER,
+  buildCoworkConfig,
+  buildCoworkMcpServers,
+  coworkMeta,
+} from "@/lib/cliToolConfigs/cowork";
 
 const APP_PORT = UPDATER_CONFIG.appPort;
 const LOCAL_MCP_PREFIX = `http://localhost:${APP_PORT}/api/mcp/`;
@@ -26,22 +28,6 @@ const injectAuthHeaders = async (entries) => {
     }
   }
   return entries;
-};
-
-const PROVIDER = "gateway";
-
-// Hardcoded relax-security profile applied on every Apply.
-const SECURITY_RELAX = {
-  coworkEgressAllowedHosts: ["*"],
-  disabledBuiltinTools: [],
-  isLocalDevMcpEnabled: true,
-  isDesktopExtensionEnabled: true,
-  isDesktopExtensionDirectoryEnabled: true,
-  isDesktopExtensionSignatureRequired: false,
-  isClaudeCodeForDesktopEnabled: true,
-  disableEssentialTelemetry: true,
-  disableNonessentialTelemetry: true,
-  disableNonessentialServices: true,
 };
 
 // Tools auto-allow per server via toolPolicy["*"] = "allow" semantics.
@@ -170,17 +156,6 @@ const buildLocalBridgeEntries = (localPluginNames) => {
   return out;
 };
 
-// Build entries for user-defined custom MCP plugins (URL or stdio command).
-const buildCustomEntries = (customPlugins) => {
-  if (!Array.isArray(customPlugins)) return [];
-  const out = [];
-  for (const p of customPlugins) {
-    if (!p?.name || !p?.url) continue;
-    out.push({ name: p.name, url: p.url, transport: p.transport || "sse", custom: true });
-  }
-  return out;
-};
-
 const checkInstalled = async () => {
   for (const dir of [...getCandidateRoots(), ...getAppInstallPaths()]) {
     try {
@@ -210,8 +185,7 @@ const ensureMeta = async () => {
     if (existingRead?.appliedId) {
       meta = existingRead;
     } else {
-      const newId = crypto.randomUUID();
-      meta = { appliedId: newId, entries: [{ id: newId, name: "Default" }] };
+      meta = coworkMeta(crypto.randomUUID());
     }
     await fs.mkdir(getWriteConfigDir(), { recursive: true });
     await fs.writeFile(writeMetaPath, JSON.stringify(meta, null, 2));
@@ -220,17 +194,13 @@ const ensureMeta = async () => {
 };
 
 // Auto-skip approvals for every managed server (no per-tool prompts).
-async function writeSkipApprovals(managedServers) {
+async function writeSkipApprovals(skip) {
   const cfgPath = path.join(getWriteRoot(), "config.json");
   let cfg;
   try {
     cfg = (await readJsonConfig(cfgPath)) || {};
   } catch (e) {
     return { error: e.code || e.message };
-  }
-  const skip = {};
-  for (const srv of managedServers) {
-    if (srv?.name) skip[srv.name] = true;
   }
   cfg.operonSkipMcpApprovals = skip;
   await fs.mkdir(getWriteRoot(), { recursive: true });
@@ -350,32 +320,32 @@ export async function POST(request) {
       (p) => p?.url,
     );
 
-    const bridgeEntries = await injectAuthHeaders(buildLocalBridgeEntries(localPluginNames));
-    const customEntries = await injectAuthHeaders(buildCustomEntries(customPluginsArray));
-    const managedMcpServers = [
-      ...buildManagedMcpServers(pluginsArray),
-      ...bridgeEntries,
-      ...customEntries,
-    ];
+    const managedMcpServers = await injectAuthHeaders(
+      buildCoworkMcpServers({
+        plugins: pluginsArray,
+        localServers: buildLocalBridgeEntries(localPluginNames),
+        customPlugins: customPluginsArray,
+      }),
+    );
 
     const bootstrapped = await bootstrapDeploymentMode();
     const meta = await ensureMeta();
     const configPath = path.join(getWriteConfigDir(), `${meta.appliedId}.json`);
+    // Same fragments as the manual snippet: [1p deploymentMode, _meta, config, config.json].
+    const [, , configFragment, skipFragment] = buildCoworkConfig({
+      baseUrl,
+      apiKey,
+      models: modelsArray,
+      managedMcpServers,
+      appliedId: meta.appliedId,
+      platform: os.platform(),
+    });
 
-    const newConfig = {
-      ...SECURITY_RELAX,
-      inferenceProvider: PROVIDER,
-      inferenceGatewayBaseUrl: baseUrl,
-      inferenceGatewayApiKey: apiKey,
-      inferenceModels: modelsArray.map((name) => ({ name })),
-    };
-    if (managedMcpServers.length > 0) newConfig.managedMcpServers = managedMcpServers;
-
-    await fs.writeFile(configPath, JSON.stringify(newConfig, null, 2));
+    await fs.writeFile(configPath, JSON.stringify(configFragment.value, null, 2));
 
     let skipResult = null;
     try {
-      skipResult = await writeSkipApprovals(managedMcpServers);
+      skipResult = await writeSkipApprovals(skipFragment.value.operonSkipMcpApprovals);
     } catch (e) {
       skipResult = { error: e.message };
     }
@@ -419,7 +389,7 @@ export async function DELETE() {
       if (error.code !== "ENOENT") throw error;
     }
     try {
-      await writeSkipApprovals([]);
+      await writeSkipApprovals({});
     } catch {
       /* ignore */
     }

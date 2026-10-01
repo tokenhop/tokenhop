@@ -77,6 +77,11 @@ const LOCAL_ONLY_PATHS = [
   "/api/headroom/proxy",
 ];
 
+// Read-only GETs under a local-only prefix that remote dashboard users may call
+// (still behind the /api/* auth below). The Cowork MCP registry fetches a fixed
+// public upstream and reads no files or secrets; the tool probe stays local-only.
+const REMOTE_READABLE_GETS = new Set(["/api/cli-tools/cowork-mcp-registry"]);
+
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 // Accepts a Host header, a URL hostname or a raw socket address. Splitting on the first
@@ -203,7 +208,8 @@ export async function proxy(request) {
   if (isPublicPage(pathname)) return NextResponse.next();
 
   // Local-only gate for spawn-capable / host-secret routes.
-  if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
+  const remoteReadable = request.method === "GET" && REMOTE_READABLE_GETS.has(pathname);
+  if (!remoteReadable && LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
     if (!(await canAccessLocalOnlyRoute(request))) {
       return NextResponse.json(
         { error: "Local only: CLI token required", code: LOCAL_ONLY_CODE },
