@@ -395,10 +395,10 @@ function buildOllamaSearchRequest(config, params) {
 }
 
 // ── GLM Coding plan MCP web_search_prime ──────────────────────────────────
-// POST https://api.z.ai/api/mcp/web_search_prime/mcp
-// JSON-RPC envelope: { jsonrpc, id, method: "tools/call",
-//   params: { name: "web_search_prime", arguments: { search_query, count } } }
-// Response: { result: { content: [{ type: "text", text: "<json>" }] } }
+// POST https://api.z.ai/api/mcp/web_search_prime/mcp (MCP Streamable HTTP).
+// This builds only the `tools/call`; glmMcp.js runs it inside an MCP session.
+// The tool has no result count (maxResults is applied client-side). Upstream
+// defaults `location` to "cn", so send "us" unless the caller asks for cn.
 function buildGlmSearchRequest(config, params) {
   const body = {
     jsonrpc: "2.0",
@@ -406,7 +406,10 @@ function buildGlmSearchRequest(config, params) {
     method: "tools/call",
     params: {
       name: "web_search_prime",
-      arguments: { search_query: params.query, count: params.maxResults },
+      arguments: {
+        search_query: params.query,
+        location: params.country?.toLowerCase() === "cn" ? "cn" : "us",
+      },
     },
   };
   return {
@@ -415,6 +418,7 @@ function buildGlmSearchRequest(config, params) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
         ...(params.token ? { Authorization: `Bearer ${params.token}` } : {}),
       },
       body: JSON.stringify(body),
