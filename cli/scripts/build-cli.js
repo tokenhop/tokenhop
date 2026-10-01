@@ -154,21 +154,28 @@ function assertRequiredApiArtifacts(cliAppDir) {
 }
 
 // The CLI must not reach outside its package at runtime, so it ships its own copy
-// of the brand module at cli/src/shared/brand/index.cjs (gitignored).
-const BRAND_MODULE_PATH = path.join("src", "shared", "brand", "index.cjs");
+// of the shared modules (brand, data-dir resolver) under cli/src/shared/ (gitignored).
+const SHARED_MODULE_PATHS = ["brand", "dataDir"].map((name) =>
+  path.join("src", "shared", name, "index.cjs"),
+);
 
-function copyBrandModule(appDir, cliDir) {
-  const dest = path.join(cliDir, BRAND_MODULE_PATH);
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(path.join(appDir, BRAND_MODULE_PATH), dest);
-  return dest;
+function copySharedModules(appDir, cliDir) {
+  return SHARED_MODULE_PATHS.map((rel) => {
+    const dest = path.join(cliDir, rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(path.join(appDir, rel), dest);
+    return dest;
+  });
 }
 
 function buildCliPackage() {
   console.log("📦 Building 9Router CLI package with Next.js...\n");
 
-  console.log("0️⃣  Copying brand module into the CLI package...");
-  console.log(`✅ Copied ${path.relative(appDir, copyBrandModule(appDir, cliDir))}\n`);
+  console.log("0️⃣  Copying shared modules into the CLI package...");
+  for (const dest of copySharedModules(appDir, cliDir)) {
+    console.log(`✅ Copied ${path.relative(appDir, dest)}`);
+  }
+  console.log("");
 
   fs.mkdirSync(buildHomeDir, { recursive: true });
   fs.mkdirSync(path.join(buildHomeDir, "AppData", "Roaming"), { recursive: true });
@@ -364,10 +371,10 @@ function buildCliPackage() {
 
 module.exports = {
   assertRequiredApiArtifacts,
-  BRAND_MODULE_PATH,
-  copyBrandModule,
+  copySharedModules,
   copyStandaloneBuild,
   mergeServerArtifacts,
+  SHARED_MODULE_PATHS,
 };
 
 if (require.main === module) {

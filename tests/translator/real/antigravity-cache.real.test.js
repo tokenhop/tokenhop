@@ -20,8 +20,8 @@
 import { beforeAll, describe, it, expect } from "vitest";
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import dataDirResolver from "../../../src/shared/dataDir/index.cjs";
 import { PROVIDERS } from "../../../open-sse/config/providers.js";
 import {
   ANTIGRAVITY_HEADERS,
@@ -112,16 +112,9 @@ describe.skipIf(!RUN_REAL)("Antigravity cache behavior (real API)", () => {
   let loadError = null;
   beforeAll(async () => {
     try {
-      // Avoid getAdapter() creating an empty DB when none exists. Mirrors
-      // src/lib/dataDir.js defaultDir() resolution without its mkdir side effect.
-      const dataDir =
-        process.env.DATA_DIR ||
-        (process.platform === "win32"
-          ? path.join(
-              process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"),
-              "9router",
-            )
-          : path.join(os.homedir(), ".9router"));
+      // Avoid getAdapter() creating an empty DB when none exists: resolve the
+      // data dir without getDataDir()'s mkdir side effect.
+      const dataDir = process.env.DATA_DIR || dataDirResolver.defaultDataDir();
       const dbSqlite = path.join(dataDir, "db", "data.sqlite");
       if (!fs.existsSync(dbSqlite)) return;
       const { getProviderConnections } = await import("../../../src/lib/localDb.js");
