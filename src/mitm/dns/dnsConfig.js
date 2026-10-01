@@ -15,16 +15,18 @@ const { ACTIVE, BRAND, LEGACY } = require("../../shared/brand/index.cjs");
 function atomicWriteHostsWin(target, originalContent, newContent) {
   const tmpNew = `${target}.${ACTIVE.slug}.new`;
   const tmpBak = `${target}.${ACTIVE.slug}.bak`;
-  try {
-    fs.writeFileSync(tmpNew, newContent, "utf8");
-    // Stale backups from an interrupted write, under either name. legacy(9router): remove in v2
-    for (const slug of [BRAND.slug, LEGACY.slug]) {
+  // Leftovers from an interrupted write, under either name. legacy(9router): remove in v2
+  for (const slug of [BRAND.slug, LEGACY.slug]) {
+    for (const leftover of [`${target}.${slug}.new`, `${target}.${slug}.bak`]) {
       try {
-        fs.unlinkSync(`${target}.${slug}.bak`);
+        fs.unlinkSync(leftover);
       } catch {
         /* none */
       }
     }
+  }
+  try {
+    fs.writeFileSync(tmpNew, newContent, "utf8");
     fs.renameSync(target, tmpBak);
     try {
       fs.renameSync(tmpNew, target);
