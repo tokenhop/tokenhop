@@ -30,6 +30,46 @@ export const findClientEntry = (map) => {
   return undefined;
 };
 
+/** `<key>/<model>` reference Apply writes, e.g. OpenCode's `model`. */
+export const modelRef = (model) => `${CLIENT_KEY}/${model}`;
+
+/** `{ key, model }` when value is `<our key>/<model>` under any known key, else null. */
+export const splitModelRef = (value) => {
+  if (typeof value !== "string") return null;
+  const slash = value.indexOf("/");
+  if (slash <= 0) return null;
+  const key = value.slice(0, slash);
+  return isClientKey(key) ? { key, model: value.slice(slash + 1) } : null;
+};
+
+/** True when value is a model reference under a key Apply migrates (tokenhop brand only). */
+export const isLegacyModelRef = (value) => LEGACY_CLIENT_KEYS.includes(splitModelRef(value)?.key);
+
+/** The same model under our active key; anything else unchanged. */
+export const repointModelRef = (value) =>
+  isLegacyModelRef(value) ? modelRef(splitModelRef(value).model) : value;
+
+/** True when a base URL names any known key (e.g. a reverse-proxy path). */
+export const urlNamesClient = (url) =>
+  typeof url === "string" && ALL_CLIENT_KEYS.some((key) => url.includes(key));
+
+/** Droid-style custom model ids: `<prefix><index>`. */
+export const CUSTOM_MODEL_ID_PREFIX = ACTIVE.customModelIdPrefix;
+const ALL_CUSTOM_MODEL_ID_PREFIXES = [
+  ...new Set([CUSTOM_MODEL_ID_PREFIX, BRAND.customModelIdPrefix, LEGACY.customModelIdPrefix]),
+];
+// legacy(9router): remove in v2 — migrated on Apply only under the tokenhop brand.
+const LEGACY_CUSTOM_MODEL_ID_PREFIXES =
+  CUSTOM_MODEL_ID_PREFIX === BRAND.customModelIdPrefix ? [LEGACY.customModelIdPrefix] : [];
+
+/** Ours under any brand (detect and Reset). */
+export const isCustomModelId = (id) =>
+  typeof id === "string" && ALL_CUSTOM_MODEL_ID_PREFIXES.some((p) => id.startsWith(p));
+/** Ours under the active brand, or a legacy id Apply replaces. */
+export const isOwnedCustomModelId = (id) =>
+  typeof id === "string" &&
+  [CUSTOM_MODEL_ID_PREFIX, ...LEGACY_CUSTOM_MODEL_ID_PREFIXES].some((p) => id.startsWith(p));
+
 /** Remove legacy entries from the key→entry object; returns the first one found. */
 export const takeLegacyEntry = (map) => {
   let found;

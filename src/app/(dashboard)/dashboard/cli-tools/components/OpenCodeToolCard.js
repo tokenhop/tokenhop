@@ -18,6 +18,7 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
+import { CLIENT_KEY, findClientEntry, modelRef, splitModelRef } from "@/lib/cliToolBrand";
 
 const ENDPOINT = "/api/cli-tools/opencode-settings";
 
@@ -59,12 +60,11 @@ export default function OpenCodeToolCard({
   useEffect(() => {
     if (status?.opencode?.models) setSelectedModels(status.opencode.models);
     if (status?.opencode?.activeModel) setActiveModel(status.opencode.activeModel);
-    if (status?.config?.agent?.explorer?.model?.startsWith("9router/")) {
-      setSubagentModel(status.config.agent.explorer.model.replace("9router/", ""));
-    }
+    const subagent = splitModelRef(status?.config?.agent?.explorer?.model);
+    if (subagent) setSubagentModel(subagent.model);
   }, [status]);
 
-  const currentBaseUrl = status?.config?.provider?.["9router"]?.options?.baseURL || "";
+  const currentBaseUrl = findClientEntry(status?.config?.provider)?.options?.baseURL || "";
 
   const getEffectiveBaseUrl = () => {
     const u = card.customBaseUrl || baseUrl || "http://localhost:20128/v1";
@@ -200,7 +200,7 @@ export default function OpenCodeToolCard({
         content: JSON.stringify(
           {
             provider: {
-              "9router": {
+              [CLIENT_KEY]: {
                 npm: "@ai-sdk/openai-compatible",
                 options: {
                   baseURL: getEffectiveBaseUrl(),
@@ -209,12 +209,12 @@ export default function OpenCodeToolCard({
                 models: modelsObj,
               },
             },
-            model: `9router/${activeShown}`,
+            model: modelRef(activeShown),
             agent: {
               explorer: {
                 description: "Fast explorer subagent for codebase exploration",
                 mode: "subagent",
-                model: `9router/${subShown}`,
+                model: modelRef(subShown),
               },
             },
           },

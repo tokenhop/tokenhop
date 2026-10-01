@@ -4,6 +4,16 @@ const { showStatus } = require("../utils/display");
 const { selectModelFromList } = require("../utils/modelSelector");
 const { showMenuWithBack } = require("../utils/menuHelper");
 const { getEndpoint } = require("../utils/endpoint");
+const { requireShared } = require("../utils/requireShared");
+
+const { ACTIVE, BRAND, LEGACY } = requireShared("brand");
+// Every provider key / custom-model prefix we have written, active brand first.
+const CLIENT_KEYS = [
+  ...new Set([ACTIVE.clientConfigKey, BRAND.clientConfigKey, ...LEGACY.clientConfigKeys]),
+];
+const MODEL_ID_PREFIXES = [
+  ...new Set([ACTIVE.customModelIdPrefix, BRAND.customModelIdPrefix, LEGACY.customModelIdPrefix]),
+];
 
 const COLORS = {
   reset: "\x1b[0m",
@@ -320,6 +330,26 @@ async function showCodexMenu(port, breadcrumb = []) {
 
 // ─── Factory Droid ────────────────────────────────────────────────────────────
 
+/** Our first Droid custom model: the active `<prefix>0`, else any known prefix. */
+function findDroidCustomModel(settings) {
+  const models = settings?.customModels || [];
+  return (
+    models.find((m) => m.id === `${ACTIVE.customModelIdPrefix}0`) ||
+    models.find((m) => MODEL_ID_PREFIXES.some((p) => m.id?.startsWith(p)))
+  );
+}
+
+/** Our OpenClaw provider (any known key) and the model its primary points at. */
+function readOpenClawEntry(settings) {
+  const providers = settings?.models?.providers || {};
+  const provider = CLIENT_KEYS.map((k) => providers[k]).find(Boolean);
+  const raw = settings?.agents?.defaults?.model?.primary;
+  const primary = typeof raw === "string" ? raw : "";
+  const key = CLIENT_KEYS.find((k) => primary.startsWith(`${k}/`));
+  const model = key ? primary.slice(key.length + 1) : provider?.models?.[0]?.id || "";
+  return { provider, model };
+}
+
 /**
  * Build header showing current Droid config status
  * @returns {Promise<string>}
@@ -338,8 +368,8 @@ async function buildDroidHeader() {
     ].join("\n");
   }
 
-  // Extract 9Router custom model config
-  const custom = settings?.customModels?.find((m) => m.id === "custom:9Router-0");
+  // Our first custom model, under any brand's id prefix
+  const custom = findDroidCustomModel(settings);
   const lines = [`Status:   ${COLORS.green}✓ Configured${COLORS.reset}`];
   if (custom?.baseUrl) lines.push(`Endpoint: ${COLORS.cyan}${custom.baseUrl}${COLORS.reset}`);
   if (custom?.model) lines.push(`Model:    ${COLORS.dim}${custom.model}${COLORS.reset}`);
@@ -435,12 +465,7 @@ async function buildOpenClawHeader() {
     ].join("\n");
   }
 
-  // Extract 9Router provider config
-  const provider = settings?.models?.providers?.["9router"];
-  const primary = settings?.agents?.defaults?.model?.primary || "";
-  const model = primary.startsWith("9router/")
-    ? primary.replace("9router/", "")
-    : provider?.models?.[0]?.id || "";
+  const { provider, model } = readOpenClawEntry(settings);
   const lines = [`Status:   ${COLORS.green}✓ Configured${COLORS.reset}`];
   if (provider?.baseUrl) lines.push(`Endpoint: ${COLORS.cyan}${provider.baseUrl}${COLORS.reset}`);
   if (model) lines.push(`Model:    ${COLORS.dim}${model}${COLORS.reset}`);
@@ -721,7 +746,7 @@ async function showCliToolsMenu(port, breadcrumb = []) {
   await showMenuWithBack({
     title: "🔧 CLI Tools",
     breadcrumb,
-    headerContent: `Configure CLI tools to use 9Router\nEndpoint: ${endpoint}`,
+    headerContent: `Configure CLI tools to use ${ACTIVE.name}\nEndpoint: ${endpoint}`,
     items: [
       {
         label: "Claude Code",
@@ -769,4 +794,4 @@ async function showCliToolsMenu(port, breadcrumb = []) {
   });
 }
 
-module.exports = { showCliToolsMenu };
+module.exports = { showCliToolsMenu, findDroidCustomModel, readOpenClawEntry };

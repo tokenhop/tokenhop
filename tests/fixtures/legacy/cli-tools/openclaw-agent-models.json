@@ -1,0 +1,14 @@
+{
+  "providers": {
+    "9router": {
+      "baseUrl": "http://127.0.0.1:9/v1",
+      "apiKey": "sk-old",
+      "api": "openai-completions",
+      "models": [{ "id": "cc/agent-old", "name": "agent-old" }]
+    },
+    "ollama": {
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "models": [{ "id": "llama3", "name": "llama3" }]
+    }
+  }
+}

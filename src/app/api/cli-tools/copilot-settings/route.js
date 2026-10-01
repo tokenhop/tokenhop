@@ -6,6 +6,7 @@ import path from "path";
 import os from "os";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
 import { ACTIVE } from "@/shared/brand";
+import { CLIENT_NAME, isClientKey, LEGACY_CLIENT_KEYS } from "@/lib/cliToolBrand";
 
 // Resolve chatLanguageModels.json path per OS
 const getConfigPath = () => {
@@ -39,26 +40,31 @@ const readConfig = async () => {
   }
 };
 
-const has9RouterConfig = (config) => {
+const hasTokenhopConfig = (config) => {
   if (!Array.isArray(config)) return false;
-  return config.some((entry) => entry.name === "9Router");
+  return config.some((entry) => isClientKey(entry.name));
 };
 
-const get9RouterEntry = (config) => {
+// Our entry, preferring the active name
+const getOurEntry = (config) => {
   if (!Array.isArray(config)) return null;
-  return config.find((entry) => entry.name === "9Router") || null;
+  return (
+    config.find((entry) => entry.name === CLIENT_NAME) ||
+    config.find((entry) => isClientKey(entry.name)) ||
+    null
+  );
 };
 
 // GET - Read current copilot config
 export async function GET() {
   try {
     const config = await readConfig();
-    const entry = get9RouterEntry(config);
+    const entry = getOurEntry(config);
 
     return NextResponse.json({
       installed: true,
       config,
-      hasTokenhop: has9RouterConfig(config),
+      hasTokenhop: hasTokenhopConfig(config),
       configPath: getConfigPath(),
       currentModel: entry?.models?.[0]?.id || null,
       currentUrl: entry?.models?.[0]?.url || null,
@@ -69,7 +75,7 @@ export async function GET() {
   }
 }
 
-// POST - Apply 9Router config to chatLanguageModels.json
+// POST - Apply our config to chatLanguageModels.json
 export async function POST(request) {
   try {
     const { baseUrl, apiKey, models } = await request.json();
@@ -82,13 +88,13 @@ export async function POST(request) {
     await fs.mkdir(path.dirname(configPath), { recursive: true });
 
     // Read existing config array
-    const config = (await readJsonConfig(configPath, "array")) ?? [];
+    let config = (await readJsonConfig(configPath, "array")) ?? [];
 
     const endpointUrl = `${baseUrl}/chat/completions#models.ai.azure.com`;
     const keyToUse = apiKey || ACTIVE.defaultApiKey;
 
     const newEntry = {
-      name: "9Router",
+      name: CLIENT_NAME,
       vendor: "azure",
       apiKey: keyToUse,
       models: models.map((id) => ({
@@ -102,10 +108,19 @@ export async function POST(request) {
       })),
     };
 
-    // Replace existing 9Router entry or append
-    const idx = config.findIndex((e) => e.name === "9Router");
+    // Replace our entry; otherwise migrate the first legacy one in place,
+    // carrying its extra fields under ours, and drop other legacy duplicates.
+    let idx = config.findIndex((e) => e.name === CLIENT_NAME);
+    let migrating = false;
+    if (idx < 0) {
+      idx = config.findIndex((e) => LEGACY_CLIENT_KEYS.includes(e.name));
+      migrating = idx >= 0;
+    }
     if (idx >= 0) {
-      config[idx] = newEntry;
+      config[idx] = migrating ? { ...config[idx], ...newEntry } : newEntry;
+      if (migrating) {
+        config = config.filter((e, i) => i === idx || !LEGACY_CLIENT_KEYS.includes(e.name));
+      }
     } else {
       config.push(newEntry);
     }
@@ -125,7 +140,7 @@ export async function POST(request) {
   }
 }
 
-// DELETE - Remove 9Router entry from chatLanguageModels.json
+// DELETE - Remove our entry from chatLanguageModels.json
 export async function DELETE() {
   try {
     const configPath = getConfigPath();
@@ -135,12 +150,12 @@ export async function DELETE() {
       return NextResponse.json({ success: true, message: "No config file to reset" });
     }
 
-    config = config.filter((e) => e.name !== "9Router");
+    config = config.filter((e) => !isClientKey(e.name));
     await fs.writeFile(configPath, JSON.stringify(config, null, 2));
 
     return NextResponse.json({
       success: true,
-      message: "9Router removed from Copilot config",
+      message: `${CLIENT_NAME} removed from Copilot config`,
     });
   } catch (error) {
     const configRes = configErrorResponse(error);

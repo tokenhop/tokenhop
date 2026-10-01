@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Ollama",
+    "vendor": "ollama",
+    "models": [{ "id": "llama3", "name": "llama3", "url": "http://127.0.0.1:11434" }]
+  },
+  {
+    "name": "9Router",
+    "vendor": "azure",
+    "apiKey": "sk-legacy",
+    "note": "keep-me",
+    "models": [
+      {
+        "id": "cc/claude-opus-4-7",
+        "name": "cc/claude-opus-4-7",
+        "url": "http://127.0.0.1:20128/v1/chat/completions#models.ai.azure.com"
+      }
+    ]
+  },
+  {
+    "name": "9router",
+    "vendor": "azure",
+    "apiKey": "sk-dup",
+    "models": []
+  }
+]

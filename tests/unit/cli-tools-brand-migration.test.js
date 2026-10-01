@@ -2,59 +2,28 @@
 // tokenhop entries and migrates legacy ones in place; the default brand keeps
 // writing what it always did. Detect and Reset accept both everywhere.
 // HOME is a per-file temp dir (tests/setup), never the real one.
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createRequire } from "node:module";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseTOML } from "confbox";
+import {
+  LEGACY,
+  OLD,
+  OLD_NAME,
+  clearHome,
+  exists,
+  fixture,
+  json,
+  load,
+  loadModule,
+  post,
+  read,
+  restoreBrand,
+  write,
+} from "../helpers/cliToolsBrand.js";
 
-const require = createRequire(import.meta.url);
-const BRAND_CJS = require.resolve("../../src/shared/brand/index.cjs");
-// Legacy names come from the brand module; they don't depend on the active brand.
-const { LEGACY } = require(BRAND_CJS);
-const OLD = LEGACY.clientConfigKeys[0];
-const OLD_NAME = LEGACY.clientConfigKeys[1];
 const OLD_JCODE_ENV = LEGACY.jcodeApiKeyEnv;
-const FIXTURES = path.join(import.meta.dirname, "../fixtures/legacy/cli-tools");
-const home = os.homedir();
-const savedBrand = process.env.NEXT_PUBLIC_BRAND;
 
-// The brand resolves at load time, so every case loads fresh modules.
-async function loadModule(brand, specifier) {
-  process.env.NEXT_PUBLIC_BRAND = brand;
-  delete require.cache[BRAND_CJS];
-  vi.resetModules();
-  return import(specifier);
-}
-const load = (brand, route) => loadModule(brand, `@/app/api/cli-tools/${route}/route.js`);
-
-const fixture = (name) => fs.readFile(path.join(FIXTURES, name), "utf-8");
-const write = async (rel, content) => {
-  const p = path.join(home, rel);
-  await fs.mkdir(path.dirname(p), { recursive: true });
-  await fs.writeFile(p, content);
-  return p;
-};
-const read = (rel) => fs.readFile(path.join(home, rel), "utf-8");
-const exists = (rel) =>
-  fs.access(path.join(home, rel)).then(
-    () => true,
-    () => false,
-  );
-const post = (body) =>
-  new Request("http://localhost/x", { method: "POST", body: JSON.stringify(body) });
-const json = (res) => res.json();
-
-beforeEach(async () => {
-  for (const d of [".codex", ".jcode", ".config", ".grok", ".deepseek", ".hermes"])
-    await fs.rm(path.join(home, d), { recursive: true, force: true });
-});
-afterEach(() => {
-  if (savedBrand === undefined) delete process.env.NEXT_PUBLIC_BRAND;
-  else process.env.NEXT_PUBLIC_BRAND = savedBrand;
-  delete require.cache[BRAND_CJS];
-});
+beforeEach(() => clearHome([".codex", ".jcode", ".config", ".grok", ".deepseek", ".hermes"]));
+afterEach(restoreBrand);
 
 describe("codex", () => {
   const rel = ".codex/config.toml";

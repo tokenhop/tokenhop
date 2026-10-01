@@ -1,0 +1,9 @@
+{
+  "anthropic": { "type": "api-key", "apiKey": "sk-ant" },
+  "9router": {
+    "type": "api-key",
+    "apiKey": "sk-legacy",
+    "baseUrl": "https://gw.example.com/9router/v1",
+    "model": "cc/claude-opus-4-7"
+  }
+}

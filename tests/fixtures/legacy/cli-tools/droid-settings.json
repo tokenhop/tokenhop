@@ -1,0 +1,25 @@
+{
+  "theme": "dark",
+  "customModels": [
+    {
+      "model": "cc/claude-opus-4-7",
+      "id": "custom:9Router-0",
+      "index": 0,
+      "baseUrl": "http://127.0.0.1:20128/v1",
+      "apiKey": "sk-legacy",
+      "displayName": "cc/claude-opus-4-7",
+      "maxOutputTokens": 131072,
+      "noImageSupport": false,
+      "provider": "openai"
+    },
+    {
+      "model": "gpt-4o",
+      "id": "custom:openai-direct-1",
+      "index": 1,
+      "baseUrl": "https://api.openai.com/v1",
+      "apiKey": "sk-openai",
+      "displayName": "gpt-4o",
+      "provider": "openai"
+    }
+  ]
+}

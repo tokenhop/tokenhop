@@ -17,6 +17,7 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
+import { CLIENT_KEY, findClientEntry, modelRef, splitModelRef } from "@/lib/cliToolBrand";
 
 const ENDPOINT = "/api/cli-tools/openclaw-settings";
 
@@ -51,10 +52,10 @@ export default function OpenClawToolCard({
   useEffect(() => {
     if (status?.installed && !hasInitializedModel.current) {
       hasInitializedModel.current = true;
-      const provider = status.settings?.models?.providers?.["9router"];
+      const provider = findClientEntry(status.settings?.models?.providers);
       if (provider) {
         const primary = status.settings?.agents?.defaults?.model?.primary;
-        if (primary) setSelectedModel(primary.replace("9router/", ""));
+        if (primary) setSelectedModel(splitModelRef(primary)?.model ?? primary);
         if (provider.apiKey && apiKeys?.some((k) => k.key === provider.apiKey)) {
           card.setSelectedApiKey(provider.apiKey);
         }
@@ -67,7 +68,7 @@ export default function OpenClawToolCard({
     }
   }, [status, apiKeys, card]);
 
-  const currentBaseUrl = status?.settings?.models?.providers?.["9router"]?.baseUrl || "";
+  const currentBaseUrl = findClientEntry(status?.settings?.models?.providers)?.baseUrl || "";
 
   const getEffectiveBaseUrl = () => {
     const u = (card.customBaseUrl || baseUrl || "http://127.0.0.1:20128/v1").replace(
@@ -137,12 +138,12 @@ export default function OpenClawToolCard({
     const content = {
       agents: {
         defaults: {
-          model: { primary: `9router/${selectedModel || "provider/model-id"}` },
+          model: { primary: modelRef(selectedModel || "provider/model-id") },
         },
       },
       models: {
         providers: {
-          "9router": {
+          [CLIENT_KEY]: {
             baseUrl: getEffectiveBaseUrl(),
             apiKey: keyToUse,
             api: "openai-completions",
