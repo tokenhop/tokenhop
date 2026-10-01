@@ -1,9 +1,12 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { handleChatSearch, CHAT_SEARCH_CONFIG } from "open-sse/handlers/search/chatSearch.js";
+import { buildKimiHeaders } from "open-sse/config/appConstants.js";
 
 // Kimi /v1/search: OAuth connections must hit the Kimi Code endpoint with
 // X-Msh-* headers, and the builtin $web_search tool must complete the
 // two-turn (tool_call → tool result → answer) flow.
+
+const KIMI_PLATFORM = buildKimiHeaders("device-123")["X-Msh-Platform"];
 
 const OAUTH_CREDS = {
   authType: "oauth",
@@ -69,7 +72,7 @@ describe("kimi chat search", () => {
     const { url, init } = calls[0];
     expect(url).toBe("https://api.kimi.com/coding/v1/chat/completions");
     expect(init.headers["X-Msh-Device-Id"]).toBe("device-123");
-    expect(init.headers["X-Msh-Platform"]).toBe("9router");
+    expect(init.headers["X-Msh-Platform"]).toBe(KIMI_PLATFORM);
     expect(init.headers.Authorization).toBe("Bearer kimi-oauth-token");
     // OAuth body: model k3, no client-injected builtin $web_search
     const reqBody = JSON.parse(init.body);
