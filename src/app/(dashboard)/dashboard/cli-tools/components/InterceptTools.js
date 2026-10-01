@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { CardSkeleton, EmptyState } from "@/shared/components";
 import Button from "@/shared/components/Button";
 import StatusPill from "@/shared/components/StatusPill";
-import { CLI_TOOLS, MITM_TOOLS } from "@/shared/constants/cliTools";
+import { MITM_TOOLS } from "@/shared/constants/cliTools";
 import { TOOL_HOSTS } from "@/shared/constants/mitmToolHosts";
 import ToolTile from "./ToolTile";
 import { readInterceptStatus } from "../lib/interceptStatus";
@@ -25,11 +25,11 @@ export default function InterceptTools({ tools }) {
   );
 }
 
-/** Hosts-file lines for IDEs that cannot point at a custom endpoint. */
+/** Hosts-file lines for the IDEs the MITM can serve (MITM_TOOLS only). */
 function RemoteInterceptSteps() {
-  const entries = Object.entries(TOOL_HOSTS).flatMap(([toolId, hosts]) => {
-    const tool = MITM_TOOLS[toolId] || CLI_TOOLS[toolId];
-    return tool ? [{ toolId, tool, hosts }] : [];
+  const entries = Object.entries(MITM_TOOLS).flatMap(([toolId, tool]) => {
+    const hosts = TOOL_HOSTS[toolId];
+    return hosts ? [{ toolId, tool, hosts }] : [];
   });
 
   return (

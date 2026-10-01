@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import {
   useSetupCard,
@@ -31,6 +31,13 @@ const SUBAGENT_TYPES = [
   { id: "plan", label: "Plan", help: "Architecture and implementation planning" },
 ];
 
+const subagentsFromStatus = (status) =>
+  Object.fromEntries(
+    SUBAGENT_TYPES.map((t) => [t.id, status?.settings?.subagentModels?.[t.id]?.model]).filter(
+      ([, m]) => Boolean(m),
+    ),
+  );
+
 /**
  * Grok Build setup panel: main model + three subagent model overrides with
  * per-model context windows. Writes ~/.grok/config.toml.
@@ -52,26 +59,24 @@ export default function GrokBuildToolCard({
   const getContextWindow = (model) => getCaps(model)?.contextWindow || null;
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "grok-build" });
   const { status } = card;
-  const [selectedModel, setSelectedModel] = useState(status?.settings?.model?.model || "");
-  const [subagentModels, setSubagentModels] = useState(() =>
-    Object.fromEntries(
-      SUBAGENT_TYPES.map((t) => [t.id, status?.settings?.subagentModels?.[t.id]?.model]).filter(
-        ([, m]) => Boolean(m),
-      ),
-    ),
-  );
+  const [selectedModel, setSelectedModel] = useState("");
+  const [subagentModels, setSubagentModels] = useState({});
   const [modelTarget, setModelTarget] = useState(null);
+  const hasHydrated = useRef(false);
 
   const hydrate = (next) => {
     setSelectedModel(next?.settings?.model?.model || "");
-    setSubagentModels(
-      Object.fromEntries(
-        SUBAGENT_TYPES.map((t) => [t.id, next?.settings?.subagentModels?.[t.id]?.model]).filter(
-          ([, m]) => Boolean(m),
-        ),
-      ),
-    );
+    setSubagentModels(subagentsFromStatus(next));
   };
+
+  // Status loads after mount; show the saved config once it arrives.
+  useEffect(() => {
+    if (status?.installed && !hasHydrated.current) {
+      hasHydrated.current = true;
+      setSelectedModel(status.settings?.model?.model || "");
+      setSubagentModels(subagentsFromStatus(status));
+    }
+  }, [status]);
 
   const configuredModel = status?.settings?.model;
   const currentBaseUrl = configuredModel?.base_url || "";
