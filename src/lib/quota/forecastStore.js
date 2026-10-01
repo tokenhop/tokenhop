@@ -5,7 +5,7 @@
 import { parseResetMs } from "../../../open-sse/services/quotaSnapshot.js";
 import { computeForecast } from "./forecast.js";
 
-const G_KEY = "__9routerQuotaForecast";
+const G_KEY = "__tokenhopQuotaForecast";
 /** Max samples kept per connection+quota key (ring buffer). */
 export const MAX_SAMPLES = 64;
 /** Max keys store-wide; least-recently-touched evicted past this. */

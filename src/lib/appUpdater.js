@@ -3,10 +3,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { DATA_DIR } from "@/lib/dataDir.js";
 import { clearPid, loadPid } from "@/lib/tunnel/cloudflare/pid.js";
+import { ACTIVE, LEGACY } from "@/shared/brand";
 
 const MITM_PID_FILE = path.join(DATA_DIR, "mitm", ".mitm.pid");
-// Written by the 9router CLI launcher (cli/src/cli/utils/processControl.js).
-const LAUNCHER_PID_FILE = path.join(DATA_DIR, "9router.pid");
+// Written by the CLI launcher (cli/src/cli/utils/processControl.js). The active
+// file first, then the legacy one — an old launcher may still be recorded there.
+// legacy(9router): remove in v2
+const LAUNCHER_PID_FILES = [...new Set([ACTIVE.pidFile, LEGACY.pidFile])].map((name) =>
+  path.join(DATA_DIR, name),
+);
 
 const isPid = (pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid;
 
@@ -80,17 +85,22 @@ export async function killAppProcesses() {
   killCloudflaredByPidFile();
 }
 
+function readLauncherPid(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"))?.launcher;
+  } catch {
+    return null;
+  }
+}
+
 // Ask the CLI launcher that spawned this server to shut down, so its own cleanup
 // (tray, MITM, tunnel, server) runs and it does not restart us. Only signals our
 // direct parent, and only when the launcher PID file confirms it is the launcher.
 export function stopLauncher() {
-  let launcher;
-  try {
-    launcher = JSON.parse(fs.readFileSync(LAUNCHER_PID_FILE, "utf8"))?.launcher;
-  } catch {
-    return false;
-  }
-  if (!isPid(launcher) || launcher !== process.ppid) return false;
+  const launcher = LAUNCHER_PID_FILES.map(readLauncherPid).find(
+    (pid) => isPid(pid) && pid === process.ppid,
+  );
+  if (!launcher) return false;
   try {
     if (process.platform === "win32") {
       execSync(`taskkill /F /T /PID ${launcher}`, {

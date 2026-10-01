@@ -8,9 +8,10 @@ import Button from "@/shared/components/Button";
 import CopyField from "@/shared/components/CopyField";
 import Callout from "@/shared/components/Callout";
 import SamlGuides from "./SamlGuides";
+import { ACTIVE } from "@/shared/brand";
 import { parseIdpMetadata, postJson, saveSettings } from "./ssoApi";
 
-const DEFAULT_ISSUER = "urn:9router:sp";
+const DEFAULT_ISSUER = ACTIVE.samlIssuerDefault;
 const DEFAULT_LABEL = "Sign in with SAML SSO";
 
 function successMessage(authMode) {

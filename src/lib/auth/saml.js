@@ -1,17 +1,18 @@
 import { SAML, ValidateInResponseTo } from "@node-saml/node-saml";
 import { InMemoryCacheProvider } from "@node-saml/node-saml/lib/in-memory-cache-provider.js";
 import { getSettings } from "../db/repos/settingsRepo.js";
+import { ACTIVE } from "@/shared/brand";
 
 const SAML_REQUEST_TTL_MS = 10 * 60 * 1000; // matches saml_state cookie maxAge (10 min)
 
 // ponytail: in-memory, single-process only; entries from unauthenticated /saml/start are bounded by
-// request rate x TTL. Upgrade path: DB-backed CacheProvider if 9router ever runs multi-process.
-if (!globalThis.__ninerouterSamlRequestCache) {
-  globalThis.__ninerouterSamlRequestCache = new InMemoryCacheProvider({
+// request rate x TTL. Upgrade path: DB-backed CacheProvider if the app ever runs multi-process.
+if (!globalThis.__tokenhopSamlRequestCache) {
+  globalThis.__tokenhopSamlRequestCache = new InMemoryCacheProvider({
     keyExpirationPeriodMs: SAML_REQUEST_TTL_MS,
   });
 }
-const requestIdCache = globalThis.__ninerouterSamlRequestCache;
+const requestIdCache = globalThis.__tokenhopSamlRequestCache;
 // node-saml checks the request ID, then awaits signature work before removing it, so two concurrent
 // posts of one response could both pass. Claim the ID for the duration of validation.
 const inFlightRequestIds = new Set();
@@ -110,7 +111,7 @@ export function createSamlInstance(settings, origin) {
   const callbackUrl = `${origin}/api/auth/saml/acs`;
   return new SAML({
     entryPoint: settings?.samlEntryPoint || "https://example.com/sso",
-    issuer: settings?.samlIssuer || "urn:9router:sp",
+    issuer: settings?.samlIssuer || ACTIVE.samlIssuerDefault,
     idpCert: cert,
     cert: cert,
     callbackUrl: callbackUrl,

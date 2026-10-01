@@ -22,6 +22,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+const { BRAND, LEGACY } = require("../../src/shared/brand/index.cjs");
 const {
   run,
   parseArgs,
@@ -130,81 +131,85 @@ describe("sanitizeText", () => {
 });
 
 describe("run (against a mock gateway)", () => {
-  it("creates, polls to done, downloads the MP4, and exits 0", async () => {
-    let pollCount = 0;
-    const seen = { createAuth: null, pollConnectionIds: [] };
+  // legacy(9router): remove in v2 — a pre-rebrand gateway only sends the legacy header.
+  it.each([`${LEGACY.headerPrefix}connection-id`, `${BRAND.headerPrefix}connection-id`])(
+    "creates, polls to done, downloads the MP4, and exits 0 (%s)",
+    async (connectionHeader) => {
+      let pollCount = 0;
+      const seen = { createAuth: null, pollConnectionIds: [] };
 
-    ({ server } = await startServer((req, res) => {
-      if (req.method === "POST" && req.url === "/v1/videos/generations") {
-        seen.createAuth = req.headers.authorization || null;
-        let body = "";
-        req.on("data", (c) => (body += c));
-        req.on("end", () => {
-          seen.createBody = JSON.parse(body);
-          res.writeHead(200, {
-            "Content-Type": "application/json",
-            "x-9router-connection-id": "conn-42",
+      ({ server } = await startServer((req, res) => {
+        if (req.method === "POST" && req.url === "/v1/videos/generations") {
+          seen.createAuth = req.headers.authorization || null;
+          let body = "";
+          req.on("data", (c) => (body += c));
+          req.on("end", () => {
+            seen.createBody = JSON.parse(body);
+            res.writeHead(200, {
+              "Content-Type": "application/json",
+              [connectionHeader]: "conn-42",
+            });
+            res.end(JSON.stringify({ request_id: "job-1" }));
           });
-          res.end(JSON.stringify({ request_id: "job-1" }));
-        });
-        return;
-      }
-      if (req.method === "GET" && req.url === "/v1/videos/job-1") {
-        seen.pollConnectionIds.push(req.headers["x-connection-id"] || null);
-        pollCount++;
-        const port = server.address().port;
-        const payload =
-          pollCount < 3
-            ? { status: "pending", progress: pollCount * 30 }
-            : {
-                status: "done",
-                video: { url: `http://127.0.0.1:${port}/files/out.mp4`, duration: 8 },
-              };
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(payload));
-        return;
-      }
-      if (req.method === "GET" && req.url === "/files/out.mp4") {
-        res.writeHead(200, { "Content-Type": "video/mp4" });
-        res.end(MP4_BYTES);
-        return;
-      }
-      res.writeHead(404).end();
-    }));
+          return;
+        }
+        if (req.method === "GET" && req.url === "/v1/videos/job-1") {
+          seen.pollConnectionIds.push(req.headers["x-connection-id"] || null);
+          pollCount++;
+          const port = server.address().port;
+          const payload =
+            pollCount < 3
+              ? { status: "pending", progress: pollCount * 30 }
+              : {
+                  status: "done",
+                  video: { url: `http://127.0.0.1:${port}/files/out.mp4`, duration: 8 },
+                };
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(payload));
+          return;
+        }
+        if (req.method === "GET" && req.url === "/files/out.mp4") {
+          res.writeHead(200, { "Content-Type": "video/mp4" });
+          res.end(MP4_BYTES);
+          return;
+        }
+        res.writeHead(404).end();
+      }));
 
-    const output = path.join(tmpDir, "result.mp4");
-    const logs = [];
-    vi.spyOn(console, "log").mockImplementation((...a) => logs.push(a.join(" ")));
-    vi.spyOn(console, "error").mockImplementation((...a) => logs.push(a.join(" ")));
+      const output = path.join(tmpDir, "result.mp4");
+      const logs = [];
+      vi.spyOn(console, "log").mockImplementation((...a) => logs.push(a.join(" ")));
+      vi.spyOn(console, "error").mockImplementation((...a) => logs.push(a.join(" ")));
 
-    const code = await run([
-      "--prompt",
-      "a neon city",
-      "--output",
-      output,
-      "--port",
-      String(server.address().port),
-      "--api-key",
-      "local-key-secret",
-      "--timeout",
-      "10",
-      "--poll-interval-ms",
-      "20",
-    ]);
+      const code = await run([
+        "--prompt",
+        "a neon city",
+        "--output",
+        output,
+        "--port",
+        String(server.address().port),
+        "--api-key",
+        "local-key-secret",
+        "--timeout",
+        "10",
+        "--poll-interval-ms",
+        "20",
+      ]);
 
-    expect(code).toBe(0);
-    expect(fs.readFileSync(output)).toEqual(MP4_BYTES);
-    expect(fs.existsSync(`${output}.part`)).toBe(false);
+      expect(code).toBe(0);
+      expect(fs.readFileSync(output)).toEqual(MP4_BYTES);
+      expect(fs.existsSync(`${output}.part`)).toBe(false);
 
-    // Model prefix forwarded as-is to the gateway (gateway strips it)
-    expect(seen.createBody.model).toBe("xai/grok-imagine-video");
-    expect(seen.createBody.prompt).toBe("a neon city");
-    // Polls pinned to the connection that created the job
-    expect(seen.pollConnectionIds.every((id) => id === "conn-42")).toBe(true);
-    // No token material in user-facing output
-    expect(logs.join("\n")).not.toContain("local-key-secret");
-    expect(logs.join("\n")).not.toContain("Authorization");
-  });
+      // Model prefix forwarded as-is to the gateway (gateway strips it)
+      expect(seen.createBody.model).toBe("xai/grok-imagine-video");
+      expect(seen.createBody.prompt).toBe("a neon city");
+      // Polls pinned to the connection that created the job
+      expect(seen.pollConnectionIds.every((id) => id === "conn-42")).toBe(true);
+      // No token material in user-facing output
+      expect(logs.join("\n")).not.toContain("local-key-secret");
+      expect(logs.join("\n")).not.toContain("Authorization");
+    },
+  );
 
   it("exits non-zero when the job fails, without leaving files", async () => {
     ({ server } = await startServer((req, res) => {

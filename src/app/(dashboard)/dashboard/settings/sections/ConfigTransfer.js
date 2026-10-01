@@ -3,6 +3,7 @@
 import PropTypes from "prop-types";
 import { useRef, useState } from "react";
 import { MAX_CONFIG_BYTES } from "@/lib/settingsConfigDoc.js";
+import { ACTIVE } from "@/shared/brand";
 import Badge from "@/shared/components/Badge";
 import Button from "@/shared/components/Button";
 import Callout from "@/shared/components/Callout";
@@ -38,7 +39,7 @@ function downloadJson(doc) {
   );
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `9router-config-${new Date().toISOString().slice(0, 10)}.json`;
+  anchor.download = `${ACTIVE.slug}-config-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();

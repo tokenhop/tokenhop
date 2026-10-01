@@ -6,6 +6,7 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { ACTIVE } from "@/shared/brand";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import {
   applyGrokBuildConfig,
@@ -110,7 +111,7 @@ export async function POST(request) {
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
     const toml = applyGrokBuildConfig(await readConfigToml(), {
       baseUrl: normalizedBaseUrl,
-      apiKey: apiKey || "sk_9router",
+      apiKey: apiKey || ACTIVE.defaultApiKey,
       model: selectedModel,
       contextWindow: normalizeContextWindow(contextWindow, selectedModel),
       subagentModels: normalizeSubagentModels(subagentModels),

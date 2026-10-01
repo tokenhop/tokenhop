@@ -10,6 +10,7 @@ import Input from "@/shared/components/Input";
 import Modal from "@/shared/components/Modal";
 import Callout from "@/shared/components/Callout";
 import CopyField from "@/shared/components/CopyField";
+import { ACTIVE } from "@/shared/brand";
 
 /**
  * Data & backup section: read-only DB location and password-gated
@@ -40,7 +41,7 @@ export default function DataSection({ onSettingsChange }) {
       const anchor = document.createElement("a");
       const stamp = new Date().toISOString().replace(/[.:]/g, "-");
       anchor.href = url;
-      anchor.download = `9router-backup-${stamp}.json`;
+      anchor.download = `${ACTIVE.backupFilePrefix}${stamp}.json`;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);

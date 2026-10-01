@@ -9,6 +9,7 @@ import path from "node:path";
 import * as opencode from "@/app/api/cli-tools/opencode-settings/route.js";
 import * as codex from "@/app/api/cli-tools/codex-settings/route.js";
 import * as claude from "@/app/api/cli-tools/claude-settings/route.js";
+import { BRAND, LEGACY } from "@/shared/brand";
 
 const home = os.homedir();
 const req = (body) =>
@@ -66,6 +67,21 @@ describe("codex-settings", () => {
     expect((await codex.DELETE()).status).toBe(200);
     expect(JSON.parse(await read(p))).toEqual(JSON.parse(auth));
   });
+
+  // legacy(9router): remove in v2 — older installs wrote the legacy placeholder key.
+  it.each([LEGACY.defaultApiKey, BRAND.defaultApiKey])(
+    "Reset removes our %s placeholder from auth.json",
+    async (key) => {
+      await write(".codex/config.toml", 'model = "o3"\n');
+      expect((await apply()).status).toBe(200);
+      const p = await write(
+        ".codex/auth.json",
+        JSON.stringify({ OPENAI_API_KEY: key, auth_mode: "apikey" }),
+      );
+      expect((await codex.DELETE()).status).toBe(200);
+      expect(JSON.parse(await read(p))).toEqual({});
+    },
+  );
 });
 
 describe("claude-settings (GH #63)", () => {

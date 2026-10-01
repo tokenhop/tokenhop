@@ -11,6 +11,7 @@ import CopyStatus from "@/shared/components/CopyStatus";
 import ApiKeySelect from "./ApiKeySelect";
 import SetupScaffold, { SingleModelRow } from "./SetupScaffold";
 import { getToolBrand } from "../lib/toolStatus";
+import { ACTIVE } from "@/shared/brand";
 
 const NOTE_VARIANT = { warning: "warn", cloudCheck: "err", info: "info" };
 
@@ -37,7 +38,8 @@ export default function DefaultToolCard({
   const { copied, error, copy } = useCopyToClipboard();
 
   const replaceVars = (text) => {
-    const keyToUse = selectedApiKey?.trim() || (!cloudEnabled ? "sk_9router" : "your-api-key");
+    const keyToUse =
+      selectedApiKey?.trim() || (!cloudEnabled ? ACTIVE.defaultApiKey : "your-api-key");
     const normalized = baseUrl || "http://localhost:20128";
     const withV1 = normalized.endsWith("/v1") ? normalized : `${normalized}/v1`;
     return String(text)

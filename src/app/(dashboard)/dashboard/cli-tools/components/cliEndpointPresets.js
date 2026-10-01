@@ -1,17 +1,31 @@
+import { ACTIVE, LEGACY } from "@/shared/brand";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
+
+// Read the active key; otherwise copy the legacy key forward. Writes use only the active key.
+function readStorageItem(storage, name) {
+  const key = ACTIVE.storageKeyPrefix + name;
+  const value = storage.getItem(key);
+  if (value !== null) return value;
+  const legacyKey = LEGACY.storageKeyPrefix + name; // legacy(9router): remove in v2
+  if (legacyKey === key) return null;
+  const legacy = storage.getItem(legacyKey);
+  if (legacy !== null) storage.setItem(key, legacy);
+  return legacy;
+}
 
 // Browser-local preset stores (endpoints, API keys) shared by every CLI tool card
 function createStore({
-  storageKey,
+  storageName,
   changeEvent,
   itemField,
   normalize = (v) => v,
   defaultName = (v) => v,
 }) {
+  const storageKey = ACTIVE.storageKeyPrefix + storageName;
   const read = () => {
     if (typeof window === "undefined") return [];
     try {
-      const raw = JSON.parse(window.localStorage.getItem(storageKey) || "[]");
+      const raw = JSON.parse(readStorageItem(window.localStorage, storageName) || "[]");
       if (!Array.isArray(raw)) return [];
       return raw.filter((p) => p?.name && p?.[itemField]);
     } catch {
@@ -58,8 +72,8 @@ function createStore({
 const stripSlash = (url) => (url || "").replace(/\/+$/, "");
 
 const endpoints = createStore({
-  storageKey: "9router.cliToolEndpointPresets",
-  changeEvent: "9router:endpoint-presets-changed",
+  storageName: "cliToolEndpointPresets",
+  changeEvent: `${ACTIVE.eventPrefix}endpoint-presets-changed`,
   itemField: "baseUrl",
   normalize: stripSlash,
   defaultName: (url) => {
@@ -72,8 +86,8 @@ const endpoints = createStore({
 });
 
 const apiKeys = createStore({
-  storageKey: "9router.cliToolApiKeyPresets",
-  changeEvent: "9router:api-key-presets-changed",
+  storageName: "cliToolApiKeyPresets",
+  changeEvent: `${ACTIVE.eventPrefix}api-key-presets-changed`,
   itemField: "key",
 });
 

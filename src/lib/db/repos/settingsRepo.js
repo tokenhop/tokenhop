@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { ACTIVE } from "@/shared/brand";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
@@ -38,7 +39,7 @@ export const DEFAULT_SETTINGS = {
   oidcScopes: "openid profile email",
   oidcLoginLabel: "Sign in with OIDC",
   samlEntryPoint: "",
-  samlIssuer: "urn:9router:sp",
+  samlIssuer: ACTIVE.samlIssuerDefault,
   samlCert: "",
   samlLoginLabel: "Sign in with SAML SSO",
   samlAttributeEmail: "email",
@@ -145,6 +146,11 @@ export async function updateSettings(updates) {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
     const current = row ? parseJson(row.data, {}) : {};
     next = { ...current, ...updates };
+    // Pin the issuer the first time SAML settings are saved, so a later brand
+    // flip can't change the SP entity ID the IdP already trusts.
+    if (Object.keys(updates).some((k) => k.startsWith("saml")) && !next.samlIssuer) {
+      next.samlIssuer = ACTIVE.samlIssuerDefault;
+    }
     db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
       [stringifyJson(next)],

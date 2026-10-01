@@ -6,6 +6,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { getSettings, getProviderConnectionById } from "@/lib/localDb";
+import { header, legacyHeaderNames } from "@/shared/brand";
 import { getModelInfo } from "../services/model.js";
 import {
   handleVideoProxyCore,
@@ -113,7 +114,10 @@ function withConnectionHeader(response, connectionId) {
   const headers = new Headers(response.headers);
   // Video jobs are account-bound upstream — clients echo this back as
   // `x-connection-id` on GET polls so the same account is used.
-  headers.set("x-9router-connection-id", String(connectionId));
+  // Emitted under every name: older clients read the legacy one. legacy(9router): remove in v2
+  for (const name of [header("connection-id"), ...legacyHeaderNames("connection-id")]) {
+    headers.set(name, String(connectionId));
+  }
   return new Response(response.body, { status: response.status, headers });
 }
 

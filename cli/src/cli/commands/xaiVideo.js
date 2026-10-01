@@ -15,7 +15,7 @@ const path = require("path");
 
 // The CLI build packs the brand module into cli/src/shared/; a repo checkout uses the source.
 const PACKED_BRAND_MODULE = path.join(__dirname, "..", "..", "shared", "brand", "index.cjs");
-const { ACTIVE, readEnv } = require(
+const { ACTIVE, BRAND, LEGACY, readEnv } = require(
   fs.existsSync(PACKED_BRAND_MODULE)
     ? PACKED_BRAND_MODULE
     : path.join(__dirname, "..", "..", "..", "..", "src", "shared", "brand", "index.cjs"),
@@ -334,7 +334,10 @@ async function run(argv) {
     }
 
     const requestId = create.body.request_id;
-    const connectionId = create.headers["x-9router-connection-id"] || null;
+    const connectionId =
+      create.headers[`${BRAND.headerPrefix}connection-id`] ||
+      create.headers[`${LEGACY.headerPrefix}connection-id`] || // legacy(9router): remove in v2
+      null;
     console.log(`📋 Job accepted: ${requestId}`);
 
     let lastLine = "";

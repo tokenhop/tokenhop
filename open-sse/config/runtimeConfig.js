@@ -1,3 +1,5 @@
+import { BRAND, LEGACY } from "../../src/shared/brand/index.js";
+
 // HTTP status codes
 export const HTTP_STATUS = {
   BAD_REQUEST: 400,
@@ -72,7 +74,9 @@ export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs(
 export const DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_MIN_TOKENS = 32000;
 
-export const TOKEN_SAVER_HEADER = "x-9router-token-saver";
+// Request input: accepted under either brand, new name first.
+export const TOKEN_SAVER_HEADER = `${BRAND.headerPrefix}token-saver`;
+export const LEGACY_TOKEN_SAVER_HEADER = `${LEGACY.headerPrefix}token-saver`; // legacy(9router): remove in v2
 
 // Retry config for 429 responses (legacy - kept for backward compatibility)
 export const RETRY_CONFIG = {

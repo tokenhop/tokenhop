@@ -10,6 +10,7 @@ import Tooltip from "@/shared/components/Tooltip";
 import ApiKeySelect from "./ApiKeySelect";
 import EndpointSegmentedPicker from "./EndpointSegmentedPicker";
 import SetupScaffold, { NotInstalledBlock, ModelRow } from "./SetupScaffold";
+import { ACTIVE } from "@/shared/brand";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import { deriveToolStatus } from "../lib/toolStatus";
 import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
@@ -172,7 +173,7 @@ export default function ClaudeToolCard({
       const keyToUse =
         selectedApiKey?.trim() ||
         (apiKeys?.length > 0 ? apiKeys[0].key : null) ||
-        (!cloudEnabled ? "sk_9router" : null);
+        (!cloudEnabled ? ACTIVE.defaultApiKey : null);
 
       if (keyToUse) env.ANTHROPIC_AUTH_TOKEN = keyToUse;
 
@@ -237,7 +238,7 @@ export default function ClaudeToolCard({
 
   const getManualConfigs = () => {
     const keyToUse =
-      selectedApiKey?.trim() || (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+      selectedApiKey?.trim() || (!cloudEnabled ? ACTIVE.defaultApiKey : "<API_KEY_FROM_DASHBOARD>");
     const env = { ANTHROPIC_BASE_URL: getEffectiveBaseUrl(), ANTHROPIC_AUTH_TOKEN: keyToUse };
     tool.defaultModels?.forEach((m) => {
       const t = modelMappings[m.alias];

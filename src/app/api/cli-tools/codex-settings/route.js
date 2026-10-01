@@ -9,6 +9,7 @@ import os from "os";
 import { stringifyTOML } from "confbox";
 import { getApiKeys } from "@/lib/localDb";
 import { configErrorResponse, readTomlConfig } from "@/lib/cliToolConfig";
+import { BRAND, LEGACY } from "@/shared/brand";
 
 const execAsync = promisify(exec);
 
@@ -212,7 +213,11 @@ export async function DELETE() {
     try {
       const authData = JSON.parse(await fs.readFile(authPath, "utf-8"));
       const key = authData?.OPENAI_API_KEY;
-      if (key && (key === "sk_9router" || (await isRouterApiKey(key)))) {
+      // legacy(9router): remove in v2 — old installs still carry sk_9router in auth.json
+      if (
+        key &&
+        (key === BRAND.defaultApiKey || key === LEGACY.defaultApiKey || (await isRouterApiKey(key)))
+      ) {
         delete authData.OPENAI_API_KEY;
         if (authData.auth_mode === "apikey") delete authData.auth_mode;
         await fs.writeFile(authPath, JSON.stringify(authData, null, 2));

@@ -6,12 +6,13 @@
  *  - byte-exact forwarding when no prefix rewrite is needed
  *  - multi-account selection (preferred connection id, rotation on 401)
  *  - NO rotation on 5xx creation errors (a job may already exist upstream)
- *  - connection id surfaced via x-9router-connection-id
+ *  - connection id surfaced via the brand connection-id header (+ legacy name under tokenhop)
  *  - GET polling pinned to x-connection-id, no rotation
  *  - refresh failure recorded via markAccountUnavailable (dashboard re-auth signal)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { header, legacyHeaderNames } from "@/shared/brand";
 
 const authMocks = vi.hoisted(() => ({
   getProviderCredentials: vi.fn(),
@@ -112,12 +113,14 @@ describe("handleVideoCreate", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("returns the serving connection id in x-9router-connection-id", async () => {
+  it("returns the serving connection id under every brand header name", async () => {
     authMocks.getProviderCredentials.mockResolvedValueOnce(account({ connectionId: "conn-77" }));
     global.fetch.mockResolvedValueOnce(jsonResponse({ request_id: "r1" }));
 
     const res = await handleVideoCreate(makeRequest({ prompt: "x" }), "generations");
-    expect(res.headers.get("x-9router-connection-id")).toBe("conn-77");
+    for (const name of [header("connection-id"), ...legacyHeaderNames("connection-id")]) {
+      expect(res.headers.get(name), name).toBe("conn-77");
+    }
     expect(await res.json()).toEqual({ request_id: "r1" });
   });
 
@@ -151,7 +154,7 @@ describe("handleVideoCreate", () => {
     const res = await handleVideoCreate(makeRequest({ prompt: "x" }), "generations");
 
     expect(res.status).toBe(200);
-    expect(res.headers.get("x-9router-connection-id")).toBe("conn-2");
+    expect(res.headers.get(header("connection-id"))).toBe("conn-2");
     expect(authMocks.markAccountUnavailable).toHaveBeenCalledWith(
       "conn-1",
       401,

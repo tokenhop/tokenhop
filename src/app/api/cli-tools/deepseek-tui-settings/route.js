@@ -6,6 +6,7 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { ACTIVE } from "@/shared/brand";
 
 const execAsync = promisify(exec);
 
@@ -136,7 +137,7 @@ export async function POST(request) {
     const dir = getDeepSeekDir();
     await fs.mkdir(dir, { recursive: true });
 
-    const newConfig = build9RouterConfig(baseUrl, apiKey || "sk_9router", model);
+    const newConfig = build9RouterConfig(baseUrl, apiKey || ACTIVE.defaultApiKey, model);
     await fs.writeFile(getDeepSeekConfigPath(), newConfig);
 
     return NextResponse.json({

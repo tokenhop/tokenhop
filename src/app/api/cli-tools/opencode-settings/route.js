@@ -7,6 +7,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
+import { ACTIVE } from "@/shared/brand";
 
 const execAsync = promisify(exec);
 
@@ -118,7 +119,7 @@ export async function POST(request) {
     const config = (await readJsonConfig(configPath)) ?? {};
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    const keyToUse = apiKey || "sk_9router";
+    const keyToUse = apiKey || ACTIVE.defaultApiKey;
     const effectiveSubagentModel = subagentModel || modelsArray[0];
 
     // Ensure provider object
