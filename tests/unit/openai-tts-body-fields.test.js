@@ -80,3 +80,38 @@ describe("TTS OpenAI body fields (YAN-58)", () => {
     expect(JSON.parse(await result.response.text()).format).toBe("mp3");
   });
 });
+
+describe("TTS OpenRouter model and voice parsing (YAN-613)", () => {
+  const SSE = 'data: {"choices":[{"delta":{"audio":{"data":"AAAA"}}}]}\n\ndata: [DONE]\n\n';
+
+  beforeEach(() => {
+    global.fetch = vi.fn().mockImplementation(async () => new Response(SSE, { status: 200 }));
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  async function openrouterUpstream(model, voice) {
+    const result = await handleTtsCore({
+      provider: "openrouter",
+      model,
+      input: "hi",
+      credentials: { apiKey: "k" },
+      voice,
+    });
+    expect(result.success).toBe(true);
+    const { model: m, audio } = upstreamBody();
+    return { model: m, voice: audio.voice };
+  }
+
+  it.each([
+    ["openai/gpt-4o-mini-tts", undefined, "openai/gpt-4o-mini-tts", "alloy"],
+    ["openai/gpt-4o-mini-tts", "nova", "openai/gpt-4o-mini-tts", "nova"],
+    ["openai/tts-1/shimmer", "nova", "openai/tts-1", "shimmer"],
+    ["echo", undefined, "openai/gpt-4o-mini-tts", "echo"],
+    ["openai/gpt-4o-mini-tts/", "nova", "openai/gpt-4o-mini-tts", "nova"],
+  ])("%s (body voice %s) -> model %s, voice %s", async (model, voice, wantModel, wantVoice) => {
+    expect(await openrouterUpstream(model, voice)).toEqual({ model: wantModel, voice: wantVoice });
+  });
+});
