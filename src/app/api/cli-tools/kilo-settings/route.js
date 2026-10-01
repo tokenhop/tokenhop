@@ -7,6 +7,13 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
+import {
+  ALL_CLIENT_KEYS,
+  CLIENT_NAME,
+  findClientEntry,
+  takeLegacyEntry,
+  urlNamesClient,
+} from "@/lib/cliToolBrand";
 
 const execAsync = promisify(exec);
 
@@ -42,14 +49,12 @@ const readJson = async (filePath) => {
   }
 };
 
-const has9RouterConfig = (auth) => {
+const hasTokenhopConfig = (auth) => {
   if (!auth) return false;
-  const entry = auth["openai-compatible"] || auth["9router"];
+  const entry = auth["openai-compatible"] || findClientEntry(auth);
   if (!entry) return false;
   const baseUrl = entry.baseUrl || entry.baseURL || "";
-  return (
-    baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1") || baseUrl.includes("9router")
-  );
+  return baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1") || urlNamesClient(baseUrl);
 };
 
 export async function GET() {
@@ -66,7 +71,7 @@ export async function GET() {
     return NextResponse.json({
       installed: true,
       settings: { auth: auth ? Object.keys(auth) : [] },
-      hasTokenhop: has9RouterConfig(auth),
+      hasTokenhop: hasTokenhopConfig(auth),
       authPath: getAuthPath(),
     });
   } catch (error) {
@@ -90,6 +95,9 @@ export async function POST(request) {
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 
     const auth = (await readJsonConfig(getAuthPath())) || {};
+    // Drop legacy-named entries (tokenhop brand only): their type/apiKey/baseUrl/model are
+    // all superseded by the openai-compatible entry written below
+    takeLegacyEntry(auth);
     auth["openai-compatible"] = {
       type: "api-key",
       apiKey,
@@ -102,7 +110,7 @@ export async function POST(request) {
     // throws before the write, so it is skipped rather than overwritten.
     try {
       const vscode = (await readJsonConfig(getVscodeSettingsPath())) || {};
-      vscode["kilocode.customProvider"] = { name: "9Router", baseURL: normalizedBaseUrl, apiKey };
+      vscode["kilocode.customProvider"] = { name: CLIENT_NAME, baseURL: normalizedBaseUrl, apiKey };
       vscode["kilocode.defaultModel"] = model;
       await fs.writeFile(getVscodeSettingsPath(), JSON.stringify(vscode, null, 2));
     } catch {
@@ -129,7 +137,7 @@ export async function DELETE() {
       return NextResponse.json({ success: true, message: "No settings file to reset" });
     }
     delete auth["openai-compatible"];
-    delete auth["9router"];
+    for (const key of ALL_CLIENT_KEYS) delete auth[key];
     await fs.writeFile(getAuthPath(), JSON.stringify(auth, null, 2));
 
     try {
@@ -143,7 +151,10 @@ export async function DELETE() {
       /* ignore */
     }
 
-    return NextResponse.json({ success: true, message: "9Router settings removed from Kilo Code" });
+    return NextResponse.json({
+      success: true,
+      message: `${CLIENT_NAME} settings removed from Kilo Code`,
+    });
   } catch (error) {
     const res = configErrorResponse(error);
     if (res) return res;

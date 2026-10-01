@@ -9,7 +9,7 @@ import path from "node:path";
 import * as opencode from "@/app/api/cli-tools/opencode-settings/route.js";
 import * as codex from "@/app/api/cli-tools/codex-settings/route.js";
 import * as claude from "@/app/api/cli-tools/claude-settings/route.js";
-import { BRAND, LEGACY } from "@/shared/brand";
+import { ACTIVE, BRAND, LEGACY } from "@/shared/brand";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
 
 const home = os.homedir();
@@ -38,7 +38,7 @@ describe("opencode-settings (GH #60)", () => {
     expect((await apply()).status).toBe(200);
     const cfg = JSON.parse(await read(p));
     expect(cfg.mcp.gh.type).toBe("local");
-    expect(cfg.provider["9router"]).toBeDefined();
+    expect(cfg.provider[ACTIVE.clientConfigKey]).toBeDefined();
   });
 
   it("refuses to write an unparseable config", async () => {

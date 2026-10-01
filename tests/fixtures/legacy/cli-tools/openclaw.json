@@ -1,0 +1,44 @@
+{
+  "$schema": "https://openclaw.ai/config.json",
+  "permissions": { "update": "ask" },
+  "mcp": { "github": { "type": "http", "url": "https://example.com/mcp" } },
+  "models": {
+    "providers": {
+      "9router": {
+        "baseUrl": "http://127.0.0.1:9/v1",
+        "apiKey": "sk-old",
+        "api": "openai-completions",
+        "models": [
+          { "id": "cc/claude-sonnet-5", "name": "claude-sonnet-5" },
+          { "id": "cc/legacy-only", "name": "legacy-only" }
+        ]
+      },
+      "openai-direct": {
+        "baseUrl": "https://api.openai.com/v1",
+        "api": "openai",
+        "models": [{ "id": "gpt-4o", "name": "gpt-4o" }]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "9router/cc/claude-sonnet-5",
+        "fallbacks": ["9router/cc/fallback-model", "openai/gpt-4o"]
+      },
+      "models": {
+        "9router/cc/claude-sonnet-5": {},
+        "openai/gpt-4o": { "label": "GPT" }
+      }
+    },
+    "list": [
+      { "id": "coder", "name": "Coder" },
+      { "id": "reviewer", "name": "Reviewer", "model": "openai/gpt-4o" },
+      {
+        "id": "planner",
+        "name": "Planner",
+        "model": { "primary": "openai/o3", "fallbacks": ["9Router/cc/fallback-model"] }
+      }
+    ]
+  }
+}

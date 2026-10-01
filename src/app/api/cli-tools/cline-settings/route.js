@@ -7,6 +7,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
+import { CLIENT_NAME, urlNamesClient } from "@/lib/cliToolBrand";
 
 const execAsync = promisify(exec);
 
@@ -41,14 +42,14 @@ const readJson = async (filePath) => {
   }
 };
 
-const has9RouterConfig = (globalState) => {
+const hasTokenhopConfig = (globalState) => {
   if (!globalState) return false;
   const isOpenAi =
     globalState.actModeApiProvider === "openai" || globalState.planModeApiProvider === "openai";
   const baseUrl = globalState.openAiBaseUrl || "";
   return (
     isOpenAi &&
-    (baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1") || baseUrl.includes("9router"))
+    (baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1") || urlNamesClient(baseUrl))
   );
 };
 
@@ -71,7 +72,7 @@ export async function GET() {
         openAiBaseUrl: globalState?.openAiBaseUrl,
         openAiModelId: globalState?.openAiModelId,
       },
-      hasTokenhop: has9RouterConfig(globalState),
+      hasTokenhop: hasTokenhopConfig(globalState),
       globalStatePath: getGlobalStatePath(),
     });
   } catch (error) {
@@ -141,7 +142,10 @@ export async function DELETE() {
     delete secrets.openAiApiKey;
     await fs.writeFile(getSecretsPath(), JSON.stringify(secrets, null, 2));
 
-    return NextResponse.json({ success: true, message: "9Router settings removed from Cline" });
+    return NextResponse.json({
+      success: true,
+      message: `${CLIENT_NAME} settings removed from Cline`,
+    });
   } catch (error) {
     const res = configErrorResponse(error);
     if (res) return res;

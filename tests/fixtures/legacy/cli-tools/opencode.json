@@ -1,0 +1,42 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "theme": "dark",
+  "autoupdate": true,
+  "model": "9router/cc/claude-sonnet-5",
+  "provider": {
+    "9router": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://127.0.0.1:9/v1",
+        "apiKey": "sk-old",
+        "extraOption": true
+      },
+      "models": {
+        "cc/claude-sonnet-5": {
+          "name": "cc/claude-sonnet-5",
+          "modalities": { "input": ["text", "image"], "output": ["text"] }
+        },
+        "cc/legacy-only": {
+          "name": "cc/legacy-only",
+          "limit": { "context": 100000 }
+        }
+      }
+    },
+    "openai-direct": {
+      "npm": "@ai-sdk/openai",
+      "options": { "baseURL": "https://api.openai.com/v1" },
+      "models": { "gpt-4o": { "name": "gpt-4o" } }
+    }
+  },
+  "agent": {
+    "builder": {
+      "model": "9Router/cc/builder-model",
+      "prompt": "stay on task"
+    },
+    "explorer": {
+      "description": "Fast explorer subagent for codebase exploration",
+      "mode": "subagent",
+      "model": "9router/cc/explorer-old"
+    }
+  }
+}

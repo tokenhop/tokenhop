@@ -18,6 +18,7 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
+import { CUSTOM_MODEL_ID_PREFIX, isCustomModelId } from "@/lib/cliToolBrand";
 
 const ENDPOINT = "/api/cli-tools/droid-settings";
 
@@ -52,20 +53,22 @@ export default function DroidToolCard({
     if (status?.installed && !hasInitializedModel.current) {
       hasInitializedModel.current = true;
       const existing = (status.settings?.customModels || [])
-        .filter((m) => m.id?.startsWith("custom:9Router"))
+        .filter((m) => isCustomModelId(m.id))
         .sort((a, b) => (a.index || 0) - (b.index || 0))
         .map((m) => m.model);
       if (existing.length > 0) {
         setModelList(existing);
       } else {
-        const legacy = status.settings?.customModels?.find((m) => m.id === "custom:9Router-0");
+        const legacy = status.settings?.customModels?.find(
+          (m) => m.id === `${CUSTOM_MODEL_ID_PREFIX}0`,
+        );
         if (legacy?.model) setModelList([legacy.model]);
       }
     }
   }, [status]);
 
   const currentBaseUrl =
-    status?.settings?.customModels?.find((m) => m.id?.startsWith("custom:9Router"))?.baseUrl || "";
+    status?.settings?.customModels?.find((m) => isCustomModelId(m.id))?.baseUrl || "";
 
   const getEffectiveBaseUrl = () => {
     const u = card.customBaseUrl || baseUrl || "http://localhost:20128/v1";
@@ -144,7 +147,7 @@ export default function DroidToolCard({
           {
             customModels: modelList.map((m, i) => ({
               model: m,
-              id: `custom:9Router-${i}`,
+              id: `${CUSTOM_MODEL_ID_PREFIX}${i}`,
               index: i,
               baseUrl: getEffectiveBaseUrl(),
               apiKey: manualKeyFallback(card.selectedApiKey, cloudEnabled),

@@ -17,6 +17,7 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
+import { CLIENT_NAME, isClientKey } from "@/lib/cliToolBrand";
 
 const ENDPOINT = "/api/cli-tools/copilot-settings";
 
@@ -53,7 +54,9 @@ export default function CopilotToolCard({
 
   useEffect(() => {
     if (status?.config && Array.isArray(status.config) && selectedModels.length === 0) {
-      const entry = status.config.find((e) => e.name === "9Router");
+      const entry =
+        status.config.find((e) => e.name === CLIENT_NAME) ||
+        status.config.find((e) => isClientKey(e.name));
       if (entry?.models?.length > 0) setSelectedModels(entry.models.map((m) => m.id));
     }
   }, [status, selectedModels.length]);
@@ -136,7 +139,7 @@ export default function CopilotToolCard({
         content: JSON.stringify(
           [
             {
-              name: "9Router",
+              name: CLIENT_NAME,
               vendor: "azure",
               apiKey: manualKeyFallback(card.selectedApiKey, cloudEnabled),
               models: modelsShown.map((id) => ({

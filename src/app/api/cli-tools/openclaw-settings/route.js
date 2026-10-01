@@ -7,6 +7,17 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
+import {
+  ALL_CLIENT_KEYS,
+  CLIENT_KEY,
+  CLIENT_NAME,
+  findClientEntry,
+  LEGACY_CLIENT_KEYS,
+  modelRef,
+  repointModelRef,
+  splitModelRef,
+  takeLegacyEntry,
+} from "@/lib/cliToolBrand";
 
 const execAsync = promisify(exec);
 
@@ -57,19 +68,21 @@ const readSettings = async () => {
   }
 };
 
-// Check if settings has 9Router config
-const has9RouterConfig = (settings) => {
-  if (!settings || !settings.models || !settings.models.providers) return false;
-  return !!settings.models.providers["9router"];
+// Refs Apply owns: the active key, plus legacy keys it migrates (tokenhop brand)
+const isOwnedRef = (value) => {
+  const key = splitModelRef(value)?.key;
+  return key === CLIENT_KEY || LEGACY_CLIENT_KEYS.includes(key);
 };
 
-// Read per-agent models.json and return current model id (without "9router/" prefix)
+const hasTokenhopConfig = (settings) => !!findClientEntry(settings?.models?.providers);
+
+// Read per-agent models.json and return the current model id (no provider prefix)
 const readAgentModel = async (agentDir) => {
   try {
     const modelsPath = path.join(agentDir, "models.json");
     const content = await fs.readFile(modelsPath, "utf-8");
     const data = JSON.parse(content);
-    const models = data?.providers?.["9router"]?.models;
+    const models = findClientEntry(data?.providers)?.models;
     return models?.[0]?.id || null;
   } catch {
     return null;
@@ -106,7 +119,7 @@ export async function GET() {
       installed: true,
       settings,
       agents: enrichedAgents,
-      hasTokenhop: has9RouterConfig(settings),
+      hasTokenhop: hasTokenhopConfig(settings),
       settingsPath: getOpenClawSettingsPath(),
     });
   } catch (error) {
@@ -122,7 +135,10 @@ const writeAgentModels = async (agentDir, model, baseUrl, apiKey) => {
   const existing = (await readJsonConfig(modelsPath)) ?? {};
 
   if (!existing.providers) existing.providers = {};
-  existing.providers["9router"] = {
+  // A legacy entry migrates under ours, keeping its extra fields
+  const legacy = takeLegacyEntry(existing.providers);
+  existing.providers[CLIENT_KEY] = {
+    ...legacy,
     baseUrl,
     apiKey: apiKey || "your_api_key",
     api: "openai-completions",
@@ -131,7 +147,7 @@ const writeAgentModels = async (agentDir, model, baseUrl, apiKey) => {
   await fs.writeFile(modelsPath, JSON.stringify(existing, null, 2));
 };
 
-// POST - Update 9Router settings (merge with existing settings)
+// POST - Update our provider settings (merge with existing settings)
 export async function POST(request) {
   try {
     // agentModels: { [agentId]: modelId } for per-agent override
@@ -156,17 +172,22 @@ export async function POST(request) {
     if (!settings.models.providers) settings.models.providers = {};
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    const fullModelId = `9router/${model}`;
+    const fullModelId = modelRef(model);
 
-    // Remove all old 9router/* entries from agents.defaults.models
+    // Remove our old entries from agents.defaults.models (the namespaces Apply
+    // migrates; Reset additionally clears every known key)
     Object.keys(settings.agents.defaults.models)
-      .filter((k) => k.startsWith("9router/"))
+      .filter(isOwnedRef)
       .forEach((k) => {
         delete settings.agents.defaults.models[k];
       });
 
-    // Update default model
+    // Update default model and repoint any legacy fallback references
     settings.agents.defaults.model.primary = fullModelId;
+    if (Array.isArray(settings.agents.defaults.model.fallbacks)) {
+      settings.agents.defaults.model.fallbacks =
+        settings.agents.defaults.model.fallbacks.map(repointModelRef);
+    }
 
     // Collect all unique models (default + per-agent)
     const allModelIds = new Set([model]);
@@ -174,25 +195,33 @@ export async function POST(request) {
       if (m) allModelIds.add(m);
     });
 
-    // Add fresh 9router models to allowlist
+    // Add fresh models to allowlist
     allModelIds.forEach((m) => {
-      settings.agents.defaults.models[`9router/${m}`] = {};
+      settings.agents.defaults.models[modelRef(m)] = {};
     });
 
-    // Remove old 9router model from each agent in agents.list. The
-    // model field may be a plain string or `{ primary, fallbacks }`.
+    // Remove our model override from each agent in agents.list. The model
+    // field may be a plain string or `{ primary, fallbacks }`; legacy fallbacks
+    // of an agent we don't manage follow the migrated provider.
     if (settings.agents.list) {
       settings.agents.list = settings.agents.list.map((agent) => {
-        if (resolveAgentModel(agent.model).startsWith("9router/")) {
+        if (isOwnedRef(resolveAgentModel(agent.model))) {
           const { model: _, ...rest } = agent;
           return rest;
         }
-        return agent;
+        if (!Array.isArray(agent?.model?.fallbacks)) return agent;
+        return {
+          ...agent,
+          model: { ...agent.model, fallbacks: agent.model.fallbacks.map(repointModelRef) },
+        };
       });
     }
 
-    // Update models.providers.9router with all models
-    settings.models.providers["9router"] = {
+    // Update models.providers with all models; a legacy entry migrates under
+    // ours, keeping its extra fields
+    const legacyProvider = takeLegacyEntry(settings.models.providers);
+    settings.models.providers[CLIENT_KEY] = {
+      ...legacyProvider,
       baseUrl: normalizedBaseUrl,
       apiKey: apiKey || "your_api_key",
       api: "openai-completions",
@@ -203,7 +232,7 @@ export async function POST(request) {
     if (settings.agents.list) {
       settings.agents.list = settings.agents.list.map((agent) => {
         const agentModel = agentModels[agent.id];
-        if (agentModel) return { ...agent, model: `9router/${agentModel}` };
+        if (agentModel) return { ...agent, model: modelRef(agentModel) };
         return agent;
       });
 
@@ -233,7 +262,7 @@ export async function POST(request) {
   }
 }
 
-// DELETE - Remove 9Router settings only (keep other settings)
+// DELETE - Remove our provider settings only (keep other settings)
 export async function DELETE() {
   try {
     const settingsPath = getOpenClawSettingsPath();
@@ -247,9 +276,9 @@ export async function DELETE() {
       });
     }
 
-    // Remove 9Router from models.providers
+    // Remove our provider from models.providers (every known key)
     if (settings.models && settings.models.providers) {
-      delete settings.models.providers["9router"];
+      for (const key of ALL_CLIENT_KEYS) delete settings.models.providers[key];
 
       // Remove providers object if empty
       if (Object.keys(settings.models.providers).length === 0) {
@@ -257,10 +286,10 @@ export async function DELETE() {
       }
     }
 
-    // Remove 9router models from agents.defaults.models allowlist
+    // Remove our models from agents.defaults.models allowlist (every known key)
     if (settings.agents?.defaults?.models) {
       const keysToRemove = Object.keys(settings.agents.defaults.models).filter((k) =>
-        k.startsWith("9router/"),
+        ALL_CLIENT_KEYS.some((key) => k.startsWith(`${key}/`)),
       );
       for (const key of keysToRemove) {
         delete settings.agents.defaults.models[key];
@@ -270,8 +299,8 @@ export async function DELETE() {
       }
     }
 
-    // Reset agents.defaults.model.primary if it uses 9router
-    if (settings.agents?.defaults?.model?.primary?.startsWith("9router/")) {
+    // Reset agents.defaults.model.primary if it points at our provider
+    if (splitModelRef(settings.agents?.defaults?.model?.primary)) {
       delete settings.agents.defaults.model.primary;
     }
 
@@ -280,7 +309,7 @@ export async function DELETE() {
 
     return NextResponse.json({
       success: true,
-      message: "9Router settings removed successfully",
+      message: `${CLIENT_NAME} settings removed successfully`,
     });
   } catch (error) {
     const configRes = configErrorResponse(error);
