@@ -24,6 +24,7 @@
     "cli:publish": "npm --prefix cli run publish:cli",
     "test": "cd tests && rm -f results.json && npx vitest run --update=new --reporter=json --outputFile=results.json; node __baseline__/verify-no-regression.mjs results.json",
     "lint": "./scripts/style.sh lint",
+    "lint:brand": "node scripts/brand-guard.mjs",
     "lint:modified": "./scripts/style.sh lint --modified",
     "lint:staged": "./scripts/style.sh lint --staged",
     "lint:unstaged": "./scripts/style.sh lint --unstaged",
