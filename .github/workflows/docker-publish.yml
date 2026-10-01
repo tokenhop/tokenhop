@@ -7,6 +7,9 @@ name: Docker Image
 # Nothing runs on branch pushes. Manual runs build the chosen ref without pushing
 # unless `push` is checked.
 #
+# Brand (NEXT_PUBLIC_BRAND build arg): v1+ tags, including v1.0.0-beta.N, build
+# tokenhop; v0.* tags keep the default brand. Manual runs use the `brand` input.
+#
 # Each platform builds natively on its own runner (arm64 on ubuntu-24.04-arm, free
 # for public repos), pushed by digest; `merge` then tags one multi-arch manifest.
 # Building arm64 under QEMU instead took ~12 min per build and could hang
@@ -21,6 +24,11 @@ on:
         description: Push the image to GHCR (tagged by branch and sha only, never :latest)
         type: boolean
         default: false
+      brand:
+        description: Brand to build (`default` follows the brand module's default)
+        type: choice
+        options: [default, tokenhop]
+        default: default
 
 concurrency:
   group: docker-${{ github.ref }}
@@ -56,6 +64,25 @@ jobs:
         run: echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v7
+
+      # Empty means the brand module's default (see the header comment).
+      - name: Resolve brand
+        id: brand
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+          INPUT_BRAND: ${{ inputs.brand }}
+        run: |
+          brand=""
+          if [ "$EVENT" = "push" ]; then
+            major="${TAG#v}"
+            major="${major%%.*}"
+            if [ "$major" -ge 1 ] 2>/dev/null; then brand=tokenhop; fi
+          elif [ "$INPUT_BRAND" != "default" ]; then
+            brand="$INPUT_BRAND"
+          fi
+          echo "brand: ${brand:-default}"
+          echo "value=${brand}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -99,6 +126,7 @@ jobs:
             APK_MIRROR=dl-cdn.alpinelinux.org
             NPM_REGISTRY=https://registry.npmjs.org
             REQUIRE_OAUTH_DEFAULTS=1
+            NEXT_PUBLIC_BRAND=${{ steps.brand.outputs.value }}
           # Cache keys ignore secret values; never reuse the OAuth-defaults layer.
           no-cache-filters: oauth-defaults
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ env.PUSH }}

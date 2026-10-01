@@ -17,6 +17,11 @@ RUN npm install --registry=${NPM_REGISTRY}
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
+# Brand switch (src/shared/brand). Empty means the default brand. Next.js inlines
+# NEXT_PUBLIC_BRAND into the bundles here, so an image is built for one brand;
+# docker-publish.yml passes "tokenhop" for v1+ tags.
+ARG NEXT_PUBLIC_BRAND=
+ENV NEXT_PUBLIC_BRAND=${NEXT_PUBLIC_BRAND}
 RUN npm run build
 
 # Public Google "installed app" OAuth clients, embedded for published images only.
@@ -46,6 +51,10 @@ ENV PORT=20128
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATA_DIR=/app/data
+# Server code, open-sse and the MITM child read the brand at runtime; it must match
+# the brand inlined into the bundles at build time.
+ARG NEXT_PUBLIC_BRAND=
+ENV NEXT_PUBLIC_BRAND=${NEXT_PUBLIC_BRAND}
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static
