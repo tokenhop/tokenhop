@@ -4,7 +4,7 @@ import { PROVIDER_MEDIA, PROVIDER_MODELS } from "../../providers/index.js";
 
 const DEFAULT_TTS_MODEL = PROVIDER_MEDIA["openai"]?.ttsConfig?.defaultModel;
 const TTS_MODEL_IDS = new Set(
-  (PROVIDER_MODELS.openai || []).filter((m) => m.kind === "tts").map((m) => m.id),
+  (PROVIDER_MODELS.openai || []).filter((m) => (m.kind || m.type) === "tts").map((m) => m.id),
 );
 
 export default {

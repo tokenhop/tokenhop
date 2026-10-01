@@ -24,12 +24,14 @@ curl "$NINEROUTER_URL/v1/audio/voices?provider=edge-tts&lang=vi" | jq '.data[].m
 
 `POST $NINEROUTER_URL/v1/audio/speech`
 
-| Field   | Required | Notes                          |
-| ------- | -------- | ------------------------------ |
-| `model` | yes      | voice ID from `/v1/models/tts` |
-| `input` | yes      | text to speak                  |
+| Field             | Required | Notes                                                                                                       |
+| ----------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
+| `model`           | yes      | voice ID from `/v1/models/tts`                                                                              |
+| `input`           | yes      | text to speak                                                                                               |
+| `voice`           | no       | used only when `model` has no voice (`openai`, `selfhosted-tts`)                                            |
+| `response_format` | no       | audio codec `mp3`, `opus`, `aac`, `flac`, `wav`, `pcm` (`openai`, `selfhosted-tts`); anything else is a 400 |
 
-Query `?response_format=mp3` (default, raw bytes) or `?response_format=json` (`{audio: base64, format}`).
+The query `?response_format=mp3` (the default, raw bytes) or `?response_format=json` (`{audio: base64, format}`) picks the response envelope. The body `response_format` picks the codec.
 
 ## Examples
 
@@ -70,15 +72,15 @@ Default → raw audio bytes (Content-Type `audio/mp3`).
 
 ## Provider quirks (model format)
 
-| Provider                                  | `model` format                            | Notes                                                       |
-| ----------------------------------------- | ----------------------------------------- | ----------------------------------------------------------- |
-| `openai`                                  | `tts-1/alloy` (model/voice) or just voice | Default model `gpt-4o-mini-tts`                             |
-| `elevenlabs`                              | `<model_id>/<voice_id>` or `<voice_id>`   | Default model `eleven_flash_v2_5`; list voices in Dashboard |
-| `openrouter`                              | `openai/gpt-4o-mini-tts/alloy`            | Streamed via chat-completions audio modality                |
-| `edge-tts`                                | voice id e.g. `vi-VN-HoaiMyNeural`        | **noAuth**; default `vi-VN-HoaiMyNeural`                    |
-| `google-tts`                              | language code e.g. `en`, `vi`             | **noAuth**                                                  |
-| `local-device`                            | OS voice name (`say -v ?` / SAPI)         | **noAuth**; needs `ffmpeg`                                  |
-| `deepgram`                                | `aura-asteria-en` etc                     | Token auth                                                  |
-| `nvidia`, `inworld`, `cartesia`, `playht` | `model/voice`                             | Provider-specific auth header                               |
-| `coqui`, `tortoise`                       | speaker / voice id                        | Localhost noAuth                                            |
-| `hyperbolic`                              | model id                                  | Body = `{text}` only                                        |
+| Provider                                  | `model` format                                         | Notes                                                       |
+| ----------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------- |
+| `openai`                                  | `tts-1/alloy`, `tts-1` (+ body `voice`), or just voice | Default model `gpt-4o-mini-tts`                             |
+| `elevenlabs`                              | `<model_id>/<voice_id>` or `<voice_id>`                | Default model `eleven_flash_v2_5`; list voices in Dashboard |
+| `openrouter`                              | `openai/gpt-4o-mini-tts/alloy`                         | Streamed via chat-completions audio modality                |
+| `edge-tts`                                | voice id e.g. `vi-VN-HoaiMyNeural`                     | **noAuth**; default `vi-VN-HoaiMyNeural`                    |
+| `google-tts`                              | language code e.g. `en`, `vi`                          | **noAuth**                                                  |
+| `local-device`                            | OS voice name (`say -v ?` / SAPI)                      | **noAuth**; needs `ffmpeg`                                  |
+| `deepgram`                                | `aura-asteria-en` etc                                  | Token auth                                                  |
+| `nvidia`, `inworld`, `cartesia`, `playht` | `model/voice`                                          | Provider-specific auth header                               |
+| `coqui`, `tortoise`                       | speaker / voice id                                     | Localhost noAuth                                            |
+| `hyperbolic`                              | model id                                               | Body = `{text}` only                                        |

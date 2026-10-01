@@ -37,7 +37,7 @@ byte-identical on both branches, so the squash commit cherry-picks cleanly.
 
 - Other adapters (edge, google, elevenlabs, gemini, mimo, generic formats) keep encoding the voice in the model id.
   Add body-voice support when someone asks for it.
-- OpenRouter's model/voice parser mis-reads `openai/gpt-4o-mini-tts` with no voice. That is a separate bug.
+- OpenRouter's model/voice parser mis-reads `openai/gpt-4o-mini-tts` with no voice. That is a separate bug, tracked as YAN-613.
 
 ## YAN-122: Kiro CLIProxyAPI import never closes the modal
 
