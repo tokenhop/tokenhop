@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   applyGrokBuildConfig,
+  GROK_MAIN_MODEL_SLOT as S,
   getGrokSubagentSlot,
   parseGrokBuildConfig,
   resetGrokBuildConfig,
 } from "../../src/lib/grokBuildConfig.js";
+
+// Lines starting with `line` (S is the active brand's slot key).
+const countLines = (text, line) => text.split("\n").filter((l) => l.startsWith(line)).length;
 
 const BASE_CONFIG = `[cli]
 installer = "internal"
@@ -45,15 +49,15 @@ describe("grokBuildConfig", () => {
     const result = applyGrokBuildConfig(BASE_CONFIG, APPLY_INPUT);
     const parsed = parseGrokBuildConfig(result);
 
-    expect(parsed.default).toBe("9router");
+    expect(parsed.default).toBe(S);
     expect(parsed.model).toMatchObject({
       model: "cx/gpt-5.6-sol",
       base_url: "http://127.0.0.1:20128/v1",
       context_window: 400000,
     });
     expect(parsed.subagentMappings).toMatchObject({
-      "general-purpose": "9router-general-purpose",
-      explore: "9router-explore",
+      "general-purpose": `${S}-general-purpose`,
+      explore: `${S}-explore`,
       plan: "grok-4.5",
     });
     expect(parsed.subagentModels["general-purpose"]).toMatchObject({
@@ -88,10 +92,10 @@ describe("grokBuildConfig", () => {
       },
     });
 
-    expect(result.match(/^\[model\.9router\]$/gm)).toHaveLength(1);
-    expect(result.match(/^\[model\.9router-general-purpose\]$/gm)).toHaveLength(1);
-    expect(result.match(/^\[model\.9router-explore\]$/gm)).toHaveLength(1);
-    expect(result.match(/^# 9router-prev-subagent-explore/gm)).toHaveLength(1);
+    expect(countLines(result, `[model.${S}]`)).toBe(1);
+    expect(countLines(result, `[model.${S}-general-purpose]`)).toBe(1);
+    expect(countLines(result, `[model.${S}-explore]`)).toBe(1);
+    expect(countLines(result, `# ${S}-prev-subagent-explore`)).toBe(1);
     expect(parseGrokBuildConfig(result).model).toMatchObject({
       model: "cc/claude-opus-4.8",
       context_window: 1000000,
@@ -115,8 +119,8 @@ describe("grokBuildConfig", () => {
     const parsed = parseGrokBuildConfig(result);
     expect(parsed.subagentMappings.explore).toBe("grok-build");
     expect(parsed.subagentModels.explore).toBeNull();
-    expect(result).not.toContain("[model.9router-explore]");
-    expect(parsed.subagentMappings["general-purpose"]).toBe("9router-general-purpose");
+    expect(result).not.toContain(`[model.${S}-explore]`);
+    expect(parsed.subagentMappings["general-purpose"]).toBe(`${S}-general-purpose`);
   });
 
   it("reset restores previous default and all previous subagent mappings", () => {
@@ -131,8 +135,8 @@ describe("grokBuildConfig", () => {
       explore: "grok-build",
       plan: "grok-4.5",
     });
-    expect(reset).not.toContain("[model.9router-");
-    expect(reset).not.toContain("9router-prev-");
+    expect(reset).not.toContain(`[model.${S}-`);
+    expect(reset).not.toContain(`${S}-prev-`);
     expect(reset).toContain("[mcp_servers.example]");
   });
 
@@ -146,7 +150,7 @@ describe("grokBuildConfig", () => {
     });
     const reset = resetGrokBuildConfig(applied);
 
-    expect(parseGrokBuildConfig(applied).subagentMappings.plan).toBe("9router-plan");
+    expect(parseGrokBuildConfig(applied).subagentMappings.plan).toBe(`${S}-plan`);
     expect(parseGrokBuildConfig(reset).subagentMappings.plan).toBeNull();
     expect(reset).not.toContain("[subagents.models]");
     expect(reset).toContain("[mcp_servers.x]");
@@ -163,14 +167,14 @@ describe("grokBuildConfig", () => {
 
     const parsed = parseGrokBuildConfig(updatedMainOnly);
     expect(parsed.model.model).toBe("gemini/gemini-3.1-pro");
-    expect(parsed.subagentMappings.explore).toBe("9router-explore");
+    expect(parsed.subagentMappings.explore).toBe(`${S}-explore`);
     expect(parsed.subagentModels.explore.model).toBe("gemini/gemini-3-flash");
   });
 
   it("returns stable slot names only for supported subagent types", () => {
-    expect(getGrokSubagentSlot("general-purpose")).toBe("9router-general-purpose");
-    expect(getGrokSubagentSlot("explore")).toBe("9router-explore");
-    expect(getGrokSubagentSlot("plan")).toBe("9router-plan");
+    expect(getGrokSubagentSlot("general-purpose")).toBe(`${S}-general-purpose`);
+    expect(getGrokSubagentSlot("explore")).toBe(`${S}-explore`);
+    expect(getGrokSubagentSlot("plan")).toBe(`${S}-plan`);
     expect(getGrokSubagentSlot("unknown")).toBeNull();
   });
 });

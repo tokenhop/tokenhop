@@ -282,7 +282,7 @@ export default function ClaudeToolCard({
         applyDisabled={!hasActiveProviders}
         applying={applying}
         onReset={handleReset}
-        resetDisabled={!claudeStatus?.has9Router}
+        resetDisabled={!claudeStatus?.hasTokenhop}
         resetting={restoring}
         onManualConfig={() => setShowManualModal(true)}
         manualConfigs={getManualConfigs()}

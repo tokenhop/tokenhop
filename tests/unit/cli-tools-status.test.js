@@ -13,18 +13,18 @@ const cliTool = { name: "Claude Code" };
 
 describe("deriveToolStatus", () => {
   it("guide tools always report guide", () => {
-    expect(deriveToolStatus(guideTool, { installed: true, has9Router: true }).key).toBe("guide");
+    expect(deriveToolStatus(guideTool, { installed: true, hasTokenhop: true }).key).toBe("guide");
     expect(deriveToolStatus(guideTool, null).key).toBe("guide");
   });
-  it("maps installed/has9Router to connected", () => {
-    expect(deriveToolStatus(cliTool, { installed: true, has9Router: true })).toMatchObject({
+  it("maps installed/hasTokenhop to connected", () => {
+    expect(deriveToolStatus(cliTool, { installed: true, hasTokenhop: true })).toMatchObject({
       key: "connected",
       label: "Connected",
       variant: "ok",
     });
   });
   it("maps installed without config to notConfigured", () => {
-    expect(deriveToolStatus(cliTool, { installed: true, has9Router: false })).toMatchObject({
+    expect(deriveToolStatus(cliTool, { installed: true, hasTokenhop: false })).toMatchObject({
       key: "notConfigured",
       label: "Not configured",
       variant: "warn",
@@ -68,8 +68,8 @@ describe("countToolsByFilter + filterToolEntries", () => {
     ["cursor", { name: "Cursor", configType: "guide" }],
   ];
   const statuses = {
-    claude: { installed: true, has9Router: true },
-    cline: { installed: true, has9Router: false },
+    claude: { installed: true, hasTokenhop: true },
+    cline: { installed: true, hasTokenhop: false },
     roo: { installed: false },
   };
   it("counts each bucket", () => {
@@ -124,8 +124,8 @@ describe("status buckets stay consistent (YAN-388 merge gate)", () => {
   // Fixtures are fixed here (not derived from TOOL_STATUS_KEYS) so a key
   // missing from that list can't silently drop out of the check.
   const PAYLOAD_FOR_KEY = {
-    connected: { installed: true, has9Router: true },
-    notConfigured: { installed: true, has9Router: false },
+    connected: { installed: true, hasTokenhop: true },
+    notConfigured: { installed: true, hasTokenhop: false },
     notInstalled: { installed: false },
     error: { installed: false, error: "status 500" },
     guide: null,

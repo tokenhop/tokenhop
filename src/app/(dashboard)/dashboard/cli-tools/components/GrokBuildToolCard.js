@@ -18,9 +18,9 @@ import {
   rememberEndpoint,
   deriveToolStatus,
 } from "./setupCard";
+import { CLIENT_KEY as MODEL_SLOT, CLIENT_NAME } from "@/lib/cliToolBrand";
 
 const ENDPOINT = "/api/cli-tools/grok-build-settings";
-const MODEL_SLOT = "9router";
 const SUBAGENT_TYPES = [
   {
     id: "general-purpose",
@@ -161,7 +161,7 @@ export default function GrokBuildToolCard({
     const mainModel = selectedModel || "provider/model-id";
     const blocks = [
       `[models]\ndefault = "${MODEL_SLOT}"`,
-      `[model.${MODEL_SLOT}]\nmodel = "${mainModel}"\nbase_url = "${effective}"\nname = "9Router"\ndescription = "Routed via 9Router gateway"\napi_backend = "chat_completions"\napi_key = "${keyToUse}"\ncontext_window = ${getContextWindow(mainModel) || 200000}`,
+      `[model.${MODEL_SLOT}]\nmodel = "${mainModel}"\nbase_url = "${effective}"\nname = "${CLIENT_NAME}"\ndescription = "Routed via ${CLIENT_NAME} gateway"\napi_backend = "chat_completions"\napi_key = "${keyToUse}"\ncontext_window = ${getContextWindow(mainModel) || 200000}`,
     ];
     const mappings = [];
     for (const t of SUBAGENT_TYPES) {
@@ -170,7 +170,7 @@ export default function GrokBuildToolCard({
       const slot = `${MODEL_SLOT}-${t.id}`;
       mappings.push(`${t.id} = "${slot}"`);
       blocks.push(
-        `[model.${slot}]\nmodel = "${model}"\nbase_url = "${effective}"\nname = "9Router ${t.id}"\ndescription = "Routed via 9Router gateway"\napi_backend = "chat_completions"\napi_key = "${keyToUse}"\ncontext_window = ${getContextWindow(model) || 200000}`,
+        `[model.${slot}]\nmodel = "${model}"\nbase_url = "${effective}"\nname = "${CLIENT_NAME} ${t.id}"\ndescription = "Routed via ${CLIENT_NAME} gateway"\napi_backend = "chat_completions"\napi_key = "${keyToUse}"\ncontext_window = ${getContextWindow(model) || 200000}`,
       );
     }
     if (mappings.length) blocks.splice(1, 0, `[subagents.models]\n${mappings.join("\n")}`);
@@ -200,7 +200,7 @@ export default function GrokBuildToolCard({
         applyDisabled={!selectedModel}
         applying={card.applying}
         onReset={handleReset}
-        resetDisabled={!status?.has9Router}
+        resetDisabled={!status?.hasTokenhop}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}

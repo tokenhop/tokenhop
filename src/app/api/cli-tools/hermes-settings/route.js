@@ -6,10 +6,10 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { CLIENT_NAME } from "@/lib/cliToolBrand";
 
 const execAsync = promisify(exec);
 
-const PROVIDER_NAME = "9router";
 const API_KEY_ENV = "OPENAI_API_KEY";
 
 const getHermesDir = () => path.join(os.homedir(), ".hermes");
@@ -95,8 +95,8 @@ const readEnvFile = async () => {
   }
 };
 
-// Detect 9router by base_url containing localhost/127.0.0.1 or matching tunnel URL
-const has9RouterConfig = (modelCfg) => {
+// Detect our config by base_url containing localhost/127.0.0.1 or matching tunnel URL
+const hasTokenhopConfig = (modelCfg) => {
   if (!modelCfg?.base_url) return false;
   return (
     modelCfg.provider === "custom" && /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(modelCfg.base_url)
@@ -118,7 +118,7 @@ export async function GET() {
     return NextResponse.json({
       installed: true,
       settings: { model },
-      has9Router: has9RouterConfig(model),
+      hasTokenhop: hasTokenhopConfig(model),
       configPath: getHermesConfigPath(),
     });
   } catch (error) {
@@ -176,7 +176,7 @@ export async function DELETE() {
     }
     const newYaml = removeModelBlock(yaml);
     await fs.writeFile(configPath, newYaml);
-    return NextResponse.json({ success: true, message: `${PROVIDER_NAME} model block removed` });
+    return NextResponse.json({ success: true, message: `${CLIENT_NAME} model block removed` });
   } catch (error) {
     console.log("Error resetting hermes settings:", error);
     return NextResponse.json({ error: "Failed to reset hermes settings" }, { status: 500 });

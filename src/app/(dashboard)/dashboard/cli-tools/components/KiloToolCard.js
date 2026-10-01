@@ -19,7 +19,7 @@ import {
 } from "./setupCard";
 
 /**
- * Kilo Code setup panel. Single model; status is binary (has9Router).
+ * Kilo Code setup panel. Single model; status is binary (hasTokenhop).
  * Writes ~/.local/share/kilo/auth.json via /api/cli-tools/kilo-settings.
  */
 export default function KiloToolCard({

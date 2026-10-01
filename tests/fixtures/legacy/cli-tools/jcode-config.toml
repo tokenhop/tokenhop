@@ -1,0 +1,20 @@
+[provider]
+default_provider = "9router"
+default_model = "cc/claude-opus-4-7"
+
+[providers.9router]
+type = "openai-compatible"
+base_url = "http://127.0.0.1:20128/v1"
+auth = "bearer"
+api_key_env = "JCODE_9ROUTER_API_KEY"
+env_file = "provider-9router.env"
+default_model = "cc/claude-opus-4-7"
+requires_api_key = true
+
+[[providers.9router.models]]
+id = "cc/claude-opus-4-7"
+context_window = 200000
+
+[providers.local-vllm]
+type = "openai-compatible"
+base_url = "http://127.0.0.1:8000/v1"

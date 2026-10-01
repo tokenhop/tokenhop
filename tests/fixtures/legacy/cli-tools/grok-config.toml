@@ -1,0 +1,45 @@
+[cli]
+installer = "internal"
+
+[models]
+default = "9router"
+default_reasoning_effort = "high"
+
+[subagents.models]
+general-purpose = "9router-general-purpose"
+explore = "9router-explore"
+plan = "grok-4.5"
+
+[mcp_servers.example]
+url = "https://example.com/mcp"
+enabled = true
+
+# 9router-prev-default = "grok-4.5"
+# 9router-prev-subagent-general-purpose = "grok-4.5"
+# 9router-prev-subagent-explore = "__9router_unset__"
+[model.9router]
+model = "cx/gpt-5.6-sol"
+base_url = "http://127.0.0.1:20128/v1"
+name = "9Router"
+description = "Routed via 9Router gateway"
+api_backend = "chat_completions"
+api_key = "sk-legacy"
+context_window = 400000
+
+[model.9router-general-purpose]
+model = "cc/claude-sonnet-5"
+base_url = "http://127.0.0.1:20128/v1"
+name = "9Router general-purpose"
+description = "Routed via 9Router gateway"
+api_backend = "chat_completions"
+api_key = "sk-legacy"
+context_window = 1000000
+
+[model.9router-explore]
+model = "gemini/gemini-3-flash"
+base_url = "http://127.0.0.1:20128/v1"
+name = "9Router explore"
+description = "Routed via 9Router gateway"
+api_backend = "chat_completions"
+api_key = "sk-legacy"
+context_window = 1048576

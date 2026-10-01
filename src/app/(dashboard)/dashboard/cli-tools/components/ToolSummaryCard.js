@@ -9,7 +9,7 @@ function getStatus(status, tool) {
   if (tool?.configType === "guide") return { label: "Guide", variant: "info" };
   if (!status) return { label: "Unknown", variant: "neutral" };
   if (!status.installed) return { label: "Not installed", variant: "neutral" };
-  if (status.has9Router) return { label: "Connected", variant: "ok" };
+  if (status.hasTokenhop) return { label: "Connected", variant: "ok" };
   return { label: "Not configured", variant: "warn" };
 }
 

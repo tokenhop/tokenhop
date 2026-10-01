@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { parseJSONC, parseTOML } from "confbox";
+import { ACTIVE } from "@/shared/brand";
 
 // Thrown when a user's CLI-tool config file exists but can't be parsed. Write
 // paths must surface this instead of falling back to `{}` — writing `{}` back
@@ -8,7 +9,7 @@ import { parseJSONC, parseTOML } from "confbox";
 export class ConfigParseError extends Error {
   constructor(filePath, cause) {
     super(
-      `Could not parse ${filePath}: ${cause?.message || cause}. Fix or remove the file, then retry — 9Router will not overwrite it.`,
+      `Could not parse ${filePath}: ${cause?.message || cause}. Fix or remove the file, then retry — ${ACTIVE.name} will not overwrite it.`,
     );
     this.name = "ConfigParseError";
     this.filePath = filePath;
