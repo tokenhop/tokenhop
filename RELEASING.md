@@ -37,13 +37,15 @@ Model: **release-branches**. Support window: latest-minor.
 <!-- ycc-release-state:table:end -->
 
 `master` has been the trunk since v0.5.0 (2026-09-30). v0.6.0 (2026-10-01) opened
-`release/0.6` and froze `release/0.5`. Planned releases from `master`:
+`release/0.6` and froze `release/0.5`.
 
-- **v1.0.0** — the tokenhop rebrand, on `master` behind the brand switch. See
+- **No v0.7.0.** Every release before the rebrand is a `v0.6.Z` patch from
+  `release/0.6`. A change that must ship before v1.0.0 is labelled `v0.6.x`,
+  lands on `master` first and is backported with `backport:0.6`.
+- **v1.0.0** — the next release from `master`: the tokenhop rebrand, behind the
+  brand switch. Everything not labelled `v0.6.x` rides it. See
   [Major release v1.0.0](#major-release-v100-tokenhop-rebrand) for how `release/0.6`
   is handled afterwards.
-- **v0.7.0** — only if features are ready to ship before the rebrand is; otherwise
-  they ride v1.0.0.
 
 ## Rules
 
@@ -186,8 +188,8 @@ single squash commit; its individual commits are kept under the
 - **Projects** are bodies of work (Re-design, Rebrand, Users & Teams). Each
   project has a target release.
 - **Every issue gets a target release at triage**, as a label from the
-  single-select **tokenhop release** label group: the patch line (`v0.6.x`),
-  the next minor (`v0.7.0`) or a planned major (`v1.0.0`). Add a label to the
+  single-select **tokenhop release** label group: the patch line (`v0.6.x`)
+  or the planned major (`v1.0.0`). Add a label to the
   group when a new version is planned. For bugs, triage also decides whether
   the fix needs a backport. (Linear's Releases feature needs a Business plan,
   so labels stand in for it.)
