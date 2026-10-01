@@ -1,4 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("open-sse/utils/proxyFetch.js", () => ({ proxyAwareFetch: vi.fn() }));
+
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import {
   resolveWsModelId,
   buildGetChatMessageRequest,
@@ -236,6 +240,22 @@ describe("grpcHeaderErrorResponse (trailers-only replies)", () => {
     );
     expect(res.status).toBe(401);
     expect((await res.json()).error.message).toBe("api key expired");
+  });
+
+  it("execute() returns the mapped error instead of an empty success", async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(null, {
+        status: 200,
+        headers: { "grpc-status": "16", "grpc-message": "api%20key%20expired" },
+      }),
+    );
+    const { response } = await new WindsurfExecutor().execute({
+      model: "windsurf/swe-1",
+      body: { messages: [{ role: "user", content: "hi" }] },
+      credentials: { apiKey: "sk-ws-dead" },
+    });
+    expect(response.status).toBe(401);
+    expect((await response.json()).error.message).toBe("api key expired");
   });
 
   it("returns null for status 0 or no grpc-status header", () => {
