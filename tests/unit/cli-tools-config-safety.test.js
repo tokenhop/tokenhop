@@ -3,7 +3,6 @@
 // dir (tests/setup), so these routes write under it, not the real home.
 import { describe, it, expect, beforeEach } from "vitest";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
 import * as opencode from "@/app/api/cli-tools/opencode-settings/route.js";
@@ -11,8 +10,9 @@ import * as codex from "@/app/api/cli-tools/codex-settings/route.js";
 import * as claude from "@/app/api/cli-tools/claude-settings/route.js";
 import { ACTIVE, BRAND, LEGACY } from "@/shared/brand";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
+import { assertIsolatedHome, removeUnderHome } from "../helpers/isolatedHome.js";
 
-const home = os.homedir();
+const home = assertIsolatedHome();
 const req = (body) =>
   new Request("http://localhost/x", { method: "POST", body: JSON.stringify(body) });
 const write = async (rel, content) => {
@@ -23,10 +23,7 @@ const write = async (rel, content) => {
 };
 const read = (p) => fs.readFile(p, "utf-8");
 
-beforeEach(async () => {
-  for (const d of [".config", ".codex", ".claude", ".claude.json"])
-    await fs.rm(path.join(home, d), { recursive: true, force: true });
-});
+beforeEach(() => removeUnderHome([".config", ".codex", ".claude", ".claude.json"], home));
 
 describe("opencode-settings (GH #60)", () => {
   const rel = ".config/opencode/opencode.json";

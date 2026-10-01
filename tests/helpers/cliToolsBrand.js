@@ -1,10 +1,11 @@
 // Shared harness for the CLI-tool brand migration tests (YAN-331, YAN-332).
-// HOME is a per-file temp dir (tests/setup), never the real one.
+// HOME is a per-file temp dir (tests/setup), never the real one: importing this
+// throws if it isn't (see isolatedHome.js).
 import { vi } from "vitest";
 import { createRequire } from "node:module";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
+import { assertIsolatedHome, removeUnderHome } from "./isolatedHome.js";
 
 const require = createRequire(import.meta.url);
 const BRAND_CJS = require.resolve("../../src/shared/brand/index.cjs");
@@ -13,7 +14,7 @@ export const { LEGACY } = require(BRAND_CJS);
 export const OLD = LEGACY.clientConfigKeys[0];
 export const OLD_NAME = LEGACY.clientConfigKeys[1];
 const FIXTURES = path.join(import.meta.dirname, "../fixtures/legacy/cli-tools");
-export const home = os.homedir();
+export const home = assertIsolatedHome();
 const savedBrand = process.env.NEXT_PUBLIC_BRAND;
 
 // The brand resolves at load time, so every case loads fresh modules.
@@ -45,8 +46,7 @@ export const exists = (rel) =>
     () => true,
     () => false,
   );
-export const clearHome = (dirs) =>
-  Promise.all(dirs.map((d) => fs.rm(path.join(home, d), { recursive: true, force: true })));
+export const clearHome = (dirs) => removeUnderHome(dirs, home);
 export const post = (body, method = "POST") =>
   new Request("http://localhost/x", { method, body: JSON.stringify(body) });
 export const json = (res) => res.json();
