@@ -16,8 +16,16 @@ import {
   ManualConfigModal,
   rememberEndpoint,
   deriveToolStatus,
+  toManualConfigs,
 } from "./setupCard";
-import { CLIENT_KEY, findClientEntry, modelRef, splitModelRef } from "@/lib/cliToolBrand";
+import Button from "@/shared/components/Button";
+import IconButton from "@/shared/components/IconButton";
+import { findClientEntry, splitModelRef } from "@/lib/cliToolBrand";
+import { buildOpenClawConfig } from "@/lib/cliToolConfigs/openclaw";
+import { useCliAccessStore } from "@/store/cliAccessStore";
+
+const INPUT_CLASS =
+  "h-10 min-w-0 flex-1 rounded-xl border border-line bg-raised px-3 text-sm text-text focus:border-coral focus:shadow-focus focus:outline-none";
 
 const ENDPOINT = "/api/cli-tools/openclaw-settings";
 
@@ -43,6 +51,10 @@ export default function OpenClawToolCard({
   const [selectedModel, setSelectedModel] = useState("");
   const [agentModels, setAgentModels] = useState({});
   const [agentModalFor, setAgentModalFor] = useState(null);
+  // Remotely there is no on-disk agent list; the user adds rows for the snippet.
+  const localOnly = useCliAccessStore((s) => s.localOnly);
+  const [remoteAgents, setRemoteAgents] = useState([]);
+  const [agentDraft, setAgentDraft] = useState({ id: "", agentDir: "" });
   const hasInitializedModel = useRef(false);
 
   useEffect(() => {
@@ -131,34 +143,31 @@ export default function OpenClawToolCard({
     }
   };
 
-  const agents = (status?.agents || []).filter((a) => a.agentDir);
+  const agents = localOnly ? remoteAgents : (status?.agents || []).filter((a) => a.agentDir);
 
-  const getManualConfigs = () => {
-    const keyToUse = manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled);
-    const content = {
-      agents: {
-        defaults: {
-          model: { primary: modelRef(selectedModel || "provider/model-id") },
-        },
-      },
-      models: {
-        providers: {
-          [CLIENT_KEY]: {
-            baseUrl: getEffectiveBaseUrl(),
-            apiKey: keyToUse,
-            api: "openai-completions",
-            models: [
-              {
-                id: selectedModel || "provider/model-id",
-                name: (selectedModel || "provider/model-id").split("/").pop(),
-              },
-            ],
-          },
-        },
-      },
-    };
-    return [{ filename: "~/.openclaw/openclaw.json", content: JSON.stringify(content, null, 2) }];
+  const addRemoteAgent = () => {
+    const id = agentDraft.id.trim();
+    const agentDir = agentDraft.agentDir.trim();
+    if (!id || !agentDir) return;
+    setRemoteAgents((prev) => [...prev.filter((a) => a.id !== id), { id, agentDir }]);
+    setAgentDraft({ id: "", agentDir: "" });
   };
+
+  const removeRemoteAgent = (id) => {
+    setRemoteAgents((prev) => prev.filter((a) => a.id !== id));
+    setAgentModels(({ [id]: _, ...rest }) => rest);
+  };
+
+  const getManualConfigs = () =>
+    toManualConfigs(
+      buildOpenClawConfig({
+        baseUrl: getEffectiveBaseUrl(),
+        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        model: selectedModel,
+        agents,
+        agentModels,
+      }),
+    );
 
   return (
     <>
@@ -226,23 +235,70 @@ export default function OpenClawToolCard({
           />
         </SetupRow>
 
-        {agents.length > 0 && (
+        {(agents.length > 0 || localOnly) && (
           <div className="flex flex-col gap-2 pt-2 border-t border-line">
             <span className="text-[13px] font-semibold text-text">Per-agent models</span>
             {agents.map((a) => (
-              <SetupRow key={a.id} label={`Agent: ${a.name || a.id}`}>
-                <SingleModelRow
-                  value={agentModels[a.id]}
-                  onChange={(val) => setAgentModels((prev) => ({ ...prev, [a.id]: val }))}
-                  onPick={() => {
-                    setAgentModalFor(a.id);
-                    card.setModalOpen(true);
-                  }}
-                  pickDisabled={!activeProviders?.length}
-                  placeholder={`default (${selectedModel || "provider/model-id"})`}
-                />
+              <SetupRow key={a.id} label={`Agent: ${a.name || a.id}`} hint={a.agentDir}>
+                <div className="flex items-center gap-1.5">
+                  <div className="min-w-0 flex-1">
+                    <SingleModelRow
+                      value={agentModels[a.id]}
+                      onChange={(val) => setAgentModels((prev) => ({ ...prev, [a.id]: val }))}
+                      onPick={() => {
+                        setAgentModalFor(a.id);
+                        card.setModalOpen(true);
+                      }}
+                      pickDisabled={!activeProviders?.length}
+                      placeholder={`default (${selectedModel || "provider/model-id"})`}
+                    />
+                  </div>
+                  {localOnly && (
+                    <IconButton
+                      icon="close"
+                      label={`Remove agent ${a.id}`}
+                      onClick={() => removeRemoteAgent(a.id)}
+                    />
+                  )}
+                </div>
               </SetupRow>
             ))}
+            {localOnly && (
+              <SetupRow label="Add agent" hint="The id and agentDir from agents.list">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <label htmlFor="openclaw-agent-id" className="sr-only">
+                    Agent id
+                  </label>
+                  <input
+                    id="openclaw-agent-id"
+                    type="text"
+                    placeholder="agent id"
+                    value={agentDraft.id}
+                    onChange={(e) => setAgentDraft((d) => ({ ...d, id: e.target.value }))}
+                    className={INPUT_CLASS}
+                  />
+                  <label htmlFor="openclaw-agent-dir" className="sr-only">
+                    Agent dir
+                  </label>
+                  <input
+                    id="openclaw-agent-dir"
+                    type="text"
+                    placeholder="~/.openclaw/agents/<id>"
+                    value={agentDraft.agentDir}
+                    onChange={(e) => setAgentDraft((d) => ({ ...d, agentDir: e.target.value }))}
+                    className={INPUT_CLASS}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={addRemoteAgent}
+                    disabled={!agentDraft.id.trim() || !agentDraft.agentDir.trim()}
+                  >
+                    Add
+                  </Button>
+                </div>
+              </SetupRow>
+            )}
           </div>
         )}
       </SetupScaffold>

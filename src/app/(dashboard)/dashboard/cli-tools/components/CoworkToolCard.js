@@ -21,9 +21,19 @@ import {
   ManualConfigModal,
   rememberEndpoint,
   deriveToolStatus,
+  toManualConfigs,
 } from "./setupCard";
+import { DEFAULT_PLUGINS } from "@/shared/constants/coworkPlugins";
+import { buildCoworkConfig, buildCoworkMcpServers } from "@/lib/cliToolConfigs/cowork";
+import { browserPlatform } from "@/lib/cliToolConfigs/shared";
 
 const ENDPOINT = "/api/cli-tools/cowork-settings";
+// crypto.randomUUID needs a secure context; remote dashboards are often plain HTTP.
+const uuid = () =>
+  crypto.randomUUID?.() ??
+  "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
+    (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16),
+  );
 const stripV1 = (url) => (url || "").replace(/\/v1\/?$/, "");
 const ensureV1 = (url) => {
   const t = (url || "").replace(/\/+$/, "");
@@ -52,7 +62,11 @@ export default function CoworkToolCard({
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "cowork" });
   const { status } = card;
   const [selectedModels, setSelectedModels] = useState([]);
-  const [plugins, setPlugins] = useState([]);
+  const [plugins, setPlugins] = useState(DEFAULT_PLUGINS);
+  // Snippet id when the host has none yet (remote, or never applied); stable per mount.
+  // Set after mount so server and client render the same markup.
+  const [draftAppliedId, setDraftAppliedId] = useState("<appliedId>");
+  useEffect(() => setDraftAppliedId(uuid()), []);
   const [localPlugins, setLocalPlugins] = useState([]);
   const [customPlugins, setCustomPlugins] = useState([]);
   const [comboModalOpen, setComboModalOpen] = useState(false);
@@ -71,14 +85,12 @@ export default function CoworkToolCard({
     }
     if (Array.isArray(status?.cowork?.plugins) && status.cowork.plugins.length > 0) {
       setPlugins(status.cowork.plugins);
-    } else if (plugins.length === 0 && Array.isArray(status?.defaultPlugins)) {
-      setPlugins(status.defaultPlugins);
     }
     if (Array.isArray(status?.cowork?.localPlugins)) setLocalPlugins(status.cowork.localPlugins);
     if (Array.isArray(status?.cowork?.customPlugins) && status.cowork.customPlugins.length > 0) {
       setCustomPlugins(status.cowork.customPlugins);
     }
-  }, [status, card, plugins.length]);
+  }, [status, card]);
 
   const currentBaseUrl = status?.cowork?.baseUrl || "";
   const getEffectiveBaseUrl = () => ensureV1(card.customBaseUrl || baseUrl);
@@ -130,7 +142,7 @@ export default function CoworkToolCard({
       if (res.ok) {
         card.setMessage({ type: "success", text: "Settings reset successfully." });
         setSelectedModels([]);
-        setPlugins(status?.defaultPlugins || []);
+        setPlugins(DEFAULT_PLUGINS);
         setLocalPlugins([]);
         setCustomPlugins([]);
         card.fetchStatus();
@@ -168,25 +180,22 @@ export default function CoworkToolCard({
   };
 
   const exaEnabled = plugins.some((p) => p.name === "exa");
-  const exaDef = (status?.defaultPlugins || []).find((d) => d.name === "exa");
+  const exaDef = DEFAULT_PLUGINS.find((d) => d.name === "exa");
   const browserDef = (status?.localStdioPlugins || []).find((p) => p.name === "browsermcp");
   const browserEnabled = localPlugins.includes("browsermcp");
 
-  const getManualConfigs = () => {
-    const modelsShown = selectedModels.length > 0 ? selectedModels : ["provider/model-id"];
-    const cfg = {
-      inferenceProvider: "gateway",
-      inferenceGatewayBaseUrl: getEffectiveBaseUrl() || "https://your-public-host/v1",
-      inferenceGatewayApiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
-      inferenceModels: modelsShown.map((name) => ({ name })),
-    };
-    return [
-      {
-        filename: "~/Library/Application Support/Claude-3p/configLibrary/<appliedId>.json",
-        content: JSON.stringify(cfg, null, 2),
-      },
-    ];
-  };
+  // Local stdio bridges are left out: they need this host and its CLI token.
+  const getManualConfigs = () =>
+    toManualConfigs(
+      buildCoworkConfig({
+        baseUrl: getEffectiveBaseUrl(),
+        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        models: selectedModels,
+        managedMcpServers: buildCoworkMcpServers({ plugins, customPlugins }),
+        appliedId: status?.cowork?.appliedId || draftAppliedId,
+        platform: browserPlatform(),
+      }),
+    );
 
   return (
     <>
@@ -215,7 +224,7 @@ export default function CoworkToolCard({
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
-        fileHint="Claude-3p/configLibrary/<appliedId>.json"
+        fileHint="Claude-3p/configLibrary + claude_desktop_config.json"
       >
         <EndpointSegmentedPicker
           value={card.customBaseUrl || baseUrl}

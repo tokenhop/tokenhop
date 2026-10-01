@@ -14,11 +14,11 @@ import {
   CLIENT_NAME,
   findClientEntry,
   LEGACY_CLIENT_KEYS,
-  modelRef,
   repointModelRef,
   splitModelRef,
   takeLegacyEntry,
 } from "@/lib/cliToolBrand";
+import { buildOpenClawConfig } from "@/lib/cliToolConfigs/openclaw";
 
 const execAsync = promisify(exec);
 
@@ -130,22 +130,15 @@ export async function GET() {
 }
 
 // Write per-agent models.json
-const writeAgentModels = async (agentDir, model, baseUrl, apiKey) => {
-  await fs.mkdir(agentDir, { recursive: true });
-  const modelsPath = path.join(agentDir, "models.json");
-  const existing = (await readJsonConfig(modelsPath)) ?? {};
+const writeAgentModels = async ({ file, value }) => {
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  const existing = (await readJsonConfig(file)) ?? {};
 
   if (!existing.providers) existing.providers = {};
   // A legacy entry migrates under ours, keeping its extra fields
   const legacy = takeLegacyEntry(existing.providers);
-  existing.providers[CLIENT_KEY] = {
-    ...legacy,
-    baseUrl,
-    apiKey: apiKey || ACTIVE.defaultApiKey,
-    api: "openai-completions",
-    models: [{ id: model, name: model.split("/").pop() || model }],
-  };
-  await fs.writeFile(modelsPath, JSON.stringify(existing, null, 2));
+  existing.providers[CLIENT_KEY] = { ...legacy, ...value.providers[CLIENT_KEY] };
+  await fs.writeFile(file, JSON.stringify(existing, null, 2));
 };
 
 // POST - Update our provider settings (merge with existing settings)
@@ -172,8 +165,15 @@ export async function POST(request) {
     if (!settings.models) settings.models = {};
     if (!settings.models.providers) settings.models.providers = {};
 
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    const fullModelId = modelRef(model);
+    const [main, ...agentFiles] = buildOpenClawConfig({
+      baseUrl,
+      apiKey: apiKey || ACTIVE.defaultApiKey,
+      model,
+      agents: settings.agents.list ?? [],
+      agentModels,
+    });
+    const { defaults, list: overrides = [] } = main.value.agents;
+    const ownProvider = main.value.models.providers[CLIENT_KEY];
 
     // Remove our old entries from agents.defaults.models (the namespaces Apply
     // migrates; Reset additionally clears every known key)
@@ -184,22 +184,14 @@ export async function POST(request) {
       });
 
     // Update default model and repoint any legacy fallback references
-    settings.agents.defaults.model.primary = fullModelId;
+    settings.agents.defaults.model.primary = defaults.model.primary;
     if (Array.isArray(settings.agents.defaults.model.fallbacks)) {
       settings.agents.defaults.model.fallbacks =
         settings.agents.defaults.model.fallbacks.map(repointModelRef);
     }
 
-    // Collect all unique models (default + per-agent)
-    const allModelIds = new Set([model]);
-    Object.values(agentModels).forEach((m) => {
-      if (m) allModelIds.add(m);
-    });
-
-    // Add fresh models to allowlist
-    allModelIds.forEach((m) => {
-      settings.agents.defaults.models[modelRef(m)] = {};
-    });
+    // Add fresh models (default + per-agent) to allowlist
+    Object.assign(settings.agents.defaults.models, defaults.models);
 
     // Remove our model override from each agent in agents.list. The model
     // field may be a plain string or `{ primary, fallbacks }`; legacy fallbacks
@@ -221,31 +213,17 @@ export async function POST(request) {
     // Update models.providers with all models; a legacy entry migrates under
     // ours, keeping its extra fields
     const legacyProvider = takeLegacyEntry(settings.models.providers);
-    settings.models.providers[CLIENT_KEY] = {
-      ...legacyProvider,
-      baseUrl: normalizedBaseUrl,
-      apiKey: apiKey || ACTIVE.defaultApiKey,
-      api: "openai-completions",
-      models: [...allModelIds].map((m) => ({ id: m, name: m.split("/").pop() || m })),
-    };
+    settings.models.providers[CLIENT_KEY] = { ...legacyProvider, ...ownProvider };
 
     // Set per-agent model in agents.list and write models.json
     if (settings.agents.list) {
       settings.agents.list = settings.agents.list.map((agent) => {
-        const agentModel = agentModels[agent.id];
-        if (agentModel) return { ...agent, model: modelRef(agentModel) };
-        return agent;
+        const override = overrides.find((o) => o.id === agent.id);
+        return override ? { ...agent, model: override.model } : agent;
       });
 
       // Write per-agent models.json for agents with agentDir
-      await Promise.all(
-        settings.agents.list.map(async (agent) => {
-          if (!agent.agentDir) return;
-          const agentModel = agentModels[agent.id];
-          const modelToWrite = agentModel || model; // fallback to default
-          await writeAgentModels(agent.agentDir, modelToWrite, normalizedBaseUrl, apiKey);
-        }),
-      );
+      await Promise.all(agentFiles.map((fragment) => writeAgentModels(fragment)));
     }
 
     await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
