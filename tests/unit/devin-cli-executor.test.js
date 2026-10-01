@@ -15,7 +15,7 @@ const { default: DevinCliExecutor } = await import("open-sse/executors/devin-cli
 // Fake devin ACP subprocess. Mirrors the real CLI's session/new validation:
 // it requires `mcpServers` to be an array, otherwise returns -32602 — this is
 // the exact error the dashboard "test" button hit ("Invalid params").
-function makeFakeChild() {
+function makeFakeChild({ reply = "hello world", splitReply = false } = {}) {
   const child = new EventEmitter();
   child.writes = [];
   child.stdin = new EventEmitter();
@@ -41,6 +41,13 @@ function makeFakeChild() {
   };
 
   const send = (obj) => child.stdout.emit("data", Buffer.from(JSON.stringify(obj) + "\n"));
+  // Emit one line as two pipe chunks split inside the reply's first multi-byte char.
+  const sendSplit = (obj) => {
+    const buf = Buffer.from(`${JSON.stringify(obj)}\n`);
+    const at = buf.indexOf(Buffer.from(reply)) + 1;
+    child.stdout.emit("data", buf.subarray(0, at));
+    child.stdout.emit("data", buf.subarray(at));
+  };
 
   function handle(msg) {
     if (msg.method === "initialize") {
@@ -98,14 +105,14 @@ function makeFakeChild() {
             },
           },
         });
-        send({
+        (splitReply ? sendSplit : send)({
           jsonrpc: "2.0",
           method: "session/update",
           params: {
             sessionId: "fake-session",
             update: {
               sessionUpdate: "agent_message_chunk",
-              content: { type: "text", text: "hello world" },
+              content: { type: "text", text: reply },
             },
           },
         });
@@ -132,8 +139,8 @@ function makeFakeChild() {
   return child;
 }
 
-async function runExecute(credentials = {}) {
-  const child = makeFakeChild();
+async function runExecute(credentials = {}, childOpts) {
+  const child = makeFakeChild(childOpts);
   spawnMock.mockImplementation((bin, args, opts) => {
     child.bin = bin;
     child.args = args;
@@ -230,6 +237,12 @@ describe("DevinCliExecutor ACP session/new", () => {
     expect(acc).toContain("finish_reason");
     expect(acc.toLowerCase()).not.toContain("(thinking)");
     expect(acc).toContain("[DONE]");
+  });
+
+  it("keeps a multi-byte character split across stdout chunks intact", async () => {
+    const { acc } = await runExecute({}, { reply: "你好", splitReply: true });
+    expect(acc).toContain("你好");
+    expect(acc).not.toContain("\uFFFD");
   });
 
   it("spawns the default agent (with built-in tools) by default", async () => {
