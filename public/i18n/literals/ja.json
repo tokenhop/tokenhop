@@ -1300,6 +1300,7 @@
   "Period": "期間",
   "Personal access token": "パーソナルアクセストークン",
   "Personal account": "個人アカウント",
+  "Pick a model to see the configuration.": "設定を表示するにはモデルを選択してください。",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "下の一覧からプロバイダーを選び、サインインするかキーを貼り付けてください。接続されるとここに表示されます。",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "プロバイダータブで Devin CLI モデルを任意に選択 — API キー入力欄は不要です。",
   "Pick model for Factory Droid": "Factory Droidのモデルを選択",

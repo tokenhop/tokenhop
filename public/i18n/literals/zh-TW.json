@@ -1299,6 +1299,7 @@
   "Period": "週期",
   "Personal access token": "個人存取權杖",
   "Personal account": "個人帳號",
+  "Pick a model to see the configuration.": "選擇模型以查看設定。",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "在下方選擇供應商，然後登入或貼上金鑰。連線成功後就會顯示在這裡。",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "在 Providers 分頁下選擇任一 Devin CLI 模型 — 不需要填寫 API 金鑰欄位。",
   "Pick model for Factory Droid": "選擇 Factory Droid 的模型",

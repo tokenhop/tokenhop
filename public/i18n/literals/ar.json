@@ -1300,6 +1300,7 @@
   "Period": "الفترة",
   "Personal access token": "رمز الوصول الشخصي",
   "Personal account": "حساب شخصي",
+  "Pick a model to see the configuration.": "اختر نموذجاً لعرض الإعدادات.",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "اختر موفرًا أدناه وسجّل الدخول أو الصق مفتاحًا. سيظهر هنا بمجرد اتصاله.",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "اختر أي نموذج Devin CLI ضمن علامة تبويب المزودين — لا حاجة لحقل مفتاح API.",
   "Pick model for Factory Droid": "اختر نموذج لـ Factory Droid",

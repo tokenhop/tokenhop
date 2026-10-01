@@ -1297,6 +1297,7 @@
   "Period": "Periode",
   "Personal access token": "Personlig tilgangstoken",
   "Personal account": "Personlig konto",
+  "Pick a model to see the configuration.": "Velg en modell for å se konfigurasjonen.",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "Velg en leverandør nedenfor og logg inn eller lim inn en nøkkel. Den vises her når den er tilkoblet.",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "Velg hvilken som helst Devin CLI-modell under Providers-faneen — ikke noe API-nøkkelfelt nødvendig.",
   "Pick model for Factory Droid": "Velg modell for Factory Droid",

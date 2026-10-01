@@ -1293,6 +1293,7 @@
   "Period": "Jakso",
   "Personal access token": "Henkilökohtainen pääsyavain",
   "Personal account": "Henkilökohtainen tili",
+  "Pick a model to see the configuration.": "Valitse malli nähdäksesi kokoonpanon.",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "Valitse palveluntarjoaja alta ja kirjaudu sisään tai liitä avain. Se näkyy täällä, kun yhteys on muodostettu.",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "Valitse mikä tahansa Devin CLI -malli Providers-välilehden alta — API-avainkenttää ei tarvita.",
   "Pick model for Factory Droid": "Valitse malli Factory Droidille",

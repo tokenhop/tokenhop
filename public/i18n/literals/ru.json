@@ -1299,6 +1299,7 @@
   "Period": "Период",
   "Personal access token": "Персональный токен доступа",
   "Personal account": "Личный аккаунт",
+  "Pick a model to see the configuration.": "Выберите модель, чтобы увидеть конфигурацию.",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "Выберите провайдера ниже и войдите или вставьте ключ. После подключения он появится здесь.",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "Выберите любую модель Devin CLI на вкладке Providers — поле для API-ключа не требуется.",
   "Pick model for Factory Droid": "Выберите модель для Factory Droid",

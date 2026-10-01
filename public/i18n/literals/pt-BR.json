@@ -1380,6 +1380,7 @@
   "Permissions": "Permissões",
   "Personal access token": "Token de Acesso Pessoal",
   "Personal account": "Conta pessoal",
+  "Pick a model to see the configuration.": "Escolha um modelo para ver a configuração.",
   "Pick a provider below and sign in or paste a key. It shows up here once it's connected.": "Escolha um provedor abaixo e faça login ou cole uma chave. Ele aparecerá aqui assim que estiver conectado.",
   "Pick any Devin CLI model under the Providers tab — no API key field needed.": "Escolha qualquer modelo do Devin CLI na aba Providers — nenhum campo de chave de API é necessário.",
   "Pick model for Factory Droid": "Escolha modelo para Factory Droid",
