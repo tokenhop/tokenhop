@@ -110,6 +110,7 @@ describe("TTS OpenRouter model and voice parsing (YAN-613)", () => {
     ["openai/gpt-4o-mini-tts", "nova", "openai/gpt-4o-mini-tts", "nova"],
     ["openai/tts-1/shimmer", "nova", "openai/tts-1", "shimmer"],
     ["echo", undefined, "openai/gpt-4o-mini-tts", "echo"],
+    ["openai/gpt-4o-mini-tts/", "nova", "openai/gpt-4o-mini-tts", "nova"],
   ])("%s (body voice %s) -> model %s, voice %s", async (model, voice, wantModel, wantVoice) => {
     expect(await openrouterUpstream(model, voice)).toEqual({ model: wantModel, voice: wantVoice });
   });
