@@ -64,6 +64,15 @@ const BRAND = Object.freeze({
   imageName: "ghcr.io/tokenhop/tokenhop",
   websiteUrl: "https://tokenhop.ai",
   docsUrl: "https://tokenhop.dev",
+  // Brand assets (public/brand/ + cli/src/cli/tray/).
+  wordmark: "tokenhop",
+  favicon: "/brand/favicon.svg",
+  faviconIco: "/brand/favicon.ico",
+  appIcon192: "/brand/icons/icon-192.svg",
+  appIcon512: "/brand/icons/icon-512.svg",
+  trayIconName: "icon-tokenhop",
+  // The mono tray glyph is a true macOS template icon (alpha only).
+  trayIconTemplate: true,
 });
 
 /**
@@ -97,6 +106,16 @@ const LEGACY = Object.freeze({
   repoUrl: "https://github.com/yandy-r/9router",
   imageName: "ghcr.io/yandy-r/9router",
   // No websiteUrl/docsUrl: the 9router site is upstream's service, never ours.
+  // Brand assets keep pointing at the legacy files, which still exist.
+  wordmark: "router",
+  favicon: "/favicon.svg",
+  faviconIco: "/favicon.ico",
+  appIcon192: "/icons/icon-192.svg",
+  appIcon512: "/icons/icon-512.svg",
+  trayIconName: "icon",
+  // The full-color RGBA icon is not a macOS template icon; template mode
+  // would render it as a solid white square (only alpha is used).
+  trayIconTemplate: false,
 });
 
 // The repo and image already moved, and the 9router site is upstream's, so

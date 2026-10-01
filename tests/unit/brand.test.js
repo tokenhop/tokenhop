@@ -41,6 +41,13 @@ const EXPECTED_BRAND = {
   imageName: "ghcr.io/tokenhop/tokenhop",
   websiteUrl: "https://tokenhop.ai",
   docsUrl: "https://tokenhop.dev",
+  wordmark: "tokenhop",
+  favicon: "/brand/favicon.svg",
+  faviconIco: "/brand/favicon.ico",
+  appIcon192: "/brand/icons/icon-192.svg",
+  appIcon512: "/brand/icons/icon-512.svg",
+  trayIconName: "icon-tokenhop",
+  trayIconTemplate: true,
 };
 
 const EXPECTED_LEGACY = {
@@ -69,6 +76,13 @@ const EXPECTED_LEGACY = {
   repoSlug: "yandy-r/9router",
   repoUrl: "https://github.com/yandy-r/9router",
   imageName: "ghcr.io/yandy-r/9router",
+  wordmark: "router",
+  favicon: "/favicon.svg",
+  faviconIco: "/favicon.ico",
+  appIcon192: "/icons/icon-192.svg",
+  appIcon512: "/icons/icon-512.svg",
+  trayIconName: "icon",
+  trayIconTemplate: false,
 };
 
 const BRAND_INDEPENDENT = ["repoSlug", "repoUrl", "imageName", "websiteUrl", "docsUrl"];
@@ -110,7 +124,9 @@ describe("brand constants", () => {
   it("ACTIVE is the primary legacy value per key under the default brand", () => {
     const { ACTIVE, BRAND } = load();
     expect(Object.keys(ACTIVE)).toEqual(Object.keys(BRAND));
-    for (const key of Object.keys(BRAND)) expect(ACTIVE[key], key).toEqual(expect.any(String));
+    for (const key of Object.keys(BRAND)) {
+      expect(typeof ACTIVE[key], key).toBe(typeof BRAND[key]);
+    }
     expect(ACTIVE.name).toBe("9Router");
     expect(ACTIVE.envPrefix).toBe("NINEROUTER_");
     expect(ACTIVE.clientConfigKey).toBe("9router");

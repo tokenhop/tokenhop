@@ -1,0 +1,5 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`brand components > renders the legacy tile at size 36 exactly like the old sidebar markup > brandmark-legacy 1`] = `"<span role="img" aria-label="9Router" class="-rotate-[8deg] flex items-center justify-center bg-coral font-display font-extrabold text-on-coral shadow-card " style="width:36px;height:36px;font-size:22px;border-radius:11px">9</span>"`;
+
+exports[`brand components > renders the tokenhop mark as inline svg > brandmark-tokenhop 1`] = `"<svg role="img" aria-label="tokenhop" viewBox="0 0 64 64" width="36" height="36" class="" focusable="false"><rect width="64" height="64" rx="16" fill="var(--signal-coral)"></rect><path d="M25 11V41.5C25 48.5 28.8 52 35.5 52H40" fill="none" stroke="currentColor" stroke-width="7.5" stroke-linecap="round"></path><path d="M14 26.5C22 18.5 34 18 42 24" fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"></path><path d="M43 29a6.5 6.5 0 1 0 13 0a6.5 6.5 0 1 0-13 0z" fill="currentColor"></path></svg>"`;

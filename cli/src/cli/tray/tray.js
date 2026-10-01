@@ -9,13 +9,24 @@ let trayInstance = null;
 let isWinTray = false;
 
 /**
+ * Icon file for this platform and the active brand. macOS gets the mono
+ * template glyph when the brand ships one (see isTemplateIcon below).
+ */
+function trayIconFile() {
+  const isWin = process.platform === "win32";
+  const isMac = process.platform === "darwin";
+  if (isMac && ACTIVE.trayIconTemplate) {
+    return `${ACTIVE.trayIconName}-template.png`;
+  }
+  return `${ACTIVE.trayIconName}${isWin ? ".ico" : ".png"}`;
+}
+
+/**
  * Get icon base64 from file — used for systray (mac/linux)
  */
 function getIconBase64() {
-  const isWin = process.platform === "win32";
-  const iconFile = isWin ? "icon.ico" : "icon.png";
   try {
-    const iconPath = path.join(__dirname, iconFile);
+    const iconPath = path.join(__dirname, trayIconFile());
     if (fs.existsSync(iconPath)) {
       return fs.readFileSync(iconPath).toString("base64");
     }
@@ -119,7 +130,7 @@ function initWindowsTray(options) {
   const { port } = options;
   try {
     const { initWinTray } = require("./trayWin");
-    const iconPath = path.join(__dirname, "icon.ico");
+    const iconPath = path.join(__dirname, `${ACTIVE.trayIconName}.ico`);
     const autostartEnabled = getAutostartEnabled();
     const items = buildMenuItems(port, autostartEnabled);
 
@@ -211,10 +222,12 @@ function initUnixTray(options) {
 
     const menu = {
       icon: getIconBase64(),
-      // The bundled icon.png is a full-color RGBA logo. Don't mark it as a
-      // template icon: macOS would then render it as a solid white square
-      // because template mode only uses the alpha channel.
-      isTemplateIcon: false,
+      // macOS gets the mono template glyph when the active brand ships one
+      // (alpha-only silhouette, macOS tints it for the menu bar). Otherwise
+      // the icon is a full-color RGBA logo and must not be a template icon:
+      // macOS would render it as a solid white square, since template mode
+      // only uses the alpha channel.
+      isTemplateIcon: process.platform === "darwin" && ACTIVE.trayIconTemplate === true,
       title: "",
       tooltip: `${ACTIVE.name} - Port ${port}`,
       items,

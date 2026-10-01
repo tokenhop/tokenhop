@@ -9,6 +9,7 @@ import "@/shared/services/bootstrap"; // Auto-run initializeApp (watchdog, auto-
 import { initConsoleLogCapture } from "@/lib/consoleLogBuffer";
 import { RuntimeI18nProvider } from "@/i18n/RuntimeI18nProvider";
 import { LOCALES, LOCALE_COOKIE, RTL_LOCALES } from "@/i18n/config";
+import { ACTIVE } from "@/shared/brand";
 
 // Hook console immediately at module load time (server-side only, runs once)
 initConsoleLogCapture();
@@ -46,7 +47,7 @@ export const metadata = {
   description:
     "One endpoint for all your AI providers. Manage keys, monitor usage, and scale effortlessly.",
   icons: {
-    icon: "/favicon.svg",
+    icon: [{ url: ACTIVE.favicon, type: "image/svg+xml" }, { url: ACTIVE.faviconIco }],
   },
 };
 

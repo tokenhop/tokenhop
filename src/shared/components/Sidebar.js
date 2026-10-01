@@ -9,11 +9,12 @@ import SidebarNav from "./SidebarNav";
 import GatewayStatusCard from "./GatewayStatusCard";
 import SidebarUserRow from "./SidebarUserRow";
 import IconButton from "./IconButton";
+import BrandLockup from "./BrandLockup";
 
 /**
  * Signal sidebar per the board: 248px width, panel background, 1px line
  * border. Top to bottom:
- * - Logo: tilted coral "9" tile, "router" wordmark, mono version chip
+ * - Logo: BrandLockup (active brand's mark + wordmark), mono version chip
  * - Gateway status card: pulsing lime dot, online state, port line
  * - Grouped nav with badges via useShellStatus
  * - User row with theme toggle, language modal and logout menu
@@ -50,15 +51,7 @@ export default function Sidebar({ onClose, inDrawer = false }) {
           onClick={onClose}
           className="flex items-center gap-2.5 focus-visible:outline-none focus-visible:shadow-focus"
         >
-          <span
-            className="-rotate-[8deg] flex size-9 items-center justify-center rounded-[11px] bg-coral font-display text-[22px] font-extrabold text-on-coral shadow-card"
-            aria-hidden="true"
-          >
-            9
-          </span>
-          <span className="font-display text-[22px] font-bold tracking-[-0.02em] text-text">
-            router
-          </span>
+          <BrandLockup />
         </Link>
         {chip.label ? (
           <span
