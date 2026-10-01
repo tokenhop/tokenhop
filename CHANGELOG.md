@@ -1,3 +1,33 @@
+# v0.6.0 (2026-10-01)
+
+Groundwork for the tokenhop rebrand (v1.0.0) lands behind the brand switch. Under the default 9router brand, names, paths, env vars, headers and output are unchanged. Includes every fix from v0.5.1–v0.5.4. With this release `release/0.6` becomes the maintenance branch and `release/0.5` is frozen.
+
+## Features
+- **Environment variables**: every product variable can be set with a `TOKENHOP_*` name. The `NINEROUTER_*` / `NINE_ROUTER_*` names keep working, silently, until v2.0.0 (#416).
+- **Brand switch**: a build-time `NEXT_PUBLIC_BRAND` switch (`9router` by default, `tokenhop` for the coming rebrand) with central brand constants and a registry of legacy names (#381, #382).
+- **Rebrand compatibility (tokenhop builds only)**: `~/.tokenhop` data dir with a legacy `~/.9router` fallback and a `data migrate` command; tokenhop wire identifiers (default key, headers, SAML issuer, PID file, storage keys) that still accept the legacy ones; CLI names and autostart entries from the brand, migrating legacy entries (#417, #421, #427). The token-saver opt-out header is accepted as `x-tokenhop-token-saver` on every build.
+
+## Changes
+- **Docker**: `docker-compose.yml` is now `compose.yml`, and its service and container are named `tokenhop`. The data volume keeps its name, `9router-data`, so existing data is reused (#436). If a container from the old file is running, upgrade with `docker compose up -d --remove-orphans`.
+- **Docker**: images are built for the brand their tag targets; v1+ tags build tokenhop, v0.x tags keep the default brand (#430).
+- **Runtime**: one shared data-dir resolver for the app, CLI and MITM (#415).
+- **i18n**: new dashboard strings are translated by a GitHub Actions workflow that opens a bot PR (#389, #390).
+- **CI**: brand-literal guard (`npm run lint:brand`) and a tokenhop-brand CI job, so both brands stay green (#381, #414).
+- **Process**: `RELEASING.md` covers the v1.0.0 transition window for `release/0.6`, and patch releases require no pending backports (#399).
+
+# v0.5.4 (2026-10-01)
+
+Last release of the 0.5 line: with v0.6.0, `release/0.5` is frozen (security fixes only).
+
+## Fixes
+- **Providers**: ClinePass API-key (`clp_…`) connections pass the connection test via `/users/me` instead of "Provider test not supported" (#401, #402).
+- **Quota**: the quota poller probes combo members written as model aliases, and a provider whose accounts are all locked reports the earliest lock's error (#405, #406).
+- **Models**: `/v1/search` and `/v1/web/fetch` accept the `{alias}/search` and `{alias}/fetch` ids `/v1/models/web` advertises, `webFetch` points at `/v1/web/fetch`, and catalog entries carry `created` (#410, #411).
+- **Search**: GLM Coding (Z.ai) web search runs over a proper MCP session instead of failing with HTTP 400 (#412, #413).
+- **Executors**: Qoder streams no longer hang when the first SSE line isn't `data:`, Windsurf gRPC-web trailers-only errors surface as errors instead of empty completions, and Devin keeps multi-byte UTF-8 intact across stdout chunks (#422, #423).
+- **TTS**: `/v1/audio/speech` honours the OpenAI `voice` and `response_format` body fields, and OpenRouter TTS sends `vendor/model` ids as the model rather than the voice (#426, #428, #433, #434).
+- **Kiro**: the CLIProxyAPI JSON import modal closes and refreshes after a successful import (#426, #428).
+
 # v0.5.3 (2026-09-30)
 
 ## Fixes
