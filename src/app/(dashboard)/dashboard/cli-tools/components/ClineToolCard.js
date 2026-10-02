@@ -50,7 +50,27 @@ export default function ClineToolCard({
     () => (status?.installed ? { model: status.settings?.openAiModelId || undefined } : null),
     [status],
   );
-  const setup = useSetupSettings({ toolId: "cline", apiKeys, defaults, disk });
+  const endpointContext = useMemo(
+    () => ({
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      requiresExternalUrl: tool.requiresExternalUrl,
+    }),
+    [
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      tool.requiresExternalUrl,
+    ],
+  );
+  const setup = useSetupSettings({ toolId: "cline", apiKeys, defaults, disk, endpointContext });
 
   const currentBaseUrl = status?.settings?.openAiBaseUrl || "";
 
@@ -168,13 +188,6 @@ export default function ClineToolCard({
           value={setup.endpoint || baseUrl}
           {...setup.pickerProps}
           currentUrl={currentBaseUrl}
-          tunnelEnabled={tunnelEnabled}
-          tunnelPublicUrl={tunnelPublicUrl}
-          tailscaleEnabled={tailscaleEnabled}
-          tailscaleUrl={tailscaleUrl}
-          cloudEnabled={cloudEnabled}
-          cloudUrl={cloudUrl}
-          requiresExternalUrl={tool.requiresExternalUrl}
         />
         {currentBaseUrl && (
           <SetupRow label="Current" hint={currentBaseUrl}>

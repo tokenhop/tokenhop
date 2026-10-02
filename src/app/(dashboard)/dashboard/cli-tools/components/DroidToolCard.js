@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useMemo, useState } from "react";
 import IconButton from "@/shared/components/IconButton";
 import Input from "@/shared/components/Input";
 import {
   useSetupCard,
+  useSetupSettings,
+  asList,
   setupCardPropTypes,
   resolveApiKey,
   manualApiKey,
@@ -28,6 +30,7 @@ const ENDPOINT = "/api/cli-tools/droid-settings";
 /**
  * Factory Droid setup panel: multi-model list (first entry is active).
  * Writes ~/.factory/settings.json via /api/cli-tools/droid-settings.
+ * Fields persist via `useSetupSettings` (saved wins, then on-disk, then defaults).
  */
 export default function DroidToolCard({
   tool,
@@ -45,48 +48,71 @@ export default function DroidToolCard({
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "droid" });
   const platform = useManualPlatform();
   const { status } = card;
-  const [modelList, setModelList] = useState([]);
   const [modelInput, setModelInput] = useState("");
-  const hasInitializedModel = useRef(false);
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !card.selectedApiKey) card.setSelectedApiKey(apiKeys[0].key);
-  }, [apiKeys, card]);
-
-  useEffect(() => {
-    if (status?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const existing = (status.settings?.customModels || [])
-        .filter((m) => isCustomModelId(m.id))
-        .sort((a, b) => (a.index || 0) - (b.index || 0))
-        .map((m) => m.model);
-      if (existing.length > 0) {
-        setModelList(existing);
-      } else {
-        const legacy = status.settings?.customModels?.find(
-          (m) => m.id === `${CUSTOM_MODEL_ID_PREFIX}0`,
-        );
-        if (legacy?.model) setModelList([legacy.model]);
-      }
+  const defaults = useMemo(() => ({ models: [], endpoint: "", apiKeyId: "" }), []);
+  // On the host, the installed config fills values the user hasn't saved yet.
+  const disk = useMemo(() => {
+    if (!status?.installed) return null;
+    const custom = status.settings?.customModels || [];
+    const existing = custom
+      .filter((m) => isCustomModelId(m.id))
+      .sort((a, b) => (a.index || 0) - (b.index || 0))
+      .map((m) => m.model);
+    if (existing.length === 0) {
+      const legacy = custom.find((m) => m.id === `${CUSTOM_MODEL_ID_PREFIX}0`);
+      if (legacy?.model) existing.push(legacy.model);
     }
-  }, [status]);
+    return {
+      models: existing.length ? existing : undefined,
+      apiKeyId: apiKeys.find((k) => k.key === custom.find((m) => isCustomModelId(m.id))?.apiKey)
+        ?.id,
+    };
+  }, [status, apiKeys]);
+  const endpointContext = useMemo(
+    () => ({
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      requiresExternalUrl: tool.requiresExternalUrl,
+    }),
+    [
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      tool.requiresExternalUrl,
+    ],
+  );
+  const setup = useSetupSettings({ toolId: "droid", apiKeys, defaults, disk, endpointContext });
+
+  const models = asList(setup.values.models);
 
   const currentBaseUrl =
     status?.settings?.customModels?.find((m) => isCustomModelId(m.id))?.baseUrl || "";
 
   const getEffectiveBaseUrl = () => {
-    const u = card.customBaseUrl || baseUrl || "http://localhost:20128/v1";
+    const u = setup.endpoint || baseUrl || "http://localhost:20128/v1";
     return u.endsWith("/v1") ? u : `${u}/v1`;
   };
 
   const addModel = () => {
     const val = modelInput.trim();
-    if (!val || modelList.includes(val)) return;
-    setModelList((prev) => [...prev, val]);
+    if (!val || models.includes(val)) return;
+    setup.setField("models", [...models, val]);
     setModelInput("");
   };
 
-  const removeModel = (id) => setModelList((prev) => prev.filter((m) => m !== id));
+  const removeModel = (id) =>
+    setup.setField(
+      "models",
+      models.filter((m) => m !== id),
+    );
 
   const handleApply = async () => {
     card.setApplying(true);
@@ -97,9 +123,9 @@ export default function DroidToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
-          models: modelList,
-          activeModel: modelList[0] || "",
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+          models,
+          activeModel: models[0] || "",
         }),
       });
       const data = await res.json();
@@ -124,8 +150,8 @@ export default function DroidToolCard({
       const res = await fetch(ENDPOINT, { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
+        // Saved card preferences stay; "Reset to defaults" clears those.
         card.setMessage({ type: "success", text: "Settings reset successfully." });
-        setModelList([]);
         card.fetchStatus();
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
@@ -143,9 +169,9 @@ export default function DroidToolCard({
     toManualConfigs(
       buildDroidConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
-        models: modelList,
-        activeModel: modelList[0] || "",
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        models,
+        activeModel: models[0] || "",
         platform,
       }),
     );
@@ -155,7 +181,7 @@ export default function DroidToolCard({
       <SetupScaffold
         tool={tool}
         status={deriveToolStatus(tool, card.status)}
-        checking={card.checking}
+        checking={card.checking || !setup.loaded}
         checkingLabel="Checking Factory Droid CLI..."
         notInstalled={
           !card.checking && status && !status.installed && !status.error ? (
@@ -171,7 +197,7 @@ export default function DroidToolCard({
         }
         message={card.message}
         onApply={handleApply}
-        applyDisabled={modelList.length === 0}
+        applyDisabled={models.length === 0}
         applying={card.applying}
         onReset={handleReset}
         resetDisabled={!status?.hasTokenhop}
@@ -179,18 +205,13 @@ export default function DroidToolCard({
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
         fileHint="~/.factory/settings.json"
+        {...setup.scaffoldProps("~/.factory/settings.json")}
       >
         <EndpointSegmentedPicker
-          value={card.customBaseUrl || baseUrl}
-          onChange={card.setCustomBaseUrl}
+          key={setup.pickerKey}
+          value={setup.endpoint || baseUrl}
+          {...setup.pickerProps}
           currentUrl={currentBaseUrl}
-          tunnelEnabled={tunnelEnabled}
-          tunnelPublicUrl={tunnelPublicUrl}
-          tailscaleEnabled={tailscaleEnabled}
-          tailscaleUrl={tailscaleUrl}
-          cloudEnabled={cloudEnabled}
-          cloudUrl={cloudUrl}
-          requiresExternalUrl={tool.requiresExternalUrl}
         />
         {currentBaseUrl && (
           <SetupRow label="Current" hint={currentBaseUrl}>
@@ -199,18 +220,18 @@ export default function DroidToolCard({
         )}
         <SetupRow label="API key">
           <ApiKeySelect
-            value={card.selectedApiKey}
-            onChange={card.setSelectedApiKey}
+            value={setup.selectedApiKey}
+            onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
           />
         </SetupRow>
-        <SetupRow label={`Models (${modelList.length})`} hint="first entry is active">
+        <SetupRow label={`Models (${models.length})`} hint="first entry is active">
           <div className="flex flex-col gap-1.5">
-            {modelList.length === 0 ? (
+            {models.length === 0 ? (
               <p className="text-xs text-muted">No models added yet.</p>
             ) : (
-              modelList.map((m) => (
+              models.map((m) => (
                 <div
                   key={m}
                   className="flex items-center gap-2 rounded-xl border border-line bg-raised px-3 py-2"
@@ -250,8 +271,8 @@ export default function DroidToolCard({
           isOpen={card.modalOpen}
           onClose={() => card.setModalOpen(false)}
           onSelect={(m) => {
-            if (m.value && !modelList.includes(m.value)) {
-              setModelList((prev) => [...prev, m.value]);
+            if (m.value && !models.includes(m.value)) {
+              setup.setField("models", [...models, m.value]);
             }
             card.setModalOpen(false);
           }}

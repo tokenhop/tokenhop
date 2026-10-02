@@ -38,7 +38,12 @@ describe("/api/cli-tool-settings/[toolId]", () => {
   });
 
   it("PUT then GET roundtrip, GET all, DELETE clears", async () => {
-    const settings = { endpoint: "http://x", oneMContext: true, models: { opus: "a/b" } };
+    const settings = {
+      endpoint: "http://x",
+      oneMContext: true,
+      models: { opus: "a/b" },
+      list: ["a"],
+    };
     const saved = await put("claude", settings);
     expect(saved.status).toBe(200);
     expect(await saved.json()).toEqual({ settings });
@@ -58,7 +63,8 @@ describe("/api/cli-tool-settings/[toolId]", () => {
       "null",
       '"s"',
       JSON.stringify({ models: { opus: { deep: "x" } } }),
-      JSON.stringify({ list: ["a"] }),
+      JSON.stringify({ list: [["a"]] }),
+      JSON.stringify({ list: [{ a: 1 }] }),
       JSON.stringify({ endpoint: "x".repeat(2049) }),
       '{"__proto__":{"a":1}}',
     ];
@@ -154,6 +160,12 @@ describe("toolSettings helpers", () => {
         },
       ),
     ).toEqual(["endpoint"]);
+  });
+
+  it("diffFromDisk ignores map key order", () => {
+    expect(diffFromDisk({ agents: { a: "x", b: "y" } }, { agents: { b: "y", a: "x" } })).toEqual(
+      [],
+    );
   });
 
   it("diffFromDisk returns [] when disk is null", () => {

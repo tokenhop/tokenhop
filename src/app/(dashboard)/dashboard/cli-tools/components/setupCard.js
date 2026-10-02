@@ -10,7 +10,7 @@ import SetupScaffold, { NotInstalledBlock, SetupRow, SingleModelRow } from "./Se
 import { rememberEndpoint } from "./cliEndpointPresets";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { deriveToolStatus } from "../lib/toolStatus";
-import { useSetupSettings } from "../hooks/useSetupSettings";
+import { asList, asMap, savedEndpointUrl, useSetupSettings } from "../hooks/useSetupSettings";
 import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 
@@ -148,6 +148,9 @@ export {
 
 export {
   useSetupSettings,
+  asList,
+  asMap,
+  savedEndpointUrl,
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,

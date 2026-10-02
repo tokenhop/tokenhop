@@ -53,7 +53,27 @@ export default function JcodeToolCard({
       apiKeyId: apiKeys.find((k) => k.key === status.envApiKey)?.id,
     };
   }, [status, apiKeys]);
-  const setup = useSetupSettings({ toolId: "jcode", apiKeys, defaults, disk });
+  const endpointContext = useMemo(
+    () => ({
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      requiresExternalUrl: tool.requiresExternalUrl,
+    }),
+    [
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      tool.requiresExternalUrl,
+    ],
+  );
+  const setup = useSetupSettings({ toolId: "jcode", apiKeys, defaults, disk, endpointContext });
 
   const currentBaseUrl = findClientEntry(status?.config?.providers)?.base_url || "";
 
@@ -160,13 +180,6 @@ export default function JcodeToolCard({
           value={setup.endpoint || baseUrl}
           {...setup.pickerProps}
           currentUrl={currentBaseUrl}
-          tunnelEnabled={tunnelEnabled}
-          tunnelPublicUrl={tunnelPublicUrl}
-          tailscaleEnabled={tailscaleEnabled}
-          tailscaleUrl={tailscaleUrl}
-          cloudEnabled={cloudEnabled}
-          cloudUrl={cloudUrl}
-          requiresExternalUrl={tool.requiresExternalUrl}
         />
         {currentBaseUrl && (
           <SetupRow label="Current" hint={currentBaseUrl}>

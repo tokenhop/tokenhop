@@ -62,7 +62,33 @@ export default function DeepSeekTuiToolCard({
         : null,
     [status, apiKeys],
   );
-  const setup = useSetupSettings({ toolId: "deepseek-tui", apiKeys, defaults, disk });
+  const endpointContext = useMemo(
+    () => ({
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      requiresExternalUrl: tool.requiresExternalUrl,
+    }),
+    [
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      tool.requiresExternalUrl,
+    ],
+  );
+  const setup = useSetupSettings({
+    toolId: "deepseek-tui",
+    apiKeys,
+    defaults,
+    disk,
+    endpointContext,
+  });
 
   const currentBaseUrl = status?.settings?.["providers.openai"]?.base_url || "";
 
@@ -169,13 +195,6 @@ export default function DeepSeekTuiToolCard({
           value={setup.endpoint || baseUrl}
           {...setup.pickerProps}
           currentUrl={currentBaseUrl}
-          tunnelEnabled={tunnelEnabled}
-          tunnelPublicUrl={tunnelPublicUrl}
-          tailscaleEnabled={tailscaleEnabled}
-          tailscaleUrl={tailscaleUrl}
-          cloudEnabled={cloudEnabled}
-          cloudUrl={cloudUrl}
-          requiresExternalUrl={tool.requiresExternalUrl}
         />
         {currentBaseUrl && (
           <SetupRow label="Current" hint={currentBaseUrl}>

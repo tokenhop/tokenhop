@@ -12,7 +12,7 @@ import ApiKeySelect from "./ApiKeySelect";
 import EndpointSegmentedPicker from "./EndpointSegmentedPicker";
 import SetupScaffold, { NotInstalledBlock, ModelRow } from "./SetupScaffold";
 import { buildClaudeConfig } from "@/lib/cliToolConfigs/claude";
-import { resolveApiKey, manualApiKey, toManualConfigs } from "./setupCard";
+import { resolveApiKey, manualApiKey, toManualConfigs, savedEndpointUrl } from "./setupCard";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import { deriveToolStatus } from "../lib/toolStatus";
 import { useToolSettings } from "../hooks/useToolSettings";
@@ -130,6 +130,28 @@ export default function ClaudeToolCard({
   }, [claudeStatus, tool.defaultModels, apiKeys]);
 
   const [values, setField, settings] = useToolSettings("claude", defaults, disk);
+  const endpointContext = useMemo(
+    () => ({
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      requiresExternalUrl: tool.requiresExternalUrl,
+    }),
+    [
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      tool.requiresExternalUrl,
+    ],
+  );
+  // A saved endpoint follows its option's current URL (YAN-647).
+  const savedEndpoint = savedEndpointUrl(values, endpointContext);
   const { models: modelMappings, autoCompactWindow, oneMContext, exaMcpEnabled } = values;
   const diskToken = claudeStatus?.installed
     ? claudeStatus.settings?.env?.ANTHROPIC_AUTH_TOKEN || ""
@@ -149,7 +171,7 @@ export default function ClaudeToolCard({
 
   const handleEndpointChange = (url, meta) => {
     if (meta?.init) setInitUrl(url);
-    else setField("endpoint", url);
+    else settings.setFields({ endpoint: url, endpointId: meta?.id });
   };
 
   const handleResetDefaults = async () => {
@@ -161,6 +183,8 @@ export default function ClaudeToolCard({
 
   const handleLoadFromFile = () => {
     settings.loadFromDisk();
+    // The saved endpoint id would keep winning over the file URL, so clear it.
+    if (values.endpointId) settings.setFields({ endpointId: undefined });
     setCustomKey(null);
     setPickerKey((k) => k + 1);
   };
@@ -203,7 +227,7 @@ export default function ClaudeToolCard({
   };
 
   const getEffectiveBaseUrl = () => {
-    const u = values.endpoint || initUrl || baseUrl || "http://localhost:20128/v1";
+    const u = savedEndpoint || initUrl || baseUrl || "http://localhost:20128/v1";
     return u.endsWith("/v1") ? u : `${u}/v1`;
   };
 
@@ -316,8 +340,8 @@ export default function ClaudeToolCard({
       >
         <EndpointSegmentedPicker
           key={pickerKey}
-          value={values.endpoint || initUrl || baseUrl}
-          savedUrl={values.endpoint}
+          value={savedEndpoint || initUrl || baseUrl}
+          savedUrl={savedEndpoint}
           onChange={handleEndpointChange}
           requiresExternalUrl={tool.requiresExternalUrl}
           tunnelEnabled={tunnelEnabled}

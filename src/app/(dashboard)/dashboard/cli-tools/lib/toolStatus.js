@@ -156,6 +156,15 @@ export function buildEndpointOptions({
 export const ENDPOINT_CUSTOM_VALUE = CUSTOM_VALUE;
 
 /**
+ * URL for a saved endpoint: a built-in or preset id follows that option's current URL;
+ * Custom, a legacy row (URL only) or an option that's gone keeps the saved URL.
+ */
+export function resolveSavedEndpoint({ endpoint = "", endpointId = "" } = {}, ctx = {}) {
+  if (!endpointId) return endpoint;
+  return buildEndpointOptions(ctx).find((o) => o.value === endpointId)?.url || endpoint;
+}
+
+/**
  * Monogram tile for a CLI tool. Colors come from the CLI_TOOLS defs (the
  * single constants map for tool brands); unknown tools get the dark fallback.
  *
