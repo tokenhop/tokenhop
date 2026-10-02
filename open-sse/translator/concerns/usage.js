@@ -122,3 +122,26 @@ export function toOpenAIUsage(raw, kind) {
   if (!extract || !raw || typeof raw !== "object") return null;
   return buildUsage(extract(raw));
 }
+
+// Chat Completions usage → Responses API usage. Shared by the non-stream pivot
+// (handlers/chatCore/completionToClient.js) and the streaming Chat→Responses
+// translator (response/openai-responses.js). Detail blocks are omitted when
+// zero, matching buildUsage(). Top-level cached_tokens/reasoning_tokens are
+// accepted as fallbacks: stream.js merges usage into state.usage in the
+// canonical shape, which hoists them out of the nested detail blocks.
+export function toResponsesUsage(usage = {}) {
+  const input = usage.prompt_tokens || usage.input_tokens || 0;
+  const output = usage.completion_tokens || usage.output_tokens || 0;
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens || usage.cached_tokens || 0;
+  const reasoningTokens =
+    usage.completion_tokens_details?.reasoning_tokens || usage.reasoning_tokens || 0;
+  return {
+    input_tokens: input,
+    output_tokens: output,
+    total_tokens: usage.total_tokens || input + output,
+    ...(cachedTokens > 0 ? { input_tokens_details: { cached_tokens: cachedTokens } } : {}),
+    ...(reasoningTokens > 0
+      ? { output_tokens_details: { reasoning_tokens: reasoningTokens } }
+      : {}),
+  };
+}
