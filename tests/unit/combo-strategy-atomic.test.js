@@ -266,4 +266,24 @@ describe("PATCH /api/settings comboStrategyPatch after rename", () => {
       m: 1,
     });
   });
+
+  it("keeps an explicit Fallback choice instead of inheriting the global strategy (YAN-679)", async () => {
+    await comboPost("explicitFallbackCombo");
+    const res = await settingsPatch({
+      comboStrategyPatch: {
+        name: "explicitFallbackCombo",
+        patch: { fallbackStrategy: "fallback" },
+      },
+    });
+    expect(res.status).toBe(200);
+    const stored = (await sqliteDb.getSettings()).comboStrategies.explicitFallbackCombo;
+    expect(stored?.fallbackStrategy).toBe("fallback");
+    const { resolveComboStrategy } = await import("open-sse/services/comboStrategy.js");
+    expect(
+      resolveComboStrategy(
+        { comboStrategy: "round-robin", comboStrategies: { explicitFallbackCombo: stored } },
+        "explicitFallbackCombo",
+      ).strategy,
+    ).toBe("fallback");
+  });
 });
