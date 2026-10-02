@@ -21,7 +21,7 @@ export const manualApiKey = (selectedApiKey, apiKeys, cloudEnabled) =>
 /**
  * A builder fragment: `{ file, format: "json" | "toml" | "text", merge: boolean, value }`; merge
  * means "merge into the existing file", otherwise the fragment replaces it.
- * Optional `note` (manual instruction) and `mode: "create"` (create only if
+ * An optional note (manual instruction) and mode "create-file" (create only if
  * missing) only change what the manual setup dialog says.
  * `value` is an object for json/toml and a string for text; it is exactly what
  * Apply writes to `file` when the file does not exist yet.
@@ -49,7 +49,7 @@ export const toManualConfigs = (fragments) =>
   (fragments || []).map((fragment) => ({
     file: fragment.file,
     format: formatLabel(fragment),
-    mode: fragment.mode || (fragment.merge ? "merge" : "replace"),
+    mode: fragment.mode || (fragment.merge ? "merge-keys" : "replace-file"),
     note: fragment.note || "",
     content: renderFragment(fragment),
   }));

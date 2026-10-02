@@ -66,10 +66,10 @@ function FilePanel({ config, path, copyState, idPrefix }) {
           <Badge variant="neutral" size="sm">
             {config.format}
           </Badge>
-          <Badge variant={config.mode === "replace" ? "warn" : "info"} size="sm">
-            {config.mode === "merge" ? (
+          <Badge variant={config.mode === "replace-file" ? "warn" : "info"} size="sm">
+            {config.mode === "merge-keys" ? (
               <>Merge</>
-            ) : config.mode === "create" ? (
+            ) : config.mode === "create-file" ? (
               <>Create</>
             ) : (
               <>Replace</>
@@ -78,7 +78,7 @@ function FilePanel({ config, path, copyState, idPrefix }) {
         </div>
         <p className="text-[13px] text-muted">
           {config.note ||
-            (config.mode === "merge" ? (
+            (config.mode === "merge-keys" ? (
               <>Merge these keys into the existing file. Keep everything else.</>
             ) : (
               <>Replace the file with this content, or create it.</>
@@ -178,7 +178,7 @@ export default function ManualConfigModal({
 const configShape = PropTypes.shape({
   file: PropTypes.string.isRequired,
   format: PropTypes.string,
-  mode: PropTypes.oneOf(["merge", "replace", "create"]),
+  mode: PropTypes.oneOf(["merge-keys", "replace-file", "create-file"]),
   note: PropTypes.string,
   content: PropTypes.string.isRequired,
 });

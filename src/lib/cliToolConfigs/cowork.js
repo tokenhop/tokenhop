@@ -86,7 +86,7 @@ export const buildCoworkConfig = ({
       file: [root, "configLibrary", "_meta.json"].join(sep),
       format: "json",
       merge: false,
-      mode: "create",
+      mode: "create-file",
       note: "Create the file if it is missing. If it exists, keep its appliedId.",
       value: coworkMeta(appliedId),
     },

@@ -32,7 +32,7 @@ describe("manual setup dialog helpers (YAN-621)", () => {
     expect(config).toEqual({
       file: "~/a.json",
       format: "JSON",
-      mode: "merge",
+      mode: "merge-keys",
       note: "N",
       content: '{\n  "a": 1\n}',
     });
