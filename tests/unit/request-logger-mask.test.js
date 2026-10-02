@@ -12,6 +12,9 @@ describe("maskSensitiveHeaders (YAN-650)", () => {
       "Set-Cookie": "session=deadbeefdeadbeefdeadbeefdeadbeef",
       "x-client-token": "tiny-token",
       "X-Shared-Secret": "topsecretvalue1234567890123",
+      "X-Model-Key": "qoder-model-key-1234567890abcdef",
+      "x-iflow-signature": "sig-1234567890abcdef1234",
+      "chatgpt-account-id": "acct-1234",
       "Content-Type": "application/json",
     };
     const snapshot = { ...headers };
@@ -27,6 +30,9 @@ describe("maskSensitiveHeaders (YAN-650)", () => {
     expect(masked["Set-Cookie"]).not.toContain("deadbeef");
     expect(masked["x-client-token"]).toBe("***"); // "token" substring match
     expect(masked["X-Shared-Secret"]).not.toContain("topsecret");
+    expect(masked["X-Model-Key"]).not.toContain("qoder-model-key");
+    expect(masked["x-iflow-signature"]).toBe("sig-...1234");
+    expect(masked["chatgpt-account-id"]).toBe("***");
     expect(masked["Content-Type"]).toBe("application/json");
     expect(maskSensitiveHeaders(null)).toEqual({});
 

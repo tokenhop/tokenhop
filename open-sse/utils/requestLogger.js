@@ -105,12 +105,19 @@ const SENSITIVE_EXACT_HEADERS = new Set([
   "x-goog-api-key",
   "cookie",
   "set-cookie",
+  "chatgpt-account-id",
 ]);
 
 function isSensitiveHeader(name) {
   const lower = name.toLowerCase();
   if (SENSITIVE_EXACT_HEADERS.has(lower)) return true;
-  return lower.includes("token") || lower.includes("secret") || lower.includes("api-key");
+  return (
+    lower.includes("token") ||
+    lower.includes("secret") ||
+    lower.includes("api-key") ||
+    lower.endsWith("-key") || // e.g. qoder X-Model-Key
+    lower.includes("signature") // e.g. x-iflow-signature
+  );
 }
 
 // Reveal 4+4 chars only when the value is long enough (>= 24) that the
