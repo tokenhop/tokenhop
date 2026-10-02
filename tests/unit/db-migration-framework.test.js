@@ -148,12 +148,13 @@ for (const [driver, available, file, factory] of ADAPTERS) {
     });
 
     it("an up-to-date DB takes no backup", async () => {
-      const { runMigrationOnce } = await import("@/lib/db/migrate.js");
+      const { runMigrationOnce, runVersionedMigrations } = await import("@/lib/db/migrate.js");
       const { BACKUPS_DIR } = await import("@/lib/db/paths.js");
-      fs.rmSync(BACKUPS_DIR, { recursive: true, force: true });
 
       const db = await open();
       db.exec(FIXTURE);
+      runVersionedMigrations(db);
+      fs.rmSync(BACKUPS_DIR, { recursive: true, force: true });
       await runMigrationOnce(db);
       expect(fs.existsSync(BACKUPS_DIR) ? fs.readdirSync(BACKUPS_DIR) : []).toEqual([]);
     });

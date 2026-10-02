@@ -366,7 +366,7 @@ Deployment paths:
 ### Persistence
 
 - `src/lib/db/`: SQLite adapter chain (`driver.js`), schema/migrations (`schema.js`, `migrations/`), repos (`repos/*`)
-- `src/lib/db/index.js`: public barrel over repos (settings, connections, nodes, pools, keys, combos, aliases, pricing, disabled models, usage, request details)
+- `src/lib/db/index.js`: public barrel over repos (settings, connections, nodes, pools, keys, combos, aliases, pricing, disabled models, usage, request details, and the users & teams identity/tenancy repos — users, identities, workspaces, memberships — which take a `Principal` from `src/lib/users/principal.js` and are unused until the multi-user switch is on)
 - `src/lib/localDb.js`, `src/lib/usageDb.js`: backward-compat re-export shims — import from `@/lib/db/index.js` in new code
 
 ### Dashboard UI
