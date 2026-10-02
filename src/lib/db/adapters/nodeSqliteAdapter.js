@@ -1,6 +1,7 @@
 // Built-in node:sqlite adapter — available in Node >= 22.5.0.
 // No native build, no npm install. API mirrors betterSqliteAdapter.
 import { PRAGMA_SQL } from "../schema.js";
+import { runShutdownFlushers } from "../shutdownFlushers.js";
 
 const CHECKPOINT_INTERVAL_MS = 60 * 1000;
 
@@ -55,7 +56,10 @@ export async function createNodeSqliteAdapter(filePath) {
       db.close();
     } catch {}
   }
-  const onShutdown = () => gracefulClose();
+  const onShutdown = () => {
+    runShutdownFlushers();
+    gracefulClose();
+  };
   process.once("beforeExit", onShutdown);
   process.once("SIGINT", () => {
     onShutdown();
