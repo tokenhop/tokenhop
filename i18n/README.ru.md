@@ -121,7 +121,7 @@ URL по умолчанию:
 
 ### 📺 Полное руководство по настройке - tokenhop + Claude Code БЕСПЛАТНО
 
-[![Настройка tokenhop + Claude Code](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
+[![Настройка 9Router + Claude Code](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
 
 **🎬 Полное пошаговое руководство:**
 

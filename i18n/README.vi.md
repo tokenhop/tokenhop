@@ -120,7 +120,7 @@ URL mặc định:
 
 ### 📺 Hướng dẫn thiết lập hoàn chỉnh - tokenhop + Claude Code MIỄN PHÍ
 
-[![Thiết lập tokenhop + Claude Code](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
+[![Thiết lập 9Router + Claude Code](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
 
 **🎬 Xem hướng dẫn từng đầy đủ:**
 

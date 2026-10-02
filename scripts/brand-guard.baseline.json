@@ -290,6 +290,5 @@
   "tests/unit/usage-live-stream.test.js": 1,
   "tests/unit/usage-trends.test.js": 1,
   "tests/unit/weighted-account-overrides.test.js": 1,
-  "tests/unit/zed-completions-wire.test.js": 1,
-  "i18n/README.vi.md": 1
+  "tests/unit/zed-completions-wire.test.js": 1
 }
