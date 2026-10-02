@@ -24,13 +24,22 @@ export async function OPTIONS() {
 export async function POST(request) {
   await ensureInitialized();
 
-  const clonedReq = request.clone();
   let modelName = "llama3.2";
+  let upstream = request;
   try {
-    const body = await clonedReq.json();
+    const body = await request.clone().json();
     modelName = body.model || "llama3.2";
+    // Ollama's API streams by default; the shared chat path now defaults a
+    // missing field to false, so make the Ollama default explicit.
+    if (body && typeof body === "object" && body.stream === undefined) {
+      upstream = new Request(request.url, {
+        method: "POST",
+        headers: request.headers,
+        body: JSON.stringify({ ...body, stream: true }),
+      });
+    }
   } catch {}
 
-  const response = await handleChat(request);
+  const response = await handleChat(upstream);
   return transformToOllama(response, modelName);
 }
