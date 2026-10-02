@@ -18,8 +18,8 @@ const LOCAL_ONLY = Symbol("localOnly");
 
 /**
  * Shared hook for the panel-style setup cards. Owns status fetching,
- * busy/message state, the selected API key default and the custom endpoint
- * draft. Per-tool cards own their model state and POST bodies.
+ * busy/message state and model aliases. Per-tool cards own their model
+ * state, persisted fields (`useSetupSettings`) and POST bodies.
  */
 export function useSetupCard({
   statusUrl,
@@ -35,8 +35,6 @@ export function useSetupCard({
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
-  const [customBaseUrl, setCustomBaseUrl] = useState("");
-  const [selectedApiKey, setSelectedApiKey] = useState("");
   const [modelAliases, setModelAliases] = useState({});
 
   // Callback-ref pattern: the page re-renders (and passes a new callback
@@ -115,10 +113,6 @@ export function useSetupCard({
     setModalOpen,
     showManualModal,
     setShowManualModal,
-    customBaseUrl,
-    setCustomBaseUrl,
-    selectedApiKey,
-    setSelectedApiKey,
     modelAliases,
   };
 }

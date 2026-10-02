@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { readPresets } from "../components/cliEndpointPresets";
+import { useState, useSyncExternalStore } from "react";
+import { readPresets, readKeyPresets, subscribeKeyPresets } from "../components/cliEndpointPresets";
 import { resolveSavedEndpoint } from "../lib/toolStatus";
 import { useToolSettings } from "./useToolSettings";
 
 // The API accepts nested objects and arrays; these cards only read strings.
 const str = (v) => (typeof v === "string" ? v : "");
+// Stable snapshot for useSyncExternalStore's SSR fallback.
+const EMPTY = [];
 
 /**
  * Saved endpoint resolved against the live options (also used by the Claude card).
@@ -49,19 +51,32 @@ export function useSetupSettings({
 }) {
   const [values, setField, settings] = useToolSettings(toolId, defaults, disk);
   const [initUrl, setInitUrl] = useState("");
-  // ponytail: typed keys stay in memory only (no raw secrets in the DB); YAN-642.
+  // ponytail: only typed, unsaved keys stay in memory; saved picks persist by
+  // apiKeyId (dashboard key) or apiKeyPreset (raw key preset, YAN-642).
   const [customKey, setCustomKey] = useState(null);
   const [pickerKey, setPickerKey] = useState(0);
+  const keyPresets = useSyncExternalStore(subscribeKeyPresets, readKeyPresets, () => EMPTY);
 
   // A deleted key's id matches nothing and falls back to the first key.
   const selectedApiKey =
-    customKey ?? (apiKeys.find((k) => k.id === values.apiKeyId)?.key || apiKeys[0]?.key || "");
+    customKey ??
+    (apiKeys.find((k) => k.id === values.apiKeyId)?.key ||
+      keyPresets.find((p) => p.name === values.apiKeyPreset)?.key ||
+      apiKeys[0]?.key ||
+      "");
 
   const onApiKeyChange = (key) => {
     const match = apiKeys.find((k) => k.key === key);
-    if (!match) return setCustomKey(key);
-    setCustomKey(null);
-    setField("apiKeyId", match.id);
+    if (match) {
+      setCustomKey(null);
+      return settings.setFields({ apiKeyId: match.id, apiKeyPreset: undefined });
+    }
+    const preset = keyPresets.find((p) => p.key === key);
+    if (preset) {
+      setCustomKey(null);
+      return settings.setFields({ apiKeyPreset: preset.name, apiKeyId: undefined });
+    }
+    setCustomKey(key);
   };
 
   const onEndpointChange = (url, meta) => {

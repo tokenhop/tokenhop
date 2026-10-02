@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let slots;
 let index;
+let keyPresets;
 vi.mock("react", () => ({
   useState(initial) {
     const slot = index++;
     slots[slot] ??= { value: initial };
     return [slots[slot].value, (v) => (slots[slot].value = v)];
   },
+  useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
 }));
 
 const setField = vi.fn();
@@ -29,6 +31,12 @@ vi.mock("../../src/app/(dashboard)/dashboard/cli-tools/hooks/useToolSettings.js"
   ],
 }));
 
+vi.mock("../../src/app/(dashboard)/dashboard/cli-tools/components/cliEndpointPresets.js", () => ({
+  readPresets: () => [],
+  readKeyPresets: () => keyPresets,
+  subscribeKeyPresets: () => () => {},
+}));
+
 import { useSetupSettings } from "../../src/app/(dashboard)/dashboard/cli-tools/hooks/useSetupSettings.js";
 
 const apiKeys = [
@@ -43,6 +51,7 @@ const render = (endpointContext) => {
 beforeEach(() => {
   slots = [];
   saved = {};
+  keyPresets = [];
   setField.mockClear();
   setFields.mockClear();
 });
@@ -50,12 +59,21 @@ beforeEach(() => {
 describe("useSetupSettings", () => {
   it("saves a known key by id and keeps a typed raw key out of the DB", () => {
     render().onApiKeyChange("sk-b");
-    expect(setField).toHaveBeenCalledWith("apiKeyId", "b");
+    expect(setFields).toHaveBeenCalledWith({ apiKeyId: "b", apiKeyPreset: undefined });
 
-    setField.mockClear();
+    setFields.mockClear();
     render().onApiKeyChange("sk-typed-secret");
-    expect(setField).not.toHaveBeenCalled();
+    expect(setFields).not.toHaveBeenCalled();
     expect(render().selectedApiKey).toBe("sk-typed-secret");
+  });
+
+  it("saves a picked key preset by name and resolves it later", () => {
+    keyPresets.push({ name: "mine", key: "sk-preset" });
+    render().onApiKeyChange("sk-preset");
+    expect(setFields).toHaveBeenCalledWith({ apiKeyPreset: "mine", apiKeyId: undefined });
+
+    saved = { apiKeyPreset: "mine" };
+    expect(render().selectedApiKey).toBe("sk-preset");
   });
 
   it("resolves the saved key id, falling back to the first key when it's gone", () => {

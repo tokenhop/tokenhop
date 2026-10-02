@@ -49,7 +49,7 @@ export async function PUT(request, { params }) {
       return NextResponse.json(
         {
           error:
-            "Settings must be a JSON object of strings, numbers, booleans, arrays of them, or one nested level of them",
+            "Settings must be a JSON object of strings, numbers, booleans, arrays of them or of flat objects, or one nested level of them",
         },
         { status: 400 },
       );

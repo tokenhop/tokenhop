@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Callout from "@/shared/components/Callout";
 import CopyField from "@/shared/components/CopyField";
 import IconButton from "@/shared/components/IconButton";
@@ -9,7 +9,9 @@ import ModelSelectModal from "@/shared/components/ModelSelectModal";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import CopyStatus from "@/shared/components/CopyStatus";
 import ApiKeySelect from "./ApiKeySelect";
+import EndpointSegmentedPicker from "./EndpointSegmentedPicker";
 import SetupScaffold, { SingleModelRow } from "./SetupScaffold";
+import { useSetupSettings } from "../hooks/useSetupSettings";
 import { getToolBrand } from "../lib/toolStatus";
 import { ACTIVE } from "@/shared/brand";
 import { API_KEY_PLACEHOLDER } from "@/lib/cliToolConfigs/shared";
@@ -20,7 +22,8 @@ const NOTE_VARIANT = { warning: "warn", cloudCheck: "err", info: "info" };
  * Guide-style setup panel for tools without a config-file writer
  * (Cursor, Roo, Continue, Amp, Qwen, Devin, OpenDesign, ...).
  * Renders the tool's guideSteps with the Signal primitives; var templates
- * ({{baseUrl}}, {{apiKey}}, {{model}}) resolve exactly as before.
+ * ({{baseUrl}}, {{apiKey}}, {{model}}) resolve exactly as before. Model,
+ * endpoint and API key persist via useSetupSettings (no disk).
  */
 export default function DefaultToolCard({
   toolId,
@@ -29,24 +32,55 @@ export default function DefaultToolCard({
   apiKeys = [],
   activeProviders = [],
   cloudEnabled = false,
+  cloudUrl = "",
   tunnelEnabled = false,
+  tunnelPublicUrl = "",
+  tailscaleEnabled = false,
+  tailscaleUrl = "",
 }) {
-  const [modelValue, setModelValue] = useState("");
   const [showModelModal, setShowModelModal] = useState(false);
-  const [selectedApiKey, setSelectedApiKey] = useState(() =>
-    apiKeys?.length > 0 ? apiKeys[0].key : "",
-  );
   const { copied, error, copy } = useCopyToClipboard();
+
+  const defaults = useMemo(
+    () => ({ model: tool.defaultModels?.[0]?.defaultValue || "", endpoint: "", apiKeyId: "" }),
+    [tool.defaultModels],
+  );
+  const endpointContext = useMemo(
+    () => ({
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      requiresExternalUrl: tool.requiresExternalUrl,
+    }),
+    [
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      tool.requiresExternalUrl,
+    ],
+  );
+  const setup = useSetupSettings({ toolId, apiKeys, defaults, endpointContext });
+
+  // The endpoint is only editable when the guide text actually uses {{baseUrl}}.
+  const usesBaseUrl =
+    tool.codeBlock?.code?.includes("{{baseUrl}}") ||
+    (tool.guideSteps || []).some((s) => s.value?.includes("{{baseUrl}}"));
 
   const replaceVars = (text) => {
     const keyToUse =
-      selectedApiKey?.trim() || (!cloudEnabled ? ACTIVE.defaultApiKey : API_KEY_PLACEHOLDER);
-    const normalized = baseUrl || "http://localhost:20128";
+      setup.selectedApiKey?.trim() || (!cloudEnabled ? ACTIVE.defaultApiKey : API_KEY_PLACEHOLDER);
+    const normalized = setup.endpoint || baseUrl || "http://localhost:20128";
     const withV1 = normalized.endsWith("/v1") ? normalized : `${normalized}/v1`;
     return String(text)
       .replace(/\{\{baseUrl\}\}/g, withV1)
       .replace(/\{\{apiKey\}\}/g, keyToUse)
-      .replace(/\{\{model\}\}/g, modelValue || "provider/model-id");
+      .replace(/\{\{model\}\}/g, setup.model || "provider/model-id");
   };
 
   const canShowGuide = () => {
@@ -62,12 +96,20 @@ export default function DefaultToolCard({
   );
 
   return (
-    <SetupScaffold tool={tool} hideActions fileHint="">
+    <SetupScaffold tool={tool} hideActions checking={!setup.loaded} {...setup.scaffoldProps("")}>
       {notes.map((note) => (
         <Callout key={`${note.type}-${note.text}`} variant={NOTE_VARIANT[note.type] || "info"}>
           {note.text}
         </Callout>
       ))}
+
+      {usesBaseUrl && (
+        <EndpointSegmentedPicker
+          key={setup.pickerKey}
+          value={setup.endpoint || baseUrl}
+          {...setup.pickerProps}
+        />
+      )}
 
       {!tool.guideSteps ? (
         <p className="text-sm text-muted">Coming soon...</p>
@@ -88,16 +130,16 @@ export default function DefaultToolCard({
                   {item.desc && <p className="text-[13px] text-muted">{item.desc}</p>}
                   {item.type === "apiKeySelector" && (
                     <ApiKeySelect
-                      value={selectedApiKey}
-                      onChange={setSelectedApiKey}
+                      value={setup.selectedApiKey}
+                      onChange={setup.onApiKeyChange}
                       apiKeys={apiKeys}
                       cloudEnabled={cloudEnabled}
                     />
                   )}
                   {item.type === "modelSelector" && (
                     <SingleModelRow
-                      value={modelValue}
-                      onChange={setModelValue}
+                      value={setup.model}
+                      onChange={setup.setModel}
                       onPick={() => setShowModelModal(true)}
                       pickDisabled={activeProviders.length === 0}
                     />
@@ -156,10 +198,10 @@ export default function DefaultToolCard({
           isOpen={showModelModal}
           onClose={() => setShowModelModal(false)}
           onSelect={(m) => {
-            setModelValue(m.value);
+            setup.setModel(m.value);
             setShowModelModal(false);
           }}
-          selectedModel={modelValue}
+          selectedModel={setup.model}
           activeProviders={activeProviders}
           title="Select model"
         />
@@ -176,6 +218,7 @@ DefaultToolCard.propTypes = {
     notes: PropTypes.array,
     guideSteps: PropTypes.array,
     codeBlock: PropTypes.object,
+    defaultModels: PropTypes.array,
     requiresExternalUrl: PropTypes.bool,
     requiresCloud: PropTypes.bool,
   }).isRequired,
@@ -183,5 +226,9 @@ DefaultToolCard.propTypes = {
   apiKeys: PropTypes.array,
   activeProviders: PropTypes.array,
   cloudEnabled: PropTypes.bool,
+  cloudUrl: PropTypes.string,
   tunnelEnabled: PropTypes.bool,
+  tunnelPublicUrl: PropTypes.string,
+  tailscaleEnabled: PropTypes.bool,
+  tailscaleUrl: PropTypes.string,
 };

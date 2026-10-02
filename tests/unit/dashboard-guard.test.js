@@ -338,6 +338,22 @@ describe("dashboard guard local-only access", () => {
     }
   });
 
+  it("lets a signed-in remote user GET and PUT CLI tool presets (YAN-642)", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+    const remote = (pathname, method) => ({
+      ...request(pathname, { host: "router.example.com" }),
+      method,
+      cookies: { get: vi.fn(() => ({ value: "jwt" })) },
+    });
+
+    for (const [pathname, method] of [
+      ["/api/cli-tool-presets", "GET"],
+      ["/api/cli-tool-presets", "PUT"],
+    ]) {
+      expect(await proxy(remote(pathname, method))).toBe(mocks.nextResponse);
+    }
+  });
+
   it("rejects MITM alias PUT for an unknown tool with 400 (YAN-622)", async () => {
     const put = (body) => putMitmAlias({ json: async () => body });
     const bad = await put({ tool: "__proto__", mappings: { a: "b" } });
