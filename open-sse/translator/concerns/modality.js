@@ -97,32 +97,53 @@ function stripOpenAI(body, caps) {
   });
 }
 
-// Claude messages[].content[].
+// Claude messages[].content[]. Images returned by a tool sit inside
+// tool_result.content[] and are filtered the same way (YAN-664).
+function stripClaudeBlocks(blocks, caps, isLast) {
+  const nested = blocks.map((block) =>
+    block?.type === "tool_result" && Array.isArray(block.content)
+      ? {
+          ...block,
+          content: filterBlocks(block.content, capForClaudeBlock, caps, new Set(), isLast),
+        }
+      : block,
+  );
+  return filterBlocks(nested, capForClaudeBlock, caps, new Set(), isLast);
+}
+
 function stripClaude(body, caps) {
   if (!Array.isArray(body.messages)) return;
   body.messages = mapItems(body.messages, (msg, isLast) =>
     Array.isArray(msg?.content)
-      ? { ...msg, content: filterBlocks(msg.content, capForClaudeBlock, caps, new Set(), isLast) }
+      ? { ...msg, content: stripClaudeBlocks(msg.content, caps, isLast) }
       : msg,
   );
 }
 
 // OpenAI Responses input[].content[] (input_image / input_file).
+function stripResponsesParts(parts, caps, isLast) {
+  const removed = new Set();
+  const out = parts.filter((b) => {
+    const cap = b?.type === "input_image" ? "vision" : b?.type === "input_file" ? "pdf" : null;
+    if (cap && caps[cap] === false) {
+      removed.add(cap);
+      return false;
+    }
+    return true;
+  });
+  for (const cap of removed) out.push({ type: "input_text", text: ph(cap, isLast) });
+  return out;
+}
+
 function stripResponses(body, caps) {
   if (!Array.isArray(body.input)) return;
   body.input = mapItems(body.input, (item, isLast) => {
+    // Tool-returned media lives in function_call_output.output[] (YAN-664).
+    if (item?.type === "function_call_output" && Array.isArray(item.output)) {
+      return { ...item, output: stripResponsesParts(item.output, caps, isLast) };
+    }
     if (!Array.isArray(item?.content)) return item;
-    const removed = new Set();
-    const content = item.content.filter((b) => {
-      const cap = b?.type === "input_image" ? "vision" : b?.type === "input_file" ? "pdf" : null;
-      if (cap && caps[cap] === false) {
-        removed.add(cap);
-        return false;
-      }
-      return true;
-    });
-    for (const cap of removed) content.push({ type: "input_text", text: ph(cap, isLast) });
-    return { ...item, content };
+    return { ...item, content: stripResponsesParts(item.content, caps, isLast) };
   });
 }
 
