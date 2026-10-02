@@ -25,7 +25,7 @@ import {
 } from "./setupCard";
 import { DEFAULT_PLUGINS } from "@/shared/constants/coworkPlugins";
 import { buildCoworkConfig, buildCoworkMcpServers } from "@/lib/cliToolConfigs/cowork";
-import { browserPlatform } from "@/lib/cliToolConfigs/shared";
+import { useManualPlatform } from "@/store/manualSetupStore";
 
 const ENDPOINT = "/api/cli-tools/cowork-settings";
 // crypto.randomUUID needs a secure context; remote dashboards are often plain HTTP.
@@ -60,6 +60,7 @@ export default function CoworkToolCard({
   onStatusUpdate,
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "cowork" });
+  const platform = useManualPlatform();
   const { status } = card;
   const [selectedModels, setSelectedModels] = useState([]);
   const [plugins, setPlugins] = useState(DEFAULT_PLUGINS);
@@ -193,7 +194,7 @@ export default function CoworkToolCard({
         models: selectedModels,
         managedMcpServers: buildCoworkMcpServers({ plugins, customPlugins }),
         appliedId: status?.cowork?.appliedId || draftAppliedId,
-        platform: browserPlatform(),
+        platform,
       }),
     );
 

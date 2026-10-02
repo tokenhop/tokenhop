@@ -9,7 +9,7 @@ import Input from "@/shared/components/Input";
 import IconButton from "@/shared/components/IconButton";
 import StatusPill from "@/shared/components/StatusPill";
 import Callout from "@/shared/components/Callout";
-import { ManualConfigList } from "@/shared/components/ManualConfigModal";
+import { manualMissingInputs } from "@/lib/cliToolConfigs/shared";
 import { useCliAccessStore } from "@/store/cliAccessStore";
 import ToolTile from "./ToolTile";
 import { LoadingState } from "@/shared/components/StateViews";
@@ -105,7 +105,28 @@ export default function SetupScaffold({
         <>
           <div className="flex flex-col gap-4">{children}</div>
           {localOnly && Array.isArray(manualConfigs) && (
-            <ManualConfigList configs={manualConfigs} idPrefix="manualinline" />
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[13px] text-muted">
+                {manualMissingInputs(manualConfigs).length ? (
+                  <>Complete the fields above to get the configuration.</>
+                ) : manualConfigs.length === 1 ? (
+                  <>1 file to edit by hand.</>
+                ) : (
+                  `${manualConfigs.length} files to edit by hand.`
+                )}
+              </p>
+              {onManualConfig && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon="content_copy"
+                  onClick={onManualConfig}
+                  className="w-full sm:w-auto"
+                >
+                  Set up manually
+                </Button>
+              )}
+            </div>
           )}
           {message && (
             <p
@@ -211,7 +232,13 @@ SetupScaffold.propTypes = {
   onManualConfig: PropTypes.func,
   manualDisabled: PropTypes.bool,
   manualConfigs: PropTypes.arrayOf(
-    PropTypes.shape({ filename: PropTypes.string, content: PropTypes.string }),
+    PropTypes.shape({
+      file: PropTypes.string,
+      format: PropTypes.string,
+      merge: PropTypes.bool,
+      note: PropTypes.string,
+      content: PropTypes.string,
+    }),
   ),
   fileHint: PropTypes.string,
   confirmReset: PropTypes.bool,

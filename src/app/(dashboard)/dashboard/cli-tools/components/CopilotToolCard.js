@@ -20,7 +20,7 @@ import {
 } from "./setupCard";
 import { CLIENT_NAME, isClientKey } from "@/lib/cliToolBrand";
 import { buildCopilotConfig } from "@/lib/cliToolConfigs/copilot";
-import { browserPlatform } from "@/lib/cliToolConfigs/shared";
+import { useManualPlatform } from "@/store/manualSetupStore";
 
 const ENDPOINT = "/api/cli-tools/copilot-settings";
 
@@ -43,6 +43,7 @@ export default function CopilotToolCard({
   onStatusUpdate,
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "copilot" });
+  const platform = useManualPlatform();
   const { status } = card;
   const [selectedModels, setSelectedModels] = useState([]);
   const selectedModelsRef = useRef([]);
@@ -140,7 +141,7 @@ export default function CopilotToolCard({
         baseUrl: getEffectiveBaseUrl(),
         apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
         models: selectedModels,
-        platform: browserPlatform(),
+        platform,
       }),
     );
 
