@@ -185,6 +185,23 @@ function convertClaudeMessage(msg) {
                 url: encodeDataUri(block.source.media_type, block.source.data),
               },
             });
+          } else if (block.source?.type === "url" && block.source.url) {
+            parts.push({ type: OPENAI_BLOCK.IMAGE_URL, image_url: { url: block.source.url } });
+          }
+          break;
+
+        // ponytail: url and content-block documents have no Chat Completions part; still dropped.
+        case CLAUDE_BLOCK.DOCUMENT:
+          if (block.source?.type === "base64" && block.source.data) {
+            parts.push({
+              type: OPENAI_BLOCK.FILE,
+              file: {
+                filename: block.title || "document.pdf",
+                file_data: encodeDataUri(block.source.media_type, block.source.data),
+              },
+            });
+          } else if (block.source?.type === "text" && block.source.data) {
+            parts.push({ type: OPENAI_BLOCK.TEXT, text: block.source.data });
           }
           break;
 

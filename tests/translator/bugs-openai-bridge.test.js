@@ -9,9 +9,8 @@ const T = (src, tgt, body, provider = null) =>
   translateRequest(src, tgt, "m", body, true, null, provider);
 
 describe("bug: Claude → OpenAI bridge data loss", () => {
-  // claude-to-openai.js:133-141 — image source.type==="url" only handles base64
-  // KNOWN BUG: it.fails passes while app drops the url; flips to failing once fixed.
-  it.fails("image with source.type=url is preserved (NOT dropped)", () => {
+  // YAN-40 / #499 — url images and base64 documents become image_url / file parts.
+  it("image with source.type=url is preserved (NOT dropped)", () => {
     const out = T(FORMATS.CLAUDE, FORMATS.OPENAI, {
       messages: [
         {
@@ -25,6 +24,34 @@ describe("bug: Claude → OpenAI bridge data loss", () => {
     });
     const json = JSON.stringify(out);
     expect(json, "remote image url silently dropped").toContain("a.png");
+  });
+
+  it("base64 PDF document becomes a file part, and an input_file on Responses targets", () => {
+    const body = {
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "summarize" },
+            {
+              type: "document",
+              source: { type: "base64", media_type: "application/pdf", data: "JVBERi0x" },
+            },
+          ],
+        },
+      ],
+    };
+    const out = T(FORMATS.CLAUDE, FORMATS.OPENAI, structuredClone(body));
+    expect(out.messages.at(-1).content).toContainEqual({
+      type: "file",
+      file: { filename: "document.pdf", file_data: "data:application/pdf;base64,JVBERi0x" },
+    });
+    const resp = T(FORMATS.CLAUDE, FORMATS.OPENAI_RESPONSES, structuredClone(body));
+    expect(resp.input.at(-1).content).toContainEqual({
+      type: "input_file",
+      filename: "document.pdf",
+      file_data: "data:application/pdf;base64,JVBERi0x",
+    });
   });
 
   // claude-to-openai.js:128 switch — missing thinking/redacted_thinking case

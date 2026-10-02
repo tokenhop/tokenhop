@@ -227,4 +227,30 @@ describe("Antigravity executor", () => {
     expect(system).not.toContain(ANTIGRAVITY_DEFAULT_SYSTEM);
     expect(system).not.toContain("Please ignore the following [ignore]");
   });
+
+  // YAN-41 / #500 — Claude envelope keeps user images and tool-result images as inlineData.
+  it("Claude-backed envelope keeps user and tool-result images as inlineData", () => {
+    const img = { type: "image_url", image_url: { url: "data:image/png;base64,QUJD" } };
+    const out = openaiToAntigravityRequest(
+      "claude-sonnet-4-6",
+      {
+        messages: [
+          { role: "user", content: [{ type: "text", text: "what" }, img] },
+          {
+            role: "assistant",
+            tool_calls: [
+              { id: "c1", type: "function", function: { name: "shot", arguments: "{}" } },
+            ],
+          },
+          { role: "tool", tool_call_id: "c1", content: [{ type: "text", text: "done" }, img] },
+        ],
+      },
+      true,
+      { projectId: "project-1", connectionId: "conn-1" },
+    );
+    const [user, , toolTurn] = out.request.contents;
+    expect(user.parts).toContainEqual({ inlineData: { mimeType: "image/png", data: "QUJD" } });
+    expect(toolTurn.parts[0].functionResponse.response.result).toBe("done");
+    expect(toolTurn.parts).toContainEqual({ inlineData: { mimeType: "image/png", data: "QUJD" } });
+  });
 });
