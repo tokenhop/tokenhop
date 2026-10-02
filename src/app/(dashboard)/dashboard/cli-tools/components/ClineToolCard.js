@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo } from "react";
 import {
   useSetupCard,
+  useSetupSettings,
   setupCardPropTypes,
   resolveApiKey,
   manualApiKey,
@@ -43,20 +44,18 @@ export default function ClineToolCard({
     toolId: "cline",
   });
   const { status } = card;
-  const [selectedModel, setSelectedModel] = useState("");
-
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !card.selectedApiKey) card.setSelectedApiKey(apiKeys[0].key);
-  }, [apiKeys, card]);
-
-  useEffect(() => {
-    if (status?.settings?.openAiModelId) setSelectedModel(status.settings.openAiModelId);
-  }, [status]);
+  const defaults = useMemo(() => ({ model: "", endpoint: "", apiKeyId: "" }), []);
+  // On the host, the installed config fills a model the user hasn't saved yet.
+  const disk = useMemo(
+    () => (status?.installed ? { model: status.settings?.openAiModelId || undefined } : null),
+    [status],
+  );
+  const setup = useSetupSettings({ toolId: "cline", apiKeys, defaults, disk });
 
   const currentBaseUrl = status?.settings?.openAiBaseUrl || "";
 
   const getEffectiveBaseUrl = () => {
-    const u = card.customBaseUrl || `${baseUrl}/v1`;
+    const u = setup.endpoint || `${baseUrl}/v1`;
     return u.endsWith("/v1") ? u : `${u}/v1`;
   };
 
@@ -69,8 +68,8 @@ export default function ClineToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
-          model: selectedModel,
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+          model: setup.model,
         }),
       });
       const data = await res.json();
@@ -95,8 +94,8 @@ export default function ClineToolCard({
       const res = await fetch("/api/cli-tools/cline-settings", { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
+        // Saved card preferences stay; "Reset to defaults" clears those.
         card.setMessage({ type: "success", text: "Settings reset successfully." });
-        setSelectedModel("");
         card.fetchStatus();
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
@@ -114,8 +113,8 @@ export default function ClineToolCard({
     toManualConfigs(
       buildClineConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
-        model: selectedModel,
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        model: setup.model,
       }),
     );
 
@@ -124,7 +123,7 @@ export default function ClineToolCard({
       <SetupScaffold
         tool={tool}
         status={deriveToolStatus(tool, card.status)}
-        checking={card.checking}
+        checking={card.checking || !setup.loaded}
         checkingLabel="Checking Cline..."
         notInstalled={
           !card.checking && status && !status.installed && !status.error ? (
@@ -154,7 +153,7 @@ export default function ClineToolCard({
         message={card.message}
         onApply={handleApply}
         applyDisabled={
-          (!card.selectedApiKey && cloudEnabled && apiKeys.length > 0) || !selectedModel
+          (!setup.selectedApiKey && cloudEnabled && apiKeys.length > 0) || !setup.model
         }
         applying={card.applying}
         onReset={handleReset}
@@ -162,10 +161,12 @@ export default function ClineToolCard({
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
         fileHint="~/.cline/data/globalState.json"
+        {...setup.scaffoldProps("~/.cline/data/globalState.json")}
       >
         <EndpointSegmentedPicker
-          value={card.customBaseUrl || baseUrl}
-          onChange={card.setCustomBaseUrl}
+          key={setup.pickerKey}
+          value={setup.endpoint || baseUrl}
+          {...setup.pickerProps}
           currentUrl={currentBaseUrl}
           tunnelEnabled={tunnelEnabled}
           tunnelPublicUrl={tunnelPublicUrl}
@@ -182,16 +183,16 @@ export default function ClineToolCard({
         )}
         <SetupRow label="API key">
           <ApiKeySelect
-            value={card.selectedApiKey}
-            onChange={card.setSelectedApiKey}
+            value={setup.selectedApiKey}
+            onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
           />
         </SetupRow>
         <SetupRow label="Model">
           <SingleModelRow
-            value={selectedModel}
-            onChange={setSelectedModel}
+            value={setup.model}
+            onChange={setup.setModel}
             onPick={() => card.setModalOpen(true)}
             pickDisabled={!activeProviders?.length}
           />
@@ -203,10 +204,10 @@ export default function ClineToolCard({
           isOpen={card.modalOpen}
           onClose={() => card.setModalOpen(false)}
           onSelect={(m) => {
-            setSelectedModel(m.value);
+            setup.setModel(m.value);
             card.setModalOpen(false);
           }}
-          selectedModel={selectedModel}
+          selectedModel={setup.model}
           activeProviders={activeProviders}
           modelAliases={card.modelAliases}
           title="Select model for Cline"

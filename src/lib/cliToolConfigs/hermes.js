@@ -8,8 +8,10 @@ export const API_KEY_ENV = "OPENAI_API_KEY";
 // Match top-level "model:" block (until next non-indented, non-empty line)
 export const MODEL_BLOCK_RE = /^model:[ \t]*\r?\n((?:[ \t]+.*\r?\n?|[ \t]*\r?\n)*)/m;
 
+// JSON strings are valid YAML double-quoted scalars, so a quote or newline in a
+// (remotely saved) model or URL can't break out of the block.
 const buildModelBlock = (model, baseUrl) =>
-  `model:\n  default: "${model}"\n  provider: "custom"\n  base_url: "${baseUrl}"\n  api_key: \${OPENAI_API_KEY}\n`;
+  `model:\n  default: ${JSON.stringify(String(model))}\n  provider: "custom"\n  base_url: ${JSON.stringify(String(baseUrl))}\n  api_key: \${OPENAI_API_KEY}\n`;
 
 export const upsertModelBlock = (yaml, newBlock) => {
   if (MODEL_BLOCK_RE.test(yaml)) return yaml.replace(MODEL_BLOCK_RE, newBlock);

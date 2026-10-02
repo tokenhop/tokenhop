@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo } from "react";
 import {
   useSetupCard,
+  useSetupSettings,
   setupCardPropTypes,
   resolveApiKey,
   manualApiKey,
@@ -43,14 +44,11 @@ export default function KiloToolCard({
     toolId: "kilo",
   });
   const { status } = card;
-  const [selectedModel, setSelectedModel] = useState("");
-
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !card.selectedApiKey) card.setSelectedApiKey(apiKeys[0].key);
-  }, [apiKeys, card]);
+  const defaults = useMemo(() => ({ model: "", endpoint: "", apiKeyId: "" }), []);
+  const setup = useSetupSettings({ toolId: "kilo", apiKeys, defaults });
 
   const getEffectiveBaseUrl = () => {
-    const u = card.customBaseUrl || `${baseUrl}/v1`;
+    const u = setup.endpoint || `${baseUrl}/v1`;
     return u.endsWith("/v1") ? u : `${u}/v1`;
   };
 
@@ -63,8 +61,8 @@ export default function KiloToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
-          model: selectedModel,
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+          model: setup.model,
         }),
       });
       const data = await res.json();
@@ -89,8 +87,8 @@ export default function KiloToolCard({
       const res = await fetch("/api/cli-tools/kilo-settings", { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
+        // Saved card preferences stay; "Reset to defaults" clears those.
         card.setMessage({ type: "success", text: "Settings reset successfully." });
-        setSelectedModel("");
         card.fetchStatus();
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
@@ -108,8 +106,8 @@ export default function KiloToolCard({
     toManualConfigs(
       buildKiloConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
-        model: selectedModel,
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        model: setup.model,
       }),
     );
 
@@ -118,7 +116,7 @@ export default function KiloToolCard({
       <SetupScaffold
         tool={tool}
         status={deriveToolStatus(tool, card.status)}
-        checking={card.checking}
+        checking={card.checking || !setup.loaded}
         checkingLabel="Checking Kilo Code..."
         notInstalled={
           !card.checking && status && !status.installed && !status.error ? (
@@ -148,7 +146,7 @@ export default function KiloToolCard({
         message={card.message}
         onApply={handleApply}
         applyDisabled={
-          (!card.selectedApiKey && cloudEnabled && apiKeys.length > 0) || !selectedModel
+          (!setup.selectedApiKey && cloudEnabled && apiKeys.length > 0) || !setup.model
         }
         applying={card.applying}
         onReset={handleReset}
@@ -156,10 +154,12 @@ export default function KiloToolCard({
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
         fileHint="~/.local/share/kilo/auth.json"
+        {...setup.scaffoldProps("~/.local/share/kilo/auth.json")}
       >
         <EndpointSegmentedPicker
-          value={card.customBaseUrl || baseUrl}
-          onChange={card.setCustomBaseUrl}
+          key={setup.pickerKey}
+          value={setup.endpoint || baseUrl}
+          {...setup.pickerProps}
           tunnelEnabled={tunnelEnabled}
           tunnelPublicUrl={tunnelPublicUrl}
           tailscaleEnabled={tailscaleEnabled}
@@ -170,16 +170,16 @@ export default function KiloToolCard({
         />
         <SetupRow label="API key">
           <ApiKeySelect
-            value={card.selectedApiKey}
-            onChange={card.setSelectedApiKey}
+            value={setup.selectedApiKey}
+            onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
           />
         </SetupRow>
         <SetupRow label="Model">
           <SingleModelRow
-            value={selectedModel}
-            onChange={setSelectedModel}
+            value={setup.model}
+            onChange={setup.setModel}
             onPick={() => card.setModalOpen(true)}
             pickDisabled={!activeProviders?.length}
           />
@@ -191,10 +191,10 @@ export default function KiloToolCard({
           isOpen={card.modalOpen}
           onClose={() => card.setModalOpen(false)}
           onSelect={(m) => {
-            setSelectedModel(m.value);
+            setup.setModel(m.value);
             card.setModalOpen(false);
           }}
-          selectedModel={selectedModel}
+          selectedModel={setup.model}
           activeProviders={activeProviders}
           modelAliases={card.modelAliases}
           title="Select model for Kilo Code"
