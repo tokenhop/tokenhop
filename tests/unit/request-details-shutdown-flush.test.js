@@ -13,7 +13,7 @@ let tempDir;
 let db;
 
 beforeAll(async () => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-shutdown-flush-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "shutdown-flush-"));
   process.env.DATA_DIR = tempDir;
   vi.resetModules();
   db = await import("@/lib/db/index.js");
