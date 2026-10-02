@@ -146,10 +146,15 @@ export async function handleStreamingResponse({
   // and clamped so untrusted upstream text never reaches the client verbatim
   // (the UI may render error.message as HTML).
   const upstreamContentType = (providerResponse.headers.get("content-type") || "").toLowerCase();
+  // Some streaming upstreams are NDJSON, not SSE: Ollama /api/chat streams
+  // application/x-ndjson. Let it through when the stream transform speaks that
+  // target format (parseSSELine already parses raw OLLAMA JSON lines).
+  const isNdjsonTargetFormat = targetFormat === FORMATS.OLLAMA;
   if (
     upstreamContentType &&
     !upstreamContentType.includes("text/event-stream") &&
-    !upstreamContentType.includes("application/json")
+    !upstreamContentType.includes("application/json") &&
+    !(isNdjsonTargetFormat && upstreamContentType.includes("application/x-ndjson"))
   ) {
     const bodyText = await providerResponse.text().catch(() => "");
     const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
