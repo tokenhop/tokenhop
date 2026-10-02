@@ -64,33 +64,35 @@ export function getProviderSetting(params, key) {
 }
 
 /**
- * Resolve base URL with optional override from providerOptions.baseUrl.
+ * Resolve base URL from operator-configured sources only.
  *
- * The override is client-controlled and therefore SSRF-hardened: only public
- * http(s) URLs are accepted (internal/private/loopback/metadata addresses are
- * rejected via assertPublicUrl). The provider's own configured baseUrl is
- * trusted as-is (admin-controlled).
+ * Sources: the connection's `providerSpecificData.baseUrl` override (admin-set,
+ * same as chat providers) or the registry/env `config.baseUrl`. A client-supplied
+ * `provider_options.baseUrl` is deliberately ignored: the built request carries
+ * the gateway's stored provider credential, and that credential must never be
+ * sent to a URL an API caller named (YAN-649).
  *
  * @param {SearchProviderConfig} config
  * @param {SearchRequestParams} params
  * @returns {string}
  */
 export function resolveBaseUrl(config, params) {
-  const override = getProviderSetting(params, "baseUrl");
-  if (override) {
-    // SSRF guard: client-supplied base URLs must be public http(s) only.
+  const override = params.providerSpecificData?.baseUrl;
+  if (typeof override === "string" && override.trim().length > 0) {
+    const trimmed = override.trim();
     let parsed;
     try {
-      parsed = new URL(override);
+      parsed = new URL(trimmed);
     } catch {
-      throw new Error(`Invalid baseUrl: ${override}`);
+      throw new Error(`Invalid baseUrl: ${trimmed}`);
     }
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       throw new Error(`Invalid baseUrl protocol: ${parsed.protocol}`);
     }
-    assertPublicUrl(override);
+    assertPublicUrl(trimmed);
+    return trimmed.replace(/\/+$/, "");
   }
-  return (override || config.baseUrl).replace(/\/+$/, "");
+  return config.baseUrl.replace(/\/+$/, "");
 }
 
 /**
