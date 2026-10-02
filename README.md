@@ -7,6 +7,8 @@ rotation, OAuth credential management and usage tracking, plus a Next.js dashboa
 > This is a personal copy of [9Router](https://github.com/decolua/9router) by
 > [decolua](https://github.com/decolua) and contributors, used under the MIT License.
 
+**Upgrading?** See [UPGRADING.md](UPGRADING.md) for what v1.0.0 changes and keeps.
+
 ## Dashboard
 
 The Next.js dashboard defaults to dark for new installs, groups its sidebar into
