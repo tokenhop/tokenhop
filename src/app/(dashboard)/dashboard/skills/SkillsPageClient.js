@@ -13,6 +13,7 @@ import {
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import CopyStatus from "@/shared/components/CopyStatus";
 import {
+  ENTRY_SKILL_ID,
   SKILLS,
   SKILLS_BLOB_BASE,
   SKILLS_REPO_URL,
@@ -205,7 +206,7 @@ export default function SkillsPageClient() {
   const active = bases?.find((base) => base.value === selected) ?? bases?.[0] ?? null;
   const activeUrl = active ? active.url : "";
   const heroValue = active
-    ? `Read this skill and use it: ${getHostedSkillUrl(active.url, "9router")}`
+    ? `Read this skill and use it: ${getHostedSkillUrl(active.url, ENTRY_SKILL_ID)}`
     : "";
 
   return (

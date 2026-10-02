@@ -1,4 +1,5 @@
-// Shared harness for the CLI-tool brand migration tests (YAN-331, YAN-332).
+// Shared harness for the brand-switch tests: CLI-tool migrations (YAN-331,
+// YAN-332) and the per-brand skills (YAN-333).
 // HOME is a per-file temp dir (tests/setup), never the real one: importing this
 // throws if it isn't (see isolatedHome.js).
 import { vi } from "vitest";
