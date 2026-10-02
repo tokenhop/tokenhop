@@ -27,7 +27,7 @@ export function buildOpenClawConfig({ baseUrl, apiKey, model, agents = [], agent
       file: "~/.openclaw/openclaw.json",
       format: "json",
       merge: true,
-      note: "merge into existing; match agents.list entries by id",
+      note: "Merge these keys into the existing file. Match agents.list entries by id.",
       value: {
         agents: {
           defaults: {

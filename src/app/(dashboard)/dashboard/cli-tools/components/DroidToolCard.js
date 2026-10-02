@@ -21,6 +21,7 @@ import {
 } from "./setupCard";
 import { CUSTOM_MODEL_ID_PREFIX, isCustomModelId } from "@/lib/cliToolBrand";
 import { buildDroidConfig } from "@/lib/cliToolConfigs/droid";
+import { useManualPlatform } from "@/store/manualSetupStore";
 
 const ENDPOINT = "/api/cli-tools/droid-settings";
 
@@ -42,6 +43,7 @@ export default function DroidToolCard({
   onStatusUpdate,
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "droid" });
+  const platform = useManualPlatform();
   const { status } = card;
   const [modelList, setModelList] = useState([]);
   const [modelInput, setModelInput] = useState("");
@@ -144,8 +146,7 @@ export default function DroidToolCard({
         apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
         models: modelList,
         activeModel: modelList[0] || "",
-        platform:
-          typeof navigator !== "undefined" && /win/i.test(navigator.platform) ? "win32" : "",
+        platform,
       }),
     );
 

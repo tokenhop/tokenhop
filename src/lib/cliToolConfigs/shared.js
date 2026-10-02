@@ -21,6 +21,8 @@ export const manualApiKey = (selectedApiKey, apiKeys, cloudEnabled) =>
 /**
  * A builder fragment: `{ file, format: "json" | "toml" | "text", merge: boolean, value }`; merge
  * means "merge into the existing file", otherwise the fragment replaces it.
+ * An optional note (manual instruction) and mode "create-file" (create only if
+ * missing) only change what the manual setup dialog says.
  * `value` is an object for json/toml and a string for text; it is exactly what
  * Apply writes to `file` when the file does not exist yet.
  */
@@ -30,18 +32,42 @@ export const renderFragment = ({ format, value }) => {
   return value;
 };
 
+/** Badge label for a fragment: its format, or the file extension for `text`. */
+export const formatLabel = ({ file, format }) => {
+  if (format === "json") return "JSON";
+  if (format === "toml" || /\.toml$/i.test(file)) return "TOML";
+  if (/\.ya?ml$/i.test(file)) return "YAML";
+  if (/\.env$/i.test(file)) return ".env";
+  return "Text";
+};
+
 /**
- * ManualConfigList entries for a builder result; `null` (missing input) → `[]`.
- * An optional fragment note replaces the default "merge into existing" hint.
+ * Manual setup dialog entries for a builder result; `null` (missing input) → `[]`.
+ * An optional fragment note replaces the default merge/replace instruction.
  */
 export const toManualConfigs = (fragments) =>
-  (fragments || []).map((fragment) => {
-    const note = fragment.note || (fragment.merge ? "merge into existing" : "");
-    return {
-      filename: note ? `${fragment.file} (${note})` : fragment.file,
-      content: renderFragment(fragment),
-    };
-  });
+  (fragments || []).map((fragment) => ({
+    file: fragment.file,
+    format: formatLabel(fragment),
+    mode: fragment.mode || (fragment.merge ? "merge-keys" : "replace-file"),
+    note: fragment.note || "",
+    content: renderFragment(fragment),
+  }));
+
+/**
+ * A builder display path for an OS: on Windows, Apply resolves `~` with
+ * `os.homedir()` and keeps the same layout, so `~/a/b` is `%USERPROFILE%\a\b`.
+ */
+export const displayPath = (file, platform) =>
+  platform === "win32" && file.startsWith("~/")
+    ? `%USERPROFILE%\\${file.slice(2).replaceAll("/", "\\")}`
+    : file;
+
+/** Inputs the user still has to provide before the snippet is usable. */
+export const manualMissingInputs = (configs) => {
+  if (!configs?.length) return ["model"];
+  return configs.some((config) => config.content.includes(API_KEY_PLACEHOLDER)) ? ["apiKey"] : [];
+};
 
 /** Best guess of the browser user's OS, for snippets whose paths differ per OS. */
 export const browserPlatform = () => {
