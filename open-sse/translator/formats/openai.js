@@ -124,14 +124,18 @@ export function filterToOpenAIFormat(body, opts = {}) {
   // Normalize tool_choice to OpenAI format
   if (body.tool_choice && typeof body.tool_choice === "object") {
     const choice = body.tool_choice;
-    // Claude format: {type: "auto|any|tool", name?: "..."}
+    // Claude format: {type: "auto|any|none|tool", name?: "..."}
     if (choice.type === "auto") {
       body.tool_choice = "auto";
     } else if (choice.type === "any") {
       body.tool_choice = "required";
+    } else if (choice.type === "none") {
+      body.tool_choice = "none";
     } else if (choice.type === "tool" && choice.name) {
       body.tool_choice = { type: OPENAI_BLOCK.FUNCTION, function: { name: choice.name } };
     }
+    // Anything else (already-OpenAI {type:"function",function}, allowed_tools,
+    // unknown restrictions) is left as-is: never silently widened to "auto".
   }
 
   return body;

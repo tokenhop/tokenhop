@@ -24,28 +24,55 @@ export function lastCacheableToolIndex(tools) {
   return -1;
 }
 
-// Check if message has valid non-empty content
+// Anthropic rejects a tool input_schema whose top level is anyOf/oneOf/allOf
+// (input_schema must be an object schema). Discriminated-union MCP tool schemas
+// commonly have this shape. Merge object branches' properties and intersect
+// required only where every branch requires it (relaxed: a key required by any
+// single branch is optional in the merged schema).
+export function normalizeUnionInputSchema(schema) {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
+  if (schema.type === "object" || (!schema.anyOf && !schema.oneOf && !schema.allOf)) return schema;
+  const branches = [
+    ...(Array.isArray(schema.anyOf) ? schema.anyOf : []),
+    ...(Array.isArray(schema.oneOf) ? schema.oneOf : []),
+    ...(Array.isArray(schema.allOf) ? schema.allOf : []),
+  ].filter((b) => b && typeof b === "object");
+  const objectBranches = branches.filter(
+    (b) => b.type === "object" || (b.properties && typeof b.properties === "object"),
+  );
+  if (objectBranches.length === 0) return { type: "object", properties: {} };
+  const properties = {};
+  const requiredCounts = new Map();
+  for (const b of objectBranches) {
+    Object.assign(properties, b.properties || {});
+    if (Array.isArray(b.required)) {
+      for (const key of b.required) requiredCounts.set(key, (requiredCounts.get(key) || 0) + 1);
+    }
+  }
+  const required = [...requiredCounts.entries()]
+    .filter(([, n]) => n === objectBranches.length)
+    .map(([key]) => key);
+  const { anyOf, oneOf, allOf, ...rest } = schema;
+  return { type: "object", ...rest, properties, ...(required.length > 0 && { required }) };
+}
+
+// Check if message has valid non-empty content.
+// Any block counts as content — including types this allowlist predates
+// (container_upload, search_result, server-tool blocks) — except a text block
+// with only whitespace. Dropping unknown blocks used to let a whole user turn
+// vanish, forwarding an empty messages array to the upstream.
 export function hasValidContent(msg) {
+  if (!msg || typeof msg !== "object") return false;
+  const validBlock = (block) =>
+    block &&
+    typeof block === "object" &&
+    !(block.type === CLAUDE_BLOCK.TEXT && !block.text?.trim());
   if (typeof msg.content === "string" && msg.content.trim()) return true;
   if (msg.content && typeof msg.content === "object" && !Array.isArray(msg.content)) {
-    const block = msg.content;
-    return !!(
-      (block.type === CLAUDE_BLOCK.TEXT && block.text?.trim()) ||
-      block.type === CLAUDE_BLOCK.TOOL_USE ||
-      block.type === CLAUDE_BLOCK.TOOL_RESULT ||
-      block.type === CLAUDE_BLOCK.IMAGE ||
-      block.type === CLAUDE_BLOCK.DOCUMENT
-    );
+    return validBlock(msg.content);
   }
   if (Array.isArray(msg.content)) {
-    return msg.content.some(
-      (block) =>
-        (block.type === CLAUDE_BLOCK.TEXT && block.text?.trim()) ||
-        block.type === CLAUDE_BLOCK.TOOL_USE ||
-        block.type === CLAUDE_BLOCK.TOOL_RESULT ||
-        block.type === CLAUDE_BLOCK.IMAGE ||
-        block.type === CLAUDE_BLOCK.DOCUMENT,
-    );
+    return msg.content.some(validBlock);
   }
   return false;
 }
@@ -536,6 +563,8 @@ export function prepareClaudeRequest(
     // Pass 1: remove cache_control + filter empty messages
     for (let i = 0; i < len; i++) {
       const msg = body.messages[i];
+      // Malformed (non-object) entries are skipped, never a TypeError (500).
+      if (!msg || typeof msg !== "object") continue;
       normalizeMessageContent(msg);
 
       // Remove cache_control from content blocks
@@ -669,6 +698,12 @@ export function prepareClaudeRequest(
           return rest;
         });
     }
+
+    body.tools = body.tools.map((tool) =>
+      tool?.input_schema
+        ? { ...tool, input_schema: normalizeUnionInputSchema(tool.input_schema) }
+        : tool,
+    );
 
     const lastCacheable = lastCacheableToolIndex(body.tools);
     body.tools = body.tools.map((tool, i) => {
