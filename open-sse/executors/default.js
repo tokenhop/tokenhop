@@ -16,6 +16,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 import { CLAUDE_CODE_SESSION_HEADER, extractClaudeCodeSession } from "../utils/sessionManager.js";
+import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { refreshMetaCodeToken } from "../services/tokenRefresh.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
@@ -254,6 +255,29 @@ export class DefaultExecutor extends BaseExecutor {
 
     if (this.usesClaudeBetas(model)) {
       headers["Anthropic-Beta"] = selectAnthropicBeta(model, body);
+      // Native Claude Code passthrough copies new body fields verbatim (e.g.
+      // `safeguards`); Anthropic 400s on them unless the client's own beta flag
+      // rides along. Merge only for official Anthropic: third-party gateways
+      // may reject unknown flags.
+      const clientBeta =
+        credentials?.rawHeaders?.["anthropic-beta"] || credentials?.rawHeaders?.["Anthropic-Beta"];
+      const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
+      const isOfficial =
+        this.provider === "claude" || baseUrl === "" || baseUrl.includes("api.anthropic.com");
+      if (
+        clientBeta &&
+        isOfficial &&
+        isNativePassthrough(detectClientTool(credentials.rawHeaders), this.provider)
+      ) {
+        headers["Anthropic-Beta"] = [
+          ...new Set(
+            `${headers["Anthropic-Beta"]},${clientBeta}`
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean),
+          ),
+        ].join(",");
+      }
       // Real Claude Code sends its session id as a header too, matching the
       // session_id inside metadata.user_id (set by applyCloaking or the client).
       const sessionId = extractClaudeCodeSession(body?.metadata?.user_id);
