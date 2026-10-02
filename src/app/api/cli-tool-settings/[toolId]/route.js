@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { deleteCliToolSettings, getCliToolSettings, setCliToolSettings } from "@/lib/db/index.js";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
+import { isValidToolSettings } from "@/lib/cliToolConfigs/toolSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export async function PUT(request, { params }) {
     if (bad) return bad;
 
     const raw = await request.text();
-    if (raw.length > MAX_BYTES) {
+    if (Buffer.byteLength(raw, "utf8") > MAX_BYTES) {
       return NextResponse.json({ error: "Settings payload too large" }, { status: 413 });
     }
 
@@ -44,8 +45,14 @@ export async function PUT(request, { params }) {
     } catch {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return NextResponse.json({ error: "Settings must be a JSON object" }, { status: 400 });
+    if (!isValidToolSettings(parsed)) {
+      return NextResponse.json(
+        {
+          error:
+            "Settings must be a JSON object of strings, numbers, booleans or one nested level of them",
+        },
+        { status: 400 },
+      );
     }
 
     await setCliToolSettings(toolId, parsed);

@@ -339,6 +339,7 @@ export async function importDb(payload) {
       ]);
     }
     for (const [tool, settings] of Object.entries(payload.cliToolSettings || {})) {
+      if (!settings || typeof settings !== "object" || Array.isArray(settings)) continue;
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('cliToolSettings', ?, ?)`, [
         tool,
         stringifyJson(settings || {}),

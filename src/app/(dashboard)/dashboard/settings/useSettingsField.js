@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
+import { debounce } from "@/shared/utils/debounce";
 
 const TEXT_DEBOUNCE_MS = 500;
 
@@ -32,15 +33,7 @@ export function initialFieldState(serverValue) {
   return { value: serverValue, savedValue: serverValue, status: "idle", error: "" };
 }
 
-export function debounce(fn, delayMs) {
-  let timer = null;
-  const debounced = (...args) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), delayMs);
-  };
-  debounced.cancel = () => clearTimeout(timer);
-  return debounced;
-}
+export { debounce };
 
 /**
  * PATCH one settings key. Throws with the server's validation message.

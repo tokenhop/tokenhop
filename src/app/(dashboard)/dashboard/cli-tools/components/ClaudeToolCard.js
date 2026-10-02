@@ -134,7 +134,8 @@ export default function ClaudeToolCard({
   const diskToken = claudeStatus?.installed
     ? claudeStatus.settings?.env?.ANTHROPIC_AUTH_TOKEN || ""
     : "";
-  // A saved key id that no longer exists falls back to the first key.
+  // Saved key id, else (host) the key in the file, else the first key. A deleted key's id
+  // matches nothing and falls through the same way.
   const selectedApiKey =
     customKey ??
     (apiKeys.find((k) => k.id === values.apiKeyId)?.key || diskToken || apiKeys[0]?.key || "");
@@ -200,8 +201,6 @@ export default function ClaudeToolCard({
       setCcFilterNaming(prev);
     }
   };
-
-  const currentBaseUrl = claudeStatus?.settings?.env?.ANTHROPIC_BASE_URL || "";
 
   const getEffectiveBaseUrl = () => {
     const u = values.endpoint || initUrl || baseUrl || "http://localhost:20128/v1";
@@ -327,7 +326,6 @@ export default function ClaudeToolCard({
           tailscaleUrl={tailscaleUrl}
           cloudEnabled={cloudEnabled}
           cloudUrl={cloudUrl}
-          currentUrl={currentBaseUrl}
         />
 
         <div className="flex flex-col gap-1.5">

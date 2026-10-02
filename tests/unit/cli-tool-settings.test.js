@@ -52,12 +52,21 @@ describe("/api/cli-tool-settings/[toolId]", () => {
     expect(await (await get("claude")).json()).toEqual({ settings: {} });
   });
 
-  it("rejects non-object bodies with 400", async () => {
-    for (const body of ["[1]", "null", "3", '"s"']) {
+  it("rejects bodies outside the settings shape with 400", async () => {
+    const bad = [
+      "[1]",
+      "null",
+      '"s"',
+      JSON.stringify({ models: { opus: { deep: "x" } } }),
+      JSON.stringify({ list: ["a"] }),
+      JSON.stringify({ endpoint: "x".repeat(2049) }),
+      '{"__proto__":{"a":1}}',
+    ];
+    for (const body of bad) {
       const res = await put("claude", body);
-      expect(res.status).toBe(400);
-      expect(await res.json()).toEqual({ error: "Settings must be a JSON object" });
+      expect(res.status, body).toBe(400);
     }
+    expect(await (await get("claude")).json()).toEqual({ settings: {} });
   });
 
   it("rejects invalid JSON with 400", async () => {
@@ -67,7 +76,14 @@ describe("/api/cli-tool-settings/[toolId]", () => {
   });
 
   it("rejects oversize payload with 413 and no write", async () => {
-    const res = await put("claude", { blob: "x".repeat(16384) });
+    const res = await put("claude", {
+      a: "é".repeat(1500),
+      b: "é".repeat(1500),
+      c: "é".repeat(1500),
+      d: "é".repeat(1500),
+      e: "é".repeat(1500),
+      f: "é".repeat(1500),
+    });
     expect(res.status).toBe(413);
     expect(await res.json()).toEqual({ error: "Settings payload too large" });
     expect(await (await get("claude")).json()).toEqual({ settings: {} });
@@ -83,8 +99,9 @@ describe("backup", () => {
     await del("claude");
     expect((await db.exportDb()).cliToolSettings).toEqual({});
 
-    await db.importDb(dump);
+    await db.importDb({ ...dump, cliToolSettings: { ...dump.cliToolSettings, codex: "oops" } });
     expect(await (await get("claude")).json()).toEqual({ settings: { endpoint: "http://backup" } });
+    expect(await (await get("codex")).json()).toEqual({ settings: {} });
     await del("claude");
   });
 });
@@ -93,9 +110,7 @@ describe("toolSettings helpers", () => {
   let mergeToolSettings;
   let diffFromDisk;
   beforeAll(async () => {
-    ({ mergeToolSettings, diffFromDisk } = await import(
-      "@/app/(dashboard)/dashboard/cli-tools/lib/toolSettings"
-    ));
+    ({ mergeToolSettings, diffFromDisk } = await import("@/lib/cliToolConfigs/toolSettings"));
   });
 
   it("merges with precedence defaults < disk < saved", () => {
@@ -143,5 +158,52 @@ describe("toolSettings helpers", () => {
 
   it("diffFromDisk returns [] when disk is null", () => {
     expect(diffFromDisk({ endpoint: "http://saved" }, null)).toEqual([]);
+  });
+});
+
+describe("toolSettingsStore saver", () => {
+  let store;
+  let calls;
+  let release;
+  beforeAll(async () => {
+    store = await import("@/store/toolSettingsStore");
+  });
+
+  // fetch stub: PUTs wait on `release` so a save can be held in flight.
+  const stubFetch = (getResponse = { ok: true, json: async () => ({ settings: {} }) }) => {
+    calls = [];
+    globalThis.fetch = async (url, init = {}) => {
+      calls.push(`${init.method || "GET"} ${url}`);
+      if (init.method === "PUT") await new Promise((r) => (release = r));
+      return typeof getResponse === "function" ? getResponse(url, init) : getResponse;
+    };
+  };
+
+  it("reset waits for an in-flight save, so the DELETE lands last", async () => {
+    store.__resetToolSettingsStore();
+    stubFetch();
+    await store.loadToolSettings();
+    store.setToolSettings("claude", { endpoint: "http://a" });
+    const flushed = store.flushToolSettings("claude");
+    await Promise.resolve();
+    const reset = store.resetToolSettings("claude");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls.at(-1)).toBe("PUT /api/cli-tool-settings/claude");
+    release();
+    await flushed;
+    expect(await reset).toBe(true);
+    expect(calls.at(-1)).toBe("DELETE /api/cli-tool-settings/claude");
+    expect(store.useToolSettingsStore.getState().saved.claude).toBeUndefined();
+  });
+
+  it("a failed load blocks autosave instead of overwriting the saved row", async () => {
+    store.__resetToolSettingsStore();
+    stubFetch({ ok: false, json: async () => ({}) });
+    await store.loadToolSettings();
+    expect(store.useToolSettingsStore.getState().loadFailed).toBe(true);
+    store.setToolSettings("claude", { endpoint: "http://a" });
+    await store.flushToolSettings("claude");
+    expect(calls).toEqual(["GET /api/cli-tool-settings"]);
+    expect(store.useToolSettingsStore.getState().status.claude).toBe("error");
   });
 });
