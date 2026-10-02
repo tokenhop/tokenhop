@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { Button, EmptyState, Input } from "@/shared/components";
 import { translate } from "@/i18n/runtime";
@@ -25,7 +25,8 @@ export default function CompatibleModelsSection({
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [testingId, setTestingId] = useState(null);
+  const [testingIds, setTestingIds] = useState(() => new Set());
+  const inFlight = useRef(new Set());
   const [testResults, setTestResults] = useState({});
 
   const allModels = getProviderCustomModelRows({
@@ -37,8 +38,10 @@ export default function CompatibleModelsSection({
   const canImport = connections.some((entry) => entry.isActive !== false);
 
   const testModel = async (modelId) => {
-    if (testingId) return;
-    setTestingId(modelId);
+    // In-flight tests are tracked per model so rows don't block each other.
+    if (inFlight.current.has(modelId)) return;
+    inFlight.current.add(modelId);
+    setTestingIds(new Set(inFlight.current));
     try {
       const res = await fetch("/api/models/test", {
         method: "POST",
@@ -53,7 +56,8 @@ export default function CompatibleModelsSection({
       setTestResults((prev) => ({ ...prev, [modelId]: "error" }));
       actions.notifyError("Network error");
     } finally {
-      setTestingId(null);
+      inFlight.current.delete(modelId);
+      setTestingIds(new Set(inFlight.current));
     }
   };
 
@@ -161,7 +165,7 @@ export default function CompatibleModelsSection({
               }
               onTest={connections.length > 0 || isFreeNoAuth ? () => testModel(id) : undefined}
               testStatus={testResults[id]}
-              isTesting={testingId === id}
+              isTesting={testingIds.has(id)}
               isCustom
             />
           ))}

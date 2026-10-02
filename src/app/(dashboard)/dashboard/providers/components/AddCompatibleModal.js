@@ -62,6 +62,17 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
     }
   }, [config.hasApiType ? formData.apiType : isOpen]);
 
+  // The modal stays mounted, so reopening must start from an empty form
+  // (Cancel only closes it; previously it leaked name/prefix/baseUrl/key).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset must only run when the modal opens or the variant changes
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormData(initialFormData());
+    setCheckKey("");
+    setCheckModelId("");
+    setValidationResult(null);
+  }, [isOpen, variant]);
+
   const handleSubmit = async () => {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
     setSubmitting(true);

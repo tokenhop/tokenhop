@@ -15,132 +15,11 @@ import {
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
-
-// Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
-// Returns true if API key is accepted (status !== 401 && !== 403).
-async function probeWebProvider(provider, apiKey) {
-  const p = AI_PROVIDERS[provider];
-  if (!p) return null;
-  // Skip if provider has dual-purpose (LLM + search), let LLM validate handle it
-  const kinds = p.serviceKinds || ["llm"];
-  const isWebOnly = kinds.every((k) => k === "webSearch" || k === "webFetch");
-  if (!isWebOnly) return null;
-  const cfg = p.searchConfig || p.fetchConfig;
-  if (!cfg) return null;
-  if (cfg.authType === "none") return true; // no-auth (e.g. searxng)
-
-  let url = cfg.validateUrl || cfg.baseUrl;
-  const headers = { "Content-Type": "application/json" };
-  let body;
-
-  // Apply auth based on authHeader
-  switch (cfg.authHeader) {
-    case "bearer":
-      headers["Authorization"] = `Bearer ${apiKey}`;
-      break;
-    case "x-api-key":
-      headers["x-api-key"] = apiKey;
-      break;
-    case "x-subscription-token":
-      headers["x-subscription-token"] = apiKey;
-      break;
-    case "key":
-      url += `?key=${encodeURIComponent(apiKey)}&q=ping&cx=test`;
-      break; // google-pse
-    case "api_key":
-      url += `?api_key=${encodeURIComponent(apiKey)}&q=ping&engine=google`;
-      break; // searchapi
-  }
-
-  // Minimal body for POST endpoints; GET sends nothing
-  if (cfg.method === "POST") {
-    body = JSON.stringify({ query: "ping", q: "ping", url: "https://example.com" });
-  }
-
-  const res = await fetch(url, {
-    method: cfg.method,
-    headers,
-    body,
-    signal: AbortSignal.timeout(8000),
-  });
-  return res.status !== 401 && res.status !== 403;
-}
-
-// Probe a media provider (tts/embedding/stt/image/video) using *Config.
-// Returns true if API key is accepted; null to skip (let default handler decide).
-async function probeMediaProvider(provider, apiKey) {
-  const p = AI_PROVIDERS[provider];
-  if (!p) return null;
-  const MEDIA_KINDS = new Set([
-    "tts",
-    "embedding",
-    "stt",
-    "image",
-    "video",
-    "music",
-    "imageToText",
-  ]);
-  const kinds = p.serviceKinds || ["llm"];
-  const isMediaOnly = kinds.every((k) => MEDIA_KINDS.has(k));
-  if (!isMediaOnly) return null;
-  const cfg =
-    p.ttsConfig ||
-    p.sttConfig ||
-    p.embeddingConfig ||
-    p.imageConfig ||
-    p.videoConfig ||
-    p.musicConfig;
-  // No probe config → best-effort accept (validate at usage time)
-  if (!cfg) return true;
-  if (p.noAuth || cfg.authType === "none") return true;
-  // Skip auth schemes that need provider-specific data
-  if (cfg.authHeader === "playht" || cfg.authHeader === "aws-sigv4") return true;
-
-  const headers = { "Content-Type": "application/json", ...(cfg.extraHeaders || {}) };
-
-  switch (cfg.authHeader) {
-    case "bearer":
-      headers["Authorization"] = `Bearer ${apiKey}`;
-      break;
-    case "key":
-      headers["Authorization"] = `Key ${apiKey}`;
-      break;
-    case "x-api-key":
-      headers["x-api-key"] = apiKey;
-      break;
-    case "x-key":
-      headers["x-key"] = apiKey;
-      break;
-    case "xi-api-key":
-      headers["xi-api-key"] = apiKey;
-      break;
-    case "token":
-      headers["Authorization"] = `Token ${apiKey}`;
-      break;
-    case "basic":
-      headers["Authorization"] = `Basic ${apiKey}`;
-      break;
-    default:
-      return null;
-  }
-
-  const method = cfg.method || "POST";
-  const res = await fetch(cfg.baseUrl, {
-    method,
-    headers,
-    body:
-      method === "GET"
-        ? undefined
-        : JSON.stringify({
-            input: "ping",
-            text: "ping",
-            prompt: "ping",
-            model: getDefaultModel(provider) || "test",
-          }),
-    signal: AbortSignal.timeout(8000),
-  });
-  return res.status !== 401 && res.status !== 403;
-}
+import {
+  probeMediaProvider,
+  probeRegistryProvider,
+  probeWebProvider,
+} from "@/lib/providerKeyProbes";
 
 // POST /api/providers/validate - Validate API key with provider
 export async function POST(request) {
@@ -742,51 +621,16 @@ export async function POST(request) {
         }
 
         default: {
-          // Generic probe for OpenAI-compatible providers (config-driven from PROVIDERS)
-          const cfg = PROVIDERS[provider];
-          if (!cfg || cfg.format !== "openai" || !cfg.baseUrl) {
+          // Registry-driven probe, shared with the saved-connection re-test so a
+          // key accepted here also passes a re-test (YAN-674).
+          const result = await probeRegistryProvider(provider, apiKey);
+          if (result === null) {
             return NextResponse.json(
               { error: "Provider validation not supported" },
               { status: 400 },
             );
           }
-          if (cfg.noAuth) {
-            isValid = true;
-            break;
-          }
-          // Build auth headers based on cfg.authHeader (default: bearer)
-          const headers = { "Content-Type": "application/json", ...(cfg.headers || {}) };
-          if (cfg.authHeader === "x-api-key") headers["X-API-Key"] = apiKey;
-          else headers["Authorization"] = `Bearer ${apiKey}`;
-          // Try /models first (fast GET), fallback to chat probe on ambiguous response
-          const modelsUrl = cfg.baseUrl
-            .replace(/\/chat\/completions$/, "/models")
-            .replace(/\/chatbot$/, "/models");
-          let probeOk = null;
-          try {
-            const probeRes = await fetch(modelsUrl, { headers, signal: AbortSignal.timeout(8000) });
-            if (probeRes.status === 401 || probeRes.status === 403) probeOk = false;
-            else if (probeRes.ok) probeOk = true;
-          } catch {
-            /* fallback to chat */
-          }
-          if (probeOk !== null) {
-            isValid = probeOk;
-            break;
-          }
-          // Fallback: minimal chat probe
-          const defaultModel = getDefaultModel(provider) || "test";
-          const chatRes = await fetch(cfg.baseUrl, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              model: defaultModel,
-              messages: [{ role: "user", content: "ping" }],
-              max_tokens: 1,
-            }),
-            signal: AbortSignal.timeout(10000),
-          });
-          isValid = chatRes.status !== 401 && chatRes.status !== 403;
+          isValid = result;
           break;
         }
       }
