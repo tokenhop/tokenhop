@@ -205,7 +205,14 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // such as Gemini, which strictly validates function names.
   const responseTools = [...(Array.isArray(body.tools) ? body.tools : []), ...additionalTools];
   if (responseTools.length > 0) {
+    // Codex groups nested tools as { type: "namespace", tools: [...] }; expand them
+    // so the children reach the provider. Calls come back by the child name,
+    // which the Codex upstream accepts (executors/codex.js registers namespace
+    // child names as valid), so no name mapping is needed on the response path.
     result.tools = responseTools
+      .flatMap((tool) =>
+        tool?.type === "namespace" && Array.isArray(tool.tools) ? tool.tools : [tool],
+      )
       .map((tool) => {
         // Already in Chat Completions format: { type: "function", function: { name, ... } }
         if (tool.function) return tool;
