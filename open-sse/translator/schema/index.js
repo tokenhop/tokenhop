@@ -8,4 +8,4 @@ export {
   VALID_OPENAI_MESSAGE_TYPES,
 } from "./blocks.js";
 export { OPENAI_FINISH, CLAUDE_STOP, GEMINI_FINISH } from "./finishReasons.js";
-export { MODEL_FALLBACK, DEFAULT_IMAGE_MIME } from "./defaults.js";
+export { MODEL_FALLBACK, DEFAULT_IMAGE_MIME, DEFAULT_DOCUMENT_FILENAME } from "./defaults.js";
