@@ -33,6 +33,8 @@ export async function POST(request) {
       delete payload.settings.multiUserEnabled;
     }
     await importDb(payload);
+    // A restore replaces custom models wholesale; reload their declared caps.
+    await (await import("@/lib/customModelCaps")).refreshCustomModelCaps().catch(() => {});
 
     // Ensure proxy settings take effect immediately after a DB import.
     try {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCustomModels, addCustomModel, deleteCustomModel } from "@/models";
 import { CAPACITY_META } from "@/shared/constants/models";
+import { refreshCustomModelCaps } from "@/lib/customModelCaps";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export async function POST(request) {
       name,
       ...(cleanCaps ? { caps: cleanCaps } : {}),
     });
+    await refreshCustomModelCaps();
     return NextResponse.json({ success: true, added });
   } catch (error) {
     console.log("Error adding custom model:", error);
@@ -58,6 +60,7 @@ export async function DELETE(request) {
       return NextResponse.json({ error: "providerAlias and id required" }, { status: 400 });
     }
     await deleteCustomModel({ providerAlias, id, type });
+    await refreshCustomModelCaps();
     return NextResponse.json({ success: true });
   } catch (error) {
     console.log("Error deleting custom model:", error);
