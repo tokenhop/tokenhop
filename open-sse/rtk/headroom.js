@@ -187,7 +187,7 @@ function textFromHeadroomMessage(message) {
       parts.push(part.text);
     }
   }
-  return parts.length > 0 ? parts.join("\n") : null;
+  return parts.length > 0 || content.length === 0 ? parts.join("\n") : null;
 }
 
 // Claude shape: project only string fields (message text, text blocks, non-error
@@ -215,27 +215,38 @@ function collectClaudeHeadroomMessages(body) {
     }
     if (!Array.isArray(msg.content)) continue;
 
+    // Tool results go first so each role:"tool" message directly follows its
+    // tool_calls (Claude user turns may put text before tool_result blocks).
     const toolCalls = [];
+    const textBlocks = [];
     for (const block of msg.content) {
       if (block?.type === CLAUDE_BLOCK.TEXT) {
-        addTextTarget(msg.role, block.text, { object: block, key: "text" });
+        textBlocks.push(block);
       } else if (block?.type === CLAUDE_BLOCK.TOOL_USE) {
         toolCalls.push({
           id: block.id,
           type: OPENAI_BLOCK.FUNCTION,
           function: { name: block.name || "", arguments: JSON.stringify(block.input || {}) },
         });
-      } else if (block?.type === CLAUDE_BLOCK.TOOL_RESULT && !block.is_error) {
+      } else if (block?.type === CLAUDE_BLOCK.TOOL_RESULT) {
         const extra = { tool_call_id: block.tool_use_id };
-        if (typeof block.content === "string") {
+        const parts = Array.isArray(block.content)
+          ? block.content.filter((part) => part?.type === CLAUDE_BLOCK.TEXT)
+          : [];
+        if (!block.is_error && typeof block.content === "string") {
           addTextTarget(ROLE.TOOL, block.content, { object: block, key: "content" }, extra);
-        } else if (Array.isArray(block.content)) {
-          for (const part of block.content) {
-            if (part?.type !== CLAUDE_BLOCK.TEXT) continue;
-            addTextTarget(ROLE.TOOL, part.text, { object: part, key: "text" }, extra);
-          }
+        } else if (!block.is_error && parts.length === 1) {
+          addTextTarget(ROLE.TOOL, parts[0].text, { object: parts[0], key: "text" }, extra);
+        } else {
+          // ponytail: error and multi-part results stay context-only (one tool
+          // message per id, never rewritten); split write-back if they matter.
+          messages.push({ role: ROLE.TOOL, content: "", ...extra });
+          targets.push(null);
         }
       }
+    }
+    for (const block of textBlocks) {
+      addTextTarget(msg.role, block.text, { object: block, key: "text" });
     }
     if (toolCalls.length > 0) {
       messages.push({ role: ROLE.ASSISTANT, content: "", tool_calls: toolCalls });

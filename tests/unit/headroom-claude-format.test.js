@@ -172,6 +172,27 @@ describe("compressWithHeadroom claude format", () => {
     expect(body).toEqual(original);
   });
 
+  it("sends each tool result right after its tool_calls and fails open on a short reply", async () => {
+    const body = claudeToolHistoryBody();
+    const original = structuredClone(body);
+    global.fetch = vi.fn(async (_url, init) => {
+      const { messages } = JSON.parse(init.body);
+      return new Response(JSON.stringify({ messages: messages.slice(1) }), { status: 200 });
+    });
+
+    const data = await compressWithHeadroom(body, {
+      enabled: true,
+      url: "http://headroom.test",
+      model: MODEL,
+      format: "claude",
+    });
+
+    const sent = JSON.parse(global.fetch.mock.calls[0][1].body).messages;
+    expect(sent.map((m) => m.role)).toEqual(["user", "assistant", "tool", "tool", "user"]);
+    expect(data).toBeNull();
+    expect(body).toEqual(original);
+  });
+
   it("compresses tool_result text in place, preserving thinking, is_error and cache_control", async () => {
     const body = claudeToolHistoryBody();
     global.fetch = vi.fn(async (_url, init) => {
