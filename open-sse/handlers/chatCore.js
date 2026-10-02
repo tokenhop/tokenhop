@@ -284,25 +284,41 @@ export async function handleChatCore({
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
     if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
   } else {
-    translatedBody = translateRequest(
-      sourceFormat,
-      targetFormat,
-      upstreamModel,
-      body,
-      stream,
-      credentials,
-      provider,
-      reqLogger,
-      stripList,
-      connectionId,
-      clientTool,
-    );
+    // A throw here is a malformed client body (not an upstream failure):
+    // mark it request-scoped so the caller answers 400 without account state.
+    try {
+      translatedBody = translateRequest(
+        sourceFormat,
+        targetFormat,
+        upstreamModel,
+        body,
+        stream,
+        credentials,
+        provider,
+        reqLogger,
+        stripList,
+        connectionId,
+        clientTool,
+      );
+    } catch (error) {
+      error.isRequestPrepError = true;
+      translatedBody = { error };
+    }
     if (!translatedBody) {
       trackPendingRequest(model, provider, connectionId, false, true);
       return createErrorResult(
         HTTP_STATUS.BAD_REQUEST,
         `Failed to translate request for ${sourceFormat} → ${targetFormat}`,
       );
+    }
+    if (translatedBody.error) {
+      trackPendingRequest(model, provider, connectionId, false, true);
+      const errResult = createErrorResult(
+        HTTP_STATUS.BAD_REQUEST,
+        String(translatedBody.error?.message || translatedBody.error),
+      );
+      errResult.localError = true;
+      return errResult;
     }
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
