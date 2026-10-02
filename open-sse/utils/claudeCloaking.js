@@ -34,7 +34,8 @@ function generateFakeUserID(sessionId, apiKey) {
 /**
  * Cloak tools before sending to Claude provider (anti-ban):
  * - Rename client tools with the CLAUDE_TOOL_SUFFIX ("_ide") in tools[] and messages[]
- * - Skip tools that carry a `type` (server-side built-ins) — sent as-is
+ * - Skip tools that carry a `type` (server-side built-ins) — sent as-is.
+ *   `type: "custom"` is still a client tool: it gets the suffix like untyped ones.
  * - Inject CC_DECOY_TOOLS after client tools
  * Returns { body, toolNameMap } where toolNameMap maps suffixed → original
  * @param {object} body - Claude API request body
@@ -49,11 +50,12 @@ export function cloakClaudeTools(body) {
   const clientToolNames = new Set();
   const clientDeclarations = [];
 
-  // All client tools get renamed with suffix.
-  // Built-in server tools (web_search_20250305, etc.) carry a `type` and require
-  // an exact reserved `name` — never suffix those or Claude rejects the request.
+  // Client tools get renamed with the suffix; typed server built-ins are sent as-is.
+  // `type: "custom"` is Anthropic's shape for a plain client tool, so it cloaks
+  // too — skipping it here but suffixing its history calls is how "_ide" names
+  // leaked to clients in the first place (YAN-675).
   for (const tool of tools) {
-    if (tool.type) {
+    if (tool.type && tool.type !== "custom") {
       clientDeclarations.push(tool);
       continue;
     }
@@ -66,11 +68,16 @@ export function cloakClaudeTools(body) {
   // Client tools first, then CC decoy tools (no overlap: client tools all have _cc suffix)
   const allTools = [...clientDeclarations, ...CC_DECOY_TOOLS];
 
-  // Rename tool_use in message history (all client tools get suffix)
+  // Rename tool_use in message history — only names that are declared client
+  // tools. Built-in/decoy tools go through unsuffixed, and an unknown name must
+  // stay unmapped so the response decloak (which is map-driven) leaves it alone
+  // instead of leaking the "_ide" suffix to the client (YAN-675).
   const renamedMessages = body.messages?.map((msg) => {
     if (!Array.isArray(msg.content)) return msg;
     const renamedContent = msg.content.map((block) =>
-      block.type === "tool_use" ? { ...block, name: suffix(block.name) } : block,
+      block.type === "tool_use" && clientToolNames.has(block.name)
+        ? { ...block, name: suffix(block.name) }
+        : block,
     );
     return { ...msg, content: renamedContent };
   });
