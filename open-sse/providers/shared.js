@@ -5,6 +5,7 @@ import {
   CLAUDE_CLI_RUNTIME_VERSION,
   CLAUDE_CLI_USER_AGENT,
   CLAUDE_CLI_BETA_FLAGS,
+  BETA_FLAG,
 } from "../config/claudeCliFingerprint.js";
 
 export { CLAUDE_CLI_VERSION, CLAUDE_CLI_USER_AGENT };
@@ -112,6 +113,42 @@ export function selectAnthropicBeta(model = "", body = null) {
   if (/^claude-(opus|sonnet)/.test(model)) flags.push(...ANTHROPIC_BETA_HEAVY_AGENT);
   if (isFastModeRequest(body)) flags.push(ANTHROPIC_BETA_FAST_MODE);
   return flags.join(",");
+}
+
+// Merge a native Claude Code client's own anthropic-beta into the selected list
+// (YAN-655: new body fields like `safeguards` need their flag). Client flags must
+// be well-formed and can't override the gateway's deliberate choices: no 1M
+// context (the [1m] marker is stripped), no redact-thinking when summaries were
+// asked for, and fast mode (extra-usage billing) only when the body opts in.
+export function mergeClientAnthropicBeta(selected, clientBeta, body = null) {
+  const keepRedact = !wantsThinkingSummaries(body);
+  const keepFast = isFastModeRequest(body);
+  const client = String(clientBeta || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(
+      (flag) =>
+        BETA_FLAG.test(flag) &&
+        !flag.startsWith("context-1m-") &&
+        (keepRedact || flag !== ANTHROPIC_BETA_REDACT_THINKING) &&
+        (keepFast || flag !== ANTHROPIC_BETA_FAST_MODE),
+    );
+  const base = String(selected || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return [...new Set([...base, ...client])].join(",");
+}
+
+// True when an anthropic-compatible base URL targets official Anthropic
+// (empty → ANTHROPIC_COMPAT_BASE). Exact host, not a substring match.
+export function isOfficialAnthropicBaseUrl(baseUrl) {
+  if (!baseUrl) return true;
+  try {
+    return new URL(baseUrl).hostname === "api.anthropic.com";
+  } catch {
+    return false;
+  }
 }
 
 // Shared baseUrls

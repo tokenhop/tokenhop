@@ -159,6 +159,58 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
     );
     expect(flags).not.toContain("safeguards-2026-05-01");
   });
+
+  it("filters client beta flags the gateway gates deliberately", () => {
+    const executor = new DefaultExecutor("claude");
+    const build = (clientBeta, body = null) =>
+      executor
+        .buildHeaders(
+          {
+            apiKey: "sk-test",
+            rawHeaders: { "user-agent": "claude-cli/2.1.300", "anthropic-beta": clientBeta },
+          },
+          true,
+          undefined,
+          "claude-opus-5",
+          body,
+        )
+        ["Anthropic-Beta"].split(",");
+    const client =
+      "context-1m-2025-08-07,fast-mode-2026-02-01,redact-thinking-2026-02-12,not a flag,safeguards-2026-05-01";
+    let flags = build(client, { thinking: { type: "adaptive", display: "summarized" } });
+    expect(flags).toContain("safeguards-2026-05-01");
+    expect(flags).not.toContain("context-1m-2025-08-07");
+    expect(flags).not.toContain("fast-mode-2026-02-01");
+    expect(flags).not.toContain("redact-thinking-2026-02-12");
+    expect(flags).not.toContain("not a flag");
+    flags = build(client, { speed: "fast" });
+    expect(flags).toContain("fast-mode-2026-02-01");
+  });
+
+  it("treats only the exact api.anthropic.com host as official for compatible providers", () => {
+    const compat = new DefaultExecutor("anthropic-compatible-custom");
+    const build = (baseUrl) =>
+      compat
+        .buildHeaders(
+          {
+            apiKey: "key",
+            rawHeaders: {
+              "user-agent": "claude-cli/2.1.300",
+              "anthropic-beta": "safeguards-2026-05-01",
+            },
+            providerSpecificData: { baseUrl },
+          },
+          true,
+          undefined,
+          "claude-opus-5",
+        )
+        ["Anthropic-Beta"].split(",");
+    expect(build("https://api.anthropic.com/v1")).toContain("safeguards-2026-05-01");
+    expect(build("https://api.anthropic.com.evil.test/v1")).not.toContain("safeguards-2026-05-01");
+    expect(build("https://gw.example.com/api.anthropic.com/v1")).not.toContain(
+      "safeguards-2026-05-01",
+    );
+  });
 });
 
 // ─── anthropic-compatible header stripping ────────────────────────────────────

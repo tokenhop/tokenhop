@@ -123,6 +123,28 @@ describe("cloakClaudeTools", () => {
     expect(toolNameMap.has(`web_search${CLAUDE_TOOL_SUFFIX}`)).toBe(false);
   });
 
+  it("forced tool_choice on a custom tool is cloaked and its streamed call decloaks (YAN-675)", () => {
+    const { body, toolNameMap } = cloakClaudeTools({
+      tools: [{ type: "custom", name: "edit", input_schema: { type: "object" } }],
+      tool_choice: { type: "tool", name: "edit" },
+      messages: [
+        {
+          role: "assistant",
+          // A tool that is no longer declared: must stay unsuffixed
+          content: [{ type: "tool_use", id: "t0", name: "gone", input: {} }],
+        },
+      ],
+    });
+    expect(body.tool_choice.name).toBe(`edit${CLAUDE_TOOL_SUFFIX}`);
+    expect(body.messages[0].content[0].name).toBe("gone");
+    const chunk = {
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "tool_use", id: "t", name: `edit${CLAUDE_TOOL_SUFFIX}`, input: {} },
+    };
+    expect(decloakStreamChunk(chunk, toolNameMap).content_block.name).toBe("edit");
+  });
+
   it("returns the body unchanged when there are no tools", () => {
     const input = {
       messages: [{ role: "user", content: "hi" }],
