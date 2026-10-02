@@ -96,7 +96,7 @@ graphify-out/*
 # Kiro local workspace state
 .kiro/
 /tokenhop-*.tgz
-9router-*
+/9router-*.tgz # legacy(9router): old CLI tarball name
 
 # Local sensitive / temp files
 .engine-token.txt
