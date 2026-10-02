@@ -31,7 +31,7 @@ CREATE INDEX idx_rd_model ON requestDetails(model);
 CREATE INDEX idx_rd_conn ON requestDetails(connectionId);
 
 INSERT INTO _meta(key, value) VALUES ('schemaVersion', '3'), ('backupSchemaVersion', '1'), ('appVersion', '1.0.0');
-INSERT INTO settings(id, data) VALUES (1, '{"requireLogin":true,"samlIssuer":"9router"}');
+INSERT INTO settings(id, data) VALUES (1, '{"requireLogin":true,"samlIssuer":"9router"}'); -- legacy(9router): issuer pinned by 003
 INSERT INTO providerConnections(id, provider, authType, name, priority, isActive, data, createdAt, updatedAt)
   VALUES ('pc1', 'openai', 'apikey', 'work', 1, 1, '{"apiKey":"sk-test"}', '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z');
 INSERT INTO apiKeys(id, key, name, isActive, createdAt) VALUES ('k1', 'sk-th-legacy', 'laptop', 1, '2026-10-01T00:00:00Z');
