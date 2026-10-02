@@ -94,6 +94,37 @@ describe("Codex Responses Lite custom tools → OpenAI Chat", () => {
   });
 });
 
+describe("Codex namespace tool groups → OpenAI Chat (YAN-656)", () => {
+  it("expands namespace children into function tools, leaving no empty stub", () => {
+    const out = openaiResponsesToOpenAIRequest(
+      "cursor/model",
+      {
+        input: "hi",
+        tools: [
+          {
+            type: "namespace",
+            name: "collaboration",
+            description: "group",
+            tools: [
+              {
+                type: "function",
+                name: "spawn_agent",
+                description: "spawn",
+                parameters: { type: "object", properties: { task: { type: "string" } } },
+              },
+            ],
+          },
+        ],
+      },
+      true,
+      null,
+    );
+
+    expect(out.tools.map((tool) => tool.function.name)).toEqual(["spawn_agent"]);
+    expect(out.tools[0].function.parameters.properties.task).toEqual({ type: "string" });
+  });
+});
+
 describe("OpenAI Chat stream → Codex custom_tool_call", () => {
   it("unwraps the Chat input parameter and emits custom-tool events", () => {
     const state = initState(FORMATS.OPENAI_RESPONSES);
