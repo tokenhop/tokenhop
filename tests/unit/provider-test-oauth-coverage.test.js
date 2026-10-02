@@ -179,9 +179,17 @@ describe("provider connection tests for OAuth and imported keys", () => {
   });
 
   it("surfaces network errors from the Antigravity Cloud Code probe and persists the failure", async () => {
+    // cloudcode-pa is a DNS-bypass host: if another suite already installed
+    // proxyFetch's global patch, the probe would open a raw socket to Google
+    // instead of the stubbed fetch. Pin the global to the test's mock.
+    vi.doMock("open-sse/utils/proxyFetch.js", () => ({
+      proxyAwareFetch: (url, options) => global.fetch(url, options),
+      default: (url, options) => global.fetch(url, options),
+    }));
     const { result, updates } = await testConnection(connection("antigravity"), () =>
       Promise.reject(new Error("Network error: request timed out")),
     );
+    vi.doUnmock("open-sse/utils/proxyFetch.js");
     expect(result.valid).toBe(false);
     expect(result.error).toBe("Network error: request timed out");
     expect(updates[0]).toMatchObject({
