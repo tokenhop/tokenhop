@@ -197,6 +197,13 @@ describe("KiroExecutor thinking tag stripping", () => {
     expect(joinedContent(output)).toBe("one  two  three");
   });
 
+  it("flushes a held-back partial tag as content at clean EOF", async () => {
+    const frames = [createMockFrame("assistantResponseEvent", { content: "answer <thi" })];
+    const output = await streamFrames(frames);
+    expect(joinedContent(output)).toBe("answer <thi");
+    expect(output).toContain('"finish_reason":"stop"');
+  });
+
   it("handles empty content after stripping when hasReasoningContent is true", async () => {
     const executor = new KiroExecutor();
 

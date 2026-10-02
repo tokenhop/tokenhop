@@ -8,52 +8,44 @@ const GROK_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
 
 const MODEL_MAP = {
-  "grok-3": { grokModel: "grok-3", modelMode: "MODEL_MODE_GROK_3", isThinking: false },
+  "grok-3": { grokModel: "grok-3", modelMode: "MODEL_MODE_GROK_3" },
   "grok-3-mini": {
     grokModel: "grok-3",
     modelMode: "MODEL_MODE_GROK_3_MINI_THINKING",
-    isThinking: true,
   },
   "grok-3-thinking": {
     grokModel: "grok-3",
     modelMode: "MODEL_MODE_GROK_3_THINKING",
-    isThinking: true,
   },
-  "grok-4": { grokModel: "grok-4", modelMode: "MODEL_MODE_GROK_4", isThinking: false },
+  "grok-4": { grokModel: "grok-4", modelMode: "MODEL_MODE_GROK_4" },
   "grok-4-mini": {
     grokModel: "grok-4-mini",
     modelMode: "MODEL_MODE_GROK_4_MINI_THINKING",
-    isThinking: true,
   },
   "grok-4-thinking": {
     grokModel: "grok-4",
     modelMode: "MODEL_MODE_GROK_4_THINKING",
-    isThinking: true,
   },
-  "grok-4-heavy": { grokModel: "grok-4", modelMode: "MODEL_MODE_HEAVY", isThinking: true },
+  "grok-4-heavy": { grokModel: "grok-4", modelMode: "MODEL_MODE_HEAVY" },
   "grok-4.1-mini": {
     grokModel: "grok-4-1-thinking-1129",
     modelMode: "MODEL_MODE_GROK_4_1_MINI_THINKING",
-    isThinking: true,
   },
   "grok-4.1-fast": {
     grokModel: "grok-4-1-thinking-1129",
     modelMode: "MODEL_MODE_FAST",
-    isThinking: false,
   },
   "grok-4.1-expert": {
     grokModel: "grok-4-1-thinking-1129",
     modelMode: "MODEL_MODE_EXPERT",
-    isThinking: true,
   },
   "grok-4.1-thinking": {
     grokModel: "grok-4-1-thinking-1129",
     modelMode: "MODEL_MODE_GROK_4_1_THINKING",
-    isThinking: true,
   },
-  "grok-4.2": { grokModel: "grok-420", modelMode: "MODEL_MODE_GROK_420", isThinking: false },
-  "grok-4.20": { grokModel: "grok-420", modelMode: "MODEL_MODE_GROK_420", isThinking: false },
-  "grok-4.20-beta": { grokModel: "grok-420", modelMode: "MODEL_MODE_GROK_420", isThinking: false },
+  "grok-4.2": { grokModel: "grok-420", modelMode: "MODEL_MODE_GROK_420" },
+  "grok-4.20": { grokModel: "grok-420", modelMode: "MODEL_MODE_GROK_420" },
+  "grok-4.20-beta": { grokModel: "grok-420", modelMode: "MODEL_MODE_GROK_420" },
 };
 
 function randomString(length, alphanumeric = false) {
