@@ -266,15 +266,24 @@ check(
 
 // ---------------------------------------------------------------- 2-3. tokenhop on the same HOME
 step("2. Swap to the tokenhop build of this checkout");
-// Next.js inlines NEXT_PUBLIC_BRAND into the client bundles at build time.
+// Next.js inlines NEXT_PUBLIC_BRAND into the client bundles at build time, so a
+// tokenhop build's client code names it, or (v1.0.0+, where tokenhop is the
+// default) the build ran without the variable and the default is tokenhop.
 const layoutChunks = fs
   .readdirSync(path.join(ROOT, ".next", "static", "chunks", "app"))
-  .filter((f) => f.startsWith("layout-"));
+  .filter((f) => f.startsWith("layout-"))
+  .map((f) => read(path.join(ROOT, ".next", "static", "chunks", "app", f)));
+const inlinedTokenhop = layoutChunks.some((js) => js.includes('="tokenhop")'));
+const inlinedLegacy = layoutChunks.some((js) => js.includes('="9router")')); // legacy(9router)
+const defaultBrand = spawnSync(
+  process.execPath,
+  ["-p", 'require("./.next/standalone/src/shared/brand/index.cjs").DEFAULT_BRAND_ID'],
+  { cwd: ROOT, env: { PATH: process.env.PATH }, encoding: "utf8" },
+).stdout.trim();
 check(
   "this checkout was built for the tokenhop brand",
-  layoutChunks.some((f) =>
-    read(path.join(ROOT, ".next", "static", "chunks", "app", f)).includes('="tokenhop")'),
-  ),
+  inlinedTokenhop || (!inlinedLegacy && defaultBrand === "tokenhop"),
+  `inlined=${inlinedTokenhop} default=${defaultBrand}`,
 );
 const neu = await startServer(ROOT, "tokenhop", { NEXT_PUBLIC_BRAND: "tokenhop", ...LEGACY_ENV });
 const nc = await client(neu.base);
