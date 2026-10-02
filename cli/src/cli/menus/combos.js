@@ -305,9 +305,11 @@ async function handleCreateCombo() {
   // Create combo
   showStatus("Creating combo...", "info");
 
+  // The API stores model id strings (alias/model, as the dashboard sends),
+  // not the /api/models row objects (YAN-693).
   const createResult = await api.createCombo({
     name,
-    models: selectedModels,
+    models: selectedModels.map((m) => m.routedModel || `${m.provider}/${m.model}`),
   });
 
   if (!createResult.success) {
