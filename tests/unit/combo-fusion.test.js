@@ -197,6 +197,57 @@ describe("fusion combo", () => {
     expect(judgeBody.messages[2].role).toBe("tool");
   });
 
+  it("appends the judge turn to Responses string input instead of messages", async () => {
+    const handleSingleModel = vi.fn(async (_body, model) => {
+      if (model === "p/judge") return okResponse("FINAL");
+      return okResponse(`ans-${model}`);
+    });
+    await handleFusionChat({
+      body: { input: "what is 2+2?" },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge",
+    });
+
+    // String input: judge prompt must live in input (translator ignores messages when input is set).
+    const judgeCall = handleSingleModel.mock.calls.find(([, m]) => m === "p/judge");
+    expect(judgeCall).toBeDefined();
+    expect(Array.isArray(judgeCall[0].input)).toBe(true);
+    expect(judgeCall[0].input.length).toBe(2);
+    expect(judgeCall[0].input[0]).toEqual({ role: "user", content: "what is 2+2?" });
+    expect(judgeCall[0].input[1].content).toContain("Source 1");
+    expect(judgeCall[0].input[1].content).toContain("ans-p/a");
+    expect(judgeCall[0].messages).toBeUndefined();
+  });
+
+  it("flattens Responses array input tool items into prose for panel calls", async () => {
+    const handleSingleModel = vi.fn(async () => okResponse("ans"));
+    await handleFusionChat({
+      body: {
+        input: [
+          { role: "user", content: "find files" },
+          { type: "function_call", call_id: "c1", name: "find", arguments: "{}" },
+          { type: "function_call_output", call_id: "c1", output: "['a.js']" },
+        ],
+        tools: [{ type: "function", name: "find" }],
+      },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge",
+    });
+
+    const panelCalls = handleSingleModel.mock.calls.filter(([, , isPanel]) => isPanel === true);
+    expect(panelCalls.length).toBe(2);
+    for (const [panelBody] of panelCalls) {
+      expect(panelBody.tools).toBeUndefined();
+      expect(panelBody.input.some((i) => i.type === "function_call")).toBe(false);
+      expect(panelBody.input.some((i) => i.type === "function_call_output")).toBe(false);
+      expect(panelBody.input.at(-1).content).toContain("['a.js']");
+    }
+  });
+
   it("flattens Anthropic-style tool_use and tool_result blocks in arrays", async () => {
     const handleSingleModel = vi.fn(async () => okResponse("ans"));
     await handleFusionChat({

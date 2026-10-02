@@ -6,6 +6,7 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { RESPONSES_ITEM } from "../translator/schema/index.js";
 import { pickSmoothWeighted } from "./weightedRoundRobin.js";
 import { effectiveComboWeight } from "./comboWeights.js";
 
@@ -24,6 +25,23 @@ function flattenToolHistory(messages) {
   return messages
     .filter((msg) => msg)
     .map((msg) => {
+      // Responses API items carry no role: function_call / custom_tool_call and
+      // their *_output become assistant prose like the chat-format branches below.
+      if (
+        msg.type === RESPONSES_ITEM.FUNCTION_CALL ||
+        msg.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL
+      ) {
+        return { role: "assistant", content: `${TOOL_CALL_PREFIX}${msg.name || "tool"}]` };
+      }
+      if (
+        msg.type === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT ||
+        msg.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL_OUTPUT
+      ) {
+        const out = msg.output;
+        const text =
+          typeof out === "string" ? out : extractTextContent(out) || JSON.stringify(out ?? "");
+        return { role: "assistant", content: `${TOOL_RESULT_PREFIX}${text}]` };
+      }
       if (msg.role === "tool" || msg.role === "function") {
         return {
           role: "assistant",
@@ -648,6 +666,12 @@ function appendUserTurn(body, text) {
     next.messages = [...body.messages, { role: "user", content: text }];
   } else if (Array.isArray(body.input)) {
     next.input = [...body.input, { role: "user", content: text }];
+  } else if (typeof body.input === "string") {
+    // Responses shorthand: translator ignores messages when input is set, so keep it in input.
+    next.input = [
+      ...(body.input.trim() ? [{ role: "user", content: body.input }] : []),
+      { role: "user", content: text },
+    ];
   } else if (Array.isArray(body.contents)) {
     next.contents = [...body.contents, { role: "user", parts: [{ text }] }];
   } else {
