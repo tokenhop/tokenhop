@@ -118,5 +118,6 @@ export default {
     authHeader: "bearer",
   },
   imageConfig: { baseUrl: "https://api.openai.com/v1/images/generations" },
+  features: { liveModels: true },
   searchViaChat: { defaultModel: "gpt-4o-mini", pricingUrl: "https://openai.com/api/pricing" },
 };

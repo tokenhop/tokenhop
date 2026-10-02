@@ -15,6 +15,8 @@ import {
   resolveGeminiCli,
 } from "@/lib/providerModels/googleModels.js";
 import { resolveXai } from "@/lib/providerModels/xaiModels.js";
+import { resolveOpenAI } from "@/lib/providerModels/openaiModels.js";
+import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
 import { ANTHROPIC_API_VERSION } from "open-sse/providers/shared.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -254,6 +256,7 @@ export const LIVE_MODEL_RESOLVERS = {
   "gemini-cli": resolveGeminiCli,
   antigravity: resolveAntigravity,
   xai: resolveXai,
+  openai: resolveOpenAI,
   codex: resolveCodex,
   zed: resolveZed,
   kiro: resolveKiro,
@@ -278,8 +281,9 @@ export const LIVE_MODEL_RESOLVERS = {
       { forceRefresh, log: console },
     ),
   ),
-  github: passthrough("GitHub Copilot", (conn, { forceRefresh }) =>
-    resolveCopilotModels(
+  // Copilot's catalog is chat-only; embeddings (models.github.ai) stay static.
+  github: passthrough("GitHub Copilot", async (conn, { forceRefresh }) => {
+    const result = await resolveCopilotModels(
       {
         accessToken: conn.accessToken,
         refreshToken: conn.refreshToken,
@@ -296,8 +300,11 @@ export const LIVE_MODEL_RESOLVERS = {
           });
         },
       },
-    ),
-  ),
+    );
+    return result?.models?.length
+      ? { models: withStaticNonChatModels("github", result.models) }
+      : null;
+  }),
   // Cline and ClinePass share api.cline.bot/api/v1/models; the service handles
   // Bearer-vs-`workos:` auth and swallows failures into null.
   cline: passthrough("Cline", (conn) =>

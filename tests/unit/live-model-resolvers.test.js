@@ -94,10 +94,11 @@ describe("resolver registry", () => {
       "gemini-cli",
       "antigravity",
       "xai",
+      "openai",
     ]) {
       expect(hasLiveModelResolver(id)).toBe(true);
     }
-    expect(hasLiveModelResolver("openai")).toBe(false);
+    expect(hasLiveModelResolver("openrouter")).toBe(false);
     expect(hasLiveModelResolver("toString")).toBe(false);
   });
 
