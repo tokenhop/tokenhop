@@ -67,9 +67,11 @@ defaults above never apply inside a container.
 ## 3. Environment variables
 
 Product variables are renamed to `TOKENHOP_*`. The legacy names keep working
-through v1.x; when both spellings are set, the new one wins. Each legacy name
-logs one deprecation line per process naming its replacement. All legacy names
-are removed in v2.0.0.
+through v1.x; when both spellings are set, the new one wins. The four runtime
+variables at the top of the table log one deprecation line per process naming
+their replacement. The last three rows are not read as process variables: they
+are skill instructions and a jcode config entry, so they log nothing. All legacy
+names are removed in v2.0.0.
 
 | Legacy (removed in v2.0.0)              | New                                   |
 | --------------------------------------- | ------------------------------------- |
@@ -137,13 +139,13 @@ up configs 9router wrote. Configs you never re-apply keep working unchanged.
 | jcode                 | `~/.jcode/config.toml`, `~/.config/jcode/provider-9router.env` | `[providers.9router]` → `[providers.tokenhop]`; `default_provider` repointed; env file becomes `provider-tokenhop.env` with `JCODE_TOKENHOP_API_KEY` |
 | Grok Build            | `~/.grok/config.toml`                                          | `[model.9router*]` slots, `9router-prev-*` markers, the `__9router_unset__` sentinel and defaults renamed                                            |
 | DeepSeek TUI          | `~/.deepseek/config.toml`                                      | No brand name stored; Apply rewrites the whole file pointing at tokenhop                                                                             |
-| Hermes                | `~/.hermes/config.yaml`                                        | No brand name stored; Apply rewrites the `model:` block and `OPENAI_API_KEY`                                                                         |
+| Hermes                | `~/.hermes/config.yaml`, `~/.hermes/.env`                      | No brand name stored; Apply rewrites the `model:` block and `OPENAI_API_KEY`                                                                         |
 | OpenCode              | `~/.config/opencode/opencode.json`                             | `provider["9router"]` → `provider["tokenhop"]`; `model` and `agent.*.model` refs repointed; models/options merged                                    |
 | OpenClaw              | `~/.openclaw/openclaw.json`, per-agent `models.json`           | `models.providers["9router"]` → `["tokenhop"]`; primary/fallbacks/allowlist refs repointed                                                           |
 | Kilo                  | `~/.local/share/kilo/auth.json` + VS Code settings             | Legacy-named auth entries dropped, superseded by the `openai-compatible` provider                                                                    |
 | Droid                 | `~/.factory/` config                                           | Custom model ids `custom:9Router-N` → `custom:tokenhop-N`                                                                                            |
 | Copilot               | Copilot extension config                                       | Entry `9Router` → `tokenhop` in place                                                                                                                |
-| Cline                 | `~/.cline/data/globalState.json`, `secrets.json`               | No brand key stored; detection matches either name; the third-party "9Router for GitHub Copilot" extension is untouched                              |
+| Cline                 | `~/.cline/data/globalState.json`, `secrets.json`               | No brand key stored; a base URL naming either brand still counts as ours; the third-party "9Router for GitHub Copilot" extension is untouched        |
 | Claude, Cowork, Devin | Brand-neutral configs                                          | Nothing to migrate                                                                                                                                   |
 
 ## 6. Default key and headers
@@ -198,8 +200,11 @@ repo transfer onward publishes to the new path, including `1.0.0` and `latest`.
 - **Compose users:** nothing to do. `compose.yml` keeps the named volume
   `9router-data` — renaming it would make Compose create a new, empty volume,
   which looks like data loss. Your data keeps working under the new image.
-- **`docker run` users:** mounts at `/root/.9router` keep working; the image
-  also provides `/root/.tokenhop` as a symlink to the same data home.
+- **`docker run` users:** nothing to do. The image sets `DATA_DIR=/app/data`, so
+  keep mounting your data at `/app/data` (`-v "$HOME/.9router:/app/data"` keeps
+  working; the host path is yours to name). The image's `/root/.9router` and
+  `/root/.tokenhop` links point at a separate in-container home, not at your
+  data.
 
 Optional move to a `tokenhop-data` volume (stop the container first):
 
