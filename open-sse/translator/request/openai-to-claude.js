@@ -211,6 +211,8 @@ Respond ONLY with the JSON object, no other text.`);
         description: toolData.description || "",
         input_schema: toolData.parameters ||
           toolData.input_schema || { type: "object", properties: {}, required: [] },
+        // Only strict:true carries over; translateRequest drops it for non-Anthropic gateways.
+        ...((toolData.strict === true || tool.strict === true) && { strict: true }),
       });
     }
 
