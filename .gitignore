@@ -95,6 +95,7 @@ graphify-out/*
 
 # Kiro local workspace state
 .kiro/
+tokenhop-*
 9router-*
 
 # Local sensitive / temp files

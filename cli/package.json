@@ -1,9 +1,9 @@
 {
-  "name": "9router",
+  "name": "tokenhop",
   "version": "0.6.0",
-  "description": "9Router CLI - Start and manage 9Router server",
+  "description": "tokenhop CLI - Start and manage tokenhop server",
   "bin": {
-    "9router": "./cli.js"
+    "tokenhop": "./cli.js"
   },
   "files": ["cli.js", "src", "hooks", "app", "README.md", "LICENSE"],
   "scripts": {
@@ -26,7 +26,15 @@
   "engines": {
     "node": ">=18.3.0"
   },
-  "keywords": ["9router", "cli", "proxy", "ai", "api"],
+  "keywords": ["tokenhop", "cli", "proxy", "ai", "api"],
+  "homepage": "https://tokenhop.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tokenhop/tokenhop.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tokenhop/tokenhop/issues"
+  },
   "license": "MIT",
   "devDependencies": {
     "esbuild": "^0.28.2",
