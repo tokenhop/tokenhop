@@ -12,7 +12,8 @@ export function fallbackToolCallId(index) {
 
 // Generate deterministic tool call ID from position + tool name (cache-friendly)
 export function generateToolCallId(msgIndex = 0, tcIndex = 0, toolName = "") {
-  const name = toolName ? `_${toolName.replace(/[^a-zA-Z0-9_-]/g, "")}` : "";
+  const name =
+    typeof toolName === "string" && toolName ? `_${toolName.replace(/[^a-zA-Z0-9_-]/g, "")}` : "";
   return `call_msg${msgIndex}_tc${tcIndex}${name}`;
 }
 
@@ -104,9 +105,12 @@ export function ensureToolCallIds(body) {
 
   for (let i = 0; i < body.messages.length; i++) {
     const msg = body.messages[i];
+    // Malformed entries are left for upstream validation, never a TypeError (500).
+    if (!msg || typeof msg !== "object") continue;
     if (msg.role === "assistant" && msg.tool_calls && Array.isArray(msg.tool_calls)) {
       for (let j = 0; j < msg.tool_calls.length; j++) {
         const tc = msg.tool_calls[j];
+        if (!tc || typeof tc !== "object") continue;
         // Validate or regenerate ID for Anthropic compatibility
         if (!tc.id || !TOOL_ID_PATTERN.test(tc.id)) {
           const sanitized = sanitizeToolId(tc.id);
@@ -132,6 +136,7 @@ export function ensureToolCallIds(body) {
     if (Array.isArray(msg.content)) {
       for (let k = 0; k < msg.content.length; k++) {
         const block = msg.content[k];
+        if (!block || typeof block !== "object") continue;
         if (block.type === "tool_use" && block.id && !TOOL_ID_PATTERN.test(block.id)) {
           const sanitized = sanitizeToolId(block.id);
           block.id = sanitized || generateToolCallId(i, k, block.name);
@@ -154,7 +159,7 @@ export function ensureToolCallIds(body) {
 
 // Get tool_call ids from assistant message (OpenAI format: tool_calls, Claude format: tool_use in content)
 export function getToolCallIds(msg) {
-  if (msg.role !== "assistant") return [];
+  if (!msg || typeof msg !== "object" || msg.role !== "assistant") return [];
 
   const ids = [];
 
