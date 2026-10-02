@@ -11,6 +11,7 @@ import {
   clampResponsesCallId,
   coerceResponsesArguments,
   coerceResponsesOutput,
+  responsesOutputToChatContent,
   resolveFunctionToolStrict,
 } from "../formats/responsesApi.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, DEFAULT_DOCUMENT_FILENAME } from "../schema/index.js";
@@ -167,11 +168,12 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         }
         pendingToolResults = [];
       }
-      // Add tool result immediately
+      // Array output (input_text/input_image, e.g. Codex tool screenshots) maps to
+      // Chat content parts so images survive as image_url parts, not JSON text.
       result.messages.push({
         role: ROLE.TOOL,
         tool_call_id: item.call_id,
-        content: typeof item.output === "string" ? item.output : JSON.stringify(item.output),
+        content: responsesOutputToChatContent(item.output),
       });
     } else if (itemType === RESPONSES_ITEM.ADDITIONAL_TOOLS) {
       if (Array.isArray(item.tools)) additionalTools.push(...item.tools);
@@ -205,7 +207,14 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // such as Gemini, which strictly validates function names.
   const responseTools = [...(Array.isArray(body.tools) ? body.tools : []), ...additionalTools];
   if (responseTools.length > 0) {
+    // Codex groups nested tools as { type: "namespace", tools: [...] }; expand them
+    // so the children reach the provider. Calls come back by the child name,
+    // which the Codex upstream accepts (executors/codex.js registers namespace
+    // child names as valid), so no name mapping is needed on the response path.
     result.tools = responseTools
+      .flatMap((tool) =>
+        tool?.type === "namespace" && Array.isArray(tool.tools) ? tool.tools : [tool],
+      )
       .map((tool) => {
         // Already in Chat Completions format: { type: "function", function: { name, ... } }
         if (tool.function) return tool;
@@ -409,8 +418,21 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   // Extract system message as instructions
   let hasSystemMessage = false;
   const messages = body.messages || [];
+  // Images moved out of an assistant turn, emitted once its tool calls/outputs are in.
+  let pendingHoistedImages = [];
+  const flushHoistedImages = () => {
+    if (pendingHoistedImages.length === 0) return;
+    result.input.push({
+      type: RESPONSES_ITEM.MESSAGE,
+      role: ROLE.USER,
+      content: pendingHoistedImages,
+    });
+    pendingHoistedImages = [];
+  };
 
   for (const msg of messages) {
+    // A new user/assistant turn closes the previous tool-output run.
+    if (msg.role === ROLE.USER || msg.role === ROLE.ASSISTANT) flushHoistedImages();
     if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
       // Collect every instruction-bearing message; OpenAI recommends role="developer"
       // for GPT-5/Codex as the system-level prompt.
@@ -423,6 +445,9 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     }
 
     // Convert user/assistant messages to input items
+    // Assistant turns must not carry input_image — Codex rejects it there (only
+    // output_text/refusal allowed). Images are hoisted to a following user turn,
+    // mirroring the Claude tool-image hoist in formats/claude.js.
     if (msg.role === ROLE.USER || msg.role === ROLE.ASSISTANT) {
       // Multi-turn continuity for store=false Responses backends (Codex / Grok CLI):
       // re-emit a reasoning item before the assistant message when the chat-format
@@ -434,42 +459,56 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
       const contentType =
         msg.role === ROLE.USER ? RESPONSES_ITEM.INPUT_TEXT : RESPONSES_ITEM.OUTPUT_TEXT;
+      const hoistedImages = [];
       const content =
         typeof msg.content === "string"
           ? [{ type: contentType, text: msg.content }]
           : Array.isArray(msg.content)
-            ? msg.content.map((c) => {
-                if (c.type === OPENAI_BLOCK.TEXT) return { type: contentType, text: c.text };
-                // Convert Chat Completions image_url → Responses API input_image
-                // Responses API expects: { type: "input_image", image_url: "<url string>" }
-                // Chat Completions sends: { type: "image_url", image_url: { url: "...", detail: "..." } }
-                if (c.type === OPENAI_BLOCK.IMAGE_URL) {
-                  const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
+            ? msg.content
+                .map((c) => {
+                  if (c.type === OPENAI_BLOCK.TEXT) return { type: contentType, text: c.text };
+                  // Convert Chat Completions image_url → Responses API input_image
+                  // Responses API expects: { type: "input_image", image_url: "<url string>" }
+                  // Chat Completions sends: { type: "image_url", image_url: { url: "...", detail: "..." } }
+                  if (c.type === OPENAI_BLOCK.IMAGE_URL) {
+                    const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
+                    const image = {
+                      type: RESPONSES_ITEM.INPUT_IMAGE,
+                      image_url: url,
+                      detail: c.image_url?.detail || "auto",
+                    };
+                    if (msg.role === ROLE.ASSISTANT) {
+                      hoistedImages.push(image);
+                      return null;
+                    }
+                    return image;
+                  }
+                  if (c.type === RESPONSES_ITEM.INPUT_IMAGE) {
+                    if (msg.role === ROLE.ASSISTANT) {
+                      hoistedImages.push(c);
+                      return null;
+                    }
+                    return c;
+                  }
+                  if (c.type === OPENAI_BLOCK.FILE && c.file?.file_data) {
+                    return {
+                      type: RESPONSES_ITEM.INPUT_FILE,
+                      filename: c.file.filename || DEFAULT_DOCUMENT_FILENAME,
+                      file_data: c.file.file_data,
+                    };
+                  }
+                  // Uploaded file reference (no inline data) → input_file by id
+                  if (c.type === OPENAI_BLOCK.FILE && c.file?.file_id) {
+                    return { type: RESPONSES_ITEM.INPUT_FILE, file_id: c.file.file_id };
+                  }
+                  // Serialize any unknown type (tool_use, tool_result, thinking, etc.) as text
+                  const text = c.text || c.content || JSON.stringify(c);
                   return {
-                    type: RESPONSES_ITEM.INPUT_IMAGE,
-                    image_url: url,
-                    detail: c.image_url?.detail || "auto",
+                    type: contentType,
+                    text: typeof text === "string" ? text : JSON.stringify(text),
                   };
-                }
-                if (c.type === RESPONSES_ITEM.INPUT_IMAGE) return c;
-                if (c.type === OPENAI_BLOCK.FILE && c.file?.file_data) {
-                  return {
-                    type: RESPONSES_ITEM.INPUT_FILE,
-                    filename: c.file.filename || DEFAULT_DOCUMENT_FILENAME,
-                    file_data: c.file.file_data,
-                  };
-                }
-                // Uploaded file reference (no inline data) → input_file by id
-                if (c.type === OPENAI_BLOCK.FILE && c.file?.file_id) {
-                  return { type: RESPONSES_ITEM.INPUT_FILE, file_id: c.file.file_id };
-                }
-                // Serialize any unknown type (tool_use, tool_result, thinking, etc.) as text
-                const text = c.text || c.content || JSON.stringify(c);
-                return {
-                  type: contentType,
-                  text: typeof text === "string" ? text : JSON.stringify(text),
-                };
-              })
+                })
+                .filter(Boolean)
             : [];
 
       // Only push a message block if content is non-empty.
@@ -482,6 +521,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
           content,
         });
       }
+      pendingHoistedImages.push(...hoistedImages);
     }
 
     // Convert tool calls
@@ -499,15 +539,51 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       }
     }
 
-    // Convert tool results - output must be a string for Responses API
+    // Hoisted assistant images go after the turn's function_calls, and after
+    // their tool outputs when there are calls, so a user message never splits a
+    // call from its output.
+    if (msg.role === ROLE.ASSISTANT && !msg.tool_calls?.length) flushHoistedImages();
+
+    // Convert tool results - output must be a string for Responses API.
+    // Image parts can't ride in the string output, so they follow as a user
+    // message with input_image items (the model sees the image, no base64 text).
     if (msg.role === ROLE.TOOL) {
+      const parts = Array.isArray(msg.content) ? msg.content : [];
+      const images = parts
+        .filter((c) => c?.type === OPENAI_BLOCK.IMAGE_URL || c?.type === RESPONSES_ITEM.INPUT_IMAGE)
+        .map((c) => {
+          if (c.type === RESPONSES_ITEM.INPUT_IMAGE) return c;
+          const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
+          return {
+            type: RESPONSES_ITEM.INPUT_IMAGE,
+            image_url: url,
+            detail: c.image_url?.detail || "auto",
+          };
+        });
+      const rest = images.length
+        ? parts.filter(
+            (c) => c?.type !== OPENAI_BLOCK.IMAGE_URL && c?.type !== RESPONSES_ITEM.INPUT_IMAGE,
+          )
+        : msg.content;
       result.input.push({
         type: RESPONSES_ITEM.FUNCTION_CALL_OUTPUT,
         call_id: clampResponsesCallId(msg.tool_call_id),
-        output: coerceResponsesOutput(msg.content),
+        output: coerceResponsesOutput(rest) || (images.length ? "(image attached below)" : ""),
       });
+      if (images.length > 0) {
+        // Deferred until the run of tool outputs ends: a user message between two
+        // function_call_outputs would split parallel calls from their outputs.
+        pendingHoistedImages.push(
+          {
+            type: RESPONSES_ITEM.INPUT_TEXT,
+            text: `[Image from tool result ${clampResponsesCallId(msg.tool_call_id)}]`,
+          },
+          ...images,
+        );
+      }
     }
   }
+  flushHoistedImages();
 
   // If no system message, leave instructions empty (will be filled by executor)
   if (!hasSystemMessage) {
