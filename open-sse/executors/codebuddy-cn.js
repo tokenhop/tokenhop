@@ -20,9 +20,10 @@ export class CodeBuddyExecutor extends DefaultExecutor {
 
     // Tencent's content filter flags CLI agent system prompts ("You are Claude
     // Code, Anthropic's official CLI...") as prompt injection / sensitive content
-    // and rejects the whole request. Detect agent system prompts (length catch-all
-    // + identity-marker regex) and replace them with a neutral one, while leaving
-    // legitimate user system prompts untouched. content may be a string or typed
+    // and rejects the whole request. Detect agent system prompts via the
+    // identity-marker regex and replace them with a neutral one, while leaving
+    // legitimate user system prompts (including long ones) untouched. content
+    // may be a string or typed
     // blocks ([{type:"text",text}]) depending on the incoming client format, so
     // flatten before matching and preserve the original shape on replacement.
     const NEUTRAL_PROMPT =
@@ -40,7 +41,7 @@ export class CodeBuddyExecutor extends DefaultExecutor {
         if (!message || message.role !== "system") return message;
         const text = flatten(message.content);
         if (!text) return message;
-        if (text.length > 2000 || AGENT_PATTERN.test(text)) {
+        if (AGENT_PATTERN.test(text)) {
           return typeof message.content === "string"
             ? { ...message, content: NEUTRAL_PROMPT }
             : { ...message, content: [{ type: "text", text: NEUTRAL_PROMPT }] };
