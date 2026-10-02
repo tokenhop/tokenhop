@@ -13,6 +13,9 @@ name: Docs Deploy
 #                                    production is untouched
 #   workflow_dispatch                deploy production from master
 #
+# `--branch=master` is a production deploy because the Pages project's
+# production branch is master.
+#
 # Secrets: CLOUDFLARE_API_TOKEN (Account → Cloudflare Pages: Edit) and
 # CLOUDFLARE_ACCOUNT_ID. Without them the deploy step fails and the site stays
 # as it was.
@@ -38,6 +41,7 @@ concurrency:
   # One group per deploy target; deploys queue, PR builds supersede each other.
   group: >-
     docs-deploy-${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref)
+    || github.event_name == 'workflow_dispatch' && 'production'
     || (github.ref_type == 'tag' && contains(github.ref_name, '-')) && 'beta'
     || 'production' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -108,5 +112,6 @@ jobs:
         run: |
           set -eu
           sha=$(git rev-parse HEAD)
-          npx --yes wrangler@4 pages deploy out --project-name=tokenhop-docs \
+          # Pinned: this step holds the Cloudflare token.
+          npx --yes wrangler@4.147.0 pages deploy out --project-name=tokenhop-docs \
             --branch="$BRANCH" --commit-hash="$sha" --commit-message="$(git log -1 --format=%s)" --commit-dirty=true
