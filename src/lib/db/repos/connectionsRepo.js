@@ -186,7 +186,10 @@ function mergeReloginProviderData(previous, fresh, provider) {
   return merged;
 }
 
-export async function createProviderConnection(data) {
+// rejectDuplicateName: throw DUPLICATE_CONNECTION_NAME instead of upserting an
+// apikey row with the same name. The check runs in the transaction, so two
+// concurrent creates cannot both pass it.
+export async function createProviderConnection(data, { rejectDuplicateName = false } = {}) {
   const db = await getAdapter();
   const now = new Date().toISOString();
   let result;
@@ -232,6 +235,11 @@ export async function createProviderConnection(data) {
       });
     } else if (data.authType === "apikey" && data.name) {
       existing = all.find((c) => c.authType === "apikey" && c.name === data.name);
+      if (existing && rejectDuplicateName) {
+        const err = new Error(`A connection named "${data.name}" already exists for this provider`);
+        err.code = "DUPLICATE_CONNECTION_NAME";
+        throw err;
+      }
     }
     // access_token: never dedup — user manages duplicates manually
 

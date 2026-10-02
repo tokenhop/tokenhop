@@ -358,6 +358,7 @@ export class GrokCliExecutor extends BaseExecutor {
     this._currentReqId = null;
     this._currentTurnIdx = 1;
     this._agentId = null;
+    this._machineAgentId = null;
   }
 
   buildUrl() {
@@ -437,10 +438,12 @@ export class GrokCliExecutor extends BaseExecutor {
     const requestKey = body;
     this._currentSessionId = resolveGrokCliSessionId(credentials, body);
     this._currentReqId = crypto.randomUUID();
+    // Executor is a shared singleton: fall back to the machine id, never to the
+    // previous request's connection id.
     this._agentId =
       credentials?.providerSpecificData?.deviceId ||
       credentials?.providerSpecificData?.agentId ||
-      null;
+      this._machineAgentId;
 
     // Normalize Responses input
     const normalized = normalizeResponsesInput(body.input);
@@ -542,23 +545,23 @@ export class GrokCliExecutor extends BaseExecutor {
   }
 
   async execute(args) {
-    // Lazy-resolve stable agent id once per process if connection has none
-    if (!this._agentId && !args.credentials?.providerSpecificData?.deviceId) {
+    // Resolve the stable machine agent id once per process; transformRequest
+    // uses it for connections without deviceId/agentId.
+    if (!this._machineAgentId) {
       try {
+        // getConsistentMachineId returns 16 hex chars; stretch to 32 for a UUID layout.
         const mid = await getConsistentMachineId("grok-cli-agent");
-        // Format as UUID-ish for header aesthetics
-        this._agentId = [
-          mid.slice(0, 8),
-          mid.slice(8, 12),
-          "5" + mid.slice(13, 16),
-          "a" + mid.slice(17, 20),
-          mid.slice(0, 12).padEnd(12, "0"),
+        const hex = crypto.createHash("sha256").update(mid).digest("hex");
+        this._machineAgentId = [
+          hex.slice(0, 8),
+          hex.slice(8, 12),
+          "5" + hex.slice(13, 16),
+          "a" + hex.slice(17, 20),
+          hex.slice(20, 32),
         ].join("-");
       } catch {
-        this._agentId = crypto.randomUUID();
+        this._machineAgentId = crypto.randomUUID();
       }
-    } else if (args.credentials?.providerSpecificData?.deviceId) {
-      this._agentId = args.credentials.providerSpecificData.deviceId;
     }
 
     return super.execute(args);
