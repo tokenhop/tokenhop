@@ -53,7 +53,7 @@ export const DEFAULT_CAPABILITIES = {
   tools: true, // function / tool calling
   reasoning: false, // thinking / reasoning
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
-  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step
+  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|mimo|hunyuan|step|tokenrouter|commandcode
   thinkingFormat: null,
   thinkingCanDisable: true, // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null, // { min, max } for budget formats; null = no clamp
@@ -455,6 +455,38 @@ export const PROVIDER_CAPABILITIES = {
       thinkingFormat: "openai",
       contextWindow: 1000000,
       maxOutput: 65536,
+    },
+  },
+  // OpenCode Go (Console Go) is OpenAI-compatible: it rejects z.ai's native
+  // `thinking` field ("unknown field") on GLM. Send reasoning_effort instead,
+  // same as the nvidia override above.
+  "opencode-go": {
+    "glm-5.3-flash": {
+      vision: true,
+      videoInput: true,
+      pdf: true,
+      reasoning: true,
+      thinkingFormat: "openai",
+      contextWindow: 1000000,
+      maxOutput: 131072,
+    },
+    "glm-5.3": {
+      reasoning: true,
+      thinkingFormat: "openai",
+      contextWindow: 200000,
+      maxOutput: 128000,
+    },
+    "glm-5.2": {
+      reasoning: true,
+      thinkingFormat: "openai",
+      contextWindow: 200000,
+      maxOutput: 128000,
+    },
+    "glm-5.1": {
+      reasoning: true,
+      thinkingFormat: "openai",
+      contextWindow: 200000,
+      maxOutput: 128000,
     },
   },
   codex: {
@@ -1366,6 +1398,18 @@ export const PATTERN_CAPABILITIES = [
   {
     pattern: "*mimo*omni*",
     caps: { vision: true, audioInput: true, contextWindow: 262144, maxOutput: 131072 },
+  },
+  // Desktop-exclusive previews reason by default and take MiMo's binary
+  // thinking.type switch (the executor defaults it to enabled when unset).
+  {
+    pattern: "*mimo*preview*",
+    caps: {
+      vision: true,
+      reasoning: true,
+      thinkingFormat: "mimo",
+      contextWindow: 262144,
+      maxOutput: 131072,
+    },
   },
   { pattern: "*mimo*", caps: { vision: true, contextWindow: 262144, maxOutput: 131072 } },
 
