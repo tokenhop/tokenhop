@@ -1,0 +1,123 @@
+name: npm Release
+
+# Publishes the CLI package (cli/) to npm with trusted publishing (OIDC — there
+# is no NPM_TOKEN anywhere) and provenance attestations. The package name and
+# version are always read from cli/package.json, never hardcoded here.
+#
+#   v* tag push        builds cli/, verifies the embedded OAuth defaults, then
+#                      `npm publish --provenance --access public` from cli/.
+#                      scripts/resolve-npm-publish.sh fails the run unless the
+#                      tag equals the cli/package.json version, so a stale tag
+#                      (e.g. a v0.6.x patch tag) can never publish from master.
+#   workflow_dispatch  defaults to a dry run: everything up to and including
+#                      `npm publish --dry-run` (provenance included), no upload.
+#                      dry_run=false really publishes and is honored only from
+#                      master.
+#
+# Dist-tags: a prerelease version (any "-" in it, e.g. 1.0.0-beta.1) publishes
+# with --tag beta and never moves latest; a stable version publishes as latest.
+#
+# Tag runs use the workflow file at the tagged commit; branches without this
+# file (e.g. release/0.6) cannot publish.
+#
+# Trusted publishing needs npm >= 11.21 (upgraded below; the .nvmrc Node ships
+# an older npm) and the package on npmjs.com must trust this repo + this
+# workflow file (release-npm.yml). Provenance attestations come from the same
+# OIDC token (id-token: write).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Stop at `npm publish --dry-run` (uncheck to really publish; master only)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write # npm trusted publishing (OIDC) + provenance attestations
+
+concurrency:
+  # Never cancel mid-publish; one publish per ref at a time.
+  group: release-npm-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  publish:
+    name: Publish CLI to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          # No dependency cache: this job holds an OIDC publish identity, and a
+          # poisoned cache must not reach it (npm's guidance for release builds).
+          registry-url: https://registry.npmjs.org
+
+      - name: Upgrade npm for trusted publishing
+        run: |
+          # Trusted publishing needs npm >= 11.5.1; setting the dist-tag at
+          # publish time (--tag beta) over OIDC needs npm >= 11.21.
+          npm install --global --no-audit --no-fund "npm@^11.21"
+          node --version
+          npm --version
+
+      - run: npm ci --no-audit --no-fund
+
+      # cli/ has no lockfile; --ignore-scripts skips its postinstall, which provisions the data dir.
+      - run: npm --prefix cli install --no-audit --no-fund --no-package-lock --ignore-scripts
+
+      - name: Resolve version, dist-tag and publish mode
+        id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+          REF: ${{ github.ref }}
+        run: ./scripts/resolve-npm-publish.sh
+
+      # Same build args as docker-publish.yml uses for v1+ tags: this workflow
+      # only ever publishes the rebranded CLI package, so it builds that brand.
+      - name: Build CLI package
+        env:
+          NEXT_PUBLIC_BRAND: tokenhop
+          GEMINI_OAUTH_CLIENT_ID: ${{ secrets.GEMINI_OAUTH_CLIENT_ID }}
+          GEMINI_OAUTH_CLIENT_SECRET: ${{ secrets.GEMINI_OAUTH_CLIENT_SECRET }}
+          ANTIGRAVITY_OAUTH_CLIENT_ID: ${{ secrets.ANTIGRAVITY_OAUTH_CLIENT_ID }}
+          ANTIGRAVITY_OAUTH_CLIENT_SECRET: ${{ secrets.ANTIGRAVITY_OAUTH_CLIENT_SECRET }}
+          META_CODE_OAUTH_CLIENT_ID: ${{ secrets.META_CODE_OAUTH_CLIENT_ID }}
+        run: npm --prefix cli run build
+
+      # The same check as the package's prepublishOnly, run from the repo root
+      # (hence cli/app instead of app).
+      - name: Check embedded OAuth client defaults
+        run: node scripts/write-oauth-clients.cjs --check cli/app
+
+      - name: Publish to npm
+        working-directory: cli
+        env:
+          DIST_TAG: ${{ steps.resolve.outputs.dist_tag }}
+          DRY_RUN: ${{ steps.resolve.outputs.dry_run }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -eu
+          args=(--provenance --access public --tag "$DIST_TAG")
+          # prepublishOnly would rebuild the whole CLI; the steps above already
+          # built it and ran the same OAuth check, so skip lifecycle scripts.
+          args+=(--ignore-scripts)
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          # Trusted publishing and provenance resolve the package's source repo
+          # from repository.url, which must match github.repository exactly.
+          # YAN-615 owns the static package.json fields, so it is set here only,
+          # for the tarball; nothing on disk changes.
+          npm pkg set "repository.url=git+https://github.com/${REPOSITORY}.git" "repository.type=git"
+          echo "+ npm publish ${args[*]}"
+          npm publish "${args[@]}"
