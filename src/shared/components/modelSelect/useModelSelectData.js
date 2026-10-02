@@ -8,6 +8,7 @@ import {
   FREE_PROVIDERS,
   FREE_TIER_PROVIDERS,
   AI_PROVIDERS,
+  VISIBLE_NO_AUTH_PROVIDERS,
   isOpenAICompatibleProvider,
   isAnthropicCompatibleProvider,
   getProviderAlias,
@@ -30,8 +31,8 @@ const PROVIDER_ORDER = [
   ...Object.keys(APIKEY_PROVIDERS),
 ];
 
-// Providers that need no auth — always show in model selector
-const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter((id) => FREE_PROVIDERS[id].noAuth);
+// Providers that need no auth — always show in model selector (hidden ones never)
+const NO_AUTH_PROVIDER_IDS = VISIBLE_NO_AUTH_PROVIDERS.map((p) => p.id);
 const ALL_PROVIDERS = {
   ...OAUTH_PROVIDERS,
   ...FREE_PROVIDERS,
