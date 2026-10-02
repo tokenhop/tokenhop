@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import initSqlJs from "sql.js";
 import { PRAGMA_SQL } from "../schema.js";
+import { runShutdownFlushers } from "../shutdownFlushers.js";
 
 let SQL = null;
 
@@ -113,8 +114,9 @@ export async function createSqlJsAdapter(filePath) {
     db.close();
   }
 
-  // Flush on shutdown
+  // Flush on shutdown (sync: repos flush before sql.js persists to disk)
   const flush = () => {
+    runShutdownFlushers();
     if (dirty)
       try {
         persist();

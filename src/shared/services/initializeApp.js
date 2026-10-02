@@ -4,6 +4,7 @@ import { dirname, join } from "path";
 import { existsSync } from "fs";
 import { ACTIVE, readEnv } from "@/shared/brand";
 import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
+import { runShutdownFlushers } from "@/lib/db/shutdownFlushers.js";
 import {
   enableTunnel,
   enableTailscale,
@@ -93,6 +94,9 @@ export async function initializeApp() {
           /* best effort */
         }
         killCloudflared();
+        // Exits before the DB adapters' own signal handlers run, so flush
+        // buffered writes (request details) here while the DB is still open.
+        runShutdownFlushers();
         process.exit();
       };
       process.on("SIGINT", cleanup);
