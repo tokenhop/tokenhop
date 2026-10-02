@@ -33,7 +33,7 @@ describe("sql.js adapter atomic persist", () => {
     vi.restoreAllMocks();
 
     expect(fs.readFileSync(file).equals(original)).toBe(true);
-    expect(fs.existsSync(`${file}.tmp`)).toBe(false);
+    expect(fs.readdirSync(tempDir).filter((f) => f.endsWith(".tmp"))).toEqual([]);
 
     const third = await createSqlJsAdapter(file);
     expect(third.all("SELECT v FROM t")).toEqual([{ v: "kept" }]);
