@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Badge from "@/shared/components/Badge";
 import Checkbox from "@/shared/components/Checkbox";
 import SegmentedControl from "@/shared/components/SegmentedControl";
@@ -15,6 +15,7 @@ import { buildClaudeConfig } from "@/lib/cliToolConfigs/claude";
 import { resolveApiKey, manualApiKey, toManualConfigs } from "./setupCard";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import { deriveToolStatus } from "../lib/toolStatus";
+import { useToolSettings } from "../hooks/useToolSettings";
 import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
@@ -54,16 +55,14 @@ export default function ClaudeToolCard({
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [currentEditingAlias, setCurrentEditingAlias] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
   const [showManualModal, setShowManualModal] = useState(false);
-  const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [ccFilterNaming, setCcFilterNaming] = useState(ccFilterNamingProp);
-  const [exaMcpEnabled, setExaMcpEnabled] = useState(false);
-  const [autoCompactWindow, setAutoCompactWindow] = useState("");
-  const [oneMContext, setOneMContext] = useState(false);
-  const [modelMappings, setModelMappings] = useState({});
-  const hasInitializedModels = useRef(false);
-  const localOnly = useCliAccessStore((s) => s.localOnly);
+  // Endpoint the picker chose at mount; not a user edit, so it isn't saved.
+  const [initUrl, setInitUrl] = useState("");
+  // ponytail: typed or browser-preset keys stay in memory only (no raw secrets in the DB);
+  // persisting them comes with the presets move (YAN-642).
+  const [customKey, setCustomKey] = useState(null);
+  const [pickerKey, setPickerKey] = useState(0);
 
   // Stable callback identity across renders — see setupCard.js. The latest
   // callback lives in a ref so the effect below runs once per mount.
@@ -83,7 +82,6 @@ export default function ClaudeToolCard({
       if (await isLocalOnlyResponse(res)) return markLocalOnly();
       const data = await res.json();
       setClaudeStatus(data);
-      setExaMcpEnabled(Boolean(data?.exaMcpEnabled));
       onStatusUpdateRef.current?.("claude", data);
     } catch (err) {
       setClaudeStatus({ installed: false, error: err.message });
@@ -101,41 +99,71 @@ export default function ClaudeToolCard({
     setCcFilterNaming(ccFilterNamingProp);
   }, [ccFilterNamingProp]);
 
-  // Sync API keys and initial mappings from on-disk settings
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
+  const defaults = useMemo(
+    () => ({
+      models: Object.fromEntries(
+        (tool.defaultModels || []).map((m) => [m.alias, m.defaultValue || ""]),
+      ),
+      endpoint: "",
+      apiKeyId: "",
+      autoCompactWindow: "",
+      oneMContext: false,
+      exaMcpEnabled: false,
+    }),
+    [tool.defaultModels],
+  );
 
-  // Remotely status never loads, so seed the mappings from the tool defaults.
-  useEffect(() => {
-    if (!localOnly || hasInitializedModels.current) return;
-    hasInitializedModels.current = true;
-    const initial = {};
-    tool.defaultModels?.forEach((m) => {
-      if (m.envKey && m.defaultValue) initial[m.alias] = m.defaultValue;
-    });
-    setModelMappings(initial);
-  }, [localOnly, tool.defaultModels]);
+  // On the host, the installed config fills fields the user hasn't saved yet.
+  const disk = useMemo(() => {
+    if (!claudeStatus?.installed) return null;
+    const env = claudeStatus.settings?.env || {};
+    return {
+      models: Object.fromEntries(
+        (tool.defaultModels || []).map((m) => [m.alias, env[m.envKey] || m.defaultValue || ""]),
+      ),
+      endpoint: env.ANTHROPIC_BASE_URL || undefined,
+      apiKeyId: apiKeys.find((k) => k.key === env.ANTHROPIC_AUTH_TOKEN)?.id,
+      autoCompactWindow: env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || undefined,
+      oneMContext: Boolean(tool.defaultModels?.some((m) => env[m.envKey]?.endsWith("[1m]"))),
+      exaMcpEnabled: Boolean(claudeStatus.exaMcpEnabled),
+    };
+  }, [claudeStatus, tool.defaultModels, apiKeys]);
 
-  useEffect(() => {
-    if (claudeStatus?.installed && !hasInitializedModels.current) {
-      hasInitializedModels.current = true;
-      const env = claudeStatus.settings?.env || {};
-      const initial = {};
-      tool.defaultModels?.forEach((m) => {
-        const v = env[m.envKey] || m.defaultValue || "";
-        if (m.envKey && v) initial[m.alias] = v;
-      });
-      if (Object.keys(initial).length > 0) setModelMappings(initial);
-      if (env.ANTHROPIC_AUTH_TOKEN) setSelectedApiKey(env.ANTHROPIC_AUTH_TOKEN);
-      if (env.CLAUDE_CODE_AUTO_COMPACT_WINDOW) {
-        setAutoCompactWindow(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW);
-      }
-      setOneMContext(Boolean(tool.defaultModels?.some((m) => env[m.envKey]?.endsWith("[1m]"))));
-    }
-  }, [claudeStatus, tool.defaultModels]);
+  const [values, setField, settings] = useToolSettings("claude", defaults, disk);
+  const { models: modelMappings, autoCompactWindow, oneMContext, exaMcpEnabled } = values;
+  const diskToken = claudeStatus?.installed
+    ? claudeStatus.settings?.env?.ANTHROPIC_AUTH_TOKEN || ""
+    : "";
+  // Saved key id, else (host) the key in the file, else the first key. A deleted key's id
+  // matches nothing and falls through the same way.
+  const selectedApiKey =
+    customKey ??
+    (apiKeys.find((k) => k.id === values.apiKeyId)?.key || diskToken || apiKeys[0]?.key || "");
+
+  const handleApiKeyChange = (key) => {
+    const match = apiKeys.find((k) => k.key === key);
+    if (!match) return setCustomKey(key);
+    setCustomKey(null);
+    setField("apiKeyId", match.id);
+  };
+
+  const handleEndpointChange = (url, meta) => {
+    if (meta?.init) setInitUrl(url);
+    else setField("endpoint", url);
+  };
+
+  const handleResetDefaults = async () => {
+    if (!(await settings.reset())) return;
+    setCustomKey(null);
+    setInitUrl("");
+    setPickerKey((k) => k + 1);
+  };
+
+  const handleLoadFromFile = () => {
+    settings.loadFromDisk();
+    setCustomKey(null);
+    setPickerKey((k) => k + 1);
+  };
 
   const withContextMarker = (value, enabled) => {
     const { model } = stripModelContextMarker(value);
@@ -143,18 +171,15 @@ export default function ClaudeToolCard({
   };
 
   const handleOneMContextToggle = (enabled) => {
-    setOneMContext(enabled);
-    setModelMappings((prev) => {
-      const next = { ...prev };
-      tool.defaultModels?.forEach((m) => {
-        if (next[m.alias]) next[m.alias] = withContextMarker(next[m.alias], enabled);
-      });
-      return next;
+    const next = { ...modelMappings };
+    tool.defaultModels?.forEach((m) => {
+      if (next[m.alias]) next[m.alias] = withContextMarker(next[m.alias], enabled);
     });
+    settings.setFields({ oneMContext: enabled, models: next });
   };
 
   const handleModelChange = (alias, val) => {
-    setModelMappings((prev) => ({ ...prev, [alias]: val }));
+    setField("models", { ...modelMappings, [alias]: val });
   };
 
   // Picked models follow the [1m] toggle; typed values stay as typed.
@@ -177,10 +202,8 @@ export default function ClaudeToolCard({
     }
   };
 
-  const currentBaseUrl = claudeStatus?.settings?.env?.ANTHROPIC_BASE_URL || "";
-
   const getEffectiveBaseUrl = () => {
-    const u = customBaseUrl || baseUrl || "http://localhost:20128/v1";
+    const u = values.endpoint || initUrl || baseUrl || "http://localhost:20128/v1";
     return u.endsWith("/v1") ? u : `${u}/v1`;
   };
 
@@ -226,16 +249,8 @@ export default function ClaudeToolCard({
       const res = await fetch("/api/cli-tools/claude-settings", { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
+        // Saved card preferences stay; "Reset to defaults" clears those.
         setMessage({ type: "success", text: "Settings reset successfully." });
-        const defaults = {};
-        tool.defaultModels?.forEach((m) => {
-          defaults[m.alias] = m.defaultValue || "";
-        });
-        setModelMappings(defaults);
-        setSelectedApiKey("");
-        setExaMcpEnabled(false);
-        setAutoCompactWindow("");
-        setOneMContext(false);
         await fetchStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings." });
@@ -270,7 +285,7 @@ export default function ClaudeToolCard({
         tool={tool}
         status={derived}
         version={claudeStatus?.installed ? "detected" : undefined}
-        checking={checking}
+        checking={checking || !settings.loaded}
         checkingLabel="Checking Claude CLI..."
         notInstalled={
           !checking && claudeStatus && !claudeStatus.installed && !claudeStatus.error ? (
@@ -294,10 +309,16 @@ export default function ClaudeToolCard({
         onManualConfig={() => setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
         fileHint="~/.claude/settings.json"
+        saveStatus={settings.status}
+        onResetDefaults={settings.hasSaved ? handleResetDefaults : undefined}
+        differsHint={settings.differs.length ? "~/.claude/settings.json" : undefined}
+        onLoadFromFile={handleLoadFromFile}
       >
         <EndpointSegmentedPicker
-          value={customBaseUrl || baseUrl}
-          onChange={setCustomBaseUrl}
+          key={pickerKey}
+          value={values.endpoint || initUrl || baseUrl}
+          savedUrl={values.endpoint}
+          onChange={handleEndpointChange}
           requiresExternalUrl={tool.requiresExternalUrl}
           tunnelEnabled={tunnelEnabled}
           tunnelPublicUrl={tunnelPublicUrl}
@@ -305,14 +326,13 @@ export default function ClaudeToolCard({
           tailscaleUrl={tailscaleUrl}
           cloudEnabled={cloudEnabled}
           cloudUrl={cloudUrl}
-          currentUrl={currentBaseUrl}
         />
 
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted">API key</span>
           <ApiKeySelect
             value={selectedApiKey}
-            onChange={setSelectedApiKey}
+            onChange={handleApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
           />
@@ -344,7 +364,7 @@ export default function ClaudeToolCard({
           <SegmentedControl
             options={AUTO_COMPACT_OPTIONS}
             value={autoCompactWindow}
-            onChange={setAutoCompactWindow}
+            onChange={(v) => setField("autoCompactWindow", v)}
             aria-label="Auto-compact window"
             size="sm"
           />
@@ -390,7 +410,7 @@ export default function ClaudeToolCard({
           />
           <Checkbox
             checked={exaMcpEnabled}
-            onChange={setExaMcpEnabled}
+            onChange={(v) => setField("exaMcpEnabled", v)}
             label={
               <span className="inline-flex items-center gap-1.5">
                 <span>Add Exa MCP for web search</span>
