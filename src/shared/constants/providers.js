@@ -168,6 +168,13 @@ export function getProvidersByKind(kind) {
     );
 }
 
+// No-auth free providers the usage topology and model picker may offer.
+// Hidden ones (dead services like mimo-free) never appear — same rule
+// getProvidersByKind applies elsewhere.
+export const VISIBLE_NO_AUTH_PROVIDERS = Object.values(FREE_PROVIDERS).filter(
+  (p) => p.noAuth && !p.hidden,
+);
+
 // Derive từ registry features flags
 export const USAGE_SUPPORTED_PROVIDERS = REGISTRY.filter((r) => r.features?.usage).map((r) => r.id);
 
