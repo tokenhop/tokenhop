@@ -5,11 +5,15 @@
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 
 const OPENAI_MODELS_URL = "https://api.openai.com/v1/models";
+const FETCH_TIMEOUT_MS = 10_000;
 
 // First match wins. `null` = drop: moderation, realtime/WebSocket, Sora video,
 // legacy /v1/completions and computer-use have no route here.
 const ID_KINDS = [
-  [/moderation|realtime|^sora-|^(babbage|davinci)-|-instruct\b|^computer-use/, null],
+  [
+    /moderation|(^|-)realtime(-|$)|^sora-|^(babbage|davinci)-|^text-(ada|babbage|curie|davinci)-|-instruct\b|^computer-use/,
+    null,
+  ],
   [/^text-embedding-/, "embedding"],
   [/^whisper-|-transcribe\b/, "stt"],
   [/^tts-|-tts\b/, "tts"],
@@ -26,16 +30,21 @@ export function classifyOpenAIModel(id) {
 }
 
 export function parseOpenAIModels(body, staticModels = getModelsByProviderId("openai")) {
-  const staticKinds = new Map(staticModels.map((m) => [m.id, m.kind || m.type || "llm"]));
+  // id → every static kind (one id can be listed under several kinds).
+  const staticKinds = new Map();
+  for (const m of staticModels) {
+    staticKinds.set(m.id, [...(staticKinds.get(m.id) || []), m.kind || m.type || "llm"]);
+  }
   const seen = new Set();
   const models = [];
   for (const entry of Array.isArray(body?.data) ? body.data : []) {
     const id = typeof entry?.id === "string" ? entry.id.trim() : "";
     if (!id || seen.has(id)) continue;
-    const kind = staticKinds.get(id) || classifyOpenAIModel(id);
-    if (!kind) continue;
     seen.add(id);
-    models.push({ id, name: id, ...(kind !== "llm" ? { kind } : {}) });
+    const kinds = staticKinds.get(id) || [classifyOpenAIModel(id)];
+    for (const kind of kinds.filter(Boolean)) {
+      models.push({ id, name: id, ...(kind !== "llm" ? { kind } : {}) });
+    }
   }
   return models;
 }
@@ -44,6 +53,8 @@ export async function resolveOpenAI(connection) {
   if (!connection.apiKey) return { models: [], warning: "No valid token found" };
   const response = await fetch(OPENAI_MODELS_URL, {
     headers: { Authorization: `Bearer ${connection.apiKey}`, Accept: "application/json" },
+    // Failures aren't cached, so an unbounded hang would stall every /v1/models call.
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!response.ok) {
     return {

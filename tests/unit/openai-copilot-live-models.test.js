@@ -59,13 +59,16 @@ describe("openai classifier", () => {
     ["gpt-realtime", null],
     ["gpt-3.5-turbo-instruct", null],
     ["sora-2", null],
+    ["text-davinci-003", null],
   ])("%s -> %s", (id, kind) => expect(classifyOpenAIModel(id)).toBe(kind));
 
   it("prefers the static registry kind and drops unservable ids", () => {
     const body = { data: [{ id: "x-voice" }, { id: "gpt-6" }, { id: "gpt-realtime" }] };
-    expect(parseOpenAIModels(body, [{ id: "x-voice", kind: "tts" }])).toEqual([
+    const statics = [{ id: "x-voice", kind: "tts" }, { id: "gpt-6" }, { id: "gpt-6", kind: "stt" }];
+    expect(parseOpenAIModels(body, statics)).toEqual([
       { id: "x-voice", name: "x-voice", kind: "tts" },
       { id: "gpt-6", name: "gpt-6" },
+      { id: "gpt-6", name: "gpt-6", kind: "stt" },
     ]);
   });
 });
@@ -95,6 +98,8 @@ describe("openai live catalog", () => {
     const llm = (await buildModelsList(["llm"])).map((m) => m.id);
     expect(llm).toContain(`${alias}/gpt-6`);
     expect(llm).not.toContain(`${alias}/text-embedding-4`);
+    const embeddings = (await buildModelsList(["embedding"])).map((m) => m.id);
+    expect(embeddings).toContain(`${alias}/text-embedding-4`);
   });
 
   it("returns a warning (static fallback) when the key is rejected", async () => {
