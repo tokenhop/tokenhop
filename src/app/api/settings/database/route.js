@@ -28,6 +28,10 @@ export async function POST(request) {
     if (!(await hasValidCliToken(request)) && !(await verifyDashboardPassword(password))) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
+    // YAN-351: a restore must not flip the users & teams switch before its release.
+    if (payload.settings && typeof payload.settings === "object") {
+      delete payload.settings.multiUserEnabled;
+    }
     await importDb(payload);
 
     // Ensure proxy settings take effect immediately after a DB import.

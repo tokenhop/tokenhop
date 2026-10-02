@@ -32,6 +32,7 @@ export default function Sidebar({ onClose, inDrawer = false }) {
     badges,
     providerAttention,
     enableTranslator,
+    multiUser,
     traffic,
   } = useShellStatus();
   const chip = resolveVersionChip(APP_CONFIG.version, APP_CONFIG.build);
@@ -79,6 +80,7 @@ export default function Sidebar({ onClose, inDrawer = false }) {
       {/* Grouped navigation */}
       <SidebarNav
         enableTranslator={enableTranslator}
+        multiUser={multiUser}
         badges={badges}
         providerAttention={providerAttention}
         onNavigate={onClose}

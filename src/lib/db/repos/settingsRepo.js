@@ -26,6 +26,8 @@ export const DEFAULT_SETTINGS = {
   },
   requireLogin: true,
   requireApiKey: true,
+  // Users & teams switch (YAN-351). Read only via isMultiUserEnabled(); not API-writable.
+  multiUserEnabled: false,
   tunnelDashboardAccess: true,
   requestLogsEnabled: false,
   translatorEnabled: false,

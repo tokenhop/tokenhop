@@ -19,18 +19,23 @@ env:
 # tokenhop since v1.0.0, so the default and tokenhop legs build the same thing;
 # both stay because their names are required checks on master. The legacy leg
 # keeps the legacy brand builds green until v2.0.0 drops that brand.
+# test also runs once per users & teams switch state (TOKENHOP_MULTI_USER,
+# YAN-351); the off legs keep the required-check names, the on legs add
+# ", multi-user on". build runs once per brand: the switch is runtime-only.
 jobs:
   test:
-    name: ${{ matrix.brand == 'default' && 'Tests (vs known-fails baseline)' || format('Tests (vs known-fails baseline, {0} brand)', matrix.brand) }}
+    name: ${{ format('Tests (vs known-fails baseline{0}{1})', matrix.brand != 'default' && format(', {0} brand', matrix.brand) || '', matrix.multi_user == 'on' && ', multi-user on' || '') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         brand: [default, tokenhop, 9router] # legacy(9router): until v2
+        multi_user: ["off", "on"]
     env:
       # Empty means unset, so the default leg builds the default brand.
       NEXT_PUBLIC_BRAND: ${{ matrix.brand != 'default' && matrix.brand || '' }}
+      TOKENHOP_MULTI_USER: ${{ matrix.multi_user }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

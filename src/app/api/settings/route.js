@@ -34,6 +34,8 @@ function omitSecrets(settings) {
   const safeSettings = Object.fromEntries(
     Object.entries(settings).filter(([key]) => !SECRET_SETTING_KEYS.has(key)),
   );
+  // YAN-351: the users & teams switch stays off the API until the v1.1.0 release.
+  delete safeSettings.multiUserEnabled;
   safeSettings.oidcConfigured = !!(
     settings.oidcIssuerUrl &&
     settings.oidcClientId &&

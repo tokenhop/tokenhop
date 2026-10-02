@@ -5,6 +5,7 @@ import { resolveFlagSetting } from "@/lib/settingsFlags";
 import { resolveListenPort, shapeGatewayStatus } from "@/lib/gatewayStatus";
 import { buildQuotaSnapshotView } from "@/sse/services/quotaSnapshotSync.js";
 import { buildShellSummary } from "@/lib/shellSummary";
+import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
 import { normalizeAckedMilestone, pendingSavingsMilestone } from "@/lib/savingsMilestones.js";
 
 export const dynamic = "force-dynamic";
@@ -19,18 +20,20 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
-    const [connections, combos, settings, traffic, savingsLifetime] = await Promise.all([
+    const [connections, combos, settings, traffic, savingsLifetime, multiUser] = await Promise.all([
       getProviderConnections(),
       getCombos(),
       getSettings(),
       getRequestRateSeries().catch(() => null),
       getSavingsLifetime().catch(() => null),
+      isMultiUserEnabled(),
     ]);
     const body = buildShellSummary({
       connections,
       combos,
       translatorEnabled: resolveFlagSetting("ENABLE_TRANSLATOR", settings?.translatorEnabled, false)
         .value,
+      multiUser,
       gateway: shapeGatewayStatus({
         uptimeSeconds: process.uptime(),
         nowMs: Date.now(),

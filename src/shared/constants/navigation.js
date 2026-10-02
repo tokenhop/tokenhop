@@ -206,13 +206,16 @@ export function isActive(pathname, item) {
  * Visible groups filter (hides gated items when disabled).
  * @param {object} [settings]
  * @param {boolean} [settings.enableTranslator]
+ * @param {boolean} [settings.multiUser] Users & teams switch (YAN-351).
  */
 export function visibleGroups(settings = {}) {
   const enableTranslator = Boolean(settings?.enableTranslator);
+  const multiUser = Boolean(settings?.multiUser);
   return NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) => {
       if (item.gate === "enableTranslator") return enableTranslator;
+      if (item.gate === "multiUser") return multiUser;
       return true;
     }),
   }));

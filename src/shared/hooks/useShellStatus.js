@@ -14,6 +14,7 @@ const INITIAL_STATE = {
   badges: { providers: null, combos: null, quota: null },
   providerAttention: { count: 0, status: null },
   enableTranslator: false,
+  multiUser: false,
   // YAN-408: heartbeat sparkline series and pending savings milestone toast.
   traffic: null,
   savingsMilestone: null,
@@ -54,6 +55,7 @@ export function applyShellSummary(prev, status, body) {
     };
   }
   if (typeof body.enableTranslator === "boolean") next.enableTranslator = body.enableTranslator;
+  if (typeof body.multiUser === "boolean") next.multiUser = body.multiUser;
   // Heartbeat: keep the last series unless the body carries a fresh one, so a
   // failed poll never drops the sparkline.
   const traffic = body.traffic ?? null;
@@ -174,6 +176,7 @@ function stop() {
  *   badges: { providers: number|null, combos: number|null, quota: number|null },
  *   providerAttention: { count: number, status: "warn"|"err"|null },
  *   enableTranslator: boolean,
+ *   multiUser: boolean,
  *   traffic: { series: number[], total: number }|null,
  *   savingsMilestone: number|null,
  * }}
