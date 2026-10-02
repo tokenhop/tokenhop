@@ -200,15 +200,35 @@ function shouldSkipAfterFailure(state, key, nowMs = Date.now()) {
   return failedAt && nowMs - failedAt < C.failureCooldownMs;
 }
 
+// Skip reasons repeat every tick in steady state; log each one once per connection.
+function logSkipOnce(state, key, reason) {
+  state.lastSkipLog ??= {};
+  if (state.lastSkipLog[key] === reason) return;
+  state.lastSkipLog[key] = reason;
+  console.log(`[AutoPing] ${key}: ${reason}`);
+}
+
 async function pingConnection(conn, provider, providerConfig, handler, deps, state = g) {
   const key = cacheKey(provider, conn.id);
 
   // resetAt is stable for time-based windows; Codex polls every tick because inactive windows slide forward.
   const cachedReset = state.resetCache[key];
+  const cachedResetMs = cachedReset ? new Date(cachedReset).getTime() : NaN;
+  const lastPingedKey = conn.lastPingedResetKey || normalizeResetKey(conn.lastPingedResetAt);
+  // A missed window: the last observed reset passed and was never pinged (the
+  // live read may no longer report it). Recover it instead of waiting forever.
+  const missedReset =
+    !providerConfig.pingWhenResetAtSlides &&
+    Number.isFinite(cachedResetMs) &&
+    Date.now() >= cachedResetMs &&
+    lastPingedKey !== normalizeResetKey(cachedReset)
+      ? cachedReset
+      : null;
   if (
+    !missedReset &&
     !providerConfig.pingWhenResetAtSlides &&
     cachedReset &&
-    Date.now() < new Date(cachedReset).getTime() - C.refreshAheadMs
+    Date.now() < cachedResetMs - C.refreshAheadMs
   )
     return;
 
@@ -231,17 +251,28 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   const usage = await handler.getUsage(connection.accessToken, proxyOptions);
   const quotas = usage?.quotas || {};
   const quota = quotas?.[providerConfig.quotaKey];
-  const resetAt = quota?.resetAt;
-  if (!resetAt) return;
+  const liveReset = quota?.resetAt;
 
-  state.resetCache[key] = resetAt;
+  // Prefer the missed window: the live read may already report the next reset
+  // (or nothing on an idle window) while the last observed one went unpinged.
+  const resetAt = missedReset || liveReset;
+  if (!resetAt) {
+    if (cachedReset) logSkipOnce(state, key, `no reset reported (last seen ${cachedReset})`);
+    return;
+  }
+  if (liveReset) state.resetCache[key] = liveReset;
 
   if (
     providerConfig.skipWhenBlockingQuotaExhausted &&
     hasExhaustedBlockingQuota(quotas, providerConfig.quotaKey)
-  )
+  ) {
+    logSkipOnce(state, key, `skip ping (blocking quota exhausted, reset ${resetAt})`);
     return;
-  if (isQuotaExhausted(quota)) return;
+  }
+  if (isQuotaExhausted(quota)) {
+    logSkipOnce(state, key, `skip ping (session quota exhausted, reset ${resetAt})`);
+    return;
+  }
 
   const now = Date.now();
   const resetKey = normalizeResetKey(resetAt);
@@ -251,7 +282,10 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   // Claude waits for reset. Codex pings only when resetAt slides, which means the 5h window is inactive.
   if (!shouldPingForReset(providerConfig, cachedReset, resetAt, now)) return;
   if (wasPingedRecently(connection, providerConfig.minPingIntervalMs, now)) return;
-  if (lastPingedResetKey === resetKey) return;
+  if (lastPingedResetKey === resetKey) {
+    logSkipOnce(state, key, `skip ping (reset ${resetAt} already pinged)`);
+    return;
+  }
 
   const ok = await handler.sendPing(connection, providerConfig, proxyOptions, deps);
   if (!ok) {
