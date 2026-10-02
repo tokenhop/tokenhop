@@ -86,6 +86,65 @@ describe("cloakClaudeTools", () => {
     expect(block.name).toBe(`todo_write${CLAUDE_TOOL_SUFFIX}`);
   });
 
+  // YAN-675: a typed client tool (type:"custom") skipped by the declarations loop
+  // used to get its history tool_use suffixed anyway; the model then echoed the
+  // "_ide" name, which no decloak map entry could restore, so it leaked to the client.
+  it('cloaks type:"custom" tools consistently in declarations, history and decloak (YAN-675)', () => {
+    const { body, toolNameMap } = cloakClaudeTools({
+      tools: [
+        // Anthropic's explicit client-tool shape: must cloak like an untyped tool
+        {
+          type: "custom",
+          name: "get_weather",
+          description: "weather",
+          input_schema: { type: "object", properties: {} },
+        },
+        // A real server built-in stays unsuffixed everywhere
+        { type: "web_search_20250305", name: "web_search" },
+      ],
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: "t1", name: "get_weather", input: {} },
+            { type: "tool_use", id: "t2", name: "web_search", input: {} },
+          ],
+        },
+      ],
+    });
+    const suffixed = `get_weather${CLAUDE_TOOL_SUFFIX}`;
+    expect(body.tools.some((t) => t.name === suffixed && t.type === "custom")).toBe(true);
+    expect(body.tools.some((t) => t.name === "web_search")).toBe(true);
+    // History renames only the declared client tool
+    expect(body.messages[0].content[0].name).toBe(suffixed);
+    expect(body.messages[0].content[1].name).toBe("web_search");
+    // ...so the response decloak (map-driven) restores the name the client sent
+    expect(toolNameMap.get(suffixed)).toBe("get_weather");
+    expect(toolNameMap.has(`web_search${CLAUDE_TOOL_SUFFIX}`)).toBe(false);
+  });
+
+  it("forced tool_choice on a custom tool is cloaked and its streamed call decloaks (YAN-675)", () => {
+    const { body, toolNameMap } = cloakClaudeTools({
+      tools: [{ type: "custom", name: "edit", input_schema: { type: "object" } }],
+      tool_choice: { type: "tool", name: "edit" },
+      messages: [
+        {
+          role: "assistant",
+          // A tool that is no longer declared: must stay unsuffixed
+          content: [{ type: "tool_use", id: "t0", name: "gone", input: {} }],
+        },
+      ],
+    });
+    expect(body.tool_choice.name).toBe(`edit${CLAUDE_TOOL_SUFFIX}`);
+    expect(body.messages[0].content[0].name).toBe("gone");
+    const chunk = {
+      type: "content_block_start",
+      index: 0,
+      content_block: { type: "tool_use", id: "t", name: `edit${CLAUDE_TOOL_SUFFIX}`, input: {} },
+    };
+    expect(decloakStreamChunk(chunk, toolNameMap).content_block.name).toBe("edit");
+  });
+
   it("returns the body unchanged when there are no tools", () => {
     const input = {
       messages: [{ role: "user", content: "hi" }],

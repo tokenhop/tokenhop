@@ -6,6 +6,8 @@ import {
   ANTHROPIC_COMPAT_BASE,
   selectAnthropicBeta,
   isFastModeRequest,
+  mergeClientAnthropicBeta,
+  isOfficialAnthropicBaseUrl,
 } from "../providers/shared.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { EXTRA_USAGE_EXHAUSTED_TEXT } from "../config/errorConfig.js";
@@ -16,6 +18,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 import { CLAUDE_CODE_SESSION_HEADER, extractClaudeCodeSession } from "../utils/sessionManager.js";
+import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { refreshMetaCodeToken } from "../services/tokenRefresh.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
@@ -254,6 +257,25 @@ export class DefaultExecutor extends BaseExecutor {
 
     if (this.usesClaudeBetas(model)) {
       headers["Anthropic-Beta"] = selectAnthropicBeta(model, body);
+      // Native Claude Code passthrough copies new body fields verbatim (e.g.
+      // `safeguards`); Anthropic 400s on them unless the client's own beta flag
+      // rides along. Merge only for official Anthropic: third-party gateways
+      // may reject unknown flags. rawHeaders keys are lowercase (fetch Headers).
+      const clientBeta = credentials?.rawHeaders?.["anthropic-beta"];
+      const isOfficial =
+        this.provider === "claude" ||
+        isOfficialAnthropicBaseUrl(credentials?.providerSpecificData?.baseUrl);
+      if (
+        clientBeta &&
+        isOfficial &&
+        isNativePassthrough(detectClientTool(credentials.rawHeaders), this.provider)
+      ) {
+        headers["Anthropic-Beta"] = mergeClientAnthropicBeta(
+          headers["Anthropic-Beta"],
+          clientBeta,
+          body,
+        );
+      }
       // Real Claude Code sends its session id as a header too, matching the
       // session_id inside metadata.user_id (set by applyCloaking or the client).
       const sessionId = extractClaudeCodeSession(body?.metadata?.user_id);
@@ -262,9 +284,7 @@ export class DefaultExecutor extends BaseExecutor {
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
-      const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
-      const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
-      if (!isOfficialAnthropic) {
+      if (!isOfficialAnthropicBaseUrl(credentials?.providerSpecificData?.baseUrl)) {
         // Some third-party Anthropic-compatible gateways require Bearer auth in
         // addition to x-api-key. Send both (x-api-key already set above) so
         // gateways that read either header succeed.

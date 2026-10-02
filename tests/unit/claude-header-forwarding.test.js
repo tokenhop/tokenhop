@@ -105,6 +105,112 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
     const executor = new DefaultExecutor("claude");
     expect(() => executor.buildHeaders({ apiKey: "sk" }, false)).not.toThrow();
   });
+
+  // YAN-655: passthrough copies new body fields (e.g. `safeguards`) verbatim,
+  // so the client's beta flag must ride along or Anthropic 400s with
+  // "Extra inputs are not permitted". Official Anthropic only — third-party
+  // anthropic-compatible gateways keep the pinned list (minus claude-code-*).
+  it("merges the client's anthropic-beta on Claude Code passthrough, deduped and gated", () => {
+    const claudeUa = { "user-agent": "claude-cli/2.1.300 (external, sdk-cli)" };
+    const clientBeta = "safeguards-2026-05-01, claude-code-20250219";
+    const splitFlags = (headers) =>
+      (headers["Anthropic-Beta"] || headers["anthropic-beta"] || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+    const executor = new DefaultExecutor("claude");
+    const headers = executor.buildHeaders(
+      { apiKey: "sk-test", rawHeaders: { ...claudeUa, "anthropic-beta": clientBeta } },
+      true,
+      undefined,
+      "claude-opus-5",
+    );
+    let flags = splitFlags(headers);
+    expect(flags).toContain("safeguards-2026-05-01");
+    expect(flags).toContain("context-management-2025-06-27"); // pinned list intact
+    expect(flags.filter((f) => f === "claude-code-20250219")).toHaveLength(1); // deduped
+
+    // Third-party anthropic-compatible gateway: client flags must not leak
+    const compat = new DefaultExecutor("anthropic-compatible-custom");
+    flags = splitFlags(
+      compat.buildHeaders(
+        {
+          apiKey: "key",
+          rawHeaders: { ...claudeUa, "anthropic-beta": clientBeta },
+          providerSpecificData: { baseUrl: "https://myproxy.example.com/v1" },
+        },
+        true,
+        undefined,
+        "claude-opus-5",
+      ),
+    );
+    expect(flags).not.toContain("safeguards-2026-05-01");
+    expect(flags).not.toContain("claude-code-20250219");
+
+    // Not a Claude Code client (no claude-cli UA / x-app): header stays pinned-only
+    flags = splitFlags(
+      executor.buildHeaders(
+        { apiKey: "sk-test", rawHeaders: { "anthropic-beta": clientBeta } },
+        true,
+        undefined,
+        "claude-opus-5",
+      ),
+    );
+    expect(flags).not.toContain("safeguards-2026-05-01");
+  });
+
+  it("filters client beta flags the gateway gates deliberately", () => {
+    const executor = new DefaultExecutor("claude");
+    const build = (clientBeta, body = null) =>
+      executor
+        .buildHeaders(
+          {
+            apiKey: "sk-test",
+            rawHeaders: { "user-agent": "claude-cli/2.1.300", "anthropic-beta": clientBeta },
+          },
+          true,
+          undefined,
+          "claude-opus-5",
+          body,
+        )
+        ["Anthropic-Beta"].split(",");
+    const client =
+      "context-1m-2025-08-07,fast-mode-2026-02-01,redact-thinking-2026-02-12,not a flag,safeguards-2026-05-01";
+    let flags = build(client, { thinking: { type: "adaptive", display: "summarized" } });
+    expect(flags).toContain("safeguards-2026-05-01");
+    expect(flags).not.toContain("context-1m-2025-08-07");
+    expect(flags).not.toContain("fast-mode-2026-02-01");
+    expect(flags).not.toContain("redact-thinking-2026-02-12");
+    expect(flags).not.toContain("not a flag");
+    flags = build(client, { speed: "fast" });
+    expect(flags).toContain("fast-mode-2026-02-01");
+  });
+
+  it("treats only the exact api.anthropic.com host as official for compatible providers", () => {
+    const compat = new DefaultExecutor("anthropic-compatible-custom");
+    const build = (baseUrl) =>
+      compat
+        .buildHeaders(
+          {
+            apiKey: "key",
+            rawHeaders: {
+              "user-agent": "claude-cli/2.1.300",
+              "anthropic-beta": "safeguards-2026-05-01",
+            },
+            providerSpecificData: { baseUrl },
+          },
+          true,
+          undefined,
+          "claude-opus-5",
+        )
+        ["Anthropic-Beta"].split(",");
+    expect(build("https://api.anthropic.com/v1")).toContain("safeguards-2026-05-01");
+    expect(build("https://api.anthropic.com.evil.test/v1")).not.toContain("safeguards-2026-05-01");
+    expect(build("https://gw.example.com/api.anthropic.com/v1")).not.toContain(
+      "safeguards-2026-05-01",
+    );
+  });
 });
 
 // ─── anthropic-compatible header stripping ────────────────────────────────────
