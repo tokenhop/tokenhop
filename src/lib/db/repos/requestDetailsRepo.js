@@ -1,5 +1,6 @@
-import { getAdapter } from "../driver.js";
+import { getAdapter, getAdapterSync } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { registerShutdownFlusher } from "../shutdownFlushers.js";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
@@ -123,60 +124,66 @@ async function flushToDatabase() {
   try {
     // Drain entire buffer (loop in case more pushed during await)
     while (writeBuffer.length > 0) {
+      // Adapter/config BEFORE the splice — if SIGTERM lands mid-await, the
+      // buffer is still intact for the sync shutdown flush.
+      const [db, config] = await Promise.all([getAdapter(), getObservabilityConfig()]);
+      // Detach the batch, then write without yielding: the adapters' sync
+      // signal handlers close the DB during any await here, losing the batch.
       const items = writeBuffer.splice(0, writeBuffer.length);
-      const db = await getAdapter();
-      const config = await getObservabilityConfig();
-
-      db.transaction(() => {
-        for (const item of items) {
-          if (!item.id) item.id = generateDetailId(item.model);
-          if (!item.timestamp) item.timestamp = new Date().toISOString();
-          if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
-
-          const record = {
-            id: item.id,
-            provider: item.provider || null,
-            model: item.model || null,
-            connectionId: item.connectionId || null,
-            timestamp: item.timestamp,
-            status: item.status || null,
-            latency: item.latency || {},
-            tokens: item.tokens || {},
-            request: truncateField(item.request, config.maxJsonSize),
-            providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-            providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
-            response: truncateField(item.response, config.maxJsonSize),
-            pxpipe: item.pxpipe || undefined,
-          };
-
-          db.run(
-            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
-            [
-              record.id,
-              record.timestamp,
-              record.provider,
-              record.model,
-              record.connectionId,
-              record.status,
-              stringifyJson(record),
-            ],
-          );
-        }
-
-        const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
-        if (cnt && cnt.c > config.maxRecords) {
-          db.run(
-            `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
-            [cnt.c - config.maxRecords],
-          );
-        }
-      });
+      writeBatch(db, items, config);
     }
   } catch (e) {
     console.error("[requestDetailsRepo] Batch write failed:", e);
   } finally {
     isFlushing = false;
   }
+}
+
+function writeBatch(db, items, config) {
+  db.transaction(() => {
+    for (const item of items) {
+      if (!item.id) item.id = generateDetailId(item.model);
+      if (!item.timestamp) item.timestamp = new Date().toISOString();
+      if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
+
+      const record = {
+        id: item.id,
+        provider: item.provider || null,
+        model: item.model || null,
+        connectionId: item.connectionId || null,
+        timestamp: item.timestamp,
+        status: item.status || null,
+        latency: item.latency || {},
+        tokens: item.tokens || {},
+        request: truncateField(item.request, config.maxJsonSize),
+        providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
+        providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
+        response: truncateField(item.response, config.maxJsonSize),
+        pxpipe: item.pxpipe || undefined,
+      };
+
+      db.run(
+        `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
+        [
+          record.id,
+          record.timestamp,
+          record.provider,
+          record.model,
+          record.connectionId,
+          record.status,
+          stringifyJson(record),
+        ],
+      );
+    }
+
+    const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
+    if (cnt && cnt.c > config.maxRecords) {
+      db.run(
+        `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+        [cnt.c - config.maxRecords],
+      );
+    }
+  });
 }
 
 export async function saveRequestDetail(detail) {
@@ -275,24 +282,42 @@ export async function getRequestDetailById(id) {
   return row ? parseJson(row.data, null) : null;
 }
 
-const _shutdownHandler = async () => {
+// Sync flush for the DB adapters' SIGTERM/SIGINT handlers: they close the DB
+// synchronously before process.exit, so an async flushToDatabase() would lose
+// whatever is still buffered.
+function flushSync() {
   if (flushTimer) {
     clearTimeout(flushTimer);
     flushTimer = null;
   }
-  if (writeBuffer.length > 0) await flushToDatabase();
-};
-
-function ensureShutdownHandler() {
-  process.off("beforeExit", _shutdownHandler);
-  process.off("SIGINT", _shutdownHandler);
-  process.off("SIGTERM", _shutdownHandler);
-  process.off("exit", _shutdownHandler);
-
-  process.on("beforeExit", _shutdownHandler);
-  process.on("SIGINT", _shutdownHandler);
-  process.on("SIGTERM", _shutdownHandler);
-  process.on("exit", _shutdownHandler);
+  if (writeBuffer.length === 0) return;
+  const items = writeBuffer.splice(0, writeBuffer.length);
+  try {
+    writeBatch(
+      getAdapterSync(),
+      items,
+      cachedConfig ?? {
+        maxRecords: DEFAULT_MAX_RECORDS,
+        batchSize: DEFAULT_BATCH_SIZE,
+        flushIntervalMs: DEFAULT_FLUSH_INTERVAL_MS,
+        maxJsonSize: DEFAULT_MAX_JSON_SIZE,
+      },
+    );
+  } catch {}
 }
 
-ensureShutdownHandler();
+function ensureShutdownFlusher() {
+  // Slot on a global registry — adapters call it before closing the DB on
+  // shutdown. Plain object slot so dev hot-reload replaces, not accumulates.
+  registerShutdownFlusher("requestDetails", flushSync);
+  // Still needed for sql.js (its handler only persists, never exits) and for
+  // environments where no adapter signal handler runs.
+  process.off("beforeExit", flushSync);
+  process.off("SIGINT", flushSync);
+  process.off("SIGTERM", flushSync);
+  process.on("beforeExit", flushSync);
+  process.on("SIGINT", flushSync);
+  process.on("SIGTERM", flushSync);
+}
+
+ensureShutdownFlusher();
