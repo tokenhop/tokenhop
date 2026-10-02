@@ -48,14 +48,12 @@ export default function HermesToolCard({
     () => (status?.installed ? { model: status.settings?.model?.default || undefined } : null),
     [status],
   );
-  const saved = useSetupSettings({ toolId: "hermes", apiKeys, defaults, disk });
-  const selectedModel = saved.values.model;
-  const setSelectedModel = (v) => saved.setField("model", v);
+  const setup = useSetupSettings({ toolId: "hermes", apiKeys, defaults, disk });
 
   const currentBaseUrl = status?.settings?.model?.base_url || "";
 
   const getEffectiveBaseUrl = () => {
-    const u = (saved.endpoint || baseUrl || "http://127.0.0.1:20128/v1").replace(
+    const u = (setup.endpoint || baseUrl || "http://127.0.0.1:20128/v1").replace(
       "://localhost",
       "://127.0.0.1",
     );
@@ -71,8 +69,8 @@ export default function HermesToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(saved.selectedApiKey, apiKeys, cloudEnabled),
-          model: selectedModel,
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+          model: setup.model,
         }),
       });
       const data = await res.json();
@@ -117,8 +115,8 @@ export default function HermesToolCard({
       buildHermesConfig({
         baseUrl: getEffectiveBaseUrl(),
         // No key: the .env gets the placeholder, so the dialog asks for one.
-        apiKey: manualApiKey(saved.selectedApiKey, apiKeys, cloudEnabled),
-        model: selectedModel,
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        model: setup.model,
       }),
     );
 
@@ -127,7 +125,7 @@ export default function HermesToolCard({
       <SetupScaffold
         tool={tool}
         status={deriveToolStatus(tool, card.status)}
-        checking={card.checking || !saved.loaded}
+        checking={card.checking || !setup.loaded}
         checkingLabel="Checking Hermes Agent..."
         notInstalled={
           !card.checking && status && !status.installed && !status.error ? (
@@ -142,7 +140,7 @@ export default function HermesToolCard({
         }
         message={card.message}
         onApply={handleApply}
-        applyDisabled={!selectedModel}
+        applyDisabled={!setup.model}
         applying={card.applying}
         onReset={handleReset}
         resetDisabled={!status?.hasTokenhop}
@@ -150,12 +148,12 @@ export default function HermesToolCard({
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
         fileHint="~/.hermes/config.yaml"
-        {...saved.scaffoldProps("~/.hermes/config.yaml")}
+        {...setup.scaffoldProps("~/.hermes/config.yaml")}
       >
         <EndpointSegmentedPicker
-          key={saved.pickerKey}
-          value={saved.endpoint || baseUrl}
-          {...saved.pickerProps}
+          key={setup.pickerKey}
+          value={setup.endpoint || baseUrl}
+          {...setup.pickerProps}
           currentUrl={currentBaseUrl}
           tunnelEnabled={tunnelEnabled}
           tunnelPublicUrl={tunnelPublicUrl}
@@ -172,16 +170,16 @@ export default function HermesToolCard({
         )}
         <SetupRow label="API key">
           <ApiKeySelect
-            value={saved.selectedApiKey}
-            onChange={saved.onApiKeyChange}
+            value={setup.selectedApiKey}
+            onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
           />
         </SetupRow>
         <SetupRow label="Default model">
           <SingleModelRow
-            value={selectedModel}
-            onChange={setSelectedModel}
+            value={setup.model}
+            onChange={setup.setModel}
             onPick={() => card.setModalOpen(true)}
             pickDisabled={!activeProviders?.length}
           />
@@ -193,10 +191,10 @@ export default function HermesToolCard({
           isOpen={card.modalOpen}
           onClose={() => card.setModalOpen(false)}
           onSelect={(m) => {
-            setSelectedModel(m.value);
+            setup.setModel(m.value);
             card.setModalOpen(false);
           }}
-          selectedModel={selectedModel}
+          selectedModel={setup.model}
           activeProviders={activeProviders}
           modelAliases={card.modelAliases}
           title="Select model for Hermes Agent"

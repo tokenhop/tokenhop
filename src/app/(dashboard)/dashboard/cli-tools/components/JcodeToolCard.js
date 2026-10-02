@@ -53,14 +53,12 @@ export default function JcodeToolCard({
       apiKeyId: apiKeys.find((k) => k.key === status.envApiKey)?.id,
     };
   }, [status, apiKeys]);
-  const saved = useSetupSettings({ toolId: "jcode", apiKeys, defaults, disk });
-  const selectedModel = saved.values.model;
-  const setSelectedModel = (v) => saved.setField("model", v);
+  const setup = useSetupSettings({ toolId: "jcode", apiKeys, defaults, disk });
 
   const currentBaseUrl = findClientEntry(status?.config?.providers)?.base_url || "";
 
   const getEffectiveBaseUrl = () => {
-    const u = (saved.endpoint || baseUrl || "http://127.0.0.1:20128/v1").replace(
+    const u = (setup.endpoint || baseUrl || "http://127.0.0.1:20128/v1").replace(
       "://localhost",
       "://127.0.0.1",
     );
@@ -76,8 +74,8 @@ export default function JcodeToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(saved.selectedApiKey, apiKeys, cloudEnabled),
-          models: selectedModel ? [selectedModel] : [],
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+          models: setup.model ? [setup.model] : [],
         }),
       });
       const data = await res.json();
@@ -121,8 +119,8 @@ export default function JcodeToolCard({
     toManualConfigs(
       buildJcodeConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(saved.selectedApiKey, apiKeys, cloudEnabled),
-        model: selectedModel,
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        model: setup.model,
       }),
     );
 
@@ -131,7 +129,7 @@ export default function JcodeToolCard({
       <SetupScaffold
         tool={tool}
         status={deriveToolStatus(tool, card.status)}
-        checking={card.checking || !saved.loaded}
+        checking={card.checking || !setup.loaded}
         checkingLabel="Checking jcode CLI..."
         notInstalled={
           !card.checking && status && !status.installed && !status.error ? (
@@ -147,7 +145,7 @@ export default function JcodeToolCard({
         }
         message={card.message}
         onApply={handleApply}
-        applyDisabled={!selectedModel}
+        applyDisabled={!setup.model}
         applying={card.applying}
         onReset={handleReset}
         resetDisabled={!status?.hasTokenhop}
@@ -155,12 +153,12 @@ export default function JcodeToolCard({
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
         fileHint="~/.jcode/config.toml"
-        {...saved.scaffoldProps("~/.jcode/config.toml")}
+        {...setup.scaffoldProps("~/.jcode/config.toml")}
       >
         <EndpointSegmentedPicker
-          key={saved.pickerKey}
-          value={saved.endpoint || baseUrl}
-          {...saved.pickerProps}
+          key={setup.pickerKey}
+          value={setup.endpoint || baseUrl}
+          {...setup.pickerProps}
           currentUrl={currentBaseUrl}
           tunnelEnabled={tunnelEnabled}
           tunnelPublicUrl={tunnelPublicUrl}
@@ -177,16 +175,16 @@ export default function JcodeToolCard({
         )}
         <SetupRow label="API key">
           <ApiKeySelect
-            value={saved.selectedApiKey}
-            onChange={saved.onApiKeyChange}
+            value={setup.selectedApiKey}
+            onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
           />
         </SetupRow>
         <SetupRow label="Default model">
           <SingleModelRow
-            value={selectedModel}
-            onChange={setSelectedModel}
+            value={setup.model}
+            onChange={setup.setModel}
             onPick={() => card.setModalOpen(true)}
             pickDisabled={!activeProviders?.length}
             placeholder={JCODE_DEFAULT_MODEL}
@@ -194,7 +192,7 @@ export default function JcodeToolCard({
         </SetupRow>
         <p className="font-mono text-xs text-muted">
           jcode --provider-profile {CLIENT_KEY}
-          {selectedModel ? ` --model ${selectedModel}` : ""}
+          {setup.model ? ` --model ${setup.model}` : ""}
         </p>
       </SetupScaffold>
 
@@ -203,10 +201,10 @@ export default function JcodeToolCard({
           isOpen={card.modalOpen}
           onClose={() => card.setModalOpen(false)}
           onSelect={(m) => {
-            setSelectedModel(m.value);
+            setup.setModel(m.value);
             card.setModalOpen(false);
           }}
-          selectedModel={selectedModel}
+          selectedModel={setup.model}
           activeProviders={activeProviders}
           modelAliases={card.modelAliases}
           title="Select model for jcode"

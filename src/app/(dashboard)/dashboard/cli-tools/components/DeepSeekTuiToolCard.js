@@ -62,14 +62,12 @@ export default function DeepSeekTuiToolCard({
         : null,
     [status, apiKeys],
   );
-  const saved = useSetupSettings({ toolId: "deepseek-tui", apiKeys, defaults, disk });
-  const selectedModel = saved.values.model;
-  const setSelectedModel = (v) => saved.setField("model", v);
+  const setup = useSetupSettings({ toolId: "deepseek-tui", apiKeys, defaults, disk });
 
   const currentBaseUrl = status?.settings?.["providers.openai"]?.base_url || "";
 
   const getEffectiveBaseUrl = () => {
-    const u = (saved.endpoint || baseUrl || "http://127.0.0.1:20128/v1").replace(
+    const u = (setup.endpoint || baseUrl || "http://127.0.0.1:20128/v1").replace(
       "://localhost",
       "://127.0.0.1",
     );
@@ -85,8 +83,8 @@ export default function DeepSeekTuiToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(saved.selectedApiKey, apiKeys, cloudEnabled),
-          model: selectedModel,
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+          model: setup.model,
         }),
       });
       const data = await res.json();
@@ -130,8 +128,8 @@ export default function DeepSeekTuiToolCard({
     toManualConfigs(
       buildDeepSeekTuiConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(saved.selectedApiKey, apiKeys, cloudEnabled),
-        model: selectedModel,
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        model: setup.model,
       }),
     );
 
@@ -140,7 +138,7 @@ export default function DeepSeekTuiToolCard({
       <SetupScaffold
         tool={tool}
         status={deriveToolStatus(tool, card.status)}
-        checking={card.checking || !saved.loaded}
+        checking={card.checking || !setup.loaded}
         checkingLabel="Checking DeepSeek TUI..."
         notInstalled={
           !card.checking && status && !status.installed && !status.error ? (
@@ -156,7 +154,7 @@ export default function DeepSeekTuiToolCard({
         }
         message={card.message}
         onApply={handleApply}
-        applyDisabled={!selectedModel}
+        applyDisabled={!setup.model}
         applying={card.applying}
         onReset={handleReset}
         resetDisabled={!status?.hasTokenhop}
@@ -164,12 +162,12 @@ export default function DeepSeekTuiToolCard({
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
         fileHint="~/.deepseek/config.toml"
-        {...saved.scaffoldProps("~/.deepseek/config.toml")}
+        {...setup.scaffoldProps("~/.deepseek/config.toml")}
       >
         <EndpointSegmentedPicker
-          key={saved.pickerKey}
-          value={saved.endpoint || baseUrl}
-          {...saved.pickerProps}
+          key={setup.pickerKey}
+          value={setup.endpoint || baseUrl}
+          {...setup.pickerProps}
           currentUrl={currentBaseUrl}
           tunnelEnabled={tunnelEnabled}
           tunnelPublicUrl={tunnelPublicUrl}
@@ -189,16 +187,16 @@ export default function DeepSeekTuiToolCard({
         )}
         <SetupRow label="API key">
           <ApiKeySelect
-            value={saved.selectedApiKey}
-            onChange={saved.onApiKeyChange}
+            value={setup.selectedApiKey}
+            onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
           />
         </SetupRow>
         <SetupRow label="Model">
           <SingleModelRow
-            value={selectedModel}
-            onChange={setSelectedModel}
+            value={setup.model}
+            onChange={setup.setModel}
             onPick={() => card.setModalOpen(true)}
             pickDisabled={!activeProviders?.length}
           />
@@ -210,10 +208,10 @@ export default function DeepSeekTuiToolCard({
           isOpen={card.modalOpen}
           onClose={() => card.setModalOpen(false)}
           onSelect={(m) => {
-            setSelectedModel(m.value);
+            setup.setModel(m.value);
             card.setModalOpen(false);
           }}
-          selectedModel={selectedModel}
+          selectedModel={setup.model}
           activeProviders={activeProviders}
           modelAliases={card.modelAliases}
           title="Select model for DeepSeek TUI"

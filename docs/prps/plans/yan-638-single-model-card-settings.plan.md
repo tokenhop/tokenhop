@@ -46,8 +46,8 @@ After: same edit survives a refresh on both; the card shows the quiet
 ## Architecture
 
 - **New `useSetupSettings({ toolId, apiKeys, defaults, disk })`** in
-  `setupCard.js`: wraps `useToolSettings` and owns `initUrl`, `customKey`,
-  `pickerKey`. Returns `values`, `setField`, `loaded`, `selectedApiKey`,
+  `hooks/useSetupSettings.js` (re-exported from `setupCard.js`): wraps `useToolSettings` and owns `initUrl`, `customKey`,
+  `pickerKey`. Returns `model`, `setModel`, `loaded`, `selectedApiKey`,
   `onApiKeyChange`, `endpoint`, `pickerKey`, `pickerProps`, `scaffoldProps(fileHint)`.
   One place for the shared wiring; YAN-639/641 reuse it.
 - **Disk** per card: model (+ `apiKeyId` where GET returns the raw key: jcode
@@ -69,22 +69,24 @@ After: same edit survives a refresh on both; the card shows the quiet
 
 ## Files to Change
 
-| File                                                                        | Change                                 |
-| --------------------------------------------------------------------------- | -------------------------------------- |
-| `src/app/(dashboard)/dashboard/cli-tools/components/setupCard.js`           | add `useSetupSettings`                 |
-| `src/app/(dashboard)/dashboard/cli-tools/components/ClineToolCard.js`       | migrate                                |
-| `src/app/(dashboard)/dashboard/cli-tools/components/KiloToolCard.js`        | migrate                                |
-| `src/app/(dashboard)/dashboard/cli-tools/components/DeepSeekTuiToolCard.js` | migrate, default model                 |
-| `src/app/(dashboard)/dashboard/cli-tools/components/JcodeToolCard.js`       | migrate, default model                 |
-| `src/app/(dashboard)/dashboard/cli-tools/components/HermesToolCard.js`      | migrate                                |
-| `src/shared/constants/cliTools.js`                                          | DeepSeek TUI `defaultValue`s           |
-| `src/lib/cliToolConfigs/jcode.js`                                           | `JCODE_DEFAULT_MODEL` from `CLI_TOOLS` |
+| File                                                                        | Change                                   |
+| --------------------------------------------------------------------------- | ---------------------------------------- |
+| `src/app/(dashboard)/dashboard/cli-tools/hooks/useSetupSettings.js`         | new hook (re-exported by `setupCard.js`) |
+| `tests/unit/cli-setup-settings.test.js`                                     | key/endpoint rules, Hermes YAML escape   |
+| `src/lib/cliToolConfigs/hermes.js`                                          | escape model/URL in the YAML block       |
+| `src/app/(dashboard)/dashboard/cli-tools/components/ClineToolCard.js`       | migrate                                  |
+| `src/app/(dashboard)/dashboard/cli-tools/components/KiloToolCard.js`        | migrate                                  |
+| `src/app/(dashboard)/dashboard/cli-tools/components/DeepSeekTuiToolCard.js` | migrate, default model                   |
+| `src/app/(dashboard)/dashboard/cli-tools/components/JcodeToolCard.js`       | migrate, default model                   |
+| `src/app/(dashboard)/dashboard/cli-tools/components/HermesToolCard.js`      | migrate                                  |
+| `src/shared/constants/cliTools.js`                                          | DeepSeek TUI `defaultValue`s             |
+| `src/lib/cliToolConfigs/jcode.js`                                           | `JCODE_DEFAULT_MODEL` from `CLI_TOOLS`   |
 
 ## Step-by-Step Tasks
 
 ### Task 1: shared hook + Cline (reference)
 
-- **ACTION**: add `useSetupSettings` to `setupCard.js`; migrate `ClineToolCard.js`.
+- **ACTION**: add `hooks/useSetupSettings.js`; migrate `ClineToolCard.js`.
 - **MIRROR**: ClaudeToolCard.js lines 102-170.
 - **IMPLEMENT**: drop `selectedModel` state and the status seeding effect; model
   from `values.model`; Apply/snippet use `endpoint` + `selectedApiKey`.
@@ -103,9 +105,11 @@ After: same edit survives a refresh on both; the card shows the quiet
 
 ## Testing Strategy
 
-No new tests: storage, API, merge and store are covered by
-`tests/unit/cli-tool-settings.test.js`; Apply/builder parity by
-`tests/unit/cli-tools-parity.test.js`. Manual browser check on host and remote.
+Storage, API, merge and store are covered by `tests/unit/cli-tool-settings.test.js`;
+Apply/builder parity by `tests/unit/cli-tools-parity.test.js`. One new file,
+`tests/unit/cli-setup-settings.test.js`, covers the security-relevant rules:
+typed keys never saved, mount endpoint never saved, Hermes YAML escaping.
+Manual browser check remotely.
 
 ## Validation Commands
 
@@ -122,7 +126,7 @@ npm run build
 - [ ] Snippet and Apply use the persisted values.
 - [ ] Kilo keeps its model on the host.
 - [ ] DeepSeek TUI / jcode start from their default model.
-- [ ] "Reset to defaults" restores starting values.
+- [ ] "Reset to defaults" clears the saved row; the file-level Reset keeps it.
 
 ## Completion Checklist
 

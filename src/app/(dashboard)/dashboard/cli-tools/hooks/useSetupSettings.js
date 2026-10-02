@@ -14,6 +14,8 @@ import { useToolSettings } from "./useToolSettings";
  */
 export function useSetupSettings({ toolId, apiKeys = [], defaults, disk = null }) {
   const [values, setField, settings] = useToolSettings(toolId, defaults, disk);
+  // The API accepts nested objects (Claude's `models`); these cards only read strings.
+  const str = (v) => (typeof v === "string" ? v : "");
   const [initUrl, setInitUrl] = useState("");
   // ponytail: typed keys stay in memory only (no raw secrets in the DB); YAN-642.
   const [customKey, setCustomKey] = useState(null);
@@ -54,14 +56,14 @@ export function useSetupSettings({ toolId, apiKeys = [], defaults, disk = null }
   };
 
   return {
-    values,
-    setField,
+    model: str(values.model),
+    setModel: (v) => setField("model", v),
     loaded: settings.loaded,
     selectedApiKey,
     onApiKeyChange,
-    endpoint: values.endpoint || initUrl,
+    endpoint: str(values.endpoint) || initUrl,
     pickerKey,
-    pickerProps: { savedUrl: values.endpoint, onChange: onEndpointChange },
+    pickerProps: { savedUrl: str(values.endpoint), onChange: onEndpointChange },
     scaffoldProps: (fileHint) => ({
       saveStatus: settings.status,
       onResetDefaults: settings.hasSaved ? resetDefaults : undefined,
