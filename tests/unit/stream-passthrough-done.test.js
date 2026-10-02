@@ -31,4 +31,14 @@ describe("passthrough stream [DONE]", () => {
   ])("emits exactly one [DONE] (%s)", async (_, input) => {
     expect((await drain(input)).match(/\[DONE\]/g)).toHaveLength(1);
   });
+
+  it("strips an empty delta.role while keeping a valid role (YAN-676)", async () => {
+    const make = (delta) =>
+      `data: ${JSON.stringify({ id: "chatcmpl-abcdefgh", choices: [{ index: 0, delta }] })}\n\n`;
+    const out = await drain(
+      `${make({ role: "", content: "hi" })}${make({ role: "assistant", content: "ho" })}`,
+    );
+    expect(out).not.toContain('"role":""');
+    expect(out).toContain('"role":"assistant"');
+  });
 });

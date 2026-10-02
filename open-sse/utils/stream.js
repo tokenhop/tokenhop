@@ -234,6 +234,12 @@ export function createSSEStream(options = {}) {
                     delete choice.delta.tool_calls;
                     fieldsInjected = true;
                   }
+                  // Qoder sends `delta.role: ""` on content chunks; AI SDK v5
+                  // openai-compatible checks role === "assistant" and aborts.
+                  if (choice.delta && "role" in choice.delta && !choice.delta.role) {
+                    delete choice.delta.role;
+                    fieldsInjected = true;
+                  }
                 }
               }
 
