@@ -220,8 +220,8 @@ describe("brand resolution order", () => {
     expect(exists).not.toHaveBeenCalled();
   });
 
-  it("keeps the legacy dir with no warning under the default brand", () => {
-    const mod = load(undefined);
+  it("keeps the legacy dir with no warning under the legacy brand", () => {
+    const mod = load(require("../../src/shared/brand/index.cjs").LEGACY.slug);
     const o = { ...PLATFORMS.linux.opts, exists: () => true };
     expect(mod.getDataDir(o)).toBe(PLATFORMS.linux.dir(mod.LEGACY.dataDirName));
     expect(mod.isLegacyDataDir(o)).toBe(false);

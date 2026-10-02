@@ -1,5 +1,5 @@
 // YAN-331: TOML/YAML tool configs. Under the tokenhop brand Apply writes
-// tokenhop entries and migrates legacy ones in place; the default brand keeps
+// tokenhop entries and migrates legacy ones in place; the legacy brand keeps
 // writing what it always did. Detect and Reset accept both everywhere.
 // HOME is a per-file temp dir (tests/setup), never the real one.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -76,9 +76,9 @@ describe("codex", () => {
     expect(cfg.profiles.direct.model_provider).toBe("openai-direct");
   });
 
-  it("default brand keeps writing the legacy provider", async () => {
+  it("legacy brand keeps writing the legacy provider", async () => {
     await write(rel, await fixture("codex-config.toml"));
-    const codex = await load("", "codex-settings");
+    const codex = await load(LEGACY.slug, "codex-settings");
     expect((await apply(codex)).status).toBe(200);
     const cfg = parseTOML(await read(rel));
     expect(cfg.model_provider).toBe(OLD);
@@ -165,8 +165,8 @@ describe("jcode", () => {
     expect(env).toContain("HTTPS_PROXY");
   });
 
-  it("default brand writes the legacy entry and env file", async () => {
-    const jcode = await load("", "jcode-settings");
+  it("legacy brand writes the legacy entry and env file", async () => {
+    const jcode = await load(LEGACY.slug, "jcode-settings");
     expect((await apply(jcode)).status).toBe(200);
     const cfg = parseTOML(await read(rel));
     expect(cfg.providers[OLD].api_key_env).toBe(OLD_JCODE_ENV);
@@ -213,7 +213,7 @@ describe("grok build", () => {
     expect(out).toContain('[mcp_servers.example]\nurl = "https://example.com/mcp"');
   });
 
-  it.each(["", "tokenhop"])(
+  it.each([LEGACY.slug, "tokenhop"])(
     "applied by the legacy brand, reset by brand %j: previous values come back",
     async (brand) => {
       await write(rel, await fixture("grok-config.toml"));

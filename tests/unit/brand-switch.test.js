@@ -30,16 +30,16 @@ describe("brand switch", () => {
     delete require.cache[CJS_PATH];
   });
 
-  it("lists both brands and defaults to 9router", () => {
+  it("lists both brands and defaults to tokenhop", () => {
     const brand = loadCjs();
     expect(brand.BRAND_IDS).toEqual(["9router", "tokenhop"]);
-    expect(brand.DEFAULT_BRAND_ID).toBe("9router");
-    expect(brand.ACTIVE_BRAND_ID).toBe("9router");
+    expect(brand.DEFAULT_BRAND_ID).toBe("tokenhop");
+    expect(brand.ACTIVE_BRAND_ID).toBe("tokenhop");
   });
 
   it("treats an empty NEXT_PUBLIC_BRAND as unset", () => {
     process.env.NEXT_PUBLIC_BRAND = "";
-    expect(loadCjs().ACTIVE_BRAND_ID).toBe("9router");
+    expect(loadCjs().ACTIVE_BRAND_ID).toBe("tokenhop");
   });
 
   it("selects tokenhop via NEXT_PUBLIC_BRAND", () => {
@@ -62,8 +62,13 @@ describe("brand switch", () => {
 
   it("isActiveBrand matches only the active brand", () => {
     const def = loadCjs();
-    expect(def.isActiveBrand("9router")).toBe(true);
-    expect(def.isActiveBrand("tokenhop")).toBe(false);
+    expect(def.isActiveBrand("tokenhop")).toBe(true);
+    expect(def.isActiveBrand("9router")).toBe(false);
+
+    process.env.NEXT_PUBLIC_BRAND = "9router";
+    const legacy = loadCjs();
+    expect(legacy.isActiveBrand("9router")).toBe(true);
+    expect(legacy.isActiveBrand("tokenhop")).toBe(false);
 
     process.env.NEXT_PUBLIC_BRAND = "tokenhop";
     const th = loadCjs();
@@ -85,7 +90,7 @@ describe("brand switch", () => {
     process.env.NEXT_PUBLIC_BRAND = "tokenhop";
     const esm = await loadEsm();
     expect(esm.BRAND_IDS).toEqual(["9router", "tokenhop"]);
-    expect(esm.DEFAULT_BRAND_ID).toBe("9router");
+    expect(esm.DEFAULT_BRAND_ID).toBe("tokenhop");
     expect(esm.ACTIVE_BRAND_ID).toBe("tokenhop");
     expect(esm.isActiveBrand("tokenhop")).toBe(true);
   });

@@ -46,9 +46,9 @@ describe("MITM Root CA generation", () => {
     expect(fs.existsSync(path.join(dataDir, "mitm", "rootCA.crt"))).toBe(true);
   });
 
-  it("names a fresh CA after the default brand", () => {
+  it("names a fresh CA after the legacy brand", () => {
     const dataDir = tempDataDir();
-    loadRootCAWithDataDir(dataDir).generateRootCA();
+    loadRootCAWithDataDir(dataDir, LEGACY.slug).generateRootCA();
 
     const { subject } = readCert(dataDir);
     expect(subject).toContain(`CN=${LEGACY.mitmCaCommonName}`);
@@ -66,7 +66,7 @@ describe("MITM Root CA generation", () => {
 
   it("keeps a legacy CA on disk unchanged under the tokenhop brand", () => {
     const dataDir = tempDataDir();
-    loadRootCAWithDataDir(dataDir).generateRootCA();
+    loadRootCAWithDataDir(dataDir, LEGACY.slug).generateRootCA();
     const before = readCert(dataDir);
 
     const tokenhop = loadRootCAWithDataDir(dataDir, "tokenhop");

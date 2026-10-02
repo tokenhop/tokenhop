@@ -1,9 +1,10 @@
 // YAN-332: JSON tool configs (Kilo, Droid, Copilot, Cline). Under the tokenhop
-// brand Apply writes tokenhop entries and migrates legacy ones; the default
+// brand Apply writes tokenhop entries and migrates legacy ones; the legacy
 // brand keeps writing what it always did. Detect and Reset accept both everywhere.
 // HOME is a per-file temp dir (tests/setup), never the real one.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  LEGACY,
   OLD,
   OLD_NAME,
   clearHome,
@@ -49,18 +50,21 @@ describe("kilo", () => {
     expect(vscode["editor.fontSize"]).toBe(14);
   });
 
-  it.each(["", "tokenhop"])("legacy → reset removes our entries under brand %j", async (brand) => {
-    await seed();
-    const kilo = await load(brand, "kilo-settings");
-    expect((await kilo.DELETE()).status).toBe(200);
-    expect(await readJson(authRel)).toEqual({
-      anthropic: { type: "api-key", apiKey: "sk-ant" },
-    });
-  });
+  it.each([LEGACY.slug, "tokenhop"])(
+    "legacy → reset removes our entries under brand %j",
+    async (brand) => {
+      await seed();
+      const kilo = await load(brand, "kilo-settings");
+      expect((await kilo.DELETE()).status).toBe(200);
+      expect(await readJson(authRel)).toEqual({
+        anthropic: { type: "api-key", apiKey: "sk-ant" },
+      });
+    },
+  );
 
-  it("default brand writes the legacy provider name and leaves legacy auth keys", async () => {
+  it("legacy brand writes the legacy provider name and leaves legacy auth keys", async () => {
     await seed();
-    const kilo = await load("", "kilo-settings");
+    const kilo = await load(LEGACY.slug, "kilo-settings");
     expect((await apply(kilo)).status).toBe(200);
     expect((await readJson(authRel))[OLD]).toBeDefined();
     expect((await readJson(vscodeRel))["kilocode.customProvider"].name).toBe(OLD_NAME);
@@ -94,17 +98,20 @@ describe("droid", () => {
     expect(customModels.some((m) => m.id.startsWith(`custom:${OLD_NAME}`))).toBe(false);
   });
 
-  it.each(["", "tokenhop"])("legacy → reset removes our models under brand %j", async (brand) => {
-    await seed();
-    const droid = await load(brand, "droid-settings");
-    expect((await droid.DELETE()).status).toBe(200);
-    const { customModels } = await readJson(rel);
-    expect(customModels.map((m) => m.id)).toEqual(["custom:openai-direct-1"]);
-  });
+  it.each([LEGACY.slug, "tokenhop"])(
+    "legacy → reset removes our models under brand %j",
+    async (brand) => {
+      await seed();
+      const droid = await load(brand, "droid-settings");
+      expect((await droid.DELETE()).status).toBe(200);
+      const { customModels } = await readJson(rel);
+      expect(customModels.map((m) => m.id)).toEqual(["custom:openai-direct-1"]);
+    },
+  );
 
-  it("default brand writes legacy ids", async () => {
+  it("legacy brand writes legacy ids", async () => {
     await seed();
-    const droid = await load("", "droid-settings");
+    const droid = await load(LEGACY.slug, "droid-settings");
     expect((await apply(droid)).status).toBe(200);
     const { customModels } = await readJson(rel);
     expect(customModels.map((m) => m.id)).toEqual([
@@ -142,16 +149,19 @@ describe("copilot", () => {
     });
   });
 
-  it.each(["", "tokenhop"])("legacy → reset removes our entries under brand %j", async (brand) => {
-    await seed();
-    const copilot = await load(brand, "copilot-settings");
-    expect((await copilot.DELETE()).status).toBe(200);
-    expect((await readJson(rel)).map((e) => e.name)).toEqual(["Ollama"]);
-  });
+  it.each([LEGACY.slug, "tokenhop"])(
+    "legacy → reset removes our entries under brand %j",
+    async (brand) => {
+      await seed();
+      const copilot = await load(brand, "copilot-settings");
+      expect((await copilot.DELETE()).status).toBe(200);
+      expect((await readJson(rel)).map((e) => e.name)).toEqual(["Ollama"]);
+    },
+  );
 
-  it("default brand writes the legacy name and keeps the existing shape", async () => {
+  it("legacy brand writes the legacy name and keeps the existing shape", async () => {
     await seed();
-    const copilot = await load("", "copilot-settings");
+    const copilot = await load(LEGACY.slug, "copilot-settings");
     expect((await apply(copilot)).status).toBe(200);
     const config = await readJson(rel);
     expect(config.map((e) => e.name)).toEqual(["Ollama", OLD_NAME, OLD]);

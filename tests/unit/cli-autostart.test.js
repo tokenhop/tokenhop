@@ -121,7 +121,7 @@ describe.each(["linux", "win32", "darwin"])("autostart on %s", (platform) => {
     expect(autostart.isAutoStartEnabled()).toBe(false);
   });
 
-  it("default brand: keeps writing the legacy-named entry and never migrates it", () => {
+  it("legacy brand: keeps writing the legacy-named entry and never migrates it", () => {
     seedLegacy(platform);
     const autostart = load(LEGACY.slug, platform);
 
