@@ -6,7 +6,7 @@
  * `result.isError`, so both are mapped to errors carrying `status`.
  */
 
-import { fetchPublic } from "../../../src/shared/utils/ssrfGuard.js";
+import { fetchTrusted } from "../../../src/shared/utils/ssrfGuard.js";
 import { UPSTREAM_CLIENT_IDS } from "../../../src/shared/brand/index.js";
 
 const PROTOCOL_VERSION = "2024-11-05";
@@ -53,7 +53,7 @@ export function parseMcpBody(text) {
 }
 
 async function rpc(url, init, payload) {
-  const resp = await fetchPublic(url, { ...init, method: "POST", body: JSON.stringify(payload) });
+  const resp = await fetchTrusted(url, { ...init, method: "POST", body: JSON.stringify(payload) });
   const text = await resp.text();
   if (!resp.ok) throw searchError(resp.status, summarizeErrorBody(text));
   if (payload.id === undefined) return { resp };

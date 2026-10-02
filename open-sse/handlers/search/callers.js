@@ -29,8 +29,6 @@
  * @property {Record<string,unknown>} [providerSpecificData]
  */
 
-import { assertPublicUrl } from "../../../src/shared/utils/ssrfGuard.js";
-
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 /**
@@ -67,10 +65,12 @@ export function getProviderSetting(params, key) {
  * Resolve base URL from operator-configured sources only.
  *
  * Sources: the connection's `providerSpecificData.baseUrl` override (admin-set,
- * same as chat providers) or the registry/env `config.baseUrl`. A client-supplied
- * `provider_options.baseUrl` is deliberately ignored: the built request carries
- * the gateway's stored provider credential, and that credential must never be
- * sent to a URL an API caller named (YAN-649).
+ * same as chat providers) or the registry/env `config.baseUrl` (e.g. the
+ * SEARXNG_URL default, which may be localhost or another internal host by
+ * design — YAN-658). A client-supplied `provider_options.baseUrl` is
+ * deliberately ignored: the built request carries the gateway's stored provider
+ * credential, and that credential must never be sent to a URL an API caller
+ * named (YAN-649).
  *
  * @param {SearchProviderConfig} config
  * @param {SearchRequestParams} params
@@ -89,7 +89,6 @@ export function resolveBaseUrl(config, params) {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       throw new Error(`Invalid baseUrl protocol: ${parsed.protocol}`);
     }
-    assertPublicUrl(trimmed);
     return trimmed.replace(/\/+$/, "");
   }
   return config.baseUrl.replace(/\/+$/, "");

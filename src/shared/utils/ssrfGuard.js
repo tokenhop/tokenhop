@@ -217,3 +217,26 @@ export async function fetchPublic(url, init = {}, { maxRedirects = 5 } = {}) {
     currentUrl = nextUrl;
   }
 }
+
+// fetch() for operator-configured URLs (registry/env config or connection
+// providerSpecificData). Unlike fetchPublic this must NOT block internal hosts —
+// an operator may deliberately point a provider (e.g. SearXNG) at localhost or
+// a private network — so there is no assert* call at all (YAN-658). Redirects
+// are still handled manually and only followed within the same origin, so a
+// redirect can't bounce request credentials (Authorization header, api key in
+// the query string) to a host the operator didn't configure.
+export async function fetchTrusted(url, init = {}, { maxRedirects = 5 } = {}) {
+  let currentUrl = url;
+  for (let hop = 0; ; hop++) {
+    const res = await fetch(currentUrl, { ...init, redirect: "manual" });
+    const isRedirect = res.status >= 300 && res.status < 400;
+    const location = isRedirect ? res.headers.get("location") : null;
+    if (!location) return res;
+    if (hop >= maxRedirects) throw new Error("Blocked URL: too many redirects");
+    const nextUrl = new URL(location, currentUrl);
+    if (nextUrl.origin !== new URL(currentUrl).origin) {
+      throw new Error(`Blocked URL: redirect to a different origin (${nextUrl.origin})`);
+    }
+    currentUrl = nextUrl.toString();
+  }
+}

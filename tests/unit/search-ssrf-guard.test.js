@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveBaseUrl } from "../../open-sse/handlers/search/callers.js";
 import { handleSearchCore } from "../../open-sse/handlers/search/index.js";
+import { SEARXNG_URL } from "../../open-sse/config/runtimeConfig.js";
 
 const CONFIG = { id: "searxng", baseUrl: "https://searxng.example.com" };
 
@@ -81,5 +82,63 @@ describe("stored credential never reaches a client-supplied URL (YAN-649)", () =
     expect(String(calledUrl)).toBe("https://api.tavily.com");
     expect(String(calledUrl)).not.toContain("attacker.example");
     expect(init.headers.Authorization).toBe("Bearer stored-tavily-key");
+  });
+});
+
+describe("operator-configured URLs are allowed, even internal (YAN-658)", () => {
+  it("default SEARXNG_URL resolves as-is", () => {
+    expect(SEARXNG_URL).toBe("http://localhost:8888/search");
+    expect(resolveBaseUrl({ id: "searxng", baseUrl: SEARXNG_URL }, {})).toBe(
+      "http://localhost:8888/search",
+    );
+  });
+
+  it("reaches the configured SearXNG without the SSRF guard blocking", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ results: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await handleSearchCore({
+      body: { query: "test" },
+      provider: { id: "searxng" },
+      providerConfig: { id: "searxng", baseUrl: SEARXNG_URL, authType: "none" },
+      credentials: null,
+    });
+
+    expect(result.success).toBe(true);
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/^http:\/\/localhost:8888\/search\?/);
+  });
+
+  it("operator connection baseUrl may be internal", async () => {
+    const config = { ...TAVILY_CONFIG, baseUrl: "http://searxng:8080/search" };
+    expect(resolveBaseUrl(config, {})).toBe("http://searxng:8080/search");
+    expect(
+      resolveBaseUrl(config, { providerSpecificData: { baseUrl: "http://10.0.0.5/search" } }),
+    ).toBe("http://10.0.0.5/search");
+  });
+
+  it("blocks a redirect from a trusted URL to a different origin", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(null, { status: 302, headers: { Location: "https://evil.example/x" } }),
+      ),
+    );
+
+    const result = await handleSearchCore({
+      body: { query: "test" },
+      provider: { id: "searxng" },
+      providerConfig: { id: "searxng", baseUrl: SEARXNG_URL, authType: "none" },
+      credentials: null,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/different origin/);
   });
 });
