@@ -38,15 +38,19 @@ Model: **release-branches**. Support window: latest-minor.
 <!-- ycc-release-state:table:end -->
 
 `master` has been the trunk since v0.5.0 (2026-09-30). v0.6.0 (2026-10-01) opened
-`release/0.6` and froze `release/0.5`.
+`release/0.6` and froze `release/0.5`. v1.0.0 (2026-10-02) opened `release/1.0`
+and put `release/0.6` into its 60-day transition window; v1.0.1 (2026-10-02) is
+the 1.0 line's first patch.
 
-- **No v0.7.0.** Every release before the rebrand is a `v0.6.Z` patch from
-  `release/0.6`. A change that must ship before v1.0.0 is labelled `v0.6.x`,
-  lands on `master` first and is backported with `backport:0.6`.
-- **v1.0.0** — the next release from `master`: the tokenhop rebrand, behind the
-  brand switch. Everything not labelled `v0.6.x` rides it. See
-  [Major release v1.0.0](#major-release-v100-tokenhop-rebrand) for how `release/0.6`
-  is handled afterwards.
+- **No v0.7.0.** The pre-rebrand line ended as `v0.6.Z` patches from
+  `release/0.6`; the v0.7.0 label was retired when the rebrand shipped as
+  v1.0.0.
+- **v1.0.x** — the shipped 1.0 line: patches from `release/1.0`, labelled
+  `v1.0.x` on the trunk and backported with `backport:1.0`.
+- **v1.1.0** — the next release from `master`: the Users & teams switch. Every
+  new issue without a patch-line label rides it. See
+  [Major release v1.0.0](#major-release-v100-tokenhop-rebrand) for how
+  `release/0.6` is being wound down.
 
 ## Rules
 
@@ -91,7 +95,7 @@ everything behind the scenes first and make the switch in one final PR shortly
 before the release.
 
 Two switches are planned for the large projects: the **brand switch** (the
-tokenhop rebrand; defaults to `9router` until the v1.0.0 release PR flips it)
+tokenhop rebrand; flipped to tokenhop by the v1.0.0 release PR, 2026-10-02)
 and the **Users & teams switch** (defaults to off). CI builds both states of
 each, so the hidden side stays green. The project handbooks list which issues
 ship anytime, which go behind the switch, and which wait for release day.
@@ -140,12 +144,14 @@ Pre-releases of the next minor are tagged `vX.Y.0-beta.N` from the trunk.
 
 ### Major release v1.0.0 (tokenhop rebrand)
 
-v1.0.0 follows the minor-release steps above. The differences:
+v1.0.0 followed the minor-release steps above and shipped on 2026-10-02. The
+differences:
 
 - The release PR flips the brand default to `tokenhop` (YAN-345). Every beta
   `v1.0.0-beta.N` before it is built as tokenhop automatically:
   `docker-publish.yml` passes `NEXT_PUBLIC_BRAND=tokenhop` for every v1+ tag.
-- Step 4 creates `release/1.0` and `backport:1.0`; step 5 freezes `release/0.6`.
+- Step 4 created `release/1.0` and `backport:1.0`; step 5 put `release/0.6` into
+  the transition window.
 - **Transition window: 60 days from the v1.0.0 tag.** v1.0.0 renames the image,
   CLI, data dir and env vars, so `release/0.6` stays open for **security and
   critical fixes only** (data loss, crashes, a broken upgrade path) during the
@@ -192,9 +198,11 @@ single squash commit; its individual commits are kept under the
 - **Projects** are bodies of work (Re-design, Rebrand, Users & Teams). Each
   project has a target release.
 - **Every issue gets a target release at triage**, as a label from the
-  single-select **tokenhop release** label group: the patch line (`v0.6.x`)
-  or the planned major (`v1.0.0`). Add a label to the
-  group when a new version is planned. For bugs, triage also decides whether
+  single-select **tokenhop release** label group: the shipped patch lines
+  (`v0.6.x`, `v1.0.x`) or the next planned minor (`v1.1.0`). Add a label to
+  the group when a new version is planned; when a planned label ships, keep
+  the label, mark its description as shipped and point it at the replacement
+  labels. For bugs, triage also decides whether
   the fix needs a backport. (Linear's Releases feature needs a Business plan,
   so labels stand in for it.)
 - Agents take issues by target. The target tells them the base branch and
