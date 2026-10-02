@@ -11,7 +11,7 @@ import { buildSearchRequest } from "./callers.js";
 import { normalizeSearchResponse } from "./normalizers.js";
 import { handleChatSearch } from "./chatSearch.js";
 import { runGlmMcpSearch } from "./glmMcp.js";
-import { fetchPublic } from "../../../src/shared/utils/ssrfGuard.js";
+import { fetchTrusted } from "../../../src/shared/utils/ssrfGuard.js";
 
 // Providers whose built request needs more than one fetch + resp.json().
 // A runner returns the parsed body or throws an Error with `status`.
@@ -135,7 +135,9 @@ async function tryDedicatedProvider({
     if (runner) {
       data = await runner(url, requestInit);
     } else {
-      const resp = await fetchPublic(url, requestInit);
+      // Operator-configured URL (registry/env/connection) — trusted, may be
+      // internal (YAN-658); redirects are confined to the same origin.
+      const resp = await fetchTrusted(url, requestInit);
       if (!resp.ok) {
         clearTimeout(timer);
         const errText = await resp.text().catch(() => "");

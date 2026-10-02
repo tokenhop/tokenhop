@@ -11,7 +11,7 @@ vi.mock("node:dns", () => ({
   promises: { lookup: lookupMock },
 }));
 
-const { assertPublicUrl, assertPublicUrlResolved, fetchPublic } = await import(
+const { assertPublicUrl, assertPublicUrlResolved, fetchPublic, fetchTrusted } = await import(
   "../../src/shared/utils/ssrfGuard.js"
 );
 
@@ -171,5 +171,78 @@ describe("fetchPublic: redirect-target re-validation from #3714", () => {
     global.fetch = vi.fn();
     await expect(fetchPublic("http://127.0.0.1/steal")).rejects.toThrow();
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("fetchTrusted: operator-configured URLs (YAN-658)", () => {
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+  beforeEach(() => {
+    lookupMock.mockReset();
+  });
+
+  it("fetches an internal URL without any DNS-based blocking", async () => {
+    global.fetch = vi.fn(async () => new Response("ok", { status: 200 }));
+    const res = await fetchTrusted("http://localhost:8888/search?q=test");
+    expect(await res.text()).toBe("ok");
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(lookupMock).not.toHaveBeenCalled();
+  });
+
+  it("follows a same-origin redirect including to a different path", async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { Location: "/search?q=test" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+
+    const res = await fetchTrusted("http://localhost:8888/search");
+    expect(await res.text()).toBe("ok");
+    expect(String(global.fetch.mock.calls[1][0])).toBe("http://localhost:8888/search?q=test");
+  });
+
+  it("blocks a redirect to a different origin", async () => {
+    global.fetch = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { Location: "https://evil.example/steal" },
+        }),
+    );
+    await expect(fetchTrusted("http://localhost:8888/search")).rejects.toThrow(/different origin/);
+  });
+
+  it("blocks a subdomain redirect that shares the suffix", async () => {
+    global.fetch = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { Location: "http://sub.localhost:8888/search" },
+        }),
+    );
+    await expect(fetchTrusted("http://localhost:8888/search")).rejects.toThrow(/different origin/);
+  });
+
+  it("bounds the redirect chain", async () => {
+    global.fetch = vi.fn(
+      async (url) =>
+        new Response(null, {
+          status: 302,
+          headers: {
+            Location: String(url).endsWith("/a")
+              ? "http://localhost:8888/b"
+              : "http://localhost:8888/a",
+          },
+        }),
+    );
+    await expect(fetchTrusted("http://localhost:8888/a", {}, { maxRedirects: 3 })).rejects.toThrow(
+      /too many redirects/i,
+    );
   });
 });

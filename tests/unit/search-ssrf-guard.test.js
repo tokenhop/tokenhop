@@ -1,49 +1,144 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveBaseUrl } from "../../open-sse/handlers/search/callers.js";
+import { handleSearchCore } from "../../open-sse/handlers/search/index.js";
+import { SEARXNG_URL } from "../../open-sse/config/runtimeConfig.js";
 
 const CONFIG = { id: "searxng", baseUrl: "https://searxng.example.com" };
 
-describe("resolveBaseUrl SSRF guard", () => {
+const TAVILY_CONFIG = {
+  id: "tavily",
+  baseUrl: "https://api.tavily.com",
+  method: "POST",
+  authType: "apikey",
+  defaultMaxResults: 5,
+  maxMaxResults: 100,
+};
+
+const EMPTY_TAVILY = () =>
+  new Response(JSON.stringify({ results: [] }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("resolveBaseUrl ignores the client baseUrl override (YAN-649)", () => {
   it("uses provider default when no override", () => {
     expect(resolveBaseUrl(CONFIG, {})).toBe("https://searxng.example.com");
   });
 
-  it("allows public https override", () => {
-    const params = { providerOptions: { baseUrl: "https://my-searxng.example.com" } };
-    expect(resolveBaseUrl(CONFIG, params)).toBe("https://my-searxng.example.com");
+  it("ignores a public client provider_options.baseUrl", () => {
+    const params = { providerOptions: { baseUrl: "https://attacker.example" } };
+    expect(resolveBaseUrl(CONFIG, params)).toBe("https://searxng.example.com");
   });
 
-  it("allows public http override", () => {
-    const params = { providerOptions: { baseUrl: "http://searxng.example.net" } };
-    expect(resolveBaseUrl(CONFIG, params)).toBe("http://searxng.example.net");
-  });
-
-  it("rejects loopback override", () => {
-    const params = { providerOptions: { baseUrl: "http://127.0.0.1:18999" } };
-    expect(() => resolveBaseUrl(CONFIG, params)).toThrow();
-  });
-
-  it("rejects private IP override", () => {
-    for (const ip of ["10.0.0.1", "192.168.1.1", "172.16.0.1"]) {
-      const params = { providerOptions: { baseUrl: `http://${ip}` } };
-      expect(() => resolveBaseUrl(CONFIG, params), `should reject ${ip}`).toThrow();
+  it("ignores internal and non-http client overrides instead of throwing", () => {
+    for (const url of [
+      "http://127.0.0.1:18999",
+      "http://localhost:8080",
+      "http://169.254.169.254/latest/meta-data",
+      "file:///etc/passwd",
+    ]) {
+      expect(resolveBaseUrl(CONFIG, { providerOptions: { baseUrl: url } }), url).toBe(
+        "https://searxng.example.com",
+      );
     }
   });
 
-  it("rejects localhost hostname override", () => {
-    const params = { providerOptions: { baseUrl: "http://localhost:8080" } };
-    expect(() => resolveBaseUrl(CONFIG, params)).toThrow();
+  it("honours the operator connection baseUrl (providerSpecificData)", () => {
+    const params = { providerSpecificData: { baseUrl: "https://search.example.net/search" } };
+    expect(resolveBaseUrl(CONFIG, params)).toBe("https://search.example.net/search");
   });
 
-  it("rejects cloud metadata override", () => {
-    const params = { providerOptions: { baseUrl: "http://169.254.169.254/latest/meta-data" } };
-    expect(() => resolveBaseUrl(CONFIG, params)).toThrow();
+  it("prefers the operator connection baseUrl over a client override", () => {
+    const params = {
+      providerOptions: { baseUrl: "https://attacker.example" },
+      providerSpecificData: { baseUrl: "https://search.example.net" },
+    };
+    expect(resolveBaseUrl(CONFIG, params)).toBe("https://search.example.net");
   });
 
-  it("rejects non-http protocols", () => {
-    for (const proto of ["file:///etc/passwd", "gopher://127.0.0.1:70", "ftp://10.0.0.1"]) {
-      const params = { providerOptions: { baseUrl: proto } };
-      expect(() => resolveBaseUrl(CONFIG, params), `should reject ${proto}`).toThrow();
-    }
+  it("rejects a non-http operator connection baseUrl", () => {
+    const params = { providerSpecificData: { baseUrl: "file:///etc/passwd" } };
+    expect(() => resolveBaseUrl(CONFIG, params)).toThrow(/protocol/);
+  });
+});
+
+describe("stored credential never reaches a client-supplied URL (YAN-649)", () => {
+  it("sends the stored key only to the provider's configured endpoint", async () => {
+    const fetchMock = vi.fn(async () => EMPTY_TAVILY());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await handleSearchCore({
+      body: { query: "x", provider_options: { baseUrl: "https://attacker.example" } },
+      provider: { id: "tavily" },
+      providerConfig: TAVILY_CONFIG,
+      credentials: { apiKey: "stored-tavily-key" },
+    });
+
+    expect(result.success).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [calledUrl, init] = fetchMock.mock.calls[0];
+    expect(String(calledUrl)).toBe("https://api.tavily.com");
+    expect(String(calledUrl)).not.toContain("attacker.example");
+    expect(init.headers.Authorization).toBe("Bearer stored-tavily-key");
+  });
+});
+
+describe("operator-configured URLs are allowed, even internal (YAN-658)", () => {
+  it("default SEARXNG_URL resolves as-is", () => {
+    expect(SEARXNG_URL).toBe("http://localhost:8888/search");
+    expect(resolveBaseUrl({ id: "searxng", baseUrl: SEARXNG_URL }, {})).toBe(
+      "http://localhost:8888/search",
+    );
+  });
+
+  it("reaches the configured SearXNG without the SSRF guard blocking", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ results: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await handleSearchCore({
+      body: { query: "test" },
+      provider: { id: "searxng" },
+      providerConfig: { id: "searxng", baseUrl: SEARXNG_URL, authType: "none" },
+      credentials: null,
+    });
+
+    expect(result.success).toBe(true);
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/^http:\/\/localhost:8888\/search\?/);
+  });
+
+  it("operator connection baseUrl may be internal", async () => {
+    const config = { ...TAVILY_CONFIG, baseUrl: "http://searxng:8080/search" };
+    expect(resolveBaseUrl(config, {})).toBe("http://searxng:8080/search");
+    expect(
+      resolveBaseUrl(config, { providerSpecificData: { baseUrl: "http://10.0.0.5/search" } }),
+    ).toBe("http://10.0.0.5/search");
+  });
+
+  it("blocks a redirect from a trusted URL to a different origin", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(null, { status: 302, headers: { Location: "https://evil.example/x" } }),
+      ),
+    );
+
+    const result = await handleSearchCore({
+      body: { query: "test" },
+      provider: { id: "searxng" },
+      providerConfig: { id: "searxng", baseUrl: SEARXNG_URL, authType: "none" },
+      credentials: null,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/different origin/);
   });
 });
