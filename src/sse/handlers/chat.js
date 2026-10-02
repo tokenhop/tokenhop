@@ -12,6 +12,9 @@ import {
   clearAntigravityStrikes,
 } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
+import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { getProviderAlias } from "@/shared/constants/providers";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -70,6 +73,9 @@ export async function handleChat(request, clientRawRequest = null, options = nul
   }
   if (body.model !== undefined && typeof body.model !== "string") {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "model must be a string");
+  }
+  if (body.messages !== undefined && !Array.isArray(body.messages)) {
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "messages must be an array");
   }
 
   // Build clientRawRequest for logging (if not provided)
@@ -323,6 +329,21 @@ function probeObserverFor(options, via) {
  * @param {object|null} options - handleChat options (probe observer); threaded so
  *   nested combos observe their own steps and skip the live-routes fallback ring.
  */
+// Same keys /v1/models checks: the provider's alias and its static alias.
+async function isModelDisabled(provider, model) {
+  let disabled;
+  try {
+    disabled = await getDisabledModels();
+  } catch {
+    return false; // fail open: a DB read error must not block traffic
+  }
+  const aliases = new Set([getProviderAlias(provider), PROVIDER_ID_TO_ALIAS[provider], provider]);
+  for (const alias of aliases) {
+    if (alias && Array.isArray(disabled?.[alias]) && disabled[alias].includes(model)) return true;
+  }
+  return false;
+}
+
 async function handleSingleModelChat(
   body,
   modelStr,
@@ -434,6 +455,14 @@ async function handleSingleModelChat(
 
   const { provider, model } = modelInfo;
 
+  // A model disabled on the provider page is hidden from /v1/models; refuse
+  // to route it too, under either alias the dashboard may have stored (YAN-661).
+  // 404 lets a combo advance to its next member.
+  if (await isModelDisabled(provider, model)) {
+    log.warn("CHAT", `Model disabled: ${provider}/${model}`);
+    return errorResponse(HTTP_STATUS.NOT_FOUND, `Model disabled: ${modelStr}`);
+  }
+
   // Routing shown in the unified "▶" line (client model → provider/model)
 
   // Extract userAgent from request
@@ -543,6 +572,8 @@ async function handleSingleModelChat(
     });
 
     if (result.success) return result.response;
+    // Local request-prep failure says nothing about the account: no cooldown, no rotation.
+    if (result.localError) return result.response;
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;

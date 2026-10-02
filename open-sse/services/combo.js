@@ -414,6 +414,28 @@ export function findComboCycle(name, models, combos) {
 }
 
 /** Convert a Retry-After header value to an ISO timestamp. */
+// Errors about the requested model rather than the request or the account:
+// another combo member can serve the request (YAN-660).
+const MODEL_SCOPED_ERROR_TEXT = [
+  "not supported when using codex with a chatgpt account",
+  "invalid_model",
+  "invalid_model_id",
+  "unknown model",
+  "model not found",
+  "model_not_found",
+  "does not exist",
+];
+
+export function isModelScopedError(status, errorText) {
+  if (status === 404 || status === 410) return true;
+  if (status !== 400) return false;
+  const text = String(errorText || "").toLowerCase();
+  return (
+    MODEL_SCOPED_ERROR_TEXT.some((t) => text.includes(t)) ||
+    /model[^.]{0,80}not supported/.test(text)
+  );
+}
+
 function retryAfterToIso(value) {
   if (!value) return null;
   const date = /^\d+$/.test(value) ? new Date(Date.now() + Number(value) * 1000) : new Date(value);
@@ -534,10 +556,13 @@ export async function handleComboChat({
         }
       }
 
-      // Check if should fallback to next model
+      // Check if should fallback to next model. Account locking stays with
+      // checkFallbackError; a model-scoped 4xx (410 Gone, model not available on
+      // this plan, unknown model id) also advances the combo, since the next
+      // member may well succeed (YAN-660).
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
-      if (!shouldFallback) {
+      if (!shouldFallback && !isModelScopedError(result.status, errorText)) {
         notifyAttempt({
           model: modelStr,
           status: result.status,

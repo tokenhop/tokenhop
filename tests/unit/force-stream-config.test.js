@@ -155,3 +155,58 @@ describe("forceStream provider config", () => {
     },
   );
 });
+
+describe("stream default (YAN-659)", () => {
+  beforeEach(() => {
+    executeMock.mockReset();
+    executeMock.mockResolvedValue({
+      response: new Response(
+        JSON.stringify({
+          id: "chatcmpl-1",
+          object: "chat.completion",
+          choices: [
+            { index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+      url: "https://api.openai.com/v1/chat/completions",
+      headers: {},
+      transformedBody: null,
+    });
+  });
+
+  // deepseek is not forceStream, so the client's intent decides. Only the
+  // executor call is asserted; this file's mocks stop at the response path.
+  const run = async (body, accept) =>
+    (await import("../../open-sse/handlers/chatCore.js"))
+      .handleChatCore({
+        body: { model: "deepseek-chat", messages: [{ role: "user", content: "hi" }], ...body },
+        modelInfo: { provider: "deepseek", model: "deepseek-chat" },
+        credentials: { apiKey: "k", providerSpecificData: {} },
+        log: { info() {}, warn() {}, debug() {}, error() {}, line() {} },
+        connectionId: "c",
+        clientRawRequest: {
+          endpoint: "/v1/chat/completions",
+          body: {},
+          headers: accept ? { accept } : {},
+        },
+      })
+      .catch(() => {});
+
+  it("a request without `stream` and Accept */* gets JSON, not SSE", async () => {
+    await run({}, "*/*");
+    expect(executeMock.mock.calls.at(-1)[0].stream).toBe(false);
+    executeMock.mockClear();
+    await run({});
+    expect(executeMock.mock.calls.at(-1)[0].stream).toBe(false);
+  });
+
+  it("stream:true, or Accept: text/event-stream without stream, still streams", async () => {
+    await run({ stream: true }, "*/*");
+    expect(executeMock.mock.calls.at(-1)[0].stream).toBe(true);
+    executeMock.mockClear();
+    await run({}, "text/event-stream");
+    expect(executeMock.mock.calls.at(-1)[0].stream).toBe(true);
+  });
+});
