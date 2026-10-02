@@ -418,8 +418,21 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   // Extract system message as instructions
   let hasSystemMessage = false;
   const messages = body.messages || [];
+  // Images moved out of an assistant turn, emitted once its tool calls/outputs are in.
+  let pendingHoistedImages = [];
+  const flushHoistedImages = () => {
+    if (pendingHoistedImages.length === 0) return;
+    result.input.push({
+      type: RESPONSES_ITEM.MESSAGE,
+      role: ROLE.USER,
+      content: pendingHoistedImages,
+    });
+    pendingHoistedImages = [];
+  };
 
   for (const msg of messages) {
+    // A new user/assistant turn closes the previous tool-output run.
+    if (msg.role === ROLE.USER || msg.role === ROLE.ASSISTANT) flushHoistedImages();
     if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
       // Collect every instruction-bearing message; OpenAI recommends role="developer"
       // for GPT-5/Codex as the system-level prompt.
@@ -508,13 +521,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
           content,
         });
       }
-      if (hoistedImages.length > 0) {
-        result.input.push({
-          type: RESPONSES_ITEM.MESSAGE,
-          role: ROLE.USER,
-          content: hoistedImages,
-        });
-      }
+      pendingHoistedImages.push(...hoistedImages);
     }
 
     // Convert tool calls
@@ -531,6 +538,11 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         });
       }
     }
+
+    // Hoisted assistant images go after the turn's function_calls, and after
+    // their tool outputs when there are calls, so a user message never splits a
+    // call from its output.
+    if (msg.role === ROLE.ASSISTANT && !msg.tool_calls?.length) flushHoistedImages();
 
     // Convert tool results - output must be a string for Responses API.
     // Image parts can't ride in the string output, so they follow as a user
@@ -559,20 +571,19 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         output: coerceResponsesOutput(rest) || (images.length ? "(image attached below)" : ""),
       });
       if (images.length > 0) {
-        result.input.push({
-          type: RESPONSES_ITEM.MESSAGE,
-          role: ROLE.USER,
-          content: [
-            {
-              type: RESPONSES_ITEM.INPUT_TEXT,
-              text: `[Image from tool result ${clampResponsesCallId(msg.tool_call_id)}]`,
-            },
-            ...images,
-          ],
-        });
+        // Deferred until the run of tool outputs ends: a user message between two
+        // function_call_outputs would split parallel calls from their outputs.
+        pendingHoistedImages.push(
+          {
+            type: RESPONSES_ITEM.INPUT_TEXT,
+            text: `[Image from tool result ${clampResponsesCallId(msg.tool_call_id)}]`,
+          },
+          ...images,
+        );
       }
     }
   }
+  flushHoistedImages();
 
   // If no system message, leave instructions empty (will be filled by executor)
   if (!hasSystemMessage) {

@@ -81,6 +81,45 @@ describe("tool-result images (YAN-665)", () => {
     expect(last.content.some((c) => c.type === "input_image" && c.image_url === PNG)).toBe(true);
   });
 
+  it("parallel tool outputs stay contiguous; their images follow the whole run", () => {
+    const toolMsg = (id) => ({
+      role: "tool",
+      tool_call_id: id,
+      content: [{ type: "image_url", image_url: { url: PNG } }],
+    });
+    const out = openaiToOpenAIResponsesRequest(
+      "gpt-5",
+      {
+        messages: [
+          { role: "user", content: "go" },
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: ["call_1", "call_2"].map((id) => ({
+              id,
+              type: "function",
+              function: { name: "shot", arguments: "{}" },
+            })),
+          },
+          toolMsg("call_1"),
+          toolMsg("call_2"),
+        ],
+      },
+      true,
+      null,
+    );
+    const types = out.input.map((i) => i.type + (i.role ? `:${i.role}` : ""));
+    expect(types).toEqual([
+      "message:user",
+      "function_call",
+      "function_call",
+      "function_call_output",
+      "function_call_output",
+      "message:user",
+    ]);
+    expect(out.input.at(-1).content.filter((c) => c.type === "input_image")).toHaveLength(2);
+  });
+
   it("assistant image_url never becomes input_image inside an assistant message", () => {
     const out = openaiToOpenAIResponsesRequest(
       "gpt-5",
