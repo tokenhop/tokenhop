@@ -123,6 +123,12 @@ describe("applyThinking per provider format", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "high" }, "claude");
     expect(out.thinking).toEqual({ type: "enabled", budget_tokens: 24576 });
   });
+  it("claude-budget/hunyuan auto intent → concrete budget_tokens (enabled without one is a 400)", () => {
+    const haiku = apply("claude", "claude-haiku-4.5", { thinking: { type: "adaptive" } }, "claude");
+    expect(haiku.thinking).toEqual({ type: "enabled", budget_tokens: 24576 });
+    const hy = apply("openai", "hunyuan-turbos-latest", { enable_thinking: true }, "custom");
+    expect(hy.thinking).toEqual({ type: "enabled", budget_tokens: 24576 });
+  });
   it("gemini-3 → thinkingLevel", () => {
     const out = apply("gemini", "gemini-3-pro", { reasoning_effort: "medium" }, "gemini");
     expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("medium");
@@ -213,6 +219,37 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "deepseek-v4-pro", { reasoning_effort: "low" }, "deepseek");
     expect(out.thinking).toEqual({ type: "enabled" });
     expect(out.reasoning_effort).toBe("high");
+  });
+  it("MiMo preview honours an explicit thinking disable (YAN-695)", () => {
+    const off = apply(
+      "openai",
+      "mimo-x-flash-preview",
+      { reasoning_effort: "none" },
+      "xiaomi-mimo",
+    );
+    expect(off.thinking).toEqual({ type: "disabled" });
+    const claudeOff = apply(
+      "openai",
+      "mimo-x-pro-preview",
+      { thinking: { type: "disabled" } },
+      "xiaomi-mimo",
+    );
+    expect(claudeOff.thinking).toEqual({ type: "disabled" });
+    const on = apply("openai", "mimo-x-pro-preview", { reasoning_effort: "high" }, "xiaomi-mimo");
+    expect(on.thinking).toEqual({ type: "enabled" });
+  });
+  it("OpenCode Go GLM gets reasoning_effort, never z.ai's native thinking field (YAN-681)", () => {
+    const out = apply("openai", "glm-5.3-flash", { reasoning_effort: "high" }, "opencode-go");
+    expect(out.thinking).toBeUndefined();
+    expect(out.reasoning_effort).toBe("high");
+    const zai = apply("openai", "glm-5.3-flash", { reasoning_effort: "high" }, "zai");
+    expect(zai.thinking).toEqual({ type: "enabled" });
+  });
+  it("Kimi K3 clamps medium to high (K3 accepts low/high/max only); other Kimi models keep medium", () => {
+    const k3 = apply("openai", "moonshotai/kimi-k3", { reasoning_effort: "medium" }, "nvidia");
+    expect(k3.reasoning_effort).toBe("high");
+    const k27 = apply("openai", "kimi-k2.6", { reasoning_effort: "medium" }, "kimchi");
+    expect(k27.reasoning_effort).toBe("medium");
   });
   it("Kimi on → reasoning_effort", () => {
     const out = apply("openai", "kimi-k2.6", { reasoning_effort: "high" }, "kimi");
