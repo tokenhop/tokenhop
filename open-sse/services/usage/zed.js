@@ -125,7 +125,9 @@ export function parseZedAuthenticatedUserUsage(userInfo) {
   const usage = plan.usage || {};
 
   const editPredictions = usage.edit_predictions || usage.editPredictions;
-  if (editPredictions) {
+  // A bucket without `limit` is unknown, not a 0 allowance: showing it as 0%
+  // would mark the account empty for "Turn off Empty".
+  if (editPredictions && editPredictions.limit != null) {
     quotas["Edit Predictions"] = makeZedQuotaRow(
       "Edit Predictions",
       editPredictions.used,
