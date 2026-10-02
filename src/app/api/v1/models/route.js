@@ -47,6 +47,17 @@ function modelKind(model) {
   return MODEL_TYPE_TO_KIND[k] || LLM_KIND;
 }
 
+// Token limits a live resolver reported for one model (`contextLength` /
+// `maxOutputTokens`), or null when it reported neither.
+function liveLimits(model) {
+  const contextWindow = Number(model?.contextLength);
+  const maxOutput = Number(model?.maxOutputTokens);
+  const limits = {};
+  if (Number.isFinite(contextWindow) && contextWindow > 0) limits.contextWindow = contextWindow;
+  if (Number.isFinite(maxOutput) && maxOutput > 0) limits.maxOutput = maxOutput;
+  return Object.keys(limits).length ? limits : null;
+}
+
 // For dynamic/unknown model IDs (compatible providers, alias map, custom models)
 // fall back to provider-level kind matching when per-model type is unavailable.
 function inferKindFromUnknownModelId(modelId) {
@@ -258,6 +269,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       const staticModelKindById = new Map(providerModels.map((m) => [m.id, modelKind(m)]));
       let liveModelKindById = new Map();
       let liveCapabilitiesById = new Map();
+      let liveLimitsById = new Map();
 
       let rawModelIds = hasExplicitEnabledModels
         ? Array.from(
@@ -300,6 +312,13 @@ export async function buildModelsList(kindFilter, options = {}) {
                 m.capabilities || (m.supportsTools ? { tools: true } : null),
               ])
               .filter(([, caps]) => caps),
+          );
+          // Keep the live catalog's token limits too — the pattern table below
+          // would otherwise downgrade ids the registry never heard of.
+          liveLimitsById = new Map(
+            liveModels
+              .map((m) => [stripProviderPrefix(m.id), liveLimits(m)])
+              .filter(([, limits]) => limits !== null),
           );
         }
       }
@@ -382,8 +401,11 @@ export async function buildModelsList(kindFilter, options = {}) {
         // Emitted at top level because not every client recurses into nested
         // objects; the camelCase `capabilities` block stays for compatibility.
         if (kind === LLM_KIND || allowAsLlm) {
-          let contextWindow = caps?.contextWindow;
-          let maxOutput = caps?.maxOutput;
+          // The live catalog's own limits beat the pattern table (grok-build is
+          // 500k there, but the generic *grok* pattern says 256k).
+          const limits = liveLimitsById.get(modelId);
+          let contextWindow = limits?.contextWindow ?? caps?.contextWindow;
+          let maxOutput = limits?.maxOutput ?? caps?.maxOutput;
           // Live-catalog and service-kind capabilities are usually partial
           // (often just { tools: true }), so fill the gaps from the static
           // table rather than emitting null and leaving clients to guess.
