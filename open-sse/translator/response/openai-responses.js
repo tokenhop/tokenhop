@@ -240,10 +240,25 @@ function closeReasoning(state, emit) {
   state.reasoningDone = false;
 }
 
+// Item id for choice idx's current message (a reopened message gets a new one).
+function messageId(state, idx) {
+  return state.msgIds?.[idx] ?? `msg_${state.responseId}_${idx}`;
+}
+
 function emitTextContent(state, emit, idx, content) {
+  // Text after the message was closed (e.g. by a reasoning segment) opens a new
+  // message item with its own output_index instead of writing into a done item.
+  if (state.msgItemDone[idx]) {
+    delete state.msgItemAdded[idx];
+    delete state.msgContentAdded[idx];
+    delete state.msgItemDone[idx];
+    delete state.msgTextBuf[idx];
+    delete state.msgOutIdx[idx];
+    (state.msgIds ??= {})[idx] = `msg_${state.responseId}_${idx}_${state.nextOutputIndex}`;
+  }
   if (!state.msgItemAdded[idx]) {
     state.msgItemAdded[idx] = true;
-    const msgId = `msg_${state.responseId}_${idx}`;
+    const msgId = messageId(state, idx);
 
     emit("response.output_item.added", {
       type: "response.output_item.added",
@@ -259,7 +274,7 @@ function emitTextContent(state, emit, idx, content) {
 
     emit("response.content_part.added", {
       type: "response.content_part.added",
-      item_id: `msg_${state.responseId}_${idx}`,
+      item_id: messageId(state, idx),
       output_index: outIdx,
       content_index: 0,
       part: { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: "" },
@@ -268,7 +283,7 @@ function emitTextContent(state, emit, idx, content) {
 
   emit("response.output_text.delta", {
     type: "response.output_text.delta",
-    item_id: `msg_${state.responseId}_${idx}`,
+    item_id: messageId(state, idx),
     output_index: outIdx,
     content_index: 0,
     delta: content,
@@ -283,7 +298,7 @@ function closeMessage(state, emit, idx) {
   if (state.msgItemAdded[idx] && !state.msgItemDone[idx]) {
     state.msgItemDone[idx] = true;
     const fullText = state.msgTextBuf[idx] || "";
-    const msgId = `msg_${state.responseId}_${idx}`;
+    const msgId = messageId(state, idx);
     const outIdx = state.msgOutIdx[idx];
 
     emit("response.output_text.done", {
@@ -363,6 +378,15 @@ function emitToolCall(state, emit, tc) {
         name: state.funcNames[tcIdx] || "",
       },
     });
+    // Arguments that arrived before the id/name are replayed so deltas precede done.
+    if (state.funcArgsBuf[tcIdx] && !custom) {
+      emit("response.function_call_arguments.delta", {
+        type: "response.function_call_arguments.delta",
+        item_id: `fc_${callId}`,
+        output_index: state.funcOutIdx[tcIdx],
+        delta: state.funcArgsBuf[tcIdx],
+      });
+    }
   }
 
   if (!state.funcArgsBuf[tcIdx]) state.funcArgsBuf[tcIdx] = "";
@@ -386,7 +410,7 @@ function emitToolCall(state, emit, tc) {
 
 function closeToolCall(state, emit, idx) {
   const callId = state.funcCallIds[idx];
-  if (callId && !state.funcItemDone[idx]) {
+  if (callId && state.funcItemAdded[idx] && !state.funcItemDone[idx]) {
     const args = state.funcArgsBuf[idx] || "{}";
     const custom = isCustomTool(state, state.funcNames[idx]);
     const outIdx = funcOutputIndex(state, idx);
@@ -454,7 +478,7 @@ function sendCompleted(state, emit) {
 }
 
 function flushEvents(state) {
-  if (state.completedSent) return [];
+  if (state.completedSent || !state.started) return [];
 
   const events = [];
   const nextSeq = () => ++state.seq;

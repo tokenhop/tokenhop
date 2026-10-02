@@ -76,7 +76,16 @@ describe("Chat stream → Responses output indexes", () => {
     const order = events
       .filter((e) => /output_item\.(added|done)$/.test(e.event))
       .map((e) => `${e.event.split(".").pop()}:${e.data.item.type}:${e.data.output_index}`);
-    expect(order.slice(0, 3)).toEqual(["added:message:0", "done:message:0", "added:reasoning:1"]);
+    expect(order).toEqual([
+      "added:message:0",
+      "done:message:0",
+      "added:reasoning:1",
+      "done:reasoning:1",
+      "added:message:2",
+      "done:message:2",
+    ]);
+    const texts = events.filter((e) => e.event === "response.output_text.delta");
+    expect(texts.map((e) => e.data.output_index)).toEqual([0, 2]);
     expect(new Set(order.map((o) => o.split(":")[2])).size).toBe(order.length / 2);
   });
 });
