@@ -23,6 +23,7 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "kimchi",
       "kiro",
       "qoder",
+      "xai",
       "zed",
     ]);
   });
