@@ -28,8 +28,11 @@ describe("skills per brand", () => {
     expect(ENTRY_SKILL_ID).toBe(brand);
     for (const skill of SKILLS) {
       expect(skill.id.startsWith(brand)).toBe(true);
+      // Every brand opens the full tokenhop skill (legacy files are stubs, YAN-634).
       const file = fs.readFileSync(path.join(ROOT, "skills", skill.path), "utf8");
-      expect(file).toMatch(new RegExp(`^---\\nname: ${skill.id}\\n`));
+      const tokenhopId = `tokenhop${skill.id.slice(brand.length)}`;
+      expect(skill.path).toBe(`${tokenhopId}/SKILL.md`);
+      expect(file).toMatch(new RegExp(`^---\\nname: ${tokenhopId}\\n`));
     }
   });
 
@@ -39,7 +42,11 @@ describe("skills per brand", () => {
     for (const id of ["tokenhop", "tokenhop-chat", ...legacyIds]) {
       const res = await getSkill("tokenhop", id);
       expect(res.status, id).toBe(200);
-      expect(await res.text()).toMatch(new RegExp(`^---\\nname: ${id}\\n`));
+    }
+    // Legacy ids serve the tokenhop content, not the pointer stubs (YAN-634).
+    for (const suffix of ["", "-chat", "-web-search"]) {
+      const res = await getSkill("tokenhop", `${OLD}${suffix}`);
+      expect(await res.text()).toMatch(new RegExp(`^---\\nname: tokenhop${suffix}\\n`));
     }
   });
 

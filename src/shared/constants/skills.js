@@ -2,7 +2,7 @@
 // Skills ship with the gateway, so the hosted URLs always resolve against the
 // selected access base (Local/Tunnel/Tailscale) plus SKILL_PATH. Skill ids
 // carry the active brand's slug (skills/9router* or skills/tokenhop*).
-import { ACTIVE, LEGACY } from "@/shared/brand";
+import { ACTIVE, BRAND, LEGACY } from "@/shared/brand";
 
 const REPO = ACTIVE.repoSlug;
 const BRANCH = "master";
@@ -155,14 +155,38 @@ export const SKILLS = [
   },
 ].map((skill) => {
   const id = ENTRY_SKILL_ID + skill.suffix;
-  return { ...skill, id, path: `${id}/SKILL.md` };
+  // Legacy ids open the tokenhop file, which is what the gateway serves for them.
+  const file = id.startsWith(LEGACY.slug) ? BRAND.slug + id.slice(LEGACY.slug.length) : id;
+  return { ...skill, id, path: `${file}/SKILL.md` };
 });
 
 /**
  * Ids the /skills route serves: the active set plus the legacy-brand ids, so
- * agents holding old links keep working on a tokenhop build.
+ * agents holding old links keep working on any build.
  */
 export const SERVED_SKILL_IDS = new Set([
   ...SKILLS.map((skill) => skill.id),
   ...SKILLS.map((skill) => LEGACY.slug + skill.suffix), // legacy(9router): remove in v2
 ]);
+
+/**
+ * Legacy-brand skill ids. Their SKILL.md files are pointer stubs since YAN-634,
+ * so the route serves the tokenhop content under these ids instead, whichever
+ * brand is active.
+ * legacy(9router): remove in v2
+ */
+export const LEGACY_SKILL_IDS = new Set(SKILLS.map((skill) => LEGACY.slug + skill.suffix));
+
+/**
+ * File served for a skill id: on every brand, legacy ids serve the tokenhop
+ * content (their own files are pointer stubs since YAN-634), other ids serve
+ * their own file. Pure for unit tests.
+ * @param {string} id
+ * @returns {string} Path under skills/, e.g. "tokenhop-chat/SKILL.md"
+ */
+export function getSkillFilePath(id) {
+  if (!SERVED_SKILL_IDS.has(id)) throw new Error(`Unknown skill: ${id}`);
+  return LEGACY_SKILL_IDS.has(id)
+    ? `${BRAND.slug}${id.slice(LEGACY.slug.length)}/SKILL.md`
+    : `${id}/SKILL.md`;
+}
