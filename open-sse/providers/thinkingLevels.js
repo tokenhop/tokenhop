@@ -39,7 +39,8 @@ const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh
 const PATTERN_THINKING = [
   // Kimi K3 accepts only low/high/max; a defaulting client sends "medium",
   // which K3 hosts reject with 400. thinkingUnified clamps to this set.
-  { pattern: "*kimi-k3*", levels: ["none", "low", "high", "max"] },
+  { pattern: "*kimi-k3", levels: ["none", "low", "high", "max"] },
+  { pattern: "*kimi-k3-*", levels: ["none", "low", "high", "max"] },
   { pattern: "k3", levels: ["none", "low", "high", "max"] },
   { provider: "codex", pattern: "*gpt-6*", levels: CODEX_GPT_5_6_LEVELS },
   { provider: "codex", pattern: "*gpt-5.6-sol*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
@@ -56,7 +57,8 @@ const PATTERN_THINKING = [
   // → all 200), but values outside a model's supportedEfforts are silently
   // clamped, so the declared set stays authoritative for the picker. Models
   // that publish no supportedEfforts (glm-5.1 / glm-5v-turbo / kimi-k2.x /
-  // kimi-k3-1 / minimax-m3) fall through to the openai format default.
+  // minimax-m3) fall through to the openai format default; kimi-k3-1 takes the K3
+  // low/high/max set above.
   { provider: "codebuddy-cn", pattern: "glm-5.3*", levels: ["low", "high", "max"] },
   { provider: "codebuddy-cn", pattern: "glm-5.2", levels: ["high", "xhigh"] },
   { provider: "codebuddy-cn", pattern: "deepseek-v4*", levels: ["low", "high", "xhigh"] },

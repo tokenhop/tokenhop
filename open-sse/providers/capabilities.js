@@ -53,7 +53,7 @@ export const DEFAULT_CAPABILITIES = {
   tools: true, // function / tool calling
   reasoning: false, // thinking / reasoning
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
-  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step
+  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|mimo|hunyuan|step|tokenrouter|commandcode
   thinkingFormat: null,
   thinkingCanDisable: true, // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null, // { min, max } for budget formats; null = no clamp
