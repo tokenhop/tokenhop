@@ -16,6 +16,8 @@ import { readFileSync, writeFileSync, renameSync, readdirSync, statSync } from "
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import brand from "../src/shared/brand/index.cjs";
 import { extractFromRepo, readLocaleFiles } from "./i18n-literals.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -55,13 +57,34 @@ export function stripComments(code) {
 }
 
 /**
+ * Literals extracted under every brand: a key another brand's build renders
+ * (e.g. the tokenhop strings behind the brand switch) is live, not orphaned.
+ * The extractor resolves brand templates at module load, so each other brand
+ * runs in its own process.
+ * @param {string} repoRoot Absolute repo path.
+ * @returns {Set<string>}
+ */
+export function extractAllBrands(repoRoot) {
+  const literals = new Set(extractFromRepo(repoRoot).literals);
+  for (const id of brand.BRAND_IDS) {
+    if (id === brand.ACTIVE_BRAND_ID) continue;
+    const out = execFileSync(
+      process.execPath,
+      [join(here, "i18n-literals.mjs"), "--json", "--root", repoRoot],
+      { env: { ...process.env, NEXT_PUBLIC_BRAND: id }, encoding: "utf8", maxBuffer: 100e6 },
+    );
+    for (const literal of JSON.parse(out).literals) literals.add(literal);
+  }
+  return literals;
+}
+
+/**
  * Split orphan keys into provably-dead vs. still-referenced in live code.
  * @param {string} repoRoot Absolute repo path.
  * @returns {{dead: string[], kept: string[], orphans: string[]}}
  */
 export function classifyOrphans(repoRoot) {
-  const { literals } = extractFromRepo(repoRoot);
-  const extracted = new Set(literals);
+  const extracted = extractAllBrands(repoRoot);
   const locales = readLocaleFiles(join(repoRoot, DEFAULT_LOCALES_DIR));
   const keyCounts = new Map();
   for (const map of locales.values()) {
