@@ -6,6 +6,7 @@
   ".github/copilot-instructions.md": 1,
   ".github/labels.md": 1,
   ".github/workflows/ci.yml": 1,
+  ".gitignore": 1,
   ".gitmessage": 1,
   "AGENTS.md": 1,
   "CLAUDE.md": 6,
