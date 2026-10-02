@@ -3,7 +3,7 @@
   "version": "0.6.0",
   "description": "tokenhop CLI - Start and manage tokenhop server",
   "bin": {
-    "tokenhop": "./cli.js"
+    "tokenhop": "cli.js"
   },
   "files": ["cli.js", "src", "hooks", "app", "README.md", "LICENSE"],
   "scripts": {
