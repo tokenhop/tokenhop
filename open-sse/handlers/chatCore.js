@@ -488,6 +488,8 @@ export async function handleChatCore({
     connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
     connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
     vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
+    strictProxy: credentials?.providerSpecificData?.strictProxy === true,
+    connectionProxyPoolId: credentials?.providerSpecificData?.connectionProxyPoolId || null,
   };
 
   if (proxyOptions.vercelRelayUrl) {
@@ -610,7 +612,7 @@ export async function handleChatCore({
       // invalid_grant → auth_failed retryable=false.
       const newCredentials = await refreshWithRetry(
         async () => {
-          const result = await executor.refreshCredentials(credentials, log);
+          const result = await executor.refreshCredentials(credentials, log, proxyOptions);
           if (result?.refreshToken && result.refreshToken !== credentials.refreshToken) {
             if (result.accessToken) credentials.accessToken = result.accessToken;
             credentials.refreshToken = result.refreshToken;

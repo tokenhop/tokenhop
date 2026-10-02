@@ -152,20 +152,27 @@ export class XaiService extends OAuthService {
   /**
    * Refresh an access token using a refresh_token.
    */
-  async refreshAccessToken(refreshToken) {
+  async refreshAccessToken(refreshToken, proxyOptions = null) {
     const { tokenUrl } = await discoverEndpoints();
-    const res = await fetch(tokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
+    // Dynamic import: proxyFetch patches globalThis.fetch at load; this module is
+    // also imported by pure URL/discovery helpers that must not trigger that.
+    const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
+    const res = await proxyAwareFetch(
+      tokenUrl,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: XAI_CONFIG.clientId,
+          refresh_token: refreshToken,
+        }),
       },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        client_id: XAI_CONFIG.clientId,
-        refresh_token: refreshToken,
-      }),
-    });
+      proxyOptions,
+    );
     if (!res.ok) {
       const err = await res.text();
       throw new Error(`xAI token refresh failed: ${err}`);
