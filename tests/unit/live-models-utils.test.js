@@ -22,6 +22,7 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "grok-cli",
       "kimchi",
       "kiro",
+      "openai",
       "qoder",
       "xai",
       "zed",

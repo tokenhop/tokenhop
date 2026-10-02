@@ -4,6 +4,7 @@
 import { ANTIGRAVITY_CONFIG, GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken } from "@/sse/services/tokenRefresh";
 import { buildOAuthResolver } from "@/lib/providerModels/oauthResolver.js";
+import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import {
   ANTIGRAVITY_IDE_BASE_URL,
@@ -50,16 +51,6 @@ export function parseGeminiModels(data) {
   });
 }
 
-// Keep static non-chat entries the live list lacks as that kind (STT twins of chat
-// models, legacy embeddings) so /v1/models/{kind} still lists them.
-function withStaticGeminiExtras(liveModels) {
-  const live = new Set(liveModels.map((m) => `${kindOf(m)}:${m.id}`));
-  const extras = getModelsByProviderId("gemini")
-    .filter((m) => kindOf(m) !== "llm" && !live.has(`${kindOf(m)}:${m.id}`))
-    .map(({ id, name, kind, type }) => ({ id, name, kind: kind || type }));
-  return [...liveModels, ...extras];
-}
-
 export async function resolveGemini(connection) {
   if (!connection.apiKey) return { models: [], warning: "No valid token found" };
   const data = { models: [] };
@@ -81,7 +72,8 @@ export async function resolveGemini(connection) {
   }
   const models = parseGeminiModels(data);
   if (!models.length) return { models: [], warning: "Gemini returned no live models." };
-  return { models: withStaticGeminiExtras(models) };
+  // STT twins of chat models and legacy embeddings stay listed under their kind.
+  return { models: withStaticNonChatModels("gemini", models) };
 }
 
 // ── Cloud Code (Gemini CLI, Antigravity) ──────────────────────────────────

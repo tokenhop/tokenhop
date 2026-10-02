@@ -63,6 +63,8 @@ async function fetchCatalogRaw(token, signal) {
   }
 }
 
+const positive = (value) => (Number(value) > 0 ? Number(value) : undefined);
+
 // Keep only chat models the account is allowed to use. The static registry
 // surfaced disabled/embedding entries inconsistently; here we trust upstream.
 function expandCatalog(raw) {
@@ -75,7 +77,18 @@ function expandCatalog(raw) {
     const id = m.id;
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    models.push({ id, name: m.name || id });
+    // Copilot enforces max_prompt_tokens as the input cap, which is often
+    // below max_context_window_tokens; clients compacting on it stay in bounds.
+    const limits = m.capabilities?.limits || {};
+    const contextLength =
+      positive(limits.max_prompt_tokens) || positive(limits.max_context_window_tokens);
+    const maxOutputTokens = positive(limits.max_output_tokens);
+    models.push({
+      id,
+      name: m.name || id,
+      ...(contextLength ? { contextLength } : {}),
+      ...(maxOutputTokens ? { maxOutputTokens } : {}),
+    });
   }
   return models;
 }
