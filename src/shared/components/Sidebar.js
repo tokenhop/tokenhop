@@ -2,9 +2,7 @@
 
 import PropTypes from "prop-types";
 import Link from "next/link";
-import { APP_CONFIG } from "@/shared/constants/appConfig";
 import useShellStatus from "@/shared/hooks/useShellStatus";
-import { resolveVersionChip } from "@/shared/utils/shell";
 import SidebarNav from "./SidebarNav";
 import GatewayStatusCard from "./GatewayStatusCard";
 import SidebarUserRow from "./SidebarUserRow";
@@ -14,7 +12,7 @@ import BrandLockup from "./BrandLockup";
 /**
  * Signal sidebar per the board: 248px width, panel background, 1px line
  * border. Top to bottom:
- * - Logo: BrandLockup (active brand's mark + wordmark), mono version chip
+ * - Logo: BrandLockup (active brand's mark + wordmark)
  * - Gateway status card: pulsing lime dot, online state, port line
  * - Grouped nav with badges via useShellStatus
  * - User row with theme toggle, language modal and logout menu
@@ -35,7 +33,6 @@ export default function Sidebar({ onClose, inDrawer = false }) {
     multiUser,
     traffic,
   } = useShellStatus();
-  const chip = resolveVersionChip(APP_CONFIG.version, APP_CONFIG.build);
 
   return (
     <aside
@@ -54,15 +51,6 @@ export default function Sidebar({ onClose, inDrawer = false }) {
         >
           <BrandLockup />
         </Link>
-        {chip.label ? (
-          <span
-            className="ms-auto max-w-[7.5rem] truncate rounded-md border border-line px-1.5 py-0.5 font-mono text-[11px] whitespace-nowrap text-muted"
-            title={chip.full}
-            data-i18n-skip="true"
-          >
-            {chip.label}
-          </span>
-        ) : null}
         {inDrawer && onClose ? (
           <IconButton icon="close" label="Close navigation" onClick={onClose} />
         ) : null}

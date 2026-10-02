@@ -7,6 +7,7 @@ import ToolbarSearch from "@/shared/components/ToolbarSearch";
 import { Skeleton } from "@/shared/components/Loading";
 import Button from "@/shared/components/Button";
 import ConfigTransfer from "./sections/ConfigTransfer";
+import AboutSection from "./sections/AboutSection";
 import GeneralSection from "./sections/GeneralSection";
 import SecuritySection from "./sections/SecuritySection";
 import SsoSection from "./sections/SsoSection";
@@ -191,6 +192,7 @@ export default function SettingsPage() {
             />
           ) : (
             <div className="space-y-6">
+              {visibleIds.has("about") && <AboutSection />}
               {visibleIds.has("general") && (
                 <GeneralSection
                   settings={settings}
