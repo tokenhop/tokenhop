@@ -155,7 +155,9 @@ export const SKILLS = [
   },
 ].map((skill) => {
   const id = ENTRY_SKILL_ID + skill.suffix;
-  return { ...skill, id, path: `${id}/SKILL.md` };
+  // Legacy ids open the tokenhop file, which is what the gateway serves for them.
+  const file = id.startsWith(LEGACY.slug) ? BRAND.slug + id.slice(LEGACY.slug.length) : id;
+  return { ...skill, id, path: `${file}/SKILL.md` };
 });
 
 /**

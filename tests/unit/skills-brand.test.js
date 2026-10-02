@@ -28,10 +28,11 @@ describe("skills per brand", () => {
     expect(ENTRY_SKILL_ID).toBe(brand);
     for (const skill of SKILLS) {
       expect(skill.id.startsWith(brand)).toBe(true);
+      // Every brand opens the full tokenhop skill (legacy files are stubs, YAN-634).
       const file = fs.readFileSync(path.join(ROOT, "skills", skill.path), "utf8");
-      // On the default brand the listed files are pointer stubs, whose name
-      // line carries the legacy(9router) marker (YAN-634).
-      expect(file).toMatch(new RegExp(`^---\\nname: ${skill.id}(\\n| )`));
+      const tokenhopId = `tokenhop${skill.id.slice(brand.length)}`;
+      expect(skill.path).toBe(`${tokenhopId}/SKILL.md`);
+      expect(file).toMatch(new RegExp(`^---\\nname: ${tokenhopId}\\n`));
     }
   });
 
