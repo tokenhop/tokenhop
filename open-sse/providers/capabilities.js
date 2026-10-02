@@ -1571,7 +1571,35 @@ function isCommandCodeTextOnly(model) {
   }
   return false;
 }
+// Capabilities the user declared on custom models (Add Custom Model toggles),
+// keyed "<provider>|<modelId>" for both the provider id and its alias. Installed
+// by the server (src/lib/customModelCaps.js); declared true/false values win
+// over every table, pattern and heuristic below (YAN-657).
+let customCapsSource = null;
+
+export function setCustomCapsSource(map) {
+  customCapsSource = map || null;
+  if (typeof globalThis !== "undefined") globalThis.__9rCustomCapsSource = customCapsSource;
+}
+
+function getCustomCaps(provider, model) {
+  const source = customCapsSource || globalThis?.__9rCustomCapsSource;
+  if (!source || !provider) return null;
+  return source.get(`${provider}|${model}`) || null;
+}
+
 export function getCapabilitiesForModel(provider, model) {
+  const resolved = resolveCapabilities(provider, model);
+  const custom = model ? getCustomCaps(provider, model) : null;
+  if (!custom) return resolved;
+  const declared = {};
+  for (const [key, value] of Object.entries(custom)) {
+    if (typeof value === "boolean") declared[key] = value;
+  }
+  return { ...resolved, ...declared };
+}
+
+function resolveCapabilities(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
