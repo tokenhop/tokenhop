@@ -468,7 +468,7 @@ export default function CombosPageClient() {
         const next = { ...base, ...patch };
         if (patch.weights) next.weights = { ...base.weights, ...patch.weights };
         const updated = { ...strategiesRef.current };
-        if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
+        if (!next.fallbackStrategy) {
           delete updated[comboName];
         } else {
           updated[comboName] = next;

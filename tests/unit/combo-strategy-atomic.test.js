@@ -266,4 +266,40 @@ describe("PATCH /api/settings comboStrategyPatch after rename", () => {
       m: 1,
     });
   });
+
+  it("keeps an explicit Fallback choice instead of inheriting the global strategy (YAN-679)", async () => {
+    await comboPost("explicitFallbackCombo");
+    const res = await settingsPatch({
+      comboStrategyPatch: {
+        name: "explicitFallbackCombo",
+        patch: { fallbackStrategy: "fallback" },
+      },
+    });
+    expect(res.status).toBe(200);
+    const stored = (await sqliteDb.getSettings()).comboStrategies.explicitFallbackCombo;
+    expect(stored?.fallbackStrategy).toBe("fallback");
+    const { resolveComboStrategy } = await import("open-sse/services/comboStrategy.js");
+    expect(
+      resolveComboStrategy(
+        { comboStrategy: "round-robin", comboStrategies: { explicitFallbackCombo: stored } },
+        "explicitFallbackCombo",
+      ).strategy,
+    ).toBe("fallback");
+  });
+
+  it("rejects an unknown combo kind on create and update (YAN-689)", async () => {
+    const { POST } = await import("@/app/api/combos/route.js");
+    const post = (body) =>
+      POST(
+        new Request("http://localhost/api/combos", {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+      );
+    expect((await post({ name: "badKindCombo", kind: "bogus" })).status).toBe(400);
+    expect((await post({ name: "ttsKindCombo", kind: "tts" })).status).toBe(201);
+    const created = await (await post({ name: "llmKindCombo", kind: "llm" })).json();
+    expect((await comboPut(created.id, { kind: "bogus" })).status).toBe(400);
+    expect((await comboPut(created.id, { kind: null })).status).toBe(200);
+  });
 });
