@@ -7,6 +7,7 @@ import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { RESPONSES_ITEM } from "../translator/schema/index.js";
+import { coerceResponsesOutput } from "../translator/formats/responsesApi.js";
 import { pickSmoothWeighted } from "./weightedRoundRobin.js";
 import { effectiveComboWeight } from "./comboWeights.js";
 
@@ -37,10 +38,10 @@ function flattenToolHistory(messages) {
         msg.type === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT ||
         msg.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL_OUTPUT
       ) {
-        const out = msg.output;
-        const text =
-          typeof out === "string" ? out : extractTextContent(out) || JSON.stringify(out ?? "");
-        return { role: "assistant", content: `${TOOL_RESULT_PREFIX}${text}]` };
+        return {
+          role: "assistant",
+          content: `${TOOL_RESULT_PREFIX}${coerceResponsesOutput(msg.output)}]`,
+        };
       }
       if (msg.role === "tool" || msg.role === "function") {
         return {

@@ -229,6 +229,12 @@ describe("fusion combo", () => {
           { role: "user", content: "find files" },
           { type: "function_call", call_id: "c1", name: "find", arguments: "{}" },
           { type: "function_call_output", call_id: "c1", output: "['a.js']" },
+          { type: "function_call", call_id: "c2", name: "read", arguments: "{}" },
+          {
+            type: "function_call_output",
+            call_id: "c2",
+            output: [{ type: "input_text", text: "file body" }],
+          },
         ],
         tools: [{ type: "function", name: "find" }],
       },
@@ -244,7 +250,8 @@ describe("fusion combo", () => {
       expect(panelBody.tools).toBeUndefined();
       expect(panelBody.input.some((i) => i.type === "function_call")).toBe(false);
       expect(panelBody.input.some((i) => i.type === "function_call_output")).toBe(false);
-      expect(panelBody.input.at(-1).content).toContain("['a.js']");
+      expect(panelBody.input[2].content).toContain("['a.js']");
+      expect(panelBody.input.at(-1).content).toBe("[Tool result: file body]");
     }
   });
 
