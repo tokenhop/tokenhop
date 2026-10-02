@@ -123,6 +123,12 @@ describe("applyThinking per provider format", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "high" }, "claude");
     expect(out.thinking).toEqual({ type: "enabled", budget_tokens: 24576 });
   });
+  it("claude-budget/hunyuan auto intent → concrete budget_tokens (enabled without one is a 400)", () => {
+    const haiku = apply("claude", "claude-haiku-4.5", { thinking: { type: "adaptive" } }, "claude");
+    expect(haiku.thinking).toEqual({ type: "enabled", budget_tokens: 24576 });
+    const hy = apply("openai", "hunyuan-turbos-latest", { enable_thinking: true }, "custom");
+    expect(hy.thinking).toEqual({ type: "enabled", budget_tokens: 24576 });
+  });
   it("gemini-3 → thinkingLevel", () => {
     const out = apply("gemini", "gemini-3-pro", { reasoning_effort: "medium" }, "gemini");
     expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("medium");

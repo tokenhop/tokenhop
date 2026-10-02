@@ -151,6 +151,14 @@ function toBudget(cfg, range) {
   return budget;
 }
 
+// Budget for formats that require a concrete budget_tokens whenever thinking is
+// enabled (Anthropic-style enabled shape): auto has no budget of its own, so it
+// maps to the "high" level budget clamped by the model range — the same default
+// the gemini-level and claude-adaptive branches use for auto.
+function toConcreteBudget(cfg, range) {
+  return toBudget(cfg.mode === "auto" ? { mode: "level", level: "high" } : cfg, range);
+}
+
 // Convert unified config to a discrete level string.
 function toLevel(cfg) {
   if (cfg.mode === "level") return cfg.level;
@@ -290,11 +298,14 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
         body.thinking = { type: "disabled" };
         break;
       }
-      const budget = toBudget(eff, caps.thinkingRange);
-      body.thinking =
-        budget === -1
-          ? { type: "enabled", ...(display ? { display } : {}) }
-          : { type: "enabled", budget_tokens: budget || 8192, ...(display ? { display } : {}) };
+      // Anthropic requires budget_tokens whenever thinking.type is "enabled",
+      // so auto must resolve to a concrete budget, never {type:"enabled"} alone.
+      const budget = toConcreteBudget(eff, caps.thinkingRange);
+      body.thinking = {
+        type: "enabled",
+        budget_tokens: budget || 8192,
+        ...(display ? { display } : {}),
+      };
       break;
     }
     case "gemini-level": {
@@ -378,9 +389,8 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
         body.thinking = { type: "disabled" };
         break;
       }
-      const budget = toBudget(eff, caps.thinkingRange);
-      body.thinking =
-        budget === -1 ? { type: "enabled" } : { type: "enabled", budget_tokens: budget || 8192 };
+      const budget = toConcreteBudget(eff, caps.thinkingRange);
+      body.thinking = { type: "enabled", budget_tokens: budget || 8192 };
       break;
     }
     case "step": {
