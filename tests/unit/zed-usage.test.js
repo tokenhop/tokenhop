@@ -103,6 +103,13 @@ describe("parseZedAuthenticatedUserUsage", () => {
     expect(parsed.message).toMatch(/dashboard\.zed\.dev/);
   });
 
+  it("skips an edit_predictions bucket that has no limit (unknown, not empty)", () => {
+    const parsed = parseZedAuthenticatedUserUsage({
+      plan: { plan_v3: "zed_free", usage: { edit_predictions: { used: 3 } } },
+    });
+    expect(parsed.quotas["Edit Predictions"]).toBeUndefined();
+  });
+
   it("surfaces overdue invoice warning", () => {
     const parsed = parseZedAuthenticatedUserUsage({
       plan: {
