@@ -7,7 +7,10 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 // A param is removed only when it is present (!== undefined).
 const STRIP_RULES = [
   // All Claude models: temperature deprecated/rejected upstream (Anthropic 400). #1748
-  { match: /claude/i, drop: ["temperature"] },
+  // Newer models (Opus 4.7+, Sonnet 4.5+/Opus 4.1+) also reject temperature+top_p
+  // together, and Opus 4.7 rejects non-default top_p — strip both with temperature
+  // so forwarded sampling params can't create new 400s.
+  { match: /claude/i, drop: ["temperature", "top_p"] },
   // GitHub Copilot gpt-5.4: temperature unsupported.
   { provider: "github", match: /gpt-5\.4/i, drop: ["temperature"] },
   // GitHub Copilot Claude (except opus/sonnet 4.6): thinking + reasoning_effort rejected. #713

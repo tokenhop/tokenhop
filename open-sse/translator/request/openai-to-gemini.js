@@ -65,8 +65,17 @@ function openaiToGeminiBase(
   if (body.top_k !== undefined) {
     result.generationConfig.topK = body.top_k;
   }
-  if (body.max_tokens !== undefined) {
-    result.generationConfig.maxOutputTokens = body.max_tokens;
+  const maxOutputTokens = body.max_tokens ?? body.max_completion_tokens;
+  if (maxOutputTokens !== undefined) {
+    result.generationConfig.maxOutputTokens = maxOutputTokens;
+  }
+  // Gemini accepts at most 5 stop sequences
+  const stopSequences = [body.stop]
+    .flat()
+    .filter((s) => typeof s === "string" && s)
+    .slice(0, 5);
+  if (stopSequences.length > 0) {
+    result.generationConfig.stopSequences = stopSequences;
   }
 
   // Build tool_call_id -> name map
@@ -356,12 +365,29 @@ function toInlineDataPart(block) {
   return parsed ? { inlineData: { mimeType: parsed.mimeType, data: parsed.base64 } } : null;
 }
 
+// Thinking on this request? Anthropic requires temperature 1 with thinking;
+// `|| 1` below must not turn an explicit 0 into 1 when thinking is off.
+function isThinkingOn(req) {
+  if (!req || typeof req !== "object") return false;
+  const type = req.thinking?.type;
+  if (type === "enabled" || type === "adaptive") return true;
+  if (type === "disabled") return false;
+  const effort =
+    req.output_config?.effort ??
+    req.reasoning_effort ??
+    (typeof req.reasoning === "object" ? req.reasoning?.effort : undefined);
+  if (typeof effort !== "string" || !effort) return false;
+  const e = effort.toLowerCase();
+  return e !== "none" && e !== "off" && e !== "disabled";
+}
+
 // Wrap Claude format in Cloud Code envelope for Antigravity
 function wrapInCloudCodeEnvelopeForClaude(
   model,
   claudeRequest,
   credentials = null,
   signature = DEFAULT_THINKING_AG_SIGNATURE,
+  thinkingOn = false,
 ) {
   const projectId = credentials?.projectId || generateProjectId();
 
@@ -377,7 +403,8 @@ function wrapInCloudCodeEnvelopeForClaude(
         deriveSessionId(credentials?.email || credentials?.connectionId),
       contents: [],
       generationConfig: {
-        temperature: claudeRequest.temperature || 1,
+        temperature:
+          thinkingOn || isThinkingOn(claudeRequest) ? 1 : (claudeRequest.temperature ?? 1),
         maxOutputTokens: claudeRequest.max_tokens || 4096,
       },
     },
@@ -526,7 +553,13 @@ function isClaudeModel(model) {
 export function openaiToAntigravityRequest(model, body, stream, credentials = null) {
   if (isClaudeModel(model)) {
     const claudeRequest = openaiToClaudeRequestForAntigravity(model, body, stream);
-    return wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials);
+    return wrapInCloudCodeEnvelopeForClaude(
+      model,
+      claudeRequest,
+      credentials,
+      DEFAULT_THINKING_AG_SIGNATURE,
+      isThinkingOn(body),
+    );
   }
 
   const geminiCLI = openaiToGeminiCLIRequest(model, body, stream);

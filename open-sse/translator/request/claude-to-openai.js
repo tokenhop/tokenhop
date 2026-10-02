@@ -28,6 +28,15 @@ export function claudeToOpenAIRequest(model, body, stream) {
     result.temperature = body.temperature;
   }
 
+  if (body.top_p !== undefined) {
+    result.top_p = body.top_p;
+  }
+
+  // OpenAI allows at most 4 stop sequences
+  if (Array.isArray(body.stop_sequences) && body.stop_sequences.length > 0) {
+    result.stop = body.stop_sequences.slice(0, 4);
+  }
+
   // System message
   if (body.system) {
     const systemContent = Array.isArray(body.system)
