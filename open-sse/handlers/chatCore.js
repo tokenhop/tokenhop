@@ -210,32 +210,21 @@ export async function handleChatCore({
     sourceFormat === FORMATS.GEMINI ||
     sourceFormat === FORMATS.GEMINI_CLI;
   const providerRequiresStreaming = PROVIDERS[provider]?.forceStream === true;
-  let stream = providerRequiresStreaming ? true : body.stream !== false;
+  // OpenAI Chat/Responses and Anthropic Messages default `stream` to false: a
+  // request without the field gets JSON, unless the client explicitly asks for
+  // SSE via Accept (YAN-659). Gemini-family source formats always stream.
+  const acceptHeader = clientRawRequest?.headers?.accept || "";
+  const clientPrefersJson = acceptHeader.includes("application/json");
+  const clientPrefersSSE = acceptHeader.includes("text/event-stream");
+  let stream =
+    providerRequiresStreaming ||
+    clientRequestedStreaming ||
+    (body.stream === undefined && clientPrefersSSE && !clientPrefersJson);
 
   // Image generation models require non-streaming (Google v1internal:generateContent)
   const modelType = getModelType(alias, model);
   const isImageGenModel = modelType === "imageGen" || /image|imagen|image-generation/i.test(model);
   if (isImageGenModel && (provider === "antigravity" || provider === "gemini-cli")) {
-    stream = false;
-  }
-
-  // DeepSeek-TUI: interactive TUI panel sends stream:true and needs SSE.
-  // Non-interactive mode (-p flag) sends without stream and can't parse SSE.
-  // Only force non-streaming when client didn't explicitly request it.
-  const detectedTool = detectClientTool(clientRawRequest?.headers || {}, body);
-  if (detectedTool === "deepseek-tui" && body.stream !== true) stream = false;
-
-  // Check client Accept header preference for non-streaming requests
-  // This fixes AI SDK compatibility where clients send Accept: application/json
-  const acceptHeader = clientRawRequest?.headers?.accept || "";
-  const clientPrefersJson = acceptHeader.includes("application/json");
-  const clientPrefersSSE = acceptHeader.includes("text/event-stream");
-  if (
-    clientPrefersJson &&
-    !clientPrefersSSE &&
-    body.stream !== true &&
-    !providerRequiresStreaming
-  ) {
     stream = false;
   }
 
