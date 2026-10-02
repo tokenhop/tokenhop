@@ -83,6 +83,7 @@ export function claudeToOpenAIRequest(model, body, stream) {
         name: tool.name,
         description: String(tool.description || ""),
         parameters: tool.input_schema || { type: "object", properties: {} },
+        ...(typeof tool.strict === "boolean" && { strict: tool.strict }),
       },
     }));
   }

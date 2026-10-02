@@ -103,7 +103,8 @@
       "X-Stainless-Timeout": "600"
     },
     "quirks": {
-      "cloakToolsOnOAuth": true
+      "cloakToolsOnOAuth": true,
+      "claudeToolStrict": true
     },
     "auth": {
       "apiKey": {

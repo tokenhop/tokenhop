@@ -24,6 +24,7 @@ export default {
     headers: buildClaudeCliHeaders({ os: "MacOS", arch: "arm64" }),
     quirks: {
       cloakToolsOnOAuth: true,
+      claudeToolStrict: true,
     },
     auth: {
       apiKey: {

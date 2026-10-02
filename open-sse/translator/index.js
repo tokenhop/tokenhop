@@ -165,6 +165,17 @@ export function translateRequest(
       credentials?.rawHeaders,
       clientSessionId,
     );
+
+    // quirk: tool `strict` is Anthropic-only. A translated request's strict:true
+    // (e.g. from an OpenAI client) must not reach Anthropic-compatible
+    // gateways that reject unknown tool fields. Claude passthrough is untouched.
+    if (
+      sourceFormat !== FORMATS.CLAUDE &&
+      Array.isArray(result?.tools) &&
+      !PROVIDERS[provider]?.quirks?.claudeToolStrict
+    ) {
+      result.tools = result.tools.map(({ strict, ...tool }) => tool);
+    }
   }
 
   // Claude cloaking: rename client tools with CLAUDE_TOOL_SUFFIX (anti-ban)
