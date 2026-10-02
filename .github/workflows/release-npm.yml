@@ -93,6 +93,7 @@ jobs:
           GEMINI_OAUTH_CLIENT_SECRET: ${{ secrets.GEMINI_OAUTH_CLIENT_SECRET }}
           ANTIGRAVITY_OAUTH_CLIENT_ID: ${{ secrets.ANTIGRAVITY_OAUTH_CLIENT_ID }}
           ANTIGRAVITY_OAUTH_CLIENT_SECRET: ${{ secrets.ANTIGRAVITY_OAUTH_CLIENT_SECRET }}
+          # Meta Code is a public OAuth client: an id, no secret (scripts/write-oauth-clients.cjs).
           META_CODE_OAUTH_CLIENT_ID: ${{ secrets.META_CODE_OAUTH_CLIENT_ID }}
         run: npm --prefix cli run build
 
@@ -116,8 +117,9 @@ jobs:
           if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
           # Trusted publishing and provenance resolve the package's source repo
           # from repository.url, which must match github.repository exactly.
-          # YAN-615 owns the static package.json fields, so it is set here only,
-          # for the tarball; nothing on disk changes.
+          # cli/package.json already carries it (YAN-615); setting it here keeps
+          # a fork or a renamed repo from publishing a mismatched URL.
+          [[ $REPOSITORY =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "unexpected repository: $REPOSITORY" >&2; exit 1; }
           npm pkg set "repository.url=git+https://github.com/${REPOSITORY}.git" "repository.type=git"
           echo "+ npm publish ${args[*]}"
           npm publish "${args[@]}"
