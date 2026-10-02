@@ -460,7 +460,11 @@ async function handleSingleModelChat(
   // 404 lets a combo advance to its next member.
   if (await isModelDisabled(provider, model)) {
     log.warn("CHAT", `Model disabled: ${provider}/${model}`);
-    return errorResponse(HTTP_STATUS.NOT_FOUND, `Model disabled: ${modelStr}`);
+    // The combo loop must treat this as model-scoped (advance past it), not as an
+    // account failure that flips connection state (YAN-661 review follow-up).
+    const res = errorResponse(HTTP_STATUS.NOT_FOUND, `Model disabled: ${modelStr}`);
+    res.localError = true;
+    return res;
   }
 
   // Routing shown in the unified "▶" line (client model → provider/model)
