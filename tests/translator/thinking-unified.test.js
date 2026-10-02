@@ -220,6 +220,12 @@ describe("applyThinking per provider format", () => {
     expect(out.thinking).toEqual({ type: "enabled" });
     expect(out.reasoning_effort).toBe("high");
   });
+  it("Kimi K3 clamps medium to high (K3 accepts low/high/max only); other Kimi models keep medium", () => {
+    const k3 = apply("openai", "moonshotai/kimi-k3", { reasoning_effort: "medium" }, "nvidia");
+    expect(k3.reasoning_effort).toBe("high");
+    const k27 = apply("openai", "kimi-k2.6", { reasoning_effort: "medium" }, "kimchi");
+    expect(k27.reasoning_effort).toBe("medium");
+  });
   it("Kimi on → reasoning_effort", () => {
     const out = apply("openai", "kimi-k2.6", { reasoning_effort: "high" }, "kimi");
     expect(out.reasoning_effort).toBe("high");
