@@ -1,8 +1,10 @@
 // Agent Skills metadata — single source of truth for /dashboard/skills page.
 // Skills ship with the gateway, so the hosted URLs always resolve against the
-// selected access base (Local/Tunnel/Tailscale) plus SKILL_PATH.
+// selected access base (Local/Tunnel/Tailscale) plus SKILL_PATH. Skill ids
+// carry the active brand's slug (skills/9router* or skills/tokenhop*).
+import { ACTIVE, LEGACY } from "@/shared/brand";
 
-const REPO = "tokenhop/tokenhop";
+const REPO = ACTIVE.repoSlug;
 const BRANCH = "master";
 const SKILL_PATH = "skills";
 
@@ -82,88 +84,91 @@ function normalizeOrigin(text) {
   }
 }
 
+/** Id of the entry skill: the active brand's slug. */
+export const ENTRY_SKILL_ID = ACTIVE.slug;
+
 export const SKILLS = [
   {
-    id: "9router",
-    name: "9router entry skill",
+    id: ENTRY_SKILL_ID,
+    name: `${ENTRY_SKILL_ID} entry skill`,
     description:
       "Setup + index of all capabilities. Start here — covers base URL, auth, model discovery, and links to every capability skill.",
     endpoint: null,
     icon: "hub",
     isEntry: true,
-    path: "9router/SKILL.md",
   },
   {
-    id: "9router-chat",
+    id: `${ENTRY_SKILL_ID}-chat`,
     name: "Chat",
     description: "Chat / code-gen via OpenAI or Anthropic format with streaming.",
     endpoint: "/v1/chat/completions",
     icon: "chat",
-    path: "9router-chat/SKILL.md",
   },
   {
-    id: "9router-image",
+    id: `${ENTRY_SKILL_ID}-image`,
     name: "Image generation",
     description: "Text-to-image via DALL-E, Imagen, FLUX, MiniMax, SDWebUI…",
     endpoint: "/v1/images/generations",
     icon: "image",
-    path: "9router-image/SKILL.md",
   },
   {
-    id: "9router-tts",
+    id: `${ENTRY_SKILL_ID}-tts`,
     name: "Text to speech",
     description: "OpenAI / ElevenLabs / Edge / Google / Deepgram voices.",
     endpoint: "/v1/audio/speech",
     icon: "record_voice_over",
-    path: "9router-tts/SKILL.md",
   },
   {
-    id: "9router-stt",
+    id: `${ENTRY_SKILL_ID}-stt`,
     name: "Speech to text",
     description: "Transcribe audio via OpenAI Whisper, Groq, Gemini, Deepgram, AssemblyAI…",
     endpoint: "/v1/audio/transcriptions",
     icon: "mic",
-    path: "9router-stt/SKILL.md",
   },
   {
-    id: "9router-embeddings",
+    id: `${ENTRY_SKILL_ID}-embeddings`,
     name: "Embeddings",
     description: "Vectors for RAG / semantic search via OpenAI, Gemini, Mistral…",
     endpoint: "/v1/embeddings",
     icon: "scatter_plot",
-    path: "9router-embeddings/SKILL.md",
   },
   {
-    id: "9router-video",
+    id: `${ENTRY_SKILL_ID}-video`,
     name: "Video generation",
     description: "Text-to-video via xAI Grok Imagine and other video providers.",
     endpoint: "/v1/videos/generations",
     icon: "movie",
-    path: "9router-video/SKILL.md",
   },
   {
-    id: "9router-web-search",
+    id: `${ENTRY_SKILL_ID}-web-search`,
     name: "Web search",
     description:
       "Web and X search via Tavily / Exa / Brave / Serper / SearXNG / Google PSE / You.com / Xquik.",
     endpoint: "/v1/search",
     icon: "search",
-    path: "9router-web-search/SKILL.md",
   },
   {
-    id: "9router-web-fetch",
+    id: `${ENTRY_SKILL_ID}-web-fetch`,
     name: "Web fetch",
     description: "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa.",
     endpoint: "/v1/web/fetch",
     icon: "language",
-    path: "9router-web-fetch/SKILL.md",
   },
-];
+].map((skill) => ({ ...skill, path: `${skill.id}/SKILL.md` }));
+
+/**
+ * Ids the /skills route serves: the active set plus the legacy-brand ids, so
+ * agents holding old links keep working on a tokenhop build.
+ */
+export const SERVED_SKILL_IDS = new Set([
+  ...SKILLS.map((skill) => skill.id),
+  ...SKILLS.map((skill) => LEGACY.slug + skill.id.slice(ENTRY_SKILL_ID.length)), // legacy(9router): remove in v2
+]);
 
 /**
  * Legacy helpers kept for compatibility: raw/blob GitHub URLs used by the
  * open-in-new-tab links and docs. Prefer getHostedSkillUrl for copyable links.
- * @param {string} id Skill id, e.g. "9router-chat".
+ * @param {string} id Skill id, e.g. "tokenhop-chat".
  * @returns {string} Raw GitHub URL for the skill's SKILL.md.
  */
 export function getSkillRawUrl(id) {
@@ -172,7 +177,7 @@ export function getSkillRawUrl(id) {
 
 /**
  * Blob (human-readable GitHub page) URL for a skill.
- * @param {string} id Skill id, e.g. "9router-chat".
+ * @param {string} id Skill id, e.g. "tokenhop-chat".
  * @returns {string} GitHub blob URL for the skill's SKILL.md.
  */
 export function getSkillBlobUrl(id) {

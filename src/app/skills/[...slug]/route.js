@@ -1,11 +1,9 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { SKILLS } from "@/shared/constants/skills";
+import { SERVED_SKILL_IDS } from "@/shared/constants/skills";
 
 export const dynamic = "force-dynamic";
-
-const VALID_SKILL_IDS = new Set(SKILLS.map((skill) => skill.id));
 
 /**
  * Public route: serves gateway-hosted agent skills as raw markdown.
@@ -26,7 +24,7 @@ export async function GET(_request, { params }) {
   }
 
   const [id, filename] = segments;
-  if (!VALID_SKILL_IDS.has(id)) {
+  if (!SERVED_SKILL_IDS.has(id)) {
     return new NextResponse("Not Found", { status: 404 });
   }
   if (filename && filename !== "SKILL.md") {

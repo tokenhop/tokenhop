@@ -1,22 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { getAvailableSkillBases, getHostedSkillUrl } from "../../src/shared/constants/skills.js";
+import {
+  ENTRY_SKILL_ID as E,
+  getAvailableSkillBases,
+  getHostedSkillUrl,
+} from "../../src/shared/constants/skills.js";
 
 describe("skill URLs", () => {
   it("uses the selected base and normalizes trailing slashes without dropping a path prefix", () => {
-    expect(getHostedSkillUrl("http://localhost:20152/", "9router")).toBe(
-      "http://localhost:20152/skills/9router/SKILL.md",
+    expect(getHostedSkillUrl("http://localhost:20152/", E)).toBe(
+      `http://localhost:20152/skills/${E}/SKILL.md`,
     );
-    expect(getHostedSkillUrl("https://r123.abc-tunnel.us///", "9router-web-search")).toBe(
-      "https://r123.abc-tunnel.us/skills/9router-web-search/SKILL.md",
+    expect(getHostedSkillUrl("https://r123.abc-tunnel.us///", `${E}-web-search`)).toBe(
+      `https://r123.abc-tunnel.us/skills/${E}-web-search/SKILL.md`,
     );
-    expect(getHostedSkillUrl("https://tail.example.ts.net/", "9router-chat")).toBe(
-      "https://tail.example.ts.net/skills/9router-chat/SKILL.md",
+    expect(getHostedSkillUrl("https://tail.example.ts.net/", `${E}-chat`)).toBe(
+      `https://tail.example.ts.net/skills/${E}-chat/SKILL.md`,
     );
   });
 
   it("rejects malformed bases and unknown skill ids", () => {
-    expect(() => getHostedSkillUrl("javascript:alert(1)", "9router")).toThrow();
-    expect(() => getHostedSkillUrl("https://host.invalid/path", "9router")).toThrow();
+    expect(() => getHostedSkillUrl("javascript:alert(1)", E)).toThrow();
+    expect(() => getHostedSkillUrl("https://host.invalid/path", E)).toThrow();
     expect(() => getHostedSkillUrl("https://host.invalid", "../etc/passwd")).toThrow();
   });
 
@@ -44,8 +48,8 @@ describe("skill URLs", () => {
   });
 
   it("covers the video skill and tolerates a bad local origin", () => {
-    expect(getHostedSkillUrl("http://localhost:20152", "9router-video")).toBe(
-      "http://localhost:20152/skills/9router-video/SKILL.md",
+    expect(getHostedSkillUrl("http://localhost:20152", `${E}-video`)).toBe(
+      `http://localhost:20152/skills/${E}-video/SKILL.md`,
     );
     expect(getAvailableSkillBases("", {})[0]).toEqual({
       value: "local",
