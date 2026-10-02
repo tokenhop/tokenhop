@@ -1,4 +1,4 @@
-# 9Router Tests
+# tokenhop Tests
 
 Vitest suite for the gateway (`src/`) and routing engine (`open-sse/`). `tests/` is an independent ESM package; the root `npm test` runs it plus the regression gate.
 
@@ -26,7 +26,7 @@ npx vitest run unit/capabilities.test.js # single file (path relative to tests/)
 
 ## Data isolation
 
-Tests never read or write your real `~/.9router`. Two setup hooks in `vitest.config.js` handle it:
+Tests never read or write your real data dir. Two setup hooks in `vitest.config.js` handle it:
 
 - `setup/tempRoot.js` (`globalSetup`) records your real home in `TOKENHOP_TEST_REAL_HOME`, creates one parent temp dir (`<os.tmpdir()>/9router-test-XXXX`) and deletes it after the run, even when files are skipped or fail to load.
 - `setup/isolateDataDir.js` (`setupFiles`) runs before every test file's imports. It creates a fresh per-file root inside that parent, points `DATA_DIR` at `<root>/data`, and points `HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA` and the `XDG_*` dirs inside `<root>/home`. It uses the `forks` pool, because a worker thread's `os.homedir()` ignores the override, and it throws if the override isn't honored.

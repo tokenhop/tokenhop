@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-9Router (`9router-app`) — a local AI routing gateway + Next.js dashboard. It exposes one OpenAI-compatible endpoint (`/v1/*`) and routes traffic across 40+ upstream providers with format translation, model-combo fallback, multi-account fallback, OAuth/API-key credential management, token refresh, quota/usage tracking, and optional cloud sync.
+tokenhop (`tokenhop-app`) — a local AI routing gateway + Next.js dashboard. It exposes one OpenAI-compatible endpoint (`/v1/*`) and routes traffic across 40+ upstream providers with format translation, model-combo fallback, multi-account fallback, OAuth/API-key credential management, token refresh, quota/usage tracking, and optional cloud sync.
 
 Two published artifacts live in this one repo:
 
-- The **dashboard + gateway** (root `package.json`, `9router-app`) — the Next.js server that does the actual routing.
-- The **CLI launcher** (`cli/`, published to npm as `9router`) — a separate package that installs/starts the server and manages the tray. It has its own `package.json`, version, and build.
+- The **dashboard + gateway** (root `package.json`, `tokenhop-app`) — the Next.js server that does the actual routing.
+- The **CLI launcher** (`cli/`, published to npm as `tokenhop`) — a separate package that installs/starts the server and manages the tray. It has its own `package.json`, version, and build.
 
 The code lives in `src/` (Next.js app + dashboard/compat APIs), `open-sse/` (the provider-agnostic routing/translation engine), `cli/` (the launcher package), and `tests/`.
 
@@ -55,7 +55,7 @@ npx vitest run unit/capabilities.test.js   # single file (path relative to tests
 >
 > **Always run tests via `npm test`, from `tests/`, or with `-c tests/vitest.config.js`.** Never use another vitest config. That config's setup moves `HOME`/`DATA_DIR` to a temp dir; without it the CLI-tool tests write to and `rm -rf` under your real home (one run deleted a real `~/.config`). The root `vitest.config.mjs` re-exports it so a bare root `npx vitest` is safe, and tests that touch the home dir must go through `tests/helpers/isolatedHome.js`, which throws when `HOME` isn't isolated.
 >
-> **Runs are isolated by default.** Every test file gets its own temp `DATA_DIR`/`HOME` (`tests/setup/`, forks pool), so `~/.9router` is never touched and no `DATA_DIR=$(mktemp -d)` prefix is needed. Only `translator/real/**` under `RUN_REAL=1`/`RUN_E2E=1` uses the real data dir. Guarded by `unit/test-data-isolation.test.js`; details in `tests/README.md`.
+> **Runs are isolated by default.** Every test file gets its own temp `DATA_DIR`/`HOME` (`tests/setup/`, forks pool), so your real data dir is never touched and no `DATA_DIR=$(mktemp -d)` prefix is needed. Only `translator/real/**` under `RUN_REAL=1`/`RUN_E2E=1` uses the real data dir. Guarded by `unit/test-data-isolation.test.js`; details in `tests/README.md`.
 >
 > The suite runs green on a plain checkout; judge regressions against `tests/__baseline__/known-fails.txt`, not a raw run (from `tests/`):
 >
@@ -102,7 +102,7 @@ Two authoritative docs already exist — read them before working in these areas
 State is **no longer `db.json`**. It's a SQLite layer under `src/lib/db/` with an adapter fallback chain (`driver.js`): `bun:sqlite` → `better-sqlite3` (optional native dep) → `node:sqlite` (Node ≥22.5) → `sql.js` (pure-JS fallback, always works). `better-sqlite3` is deliberately in `optionalDependencies` so install never fails without build tools.
 
 - `src/lib/localDb.js` is a **backward-compat shim** re-exporting `src/lib/db/index.js`. New code should import from `@/lib/db/index.js`; per-entity logic lives in `src/lib/db/repos/*`. Schema/migrations in `src/lib/db/migrations/`.
-- DB file location resolves via `src/lib/db/paths.js` (`DATA_DIR`, else `~/.9router/`).
+- DB file location resolves via `src/lib/db/paths.js` (`DATA_DIR`, else `~/.tokenhop/`, or a legacy data dir that already exists; see `src/lib/dataDir.js`).
 - Usage and request logs live in the same SQLite DB under `DATA_DIR` — `src/lib/usageDb.js` is just a shim re-exporting `@/lib/db/index.js`. `usage.json` is only a legacy one-time migration source; `log.txt` no longer exists.
 
 ### RTK token saver (`open-sse/rtk/`)

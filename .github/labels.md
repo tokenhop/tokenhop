@@ -1,4 +1,4 @@
-# GitHub Labels for 9Router
+# GitHub Labels for tokenhop
 
 Apply these labels to keep issues and pull requests consistently categorized. Labels use the project taxonomy below.
 

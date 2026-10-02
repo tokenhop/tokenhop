@@ -1,10 +1,10 @@
-# 9Router Architecture
+# tokenhop Architecture
 
 _Last updated: 2026-09-27_
 
 ## Executive Summary
 
-9Router is a local AI routing gateway and dashboard built on Next.js.
+tokenhop is a local AI routing gateway and dashboard built on Next.js.
 It provides a single OpenAI-compatible endpoint (`/v1/*`) and routes traffic across multiple upstream providers with translation, fallback, token refresh, and usage tracking.
 
 Core capabilities:
@@ -52,7 +52,7 @@ flowchart LR
         BROWSER[Browser Dashboard]
     end
 
-    subgraph Router[9Router Local Process]
+    subgraph Router[tokenhop Local Process]
         API[V1 Compatibility API\n/v1/*]
         DASH[Dashboard + Management API\n/api/*]
         CORE[SSE + Translation Core\nopen-sse + src/sse]
@@ -135,7 +135,7 @@ Main flow modules:
 
 SQLite is the source of truth for configuration, routing state, usage, and request details. `src/lib/db/index.js` exposes the repository API; entity operations live in `src/lib/db/repos/*`. `src/lib/localDb.js` and `src/lib/usageDb.js` remain backward-compatible re-export shims.
 
-- Database file: `<DATA_DIR>/db/data.sqlite`; backups: `<DATA_DIR>/db/backups`. `DATA_DIR` defaults to the platform data directory (typically `~/.9router` on Unix) and can fall back if configured storage is unwritable. Docker sets `DATA_DIR=/app/data`.
+- Database file: `<DATA_DIR>/db/data.sqlite`; backups: `<DATA_DIR>/db/backups`. `DATA_DIR` defaults to the platform data directory (typically `~/.tokenhop` on Unix, or an existing legacy data dir) and can fall back if configured storage is unwritable. Docker sets `DATA_DIR=/app/data`.
 - Adapter order: Bun uses `bun:sqlite`, then `sql.js`; Node tries `better-sqlite3` (skipped on Node >=24), `node:sqlite` (Node >=22.5), then `sql.js`. Startup fails if no driver initializes.
 - Schema lives in `src/lib/db/schema.js`; versioned migrations run transactionally, followed by additive schema synchronization. Legacy JSON files under `DATA_DIR` (`db.json`, `usage.json`, `disabledModels.json`, `request-details.json`) are one-time import sources: migration backs them up, retains originals, and checks imported row counts. Malformed legacy JSON is not guaranteed to import.
 - Tables: `_meta`, `settings`, `providerConnections`, `providerNodes`, `proxyPools`, `apiKeys`, `combos`, `kv`, `usageHistory`, `usageDaily`, and `requestDetails`. Several entities store JSON in `data`; aliases, pricing, and disabled models use `kv`. Indexed `connectionId` values are not declared foreign keys.
@@ -305,7 +305,7 @@ flowchart LR
         Launcher[Optional npm CLI launcher (cli/)]
     end
 
-    subgraph ContainerOrProcess[9Router Runtime]
+    subgraph ContainerOrProcess[tokenhop Runtime]
         Next[Next.js server]
         Core[SSE Core + Executors]
         SQLITE[(DATA_DIR/db/data.sqlite)]
@@ -329,7 +329,7 @@ Deployment paths:
 - Source: `npm run build && npm run start` (default port 20127).
 - Docker: `node custom-server.js`, `ENV PORT=20128`, `ENV DATA_DIR=/app/data` → SQLite at `/app/data/db/data.sqlite`.
 - Dev compose: `compose.dev.yml` uses `PORT=20127` with a bind mount.
-- CLI launcher (`cli/`, npm package `9router`): optional local distribution/control plane — bundles and spawns the Next server, installs/heals optional SQLite drivers. Distinct from the dashboard's CLI-tools page and compatibility client binaries.
+- CLI launcher (`cli/`, npm package `tokenhop`): optional local distribution/control plane — bundles and spawns the Next server, installs/heals optional SQLite drivers. Distinct from the dashboard's CLI-tools page and compatibility client binaries.
 
 ## Module Mapping (Decision-Critical)
 
@@ -493,7 +493,7 @@ Environment variables actively used by code:
 ## Operational Verification Checklist
 
 - Build from source: `npm run build` (from repo root)
-- Build Docker image: `docker build -t 9router .`
+- Build Docker image: `docker build -t tokenhop .`
 - Start service: `npm run start` (default port 20127) or Docker (port 20128)
 - Verify: `GET /api/settings` (requires dashboard auth or CLI token / `requireLogin=false`), `GET /api/v1/models` (public LLM API — local peer, CLI token, or valid API key)
 - CLI target base URL should be `http://<host>:<PORT>/v1` (20127 source default, 20128 Docker)

@@ -1,11 +1,14 @@
-# 9Router (yandy-r)
+# tokenhop
 
 A self-hosted AI routing gateway: one OpenAI-compatible endpoint (`/v1/*`) in front of
 40+ upstream providers, with format translation, model-combo fallback, multi-account
 rotation, OAuth credential management and usage tracking, plus a Next.js dashboard.
 
-> This is a personal copy of [9Router](https://github.com/decolua/9router) by
-> [decolua](https://github.com/decolua) and contributors, used under the MIT License.
+> tokenhop started as a fork of [9Router](https://github.com/decolua/9router) by [decolua](https://github.com/decolua)
+> and contributors, used under the MIT License.
+>
+> Upgrading from 9router? Nothing to do: your data, keys and tool configs carry over.
+> See [UPGRADING.md](UPGRADING.md). Docs: <https://tokenhop.dev>.
 
 **Upgrading?** See [UPGRADING.md](UPGRADING.md) for what v1.0.0 changes and keeps.
 
@@ -46,9 +49,9 @@ accounts are never included), Environment (read-only `.env` readout) and Danger 
 ## Quick start (Docker)
 
 ```bash
-docker run -d --name 9router \
+docker run -d --name tokenhop \
   -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
+  -v tokenhop-data:/app/data \
   -e JWT_SECRET="$(openssl rand -hex 32)" \
   -e INITIAL_PASSWORD="change-me" \
   ghcr.io/tokenhop/tokenhop:latest
@@ -61,20 +64,21 @@ Or with Compose, pinned to a version:
 
 ```yaml
 services:
-  9router:
+  tokenhop:
     image: ghcr.io/tokenhop/tokenhop:1.0.0 # or :latest
     restart: unless-stopped
     ports:
       - "20128:20128"
     volumes:
-      - 9router-data:/app/data
+      - tokenhop-data:/app/data
     env_file: .env
 
 volumes:
-  9router-data:
+  tokenhop-data:
 ```
 
-State (SQLite at `/app/data/db/data.sqlite`) lives in the mounted volume.
+State (SQLite at `/app/data/db/data.sqlite`) lives in the mounted volume. Existing installs keep
+their old volume; see [UPGRADING.md](UPGRADING.md#docker).
 
 ## Using it
 
@@ -90,7 +94,7 @@ State (SQLite at `/app/data/db/data.sqlite`) lives in the mounted volume.
 
 ```bash
 curl http://localhost:20128/v1/chat/completions \
-  -H "Authorization: Bearer $NINEROUTER_API_KEY" \
+  -H "Authorization: Bearer $TOKENHOP_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model": "cc/claude-sonnet-5", "messages": [{"role": "user", "content": "hi"}]}'
 ```
@@ -194,7 +198,8 @@ hold an older pair.
 Pushing a `v*` tag, or pushing application code to `master`, runs
 [`docker-publish.yml`](.github/workflows/docker-publish.yml), which builds
 `linux/amd64` + `linux/arm64` and pushes to `ghcr.io/tokenhop/tokenhop`. Other branch
-pushes run nothing, and nothing is published to npm.
+pushes run nothing. The same `v*` tag publishes the `tokenhop` CLI to npm from
+[`release-npm.yml`](.github/workflows/release-npm.yml) (prerelease tags go to the `beta` dist-tag).
 
 | Tag                | When                                                                                                                                                                                           |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -215,8 +220,7 @@ build any branch; it only pushes when the `push` input is checked, and never tag
 client vars above. Docker reads them from GitHub Actions repository secrets of the
 same names (`GEMINI_OAUTH_CLIENT_ID`, `GEMINI_OAUTH_CLIENT_SECRET`,
 `ANTIGRAVITY_OAUTH_CLIENT_ID`, `ANTIGRAVITY_OAUTH_CLIENT_SECRET`) at build time. The
-npm package is published with `npx dotenvx run -f .env.encrypted -- npm run
-cli:publish`, which fails the publish if those defaults are missing. Both artifacts
+npm workflow reads the same secrets and fails the publish if those defaults are missing. Both artifacts
 are public; the values aren't confidential per Google's installed-app model above,
 but secret scanners may flag the `GOCSPX-` string in them — accepted.
 
@@ -229,7 +233,7 @@ PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
 ```
 
 Production build: `npm run build && PORT=20128 HOSTNAME=0.0.0.0 npm run start`.
-Local image: `docker build -t 9router-local .` (pass `--build-arg APK_MIRROR=dl-cdn.alpinelinux.org
+Local image: `docker build -t tokenhop-local .` (pass `--build-arg APK_MIRROR=dl-cdn.alpinelinux.org
 --build-arg NPM_REGISTRY=https://registry.npmjs.org` to skip the default CN mirrors).
 To bake the Google OAuth clients into a local image, pass them as BuildKit secrets
 (see [DOCKER.md](DOCKER.md)).

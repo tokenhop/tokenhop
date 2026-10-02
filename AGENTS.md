@@ -1,4 +1,4 @@
-# 9Router — Agent Rules
+# tokenhop — Agent Rules
 
 The canonical agent rules for this repository live in [`CLAUDE.md`](CLAUDE.md).
 This file exists so agent-runtime tools that default to `AGENTS.md` pick up the

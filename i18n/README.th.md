@@ -1,9 +1,9 @@
 นี่คือเอกสารแปลภาษาไทยของไฟล์ Markdown ต้นฉบับ โดยรักษาโครงสร้างและซินแท็กซ์ทางเทคนิคทั้งหมดไว้เหมือนเดิม
 
 <div align="center">
-  <img src="../images/9router.png?1" alt="แดชบอร์ด 9Router" width="800"/>
+  <img src="../images/tokenhop.png?1" alt="แดชบอร์ด tokenhop" width="800"/>
 
-# 9Router - Free AI Router
+# tokenhop - Free AI Router
 
 **ไม่ต้องหยุดเขียนโค้ด ประหยัดโทเค็น 20-40% ด้วย RTK + สลับอัตโนมัติไปยังโมเดล AI ฟรีและราคาถูก**
 
@@ -13,16 +13,16 @@
     <img src="../public/providers/openclaw.png" alt="OpenClaw" width="80"/>
   </p>
 
-[![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-[![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
+[![npm](https://img.shields.io/npm/v/tokenhop.svg)](https://www.npmjs.com/package/tokenhop)
+[![Downloads](https://img.shields.io/npm/dm/tokenhop.svg)](https://www.npmjs.com/package/tokenhop)
+[![License](https://img.shields.io/npm/l/tokenhop.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
-[🚀 เริ่มต้นใช้งาน](#-quick-start) • [💡 ฟีเจอร์](#-key-features) • [📖 การตั้งค่า](#-setup-guide) • [🌐 เว็บไซต์](https://9router.com)
+[🚀 เริ่มต้นใช้งาน](#-quick-start) • [💡 ฟีเจอร์](#-key-features) • [📖 การตั้งค่า](#-setup-guide) • [🌐 เว็บไซต์](https://tokenhop.ai)
 </div>
 
 ---
 
-## 🤔 ทำไมต้อง 9Router?
+## 🤔 ทำไมต้อง tokenhop?
 
 **หยุดเสียเงินและเจอขีดจำกัด:**
 
@@ -31,7 +31,7 @@
 - ❌ ค่า API แพง ($20-50/เดือน ต่อผู้ให้บริการแต่ละราย)
 - ❌ ต้องสลับผู้ให้บริการด้วยตนเอง
 
-**9Router แก้ปัญหาเหล่านี้:**
+**tokenhop แก้ปัญหาเหล่านี้:**
 
 - ✅ **ประหยัดโทเค็น RTK** - บีบอัดผลลัพธ์จากเครื่องมือ (`git diff`, `grep`, `ls`...) ก่อนส่งให้ LLM
 - ✅ **เพิ่มประสิทธิภาพสมาชิก** - ติดตามโควตา ใช้ทุกบิตก่อนรีเซ็ต
@@ -51,7 +51,7 @@
        │ http://localhost:20128/v1
        ↓
 ┌─────────────────────────────────────────────┐
-│           9Router (Smart Router)            │
+│           tokenhop (Smart Router)           │
 │  • RTK Token Saver (ตัดโทเค็น tool_result) │
 │  • แปลงรูปแบบ (OpenAI ↔ Claude)           │
 │  • ติดตามโควตา                              │
@@ -74,8 +74,8 @@
 **1. ติดตั้งแบบ Global:**
 
 ```bash
-npm install -g 9router
-9router
+npm install -g tokenhop
+tokenhop
 ```
 
 🎉 เปิดแดชบอร์ดที่ `http://localhost:20128`
@@ -97,7 +97,7 @@ npm install -g 9router
 
 **วิธีอื่น: รันจากซอร์สโค้ด (เก็บรักษาไว้ใน repo นี้):**
 
-Repo นี้เป็น private package (`9router-app`) ดังนั้นการรันจากซอร์ส/Docker คือเส้นทางพัฒนาท้องถิ่นที่คาดไว้
+Repo นี้เป็น private package (`tokenhop-app`) ดังนั้นการรันจากซอร์ส/Docker คือเส้นทางพัฒนาท้องถิ่นที่คาดไว้
 
 ```bash
 cp .env.example .env
@@ -121,7 +121,7 @@ URL ค่าเริ่มต้น:
 
 ## 🛠️ เครื่องมือ CLI ที่รองรับ
 
-9Router ทำงานได้อย่างราบรื่นกับเครื่องมือเขียนโค้ด AI ทุกประเภท:
+tokenhop ทำงานได้อย่างราบรื่นกับเครื่องมือเขียนโค้ด AI ทุกประเภท:
 
 <div align="center">
   <table>
@@ -366,10 +366,10 @@ URL ค่าเริ่มต้น:
 
 ### 🧠 Headroom Token Saver
 
-Headroom เป็นตัวเลือกและทำงานแยกกัน 9Router เรียก endpoint `/v1/compress` ของ Headroom จากนั้นยังคงเลือกเส้นทาง, fallback, auth และติดตามการใช้งานตามปกติ:
+Headroom เป็นตัวเลือกและทำงานแยกกัน tokenhop เรียก endpoint `/v1/compress` ของ Headroom จากนั้นยังคงเลือกเส้นทาง, fallback, auth และติดตามการใช้งานตามปกติ:
 
 ```
-Client → 9Router → Headroom /v1/compress → 9Router → provider
+Client → tokenhop → Headroom /v1/compress → tokenhop → provider
 ```
 
 ตั้งค่าท้องถิ่น:
@@ -388,7 +388,7 @@ headroom proxy --port 8787
 http://host.docker.internal:8787
 ```
 
-ถ้า Headroom ดับหรือคืน error, 9Router จะ fail open และส่งคำขอต้นฉบับ
+ถ้า Headroom ดับหรือคืน error, tokenhop จะ fail open และส่งคำขอต้นฉบับ
 
 ### 🐴 Ponytail (Lazy Senior Dev)
 
@@ -430,7 +430,7 @@ Combo: "my-coding-stack"
 แปลงรูปแบบได้อย่างราบรื่น:
 
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **Cursor** ↔ **Kiro** ↔ **Vertex** ↔ **Antigravity** ↔ **Ollama** ↔ **OpenAI Responses**
-- เครื่องมือ CLI ของคุณส่งรูปแบบ OpenAI → 9Router แปลง → ผู้ให้บริการได้รับรูปแบบต้นฉบับ
+- เครื่องมือ CLI ของคุณส่งรูปแบบ OpenAI → tokenhop แปลง → ผู้ให้บริการได้รับรูปแบบต้นฉบับ
 - ใช้ได้กับเครื่องมือใดก็ได้ที่รองรับ custom OpenAI endpoints
 
 ### 👥 รองรับหลายบัญชี
@@ -575,17 +575,17 @@ Combo: "openclaw-free"
 ## ❓ คำถามที่พบบ่อย
 
 <details>
-<summary><b>💳 9Router เก็บเงินฉันหรือไม่?</b></summary>
+<summary><b>💳 tokenhop เก็บเงินฉันหรือไม่?</b></summary>
 
-**ไม่.** 9Router เป็นซอฟต์แวร์ฟรีแบบ open source ที่ทำงานบนเครื่องของคุณเอง มันไม่มีวันเรียกเก็บเงินจากคุณ
+**ไม่.** tokenhop เป็นซอฟต์แวร์ฟรีแบบ open source ที่ทำงานบนเครื่องของคุณเอง มันไม่มีวันเรียกเก็บเงินจากคุณ
 
 **คุณจ่ายเงินเฉพาะ:**
 
 - ✅ **ผู้ให้บริการสมาชิก** (Claude Code $20/เดือน, Codex $20-200/เดือน) → จ่ายตรงให้พวกเขาบนเว็บไซต์ของพวกเขา
-- ✅ **ผู้ให้บริการราคาถูก** (GLM, MiniMax) → จ่ายตรงให้พวกเขา, 9Router แค่เลือกเส้นทางคำขอของคุณ
-- ❌ **ตัว 9Router เอง** → **ไม่มีวันเรียกเก็บเงินใดๆ ทั้งสิ้น**
+- ✅ **ผู้ให้บริการราคาถูก** (GLM, MiniMax) → จ่ายตรงให้พวกเขา, tokenhop แค่เลือกเส้นทางคำขอของคุณ
+- ❌ **ตัว tokenhop เอง** → **ไม่มีวันเรียกเก็บเงินใดๆ ทั้งสิ้น**
 
-9Router เป็น proxy/router ท้องถิ่น มันไม่มีบัตรเครดิตของคุณ, ไม่สามารถส่งใบแจ้งหนี้ได้ และไม่มีระบบชำระเงิน เป็นซอฟต์แวร์ฟรีทั้งหมด
+tokenhop เป็น proxy/router ท้องถิ่น มันไม่มีบัตรเครดิตของคุณ, ไม่สามารถส่งใบแจ้งหนี้ได้ และไม่มีระบบชำระเงิน เป็นซอฟต์แวร์ฟรีทั้งหมด
 
 </details>
 
@@ -600,7 +600,7 @@ Combo: "openclaw-free"
 - **OpenCode Free**: ไม่ต้องยืนยันตัวตน, ดึงโมเดลอัตโนมัติ
 - **Vertex AI**: $300 เครดิตฟรีสำหรับ Gemini 3 Pro
 
-9Router แค่เลือกเส้นทางคำขอของคุณไปหาพวกเขา — ไม่มี "กับดัก" หรือการเรียกเก็บเงินในอนาคต เป็นบริการที่ฟรีจริงๆ และ 9Router ทำให้ใช้งานง่ายด้วยการรองรับ fallback
+tokenhop แค่เลือกเส้นทางคำขอของคุณไปหาพวกเขา — ไม่มี "กับดัก" หรือการเรียกเก็บเงินในอนาคต เป็นบริการที่ฟรีจริงๆ และ tokenhop ทำให้ใช้งานง่ายด้วยการรองรับ fallback
 
 </details>
 
@@ -628,7 +628,7 @@ Combo: "openclaw-free"
    **ค่าใช้จ่ายเพิ่มเติม:** จ่ายเฉพาะที่ใช้
 
 3. **ใช้ผู้ให้บริการสมาชิก** ก็ต่อเมื่อมีอยู่แล้ว:
-   - 9Router ช่วยเพิ่มประสิทธิภาพมูลค่าของพวกเขาผ่านการติดตามโควตา
+   - tokenhop ช่วยเพิ่มประสิทธิภาพมูลค่าของพวกเขาผ่านการติดตามโควตา
 
 **ผลลัพธ์:** ผู้ใช้ส่วนใหญ่สามารถทำงานที่ $0/เดือน โดยใช้เฉพาะชั้นฟรี!
 
@@ -650,7 +650,7 @@ Combo: "openclaw-free"
 
 **OAuth Token หมดอายุ**
 
-- รีเฟรชอัตโนมัติโดย 9Router
+- รีเฟรชอัตโนมัติโดย tokenhop
 - ถ้าปัญหายังคงอยู่: แดชบอร์ด → ผู้ให้บริการ → เชื่อมต่อใหม่
 
 **ค่าใช้จ่ายสูง**
@@ -717,7 +717,7 @@ Authorization: Bearer your-api-key
 
 ## 📧 สนับสนุน
 
-- **เว็บไซต์**: [9router.com](https://9router.com)
+- **เว็บไซต์**: [tokenhop.ai](https://tokenhop.ai)
 - **GitHub**: [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
 - **Issues**: [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 
@@ -725,7 +725,7 @@ Authorization: Bearer your-api-key
 
 ## 👥 ผู้มีส่วนร่วม
 
-ขอขอบคุณผู้มีส่วนร่วมทุกคนที่ช่วยทำให้ 9Router ดียิ่งขึ้น!
+ขอขอบคุณผู้มีส่วนร่วมทุกคนที่ช่วยทำให้ tokenhop ดียิ่งขึ้น!
 
 [![Contributors](https://contrib.rocks/image?repo=tokenhop/tokenhop&max=150&columns=15&anon=1)](https://github.com/tokenhop/tokenhop/graphs/contributors)
 

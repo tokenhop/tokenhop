@@ -1,4 +1,4 @@
-# GitHub Copilot / code-agent PR guidance — 9Router
+# GitHub Copilot / code-agent PR guidance — tokenhop
 
 This file is read by GitHub Copilot's coding agent when it opens or edits a
 pull request. OpenAI Codex and Anthropic's code-agent bots read

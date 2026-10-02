@@ -1,4 +1,4 @@
-// commitlint.config.cjs — Conventional Commits 1.0.0 for 9Router
+// commitlint.config.cjs — Conventional Commits 1.0.0 for tokenhop
 
 /** @type {import('@commitlint/types').UserConfig} */
 module.exports = {
