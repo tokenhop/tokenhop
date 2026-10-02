@@ -4,40 +4,12 @@ import {
   isOpenAICompatibleProvider,
   isAnthropicCompatibleProvider,
 } from "@/shared/constants/providers";
-import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
-import { refreshGoogleToken } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
-import { buildOAuthResolver } from "@/lib/providerModels/oauthResolver.js";
 import { hasLiveModelResolver, resolveLiveModels } from "@/lib/providerModels/liveResolvers.js";
-
-const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
   return data?.data || data?.models || data?.results || [];
-};
-
-const parseGeminiCliModels = (data) => {
-  if (Array.isArray(data?.models)) {
-    return data.models
-      .map((item) => {
-        const id = item?.id || item?.model || item?.name;
-        if (!id) return null;
-        return { id, name: item?.displayName || item?.name || id };
-      })
-      .filter(Boolean);
-  }
-
-  if (data?.models && typeof data.models === "object") {
-    return Object.entries(data.models)
-      .filter(([, info]) => !info?.isInternal)
-      .map(([id, info]) => ({
-        id,
-        name: info?.displayName || info?.name || id,
-      }));
-  }
-
-  return [];
 };
 
 const createOpenAIModelsConfig = (url) => ({
@@ -51,35 +23,8 @@ const createOpenAIModelsConfig = (url) => ({
 
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
-  gemini: {
-    url: "https://generativelanguage.googleapis.com/v1beta/models",
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    authQuery: "key", // Use query param for API key
-    parseResponse: (data) => data.models || [],
-  },
-  antigravity: {
-    url: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:models",
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    authHeader: "Authorization",
-    authPrefix: "Bearer ",
-    body: {},
-    parseResponse: (data) => data.models || [],
-  },
   openai: createOpenAIModelsConfig("https://api.openai.com/v1/models"),
   openrouter: createOpenAIModelsConfig("https://openrouter.ai/api/v1/models"),
-  anthropic: {
-    url: "https://api.anthropic.com/v1/models",
-    method: "GET",
-    headers: {
-      "Anthropic-Version": "2023-06-01",
-      "Content-Type": "application/json",
-    },
-    authHeader: "x-api-key",
-    parseResponse: (data) => data.data || [],
-  },
-
   alicode: {
     url: "https://coding.dashscope.aliyuncs.com/v1/models",
     method: "GET",
@@ -132,28 +77,6 @@ const PROVIDER_MODELS_CONFIG = {
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
   assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models"),
   "vercel-ai-gateway": createOpenAIModelsConfig("https://ai-gateway.vercel.sh/v1/models"),
-  "gemini-cli": {
-    customResolver: buildOAuthResolver({
-      refreshFn: (conn) =>
-        refreshGoogleToken(conn.refreshToken, GEMINI_CONFIG.clientId, GEMINI_CONFIG.clientSecret),
-      fetchFn: (token, conn) => {
-        const projectId = conn.projectId || conn.providerSpecificData?.projectId;
-        const body = projectId ? { project: projectId } : {};
-        return fetch(GEMINI_CLI_MODELS_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-            "User-Agent": "google-api-nodejs-client/9.15.1",
-            "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-          },
-          body: JSON.stringify(body),
-        });
-      },
-      parseFn: parseGeminiCliModels,
-      errorLabel: "Failed to fetch Gemini CLI models",
-    }),
-  },
   "ollama-local": {
     customResolver: async (connection) => {
       const url = `${resolveOllamaLocalHost(connection)}/api/tags`;
@@ -307,29 +230,12 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "No valid token found" }, { status: 401 });
     }
 
-    // Build request URL
-    let url = config.url;
-    if (config.authQuery) {
-      url += `?${config.authQuery}=${token}`;
-    }
-
-    // Build headers
     const headers = { ...config.headers };
-    if (config.authHeader && !config.authQuery) {
+    if (config.authHeader) {
       headers[config.authHeader] = (config.authPrefix || "") + token;
     }
 
-    // Make request
-    const fetchOptions = {
-      method: config.method,
-      headers,
-    };
-
-    if (config.body && config.method === "POST") {
-      fetchOptions.body = JSON.stringify(config.body);
-    }
-
-    const response = await fetch(url, fetchOptions);
+    const response = await fetch(config.url, { method: config.method, headers });
 
     if (!response.ok) {
       const errorText = await response.text();

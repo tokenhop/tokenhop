@@ -27,4 +27,7 @@ export default {
     { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
   ],
   serviceKinds: ["llm", "imageToText"],
+  features: {
+    liveModels: true,
+  },
 };
