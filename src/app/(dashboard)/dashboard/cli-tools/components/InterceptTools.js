@@ -3,12 +3,14 @@
 import PropTypes from "prop-types";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ACTIVE } from "@/shared/brand";
 import { CardSkeleton, EmptyState } from "@/shared/components";
 import Button from "@/shared/components/Button";
 import StatusPill from "@/shared/components/StatusPill";
 import { MITM_TOOLS } from "@/shared/constants/cliTools";
 import { TOOL_HOSTS } from "@/shared/constants/mitmToolHosts";
 import ToolTile from "./ToolTile";
+import MitmRemoteSteps from "./MitmRemoteSteps";
 import { readInterceptStatus } from "../lib/interceptStatus";
 import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
@@ -42,13 +44,10 @@ function RemoteInterceptSteps() {
           Intercept tools
         </h2>
         <p className="text-[13px] text-muted">
-          For IDEs that can’t change their endpoint, 9router listens in (MITM) and reroutes.
+          For IDEs that can’t change their endpoint, {ACTIVE.name} listens in (MITM) and reroutes.
         </p>
       </div>
-      <p className="text-[13px] text-muted">
-        These hosts entries only work when the IDE runs on the same machine as 9router. Turn DNS on
-        from the dashboard on the host.
-      </p>
+      <MitmRemoteSteps />
       <ul className="grid list-none grid-cols-1 gap-3 p-0 sm:grid-cols-2">
         {entries.map(({ toolId, tool, hosts }) => (
           <li
@@ -65,6 +64,12 @@ function RemoteInterceptSteps() {
             <pre className="overflow-x-auto rounded-xl border border-line bg-raised px-3 py-2 font-mono text-xs text-text">
               {hosts.map((host) => `127.0.0.1 ${host}`).join("\n")}
             </pre>
+            <Link
+              href="/dashboard/mitm"
+              className="flex min-h-11 items-center justify-center rounded-xl border border-line text-[13px] font-medium text-text transition-colors duration-150 hover:border-subtle focus-visible:outline-none focus-visible:shadow-focus motion-reduce:transition-none"
+            >
+              Map models
+            </Link>
           </li>
         ))}
       </ul>
@@ -132,7 +137,7 @@ function InterceptToolsSection({ tools, onRetry }) {
           Intercept tools
         </h2>
         <p className="text-[13px] text-muted">
-          For IDEs that can’t change their endpoint, 9router listens in (MITM) and reroutes.
+          For IDEs that can’t change their endpoint, {ACTIVE.name} listens in (MITM) and reroutes.
         </p>
       </div>
       {loading ? (

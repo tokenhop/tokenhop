@@ -77,10 +77,17 @@ const LOCAL_ONLY_PATHS = [
   "/api/headroom/proxy",
 ];
 
-// Read-only GETs under a local-only prefix that remote dashboard users may call
-// (still behind the /api/* auth below). The Cowork MCP registry fetches a fixed
-// public upstream and reads no files or secrets; the tool probe stays local-only.
-const REMOTE_READABLE_GETS = new Set(["/api/cli-tools/cowork-mcp-registry"]);
+// Remote-accessible routes under a local-only prefix, mapped to their allowed
+// HTTP methods (still behind the /api/* auth below). The Cowork MCP registry
+// fetches a fixed public upstream and reads no files or secrets; the MITM alias
+// route only reads/writes the alias map (DB + aliases.json), spawns nothing and
+// reads no host secrets (YAN-622). Everything else stays local-only, including
+// the /api/cli-tools/antigravity-mitm control route (POST start, PATCH DNS,
+// DELETE stop).
+const REMOTE_ALLOWED_METHODS = new Map([
+  ["/api/cli-tools/cowork-mcp-registry", new Set(["GET"])],
+  ["/api/cli-tools/antigravity-mitm/alias", new Set(["GET", "PUT"])],
+]);
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
@@ -208,8 +215,8 @@ export async function proxy(request) {
   if (isPublicPage(pathname)) return NextResponse.next();
 
   // Local-only gate for spawn-capable / host-secret routes.
-  const remoteReadable = request.method === "GET" && REMOTE_READABLE_GETS.has(pathname);
-  if (!remoteReadable && LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
+  const remoteAllowed = REMOTE_ALLOWED_METHODS.get(pathname)?.has(request.method) === true;
+  if (!remoteAllowed && LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
     if (!(await canAccessLocalOnlyRoute(request))) {
       return NextResponse.json(
         { error: "Local only: CLI token required", code: LOCAL_ONLY_CODE },

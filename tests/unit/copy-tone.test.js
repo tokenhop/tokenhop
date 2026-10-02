@@ -14,10 +14,6 @@ const COPY_TONE_ALLOWLIST = new Map([
     "Administrator required — restart 9Router as Administrator to use MITM",
     "Windows Administrator role name",
   ],
-  [
-    "Windows: run the 9Router terminal as Administrator to enable MITM.",
-    "Windows Administrator role name",
-  ],
   // Button/setting citations keep the label's own capitalization.
   [
     "OAuth required. Add now and authenticate after Apply; the tool list will be discovered after the first connect.",

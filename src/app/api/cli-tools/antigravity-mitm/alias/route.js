@@ -2,7 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { getMitmAlias, setMitmAliasAll } from "@/models";
-import { getMitmStatus } from "@/mitm/manager";
+import { MITM_TOOLS } from "@/shared/constants/cliTools";
 import { writeAliasForTool } from "@/lib/mitmAliasCache";
 
 // GET - Get MITM aliases for a tool
@@ -23,17 +23,17 @@ export async function PUT(request) {
   try {
     const { tool, mappings } = await request.json();
 
-    if (!tool || !mappings || typeof mappings !== "object") {
+    if (!tool || !mappings || typeof mappings !== "object" || Array.isArray(mappings)) {
       return NextResponse.json({ error: "tool and mappings required" }, { status: 400 });
     }
 
-    // Check if DNS is enabled for this tool
-    const status = await getMitmStatus();
-    if (!status.dnsStatus || !status.dnsStatus[tool]) {
-      return NextResponse.json(
-        { error: `DNS must be enabled for ${tool} before editing model mappings` },
-        { status: 403 },
-      );
+    // Remote users can reach this route, so only known MITM tools are writable.
+    if (!Object.hasOwn(MITM_TOOLS, tool)) {
+      return NextResponse.json({ error: "Unknown MITM tool" }, { status: 400 });
+    }
+
+    if (Object.values(mappings).some((model) => typeof model !== "string")) {
+      return NextResponse.json({ error: "mapping values must be strings" }, { status: 400 });
     }
 
     const filtered = {};

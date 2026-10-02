@@ -45,17 +45,8 @@ describe("CLI tool status fetch stability", () => {
     expect(depsAfter(claude, "const fetchStatus = useCallback(")).toEqual([]);
   });
 
-  it("AntigravityToolCard mount fetch ignores callback identity", () => {
-    const antigravity = read("components/AntigravityToolCard.js");
-    expect(depsAfter(antigravity, 'await fetch("/api/cli-tools/antigravity-mitm");')).toEqual([]);
-  });
-
   it("every status fetcher reads the latest callback from a ref", () => {
-    for (const file of [
-      "components/setupCard.js",
-      "components/ClaudeToolCard.js",
-      "components/AntigravityToolCard.js",
-    ]) {
+    for (const file of ["components/setupCard.js", "components/ClaudeToolCard.js"]) {
       const source = read(file);
       expect(source).toMatch(/const onStatusUpdateRef = useRef\(onStatusUpdate\)/);
       expect(source).not.toMatch(/[^.]onStatusUpdate\?\.\(/);
