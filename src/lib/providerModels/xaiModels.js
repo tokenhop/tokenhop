@@ -93,9 +93,10 @@ export async function resolveXai(connection) {
     return { models: [], warning: "No valid token found" };
   }
 
-  const result = connection.accessToken
-    ? await resolveXaiOAuth(connection)
-    : await resolveXaiApiKey(connection);
+  // Same precedence as chat requests (executors send apiKey || accessToken).
+  const result = connection.apiKey
+    ? await resolveXaiApiKey(connection)
+    : await resolveXaiOAuth(connection);
   const warning = result.error || result.warning;
   if (!result.models?.length) {
     return { models: [], warning: warning || "xAI returned no live models." };
@@ -103,6 +104,6 @@ export async function resolveXai(connection) {
 
   const staticModels = getModelsByProviderId("xai");
   // OAuth may have refreshed the token in place.
-  const media = await fetchOptionalLists(connection.accessToken || connection.apiKey, staticModels);
+  const media = await fetchOptionalLists(connection.apiKey || connection.accessToken, staticModels);
   return { models: reconcileXaiAliases([...result.models, ...media], staticModels) };
 }
