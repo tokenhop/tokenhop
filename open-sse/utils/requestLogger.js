@@ -94,25 +94,43 @@ function writeJsonFile(sessionPath, filename, data) {
   }
 }
 
-// Mask sensitive data in headers (DISABLED - keep full token for testing)
-function maskSensitiveHeaders(headers) {
-  if (!headers) return {};
-  return { ...headers };
+// Mask credential headers before writing request logs (YAN-650).
+// Case-insensitive: exact names plus any header containing "token",
+// "secret" or "api-key". Long values keep a short prefix/suffix for
+// debuggability; short values are fully masked. Never mutates the input.
+const SENSITIVE_EXACT_HEADERS = new Set([
+  "authorization",
+  "proxy-authorization",
+  "x-api-key",
+  "x-goog-api-key",
+  "cookie",
+  "set-cookie",
+]);
 
-  // Old masking code (disabled):
-  // const masked = { ...headers };
-  // const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
-  //
-  // for (const key of Object.keys(masked)) {
-  //   const lowerKey = key.toLowerCase();
-  //   if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
-  //     const value = masked[key];
-  //     if (value && value.length > 20) {
-  //       masked[key] = value.slice(0, 10) + "..." + value.slice(-5);
-  //     }
-  //   }
-  // }
-  // return masked;
+function isSensitiveHeader(name) {
+  const lower = name.toLowerCase();
+  if (SENSITIVE_EXACT_HEADERS.has(lower)) return true;
+  return lower.includes("token") || lower.includes("secret") || lower.includes("api-key");
+}
+
+// Reveal 4+4 chars only when the value is long enough (>= 24) that the
+// visible fragment stays under a third of the secret; otherwise "***".
+function maskHeaderValue(value) {
+  if (Array.isArray(value)) return value.map(maskHeaderValue);
+  const s = typeof value === "string" ? value : String(value ?? "");
+  if (s.length < 24) return "***";
+  return `${s.slice(0, 4)}...${s.slice(-4)}`;
+}
+
+export function maskSensitiveHeaders(headers) {
+  if (!headers) return {};
+  const source =
+    typeof headers.entries === "function" ? Object.fromEntries(headers.entries()) : headers;
+  const masked = {};
+  for (const key of Object.keys(source)) {
+    masked[key] = isSensitiveHeader(key) ? maskHeaderValue(source[key]) : source[key];
+  }
+  return masked;
 }
 
 // No-op logger when logging is disabled
@@ -193,15 +211,16 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     // 5. Log provider response (for non-streaming or error)
     logProviderResponse(status, statusText, headers, body) {
       const filename = "5_res_provider.json";
+      const rawHeaders = headers
+        ? typeof headers.entries === "function"
+          ? Object.fromEntries(headers.entries())
+          : headers
+        : {};
       writeJsonFile(sessionPath, filename, {
         timestamp: new Date().toISOString(),
         status,
         statusText,
-        headers: headers
-          ? typeof headers.entries === "function"
-            ? Object.fromEntries(headers.entries())
-            : headers
-          : {},
+        headers: maskSensitiveHeaders(rawHeaders),
         body,
       });
     },
