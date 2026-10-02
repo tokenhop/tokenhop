@@ -1,6 +1,7 @@
 // Public API barrel — all DB functions
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
+import { latestVersion } from "./migrations/index.js";
 
 // Settings
 export {
@@ -146,6 +147,7 @@ export async function exportDb() {
   const { exportSettings } = await import("./repos/settingsRepo.js");
 
   const out = {
+    schemaVersion: latestVersion(),
     settings: await exportSettings(),
     providerConnections: db.all(`SELECT * FROM providerConnections`).map((r) => ({
       ...parseJson(r.data, {}),
@@ -218,6 +220,18 @@ export async function exportDb() {
 export async function importDb(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("Invalid database payload");
+  }
+  // Exports before YAN-352 carry no schemaVersion; they are the v1.0.0 shape.
+  const { schemaVersion } = payload;
+  if (schemaVersion !== undefined) {
+    if (!Number.isInteger(schemaVersion) || schemaVersion < 0) {
+      throw new Error("Invalid database payload: bad schemaVersion");
+    }
+    if (schemaVersion > latestVersion()) {
+      throw new Error(
+        `Backup is from a newer version (schema ${schemaVersion}, this install reads up to ${latestVersion()}). Upgrade before importing.`,
+      );
+    }
   }
   const db = await getAdapter();
 

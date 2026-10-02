@@ -25,6 +25,7 @@ export async function createSqlJsAdapter(filePath) {
 
   function persist() {
     const data = Buffer.from(db.export());
+    db.exec(PRAGMA_SQL); // export() reopens the DB, which resets the PRAGMAs
     // Write a sibling temp file, fsync, then rename over the target so a crash mid-write
     // never leaves a truncated DB. rename replaces an existing file on POSIX and Windows.
     // Unique per writer so two processes on one DATA_DIR never share a temp file.
@@ -161,5 +162,19 @@ export async function createSqlJsAdapter(filePath) {
   process.on("SIGINT", flush);
   process.on("SIGTERM", flush);
 
-  return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
+  // Backup bytes without `excludeTables`. ATTACH would write into sql.js's
+  // in-memory FS, never to disk, so backups copy through a scratch DB instead.
+  function snapshot(excludeTables = []) {
+    const scratch = new SQLLib.Database(db.export());
+    db.exec(PRAGMA_SQL); // export() reopens the DB, which resets the PRAGMAs
+    try {
+      for (const t of excludeTables) scratch.exec(`DROP TABLE IF EXISTS ${t}`);
+      scratch.exec("VACUUM");
+      return Buffer.from(scratch.export());
+    } finally {
+      scratch.close();
+    }
+  }
+
+  return { driver: "sql.js", run, get, all, exec, transaction, close, snapshot, raw: db };
 }
