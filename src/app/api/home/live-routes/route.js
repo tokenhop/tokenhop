@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET /api/home/live-routes
- * Live client → 9router → provider flows over the rolling 5-minute window,
+ * Live client → tokenhop → provider flows over the rolling 5-minute window,
  * derived from recorded usage history plus provider model-lock state.
  */
 export async function GET() {

@@ -11,7 +11,7 @@ import {
 } from "./detect.js";
 
 // Headroom's telemetry beacon and PyPI update check are always forced off for
-// the proxy we launch: 9router doesn't track anyone or phone home on your behalf.
+// the proxy we launch: tokenhop doesn't track anyone or phone home on your behalf.
 export const HEADROOM_PRIVACY_ENV = Object.freeze({
   HEADROOM_TELEMETRY: "off",
   HEADROOM_UPDATE_CHECK: "off",

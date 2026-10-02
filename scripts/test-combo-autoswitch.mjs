@@ -3,7 +3,7 @@
 //   node scripts/test-combo-autoswitch.mjs
 const BASE = process.env.BASE_URL || "http://localhost:20127";
 const KEY = process.env.API_KEY;
-if (!KEY) throw new Error("Set API_KEY to a 9router API key");
+if (!KEY) throw new Error("Set API_KEY to a tokenhop API key");
 const COMBO = process.env.COMBO || "haha";
 
 // 16x16 PNG (valid image so vision providers accept it).

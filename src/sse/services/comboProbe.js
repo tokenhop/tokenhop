@@ -16,6 +16,7 @@
 import { getComboById } from "@/lib/localDb";
 import { getSettings } from "@/lib/localDb";
 import { handleChat } from "@/sse/handlers/chat.js";
+import { ACTIVE } from "@/shared/brand";
 
 import { resolveComboStrategy } from "open-sse/services/comboStrategy.js";
 import { COMBO_PROBE_ENDPOINT } from "open-sse/config/runtimeConfig.js";
@@ -134,10 +135,10 @@ export async function runComboProbe({ comboId }) {
     headers: {
       get: (name) => {
         const n = String(name || "").toLowerCase();
-        if (n === "user-agent") return "9router-combo-probe/1.0";
+        if (n === "user-agent") return `${ACTIVE.slug}-combo-probe/1.0`;
         return null;
       },
-      entries: () => [["user-agent", "9router-combo-probe/1.0"]][Symbol.iterator](),
+      entries: () => [["user-agent", `${ACTIVE.slug}-combo-probe/1.0`]][Symbol.iterator](),
     },
     json: async () => ({ ...probeBody }),
   };

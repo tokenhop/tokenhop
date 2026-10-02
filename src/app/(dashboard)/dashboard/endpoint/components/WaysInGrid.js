@@ -46,7 +46,7 @@ const tailscaleShape = PropTypes.shape({
 });
 
 /**
- * Local-only way in: always on while 9router runs.
+ * Local-only way in: always on while tokenhop runs.
  *
  * @param {object} props
  * @param {string} props.localUrl Full local API URL (e.g. http://localhost:20128/v1).

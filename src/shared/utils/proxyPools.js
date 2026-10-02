@@ -34,7 +34,7 @@ export function maskProxyUrl(url) {
 
 /**
  * Validate a proxy URL value (client-side mirror of the outbound proxy
- * allowlist). Relay entries deployed by 9router use `https:` and pass.
+ * allowlist). Relay entries deployed by tokenhop use `https:` and pass.
  *
  * @param {string} url Candidate proxy URL.
  * @returns {string|null} Error message, or `null` when valid.

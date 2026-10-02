@@ -1,6 +1,6 @@
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
-// Machine-bound token the local 9router CLI sends in place of a login/API key.
+// Machine-bound token the local tokenhop CLI sends in place of a login/API key.
 export const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
 
