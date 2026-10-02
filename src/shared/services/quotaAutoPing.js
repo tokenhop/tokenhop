@@ -200,6 +200,14 @@ function shouldSkipAfterFailure(state, key, nowMs = Date.now()) {
   return failedAt && nowMs - failedAt < C.failureCooldownMs;
 }
 
+// Skip reasons repeat every tick in steady state; log each one once per connection.
+function logSkipOnce(state, key, reason) {
+  state.lastSkipLog ??= {};
+  if (state.lastSkipLog[key] === reason) return;
+  state.lastSkipLog[key] = reason;
+  console.log(`[AutoPing] ${key}: ${reason}`);
+}
+
 async function pingConnection(conn, provider, providerConfig, handler, deps, state = g) {
   const key = cacheKey(provider, conn.id);
 
@@ -249,10 +257,7 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   // (or nothing on an idle window) while the last observed one went unpinged.
   const resetAt = missedReset || liveReset;
   if (!resetAt) {
-    if (cachedReset)
-      console.log(
-        `[AutoPing] ${provider}:${connection.id}: no reset reported (last seen ${cachedReset})`,
-      );
+    if (cachedReset) logSkipOnce(state, key, `no reset reported (last seen ${cachedReset})`);
     return;
   }
   if (liveReset) state.resetCache[key] = liveReset;
@@ -261,11 +266,11 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
     providerConfig.skipWhenBlockingQuotaExhausted &&
     hasExhaustedBlockingQuota(quotas, providerConfig.quotaKey)
   ) {
-    console.log(`[AutoPing] ${provider}:${connection.id}: skip ping (blocking quota exhausted)`);
+    logSkipOnce(state, key, `skip ping (blocking quota exhausted, reset ${resetAt})`);
     return;
   }
   if (isQuotaExhausted(quota)) {
-    console.log(`[AutoPing] ${provider}:${connection.id}: skip ping (session quota exhausted)`);
+    logSkipOnce(state, key, `skip ping (session quota exhausted, reset ${resetAt})`);
     return;
   }
 
@@ -278,9 +283,7 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   if (!shouldPingForReset(providerConfig, cachedReset, resetAt, now)) return;
   if (wasPingedRecently(connection, providerConfig.minPingIntervalMs, now)) return;
   if (lastPingedResetKey === resetKey) {
-    console.log(
-      `[AutoPing] ${provider}:${connection.id}: skip ping (reset ${resetAt} already pinged)`,
-    );
+    logSkipOnce(state, key, `skip ping (reset ${resetAt} already pinged)`);
     return;
   }
 
