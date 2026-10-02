@@ -20,6 +20,9 @@ export default {
       "anthropic-version": "2023-06-01",
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
     },
+    quirks: {
+      claudeToolStrict: true,
+    },
   },
   models: [
     { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },

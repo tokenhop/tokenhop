@@ -21,6 +21,9 @@
     "headers": {
       "anthropic-version": "2023-06-01",
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
+    },
+    "quirks": {
+      "claudeToolStrict": true
     }
   },
   "antigravity": {
@@ -103,7 +106,8 @@
       "X-Stainless-Timeout": "600"
     },
     "quirks": {
-      "cloakToolsOnOAuth": true
+      "cloakToolsOnOAuth": true,
+      "claudeToolStrict": true
     },
     "auth": {
       "apiKey": {

@@ -655,6 +655,7 @@ export function prepareClaudeRequest(
               name: tool.function.name,
               description: tool.function.description,
               input_schema: tool.function.parameters,
+              ...(tool.function.strict === true && { strict: true }),
             };
           }
           // When the provider declared a supportedToolTypes whitelist, keep
