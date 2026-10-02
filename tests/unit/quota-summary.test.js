@@ -154,6 +154,21 @@ describe("getBulkActionTargets", () => {
   it("turns on only inactive accounts with quota left", () => {
     expect(getBulkActionTargets(connections, quotaData, "on")).toEqual(["off-available"]);
   });
+  it("treats a remainingPercentage-only row with total 0 as empty (Zed, no allowance)", () => {
+    const zed = [{ name: "Prompts", used: 0, total: 0, remainingPercentage: 0, unlimited: false }];
+    const conns = [
+      { id: "on", isActive: true },
+      { id: "off", isActive: false },
+    ];
+    const data = { on: { quotas: zed }, off: { quotas: zed } };
+    expect(getBulkActionTargets(conns, data, "off")).toEqual(["on"]);
+    expect(getBulkActionTargets(conns, data, "on")).toEqual([]);
+    // Vercel "Used (USD)" row: total 0 but 100% remaining — never empty (YAN-118).
+    const vercel = {
+      v: { quotas: [{ name: "Used (USD)", used: 3, total: 0, remainingPercentage: 100 }] },
+    };
+    expect(getBulkActionTargets([{ id: "v", isActive: true }], vercel, "off")).toEqual([]);
+  });
   it("returns empty lists when nothing matches", () => {
     expect(getBulkActionTargets([], {}, "off")).toEqual([]);
     expect(getBulkActionTargets([], {}, "on")).toEqual([]);

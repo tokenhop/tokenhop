@@ -120,7 +120,9 @@ export function isAccountDepleted(quotas) {
   if (!Array.isArray(quotas) || quotas.length === 0) return false;
   return quotas.some((quota) => {
     if (quota?.unlimited === true || quota?.isCreditBalance === true) return false;
-    if (!quota?.total || quota.total <= 0) return false;
+    const hasRemaining = quota?.remaining != null || quota?.remainingPercentage != null;
+    // used/total fallback reads total 0 as 0%, so only trust it with a real total.
+    if (!hasRemaining && !(quota?.total > 0)) return false;
     return getRemainingPercentage(quota) <= 5;
   });
 }
