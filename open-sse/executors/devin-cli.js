@@ -413,7 +413,7 @@ export class DevinCliExecutor extends BaseExecutor {
         // (fs/shell/search) so the model can actually perform tasks. Override to
         // `summarizer` (no tools, text-only) via CLI_DEVIN_AGENT_TYPE for a safer,
         // tool-less mode. WARNING: the default agent can run shell commands and
-        // modify the filesystem on the host running 9router — only expose locally.
+        // modify the filesystem on the host running tokenhop — only expose locally.
         const agentType = process.env.CLI_DEVIN_AGENT_TYPE?.trim();
         const acpArgs = ["acp"];
         if (agentType) acpArgs.push("--agent-type", agentType);

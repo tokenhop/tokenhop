@@ -1,4 +1,4 @@
-// Zed client fingerprint — the identity 9router presents to zed.dev /
+// Zed client fingerprint — the identity tokenhop presents to zed.dev /
 // cloud.zed.dev on `zed` provider traffic.
 //
 // Mirrors upstream Zed: every HTTP request carries

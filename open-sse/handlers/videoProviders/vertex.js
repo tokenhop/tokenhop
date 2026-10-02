@@ -93,7 +93,7 @@ function toVertexBody(body) {
   return { instances: [instance], ...(Object.keys(parameters).length ? { parameters } : {}) };
 }
 
-/** Vertex operation → the async-job shape 9Router clients already poll for. */
+/** Vertex operation → the async-job shape tokenhop clients already poll for. */
 function fromVertexOperation(json) {
   if (!json?.name) return json;
   const id = encodeJobId(json.name);

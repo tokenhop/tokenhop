@@ -2,7 +2,7 @@
  * Cursor AgentService exec protocol: agent.v1.ExecServerMessage → ExecClientMessage.
  *
  * AgentService is trained for the Cursor IDE and asks the client to run built-in
- * tools (shell, read, grep, …) even when the request declares MCP tools. 9router
+ * tools (shell, read, grep, …) even when the request declares MCP tools. tokenhop
  * has no IDE, so every built-in gets a typed rejection and the model falls back
  * to the declared MCP tools or a text answer. Unknown variants get an empty
  * result instead of aborting the turn.

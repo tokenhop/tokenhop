@@ -1,4 +1,4 @@
-// Codex CLI version 9router reports to OpenAI on `codex` provider traffic:
+// Codex CLI version tokenhop reports to OpenAI on `codex` provider traffic:
 //   User-Agent `codex_cli_rs/<v>` + Version header on chat/image requests, and
 //   `client_version=<v>` on the live model catalog (/backend-api/codex/models).
 // The catalog drops models newer than the client, so a stale value returns 200
