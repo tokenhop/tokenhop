@@ -144,4 +144,49 @@ describe("provider connection tests for OAuth and imported keys", () => {
     expect(result).toMatchObject({ valid: true, refreshed: true });
     expect(updates[0]).toMatchObject({ testStatus: "active", accessToken: "new-access" });
   });
+
+  it.each([
+    [200, { valid: true, error: null }, "active"],
+    [401, { valid: false, error: "Invalid API key" }, "error"],
+  ])(
+    "re-tests Venice API keys via the registry validateUrl (%i)",
+    async (status, expected, testStatus) => {
+      const { result, updates, fetchMock } = await testConnection(
+        { id: "venice-1", provider: "venice", authType: "apikey", apiKey: "vn_key" },
+        () => Promise.resolve(Response.json({}, { status })),
+      );
+      expect(result).toMatchObject(expected);
+      expect(updates[0].testStatus).toBe(testStatus);
+      expect(fetchMock.mock.calls[0][0]).toBe("https://api.venice.ai/api/v1/models");
+      expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe("Bearer vn_key");
+    },
+  );
+
+  it("falls back to a derived /models probe then a chat probe when no validateUrl exists", async () => {
+    const { result, updates, fetchMock } = await testConnection(
+      { id: "alitp-1", provider: "alitp-intl", authType: "apikey", apiKey: "tp_key" },
+      (url) =>
+        Promise.resolve(
+          url.endsWith("/models") ? new Response("{}", { status: 404 }) : Response.json({}),
+        ),
+    );
+    expect(result.valid).toBe(true);
+    expect(updates[0].testStatus).toBe("active");
+    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual([
+      "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/models",
+      "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+    ]);
+  });
+
+  it("surfaces network errors from the Antigravity Cloud Code probe and persists the failure", async () => {
+    const { result, updates } = await testConnection(connection("antigravity"), () =>
+      Promise.reject(new Error("Network error: request timed out")),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Network error: request timed out");
+    expect(updates[0]).toMatchObject({
+      testStatus: "error",
+      lastError: "Network error: request timed out",
+    });
+  });
 });

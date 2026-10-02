@@ -1,6 +1,7 @@
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
+import { probeApiKeyProvider } from "@/lib/providerKeyProbes";
 import { UPSTREAM_CLIENT_IDS } from "@/shared/brand";
 import {
   isOpenAICompatibleProvider,
@@ -402,25 +403,32 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     return { valid: true, error: null, refreshed: false, newTokens: null };
   }
 
+  // The Cloud Code probe runs outside the generic try below; network failures
+  // (DNS, timeout) must surface as a failed test and persist testStatus/
+  // lastError like other providers, not bubble to a generic "Test failed" 500.
   if (connection.provider === "gemini-cli" || connection.provider === "antigravity") {
-    const initial = await probeCloudCodeAssistAccess(connection, accessToken, effectiveProxy);
-    if (initial.valid) return { valid: true, error: null, refreshed, newTokens };
+    try {
+      const initial = await probeCloudCodeAssistAccess(connection, accessToken, effectiveProxy);
+      if (initial.valid) return { valid: true, error: null, refreshed, newTokens };
 
-    if (initial.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
-      const tokens = await refreshOAuthToken(connection);
-      if (tokens?.accessToken) {
-        const retry = await probeCloudCodeAssistAccess(
-          connection,
-          tokens.accessToken,
-          effectiveProxy,
-        );
-        if (retry.valid) return { valid: true, error: null, refreshed: true, newTokens: tokens };
-        return { valid: false, error: retry.error, refreshed: true, newTokens: tokens };
+      if (initial.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
+        const tokens = await refreshOAuthToken(connection);
+        if (tokens?.accessToken) {
+          const retry = await probeCloudCodeAssistAccess(
+            connection,
+            tokens.accessToken,
+            effectiveProxy,
+          );
+          if (retry.valid) return { valid: true, error: null, refreshed: true, newTokens: tokens };
+          return { valid: false, error: retry.error, refreshed: true, newTokens: tokens };
+        }
+        return { valid: false, error: "Token invalid or revoked", refreshed: false };
       }
-      return { valid: false, error: "Token invalid or revoked", refreshed: false };
-    }
 
-    return { valid: false, error: initial.error, refreshed };
+      return { valid: false, error: initial.error, refreshed };
+    } catch (err) {
+      return { valid: false, error: err.message, refreshed };
+    }
   }
 
   if (connection.provider === "zed") {
@@ -1193,8 +1201,17 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         if (res.status === 403) return { valid: false, error: "Access denied" };
         return { valid: false, error: `API returned ${res.status}` };
       }
-      default:
-        return { valid: false, error: "Provider test not supported" };
+      default: {
+        // Registry-driven fallback shared with the add-time validator, so a key
+        // that validated when the connection was added also passes a re-test.
+        const probe = await probeApiKeyProvider(
+          connection.provider,
+          connection.apiKey,
+          (url, options) => fetchWithConnectionProxy(url, options, effectiveProxy),
+        );
+        if (probe === null) return { valid: false, error: "Provider test not supported" };
+        return { valid: probe, error: probe ? null : "Invalid API key" };
+      }
     }
   } catch (err) {
     return { valid: false, error: err.message };
