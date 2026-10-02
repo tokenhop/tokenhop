@@ -149,6 +149,43 @@ describe("inspectAndWrapCommandCodeResponse", () => {
     expect(contents.some((c) => c.usage)).toBe(true);
   });
 
+  it("replays a multi-byte UTF-8 character split across the stop-loop chunk boundary intact", async () => {
+    // The peek loop stops on the first text-delta line; the chunk must end
+    // inside the 3-byte character 世 so the raw tail bytes are still undecoded.
+    const full = [
+      JSON.stringify({ type: "start" }),
+      JSON.stringify({ type: "text-delta", text: "A" }),
+      JSON.stringify({ type: "text-delta", text: "世界" }),
+      JSON.stringify({ type: "finish" }),
+    ]
+      .join("\n")
+      .concat("\n");
+    const bytes = new TextEncoder().encode(full);
+    const splitAt = bytes.indexOf(0xe4) + 1; // first byte of 世
+    const upstream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes.subarray(0, splitAt));
+        controller.enqueue(bytes.subarray(splitAt));
+        controller.close();
+      },
+    });
+
+    const result = await inspectAndWrapCommandCodeResponse(
+      new Response(upstream, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+      "poolside/laguna-s-2.1-free",
+    );
+
+    const text = await result.text();
+    const content = text
+      .split("\n")
+      .filter((l) => l.startsWith("data: {"))
+      .map((l) => JSON.parse(l.slice(6)))
+      .map((c) => c.choices?.[0]?.delta?.content || "")
+      .join("");
+    expect(content).toBe("A世界");
+    expect(text).not.toContain("\uFFFD");
+  });
+
   it("streams successful responses when content is emitted", async () => {
     const ndjsonBody = createNdjsonStream([
       JSON.stringify({ type: "start" }) + "\n",

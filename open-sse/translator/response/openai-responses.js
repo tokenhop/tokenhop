@@ -498,6 +498,11 @@ function flushEvents(state) {
 // currentToolCallId is intentionally sticky for the current turn so flush/completion
 // can still finalize as tool_calls even if the tool call was emitted before stream end.
 function computeFinishReason(state) {
+  if (state.incompleteReason) {
+    return state.incompleteReason === "content_filter"
+      ? OPENAI_FINISH.CONTENT_FILTER
+      : OPENAI_FINISH.LENGTH;
+  }
   return state.toolCallIndex > 0 || state.currentToolCallId
     ? OPENAI_FINISH.TOOL_CALLS
     : OPENAI_FINISH.STOP;
@@ -650,7 +655,16 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
   }
 
   // Response completed
-  if (eventType === "response.completed" || eventType === "response.done") {
+  if (
+    eventType === "response.completed" ||
+    eventType === "response.done" ||
+    eventType === "response.incomplete"
+  ) {
+    // response.incomplete (e.g. max_output_tokens) is terminal too: same usage,
+    // but finish_reason length/content_filter instead of stop (YAN-670).
+    if (eventType === "response.incomplete") {
+      state.incompleteReason = data.response?.incomplete_details?.reason || "max_output_tokens";
+    }
     // Extract usage from response.completed event
     const responseUsage = data.response?.usage;
     if (responseUsage && typeof responseUsage === "object") {

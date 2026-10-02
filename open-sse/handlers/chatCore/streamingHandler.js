@@ -146,10 +146,15 @@ export async function handleStreamingResponse({
   // and clamped so untrusted upstream text never reaches the client verbatim
   // (the UI may render error.message as HTML).
   const upstreamContentType = (providerResponse.headers.get("content-type") || "").toLowerCase();
+  // Some streaming upstreams are NDJSON, not SSE: Ollama /api/chat streams
+  // application/x-ndjson. Let it through when the stream transform speaks that
+  // target format (parseSSELine already parses raw OLLAMA JSON lines).
+  const isNdjsonTargetFormat = targetFormat === FORMATS.OLLAMA;
   if (
     upstreamContentType &&
     !upstreamContentType.includes("text/event-stream") &&
-    !upstreamContentType.includes("application/json")
+    !upstreamContentType.includes("application/json") &&
+    !(isNdjsonTargetFormat && upstreamContentType.includes("application/x-ndjson"))
   ) {
     const bodyText = await providerResponse.text().catch(() => "");
     const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
@@ -268,12 +273,16 @@ export function buildOnStreamComplete({
 }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-  const onStreamComplete = (contentObj, usage, ttftAt) => {
+  const onStreamComplete = (contentObj, usage, ttftAt, { error = null } = {}) => {
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime,
     };
-    const safeContent = contentObj?.content || "[Empty streaming response]";
+    // A mid-stream error (event: error, response.failed, …) is still a failed
+    // request even though the 200 headers already went out (YAN-662).
+    const safeContent =
+      contentObj?.content ||
+      (error ? `[Stream error] ${error.message}` : "[Empty streaming response]");
     const safeThinking = contentObj?.thinking || null;
 
     saveRequestDetail(
@@ -287,9 +296,14 @@ export function buildOnStreamComplete({
           request: extractRequestConfig(body, stream),
           providerRequest: finalBody || translatedBody || null,
           providerResponse: safeContent,
-          response: { content: safeContent, thinking: safeThinking, type: "streaming" },
+          response: {
+            content: safeContent,
+            thinking: safeThinking,
+            type: "streaming",
+            ...(error && { error }),
+          },
           pxpipe,
-          status: "success",
+          status: error ? "error" : "success",
         },
         { id: streamDetailId },
       ),
