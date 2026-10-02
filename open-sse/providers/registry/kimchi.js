@@ -45,5 +45,8 @@ export default {
     userInfoUrl: "https://app.kimchi.dev/api/v1/me",
     modelsUrl: "https://llm.kimchi.dev/v1/models/metadata?include_in_cli=true",
   },
+  features: {
+    liveModels: true,
+  },
   passthroughModels: true,
 };
