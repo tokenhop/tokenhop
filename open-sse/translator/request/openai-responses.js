@@ -101,6 +101,15 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
                 image_url: { url, detail: c.detail || "auto" },
               };
             }
+            // Responses input_file → Chat file part; only inline data or an
+            // uploaded file id map — url-only files have no Chat equivalent.
+            if (c.type === RESPONSES_ITEM.INPUT_FILE && (c.file_data || c.file_id)) {
+              const file = {};
+              if (c.file_data !== undefined) file.file_data = c.file_data;
+              if (c.file_id !== undefined) file.file_id = c.file_id;
+              if (c.filename !== undefined) file.filename = c.filename;
+              return { type: OPENAI_BLOCK.FILE, file };
+            }
             return c;
           })
         : item.content;
@@ -255,6 +264,42 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     delete result.max_output_tokens;
   }
 
+  // tool_choice: { type: "function"|"custom", name } (no .function) → Chat function form
+  if (
+    result.tool_choice &&
+    typeof result.tool_choice === "object" &&
+    !Array.isArray(result.tool_choice) &&
+    !result.tool_choice.function &&
+    typeof result.tool_choice.name === "string" &&
+    (result.tool_choice.type === OPENAI_BLOCK.FUNCTION || result.tool_choice.type === "custom")
+  ) {
+    result.tool_choice = {
+      type: OPENAI_BLOCK.FUNCTION,
+      function: { name: result.tool_choice.name },
+    };
+  }
+
+  // text.format → response_format; text must not leak to Chat upstreams
+  if (result.text && typeof result.text === "object" && result.response_format === undefined) {
+    const format = result.text.format;
+    if (format && typeof format === "object") {
+      if (format.type === "json_schema") {
+        const json_schema = {};
+        if (format.name !== undefined) json_schema.name = format.name;
+        if (format.schema !== undefined) json_schema.schema = format.schema;
+        if (format.strict !== undefined) json_schema.strict = format.strict;
+        if (format.description !== undefined) json_schema.description = format.description;
+        result.response_format = { type: "json_schema", json_schema };
+      } else if (format.type === "json_object") {
+        result.response_format = { type: "json_object" };
+      }
+    }
+    if (result.text.verbosity !== undefined && result.verbosity === undefined) {
+      result.verbosity = result.text.verbosity;
+    }
+  }
+  delete result.text;
+
   delete result.input;
   delete result.instructions;
   delete result.include;
@@ -367,10 +412,11 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
   for (const msg of messages) {
     if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
-      // Use the first instruction-bearing message as instructions.
-      // OpenAI recommends role="developer" for GPT-5/Codex as the system-level prompt.
-      if (!hasSystemMessage) {
-        result.instructions = extractInstructionsText(msg.content);
+      // Collect every instruction-bearing message; OpenAI recommends role="developer"
+      // for GPT-5/Codex as the system-level prompt.
+      const text = extractInstructionsText(msg.content);
+      if (text) {
+        result.instructions = result.instructions ? `${result.instructions}\n${text}` : text;
         hasSystemMessage = true;
       }
       continue; // Skip instruction messages in input
@@ -412,6 +458,10 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
                     filename: c.file.filename || DEFAULT_DOCUMENT_FILENAME,
                     file_data: c.file.file_data,
                   };
+                }
+                // Uploaded file reference (no inline data) → input_file by id
+                if (c.type === OPENAI_BLOCK.FILE && c.file?.file_id) {
+                  return { type: RESPONSES_ITEM.INPUT_FILE, file_id: c.file.file_id };
                 }
                 // Serialize any unknown type (tool_use, tool_result, thinking, etc.) as text
                 const text = c.text || c.content || JSON.stringify(c);
@@ -485,6 +535,39 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         return tool;
       })
       .filter(Boolean);
+  }
+
+  // tool_choice: pass through strings and the Responses shape; convert the
+  // nested Chat function form → { type: "function", name } (codex executor
+  // validates the flat `name`).
+  if (body.tool_choice !== undefined) {
+    if (
+      typeof body.tool_choice === "object" &&
+      body.tool_choice !== null &&
+      body.tool_choice.type === OPENAI_BLOCK.FUNCTION &&
+      typeof body.tool_choice.function?.name === "string"
+    ) {
+      result.tool_choice = {
+        type: OPENAI_BLOCK.FUNCTION,
+        name: body.tool_choice.function.name,
+      };
+    } else {
+      result.tool_choice = body.tool_choice;
+    }
+  }
+
+  // response_format → Responses text.format; never clobber an existing text block
+  if (body.text !== undefined) {
+    result.text = body.text;
+  } else if (body.response_format && typeof body.response_format === "object") {
+    const rf = body.response_format;
+    if (rf.type === "json_schema" && rf.json_schema && typeof rf.json_schema === "object") {
+      result.text = {
+        format: { type: "json_schema", ...rf.json_schema },
+      };
+    } else if (rf.type === "json_object") {
+      result.text = { format: { type: "json_object" } };
+    }
   }
 
   // Pass through other relevant fields
