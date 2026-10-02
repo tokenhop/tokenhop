@@ -152,4 +152,28 @@ describe("OpenAI Responses streaming termination", () => {
     expect(out).not.toContain('"finish_reason":"stop"');
     expect(out).toContain('"completion_tokens":100');
   });
+
+  it("fills an empty response.completed.output from output_item.done on passthrough (YAN-671)", async () => {
+    const item = {
+      type: "message",
+      id: "msg_1",
+      role: "assistant",
+      status: "completed",
+      content: [{ type: "output_text", text: "OK" }],
+    };
+    const output = await runTransform(
+      [
+        `event: response.output_item.done`,
+        `data: ${JSON.stringify({ type: "response.output_item.done", output_index: 0, item })}`,
+        "",
+        `event: response.completed`,
+        `data: ${JSON.stringify({ type: "response.completed", response: { id: "resp_test", status: "completed", output: [] } })}`,
+        "",
+      ].join("\n"),
+    );
+    const completed = output
+      .split("\n")
+      .find((l) => l.startsWith("data:") && l.includes('"response.completed"'));
+    expect(JSON.parse(completed.slice(5)).response.output).toEqual([item]);
+  });
 });

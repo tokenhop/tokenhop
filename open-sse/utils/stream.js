@@ -100,6 +100,7 @@ export function createSSEStream(options = {}) {
   let currentOpenAIResponsesEvent = null;
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
+  const responsesOutputItems = new Map(); // output_index → item, for an empty response.completed.output
   let streamDoneSent = false; // track duplicate [DONE] across transform + flush
   let finalized = false;
 
@@ -400,6 +401,21 @@ export function createSSEStream(options = {}) {
 
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
+          // Codex's response.completed carries output: []; SDK final-response
+          // consumers need the items, so rebuild them from output_item.done
+          // (same workaround as streamToJsonConverter) (YAN-671).
+          if (openAIResponsesEventName === "response.output_item.done" && parsed.item) {
+            responsesOutputItems.set(parsed.output_index ?? responsesOutputItems.size, parsed.item);
+          } else if (
+            parsed.response &&
+            responsesOutputItems.size > 0 &&
+            isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed) &&
+            !(Array.isArray(parsed.response.output) && parsed.response.output.length > 0)
+          ) {
+            parsed.response.output = [...responsesOutputItems.entries()]
+              .sort(([a], [b]) => a - b)
+              .map(([, item]) => item);
+          }
           const output = formatSSE({ event: openAIResponsesEventName, data: parsed }, sourceFormat);
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
