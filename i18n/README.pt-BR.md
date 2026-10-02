@@ -118,112 +118,6 @@ URLs padrão:
 
 ---
 
-## Guias de vídeo
-
-<div align="center">
-
-<table>
-  <tr>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=X69n5Lm06Yw">
-        <img src="https://img.youtube.com/vi/X69n5Lm06Yw/maxresdefault.jpg" alt="Tiết kiệm chi phí LLM với 9Router" width="300"/>
-</a><br/>
-      <b>🇻🇳 Tiếng Việt</b><br/>
-      <sub>Tiết kiệm chi phí LLM cho OpenClaw no 9Router<br/>por <a href="https://www.youtube.com/c/M%C3%ACAIblog">Mì AI</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://youtu.be/VQAw612S27Y">
-        <img src="https://img.youtube.com/vi/VQAw612S27Y/maxresdefault.jpg" alt="9Router + Claude Code FREE Unlimited Setup" width="300"/>
-      </a><br/>
-      <b>🇵🇰 اردو / हिन्दी</b><br/>
-      <sub>9Router + Claude Code Configuração ilimitada GRATUITA<br/>por <a href="https://www.youtube.com/@BuildAIWithHamid">Construir IA com Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-<a href="https://www.youtube.com/watch?v=raEyZPg5xE0">
-        <img src="https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg" alt="9Router Setup Tutorial" width="300"/>
-      </a><br/>
-      <b>🇺🇸 Inglês</b><br/>
-      <sub>9Router + Claude Code Configuração GRATUITA<br/>por <a href="https://www.youtube.com/@BuildAIWithHamid">Construir IA com Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://youtu.be/3dF5GIYMrcQ?si=bAyfyiHbARJQAHj_">
-        <img src="https://img.youtube.com/vi/3dF5GIYMrcQ/hqdefault.jpg" alt="9Router Setup Tutorial" width="300"/>
-      </a><br/>
-      <b>🇺🇸 Inglês</b><br/>
-      <sub>9Router + Claude Code Configuração GRATUITA<br/>por <a href="https://www.youtube.com/@BuildAIWithHamid">Construir IA com Hamid</a></sub>
-</td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=o3qYCyjrFYg">
-        <img src="https://img.youtube.com/vi/o3qYCyjrFYg/maxresdefault.jpg" alt="Claude Code FREE Forever" width="300"/>
-      </a><br/>
-      <b>🇺🇸 Inglês</b><br/>
-      <sub>Claude Code FREE Forever - Modelos ilimitados<br/>por <a href="https://www.youtube.com/@BuildAIWithHamid">Construa IA com Hamid</a></sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=Ttpc26m39Dw">
-<img src="https://img.youtube.com/vi/Ttpc26m39Dw/maxresdefault.jpg" alt="Claude CLI Free Setup" width="300"/>
-      </a><br/>
-      <b>🇺🇸 Inglês</b><br/>
-      Configuração gratuita <sub>Claude CLI com 9Router 🚀<br/>por <a href="https://www.youtube.com/@CodeVerseSoban">CodeVerse Soban</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=G-5A_D5Pm6Y">
-        <img src="https://img.youtube.com/vi/G-5A_D5Pm6Y/maxresdefault.jpg" alt="Cài đặt OpenClaw Free A-Z" width="300"/>
-      </a><br/>
-      <b>🇻🇳 Tiếng Việt</b><br/>
-      <sub>Cài Đặt OpenClaw Free Từ A-Z + 9Router<br/>por <a href="https://www.youtube.com/@maigia">Mai Gia</a></sub>
-    </td>
-<td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=JXmg8_gccgE">
-        <img src="https://img.youtube.com/vi/JXmg8_gccgE/maxresdefault.jpg" alt="FREE OpenClaw with Claude Opus" width="300"/>
-      </a><br/>
-      <b>🇺🇸 Inglês</b><br/>
-      <sub>FREE OpenClaw + Claude Opus 4.6<br/>por <a href="https://www.youtube.com/@BuildAIWithHamid">Construir IA com Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=CkVZZUSTXAI">
-        <img src="https://img.youtube.com/vi/CkVZZUSTXAI/mqdefault.jpg" alt="Claude CLI Free Setup" width="300"/>
-      </a><br/>
-      <b>🇮🇩 Indonésia</b><br/>
-<sub>Koding 24 Jam Anti Rate Limit! Hemat Token AI 65% | Tutorial Configuração Rápida 9Router 🚀<br/>por <a href="https://www.youtube.com/@krisswuh">Krisswuh</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=TXGv4eofe1I">
-        <img src="https://img.youtube.com/vi/TXGv4eofe1I/mqdefault.jpg" alt="Cara Deploy 9Router di Hugging Face GRATIS Non-Stop! | Alternatif VPS RAM 16GB" width="300"/>
-      </a><br/>
-      <b>🇮🇩 Indonésia</b><br/>
-      <sub>Cara Implante 9Router no Hugging Face GRATUITAMENTE sem parar! | Alternativa VPS RAM 16GB<br/>por <a href="https://www.youtube.com/@krisswuh">Krisswuh</a></sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="320">
-<a href="https://www.youtube.com/watch?v=GyX-DLvePW8">
-        <img src="https://img.youtube.com/vi/GyX-DLvePW8/hqdefault.jpg" alt="این شکلی از هر API ای استفاده کن برای هوش مصنوعی" width="300"/>
-      </a><br/>
-      <b>🇮🇷 Persa-فارسی</b><br/>
-      <sub dir="rtl">این شکلی از هر API ای استفاده کن برای هوش مصنوعی<br/>por <a href="https://www.youtube.com/@Matin_SenPai">Matin SenPai</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=hPusYX-5Pmw">
-        <img src="https://img.youtube.com/vi/hPusYX-5Pmw/maxresdefault.jpg" alt="Hướng Dẫn Setup OpenClaw + 9Router: Tạo Bot Zalo AI Tự Động Từ A-Z" width="300"/>
-      </a><br/>
-      <b>🇻🇳 Tiếng Việt</b><br/>
-      <sub>Hướng Dẫn Setup OpenClaw + tokenhop: Tạo Bot Zalo AI Tự Động Từ A-Z<br/>por <a href="https://github.com/tuanminhhole">tuanminhhole</a></sub>
-</td>
-    <td align="center" width="320"></td>
-    <td align="center" width="320"></td>
-    <td align="center" width="320"></td>
-  </tr>
-</table>
-
-</div>
-
-> 🎬 **Fez um vídeo sobre o tokenhop?** Envie um [Pull Request](https://github.com/tokenhop/tokenhop/pulls) adicionando seu vídeo a esta seção - nós o mesclaremos!
-
----
-
 ## 🛠️ Ferramentas CLI suportadas
 
 tokenhop funciona perfeitamente com todas as principais ferramentas de codificação de IA:
@@ -1280,25 +1174,25 @@ docker pull ghcr.io/tokenhop/tokenhop:latest   # atualizar para a versão mais r
 
 ### Variáveis de Ambiente
 
-| Variável                                             | Padrão                                            | Descrição                                                                                                                                                                             |
-| ---------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `JWT_SECRET`                                         | Gerado automaticamente (`~/.tokenhop/jwt-secret`) | Segredo de assinatura JWT para cookie de autenticação do painel (substituir para compartilhar entre instâncias)                                                                       |
-| `INITIAL_PASSWORD`                                   | `123456`                                          | Primeira senha de login quando não existe hash salvo                                                                                                                                  |
-| `DATA_DIR`                                           | `~/.tokenhop`                                     | Localização principal dos dados do aplicativo (SQLite em `$DATA_DIR/db/data.sqlite`); um `~/.9router` existente continua sendo usado automaticamente (`tokenhop data migrate` o move) |
-| `PORT`                                               | padrão da estrutura                               | Porta de serviço (`20128` nos exemplos)                                                                                                                                               |
-| `HOSTNAME`                                           | padrão da estrutura                               | Host de vinculação (o padrão do Docker é `0.0.0.0`)                                                                                                                                   |
-| `NODE_ENV`                                           | padrão de tempo de execução                       | Definir `production` para implantação                                                                                                                                                 |
-| `BASE_URL`                                           | `http://localhost:20128`                          | URL base interna do lado do servidor usada por trabalhos de sincronização na nuvem                                                                                                    |
-| `CLOUD_URL`                                          | vazio                                             | Opcional: URL de um endpoint de sincronização auto-hospedado (sem valor padrão; vazio = nada é enviado)                                                                               |
-| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`                           | URL de base pública/compatível com versões anteriores (prefira `BASE_URL` para tempo de execução do servidor)                                                                         |
-| `NEXT_PUBLIC_CLOUD_URL`                              | vazio                                             | Variante pública/compatível de `CLOUD_URL` (opcional, somente para um endpoint auto-hospedado)                                                                                        |
-| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`                   | Segredo HMAC para chaves de API geradas                                                                                                                                               |
-| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                             | Salt para hashing estável de ID de máquina                                                                                                                                            |
-| `ENABLE_REQUEST_LOGS`                                | `false`                                           | Habilita logs de solicitação/resposta em `logs/`                                                                                                                                      |
-| `AUTH_COOKIE_SECURE`                                 | `false`                                           | Forçar cookie de autenticação `Secure` (definir `true` atrás do proxy reverso HTTPS)                                                                                                  |
-| `REQUIRE_API_KEY`                                    | `false`                                           | Aplicar chave de API Bearer em rotas `/v1/*` (recomendado para implantações expostas à Internet)                                                                                      |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | vazio                                             | Proxy de saída opcional para chamadas de provedor upstream                                                                                                                            |
-| `SEARXNG_URL`                                        | `http://localhost:8888/search`                    | Endpoint para o provedor de pesquisa na web SearXNG não autenticado integrado                                                                                                         |
+| Variável                                             | Padrão                                            | Descrição                                                                                                                                                                                                      |
+| ---------------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`                                         | Gerado automaticamente (`~/.tokenhop/jwt-secret`) | Segredo de assinatura JWT para cookie de autenticação do painel (substituir para compartilhar entre instâncias)                                                                                                |
+| `INITIAL_PASSWORD`                                   | `123456`                                          | Primeira senha de login quando não existe hash salvo                                                                                                                                                           |
+| `DATA_DIR`                                           | `~/.tokenhop`                                     | Localização principal dos dados do aplicativo (SQLite em `$DATA_DIR/db/data.sqlite`); um `~/.9router` existente continua sendo usado automaticamente (`tokenhop data migrate` o move) <!-- legacy(9router) --> |
+| `PORT`                                               | padrão da estrutura                               | Porta de serviço (`20128` nos exemplos)                                                                                                                                                                        |
+| `HOSTNAME`                                           | padrão da estrutura                               | Host de vinculação (o padrão do Docker é `0.0.0.0`)                                                                                                                                                            |
+| `NODE_ENV`                                           | padrão de tempo de execução                       | Definir `production` para implantação                                                                                                                                                                          |
+| `BASE_URL`                                           | `http://localhost:20128`                          | URL base interna do lado do servidor usada por trabalhos de sincronização na nuvem                                                                                                                             |
+| `CLOUD_URL`                                          | vazio                                             | Opcional: URL de um endpoint de sincronização auto-hospedado (sem valor padrão; vazio = nada é enviado)                                                                                                        |
+| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`                           | URL de base pública/compatível com versões anteriores (prefira `BASE_URL` para tempo de execução do servidor)                                                                                                  |
+| `NEXT_PUBLIC_CLOUD_URL`                              | vazio                                             | Variante pública/compatível de `CLOUD_URL` (opcional, somente para um endpoint auto-hospedado)                                                                                                                 |
+| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`                   | Segredo HMAC para chaves de API geradas                                                                                                                                                                        |
+| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                             | Salt para hashing estável de ID de máquina                                                                                                                                                                     |
+| `ENABLE_REQUEST_LOGS`                                | `false`                                           | Habilita logs de solicitação/resposta em `logs/`                                                                                                                                                               |
+| `AUTH_COOKIE_SECURE`                                 | `false`                                           | Forçar cookie de autenticação `Secure` (definir `true` atrás do proxy reverso HTTPS)                                                                                                                           |
+| `REQUIRE_API_KEY`                                    | `false`                                           | Aplicar chave de API Bearer em rotas `/v1/*` (recomendado para implantações expostas à Internet)                                                                                                               |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | vazio                                             | Proxy de saída opcional para chamadas de provedor upstream                                                                                                                                                     |
+| `SEARXNG_URL`                                        | `http://localhost:8888/search`                    | Endpoint para o provedor de pesquisa na web SearXNG não autenticado integrado                                                                                                                                  |
 
 Notas:
 

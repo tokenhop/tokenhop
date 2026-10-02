@@ -116,65 +116,6 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 ---
 
-## 视频教程
-
-<div align="center">
-
-<table>
-  <tr>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=raEyZPg5xE0">
-        <img src="https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg" alt="9Router Setup Tutorial" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>9Router + Claude Code 免费设置<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=X69n5Lm06Yw">
-        <img src="https://img.youtube.com/vi/X69n5Lm06Yw/maxresdefault.jpg" alt="Tiết kiệm chi phí LLM với 9Router" width="300"/>
-      </a><br/>
-      <b>🇻🇳 Tiếng Việt</b><br/>
-      <sub>使用 9Router 节省 OpenClaw 的 LLM 成本<br/>by <a href="https://www.youtube.com/c/M%C3%ACAIblog">Mì AI</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=o3qYCyjrFYg">
-        <img src="https://img.youtube.com/vi/o3qYCyjrFYg/maxresdefault.jpg" alt="Claude Code FREE Forever" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>Claude Code 免费永久使用 — 无限模型<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=Ttpc26m39Dw">
-        <img src="https://img.youtube.com/vi/Ttpc26m39Dw/maxresdefault.jpg" alt="Claude CLI Free Setup" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>使用 9Router 免费设置 Claude CLI 🚀<br/>by <a href="https://www.youtube.com/@CodeVerseSoban">CodeVerse Soban</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=G-5A_D5Pm6Y">
-        <img src="https://img.youtube.com/vi/G-5A_D5Pm6Y/maxresdefault.jpg" alt="Cài đặt OpenClaw Free A-Z" width="300"/>
-      </a><br/>
-      <b>🇻🇳 Tiếng Việt</b><br/>
-      <sub>从零开始安装 OpenClaw 免费版 + 9Router<br/>by <a href="https://www.youtube.com/@maigia">Mai Gia</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=JXmg8_gccgE">
-        <img src="https://img.youtube.com/vi/JXmg8_gccgE/maxresdefault.jpg" alt="FREE OpenClaw with Claude Opus" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>免费 OpenClaw + Claude Opus 4.6<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-  </tr>
-</table>
-
-</div>
-
-> 🎬 **制作了关于 tokenhop 的视频？** 提交 [Pull Request](https://github.com/tokenhop/tokenhop/pulls)，将你的视频添加到此部分 — 我们会合并它！
-
----
-
 ## 🛠️ 支持的 CLI 工具
 
 tokenhop 与所有主流 AI 编程工具无缝协作：
@@ -1105,7 +1046,7 @@ docker restart tokenhop
 docker stop tokenhop && docker rm tokenhop
 ```
 
-> 现有安装可继续使用旧的 `9router-data` 卷（见 UPGRADING.md）。
+> 现有安装可继续使用旧的 `9router-data` 卷（见 UPGRADING.md）。 <!-- legacy(9router) -->
 
 ### 环境变量
 
@@ -1141,7 +1082,7 @@ docker stop tokenhop && docker rm tokenhop
 - 使用历史和日志：`${DATA_DIR}/usage.json` 和 `${DATA_DIR}/log.txt`，由 `src/lib/usageDb.js` 管理。
 - 可选的请求/翻译器日志：`ENABLE_REQUEST_LOGS=true` 时位于 `<repo>/logs/...`。
 - `${DATA_DIR}` 和 `~/.tokenhop` 在 Docker 容器中解析到同一位置 — 符号链接 `/root/.tokenhop -> /app/data` 在构建时创建。
-- 已有的 `~/.9router` 数据目录仍会被自动使用；运行 `tokenhop data migrate` 可完成迁移。
+- 已有的 `~/.9router` 数据目录仍会被自动使用；运行 `tokenhop data migrate` 可完成迁移。 <!-- legacy(9router) -->
 
 </details>
 

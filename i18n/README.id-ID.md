@@ -113,29 +113,6 @@ URL default:
 
 ---
 
-## 🎥 Video Tutorial
-
-<div align="center">
-
-### 📺 Panduan Setup Lengkap - tokenhop + Claude Code Gratis
-
-[![9Router + Claude Code Setup](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
-
-**🎬 Tonton tutorial langkah demi langkah:**
-
-- ✅ Install dan setup tokenhop
-- ✅ Konfigurasi Claude Sonnet 4.5 gratis
-- ✅ Integrasi dengan Claude Code
-- ✅ Demo live coding
-
-**⏱️ Durasi:** 20 menit | **👥 Dibuat oleh:** Developer Community
-
-[▶️ Tonton di YouTube](https://www.youtube.com/watch?v=o3qYCyjrFYg)
-
-</div>
-
----
-
 ## 🛠️ Tool CLI yang Didukung
 
 tokenhop bekerja mulus dengan semua tool AI coding utama:

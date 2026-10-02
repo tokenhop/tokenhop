@@ -114,29 +114,6 @@ URL mặc định:
 
 ---
 
-## 🎥 Hướng dẫn Video
-
-<div align="center">
-
-### 📺 Hướng dẫn thiết lập hoàn chỉnh - tokenhop + Claude Code MIỄN PHÍ
-
-[![Thiết lập 9Router + Claude Code](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
-
-**🎬 Xem hướng dẫn từng đầy đủ:**
-
-- ✅ Cài đặt & thiết lập tokenhop
-- ✅ Cấu hình Claude Sonnet 4.5 MIỄN PHÍ
-- ✅ Tích hợp Claude Code
-- ✅ Thử nghiệm code trực tiếp
-
-**⏱️ Thời lượng:** 20 phút | **👥 Bởi:** Cộng đồng Nhà phát triển
-
-[▶️ Xem trên YouTube](https://www.youtube.com/watch?v=o3qYCyjrFYg)
-
-</div>
-
----
-
 ## 🛠️ Các công cụ CLI được hỗ trợ
 
 tokenhop hoạt động liền mạch với tất cả các công cụ code AI chính:
@@ -1055,7 +1032,7 @@ Ghi chú:
 - `.env` không được nướng vào image Docker (`.dockerignore`); tiêm cấu hình runtime với `--env-file` hoặc `-e`.
 - Trên Windows, `APPDATA` có thể được sử dụng cho việc phân giải đường dẫn lưuữ cục bộ.
 - `INSTANCE_NAME` xuất hiện trong các tài liệu/mẫu env cũ hơn, nhưng hiện không được sử dụng trong runtime.
-- Nâng cấp: thư mục `~/.9router` hiện có vẫn được dùng tự động; `tokenhop data migrate` di chuyển dữ liệu sang `~/.tokenhop`.
+- Nâng cấp: thư mục `~/.9router` hiện có vẫn được dùng tự động; `tokenhop data migrate` di chuyển dữ liệu sang `~/.tokenhop`. <!-- legacy(9router) -->
 
 ### Tệp Runtime và Lưu trữ
 

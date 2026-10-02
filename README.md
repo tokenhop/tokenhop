@@ -7,7 +7,7 @@ rotation, OAuth credential management and usage tracking, plus a Next.js dashboa
 > tokenhop started as a fork of [9Router](https://github.com/decolua/9router) by [decolua](https://github.com/decolua)
 > and contributors, used under the MIT License.
 >
-> Upgrading from 9router? Nothing to do: your data, keys and tool configs carry over.
+> Upgrading from 9router? Nothing to do: your data, keys and tool configs carry over. <!-- legacy(9router) -->
 > See [UPGRADING.md](UPGRADING.md). Docs: <https://tokenhop.dev>.
 
 ## Dashboard

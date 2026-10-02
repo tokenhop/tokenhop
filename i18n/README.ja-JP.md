@@ -113,29 +113,6 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 ---
 
-## 🎥 動画チュートリアル
-
-<div align="center">
-
-### 📺 完全セットアップガイド - tokenhop + Claude Code 無料
-
-[![9Router + Claude Code Setup](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
-
-**🎬 ステップバイステップのチュートリアルを視聴：**
-
-- ✅ tokenhopのインストールとセットアップ
-- ✅ 無料Claude Sonnet 4.5の設定
-- ✅ Claude Codeとの統合
-- ✅ ライブコーディングデモ
-
-**⏱️ 所要時間:** 20分 | **👥 作成:** Developer Community
-
-[▶️ YouTubeで視聴](https://www.youtube.com/watch?v=o3qYCyjrFYg)
-
-</div>
-
----
-
 ## 🛠️ 対応CLIツール
 
 tokenhopはすべての主要AIコーディングツールとシームレスに連携します：
@@ -1065,7 +1042,7 @@ docker stop tokenhop && docker rm tokenhop
 - メインアプリ状態: `${DATA_DIR}/db.json`（プロバイダー、コンボ、エイリアス、キー、設定）、`src/lib/localDb.js` で管理。
 - 使用履歴とログ: `~/.tokenhop/usage.json` と `~/.tokenhop/log.txt`、`src/lib/usageDb.js` で管理。
 - オプションのリクエスト/トランスレーターログ: `ENABLE_REQUEST_LOGS=true` 時に `<repo>/logs/...`。
-- 使用状況ストレージは現在 `~/.tokenhop` パスロジックに従い、`DATA_DIR` とは独立しています。既存の `~/.9router` があれば自動的に使われ、`tokenhop data migrate` で移行できます。
+- 使用状況ストレージは現在 `~/.tokenhop` パスロジックに従い、`DATA_DIR` とは独立しています。既存の `~/.9router` があれば自動的に使われ、`tokenhop data migrate` で移行できます。 <!-- legacy(9router) -->
 
 </details>
 

@@ -115,29 +115,6 @@ URL по умолчанию:
 
 ---
 
-## 🎥 Видео-руководство
-
-<div align="center">
-
-### 📺 Полное руководство по настройке - tokenhop + Claude Code БЕСПЛАТНО
-
-[![Настройка 9Router + Claude Code](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
-
-**🎬 Полное пошаговое руководство:**
-
-- ✅ Установка и настройка tokenhop
-- ✅ Настройка Claude Sonnet 4.5 БЕСПЛАТНО
-- ✅ Интеграция с Claude Code
-- ✅ Тестирование кода вживую
-
-**⏱️ Длительность:** 20 минут | **👥 Автор:** Сообщество разработчиков
-
-[▶️ Смотреть на YouTube](https://www.youtube.com/watch?v=o3qYCyjrFYg)
-
-</div>
-
----
-
 ## 🛠️ Поддерживаемые CLI-инструменты
 
 tokenhop бесшовно работает со всеми основными AI-инструментами для кодинга:
@@ -1067,7 +1044,7 @@ docker stop tokenhop && docker rm tokenhop
 - История использования и логи: `~/.tokenhop/usage.json` и `~/.tokenhop/log.txt`, управляется `src/lib/usageDb.js`.
 - Опциональные логи запросов/транслятора: `<repo>/logs/...` при `ENABLE_REQUEST_LOGS=true`.
 - Хранилище использования следует логике пути `~/.tokenhop` и независимо от `DATA_DIR`.
-- Уже существующий каталог `~/.9router` продолжает использоваться автоматически; `tokenhop data migrate` переносит его в `~/.tokenhop`.
+- Уже существующий каталог `~/.9router` продолжает использоваться автоматически; `tokenhop data migrate` переносит его в `~/.tokenhop`. <!-- legacy(9router) -->
 
 </details>
 

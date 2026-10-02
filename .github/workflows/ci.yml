@@ -82,7 +82,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci --no-audit --no-fund
-      # cli/ has no lockfile; --ignore-scripts skips its postinstall, which provisions ~/.9router.
+      # cli/ has no lockfile; --ignore-scripts skips its postinstall, which provisions the data dir.
       - run: npm --prefix cli install --no-audit --no-fund --no-package-lock --ignore-scripts
       - run: npm run cli:pack
 
