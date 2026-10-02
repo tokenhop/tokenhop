@@ -150,10 +150,9 @@ async function* readGrokNdjsonEvents(body, signal) {
   }
 }
 
-async function* extractContent(eventStream, isThinkingModel, signal) {
+async function* extractContent(eventStream, signal) {
   let fingerprint = "";
   let responseId = "";
-  let thinkOpened = false;
 
   for await (const event of readGrokNdjsonEvents(eventStream, signal)) {
     if (event.error) {
@@ -168,21 +167,20 @@ async function* extractContent(eventStream, isThinkingModel, signal) {
 
     if (resp.modelResponse) {
       const mr = resp.modelResponse;
-      if (thinkOpened && isThinkingModel) {
-        if (mr.message) yield { thinking: mr.message };
-        thinkOpened = false;
-      }
       if (mr.message) yield { fullMessage: mr.message, fingerprint, responseId };
       if (mr.metadata?.llm_info?.modelHash) fingerprint = mr.metadata.llm_info.modelHash;
       continue;
     }
 
-    if (resp.token != null) yield { delta: resp.token, fingerprint, responseId };
+    if (resp.token != null) {
+      if (resp.isThinking) yield { thinking: resp.token, fingerprint, responseId };
+      else yield { delta: resp.token, fingerprint, responseId };
+    }
   }
   yield { done: true, fingerprint, responseId };
 }
 
-function buildStreamingResponse(eventStream, model, cid, created, isThinkingModel, signal) {
+function buildStreamingResponse(eventStream, model, cid, created, signal) {
   const encoder = new TextEncoder();
   return new ReadableStream({
     async start(controller) {
@@ -203,7 +201,7 @@ function buildStreamingResponse(eventStream, model, cid, created, isThinkingMode
         );
 
         let fp = "";
-        for await (const chunk of extractContent(eventStream, isThinkingModel, signal)) {
+        for await (const chunk of extractContent(eventStream, signal)) {
           if (chunk.fingerprint) fp = chunk.fingerprint;
 
           if (chunk.error) {
@@ -315,19 +313,12 @@ function buildStreamingResponse(eventStream, model, cid, created, isThinkingMode
   });
 }
 
-async function buildNonStreamingResponse(
-  eventStream,
-  model,
-  cid,
-  created,
-  isThinkingModel,
-  signal,
-) {
+async function buildNonStreamingResponse(eventStream, model, cid, created, signal) {
   let fullContent = "";
   let fingerprint = "";
   const thinkingParts = [];
 
-  for await (const chunk of extractContent(eventStream, isThinkingModel, signal)) {
+  for await (const chunk of extractContent(eventStream, signal)) {
     if (chunk.fingerprint) fingerprint = chunk.fingerprint;
     if (chunk.error) {
       return new Response(
@@ -347,7 +338,7 @@ async function buildNonStreamingResponse(
   }
 
   const msg = { role: "assistant", content: fullContent };
-  if (thinkingParts.length > 0) msg.reasoning_content = thinkingParts.join("\n");
+  if (thinkingParts.length > 0) msg.reasoning_content = thinkingParts.join("");
 
   const promptTokens = Math.ceil(fullContent.length / 4);
   const completionTokens = Math.ceil(fullContent.length / 4);
@@ -389,7 +380,7 @@ export class GrokWebExecutor extends BaseExecutor {
 
     const modelInfo = MODEL_MAP[model];
     if (!modelInfo) log?.info?.("GROK-WEB", `Unmapped model ${model}, defaulting to grok-4.1-fast`);
-    const { grokModel, modelMode, isThinking } = modelInfo || MODEL_MAP["grok-4.1-fast"];
+    const { grokModel, modelMode } = modelInfo || MODEL_MAP["grok-4.1-fast"];
 
     const message = parseOpenAIMessages(messages);
     if (!message.trim()) {
@@ -527,27 +518,13 @@ export class GrokWebExecutor extends BaseExecutor {
 
     let finalResponse;
     if (stream) {
-      const sseStream = buildStreamingResponse(
-        response.body,
-        model,
-        cid,
-        created,
-        isThinking,
-        signal,
-      );
+      const sseStream = buildStreamingResponse(response.body, model, cid, created, signal);
       finalResponse = new Response(sseStream, {
         status: 200,
         headers: { ...SSE_HEADERS_NO_BUFFER },
       });
     } else {
-      finalResponse = await buildNonStreamingResponse(
-        response.body,
-        model,
-        cid,
-        created,
-        isThinking,
-        signal,
-      );
+      finalResponse = await buildNonStreamingResponse(response.body, model, cid, created, signal);
     }
     return { response: finalResponse, url: GROK_CHAT_API, headers, transformedBody: grokPayload };
   }
