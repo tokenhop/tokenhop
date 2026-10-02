@@ -29,7 +29,9 @@ describe("skills per brand", () => {
     for (const skill of SKILLS) {
       expect(skill.id.startsWith(brand)).toBe(true);
       const file = fs.readFileSync(path.join(ROOT, "skills", skill.path), "utf8");
-      expect(file).toMatch(new RegExp(`^---\\nname: ${skill.id}\\n`));
+      // On the default brand the listed files are pointer stubs, whose name
+      // line carries the legacy(9router) marker (YAN-634).
+      expect(file).toMatch(new RegExp(`^---\\nname: ${skill.id}(\\n| )`));
     }
   });
 
@@ -39,7 +41,11 @@ describe("skills per brand", () => {
     for (const id of ["tokenhop", "tokenhop-chat", ...legacyIds]) {
       const res = await getSkill("tokenhop", id);
       expect(res.status, id).toBe(200);
-      expect(await res.text()).toMatch(new RegExp(`^---\\nname: ${id}\\n`));
+    }
+    // Legacy ids serve the tokenhop content, not the pointer stubs (YAN-634).
+    for (const suffix of ["", "-chat", "-web-search"]) {
+      const res = await getSkill("tokenhop", `${OLD}${suffix}`);
+      expect(await res.text()).toMatch(new RegExp(`^---\\nname: tokenhop${suffix}\\n`));
     }
   });
 

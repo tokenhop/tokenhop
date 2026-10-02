@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { SERVED_SKILL_IDS } from "@/shared/constants/skills";
+import { getSkillFilePath, SERVED_SKILL_IDS } from "@/shared/constants/skills";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,7 @@ export async function GET(_request, { params }) {
     return new NextResponse("Not Found", { status: 404 });
   }
 
-  const filePath = path.join(process.cwd(), "skills", id, "SKILL.md");
+  const filePath = path.join(process.cwd(), "skills", getSkillFilePath(id));
   try {
     const content = await fs.readFile(filePath, "utf-8");
     return new NextResponse(content, {
