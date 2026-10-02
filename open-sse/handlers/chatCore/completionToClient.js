@@ -1,5 +1,6 @@
 import { FORMATS } from "../../translator/formats.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import { toResponsesUsage } from "../../translator/concerns/usage.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 
 // Non-streaming bodies pivot through OpenAI `chat.completion`. This module turns that
@@ -123,9 +124,6 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
     });
   }
 
-  const usage = responseBody.usage || {};
-  const cachedTokens = usage.prompt_tokens_details?.cached_tokens || 0;
-  const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens || 0;
   const truncated = choice.finish_reason === "length";
 
   return {
@@ -138,16 +136,7 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
     background: false,
     error: null,
     output,
-    usage: {
-      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
-      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
-      total_tokens:
-        usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
-      ...(cachedTokens > 0 ? { input_tokens_details: { cached_tokens: cachedTokens } } : {}),
-      ...(reasoningTokens > 0
-        ? { output_tokens_details: { reasoning_tokens: reasoningTokens } }
-        : {}),
-    },
+    usage: toResponsesUsage(responseBody.usage),
   };
 }
 

@@ -202,13 +202,13 @@ export async function handleStreamingResponse({
 
   // Terminal bytes when the stream aborts after HTTP 200 was already sent, so the
   // client sees a real error instead of a silently truncated stream.
-  // Responses passthrough keeps its own response.failed shape; every other client
-  // format gets the OpenAI error frame + [DONE], or `event: error` for Claude.
-  const isResponsesPassthrough =
-    sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
-  const onAbortTerminal = isResponsesPassthrough
-    ? buildAbortedResponsesTerminalBytes
-    : (message) => buildStreamErrorBytes(HTTP_STATUS.GATEWAY_TIMEOUT, message, sourceFormat);
+  // Responses clients (passthrough or translated) get a response.failed shape;
+  // every other client format gets the OpenAI error frame + [DONE], or
+  // `event: error` for Claude.
+  const onAbortTerminal =
+    sourceFormat === FORMATS.OPENAI_RESPONSES
+      ? buildAbortedResponsesTerminalBytes
+      : (message) => buildStreamErrorBytes(HTTP_STATUS.GATEWAY_TIMEOUT, message, sourceFormat);
   const stallTimeoutMs =
     PROVIDERS[provider]?.stallTimeoutMs || getActiveReliabilityPolicy().streamTimeouts.stallMs;
   const transformedBody = pipeWithDisconnect(
