@@ -9,7 +9,6 @@ const BRANCH = "master";
 const SKILL_PATH = "skills";
 
 export const SKILLS_REPO_URL = `https://github.com/${REPO}`;
-export const SKILLS_RAW_BASE = `https://raw.githubusercontent.com/${REPO}/refs/heads/${BRANCH}/${SKILL_PATH}`;
 export const SKILLS_BLOB_BASE = `https://github.com/${REPO}/blob/${BRANCH}/${SKILL_PATH}`;
 
 /**
@@ -89,7 +88,7 @@ export const ENTRY_SKILL_ID = ACTIVE.slug;
 
 export const SKILLS = [
   {
-    id: ENTRY_SKILL_ID,
+    suffix: "",
     name: `${ENTRY_SKILL_ID} entry skill`,
     description:
       "Setup + index of all capabilities. Start here — covers base URL, auth, model discovery, and links to every capability skill.",
@@ -98,49 +97,49 @@ export const SKILLS = [
     isEntry: true,
   },
   {
-    id: `${ENTRY_SKILL_ID}-chat`,
+    suffix: "-chat",
     name: "Chat",
     description: "Chat / code-gen via OpenAI or Anthropic format with streaming.",
     endpoint: "/v1/chat/completions",
     icon: "chat",
   },
   {
-    id: `${ENTRY_SKILL_ID}-image`,
+    suffix: "-image",
     name: "Image generation",
     description: "Text-to-image via DALL-E, Imagen, FLUX, MiniMax, SDWebUI…",
     endpoint: "/v1/images/generations",
     icon: "image",
   },
   {
-    id: `${ENTRY_SKILL_ID}-tts`,
+    suffix: "-tts",
     name: "Text to speech",
     description: "OpenAI / ElevenLabs / Edge / Google / Deepgram voices.",
     endpoint: "/v1/audio/speech",
     icon: "record_voice_over",
   },
   {
-    id: `${ENTRY_SKILL_ID}-stt`,
+    suffix: "-stt",
     name: "Speech to text",
     description: "Transcribe audio via OpenAI Whisper, Groq, Gemini, Deepgram, AssemblyAI…",
     endpoint: "/v1/audio/transcriptions",
     icon: "mic",
   },
   {
-    id: `${ENTRY_SKILL_ID}-embeddings`,
+    suffix: "-embeddings",
     name: "Embeddings",
     description: "Vectors for RAG / semantic search via OpenAI, Gemini, Mistral…",
     endpoint: "/v1/embeddings",
     icon: "scatter_plot",
   },
   {
-    id: `${ENTRY_SKILL_ID}-video`,
+    suffix: "-video",
     name: "Video generation",
     description: "Text-to-video via xAI Grok Imagine and other video providers.",
     endpoint: "/v1/videos/generations",
     icon: "movie",
   },
   {
-    id: `${ENTRY_SKILL_ID}-web-search`,
+    suffix: "-web-search",
     name: "Web search",
     description:
       "Web and X search via Tavily / Exa / Brave / Serper / SearXNG / Google PSE / You.com / Xquik.",
@@ -148,13 +147,16 @@ export const SKILLS = [
     icon: "search",
   },
   {
-    id: `${ENTRY_SKILL_ID}-web-fetch`,
+    suffix: "-web-fetch",
     name: "Web fetch",
     description: "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa.",
     endpoint: "/v1/web/fetch",
     icon: "language",
   },
-].map((skill) => ({ ...skill, path: `${skill.id}/SKILL.md` }));
+].map((skill) => {
+  const id = ENTRY_SKILL_ID + skill.suffix;
+  return { ...skill, id, path: `${id}/SKILL.md` };
+});
 
 /**
  * Ids the /skills route serves: the active set plus the legacy-brand ids, so
@@ -162,24 +164,5 @@ export const SKILLS = [
  */
 export const SERVED_SKILL_IDS = new Set([
   ...SKILLS.map((skill) => skill.id),
-  ...SKILLS.map((skill) => LEGACY.slug + skill.id.slice(ENTRY_SKILL_ID.length)), // legacy(9router): remove in v2
+  ...SKILLS.map((skill) => LEGACY.slug + skill.suffix), // legacy(9router): remove in v2
 ]);
-
-/**
- * Legacy helpers kept for compatibility: raw/blob GitHub URLs used by the
- * open-in-new-tab links and docs. Prefer getHostedSkillUrl for copyable links.
- * @param {string} id Skill id, e.g. "tokenhop-chat".
- * @returns {string} Raw GitHub URL for the skill's SKILL.md.
- */
-export function getSkillRawUrl(id) {
-  return `${SKILLS_RAW_BASE}/${id}/SKILL.md`;
-}
-
-/**
- * Blob (human-readable GitHub page) URL for a skill.
- * @param {string} id Skill id, e.g. "tokenhop-chat".
- * @returns {string} GitHub blob URL for the skill's SKILL.md.
- */
-export function getSkillBlobUrl(id) {
-  return `${SKILLS_BLOB_BASE}/${id}/SKILL.md`;
-}
