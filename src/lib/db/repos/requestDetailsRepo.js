@@ -303,21 +303,25 @@ function flushSync() {
         maxJsonSize: DEFAULT_MAX_JSON_SIZE,
       },
     );
-  } catch {}
+  } catch (e) {
+    try {
+      console.error("[requestDetailsRepo] Shutdown flush failed:", e);
+    } catch {}
+  }
 }
 
 function ensureShutdownFlusher() {
-  // Slot on a global registry — adapters call it before closing the DB on
-  // shutdown. Plain object slot so dev hot-reload replaces, not accumulates.
+  // Slot on a global registry — adapters and the app's signal cleanup call it
+  // before closing the DB. Plain object slot so dev hot-reload replaces it.
   registerShutdownFlusher("requestDetails", flushSync);
-  // Still needed for sql.js (its handler only persists, never exits) and for
-  // environments where no adapter signal handler runs.
-  process.off("beforeExit", flushSync);
-  process.off("SIGINT", flushSync);
-  process.off("SIGTERM", flushSync);
-  process.on("beforeExit", flushSync);
-  process.on("SIGINT", flushSync);
-  process.on("SIGTERM", flushSync);
+  // Own listeners still cover sql.js (its handler only persists) and any
+  // process.exit() path. Stash the handler globally so hot reload swaps it
+  // instead of stacking listeners.
+  const events = ["beforeExit", "SIGINT", "SIGTERM", "exit"];
+  const prev = globalThis.__requestDetailsFlushSync;
+  if (prev) for (const event of events) process.off(event, prev);
+  globalThis.__requestDetailsFlushSync = flushSync;
+  for (const event of events) process.on(event, flushSync);
 }
 
 ensureShutdownFlusher();
