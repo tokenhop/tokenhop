@@ -39,6 +39,9 @@ export function rebuildTable(db, name, newDef, copySql = null) {
 
   if (copySql) {
     db.exec(`INSERT INTO ${tmp} (${newCols.join(", ")}) ${copySql}`);
+    const before = db.get(`SELECT COUNT(*) AS c FROM ${name}`).c;
+    const after = db.get(`SELECT COUNT(*) AS c FROM ${tmp}`).c;
+    console.log(`[DB][migrate] rebuild ${name}: kept ${after} of ${before} row(s)`);
   } else {
     const oldCols = new Set(db.all(`PRAGMA table_info(${name})`).map((c) => c.name));
     const shared = newCols.filter((c) => oldCols.has(c)).join(", ");

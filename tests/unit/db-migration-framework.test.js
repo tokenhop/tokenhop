@@ -127,6 +127,26 @@ for (const [driver, available, file, factory] of ADAPTERS) {
       expect(db.all(`SELECT * FROM sqlite_master ORDER BY name`)).toEqual(before);
     });
 
+    it("backup gate: a fresh DB takes none; a legacy unstamped (v0) DB is backed up and kept", async () => {
+      const { runMigrationOnce } = await import("@/lib/db/migrate.js");
+      const { latestVersion } = await import("@/lib/db/migrations/index.js");
+      const { BACKUPS_DIR } = await import("@/lib/db/paths.js");
+      const backups = () => (fs.existsSync(BACKUPS_DIR) ? fs.readdirSync(BACKUPS_DIR) : []);
+      fs.rmSync(BACKUPS_DIR, { recursive: true, force: true });
+
+      const fresh = await open("fresh.sqlite");
+      await runMigrationOnce(fresh);
+      expect(version(fresh)).toBe(latestVersion());
+      expect(backups()).toEqual([]);
+
+      const legacy = await open("legacy.sqlite");
+      legacy.exec(FIXTURE.replace(/^INSERT INTO _meta.*$/m, ""));
+      await runMigrationOnce(legacy);
+      expect(version(legacy)).toBe(latestVersion());
+      expect(legacy.get(`SELECT COUNT(*) AS c FROM combos`).c).toBe(2);
+      expect(backups()).toEqual([expect.stringMatching(/^schema-0-to-/)]);
+    });
+
     it("an up-to-date DB takes no backup", async () => {
       const { runMigrationOnce } = await import("@/lib/db/migrate.js");
       const { BACKUPS_DIR } = await import("@/lib/db/paths.js");

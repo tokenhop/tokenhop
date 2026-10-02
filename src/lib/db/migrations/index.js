@@ -18,6 +18,12 @@ import m003 from "./003-pin-saml-issuer.js";
 
 export const MIGRATIONS = [m001, m002, m003].sort((a, b) => a.version - b.version);
 
+for (let i = 1; i < MIGRATIONS.length; i++) {
+  if (MIGRATIONS[i].version === MIGRATIONS[i - 1].version) {
+    throw new Error(`[DB] duplicate migration version ${MIGRATIONS[i].version}`);
+  }
+}
+
 export function latestVersion() {
   return MIGRATIONS.length ? MIGRATIONS[MIGRATIONS.length - 1].version : 0;
 }
