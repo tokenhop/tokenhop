@@ -1055,7 +1055,7 @@ Ghi chú:
 - `.env` không được nướng vào image Docker (`.dockerignore`); tiêm cấu hình runtime với `--env-file` hoặc `-e`.
 - Trên Windows, `APPDATA` có thể được sử dụng cho việc phân giải đường dẫn lưuữ cục bộ.
 - `INSTANCE_NAME` xuất hiện trong các tài liệu/mẫu env cũ hơn, nhưng hiện không được sử dụng trong runtime.
-- Nâng cấp: thư mục `~/.tokenhop` hiện có vẫn được dùng tự động; `tokenhop data migrate` di chuyển dữ liệu sang `~/.tokenhop`.
+- Nâng cấp: thư mục `~/.9router` hiện có vẫn được dùng tự động; `tokenhop data migrate` di chuyển dữ liệu sang `~/.tokenhop`.
 
 ### Tệp Runtime và Lưu trữ
 
