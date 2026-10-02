@@ -346,12 +346,14 @@ function toInlineDataPart(block) {
   ) {
     return { inlineData: { mimeType: block.source.media_type, data: block.source.data } };
   }
+  let url = null;
   if (block?.type === OPENAI_BLOCK.IMAGE_URL) {
-    const url = typeof block.image_url === "string" ? block.image_url : block.image_url?.url;
-    const parsed = parseDataUri(url);
-    if (parsed) return { inlineData: { mimeType: parsed.mimeType, data: parsed.base64 } };
+    url = typeof block.image_url === "string" ? block.image_url : block.image_url?.url;
+  } else if (block?.type === OPENAI_BLOCK.FILE) {
+    url = block.file?.file_data;
   }
-  return null;
+  const parsed = parseDataUri(url);
+  return parsed ? { inlineData: { mimeType: parsed.mimeType, data: parsed.base64 } } : null;
 }
 
 // Wrap Claude format in Cloud Code envelope for Antigravity
@@ -431,17 +433,20 @@ function wrapInCloudCodeEnvelopeForClaude(
           } else if (block.type === CLAUDE_BLOCK.TOOL_RESULT) {
             let content = block.content;
             if (Array.isArray(content)) {
-              const media = content.map(toInlineDataPart).filter(Boolean);
+              const media = [];
+              const text = [];
+              for (const c of content) {
+                const inline = toInlineDataPart(c);
+                if (inline) media.push(inline);
+                else text.push(c.type === CLAUDE_BLOCK.TEXT ? c.text : JSON.stringify(c));
+              }
               if (media.length) {
                 toolMedia.push(
                   { text: `[Attachment from tool result ${block.tool_use_id}]` },
                   ...media,
                 );
               }
-              content = content
-                .filter((c) => !toInlineDataPart(c))
-                .map((c) => (c.type === CLAUDE_BLOCK.TEXT ? c.text : JSON.stringify(c)))
-                .join("\n");
+              content = text.join("\n");
             }
             // Resolve the original tool name from the id — Gemini requires it to match the functionCall name
             const resolvedName = toolUseIdToName[block.tool_use_id]

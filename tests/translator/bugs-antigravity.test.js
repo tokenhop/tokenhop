@@ -253,4 +253,31 @@ describe("Antigravity executor", () => {
     expect(toolTurn.parts[0].functionResponse.response.result).toBe("done");
     expect(toolTurn.parts).toContainEqual({ inlineData: { mimeType: "image/png", data: "QUJD" } });
   });
+
+  it("Claude-backed envelope inlines a media-only tool result and leaves an empty result", () => {
+    const pdf = { type: "file", file: { file_data: "data:application/pdf;base64,JVBE" } };
+    const out = openaiToAntigravityRequest(
+      "claude-sonnet-4-6",
+      {
+        messages: [
+          { role: "user", content: "read it" },
+          {
+            role: "assistant",
+            tool_calls: [
+              { id: "c1", type: "function", function: { name: "get", arguments: "{}" } },
+            ],
+          },
+          { role: "tool", tool_call_id: "c1", content: [pdf] },
+        ],
+      },
+      true,
+      { projectId: "project-1", connectionId: "conn-1" },
+    );
+    const toolTurn = out.request.contents.at(-1);
+    expect(toolTurn.parts[0].functionResponse.response.result).toBe("");
+    expect(JSON.stringify(toolTurn)).not.toContain('"type":"file"');
+    expect(toolTurn.parts).toContainEqual({
+      inlineData: { mimeType: "application/pdf", data: "JVBE" },
+    });
+  });
 });

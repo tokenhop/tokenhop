@@ -300,9 +300,10 @@ export class CodexExecutor extends BaseExecutor {
     for (const item of body.input) {
       if (!Array.isArray(item.content)) continue;
       const pending = item.content.map(async (c) => {
-        if (c.type !== "image_url") return c;
+        // Translated bodies already carry input_image with a plain-string URL.
+        if (c.type !== "image_url" && c.type !== "input_image") return c;
         const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
-        const detail = c.image_url?.detail || "auto";
+        const detail = c.detail || c.image_url?.detail || "auto";
         if (!url) return c;
         if (url.startsWith("data:")) return { type: "input_image", image_url: url, detail };
         const fetched = await fetchImageAsBase64(url, { timeoutMs: 15000 });

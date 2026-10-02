@@ -30,8 +30,12 @@ Linear: YAN-40, YAN-41 · GitHub: #499, #500 · Target: v0.6.x (`backport:0.6`)
    step 1 would dump base64 PDFs into the prompt of Codex targets.
 3. `openai-to-gemini.js`: `toInlineDataPart` maps Claude base64 image/document
    and OpenAI data-URI `image_url` to `inlineData`. User blocks use it directly.
-   Tool-result media are pulled out of the stringified result and appended
-   after the message's parts, tagged with the tool call id.
+   Tool-result media (including Chat `file` data URIs) are pulled out of the
+   stringified result and appended after the message's parts, tagged with the
+   tool call id.
+4. `executors/codex.js` `prefetchImages`: also inline remote `input_image`
+   URLs. Claude URL images now reach Codex in that shape, and the Codex backend
+   can't fetch remote images (review finding).
 
 ## Tasks
 

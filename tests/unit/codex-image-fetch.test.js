@@ -90,6 +90,26 @@ describe("CodexExecutor image handling", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("inlines a remote input_image produced by the Chat→Responses translator", async () => {
+    global.fetch = vi.fn(async () => mockImageFetch(IMAGE_1MB_BYTES));
+
+    const executor = new CodexExecutor();
+    const body = {
+      input: [
+        {
+          role: "user",
+          content: [{ type: "input_image", image_url: REMOTE_URL, detail: "low" }],
+        },
+      ],
+    };
+
+    await executor.prefetchImages(body);
+
+    const imgBlock = body.input[0].content[0];
+    expect(imgBlock.image_url.startsWith("data:image/jpeg;base64,")).toBe(true);
+    expect(imgBlock.detail).toBe("low");
+  });
+
   it("passes through existing data URIs without calling fetch", async () => {
     global.fetch = vi.fn();
 

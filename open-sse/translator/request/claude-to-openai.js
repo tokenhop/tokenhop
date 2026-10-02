@@ -2,7 +2,7 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { adjustMaxTokens } from "../formats/maxTokens.js";
 import { encodeDataUri } from "../concerns/image.js";
-import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
+import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK, DEFAULT_DOCUMENT_FILENAME } from "../schema/index.js";
 import { collapseTextParts } from "../concerns/message.js";
 
 function stripAnthropicBillingHeader(text) {
@@ -196,7 +196,7 @@ function convertClaudeMessage(msg) {
             parts.push({
               type: OPENAI_BLOCK.FILE,
               file: {
-                filename: block.title || "document.pdf",
+                filename: block.title || DEFAULT_DOCUMENT_FILENAME,
                 file_data: encodeDataUri(block.source.media_type, block.source.data),
               },
             });
