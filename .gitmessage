@@ -24,4 +24,4 @@
 # Breaking change: append `!` after type OR add `BREAKING CHANGE:` footer.
 # Internal docs (not for release notes): use `docs(internal): …`.
 #
-# 9Router  •  enforced by commitlint (lefthook commit-msg hook)
+# tokenhop  •  enforced by commitlint (lefthook commit-msg hook)

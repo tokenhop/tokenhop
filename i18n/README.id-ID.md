@@ -1,24 +1,24 @@
 <div align="center">
-  <img src="../images/9router.png?1" alt="9Router Dashboard" width="800"/>
+  <img src="../images/tokenhop.png?1" alt="tokenhop Dashboard" width="800"/>
 
-# 9Router - Router AI Gratis
+# tokenhop - Router AI Gratis
 
 **Jangan berhenti ngoding. Otomatis dialihkan ke model AI gratis & murah dengan smart fallback.**
 
 **Hubungkan semua tool AI coding (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) ke 40+ provider AI dan 100+ model.**
 
-[![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-[![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
+[![npm](https://img.shields.io/npm/v/tokenhop.svg)](https://www.npmjs.com/package/tokenhop)
+[![Downloads](https://img.shields.io/npm/dm/tokenhop.svg)](https://www.npmjs.com/package/tokenhop)
+[![License](https://img.shields.io/npm/l/tokenhop.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
-[🚀 Mulai Cepat](#-mulai-cepat) • [💡 Fitur](#-fitur-utama) • [📖 Setup](#-panduan-setup) • [🌐 Website](https://9router.com)
+[🚀 Mulai Cepat](#-mulai-cepat) • [💡 Fitur](#-fitur-utama) • [📖 Setup](#-panduan-setup) • [🌐 Website](https://tokenhop.ai)
 
 [🇻🇳 Tiếng Việt](./README.vi.md) • [🇨🇳 中文](./README.zh-CN.md) • [🇯🇵 日本語](./README.ja-JP.md) • [🇮🇩 Bahasa Indonesia](./README.id-ID.md)
 </div>
 
 ---
 
-## 🤔 Kenapa 9Router?
+## 🤔 Kenapa tokenhop?
 
 **Berhenti buang-buang uang dan terhambat limit:**
 
@@ -27,7 +27,7 @@
 - ❌ API mahal ($20–50/bulan per provider)
 - ❌ Harus gonta-ganti provider secara manual
 
-**9Router menyelesaikan itu semua:**
+**tokenhop menyelesaikan itu semua:**
 
 - ✅ **Maksimalkan langganan** - lacak kuota dan habiskan sebelum reset
 - ✅ **Fallback otomatis** - langganan → murah → gratis, tanpa downtime
@@ -46,7 +46,7 @@
        │ http://localhost:20128/v1
        ↓
 ┌─────────────────────────────────────────┐
-│         9Router (Smart Router)          │
+│         tokenhop (Smart Router)         │
 │  • Konversi format (OpenAI ↔ Claude)    │
 │  • Pelacakan kuota                      │
 │  • Refresh token otomatis               │
@@ -68,8 +68,8 @@ Hasil: ngoding tanpa berhenti, biaya minimum
 **1. Install secara global:**
 
 ```bash
-npm install -g 9router
-9router
+npm install -g tokenhop
+tokenhop
 ```
 
 🎉 Dashboard terbuka di `http://localhost:20128`
@@ -91,7 +91,7 @@ Konfigurasi Claude Code/Codex/Gemini CLI/OpenClaw/Cursor/Cline:
 
 **Alternatif: jalankan dari source (repo ini):**
 
-Paket repo ini bersifat privat (`9router-app`), jadi menjalankan dari source/Docker adalah jalur yang diharapkan untuk pengembangan lokal.
+Paket repo ini bersifat privat (`tokenhop-app`), jadi menjalankan dari source/Docker adalah jalur yang diharapkan untuk pengembangan lokal.
 
 ```bash
 cp .env.example .env
@@ -117,13 +117,13 @@ URL default:
 
 <div align="center">
 
-### 📺 Panduan Setup Lengkap - 9Router + Claude Code Gratis
+### 📺 Panduan Setup Lengkap - tokenhop + Claude Code Gratis
 
 [![9Router + Claude Code Setup](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
 
 **🎬 Tonton tutorial langkah demi langkah:**
 
-- ✅ Install dan setup 9Router
+- ✅ Install dan setup tokenhop
 - ✅ Konfigurasi Claude Sonnet 4.5 gratis
 - ✅ Integrasi dengan Claude Code
 - ✅ Demo live coding
@@ -138,7 +138,7 @@ URL default:
 
 ## 🛠️ Tool CLI yang Didukung
 
-9Router bekerja mulus dengan semua tool AI coding utama:
+tokenhop bekerja mulus dengan semua tool AI coding utama:
 
 <div align="center">
   <table>
@@ -390,7 +390,7 @@ Combo: "my-coding-stack"
 Konversi mulus antar format:
 
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **OpenAI Responses**
-- Tool CLI mengirim dalam format OpenAI → 9Router mengonversi → provider menerima dalam format nativenya
+- Tool CLI mengirim dalam format OpenAI → tokenhop mengonversi → provider menerima dalam format nativenya
 - Bekerja dengan semua tool yang mendukung custom OpenAI endpoint
 
 ### 👥 Dukungan Multi-akun
@@ -444,12 +444,12 @@ Konversi mulus antar format:
 > **💡 PENTING - tentang biaya di dashboard:**
 >
 > "Biaya" yang ditampilkan pada analitik penggunaan **hanya untuk pelacakan dan perbandingan**.
-> 9Router sendiri **tidak menagih apa pun**. Kamu hanya membayar langsung ke provider jika memakai layanan berbayar.
+> tokenhop sendiri **tidak menagih apa pun**. Kamu hanya membayar langsung ke provider jika memakai layanan berbayar.
 >
 > **Contoh:** jika dashboard menampilkan "Total biaya $290" untuk pemakaian model iFlow,
 > itu adalah jumlah yang seharusnya kamu bayar bila memakai API berbayar secara langsung. Biaya sebenarnya = **$0** (iFlow gratis tanpa batas).
 >
-> Anggap saja ini "pelacak penghematan" yang menunjukkan berapa banyak yang kamu hemat lewat model gratis dan routing 9Router!
+> Anggap saja ini "pelacak penghematan" yang menunjukkan berapa banyak yang kamu hemat lewat model gratis dan routing tokenhop!
 
 ### 🌐 Deploy di Mana Saja
 
@@ -481,15 +481,15 @@ Konversi mulus antar format:
 
 ---
 
-### 📊 Tentang Biaya dan Penagihan 9Router
+### 📊 Tentang Biaya dan Penagihan tokenhop
 
-**Fakta soal penagihan 9Router:**
+**Fakta soal penagihan tokenhop:**
 
-✅ **Software 9Router = gratis selamanya** (open source, tanpa tagihan)
+✅ **Software tokenhop = gratis selamanya** (open source, tanpa tagihan)
 ✅ **"Biaya" di dashboard = tampilan/pelacakan saja** (bukan tagihan sungguhan)
 ✅ **Pembayaran langsung ke provider** (langganan atau biaya API)
 ✅ **Provider gratis tetap gratis** (iFlow, Kiro, Qwen = $0 unlimited)
-❌ **9Router tidak mengirim invoice** atau menagih kartumu
+❌ **tokenhop tidak mengirim invoice** atau menagih kartumu
 
 **Cara kerja tampilan biaya:**
 
@@ -512,9 +512,9 @@ Kenyataannya:
 **Aturan pembayaran:**
 
 - **Provider langganan** (Claude Code, Codex): bayar langsung di website masing-masing
-- **Provider murah** (GLM, MiniMax): bayar langsung, 9Router hanya melakukan routing
+- **Provider murah** (GLM, MiniMax): bayar langsung, tokenhop hanya melakukan routing
 - **Provider gratis** (iFlow, Kiro, Qwen): benar-benar gratis selamanya, tanpa biaya tersembunyi
-- **9Router**: tidak menagih apa pun
+- **tokenhop**: tidak menagih apa pun
 
 ---
 
@@ -593,7 +593,7 @@ Cara akses: WhatsApp, Telegram, Slack, Discord, iMessage, Signal...
 <details>
 <summary><b>📊 Kenapa dashboard menampilkan biaya yang besar?</b></summary>
 
-Dashboard melacak pemakaian token dan menampilkan **estimasi biaya** seandainya kamu memakai API berbayar secara langsung. Ini **bukan tagihan nyata**, melainkan acuan untuk melihat berapa banyak yang kamu hemat dengan memakai model gratis atau langganan yang sudah ada lewat 9Router.
+Dashboard melacak pemakaian token dan menampilkan **estimasi biaya** seandainya kamu memakai API berbayar secara langsung. Ini **bukan tagihan nyata**, melainkan acuan untuk melihat berapa banyak yang kamu hemat dengan memakai model gratis atau langganan yang sudah ada lewat tokenhop.
 
 **Contoh:**
 
@@ -607,17 +607,17 @@ Tampilan biaya adalah "pelacak penghematan" untuk memahami pola pemakaian dan pe
 </details>
 
 <details>
-<summary><b>💳 Apakah 9Router menagih saya?</b></summary>
+<summary><b>💳 Apakah tokenhop menagih saya?</b></summary>
 
-**Tidak.** 9Router adalah software open source gratis yang berjalan di komputermu sendiri. Tidak ada penagihan sama sekali.
+**Tidak.** tokenhop adalah software open source gratis yang berjalan di komputermu sendiri. Tidak ada penagihan sama sekali.
 
 **Kamu membayar ke:**
 
 - ✅ **Provider langganan** (Claude Code $20/bulan, Codex $20-200/bulan) → bayar langsung di website masing-masing
-- ✅ **Provider murah** (GLM, MiniMax) → bayar langsung, 9Router hanya me-routing request
-- ❌ **9Router sendiri** → **tidak menagih apa pun**
+- ✅ **Provider murah** (GLM, MiniMax) → bayar langsung, tokenhop hanya me-routing request
+- ❌ **tokenhop sendiri** → **tidak menagih apa pun**
 
-9Router adalah proxy/router lokal. Ia tidak menyimpan informasi kartu kredit, tidak bisa mengirim invoice, dan tidak punya sistem penagihan. Sepenuhnya software gratis.
+tokenhop adalah proxy/router lokal. Ia tidak menyimpan informasi kartu kredit, tidak bisa mengirim invoice, dan tidak punya sistem penagihan. Sepenuhnya software gratis.
 
 </details>
 
@@ -632,9 +632,9 @@ Ini adalah layanan gratis yang disediakan masing-masing perusahaan:
 - **Kiro**: model Claude gratis unlimited via AWS Builder ID
 - **Qwen**: akses gratis unlimited ke model Qwen via device authentication
 
-9Router hanya me-routing request — tidak ada "jebakan" atau tagihan di kemudian hari. Layanannya memang gratis, dan 9Router membuatnya lebih mudah dipakai dengan dukungan fallback.
+tokenhop hanya me-routing request — tidak ada "jebakan" atau tagihan di kemudian hari. Layanannya memang gratis, dan tokenhop membuatnya lebih mudah dipakai dengan dukungan fallback.
 
-**Catatan:** beberapa provider langganan (Antigravity, GitHub Copilot) punya masa preview gratis dan bisa jadi berbayar nanti, tetapi hal itu diumumkan secara jelas oleh provider tersebut, bukan oleh 9Router.
+**Catatan:** beberapa provider langganan (Antigravity, GitHub Copilot) punya masa preview gratis dan bisa jadi berbayar nanti, tetapi hal itu diumumkan secara jelas oleh provider tersebut, bukan oleh tokenhop.
 
 </details>
 
@@ -663,7 +663,7 @@ Ini adalah layanan gratis yang disediakan masing-masing perusahaan:
 
 3. **Gunakan provider langganan paling akhir:**
    - Hanya jika kamu memang sudah punya
-   - 9Router memaksimalkan nilainya lewat pelacakan kuota
+   - tokenhop memaksimalkan nilainya lewat pelacakan kuota
 
 **Hasil:** sebagian besar pengguna bisa jalan dengan $0/bulan hanya dengan tier gratis!
 
@@ -672,22 +672,22 @@ Ini adalah layanan gratis yang disediakan masing-masing perusahaan:
 <details>
 <summary><b>📈 Bagaimana kalau pemakaian tiba-tiba melonjak?</b></summary>
 
-Smart fallback 9Router mencegah tagihan tak terduga:
+Smart fallback tokenhop mencegah tagihan tak terduga:
 
 **Skenario:** kuota habis di tengah sprint coding
 
-**Tanpa 9Router:**
+**Tanpa tokenhop:**
 
 - ❌ Kena rate limit → kerja berhenti → frustrasi
 - ❌ Atau: tagihan API mahal tanpa disengaja
 
-**Dengan 9Router:**
+**Dengan tokenhop:**
 
 - ✅ Langganan mencapai batas → otomatis fallback ke tier murah
 - ✅ Tier murah jadi mahal → otomatis fallback ke tier gratis
 - ✅ Ngoding tidak berhenti → biaya tetap terprediksi
 
-**Kamu yang pegang kendali:** atur batas pengeluaran per provider di dashboard, dan 9Router akan mematuhinya.
+**Kamu yang pegang kendali:** atur batas pengeluaran per provider di dashboard, dan tokenhop akan mematuhinya.
 
 </details>
 
@@ -711,7 +711,7 @@ Model:
   cc/claude-haiku-4-5-20251001
 ```
 
-**Tips pro:** pakai Opus untuk tugas kompleks, Sonnet kalau mengutamakan kecepatan. 9Router melacak kuota per model!
+**Tips pro:** pakai Opus untuk tugas kompleks, Sonnet kalau mengutamakan kecepatan. tokenhop melacak kuota per model!
 
 ### OpenAI Codex (Plus/Pro)
 
@@ -889,9 +889,9 @@ Biaya bulanan: $0
 
 ```bash
 docker run -d \
-  --name 9router \
+  --name tokenhop \
   -p 20128:20128 \
-  -v 9router-data:/app/data \
+  -v tokenhop-data:/app/data \
   -e PORT=20128 \
   -e BASE_URL=http://localhost:20128 \
   ghcr.io/tokenhop/tokenhop:latest
@@ -905,8 +905,8 @@ Dashboard: `http://localhost:20128/dashboard`
 <summary><b>VPS / Cloud</b></summary>
 
 ```bash
-npm install -g 9router
-PORT=20128 HOSTNAME=0.0.0.0 BASE_URL=https://your-domain.com 9router
+npm install -g tokenhop
+PORT=20128 HOSTNAME=0.0.0.0 BASE_URL=https://your-domain.com tokenhop
 ```
 
 Disarankan menaruhnya di belakang reverse proxy (Nginx/Caddy) dengan HTTPS, dan membatasi akses hanya untuk dirimu sendiri.
@@ -962,8 +962,8 @@ MIT License — lihat [LICENSE](https://github.com/tokenhop/tokenhop/blob/master
 
 <div align="center">
 
-**Kalau 9Router membantumu, kasih ⭐ di [GitHub](https://github.com/tokenhop/tokenhop)!**
+**Kalau tokenhop membantumu, kasih ⭐ di [GitHub](https://github.com/tokenhop/tokenhop)!**
 
-[🌐 Website](https://9router.com) • [📦 npm](https://www.npmjs.com/package/9router) • [🐛 Laporkan Bug](https://github.com/tokenhop/tokenhop/issues)
+[🌐 Website](https://tokenhop.ai) • [📦 npm](https://www.npmjs.com/package/tokenhop) • [🐛 Laporkan Bug](https://github.com/tokenhop/tokenhop/issues)
 
 </div>

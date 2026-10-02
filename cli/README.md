@@ -1,19 +1,19 @@
-# 9Router - FREE AI Router & Token Saver
+# tokenhop - FREE AI Router & Token Saver
 
 **Never stop coding. Save 20-40% tokens with RTK + auto-fallback to FREE & cheap AI models.**
 
 **Connect All AI Code Tools (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) to 40+ AI Providers & 100+ Models.**
 
-[![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-[![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
+[![npm](https://img.shields.io/npm/v/tokenhop.svg)](https://www.npmjs.com/package/tokenhop)
+[![Downloads](https://img.shields.io/npm/dm/tokenhop.svg)](https://www.npmjs.com/package/tokenhop)
 [![GHCR](https://img.shields.io/badge/GHCR-tokenhop%2Ftokenhop-blue?logo=github)](https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop)
-[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
+[![License](https://img.shields.io/npm/l/tokenhop.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
-[🌐 Website](https://9router.com) • [📖 Full Docs](https://github.com/tokenhop/tokenhop)
+[🌐 Website](https://tokenhop.ai) • [📖 Docs](https://tokenhop.dev) • [💻 GitHub](https://github.com/tokenhop/tokenhop)
 
 ---
 
-## 🤔 Why 9Router?
+## 🤔 Why tokenhop?
 
 **Stop wasting money, tokens and hitting limits:**
 
@@ -22,7 +22,7 @@
 - ❌ Tool outputs (git diff, grep, ls...) burn tokens fast
 - ❌ Expensive APIs ($20-50/month per provider)
 
-**9Router solves this:**
+**tokenhop solves this:**
 
 - ✅ **RTK Token Saver** - Auto-compress tool_result, save 20-40% tokens
 - ✅ **Maximize subscriptions** - Track quota, use every bit before reset
@@ -37,18 +37,18 @@
 **Option 1 — npm (recommended for desktop):**
 
 ```bash
-npm install -g 9router
-9router
+npm install -g tokenhop
+tokenhop
 
 # Or run directly with npx
-npx 9router
+npx tokenhop
 ```
 
 **Option 2 — Docker (server/VPS):**
 
 ```bash
-docker run -d --name 9router -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" -e DATA_DIR=/app/data \
+docker run -d --name tokenhop -p 20128:20128 \
+  -v "$HOME/.tokenhop:/app/data" -e DATA_DIR=/app/data \
   ghcr.io/tokenhop/tokenhop:latest
 ```
 
@@ -79,10 +79,10 @@ That's it! Start coding with FREE AI models.
 ## 🚀 CLI Options
 
 ```bash
-9router                    # Start with default settings
-9router --port 8080        # Custom port
-9router --no-browser       # Don't open browser
-9router --help             # Show all options
+tokenhop                   # Start with default settings
+tokenhop --port 8080       # Custom port
+tokenhop --no-browser      # Don't open browser
+tokenhop --help            # Show all options
 ```
 
 **Dashboard**: `http://localhost:20128/dashboard`
@@ -99,9 +99,12 @@ Any tool supporting OpenAI/Claude-compatible API works.
 
 ## 💾 Data Location
 
-- **macOS/Linux**: `~/.9router/db/data.sqlite`
-- **Windows**: `%APPDATA%/9router/db/data.sqlite`
-- **Docker**: `/app/data/db/data.sqlite` (mount `$HOME/.9router` to persist)
+- **macOS/Linux**: `~/.tokenhop/db/data.sqlite`
+- **Windows**: `%APPDATA%/tokenhop/db/data.sqlite`
+- **Docker**: `/app/data/db/data.sqlite` (mount `$HOME/.tokenhop` to persist)
+
+Upgrading from 9router? An existing `~/.9router` is used automatically until you run
+`tokenhop data migrate`. See the [upgrade guide](https://github.com/tokenhop/tokenhop/blob/master/UPGRADING.md).
 
 ---
 
@@ -111,12 +114,14 @@ Full docs, advanced setup, video tutorials & development guide:
 
 - **GitHub**: <https://github.com/tokenhop/tokenhop>
 - **Full README**: <https://github.com/tokenhop/tokenhop/blob/master/README.md>
-- **Website**: <https://9router.com>
+- **Docs**: <https://tokenhop.dev>
+- **Website**: <https://tokenhop.ai>
 
 ---
 
 ## 🙏 Acknowledgments
 
+- **[9Router](https://github.com/decolua/9router)** by decolua - the project tokenhop started as a fork of (MIT)
 - **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** - Original Go implementation
 
 ## 📄 License

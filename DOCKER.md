@@ -1,6 +1,6 @@
 # Docker
 
-Run 9Router in a container. Published image: [`ghcr.io/tokenhop/tokenhop`](https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop) — multi-platform `linux/amd64` + `linux/arm64`.
+Run tokenhop in a container. Published image: [`ghcr.io/tokenhop/tokenhop`](https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop) — multi-platform `linux/amd64` + `linux/arm64`.
 
 ---
 
@@ -11,9 +11,9 @@ Run 9Router in a container. Published image: [`ghcr.io/tokenhop/tokenhop`](https
 ```bash
 docker run -d \
   -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
+  -v "$HOME/.tokenhop:/app/data" \
   -e DATA_DIR=/app/data \
-  --name 9router \
+  --name tokenhop \
   ghcr.io/tokenhop/tokenhop:latest
 ```
 
@@ -22,20 +22,22 @@ App listens on port `20128`. Open: <http://localhost:20128>
 ## Manage container
 
 ```bash
-docker logs -f 9router        # view logs
-docker stop 9router           # stop
-docker start 9router          # start again
-docker rm -f 9router          # remove
+docker logs -f tokenhop       # view logs
+docker stop tokenhop          # stop
+docker start tokenhop         # start again
+docker rm -f tokenhop         # remove
 ```
 
 ## Data persistence
 
 ```bash
--v "$HOME/.9router:/app/data" \
+-v "$HOME/.tokenhop:/app/data" \
 -e DATA_DIR=/app/data
 ```
 
-Without `DATA_DIR`, the app falls back to `~/.9router/` (macOS/Linux) or `%APPDATA%\9router\` (Windows). In the container, `DATA_DIR=/app/data` makes the bind mount work.
+Without `DATA_DIR`, the app falls back to `~/.tokenhop/` (macOS/Linux) or `%APPDATA%\tokenhop\` (Windows). In the container, `DATA_DIR=/app/data` makes the bind mount work.
+
+**Upgrading from 9router?** Keep mounting the host directory or volume you already use (for example `$HOME/.9router`); the container only sees `/app/data`, so nothing moves. See [UPGRADING.md](UPGRADING.md#9-docker).
 
 Data layout under `$DATA_DIR/`:
 
@@ -47,7 +49,7 @@ $DATA_DIR/
 └── ...                   # certs, logs, runtime configs
 ```
 
-Host path: `$HOME/.9router/db/data.sqlite`
+Host path: `$HOME/.tokenhop/db/data.sqlite`
 Container path: `/app/data/db/data.sqlite`
 
 ## Optional env vars
@@ -58,27 +60,27 @@ built into the official image, so they're only needed to override the built-in p
 ```bash
 docker run -d \
   -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
+  -v "$HOME/.tokenhop:/app/data" \
   -e DATA_DIR=/app/data \
   -e PORT=20128 \
   -e HOSTNAME=0.0.0.0 \
   -e DEBUG=true \
-  --name 9router \
+  --name tokenhop \
   ghcr.io/tokenhop/tokenhop:latest
 ```
 
 ## Optional Headroom sidecar
 
-The 9Router image does not bundle Python or Headroom. To use Headroom in Docker, run it as a separate service and point 9Router at that proxy:
+The tokenhop image does not bundle Python or Headroom. To use Headroom in Docker, run it as a separate service and point tokenhop at that proxy:
 
 ```yaml
 services:
-  9router:
+  tokenhop:
     image: ghcr.io/tokenhop/tokenhop:latest
     ports:
       - "20128:20128"
     volumes:
-      - "$HOME/.9router:/app/data"
+      - "$HOME/.tokenhop:/app/data"
     environment:
       DATA_DIR: /app/data
       HEADROOM_URL: http://headroom:8787
@@ -99,7 +101,7 @@ If Headroom runs on the Docker host instead of as a sidecar, use `http://host.do
 
 ```bash
 docker pull ghcr.io/tokenhop/tokenhop:latest
-docker rm -f 9router
+docker rm -f tokenhop
 # re-run the quick start command
 ```
 
@@ -110,12 +112,12 @@ docker rm -f 9router
 ## Build image locally (test)
 
 ```bash
-docker build -t 9router .
+docker build -t tokenhop .
 
 docker run --rm -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
+  -v "$HOME/.tokenhop:/app/data" \
   -e DATA_DIR=/app/data \
-  9router
+  tokenhop
 ```
 
 To bake the Google OAuth clients into a local image (otherwise supply via `-e`), pass them via BuildKit secrets:
@@ -126,21 +128,14 @@ docker build --no-cache-filter oauth-defaults \
   --secret id=GEMINI_OAUTH_CLIENT_SECRET,env=GEMINI_OAUTH_CLIENT_SECRET \
   --secret id=ANTIGRAVITY_OAUTH_CLIENT_ID,env=ANTIGRAVITY_OAUTH_CLIENT_ID \
   --secret id=ANTIGRAVITY_OAUTH_CLIENT_SECRET,env=ANTIGRAVITY_OAUTH_CLIENT_SECRET \
-  -t 9router .
+  -t tokenhop .
 ```
 
 ## Publish (automatic via CI)
 
 Push a git tag `v*` → GitHub Actions builds multi-platform (amd64+arm64) and pushes to:
 
-- `ghcr.io/tokenhop/tokenhop:v{version}` + `:latest`
+- `ghcr.io/tokenhop/tokenhop:{version}` and `:{major}.{minor}`, plus `:latest` for the highest stable tag
 
-```bash
-# Use scripts/release.js (recommended)
-node scripts/release.js "Release title" "Notes"
-
-# Or manually
-git tag v0.4.x && git push origin v0.4.x
-```
-
-Workflow: `app/.github/workflows/docker-publish.yml`
+Releases are cut by maintainers only; see [RELEASING.md](RELEASING.md). Workflow:
+[`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml).

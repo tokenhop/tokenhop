@@ -1,19 +1,19 @@
 name: Bug report
-description: "Report a reproducible bug in 9router"
+description: "Report a reproducible bug in tokenhop"
 title: "[Bug]: "
 labels: ["type:bug", "status:needs-triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to report a bug in **9router**. Please fill out
+        Thanks for taking the time to report a bug in **tokenhop**. Please fill out
         the form below so we can reproduce and fix it.
 
   - type: input
     id: version
     attributes:
-      label: 9router version
-      description: "App version (dashboard footer) and/or CLI version (`npx 9router --version`), or commit hash"
+      label: tokenhop version
+      description: "App version (dashboard footer) and/or CLI version (`npx tokenhop --version`), or commit hash"
       placeholder: "app v0.1.3 / cli v0.1.3 or abc1234"
     validations:
       required: true
@@ -22,9 +22,9 @@ body:
     id: install-method
     attributes:
       label: Install method
-      description: "How did you install / run 9router?"
+      description: "How did you install / run tokenhop?"
       options:
-        - npm CLI (`npx 9router` / `npm i -g 9router`)
+        - npm CLI (`npx tokenhop` / `npm i -g tokenhop`)
         - Docker (`docker compose up` / image)
         - From source (`git clone`, `npm run dev` / `npm run start`)
         - Other
@@ -44,7 +44,7 @@ body:
     id: client-tool
     attributes:
       label: Client tool
-      description: "Which client talks to the 9router gateway (`/v1/*`)?"
+      description: "Which client talks to the tokenhop gateway (`/v1/*`)?"
       options:
         - Claude Code
         - Codex
@@ -60,7 +60,7 @@ body:
     id: environment
     attributes:
       label: OS
-      description: "Where are you running 9router?"
+      description: "Where are you running tokenhop?"
       options:
         - Linux
         - macOS

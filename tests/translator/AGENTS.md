@@ -45,7 +45,7 @@ cd app && npx vitest run --config tests/vitest.config.js "tests/translator/bugs-
 cd app && RUN_REAL=1 npx vitest run --config tests/vitest.config.js "tests/translator/real/"
 ```
 
-No-cred tests make NO network calls and need NO creds. Real tests (`real/`, gated by `RUN_REAL=1`) read active connections from `~/.9router/db/data.sqlite`, send a tiny prompt per provider through `handleChatCore`, and assert valid SSE. Account/quota errors (401/402/403/429) are treated as credential issues and skipped, not failures.
+No-cred tests make NO network calls and need NO creds. Real tests (`real/`, gated by `RUN_REAL=1`) read active connections from the real data dir (`<data dir>/db/data.sqlite`), send a tiny prompt per provider through `handleChatCore`, and assert valid SSE. Account/quota errors (401/402/403/429) are treated as credential issues and skipped, not failures.
 
 ## 4. Adding a new provider → tests cover it AUTOMATICALLY
 

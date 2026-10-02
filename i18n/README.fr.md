@@ -1,18 +1,18 @@
 <div align="center">
-  <img src="../images/9router.png?1" alt="Tableau de bord 9Router" width="800"/>
+  <img src="../images/tokenhop.png?1" alt="Tableau de bord tokenhop" width="800"/>
 
-# 9Router - Routeur IA GRATUIT et économiseur de tokens
+# tokenhop - Routeur IA GRATUIT et économiseur de tokens
 
 **N'arrêtez jamais de coder. Économisez 20 à 40 % de tokens avec RTK + bascule automatique vers des modèles d'IA GRATUITS et bon marché.**
 
 **Connectez tous vos outils de codage IA (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) à plus de 40 fournisseurs d'IA et plus de 100 modèles.**
 
-[![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-[![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
+[![npm](https://img.shields.io/npm/v/tokenhop.svg)](https://www.npmjs.com/package/tokenhop)
+[![Downloads](https://img.shields.io/npm/dm/tokenhop.svg)](https://www.npmjs.com/package/tokenhop)
 [![GHCR](https://img.shields.io/badge/GHCR-tokenhop%2Ftokenhop-blue?logo=github)](https://github.com/tokenhop/tokenhop/pkgs/container/tokenhop)
-[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
+[![License](https://img.shields.io/npm/l/tokenhop.svg)](https://github.com/tokenhop/tokenhop/blob/master/LICENSE)
 
-[🚀 Démarrage rapide](#-démarrage-rapide) • [💡 Fonctionnalités](#-fonctionnalités-clés) • [📖 Configuration](#-guide-dinstallation) • [🌐 Site web](https://9router.com)
+[🚀 Démarrage rapide](#-démarrage-rapide) • [💡 Fonctionnalités](#-fonctionnalités-clés) • [📖 Configuration](#-guide-dinstallation) • [🌐 Site web](https://tokenhop.ai)
 
 [🇻🇳 Tiếng Việt](./README.vi.md) • [🇨🇳 中文](./README.zh-CN.md) • [🇯🇵 日本語](./README.ja-JP.md) • [🇷🇺 Русский](./README.ru.md) • [🇹🇭 ไทย](./README.th.md) • [🇮🇷 فارسی](./README.fa_IR.md) • [🇮🇩 Indonesia](./README.id-ID.md) • [🇪🇸 Español](./README.es.md) • [🇫🇷 Français](./README.fr.md)
 
@@ -20,7 +20,7 @@
 
 ---
 
-## 🤔 Pourquoi 9Router ?
+## 🤔 Pourquoi tokenhop ?
 
 **Arrêtez de gaspiller de l'argent, des tokens et de buter contre les limites :**
 
@@ -30,7 +30,7 @@
 - ❌ Des API coûteuses (20 à 50 $/mois par fournisseur)
 - ❌ Changement manuel entre les fournisseurs
 
-**9Router résout tout cela :**
+**tokenhop résout tout cela :**
 
 - ✅ **Économiseur de tokens RTK** - Compresse automatiquement le contenu de tool_result et économise 20 à 40 % de tokens par requête
 - ✅ **Maximise les abonnements** - Suit le quota et utilise chaque bit avant sa réinitialisation
@@ -50,7 +50,7 @@
        │ http://localhost:20128/v1
        ↓
 ┌─────────────────────────────────────────────┐
-│           9Router (Smart Router)            │
+│           tokenhop (Smart Router)           │
 │  • RTK Token Saver (cut tool_result tokens) │
 │  • Format translation (OpenAI ↔ Claude)     │
 │  • Quota tracking                           │
@@ -73,8 +73,8 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 **1. Installez globalement :**
 
 ```bash
-npm install -g 9router
-9router
+npm install -g tokenhop
+tokenhop
 ```
 
 🎉 Le tableau de bord s'ouvre sur `http://localhost:20128`
@@ -96,7 +96,7 @@ Paramètres de Claude Code/Codex/OpenClaw/Cursor/Cline :
 
 **Alternative : exécuter depuis le code source (ce dépôt) :**
 
-Le paquet de ce dépôt est privé (`9router-app`), donc l'exécution depuis le code source/Docker est le chemin de développement local attendu.
+Le paquet de ce dépôt est privé (`tokenhop-app`), donc l'exécution depuis le code source/Docker est le chemin de développement local attendu.
 
 ```bash
 cp .env.example .env
@@ -210,13 +210,13 @@ URL par défaut :
 
 </div>
 
-> 🎬 **Vous avez réalisé une vidéo sur 9Router ?** Envoyez une [Pull Request](https://github.com/tokenhop/tokenhop/pulls) en ajoutant votre vidéo à cette section — nous la fusionnerons !
+> 🎬 **Vous avez réalisé une vidéo sur tokenhop ?** Envoyez une [Pull Request](https://github.com/tokenhop/tokenhop/pulls) en ajoutant votre vidéo à cette section — nous la fusionnerons !
 
 ---
 
 ## 🛠️ Outils CLI pris en charge
 
-9Router fonctionne parfaitement avec tous les principaux outils de codage IA :
+tokenhop fonctionne parfaitement avec tous les principaux outils de codage IA :
 
 <div align="center">
   <table>
@@ -465,10 +465,10 @@ Avec RTK :   28K tokens envoyés au LLM   (40 % économisés · même contexte �
 
 ### 🧠 Économiseur de tokens Headroom
 
-Headroom est optionnel et s'exécute séparément. 9Router appelle l'endpoint local `/v1/compress` de Headroom, puis conserve le routage, le repli, l'authentification et le suivi d'utilisation normaux :
+Headroom est optionnel et s'exécute séparément. tokenhop appelle l'endpoint local `/v1/compress` de Headroom, puis conserve le routage, le repli, l'authentification et le suivi d'utilisation normaux :
 
 ```
-Client → 9Router → Headroom /v1/compress → 9Router → fournisseur
+Client → tokenhop → Headroom /v1/compress → tokenhop → fournisseur
 ```
 
 Configuration locale :
@@ -490,7 +490,7 @@ http://headroom:8787
 http://host.docker.internal:8787
 ```
 
-Si Headroom est indisponible ou renvoie une erreur, 9Router bascule en mode dégradé et envoie la requête originale.
+Si Headroom est indisponible ou renvoie une erreur, tokenhop bascule en mode dégradé et envoie la requête originale.
 
 ### 🐴 Ponytail (Dev sénior fainéant)
 
@@ -532,7 +532,7 @@ Combo : "my-coding-stack"
 Traduction transparente entre les formats :
 
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **Cursor** ↔ **Kiro** ↔ **Vertex** ↔ **Antigravity** ↔ **Ollama** ↔ **OpenAI Responses**
-- Votre outil CLI envoie le format OpenAI → 9Router le traduit → Le fournisseur reçoit le format natif
+- Votre outil CLI envoie le format OpenAI → tokenhop le traduit → Le fournisseur reçoit le format natif
 - Fonctionne avec tout outil prenant en charge les endpoints OpenAI personnalisés
 
 ### 👥 Prise en charge multi-comptes
@@ -586,13 +586,13 @@ Traduction transparente entre les formats :
 > **💡 IMPORTANT - Comprendre les coûts du tableau de bord :**
 >
 > Le "coût" affiché dans l'Analytique d'utilisation est **uniquement à des fins de suivi et de comparaison**.
-> 9Router lui-même **ne vous facture jamais** quoi que ce soit. Vous ne payez que les fournisseurs directement (si vous utilisez des services payants).
+> tokenhop lui-même **ne vous facture jamais** quoi que ce soit. Vous ne payez que les fournisseurs directement (si vous utilisez des services payants).
 >
 > **Exemple :** Si votre tableau de bord affiche "coût total de 290 $" alors que vous utilisez les modèles iFlow, cela représente
 > ce que vous auriez payé en utilisant des API payantes directement. Votre coût réel = **0 $** (iFlow est gratuit et illimité).
 >
 > Considérez-le comme un "suivi d'économies" qui montre combien vous économisez en utilisant des modèles gratuits ou
-> en routant via 9Router !
+> en routant via tokenhop !
 
 ### 🌐 Déployez partout
 
@@ -625,15 +625,15 @@ Traduction transparente entre les formats :
 
 ---
 
-### 📊 Comprendre les coûts et la facturation de 9Router
+### 📊 Comprendre les coûts et la facturation de tokenhop
 
-**La réalité de la facturation de 9Router :**
+**La réalité de la facturation de tokenhop :**
 
-✅ **Le logiciel 9Router = GRATUIT pour toujours** (open source, ne facture jamais)  
+✅ **Le logiciel tokenhop = GRATUIT pour toujours** (open source, ne facture jamais)  
 ✅ **Les "coûts" du tableau de bord = Affichage/suivi uniquement** (pas de vraies factures)  
 ✅ **Vous payez les fournisseurs directement** (abonnements ou frais d'API)  
 ✅ **Les fournisseurs GRATUITS restent GRATUITS** (iFlow, Kiro, Qwen = 0 $ illimité)  
-❌ **9Router n'envoie jamais de factures** et ne débite pas votre carte
+❌ **tokenhop n'envoie jamais de factures** et ne débite pas votre carte
 
 **Comment fonctionne l'affichage des coûts :**
 
@@ -656,9 +656,9 @@ Vérification de la réalité :
 **Règles de paiement :**
 
 - **Fournisseurs par abonnement** (Claude Code, Codex) : Payez-les directement via leurs sites web
-- **Fournisseurs bon marché** (GLM, MiniMax) : Payez-les directement, 9Router se contente de router
+- **Fournisseurs bon marché** (GLM, MiniMax) : Payez-les directement, tokenhop se contente de router
 - **Fournisseurs GRATUITS** (iFlow, Kiro, Qwen) : Vraiment gratuits pour toujours, sans frais cachés
-- **9Router** : Ne facture jamais rien, jamais
+- **tokenhop** : Ne facture jamais rien, jamais
 
 ---
 
@@ -737,7 +737,7 @@ Accès via : WhatsApp, Telegram, Slack, Discord, iMessage, Signal...
 <details>
 <summary><b>📊 Pourquoi mon tableau de bord affiche-t-il des coûts élevés ?</b></summary>
 
-Le tableau de bord suit votre utilisation de tokens et affiche des **coûts estimés** comme si vous utilisiez des API payantes directement. Ce n'est **pas une facturation réelle** — c'est une référence pour montrer combien vous économisez en utilisant des modèles gratuits ou des abonnements existants via 9Router.
+Le tableau de bord suit votre utilisation de tokens et affiche des **coûts estimés** comme si vous utilisiez des API payantes directement. Ce n'est **pas une facturation réelle** — c'est une référence pour montrer combien vous économisez en utilisant des modèles gratuits ou des abonnements existants via tokenhop.
 
 **Exemple :**
 
@@ -751,17 +751,17 @@ L'affichage des coûts est un "suivi d'économies" qui vous aide à comprendre v
 </details>
 
 <details>
-<summary><b>💳 9Router me facturera-t-il ?</b></summary>
+<summary><b>💳 tokenhop me facturera-t-il ?</b></summary>
 
-**Non.** 9Router est un logiciel gratuit et open source qui s'exécute sur votre propre ordinateur. Il ne vous facture jamais rien.
+**Non.** tokenhop est un logiciel gratuit et open source qui s'exécute sur votre propre ordinateur. Il ne vous facture jamais rien.
 
 **Vous ne payez que :**
 
 - ✅ **Fournisseurs par abonnement** (Claude Code 20 $/mois, Codex 20 à 200 $/mois) → Payez-les directement sur leurs sites web
-- ✅ **Fournisseurs bon marché** (GLM, MiniMax) → Payez-les directement, 9Router route simplement vos requêtes
-- ❌ **9Router lui-même** → **Ne facture jamais rien, jamais**
+- ✅ **Fournisseurs bon marché** (GLM, MiniMax) → Payez-les directement, tokenhop route simplement vos requêtes
+- ❌ **tokenhop lui-même** → **Ne facture jamais rien, jamais**
 
-9Router est un proxy/routeur local. Il n'a pas votre carte bancaire, ne peut pas envoyer de factures et ne possède aucun système de facturation. C'est un logiciel entièrement gratuit.
+tokenhop est un proxy/routeur local. Il n'a pas votre carte bancaire, ne peut pas envoyer de factures et ne possède aucun système de facturation. C'est un logiciel entièrement gratuit.
 
 </details>
 
@@ -776,7 +776,7 @@ Ce sont des services gratuits offerts par ces entreprises respectives :
 - **OpenCode Free** : Proxy de passage sans authentification, modèles récupérés automatiquement depuis `opencode.ai/zen/v1/models`
 - **Vertex AI** : 300 $ de crédit gratuit pour les nouveaux comptes Google Cloud (90 jours)
 
-9Router se contente de router vos requêtes vers eux — il n'y a pas de "piège" ni de facturation future. Ce sont de véritables services gratuits, et 9Router les rend faciles à utiliser avec le support du repli.
+tokenhop se contente de router vos requêtes vers eux — il n'y a pas de "piège" ni de facturation future. Ce sont de véritables services gratuits, et tokenhop les rend faciles à utiliser avec le support du repli.
 
 **Niveaux gratuits interrompus (non recommandés) :**
 
@@ -811,7 +811,7 @@ Ce sont des services gratuits offerts par ces entreprises respectives :
 
 3. **Utilisez les fournisseurs par abonnement en dernier :**
    - Uniquement si vous les possédez déjà
-   - 9Router vous aide à maximiser leur valeur grâce au suivi de quota
+   - tokenhop vous aide à maximiser leur valeur grâce au suivi de quota
 
 **Résultat :** La plupart des utilisateurs peuvent fonctionner à 0 $/mois en utilisant uniquement les niveaux gratuits !
 
@@ -820,22 +820,22 @@ Ce sont des services gratuits offerts par ces entreprises respectives :
 <details>
 <summary><b>📈 Et si mon utilisation explose soudainement ?</b></summary>
 
-Le repli intelligent de 9Router évite les frais surprises :
+Le repli intelligent de tokenhop évite les frais surprises :
 
 **Scénario :** Vous êtes en sprint de codage et vous épuisez vos quotas
 
-**Sans 9Router :**
+**Sans tokenhop :**
 
 - ❌ Limite de débit atteinte → Le travail s'arrête → Frustration
 - ❌ Ou : Vous accumulez accidentellement d'énormes factures d'API
 
-**Avec 9Router :**
+**Avec tokenhop :**
 
 - ✅ L'abonnement atteint sa limite → Repli automatique vers le niveau économique
 - ✅ Le niveau économique devient coûteux → Repli automatique vers le niveau gratuit
 - ✅ N'arrêtez jamais de coder → Coûts prévisibles
 
-**Vous gardez le contrôle :** Définissez des limites de dépenses par fournisseur dans le tableau de bord, et 9Router les respecte.
+**Vous gardez le contrôle :** Définissez des limites de dépenses par fournisseur dans le tableau de bord, et tokenhop les respecte.
 
 </details>
 
@@ -860,7 +860,7 @@ Modèles :
   cc/claude-haiku-4-5-20251001
 ```
 
-**Astuce pro :** Utilisez Opus pour les tâches complexes et Sonnet pour la vitesse. 9Router suit le quota par modèle !
+**Astuce pro :** Utilisez Opus pour les tâches complexes et Sonnet pour la vitesse. tokenhop suit le quota par modèle !
 
 ### OpenAI Codex (Plus/Pro)
 
@@ -1041,7 +1041,7 @@ Coût : 0 $ pour toujours (+ 20 à 40 % d'économie de tokens via RTK) !
 ```
 Settings → Models → Advanced :
   OpenAI API Base URL : http://localhost:20128/v1
-  OpenAI API Key : [depuis le tableau de bord 9router]
+  OpenAI API Key : [depuis le tableau de bord tokenhop]
   Model : cc/claude-opus-4-7
 ```
 
@@ -1054,7 +1054,7 @@ Modifiez `~/.claude/config.json` :
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "votre-clé-api-9router"
+  "anthropic_api_key": "votre-clé-api-tokenhop"
 }
 ```
 
@@ -1062,7 +1062,7 @@ Modifiez `~/.claude/config.json` :
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="votre-clé-api-9router"
+export OPENAI_API_KEY="votre-clé-api-tokenhop"
 
 codex "votre prompt"
 ```
@@ -1082,15 +1082,15 @@ Tableau de bord → CLI Tools → OpenClaw → Sélectionnez le modèle → Appl
   "agents": {
     "defaults": {
       "model": {
-        "primary": "9router/kr/claude-sonnet-4.5"
+        "primary": "tokenhop/kr/claude-sonnet-4.5"
       }
     }
   },
   "models": {
     "providers": {
-      "9router": {
+      "tokenhop": {
         "baseUrl": "http://127.0.0.1:20128/v1",
-        "apiKey": "sk_9router",
+        "apiKey": "sk_tokenhop",
         "api": "openai-completions",
         "models": [
           {
@@ -1104,7 +1104,7 @@ Tableau de bord → CLI Tools → OpenClaw → Sélectionnez le modèle → Appl
 }
 ```
 
-> **Remarque :** OpenClaw ne fonctionne qu'avec un 9Router local. Utilisez `127.0.0.1` au lieu de `localhost` pour éviter les problèmes de résolution IPv6.
+> **Remarque :** OpenClaw ne fonctionne qu'avec un tokenhop local. Utilisez `127.0.0.1` au lieu de `localhost` pour éviter les problèmes de résolution IPv6.
 
 ### Cline / Continue / RooCode
 
@@ -1125,19 +1125,19 @@ Model : cc/claude-opus-4-7
 ```bash
 # Clonez et installez
 git clone https://github.com/tokenhop/tokenhop.git
-cd 9router
+cd tokenhop
 npm install
 npm run build
 
 # Configuration
 export JWT_SECRET="votre-secret-sécurisé-changez-le"
 export INITIAL_PASSWORD="votre-mot-de-passe"
-export DATA_DIR="/var/lib/9router"
+export DATA_DIR="/var/lib/tokenhop"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
 export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
-export NEXT_PUBLIC_CLOUD_URL="https://9router.com"
+# export NEXT_PUBLIC_CLOUD_URL=  # optionnel : uniquement pour un endpoint de synchronisation auto-hébergé (pas de cloud par défaut)
 export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
@@ -1146,7 +1146,7 @@ npm run start
 
 # Ou utilisez PM2
 npm install -g pm2
-pm2 start npm --name 9router -- start
+pm2 start npm --name tokenhop -- start
 pm2 save
 pm2 startup
 ```
@@ -1161,9 +1161,9 @@ Images publiées (multi-plateformes `linux/amd64` + `linux/arm64`) :
 
 ```bash
 docker run -d \
-  --name 9router \
+  --name tokenhop \
   -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
+  -v "$HOME/.tokenhop:/app/data" \
   -e DATA_DIR=/app/data \
   ghcr.io/tokenhop/tokenhop:latest
 ```
@@ -1174,10 +1174,10 @@ docker run -d \
 
 ```bash
 git clone https://github.com/tokenhop/tokenhop.git
-cd 9router/app
-docker build -t 9router .
-docker run -d --name 9router -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" -e DATA_DIR=/app/data 9router
+cd tokenhop/app
+docker build -t tokenhop .
+docker run -d --name tokenhop -p 20128:20128 \
+  -v "$HOME/.tokenhop:/app/data" -e DATA_DIR=/app/data tokenhop
 ```
 
 **Valeurs par défaut du conteneur :**
@@ -1188,35 +1188,35 @@ docker run -d --name 9router -p 20128:20128 \
 **Commandes utiles :**
 
 ```bash
-docker logs -f 9router
-docker restart 9router
-docker stop 9router && docker rm 9router
+docker logs -f tokenhop
+docker restart tokenhop
+docker stop tokenhop && docker rm tokenhop
 docker pull ghcr.io/tokenhop/tokenhop:latest   # mise à jour vers la dernière version
 ```
 
-**Persistance des données :** `$HOME/.9router/db/data.sqlite` sur l'hôte ↔ `/app/data/db/data.sqlite` dans le conteneur.
+**Persistance des données :** `$HOME/.tokenhop/db/data.sqlite` sur l'hôte ↔ `/app/data/db/data.sqlite` dans le conteneur.
 
 ### Variables d'environnement
 
-| Variable                                             | Par défaut                                       | Description                                                                                                               |
-| ---------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| `JWT_SECRET`                                         | Généré automatiquement (`~/.9router/jwt-secret`) | Secret de signature JWT pour le cookie d'authentification du tableau de bord (remplacez-le pour partager entre instances) |
-| `INITIAL_PASSWORD`                                   | `123456`                                         | Mot de passe de première connexion quand aucun hash n'est enregistré                                                      |
-| `DATA_DIR`                                           | `~/.9router`                                     | Emplacement principal des données de l'app (SQLite dans `$DATA_DIR/db/data.sqlite`)                                       |
-| `PORT`                                               | défaut du framework                              | Port du service (`20128` dans les exemples)                                                                               |
-| `HOSTNAME`                                           | défaut du framework                              | Hôte de liaison (Docker utilise `0.0.0.0` par défaut)                                                                     |
-| `NODE_ENV`                                           | défaut du runtime                                | Définissez `production` pour le déploiement                                                                               |
-| `BASE_URL`                                           | `http://localhost:20128`                         | URL de base interne côté serveur utilisée par les tâches de synchronisation cloud                                         |
-| `CLOUD_URL`                                          | `https://9router.com`                            | URL de base de l'endpoint de synchronisation cloud côté serveur                                                           |
-| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`                          | URL de base publique/rétrocompatible (préférez `BASE_URL` pour le runtime serveur)                                        |
-| `NEXT_PUBLIC_CLOUD_URL`                              | `https://9router.com`                            | URL cloud publique/rétrocompatible (préférez `CLOUD_URL` pour le runtime serveur)                                         |
-| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`                  | Secret HMAC pour les clés API générées                                                                                    |
-| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                            | Sel pour le hachage stable de l'ID machine                                                                                |
-| `ENABLE_REQUEST_LOGS`                                | `false`                                          | Active les journaux de requêtes/réponses dans `logs/`                                                                     |
-| `AUTH_COOKIE_SECURE`                                 | `false`                                          | Force le cookie d'authentification `Secure` (mettez `true` derrière un proxy inverse HTTPS)                               |
-| `REQUIRE_API_KEY`                                    | `false`                                          | Applique la clé API Bearer sur les routes `/v1/*` (recommandé pour les déploiements exposés à Internet)                   |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | vide                                             | Proxy sortant optionnel pour les appels aux fournisseurs externes                                                         |
-| `SEARXNG_URL`                                        | `http://localhost:8888/search`                   | Endpoint du fournisseur de recherche web SearXNG intégré, sans authentification                                           |
+| Variable                                             | Par défaut                                        | Description                                                                                                                                                                       |
+| ---------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`                                         | Généré automatiquement (`~/.tokenhop/jwt-secret`) | Secret de signature JWT pour le cookie d'authentification du tableau de bord (remplacez-le pour partager entre instances)                                                         |
+| `INITIAL_PASSWORD`                                   | `123456`                                          | Mot de passe de première connexion quand aucun hash n'est enregistré                                                                                                              |
+| `DATA_DIR`                                           | `~/.tokenhop`                                     | Emplacement principal des données de l'app (SQLite dans `$DATA_DIR/db/data.sqlite`) ; un `~/.9router` existant reste utilisé automatiquement (`tokenhop data migrate` le déplace) |
+| `PORT`                                               | défaut du framework                               | Port du service (`20128` dans les exemples)                                                                                                                                       |
+| `HOSTNAME`                                           | défaut du framework                               | Hôte de liaison (Docker utilise `0.0.0.0` par défaut)                                                                                                                             |
+| `NODE_ENV`                                           | défaut du runtime                                 | Définissez `production` pour le déploiement                                                                                                                                       |
+| `BASE_URL`                                           | `http://localhost:20128`                          | URL de base interne côté serveur utilisée par les tâches de synchronisation cloud                                                                                                 |
+| `CLOUD_URL`                                          | vide                                              | Optionnel : URL d'un endpoint de synchronisation auto-hébergé (aucune valeur par défaut ; vide = rien n'est envoyé)                                                               |
+| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`                           | URL de base publique/rétrocompatible (préférez `BASE_URL` pour le runtime serveur)                                                                                                |
+| `NEXT_PUBLIC_CLOUD_URL`                              | vide                                              | Variante publique/rétrocompatible de `CLOUD_URL` (optionnelle, uniquement pour un endpoint auto-hébergé)                                                                          |
+| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`                   | Secret HMAC pour les clés API générées                                                                                                                                            |
+| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                             | Sel pour le hachage stable de l'ID machine                                                                                                                                        |
+| `ENABLE_REQUEST_LOGS`                                | `false`                                           | Active les journaux de requêtes/réponses dans `logs/`                                                                                                                             |
+| `AUTH_COOKIE_SECURE`                                 | `false`                                           | Force le cookie d'authentification `Secure` (mettez `true` derrière un proxy inverse HTTPS)                                                                                       |
+| `REQUIRE_API_KEY`                                    | `false`                                           | Applique la clé API Bearer sur les routes `/v1/*` (recommandé pour les déploiements exposés à Internet)                                                                           |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | vide                                              | Proxy sortant optionnel pour les appels aux fournisseurs externes                                                                                                                 |
+| `SEARXNG_URL`                                        | `http://localhost:8888/search`                    | Endpoint du fournisseur de recherche web SearXNG intégré, sans authentification                                                                                                   |
 
 Remarques :
 
@@ -1230,7 +1230,7 @@ Remarques :
 - État principal de l'app : `${DATA_DIR}/db/data.sqlite` (SQLite — fournisseurs, combos, alias, clés, paramètres, historique d'utilisation)
 - Sauvegardes automatiques : `${DATA_DIR}/db/backups/`
 - Journaux optionnels de requêtes/translator : `<repo>/logs/...` quand `ENABLE_REQUEST_LOGS=true`
-- `${DATA_DIR}` et `~/.9router` résolvent tous deux le même emplacement dans un conteneur Docker — le lien symbolique `/root/.9router -> /app/data` est créé au moment de la compilation.
+- `${DATA_DIR}` et `~/.tokenhop` résolvent tous deux le même emplacement dans un conteneur Docker — le lien symbolique `/root/.tokenhop -> /app/data` est créé au moment de la compilation.
 
 </details>
 
@@ -1327,7 +1327,7 @@ Remarques :
 
 **Token OAuth expiré**
 
-- Renouvelé automatiquement par 9Router
+- Renouvelé automatiquement par tokenhop
 - Si les problèmes persistent : Tableau de bord → Provider → Reconnecter
 
 **Coûts élevés**
@@ -1392,7 +1392,7 @@ Authorization: Bearer votre-clé-api
 
 ## 📧 Support
 
-- **Site web** : [9router.com](https://9router.com)
+- **Site web** : [tokenhop.ai](https://tokenhop.ai)
 - **GitHub** : [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
 - **Problèmes** : [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 
@@ -1400,7 +1400,7 @@ Authorization: Bearer votre-clé-api
 
 ## 👥 Contributeurs
 
-Merci à tous les contributeurs qui ont contribué à améliorer 9Router !
+Merci à tous les contributeurs qui ont contribué à améliorer tokenhop !
 
 [![Contributors](https://contrib.rocks/image?repo=tokenhop/tokenhop&max=150&columns=15&anon=1&v=20260309)](https://github.com/tokenhop/tokenhop/graphs/contributors)
 
@@ -1412,7 +1412,7 @@ Merci à tous les contributeurs qui ont contribué à améliorer 9Router !
 
 ## 🔀 Forks
 
-**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — Un fork TypeScript complet de 9Router. Ajoute plus de 36 fournisseurs, un repli automatique à 4 niveaux, des API multimodales (images, embeddings, audio, TTS), un disjoncteur, un cache sémantique, des évaluations de LLM et un tableau de bord soigné. Plus de 368 tests unitaires. Disponible via npm et Docker.
+**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — Un fork TypeScript complet de [9Router](https://github.com/decolua/9router) (decolua). Ajoute plus de 36 fournisseurs, un repli automatique à 4 niveaux, des API multimodales (images, embeddings, audio, TTS), un disjoncteur, un cache sémantique, des évaluations de LLM et un tableau de bord soigné. Plus de 368 tests unitaires. Disponible via npm et Docker.
 
 ---
 
@@ -1421,11 +1421,11 @@ Merci à tous les contributeurs qui ont contribué à améliorer 9Router !
 Construit sur les épaules de géants :
 
 - **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** — implémentation originale en Go qui a inspiré ce port JavaScript.
-- **[RTK](https://github.com/rtk-ai/rtk)** ![Stars](https://img.shields.io/github/stars/rtk-ai/rtk?style=flat&color=yellow) — économiseur de tokens en Rust. 9Router porte son pipeline de compression en JS → **−20 à 40 % de tokens d'entrée** sur chaque requête.
-- **[Caveman](https://github.com/JuliusBrussee/caveman)** ![Stars](https://img.shields.io/github/stars/JuliusBrussee/caveman?style=flat&color=yellow) par **[@JuliusBrussee](https://github.com/JuliusBrussee)** — viral _"why use many token when few token do trick"_. 9Router adapte son prompt → **−65 % de tokens de sortie**.
-- **[Ponytail](https://github.com/DietrichGebert/ponytail)** ![Stars](https://img.shields.io/github/stars/DietrichGebert/ponytail?style=flat&color=yellow) par **[@DietrichGebert](https://github.com/DietrichGebert)** — compétence de _"dev sénior fainéant"_. 9Router injecte sa hiérarchie YAGNI-d'abord → **moins de tokens, moins de code, des diffs plus courts**.
+- **[RTK](https://github.com/rtk-ai/rtk)** ![Stars](https://img.shields.io/github/stars/rtk-ai/rtk?style=flat&color=yellow) — économiseur de tokens en Rust. tokenhop porte son pipeline de compression en JS → **−20 à 40 % de tokens d'entrée** sur chaque requête.
+- **[Caveman](https://github.com/JuliusBrussee/caveman)** ![Stars](https://img.shields.io/github/stars/JuliusBrussee/caveman?style=flat&color=yellow) par **[@JuliusBrussee](https://github.com/JuliusBrussee)** — viral _"why use many token when few token do trick"_. tokenhop adapte son prompt → **−65 % de tokens de sortie**.
+- **[Ponytail](https://github.com/DietrichGebert/ponytail)** ![Stars](https://img.shields.io/github/stars/DietrichGebert/ponytail?style=flat&color=yellow) par **[@DietrichGebert](https://github.com/DietrichGebert)** — compétence de _"dev sénior fainéant"_. tokenhop injecte sa hiérarchie YAGNI-d'abord → **moins de tokens, moins de code, des diffs plus courts**.
 
-Un immense merci à ces auteurs — sans leur travail, les fonctionnalités d'économie de tokens de 9Router n'existeraient pas. Mettez-leur une ⭐ sur GitHub !
+Un immense merci à ces auteurs — sans leur travail, les fonctionnalités d'économie de tokens de tokenhop n'existeraient pas. Mettez-leur une ⭐ sur GitHub !
 
 ---
 

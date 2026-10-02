@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Help us improve the **9router** documentation. Use this form to report
+        Help us improve the **tokenhop** documentation. Use this form to report
         missing, unclear, or incorrect documentation.
 
   - type: dropdown
