@@ -102,8 +102,9 @@ export async function POST(request) {
 
         const executor = getExecutor(provider);
         const url = executor.buildUrl(model, stream, 0, credentials);
-        const headers = executor.buildHeaders(credentials, stream);
+        // Same order as BaseExecutor.execute: transformRequest sets per-request header state.
         const finalBody = executor.transformRequest(model, translated, stream, credentials);
+        const headers = executor.buildHeaders(credentials, stream);
 
         return NextResponse.json({ success: true, result: { url, headers, body: finalBody } });
       }

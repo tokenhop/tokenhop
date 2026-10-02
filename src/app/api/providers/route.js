@@ -209,30 +209,23 @@ export async function POST(request) {
     }
 
     const authType = isWebCookieProvider ? "cookie" : "apikey";
-    // createProviderConnection upserts apikey rows by name; reject here so a reused
-    // name never silently replaces another connection's key.
-    if (authType === "apikey") {
-      const existing = await getProviderConnections({ provider });
-      if (existing.some((c) => c.authType === "apikey" && c.name === connectionName)) {
-        return NextResponse.json(
-          { error: `A connection named "${connectionName}" already exists for this provider` },
-          { status: 409 },
-        );
-      }
-    }
-
-    const newConnection = await createProviderConnection({
-      provider,
-      authType,
-      name: connectionName,
-      apiKey: apiKey || "",
-      priority: priority || 1,
-      globalPriority: globalPriority || null,
-      defaultModel: defaultModel || null,
-      providerSpecificData: mergedProviderSpecificData,
-      isActive: true,
-      testStatus: testStatus || "unknown",
-    });
+    // createProviderConnection upserts apikey rows by name; reject inside its
+    // transaction so a reused name never silently replaces another connection's key.
+    const newConnection = await createProviderConnection(
+      {
+        provider,
+        authType,
+        name: connectionName,
+        apiKey: apiKey || "",
+        priority: priority || 1,
+        globalPriority: globalPriority || null,
+        defaultModel: defaultModel || null,
+        providerSpecificData: mergedProviderSpecificData,
+        isActive: true,
+        testStatus: testStatus || "unknown",
+      },
+      { rejectDuplicateName: true },
+    );
 
     // Hide sensitive fields
     const result = { ...newConnection };
@@ -240,6 +233,9 @@ export async function POST(request) {
 
     return NextResponse.json({ connection: result }, { status: 201 });
   } catch (error) {
+    if (error?.code === "DUPLICATE_CONNECTION_NAME") {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     console.log("Error creating provider:", error);
     return NextResponse.json({ error: "Failed to create provider" }, { status: 500 });
   }
