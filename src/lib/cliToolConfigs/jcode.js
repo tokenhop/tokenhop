@@ -1,10 +1,11 @@
 // Pure jcode config fragments, shared by the Apply route and the manual
 // snippet in the dashboard. No fs/env access: the route resolves real paths.
 import { CLIENT_KEY, JCODE_API_KEY_ENV } from "@/lib/cliToolBrand";
+import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { withV1 } from "./shared";
 
-// Matches the jcode tool definition's first default model (cliTools.js).
-export const JCODE_DEFAULT_MODEL = "cc/claude-opus-5";
+// The jcode tool definition's first default model (cliTools.js): single source.
+export const JCODE_DEFAULT_MODEL = CLI_TOOLS.jcode.defaultModels[0].defaultValue;
 
 /**
  * `buildJcodeConfig({ baseUrl, apiKey, model, envDir = "~/.config/jcode" })` →

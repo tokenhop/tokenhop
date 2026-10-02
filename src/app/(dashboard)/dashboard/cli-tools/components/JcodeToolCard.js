@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useMemo } from "react";
 import {
   useSetupCard,
+  useSetupSettings,
   setupCardPropTypes,
   resolveApiKey,
   manualApiKey,
@@ -42,29 +43,24 @@ export default function JcodeToolCard({
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "jcode" });
   const { status } = card;
-  const [selectedModel, setSelectedModel] = useState("");
-  const hasInitializedModel = useRef(false);
-
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !card.selectedApiKey) card.setSelectedApiKey(apiKeys[0].key);
-  }, [apiKeys, card]);
-
-  useEffect(() => {
-    if (status?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const provider = findClientEntry(status.config?.providers);
-      if (provider) {
-        if (provider.default_model) setSelectedModel(provider.default_model);
-        const envKey = status.envApiKey;
-        if (envKey && apiKeys?.some((k) => k.key === envKey)) card.setSelectedApiKey(envKey);
-      }
-    }
-  }, [status, apiKeys, card]);
+  const defaults = useMemo(() => ({ model: JCODE_DEFAULT_MODEL, endpoint: "", apiKeyId: "" }), []);
+  // On the host, the installed config fills values the user hasn't saved yet.
+  const disk = useMemo(() => {
+    if (!status?.installed) return null;
+    const provider = findClientEntry(status.config?.providers);
+    return {
+      model: provider?.default_model || undefined,
+      apiKeyId: apiKeys.find((k) => k.key === status.envApiKey)?.id,
+    };
+  }, [status, apiKeys]);
+  const saved = useSetupSettings({ toolId: "jcode", apiKeys, defaults, disk });
+  const selectedModel = saved.values.model;
+  const setSelectedModel = (v) => saved.setField("model", v);
 
   const currentBaseUrl = findClientEntry(status?.config?.providers)?.base_url || "";
 
   const getEffectiveBaseUrl = () => {
-    const u = (card.customBaseUrl || baseUrl || "http://127.0.0.1:20128/v1").replace(
+    const u = (saved.endpoint || baseUrl || "http://127.0.0.1:20128/v1").replace(
       "://localhost",
       "://127.0.0.1",
     );
@@ -80,7 +76,7 @@ export default function JcodeToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(saved.selectedApiKey, apiKeys, cloudEnabled),
           models: selectedModel ? [selectedModel] : [],
         }),
       });
@@ -106,9 +102,8 @@ export default function JcodeToolCard({
       const res = await fetch(ENDPOINT, { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
+        // Saved card preferences stay; "Reset to defaults" clears those.
         card.setMessage({ type: "success", text: "Settings reset successfully." });
-        setSelectedModel("");
-        card.setSelectedApiKey("");
         card.fetchStatus();
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
@@ -126,7 +121,7 @@ export default function JcodeToolCard({
     toManualConfigs(
       buildJcodeConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: manualApiKey(saved.selectedApiKey, apiKeys, cloudEnabled),
         model: selectedModel,
       }),
     );
@@ -136,7 +131,7 @@ export default function JcodeToolCard({
       <SetupScaffold
         tool={tool}
         status={deriveToolStatus(tool, card.status)}
-        checking={card.checking}
+        checking={card.checking || !saved.loaded}
         checkingLabel="Checking jcode CLI..."
         notInstalled={
           !card.checking && status && !status.installed && !status.error ? (
@@ -160,10 +155,12 @@ export default function JcodeToolCard({
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
         fileHint="~/.jcode/config.toml"
+        {...saved.scaffoldProps("~/.jcode/config.toml")}
       >
         <EndpointSegmentedPicker
-          value={card.customBaseUrl || baseUrl}
-          onChange={card.setCustomBaseUrl}
+          key={saved.pickerKey}
+          value={saved.endpoint || baseUrl}
+          {...saved.pickerProps}
           currentUrl={currentBaseUrl}
           tunnelEnabled={tunnelEnabled}
           tunnelPublicUrl={tunnelPublicUrl}
@@ -180,8 +177,8 @@ export default function JcodeToolCard({
         )}
         <SetupRow label="API key">
           <ApiKeySelect
-            value={card.selectedApiKey}
-            onChange={card.setSelectedApiKey}
+            value={saved.selectedApiKey}
+            onChange={saved.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
           />

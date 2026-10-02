@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useMemo } from "react";
 import {
   useSetupCard,
+  useSetupSettings,
   setupCardPropTypes,
   resolveApiKey,
   manualApiKey,
@@ -41,25 +42,20 @@ export default function HermesToolCard({
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "hermes" });
   const { status } = card;
-  const [selectedModel, setSelectedModel] = useState("");
-  const hasInitializedModel = useRef(false);
-
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !card.selectedApiKey) card.setSelectedApiKey(apiKeys[0].key);
-  }, [apiKeys, card]);
-
-  useEffect(() => {
-    if (status?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const def = status.settings?.model?.default;
-      if (def) setSelectedModel(def);
-    }
-  }, [status]);
+  const defaults = useMemo(() => ({ model: "", endpoint: "", apiKeyId: "" }), []);
+  // On the host, the installed config fills a model the user hasn't saved yet.
+  const disk = useMemo(
+    () => (status?.installed ? { model: status.settings?.model?.default || undefined } : null),
+    [status],
+  );
+  const saved = useSetupSettings({ toolId: "hermes", apiKeys, defaults, disk });
+  const selectedModel = saved.values.model;
+  const setSelectedModel = (v) => saved.setField("model", v);
 
   const currentBaseUrl = status?.settings?.model?.base_url || "";
 
   const getEffectiveBaseUrl = () => {
-    const u = (card.customBaseUrl || baseUrl || "http://127.0.0.1:20128/v1").replace(
+    const u = (saved.endpoint || baseUrl || "http://127.0.0.1:20128/v1").replace(
       "://localhost",
       "://127.0.0.1",
     );
@@ -75,7 +71,7 @@ export default function HermesToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(saved.selectedApiKey, apiKeys, cloudEnabled),
           model: selectedModel,
         }),
       });
@@ -101,8 +97,8 @@ export default function HermesToolCard({
       const res = await fetch(ENDPOINT, { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
+        // Saved card preferences stay; "Reset to defaults" clears those.
         card.setMessage({ type: "success", text: "Settings reset successfully." });
-        setSelectedModel("");
         card.fetchStatus();
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
@@ -121,7 +117,7 @@ export default function HermesToolCard({
       buildHermesConfig({
         baseUrl: getEffectiveBaseUrl(),
         // No key: the .env gets the placeholder, so the dialog asks for one.
-        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: manualApiKey(saved.selectedApiKey, apiKeys, cloudEnabled),
         model: selectedModel,
       }),
     );
@@ -131,7 +127,7 @@ export default function HermesToolCard({
       <SetupScaffold
         tool={tool}
         status={deriveToolStatus(tool, card.status)}
-        checking={card.checking}
+        checking={card.checking || !saved.loaded}
         checkingLabel="Checking Hermes Agent..."
         notInstalled={
           !card.checking && status && !status.installed && !status.error ? (
@@ -154,10 +150,12 @@ export default function HermesToolCard({
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
         fileHint="~/.hermes/config.yaml"
+        {...saved.scaffoldProps("~/.hermes/config.yaml")}
       >
         <EndpointSegmentedPicker
-          value={card.customBaseUrl || baseUrl}
-          onChange={card.setCustomBaseUrl}
+          key={saved.pickerKey}
+          value={saved.endpoint || baseUrl}
+          {...saved.pickerProps}
           currentUrl={currentBaseUrl}
           tunnelEnabled={tunnelEnabled}
           tunnelPublicUrl={tunnelPublicUrl}
@@ -174,8 +172,8 @@ export default function HermesToolCard({
         )}
         <SetupRow label="API key">
           <ApiKeySelect
-            value={card.selectedApiKey}
-            onChange={card.setSelectedApiKey}
+            value={saved.selectedApiKey}
+            onChange={saved.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
           />

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useMemo } from "react";
 import {
   useSetupCard,
+  useSetupSettings,
   setupCardPropTypes,
   resolveApiKey,
   manualApiKey,
@@ -41,25 +42,34 @@ export default function DeepSeekTuiToolCard({
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "deepseek-tui" });
   const { status } = card;
-  const [selectedModel, setSelectedModel] = useState("");
-  const hasInitializedModel = useRef(false);
-
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !card.selectedApiKey) card.setSelectedApiKey(apiKeys[0].key);
-  }, [apiKeys, card]);
-
-  useEffect(() => {
-    if (status?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const model = status.settings?.["providers.openai"]?.model;
-      if (model) setSelectedModel(model);
-    }
-  }, [status]);
+  const defaults = useMemo(
+    () => ({
+      model: tool.defaultModels?.[0]?.defaultValue || "",
+      endpoint: "",
+      apiKeyId: "",
+    }),
+    [tool.defaultModels],
+  );
+  // On the host, the installed config fills values the user hasn't saved yet.
+  const disk = useMemo(
+    () =>
+      status?.installed
+        ? {
+            model: status.settings?.["providers.openai"]?.model || undefined,
+            apiKeyId: apiKeys.find((k) => k.key === status.settings?.["providers.openai"]?.api_key)
+              ?.id,
+          }
+        : null,
+    [status, apiKeys],
+  );
+  const saved = useSetupSettings({ toolId: "deepseek-tui", apiKeys, defaults, disk });
+  const selectedModel = saved.values.model;
+  const setSelectedModel = (v) => saved.setField("model", v);
 
   const currentBaseUrl = status?.settings?.["providers.openai"]?.base_url || "";
 
   const getEffectiveBaseUrl = () => {
-    const u = (card.customBaseUrl || baseUrl || "http://127.0.0.1:20128/v1").replace(
+    const u = (saved.endpoint || baseUrl || "http://127.0.0.1:20128/v1").replace(
       "://localhost",
       "://127.0.0.1",
     );
@@ -75,7 +85,7 @@ export default function DeepSeekTuiToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(saved.selectedApiKey, apiKeys, cloudEnabled),
           model: selectedModel,
         }),
       });
@@ -101,8 +111,8 @@ export default function DeepSeekTuiToolCard({
       const res = await fetch(ENDPOINT, { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
+        // Saved card preferences stay; "Reset to defaults" clears those.
         card.setMessage({ type: "success", text: "Settings reset successfully." });
-        setSelectedModel("");
         card.fetchStatus();
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
@@ -120,7 +130,7 @@ export default function DeepSeekTuiToolCard({
     toManualConfigs(
       buildDeepSeekTuiConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: manualApiKey(saved.selectedApiKey, apiKeys, cloudEnabled),
         model: selectedModel,
       }),
     );
@@ -130,7 +140,7 @@ export default function DeepSeekTuiToolCard({
       <SetupScaffold
         tool={tool}
         status={deriveToolStatus(tool, card.status)}
-        checking={card.checking}
+        checking={card.checking || !saved.loaded}
         checkingLabel="Checking DeepSeek TUI..."
         notInstalled={
           !card.checking && status && !status.installed && !status.error ? (
@@ -154,10 +164,12 @@ export default function DeepSeekTuiToolCard({
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
         fileHint="~/.deepseek/config.toml"
+        {...saved.scaffoldProps("~/.deepseek/config.toml")}
       >
         <EndpointSegmentedPicker
-          value={card.customBaseUrl || baseUrl}
-          onChange={card.setCustomBaseUrl}
+          key={saved.pickerKey}
+          value={saved.endpoint || baseUrl}
+          {...saved.pickerProps}
           currentUrl={currentBaseUrl}
           tunnelEnabled={tunnelEnabled}
           tunnelPublicUrl={tunnelPublicUrl}
@@ -177,8 +189,8 @@ export default function DeepSeekTuiToolCard({
         )}
         <SetupRow label="API key">
           <ApiKeySelect
-            value={card.selectedApiKey}
-            onChange={card.setSelectedApiKey}
+            value={saved.selectedApiKey}
+            onChange={saved.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
           />
