@@ -19,7 +19,7 @@ vi.mock("@/app/api/usage/[connectionId]/route.js", () => ({
 vi.mock("@/shared/constants/config", () => ({
   QUOTA_AUTOPING_CONFIG: {
     tickIntervalMs: 60000,
-    pingLeadMs: 5000,
+    pingLeadMs: 60000,
     refreshAheadMs: 300000,
     failureCooldownMs: 900000,
     providers: {
@@ -434,5 +434,54 @@ describe("quota auto-ping", () => {
       max_tokens: 1,
       messages: [{ role: "user", content: "hi" }],
     });
+  });
+
+  // YAN-694 — once the usage read stops reporting a reset that passed without a
+  // ping (idle window / 5min cache), the old code dropped it forever.
+  it("recovers a missed Claude reset window exactly once (YAN-694)", async () => {
+    deps.getSettings.mockResolvedValue({ claudeAutoPing: { connections: { "claude-1": true } } });
+    const missedReset = new Date(Date.now() - 120000).toISOString(); // passed 2min ago
+    state.resetCache["claude:claude-1"] = missedReset;
+    deps.getProviderConnections.mockImplementation(async ({ provider }) =>
+      provider === "claude"
+        ? [
+            {
+              id: "claude-1",
+              provider: "claude",
+              authType: "oauth",
+              accessToken: "token",
+              lastPingedResetAt: new Date(Date.now() - 6 * 3600000).toISOString(),
+            },
+          ]
+        : [],
+    );
+    // Live read no longer reports the old reset (idle window).
+    getClaudeUsage.mockResolvedValue({ quotas: {} });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).toHaveBeenCalledTimes(1);
+    expect(deps.updateProviderConnection).toHaveBeenCalledWith(
+      "claude-1",
+      expect.objectContaining({ lastPingedResetAt: missedReset }),
+    );
+
+    // Next tick: connection records the pinged reset — no duplicate ping.
+    deps.getProviderConnections.mockImplementation(async ({ provider }) =>
+      provider === "claude"
+        ? [
+            {
+              id: "claude-1",
+              provider: "claude",
+              authType: "oauth",
+              accessToken: "token",
+              lastPingedResetAt: missedReset,
+            },
+          ]
+        : [],
+    );
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).toHaveBeenCalledTimes(1);
   });
 });
