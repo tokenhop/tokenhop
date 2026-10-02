@@ -46,6 +46,7 @@ afterEach(() => {
   else process.env.NEXT_PUBLIC_BRAND = savedBrand;
   delete require.cache[BRAND_CJS];
   vi.resetModules();
+  vi.restoreAllMocks();
 });
 
 async function load(brand = "tokenhop") {
@@ -119,5 +120,35 @@ describe("cli-tool preset import", () => {
         ],
       },
     ]);
+  });
+
+  it("blocks saves on a failed GET and retries after the cooldown", async () => {
+    respond = { presets: { endpoints: ENDPOINTS, apiKeys: [] } };
+    let up = false;
+    let gets = 0;
+    globalThis.fetch = async (_url, init = {}) => {
+      if (init.method === "PUT") {
+        puts.push(JSON.parse(init.body));
+        return { ok: true, json: async () => ({ presets: {} }) };
+      }
+      gets += 1;
+      return { ok: up, json: async () => respond };
+    };
+
+    const presets = await load();
+    presets.readPresets(); // failed GET
+    await vi.waitFor(() => expect(gets).toBe(1));
+    await new Promise((r) => setTimeout(r, 0)); // let the failure land
+
+    expect(presets.readPresets()).toEqual([]); // cooldown: no retry, nothing loaded
+    expect(gets).toBe(1);
+    presets.upsertPreset("http://box:20128", "box");
+    expect(puts).toEqual([]); // save blocked while unloaded
+
+    up = true;
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 6000); // past RETRY_MS
+    presets.readPresets(); // retries the load
+    await vi.waitFor(() => expect(presets.readPresets()).toEqual(ENDPOINTS));
+    expect(gets).toBe(2);
   });
 });

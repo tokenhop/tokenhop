@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import { readPresets, readKeyPresets, subscribeKeyPresets } from "../components/cliEndpointPresets";
+import {
+  readPresets,
+  subscribePresets,
+  readKeyPresets,
+  subscribeKeyPresets,
+} from "../components/cliEndpointPresets";
 import { resolveSavedEndpoint } from "../lib/toolStatus";
 import { useToolSettings } from "./useToolSettings";
 
@@ -12,14 +17,16 @@ const EMPTY = [];
 
 /**
  * Saved endpoint resolved against the live options (also used by the Claude card).
+ * Callers pass presets from their own useSyncExternalStore subscription so a
+ * preset saved after mount re-renders them.
  */
-export const savedEndpointUrl = (values, endpointContext) =>
+export const savedEndpointUrl = (values, endpointContext, savedPresets = EMPTY) =>
   resolveSavedEndpoint(
     { endpoint: str(values.endpoint), endpointId: str(values.endpointId) },
     {
       ...endpointContext,
       localOrigin: typeof window === "undefined" ? "" : window.location.origin,
-      savedPresets: readPresets(),
+      savedPresets,
     },
   );
 
@@ -29,6 +36,47 @@ export const asMap = (v) =>
   v && typeof v === "object" && !Array.isArray(v)
     ? Object.fromEntries(Object.entries(v).filter(([, x]) => typeof x === "string"))
     : {};
+// Saved values are read back untrusted; plugin lists keep whole plain objects,
+// filtered to entries with a string name and url.
+export const asObjectList = (v) =>
+  Array.isArray(v)
+    ? v.filter(
+        (p) =>
+          p && typeof p === "object" && typeof p.name === "string" && typeof p.url === "string",
+      )
+    : [];
+
+/**
+ * API-key selection shared with the Claude card, which passes the on-disk token
+ * as its fallback. Saved key id, else saved key preset, else the caller's
+ * fallback (host: the key in the file), else the first key. A deleted key's id
+ * matches nothing and falls through the same way.
+ */
+export const resolveSelectedApiKey = ({
+  customKey,
+  apiKeys = [],
+  keyPresets = [],
+  values,
+  fallback = "",
+}) =>
+  customKey ??
+  (apiKeys.find((k) => k.id === values.apiKeyId)?.key ||
+    keyPresets.find((p) => p.name === values.apiKeyPreset)?.key ||
+    fallback ||
+    apiKeys[0]?.key ||
+    "");
+
+/**
+ * Persisted patch for a picked key: a dashboard key by id, a raw key preset by
+ * name, or null when the key is typed/custom (kept in memory only).
+ */
+export const apiKeyPatch = (key, apiKeys = [], keyPresets = []) => {
+  const match = apiKeys.find((k) => k.key === key);
+  if (match) return { apiKeyId: match.id, apiKeyPreset: undefined };
+  const preset = keyPresets.find((p) => p.key === key);
+  if (preset) return { apiKeyPreset: preset.name, apiKeyId: undefined };
+  return null;
+};
 
 /**
  * Persisted model / endpoint / API key for a setup card (`useToolSettings`).
@@ -56,27 +104,15 @@ export function useSetupSettings({
   const [customKey, setCustomKey] = useState(null);
   const [pickerKey, setPickerKey] = useState(0);
   const keyPresets = useSyncExternalStore(subscribeKeyPresets, readKeyPresets, () => EMPTY);
+  const endpointPresets = useSyncExternalStore(subscribePresets, readPresets, () => EMPTY);
 
-  // A deleted key's id matches nothing and falls back to the first key.
-  const selectedApiKey =
-    customKey ??
-    (apiKeys.find((k) => k.id === values.apiKeyId)?.key ||
-      keyPresets.find((p) => p.name === values.apiKeyPreset)?.key ||
-      apiKeys[0]?.key ||
-      "");
+  const selectedApiKey = resolveSelectedApiKey({ customKey, apiKeys, keyPresets, values });
 
   const onApiKeyChange = (key) => {
-    const match = apiKeys.find((k) => k.key === key);
-    if (match) {
-      setCustomKey(null);
-      return settings.setFields({ apiKeyId: match.id, apiKeyPreset: undefined });
-    }
-    const preset = keyPresets.find((p) => p.key === key);
-    if (preset) {
-      setCustomKey(null);
-      return settings.setFields({ apiKeyPreset: preset.name, apiKeyId: undefined });
-    }
-    setCustomKey(key);
+    const patch = apiKeyPatch(key, apiKeys, keyPresets);
+    if (!patch) return setCustomKey(key);
+    setCustomKey(null);
+    settings.setFields(patch);
   };
 
   const onEndpointChange = (url, meta) => {
@@ -97,10 +133,12 @@ export function useSetupSettings({
 
   const loadFromFile = () => {
     settings.loadFromDisk();
+    // The saved endpoint id would keep winning over the file URL, so clear it.
+    if (settings.differs.includes("endpoint")) settings.setFields({ endpointId: undefined });
     remountPicker();
   };
 
-  const savedEndpoint = savedEndpointUrl(values, endpointContext);
+  const savedEndpoint = savedEndpointUrl(values, endpointContext, endpointPresets);
 
   return {
     values,

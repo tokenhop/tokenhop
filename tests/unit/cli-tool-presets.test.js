@@ -39,6 +39,8 @@ describe("/api/cli-tool-presets", () => {
   it("rejects bad bodies with 400", async () => {
     const bad = [
       JSON.stringify({ kind: "nope", items: [] }),
+      JSON.stringify({ kind: "__proto__", items: [] }),
+      JSON.stringify({ kind: "endpoints", items: [{ name: "x", baseUrl: "ftp://x" }] }),
       JSON.stringify({ kind: "endpoints", items: [{ name: "x", baseUrl: "http://x", extra: 1 }] }),
       JSON.stringify({ kind: "apiKeys", items: [{ name: "x" }] }),
       JSON.stringify({

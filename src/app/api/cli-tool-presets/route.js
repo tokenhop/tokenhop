@@ -18,8 +18,8 @@ const isPlainObject = (v) =>
 const isStr = (v, max) => typeof v === "string" && v.length >= 1 && v.length <= max;
 
 function validate(body) {
-  const field = KINDS[body?.kind];
-  if (!field) return 'kind must be "endpoints" or "apiKeys"';
+  if (!Object.hasOwn(KINDS, body?.kind)) return 'kind must be "endpoints" or "apiKeys"';
+  const field = KINDS[body.kind];
   if (!Array.isArray(body.items) || body.items.length > MAX_ITEMS) {
     return `items must be an array of at most ${MAX_ITEMS} presets`;
   }
@@ -31,6 +31,9 @@ function validate(body) {
     }
     if (!isStr(item.name, 128)) return "preset name must be a string of 1..128 characters";
     if (!isStr(item[field], 2048)) return `preset ${field} must be a string of 1..2048 characters`;
+    if (body.kind === "endpoints" && !/^https?:\/\//i.test(item.baseUrl)) {
+      return "endpoint baseUrl must be an http(s) URL";
+    }
   }
   return null;
 }

@@ -13,8 +13,11 @@ function readStorageItem(storage, name) {
 }
 
 const stores = [];
-// Shared in-flight load; reset on failure so a later read() retries.
+// Shared in-flight load; reset on failure so a later read() retries after the cooldown.
 let loadPromise = null;
+// Cooldown after a failed GET, so read()-during-render cannot fetch-storm a down server.
+const RETRY_MS = 5000;
+let failedAt = 0;
 // Saves are blocked until the first load succeeds: a whole-list PUT from the
 // empty pre-load cache would wipe presets saved elsewhere (same rule as
 // toolSettingsStore's loadFailed).
@@ -66,6 +69,7 @@ function load() {
     loaded = true;
   })().catch((err) => {
     loadPromise = null;
+    failedAt = Date.now();
     console.log("Error fetching CLI tool presets:", err.message);
   });
   return loadPromise;
@@ -85,7 +89,7 @@ function createStore({
 
   const read = () => {
     if (typeof window === "undefined") return store.items;
-    load();
+    if (Date.now() - failedAt >= RETRY_MS) load();
     return store.items;
   };
 

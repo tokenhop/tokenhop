@@ -33,11 +33,15 @@ vi.mock("../../src/app/(dashboard)/dashboard/cli-tools/hooks/useToolSettings.js"
 
 vi.mock("../../src/app/(dashboard)/dashboard/cli-tools/components/cliEndpointPresets.js", () => ({
   readPresets: () => [],
+  subscribePresets: () => () => {},
   readKeyPresets: () => keyPresets,
   subscribeKeyPresets: () => () => {},
 }));
 
-import { useSetupSettings } from "../../src/app/(dashboard)/dashboard/cli-tools/hooks/useSetupSettings.js";
+import {
+  useSetupSettings,
+  asObjectList,
+} from "../../src/app/(dashboard)/dashboard/cli-tools/hooks/useSetupSettings.js";
 
 const apiKeys = [
   { id: "a", key: "sk-a" },
@@ -101,6 +105,18 @@ describe("useSetupSettings", () => {
     const hook = render(ctx);
     expect(hook.endpoint).toBe("https://new/v1");
     expect(hook.pickerProps).toMatchObject({ ...ctx, savedUrl: "https://new/v1" });
+  });
+
+  it("asObjectList keeps whole plain objects that have a string name and url", () => {
+    expect(
+      asObjectList([
+        { name: "a", url: "http://x", oauth: true, toolPolicy: { default: "allow" } },
+        { name: "no-url" },
+        null,
+        "str",
+      ]),
+    ).toEqual([{ name: "a", url: "http://x", oauth: true, toolPolicy: { default: "allow" } }]);
+    expect(asObjectList("nope")).toEqual([]);
   });
 });
 

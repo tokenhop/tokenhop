@@ -12,6 +12,7 @@ import {
   useSetupCard,
   useSetupSettings,
   asList,
+  asObjectList,
   setupCardPropTypes,
   resolveApiKey,
   manualApiKey,
@@ -41,11 +42,6 @@ const ensureV1 = (url) => {
   const t = (url || "").replace(/\/+$/, "");
   return !t ? "" : /\/v1$/.test(t) ? t : `${t}/v1`;
 };
-// Saved values are read back untrusted; plugin lists keep {name, url} objects only.
-const asPluginList = (v) =>
-  Array.isArray(v)
-    ? v.filter((p) => p && typeof p.name === "string" && typeof p.url === "string")
-    : [];
 
 /**
  * Claude Desktop Cowork setup panel: custom inference gateway, models
@@ -109,6 +105,7 @@ export default function CoworkToolCard({
           ? status.cowork.customPlugins
           : undefined,
       apiKeyId: apiKeys.find((k) => k.key === status.config?.inferenceGatewayApiKey)?.id,
+      endpoint: status.cowork?.baseUrl || undefined,
     };
   }, [status, apiKeys]);
   const endpointContext = useMemo(
@@ -133,11 +130,11 @@ export default function CoworkToolCard({
   );
   const setup = useSetupSettings({ toolId: "cowork", apiKeys, defaults, disk, endpointContext });
 
-  // Saved values are read back untrusted; plugin lists keep {name, url} objects only.
+  // Saved values are read back untrusted; plugin lists keep plain objects with a name and url.
   const selectedModels = asList(setup.values.models);
-  const plugins = asPluginList(setup.values.plugins);
+  const plugins = asObjectList(setup.values.plugins);
   const localPlugins = asList(setup.values.localPlugins);
-  const customPlugins = asPluginList(setup.values.customPlugins);
+  const customPlugins = asObjectList(setup.values.customPlugins);
 
   const currentBaseUrl = status?.cowork?.baseUrl || "";
   const getEffectiveBaseUrl = () => ensureV1(setup.endpoint || baseUrl);
@@ -486,7 +483,21 @@ export default function CoworkToolCard({
         isOpen={marketplaceOpen}
         onClose={() => setMarketplaceOpen(false)}
         onAdd={(p) => {
-          if (!plugins.some((x) => x.name === p.name)) setup.setField("plugins", [...plugins, p]);
+          // Saved plugins reach autosave/validation, so keep flat scalars only.
+          if (plugins.some((x) => x.name === p.name)) return;
+          setup.setField("plugins", [
+            ...plugins,
+            {
+              name: p.name,
+              title: p.title,
+              url: p.url,
+              transport: p.transport,
+              oauth: Boolean(p.oauth),
+              toolNames: Array.isArray(p.toolNames)
+                ? p.toolNames.filter((t) => typeof t === "string")
+                : [],
+            },
+          ]);
         }}
         addedNames={plugins.map((p) => p.name)}
       />
