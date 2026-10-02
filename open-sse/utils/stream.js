@@ -12,6 +12,7 @@ import {
   COLORS,
 } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import { extractReasoningText } from "../translator/concerns/reasoning.js";
 import {
   getOpenAIResponsesEventName,
   isOpenAIResponsesTerminalEvent,
@@ -99,6 +100,24 @@ export function createSSEStream(options = {}) {
   let currentOpenAIResponsesEvent = null;
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
+  const responsesOutputItems = new Map(); // output_index → item, for an empty response.completed.output
+  // First upstream error seen mid-stream (after the 200 headers), so the
+  // request is logged as an error instead of success (YAN-662).
+  let streamError = null;
+  const noteStreamError = (parsed) => {
+    if (streamError || !parsed || typeof parsed !== "object") return;
+    const type = parsed.type;
+    let err = null;
+    if (type === "error") err = parsed.error || parsed;
+    else if (type === "response.failed")
+      err = parsed.response?.error || { message: "response.failed" };
+    else if (parsed.error && !parsed.choices?.length) err = parsed.error;
+    if (!err) return;
+    streamError = {
+      message: typeof err === "string" ? err : err.message || JSON.stringify(err),
+      ...(typeof err === "object" && (err.type || err.code) && { type: err.type || err.code }),
+    };
+  };
   let streamDoneSent = false; // track duplicate [DONE] across transform + flush
   let finalized = false;
 
@@ -130,9 +149,13 @@ export function createSSEStream(options = {}) {
         apiKey,
       );
     } else {
-      appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(
-        () => {},
-      );
+      appendRequestLog({
+        model,
+        provider,
+        connectionId,
+        tokens: null,
+        status: streamError ? "FAILED stream" : "200 OK",
+      }).catch(() => {});
     }
 
     if (onStreamComplete) {
@@ -143,6 +166,7 @@ export function createSSEStream(options = {}) {
         },
         finalUsage,
         ttftAt,
+        { error: streamError },
       );
     }
   };
@@ -189,6 +213,7 @@ export function createSSEStream(options = {}) {
           } else if (trimmed.startsWith("data:")) {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
+              noteStreamError(parsed);
 
               const idFixed = fixInvalidId(parsed);
 
@@ -234,6 +259,12 @@ export function createSSEStream(options = {}) {
                     delete choice.delta.tool_calls;
                     fieldsInjected = true;
                   }
+                  // Qoder sends `delta.role: ""` on content chunks; AI SDK v5
+                  // openai-compatible checks role === "assistant" and aborts.
+                  if (choice.delta && "role" in choice.delta && !choice.delta.role) {
+                    delete choice.delta.role;
+                    fieldsInjected = true;
+                  }
                 }
               }
 
@@ -243,7 +274,7 @@ export function createSSEStream(options = {}) {
 
               const delta = parsed.choices?.[0]?.delta;
               const content = delta?.content;
-              const reasoning = delta?.reasoning_content;
+              const reasoning = extractReasoningText(delta);
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
                 accumulatedContent += content;
@@ -308,6 +339,7 @@ export function createSSEStream(options = {}) {
 
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
+        noteStreamError(parsed);
 
         // Responses API same-format passthrough: preserve event framing + track terminal state
         const isOpenAIResponsesStream = targetFormat === FORMATS.OPENAI_RESPONSES;
@@ -341,8 +373,12 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
           }
-          streamDoneSent = true;
-          if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
+          // OpenAI Chat clients get their [DONE] from flush(), after any
+          // translator tail (finish chunk, usage) — never mid-stream here.
+          if (keepsOpenAIResponsesFormat) {
+            streamDoneSent = true;
+            openAIResponsesDoneSent = true;
+          }
           continue;
         }
 
@@ -389,6 +425,21 @@ export function createSSEStream(options = {}) {
 
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
+          // Codex's response.completed carries output: []; SDK final-response
+          // consumers need the items, so rebuild them from output_item.done
+          // (same workaround as streamToJsonConverter) (YAN-671).
+          if (openAIResponsesEventName === "response.output_item.done" && parsed.item) {
+            responsesOutputItems.set(parsed.output_index ?? responsesOutputItems.size, parsed.item);
+          } else if (
+            parsed.response &&
+            responsesOutputItems.size > 0 &&
+            isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed) &&
+            !(Array.isArray(parsed.response.output) && parsed.response.output.length > 0)
+          ) {
+            parsed.response.output = [...responsesOutputItems.entries()]
+              .sort(([a], [b]) => a - b)
+              .map(([, item]) => item);
+          }
           const output = formatSSE({ event: openAIResponsesEventName, data: parsed }, sourceFormat);
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
@@ -491,6 +542,7 @@ export function createSSEStream(options = {}) {
           // accepts "data: " lines, so an NDJSON provider (Ollama) lost whatever
           // arrived without its closing newline.
           const parsed = parseSSELine(buffer.trim(), targetFormat);
+          noteStreamError(parsed);
           // parseSSELine turns the SSE sentinel "data: [DONE]" into { done: true },
           // which must not be translated. An Ollama chunk also carries done:true,
           // but it is the real final chunk — it holds finish_reason and the token
@@ -555,6 +607,16 @@ export function createSSEStream(options = {}) {
           reqLogger?.appendConvertedChunk?.(doneOutput);
           controller.enqueue(sharedEncoder.encode(doneOutput));
           openAIResponsesDoneSent = true;
+          streamDoneSent = true;
+        }
+
+        // OpenAI Chat clients require the [DONE] sentinel (Cline, DeepSeek ACP
+        // abort without it). Translated upstreams either never send one (Claude,
+        // Gemini) or had it swallowed above, so emit it once, last (YAN-652).
+        if (sourceFormat === FORMATS.OPENAI && !streamDoneSent) {
+          const doneOutput = "data: [DONE]\n\n";
+          reqLogger?.appendConvertedChunk?.(doneOutput);
+          controller.enqueue(sharedEncoder.encode(doneOutput));
           streamDoneSent = true;
         }
 

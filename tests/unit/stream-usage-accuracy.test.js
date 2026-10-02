@@ -136,3 +136,57 @@ describe("Claude → OpenAI stream usage", () => {
     });
   });
 });
+
+describe("mid-stream errors (YAN-662)", () => {
+  async function completedMeta(makeStream, input) {
+    let meta;
+    const onStreamComplete = (_content, _usage, _ttft, m) => {
+      meta = m;
+    };
+    const source = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(input));
+        controller.close();
+      },
+    });
+    const reader = source.pipeThrough(makeStream(onStreamComplete)).getReader();
+    while (!(await reader.read()).done) {}
+    return meta;
+  }
+
+  it("reports a Responses response.failed as a stream error", async () => {
+    const meta = await completedMeta(
+      (cb) =>
+        createSSETransformStreamWithLogger(
+          "openai-responses",
+          "openai-responses",
+          "codex",
+          null,
+          null,
+          "m",
+          null,
+          { messages: [] },
+          cb,
+        ),
+      "event: response.created\n" +
+        data({ type: "response.created", response: { id: "r", status: "in_progress" } }) +
+        "\nevent: response.failed\n" +
+        data({
+          type: "response.failed",
+          response: { id: "r", status: "failed", error: { code: "server_error", message: "boom" } },
+        }) +
+        "\n",
+    );
+    expect(meta.error?.message).toBe("boom");
+  });
+
+  it("reports an OpenAI chunk with a top-level error, and nothing for a clean stream", async () => {
+    const failed = await completedMeta(
+      passthrough,
+      contentChunk + data({ error: { message: "upstream overloaded" } }) + "data: [DONE]\n",
+    );
+    expect(failed.error?.message).toBe("upstream overloaded");
+    const clean = await completedMeta(passthrough, `${contentChunk}${finishChunk}data: [DONE]\n`);
+    expect(clean.error).toBeNull();
+  });
+});
