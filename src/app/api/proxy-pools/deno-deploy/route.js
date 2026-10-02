@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createProxyPool } from "@/models";
+import { UPSTREAM_CLIENT_IDS } from "@/shared/brand";
 
 const DENO_V2_API = "https://api.deno.com/v2";
 
@@ -69,7 +70,7 @@ export async function POST(request) {
       headers,
       body: JSON.stringify({
         slug: projectName,
-        labels: { "custom.kind": "9router-relay" },
+        labels: { "custom.kind": UPSTREAM_CLIENT_IDS.denoRelayKind },
         config: {
           install: "deno install",
           runtime: {

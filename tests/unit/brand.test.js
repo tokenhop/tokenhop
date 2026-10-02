@@ -154,6 +154,12 @@ describe("brand constants", () => {
       devinMcpClientName: slug,
       coworkMcpClientName: slug,
       cursorMcpProvider: slug,
+      glmMcpClientName: slug,
+      xaiUserAgent: `grok-cli/${slug}`,
+      xiaomiKeyNamePrefix: `${slug}-xmd-`,
+      githubUserAgent: names[0],
+      proxyTestUserAgent: names[0],
+      denoRelayKind: `${slug}-relay`,
     };
     for (const brand of [undefined, "tokenhop"]) {
       const { UPSTREAM_CLIENT_IDS } = load(brand);

@@ -7,6 +7,7 @@
  */
 
 import { fetchPublic } from "../../../src/shared/utils/ssrfGuard.js";
+import { UPSTREAM_CLIENT_IDS } from "../../../src/shared/brand/index.js";
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SESSION_TTL_MS = 10 * 60 * 1000;
@@ -77,7 +78,7 @@ async function openSession(url, init) {
     params: {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: {},
-      clientInfo: { name: "9router", version: "1" },
+      clientInfo: { name: UPSTREAM_CLIENT_IDS.glmMcpClientName, version: "1" },
     },
   });
   const sessionId = resp.headers.get("mcp-session-id");

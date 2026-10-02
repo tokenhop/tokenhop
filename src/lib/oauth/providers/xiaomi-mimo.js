@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { XIAOMI_MIMO_CONFIG } from "../constants/oauth.js";
+import { UPSTREAM_CLIENT_IDS } from "@/shared/brand";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Xiaomi MiMo OAuth helpers
@@ -116,5 +117,5 @@ export function getKeyName() {
     .update(`${process.platform}-${process.env.COMPUTERNAME || process.env.HOSTNAME || "unknown"}`)
     .digest("hex")
     .slice(0, 8);
-  return `9router-xmd-${machineId}`;
+  return `${UPSTREAM_CLIENT_IDS.xiaomiKeyNamePrefix}${machineId}`;
 }

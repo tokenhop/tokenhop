@@ -131,6 +131,12 @@ const UPSTREAM_CLIENT_IDS = Object.freeze({
   devinMcpClientName: "9router", // devin acp initialize clientInfo.name
   coworkMcpClientName: "9router", // Cowork MCP probe initialize clientInfo.name
   cursorMcpProvider: "9router", // Cursor MCP server_name/identifier/provider_identifier
+  glmMcpClientName: "9router", // GLM/Z.ai search MCP initialize clientInfo.name
+  xaiUserAgent: "grok-cli/9router", // xAI OAuth User-Agent
+  xiaomiKeyNamePrefix: "9router-xmd-", // Xiaomi MiMo OAuth key_name prefix
+  githubUserAgent: "9Router", // GitHub API User-Agent (connection test)
+  proxyTestUserAgent: "9Router", // User-Agent of the proxy test HEAD request
+  denoRelayKind: "9router-relay", // Deno Deploy app label "custom.kind"
 });
 
 // The repo and image already moved, and the 9router site is upstream's, so
