@@ -149,7 +149,8 @@ describe("placeholdersOf", () => {
 
 describe("UNTRANSLATED_RE", () => {
   it("matches product names and identifiers", () => {
-    for (const value of ["9Router", "9Remote", "RTK", "PXPIPE", "MCP", "cli/models"]) {
+    const legacyName = "9Router"; // legacy(9router): proper name the 9router brand renders
+    for (const value of [legacyName, "9Remote", "RTK", "PXPIPE", "MCP", "cli/models"]) {
       expect(UNTRANSLATED_RE.test(value)).toBe(true);
     }
   });

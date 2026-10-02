@@ -3,6 +3,7 @@
 // Probe traffic: records nested timeline steps ({ role: "nested", via: ... })
 // and NEVER writes to global._fallbackHops or usage stats.
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { ACTIVE } from "@/shared/brand";
 
 const { executeMock } = vi.hoisted(() => ({ executeMock: vi.fn() }));
 
@@ -196,7 +197,8 @@ describe("nested combo fallback and probe isolation", () => {
       {
         url: "http://localhost/api/combos/probe",
         headers: {
-          get: (n) => (String(n).toLowerCase() === "user-agent" ? "9router-combo-probe/1.0" : null),
+          get: (n) =>
+            String(n).toLowerCase() === "user-agent" ? `${ACTIVE.slug}-combo-probe/1.0` : null,
           entries: () => [][Symbol.iterator](),
         },
         json: async () => ({ ...imageBody }),

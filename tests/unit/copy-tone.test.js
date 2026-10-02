@@ -40,11 +40,11 @@ const COPY_TONE_ALLOWLIST = new Map([
     "Cursor Tunnel / Cloud Endpoint settings options",
   ],
   [
-    "In VS Code, open Extensions (Ctrl+Shift+X or Cmd+Shift+X), search for '9Router for GitHub Copilot' and click Install.",
+    "In VS Code, open Extensions (Ctrl+Shift+X or Cmd+Shift+X), search for '9Router for GitHub Copilot' and click Install.", // legacy(9router): third-party extension name
     "VS Code UI labels and command citations",
   ],
   [
-    "Press Cmd+Shift+P (or Ctrl+Shift+P), run '9Router: Configure Server', then enter your server URL and API key:",
+    "Press Cmd+Shift+P (or Ctrl+Shift+P), run '9Router: Configure Server', then enter your server URL and API key:", // legacy(9router): third-party extension name
     "quoted VS Code command citation",
   ],
   [

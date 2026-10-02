@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 // Guard: the shipped app must not track users or phone home to services run by
-// the original 9router authors. Docs (gitbook/, READMEs) are out of scope here;
+// the original upstream authors. Docs (gitbook/, READMEs) are out of scope here;
 // they are rewritten by the rebrand work.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -41,7 +41,7 @@ const FORBIDDEN = [
   },
   { pattern: /(sentry\.io|bugsnag\.com|datadoghq\.com)/i, why: "error/usage reporting" },
   { pattern: /abc-tunnel\.us/i, why: "upstream tunnel relay" },
-  { pattern: /9router\.com/i, why: "upstream 9router.com service" },
+  { pattern: /9router\.com/i, why: "upstream 9router.com service" }, // legacy(9router): banned upstream domain
   { pattern: /(9remote\.cc|9english\.net)/i, why: "upstream product promo" },
 ];
 
@@ -82,7 +82,7 @@ describe("no tracking or upstream phone-home in runtime code", () => {
 });
 
 describe("Headroom sidecar never sends telemetry or update checks", () => {
-  it("forces telemetry and the PyPI update check off for the proxy 9router launches", async () => {
+  it("forces telemetry and the PyPI update check off for the proxy tokenhop launches", async () => {
     const { HEADROOM_PRIVACY_ENV } = await import("../../src/lib/headroom/process.js");
     expect(HEADROOM_PRIVACY_ENV).toEqual({
       HEADROOM_TELEMETRY: "off",

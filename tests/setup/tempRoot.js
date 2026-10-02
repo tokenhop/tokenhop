@@ -11,7 +11,7 @@ export default function setup() {
   if (process.env.TOKENHOP_TEST_TMP_PARENT) return;
   // Workers inherit this env. Recorded here, before any worker overrides HOME.
   process.env.TOKENHOP_TEST_REAL_HOME ??= homedir();
-  const parent = mkdtempSync(join(tmpdir(), "9router-test-"));
+  const parent = mkdtempSync(join(tmpdir(), "tokenhop-test-"));
   process.env.TOKENHOP_TEST_TMP_PARENT = parent;
   return () => rmSync(parent, { recursive: true, force: true });
 }

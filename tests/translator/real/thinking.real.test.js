@@ -12,6 +12,7 @@ import { checkAndRefreshToken } from "../../../src/sse/services/tokenRefresh.js"
 import { handleChatCore } from "../../../open-sse/handlers/chatCore.js";
 import { getModelsByProviderId } from "../../../open-sse/config/providerModels.js";
 import { getCapabilitiesForModel } from "../../../open-sse/providers/capabilities.js";
+import { getDataDir } from "../../../src/lib/dataDir.js";
 
 const RUN_REAL = process.env.RUN_REAL === "1";
 const MAX_TOKENS = 512;
@@ -118,7 +119,7 @@ function targetProviders() {
     const path = require("path");
     const dbPath = process.env.DATA_DIR
       ? path.join(process.env.DATA_DIR, "db", "data.sqlite")
-      : path.join(os.homedir(), ".9router", "db", "data.sqlite");
+      : path.join(getDataDir(), "db", "data.sqlite");
     const db = new Database(dbPath, { readonly: true });
     const rows = db
       .prepare("SELECT DISTINCT provider FROM providerConnections WHERE isActive = 1")

@@ -1,6 +1,6 @@
 // vitest `setupFiles`: runs before every test file. Points DATA_DIR and the
 // home-dir env vars at a fresh per-file temp root so tests never read or write
-// the developer's real ~/.9router (DB, jwt-secret, machine-id, MITM logs, …).
+// the developer's real data dir (DB, jwt-secret, machine-id, MITM logs, …).
 // App modules resolve these paths at import time, which is why this must run
 // before the test file loads rather than inside a beforeAll.
 //

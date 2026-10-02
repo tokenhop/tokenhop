@@ -43,7 +43,7 @@ describe("home format helpers", () => {
   });
 
   it("masks keys like the endpoint page", () => {
-    expect(maskApiKey("sk-9router-a41cdef0")).toBe("sk-9ro•••••••••def0");
+    expect(maskApiKey("sk-tokenhop-a41cdef0")).toBe("sk-tok••••••••••def0");
     expect(maskApiKey("short")).toBe("s••••");
     expect(maskApiKey(null)).toBe("—");
   });

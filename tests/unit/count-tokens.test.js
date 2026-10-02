@@ -7,7 +7,7 @@ vi.mock("@/lib/auth/requireClientApiKey", () => ({ requireClientApiKey: async ()
 
 async function countTokens(body) {
   const response = await POST(
-    new Request("https://9router.local/v1/messages/count_tokens", {
+    new Request("https://tokenhop.local/v1/messages/count_tokens", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

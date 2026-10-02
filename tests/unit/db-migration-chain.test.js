@@ -9,7 +9,7 @@ let tempDir;
 const originalDataDir = process.env.DATA_DIR;
 
 beforeEach(() => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-mig-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-mig-"));
   process.env.DATA_DIR = tempDir;
   // Reset global singleton so each test gets fresh adapter pointed at tempDir
   delete global._dbAdapter;

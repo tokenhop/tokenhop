@@ -178,7 +178,7 @@ describe("Kiro external_idp (CLIProxyAPI) import and refresh", () => {
     };
 
     const response = await POST(
-      new Request("https://9router.local/api/oauth/kiro/import-cli-proxy", {
+      new Request("https://tokenhop.local/api/oauth/kiro/import-cli-proxy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cliProxyAuth }),

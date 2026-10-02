@@ -44,7 +44,7 @@ describe("OpenRouter key validation", () => {
   async function validate(status) {
     fetchMock.mockResolvedValue(new Response("{}", { status }));
     return POST(
-      jsonRequest("https://9router.local/api/providers/validate", "POST", {
+      jsonRequest("https://tokenhop.local/api/providers/validate", "POST", {
         provider: "openrouter",
         apiKey: "garbage",
       }),
@@ -80,7 +80,7 @@ describe("cookie connection credential update", () => {
     });
 
     const response = await PUT(
-      jsonRequest("https://9router.local/api/providers/c1", "PUT", { apiKey: "new-cookie" }),
+      jsonRequest("https://tokenhop.local/api/providers/c1", "PUT", { apiKey: "new-cookie" }),
       { params: Promise.resolve({ id: "c1" }) },
     );
 

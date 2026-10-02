@@ -80,7 +80,7 @@ describe("getPricingForModel merges user override over defaults (YAN-65)", () =>
   let ossGetPricingForModel;
 
   beforeAll(async () => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-pricing-accuracy-"));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-pricing-accuracy-"));
     process.env.DATA_DIR = tempDir;
     vi.resetModules();
     db = await import("@/lib/db/index.js");

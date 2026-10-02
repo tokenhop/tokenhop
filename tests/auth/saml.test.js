@@ -27,11 +27,11 @@ describe("SAML", () => {
   it("generateSamlMetadata produces valid SP XML", () => {
     const settings = {
       samlEntryPoint: "https://idp.example.com/sso",
-      samlIssuer: "urn:9router:sp",
+      samlIssuer: "urn:tokenhop:sp",
       samlCert: "MIIC123456789012345678901234567890123456789012345678901234567890",
     };
     const xml = generateSamlMetadata("https://localhost:20127", settings);
-    expect(xml).toMatch(/entityID="urn:9router:sp"/);
+    expect(xml).toMatch(/entityID="urn:tokenhop:sp"/);
     expect(xml).toMatch(/Location="https:\/\/localhost:20127\/api\/auth\/saml\/acs"/);
   });
 

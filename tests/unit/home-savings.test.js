@@ -154,7 +154,7 @@ describe("recorded savings (saveRequestUsage -> getUsageSavings)", () => {
   let db;
 
   beforeAll(async () => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-savings-e2e-"));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-savings-e2e-"));
     process.env.DATA_DIR = tempDir;
     vi.resetModules();
     db = await import("@/lib/db/index.js");

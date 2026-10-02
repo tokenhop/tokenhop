@@ -219,7 +219,7 @@ describe("login limiter client IP", () => {
     expect(ip).toBe("203.0.113.9");
   });
 
-  it("still honours TRUST_PROXY for operators fronting 9router with a reverse proxy", () => {
+  it("still honours TRUST_PROXY for operators fronting tokenhop with a reverse proxy", () => {
     process.env.TRUST_PROXY = "true";
 
     const ip = getClientIp(

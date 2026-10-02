@@ -55,7 +55,7 @@ describe("weighted account overrides", () => {
   });
 
   function putRequest(id, providerSpecificData) {
-    return new Request(`https://9router.local/api/providers/${id}`, {
+    return new Request(`https://tokenhop.local/api/providers/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ providerSpecificData }),

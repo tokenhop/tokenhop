@@ -13,6 +13,7 @@ import {
 } from "../../open-sse/utils/cursorProtobuf.js";
 import { isAgentCapableRequest, buildAgentRunFrame } from "../../open-sse/executors/cursor.js";
 import { convertMessages } from "../../open-sse/translator/request/openai-to-cursor.js";
+import { UPSTREAM_CLIENT_IDS } from "@/shared/brand";
 
 // AgentService (agent.v1) codec tests — validate the production implementation
 // in cursorProtobuf.js + the executor's frame builders. Pure round-trip, no network.
@@ -69,7 +70,9 @@ describe("Cursor AgentService codec (cursorProtobuf.js)", () => {
       const msg = decodeMessage(def);
       expect(Buffer.from(msg.get(1)[0].value).toString("utf8")).toBe("get_weather");
       expect(Buffer.from(msg.get(2)[0].value).toString("utf8")).toBe("Get weather");
-      expect(Buffer.from(msg.get(4)[0].value).toString("utf8")).toBe("9router");
+      expect(Buffer.from(msg.get(4)[0].value).toString("utf8")).toBe(
+        UPSTREAM_CLIENT_IDS.cursorMcpProvider,
+      );
       expect(Buffer.from(msg.get(5)[0].value).toString("utf8")).toBe("get_weather");
       expect(decodeAgentValue(msg.get(3)[0].value)).toEqual(schema);
     });

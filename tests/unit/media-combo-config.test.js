@@ -83,12 +83,12 @@ describe("exampleBodyFor", () => {
 describe("buildCurl", () => {
   it("renders a preview-safe curl with the placeholder key", () => {
     const curl = buildCurl({
-      origin: "http://localhost:9router",
+      origin: "http://localhost:tokenhop",
       kind: "image",
       name: "mix",
       apiKey: "live-secret",
     });
-    expect(curl).toContain("curl -X POST http://localhost:9router/v1/images/generations");
+    expect(curl).toContain("curl -X POST http://localhost:tokenhop/v1/images/generations");
     expect(curl).toContain('"Authorization: Bearer YOUR_KEY"');
     expect(curl).not.toContain("live-secret");
   });

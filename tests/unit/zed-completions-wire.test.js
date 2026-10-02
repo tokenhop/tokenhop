@@ -129,7 +129,7 @@ describe("completion payload shaping", () => {
 });
 
 describe("YAN-12 — completions carry the Zed client version", () => {
-  it("sends x-zed-version from the fingerprint and no 9router User-Agent override", async () => {
+  it("sends x-zed-version from the fingerprint and no tokenhop User-Agent override", async () => {
     const { ZED_CLIENT_VERSION } = await import("open-sse/config/zedClientFingerprint.js");
     resolveZedModels.mockImplementation(async () =>
       catalogFor([["claude-x", { provider: "anthropic" }]]),
