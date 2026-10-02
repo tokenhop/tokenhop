@@ -90,7 +90,9 @@ export function claudeToOpenAIRequest(model, body, stream) {
 
   // Tool choice
   if (body.tool_choice) {
-    result.tool_choice = convertToolChoice(body.tool_choice);
+    const { toolChoice, parallelToolCalls } = convertToolChoice(body.tool_choice);
+    result.tool_choice = toolChoice;
+    if (parallelToolCalls !== undefined) result.parallel_tool_calls = parallelToolCalls;
   }
 
   if (body.reasoning_effort !== undefined) {
@@ -155,6 +157,8 @@ function systemReminderText(content) {
 
 // Convert single Claude message - returns single message or array of messages
 function convertClaudeMessage(msg) {
+  // Malformed entries are skipped, never a TypeError (500).
+  if (!msg || typeof msg !== "object") return null;
   // Some clients send content as a single block object; normalize to the
   // one-element array every branch below (the system-reminder fold included)
   // expects. Must run BEFORE the role branch: systemReminderText only reads
@@ -182,6 +186,7 @@ function convertClaudeMessage(msg) {
     const toolResults = [];
 
     for (const block of msg.content) {
+      if (!block || typeof block !== "object") continue;
       switch (block.type) {
         case CLAUDE_BLOCK.TEXT:
           parts.push({ type: OPENAI_BLOCK.TEXT, text: block.text });
@@ -265,6 +270,22 @@ function convertClaudeMessage(msg) {
           }
           break;
         }
+
+        // Unlisted-but-valid Anthropic blocks (container_upload, search_result,
+        // server-tool blocks) have no native OpenAI part. Dropping them used to
+        // void the whole message — forwarding `messages: []` upstream. Serialize
+        // them into a text part so the turn survives the bridge.
+        default:
+          if (
+            block.type &&
+            block.type !== CLAUDE_BLOCK.THINKING &&
+            block.type !== CLAUDE_BLOCK.REDACTED_THINKING
+          ) {
+            parts.push({
+              type: OPENAI_BLOCK.TEXT,
+              text: `[Unsupported content block: ${JSON.stringify(block)}]`,
+            });
+          }
       }
     }
 
@@ -303,21 +324,40 @@ function convertClaudeMessage(msg) {
   return null;
 }
 
-// Convert tool choice
+// Convert Claude tool choice to OpenAI format.
+// Returns { toolChoice, parallelToolCalls } — parallelToolCalls is set (false)
+// only when the Claude choice carried disable_parallel_tool_use.
 function convertToolChoice(choice) {
-  if (!choice) return "auto";
-  if (typeof choice === "string") return choice;
+  const parallelToolCalls = choice?.disable_parallel_tool_use === true ? false : undefined;
 
-  switch (choice.type) {
-    case "auto":
-      return "auto";
-    case "any":
-      return "required";
-    case "tool":
-      return { type: OPENAI_BLOCK.FUNCTION, function: { name: choice.name } };
-    default:
-      return "auto";
+  if (typeof choice === "string") {
+    return {
+      toolChoice: ["none", "auto", "required"].includes(choice) ? choice : "auto",
+      parallelToolCalls,
+    };
   }
+
+  let toolChoice;
+  switch (choice?.type) {
+    case "auto":
+      toolChoice = "auto";
+      break;
+    case "any":
+      toolChoice = "required";
+      break;
+    case "none":
+      toolChoice = "none";
+      break;
+    case "tool":
+      toolChoice = { type: OPENAI_BLOCK.FUNCTION, function: { name: choice.name } };
+      break;
+    default:
+      // Unknown restriction — don't widen it to "auto"; pass the original type
+      // through so the upstream validates it instead.
+      toolChoice = choice?.type;
+  }
+
+  return { toolChoice, parallelToolCalls };
 }
 
 // Register

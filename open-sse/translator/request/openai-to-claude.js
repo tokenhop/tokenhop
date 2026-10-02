@@ -2,6 +2,7 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { CLAUDE_SYSTEM_PROMPT } from "../../config/appConstants.js";
 import { adjustMaxTokens } from "../formats/maxTokens.js";
+import { normalizeUnionInputSchema } from "../formats/claude.js";
 import { safeParseJSON } from "../concerns/json.js";
 import { parseDataUri } from "../concerns/image.js";
 import { extractTextContent } from "../formats/gemini.js";
@@ -55,6 +56,7 @@ export function openaiToClaudeRequest(model, body, stream) {
   if (body.messages && Array.isArray(body.messages)) {
     // Extract system and developer messages in their original order.
     for (const msg of body.messages) {
+      if (!msg || typeof msg !== "object") continue;
       if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
         systemParts.push(
           typeof msg.content === "string" ? msg.content : extractTextContent(msg.content, "\n"),
@@ -62,9 +64,10 @@ export function openaiToClaudeRequest(model, body, stream) {
       }
     }
 
-    // Filter out instruction messages for separate processing
+    // Filter out instruction messages for separate processing.
+    // Malformed (non-object) entries are skipped, never a TypeError (500).
     const nonSystemMessages = body.messages.filter(
-      (m) => m.role !== ROLE.SYSTEM && m.role !== ROLE.DEVELOPER,
+      (m) => m && typeof m === "object" && m.role !== ROLE.SYSTEM && m.role !== ROLE.DEVELOPER,
     );
 
     // Process messages with merging logic
@@ -209,8 +212,10 @@ Respond ONLY with the JSON object, no other text.`);
       result.tools.push({
         name: toolName,
         description: toolData.description || "",
-        input_schema: toolData.parameters ||
-          toolData.input_schema || { type: "object", properties: {}, required: [] },
+        input_schema: normalizeUnionInputSchema(
+          toolData.parameters ||
+            toolData.input_schema || { type: "object", properties: {}, required: [] },
+        ),
         // Only strict:true carries over; translateRequest drops it for non-Anthropic gateways.
         ...((toolData.strict === true || tool.strict === true) && { strict: true }),
       });
@@ -221,9 +226,18 @@ Respond ONLY with the JSON object, no other text.`);
     }
   }
 
-  // Tool choice
+  // Tool choice + parallel-tool policy
   if (body.tool_choice) {
-    result.tool_choice = convertOpenAIToolChoice(body.tool_choice);
+    if (!applyAllowedToolsChoice(result, body.tool_choice)) {
+      result.tool_choice = convertOpenAIToolChoice(body.tool_choice);
+    }
+  }
+  if (body.parallel_tool_calls === false) {
+    if (result.tool_choice && typeof result.tool_choice === "object") {
+      result.tool_choice = { ...result.tool_choice, disable_parallel_tool_use: true };
+    } else {
+      result.tool_choice = { type: "auto", disable_parallel_tool_use: true };
+    }
   }
 
   // Thinking is normalized centrally by applyThinking (thinkingUnified.js) after translation.
@@ -245,6 +259,8 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map(), thinkingInten
       type: CLAUDE_BLOCK.TOOL_RESULT,
       tool_use_id: msg.tool_call_id,
       content: msg.content,
+      // Strict Anthropic parsers (e.g. Zed) require is_error as a boolean.
+      is_error: false,
     });
   } else if (msg.role === ROLE.USER) {
     if (typeof msg.content === "string") {
@@ -253,6 +269,7 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map(), thinkingInten
       }
     } else if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
+        if (!part || typeof part !== "object") continue;
         if (part.type === OPENAI_BLOCK.TEXT && part.text) {
           blocks.push({ type: CLAUDE_BLOCK.TEXT, text: part.text });
         } else if (part.type === CLAUDE_BLOCK.TOOL_RESULT) {
@@ -260,7 +277,7 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map(), thinkingInten
             type: CLAUDE_BLOCK.TOOL_RESULT,
             tool_use_id: part.tool_use_id,
             content: part.content,
-            ...(part.is_error && { is_error: part.is_error }),
+            is_error: Boolean(part.is_error),
           });
         } else if (part.type === OPENAI_BLOCK.IMAGE_URL) {
           const url = typeof part.image_url === "string" ? part.image_url : part.image_url?.url;
@@ -320,6 +337,7 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map(), thinkingInten
     }
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
+        if (!part || typeof part !== "object") continue;
         if (part.type === OPENAI_BLOCK.TEXT && part.text) {
           blocks.push({ type: CLAUDE_BLOCK.TEXT, text: part.text });
         } else if (part.type === CLAUDE_BLOCK.TOOL_USE) {
@@ -346,6 +364,7 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map(), thinkingInten
 
     if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
       for (const tc of msg.tool_calls) {
+        if (!tc || typeof tc !== "object") continue;
         if (tc.type === OPENAI_BLOCK.FUNCTION) {
           // Apply prefix to tool name
           const toolName = CLAUDE_OAUTH_TOOL_PREFIX + tc.function.name;
@@ -368,6 +387,33 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map(), thinkingInten
 // anything else (e.g. OpenAI's "function") triggers a 400, so we never pass an
 // unrecognized type through.
 const CLAUDE_TOOL_CHOICE_TYPES = new Set(["auto", "any", "tool", "none"]);
+
+// OpenAI Responses "allowed_tools" restriction:
+// { type: "allowed_tools", mode: "auto"|"required", tools: [...] } (or the doubly
+// nested { type: "allowed_tools", allowed_tools: { mode, tools } } some clients send).
+// A single allowed tool maps to Claude { type: "tool", name }; multiple tools filter
+// the declared tools down to the allowed set and map the mode (required→any).
+// Returns true when the choice was an allowed_tools shape (handled or not).
+function applyAllowedToolsChoice(result, choice) {
+  if (!choice || typeof choice !== "object" || choice.type !== "allowed_tools") return false;
+  const entries = choice.tools ?? choice.allowed_tools?.tools;
+  if (!Array.isArray(entries)) return true;
+  const names = entries
+    .map((t) => t?.function?.name ?? t?.name)
+    .filter((n) => typeof n === "string" && n);
+  if (names.length === 0) {
+    result.tool_choice = { type: "none" };
+  } else if (names.length === 1) {
+    result.tool_choice = { type: "tool", name: names[0] };
+  } else {
+    if (Array.isArray(result.tools)) {
+      const allowed = new Set(names);
+      result.tools = result.tools.filter((t) => allowed.has(t?.name));
+    }
+    result.tool_choice = { type: choice.mode === "required" ? "any" : "auto" };
+  }
+  return true;
+}
 
 function convertOpenAIToolChoice(choice) {
   if (!choice) return { type: "auto" };
