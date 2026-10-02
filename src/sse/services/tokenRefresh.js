@@ -46,8 +46,8 @@ export const refreshIflowToken = (refreshToken) => _refreshIflowToken(refreshTok
 
 export const refreshGitHubToken = (refreshToken) => _refreshGitHubToken(refreshToken, log);
 
-export const refreshCopilotToken = (githubAccessToken) =>
-  _refreshCopilotToken(githubAccessToken, log);
+export const refreshCopilotToken = (githubAccessToken, proxyOptions = null) =>
+  _refreshCopilotToken(githubAccessToken, log, proxyOptions);
 
 export const refreshKiroToken = (refreshToken, providerSpecificData) =>
   _refreshKiroToken(refreshToken, providerSpecificData, log);
@@ -213,12 +213,30 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
 // ─── Local-specific: proactive token refresh ─────────────────────────────────
 
 /**
+ * Build proxyOptions from the connection-resolved providerSpecificData stamped
+ * by getProviderCredentials. Carries the pool's strictProxy so a token refresh
+ * never falls back to a direct connection when strict mode is on (YAN-651).
+ */
+function proxyOptionsFromCredentials(credentials) {
+  const psd = credentials?.providerSpecificData;
+  if (!psd) return null;
+  return {
+    connectionProxyEnabled: psd.connectionProxyEnabled === true,
+    connectionProxyUrl: psd.connectionProxyUrl || "",
+    connectionNoProxy: psd.connectionNoProxy || "",
+    vercelRelayUrl: psd.vercelRelayUrl || "",
+    strictProxy: psd.strictProxy === true,
+    connectionProxyPoolId: psd.connectionProxyPoolId || null,
+  };
+}
+
+/**
  * Check whether the provider token (and, for GitHub, the Copilot token) is
  * about to expire and refresh it proactively.
  *
  * @param {string} provider
  * @param {object} credentials
- * @param {{ force?: boolean }} [options]  force=true skips the on-request lead check
+ * @param {{ force?: boolean, proxyOptions?: object|null }} [options]  force=true skips the on-request lead check
  *   (used by background scheduler which applies a larger lead). Request path omits this.
  * @returns {Promise<object>} updated credentials object
  */
@@ -229,6 +247,7 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
   }
 
   const force = options?.force === true;
+  const proxyOptions = options?.proxyOptions || proxyOptionsFromCredentials(creds);
 
   // ── 1. Regular access-token expiry ────────────────────────────────────────
   if (force || _shouldRefreshCredentials(provider, creds)) {
@@ -243,7 +262,7 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
       lastRefreshAt: creds.lastRefreshAt || null,
     });
 
-    const newCreds = await _refreshProviderCredentials(provider, creds, log);
+    const newCreds = await _refreshProviderCredentials(provider, creds, log, proxyOptions);
     if (newCreds?.accessToken || newCreds?.apiKey || newCreds?.copilotToken) {
       const mergedCreds = {
         ...newCreds,
@@ -284,7 +303,7 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
         expiresIn: copilotToken ? Math.round(remaining / 1000) : "missing",
       });
 
-      const copilotTokenResult = await refreshCopilotToken(creds.accessToken);
+      const copilotTokenResult = await refreshCopilotToken(creds.accessToken, proxyOptions);
       if (copilotTokenResult) {
         const updatedSpecific = {
           ...creds.providerSpecificData,
