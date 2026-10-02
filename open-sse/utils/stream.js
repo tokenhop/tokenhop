@@ -347,8 +347,12 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
           }
-          streamDoneSent = true;
-          if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
+          // OpenAI Chat clients get their [DONE] from flush(), after any
+          // translator tail (finish chunk, usage) — never mid-stream here.
+          if (keepsOpenAIResponsesFormat) {
+            streamDoneSent = true;
+            openAIResponsesDoneSent = true;
+          }
           continue;
         }
 
@@ -561,6 +565,16 @@ export function createSSEStream(options = {}) {
           reqLogger?.appendConvertedChunk?.(doneOutput);
           controller.enqueue(sharedEncoder.encode(doneOutput));
           openAIResponsesDoneSent = true;
+          streamDoneSent = true;
+        }
+
+        // OpenAI Chat clients require the [DONE] sentinel (Cline, DeepSeek ACP
+        // abort without it). Translated upstreams either never send one (Claude,
+        // Gemini) or had it swallowed above, so emit it once, last (YAN-652).
+        if (sourceFormat === FORMATS.OPENAI && !streamDoneSent) {
+          const doneOutput = "data: [DONE]\n\n";
+          reqLogger?.appendConvertedChunk?.(doneOutput);
+          controller.enqueue(sharedEncoder.encode(doneOutput));
           streamDoneSent = true;
         }
 

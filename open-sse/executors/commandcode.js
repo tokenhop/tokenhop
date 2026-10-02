@@ -3,6 +3,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { commandCodeToOpenAIResponse } from "../translator/response/commandcode-to-openai.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
+import { FORMATS } from "../translator/formats.js";
 
 /**
  * CommandCodeExecutor — talks to https://api.commandcode.ai/alpha/generate
@@ -62,6 +63,9 @@ export class CommandCodeExecutor extends BaseExecutor {
       }
 
       result.response = wrappedResponse;
+      // Already translated to OpenAI chunks by wrapNdjsonAsOpenAISse — the
+      // stream transform must not re-translate from commandcode format.
+      result.responseFormat = FORMATS.OPENAI;
       return result;
     }
   }
