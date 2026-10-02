@@ -132,6 +132,10 @@ describe("gemini", () => {
     expect(calls).toHaveLength(2);
     expect(calls.every((c) => !c.url.includes("key="))).toBe(true);
     expect(calls[0].headers["x-goog-api-key"]).toBe("AIza-key");
+
+    // ...and its static STT twin stays discoverable.
+    const sttIds = (await buildModelsList(["stt"])).map((m) => m.id);
+    expect(sttIds).toContain(`${alias}/gemini-2.5-pro`);
   });
 });
 
@@ -197,6 +201,7 @@ describe("antigravity", () => {
         { id: "claude-sonnet-4-6", name: "x" },
         { id: "gemini-3.1-flash-image", name: "x" },
         { id: "gemini-9-new", name: "Gemini 9" },
+        { id: "gemini-9-image", name: "Img 9" },
         { id: "chat_20706", name: "internal" },
       ],
       STATIC,
@@ -207,6 +212,7 @@ describe("antigravity", () => {
       { id: "claude-sonnet-4-6", name: "Sonnet" },
       { id: "gemini-3.1-flash-image", name: "Image", kind: "image" },
       { id: "gemini-9-new", name: "Gemini 9" },
+      { id: "gemini-9-image", name: "Img 9", kind: "image" },
     ]);
   });
 

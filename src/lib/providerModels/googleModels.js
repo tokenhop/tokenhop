@@ -50,13 +50,12 @@ export function parseGeminiModels(data) {
   });
 }
 
-// Keep static non-chat entries the live list lacks (legacy embeddings) so
-// /v1/models/{kind} still lists them. Ids already live are skipped: kinds are keyed
-// by id downstream, so a same-id STT alias would push a chat model out of the list.
+// Keep static non-chat entries the live list lacks as that kind (STT twins of chat
+// models, legacy embeddings) so /v1/models/{kind} still lists them.
 function withStaticGeminiExtras(liveModels) {
-  const liveIds = new Set(liveModels.map((m) => m.id));
+  const live = new Set(liveModels.map((m) => `${kindOf(m)}:${m.id}`));
   const extras = getModelsByProviderId("gemini")
-    .filter((m) => kindOf(m) !== "llm" && !liveIds.has(m.id))
+    .filter((m) => kindOf(m) !== "llm" && !live.has(`${kindOf(m)}:${m.id}`))
     .map(({ id, name, kind, type }) => ({ id, name, kind: kind || type }));
   return [...liveModels, ...extras];
 }
@@ -181,7 +180,9 @@ export function reconcileAntigravityModels(liveModels, staticModels) {
     ];
   });
   const covered = new Set(staticModels.filter((m) => live.has(wireIdOf(m))).map(wireIdOf));
-  const unknown = [...live.values()].filter((m) => !covered.has(m.id));
+  const unknown = [...live.values()]
+    .filter((m) => !covered.has(m.id))
+    .map((m) => (/image/.test(m.id) ? { ...m, kind: "image" } : m));
   return [...kept, ...unknown];
 }
 
@@ -204,7 +205,12 @@ const resolveAntigravityOAuth = buildOAuthResolver({
 export async function resolveAntigravity(connection) {
   const result = await resolveCloudCode(resolveAntigravityOAuth, connection, "Antigravity");
   if (!result.models.length) return result;
-  const models = reconcileAntigravityModels(result.models, getModelsByProviderId("antigravity"));
+  const staticModels = getModelsByProviderId("antigravity");
+  const models = reconcileAntigravityModels(result.models, staticModels);
+  // The account's catalog is the truth (tiers differ); log what it hides for operators.
+  const listed = new Set(models.map((m) => m.id));
+  const dropped = staticModels.filter((m) => !listed.has(m.id)).map((m) => m.id);
+  if (dropped.length) console.log(`Antigravity live catalog omits ${dropped.join(", ")}`);
   return models.length
     ? { models }
     : { models: [], warning: "Antigravity returned no live models." };

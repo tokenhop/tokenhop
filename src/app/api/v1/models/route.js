@@ -47,6 +47,22 @@ function modelKind(model) {
   return MODEL_TYPE_TO_KIND[k] || LLM_KIND;
 }
 
+// id → kinds. One id can carry several kinds (Gemini lists gemini-2.5-pro as chat
+// and as STT), so a plain id → kind map would drop one of them.
+function kindsById(models) {
+  const map = new Map();
+  for (const m of models) {
+    const kinds = map.get(m.id) || [];
+    kinds.push(modelKind(m));
+    map.set(m.id, kinds);
+  }
+  return map;
+}
+
+// The kind the requested endpoint wants when the id has it, else the first one.
+const pickKind = (kinds, kindFilter) =>
+  kinds && (kinds.find((k) => kindFilter.includes(k)) || kinds[0]);
+
 // Token limits a live resolver reported for one model (`contextLength` /
 // `maxOutputTokens`), or null when it reported neither.
 function liveLimits(model) {
@@ -266,8 +282,8 @@ export async function buildModelsList(kindFilter, options = {}) {
         isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
 
       // Build kind lookup for static models so we can filter even when only IDs are exposed
-      const staticModelKindById = new Map(providerModels.map((m) => [m.id, modelKind(m)]));
-      let liveModelKindById = new Map();
+      const staticKindsById = kindsById(providerModels);
+      let liveKindsById = new Map();
       let liveCapabilitiesById = new Map();
       let liveLimitsById = new Map();
 
@@ -302,8 +318,8 @@ export async function buildModelsList(kindFilter, options = {}) {
         if (live.models.length) {
           const liveModels = live.models.filter((m) => m?.id);
           rawModelIds = liveModels.map((m) => m.id);
-          liveModelKindById = new Map(
-            liveModels.map((m) => [stripProviderPrefix(m.id), modelKind(m)]),
+          liveKindsById = kindsById(
+            liveModels.map((m) => ({ ...m, id: stripProviderPrefix(m.id) })),
           );
           liveCapabilitiesById = new Map(
             liveModels
@@ -368,11 +384,11 @@ export async function buildModelsList(kindFilter, options = {}) {
       for (const modelId of mergedModelIds) {
         // Resolve kind: prefer custom/live metadata, then static, then ID heuristics.
         const customKind = customModelKindById.get(modelId);
-        const liveKind = liveModelKindById.get(modelId);
+        const liveKind = pickKind(liveKindsById.get(modelId), kindFilter);
         const kind =
           customKind ||
           liveKind ||
-          staticModelKindById.get(modelId) ||
+          pickKind(staticKindsById.get(modelId), kindFilter) ||
           inferKindFromUnknownModelId(modelId);
         // imageToText custom models stay in the LLM list (vision-capable chat models)
         const allowAsLlm = kind === "imageToText" && kindFilter.includes(LLM_KIND);
