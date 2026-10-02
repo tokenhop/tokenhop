@@ -360,6 +360,16 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   const proxyUrl = connectionProxyUrl || envProxyUrl;
 
+  // Pool id + target host in fallback warnings so operators can find the failing pool.
+  const poolId = normalizeString(proxyOptions?.connectionProxyPoolId) || "none";
+  let targetHost = targetUrl;
+  try {
+    targetHost = new URL(targetUrl).host;
+  } catch {
+    /* keep raw url */
+  }
+  const fallbackCtx = ` (pool=${poolId}, target=${targetHost})`;
+
   // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
   if (shouldBypassMitmDns(targetUrl)) {
     if (proxyUrl) {
@@ -374,7 +384,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
           );
         }
         console.warn(
-          `[ProxyFetch] Proxy failed, falling back to direct bypass: ${proxyError.message}`,
+          `[ProxyFetch] Proxy failed, falling back to direct bypass: ${proxyError.message}${fallbackCtx}`,
         );
       }
     }
@@ -401,7 +411,9 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
           `[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`,
         );
       }
-      console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
+      console.warn(
+        `[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}${fallbackCtx}`,
+      );
       return originalFetch(url, options);
     }
   }

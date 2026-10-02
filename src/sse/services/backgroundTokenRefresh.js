@@ -78,7 +78,19 @@ async function loadActiveConnections() {
 
 async function refreshOne(connection) {
   const { checkAndRefreshToken } = await import("./tokenRefresh.js");
-  return checkAndRefreshToken(connection.provider, connection, { force: true });
+  // Resolve the connection's proxy config so refresh honours the pool's
+  // strictProxy flag (YAN-651): never fall back to direct when strict is on.
+  const { resolveConnectionProxyConfig } = await import("../../lib/network/connectionProxy.js");
+  const cfg = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+  const proxyOptions = {
+    connectionProxyEnabled: cfg.connectionProxyEnabled === true,
+    connectionProxyUrl: cfg.connectionProxyUrl || "",
+    connectionNoProxy: cfg.connectionNoProxy || "",
+    vercelRelayUrl: cfg.vercelRelayUrl || "",
+    strictProxy: cfg.strictProxy === true,
+    connectionProxyPoolId: cfg.proxyPoolId || null,
+  };
+  return checkAndRefreshToken(connection.provider, connection, { force: true, proxyOptions });
 }
 
 /**
