@@ -186,4 +186,27 @@ describe("compatible provider connections API", () => {
     expect(storedConnections).toHaveLength(1);
     expect(storedConnections[0].apiKey).toBe("original-key");
   });
+
+  it("rejects one of two concurrent same-name creates (YAN-273)", async () => {
+    const ctx = await setupTestContext({
+      id: "openai-compatible-race-test",
+      type: "openai-compatible",
+      name: "Race Node",
+      prefix: "race",
+      apiType: "chat",
+      baseUrl: "https://race.test/v1",
+    });
+    cleanup = ctx.cleanup;
+
+    const responses = await Promise.all([
+      ctx.POST(makeRequest(ctx.node.id, "Key A", "key-1")),
+      ctx.POST(makeRequest(ctx.node.id, "Key A", "key-2")),
+    ]);
+    const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
+    const created = await responses.find((r) => r.status === 201).json();
+
+    expect(responses.map((r) => r.status).sort()).toEqual([201, 409]);
+    expect(storedConnections).toHaveLength(1);
+    expect(storedConnections[0].id).toBe(created.connection.id);
+  });
 });
