@@ -5,9 +5,14 @@
  * Used by tests/unit/copy-tone.test.js (guard) and by the YAN-414 sweep.
  * Pure functions over the literal list produced by scripts/i18n-literals.mjs.
  */
+import { createRequire } from "node:module";
+
+const { BRAND_IDS } = createRequire(import.meta.url)("../src/shared/brand/index.cjs");
 
 /** The one success toast allowed an exclamation mark (§9; YAN-408). */
-export const SUCCESS_TOAST_RE = /^You've saved .+ tokens with 9router!$/;
+export const SUCCESS_TOAST_RE = new RegExp(
+  `^You've saved .+ tokens with (${BRAND_IDS.join("|")})!$`,
+);
 
 /**
  * Words that stay capitalized mid-sentence because they are product, provider,

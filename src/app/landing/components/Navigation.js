@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button, IconButton, ThemeToggle } from "@/shared/components";
+import BrandLockup from "@/shared/components/BrandLockup";
+import { ACTIVE } from "@/shared/brand";
 
 const NAV_LINKS = [
   { label: "Features", href: "#features" },
@@ -46,18 +48,10 @@ export default function Navigation() {
       >
         <Link
           href="/"
-          aria-label="9Router home"
+          aria-label={`${ACTIVE.name} home`}
           className="flex min-h-[44px] items-center gap-3 rounded-lg"
         >
-          <span
-            className="-rotate-[8deg] flex size-9 items-center justify-center rounded-[11px] bg-coral font-display text-[22px] font-extrabold text-on-coral shadow-card"
-            aria-hidden="true"
-          >
-            9
-          </span>
-          <span className="font-display text-[22px] font-bold tracking-[-0.02em] text-text">
-            router
-          </span>
+          <BrandLockup />
         </Link>
 
         <div className="hidden items-center gap-1 md:flex">

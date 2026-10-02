@@ -1,6 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { ACTIVE } from "@/shared/brand";
 import { useCallback, useEffect, useState } from "react";
 import SectionCard from "@/shared/components/SectionCard";
 import SettingRow from "@/shared/components/SettingRow";
@@ -197,7 +198,7 @@ export default function NetworkSection({ settings, onSettingsChange }) {
       <SectionCard
         icon="public"
         title="Network"
-        subtitle="How 9router reaches providers, and how you reach it."
+        subtitle={`How ${ACTIVE.slug} reaches providers, and how you reach it.`}
       />
       <div className="rounded-2xl border border-line bg-panel p-5 shadow-card divide-y divide-line">
         <SettingRow

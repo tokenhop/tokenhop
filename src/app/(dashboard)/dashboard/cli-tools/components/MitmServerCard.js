@@ -192,13 +192,12 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           {/* Purpose & How it works */}
           <div className="px-2 py-2 rounded-lg bg-panel/50 border border-line/50 flex flex-col gap-2">
             <p className="text-[11px] text-muted leading-relaxed">
-              <span className="font-medium text-text">Purpose:</span> Use Antigravity IDE & GitHub
-              Copilot → with ANY provider/model from 9Router
+              <span className="font-medium text-text">Purpose:</span>{" "}
+              {`Use Antigravity IDE & GitHub Copilot → with ANY provider/model from ${ACTIVE.name}`}
             </p>
             <p className="text-[11px] text-muted leading-relaxed">
-              <span className="font-medium text-text">How it works:</span> Antigravity/Copilot IDE
-              request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response
-              to Antigravity/Copilot
+              <span className="font-medium text-text">How it works:</span>{" "}
+              {`Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → ${ACTIVE.name} → response to Antigravity/Copilot`}
             </p>
           </div>
 
@@ -206,7 +205,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           <div className="flex flex-col gap-2">
             <div className="grid gap-1 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
               <span className="text-xs font-semibold text-text sm:text-right sm:text-sm">
-                9Router base URL
+                {`${ACTIVE.name} base URL`}
               </span>
               <span
                 className="material-symbols-outlined hidden text-muted text-[14px] sm:inline"
@@ -324,7 +323,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
                 shield_lock
               </span>
-              <span>Administrator required — restart 9Router as Administrator to use MITM</span>
+              <span>{`Administrator required — restart ${ACTIVE.name} as Administrator to use MITM`}</span>
             </div>
           )}
         </div>

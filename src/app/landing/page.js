@@ -1,6 +1,7 @@
 "use client";
 
 import Button from "@/shared/components/Button";
+import { ACTIVE } from "@/shared/brand";
 import Navigation from "./components/Navigation";
 import HeroSection from "./components/HeroSection";
 import FlowAnimation from "./components/FlowAnimation";
@@ -48,8 +49,7 @@ export default function LandingPage() {
               Ready to simplify your AI infrastructure?
             </h2>
             <p className="mx-auto mb-10 max-w-2xl text-xl text-muted">
-              Join developers who are streamlining their AI integrations with 9Router. Open source
-              and free to start.
+              {`Join developers who are streamlining their AI integrations with ${ACTIVE.name}. Open source and free to start.`}
             </p>
             <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
               <Button variant="primary" size="md" href="/dashboard" className="w-full sm:w-auto">

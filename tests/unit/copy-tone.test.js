@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { extractFromRepo } from "../../scripts/i18n-literals.mjs";
 import { findCopyToneViolations } from "../../scripts/copy-tone.mjs";
+import { ACTIVE } from "../../src/shared/brand/index.cjs";
 
 /**
  * Literals the §9 detector flags that are correct as written. Every entry
@@ -11,7 +12,7 @@ import { findCopyToneViolations } from "../../scripts/copy-tone.mjs";
 const COPY_TONE_ALLOWLIST = new Map([
   // Windows "run as Administrator" role name keeps its OS casing.
   [
-    "Administrator required — restart 9Router as Administrator to use MITM",
+    `Administrator required — restart ${ACTIVE.name} as Administrator to use MITM`,
     "Windows Administrator role name",
   ],
   // Button/setting citations keep the label's own capitalization.

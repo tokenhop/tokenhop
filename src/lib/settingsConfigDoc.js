@@ -18,6 +18,7 @@
  */
 
 import { maskUrlCredentials } from "./settingsFlags.js";
+import { ACTIVE } from "@/shared/brand";
 
 export const CONFIG_SCHEMA_VERSION = 1;
 
@@ -287,7 +288,7 @@ export function validateConfigDocument(doc, knownKeys) {
   }
   if (doc.schemaVersion !== CONFIG_SCHEMA_VERSION) {
     errors.push(
-      `Unsupported schemaVersion ${JSON.stringify(doc.schemaVersion ?? null)}: this version of 9router reads ${CONFIG_SCHEMA_VERSION}`,
+      `Unsupported schemaVersion ${JSON.stringify(doc.schemaVersion ?? null)}: this version of ${ACTIVE.slug} reads ${CONFIG_SCHEMA_VERSION}`,
     );
     return fail();
   }

@@ -124,3 +124,51 @@ describe("brand components", () => {
     expect(markup).toContain('aria-hidden="true"');
   });
 });
+
+describe("brand mark inside an SVG (routes-map hub)", () => {
+  const renderSvg = async (brandId) => {
+    const { default: BrandMark } = await loadModule(brandId, "@/shared/components/BrandMark.js");
+    return renderToStaticMarkup(
+      createElement("svg", null, createElement(BrandMark, { x: 10, y: 20, size: 96 })),
+    );
+  };
+
+  it("draws the legacy tile and wordmark at the old hub geometry", async () => {
+    const markup = await renderSvg(BRAND_IDS[0]);
+    expect(markup).toContain('<rect x="10" y="20" width="96" height="96" rx="28"');
+    expect(markup).toContain(">9</text>");
+    expect(markup).toContain(`>${LEGACY.wordmark}</text>`);
+  });
+
+  it("draws the tokenhop mark as a nested svg", async () => {
+    const markup = await renderSvg(BRAND_IDS[1]);
+    expect(markup).toMatch(/<svg><svg [^>]*x="10" y="20" width="96" height="96"/);
+    expect(markup).toContain('d="M25 11V41.5C25 48.5 28.8 52 35.5 52H40"');
+    expect(markup).not.toContain(">9</text>");
+  });
+});
+
+// brand-guard can't see a logo split into a "9" tile and a wordmark element, so
+// this keeps every logo going through BrandMark/BrandLockup.
+describe("no hardcoded legacy logo outside the brand components", () => {
+  const BRAND_COMPONENTS = new Set(["BrandMark.js", "BrandLockup.js"]);
+  const LEGACY_LOGO = [
+    /-rotate-\[8deg\][^"]*bg-coral|bg-coral[^"]*-rotate-\[8deg\]/, // tilted coral tile
+    new RegExp(`>\\s*${LEGACY.wordmark}\\s*<`), // standalone wordmark text node
+  ];
+
+  const files = (dir) =>
+    fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) return files(full);
+      return entry.name.endsWith(".js") && !BRAND_COMPONENTS.has(entry.name) ? [full] : [];
+    });
+
+  it("finds no legacy tile or wordmark markup in src/", () => {
+    const hits = files(path.join(REPO_ROOT, "src")).filter((file) => {
+      const code = fs.readFileSync(file, "utf8");
+      return LEGACY_LOGO.some((re) => re.test(code));
+    });
+    expect(hits.map((file) => path.relative(REPO_ROOT, file))).toEqual([]);
+  });
+});

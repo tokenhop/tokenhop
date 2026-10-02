@@ -1,6 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { ACTIVE } from "@/shared/brand";
 import Toggle from "@/shared/components/Toggle";
 import Button from "@/shared/components/Button";
 import ModelSelectModal from "@/shared/components/ModelSelectModal";
@@ -145,8 +146,7 @@ export default function CapabilityAdapterCard({
                 role="status"
                 className="rounded-xl border border-warn bg-warn-bg p-3 text-xs text-warn"
               >
-                On, but no models. 9router tries oc/mimo-v2.5-free; if it can't handle the request,
-                the original route may reject the media.{" "}
+                {`On, but no models. ${ACTIVE.slug} tries oc/mimo-v2.5-free; if it can't handle the request, the original route may reject the media.`}{" "}
                 <button
                   type="button"
                   onClick={() => onActiveCapChange?.(cap.key)}

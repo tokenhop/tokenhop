@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ACTIVE } from "@/shared/brand";
 import Button from "@/shared/components/Button";
 import Checkbox from "@/shared/components/Checkbox";
 import CopyField from "@/shared/components/CopyField";
@@ -41,7 +42,7 @@ export default function KitClient() {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
-            9router UI kit
+            {`${ACTIVE.slug} UI kit`}
           </p>
           <h1 className="font-display text-[68px] leading-none font-extrabold">Signal</h1>
           <p dir="auto" className="mt-1 max-w-[72ch] text-[15px] text-muted">

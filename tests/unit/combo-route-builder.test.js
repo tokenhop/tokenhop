@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { ACTIVE } from "../../src/shared/brand/index.cjs";
 
 import {
   roleLabel,
@@ -47,7 +48,7 @@ describe("roleLabel", () => {
 describe("STRATEGY_EXPLAINERS", () => {
   it("has board copy for all four strategies", () => {
     expect(STRATEGY_EXPLAINERS.fallback).toBe(
-      "Every request starts at #1. On a rate limit, auth error or outage, 9router moves down the list without your client noticing.",
+      `Every request starts at #1. On a rate limit, auth error or outage, ${ACTIVE.slug} moves down the list without your client noticing.`,
     );
     expect(STRATEGY_EXPLAINERS["round-robin"]).toBe(
       "Each request goes to the next model in the list, spreading load and quota evenly.",

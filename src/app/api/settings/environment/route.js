@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { buildEnvironmentReadout } from "@/lib/settingsFlags";
 import { shouldUseSecureCookie } from "@/lib/auth/dashboardSession";
 import { DATA_DIR, ignoredLegacyDataDir, isLegacyDataDir } from "@/lib/dataDir";
+import { DATA_FILE } from "@/lib/db/paths";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -18,6 +19,7 @@ export async function GET(request) {
       {
         values: buildEnvironmentReadout(),
         dataDir: DATA_DIR,
+        databaseFile: DATA_FILE,
         isLegacyDataDir: isLegacyDataDir(),
         ignoredLegacyDataDir: ignoredLegacyDataDir(),
         cookieSecure: shouldUseSecureCookie(request),

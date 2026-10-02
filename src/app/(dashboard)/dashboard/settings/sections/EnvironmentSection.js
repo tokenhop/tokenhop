@@ -5,7 +5,7 @@ import SectionCard from "@/shared/components/SectionCard";
 import CopyField from "@/shared/components/CopyField";
 import Callout from "@/shared/components/Callout";
 import { Skeleton } from "@/shared/components/Loading";
-import { BRAND } from "@/shared/brand";
+import { ACTIVE, BRAND } from "@/shared/brand";
 
 const MIGRATE_COMMAND = `${BRAND.npmPackage} data migrate`;
 
@@ -51,7 +51,7 @@ export default function EnvironmentSection() {
       />
       <div className="rounded-2xl border border-line bg-panel p-5 shadow-card space-y-4">
         <Callout variant="info" title=".env · restart">
-          Values come from the server environment. Change them in .env and restart 9router.
+          {`Values come from the server environment. Change them in .env and restart ${ACTIVE.slug}.`}
         </Callout>
         {legacyDataDir && (
           <Callout variant="warn" title="Data directory">

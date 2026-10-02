@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/localDb";
 import { restartHeadroomProxy } from "@/lib/headroom/process";
 import { DEFAULT_HEADROOM_URL, isLoopbackHeadroomUrl } from "@/lib/headroom/detect";
+import { ACTIVE } from "@/shared/brand";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export async function POST() {
     if (!isLoopbackHeadroomUrl(url)) {
       return NextResponse.json(
         {
-          error: "External Headroom proxies must be started outside 9Router",
+          error: `External Headroom proxies must be started outside ${ACTIVE.name}`,
           code: "EXTERNAL_PROXY",
         },
         { status: 400 },

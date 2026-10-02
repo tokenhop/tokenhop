@@ -1,6 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import BrandLockup from "@/shared/components/BrandLockup";
+import { ACTIVE, ACTIVE_BRAND_ID, BRAND, LEGACY } from "@/shared/brand";
+
+const IS_TOKENHOP = ACTIVE_BRAND_ID === BRAND.slug;
 
 const PRODUCT_LINKS = [
   { label: "Features", href: "#features" },
@@ -32,7 +36,25 @@ const RESOURCE_LINKS = [
     target: "_blank",
     rel: "noopener noreferrer",
   },
+  ...(IS_TOKENHOP
+    ? [
+        {
+          label: "npm",
+          href: `https://www.npmjs.com/package/${BRAND.npmPackage}`,
+          target: "_blank",
+          rel: "noopener noreferrer",
+        },
+      ]
+    : []),
 ];
+
+// The upstream project this fork is based on (MIT), credited on the tokenhop brand.
+const UPSTREAM_CREDIT = IS_TOKENHOP
+  ? {
+      label: `Based on ${LEGACY.names[0]} by decolua`,
+      href: `https://github.com/decolua/${LEGACY.slug}`,
+    }
+  : null;
 
 const LEGAL_LINKS = [
   {
@@ -54,18 +76,10 @@ export default function Footer() {
           <div className="col-span-2 lg:col-span-2">
             <Link
               href="/"
-              aria-label="9Router home"
+              aria-label={`${ACTIVE.name} home`}
               className="mb-6 inline-flex min-h-[44px] items-center gap-3 rounded-lg"
             >
-              <span
-                className="-rotate-[8deg] flex size-9 items-center justify-center rounded-[11px] bg-coral font-display text-[22px] font-extrabold text-on-coral shadow-card"
-                aria-hidden="true"
-              >
-                9
-              </span>
-              <span className="font-display text-[22px] font-bold tracking-[-0.02em] text-text">
-                router
-              </span>
+              <BrandLockup />
             </Link>
             <p className="mb-6 max-w-xs text-sm leading-relaxed text-muted">
               The unified endpoint for AI generation. Connect, route, and manage your AI providers
@@ -78,7 +92,7 @@ export default function Footer() {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <span className="sr-only">9Router on GitHub</span>
+                <span className="sr-only">{`${ACTIVE.name} on GitHub`}</span>
                 <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
                   code
                 </span>
@@ -133,7 +147,19 @@ export default function Footer() {
         </div>
 
         <div className="flex flex-col items-center justify-between gap-4 border-t border-line pt-8 sm:flex-row">
-          <p className="text-sm text-muted">© 2025 9Router. All rights reserved.</p>
+          <div className="flex flex-col gap-1">
+            <p className="text-sm text-muted">{`© 2025 ${ACTIVE.name}. All rights reserved.`}</p>
+            {UPSTREAM_CREDIT && (
+              <a
+                className="inline-flex min-h-[44px] items-center text-sm text-muted transition-colors hover:text-text focus-visible:shadow-focus"
+                href={UPSTREAM_CREDIT.href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {UPSTREAM_CREDIT.label}
+              </a>
+            )}
+          </div>
           <div className="flex gap-6">
             <a
               className="inline-flex min-h-[44px] items-center text-sm text-muted transition-colors hover:text-text focus-visible:shadow-focus"

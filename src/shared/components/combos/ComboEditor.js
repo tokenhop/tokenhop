@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { ACTIVE } from "@/shared/brand";
 import PropTypes from "prop-types";
 import {
   DndContext,
@@ -287,8 +288,7 @@ export default function ComboEditor({
       {emptyAdapters.length > 0 && (
         <p role="status" className="rounded-xl border border-warn bg-warn-bg p-3 text-sm text-warn">
           {emptyAdapters.map((key) => (key === "vision" ? "Vision" : "Audio")).join(" and ")}{" "}
-          adapter on, but no models. 9router tries oc/mimo-v2.5-free; if it can't handle the
-          request, the original route may reject the media.{" "}
+          {`adapter on, but no models. ${ACTIVE.slug} tries oc/mimo-v2.5-free; if it can't handle the request, the original route may reject the media.`}{" "}
           <button
             type="button"
             className="font-semibold underline underline-offset-2 focus-visible:shadow-focus focus-visible:outline-none"

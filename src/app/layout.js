@@ -43,7 +43,7 @@ const materialSymbols = localFont({
 });
 
 export const metadata = {
-  title: "9Router - AI infrastructure management",
+  title: `${ACTIVE.name} - AI infrastructure management`,
   description:
     "One endpoint for all your AI providers. Manage keys, monitor usage, and scale effortlessly.",
   icons: {

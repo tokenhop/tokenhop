@@ -1,14 +1,14 @@
 "use client";
 
 import { CopyField } from "@/shared/components";
+import { ACTIVE } from "@/shared/brand";
 
 // Published by this project on GHCR. (The `9router` package on npm is not ours.)
-const INSTALL_COMMAND =
-  "docker run -d -p 20128:20128 -v ~/.9router:/app/data -e INITIAL_PASSWORD=change-me ghcr.io/tokenhop/tokenhop";
+const INSTALL_COMMAND = `docker run -d -p 20128:20128 -v ~/.${ACTIVE.dataDirName}:/app/data -e INITIAL_PASSWORD=change-me ghcr.io/tokenhop/tokenhop`;
 
 const STEPS = [
   {
-    title: "Install 9Router",
+    title: `Install ${ACTIVE.name}`,
     desc: "Run the Docker image to start the server instantly",
   },
   {
@@ -22,7 +22,7 @@ const STEPS = [
 ];
 
 const LOG_LINES = [
-  { text: "Starting 9Router...", tone: "signal-terminal-log" },
+  { text: `Starting ${ACTIVE.name}...`, tone: "signal-terminal-log" },
   { text: "Server running on http://localhost:20128", tone: "signal-terminal-info" },
   { text: "Dashboard: http://localhost:20128/dashboard", tone: "signal-terminal-info" },
   { text: "Ready to route", tone: "signal-terminal-log" },
@@ -45,8 +45,7 @@ export default function GetStarted() {
               Get started in 30 seconds
             </h2>
             <p className="mb-8 text-lg text-muted">
-              Install 9Router, configure your providers via web dashboard, and start routing AI
-              requests.
+              {`Install ${ACTIVE.name}, configure your providers via web dashboard, and start routing AI requests.`}
             </p>
 
             <ol className="flex list-none flex-col gap-6 p-0">
@@ -88,8 +87,7 @@ export default function GetStarted() {
                 />
 
                 <p className="sr-only">
-                  Starting 9Router. Server running on http://localhost:20128. Dashboard at
-                  http://localhost:20128/dashboard. Ready to route.
+                  {`Starting ${ACTIVE.name}. Server running on http://localhost:20128. Dashboard at http://localhost:20128/dashboard. Ready to route.`}
                 </p>
                 <div aria-hidden="true" className="mb-6 flex flex-col gap-1">
                   {LOG_LINES.map((line) => (
@@ -114,10 +112,10 @@ export default function GetStarted() {
                   <span className="signal-terminal-debug">Data location:</span>
                   <br />
                   <span className="signal-terminal-time">macOS/Linux:</span>{" "}
-                  ~/.9router/db/data.sqlite
+                  {`~/.${ACTIVE.dataDirName}/db/data.sqlite`}
                   <br />
                   <span className="signal-terminal-time">Windows:</span>{" "}
-                  %APPDATA%/9router/db/data.sqlite
+                  {`%APPDATA%/${ACTIVE.dataDirName}/db/data.sqlite`}
                 </p>
               </div>
             </div>

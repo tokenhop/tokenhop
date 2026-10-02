@@ -2,8 +2,8 @@ import { ACTIVE } from "@/shared/brand";
 
 export default function manifest() {
   return {
-    name: "9Router - AI infrastructure management",
-    short_name: "9Router",
+    name: `${ACTIVE.name} - AI infrastructure management`,
+    short_name: ACTIVE.name,
     description:
       "One endpoint for all your AI providers. Manage keys, monitor usage, and scale effortlessly.",
     start_url: "/",

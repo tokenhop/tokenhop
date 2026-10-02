@@ -6,6 +6,7 @@ import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/prov
 import { getProviderBrand, resolveProviderId } from "@/shared/constants/providerBrands";
 import { EDGE_STATE_LABEL } from "@/shared/utils/routesMap";
 import { formatCompact } from "@/shared/utils/format";
+import BrandMark from "@/shared/components/BrandMark";
 import { HUB_H, NODE_H, NODE_W } from "./layout";
 
 /** Client node: API key name or user-agent family with a request count. */
@@ -164,42 +165,9 @@ ProviderNode.propTypes = {
   }).isRequired,
 };
 
-/** Center 9router hub tile (coral). */
+/** Center hub tile: the active brand's mark. */
 export function HubNode({ x, y }) {
-  return (
-    <g>
-      <rect
-        x={x}
-        y={y - HUB_H / 2}
-        width={NODE_W.hub}
-        height={HUB_H}
-        rx={28}
-        fill="var(--signal-coral)"
-      />
-      <text
-        x={x + NODE_W.hub / 2}
-        y={y - 2}
-        textAnchor="middle"
-        fill="var(--signal-on-coral)"
-        fontSize="42"
-        fontWeight="800"
-        fontFamily="var(--signal-font-display)"
-      >
-        9
-      </text>
-      <text
-        x={x + NODE_W.hub / 2}
-        y={y + 22}
-        textAnchor="middle"
-        fill="var(--signal-on-coral)"
-        fontSize="11"
-        fontWeight="700"
-        letterSpacing="1.1"
-      >
-        router
-      </text>
-    </g>
-  );
+  return <BrandMark x={x} y={y - HUB_H / 2} size={NODE_W.hub} decorative />;
 }
 
 HubNode.propTypes = {

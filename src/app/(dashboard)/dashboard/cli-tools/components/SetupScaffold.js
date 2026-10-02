@@ -1,6 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { ACTIVE } from "@/shared/brand";
 import { useState } from "react";
 import Button from "@/shared/components/Button";
 import { ConfirmDialog } from "@/shared/components/Modal";
@@ -191,8 +192,8 @@ export default function SetupScaffold({
           title={`Reset ${tool.name} settings?`}
           message={
             <span>
-              This rewrites <span className="font-mono">{fileHint}</span> and removes the 9Router
-              configuration from it.
+              This rewrites <span className="font-mono">{fileHint}</span>
+              {` and removes the ${ACTIVE.name} configuration from it.`}
             </span>
           }
           confirmText="Reset"
@@ -264,7 +265,7 @@ export function NotInstalledBlock({
   return (
     <div className="flex flex-col gap-3">
       <Callout variant="warn" title={installTitle || `${toolName} not detected locally`}>
-        Manual configuration is still available if 9router is deployed on a remote server.
+        {`Manual configuration is still available if ${ACTIVE.slug} is deployed on a remote server.`}
       </Callout>
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="secondary" size="sm" onClick={onManualConfig} icon="content_copy">

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import ProviderIcon from "@/shared/components/ProviderIcon";
+import { ACTIVE } from "@/shared/brand";
 
 const CLI_TOOLS = [
   { id: "claude", name: "Claude Code", image: "/providers/claude.webp" },
@@ -64,7 +65,7 @@ export default function FlowAnimation() {
   return (
     <div className="w-full max-w-4xl">
       <ul className="sr-only">
-        <li>Requests from Claude Code, OpenAI Codex, Cline and Cursor go to the 9Router hub.</li>
+        <li>{`Requests from Claude Code, OpenAI Codex, Cline and Cursor go to the ${ACTIVE.name} hub.`}</li>
         <li>The hub routes each request to OpenAI, Anthropic, Gemini or GitHub Copilot.</li>
       </ul>
 
@@ -87,7 +88,7 @@ export default function FlowAnimation() {
           arrow_downward
         </span>
         <span className="rounded-xl border-2 border-coral bg-panel px-4 py-3 text-center font-display text-base font-bold text-text">
-          9Router hub
+          {`${ACTIVE.name} hub`}
         </span>
         <span
           className="material-symbols-outlined self-center text-[22px] text-lime-ink"
@@ -114,7 +115,7 @@ export default function FlowAnimation() {
       >
         <div className="relative z-20 flex size-32 flex-col items-center justify-center gap-1 rounded-full border-2 border-coral bg-panel shadow-card">
           <span className="material-symbols-outlined text-4xl text-coral">hub</span>
-          <span className="text-xs font-bold tracking-widest text-text uppercase">9Router</span>
+          <span className="text-xs font-bold tracking-widest text-text uppercase">{`${ACTIVE.name}`}</span>
           <span className="absolute inset-0 rounded-full border border-coral opacity-40 motion-safe:animate-ping" />
         </div>
 

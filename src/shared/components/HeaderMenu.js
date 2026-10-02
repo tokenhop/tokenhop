@@ -4,6 +4,7 @@ import { useState } from "react";
 import dynamic from "next/dynamic";
 import PropTypes from "prop-types";
 import { APP_CONFIG } from "@/shared/constants/appConfig";
+import { ACTIVE } from "@/shared/brand";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { resolveVersionChip } from "@/shared/utils/shell";
 import { ConfirmDialog } from "./Modal";
@@ -127,7 +128,7 @@ export default function HeaderMenu({ onLogout, onDonate }) {
           <MenuItem
             key="mobile-support"
             icon="volunteer_activism"
-            label="Support 9router"
+            label={`Support ${ACTIVE.slug}`}
             onSelect={onDonate}
           />
           <MenuItem

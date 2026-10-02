@@ -8,6 +8,7 @@
  *
  * Rows are metadata only; interactive controls live in the section components.
  */
+import { ACTIVE } from "@/shared/brand";
 
 /**
  * @typedef {object} SettingsRow
@@ -240,7 +241,7 @@ export const SETTINGS_SECTIONS = [
   {
     id: "network",
     title: "Network",
-    subtitle: "How 9router reaches providers, and how you reach it.",
+    subtitle: `How ${ACTIVE.slug} reaches providers, and how you reach it.`,
     icon: "public",
     rows: [
       {
@@ -569,7 +570,7 @@ export const SETTINGS_SECTIONS = [
       },
       {
         key: "shutdown",
-        label: "Shut down 9router",
+        label: `Shut down ${ACTIVE.slug}`,
         description: "Your tools lose their endpoint until you start it again.",
         keywords: "shutdown stop close server power",
       },

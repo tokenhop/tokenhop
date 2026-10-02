@@ -1,6 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { ACTIVE } from "@/shared/brand";
 import Button from "./Button";
 import Callout from "./Callout";
 import CopyField from "./CopyField";
@@ -125,7 +126,7 @@ export default function ProxyOAuthPanel({
             </div>
             <Input
               label="Step 2: Paste the callback URL here"
-              hint="After signing in, the browser is sent to a http://127.0.0.1:… address. If that page does not load (for example when 9router runs in Docker or on another machine), copy the full URL from the address bar and paste it here."
+              hint={`After signing in, the browser is sent to a http://127.0.0.1:… address. If that page does not load (for example when ${ACTIVE.slug} runs in Docker or on another machine), copy the full URL from the address bar and paste it here.`}
               value={callbackUrl}
               onChange={(e) => onCallbackUrlChange(e.target.value)}
               placeholder="http://127.0.0.1:.../?user_id=...&access_token=..."

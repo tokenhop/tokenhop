@@ -1,5 +1,7 @@
 "use client";
 
+import { ACTIVE } from "@/shared/brand";
+
 /**
  * How-it-works section: three steps from CLI tools through the hub to providers.
  */
@@ -12,7 +14,7 @@ export default function HowItWorks() {
             How it works
           </p>
           <h2 className="mb-4 font-display text-3xl font-bold tracking-[-0.02em] text-text md:text-4xl">
-            How 9Router works
+            {`How ${ACTIVE.name} works`}
           </h2>
           <p className="max-w-xl text-lg text-muted">
             Data flows seamlessly from your application through our intelligent routing layer to the
@@ -51,7 +53,7 @@ export default function HowItWorks() {
               </span>
             </div>
             <div className="text-start md:text-center">
-              <h3 className="mb-2 text-xl font-bold text-coral">2. 9Router hub</h3>
+              <h3 className="mb-2 text-xl font-bold text-coral">{`2. ${ACTIVE.name} hub`}</h3>
               <p className="text-sm text-muted">
                 Our engine analyzes the prompt, checks provider health, and routes for lowest
                 latency or cost.
