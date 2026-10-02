@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import {
   useSetupCard,
+  useSetupSettings,
   setupCardPropTypes,
   resolveApiKey,
   manualApiKey,
   toManualConfigs,
+  asMap,
   ApiKeySelect,
   EndpointSegmentedPicker,
   SetupScaffold,
@@ -60,31 +62,59 @@ export default function GrokBuildToolCard({
   const getContextWindow = (model) => getCaps(model)?.contextWindow || null;
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "grok-build" });
   const { status } = card;
-  const [selectedModel, setSelectedModel] = useState("");
-  const [subagentModels, setSubagentModels] = useState({});
   const [modelTarget, setModelTarget] = useState(null);
-  const hasHydrated = useRef(false);
 
-  const hydrate = (next) => {
-    setSelectedModel(next?.settings?.model?.model || "");
-    setSubagentModels(subagentsFromStatus(next));
-  };
+  const defaults = useMemo(
+    () => ({ model: "", subagentModels: {}, endpoint: "", apiKeyId: "" }),
+    [],
+  );
+  // On the host, the installed config fills values the user hasn't saved yet.
+  const disk = useMemo(
+    () =>
+      status?.installed
+        ? {
+            model: status.settings?.model?.model || undefined,
+            subagentModels: subagentsFromStatus(status),
+            apiKeyId:
+              apiKeys.find((k) => k.key === status.settings?.model?.api_key)?.id || undefined,
+          }
+        : null,
+    [status, apiKeys],
+  );
+  const endpointContext = useMemo(
+    () => ({
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      requiresExternalUrl: tool.requiresExternalUrl,
+    }),
+    [
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      tool.requiresExternalUrl,
+    ],
+  );
+  const setup = useSetupSettings({
+    toolId: "grok-build",
+    apiKeys,
+    defaults,
+    disk,
+    endpointContext,
+  });
+  const subagentModels = asMap(setup.values.subagentModels);
 
-  // Status loads after mount; show the saved config once it arrives.
-  useEffect(() => {
-    if (status?.installed && !hasHydrated.current) {
-      hasHydrated.current = true;
-      setSelectedModel(status.settings?.model?.model || "");
-      setSubagentModels(subagentsFromStatus(status));
-    }
-  }, [status]);
-
-  const configuredModel = status?.settings?.model;
-  const currentBaseUrl = configuredModel?.base_url || "";
+  const currentBaseUrl = status?.settings?.model?.base_url || "";
 
   const getEffectiveBaseUrl = () => {
     const u =
-      card.customBaseUrl ||
+      setup.endpoint ||
       baseUrl ||
       (typeof window !== "undefined"
         ? window.location.origin.replace("://localhost", "://127.0.0.1")
@@ -110,9 +140,9 @@ export default function GrokBuildToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
-          model: selectedModel,
-          contextWindow: getContextWindow(selectedModel),
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+          model: setup.model,
+          contextWindow: getContextWindow(setup.model),
           subagentModels: mapSubagents(),
         }),
       });
@@ -125,7 +155,6 @@ export default function GrokBuildToolCard({
         });
         const fresh = await (await fetch(ENDPOINT)).json();
         card.setStatus(fresh);
-        hydrate(fresh);
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to apply settings." });
       }
@@ -143,9 +172,8 @@ export default function GrokBuildToolCard({
       const res = await fetch(ENDPOINT, { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
+        // Saved card preferences stay; "Reset to defaults" clears those.
         card.setMessage({ type: "success", text: "Settings reset successfully." });
-        setSelectedModel("");
-        setSubagentModels({});
         const fresh = await (await fetch(ENDPOINT)).json();
         card.setStatus(fresh);
       } else {
@@ -164,9 +192,9 @@ export default function GrokBuildToolCard({
     toManualConfigs(
       buildGrokBuildConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
-        model: selectedModel,
-        contextWindow: getContextWindow(selectedModel),
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        model: setup.model,
+        contextWindow: getContextWindow(setup.model),
         subagentModels: mapSubagents(),
       }),
     );
@@ -176,7 +204,7 @@ export default function GrokBuildToolCard({
       <SetupScaffold
         tool={tool}
         status={deriveToolStatus(tool, card.status)}
-        checking={card.checking}
+        checking={card.checking || !setup.loaded}
         checkingLabel="Checking Grok Build..."
         notInstalled={
           !card.checking && status && !status.installed && !status.error ? (
@@ -191,7 +219,7 @@ export default function GrokBuildToolCard({
         }
         message={card.message}
         onApply={handleApply}
-        applyDisabled={!selectedModel}
+        applyDisabled={!setup.model}
         applying={card.applying}
         onReset={handleReset}
         resetDisabled={!status?.hasTokenhop}
@@ -199,34 +227,29 @@ export default function GrokBuildToolCard({
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
         fileHint="~/.grok/config.toml"
+        {...setup.scaffoldProps("~/.grok/config.toml")}
       >
         <EndpointSegmentedPicker
-          value={card.customBaseUrl || baseUrl}
-          onChange={card.setCustomBaseUrl}
+          key={setup.pickerKey}
+          value={setup.endpoint || baseUrl}
+          {...setup.pickerProps}
           currentUrl={currentBaseUrl}
-          tunnelEnabled={tunnelEnabled}
-          tunnelPublicUrl={tunnelPublicUrl}
-          tailscaleEnabled={tailscaleEnabled}
-          tailscaleUrl={tailscaleUrl}
-          cloudEnabled={cloudEnabled}
-          cloudUrl={cloudUrl}
-          requiresExternalUrl={tool.requiresExternalUrl}
         />
         {tool.notes?.length > 0 && (
           <p className="text-xs text-muted">{tool.notes.map((n) => n.text).join(" ")}</p>
         )}
         <SetupRow label="API key">
           <ApiKeySelect
-            value={card.selectedApiKey}
-            onChange={card.setSelectedApiKey}
+            value={setup.selectedApiKey}
+            onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
           />
         </SetupRow>
         <SetupRow label="Main model">
           <SingleModelRow
-            value={selectedModel}
-            onChange={setSelectedModel}
+            value={setup.model}
+            onChange={setup.setModel}
             onPick={() => {
               setModelTarget("main");
               card.setModalOpen(true);
@@ -244,13 +267,15 @@ export default function GrokBuildToolCard({
             <SetupRow key={t.id} label={t.label} hint={t.help}>
               <SingleModelRow
                 value={subagentModels[t.id] || ""}
-                onChange={(val) => setSubagentModels((cur) => ({ ...cur, [t.id]: val }))}
+                onChange={(val) =>
+                  setup.setField("subagentModels", { ...subagentModels, [t.id]: val })
+                }
                 onPick={() => {
                   setModelTarget(t.id);
                   card.setModalOpen(true);
                 }}
                 pickDisabled={!activeProviders?.length}
-                placeholder={`${selectedModel || "Main model"} (inherit)`}
+                placeholder={`${setup.model || "Main model"} (inherit)`}
               />
             </SetupRow>
           ))}
@@ -265,12 +290,13 @@ export default function GrokBuildToolCard({
             setModelTarget(null);
           }}
           onSelect={(m) => {
-            if (modelTarget === "main") setSelectedModel(m.value);
-            else if (modelTarget) setSubagentModels((cur) => ({ ...cur, [modelTarget]: m.value }));
+            if (modelTarget === "main") setup.setModel(m.value);
+            else if (modelTarget)
+              setup.setField("subagentModels", { ...subagentModels, [modelTarget]: m.value });
             card.setModalOpen(false);
             setModelTarget(null);
           }}
-          selectedModel={modelTarget === "main" ? selectedModel : subagentModels[modelTarget]}
+          selectedModel={modelTarget === "main" ? setup.model : subagentModels[modelTarget]}
           activeProviders={activeProviders}
           modelAliases={card.modelAliases}
           title={

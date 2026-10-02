@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useMemo, useState } from "react";
 import {
   useSetupCard,
+  useSetupSettings,
+  asMap,
   setupCardPropTypes,
   resolveApiKey,
   manualApiKey,
@@ -48,42 +50,58 @@ export default function OpenClawToolCard({
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "openclaw" });
   const { status } = card;
-  const [selectedModel, setSelectedModel] = useState("");
-  const [agentModels, setAgentModels] = useState({});
   const [agentModalFor, setAgentModalFor] = useState(null);
   // Remotely there is no on-disk agent list; the user adds rows for the snippet.
   const localOnly = useCliAccessStore((s) => s.localOnly);
-  const [remoteAgents, setRemoteAgents] = useState([]);
   const [agentDraft, setAgentDraft] = useState({ id: "", agentDir: "" });
-  const hasInitializedModel = useRef(false);
-
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !card.selectedApiKey) card.setSelectedApiKey(apiKeys[0].key);
-  }, [apiKeys, card]);
-
-  useEffect(() => {
-    if (status?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const provider = findClientEntry(status.settings?.models?.providers);
-      if (provider) {
-        const primary = status.settings?.agents?.defaults?.model?.primary;
-        if (primary) setSelectedModel(splitModelRef(primary)?.model ?? primary);
-        if (provider.apiKey && apiKeys?.some((k) => k.key === provider.apiKey)) {
-          card.setSelectedApiKey(provider.apiKey);
-        }
-      }
-      const initAgents = {};
-      (status.agents || []).forEach((a) => {
-        if (a.currentModel) initAgents[a.id] = a.currentModel;
-      });
-      setAgentModels(initAgents);
+  const defaults = useMemo(
+    () => ({ model: "", agentModels: {}, remoteAgents: {}, endpoint: "", apiKeyId: "" }),
+    [],
+  );
+  // On the host, the installed config fills fields the user hasn't saved yet.
+  const disk = useMemo(() => {
+    if (!status?.installed) return null;
+    const provider = findClientEntry(status.settings?.models?.providers);
+    const primary = status.settings?.agents?.defaults?.model?.primary;
+    const fromAgents = {};
+    for (const a of status.agents || []) {
+      if (a.currentModel) fromAgents[a.id] = a.currentModel;
     }
-  }, [status, apiKeys, card]);
+    return {
+      model: provider && primary ? (splitModelRef(primary)?.model ?? primary) : undefined,
+      apiKeyId: provider?.apiKey ? apiKeys.find((k) => k.key === provider.apiKey)?.id : undefined,
+      agentModels: Object.keys(fromAgents).length ? fromAgents : undefined,
+    };
+  }, [status, apiKeys]);
+  const endpointContext = useMemo(
+    () => ({
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      requiresExternalUrl: tool.requiresExternalUrl,
+    }),
+    [
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      tool.requiresExternalUrl,
+    ],
+  );
+  const setup = useSetupSettings({ toolId: "openclaw", apiKeys, defaults, disk, endpointContext });
+  const selectedModel = setup.model;
+  const agentModels = asMap(setup.values.agentModels);
+  const remoteAgents = asMap(setup.values.remoteAgents);
 
   const currentBaseUrl = findClientEntry(status?.settings?.models?.providers)?.baseUrl || "";
 
   const getEffectiveBaseUrl = () => {
-    const u = (card.customBaseUrl || baseUrl || "http://127.0.0.1:20128/v1").replace(
+    const u = (setup.endpoint || baseUrl || "http://127.0.0.1:20128/v1").replace(
       "://localhost",
       "://127.0.0.1",
     );
@@ -99,7 +117,7 @@ export default function OpenClawToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
           model: selectedModel,
           agentModels,
         }),
@@ -126,10 +144,8 @@ export default function OpenClawToolCard({
       const res = await fetch(ENDPOINT, { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
+        // Saved card preferences stay; "Reset to defaults" clears those.
         card.setMessage({ type: "success", text: "Settings reset successfully." });
-        setSelectedModel("");
-        setAgentModels({});
-        card.setSelectedApiKey("");
         card.fetchStatus();
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
@@ -143,26 +159,29 @@ export default function OpenClawToolCard({
     }
   };
 
-  const agents = localOnly ? remoteAgents : (status?.agents || []).filter((a) => a.agentDir);
+  const agents = localOnly
+    ? Object.entries(remoteAgents).map(([id, agentDir]) => ({ id, agentDir }))
+    : (status?.agents || []).filter((a) => a.agentDir);
 
   const addRemoteAgent = () => {
     const id = agentDraft.id.trim();
     const agentDir = agentDraft.agentDir.trim();
     if (!id || !agentDir) return;
-    setRemoteAgents((prev) => [...prev.filter((a) => a.id !== id), { id, agentDir }]);
+    setup.setField("remoteAgents", { ...remoteAgents, [id]: agentDir });
     setAgentDraft({ id: "", agentDir: "" });
   };
 
   const removeRemoteAgent = (id) => {
-    setRemoteAgents((prev) => prev.filter((a) => a.id !== id));
-    setAgentModels(({ [id]: _, ...rest }) => rest);
+    const { [id]: _agent, ...rest } = remoteAgents;
+    const { [id]: _model, ...restModels } = agentModels;
+    setup.setFields({ remoteAgents: rest, agentModels: restModels });
   };
 
   const getManualConfigs = () =>
     toManualConfigs(
       buildOpenClawConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
         model: selectedModel,
         agents,
         agentModels,
@@ -174,7 +193,7 @@ export default function OpenClawToolCard({
       <SetupScaffold
         tool={tool}
         status={deriveToolStatus(tool, card.status)}
-        checking={card.checking}
+        checking={card.checking || !setup.loaded}
         checkingLabel="Checking Open Claw CLI..."
         notInstalled={
           !card.checking && status && !status.installed && !status.error ? (
@@ -197,18 +216,13 @@ export default function OpenClawToolCard({
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
         fileHint="~/.openclaw/openclaw.json"
+        {...setup.scaffoldProps("~/.openclaw/openclaw.json")}
       >
         <EndpointSegmentedPicker
-          value={card.customBaseUrl || baseUrl}
-          onChange={card.setCustomBaseUrl}
+          key={setup.pickerKey}
+          value={setup.endpoint || baseUrl}
+          {...setup.pickerProps}
           currentUrl={currentBaseUrl}
-          tunnelEnabled={tunnelEnabled}
-          tunnelPublicUrl={tunnelPublicUrl}
-          tailscaleEnabled={tailscaleEnabled}
-          tailscaleUrl={tailscaleUrl}
-          cloudEnabled={cloudEnabled}
-          cloudUrl={cloudUrl}
-          requiresExternalUrl={tool.requiresExternalUrl}
         />
         {currentBaseUrl && (
           <SetupRow label="Current" hint={currentBaseUrl}>
@@ -217,8 +231,8 @@ export default function OpenClawToolCard({
         )}
         <SetupRow label="API key">
           <ApiKeySelect
-            value={card.selectedApiKey}
-            onChange={card.setSelectedApiKey}
+            value={setup.selectedApiKey}
+            onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
           />
@@ -226,7 +240,7 @@ export default function OpenClawToolCard({
         <SetupRow label="Primary model">
           <SingleModelRow
             value={selectedModel}
-            onChange={setSelectedModel}
+            onChange={setup.setModel}
             onPick={() => {
               setAgentModalFor(null);
               card.setModalOpen(true);
@@ -244,7 +258,9 @@ export default function OpenClawToolCard({
                   <div className="min-w-0 flex-1">
                     <SingleModelRow
                       value={agentModels[a.id]}
-                      onChange={(val) => setAgentModels((prev) => ({ ...prev, [a.id]: val }))}
+                      onChange={(val) =>
+                        setup.setField("agentModels", { ...agentModels, [a.id]: val })
+                      }
                       onPick={() => {
                         setAgentModalFor(a.id);
                         card.setModalOpen(true);
@@ -312,9 +328,9 @@ export default function OpenClawToolCard({
           }}
           onSelect={(m) => {
             if (agentModalFor) {
-              setAgentModels((prev) => ({ ...prev, [agentModalFor]: m.value }));
+              setup.setField("agentModels", { ...agentModels, [agentModalFor]: m.value });
             } else {
-              setSelectedModel(m.value);
+              setup.setModel(m.value);
             }
             card.setModalOpen(false);
             setAgentModalFor(null);

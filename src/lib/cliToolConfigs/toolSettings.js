@@ -54,13 +54,17 @@ const validKeys = (obj) =>
   Object.keys(obj).every((k) => k.length <= 128 && !BLOCKED_KEYS.has(k));
 
 /**
- * Saved settings shape: a plain object of scalars, or of one nested plain
- * object of scalars (e.g. `models`). Signed-in remote users can write it and
- * Apply later reads it on the host, so anything else is rejected.
+ * Saved settings shape: a plain object of scalars, flat arrays of scalars
+ * (e.g. model lists), or one nested plain object of scalars (e.g. `models`).
+ * Signed-in remote users can write it and Apply later reads it on the host,
+ * so anything else is rejected.
  */
 export function isValidToolSettings(value) {
   if (!isPlain(value) || !validKeys(value)) return false;
   return Object.values(value).every(
-    (v) => isScalar(v) || (isPlain(v) && validKeys(v) && Object.values(v).every(isScalar)),
+    (v) =>
+      isScalar(v) ||
+      (Array.isArray(v) && v.length <= MAX_KEYS && v.every(isScalar)) ||
+      (isPlain(v) && validKeys(v) && Object.values(v).every(isScalar)),
   );
 }

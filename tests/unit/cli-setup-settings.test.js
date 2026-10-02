@@ -11,6 +11,7 @@ vi.mock("react", () => ({
 }));
 
 const setField = vi.fn();
+const setFields = vi.fn();
 let saved;
 vi.mock("../../src/app/(dashboard)/dashboard/cli-tools/hooks/useToolSettings.js", () => ({
   useToolSettings: () => [
@@ -21,6 +22,7 @@ vi.mock("../../src/app/(dashboard)/dashboard/cli-tools/hooks/useToolSettings.js"
       status: "",
       hasSaved: false,
       differs: [],
+      setFields,
       reset: vi.fn(),
       loadFromDisk: vi.fn(),
     },
@@ -33,15 +35,16 @@ const apiKeys = [
   { id: "a", key: "sk-a" },
   { id: "b", key: "sk-b" },
 ];
-const render = () => {
+const render = (endpointContext) => {
   index = 0;
-  return useSetupSettings({ toolId: "cline", apiKeys, defaults: {} });
+  return useSetupSettings({ toolId: "cline", apiKeys, defaults: {}, endpointContext });
 };
 
 beforeEach(() => {
   slots = [];
   saved = {};
   setField.mockClear();
+  setFields.mockClear();
 });
 
 describe("useSetupSettings", () => {
@@ -64,11 +67,22 @@ describe("useSetupSettings", () => {
 
   it("doesn't save the endpoint the picker picks at mount", () => {
     render().pickerProps.onChange("http://host/v1", { init: true });
-    expect(setField).not.toHaveBeenCalled();
+    expect(setFields).not.toHaveBeenCalled();
     expect(render().endpoint).toBe("http://host/v1");
 
-    render().pickerProps.onChange("https://custom/v1");
-    expect(setField).toHaveBeenCalledWith("endpoint", "https://custom/v1");
+    render().pickerProps.onChange("https://custom/v1", { id: "__custom__" });
+    expect(setFields).toHaveBeenCalledWith({
+      endpoint: "https://custom/v1",
+      endpointId: "__custom__",
+    });
+  });
+
+  it("resolves a saved option id to its current url", () => {
+    saved = { endpoint: "https://old/v1", endpointId: "tunnel" };
+    const ctx = { tunnelEnabled: true, tunnelPublicUrl: "https://new" };
+    const hook = render(ctx);
+    expect(hook.endpoint).toBe("https://new/v1");
+    expect(hook.pickerProps).toMatchObject({ ...ctx, savedUrl: "https://new/v1" });
   });
 });
 

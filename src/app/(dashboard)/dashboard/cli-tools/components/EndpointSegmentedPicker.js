@@ -18,7 +18,9 @@ import { useCliAccessStore } from "@/store/cliAccessStore";
  *
  * @param {object} props
  * @param {string} props.value Currently selected or typed URL.
- * @param {(nextUrl: string) => void} props.onChange
+ * @param {(nextUrl: string, meta?: { id?: string, init?: boolean }) => void} props.onChange
+ *   User changes report the picked option id (`local`, `tunnel`, `saved:<name>`,
+ *   `__custom__`) as `meta.id`; the mount init reports `{ init: true }`.
  * @param {boolean} [props.requiresExternalUrl=false] Disables Local.
  * @param {boolean} [props.tunnelEnabled=false]
  * @param {string} [props.tunnelPublicUrl=""]
@@ -154,14 +156,14 @@ export default function EndpointSegmentedPicker({
     if (nextValue === ENDPOINT_CUSTOM_VALUE) {
       setMode(ENDPOINT_CUSTOM_VALUE);
       setCustomDraft("");
-      onChange?.("");
+      onChange?.("", { id: ENDPOINT_CUSTOM_VALUE });
       return;
     }
     const found = options.find((o) => o.value === nextValue);
     if (!found) return;
     setMode(nextValue);
     setCustomDraft("");
-    if (found.url) onChange?.(found.url);
+    if (found.url) onChange?.(found.url, { id: nextValue });
   };
 
   const handleSavedChange = (event) => {
@@ -169,14 +171,14 @@ export default function EndpointSegmentedPicker({
     setMode(next);
     setCustomDraft("");
     const found = options.find((o) => o.value === next);
-    if (found?.url) onChange?.(found.url);
+    if (found?.url) onChange?.(found.url, { id: next });
   };
 
   const handleCustomChange = (event) => {
     const next = event.target.value;
     setCustomDraft(next);
     setMode(ENDPOINT_CUSTOM_VALUE);
-    onChange?.(next);
+    onChange?.(next, { id: ENDPOINT_CUSTOM_VALUE });
   };
 
   const builtinOptions = options.filter((o) => !o.value.startsWith("saved:"));

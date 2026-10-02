@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Callout from "@/shared/components/Callout";
 import { useCliAccessStore } from "@/store/cliAccessStore";
+import { flushToolSettings } from "@/store/toolSettingsStore";
 import {
   useSetupCard,
+  useSetupSettings,
+  asList,
   setupCardPropTypes,
   resolveApiKey,
   manualApiKey,
@@ -27,7 +30,8 @@ const ENDPOINT = "/api/cli-tools/copilot-settings";
 /**
  * GitHub Copilot setup panel: multi-model chips written to VS Code's
  * chatLanguageModels.json. No install gate — the config lives in the
- * editor, not on this machine.
+ * editor, not on this machine. Fields persist via `useSetupSettings`;
+ * the DB write goes out before the immediate file POST.
  */
 export default function CopilotToolCard({
   tool,
@@ -45,39 +49,61 @@ export default function CopilotToolCard({
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "copilot" });
   const platform = useManualPlatform();
   const { status } = card;
-  const [selectedModels, setSelectedModels] = useState([]);
   const selectedModelsRef = useRef([]);
 
-  useEffect(() => {
-    selectedModelsRef.current = selectedModels;
-  }, [selectedModels]);
+  const defaults = useMemo(() => ({ models: [], endpoint: "", apiKeyId: "" }), []);
+  // The host's chatLanguageModels.json fills values the user hasn't saved yet.
+  const disk = useMemo(() => {
+    if (!Array.isArray(status?.config)) return null;
+    const entry =
+      status.config.find((e) => e.name === CLIENT_NAME) ||
+      status.config.find((e) => isClientKey(e.name));
+    return {
+      models: entry?.models?.length ? entry.models.map((m) => m.id) : undefined,
+      apiKeyId: apiKeys.find((k) => k.key === entry?.apiKey)?.id,
+    };
+  }, [status, apiKeys]);
+  const endpointContext = useMemo(
+    () => ({
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      requiresExternalUrl: tool.requiresExternalUrl,
+    }),
+    [
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      tool.requiresExternalUrl,
+    ],
+  );
+  const setup = useSetupSettings({ toolId: "copilot", apiKeys, defaults, disk, endpointContext });
+
+  const models = asList(setup.values.models);
 
   useEffect(() => {
-    if (apiKeys?.length > 0 && !card.selectedApiKey) card.setSelectedApiKey(apiKeys[0].key);
-  }, [apiKeys, card]);
-
-  useEffect(() => {
-    if (status?.config && Array.isArray(status.config) && selectedModels.length === 0) {
-      const entry =
-        status.config.find((e) => e.name === CLIENT_NAME) ||
-        status.config.find((e) => isClientKey(e.name));
-      if (entry?.models?.length > 0) setSelectedModels(entry.models.map((m) => m.id));
-    }
-  }, [status, selectedModels.length]);
+    selectedModelsRef.current = models;
+  }, [models]);
 
   const getEffectiveBaseUrl = () => {
-    const fallback = card.customBaseUrl || baseUrl || "http://localhost:20128/v1";
+    const fallback = setup.endpoint || baseUrl || "http://localhost:20128/v1";
     return fallback.endsWith("/v1") ? fallback : `${fallback}/v1`;
   };
 
-  const postModels = async (models) => {
+  const postModels = async (nextModels) => {
     await fetch(ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
-        models,
+        apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        models: nextModels,
       }),
     }).catch(() => {});
   };
@@ -91,8 +117,8 @@ export default function CopilotToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
-          models: selectedModels,
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+          models,
         }),
       });
       const data = await res.json();
@@ -120,8 +146,8 @@ export default function CopilotToolCard({
       const res = await fetch(ENDPOINT, { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
+        // Saved card preferences stay; "Reset to defaults" clears those.
         card.setMessage({ type: "success", text: "Settings reset successfully." });
-        setSelectedModels([]);
         card.fetchStatus();
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
@@ -139,8 +165,8 @@ export default function CopilotToolCard({
     toManualConfigs(
       buildCopilotConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
-        models: selectedModels,
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        models,
         platform,
       }),
     );
@@ -150,39 +176,35 @@ export default function CopilotToolCard({
       <SetupScaffold
         tool={tool}
         status={status ? deriveToolStatus(tool, status) : null}
-        checking={card.checking}
+        checking={card.checking || !setup.loaded}
         checkingLabel="Checking Copilot config..."
         message={card.message}
         onApply={handleApply}
-        applyDisabled={selectedModels.length === 0}
+        applyDisabled={models.length === 0}
         applying={card.applying}
         onReset={handleReset}
         resetDisabled={!status?.hasTokenhop}
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
-        manualDisabled={selectedModels.length === 0}
+        manualDisabled={models.length === 0}
         fileHint="chatLanguageModels.json"
+        {...setup.scaffoldProps("chatLanguageModels.json")}
       >
         <Callout variant="info" title="VS Code extension">
           Writes to chatLanguageModels.json. Reload VS Code after applying for changes to take
           effect.
         </Callout>
         <EndpointSegmentedPicker
-          value={card.customBaseUrl || baseUrl}
-          onChange={card.setCustomBaseUrl}
-          tunnelEnabled={tunnelEnabled}
-          tunnelPublicUrl={tunnelPublicUrl}
-          tailscaleEnabled={tailscaleEnabled}
-          tailscaleUrl={tailscaleUrl}
-          cloudEnabled={cloudEnabled}
-          cloudUrl={cloudUrl}
-          requiresExternalUrl={tool.requiresExternalUrl}
+          key={setup.pickerKey}
+          value={setup.endpoint || baseUrl}
+          {...setup.pickerProps}
+          currentUrl={status?.currentUrl?.replace(/\/chat\/completions.*$/, "") || ""}
         />
         <SetupRow label="API key">
           <ApiKeySelect
-            value={card.selectedApiKey}
-            onChange={card.setSelectedApiKey}
+            value={setup.selectedApiKey}
+            onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
           />
@@ -194,10 +216,10 @@ export default function CopilotToolCard({
               role="listbox"
               aria-label="Selected models"
             >
-              {selectedModels.length === 0 ? (
+              {models.length === 0 ? (
                 <span className="text-xs text-muted">No models selected</span>
               ) : (
-                selectedModels.map((m) => (
+                models.map((m) => (
                   <span
                     key={m}
                     className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-transparent bg-panel px-2 py-0.5 font-mono text-xs text-muted"
@@ -205,7 +227,12 @@ export default function CopilotToolCard({
                     {m}
                     <button
                       type="button"
-                      onClick={() => setSelectedModels((prev) => prev.filter((x) => x !== m))}
+                      onClick={() =>
+                        setup.setField(
+                          "models",
+                          models.filter((x) => x !== m),
+                        )
+                      }
                       aria-label={`Remove ${m}`}
                       className="flex size-6 items-center justify-center rounded-md transition-colors hover:text-err"
                     >
@@ -232,20 +259,24 @@ export default function CopilotToolCard({
       {card.modalOpen && (
         <ModelSelectModal
           isOpen={card.modalOpen}
-          onClose={() => {
+          onClose={async () => {
             card.setModalOpen(false);
+            await flushToolSettings("copilot");
             if (!useCliAccessStore.getState().localOnly) postModels(selectedModelsRef.current);
           }}
           onSelect={(m) => {
-            if (!selectedModels.includes(m.value)) setSelectedModels((prev) => [...prev, m.value]);
+            if (!models.includes(m.value)) setup.setField("models", [...models, m.value]);
           }}
           onDeselect={(m) => {
-            setSelectedModels((prev) => prev.filter((x) => x !== m.value));
+            setup.setField(
+              "models",
+              models.filter((x) => x !== m.value),
+            );
           }}
           selectedModel={null}
           activeProviders={activeProviders}
           modelAliases={card.modelAliases}
-          addedModelValues={selectedModels}
+          addedModelValues={models}
           closeOnSelect={false}
           title="Add model for GitHub Copilot"
         />

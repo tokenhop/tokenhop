@@ -3,6 +3,7 @@ import {
   countToolsByFilter,
   filterToolEntries,
   buildEndpointOptions,
+  resolveSavedEndpoint,
   getToolBrand,
   TOOL_STATUS_KEYS,
 } from "@/app/(dashboard)/dashboard/cli-tools/lib/toolStatus.js";
@@ -181,6 +182,38 @@ describe("buildEndpointOptions", () => {
   it("hides local when an external url is required", () => {
     const opts = buildEndpointOptions({ requiresExternalUrl: true, localOrigin: "http://x" });
     expect(opts.map((o) => o.value)).toEqual(["__custom__"]);
+  });
+});
+
+describe("resolveSavedEndpoint", () => {
+  it("follows a saved tunnel id to the current tunnel url", () => {
+    expect(
+      resolveSavedEndpoint(
+        { endpoint: "https://old/v1", endpointId: "tunnel" },
+        { tunnelEnabled: true, tunnelPublicUrl: "https://new" },
+      ),
+    ).toBe("https://new/v1");
+  });
+  it("keeps the saved url for a legacy row without an id", () => {
+    expect(resolveSavedEndpoint({ endpoint: "https://old/v1" })).toBe("https://old/v1");
+  });
+  it("keeps the saved url for custom", () => {
+    expect(resolveSavedEndpoint({ endpoint: "https://old/v1", endpointId: "__custom__" }, {})).toBe(
+      "https://old/v1",
+    );
+  });
+  it("keeps the saved url when the saved option is gone", () => {
+    expect(resolveSavedEndpoint({ endpoint: "https://old/v1", endpointId: "tunnel" }, {})).toBe(
+      "https://old/v1",
+    );
+  });
+  it("follows a saved preset id to the preset url", () => {
+    expect(
+      resolveSavedEndpoint(
+        { endpoint: "https://old/v1", endpointId: "saved:box" },
+        { savedPresets: [{ name: "box", baseUrl: "https://preset/v1" }] },
+      ),
+    ).toBe("https://preset/v1");
   });
 });
 

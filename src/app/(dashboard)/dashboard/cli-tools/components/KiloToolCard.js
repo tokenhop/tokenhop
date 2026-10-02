@@ -45,7 +45,27 @@ export default function KiloToolCard({
   });
   const { status } = card;
   const defaults = useMemo(() => ({ model: "", endpoint: "", apiKeyId: "" }), []);
-  const setup = useSetupSettings({ toolId: "kilo", apiKeys, defaults });
+  const endpointContext = useMemo(
+    () => ({
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      requiresExternalUrl: tool.requiresExternalUrl,
+    }),
+    [
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      tool.requiresExternalUrl,
+    ],
+  );
+  const setup = useSetupSettings({ toolId: "kilo", apiKeys, defaults, endpointContext });
 
   const getEffectiveBaseUrl = () => {
     const u = setup.endpoint || `${baseUrl}/v1`;
@@ -160,13 +180,6 @@ export default function KiloToolCard({
           key={setup.pickerKey}
           value={setup.endpoint || baseUrl}
           {...setup.pickerProps}
-          tunnelEnabled={tunnelEnabled}
-          tunnelPublicUrl={tunnelPublicUrl}
-          tailscaleEnabled={tailscaleEnabled}
-          tailscaleUrl={tailscaleUrl}
-          cloudEnabled={cloudEnabled}
-          cloudUrl={cloudUrl}
-          requiresExternalUrl={tool.requiresExternalUrl}
         />
         <SetupRow label="API key">
           <ApiKeySelect
