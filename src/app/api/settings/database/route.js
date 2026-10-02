@@ -29,6 +29,8 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
     await importDb(payload);
+    // A restore replaces custom models wholesale; reload their declared caps.
+    await (await import("@/lib/customModelCaps")).refreshCustomModelCaps().catch(() => {});
 
     // Ensure proxy settings take effect immediately after a DB import.
     try {
