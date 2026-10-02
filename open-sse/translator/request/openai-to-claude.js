@@ -38,6 +38,16 @@ export function openaiToClaudeRequest(model, body, stream) {
     result.temperature = body.temperature;
   }
 
+  if (body.top_p !== undefined) {
+    result.top_p = body.top_p;
+  }
+
+  // Stop: OpenAI string | string[] -> Claude stop_sequences (rejects empty/whitespace entries)
+  const stopSequences = [body.stop].flat().filter((s) => typeof s === "string" && s.trim());
+  if (stopSequences.length > 0) {
+    result.stop_sequences = stopSequences;
+  }
+
   // Messages
   result.messages = [];
   const systemParts = [];
