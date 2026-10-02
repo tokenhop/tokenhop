@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Card, Button, Badge, Input, ModelSelectModal, Modal } from "@/shared/components";
+import { ACTIVE } from "@/shared/brand";
 import { TOOL_HOSTS } from "@/shared/constants/mitmToolHosts";
 import { useNotificationStore } from "@/store/notificationStore";
 import Image from "next/image";
@@ -17,7 +18,8 @@ import {
  * Per-tool MITM card — shows DNS status + model mappings.
  * - Auto-saves model mapping on blur or modal select
  * - Skips sudo modal if password is already cached
- * - Model mappings can only be edited when DNS is active
+ * - `remote` hides host-only controls (server/DNS badge, DNS toggle) on a
+ *   remote dashboard; mappings stay editable everywhere
  */
 export default function MitmToolCard({
   tool,
@@ -25,6 +27,7 @@ export default function MitmToolCard({
   onToggle,
   serverRunning,
   dnsActive,
+  remote = false,
   hasCachedPassword,
   needsSudoPassword,
   isWin,
@@ -260,7 +263,11 @@ export default function MitmToolCard({
             <span className="min-w-0">
               <span className="flex flex-wrap items-center gap-2">
                 <span className="font-medium text-sm">{tool.name}</span>
-                {!serverRunning ? (
+                {remote ? (
+                  <Badge variant="default" size="sm">
+                    Host-managed
+                  </Badge>
+                ) : !serverRunning ? (
                   <Badge variant="default" size="sm">
                     Server off
                   </Badge>
@@ -293,7 +300,9 @@ export default function MitmToolCard({
             {mitmHosts.length > 0 && (
               <div className="mt-2 rounded-md border border-line bg-panel/50 px-2 py-1.5">
                 <p className="text-[10px] font-medium tracking-wide text-text/80 mb-1">
-                  Edit hosts file manually to add the following entries:
+                  {remote
+                    ? "Hosts file entries on the host:"
+                    : "Edit hosts file manually to add the following entries:"}
                 </p>
                 <ul className="list-none space-y-0.5 font-mono text-[10px] text-muted break-all">
                   {mitmHosts.map((h) => (
@@ -304,9 +313,15 @@ export default function MitmToolCard({
             )}
             {/* Info */}
             <div className="flex flex-col gap-0.5 text-[11px] text-muted px-1">
-              <p>Toggle DNS to redirect {tool.name} traffic through 9Router via MITM.</p>
-              {!dnsActive && (
-                <p className="text-amber-600 text-[10px] mt-1">Enable DNS to edit model mappings</p>
+              {remote ? (
+                <p>
+                  Unmapped models pass through to the original service unchanged. Mappings apply
+                  immediately.
+                </p>
+              ) : (
+                <p>
+                  Toggle DNS to redirect {tool.name} traffic through {ACTIVE.name} via MITM.
+                </p>
               )}
             </div>
 
@@ -334,8 +349,7 @@ export default function MitmToolCard({
                         onChange={(e) => handleModelMappingChange(model.alias, e.target.value)}
                         onBlur={(e) => handleMappingBlur(model.alias, e.target.value)}
                         placeholder="provider/model-id"
-                        disabled={!dnsActive}
-                        className={`w-full min-w-0 pl-2 pr-7 py-2 bg-panel rounded border border-line text-xs focus:outline-none focus:ring-1 focus:ring-coral/50 sm:py-1.5 ${!dnsActive ? "opacity-50 cursor-not-allowed" : ""}`}
+                        className="w-full min-w-0 pl-2 pr-7 py-2 bg-panel rounded border border-line text-xs focus:outline-none focus:ring-1 focus:ring-coral/50 sm:py-1.5"
                       />
                       {modelMappings[model.alias] && (
                         <button
@@ -357,8 +371,8 @@ export default function MitmToolCard({
                     </div>
                     <button
                       onClick={() => openModelSelector(model.alias)}
-                      disabled={!hasActiveProviders || !dnsActive}
-                      className={`rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 ${hasActiveProviders && dnsActive ? "bg-panel border-line hover:border-coral cursor-pointer" : "opacity-50 cursor-not-allowed border-line"}`}
+                      disabled={!hasActiveProviders}
+                      className={`rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 ${hasActiveProviders ? "bg-panel border-line hover:border-coral cursor-pointer" : "opacity-50 cursor-not-allowed border-line"}`}
                     >
                       Select
                     </button>
@@ -371,50 +385,52 @@ export default function MitmToolCard({
               <p className="text-xs text-muted px-1">Model mappings will be available soon.</p>
             )}
 
-            {/* Start / Stop DNS button */}
-            <div className="flex flex-col gap-2 sm:items-start">
-              {dnsActive ? (
-                <Button
-                  variant="danger"
-                  size="sm"
-                  icon="stop_circle"
-                  onClick={handleDnsToggle}
-                  disabled={!serverRunning || loading}
-                  className="w-full sm:w-auto"
-                >
-                  Stop DNS
-                </Button>
-              ) : (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon="play_circle"
-                  onClick={handleDnsToggle}
-                  disabled={!serverRunning || loading}
-                  className="w-full sm:w-auto"
-                >
-                  Start DNS
-                </Button>
-              )}
+            {/* Start / Stop DNS button: host only */}
+            {!remote && (
+              <div className="flex flex-col gap-2 sm:items-start">
+                {dnsActive ? (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    icon="stop_circle"
+                    onClick={handleDnsToggle}
+                    disabled={!serverRunning || loading}
+                    className="w-full sm:w-auto"
+                  >
+                    Stop DNS
+                  </Button>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon="play_circle"
+                    onClick={handleDnsToggle}
+                    disabled={!serverRunning || loading}
+                    className="w-full sm:w-auto"
+                  >
+                    Start DNS
+                  </Button>
+                )}
 
-              {/* Warning below button */}
-              {warning && (
-                <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs text-amber-500">
-                  <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
-                    warning
-                  </span>
-                  <span>{warning}</span>
-                </div>
-              )}
-              {dnsError && (
-                <p role="alert" className="flex items-center gap-2 text-xs text-err">
-                  <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
-                    error
-                  </span>
-                  <span>{dnsError}</span>
-                </p>
-              )}
-            </div>
+                {/* Warning below button */}
+                {warning && (
+                  <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs text-amber-500">
+                    <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                      warning
+                    </span>
+                    <span>{warning}</span>
+                  </div>
+                )}
+                {dnsError && (
+                  <p role="alert" className="flex items-center gap-2 text-xs text-err">
+                    <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                      error
+                    </span>
+                    <span>{dnsError}</span>
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </Card>

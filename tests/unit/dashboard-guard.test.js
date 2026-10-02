@@ -33,7 +33,19 @@ vi.mock("@/lib/auth/dashboardSession", () => ({
   verifyDashboardAuthToken: mocks.verifyDashboardAuthToken,
 }));
 
+vi.mock("@/models", () => ({
+  getMitmAlias: vi.fn(),
+  setMitmAliasAll: vi.fn(),
+}));
+
+vi.mock("@/lib/mitmAliasCache", () => ({
+  writeAliasForTool: vi.fn(),
+}));
+
 const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
+const { PUT: putMitmAlias } = await import(
+  "../../src/app/api/cli-tools/antigravity-mitm/alias/route.js"
+);
 
 const PEER_TOKEN = "peer-token-fixture";
 
@@ -281,6 +293,50 @@ describe("dashboard guard local-only access", () => {
     const response = await proxy({
       ...request("/api/cli-tools/cowork-mcp-registry", { host: "router.example.com" }),
       method: "GET",
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it("lets a signed-in remote user GET and PUT the MITM alias map, keeps start/DNS/stop local-only (YAN-622)", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+    const remote = (pathname, method) => ({
+      ...request(pathname, { host: "router.example.com" }),
+      method,
+      cookies: { get: vi.fn(() => ({ value: "jwt" })) },
+    });
+
+    const aliasGet = await proxy(remote("/api/cli-tools/antigravity-mitm/alias", "GET"));
+    expect(aliasGet).toBe(mocks.nextResponse);
+
+    const aliasPut = await proxy(remote("/api/cli-tools/antigravity-mitm/alias", "PUT"));
+    expect(aliasPut).toBe(mocks.nextResponse);
+
+    const mitmPatch = await proxy(remote("/api/cli-tools/antigravity-mitm", "PATCH"));
+    expect(mitmPatch.status).toBe(403);
+    expect(mitmPatch.body.code).toBe("LOCAL_ONLY");
+
+    const aliasDelete = await proxy(remote("/api/cli-tools/antigravity-mitm/alias", "DELETE"));
+    expect(aliasDelete.status).toBe(403);
+    expect(aliasDelete.body.code).toBe("LOCAL_ONLY");
+  });
+
+  it("rejects MITM alias PUT for an unknown tool with 400 (YAN-622)", async () => {
+    const put = (body) => putMitmAlias({ json: async () => body });
+    const bad = await put({ tool: "__proto__", mappings: { a: "b" } });
+    expect(bad.status).toBe(400);
+    const unknown = await put({ tool: "nope", mappings: { a: "b" } });
+    expect(unknown.status).toBe(400);
+    const long = await put({ tool: "antigravity", mappings: { a: "x".repeat(300) } });
+    expect(long.status).toBe(400);
+    const ok = await put({ tool: "antigravity", mappings: { a: " b " } });
+    expect(ok.status).toBe(200);
+    expect(ok.body.aliases).toEqual({ a: "b" });
+  });
+
+  it("still requires dashboard auth for the remote MITM alias PUT", async () => {
+    const response = await proxy({
+      ...request("/api/cli-tools/antigravity-mitm/alias", { host: "router.example.com" }),
+      method: "PUT",
     });
     expect(response.status).toBe(401);
   });
