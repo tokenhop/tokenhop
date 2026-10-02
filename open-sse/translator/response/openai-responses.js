@@ -5,7 +5,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { buildChunk } from "../concerns/chunk.js";
-import { buildUsage } from "../concerns/usage.js";
+import { buildUsage, toResponsesUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
 import {
@@ -24,6 +24,12 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   if (!chunk) {
     return flushEvents(state);
   }
+
+  // Trailing usage-only chunks (choices: []) carry no delta; adopt their usage so
+  // the deferred response.completed can report it. stream.js normally merges
+  // usage into state.usage before translating — never overwrite that value.
+  if (chunk.usage) state.usage ??= chunk.usage;
+  if (chunk.model) state.model = chunk.model;
 
   if (!chunk.choices?.length) return [];
 
@@ -115,33 +121,62 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     }
   }
 
-  // Handle finish_reason
+  // Handle finish_reason: close open items only. response.completed is deferred
+  // to flushEvents() so a trailing usage-only chunk (sent after finish_reason)
+  // lands in state.usage before the payload is built.
   if (choice.finish_reason) {
     for (const i in state.msgItemAdded) closeMessage(state, emit, i);
     closeReasoning(state, emit);
     for (const i in state.funcCallIds) closeToolCall(state, emit, i);
-    sendCompleted(state, emit);
   }
 
   return events;
 }
 
 // Helper functions
-function startReasoning(state, emit, idx) {
+
+// Every output item (reasoning, message, function_call) gets its own
+// output_index, allocated when the item is added and reused for all its events.
+// Chat choice.index / tool_calls[].index are not Responses positions: they
+// collide (all 0 for a single choice) and made reasoning, message and the first
+// tool call share one output_index.
+function allocOutputIndex(state) {
+  state.nextOutputIndex ??= 0;
+  return state.nextOutputIndex++;
+}
+
+// Finished items, kept by output_index so response.completed can carry output[].
+function recordOutputItem(state, outIdx, item) {
+  (state.outputItems ??= [])[outIdx] = item;
+}
+
+function messageOutputIndex(state, idx) {
+  return ((state.msgOutIdx ??= {})[idx] ??= allocOutputIndex(state));
+}
+
+function funcOutputIndex(state, idx) {
+  return ((state.funcOutIdx ??= {})[idx] ??= allocOutputIndex(state));
+}
+
+function startReasoning(state, emit) {
   if (!state.reasoningId) {
-    state.reasoningId = `rs_${state.responseId}_${idx}`;
-    state.reasoningIndex = idx;
+    // Output items are sequential: finish any open message before this item.
+    for (const i in state.msgItemAdded) closeMessage(state, emit, i);
+
+    const outIdx = allocOutputIndex(state);
+    state.reasoningId = `rs_${state.responseId}_${outIdx}`;
+    state.reasoningIndex = outIdx;
 
     emit("response.output_item.added", {
       type: "response.output_item.added",
-      output_index: idx,
+      output_index: outIdx,
       item: { id: state.reasoningId, type: RESPONSES_ITEM.REASONING, summary: [] },
     });
 
     emit("response.reasoning_summary_part.added", {
       type: "response.reasoning_summary_part.added",
       item_id: state.reasoningId,
-      output_index: idx,
+      output_index: outIdx,
       summary_index: 0,
       part: { type: RESPONSES_ITEM.SUMMARY_TEXT, text: "" },
     });
@@ -162,13 +197,15 @@ function emitReasoningDelta(state, emit, text) {
 }
 
 function closeReasoning(state, emit) {
-  if (state.reasoningId && !state.reasoningDone) {
+  if (!state.reasoningId) return;
+  const outIdx = state.reasoningIndex;
+  if (!state.reasoningDone) {
     state.reasoningDone = true;
 
     emit("response.reasoning_summary_text.done", {
       type: "response.reasoning_summary_text.done",
       item_id: state.reasoningId,
-      output_index: state.reasoningIndex,
+      output_index: outIdx,
       summary_index: 0,
       text: state.reasoningBuf,
     });
@@ -176,21 +213,31 @@ function closeReasoning(state, emit) {
     emit("response.reasoning_summary_part.done", {
       type: "response.reasoning_summary_part.done",
       item_id: state.reasoningId,
-      output_index: state.reasoningIndex,
+      output_index: outIdx,
       summary_index: 0,
       part: { type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf },
     });
 
+    const item = {
+      id: state.reasoningId,
+      type: RESPONSES_ITEM.REASONING,
+      summary: [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf }],
+    };
     emit("response.output_item.done", {
       type: "response.output_item.done",
-      output_index: state.reasoningIndex,
-      item: {
-        id: state.reasoningId,
-        type: RESPONSES_ITEM.REASONING,
-        summary: [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf }],
-      },
+      output_index: outIdx,
+      item,
     });
+    recordOutputItem(state, outIdx, item);
   }
+
+  // Clear the closed segment so a later one opens a fresh item with its own
+  // output_index — keeping the id would route new deltas into a closed item.
+  state.reasoningId = "";
+  state.reasoningIndex = -1;
+  state.reasoningBuf = "";
+  state.reasoningPartAdded = false;
+  state.reasoningDone = false;
 }
 
 function emitTextContent(state, emit, idx, content) {
@@ -200,10 +247,12 @@ function emitTextContent(state, emit, idx, content) {
 
     emit("response.output_item.added", {
       type: "response.output_item.added",
-      output_index: idx,
+      output_index: messageOutputIndex(state, idx),
       item: { id: msgId, type: RESPONSES_ITEM.MESSAGE, content: [], role: ROLE.ASSISTANT },
     });
   }
+
+  const outIdx = state.msgOutIdx[idx];
 
   if (!state.msgContentAdded[idx]) {
     state.msgContentAdded[idx] = true;
@@ -211,7 +260,7 @@ function emitTextContent(state, emit, idx, content) {
     emit("response.content_part.added", {
       type: "response.content_part.added",
       item_id: `msg_${state.responseId}_${idx}`,
-      output_index: idx,
+      output_index: outIdx,
       content_index: 0,
       part: { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: "" },
     });
@@ -220,7 +269,7 @@ function emitTextContent(state, emit, idx, content) {
   emit("response.output_text.delta", {
     type: "response.output_text.delta",
     item_id: `msg_${state.responseId}_${idx}`,
-    output_index: idx,
+    output_index: outIdx,
     content_index: 0,
     delta: content,
     logprobs: [],
@@ -235,11 +284,12 @@ function closeMessage(state, emit, idx) {
     state.msgItemDone[idx] = true;
     const fullText = state.msgTextBuf[idx] || "";
     const msgId = `msg_${state.responseId}_${idx}`;
+    const outIdx = state.msgOutIdx[idx];
 
     emit("response.output_text.done", {
       type: "response.output_text.done",
       item_id: msgId,
-      output_index: parseInt(idx),
+      output_index: outIdx,
       content_index: 0,
       text: fullText,
       logprobs: [],
@@ -248,23 +298,25 @@ function closeMessage(state, emit, idx) {
     emit("response.content_part.done", {
       type: "response.content_part.done",
       item_id: msgId,
-      output_index: parseInt(idx),
+      output_index: outIdx,
       content_index: 0,
       part: { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText },
     });
 
+    const item = {
+      id: msgId,
+      type: RESPONSES_ITEM.MESSAGE,
+      content: [
+        { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText },
+      ],
+      role: ROLE.ASSISTANT,
+    };
     emit("response.output_item.done", {
       type: "response.output_item.done",
-      output_index: parseInt(idx),
-      item: {
-        id: msgId,
-        type: RESPONSES_ITEM.MESSAGE,
-        content: [
-          { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText },
-        ],
-        role: ROLE.ASSISTANT,
-      },
+      output_index: outIdx,
+      item,
     });
+    recordOutputItem(state, outIdx, item);
   }
 }
 
@@ -302,7 +354,7 @@ function emitToolCall(state, emit, tc) {
 
     emit("response.output_item.added", {
       type: "response.output_item.added",
-      output_index: tcIdx,
+      output_index: funcOutputIndex(state, tcIdx),
       item: {
         id: `${custom ? "ctc" : "fc"}_${callId}`,
         type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
@@ -321,7 +373,7 @@ function emitToolCall(state, emit, tc) {
       emit("response.function_call_arguments.delta", {
         type: "response.function_call_arguments.delta",
         item_id: `fc_${refCallId}`,
-        output_index: tcIdx,
+        output_index: state.funcOutIdx[tcIdx],
         delta: tc.function.arguments,
       });
     }
@@ -337,41 +389,44 @@ function closeToolCall(state, emit, idx) {
   if (callId && !state.funcItemDone[idx]) {
     const args = state.funcArgsBuf[idx] || "{}";
     const custom = isCustomTool(state, state.funcNames[idx]);
+    const outIdx = funcOutputIndex(state, idx);
 
     if (custom) {
       const input = extractCustomToolInput(args);
       emit("response.custom_tool_call_input.delta", {
         type: "response.custom_tool_call_input.delta",
         item_id: `ctc_${callId}`,
-        output_index: parseInt(idx),
+        output_index: outIdx,
         delta: input,
       });
       emit("response.custom_tool_call_input.done", {
         type: "response.custom_tool_call_input.done",
         item_id: `ctc_${callId}`,
-        output_index: parseInt(idx),
+        output_index: outIdx,
         input,
       });
     } else {
       emit("response.function_call_arguments.done", {
         type: "response.function_call_arguments.done",
         item_id: `fc_${callId}`,
-        output_index: parseInt(idx),
+        output_index: outIdx,
         arguments: args,
       });
     }
 
+    const item = {
+      id: `${custom ? "ctc" : "fc"}_${callId}`,
+      type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
+      ...(custom ? { input: extractCustomToolInput(args) } : { arguments: args }),
+      call_id: callId,
+      name: state.funcNames[idx] || "",
+    };
     emit("response.output_item.done", {
       type: "response.output_item.done",
-      output_index: parseInt(idx),
-      item: {
-        id: `${custom ? "ctc" : "fc"}_${callId}`,
-        type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
-        ...(custom ? { input: extractCustomToolInput(args) } : { arguments: args }),
-        call_id: callId,
-        name: state.funcNames[idx] || "",
-      },
+      output_index: outIdx,
+      item,
     });
+    recordOutputItem(state, outIdx, item);
 
     state.funcItemDone[idx] = true;
     state.funcArgsDone[idx] = true;
@@ -387,9 +442,12 @@ function sendCompleted(state, emit) {
         id: state.responseId,
         object: "response",
         created_at: state.created,
+        model: state.model || MODEL_FALLBACK,
         status: "completed",
         background: false,
         error: null,
+        output: (state.outputItems || []).filter(Boolean),
+        ...(state.usage ? { usage: toResponsesUsage(state.usage) } : {}),
       },
     });
   }
