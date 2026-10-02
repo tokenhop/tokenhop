@@ -9,9 +9,9 @@ import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { resolveAuthModes } from "@/lib/auth/authModes";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 import { isLocalRequest } from "@/dashboardGuard";
+import { ACTIVE } from "@/shared/brand";
 
-const RESET_HINT =
-  "Forgot password? Reset to default via 9Router CLI → Settings → Reset password to default.";
+const RESET_HINT = `Forgot password? Reset to default via ${ACTIVE.name} CLI → Settings → Reset password to default.`;
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
 
 function isTunnelRequest(request, settings) {

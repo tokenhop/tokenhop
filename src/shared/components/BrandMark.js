@@ -12,6 +12,100 @@ const MARK_VIEWBOX = 64;
 const LEGACY_TILE = 36;
 const LEGACY_GLYPH = 22;
 const LEGACY_RADIUS = 11;
+// Legacy hub tile inside an SVG (routes map), at its 96px design size.
+const LEGACY_HUB = 96;
+
+const markPaths = () => [
+  createElement("path", {
+    key: "stem",
+    d: "M25 11V41.5C25 48.5 28.8 52 35.5 52H40",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 7.5,
+    strokeLinecap: "round",
+  }),
+  createElement("path", {
+    key: "arc",
+    d: "M14 26.5C22 18.5 34 18 42 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 6.5,
+    strokeLinecap: "round",
+  }),
+  // Dot as a path arc (cx 49.5, cy 29, r 6.5): an SVG circle element name collides
+  // with a Material Symbols ligature in the icon-subset scanner.
+  createElement("path", {
+    key: "dot",
+    d: "M43 29a6.5 6.5 0 1 0 13 0a6.5 6.5 0 1 0-13 0z",
+    fill: "currentColor",
+  }),
+];
+
+/** The mark drawn inside a parent <svg>, top-left corner at (x, y). */
+function SvgMark({ x, y, size, aria }) {
+  if (ACTIVE_BRAND_ID === LEGACY.slug) {
+    const scale = size / LEGACY_HUB;
+    const cx = x + size / 2;
+    const cy = y + size / 2;
+    return createElement(
+      "g",
+      aria,
+      createElement("rect", {
+        x,
+        y,
+        width: size,
+        height: size,
+        rx: 28 * scale,
+        fill: "var(--signal-coral)",
+      }),
+      createElement(
+        "text",
+        {
+          x: cx,
+          y: cy - 2 * scale,
+          textAnchor: "middle",
+          fill: "var(--signal-on-coral)",
+          fontSize: `${42 * scale}`,
+          fontWeight: "800",
+          fontFamily: "var(--signal-font-display)",
+        },
+        "9",
+      ),
+      createElement(
+        "text",
+        {
+          x: cx,
+          y: cy + 22 * scale,
+          textAnchor: "middle",
+          fill: "var(--signal-on-coral)",
+          fontSize: `${11 * scale}`,
+          fontWeight: "700",
+          letterSpacing: `${1.1 * scale}`,
+        },
+        ACTIVE.wordmark,
+      ),
+    );
+  }
+  return createElement(
+    "svg",
+    {
+      ...aria,
+      x,
+      y,
+      width: size,
+      height: size,
+      viewBox: `0 0 ${MARK_VIEWBOX} ${MARK_VIEWBOX}`,
+      color: "var(--signal-text)",
+    },
+    createElement("rect", {
+      width: MARK_VIEWBOX,
+      height: MARK_VIEWBOX,
+      rx: 16,
+      fill: "var(--signal-coral)",
+    }),
+    ...markPaths(),
+  );
+}
 
 /**
  * The active brand's mark, with an accessible name.
@@ -21,9 +115,20 @@ const LEGACY_RADIUS = 11;
  * @param {boolean} [props.decorative=false] Hide from assistive tech when a
  *   visible brand name sits next to the mark (e.g. inside BrandLockup).
  * @param {string} [props.className] Extra classes for the tile element.
+ * @param {number} [props.x] With `y`: draw inside a parent <svg> at (x, y)
+ *   instead of as an HTML element (the routes-map hub).
+ * @param {number} [props.y]
  */
-export default function BrandMark({ size = LEGACY_TILE, decorative = false, className = "" }) {
+export default function BrandMark({
+  size = LEGACY_TILE,
+  decorative = false,
+  className = "",
+  x,
+  y,
+}) {
   const aria = decorative ? { "aria-hidden": "true" } : { role: "img", "aria-label": ACTIVE.name };
+
+  if (typeof x === "number" && typeof y === "number") return SvgMark({ x, y, size, aria });
 
   if (ACTIVE_BRAND_ID === LEGACY.slug) {
     return createElement(
@@ -58,25 +163,6 @@ export default function BrandMark({ size = LEGACY_TILE, decorative = false, clas
       rx: 16,
       fill: "var(--signal-coral)",
     }),
-    createElement("path", {
-      d: "M25 11V41.5C25 48.5 28.8 52 35.5 52H40",
-      fill: "none",
-      stroke: "currentColor",
-      strokeWidth: 7.5,
-      strokeLinecap: "round",
-    }),
-    createElement("path", {
-      d: "M14 26.5C22 18.5 34 18 42 24",
-      fill: "none",
-      stroke: "currentColor",
-      strokeWidth: 6.5,
-      strokeLinecap: "round",
-    }),
-    // Dot as a path arc (cx 49.5, cy 29, r 6.5): an SVG circle element name collides
-    // with a Material Symbols ligature in the icon-subset scanner.
-    createElement("path", {
-      d: "M43 29a6.5 6.5 0 1 0 13 0a6.5 6.5 0 1 0-13 0z",
-      fill: "currentColor",
-    }),
+    ...markPaths(),
   );
 }

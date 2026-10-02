@@ -1,9 +1,10 @@
 import pkg from "../../../package.json" with { type: "json" };
+import { ACTIVE } from "@/shared/brand";
 
 // Plain app configuration, importable by the shell without loading the provider registry.
 /** Dashboard shell identity + version. */
 export const APP_CONFIG = {
-  name: "9Router Proxy",
+  name: `${ACTIVE.name} Proxy`,
   description: "AI infrastructure management",
   version: pkg.version,
   // Set for unreleased images only (docker-publish.yml); empty in releases and

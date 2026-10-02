@@ -1,6 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { ACTIVE } from "@/shared/brand";
 import { useState } from "react";
 import Input from "@/shared/components/Input";
 import Button from "@/shared/components/Button";
@@ -134,14 +135,14 @@ export default function OidcForm({ settings, authMode, redirectUri, onSaved }) {
         label="Issuer URL"
         value={form.oidcIssuerUrl}
         onChange={update("oidcIssuerUrl")}
-        placeholder="https://auth.example.com/application/o/9router/"
+        placeholder={`https://auth.example.com/application/o/${ACTIVE.slug}/`}
         disabled={disabled}
       />
       <Input
         label="Client ID"
         value={form.oidcClientId}
         onChange={update("oidcClientId")}
-        placeholder="9router-dashboard"
+        placeholder={`${ACTIVE.slug}-dashboard`}
         disabled={disabled}
       />
       <Input

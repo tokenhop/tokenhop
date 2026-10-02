@@ -1,6 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { ACTIVE } from "@/shared/brand";
 import {
   Card,
   Button,
@@ -63,7 +64,7 @@ function LocalWay({ localUrl }) {
     >
       <div className="flex flex-col gap-2">
         <CopyField value={localUrl} copyValue={localUrl} label="Copy local URL" />
-        <p className="text-[13px] text-muted">Always on while 9router runs.</p>
+        <p className="text-[13px] text-muted">{`Always on while ${ACTIVE.slug} runs.`}</p>
       </div>
     </Card>
   );

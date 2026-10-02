@@ -8,6 +8,7 @@
  * from `open-sse/services/comboWeights.js` — the same pure helper the router
  * uses (YAN-411), never re-implemented here.
  */
+import { ACTIVE } from "@/shared/brand";
 
 import {
   comboBaseWeight,
@@ -100,8 +101,7 @@ export const STRATEGY_PILL = {
 };
 
 export const STRATEGY_EXPLAINERS = {
-  fallback:
-    "Every request starts at #1. On a rate limit, auth error or outage, 9router moves down the list without your client noticing.",
+  fallback: `Every request starts at #1. On a rate limit, auth error or outage, ${ACTIVE.slug} moves down the list without your client noticing.`,
   "round-robin":
     "Each request goes to the next model in the list, spreading load and quota evenly.",
   weighted:

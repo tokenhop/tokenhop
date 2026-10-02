@@ -7,6 +7,8 @@ import Callout from "@/shared/components/Callout";
 import Card from "@/shared/components/Card";
 import Input from "@/shared/components/Input";
 import { SkeletonText } from "@/shared/components/Loading";
+import BrandLockup from "@/shared/components/BrandLockup";
+import { ACTIVE } from "@/shared/brand";
 import { resolveLoginVisibility } from "./loginVisibility";
 import { resolveAuthModes } from "@/lib/auth/authModes";
 import { describeLoginError } from "./loginErrors";
@@ -188,21 +190,13 @@ export default function LoginPage() {
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-bg p-4">
       <div className="relative z-10 w-full max-w-md">
         <div className="mb-8 text-center">
-          <h1 className="sr-only">Login to 9Router</h1>
+          <h1 className="sr-only">{`Login to ${ACTIVE.name}`}</h1>
           <Link
             href="/landing"
             className="inline-flex items-center gap-2.5 focus-visible:outline-none focus-visible:shadow-focus"
-            aria-label="9Router home"
+            aria-label={`${ACTIVE.name} home`}
           >
-            <span
-              className="flex size-11 -rotate-[8deg] items-center justify-center rounded-[11px] bg-coral font-display text-2xl font-extrabold text-on-coral shadow-card"
-              aria-hidden="true"
-            >
-              9
-            </span>
-            <span className="font-display text-[26px] font-bold tracking-[-0.02em] text-text">
-              router
-            </span>
+            <BrandLockup size={44} />
           </Link>
           <p className="mt-4 text-sm text-muted">
             {samlAvailable
@@ -296,8 +290,8 @@ export default function LoginPage() {
                   )}
                   {resetHint && (
                     <p className="text-xs text-muted">
-                      Forgot password? Open <code className="font-mono">9router</code> CLI on the
-                      host → <b>Settings</b> → <b>Reset password to default</b>.
+                      Forgot password? Open <code className="font-mono">{ACTIVE.npmPackage}</code>{" "}
+                      CLI on the host → <b>Settings</b> → <b>Reset password to default</b>.
                     </p>
                   )}
 

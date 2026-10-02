@@ -1,3 +1,5 @@
+import { ACTIVE } from "@/shared/brand";
+
 // MITM Tools — IDE tools intercepted via MITM proxy
 export const MITM_TOOLS = {
   antigravity: {
@@ -377,7 +379,7 @@ export const CLI_TOOLS = {
     notes: [
       {
         type: "info",
-        text: "Use 9Router model aliases to keep Amp shorthand mappings stable across provider updates.",
+        text: `Use ${ACTIVE.name} model aliases to keep Amp shorthand mappings stable across provider updates.`,
       },
       {
         type: "warning",
@@ -396,7 +398,7 @@ export const CLI_TOOLS = {
       {
         step: 5,
         title: "Add shorthands",
-        desc: "Map Amp shorthand names such as g25p or cs45 to 9Router aliases in your local config.",
+        desc: `Map Amp shorthand names such as g25p or cs45 to ${ACTIVE.name} aliases in your local config.`,
       },
     ],
     codeBlock: {
@@ -414,19 +416,18 @@ amp --model "{{model}}"
     name: "Qwen Code",
     image: "/providers/qwen.webp",
     color: "#10B981",
-    description:
-      "Alibaba Qwen Code CLI — supports OpenAI, Anthropic & Gemini providers via 9Router",
+    description: `Alibaba Qwen Code CLI — supports OpenAI, Anthropic & Gemini providers via ${ACTIVE.name}`,
     docsUrl: "https://qwenlm.github.io/qwen-code-docs/en/users/configuration/model-providers/",
     configType: "guide",
     defaultCommand: "qwen",
     notes: [
       {
         type: "info",
-        text: "Qwen Code supports multiple provider types (openai, anthropic, gemini) via modelProviders in settings.json. 9Router works as an OpenAI-compatible endpoint.",
+        text: `Qwen Code supports multiple provider types (openai, anthropic, gemini) via modelProviders in settings.json. ${ACTIVE.name} works as an OpenAI-compatible endpoint.`,
       },
       {
         type: "info",
-        text: "Any model available in 9Router can be used — not just Qwen models. Select from Qwen, Claude, Gemini, GPT, and more.",
+        text: `Any model available in ${ACTIVE.name} can be used — not just Qwen models. Select from Qwen, Claude, Gemini, GPT, and more.`,
       },
       {
         type: "warning",
@@ -434,7 +435,7 @@ amp --model "{{model}}"
       },
       {
         type: "error",
-        text: "Qwen OAuth free tier was discontinued on 2026-04-15. Use 9Router with alicode/openrouter/anthropic/gemini providers instead.",
+        text: `Qwen OAuth free tier was discontinued on 2026-04-15. Use ${ACTIVE.name} with alicode/openrouter/anthropic/gemini providers instead.`,
       },
     ],
     modelAliases: [
@@ -551,7 +552,7 @@ amp --model "{{model}}"
     notes: [
       {
         type: "info",
-        text: "DeepSeek TUI uses ~/.deepseek/config.toml for configuration. 9Router will update the provider to 'openai' mode with your base_url, api_key, and model.",
+        text: `DeepSeek TUI uses ~/.deepseek/config.toml for configuration. ${ACTIVE.name} will update the provider to 'openai' mode with your base_url, api_key, and model.`,
       },
       {
         type: "warning",
@@ -574,7 +575,7 @@ amp --model "{{model}}"
       },
       {
         type: "info",
-        text: "Configure 9router as an OpenAI-compatible provider to route all jcode requests through 9router's optimization layer.",
+        text: `Configure ${ACTIVE.slug} as an OpenAI-compatible provider to route all jcode requests through ${ACTIVE.slug}'s optimization layer.`,
       },
       {
         type: "warning",
@@ -615,11 +616,11 @@ amp --model "{{model}}"
     notes: [
       {
         type: "info",
-        text: "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.",
+        text: `Grok Build uses ~/.grok/config.toml. ${ACTIVE.name} writes a [model.${ACTIVE.clientConfigKey}] custom model and sets it as the default.`,
       },
       {
         type: "info",
-        text: "Once the config is in place, run grok (or /model 9router) to use the routed model. Switch back anytime with /model grok-build.",
+        text: `Once the config is in place, run grok (or /model ${ACTIVE.clientConfigKey}) to use the routed model. Switch back anytime with /model grok-build.`,
       },
       {
         type: "warning",
@@ -684,7 +685,7 @@ devin --version`,
     notes: [
       {
         type: "info",
-        text: "OpenDesign ships as a plugin/skills pack installed into Claude Code, Cursor, OpenAI Codex, Gemini CLI, or OpenCode. It inherits the host agent's model config, so once your host points at 9Router, /opendesign design sessions route through 9Router automatically — no extra env vars needed.",
+        text: `OpenDesign ships as a plugin/skills pack installed into Claude Code, Cursor, OpenAI Codex, Gemini CLI, or OpenCode. It inherits the host agent's model config, so once your host points at ${ACTIVE.name}, /opendesign design sessions route through ${ACTIVE.name} automatically — no extra env vars needed.`,
       },
       {
         type: "info",
@@ -700,7 +701,7 @@ devin --version`,
       {
         step: 2,
         title: "No config needed",
-        desc: "OpenDesign runs inside your host agent and uses its model config. If the host already routes through 9Router, /opendesign traffic does too.",
+        desc: `OpenDesign runs inside your host agent and uses its model config. If the host already routes through ${ACTIVE.name}, /opendesign traffic does too.`,
       },
       {
         step: 3,

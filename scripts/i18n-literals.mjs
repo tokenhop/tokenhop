@@ -15,11 +15,14 @@
  *   confirmText, actionLabel, checkingLabel, installHint, pickLabel,
  *   resetLabel), and `label:` keys in navigation constant files
  * - String-literal arguments to translate("...") calls
+ * - Brand templates in any of the slots above: template literals whose every
+ *   expression is a string from the brand module (`${ACTIVE.name}`), resolved
+ *   for the brand NEXT_PUBLIC_BRAND selects, as the built bundle renders them
  *
  * Skipped by design (matches the runtime):
  * - Icon ligatures (material-symbols spans carry aria-hidden)
  * - Code/mono content, scripts, styles (data-i18n-skip subtrees, code/pre tags)
- * - Dynamic values (template literals, concatenation, variables)
+ * - Other dynamic values (template literals, concatenation, variables)
  * - Anything under a data-i18n-skip ancestor
  *
  * Usage:
@@ -39,6 +42,42 @@ const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(join(here, "..", "package.json"));
 const babelParser = require("next/dist/compiled/babel/parser.js");
 const babelTraverse = require("next/dist/compiled/babel/traverse.js").default;
+const brandModule = require("./src/shared/brand/index.cjs");
+
+/** Brand-module objects whose string values a template may interpolate. */
+const BRAND_OBJECTS = { ACTIVE: brandModule.ACTIVE, BRAND: brandModule.BRAND };
+
+/**
+ * The string a template literal renders when every expression is a string
+ * value of ACTIVE/BRAND (e.g. `Install ${ACTIVE.name}`); null otherwise.
+ * @param {object | null | undefined} node Babel AST node.
+ * @returns {string | null}
+ */
+export function resolveBrandTemplate(node) {
+  if (node?.type !== "TemplateLiteral" || node.expressions.length === 0) return null;
+  let out = "";
+  for (let i = 0; i < node.quasis.length; i++) {
+    out += node.quasis[i].value.cooked;
+    const expr = node.expressions[i];
+    if (!expr) continue;
+    const isBrandMember =
+      expr.type === "MemberExpression" &&
+      !expr.computed &&
+      expr.object?.type === "Identifier" &&
+      Object.hasOwn(BRAND_OBJECTS, expr.object.name) &&
+      expr.property?.type === "Identifier";
+    const value = isBrandMember ? BRAND_OBJECTS[expr.object.name][expr.property.name] : undefined;
+    if (typeof value !== "string") return null;
+    out += value;
+  }
+  return out;
+}
+
+/** A string literal's value or a resolved brand template; null for anything else. */
+function staticText(node) {
+  if (node?.type === "StringLiteral") return node.value;
+  return resolveBrandTemplate(node);
+}
 
 const DEFAULT_SRC_DIRS = ["src/app", "src/shared", "src/dashboardGuard.js"];
 const DEFAULT_LOCALES_DIR = "public/i18n/literals";
@@ -276,6 +315,18 @@ export function extractWithLines(code, filename = "unknown.js") {
       const parentTag = path.parentPath?.node?.openingElement?.name?.name || "fragment";
       literals.add(trimmed, path.node, `text:${parentTag}`);
     },
+    // A {`… ${ACTIVE.name} …`} child renders as its own text node.
+    JSXExpressionContainer(path) {
+      const parent = path.parentPath?.node;
+      if (parent?.type !== "JSXElement" && parent?.type !== "JSXFragment") return;
+      const text = resolveBrandTemplate(path.node.expression);
+      if (text === null) return;
+      const trimmed = text.replace(/\s+/g, " ").trim();
+      if (isUntranslatableValue(trimmed)) return;
+      if (hasSkipAncestor(path)) return;
+      const parentTag = parent.openingElement?.name?.name || "fragment";
+      literals.add(trimmed, path.node, `text:${parentTag}`);
+    },
     JSXAttribute(path) {
       const attrName = path.node.name?.name;
       const opening = path.parentPath?.node;
@@ -285,8 +336,15 @@ export function extractWithLines(code, filename = "unknown.js") {
         TRANSLATABLE_ATTRS.has(attrName) ||
         (isComponent && TRANSLATABLE_COMPONENT_PROPS.has(attrName));
       if (!translatable) return;
-      if (path.node.value?.type !== "StringLiteral") return;
-      const trimmed = path.node.value.value.replace(/\s+/g, " ").trim();
+      const value = path.node.value;
+      const text =
+        value?.type === "StringLiteral"
+          ? value.value
+          : value?.type === "JSXExpressionContainer"
+            ? resolveBrandTemplate(value.expression)
+            : null;
+      if (text === null) return;
+      const trimmed = text.replace(/\s+/g, " ").trim();
       if (isUntranslatableValue(trimmed)) return;
       if (hasSkipAncestor(path)) return;
       literals.add(trimmed, path.node, `attr:${tagName}.${attrName}`);
@@ -297,8 +355,9 @@ export function extractWithLines(code, filename = "unknown.js") {
         key?.type === "Identifier" ? key.name : key?.type === "StringLiteral" ? key.value : "";
       if (!CONDITIONAL_OBJECT_KEYS.has(keyName)) return;
       if (!LABEL_KEY_FILE_RES.some((re) => re.test(filename))) return;
-      if (path.node.value?.type !== "StringLiteral") return;
-      const trimmed = path.node.value.value.replace(/\s+/g, " ").trim();
+      const text = staticText(path.node.value);
+      if (text === null) return;
+      const trimmed = text.replace(/\s+/g, " ").trim();
       if (isUntranslatableValue(trimmed)) return;
       if (OBJECT_VALUE_SKIP_RE.test(trimmed)) return;
       literals.add(trimmed, path.node, `key:${keyName}`);
@@ -306,8 +365,9 @@ export function extractWithLines(code, filename = "unknown.js") {
     CallExpression(path) {
       if (path.node.callee?.name !== "translate") return;
       const arg = path.node.arguments[0];
-      if (arg?.type !== "StringLiteral") return;
-      const trimmed = arg.value.replace(/\s+/g, " ").trim();
+      const text = staticText(arg);
+      if (text === null) return;
+      const trimmed = text.replace(/\s+/g, " ").trim();
       if (isUntranslatableValue(trimmed)) return;
       literals.add(trimmed, path.node, "call:translate");
     },

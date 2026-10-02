@@ -1,6 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { ACTIVE } from "@/shared/brand";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -327,9 +328,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
             <div>
               <p className="text-sm font-medium text-text">Cloudflare Tunnel</p>
               <p className="text-sm text-muted">
-                Expose your local 9Router to the internet. No port forwarding, no static IP needed.
-                Share endpoint URL with your team or use it in Cursor, Cline, and other AI tools
-                from anywhere.
+                {`Expose your local ${ACTIVE.name} to the internet. No port forwarding, no static IP needed. Share endpoint URL with your team or use it in Cursor, Cline, and other AI tools from anywhere.`}
               </p>
             </div>
           </div>

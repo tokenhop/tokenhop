@@ -1,6 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { ACTIVE } from "@/shared/brand";
 import Modal from "./Modal";
 import Button from "./Button";
 
@@ -43,13 +44,13 @@ export default function DonateModal({ isOpen, onClose }) {
           <span className="material-symbols-outlined text-coral" aria-hidden="true">
             volunteer_activism
           </span>
-          Support 9router
+          {`Support ${ACTIVE.slug}`}
         </span>
       }
       size="full"
     >
       <p className="mb-6 text-center text-sm text-muted">
-        If 9Router helps your work, consider supporting development.
+        {`If ${ACTIVE.name} helps your work, consider supporting development.`}
       </p>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {CHANNELS.map((channel) => (

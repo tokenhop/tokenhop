@@ -4,6 +4,7 @@
 const { spawn } = require("child_process");
 const crypto = require("crypto");
 const { LOCAL_STDIO_PLUGINS } = require("@/shared/constants/coworkPlugins");
+const { ACTIVE } = require("@/shared/brand/index.cjs");
 
 const G_KEY = "__tokenhopMcpBridges";
 const MAX_TEXT_CHARS = 50000;
@@ -20,7 +21,7 @@ function smartFilterText(text) {
   out = collapseRepeated(out);
   if (out.length > MAX_TEXT_CHARS) {
     const head = out.slice(0, MAX_TEXT_CHARS - 300);
-    out = `${head}\n\n... [truncated ${text.length - head.length} chars by 9router bridge. Page is large; ask user to scroll/navigate to a specific section, or click an element with the refs shown above]`;
+    out = `${head}\n\n... [truncated ${text.length - head.length} chars by ${ACTIVE.slug} bridge. Page is large; ask user to scroll/navigate to a specific section, or click an element with the refs shown above]`;
   }
   return out;
 }
@@ -60,7 +61,7 @@ function collapseRepeated(text) {
       const tailStart = findLastNSiblingStart(lines, j, indent, role, COLLAPSE_KEEP_TAIL);
       for (let k = i; k < headEnd; k++) out.push(lines[k]);
       out.push(
-        `${indent}... [${groupLen - COLLAPSE_KEEP_HEAD - COLLAPSE_KEEP_TAIL} similar "${role}" items omitted by 9router bridge]`,
+        `${indent}... [${groupLen - COLLAPSE_KEEP_HEAD - COLLAPSE_KEEP_TAIL} similar "${role}" items omitted by ${ACTIVE.slug} bridge]`,
       );
       for (let k = tailStart; k < j; k++) out.push(lines[k]);
     } else {

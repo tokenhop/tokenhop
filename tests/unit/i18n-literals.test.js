@@ -8,6 +8,7 @@ import {
   validateLocaleFile,
 } from "../../scripts/i18n-literals.mjs";
 import { REPR_RE, isVerbatim, validateTranslation } from "../../scripts/translate-literals.mjs";
+import { ACTIVE } from "../../src/shared/brand/index.cjs";
 
 describe("extractFromSource", () => {
   it("extracts plain JSX text", () => {
@@ -43,6 +44,22 @@ describe("extractFromSource", () => {
   it("skips dynamic translate() arguments", () => {
     expect([...extractFromSource(`const a = translate(variable);`, "a.js")]).toEqual([]);
     expect([...extractFromSource("const a = translate(`Hi ${name}`);", "a.js")]).toEqual([]);
+  });
+
+  it("resolves templates built only from brand-module strings, as the active brand renders them", () => {
+    const code = [
+      "const o = { label: `Shut down ${ACTIVE.slug}` };",
+      "const t = translate(`Login to ${ACTIVE.name}`);",
+      "<><p>{`Install ${ACTIVE.name} now.`}</p><a aria-label={`${ACTIVE.name} home`} />",
+      "<p>{`Hi ${user}`}</p><p>{`${ACTIVE.missing} x`}</p></>",
+    ].join("\n");
+    const name = ACTIVE.name;
+    expect([...extractFromSource(code, "src/shared/constants/a.js")]).toEqual([
+      `Shut down ${ACTIVE.slug}`,
+      `Login to ${name}`,
+      `Install ${name} now.`,
+      `${name} home`,
+    ]);
   });
 
   it("skips pure punctuation and single characters", () => {

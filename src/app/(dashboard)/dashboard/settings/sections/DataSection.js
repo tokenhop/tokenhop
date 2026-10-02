@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import SectionCard from "@/shared/components/SectionCard";
 import SettingRow from "@/shared/components/SettingRow";
 import Toggle from "@/shared/components/Toggle";
@@ -11,6 +11,9 @@ import Modal from "@/shared/components/Modal";
 import Callout from "@/shared/components/Callout";
 import CopyField from "@/shared/components/CopyField";
 import { ACTIVE } from "@/shared/brand";
+
+// Shown until the server reports the real path (and if that request fails).
+const DEFAULT_DATABASE_FILE = `~/.${ACTIVE.dataDirName}/db/data.sqlite`;
 
 /**
  * Data & backup section: read-only DB location and password-gated
@@ -23,6 +26,20 @@ export default function DataSection({ onSettingsChange }) {
   const [auth, setAuth] = useState({ open: false, mode: "", password: "" });
   const pendingFileRef = useRef(null);
   const importFileRef = useRef(null);
+  const [databaseFile, setDatabaseFile] = useState(DEFAULT_DATABASE_FILE);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/settings/environment", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.databaseFile) setDatabaseFile(data.databaseFile);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleExport = async (password) => {
     setLoading(true);
@@ -108,7 +125,7 @@ export default function DataSection({ onSettingsChange }) {
           settingKey="DATA_DIR"
           control={
             <div className="w-full sm:min-w-72 sm:max-w-sm">
-              <CopyField value="~/.9router/db/data.sqlite" />
+              <CopyField value={databaseFile} />
             </div>
           }
         />

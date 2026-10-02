@@ -10,6 +10,7 @@ import HeaderLanguage from "@/shared/components/HeaderLanguage";
 import dynamic from "next/dynamic";
 import IconButton from "@/shared/components/IconButton";
 import CommandPaletteTrigger from "@/shared/components/CommandPaletteTrigger";
+import { ACTIVE } from "@/shared/brand";
 import useAuthStatus from "@/shared/hooks/useAuthStatus";
 import { getMediaRouteInfo } from "@/shared/utils/mediaPageInfo";
 import { PROVIDER_DISPLAY } from "@/shared/constants/providerDisplay.generated";
@@ -97,7 +98,7 @@ export const getPageInfo = (pathname) => {
   if (pathname.includes("/mitm"))
     return {
       title: "MITM proxy",
-      description: "Intercept CLI tool traffic and route through 9Router",
+      description: `Intercept CLI tool traffic and route through ${ACTIVE.name}`,
       icon: "security",
       breadcrumbs: [],
     };
@@ -132,7 +133,7 @@ export const getPageInfo = (pathname) => {
   if (pathname.includes("/skills"))
     return {
       title: "Skills",
-      description: "Teach any AI agent to use your 9router with one line.",
+      description: `Teach any AI agent to use your ${ACTIVE.slug} with one line.`,
       icon: "extension",
       breadcrumbs: [],
     };
@@ -312,7 +313,7 @@ export default function Header({
           {/* Support heart icon button (in the ⋮ menu below sm) */}
           <IconButton
             icon="volunteer_activism"
-            label="Support 9router"
+            label={`Support ${ACTIVE.slug}`}
             onClick={() => setDonateOpen(true)}
             className="text-coral hover:bg-coral-bg hover:text-coral-ink"
           />

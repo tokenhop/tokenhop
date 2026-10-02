@@ -16,6 +16,7 @@ const {
   isSudoPasswordRequired,
 } = require("./dns/dnsConfig");
 const { isAdmin } = require("./winElevated.js");
+const { ACTIVE } = require("../shared/brand/index.cjs");
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
@@ -653,7 +654,9 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
       log(`[MITM] server.js missing at ${effectiveServerPath} → recopying`);
       effectiveServerPath = ensureRuntimeServer(resolveBundledServerPath());
       if (!effectiveServerPath || !fs.existsSync(effectiveServerPath)) {
-        throw new Error(`MITM server.js not found at ${effectiveServerPath}. Reinstall 9router.`);
+        throw new Error(
+          `MITM server.js not found at ${effectiveServerPath}. Reinstall ${ACTIVE.npmPackage}.`,
+        );
       }
     }
     const mitmRouterBase = await resolveMitmRouterBaseUrl();

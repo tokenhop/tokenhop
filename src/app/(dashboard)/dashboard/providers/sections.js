@@ -1,3 +1,4 @@
+import { ACTIVE } from "@/shared/brand";
 import {
   OAUTH_PROVIDERS,
   APIKEY_PROVIDERS,
@@ -162,7 +163,7 @@ export function PROVIDER_SECTIONS({ connections, providerNodes, statsFor }) {
     {
       id: "oauth",
       title: "Subscriptions & OAuth",
-      subtitle: "Sign in once. 9router refreshes tokens for you.",
+      subtitle: `Sign in once. ${ACTIVE.slug} refreshes tokens for you.`,
       entries: [...oauthEntries, ...connectedHiddenEntries],
       totalCount: oauthEntries.length + connectedHiddenEntries.length,
     },

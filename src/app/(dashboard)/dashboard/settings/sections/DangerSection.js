@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ACTIVE } from "@/shared/brand";
 import SectionCard from "@/shared/components/SectionCard";
 import SettingRow from "@/shared/components/SettingRow";
 import Button from "@/shared/components/Button";
@@ -57,7 +58,7 @@ export default function DangerSection() {
           </p>
         )}
         <SettingRow
-          label="Shut down 9router"
+          label={`Shut down ${ACTIVE.slug}`}
           description="Your tools lose their endpoint until you start it again."
           control={
             <Button
@@ -74,7 +75,7 @@ export default function DangerSection() {
         isOpen={shutdownOpen}
         onClose={() => setShutdownOpen(false)}
         onConfirm={handleShutdown}
-        title="Shut down 9router"
+        title={`Shut down ${ACTIVE.slug}`}
         message="Your tools lose their endpoint until you start it again."
         confirmText="Shut down"
         variant="danger"

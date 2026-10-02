@@ -1,3 +1,4 @@
+import { ACTIVE } from "@/shared/brand";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getProvidersByKind, getProviderAlias } from "@/shared/constants/providers";
 
@@ -24,7 +25,7 @@ export const PLAYGROUND_KIND_DEFAULTS = {
   },
   tts: {
     inputLabel: "Input",
-    defaultInput: "Hello, this is a text to speech test on 9router.",
+    defaultInput: `Hello, this is a text to speech test on ${ACTIVE.slug}.`,
     path: "/v1/audio/speech",
   },
   stt: {
