@@ -22,6 +22,7 @@ import {
   normalizeGeminiContents,
 } from "../formats/gemini.js";
 import { deriveSessionId, toNumericSessionId } from "../../utils/sessionManager.js";
+import { parseDataUri } from "../concerns/image.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 
 // Sanitize function names for Gemini API.
@@ -335,6 +336,26 @@ function wrapInCloudCodeEnvelope(model, geminiCLI, credentials = null, isAntigra
   return envelope;
 }
 
+// Claude base64 image/document block or OpenAI data-URI image_url → Gemini inlineData part.
+// ponytail: remote URLs are not handled here; prefetchRemoteImages inlines them first.
+function toInlineDataPart(block) {
+  if (
+    (block?.type === CLAUDE_BLOCK.IMAGE || block?.type === CLAUDE_BLOCK.DOCUMENT) &&
+    block.source?.type === "base64" &&
+    block.source.data
+  ) {
+    return { inlineData: { mimeType: block.source.media_type, data: block.source.data } };
+  }
+  let url = null;
+  if (block?.type === OPENAI_BLOCK.IMAGE_URL) {
+    url = typeof block.image_url === "string" ? block.image_url : block.image_url?.url;
+  } else if (block?.type === OPENAI_BLOCK.FILE) {
+    url = block.file?.file_data;
+  }
+  const parsed = parseDataUri(url);
+  return parsed ? { inlineData: { mimeType: parsed.mimeType, data: parsed.base64 } } : null;
+}
+
 // Wrap Claude format in Cloud Code envelope for Antigravity
 function wrapInCloudCodeEnvelopeForClaude(
   model,
@@ -380,11 +401,16 @@ function wrapInCloudCodeEnvelopeForClaude(
   if (claudeRequest.messages && Array.isArray(claudeRequest.messages)) {
     for (const msg of claudeRequest.messages) {
       const parts = [];
+      // Media returned by tools; they go after the functionResponses, tagged by call id.
+      const toolMedia = [];
 
       if (Array.isArray(msg.content)) {
         let firstToolUseSeen = false;
         for (const block of msg.content) {
-          if (block.type === CLAUDE_BLOCK.TEXT) {
+          const inline = toInlineDataPart(block);
+          if (inline) {
+            parts.push(inline);
+          } else if (block.type === CLAUDE_BLOCK.TEXT) {
             parts.push({ text: block.text });
           } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
             const cachedSig = block.id
@@ -407,9 +433,20 @@ function wrapInCloudCodeEnvelopeForClaude(
           } else if (block.type === CLAUDE_BLOCK.TOOL_RESULT) {
             let content = block.content;
             if (Array.isArray(content)) {
-              content = content
-                .map((c) => (c.type === CLAUDE_BLOCK.TEXT ? c.text : JSON.stringify(c)))
-                .join("\n");
+              const media = [];
+              const text = [];
+              for (const c of content) {
+                const inline = toInlineDataPart(c);
+                if (inline) media.push(inline);
+                else text.push(c.type === CLAUDE_BLOCK.TEXT ? c.text : JSON.stringify(c));
+              }
+              if (media.length) {
+                toolMedia.push(
+                  { text: `[Attachment from tool result ${block.tool_use_id}]` },
+                  ...media,
+                );
+              }
+              content = text.join("\n");
             }
             // Resolve the original tool name from the id — Gemini requires it to match the functionCall name
             const resolvedName = toolUseIdToName[block.tool_use_id]
@@ -427,6 +464,7 @@ function wrapInCloudCodeEnvelopeForClaude(
       } else if (typeof msg.content === "string") {
         parts.push({ text: msg.content });
       }
+      parts.push(...toolMedia);
 
       if (parts.length > 0) {
         envelope.request.contents.push({
