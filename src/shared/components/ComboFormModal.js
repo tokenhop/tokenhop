@@ -17,8 +17,9 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
   const editRef = useRef(null);
   const commit = () => {
     const trimmed = draft.trim();
-    if (trimmed && trimmed !== model) onEdit(trimmed);
-    else setDraft(model);
+    // onEdit returns false when it rejects the value (duplicate model).
+    const accepted = trimmed && trimmed !== model && onEdit(trimmed) !== false;
+    setDraft(accepted ? trimmed : model);
     setEditing(false);
   };
   const handleKeyDown = (e) => {
@@ -121,7 +122,13 @@ export default function ComboFormModal({
       : combo.name
     : "";
   const [name, setName] = useState(initialName);
-  const [models, setModels] = useState(combo?.models || []);
+  // Each row keeps a stable id so React never hands one row's edit state to
+  // another after a remove or reorder (index keys did, with duplicate models).
+  const nextRowId = useRef(0);
+  const toRow = (model) => ({ id: nextRowId.current++, model });
+  const [rows, setRows] = useState(() => (combo?.models || []).map(toRow));
+  const models = rows.map((r) => r.model);
+  const [editNotice, setEditNotice] = useState("");
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -159,23 +166,31 @@ export default function ComboFormModal({
   };
 
   const handleAddModel = (model) => {
-    if (!models.includes(model.value)) setModels([...models, model.value]);
+    if (!models.includes(model.value)) setRows([...rows, toRow(model.value)]);
   };
   const handleDeselectModel = (model) => {
-    setModels(models.filter((m) => m !== model.value));
+    setRows(rows.filter((r) => r.model !== model.value));
   };
-  const handleRemoveModel = (i) => setModels(models.filter((_, idx) => idx !== i));
+  const handleEditModel = (i, value) => {
+    if (models.some((m, idx) => idx !== i && m === value)) {
+      setEditNotice("That model is already in this combo.");
+      return false;
+    }
+    setEditNotice("");
+    setRows(rows.map((r, idx) => (idx === i ? { ...r, model: value } : r)));
+  };
+  const handleRemoveModel = (i) => setRows(rows.filter((_, idx) => idx !== i));
   const handleMoveUp = (i) => {
     if (i === 0) return;
-    const a = [...models];
+    const a = [...rows];
     [a[i - 1], a[i]] = [a[i], a[i - 1]];
-    setModels(a);
+    setRows(a);
   };
   const handleMoveDown = (i) => {
-    if (i === models.length - 1) return;
-    const a = [...models];
+    if (i === rows.length - 1) return;
+    const a = [...rows];
     [a[i], a[i + 1]] = [a[i + 1], a[i]];
-    setModels(a);
+    setRows(a);
   };
 
   const handleSave = async () => {
@@ -253,19 +268,14 @@ export default function ComboFormModal({
                 aria-labelledby="combo-models-label"
                 className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]"
               >
-                {models.map((model, index) => (
+                {rows.map(({ id, model }, index) => (
                   <ModelItem
-                    // biome-ignore lint/suspicious/noArrayIndexKey: models may repeat; position is the identity
-                    key={`${model}-${index}`}
+                    key={id}
                     index={index}
                     model={model}
                     isFirst={index === 0}
-                    isLast={index === models.length - 1}
-                    onEdit={(v) => {
-                      const a = [...models];
-                      a[index] = v;
-                      setModels(a);
-                    }}
+                    isLast={index === rows.length - 1}
+                    onEdit={(v) => handleEditModel(index, v)}
                     onMoveUp={() => handleMoveUp(index)}
                     onMoveDown={() => handleMoveDown(index)}
                     onRemove={() => handleRemoveModel(index)}
@@ -273,6 +283,9 @@ export default function ComboFormModal({
                 ))}
               </ul>
             )}
+            <p role="status" className="mt-0.5 text-[11px] text-err empty:hidden">
+              {editNotice}
+            </p>
             <Button
               variant="secondary"
               size="sm"
