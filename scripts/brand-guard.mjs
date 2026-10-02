@@ -26,11 +26,7 @@ const ALLOWED_PATHS = [
   // translations. The 9router keys go when v2 drops the 9router brand id; new
   // ones can only come from src/, which this guard covers.
   "public/i18n/literals/**",
-  // The image's fallback title must equal DEFAULT_BRAND_ID (docker-brand.test.js).
-  // YAN-345 flips the default and removes this entry.
-  "Dockerfile",
-  // Describes the brand switch's current default; only /ycc:release-model edits it,
-  // and the v1.0.0 release rewrites that line. YAN-345 removes this entry.
+  // Describes the brand switch's history; only /ycc:release-model edits it.
   "RELEASING.md",
   // Upstream copyright, kept verbatim.
   "**/LICENSE",

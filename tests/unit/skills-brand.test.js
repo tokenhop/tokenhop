@@ -50,7 +50,7 @@ describe("skills per brand", () => {
     }
   });
 
-  it("the default brand keeps tokenhop skills hidden", async () => {
+  it("the legacy brand keeps tokenhop skills hidden", async () => {
     expect((await getSkill(OLD, OLD)).status).toBe(200);
     expect((await getSkill(OLD, "tokenhop")).status).toBe(404);
   });

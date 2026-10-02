@@ -84,10 +84,10 @@ describe("API_KEY (cli xai video)", () => {
     expect(warn.mock.calls[0][0]).toContain(`"${API_KEY_LEGACY}" → use "TOKENHOP_API_KEY"`);
   });
 
-  it("honours the legacy name silently under the default brand", () => {
+  it("honours the legacy name silently under the legacy brand", () => {
     process.env[API_KEY_LEGACY] = "legacy-key";
     const warn = vi.mocked(console.warn);
-    expect(loadXaiVideo().parseArgs([]).apiKey).toBe("legacy-key");
+    expect(loadXaiVideo(LEGACY.slug).parseArgs([]).apiKey).toBe("legacy-key");
     expect(warn).not.toHaveBeenCalled();
   });
 
@@ -98,6 +98,6 @@ describe("API_KEY (cli xai video)", () => {
   });
 
   it("is null when neither is set", () => {
-    expect(loadXaiVideo().parseArgs([]).apiKey).toBeNull();
+    expect(loadXaiVideo("tokenhop").parseArgs([]).apiKey).toBeNull();
   });
 });

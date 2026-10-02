@@ -67,7 +67,7 @@ describe("legacy skill stubs", () => {
     },
   );
 
-  it("the default brand keeps tokenhop ids hidden", async () => {
+  it("the legacy brand keeps tokenhop ids hidden", async () => {
     expect((await getSkill(OLD, "tokenhop")).status).toBe(404);
     expect((await getSkill(OLD, "tokenhop-chat")).status).toBe(404);
   });

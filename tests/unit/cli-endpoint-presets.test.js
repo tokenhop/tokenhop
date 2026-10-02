@@ -55,9 +55,9 @@ describe("cli-tool preset storage", () => {
     expect(JSON.parse(store.get(newKey)).map((p) => p.name)).toEqual(["box", "other:1"]);
   });
 
-  it("keeps the shipped key under the default brand", async () => {
+  it("keeps the shipped key under the legacy brand", async () => {
     const legacyKey = `${LEGACY.storageKeyPrefix}cliToolApiKeyPresets`;
-    const presets = await load(undefined);
+    const presets = await load(LEGACY.slug);
     presets.upsertKeyPreset("sk-a", "mine");
     expect([...store.keys()]).toEqual([legacyKey]);
     expect(presets.readKeyPresets()).toEqual([{ name: "mine", key: "sk-a" }]);

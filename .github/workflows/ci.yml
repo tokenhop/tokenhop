@@ -15,20 +15,22 @@ concurrency:
 env:
   NEXT_TELEMETRY_DISABLED: "1"
 
-# test and build run once per brand (src/shared/brand). The default-brand legs keep
-# their original names because those are required checks on master.
+# test and build run once per brand (src/shared/brand). The default brand is
+# tokenhop since v1.0.0, so the default and tokenhop legs build the same thing;
+# both stay because their names are required checks on master. The legacy leg
+# keeps the legacy brand builds green until v2.0.0 drops that brand.
 jobs:
   test:
-    name: ${{ matrix.brand == 'tokenhop' && 'Tests (vs known-fails baseline, tokenhop brand)' || 'Tests (vs known-fails baseline)' }}
+    name: ${{ matrix.brand == 'default' && 'Tests (vs known-fails baseline)' || format('Tests (vs known-fails baseline, {0} brand)', matrix.brand) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        brand: [default, tokenhop]
+        brand: [default, tokenhop, 9router] # legacy(9router): until v2
     env:
-      # Empty means unset, so the default leg runs exactly as before.
-      NEXT_PUBLIC_BRAND: ${{ matrix.brand == 'tokenhop' && 'tokenhop' || '' }}
+      # Empty means unset, so the default leg builds the default brand.
+      NEXT_PUBLIC_BRAND: ${{ matrix.brand != 'default' && matrix.brand || '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -53,15 +55,15 @@ jobs:
         run: node tests/__baseline__/verify-oauth-urls.mjs
 
   build:
-    name: ${{ matrix.brand == 'tokenhop' && 'Next.js build (tokenhop brand)' || 'Next.js build' }}
+    name: ${{ matrix.brand == 'default' && 'Next.js build' || format('Next.js build ({0} brand)', matrix.brand) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        brand: [default, tokenhop]
+        brand: [default, tokenhop, 9router] # legacy(9router): until v2
     env:
-      NEXT_PUBLIC_BRAND: ${{ matrix.brand == 'tokenhop' && 'tokenhop' || '' }}
+      NEXT_PUBLIC_BRAND: ${{ matrix.brand != 'default' && matrix.brand || '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

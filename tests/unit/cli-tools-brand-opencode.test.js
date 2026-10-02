@@ -1,10 +1,11 @@
 // YAN-332: JSON tool configs (OpenCode, OpenClaw). Under the tokenhop brand
-// Apply writes tokenhop entries and migrates legacy ones in place; the default
+// Apply writes tokenhop entries and migrates legacy ones in place; the legacy
 // brand keeps writing what it always did. Detect and Reset accept both
 // everywhere. HOME is a per-file temp dir (tests/setup), never the real one.
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  LEGACY,
   OLD,
   OLD_NAME,
   clearHome,
@@ -83,26 +84,29 @@ describe("opencode", () => {
     expect(status.opencode.activeModel).toBe("cc/gpt-5");
   });
 
-  it.each(["tokenhop", ""])("legacy → reset removes our entries under brand %j", async (brand) => {
-    await write(rel, await fixture("opencode.json"));
-    const route = await load(brand, "opencode-settings");
-    expect(await json(await route.GET())).toMatchObject({ hasTokenhop: true });
+  it.each(["tokenhop", LEGACY.slug])(
+    "legacy → reset removes our entries under brand %j",
+    async (brand) => {
+      await write(rel, await fixture("opencode.json"));
+      const route = await load(brand, "opencode-settings");
+      expect(await json(await route.GET())).toMatchObject({ hasTokenhop: true });
 
-    expect((await route.DELETE(new Request("http://localhost/x"))).status).toBe(200);
-    const cfg = await readJson(rel);
-    expect(cfg.provider[OLD]).toBeUndefined();
-    expect(cfg.provider.tokenhop).toBeUndefined();
-    expect(Object.keys(cfg.provider)).toEqual(["openai-direct"]);
-    expect(cfg.model).toBeUndefined();
-    expect(cfg.agent.explorer).toBeUndefined();
-    expect(cfg.agent.builder).toEqual({
-      model: `${OLD_NAME}/cc/builder-model`,
-      prompt: "stay on task",
-    });
-  });
+      expect((await route.DELETE(new Request("http://localhost/x"))).status).toBe(200);
+      const cfg = await readJson(rel);
+      expect(cfg.provider[OLD]).toBeUndefined();
+      expect(cfg.provider.tokenhop).toBeUndefined();
+      expect(Object.keys(cfg.provider)).toEqual(["openai-direct"]);
+      expect(cfg.model).toBeUndefined();
+      expect(cfg.agent.explorer).toBeUndefined();
+      expect(cfg.agent.builder).toEqual({
+        model: `${OLD_NAME}/cc/builder-model`,
+        prompt: "stay on task",
+      });
+    },
+  );
 
-  it("default brand writes the legacy provider and refs on a fresh file", async () => {
-    const route = await load("", "opencode-settings");
+  it("legacy brand writes the legacy provider and refs on a fresh file", async () => {
+    const route = await load(LEGACY.slug, "opencode-settings");
     expect((await apply(route)).status).toBe(200);
     const cfg = await readJson(rel);
     expect(cfg.provider.tokenhop).toBeUndefined();
@@ -194,7 +198,7 @@ describe("openclaw", () => {
       apiKey: "sk-new",
       api: "openai-completions",
     });
-    // Apply sets the model list (as under the default brand)
+    // Apply sets the model list (as under the legacy brand)
     expect(cfg.models.providers.tokenhop.models.map((m) => m.id)).toEqual([
       "cc/new-hotness",
       "cc/coder-model",
@@ -237,25 +241,28 @@ describe("openclaw", () => {
     );
   });
 
-  it.each(["tokenhop", ""])("legacy → reset removes our entries under brand %j", async (brand) => {
-    const settings = JSON.parse(await fixture("openclaw.json"));
-    // Cover the second legacy spelling too
-    settings.agents.defaults.model.primary = `${OLD_NAME}/cc/primary`;
-    settings.agents.defaults.models[`${OLD_NAME}/cc/allowlisted`] = {};
-    await write(rel, JSON.stringify(settings, null, 2));
-    const route = await load(brand, "openclaw-settings");
+  it.each(["tokenhop", LEGACY.slug])(
+    "legacy → reset removes our entries under brand %j",
+    async (brand) => {
+      const settings = JSON.parse(await fixture("openclaw.json"));
+      // Cover the second legacy spelling too
+      settings.agents.defaults.model.primary = `${OLD_NAME}/cc/primary`;
+      settings.agents.defaults.models[`${OLD_NAME}/cc/allowlisted`] = {};
+      await write(rel, JSON.stringify(settings, null, 2));
+      const route = await load(brand, "openclaw-settings");
 
-    expect((await route.DELETE()).status).toBe(200);
-    const cfg = await readJson(rel);
-    expect(cfg.models.providers[OLD]).toBeUndefined();
-    expect(cfg.models.providers.tokenhop).toBeUndefined();
-    expect(Object.keys(cfg.models.providers)).toEqual(["openai-direct"]);
-    expect(cfg.agents.defaults.models).toEqual({ "openai/gpt-4o": { label: "GPT" } });
-    expect(cfg.agents.defaults.model.primary).toBeUndefined();
-  });
+      expect((await route.DELETE()).status).toBe(200);
+      const cfg = await readJson(rel);
+      expect(cfg.models.providers[OLD]).toBeUndefined();
+      expect(cfg.models.providers.tokenhop).toBeUndefined();
+      expect(Object.keys(cfg.models.providers)).toEqual(["openai-direct"]);
+      expect(cfg.agents.defaults.models).toEqual({ "openai/gpt-4o": { label: "GPT" } });
+      expect(cfg.agents.defaults.model.primary).toBeUndefined();
+    },
+  );
 
-  it("default brand writes the legacy provider and refs on a fresh file", async () => {
-    const route = await load("", "openclaw-settings");
+  it("legacy brand writes the legacy provider and refs on a fresh file", async () => {
+    const route = await load(LEGACY.slug, "openclaw-settings");
     expect(
       (
         await route.POST(

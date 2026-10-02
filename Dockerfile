@@ -64,7 +64,7 @@ ENV NEXT_PUBLIC_BRAND=${NEXT_PUBLIC_BRAND}
 # The title follows the brand; the fallback must equal DEFAULT_BRAND_ID in
 # src/shared/brand (tests/unit/docker-brand.test.js checks it). docker-publish.yml
 # sets the same title through docker/metadata-action, whose labels win.
-LABEL org.opencontainers.image.title="${NEXT_PUBLIC_BRAND:-9router}" \
+LABEL org.opencontainers.image.title="${NEXT_PUBLIC_BRAND:-tokenhop}" \
   org.opencontainers.image.description="Self-hosted AI routing gateway with an OpenAI-compatible endpoint" \
   org.opencontainers.image.source="https://github.com/tokenhop/tokenhop"
 

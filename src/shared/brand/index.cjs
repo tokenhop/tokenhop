@@ -11,11 +11,13 @@
  * `NEXT_PUBLIC_BRAND` overrides the default for dev, CI and tokenhop beta images
  * (the Dockerfile build arg). Next.js inlines it into bundles at build time, so
  * keep the literal `process.env.NEXT_PUBLIC_BRAND` expression (no destructuring)
- * or the inlining stops working. Server code and the CLI read it at runtime. The v1.0.0 release flips DEFAULT_BRAND_ID to "tokenhop".
+ * or the inlining stops working. Server code and the CLI read it at runtime.
+ * tokenhop is the default since v1.0.0; NEXT_PUBLIC_BRAND=9router builds the
+ * legacy brand until v2.0.0 drops it.
  */
 
 const BRAND_IDS = Object.freeze(["9router", "tokenhop"]);
-const DEFAULT_BRAND_ID = "9router";
+const DEFAULT_BRAND_ID = "tokenhop";
 
 function assertBrandId(id, source) {
   if (BRAND_IDS.includes(id)) return id;

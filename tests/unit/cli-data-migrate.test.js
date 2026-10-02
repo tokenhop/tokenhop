@@ -66,8 +66,8 @@ const exdev = () => {
 };
 
 describe("data migrate", () => {
-  it("is not offered under the default brand", async () => {
-    const { cmd } = load(undefined);
+  it("is not offered under the legacy brand", async () => {
+    const { cmd } = load("9router"); // legacy(9router): remove in v2
     expect(cmd.AVAILABLE).toBe(false);
     expect(await cmd.run(["migrate"], { homedir: home, log: () => {} })).toBe(2);
   });

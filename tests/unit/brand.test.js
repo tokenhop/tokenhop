@@ -121,8 +121,8 @@ describe("brand constants", () => {
     expect(legacyValues.filter((v) => brandValues.has(v))).toEqual([]);
   });
 
-  it("ACTIVE is the primary legacy value per key under the default brand", () => {
-    const { ACTIVE, BRAND } = load();
+  it("ACTIVE is the primary legacy value per key under the 9router brand", () => {
+    const { ACTIVE, BRAND } = load("9router");
     expect(Object.keys(ACTIVE)).toEqual(Object.keys(BRAND));
     for (const key of Object.keys(BRAND)) {
       expect(typeof ACTIVE[key], key).toBe(typeof BRAND[key]);
@@ -136,7 +136,7 @@ describe("brand constants", () => {
   });
 
   it("ACTIVE keeps brand-independent keys on the current repo, image and sites", () => {
-    const { ACTIVE, BRAND } = load();
+    const { ACTIVE, BRAND } = load("9router");
     for (const key of BRAND_INDEPENDENT) expect(ACTIVE[key]).toBe(BRAND[key]);
   });
 
@@ -161,7 +161,7 @@ describe("brand constants", () => {
       proxyTestUserAgent: names[0],
       denoRelayKind: `${slug}-relay`,
     };
-    for (const brand of [undefined, "tokenhop"]) {
+    for (const brand of ["9router", "tokenhop"]) {
       const { UPSTREAM_CLIENT_IDS } = load(brand);
       expect(UPSTREAM_CLIENT_IDS).toEqual(expected);
       expect(Object.isFrozen(UPSTREAM_CLIENT_IDS)).toBe(true);
@@ -187,7 +187,7 @@ describe("brand constants", () => {
 
     it("falls back to the first defined legacy prefix, in order", () => {
       process.env.NINE_ROUTER_T_ORDER = "second";
-      const brand = load();
+      const brand = load("9router");
       expect(brand.readEnv("T_ORDER")).toBe("second");
       process.env.NINEROUTER_T_ORDER = "first";
       expect(brand.readEnv("T_ORDER")).toBe("first");
@@ -198,7 +198,7 @@ describe("brand constants", () => {
     });
 
     it("reads from an injected env object", () => {
-      expect(load().readEnv("X", { NINE_ROUTER_X: "1" })).toBe("1");
+      expect(load("9router").readEnv("X", { NINE_ROUTER_X: "1" })).toBe("1");
     });
 
     it("warns once per legacy variable under the tokenhop brand", () => {
@@ -219,10 +219,10 @@ describe("brand constants", () => {
       ]);
     });
 
-    it("stays silent under the default brand", () => {
+    it("stays silent under the 9router brand", () => {
       process.env.NINEROUTER_T_A = "a";
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-      expect(load().readEnv("T_A")).toBe("a");
+      expect(load("9router").readEnv("T_A")).toBe("a");
       expect(warn).not.toHaveBeenCalled();
     });
   });
@@ -237,7 +237,7 @@ describe("brand constants", () => {
   });
 
   it("header and legacyHeaderNames follow the active brand", () => {
-    const def = load();
+    const def = load("9router");
     expect(def.header("connection-id")).toBe("x-9router-connection-id");
     expect(def.legacyHeaderNames("connection-id")).toEqual([]);
 
