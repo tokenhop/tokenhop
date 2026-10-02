@@ -273,12 +273,16 @@ export function buildOnStreamComplete({
 }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-  const onStreamComplete = (contentObj, usage, ttftAt) => {
+  const onStreamComplete = (contentObj, usage, ttftAt, { error = null } = {}) => {
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime,
     };
-    const safeContent = contentObj?.content || "[Empty streaming response]";
+    // A mid-stream error (event: error, response.failed, …) is still a failed
+    // request even though the 200 headers already went out (YAN-662).
+    const safeContent =
+      contentObj?.content ||
+      (error ? `[Stream error] ${error.message}` : "[Empty streaming response]");
     const safeThinking = contentObj?.thinking || null;
 
     saveRequestDetail(
@@ -292,9 +296,14 @@ export function buildOnStreamComplete({
           request: extractRequestConfig(body, stream),
           providerRequest: finalBody || translatedBody || null,
           providerResponse: safeContent,
-          response: { content: safeContent, thinking: safeThinking, type: "streaming" },
+          response: {
+            content: safeContent,
+            thinking: safeThinking,
+            type: "streaming",
+            ...(error && { error }),
+          },
           pxpipe,
-          status: "success",
+          status: error ? "error" : "success",
         },
         { id: streamDetailId },
       ),

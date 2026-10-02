@@ -101,6 +101,23 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   const responsesOutputItems = new Map(); // output_index → item, for an empty response.completed.output
+  // First upstream error seen mid-stream (after the 200 headers), so the
+  // request is logged as an error instead of success (YAN-662).
+  let streamError = null;
+  const noteStreamError = (parsed) => {
+    if (streamError || !parsed || typeof parsed !== "object") return;
+    const type = parsed.type;
+    let err = null;
+    if (type === "error") err = parsed.error || parsed;
+    else if (type === "response.failed")
+      err = parsed.response?.error || { message: "response.failed" };
+    else if (parsed.error && !parsed.choices?.length) err = parsed.error;
+    if (!err) return;
+    streamError = {
+      message: typeof err === "string" ? err : err.message || JSON.stringify(err),
+      ...(typeof err === "object" && (err.type || err.code) && { type: err.type || err.code }),
+    };
+  };
   let streamDoneSent = false; // track duplicate [DONE] across transform + flush
   let finalized = false;
 
@@ -132,9 +149,13 @@ export function createSSEStream(options = {}) {
         apiKey,
       );
     } else {
-      appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(
-        () => {},
-      );
+      appendRequestLog({
+        model,
+        provider,
+        connectionId,
+        tokens: null,
+        status: streamError ? "FAILED stream" : "200 OK",
+      }).catch(() => {});
     }
 
     if (onStreamComplete) {
@@ -145,6 +166,7 @@ export function createSSEStream(options = {}) {
         },
         finalUsage,
         ttftAt,
+        { error: streamError },
       );
     }
   };
@@ -191,6 +213,7 @@ export function createSSEStream(options = {}) {
           } else if (trimmed.startsWith("data:")) {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
+              noteStreamError(parsed);
 
               const idFixed = fixInvalidId(parsed);
 
@@ -316,6 +339,7 @@ export function createSSEStream(options = {}) {
 
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
+        noteStreamError(parsed);
 
         // Responses API same-format passthrough: preserve event framing + track terminal state
         const isOpenAIResponsesStream = targetFormat === FORMATS.OPENAI_RESPONSES;
@@ -518,6 +542,7 @@ export function createSSEStream(options = {}) {
           // accepts "data: " lines, so an NDJSON provider (Ollama) lost whatever
           // arrived without its closing newline.
           const parsed = parseSSELine(buffer.trim(), targetFormat);
+          noteStreamError(parsed);
           // parseSSELine turns the SSE sentinel "data: [DONE]" into { done: true },
           // which must not be translated. An Ollama chunk also carries done:true,
           // but it is the real final chunk — it holds finish_reason and the token
