@@ -18,6 +18,10 @@ export async function GET(request) {
   }
 }
 
+// Remote users can write here, so bound what lands in the DB and aliases.json.
+const MAX_MAPPINGS = 200;
+const MAX_LENGTH = 256;
+
 // PUT - Save MITM aliases for a specific tool
 export async function PUT(request) {
   try {
@@ -32,13 +36,26 @@ export async function PUT(request) {
       return NextResponse.json({ error: "Unknown MITM tool" }, { status: 400 });
     }
 
-    if (Object.values(mappings).some((model) => typeof model !== "string")) {
-      return NextResponse.json({ error: "mapping values must be strings" }, { status: 400 });
+    const entries = Object.entries(mappings);
+    if (entries.length > MAX_MAPPINGS) {
+      return NextResponse.json({ error: "too many mappings" }, { status: 400 });
+    }
+    if (
+      entries.some(
+        ([alias, model]) =>
+          typeof model !== "string" || alias.length > MAX_LENGTH || model.length > MAX_LENGTH,
+      )
+    ) {
+      return NextResponse.json(
+        { error: `mapping values must be strings of at most ${MAX_LENGTH} characters` },
+        { status: 400 },
+      );
     }
 
-    const filtered = {};
-    for (const [alias, model] of Object.entries(mappings)) {
-      if (model && model.trim()) {
+    // Null prototype: an alias named "__proto__" is stored as a plain key.
+    const filtered = Object.create(null);
+    for (const [alias, model] of entries) {
+      if (model.trim()) {
         filtered[alias] = model.trim();
       }
     }

@@ -326,6 +326,8 @@ describe("dashboard guard local-only access", () => {
     expect(bad.status).toBe(400);
     const unknown = await put({ tool: "nope", mappings: { a: "b" } });
     expect(unknown.status).toBe(400);
+    const long = await put({ tool: "antigravity", mappings: { a: "x".repeat(300) } });
+    expect(long.status).toBe(400);
     const ok = await put({ tool: "antigravity", mappings: { a: " b " } });
     expect(ok.status).toBe(200);
     expect(ok.body.aliases).toEqual({ a: "b" });
