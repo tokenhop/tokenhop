@@ -1,0 +1,112 @@
+name: Docs Deploy
+
+# Builds the docs site (gitbook/, a static Next export in gitbook/out) and
+# deploys it to the Cloudflare Pages project tokenhop-docs (tokenhop.dev).
+#
+#   pull request touching gitbook/   build only: no secrets, no deploy
+#   push to master touching gitbook/ deploy production (tokenhop.dev)
+#   stable tag vX.Y.Z                redeploy production from master, so a
+#                                    patch tag cut from release/X.Y can never
+#                                    roll the site back to older docs
+#   prerelease tag (vX.Y.Z-beta.N)   deploy that tag's docs to the Pages
+#                                    `beta` alias (beta.tokenhop-docs.pages.dev);
+#                                    production is untouched
+#   workflow_dispatch                deploy production from master
+#
+# Secrets: CLOUDFLARE_API_TOKEN (Account → Cloudflare Pages: Edit) and
+# CLOUDFLARE_ACCOUNT_ID. Without them the deploy step fails and the site stays
+# as it was.
+
+on:
+  pull_request:
+    paths:
+      - gitbook/**
+      - .github/workflows/docs-deploy.yml
+  push:
+    branches: [master]
+    tags: ["v*"]
+    # Master pushes only: GitHub ignores path filters for tag pushes.
+    paths:
+      - gitbook/**
+      - .github/workflows/docs-deploy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One group per deploy target; deploys queue, PR builds supersede each other.
+  group: >-
+    docs-deploy-${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref)
+    || (github.ref_type == 'tag' && contains(github.ref_name, '-')) && 'beta'
+    || 'production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  docs:
+    name: Build and deploy docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Resolve target
+        id: target
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -eu
+          ref=$GITHUB_SHA branch=""
+          case "$EVENT/$REF_TYPE" in
+            pull_request/*) ;;
+            push/branch) branch=master ;;
+            workflow_dispatch/*) ref=master branch=master ;;
+            push/tag)
+              if [[ $REF_NAME =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                ref=master branch=master
+              elif [[ $REF_NAME =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$ ]]; then
+                branch=beta
+              else
+                echo "::error::tag '$REF_NAME' is not vX.Y.Z or vX.Y.Z-pre"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::unexpected trigger $EVENT/$REF_TYPE"
+              exit 1
+              ;;
+          esac
+          echo "Docs: checkout $ref, deploy to '${branch:-<none, build only>}'"
+          echo "ref=$ref" >>"$GITHUB_OUTPUT"
+          echo "branch=$branch" >>"$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.target.outputs.ref }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      # gitbook/ has no lockfile.
+      - run: npm install --no-audit --no-fund --no-package-lock
+        working-directory: gitbook
+
+      - run: npm run build
+        working-directory: gitbook
+
+      - name: Deploy to Cloudflare Pages
+        if: steps.target.outputs.branch != ''
+        working-directory: gitbook
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BRANCH: ${{ steps.target.outputs.branch }}
+        run: |
+          set -eu
+          sha=$(git rev-parse HEAD)
+          npx --yes wrangler@4 pages deploy out --project-name=tokenhop-docs \
+            --branch="$BRANCH" --commit-hash="$sha" --commit-message="$(git log -1 --format=%s)" --commit-dirty=true
