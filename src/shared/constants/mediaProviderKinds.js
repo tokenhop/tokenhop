@@ -56,3 +56,9 @@ export const MEDIA_PROVIDER_KINDS = [
     endpoint: { method: "POST", path: "/v1/audio/music" },
   },
 ];
+
+// A combo's `kind`: null/"llm" for chat, or one of the media kinds above.
+// Anything else would hide the combo from every page and /v1/models (YAN-689).
+export function isValidComboKind(kind) {
+  return kind == null || kind === "llm" || MEDIA_PROVIDER_KINDS.some((k) => k.id === kind);
+}
