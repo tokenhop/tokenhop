@@ -7,6 +7,7 @@ import {
   encodeField,
   wrapConnectRPCFrame,
 } from "../../open-sse/utils/cursorProtobuf.js";
+import { UPSTREAM_CLIENT_IDS } from "@/shared/brand";
 
 const VARINT = 0;
 const LEN = 2;
@@ -314,13 +315,16 @@ describe("CursorExecutor AgentService exec_request handling", () => {
           function: { name: "read_file", description: "Read", parameters: { type: "object" } },
         },
       ],
-      frames: [execFrame(36, { args: encodeField(1, LEN, "9router") }), textFrame("later")],
+      frames: [
+        execFrame(36, { args: encodeField(1, LEN, UPSTREAM_CLIENT_IDS.cursorMcpProvider) }),
+        textFrame("later"),
+      ],
       stream: true,
     });
 
     expect(contentOf(parseSSE(await result.response.text()))).toBe("later");
     const server = sub(sub(sub(decodeReply(written[1]), 36), 1), 1);
-    expect(str(server, 2)).toBe("9router");
+    expect(str(server, 2)).toBe(UPSTREAM_CLIENT_IDS.cursorMcpProvider);
     expect(server.has(5)).toBe(true);
     expect(str(sub(server, 5), 1)).toBe("read_file");
   });

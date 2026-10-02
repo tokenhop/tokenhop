@@ -1,7 +1,7 @@
 // Agent Skills metadata — single source of truth for /dashboard/skills page.
 // Skills ship with the gateway, so the hosted URLs always resolve against the
 // selected access base (Local/Tunnel/Tailscale) plus SKILL_PATH. Skill ids
-// carry the active brand's slug (skills/9router* or skills/tokenhop*).
+// carry the active brand's slug (skills/<slug>*).
 import { ACTIVE, BRAND, LEGACY } from "@/shared/brand";
 
 const REPO = ACTIVE.repoSlug;

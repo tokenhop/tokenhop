@@ -4,8 +4,8 @@
 
 /**
  * Status keys shown as pills on the tool grid.
- * connected: tool installed + points at 9Router.
- * notConfigured: installed but no 9Router config.
+ * connected: tool installed + points at tokenhop.
+ * notConfigured: installed but no tokenhop config.
  * notInstalled: CLI not detected on this machine.
  * error: detection request failed, so install state is unknown.
  * guide: configType "guide" tools are docs, not detection.

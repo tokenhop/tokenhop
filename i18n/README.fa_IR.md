@@ -118,102 +118,6 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 ---
 
-## راهنماهای تصویری
-
-<div align="center">
-
-<table>
-  <tr>
-  <td align="center" width="320">
-  <a href="https://www.youtube.com/watch?v=X69n5Lm06Yw">
-    <img src="https://img.youtube.com/vi/X69n5Lm06Yw/maxresdefault.jpg" alt="صرفه‌جویی در هزینه LLM با 9Router" width="300"/>
-  </a><br/>
-  <b>🇻🇳 ویتنامی</b><br/>
-  <sub>صرفه‌جویی در هزینه LLM برای OpenClaw با 9Router<br/>توسط <a href="https://www.youtube.com/c/M%C3%ACAIblog">Mì AI</a></sub>
-</td>
-<td align="center" width="320">
-      <a href="https://youtu.be/VQAw612S27Y">
-        <img src="https://img.youtube.com/vi/VQAw612S27Y/maxresdefault.jpg" alt="راه‌اندازی نامحدود رایگان 9Router + Claude Code" width="300"/>
-      </a><br/>
-      <b>🇵🇰 اردو / हिन्दी</b><br/>
-      <sub>راه‌اندازی نامحدود رایگان 9Router + Claude Code<br/>توسط <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=raEyZPg5xE0">
-        <img src="https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg" alt="آموزش راه‌اندازی 9Router" width="300"/>
-      </a><br/>
-      <b>🇺🇸 انگلیسی</b><br/>
-      <sub>راه‌اندازی رایگان 9Router + Claude Code<br/>توسط <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-
-  </tr>
-  <tr>
-  <td align="center" width="320">
-      <a href="https://youtu.be/3dF5GIYMrcQ?si=bAyfyiHbARJQAHj_">
-        <img src="https://img.youtube.com/vi/3dF5GIYMrcQ/hqdefault.jpg" alt="آموزش راه‌اندازی 9Router" width="300"/>
-      </a><br/>
-      <b>🇺🇸 انگلیسی</b><br/>
-      <sub>راه‌اندازی رایگان 9Router + Claude Code<br/>توسط <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=o3qYCyjrFYg">
-        <img src="https://img.youtube.com/vi/o3qYCyjrFYg/maxresdefault.jpg" alt="Claude Code رایگان برای همیشه" width="300"/>
-      </a><br/>
-      <b>🇺🇸 انگلیسی</b><br/>
-      <sub>Claude Code رایگان برای همیشه — مدل‌های نامحدود<br/>توسط <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=Ttpc26m39Dw">
-        <img src="https://img.youtube.com/vi/Ttpc26m39Dw/maxresdefault.jpg" alt="راه‌اندازی رایگان Claude CLI" width="300"/>
-      </a><br/>
-      <b>🇺🇸 انگلیسی</b><br/>
-      <sub>راه‌اندازی رایگان Claude CLI با 9Router 🚀<br/>توسط <a href="https://www.youtube.com/@CodeVerseSoban">CodeVerse Soban</a></sub>
-    </td>
-
-  </tr>
-  <tr>
-  <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=G-5A_D5Pm6Y">
-        <img src="https://img.youtube.com/vi/G-5A_D5Pm6Y/maxresdefault.jpg" alt="نصب کامل OpenClaw رایگان" width="300"/>
-      </a><br/>
-      <b>🇻🇳 ویتنامی</b><br/>
-      <sub>نصب کامل OpenClaw رایگان از صفر تا صد + 9Router<br/>توسط <a href="https://www.youtube.com/@maigia">Mai Gia</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=JXmg8_gccgE">
-        <img src="https://img.youtube.com/vi/JXmg8_gccgE/maxresdefault.jpg" alt="OpenClaw رایگان با Claude Opus" width="300"/>
-      </a><br/>
-      <b>🇺🇸 انگلیسی</b><br/>
-      <sub>OpenClaw رایگان + Claude Opus 4.6<br/>توسط <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=CkVZZUSTXAI">
-        <img src="https://img.youtube.com/vi/CkVZZUSTXAI/mqdefault.jpg" alt="راه‌اندازی رایگان Claude CLI" width="300"/>
-      </a><br/>
-      <b>🇮🇩 اندونزیایی</b><br/>
-      <sub>کدنویسی ۲۴ ساعته بدون محدودیت نرخ! صرفه‌جویی ۶۵٪ توکن هوش مصنوعی | آموزش راه‌اندازی سریع 9Router 🚀<br/>توسط <a href="https://www.youtube.com/@krisswuh">Krisswuh</a></sub>
-    </td>
-
-  </tr>
-
-  <tr>
-  <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=TXGv4eofe1I">
-        <img src="https://img.youtube.com/vi/TXGv4eofe1I/mqdefault.jpg" alt="روش استقرار 9Router در Hugging Face رایگان و همیشه روشن! | جایگزین VPS با ۱۶ گیگابایت رم" width="300"/>
-      </a><br/>
-      <b>🇮🇩 اندونزیایی</b><br/>
-      <sub>روش استقرار 9Router در Hugging Face رایگان و همیشه روشن! | جایگزین VPS با ۱۶ گیگابایت رم<br/>توسط <a href="https://www.youtube.com/@krisswuh">Krisswuh</a></sub>
-    </td>
-  </tr>
-
-</table>
-
-</div>
-
-> 🎬 **درباره tokenhop ویدیو ساخته‌اید؟** یک [درخواست Pull](https://github.com/tokenhop/tokenhop/pulls) برای افزودن ویدیوی خود به این بخش ارسال کنید — ما آن را ادغام خواهیم کرد!
-
----
-
 ## 🛠️ ابزارهای خط فرمان پشتیبانی شده
 
 tokenhop به‌طور یکپارچه با تمام ابزارهای اصلی کدنویسی هوش مصنوعی کار می‌کند:
@@ -1198,25 +1102,25 @@ docker pull ghcr.io/tokenhop/tokenhop:latest   # به‌روزرسانی به آ
 
 ### متغیرهای محیطی
 
-| متغیر                                                | پیش‌فرض                                 | توضیحات                                                                                                                                                                       |
-| ---------------------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `JWT_SECRET`                                         | تولید خودکار (`~/.tokenhop/jwt-secret`) | راز امضای JWT برای کوکی احراز هویت داشبورد (برای اشتراک بین نمونه‌ها بازنویسی کنید)                                                                                           |
-| `INITIAL_PASSWORD`                                   | `123456`                                | رمز عبور اولین ورود در صورت عدم وجود هش ذخیره شده                                                                                                                             |
-| `DATA_DIR`                                           | `~/.tokenhop`                           | مکان اصلی داده‌های برنامه (SQLite در `$DATA_DIR/db/data.sqlite`)؛ اگر `~/.9router` از قبل وجود داشته باشد، خودکار استفاده می‌شود (`tokenhop data migrate` آن را منتقل می‌کند) |
-| `PORT`                                               | پیش‌فرض فریم‌ورک                        | پورت سرویس (`۲۰۱۲۸` در مثال‌ها)                                                                                                                                               |
-| `HOSTNAME`                                           | پیش‌فرض فریم‌ورک                        | هاست بایند (داکر پیش‌فرض `۰.۰.۰.۰` است)                                                                                                                                       |
-| `NODE_ENV`                                           | پیش‌فرض زمان اجرا                       | برای استقرار `production` را تنظیم کنید                                                                                                                                       |
-| `BASE_URL`                                           | `http://localhost:20128`                | آدرس پایه داخلی سمت سرور که توسط کارهای همگام‌سازی ابری استفاده می‌شود                                                                                                        |
-| `CLOUD_URL`                                          | خالی                                    | اختیاری: آدرس نقطه پایانی همگام‌سازی خودمیزبان (پیش‌فرضی ندارد؛ خالی یعنی چیزی ارسال نمی‌شود)                                                                                 |
-| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`                 | آدرس پایه عمومی/سازگار با گذشته (برای زمان اجرای سرور `BASE_URL` را ترجیح دهید)                                                                                               |
-| `NEXT_PUBLIC_CLOUD_URL`                              | خالی                                    | نسخه عمومی/سازگار با گذشته `CLOUD_URL` (اختیاری، فقط برای نقطه پایانی خودمیزبان)                                                                                              |
-| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`         | راز HMAC برای کلیدهای API تولید شده                                                                                                                                           |
-| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                   | نمک برای هش کردن شناسه ماشین پایدار                                                                                                                                           |
-| `ENABLE_REQUEST_LOGS`                                | `false`                                 | لاگ‌های درخواست/پاسخ را در `logs/` فعال می‌کند                                                                                                                                |
-| `AUTH_COOKIE_SECURE`                                 | `false`                                 | کوکی احراز هویت `Secure` را اعمال می‌کند (در پشت پروکسی معکوس HTTPS `true` تنظیم کنید)                                                                                        |
-| `REQUIRE_API_KEY`                                    | `false`                                 | اعمال کلید API Bearer در مسیرهای `/v1/*` (برای استقرارهای در معرض اینترنت توصیه می‌شود)                                                                                       |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | خالی                                    | پروکسی خروجی اختیاری برای فراخوانی‌های ارائه‌دهنده بالا دست                                                                                                                   |
-| `SEARXNG_URL`                                        | `http://localhost:8888/search`          | نقطه پایانی برای ارائه‌دهنده جستجوی وب SearXNG ساخته شده بدون احراز هویت                                                                                                      |
+| متغیر                                                | پیش‌فرض                                 | توضیحات                                                                                                                                                                                                |
+| ---------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `JWT_SECRET`                                         | تولید خودکار (`~/.tokenhop/jwt-secret`) | راز امضای JWT برای کوکی احراز هویت داشبورد (برای اشتراک بین نمونه‌ها بازنویسی کنید)                                                                                                                    |
+| `INITIAL_PASSWORD`                                   | `123456`                                | رمز عبور اولین ورود در صورت عدم وجود هش ذخیره شده                                                                                                                                                      |
+| `DATA_DIR`                                           | `~/.tokenhop`                           | مکان اصلی داده‌های برنامه (SQLite در `$DATA_DIR/db/data.sqlite`)؛ اگر `~/.9router` از قبل وجود داشته باشد، خودکار استفاده می‌شود (`tokenhop data migrate` آن را منتقل می‌کند) <!-- legacy(9router) --> |
+| `PORT`                                               | پیش‌فرض فریم‌ورک                        | پورت سرویس (`۲۰۱۲۸` در مثال‌ها)                                                                                                                                                                        |
+| `HOSTNAME`                                           | پیش‌فرض فریم‌ورک                        | هاست بایند (داکر پیش‌فرض `۰.۰.۰.۰` است)                                                                                                                                                                |
+| `NODE_ENV`                                           | پیش‌فرض زمان اجرا                       | برای استقرار `production` را تنظیم کنید                                                                                                                                                                |
+| `BASE_URL`                                           | `http://localhost:20128`                | آدرس پایه داخلی سمت سرور که توسط کارهای همگام‌سازی ابری استفاده می‌شود                                                                                                                                 |
+| `CLOUD_URL`                                          | خالی                                    | اختیاری: آدرس نقطه پایانی همگام‌سازی خودمیزبان (پیش‌فرضی ندارد؛ خالی یعنی چیزی ارسال نمی‌شود)                                                                                                          |
+| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`                 | آدرس پایه عمومی/سازگار با گذشته (برای زمان اجرای سرور `BASE_URL` را ترجیح دهید)                                                                                                                        |
+| `NEXT_PUBLIC_CLOUD_URL`                              | خالی                                    | نسخه عمومی/سازگار با گذشته `CLOUD_URL` (اختیاری، فقط برای نقطه پایانی خودمیزبان)                                                                                                                       |
+| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`         | راز HMAC برای کلیدهای API تولید شده                                                                                                                                                                    |
+| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                   | نمک برای هش کردن شناسه ماشین پایدار                                                                                                                                                                    |
+| `ENABLE_REQUEST_LOGS`                                | `false`                                 | لاگ‌های درخواست/پاسخ را در `logs/` فعال می‌کند                                                                                                                                                         |
+| `AUTH_COOKIE_SECURE`                                 | `false`                                 | کوکی احراز هویت `Secure` را اعمال می‌کند (در پشت پروکسی معکوس HTTPS `true` تنظیم کنید)                                                                                                                 |
+| `REQUIRE_API_KEY`                                    | `false`                                 | اعمال کلید API Bearer در مسیرهای `/v1/*` (برای استقرارهای در معرض اینترنت توصیه می‌شود)                                                                                                                |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | خالی                                    | پروکسی خروجی اختیاری برای فراخوانی‌های ارائه‌دهنده بالا دست                                                                                                                                            |
+| `SEARXNG_URL`                                        | `http://localhost:8888/search`          | نقطه پایانی برای ارائه‌دهنده جستجوی وب SearXNG ساخته شده بدون احراز هویت                                                                                                                               |
 
 نکات:
 

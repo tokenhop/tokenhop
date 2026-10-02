@@ -325,7 +325,7 @@ async function callCompress(url, messages, model, timeoutMs, compressUserMessage
 
 // Compress request body via Headroom proxy. Fail-open: returns null on any error.
 // /v1/compress only understands OpenAI shape, so Claude bodies are translated
-// to OpenAI, compressed, then translated back using 9Router's own translators.
+// to OpenAI, compressed, then translated back using tokenhop's own translators.
 export async function compressWithHeadroom(
   body,
   {

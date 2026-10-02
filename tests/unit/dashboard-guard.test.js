@@ -81,7 +81,7 @@ describe("dashboard guard public LLM API access", () => {
 
   it("allows public skill markdown on remote hosts without an API key", async () => {
     const response = await proxy(
-      request("/skills/9router/SKILL.md", { host: "router.example.com" }),
+      request("/skills/tokenhop/SKILL.md", { host: "router.example.com" }),
     );
 
     expect(response).toBe(mocks.nextResponse);

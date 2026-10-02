@@ -2,7 +2,7 @@
  * Native qodercli does NOT stuff image/PDF bytes into agent_chat_generation.
  * It PUTs them to /algo/api/v2/image/upload (COSY-signed multipart) and then
  * sends the returned OSS URL. Agents like Claude Code send OpenAI/Claude
- * data-URIs instead, which 9router previously forwarded verbatim — 10MB
+ * data-URIs instead, which tokenhop previously forwarded verbatim — 10MB
  * images become 30MB+ JSON and upstream 413s even though the model window
  * is ~200k tokens.
  *

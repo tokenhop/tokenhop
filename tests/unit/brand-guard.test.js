@@ -5,7 +5,6 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const SCRIPT = path.resolve(import.meta.dirname, "../../scripts/brand-guard.mjs");
-const BASELINE = "scripts/brand-guard.baseline.json";
 
 let repo;
 
@@ -25,51 +24,31 @@ function guard(...args) {
   return { code: r.status, out: r.stdout + r.stderr };
 }
 
-function baseline() {
-  return JSON.parse(fs.readFileSync(path.join(repo, BASELINE), "utf8"));
-}
-
 beforeEach(() => {
   repo = fs.mkdtempSync(path.join(os.tmpdir(), "brand-guard-"));
   git("init", "-q");
-  write("a.js", "// 9Router NINE_ROUTER nine-router\nconst ok = 1;\n");
+  write("a.js", "const ok = 1;\n");
   git("add", "-A");
-  expect(guard("--update").code).toBe(0);
 });
 
 afterEach(() => {
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
-describe("brand-guard", () => {
-  it("counts every spelling and passes on the baseline", () => {
-    expect(baseline()).toEqual({ "a.js": 3 });
+describe("brand-guard (strict)", () => {
+  it("passes a clean repo", () => {
     const { code, out } = guard();
     expect(code).toBe(0);
-    expect(out).toContain("brand-guard: 3 occurrences in 1 files remaining (baseline 3). OK");
+    expect(out).toContain("brand-guard: 0 occurrences. OK");
   });
 
-  it("fails when a new file appears", () => {
-    write("b.js", "const x = '9router';\n");
+  it("fails on every spelling and reports file:line", () => {
+    write("b.js", "const x = 1;\n// 9Router NINE_ROUTER nine-router\n");
     git("add", "b.js");
     const { code, out } = guard();
     expect(code).toBe(1);
-    expect(out).toContain("b.js");
-    expect(out).toContain("FAIL");
-  });
-
-  it("fails when a file's count goes up", () => {
-    write("a.js", "// 9Router NINE_ROUTER nine-router\nconst ok = '9router';\n");
-    const { code, out } = guard();
-    expect(code).toBe(1);
-    expect(out).toMatch(/a\.js: 3 → 4/);
-  });
-
-  it("passes a decrease, and --update lowers the baseline", () => {
-    write("a.js", "// 9Router\n");
-    expect(guard().code).toBe(0);
-    expect(guard("--update").code).toBe(0);
-    expect(baseline()).toEqual({ "a.js": 1 });
+    expect(out).toContain("brand-guard: 3 occurrences in 1 files. FAIL");
+    expect(out).toContain("b.js:2:");
   });
 
   it("ignores allowlisted paths and lines", () => {
@@ -78,22 +57,24 @@ describe("brand-guard", () => {
     write("cli/package-lock.json", '{"name":"9router"}\n');
     write("docs/plans/x/plan.md", "9router\n");
     write("src/shared/brand/index.cjs", "const slug = '9router';\n");
+    write("tests/unit/brand.test.js", "expect(slug).toBe('9router');\n");
+    write("public/i18n/literals/de.json", '{"Install 9Router": "9Router installieren"}\n');
     write("tests/fixtures/legacy/db.json", "9router\n");
     write("c.js", "const d = '~/.9router'; // legacy(9router): remove in v2\n");
     write("README.md", "> A copy of [9Router](https://github.com/decolua/9router).\n");
     git("add", "-A");
-    const { code, out } = guard();
-    expect(code).toBe(0);
-    expect(out).toContain("3 occurrences in 1 files");
+    expect(guard().code).toBe(0);
   });
 
-  it("--update refuses increases and leaves the baseline alone", () => {
-    write("b.js", "9router\n");
-    git("add", "b.js");
-    const { code, out } = guard("--update");
-    expect(code).toBe(1);
-    expect(out).toMatch(/refus/i);
-    expect(baseline()).toEqual({ "a.js": 3 });
+  it("allows the decolua credit only in README files", () => {
+    write("notes.md", "Based on 9Router by decolua\n");
+    git("add", "notes.md");
+    expect(guard().code).toBe(1);
+  });
+
+  it("rejects arguments, including the removed --update", () => {
+    expect(guard("--update").code).toBe(2);
+    expect(guard("--nope").code).toBe(2);
   });
 
   it("ignores files ignored by .gitignore", () => {

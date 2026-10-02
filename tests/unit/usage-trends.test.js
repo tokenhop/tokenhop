@@ -18,7 +18,7 @@ let db;
 let adapter;
 
 beforeAll(async () => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-usage-trends-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-usage-trends-"));
   process.env.DATA_DIR = tempDir;
   vi.resetModules();
   db = await import("@/lib/db/index.js");

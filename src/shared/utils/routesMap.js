@@ -1,6 +1,6 @@
 /**
  * Shared routes-map model helpers (YAN-412). Pure functions, no IO — they
- * shape the client → 9router → provider flow model from
+ * shape the client → tokenhop → provider flow model from
  * `/api/home/live-routes` (see `src/lib/home/liveRoutes.js`) for the shared
  * RoutesMap component on Home and Usage.
  *

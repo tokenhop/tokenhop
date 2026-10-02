@@ -127,7 +127,7 @@ export class BaseExecutor {
     const retryAttemptsByUrl = {};
 
     // Merge default retry config with provider-specific config.
-    // Injected reliability overrides (from 9router settings) win over the
+    // Injected reliability overrides (from tokenhop settings) win over the
     // provider registry entry; provider entries win over built-in defaults.
     // 429 never retries (resolveRetryForStatus), only advances baseUrls.
     const policy = getActiveReliabilityPolicy();

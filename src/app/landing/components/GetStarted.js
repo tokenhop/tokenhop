@@ -3,7 +3,7 @@
 import { CopyField } from "@/shared/components";
 import { ACTIVE } from "@/shared/brand";
 
-// Published by this project on GHCR. (The `9router` package on npm is not ours.)
+// Published by this project on GHCR. (The npm package under the old upstream name is not ours.)
 const INSTALL_COMMAND = `docker run -d -p 20128:20128 -v ~/.${ACTIVE.dataDirName}:/app/data -e INITIAL_PASSWORD=change-me ghcr.io/tokenhop/tokenhop`;
 
 const STEPS = [

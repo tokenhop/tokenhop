@@ -1,5 +1,5 @@
 // cli-tools Apply/Reset must never overwrite a user's config it can't parse,
-// and must only touch what 9Router owns (GH #60–#63). HOME is a per-file temp
+// and must only touch what tokenhop owns (GH #60–#63). HOME is a per-file temp
 // dir (tests/setup), so these routes write under it, not the real home.
 import { describe, it, expect, beforeEach } from "vitest";
 import fs from "node:fs/promises";

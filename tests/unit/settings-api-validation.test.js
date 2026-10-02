@@ -7,7 +7,7 @@ const originalDataDir = process.env.DATA_DIR;
 let tempDir;
 
 beforeAll(async () => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-settings-validation-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-settings-validation-"));
   process.env.DATA_DIR = tempDir;
   vi.resetModules();
   const db = await import("@/lib/db/index.js");
@@ -90,7 +90,7 @@ describe("PATCH /api/settings validation for YAN-309 keys", () => {
   it("accepts SAML fields within lengths and rejects bad URLs / overlong certs", async () => {
     const good = await settingsPatch({
       samlEntryPoint: "https://idp.example.com/sso",
-      samlIssuer: "urn:9router:sp",
+      samlIssuer: "urn:tokenhop:sp",
       samlCert: "QUJD",
       samlLoginLabel: "Sign in with SAML SSO",
       samlAttributeEmail: "email",

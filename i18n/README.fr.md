@@ -118,102 +118,6 @@ URL par défaut :
 
 ---
 
-## 🎥 Guides vidéo
-
-<div align="center">
-
-<table>
-  <tr>
-  <td align="center" width="320">
-  <a href="https://www.youtube.com/watch?v=X69n5Lm06Yw">
-    <img src="https://img.youtube.com/vi/X69n5Lm06Yw/maxresdefault.jpg" alt="Tiết kiệm chi phí LLM với 9Router" width="300"/>
-  </a><br/>
-  <b>🇻🇳 Tiếng Việt</b><br/>
-  <sub>Tiết kiệm chi phí LLM cho OpenClaw với 9Router<br/>by <a href="https://www.youtube.com/c/M%C3%ACAIblog">Mì AI</a></sub>
-</td>
-<td align="center" width="320">
-      <a href="https://youtu.be/VQAw612S27Y">
-        <img src="https://img.youtube.com/vi/VQAw612S27Y/maxresdefault.jpg" alt="9Router + Claude Code FREE Unlimited Setup" width="300"/>
-      </a><br/>
-      <b>🇵🇰 اردو / हिन्दी</b><br/>
-      <sub>9Router + Claude Code FREE Unlimited Setup<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=raEyZPg5xE0">
-        <img src="https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg" alt="9Router Setup Tutorial" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>9Router + Claude Code FREE Setup<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-
-  </tr>
-  <tr>
-  <td align="center" width="320">
-      <a href="https://youtu.be/3dF5GIYMrcQ?si=bAyfyiHbARJQAHj_">
-        <img src="https://img.youtube.com/vi/3dF5GIYMrcQ/hqdefault.jpg" alt="9Router Setup Tutorial" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>9Router + Claude Code FREE Setup<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=o3qYCyjrFYg">
-        <img src="https://img.youtube.com/vi/o3qYCyjrFYg/maxresdefault.jpg" alt="Claude Code FREE Forever" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>Claude Code FREE Forever — Unlimited Models<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=Ttpc26m39Dw">
-        <img src="https://img.youtube.com/vi/Ttpc26m39Dw/maxresdefault.jpg" alt="Claude CLI Free Setup" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>Claude CLI Free Setup with 9Router 🚀<br/>by <a href="https://www.youtube.com/@CodeVerseSoban">CodeVerse Soban</a></sub>
-    </td>
-
-  </tr>
-  <tr>
-  <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=G-5A_D5Pm6Y">
-        <img src="https://img.youtube.com/vi/G-5A_D5Pm6Y/maxresdefault.jpg" alt="Cài đặt OpenClaw Free A-Z" width="300"/>
-      </a><br/>
-      <b>🇻🇳 Tiếng Việt</b><br/>
-      <sub>Cài Đặt OpenClaw Free Từ A-Z + 9Router<br/>by <a href="https://www.youtube.com/@maigia">Mai Gia</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=JXmg8_gccgE">
-        <img src="https://img.youtube.com/vi/JXmg8_gccgE/maxresdefault.jpg" alt="FREE OpenClaw with Claude Opus" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>FREE OpenClaw + Claude Opus 4.6<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=CkVZZUSTXAI">
-        <img src="https://img.youtube.com/vi/CkVZZUSTXAI/mqdefault.jpg" alt="Claude CLI Free Setup" width="300"/>
-      </a><br/>
-      <b>🇮🇩 Indonesia</b><br/>
-      <sub>Koding 24 Jam Anti Rate Limit! Hemat Token AI 65% | Tutorial Quick Setup 9Router 🚀<br/>by <a href="https://www.youtube.com/@krisswuh">Krisswuh</a></sub>
-    </td>
-
-  </tr>
-
-  <tr>
-  <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=TXGv4eofe1I">
-        <img src="https://img.youtube.com/vi/TXGv4eofe1I/mqdefault.jpg" alt="Cara Deploy 9Router di Hugging Face GRATIS Non-Stop! | Alternatif VPS RAM 16GB" width="300"/>
-      </a><br/>
-      <b>🇮🇩 Indonesia</b><br/>
-      <sub>Cara Deploy 9Router di Hugging Face GRATIS Non-Stop! | Alternatif VPS RAM 16GB<br/>by <a href="https://www.youtube.com/@krisswuh">Krisswuh</a></sub>
-    </td>
-  </tr>
-
-</table>
-
-</div>
-
-> 🎬 **Vous avez réalisé une vidéo sur tokenhop ?** Envoyez une [Pull Request](https://github.com/tokenhop/tokenhop/pulls) en ajoutant votre vidéo à cette section — nous la fusionnerons !
-
----
-
 ## 🛠️ Outils CLI pris en charge
 
 tokenhop fonctionne parfaitement avec tous les principaux outils de codage IA :
@@ -1198,25 +1102,25 @@ docker pull ghcr.io/tokenhop/tokenhop:latest   # mise à jour vers la dernière 
 
 ### Variables d'environnement
 
-| Variable                                             | Par défaut                                        | Description                                                                                                                                                                       |
-| ---------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `JWT_SECRET`                                         | Généré automatiquement (`~/.tokenhop/jwt-secret`) | Secret de signature JWT pour le cookie d'authentification du tableau de bord (remplacez-le pour partager entre instances)                                                         |
-| `INITIAL_PASSWORD`                                   | `123456`                                          | Mot de passe de première connexion quand aucun hash n'est enregistré                                                                                                              |
-| `DATA_DIR`                                           | `~/.tokenhop`                                     | Emplacement principal des données de l'app (SQLite dans `$DATA_DIR/db/data.sqlite`) ; un `~/.9router` existant reste utilisé automatiquement (`tokenhop data migrate` le déplace) |
-| `PORT`                                               | défaut du framework                               | Port du service (`20128` dans les exemples)                                                                                                                                       |
-| `HOSTNAME`                                           | défaut du framework                               | Hôte de liaison (Docker utilise `0.0.0.0` par défaut)                                                                                                                             |
-| `NODE_ENV`                                           | défaut du runtime                                 | Définissez `production` pour le déploiement                                                                                                                                       |
-| `BASE_URL`                                           | `http://localhost:20128`                          | URL de base interne côté serveur utilisée par les tâches de synchronisation cloud                                                                                                 |
-| `CLOUD_URL`                                          | vide                                              | Optionnel : URL d'un endpoint de synchronisation auto-hébergé (aucune valeur par défaut ; vide = rien n'est envoyé)                                                               |
-| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`                           | URL de base publique/rétrocompatible (préférez `BASE_URL` pour le runtime serveur)                                                                                                |
-| `NEXT_PUBLIC_CLOUD_URL`                              | vide                                              | Variante publique/rétrocompatible de `CLOUD_URL` (optionnelle, uniquement pour un endpoint auto-hébergé)                                                                          |
-| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`                   | Secret HMAC pour les clés API générées                                                                                                                                            |
-| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                             | Sel pour le hachage stable de l'ID machine                                                                                                                                        |
-| `ENABLE_REQUEST_LOGS`                                | `false`                                           | Active les journaux de requêtes/réponses dans `logs/`                                                                                                                             |
-| `AUTH_COOKIE_SECURE`                                 | `false`                                           | Force le cookie d'authentification `Secure` (mettez `true` derrière un proxy inverse HTTPS)                                                                                       |
-| `REQUIRE_API_KEY`                                    | `false`                                           | Applique la clé API Bearer sur les routes `/v1/*` (recommandé pour les déploiements exposés à Internet)                                                                           |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | vide                                              | Proxy sortant optionnel pour les appels aux fournisseurs externes                                                                                                                 |
-| `SEARXNG_URL`                                        | `http://localhost:8888/search`                    | Endpoint du fournisseur de recherche web SearXNG intégré, sans authentification                                                                                                   |
+| Variable                                             | Par défaut                                        | Description                                                                                                                                                                                                |
+| ---------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`                                         | Généré automatiquement (`~/.tokenhop/jwt-secret`) | Secret de signature JWT pour le cookie d'authentification du tableau de bord (remplacez-le pour partager entre instances)                                                                                  |
+| `INITIAL_PASSWORD`                                   | `123456`                                          | Mot de passe de première connexion quand aucun hash n'est enregistré                                                                                                                                       |
+| `DATA_DIR`                                           | `~/.tokenhop`                                     | Emplacement principal des données de l'app (SQLite dans `$DATA_DIR/db/data.sqlite`) ; un `~/.9router` existant reste utilisé automatiquement (`tokenhop data migrate` le déplace) <!-- legacy(9router) --> |
+| `PORT`                                               | défaut du framework                               | Port du service (`20128` dans les exemples)                                                                                                                                                                |
+| `HOSTNAME`                                           | défaut du framework                               | Hôte de liaison (Docker utilise `0.0.0.0` par défaut)                                                                                                                                                      |
+| `NODE_ENV`                                           | défaut du runtime                                 | Définissez `production` pour le déploiement                                                                                                                                                                |
+| `BASE_URL`                                           | `http://localhost:20128`                          | URL de base interne côté serveur utilisée par les tâches de synchronisation cloud                                                                                                                          |
+| `CLOUD_URL`                                          | vide                                              | Optionnel : URL d'un endpoint de synchronisation auto-hébergé (aucune valeur par défaut ; vide = rien n'est envoyé)                                                                                        |
+| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`                           | URL de base publique/rétrocompatible (préférez `BASE_URL` pour le runtime serveur)                                                                                                                         |
+| `NEXT_PUBLIC_CLOUD_URL`                              | vide                                              | Variante publique/rétrocompatible de `CLOUD_URL` (optionnelle, uniquement pour un endpoint auto-hébergé)                                                                                                   |
+| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`                   | Secret HMAC pour les clés API générées                                                                                                                                                                     |
+| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                             | Sel pour le hachage stable de l'ID machine                                                                                                                                                                 |
+| `ENABLE_REQUEST_LOGS`                                | `false`                                           | Active les journaux de requêtes/réponses dans `logs/`                                                                                                                                                      |
+| `AUTH_COOKIE_SECURE`                                 | `false`                                           | Force le cookie d'authentification `Secure` (mettez `true` derrière un proxy inverse HTTPS)                                                                                                                |
+| `REQUIRE_API_KEY`                                    | `false`                                           | Applique la clé API Bearer sur les routes `/v1/*` (recommandé pour les déploiements exposés à Internet)                                                                                                    |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | vide                                              | Proxy sortant optionnel pour les appels aux fournisseurs externes                                                                                                                                          |
+| `SEARXNG_URL`                                        | `http://localhost:8888/search`                    | Endpoint du fournisseur de recherche web SearXNG intégré, sans authentification                                                                                                                            |
 
 Remarques :
 

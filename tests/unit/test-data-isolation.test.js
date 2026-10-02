@@ -1,13 +1,14 @@
 // Regression guard for YAN-14: the suite must never resolve the developer's
-// real 9router data dir. tests/setup/isolateDataDir.js points DATA_DIR and HOME
+// real data dir. tests/setup/isolateDataDir.js points DATA_DIR and HOME
 // at a per-file temp root; if that setup stops running (or runs too late), the
-// app modules below resolve ~/.9router at import time and these assertions fail.
+// app modules below resolve the real data dir at import time and these assertions fail.
 import { describe, it, expect, afterEach } from "vitest";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { DATA_DIR, getDataDir } from "@/lib/dataDir.js";
 import { DATA_FILE } from "@/lib/db/paths.js";
+import { LEGACY } from "@/shared/brand";
 
 const require = createRequire(import.meta.url);
 const mitmPaths = require("../../src/mitm/paths.js");
@@ -30,7 +31,7 @@ describe("test data isolation", () => {
     expect(root).toBeTruthy();
     expect(realHome).toBeTruthy();
     expect(path.resolve(root)).not.toBe(path.resolve(realHome));
-    expect(isInside(root, path.join(realHome, ".9router"))).toBe(false);
+    expect(isInside(root, path.join(realHome, `.${LEGACY.dataDirName}`))).toBe(false);
   });
 
   it("app data paths resolved at import time live inside the temp root", () => {

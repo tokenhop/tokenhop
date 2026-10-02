@@ -45,8 +45,8 @@ function modeTabClass(active) {
 /**
  * Trae/Windsurf/Zed dynamic-port proxy flow. Browser mode waits for the local
  * callback proxy, but always offers a manual callback-URL paste: the redirect
- * targets 127.0.0.1 on the 9router host, which the browser cannot reach when
- * 9router runs in Docker or on another machine.
+ * targets 127.0.0.1 on the tokenhop host, which the browser cannot reach when
+ * tokenhop runs in Docker or on another machine.
  */
 export default function ProxyOAuthPanel({
   provider,

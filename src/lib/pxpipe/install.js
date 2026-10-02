@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { spawn, execSync } from "child_process";
 import { DATA_DIR } from "@/lib/dataDir.js";
+import { ACTIVE } from "@/shared/brand";
 
 export const PXPIPE_DIR = path.join(DATA_DIR, "pxpipe");
 export const PXPIPE_PACKAGE = "pxpipe-proxy";
@@ -94,7 +95,7 @@ async function runInstall() {
   if (!fs.existsSync(pkgJson)) {
     fs.writeFileSync(
       pkgJson,
-      JSON.stringify({ name: "9router-pxpipe-host", private: true }, null, 2),
+      JSON.stringify({ name: `${ACTIVE.slug}-pxpipe-host`, private: true }, null, 2),
     );
   }
 

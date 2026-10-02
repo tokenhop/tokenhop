@@ -116,29 +116,6 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 ---
 
-## 🎥 视频教程
-
-<div align="center">
-
-### 📺完整设置指南 - tokenhop + Claude Code 免费
-
-[![9Router + Claude Code Setup](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
-
-**🎬 观看完整的分步教程：**
-
-- ✅ tokenhop 安装与设置
-- ✅ 免费 Claude Sonnet 4.5 配置
-- ✅ Claude Code 集成
-- ✅ 实时编程演示
-
-**⏱️ 时长：** 20 分钟 | **👥 作者** 开发者社区
-
-[▶️ 在 YouTube 上观看](https://www.youtube.com/watch?v=o3qYCyjrFYg)
-
-</div>
-
----
-
 ## 🛠️ 支持的 CLI 工具
 
 tokenhop 与所有主流 AI 编程工具无缝协作：
@@ -1045,24 +1022,24 @@ docker stop tokenhop && docker rm tokenhop
 
 ### 环境变量
 
-| 变量                                                 | 默认值                               | 描述                                                                                                 |
-| ---------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `JWT_SECRET`                                         | 自动生成（`~/.tokenhop/jwt-secret`） | 仪表板认证 cookie 的 JWT 签名密钥（设置可在多实例间共享）                                            |
-| `INITIAL_PASSWORD                                    | `123456`                             | 当没有保存的哈希时的首次登录密码                                                                     |
-| `DATA_DIR`                                           | `~/.tokenhop`                        | 主应用数据库位置（`db.json`）；如已存在 `~/.9router`，仍会自动使用（`tokenhop data migrate` 可迁移） |
-| `PORT`                                               | 框架默认值                           | 服务端口（示例中为 `20128`）                                                                         |
-| `HOSTNAME`                                           | 框架默认值                           | 绑定主机（Docker 默认为 `0.0.0.0`）                                                                  |
-| `NODE_ENV`                                           | 运行时默认值                         | 部署时设置 `production`                                                                              |
-| `BASE_URL`                                           | <http://localhost:20128`>            | 云同步作业使用的服务器端内部基础 URL                                                                 |
-| `CLOUD_URL`                                          | 空                                   | 可选：自托管云同步端点 URL（默认没有云端服务；留空不发送任何数据）                                   |
-| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`              | 向后兼容/公共基础 URL（服务器运行时优先使用 `BASE_URL`）                                             |
-| `NEXT_PUBLIC_CLOUD_URL`                              | 空                                   | 向后兼容/公共云 URL（可选，仅用于自托管云端端点）                                                    |
-| `API_KEY_SECRET`                                     | `endpoint-proxy-api-secret`          | 生成的 API Key 的 HMAC 密钥                                                                          |
-| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                | 稳定机器 ID 哈希的盐值                                                                               |
-| `ENABLE_REQUEST_LOGS`                                | `false`                              | 在 `logs/` 下启用请求/响应日志                                                                       |
-| `AUTH_COOKIE_SECURE`                                 | `false`                              | 强制 `Secure` 认证 cookie（在 HTTPS 反向代理后设置 `true`）                                          |
-| `REQUIRE_API_KEY`                                    | `false`                              | 在 `/v1/*` 路由上强制执行 Bearer API key推荐用于暴露在互联网的部署）                                 |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | 空                                   | 上游提供商调用的可选出站代理                                                                         |
+| 变量                                                 | 默认值                               | 描述                                                                                                                          |
+| ---------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`                                         | 自动生成（`~/.tokenhop/jwt-secret`） | 仪表板认证 cookie 的 JWT 签名密钥（设置可在多实例间共享）                                                                     |
+| `INITIAL_PASSWORD                                    | `123456`                             | 当没有保存的哈希时的首次登录密码                                                                                              |
+| `DATA_DIR`                                           | `~/.tokenhop`                        | 主应用数据库位置（`db.json`）；如已存在 `~/.9router`，仍会自动使用（`tokenhop data migrate` 可迁移） <!-- legacy(9router) --> |
+| `PORT`                                               | 框架默认值                           | 服务端口（示例中为 `20128`）                                                                                                  |
+| `HOSTNAME`                                           | 框架默认值                           | 绑定主机（Docker 默认为 `0.0.0.0`）                                                                                           |
+| `NODE_ENV`                                           | 运行时默认值                         | 部署时设置 `production`                                                                                                       |
+| `BASE_URL`                                           | <http://localhost:20128`>            | 云同步作业使用的服务器端内部基础 URL                                                                                          |
+| `CLOUD_URL`                                          | 空                                   | 可选：自托管云同步端点 URL（默认没有云端服务；留空不发送任何数据）                                                            |
+| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`              | 向后兼容/公共基础 URL（服务器运行时优先使用 `BASE_URL`）                                                                      |
+| `NEXT_PUBLIC_CLOUD_URL`                              | 空                                   | 向后兼容/公共云 URL（可选，仅用于自托管云端端点）                                                                             |
+| `API_KEY_SECRET`                                     | `endpoint-proxy-api-secret`          | 生成的 API Key 的 HMAC 密钥                                                                                                   |
+| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                | 稳定机器 ID 哈希的盐值                                                                                                        |
+| `ENABLE_REQUEST_LOGS`                                | `false`                              | 在 `logs/` 下启用请求/响应日志                                                                                                |
+| `AUTH_COOKIE_SECURE`                                 | `false`                              | 强制 `Secure` 认证 cookie（在 HTTPS 反向代理后设置 `true`）                                                                   |
+| `REQUIRE_API_KEY`                                    | `false`                              | 在 `/v1/*` 路由上强制执行 Bearer API key推荐用于暴露在互联网的部署）                                                          |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | 空                                   | 上游提供商调用的可选出站代理                                                                                                  |
 
 注意：
 

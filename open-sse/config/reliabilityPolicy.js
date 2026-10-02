@@ -1,6 +1,6 @@
 // YAN-311: resolved reliability policy. Source order: built-in defaults
 // (identical to today's hardcoded constants) < injected overrides (from
-// 9router settings via src/) < env vars (stream timeouts only).
+// tokenhop settings via src/) < env vars (stream timeouts only).
 // open-sse never imports src/: overrides arrive as a plain argument.
 
 const STATUS_KEYS = [502, 503, 504];
@@ -100,7 +100,7 @@ export function resolveRetryForStatus(policy, status) {
   return { attempts: Math.max(0, attempts), delayMs: Math.max(0, delayMs) };
 }
 
-// Injected stored overrides (from 9router settings via src/). Module-level so
+// Injected stored overrides (from tokenhop settings via src/). Module-level so
 // every consumer reads the resolved policy at use time — no stale copies, no
 // constructor signature changes. Standalone open-sse: never set, defaults win.
 let injectedOverrides = null;

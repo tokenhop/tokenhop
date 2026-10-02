@@ -77,10 +77,10 @@ const TARGET_NAMES = {
 // Hyphenated prose like "Auto-detect" stays translatable: the hyphen rule only
 // matches model-id shapes (slash, colon, or version digits, e.g. gpt-4, cc/…).
 const KEEP =
-  /^(9router|tokenhop|9remote|rtk|pxpipe|mcp|api|url|json|cli|sdk|ok|[\w-]+(\/[\w.-]+)+|[\w-]+:[\w-]+|[a-z]+-[a-z]*\d[a-z0-9-]*|\.?env(\s+.*|\s*·.*)?|\/[\w/#.-]+|%( (cached|left|share)|lighter than raw requests)|\d[\d\s\-_:.,/%]*|[^\w\s]{1,3})$/i;
+  /^(9router|tokenhop|9remote|rtk|pxpipe|mcp|api|url|json|cli|sdk|ok|[\w-]+(\/[\w.-]+)+|[\w-]+:[\w-]+|[a-z]+-[a-z]*\d[a-z0-9-]*|\.?env(\s+.*|\s*·.*)?|\/[\w/#.-]+|%( (cached|left|share)|lighter than raw requests)|\d[\d\s\-_:.,/%]*|[^\w\s]{1,3})$/i; // legacy(9router)
 
 // Brand/provider/model names that must survive translation verbatim
-// (case-insensitive: translations may fix casing, e.g. "9router" → "9Router").
+// (case-insensitive: translations may fix casing, e.g. "9remote" → "9Remote").
 const BRAND_RE =
   /(9[Rr]outer|tokenhop|9[Rr]emote|PxPipe|RTK|OpenAI|Anthropic|Claude|Gemini|Codex|Qwen|Kimi|DeepSeek|Grok|Copilot|Ollama|GLM|MiMo|Keycloak|Authentik|Microsoft Entra|Azure|Cline|RooCode|Aider|Cursor)/gi;
 
@@ -167,8 +167,6 @@ export const VERBATIM_KEYS = new Set([
   "(RTK)",
   "PXPIPE",
   // Commands, OS labels and provider lists shown as-is.
-  "npx 9router",
-  "npm install -g 9router",
   "open http://localhost:9099",
   "→ OpenAI",
   "→ localhost",
@@ -238,7 +236,7 @@ async function callLlm(cfg, langName, items) {
     "Return ONLY a JSON array of translated strings in the same order, no other text.\n" +
     "Rules:\n" +
     "- Preserve placeholders like {count}, %s, [code] EXACTLY as-is.\n" +
-    "- Do NOT translate product/brand/provider/model names: 9Router, tokenhop (always lowercase), 9Remote, RTK, " +
+    "- Do NOT translate product/brand/provider/model names: 9Router, tokenhop (always lowercase), 9Remote, RTK, " + // legacy(9router)
     "PxPipe, OpenAI, Anthropic, Claude, Gemini, Codex, Qwen, Kimi, GLM, DeepSeek, " +
     "Grok, Copilot, Ollama, MiMo, MCP.\n" +
     "- Do NOT translate URLs, file paths, env vars, model ids or code tokens.\n" +

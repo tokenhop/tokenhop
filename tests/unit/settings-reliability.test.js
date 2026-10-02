@@ -7,7 +7,7 @@ const originalDataDir = process.env.DATA_DIR;
 let tempDir;
 
 beforeAll(async () => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-reliability-api-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-reliability-api-"));
   process.env.DATA_DIR = tempDir;
   const db = await import("@/lib/db/index.js");
   await db.initDb();

@@ -10,7 +10,7 @@ let tempDir;
 let sqliteDb;
 
 beforeAll(async () => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-combo-atomic-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-combo-atomic-"));
   process.env.DATA_DIR = tempDir;
   vi.resetModules();
   sqliteDb = await import("@/lib/db/index.js");

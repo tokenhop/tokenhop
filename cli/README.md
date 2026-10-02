@@ -103,7 +103,7 @@ Any tool supporting OpenAI/Claude-compatible API works.
 - **Windows**: `%APPDATA%/tokenhop/db/data.sqlite`
 - **Docker**: `/app/data/db/data.sqlite` (mount `$HOME/.tokenhop` to persist)
 
-Upgrading from 9router? An existing `~/.9router` is used automatically until you run
+Upgrading from 9router? An existing `~/.9router` is used automatically until you run <!-- legacy(9router) -->
 `tokenhop data migrate`. See the [upgrade guide](https://github.com/tokenhop/tokenhop/blob/master/UPGRADING.md).
 
 ---

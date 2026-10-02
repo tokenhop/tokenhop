@@ -19,9 +19,9 @@ export const SUCCESS_TOAST_RE = new RegExp(
  * model or brand names (single words; multi-word names live in PROPER_PHRASES).
  */
 export const PROPER_WORDS = new Set([
-  // 9router products and features
-  "9Router",
-  "9router",
+  // tokenhop products and features
+  "9Router", // legacy(9router)
+  "9router", // legacy(9router)
   "9Remote",
   "PxPipe",
   "PXPIPE",

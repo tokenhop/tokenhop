@@ -222,7 +222,7 @@ export async function isTailscaleRunningStrict() {
   }
 }
 
-// Check if a system-level tailscaled is running (uses system socket, not 9Router's custom one).
+// Check if a system-level tailscaled is running (uses system socket, not tokenhop's custom one).
 export function isSystemDaemonRunning() {
   if (IS_WINDOWS || !SYSTEM_TAILSCALE_SOCKET || !fs.existsSync(SYSTEM_TAILSCALE_SOCKET))
     return false;
@@ -623,7 +623,7 @@ export function isDaemonAlive() {
  * Start tailscaled.
  * - With sudoPassword: TUN mode (root) → Funnel TLS works
  * - Without: userspace-networking fallback (no sudo, but Funnel TLS unstable)
- * State always lives in ~/.9router/tailscale/ via --statedir.
+ * State always lives in <data dir>/tailscale/ via --statedir.
  */
 export async function startDaemonWithPassword(sudoPassword) {
   if (IS_WINDOWS) {

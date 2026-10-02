@@ -31,7 +31,7 @@ import { ClientNode, HubNode, ProviderNode } from "./nodes";
 import { RouteEdge } from "./RouteEdge";
 
 /**
- * Shared routes map: clients → 9router → providers over the last 5 minutes.
+ * Shared routes map: clients → tokenhop → providers over the last 5 minutes.
  * Plain SVG (no pan/zoom): Home uses the compact variant, Usage the full one.
  * Connected providers with no traffic render as muted idle nodes with idle
  * edges plus a last-activity caption — the true empty state only fires when

@@ -9,7 +9,7 @@
 //
 // Reads active Antigravity OAuth connections from the real SQLite DB
 // (<DATA_DIR>/db/data.sqlite) via the app DB layer. Gated by RUN_REAL=1 so the
-// default `vitest run` never touches the network or the real ~/.9router.
+// default `vitest run` never touches the network or the real data dir.
 //
 //   npx dotenvx run -f .env.encrypted -- npx vitest run --config tests/vitest.config.js tests/translator/real/antigravity-cache.real.test.js
 //

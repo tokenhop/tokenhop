@@ -1,4 +1,4 @@
-// Claude Code client fingerprint — the identity 9router presents to Anthropic
+// Claude Code client fingerprint — the identity tokenhop presents to Anthropic
 // on OAuth (`claude` provider) traffic.
 //
 // Defaults were captured from a real Claude Code 2.1.280 `/v1/messages` request.
@@ -28,7 +28,7 @@ export const CLAUDE_CLI_RUNTIME_VERSION = envString(
 export const CLAUDE_CLI_USER_AGENT = `claude-cli/${CLAUDE_CLI_VERSION} (external, sdk-cli)`;
 
 // Sent by Claude Code 2.1.280 on every OAuth request regardless of model, plus
-// flags 9router's own features depend on (structured outputs, redacted thinking —
+// flags tokenhop's own features depend on (structured outputs, redacted thinking —
 // the latter is dropped per-request in selectAnthropicBeta). The fast-mode beta is
 // not here: fast mode bills only from extra usage, so selectAnthropicBeta adds it
 // per request, when the body opts in.

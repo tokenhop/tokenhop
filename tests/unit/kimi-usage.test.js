@@ -12,6 +12,7 @@ import {
 } from "../../src/shared/constants/providers.js";
 import { PROVIDERS } from "../../open-sse/providers/index.js";
 import { parseQuotaData } from "../../src/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
+import { UPSTREAM_CLIENT_IDS } from "@/shared/brand";
 
 const KIMI_USAGE_URL = "https://api.kimi.com/coding/v1/usages";
 
@@ -168,7 +169,7 @@ describe("getUsageForProvider(kimi) auth selection", () => {
     expect(opts.method).toBe("GET");
     expect(opts.headers.Authorization).toBe("Bearer tok-abc");
     expect(opts.headers["x-api-key"]).toBeUndefined();
-    expect(opts.headers["X-Msh-Platform"]).toBe("9router");
+    expect(opts.headers["X-Msh-Platform"]).toBe(UPSTREAM_CLIENT_IDS.kimiPlatform);
     expect(opts.headers["X-Msh-Device-Id"]).toBe("stable-device-1");
     expect(opts.headers["X-Msh-Version"]).toBeTruthy();
   });

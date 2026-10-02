@@ -38,7 +38,7 @@ const chipClass = (active) =>
     : "border-line bg-raised text-text";
 
 /**
- * Live routing diagram: CLI tools flow into the 9Router hub and out to one
+ * Live routing diagram: CLI tools flow into the tokenhop hub and out to one
  * lime-highlighted provider at a time. The rotation stops under reduced motion.
  * A screen-reader list describes the flow; phones get a stacked text diagram.
  */

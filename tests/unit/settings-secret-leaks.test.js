@@ -10,7 +10,7 @@ let tempDir;
 let db;
 
 beforeAll(async () => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-settings-secrets-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-settings-secrets-"));
   process.env.DATA_DIR = tempDir;
   process.env.INITIAL_PASSWORD = "initial-pw";
   vi.resetModules();

@@ -1,5 +1,5 @@
 /**
- * Live routes map geometry: three columns (clients → 9router → providers)
+ * Live routes map geometry: three columns (clients → tokenhop → providers)
  * rendered as one plain SVG. Plain SVG wins over a graph library here: the
  * board is a static three-column flow with bezier edges, no pan/zoom or node
  * dragging, and SVG keeps the text alternative trivially in sync.
@@ -33,7 +33,7 @@ export function columnHeight(rows) {
 }
 
 /**
- * SVG height: the tallest column, never shorter than the 9router hub.
+ * SVG height: the tallest column, never shorter than the tokenhop hub.
  * @param {number} rows
  * @returns {number}
  */

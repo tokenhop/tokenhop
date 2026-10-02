@@ -177,7 +177,7 @@ const SKIP_VALUE_RE = /^[\d\s\-_:.,/\\|#*()[\]{}!?…+='";$%@&<>"'`~^]*$/;
 
 /** Product names, model ids and mono identifiers stay untranslated. */
 export const UNTRANSLATED_RE =
-  /^(9router|9remote|rtk|pxpipe|mcp|api|url|json|cli|sdk|ok|[\w-]+(\/[\w.-]+)+)$/i;
+  /^(9router|9remote|rtk|pxpipe|mcp|api|url|json|cli|sdk|ok|[\w-]+(\/[\w.-]+)+)$/i; // legacy(9router)
 
 /**
  * Identifier-like values the runtime would look up but no locale should
@@ -193,7 +193,7 @@ const IDENTIFIER_RES = [
   /^(?=[a-z]*\d)[a-z0-9]+\.{3}$|^[a-z]+-\.{3}$/, // key stubs: abc123def456..., sk-...
   /^[\w.-]+(,\s*[\w.-]+)+$/, // host lists (localhost, 127.0.0.1)
   /^[a-z]+[A-Z]\w*$/, // camelCase settings keys (providerStrategies)
-  /^[~%]/, // filesystem paths (~/.9router, %APPDATA%/…)
+  /^[~%]/, // filesystem paths (~/.tokenhop, %APPDATA%/…)
   /^[A-Z]{2,5}$/, // bare units/acronyms (KB, TTFT)
   /^[a-z0-9]+(-[a-z0-9]+)+$/, // lowercase slugs / sample ids (my-combo-123)
 ];

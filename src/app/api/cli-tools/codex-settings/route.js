@@ -26,7 +26,7 @@ const getCodexDir = () => path.join(os.homedir(), ".codex");
 const getCodexConfigPath = () => path.join(getCodexDir(), "config.toml");
 const getCodexAuthPath = () => path.join(getCodexDir(), "auth.json");
 
-// True only when the key is one 9Router itself wrote to auth.json (legacy flow).
+// True only when the key is one tokenhop itself wrote to auth.json (legacy flow).
 // A DB failure must mean "don't delete".
 const isRouterApiKey = async (key) => {
   try {
@@ -235,7 +235,7 @@ export async function DELETE() {
     const configContent = stringifyTOML(parsed);
     await fs.writeFile(configPath, configContent);
 
-    // Legacy cleanup: older 9Router versions wrote their key into auth.json.
+    // Legacy cleanup: older tokenhop versions wrote their key into auth.json.
     // Remove it only when it is ours — never touch a user's own key, never unlink.
     const authPath = getCodexAuthPath();
     try {

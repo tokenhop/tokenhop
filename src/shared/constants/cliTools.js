@@ -223,27 +223,27 @@ export const CLI_TOOLS = {
     name: "GitHub Copilot",
     image: "/providers/copilot.webp",
     color: "#1F6FEB",
-    description: "GitHub Copilot in VS Code via 9Router extension",
+    description: "GitHub Copilot in VS Code via 9Router extension", // legacy(9router): third-party extension name
     configType: "guide",
     docsUrl:
-      "https://marketplace.visualstudio.com/items?itemName=hotrungnhan.9router-for-github-copilot",
+      "https://marketplace.visualstudio.com/items?itemName=hotrungnhan.9router-for-github-copilot", // legacy(9router): third-party extension name
     guideSteps: [
       {
         step: 1,
         title: "Install extension",
-        desc: "In VS Code, open Extensions (Ctrl+Shift+X or Cmd+Shift+X), search for '9Router for GitHub Copilot' and click Install.",
+        desc: "In VS Code, open Extensions (Ctrl+Shift+X or Cmd+Shift+X), search for '9Router for GitHub Copilot' and click Install.", // legacy(9router): third-party extension name
       },
       {
         step: 2,
         title: "Configure server",
-        desc: "Press Cmd+Shift+P (or Ctrl+Shift+P), run '9Router: Configure Server', then enter your server URL and API key:",
+        desc: "Press Cmd+Shift+P (or Ctrl+Shift+P), run '9Router: Configure Server', then enter your server URL and API key:", // legacy(9router): third-party extension name
         value: "{{baseUrl}}",
         copyable: true,
       },
       {
         step: 3,
         title: "Select model in Copilot Chat",
-        desc: "Open Copilot Chat, click the model picker at the bottom → 'Manage Models...' → check the 9Router models to use.",
+        desc: "Open Copilot Chat, click the model picker at the bottom → 'Manage Models...' → check the 9Router models to use.", // legacy(9router): third-party extension name
       },
     ],
   },
