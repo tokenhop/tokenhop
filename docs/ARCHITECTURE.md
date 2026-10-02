@@ -293,7 +293,7 @@ Notes:
 - `_meta`: schema version metadata.
 - Legacy `db.json`, `usage.json`, `disabledModels.json`, `request-details.json` under `DATA_DIR` are one-time import sources only (backup + row-count checks); `log.txt` is not an import source.
 
-Optional deep request/translation debug logs still land in `<process.cwd()>/logs` when `ENABLE_REQUEST_LOGS=true` — distinct from SQLite and not the removed `log.txt`.
+Optional deep request/translation debug logs still land in `<process.cwd()>/logs` when `ENABLE_REQUEST_LOGS=true` — distinct from SQLite and not the removed `log.txt`. Credential headers are masked, but the logs still contain full request/response bodies.
 
 ## Deployment Topology
 
