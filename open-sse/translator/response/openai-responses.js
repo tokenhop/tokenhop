@@ -170,7 +170,12 @@ function startReasoning(state, emit) {
     emit("response.output_item.added", {
       type: "response.output_item.added",
       output_index: outIdx,
-      item: { id: state.reasoningId, type: RESPONSES_ITEM.REASONING, summary: [] },
+      item: {
+        id: state.reasoningId,
+        type: RESPONSES_ITEM.REASONING,
+        summary: [],
+        status: "in_progress",
+      },
     });
 
     emit("response.reasoning_summary_part.added", {
@@ -222,6 +227,7 @@ function closeReasoning(state, emit) {
       id: state.reasoningId,
       type: RESPONSES_ITEM.REASONING,
       summary: [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf }],
+      status: "completed",
     };
     emit("response.output_item.done", {
       type: "response.output_item.done",
@@ -263,7 +269,13 @@ function emitTextContent(state, emit, idx, content) {
     emit("response.output_item.added", {
       type: "response.output_item.added",
       output_index: messageOutputIndex(state, idx),
-      item: { id: msgId, type: RESPONSES_ITEM.MESSAGE, content: [], role: ROLE.ASSISTANT },
+      item: {
+        id: msgId,
+        type: RESPONSES_ITEM.MESSAGE,
+        content: [],
+        role: ROLE.ASSISTANT,
+        status: "in_progress",
+      },
     });
   }
 
@@ -325,6 +337,7 @@ function closeMessage(state, emit, idx) {
         { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText },
       ],
       role: ROLE.ASSISTANT,
+      status: "completed",
     };
     emit("response.output_item.done", {
       type: "response.output_item.done",
@@ -376,6 +389,7 @@ function emitToolCall(state, emit, tc) {
         ...(custom ? { input: "" } : { arguments: "" }),
         call_id: callId,
         name: state.funcNames[tcIdx] || "",
+        status: "in_progress",
       },
     });
     // Arguments that arrived before the id/name are replayed so deltas precede done.
@@ -444,6 +458,7 @@ function closeToolCall(state, emit, idx) {
       ...(custom ? { input: extractCustomToolInput(args) } : { arguments: args }),
       call_id: callId,
       name: state.funcNames[idx] || "",
+      status: "completed",
     };
     emit("response.output_item.done", {
       type: "response.output_item.done",
