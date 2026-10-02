@@ -262,9 +262,33 @@ describe("recorded savings (saveRequestUsage -> getUsageSavings)", () => {
     expect(pack.requests).toBe(1);
   });
 
+  it("getUsageSavings rejects invalid period", async () => {
+    await expect(db.getUsageSavings("90d")).rejects.toThrow(/Invalid period/);
+  });
+});
+
+describe("savings and summary windows", () => {
+  const originalDataDir = process.env.DATA_DIR;
+  let tempDir;
+  let db;
+  let adapter;
+
+  beforeAll(async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-savings-windows-"));
+    process.env.DATA_DIR = tempDir;
+    vi.resetModules();
+    db = await import("@/lib/db/index.js");
+    await db.initDb();
+    adapter = await (await import("@/lib/db/driver.js")).getAdapter();
+  });
+
+  afterAll(() => {
+    if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+    if (originalDataDir === undefined) delete process.env.DATA_DIR;
+    else process.env.DATA_DIR = originalDataDir;
+  });
+
   it("savings and summary use calendar windows and the shared previous window", async () => {
-    const adapter = await (await import("@/lib/db/driver.js")).getAdapter();
-    adapter.run(`DELETE FROM usageHistory`);
     const now = new Date(2026, 8, 29, 12).getTime();
     const start = new Date(2026, 8, 23).getTime(); // 7d = local midnight of today - 6
     const meta = JSON.stringify({
@@ -287,10 +311,6 @@ describe("recorded savings (saveRequestUsage -> getUsageSavings)", () => {
     expect(summary.previousRequests).toBe(2);
     expect((await db.getUsageSavings("24h", now)).requestsWithSavings).toBe(1);
     expect((await db.getHomeSummary("60d", now)).requests).toBe(4);
-  });
-
-  it("getUsageSavings rejects invalid period", async () => {
-    await expect(db.getUsageSavings("90d")).rejects.toThrow(/Invalid period/);
   });
 });
 

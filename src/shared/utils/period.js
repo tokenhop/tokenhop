@@ -37,7 +37,7 @@ export function isPeriod(value) {
  * Map `value` onto `allowed`.
  *
  * A known value outside the subset upgrades to the first allowed period at or
- * above its rank (24h→7d, 60d→30d on summary pages). An unknown value falls
+ * above its rank (24h→7d, 60d→30d for a today/7d/30d list). An unknown value falls
  * back to the default (or the first allowed period when even the default is
  * not allowed).
  * @param {unknown} value

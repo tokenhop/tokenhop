@@ -1159,6 +1159,7 @@ export async function getUsageSavings(period = "7d", now = Date.now()) {
   let requestsWithSavings = 0;
   let costSavedEst = 0;
   let pricedRequests = 0;
+  const pricingCache = new Map();
 
   for (const row of rows) {
     const meta = parseJson(row.meta, {});
@@ -1187,7 +1188,7 @@ export async function getUsageSavings(period = "7d", now = Date.now()) {
     tokensBeforeEst += Number(savings.tokensBeforeEst) || 0;
     requestsWithSavings += 1;
 
-    const rowCost = await savedTokensCost(row.provider, row.model, rowSaved);
+    const rowCost = await savedTokensCost(row.provider, row.model, rowSaved, pricingCache);
     if (rowCost > 0) {
       costSavedEst += rowCost;
       pricedRequests += 1;
@@ -1222,13 +1223,18 @@ export async function getUsageSavings(period = "7d", now = Date.now()) {
  * @param {string|null} provider
  * @param {string|null} model
  * @param {number} savedTokens
+ * @param {Map<string, Promise<object|null>>} [cache] per-call pricing lookups by provider/model
  * @returns {Promise<number>} dollars
  */
-async function savedTokensCost(provider, model, savedTokens) {
+async function savedTokensCost(provider, model, savedTokens, cache = new Map()) {
   if (!model || !(savedTokens > 0)) return 0;
   try {
-    const { getPricingForModel } = await import("./pricingRepo.js");
-    const pricing = await getPricingForModel(provider, model);
+    const key = `${provider}\u0000${model}`;
+    if (!cache.has(key)) {
+      const { getPricingForModel } = await import("./pricingRepo.js");
+      cache.set(key, getPricingForModel(provider, model));
+    }
+    const pricing = await cache.get(key);
     if (!pricing || !(Number(pricing.input) > 0)) return 0;
     const { calculateCostFromTokens } = await import("open-sse/providers/pricing.js");
     return calculateCostFromTokens({ prompt_tokens: savedTokens }, pricing);
@@ -1333,17 +1339,17 @@ export async function getHomeSummary(period = "7d", now = Date.now()) {
   const current = { start: periodStart(period, now), end: now };
   const prev = previousPeriodRange(period, now);
 
-  const countIn = (start, end) => {
+  const countIn = (start, end, endOp) => {
     const row = db.get(
-      `SELECT COUNT(*) AS n FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
+      `SELECT COUNT(*) AS n FROM usageHistory WHERE timestamp >= ? AND timestamp ${endOp} ?`,
       [new Date(start).toISOString(), new Date(end).toISOString()],
     );
     return row?.n || 0;
   };
 
-  const requests = countIn(current.start, current.end);
-  // Same half-open previous window as /api/usage/stats?compare=previous.
-  const previousRequests = (await getUsageTotals(prev)).requests;
+  const requests = countIn(current.start, current.end, "<=");
+  // Half-open like /api/usage/stats?compare=previous, so a row at the current start counts once.
+  const previousRequests = countIn(prev.start, prev.end, "<");
 
   const rows = db.all(
     `SELECT timestamp, meta FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
