@@ -32,32 +32,6 @@ import { ACTIVE } from "@/shared/brand";
 /** @type {SettingsSection[]} */
 export const SETTINGS_SECTIONS = [
   {
-    id: "about",
-    title: "About",
-    subtitle: "Version and project information.",
-    icon: "info",
-    rows: [
-      {
-        key: "version",
-        label: "Version",
-        description: "App version and build channel.",
-        keywords: "version build release channel about",
-      },
-      {
-        key: "project",
-        label: "Project",
-        description: "GitHub, docs and releases.",
-        keywords: "project github docs releases links about",
-      },
-      {
-        key: "license",
-        label: "License",
-        description: "MIT license.",
-        keywords: "license mit open source about",
-      },
-    ],
-  },
-  {
     id: "general",
     title: "General",
     subtitle: "Look, language and where you land.",
@@ -523,6 +497,32 @@ export const SETTINGS_SECTIONS = [
         label: "Reset to defaults",
         description: "Restore standard rates.",
         keywords: "reset defaults restore pricing",
+      },
+    ],
+  },
+  {
+    id: "about",
+    title: "About",
+    subtitle: "Version and project information.",
+    icon: "info",
+    rows: [
+      {
+        key: "version",
+        label: "Version",
+        description: "App version and build channel.",
+        keywords: "version build release channel about",
+      },
+      {
+        key: "project",
+        label: "Project",
+        description: "GitHub, docs and releases.",
+        keywords: "project github docs releases links about",
+      },
+      {
+        key: "license",
+        label: "License",
+        description: "MIT license.",
+        keywords: "license mit open source about",
       },
     ],
   },

@@ -21,6 +21,7 @@ describe("settings registry", () => {
       "providers",
       "logs",
       "pricing",
+      "about",
       "data",
       "environment",
       "danger",
