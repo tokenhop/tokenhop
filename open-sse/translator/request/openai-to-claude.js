@@ -250,6 +250,32 @@ Respond ONLY with the JSON object, no other text.`);
   return result;
 }
 
+// Tool results may carry array content (text/image_url parts) once they crossed
+// the Responses→Chat translation; map it to Claude blocks so images stay image
+// blocks inside tool_result instead of a JSON text blob.
+function toolResultContentBlocks(content) {
+  if (!Array.isArray(content)) return content;
+  return content.map((part) => {
+    if (part?.type === OPENAI_BLOCK.TEXT) return { type: CLAUDE_BLOCK.TEXT, text: part.text ?? "" };
+    if (part?.type === OPENAI_BLOCK.IMAGE_URL) {
+      const url = typeof part.image_url === "string" ? part.image_url : part.image_url?.url;
+      const parsed = parseDataUri(url);
+      if (parsed) {
+        return {
+          type: CLAUDE_BLOCK.IMAGE,
+          source: { type: "base64", media_type: parsed.mimeType, data: parsed.base64 },
+        };
+      }
+      if (typeof url === "string" && (url.startsWith("http://") || url.startsWith("https://"))) {
+        return { type: CLAUDE_BLOCK.IMAGE, source: { type: "url", url } };
+      }
+    }
+    // Unknown parts (e.g. OpenAI file blocks) pass through untouched — downstream
+    // consumers (antigravity envelope) still hoist them as inline media.
+    return part;
+  });
+}
+
 // Get content blocks from single message
 function getContentBlocksFromMessage(msg, toolNameMap = new Map(), thinkingIntent = null) {
   const blocks = [];
@@ -258,7 +284,7 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map(), thinkingInten
     blocks.push({
       type: CLAUDE_BLOCK.TOOL_RESULT,
       tool_use_id: msg.tool_call_id,
-      content: msg.content,
+      content: toolResultContentBlocks(msg.content),
       // Strict Anthropic parsers (e.g. Zed) require is_error as a boolean.
       is_error: false,
     });

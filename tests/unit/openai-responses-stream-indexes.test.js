@@ -88,4 +88,29 @@ describe("Chat stream → Responses output indexes", () => {
     expect(texts.map((e) => e.data.output_index)).toEqual([0, 2]);
     expect(new Set(order.map((o) => o.split(":")[2])).size).toBe(order.length / 2);
   });
+
+  // YAN-668: strict Responses clients reject output items without status.
+  it("sets status in_progress on added items and completed on done and response.completed", () => {
+    const events = run([
+      delta({ role: "assistant", reasoning_content: "think" }),
+      delta({ content: "hello" }),
+      delta(tool(0, "call_a", "a", "{}")),
+      delta({}, "tool_calls"),
+    ]);
+    const statuses = (name) =>
+      events.filter((e) => e.event === name).map((e) => e.data.item.status);
+
+    expect(statuses("response.output_item.added")).toEqual([
+      "in_progress",
+      "in_progress",
+      "in_progress",
+    ]);
+    expect(statuses("response.output_item.done")).toEqual(["completed", "completed", "completed"]);
+    const completed = events.find((e) => e.event === "response.completed");
+    expect(completed.data.response.output.map((i) => i.status)).toEqual([
+      "completed",
+      "completed",
+      "completed",
+    ]);
+  });
 });
