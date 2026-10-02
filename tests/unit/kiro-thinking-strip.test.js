@@ -70,6 +70,35 @@ async function readNextWithTimeout(reader) {
   ]);
 }
 
+async function streamFrames(frames) {
+  const executor = new KiroExecutor();
+  const readableStream = new ReadableStream({
+    start(controller) {
+      for (const frame of frames) controller.enqueue(frame);
+      controller.close();
+    },
+  });
+  const transformedResponse = executor.transformEventStreamToSSE(
+    { body: readableStream },
+    "claude-test",
+  );
+  return readAllSSE(transformedResponse.body);
+}
+
+function joinedContent(output) {
+  return output
+    .split("\n")
+    .filter((line) => line.startsWith("data: ") && !line.includes("[DONE]"))
+    .map((line) => {
+      try {
+        return JSON.parse(line.slice(6)).choices[0].delta.content || "";
+      } catch {
+        return "";
+      }
+    })
+    .join("");
+}
+
 describe("KiroExecutor thinking tag stripping", () => {
   it("strips <thinking> tags from assistantResponseEvent", async () => {
     const executor = new KiroExecutor();
@@ -117,6 +146,62 @@ describe("KiroExecutor thinking tag stripping", () => {
 
     const fullText = contents.join("");
     expect(fullText).toBe("Here is my answer.  Yes, 42.");
+  });
+
+  it("strips an open tag split across events", async () => {
+    const frames = [
+      createMockFrame("assistantResponseEvent", { content: "Answer. <thin" }),
+      createMockFrame("assistantResponseEvent", { content: "king>hidden</thinking> Visible" }),
+    ];
+    const output = await streamFrames(frames);
+    expect(output).not.toContain("<thinking>");
+    expect(output).not.toContain("hidden");
+    expect(joinedContent(output)).toBe("Answer.  Visible");
+  });
+
+  it("recovers the answer when the close tag is split across events", async () => {
+    const frames = [
+      createMockFrame("assistantResponseEvent", { content: "start <thinking>hidden</thin" }),
+      createMockFrame("assistantResponseEvent", { content: "king>\nthe answer" }),
+    ];
+    const output = await streamFrames(frames);
+    expect(output).not.toContain("hidden");
+    expect(output).not.toContain("Kiro EventStream ended without model output");
+    expect(output).toContain('"finish_reason":"stop"');
+    expect(joinedContent(output)).toBe("start the answer");
+  });
+
+  it("strips two thinking blocks in a single event", async () => {
+    const frames = [
+      createMockFrame("assistantResponseEvent", {
+        content: "A<thinking>one</thinking>B<thinking>two</thinking>C",
+      }),
+    ];
+    const output = await streamFrames(frames);
+    expect(output).not.toContain("<thinking>");
+    expect(output).not.toContain("</thinking>");
+    expect(joinedContent(output)).toBe("ABC");
+  });
+
+  it("strips a block spanning events followed by a second block", async () => {
+    const frames = [
+      createMockFrame("assistantResponseEvent", { content: "one <thinking>secret" }),
+      createMockFrame("assistantResponseEvent", {
+        content: "still</thinking> two <thinking>more",
+      }),
+      createMockFrame("assistantResponseEvent", { content: "hidden</thinking> three" }),
+    ];
+    const output = await streamFrames(frames);
+    expect(output).not.toContain("secret");
+    expect(output).not.toContain("hidden");
+    expect(joinedContent(output)).toBe("one  two  three");
+  });
+
+  it("flushes a held-back partial tag as content at clean EOF", async () => {
+    const frames = [createMockFrame("assistantResponseEvent", { content: "answer <thi" })];
+    const output = await streamFrames(frames);
+    expect(joinedContent(output)).toBe("answer <thi");
+    expect(output).toContain('"finish_reason":"stop"');
   });
 
   it("handles empty content after stripping when hasReasoningContent is true", async () => {
