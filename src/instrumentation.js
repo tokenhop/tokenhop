@@ -15,10 +15,9 @@ export async function register() {
     startModelCatalogSync();
 
     // Custom-model capability toggles (YAN-657); refreshed again on every change.
-    const { refreshCustomModelCaps } = await import("@/lib/customModelCaps.js");
-    await refreshCustomModelCaps().catch((err) =>
-      console.warn("[CustomModelCaps] initial load failed:", err?.message),
-    );
+    await import("@/lib/customModelCaps.js")
+      .then((m) => m.refreshCustomModelCaps())
+      .catch((err) => console.warn("[CustomModelCaps] initial load failed:", err?.message));
 
     // YAN-311: warm reliability overrides from the store for API-only servers
     // serving /v1 traffic (layout.js never mounts when no dashboard page is loaded).
