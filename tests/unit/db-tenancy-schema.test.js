@@ -135,6 +135,7 @@ describe("tenancy repos", () => {
   it("role, status and password changes bump sessionVersion; profile edits don't", async () => {
     const u = await repo.createUserUnscoped({ instanceRole: "user" });
     expect((await repo.updateUserUnscoped(u.id, { displayName: "U" })).sessionVersion).toBe(1);
+    expect((await repo.updateUserUnscoped(u.id, { instanceRole: "user" })).sessionVersion).toBe(1);
     expect((await repo.updateUserUnscoped(u.id, { passwordHash: "x" })).sessionVersion).toBe(2);
     expect((await repo.updateUserUnscoped(u.id, { status: "disabled" })).sessionVersion).toBe(3);
   });

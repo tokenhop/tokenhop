@@ -120,7 +120,10 @@ export async function updateUserUnscoped(id, patch = {}) {
         throw new TenancyError("OWNER_IMMUTABLE", "The owner can't be disabled");
       }
 
-      const bump = SESSION_FIELDS.some((k) => Object.hasOwn(next, k));
+      const bump =
+        (Object.hasOwn(next, "instanceRole") && next.instanceRole !== row.instanceRole) ||
+        (Object.hasOwn(next, "status") && next.status !== row.status) ||
+        Object.hasOwn(next, "passwordHash");
       const sets = Object.keys(next).map((k) => `${k} = ?`);
       sets.push("updatedAt = ?");
       if (bump) sets.push("sessionVersion = sessionVersion + 1");
