@@ -162,6 +162,12 @@ describe("toolSettings helpers", () => {
     ).toEqual(["endpoint"]);
   });
 
+  it("diffFromDisk ignores map key order", () => {
+    expect(diffFromDisk({ agents: { a: "x", b: "y" } }, { agents: { b: "y", a: "x" } })).toEqual(
+      [],
+    );
+  });
+
   it("diffFromDisk returns [] when disk is null", () => {
     expect(diffFromDisk({ endpoint: "http://saved" }, null)).toEqual([]);
   });

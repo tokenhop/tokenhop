@@ -184,7 +184,7 @@ export default function ClaudeToolCard({
   const handleLoadFromFile = () => {
     settings.loadFromDisk();
     // The saved endpoint id would keep winning over the file URL, so clear it.
-    if (settings.differs.includes("endpoint")) settings.setFields({ endpointId: undefined });
+    if (values.endpointId) settings.setFields({ endpointId: undefined });
     setCustomKey(null);
     setPickerKey((k) => k + 1);
   };

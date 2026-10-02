@@ -30,6 +30,9 @@ export function mergeToolSettings(defaults, disk, saved) {
   return out;
 }
 
+// Map key order is irrelevant (saved vs disk maps are built in different orders).
+const stable = (v) => JSON.stringify(isPlain(v) ? Object.fromEntries(Object.entries(v).sort()) : v);
+
 /** Top-level keys where the saved value differs from a defined on-disk value. */
 export function diffFromDisk(saved, disk) {
   if (!disk || !saved) return [];
@@ -37,7 +40,7 @@ export function diffFromDisk(saved, disk) {
     (key) =>
       Object.hasOwn(disk, key) &&
       disk[key] !== undefined &&
-      JSON.stringify(saved[key]) !== JSON.stringify(disk[key]),
+      stable(saved[key]) !== stable(disk[key]),
   );
 }
 

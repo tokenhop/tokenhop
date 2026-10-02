@@ -83,7 +83,8 @@ export default function CodexToolCard({
     ],
   );
   const setup = useSetupSettings({ toolId: "codex", apiKeys, defaults, disk, endpointContext });
-  const subagentModel = setup.values.subagentModel;
+  const subagentModel =
+    typeof setup.values.subagentModel === "string" ? setup.values.subagentModel : "";
 
   const currentBaseUrl = status?.config?.match(/base_url\s*=\s*"([^"]+)"/)?.[1] || "";
 
@@ -104,7 +105,7 @@ export default function CodexToolCard({
           baseUrl: getEffectiveBaseUrl(),
           apiKey: keyToUse,
           model: setup.model,
-          subagentModel: setup.values.subagentModel || setup.model,
+          subagentModel: subagentModel || setup.model,
         }),
       });
       const data = await res.json();
@@ -150,7 +151,7 @@ export default function CodexToolCard({
         baseUrl: getEffectiveBaseUrl(),
         apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
         model: setup.model,
-        subagentModel: setup.values.subagentModel || setup.model,
+        subagentModel: subagentModel || setup.model,
       }),
     );
 
