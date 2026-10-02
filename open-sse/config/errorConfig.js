@@ -76,6 +76,10 @@ export const ERROR_RULES = [
   { text: EXTRA_USAGE_EXHAUSTED_TEXT, cooldownMs: COOLDOWN.none },
   { text: "capacity", backoff: true },
   { text: "overloaded", backoff: true },
+  // Codex returns 400 when the account's ChatGPT plan can't serve the model.
+  // Lock that model on this account (model-scoped lock) so other accounts and
+  // combo members are tried instead (YAN-660).
+  { text: "not supported when using codex with a chatgpt account", cooldownMs: COOLDOWN.long },
 
   // --- Status-based rules (fallback when text doesn't match) ---
   { status: 401, cooldownMs: COOLDOWN.long },
