@@ -85,7 +85,9 @@ async function handleComboStrategyPatch(body) {
       mergedError = validateComboStrategySettings({ comboStrategies: { [name]: next } });
       if (mergedError) return strategies;
       const updated = { ...strategies };
-      if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
+      // An explicit "fallback" is stored: deleting the entry would make the combo
+      // silently inherit the global comboStrategy instead (YAN-679).
+      if (!next.fallbackStrategy) {
         delete updated[name];
       } else {
         updated[name] = next;

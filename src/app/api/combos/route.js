@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCombos, createCombo, getComboByName } from "@/lib/localDb";
 import { findComboCycle, isModelList } from "open-sse/services/combo.js";
+import { isValidComboKind } from "@/shared/constants/mediaProviderKinds";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,10 @@ export async function POST(request) {
 
     if (models !== undefined && !isModelList(models)) {
       return NextResponse.json({ error: "Models must be an array of strings" }, { status: 400 });
+    }
+
+    if (!isValidComboKind(kind)) {
+      return NextResponse.json({ error: `Invalid combo kind "${kind}"` }, { status: 400 });
     }
 
     const cycle = findComboCycle(name, models || [], await getCombos());

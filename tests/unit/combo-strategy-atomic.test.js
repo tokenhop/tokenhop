@@ -286,4 +286,20 @@ describe("PATCH /api/settings comboStrategyPatch after rename", () => {
       ).strategy,
     ).toBe("fallback");
   });
+
+  it("rejects an unknown combo kind on create and update (YAN-689)", async () => {
+    const { POST } = await import("@/app/api/combos/route.js");
+    const post = (body) =>
+      POST(
+        new Request("http://localhost/api/combos", {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+      );
+    expect((await post({ name: "badKindCombo", kind: "bogus" })).status).toBe(400);
+    expect((await post({ name: "ttsKindCombo", kind: "tts" })).status).toBe(201);
+    const created = await (await post({ name: "llmKindCombo", kind: "llm" })).json();
+    expect((await comboPut(created.id, { kind: "bogus" })).status).toBe(400);
+    expect((await comboPut(created.id, { kind: null })).status).toBe(200);
+  });
 });
