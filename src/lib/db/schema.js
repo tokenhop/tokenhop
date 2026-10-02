@@ -1,10 +1,3 @@
-// ⚠️ AGENT/DEV: Bump this by +1 EVERY TIME you change the schema below
-// (add/remove/alter a table, column, or index in TABLES). It drives the
-// pre-change safety backup in migrate.js: when the stored version is lower,
-// one lightweight DB backup is taken before applying schema changes. Forgetting
-// to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 1;
-
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
@@ -15,9 +8,10 @@ PRAGMA foreign_keys = ON;
 PRAGMA busy_timeout = 5000;
 `;
 
-// Declarative current schema. Used by syncSchemaFromTables() to
-// auto-add missing tables/columns/indexes after versioned migrations.
-// For destructive changes (drop/rename/type-change), write a migration file.
+// Declarative current schema: what the migration chain in ./migrations/ must
+// produce (a test checks the two match). syncSchemaFromTables() also adds
+// missing tables/columns/indexes from it after the chain, as a safety net.
+// Every change here needs a matching migration — see ./migrations/index.js.
 export const TABLES = {
   _meta: {
     columns: {
@@ -157,5 +151,7 @@ export const TABLES = {
 export function buildCreateTableSql(name, def) {
   const cols = Object.entries(def.columns).map(([k, v]) => `${k} ${v}`);
   if (def.primaryKey) cols.push(def.primaryKey);
+  // Table-level constraints, e.g. "UNIQUE (workspaceId, name)" or a FOREIGN KEY.
+  for (const c of def.constraints || []) cols.push(c);
   return `CREATE TABLE IF NOT EXISTS ${name} (${cols.join(", ")})`;
 }

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { LEGACY_FILES, DB_DIR } from "./paths.js";
-import { TABLES, buildCreateTableSql, SCHEMA_VERSION } from "./schema.js";
+import { TABLES, buildCreateTableSql } from "./schema.js";
 import { MIGRATIONS, latestVersion } from "./migrations/index.js";
 import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
@@ -103,22 +103,48 @@ function legacyTablesEmpty(adapter) {
   );
 }
 
+function storedSchemaVersion(adapter) {
+  return parseInt(getMetaSync(adapter, "schemaVersion", "0"), 10) || 0;
+}
+
+// True when the DB holds anything besides _meta: an existing install, including
+// a legacy unstamped one (schemaVersion 0), as opposed to a brand-new file.
+function hasUserTables(adapter) {
+  return !!adapter.get(
+    `SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != '_meta'`,
+  );
+}
+
 // ─── Versioned migrations runner (skip-version safe) ─────────────────────
-function runVersionedMigrations(adapter) {
-  // Bootstrap _meta first so we can read schemaVersion
+// Each migration runs in its own transaction with its version stamp, so a
+// failure rolls back both. Foreign keys are off around it (SQLite ignores the
+// PRAGMA inside a transaction) so a table rebuild's DROP can't cascade, and
+// `foreign_key_check` must pass before the commit.
+export function runVersionedMigrations(adapter, migrations = MIGRATIONS) {
   adapter.exec(buildCreateTableSql("_meta", TABLES._meta));
 
-  const current = parseInt(getMetaSync(adapter, "schemaVersion", "0"), 10) || 0;
-  const target = latestVersion();
-  if (current >= target) return { applied: 0, from: current, to: current };
-
-  const pending = MIGRATIONS.filter((m) => m.version > current);
+  const current = storedSchemaVersion(adapter);
+  const pending = migrations.filter((m) => m.version > current);
   let lastApplied = current;
   for (const m of pending) {
-    adapter.transaction(() => {
-      m.up(adapter);
-      setMetaSync(adapter, "schemaVersion", m.version);
-    });
+    adapter.exec("PRAGMA foreign_keys = OFF");
+    try {
+      if (adapter.get("PRAGMA foreign_keys").foreign_keys !== 0) {
+        throw new Error(
+          `migration #${m.version}: run outside a transaction (foreign_keys stuck ON)`,
+        );
+      }
+      adapter.transaction(() => {
+        m.up(adapter);
+        const violations = adapter.all("PRAGMA foreign_key_check");
+        if (violations.length) {
+          throw new Error(`migration #${m.version}: ${violations.length} foreign key violation(s)`);
+        }
+        setMetaSync(adapter, "schemaVersion", m.version);
+      });
+    } finally {
+      adapter.exec("PRAGMA foreign_keys = ON");
+    }
     lastApplied = m.version;
     console.log(`[DB][migrate] applied #${m.version} ${m.name}`);
   }
@@ -391,35 +417,29 @@ export async function runMigrationOnce(adapter) {
   // Prune stale backups every boot so old oversized backups shrink to KEEP.
   pruneOldBackups();
 
-  // Bootstrap _meta so we can read the stored backup schema version below
+  // Bootstrap _meta so we can read the stored schema version below
   // (runVersionedMigrations also ensures this, but we need it earlier here).
   adapter.exec(buildCreateTableSql("_meta", TABLES._meta));
 
-  // Detect a pending schema change via the central SCHEMA_VERSION const.
-  // A lightweight backup is taken BEFORE any schema mutation below.
-  const storedSchemaVer = parseInt(getMetaSync(adapter, "backupSchemaVersion", "0"), 10) || 0;
-  const schemaChanging = !fresh && storedSchemaVer < SCHEMA_VERSION;
-  if (schemaChanging) {
+  // Back up an existing DB before ANY pending migration touches it.
+  const from = storedSchemaVersion(adapter);
+  const to = latestVersion();
+  if (from < to && hasUserTables(adapter)) {
     try {
-      const backupDir = makeBackupDir(`schema-${storedSchemaVer}-to-${SCHEMA_VERSION}`);
+      const backupDir = makeBackupDir(`schema-${from}-to-${to}`);
       backupDbLite(adapter, backupDir);
       pruneOldBackups();
-      console.log(
-        `[DB][migrate] pre-schema backup ${storedSchemaVer} → ${SCHEMA_VERSION}: ${backupDir}`,
-      );
+      console.log(`[DB][migrate] pre-migration backup ${from} → ${to}: ${backupDir}`);
     } catch (e) {
-      console.warn(`[DB][migrate] pre-schema backup failed (continuing): ${e.message}`);
+      console.warn(`[DB][migrate] pre-migration backup failed (continuing): ${e.message}`);
     }
   }
 
   // 1. Always run versioned migrations chain (skip-version safe)
-  const migInfo = runVersionedMigrations(adapter);
+  runVersionedMigrations(adapter);
 
   // 2. Additive sync (auto add missing columns/indexes declared in TABLES)
   syncSchemaFromTables(adapter);
-
-  // Stamp the schema version we just reached so future boots skip re-backup.
-  setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);
 
   // 3. One-time legacy JSON import. Gated on "never imported + entity tables
   // empty" rather than "fresh on entry": schemaVersion is stamped above, outside
@@ -447,7 +467,6 @@ export async function runMigrationOnce(adapter) {
         importLegacyDisabled(adapter, legacyDisabled);
         importLegacyDetails(adapter, legacyDetails);
         setMetaSync(adapter, "appVersion", getAppVersion());
-        setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);
         setMetaSync(adapter, "migratedAt", new Date().toISOString());
       });
     } catch (err) {
@@ -471,7 +490,7 @@ export async function runMigrationOnce(adapter) {
   }
 
   // Track app version for informational purposes only. App version bumps no
-  // longer trigger a DB backup — only real schema changes (SCHEMA_VERSION) do.
+  // longer trigger a DB backup — only pending migrations do.
   const newVer = getAppVersion();
   const oldVer = getMetaSync(adapter, "appVersion", null);
   if (oldVer !== newVer) setMetaSync(adapter, "appVersion", newVer);

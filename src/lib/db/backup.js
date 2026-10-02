@@ -41,9 +41,15 @@ export function backupDbLite(adapter, destDir, destName = "data.sqlite") {
   try {
     fs.rmSync(dest, { force: true });
   } catch {}
+  if (adapter.snapshot) {
+    fs.writeFileSync(dest, adapter.snapshot(BACKUP_EXCLUDE_TABLES));
+    return dest;
+  }
   const escaped = dest.replace(/'/g, "''");
 
   adapter.exec(`ATTACH DATABASE '${escaped}' AS bak`);
+  // Copy order isn't FK order; the backup only needs the rows.
+  adapter.exec("PRAGMA foreign_keys = OFF");
   try {
     const excluded = new Set(BACKUP_EXCLUDE_TABLES);
     const tables = adapter
@@ -61,6 +67,7 @@ export function backupDbLite(adapter, destDir, destName = "data.sqlite") {
       }
     });
   } finally {
+    adapter.exec("PRAGMA foreign_keys = ON");
     try {
       adapter.exec("DETACH DATABASE bak");
     } catch {}
