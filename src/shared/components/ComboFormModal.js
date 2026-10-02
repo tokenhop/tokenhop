@@ -124,6 +124,8 @@ export default function ComboFormModal({
   const [name, setName] = useState(initialName);
   // Each row keeps a stable id so React never hands one row's edit state to
   // another after a remove or reorder (index keys did, with duplicate models).
+  // ComboEditor derives ids with assignStepIds; this modal owns its list, so a
+  // counter is enough.
   const nextRowId = useRef(0);
   const toRow = (model) => ({ id: nextRowId.current++, model });
   const [rows, setRows] = useState(() => (combo?.models || []).map(toRow));
@@ -166,9 +168,11 @@ export default function ComboFormModal({
   };
 
   const handleAddModel = (model) => {
+    setEditNotice("");
     if (!models.includes(model.value)) setRows([...rows, toRow(model.value)]);
   };
   const handleDeselectModel = (model) => {
+    setEditNotice("");
     setRows(rows.filter((r) => r.model !== model.value));
   };
   const handleEditModel = (i, value) => {
@@ -179,7 +183,10 @@ export default function ComboFormModal({
     setEditNotice("");
     setRows(rows.map((r, idx) => (idx === i ? { ...r, model: value } : r)));
   };
-  const handleRemoveModel = (i) => setRows(rows.filter((_, idx) => idx !== i));
+  const handleRemoveModel = (i) => {
+    setEditNotice("");
+    setRows(rows.filter((_, idx) => idx !== i));
+  };
   const handleMoveUp = (i) => {
     if (i === 0) return;
     const a = [...rows];
