@@ -65,6 +65,19 @@ describe("developer and system instructions", () => {
     expect(out.contents).toEqual([{ role: "user", parts: [{ text: "hi" }] }]);
   });
 
+  it("OpenAI → Responses joins every system and developer instruction", () => {
+    const out = translate(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, {
+      messages: [
+        { role: "system", content: "A" },
+        { role: "developer", content: "B" },
+        { role: "user", content: "hi" },
+      ],
+    });
+
+    expect(out.instructions).toBe("A\nB");
+    expect(out.input.map((item) => item.role)).toEqual(["user"]);
+  });
+
   it("OpenAI → Kiro wraps developer exactly like system", () => {
     const out = translate(FORMATS.OPENAI, FORMATS.KIRO, {
       messages: [
