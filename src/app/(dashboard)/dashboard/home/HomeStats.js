@@ -7,7 +7,7 @@ import CountUp from "@/shared/components/CountUp";
 import QuietPeriod from "@/shared/components/QuietPeriod";
 import StatTile from "@/shared/components/StatTile";
 import { periodDelta } from "@/shared/utils/commandCenter";
-import { SUMMARY_PERIODS } from "@/shared/utils/period";
+import { PERIOD_VALUES } from "@/shared/utils/period";
 import { cachedShare, formatCompact, formatInt, formatMoney } from "./format";
 import { WidgetError, WidgetSkeleton } from "./WidgetStates";
 
@@ -61,7 +61,7 @@ export function deltaLine(current, previous) {
 
 /**
  * Four StatTiles: requests (+delta +sparkline), tokens in/out (cached %),
- * est. cost, saved-by-token-saver lime hero. Driven by Today/7d/30d.
+ * est. cost, saved-by-token-saver lime hero. Driven by the shared period control.
  * A quiet period collapses to one compact QuietPeriod row that names the
  * real last-request time and can jump to the smallest period with data.
  *
@@ -74,7 +74,7 @@ export function deltaLine(current, previous) {
  * @param {boolean} props.loading
  * @param {string|null} props.error
  * @param {() => void} props.onRetry
- * @param {"today"|"7d"|"30d"|null} props.period selected period for the quiet state
+ * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} props.period selected period for the quiet state
  * @param {string|null|undefined} props.lastRequestAt ISO time of the last request (undefined until loaded)
  * @param {boolean} [props.lastActivityLoading] true while last-activity loads
  * @param {string|null} [props.lastActivityError] last-activity fetch error
@@ -121,7 +121,6 @@ export default function HomeStats({
           loading={lastActivityLoading}
           error={lastActivityError}
           onRetry={onRetryLastActivity}
-          allowed={SUMMARY_PERIODS}
           onSelectPeriod={onSelectPeriod}
           headingAs="h2"
         />
@@ -222,7 +221,7 @@ HomeStats.propTypes = {
   loading: PropTypes.bool,
   error: PropTypes.string,
   onRetry: PropTypes.func.isRequired,
-  period: PropTypes.oneOf(SUMMARY_PERIODS),
+  period: PropTypes.oneOf(PERIOD_VALUES),
   lastRequestAt: PropTypes.string,
   lastActivityLoading: PropTypes.bool,
   lastActivityError: PropTypes.string,

@@ -12,7 +12,7 @@ import { periodDelta } from "@/shared/utils/commandCenter.js";
  * @param {Array<object>} [options.history] rows from getUsageHistory.
  * @param {Array<object>} [options.combos] rows from getCombos.
  * @param {object} [options.comboStrategies] settings.comboStrategies map.
- * @param {string} [options.period="7d"] "today" | "7d" | "30d".
+ * @param {string} [options.period="7d"] "today" | "24h" | "7d" | "30d" | "60d".
  * @param {number} [options.now] epoch ms.
  * @returns {{ period: string, currentRequests: number, previousRequests: number,
  *   requestsDelta: { delta: number, pct: number|null }, savings: object, topCombos: Array<object> }}

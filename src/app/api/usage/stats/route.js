@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUsageStats, getUsageTotals } from "@/lib/usageDb";
-import { PERIOD_VALUES, periodStart, previousPeriodRange } from "@/shared/utils/period";
-
-const VALID_PERIODS = new Set([...PERIOD_VALUES, "all"]);
+import { isPeriod, periodStart, previousPeriodRange } from "@/shared/utils/period";
 
 export const dynamic = "force-dynamic";
 
@@ -12,13 +10,13 @@ export async function GET(request) {
     const period = searchParams.get("period") || "7d";
     const compare = searchParams.get("compare");
 
-    if (!VALID_PERIODS.has(period)) {
+    if (period !== "all" && !isPeriod(period)) {
       return NextResponse.json({ error: "Invalid period" }, { status: 400 });
     }
     // Optional compare=previous adds `currentTotals` + `previous` computed
     // from the same usageHistory windows, so both sides of a delta match.
     // "all" has no previous window, so comparison stays off there.
-    if (compare !== null && (compare !== "previous" || !PERIOD_VALUES.includes(period))) {
+    if (compare !== null && (compare !== "previous" || !isPeriod(period))) {
       return NextResponse.json({ error: "Invalid compare" }, { status: 400 });
     }
 

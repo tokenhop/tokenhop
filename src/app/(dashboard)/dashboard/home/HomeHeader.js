@@ -4,7 +4,7 @@ import PropTypes from "prop-types";
 import PageTitle from "@/shared/components/PageTitle";
 import PeriodControl from "@/shared/components/PeriodControl";
 import { deriveCommandCenterStatus } from "@/shared/utils/commandCenter";
-import { SUMMARY_PERIODS } from "@/shared/utils/period";
+import { PERIOD_VALUES } from "@/shared/utils/period";
 import { summarizeProviders } from "@/shared/utils/providerHealth";
 
 /**
@@ -15,7 +15,7 @@ import { summarizeProviders } from "@/shared/utils/providerHealth";
  * @param {object} props
  * @param {Array<object>} props.connections provider connections for the status line
  * @param {boolean} props.providersLoading true while connections load ("…" line)
- * @param {"today"|"7d"|"30d"|null} props.period null while the period is unresolved
+ * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} props.period null while the period is unresolved
  * @param {Array<{value: string, label: string}>} props.options period choices from usePeriod
  * @param {(period: string) => void} props.onPeriodChange
  */
@@ -59,7 +59,7 @@ export default function HomeHeader({
 HomeHeader.propTypes = {
   connections: PropTypes.arrayOf(PropTypes.object),
   providersLoading: PropTypes.bool,
-  period: PropTypes.oneOf(SUMMARY_PERIODS),
+  period: PropTypes.oneOf(PERIOD_VALUES),
   options: PropTypes.arrayOf(PropTypes.shape({ value: PropTypes.string, label: PropTypes.string })),
   onPeriodChange: PropTypes.func.isRequired,
 };

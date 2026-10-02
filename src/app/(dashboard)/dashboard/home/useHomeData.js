@@ -7,9 +7,9 @@ import { useHomeResource } from "./useHomeResource";
 const periodUrl = (path, period) => (period ? `${path}?period=${period}` : null);
 
 /**
- * Usage stats for a Home period (today/7d/30d). A null period (URL and
+ * Usage stats for a Home period (today/24h/7d/30d/60d). A null period (URL and
  * storage not resolved yet) keeps the tiles on skeletons without fetching.
- * @param {"today"|"7d"|"30d"|null} period
+ * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ current: object|null, currentPeriod: string|null, loading: boolean, error: string|null }}
  *   `currentPeriod` is the period `current` was fetched for (it lags a switch until the refetch lands).
@@ -28,7 +28,7 @@ export function useHomeUsage(period, refreshKey = 0) {
 
 /**
  * Chart buckets for the cost and requests sparklines.
- * @param {"today"|"7d"|"30d"|null} period
+ * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ buckets: Array<{ tokens: number, cost: number, requests?: number }>|null, loading: boolean, error: string|null }}
  */
@@ -44,7 +44,7 @@ export function useHomeChart(period, refreshKey = 0) {
  * Token-saver savings for a period. Only recorded aggregation is shown:
  * an endpoint failure or malformed payload surfaces `savingsUnavailable`
  * so the tile can say "Savings data unavailable" instead of inventing numbers.
- * @param {"today"|"7d"|"30d"|null} period
+ * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ savings: object|null, loading: boolean, error: null, savingsUnavailable: boolean }}
  */
@@ -66,7 +66,7 @@ export function useHomeSavings(period, refreshKey = 0) {
  * Previous-period request count + top-combo counts for a Home period.
  * Failures degrade gracefully: delta text and combo counts fall back to
  * "unavailable", derived from /api/usage/stats instead of erroring.
- * @param {"today"|"7d"|"30d"|null} period
+ * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ summary: object|null, loading: boolean, error: null }}
  */

@@ -1,39 +1,14 @@
-export const VALID_PERIODS = ["today", "7d", "30d"];
-
-const PERIOD_DURATIONS = {
-  "7d": 7 * 24 * 60 * 60 * 1000,
-  "30d": 30 * 24 * 60 * 60 * 1000,
-};
+import { isPeriod, periodStart, previousPeriodRange } from "@/shared/utils/period";
 
 /**
  * Return [startMs, endMs] for a period, plus previous period range for delta math.
  */
 export function resolvePeriodRange(period, now = Date.now()) {
-  if (!VALID_PERIODS.includes(period)) {
-    throw new Error(`Invalid period: ${period}. Expected one of: ${VALID_PERIODS.join(", ")}`);
+  if (!isPeriod(period)) {
+    throw new Error(`Invalid period: ${period}`);
   }
-
-  const endMs = now;
-  let startMs;
-  let prevStartMs;
-  let prevEndMs;
-
-  if (period === "today") {
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-    startMs = startOfToday.getTime();
-    const elapsedToday = endMs - startMs;
-    prevStartMs = startMs - 24 * 60 * 60 * 1000;
-    // Compare against identical time slice of yesterday
-    prevEndMs = prevStartMs + elapsedToday;
-  } else {
-    const duration = PERIOD_DURATIONS[period];
-    startMs = endMs - duration;
-    prevEndMs = startMs;
-    prevStartMs = startMs - duration;
-  }
-
-  return { startMs, endMs, prevStartMs, prevEndMs };
+  const { start, end } = previousPeriodRange(period, now);
+  return { startMs: periodStart(period, now), endMs: now, prevStartMs: start, prevEndMs: end };
 }
 
 /**

@@ -18,12 +18,6 @@ export const PERIODS = [
 /** Every valid period value, in ascending range order. */
 export const PERIOD_VALUES = PERIODS.map((p) => p.value);
 
-/**
- * Periods whose APIs the Home and Token saver summaries accept. Must match
- * `SAVINGS_PERIODS` in src/lib/db/repos/usageRepo.js (YAN-428 unifies them).
- */
-export const SUMMARY_PERIODS = ["today", "7d", "30d"];
-
 /** Safe-storage key for the remembered period. */
 export const PERIOD_STORAGE_KEY = "signal.period";
 
@@ -43,7 +37,7 @@ export function isPeriod(value) {
  * Map `value` onto `allowed`.
  *
  * A known value outside the subset upgrades to the first allowed period at or
- * above its rank (24h→7d, 60d→30d on summary pages). An unknown value falls
+ * above its rank (24h→7d, 60d→30d for a today/7d/30d list). An unknown value falls
  * back to the default (or the first allowed period when even the default is
  * not allowed).
  * @param {unknown} value
@@ -85,14 +79,17 @@ export function periodOptions(allowed) {
   return PERIODS.filter((p) => allowed.includes(p.value));
 }
 
-const DAY_COUNTS = { "7d": 7, "30d": 30, "60d": 60 };
+/** Calendar-day length of each multi-day period. */
+export const PERIOD_DAYS = { "7d": 7, "30d": 30, "60d": 60 };
 
 /**
- * Inclusive start (ms) of `period`.
+ * Inclusive start (ms) of `period` — the single window definition for every
+ * usage endpoint (server and client).
  *
- * `today` is local midnight; `24h` is a rolling now−24h window; `7d/30d/60d`
- * are calendar windows starting at local midnight of (today − (N−1)) so every
- * bucket start is at or before the corresponding API window start.
+ * `today` is local midnight (server's local time on the server); `24h` is a
+ * rolling now−24h window; `7d/30d/60d` are calendar windows starting at local
+ * midnight of (today − (N−1)) so every bucket start is at or before the
+ * corresponding API window start.
  * @param {string} period
  * @param {number} [now]
  * @returns {number}
@@ -109,7 +106,7 @@ export function periodStart(period, now = Date.now()) {
     case "30d":
     case "60d":
       // Calendar days (setDate), not 24h multiples, so DST shifts keep local midnight.
-      midnight.setDate(midnight.getDate() - (DAY_COUNTS[period] - 1));
+      midnight.setDate(midnight.getDate() - (PERIOD_DAYS[period] - 1));
       return midnight.getTime();
     default:
       throw new Error(`Unknown period: ${period}`);

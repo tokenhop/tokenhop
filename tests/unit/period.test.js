@@ -12,12 +12,12 @@ import {
   resolvePeriod,
   saveStoredPeriod,
   smallestPeriodWithData,
-  SUMMARY_PERIODS,
 } from "@/shared/utils/period.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const PERIOD_MODULE = fileURLToPath(new URL("../../src/shared/utils/period.js", import.meta.url));
 const now = new Date(2026, 8, 29, 12).getTime();
+const SUBSET = ["today", "7d", "30d"];
 
 describe("period selection", () => {
   it("recognizes only known period values", () => {
@@ -29,21 +29,15 @@ describe("period selection", () => {
 
   it("coerces to the next allowed rank or the largest allowed period", () => {
     expect(coercePeriod("24h")).toBe("24h");
-    expect(coercePeriod("24h", SUMMARY_PERIODS)).toBe("7d");
-    expect(coercePeriod("60d", SUMMARY_PERIODS)).toBe("30d");
-    expect(coercePeriod("bad", SUMMARY_PERIODS)).toBe("today");
+    expect(coercePeriod("24h", SUBSET)).toBe("7d");
+    expect(coercePeriod("60d", SUBSET)).toBe("30d");
+    expect(coercePeriod("bad", SUBSET)).toBe("today");
   });
 
   it("prefers valid URL, then valid stored period, then default", () => {
-    expect(resolvePeriod({ urlValue: "24h", storedValue: "30d", allowed: SUMMARY_PERIODS })).toBe(
-      "7d",
-    );
-    expect(resolvePeriod({ urlValue: "bad", storedValue: "30d", allowed: SUMMARY_PERIODS })).toBe(
-      "30d",
-    );
-    expect(resolvePeriod({ urlValue: null, storedValue: "bad", allowed: SUMMARY_PERIODS })).toBe(
-      "today",
-    );
+    expect(resolvePeriod({ urlValue: "24h", storedValue: "30d", allowed: SUBSET })).toBe("7d");
+    expect(resolvePeriod({ urlValue: "bad", storedValue: "30d", allowed: SUBSET })).toBe("30d");
+    expect(resolvePeriod({ urlValue: null, storedValue: "bad", allowed: SUBSET })).toBe("today");
   });
 
   it("returns options in canonical order regardless of allowed order", () => {
@@ -91,7 +85,7 @@ describe("period boundaries", () => {
     for (const [lastAt, expected] of cases) {
       expect(smallestPeriodWithData(lastAt, undefined, now)).toBe(expected);
     }
-    expect(smallestPeriodWithData(new Date(2026, 8, 28, 23), SUMMARY_PERIODS, now)).toBe("7d");
+    expect(smallestPeriodWithData(new Date(2026, 8, 28, 23), SUBSET, now)).toBe("7d");
     expect(
       smallestPeriodWithData(
         new Date(2026, 8, 28, 22),

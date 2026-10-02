@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { getUsageSavings } from "@/lib/db/index.js";
+import { isPeriod } from "@/shared/utils/period";
 
-const VALID_PERIODS = new Set(["today", "7d", "30d"]);
 export const dynamic = "force-dynamic";
 
 // /api/usage/* is protected by src/dashboardGuard.js (proxy middleware).
 export async function GET(request) {
   const period = new URL(request.url).searchParams.get("period") || "7d";
-  if (!VALID_PERIODS.has(period)) {
+  if (!isPeriod(period)) {
     return NextResponse.json({ error: "Invalid period" }, { status: 400 });
   }
   try {

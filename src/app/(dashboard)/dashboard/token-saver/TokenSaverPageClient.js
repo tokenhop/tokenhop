@@ -12,7 +12,6 @@ import {
   Toggle,
 } from "@/shared/components";
 import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
-import { SUMMARY_PERIODS } from "@/shared/utils/period";
 import usePeriod from "@/shared/hooks/usePeriod";
 import { WENYAN_LOCALES, CAVEMAN_LEVELS, PONYTAIL_LEVELS } from "../endpoint/endpointConstants";
 import { TokenSaverHeader, SavingsHero, MethodFooter } from "./SavingsHero";
@@ -42,7 +41,7 @@ const RTK_CHIPS = ["git log", "git diff", "grep / rg", "ls / tree", "test output
  * same store the Settings page uses.
  */
 export default function TokenSaverPageClient() {
-  const { period, setPeriod } = usePeriod(SUMMARY_PERIODS);
+  const { period, setPeriod } = usePeriod();
   const [refreshKey, setRefreshKey] = useState(0);
   const bump = useCallback(() => setRefreshKey((value) => value + 1), []);
 
