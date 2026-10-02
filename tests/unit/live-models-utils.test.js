@@ -14,6 +14,10 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "clinepass",
       "codex",
       "cursor",
+      "github",
+      "grok-cli",
+      "kimchi",
+      "kiro",
       "qoder",
       "zed",
     ]);

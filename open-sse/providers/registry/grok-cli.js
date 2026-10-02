@@ -81,6 +81,7 @@ export default {
   ],
   features: {
     usage: true,
+    liveModels: true,
   },
   oauth: {
     // Same public client_id as Grok CLI / existing xai OAuth
