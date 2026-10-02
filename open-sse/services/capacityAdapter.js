@@ -44,11 +44,14 @@ export function getCapacityAdapterConfig(cap, settings) {
   return entry;
 }
 
-// Flatten enabled models across all capability pools, in priority order, deduped.
-export function getCapacityAdapterModels(settings) {
+// Flatten enabled models across capability pools, in priority order, deduped.
+// With `caps`, only those capabilities' pools count: an enabled Audio pool must
+// never feed an image request (YAN-692).
+export function getCapacityAdapterModels(settings, caps = CAPABILITY_KEYS) {
   const seen = new Set();
   const models = [];
   for (const cap of CAPABILITY_KEYS) {
+    if (!caps.includes(cap)) continue;
     const { enabled, models: pool } = getCapacityAdapterConfig(cap, settings);
     if (!enabled) continue;
     for (const m of pool) {
@@ -98,7 +101,7 @@ export function augmentModelsWithCapacityAdapter(models, requiredCapabilities, s
   if (hard.length === 0 || !Array.isArray(models) || models.length === 0) return models;
   if (models.some((m) => modelSatisfies(m, hard))) return models;
 
-  const pool = getCapacityAdapterModels(settings).filter(
+  const pool = getCapacityAdapterModels(settings, hard).filter(
     (m) => !models.includes(m) && modelSatisfies(m, hard),
   );
   if (pool.length === 0) return models;
