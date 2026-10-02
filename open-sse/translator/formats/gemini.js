@@ -3,78 +3,28 @@
 import { safeParseJSON } from "../concerns/json.js";
 import { OPENAI_BLOCK } from "../schema/index.js";
 
-// Unsupported JSON Schema constraints that should be removed for Antigravity
-export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
-  // Basic constraints (not supported by Gemini API)
-  "minLength",
-  "maxLength",
-  "exclusiveMinimum",
-  "exclusiveMaximum",
-  "minItems",
-  "maxItems",
-  "format",
-  "multipleOf",
-  // Array keywords the Gemini schema proto has no field for. Agent tool
-  // schemas set these routinely, and one occurrence rejects the whole request
-  // with "Unknown name ...: Cannot find field".
-  "uniqueItems",
-  "contains",
-  // 2020-12 keywords with no Gemini equivalent
-  "unevaluatedProperties",
-  "unevaluatedItems",
-  "contentSchema",
-  // Tuple-array keywords; converted to items first, leftovers stripped
-  "prefixItems",
-  "additionalItems",
-  // Claude rejects these in VALIDATED mode
-  "default",
-  "examples",
-  // JSON Schema meta keywords
-  "$schema",
-  "$defs",
-  "definitions",
-  "const",
-  "$ref",
-  "$comment",
-  // Annotation keywords (rejected by Gemini/Antigravity - e.g. MCP tool schemas set these)
-  "deprecated",
-  "readOnly",
-  "writeOnly",
-  // Object validation keywords (not supported)
-  "additionalProperties",
-  "propertyNames",
-  "patternProperties",
-  "enumDescriptions",
-  // Complex schema keywords (handled by flattenAnyOfOneOf/mergeAllOf)
-  "anyOf",
-  "oneOf",
-  "allOf",
-  "not",
-  // Dependency keywords (not supported)
-  "dependencies",
-  "dependentSchemas",
-  "dependentRequired",
-  // Other unsupported keywords
-  "title",
-  "optional",
-  "deprecated",
-  "if",
-  "then",
-  "else",
-  "contentMediaType",
-  "contentEncoding",
-  // UI/Styling properties (from Cursor tools - NOT JSON Schema standard)
-  "cornerRadius",
-  "fillColor",
-  "fontFamily",
-  "fontSize",
-  "fontWeight",
-  "gap",
-  "padding",
-  "strokeColor",
-  "strokeThickness",
-  "textColor",
-];
+// Keys Gemini's Schema proto accepts on a schema node; anything else is rejected with
+// "Unknown name ...: Cannot find field". Allowlist, so new/unknown keywords can't leak.
+// Aligned with the keys this cleaner can emit: anyOf is flattened away before Phase 3
+// and example is currently stripped like examples, so neither is listed here.
+// title, format, minLength/maxLength/minItems/maxItems and default stay out: the previous denylist
+// stripped them on purpose (Gemini rejects some; Claude-on-Antigravity rejects default
+// in VALIDATED mode), and this fix must not start sending them.
+const SUPPORTED_SCHEMA_KEYS = new Set([
+  "type",
+  "description",
+  "nullable",
+  "enum",
+  "items",
+  "properties",
+  "required",
+  "minProperties",
+  "maxProperties",
+  "minimum",
+  "maximum",
+  "pattern",
+  "propertyOrdering",
+]);
 
 // Default safety settings
 export const DEFAULT_SAFETY_SETTINGS = [
@@ -208,19 +158,20 @@ function forEachSubschema(obj, fn) {
   }
 }
 
-// Helper: Remove unsupported keywords recursively from object/array
-// Also strips all vendor extension fields (x- prefixed) not supported by Gemini
-function removeUnsupportedKeywords(obj, keywords) {
-  if (!obj || typeof obj !== "object") return;
+// Keep only SUPPORTED_SCHEMA_KEYS on every schema node (also drops x-* extensions).
+// Walks only the schema-bearing keys (properties values, items) so property names,
+// enum values and example payloads are never treated as keywords.
+function keepSupportedKeywords(node) {
+  if (!node || typeof node !== "object" || Array.isArray(node)) return;
 
-  // Drop real keywords first; property names are only reached via forEachSubschema
-  if (!Array.isArray(obj)) {
-    for (const key of Object.keys(obj)) {
-      if (keywords.includes(key) || key.startsWith("x-")) delete obj[key];
-    }
+  for (const key of Object.keys(node)) {
+    if (!SUPPORTED_SCHEMA_KEYS.has(key)) delete node[key];
   }
 
-  forEachSubschema(obj, (sub) => removeUnsupportedKeywords(sub, keywords));
+  if (node.properties && typeof node.properties === "object") {
+    for (const sub of Object.values(node.properties)) keepSupportedKeywords(sub);
+  }
+  for (const sub of [node.items].flat()) keepSupportedKeywords(sub);
 }
 
 // Convert const to enum
@@ -401,8 +352,8 @@ export function cleanJSONSchemaForAntigravity(schema) {
   ensureObjectType(cleaned);
   ensureArrayItems(cleaned);
 
-  // Phase 3: Remove all unsupported keywords at ALL levels (including inside arrays)
-  removeUnsupportedKeywords(cleaned, UNSUPPORTED_SCHEMA_CONSTRAINTS);
+  // Phase 3: Keep only keywords Gemini's Schema supports, at every level
+  keepSupportedKeywords(cleaned);
 
   // Phase 4: Cleanup required fields recursively
   function cleanupRequired(obj) {

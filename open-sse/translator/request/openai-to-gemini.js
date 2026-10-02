@@ -79,29 +79,18 @@ function openaiToGeminiBase(
     result.generationConfig.stopSequences = stopSequences;
   }
 
-  // Build tool_call_id -> name map
-  const tcID2Name = {};
-  if (body.messages && Array.isArray(body.messages)) {
-    for (const msg of body.messages) {
-      if (msg.role === ROLE.ASSISTANT && msg.tool_calls) {
-        for (const tc of msg.tool_calls) {
-          if (tc.type === OPENAI_BLOCK.FUNCTION && tc.id && tc.function?.name) {
-            tcID2Name[tc.id] = tc.function.name;
-          }
-        }
-      }
-    }
-  }
-
-  // Build tool responses cache
-  const toolResponses = {};
-  if (body.messages && Array.isArray(body.messages)) {
-    for (const msg of body.messages) {
-      if (msg.role === ROLE.TOOL && msg.tool_call_id) {
-        toolResponses[msg.tool_call_id] = msg.content;
-      }
-    }
-  }
+  // Tool-call ids can repeat across turns (some clients/upstreams reuse them),
+  // but Gemini pairs functionCall/functionResponse by id. Make every occurrence
+  // unique by suffixing repeats (call_1 -> call_1__2) on both call and response.
+  // The conversion loop consumes uniqueCallId once per occurrence in message
+  // order, so a per-occurrence counter assigns the same suffixes deterministically.
+  const idUseCount = new Map();
+  const uniqueCallId = (id) => {
+    if (!id) return id;
+    const count = (idUseCount.get(id) || 0) + 1;
+    idUseCount.set(id, count);
+    return count === 1 ? id : `${id}__${count}`;
+  };
 
   // Convert messages
   if (body.messages && Array.isArray(body.messages)) {
@@ -153,7 +142,7 @@ function openaiToGeminiBase(
         }
 
         if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
-          const toolCallIds = [];
+          const calls = [];
           let firstFunctionCallSeen = false;
           for (const tc of msg.tool_calls) {
             if (tc.type !== OPENAI_BLOCK.FUNCTION) continue;
@@ -164,10 +153,14 @@ function openaiToGeminiBase(
             const callSig = cachedSig || (!firstFunctionCallSeen ? signature : undefined);
             firstFunctionCallSeen = true;
 
+            // Repeated ids (reused across turns) are made unique so every
+            // functionCall/functionResponse pair matches by id
+            const callId = uniqueCallId(tc.id);
+            const name = tc.function?.name || "";
             const part = {
               functionCall: {
-                id: tc.id,
-                name: sanitizeGeminiFunctionName(tc.function.name),
+                id: callId,
+                name: sanitizeGeminiFunctionName(name),
                 args: args,
               },
             };
@@ -175,30 +168,42 @@ function openaiToGeminiBase(
               part.thoughtSignature = callSig;
             }
             parts.push(part);
-            toolCallIds.push(tc.id);
+            calls.push({ id: callId, origId: tc.id, name });
           }
 
           if (parts.length > 0) {
             result.contents.push({ role: GEMINI_ROLE.MODEL, parts });
           }
 
+          // Pair this turn with the tool messages that follow it, up to the next
+          // assistant turn — ids can repeat across turns, so never match against
+          // the whole conversation.
+          const responses = new Map();
+          for (let j = i + 1; j < body.messages.length; j++) {
+            const tm = body.messages[j];
+            if (tm.role === ROLE.ASSISTANT) break;
+            if (tm.role === ROLE.TOOL) {
+              responses.set(tm.tool_call_id, tm.content);
+            }
+          }
+
           // Check if there are actual tool responses in the next messages
           const isIntermediate = i < body.messages.length - 1;
-          const hasActualResponses = toolCallIds.some((fid) => toolResponses[fid] !== undefined);
+          const hasActualResponses = calls.some((c) => responses.has(c.origId));
 
           if (hasActualResponses || isIntermediate) {
             const toolParts = [];
-            for (const fid of toolCallIds) {
-              let resp = toolResponses[fid];
+            for (const call of calls) {
+              let resp = responses.get(call.origId);
               if (resp === undefined) resp = "";
 
-              let name = tcID2Name[fid];
+              let name = call.name;
               if (!name) {
-                const idParts = fid.split("-");
+                const idParts = call.origId.split("-");
                 if (idParts.length > 2) {
                   name = idParts.slice(0, -2).join("-");
                 } else {
-                  name = fid;
+                  name = call.origId;
                 }
               }
 
@@ -211,7 +216,7 @@ function openaiToGeminiBase(
 
               toolParts.push({
                 functionResponse: {
-                  id: fid,
+                  id: call.id,
                   name: sanitizeGeminiFunctionName(name),
                   response: { result: parsedResp },
                 },
@@ -401,14 +406,31 @@ function wrapInCloudCodeEnvelopeForClaude(
     },
   };
 
-  // Build tool_use id -> name map so functionResponse can use the correct name
-  const toolUseIdToName = {};
+  // Claude tool_use ids can repeat across turns (some clients/upstreams reuse
+  // them), but Gemini pairs functionCall/functionResponse by id. Pair each
+  // tool_result with the nearest preceding tool_use of the same id and make
+  // repeated ids unique (toolu_1 -> toolu_1__2) on both sides.
+  const callIdFor = new WeakMap(); // tool_use/tool_result block -> unique id
+  const nameFor = new WeakMap(); // tool_result block -> tool name
+  const idUseCount = new Map(); // tool_use id -> occurrence count
   if (claudeRequest.messages && Array.isArray(claudeRequest.messages)) {
+    const openCalls = [];
     for (const msg of claudeRequest.messages) {
-      if (Array.isArray(msg.content)) {
-        for (const block of msg.content) {
-          if (block.type === CLAUDE_BLOCK.TOOL_USE && block.id && block.name) {
-            toolUseIdToName[block.id] = block.name;
+      if (!Array.isArray(msg.content)) continue;
+      for (const block of msg.content) {
+        if (!block || typeof block !== "object") continue;
+        if (block.type === CLAUDE_BLOCK.TOOL_USE && block.id) {
+          const count = (idUseCount.get(block.id) || 0) + 1;
+          idUseCount.set(block.id, count);
+          if (count > 1) callIdFor.set(block, `${block.id}__${count}`);
+          openCalls.push(block);
+        } else if (block.type === CLAUDE_BLOCK.TOOL_RESULT && block.tool_use_id) {
+          for (let k = openCalls.length - 1; k >= 0; k--) {
+            if (openCalls[k].id === block.tool_use_id) {
+              nameFor.set(block, openCalls[k].name);
+              if (callIdFor.has(openCalls[k])) callIdFor.set(block, callIdFor.get(openCalls[k]));
+              break;
+            }
           }
         }
       }
@@ -439,7 +461,7 @@ function wrapInCloudCodeEnvelopeForClaude(
 
             const part = {
               functionCall: {
-                id: block.id,
+                id: callIdFor.get(block) || block.id,
                 name: sanitizeGeminiFunctionName(block.name),
                 args: block.input || {},
               },
@@ -466,14 +488,14 @@ function wrapInCloudCodeEnvelopeForClaude(
               }
               content = text.join("\n");
             }
-            // Resolve the original tool name from the id — Gemini requires it to match the functionCall name
-            const resolvedName = toolUseIdToName[block.tool_use_id]
-              ? sanitizeGeminiFunctionName(toolUseIdToName[block.tool_use_id])
-              : "tool";
+            // Resolve the name/id from the paired tool_use — Gemini requires
+            // the functionResponse to match its functionCall (ids may have been
+            // made unique when repeated across turns)
+            const pairedName = nameFor.get(block);
             parts.push({
               functionResponse: {
-                id: block.tool_use_id,
-                name: resolvedName,
+                id: callIdFor.get(block) || block.tool_use_id,
+                name: pairedName ? sanitizeGeminiFunctionName(pairedName) : "tool",
                 response: { result: tryParseJSON(content) || content },
               },
             });
