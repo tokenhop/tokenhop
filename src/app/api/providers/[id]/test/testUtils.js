@@ -407,12 +407,14 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
   // (DNS, timeout) must surface as a failed test and persist testStatus/
   // lastError like other providers, not bubble to a generic "Test failed" 500.
   if (connection.provider === "gemini-cli" || connection.provider === "antigravity") {
+    // Kept outside the try so a retry that throws still persists a refreshed token.
+    let tokens = null;
     try {
       const initial = await probeCloudCodeAssistAccess(connection, accessToken, effectiveProxy);
       if (initial.valid) return { valid: true, error: null, refreshed, newTokens };
 
       if (initial.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
-        const tokens = await refreshOAuthToken(connection);
+        tokens = await refreshOAuthToken(connection);
         if (tokens?.accessToken) {
           const retry = await probeCloudCodeAssistAccess(
             connection,
@@ -427,6 +429,9 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 
       return { valid: false, error: initial.error, refreshed };
     } catch (err) {
+      if (tokens?.accessToken) {
+        return { valid: false, error: err.message, refreshed: true, newTokens: tokens };
+      }
       return { valid: false, error: err.message, refreshed };
     }
   }
