@@ -44,6 +44,7 @@ export default {
     },
   ],
   serviceKinds: ["llm", "imageToText", "webSearch", "image", "video"],
+  features: { liveModels: true },
   imageConfig: {
     baseUrl: "https://api.x.ai/v1/images/generations",
     bodyFields: ["model", "prompt", "n", "response_format"],

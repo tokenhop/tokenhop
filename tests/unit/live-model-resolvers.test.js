@@ -93,6 +93,7 @@ describe("resolver registry", () => {
       "gemini",
       "gemini-cli",
       "antigravity",
+      "xai",
     ]) {
       expect(hasLiveModelResolver(id)).toBe(true);
     }

@@ -14,6 +14,7 @@ import {
   resolveGemini,
   resolveGeminiCli,
 } from "@/lib/providerModels/googleModels.js";
+import { resolveXai } from "@/lib/providerModels/xaiModels.js";
 import { ANTHROPIC_API_VERSION } from "open-sse/providers/shared.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -252,6 +253,7 @@ export const LIVE_MODEL_RESOLVERS = {
   gemini: resolveGemini,
   "gemini-cli": resolveGeminiCli,
   antigravity: resolveAntigravity,
+  xai: resolveXai,
   codex: resolveCodex,
   zed: resolveZed,
   kiro: resolveKiro,
