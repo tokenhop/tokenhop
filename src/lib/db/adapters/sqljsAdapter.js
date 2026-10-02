@@ -23,8 +23,29 @@ export async function createSqlJsAdapter(filePath) {
   const SAVE_DEBOUNCE_MS = 100;
 
   function persist() {
-    const data = db.export();
-    fs.writeFileSync(filePath, Buffer.from(data));
+    const data = Buffer.from(db.export());
+    // Write a sibling temp file, fsync, then rename over the target so a crash mid-write
+    // never leaves a truncated DB. rename replaces an existing file on POSIX and Windows.
+    const tmpPath = `${filePath}.tmp`;
+    let fd = null;
+    try {
+      fd = fs.openSync(tmpPath, "w");
+      fs.writeSync(fd, data, 0, data.length, 0);
+      fs.fsyncSync(fd);
+      fs.closeSync(fd);
+      fd = null;
+      fs.renameSync(tmpPath, filePath);
+    } catch (e) {
+      if (fd !== null) {
+        try {
+          fs.closeSync(fd);
+        } catch {}
+      }
+      try {
+        fs.rmSync(tmpPath, { force: true });
+      } catch {}
+      throw e;
+    }
     dirty = false;
   }
 
