@@ -238,6 +238,13 @@ describe("applyThinking per provider format", () => {
     const on = apply("openai", "mimo-x-pro-preview", { reasoning_effort: "high" }, "xiaomi-mimo");
     expect(on.thinking).toEqual({ type: "enabled" });
   });
+  it("OpenCode Go GLM gets reasoning_effort, never z.ai's native thinking field (YAN-681)", () => {
+    const out = apply("openai", "glm-5.3-flash", { reasoning_effort: "high" }, "opencode-go");
+    expect(out.thinking).toBeUndefined();
+    expect(out.reasoning_effort).toBe("high");
+    const zai = apply("openai", "glm-5.3-flash", { reasoning_effort: "high" }, "zai");
+    expect(zai.thinking).toEqual({ type: "enabled" });
+  });
   it("Kimi K3 clamps medium to high (K3 accepts low/high/max only); other Kimi models keep medium", () => {
     const k3 = apply("openai", "moonshotai/kimi-k3", { reasoning_effort: "medium" }, "nvidia");
     expect(k3.reasoning_effort).toBe("high");
