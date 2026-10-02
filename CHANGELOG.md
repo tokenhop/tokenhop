@@ -1,3 +1,60 @@
+# v1.0.0 (2026-10-02)
+
+**9router is now tokenhop.** The product, CLI, image, data directory, environment variables and docs carry the new name. Existing installs upgrade by swapping the image or binary: data, API keys, tool configs, SSO, MITM trust and autostart keep working. Read [UPGRADING.md](UPGRADING.md) for what changes and what stays. tokenhop started as a fork of [9Router](https://github.com/decolua/9router) by decolua (MIT). Includes every fix from v0.6.1.
+
+## Breaking changes
+- **Name**: the default brand is `tokenhop` (#577). Builds with `NEXT_PUBLIC_BRAND=9router` still produce the legacy brand until v2.0.0.
+- **CLI**: the npm package and binary are `tokenhop` (`npx tokenhop`, `npm i -g tokenhop`). There is no `9router` alias, because that npm name belongs to upstream (#572, #573). The CLI is published from CI with npm trusted publishing and provenance (#567).
+- **Image**: `ghcr.io/tokenhop/tokenhop`. `ghcr.io/yandy-r/9router` gets no new images. `compose.yml` keeps the `9router-data` volume, so existing data is reused (#470).
+- **Data dir**: `~/.tokenhop` (`%APPDATA%\tokenhop`). An existing `~/.9router` keeps being used until you run `tokenhop data migrate` (#417).
+- **Environment variables**: `TOKENHOP_*`. `NINEROUTER_*` / `NINE_ROUTER_*` keep working, with one deprecation warning each, until v2.0.0 (#416).
+- **Wire identifiers**: new configs use the `sk_tokenhop` default key placeholder and `x-tokenhop-*` headers. The `x-9router-*` headers are still accepted or emitted until v2.0.0. Existing SAML setups keep their `urn:9router:sp` issuer (#421).
+
+## Rebrand compatibility
+- **Tool configs**: Codex, jcode, DeepSeek TUI, Grok Build, Hermes, OpenCode, OpenClaw, Kilo, Droid, Copilot, Cline, Claude, Cowork, Devin and Antigravity configs written by 9router are detected, and the next Apply migrates them to `tokenhop` with their models kept (#449, #460).
+- **MITM**: an existing root CA keeps its key, name and trust; only a fresh CA is issued as `tokenhop MITM Root CA` (#438).
+- **CLI**: autostart entries and a running 9router launcher are migrated and stopped (#427). Upstream-facing client identifiers keep their values (#495).
+- **Skills**: agent skills are `skills/tokenhop*`, read `TOKENHOP_URL` / `TOKENHOP_KEY`, and fall back to the legacy names. Old `skills/9router*` links serve the tokenhop content or a pointer stub (#505, #568).
+- **Verification**: `tests/e2e/upgrade-from-9router.mjs` upgrades real v0.6.1 state (data, keys, SAML, six tool configs, env vars, backup, autostart, MITM CA, `data migrate`, the Docker volume) and checks every promise. 75 checks pass (#576).
+
+## Features
+- **Brand**: tokenhop logo, favicons, PWA and tray icons (#485), the product name across the dashboard, login and landing (#549), and translated brand strings in all 34 locales (#559).
+- **CLI tools**:
+  - Tool card settings persist in the database, for single-model and multi-model cards and the endpoint option (#543, #560, #570).
+  - Apply and the manual snippet come from one config builder per tool, and a Set up manually dialog replaces the inline snippet (#477, #498).
+  - Remote setups show the full intercept steps and allow model mapping, and Cowork and OpenClaw manual setup includes everything Apply writes (#455, #489, #508).
+- **Dashboard**: the version chip shows the dev channel and commit on `:dev` images (#479).
+- **Docs**: README, translated READMEs, Docker and CLI docs, contributor docs and the docs site (5 languages) are rebranded. The docs site's hosted-gateway instructions now describe exposing your own instance (#566, #571). Plus the new upgrade guide (#569).
+
+## Fixes
+- **Translator**:
+  - Max tokens, stop, top_p and `temperature: 0` survive across formats (#541).
+  - Responses ↔ Chat maps `tool_choice`, structured output and files (#540).
+  - Each Responses stream item gets its own `output_index`, and the stream completes with usage (#546).
+  - Tool `strict` carries between Claude and OpenAI (#550).
+  - URL images and PDFs survive Claude→OpenAI and the Antigravity envelope (#501).
+  - Gemini tool params are kept, Claude think tags dropped, and image-only Ollama turns kept (#475).
+- **Executors**: Kiro thinking tags are stripped across events, Grok web reasoning tokens are routed, and grok-cli sends its agent id header (#534, #494).
+- **Token saver**: Claude bodies stay intact under Headroom, and the off header is honoured for PXPIPE (#532).
+- **Combos**: the judge turn is kept and tool items are flattened for Responses fusion input (#530).
+- **Dashboard**:
+  - The OAuth poll re-arms on retry.
+  - The media pin picker lists every connection.
+  - Percentage-only quota rows count as empty.
+  - Combo rows are keyed by id.
+
+  (#533, #510)
+- **Usage**: a Zed `edit_predictions` bucket with no limit is skipped (#557).
+- **DB**: buffered request details flush synchronously on SIGTERM/SIGINT (#537).
+- **CLI**: the server restarts in tray and headless modes, and better-sqlite3 and systray2 stay installed (#486).
+- **API keys**: the duplicate key-name check is atomic (#494).
+- From v0.6.1: CLI tool card state, usage date and account stats, `.env.example` request logs, the MiMo proxy timeout, and Kimi OAuth search (#445, #450, #456, #463).
+
+## Changes
+- **Brand guard**: strict. Any `9router` literal outside the brand module and the documented allowlist fails CI (#574).
+- **CI**: rolling `:dev` / `:develop` images on pushes to `master` that change application code (#472, #474). The translation bot PR auto-merges (#462). The test and build matrix covers the default and legacy brands (#577).
+- **Tests**: setup fails closed when `HOME` is not isolated (#488).
+
 # v0.6.1 (2026-10-01)
 
 Patch fixes on `release/0.6`.
