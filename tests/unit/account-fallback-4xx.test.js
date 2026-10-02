@@ -5,6 +5,7 @@
 // looked like the same failure in unrelated sessions.
 import { describe, expect, it } from "vitest";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
+import { handleComboChat, isModelScopedError } from "../../open-sse/services/combo.js";
 
 describe("checkFallbackError — request-scoped vs account-scoped failures", () => {
   it("does not cool the account down for a 400 caused by the request", () => {
@@ -51,5 +52,44 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
 
     expect(result.shouldFallback).toBe(true);
     expect(result.cooldownMs).toBeGreaterThan(0);
+  });
+});
+
+describe("model-scoped 4xx (YAN-660)", () => {
+  const codexEntitlement =
+    "The 'gpt-x' model is not supported when using Codex with a ChatGPT account.";
+
+  it("locks the model on that account for the Codex ChatGPT-plan entitlement error", () => {
+    const result = checkFallbackError(400, codexEntitlement);
+    expect(result.shouldFallback).toBe(true);
+    expect(result.cooldownMs).toBeGreaterThan(0);
+  });
+
+  it("classifies 404/410 and model-not-supported 400s as model-scoped, not request-scoped", () => {
+    expect(isModelScopedError(410, "Gone")).toBe(true);
+    expect(isModelScopedError(404, "nope")).toBe(true);
+    expect(isModelScopedError(400, codexEntitlement)).toBe(true);
+    expect(isModelScopedError(400, "INVALID_MODEL_ID")).toBe(true);
+    expect(isModelScopedError(400, "maximum context length exceeded")).toBe(false);
+    expect(isModelScopedError(422, "unknown model")).toBe(false);
+  });
+
+  it("a combo advances past a 410 to the next member", async () => {
+    const replies = [
+      new Response(JSON.stringify({ error: { message: "model retired" } }), { status: 410 }),
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    ];
+    const seen = [];
+    const res = await handleComboChat({
+      body: {},
+      models: ["p/old", "p/new"],
+      handleSingleModel: async (_b, m) => {
+        seen.push(m);
+        return replies.shift();
+      },
+      log: { info: () => {}, warn: () => {}, debug: () => {} },
+    });
+    expect(res.status).toBe(200);
+    expect(seen).toEqual(["p/old", "p/new"]);
   });
 });
