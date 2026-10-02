@@ -19,6 +19,7 @@ import { cn } from "@/shared/utils/cn";
  *
  * @param {object} props
  * @param {boolean} props.enableTranslator Show the Debug translator item.
+ * @param {boolean} [props.multiUser] Users & teams switch; shows `gate: "multiUser"` items.
  * @param {Record<string, number|null>} [props.badges] Badge counts by badgeKey.
  * @param {{ count: number, status: "warn"|"err"|null }} [props.providerAttention]
  *   Worst needs-attention status for the Providers badge tint.
@@ -27,12 +28,15 @@ import { cn } from "@/shared/utils/cn";
 
 export default function SidebarNav({
   enableTranslator,
+  multiUser = false,
   badges = {},
   providerAttention = { count: 0, status: null },
   onNavigate,
 }) {
   const pathname = usePathname() || "";
-  const groups = visibleGroups({ enableTranslator }).filter((group) => group.items.length > 0);
+  const groups = visibleGroups({ enableTranslator, multiUser }).filter(
+    (group) => group.items.length > 0,
+  );
 
   return (
     <nav
@@ -102,6 +106,7 @@ export default function SidebarNav({
 
 SidebarNav.propTypes = {
   enableTranslator: PropTypes.bool,
+  multiUser: PropTypes.bool,
   badges: PropTypes.shape({
     providers: PropTypes.number,
     combos: PropTypes.number,

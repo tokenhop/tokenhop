@@ -56,6 +56,7 @@ export function shapeHeartbeatTraffic(series) {
  *   connections: Array<object>,
  *   combos: Array<object>,
  *   translatorEnabled: boolean,
+ *   multiUser?: boolean,
  *   gateway: { ok: boolean, uptimeSeconds: number, startedAt: string, port: number|null },
  *   getSnapshotView: (connectionId: string) => object|null,
  *   traffic?: Array<number>|null,
@@ -67,6 +68,7 @@ export function buildShellSummary({
   connections,
   combos,
   translatorEnabled,
+  multiUser,
   gateway,
   getSnapshotView,
   traffic,
@@ -82,6 +84,8 @@ export function buildShellSummary({
       .length,
     lowQuota: countLowQuota(deriveQuotaAccounts(active, getSnapshotView)),
     enableTranslator: Boolean(translatorEnabled),
+    // YAN-351: users & teams switch, for nav gating only.
+    multiUser: Boolean(multiUser),
     traffic: shapeHeartbeatTraffic(traffic),
     // Savings lookup failure omits the block (clients keep their last state);
     // a computed value — including "nothing pending" — is always sent.

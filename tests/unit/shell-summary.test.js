@@ -49,6 +49,7 @@ describe("buildShellSummary", () => {
       // d is ≤ 20% but disabled; c has no snapshot.
       lowQuota: 1,
       enableTranslator: true,
+      multiUser: false,
       // No traffic input: heartbeat absent, not a fake flat line.
       traffic: null,
     });
@@ -137,6 +138,7 @@ describe("applyShellSummary", () => {
     badges: { providers: 4, combos: 2, quota: 1 },
     providerAttention: { count: 1, status: "warn" },
     enableTranslator: true,
+    multiUser: true,
     traffic: { series: [0, 1], total: 1 },
     savingsMilestone: 100_000,
   };
@@ -148,6 +150,7 @@ describe("applyShellSummary", () => {
       combos: 5,
       lowQuota: 0,
       enableTranslator: false,
+      multiUser: false,
       traffic: { series: [0, 0, 2], total: 2 },
       savings: { pendingMilestone: null },
     });
@@ -159,6 +162,7 @@ describe("applyShellSummary", () => {
       badges: { providers: 3, combos: 5, quota: 0 },
       providerAttention: { count: 0, status: null },
       enableTranslator: false,
+      multiUser: false,
       traffic: { series: [0, 0, 2], total: 2 },
       savingsMilestone: null,
     });

@@ -22,6 +22,12 @@ npx vitest run unit/capabilities.test.js # single file (path relative to tests/)
 
 `npm test` runs the same thing with `--reporter=verbose`.
 
+CI runs the suite twice, with the users & teams switch off and on (YAN-351). Both must pass. To run the on state locally:
+
+```bash
+TOKENHOP_MULTI_USER=on npm test          # from the repo root; =off, or unset, is the default state
+```
+
 > **Always load `tests/vitest.config.js`.** Run tests via `npm test`, from `tests/`, or with `npx vitest run -c tests/vitest.config.js`. Never point vitest at another config. Without this config the setup below never runs, `HOME` stays your real home, and the CLI-tool tests write to and delete under it (one such run deleted a real `~/.config`). The root `vitest.config.mjs` re-exports this config, so a bare `npx vitest` from the repo root is safe too.
 
 ## Data isolation

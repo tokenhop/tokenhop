@@ -90,6 +90,7 @@ export const READ_ONLY_SETTING_KEYS = new Set([
   "CODEX_CLI_VERSION",
   "GROK_CLI_VERSION",
   "ZED_CLIENT_VERSION",
+  "multiUserEnabled",
 ]);
 
 /** Keys that don't take effect until a restart or a manual re-enable. */
