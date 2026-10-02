@@ -306,9 +306,11 @@ export function extractUsage(chunk) {
     });
   }
 
-  // OpenAI Responses API format (response.completed or response.done)
+  // OpenAI Responses API format (response.completed / done / incomplete)
   if (
-    (chunk.type === "response.completed" || chunk.type === "response.done") &&
+    (chunk.type === "response.completed" ||
+      chunk.type === "response.done" ||
+      chunk.type === "response.incomplete") &&
     chunk.response?.usage &&
     typeof chunk.response.usage === "object"
   ) {

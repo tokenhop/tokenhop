@@ -101,4 +101,79 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
     expect(output).not.toContain("data: null");
   });
+
+  it("treats response.incomplete as terminal: no synthetic response.failed (YAN-670)", async () => {
+    const output = await runTransform(
+      [
+        `event: response.incomplete`,
+        `data: ${JSON.stringify({ type: "response.incomplete", response: { id: "resp_test", status: "incomplete", incomplete_details: { reason: "max_output_tokens" } } })}`,
+        "",
+        "data: [DONE]",
+        "",
+      ].join("\n"),
+    );
+    expect(output).toContain("event: response.incomplete");
+    expect(output).not.toContain("response.failed");
+    expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
+  it("maps response.incomplete to finish_reason length plus usage for Chat clients (YAN-670)", async () => {
+    const input = [
+      `event: response.created`,
+      `data: ${JSON.stringify({ type: "response.created", response: { id: "resp_test", status: "in_progress" } })}`,
+      "",
+      `event: response.incomplete`,
+      `data: ${JSON.stringify({ type: "response.incomplete", response: { id: "resp_test", status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, usage: { input_tokens: 5, output_tokens: 100 } } })}`,
+      "",
+    ].join("\n");
+    const stream = new ReadableStream({
+      start(c) {
+        c.enqueue(new TextEncoder().encode(input));
+        c.close();
+      },
+    });
+    const reader = stream
+      .pipeThrough(
+        createSSETransformStreamWithLogger(
+          FORMATS.OPENAI_RESPONSES,
+          FORMATS.OPENAI,
+          "codex",
+          null,
+          null,
+          "gpt-5.5",
+        ),
+      )
+      .getReader();
+    const decoder = new TextDecoder();
+    let out = "";
+    for (let r = await reader.read(); !r.done; r = await reader.read())
+      out += decoder.decode(r.value);
+    expect(out).toContain('"finish_reason":"length"');
+    expect(out).not.toContain('"finish_reason":"stop"');
+    expect(out).toContain('"completion_tokens":100');
+  });
+
+  it("fills an empty response.completed.output from output_item.done on passthrough (YAN-671)", async () => {
+    const item = {
+      type: "message",
+      id: "msg_1",
+      role: "assistant",
+      status: "completed",
+      content: [{ type: "output_text", text: "OK" }],
+    };
+    const output = await runTransform(
+      [
+        `event: response.output_item.done`,
+        `data: ${JSON.stringify({ type: "response.output_item.done", output_index: 0, item })}`,
+        "",
+        `event: response.completed`,
+        `data: ${JSON.stringify({ type: "response.completed", response: { id: "resp_test", status: "completed", output: [] } })}`,
+        "",
+      ].join("\n"),
+    );
+    const completed = output
+      .split("\n")
+      .find((l) => l.startsWith("data:") && l.includes('"response.completed"'));
+    expect(JSON.parse(completed.slice(5)).response.output).toEqual([item]);
+  });
 });
