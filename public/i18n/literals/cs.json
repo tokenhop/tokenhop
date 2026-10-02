@@ -1984,6 +1984,7 @@
   "active ·": "aktivní ·",
   "adapter on, but no models. 9router tries oc/mimo-v2.5-free; if it can't handle the request, the original route may reject the media.": "adaptér zapnutý, ale žádné modely. 9Router zkouší oc/mimo-v2.5-free; pokud nemůže zpracovat požadavek, původní trasa může odmítnout médium.",
   "added": "přidáno",
+  "agent id": "ID agenta",
   "alias": "Přezdívka",
   "all AI providers": "všech poskytovatelů AI",
   "and removes the 9Router configuration from it.": "a odstraňuje konfiguraci 9Router z něj.",
