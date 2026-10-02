@@ -13,7 +13,7 @@ import {
   coerceResponsesOutput,
   resolveFunctionToolStrict,
 } from "../formats/responsesApi.js";
-import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
+import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, DEFAULT_DOCUMENT_FILENAME } from "../schema/index.js";
 
 const MAX_TOOL_NAME_LEN = 128;
 
@@ -406,6 +406,13 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
                   };
                 }
                 if (c.type === RESPONSES_ITEM.INPUT_IMAGE) return c;
+                if (c.type === OPENAI_BLOCK.FILE && c.file?.file_data) {
+                  return {
+                    type: RESPONSES_ITEM.INPUT_FILE,
+                    filename: c.file.filename || DEFAULT_DOCUMENT_FILENAME,
+                    file_data: c.file.file_data,
+                  };
+                }
                 // Serialize any unknown type (tool_use, tool_result, thinking, etc.) as text
                 const text = c.text || c.content || JSON.stringify(c);
                 return {
