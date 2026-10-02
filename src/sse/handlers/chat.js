@@ -84,7 +84,8 @@ export async function handleChat(request, clientRawRequest = null, options = nul
   // Claude Code marks a 1M-context request as `<model>[1m]`; the marker matches
   // no combo, alias or provider/model pair, so it must not reach resolution.
   // Stripping is all that's needed: current Claude models serve 1M natively, and
-  // the client's anthropic-beta (context-1m) is never forwarded upstream.
+  // the client's context-1m beta is filtered out when its anthropic-beta is merged
+  // (mergeClientAnthropicBeta).
   const { model: modelStr, contextMarker } = stripModelContextMarker(body.model);
   if (contextMarker) body.model = modelStr;
 
