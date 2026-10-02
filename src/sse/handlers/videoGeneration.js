@@ -40,6 +40,15 @@ async function resolveGetProvider(request, connectionId) {
 // Creation POSTs are billable jobs — only rotate to another account for
 // errors that upstream rejects BEFORE creating a job (auth/quota). A 5xx may
 // have created the job, so it is returned to the caller instead of re-sent.
+// Poll failures that say something about the account (5xx handled separately).
+const POLL_LOCK_STATUSES = new Set([
+  HTTP_STATUS.UNAUTHORIZED,
+  HTTP_STATUS.FORBIDDEN,
+  HTTP_STATUS.RATE_LIMITED,
+]);
+// Lock key for poll failures: scoped to video polling, never the account-wide `__all`.
+const VIDEO_POLL_LOCK_MODEL = "__video_poll";
+
 const CREATE_ROTATION_STATUSES = new Set([
   HTTP_STATUS.UNAUTHORIZED,
   HTTP_STATUS.FORBIDDEN,
@@ -267,12 +276,19 @@ export async function handleVideoGet(request, requestId) {
     return withConnectionHeader(result.response, credentials.connectionId);
   }
 
-  await markAccountUnavailable(
-    credentials.connectionId,
-    result.status,
-    sanitizeSecrets(result.error, refreshedCredentials),
-    provider,
-    null,
-  );
+  // A poll failure is about one job, not the account: a 404 (unknown/expired
+  // job id the client supplied) must not lock anything, and a real account
+  // failure locks only video polling (a null model would lock every model and,
+  // since a locked account drops the x-connection-id pin, spread to the other
+  // accounts on the next poll) (YAN-678).
+  if (POLL_LOCK_STATUSES.has(result.status) || result.status >= 500) {
+    await markAccountUnavailable(
+      credentials.connectionId,
+      result.status,
+      sanitizeSecrets(result.error, refreshedCredentials),
+      provider,
+      VIDEO_POLL_LOCK_MODEL,
+    );
+  }
   return result.response;
 }

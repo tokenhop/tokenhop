@@ -230,6 +230,19 @@ describe("handleVideoGet", () => {
     expect(global.fetch.mock.calls[0][0]).toBe("https://api.x.ai/v1/videos/req-1");
   });
 
+  it("a 404 poll locks nothing, and auth failures lock only video polling (YAN-678)", async () => {
+    authMocks.getProviderCredentials.mockResolvedValueOnce(account());
+    global.fetch.mockResolvedValueOnce(jsonResponse({ error: "not found" }, 404));
+    await handleVideoGet(new Request("http://localhost/v1/videos/missing"), "missing");
+    expect(authMocks.markAccountUnavailable).not.toHaveBeenCalled();
+
+    authMocks.getProviderCredentials.mockResolvedValueOnce(account({ refreshToken: null }));
+    global.fetch.mockResolvedValueOnce(jsonResponse({ error: "unauthorized" }, 401));
+    await handleVideoGet(new Request("http://localhost/v1/videos/req-1"), "req-1");
+    const lockModel = authMocks.markAccountUnavailable.mock.calls.at(-1)[4];
+    expect(lockModel).toBeTruthy(); // never null: null locks every model on the account
+  });
+
   it("records the failure when polling hits a terminal auth error", async () => {
     authMocks.getProviderCredentials.mockResolvedValueOnce(account({ refreshToken: null }));
     global.fetch.mockResolvedValueOnce(jsonResponse({ error: "unauthorized" }, 401));

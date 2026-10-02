@@ -155,6 +155,28 @@ describe("injectReasoningContent — MiniMax thinking round-trip", () => {
   });
 });
 
+describe("injectReasoningContent — non-array messages (YAN-687)", () => {
+  it("returns the body unchanged when messages is a string/number/object", () => {
+    for (const messages of ["hi", 42, { role: "user", content: "hi" }]) {
+      const body = { model: "deepseek-chat", messages };
+      const out = injectReasoningContent({
+        provider: "deepseek",
+        model: "deepseek-chat",
+        body,
+      });
+      expect(out.messages).toBe(messages);
+    }
+  });
+
+  it("DefaultExecutor transformRequest does not throw on non-array messages", () => {
+    const { DefaultExecutor } = require("../../open-sse/executors/default.js");
+    const executor = new DefaultExecutor("deepseek");
+    const body = { model: "deepseek-chat", messages: "hi" };
+    expect(() => executor.transformRequest("deepseek-chat", body)).not.toThrow();
+    expect(executor.transformRequest("deepseek-chat", body).messages).toBe("hi");
+  });
+});
+
 describe("OpenCodeExecutor — issue #1543 regression", () => {
   it("runs the injector so deepseek-v4-flash-free round-trips reasoning_content", () => {
     const executor = new OpenCodeExecutor();
