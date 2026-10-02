@@ -1,10 +1,10 @@
 # Integración con otras herramientas
 
-9Router es compatible con cualquier herramienta que soporte el formato de API de OpenAI. Esta guía cubre patrones de integración genéricos para varias herramientas y aplicaciones personalizadas.
+tokenhop es compatible con cualquier herramienta que soporte el formato de API de OpenAI. Esta guía cubre patrones de integración genéricos para varias herramientas y aplicaciones personalizadas.
 
 ## Resumen
 
-9Router proporciona un endpoint de API compatible con OpenAI que funciona con:
+tokenhop proporciona un endpoint de API compatible con OpenAI que funciona con:
 
 - Scripts y aplicaciones personalizadas
 - Clientes de API y herramientas de testing
@@ -14,22 +14,22 @@
 
 ## Patrón de configuración genérico
 
-Cualquier herramienta compatible con OpenAI puede conectarse a 9Router usando estas configuraciones:
+Cualquier herramienta compatible con OpenAI puede conectarse a tokenhop usando estas configuraciones:
 
-**9Router local:**
+**tokenhop local:**
 
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
-Model: cualquier modelo de 9Router (cc/*, cx/*, glm/*, etc.)
+Model: cualquier modelo de tokenhop (cc/*, cx/*, glm/*, etc.)
 ```
 
-**9Router en la nube:**
+**tokenhop remoto (tu VPS o URL de túnel):**
 
 ```
-Base URL: https://9router.com/v1
+Base URL: https://<your-tokenhop-host>/v1
 API Key: your-api-key-from-dashboard
-Model: cualquier modelo de 9Router (cc/*, cx/*, glm/*, etc.)
+Model: cualquier modelo de tokenhop (cc/*, cx/*, glm/*, etc.)
 ```
 
 ## Modelos disponibles
@@ -323,10 +323,10 @@ def chat_with_retry(prompt, max_retries=3):
 
 ### Problemas de conexión
 
-**Problema:** No se puede conectar a 9Router
+**Problema:** No se puede conectar a tokenhop
 
 ```bash
-# Verifica si 9Router está corriendo
+# Verifica si tokenhop está corriendo
 curl http://localhost:20128/health
 
 # Respuesta esperada:
@@ -335,7 +335,7 @@ curl http://localhost:20128/health
 
 **Solución:**
 
-- Verifica que 9Router esté corriendo
+- Verifica que tokenhop esté corriendo
 - Verifica que el puerto 20128 no esté bloqueado
 - Asegúrate de tener la URL base correcta (incluir `/v1`)
 
@@ -379,7 +379,7 @@ Error: Request timed out after 30s
 
 - Aumenta el timeout en la configuración del cliente
 - Usa modelos más rápidos para tareas sensibles al tiempo
-- Verifica la conexión de red a 9Router
+- Verifica la conexión de red a tokenhop
 
 ### Rate limiting
 

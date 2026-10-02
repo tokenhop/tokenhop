@@ -1,6 +1,6 @@
 # Bắt đầu
 
-Khởi chạy 9Router trong 5 phút và bắt đầu định tuyến các request AI một cách thông minh.
+Khởi chạy tokenhop trong 5 phút và bắt đầu định tuyến các request AI một cách thông minh.
 
 ---
 
@@ -9,7 +9,7 @@ Khởi chạy 9Router trong 5 phút và bắt đầu định tuyến các reques
 ### 1. Cài đặt
 
 ```bash
-npm install -g 9router
+npm install -g tokenhop
 ```
 
 **Yêu cầu:** Node.js 20+ ([Chi tiết cài đặt](getting-started/installation.md))
@@ -17,7 +17,7 @@ npm install -g 9router
 ### 2. Khởi chạy
 
 ```bash
-9router
+tokenhop
 ```
 
 🎉 **Dashboard tự động mở** tại `http://localhost:20128`
@@ -44,7 +44,7 @@ Dashboard → Providers → Connect [Provider]
 
 1. Click "Connect Claude Code"
 2. Đăng nhập tài khoản Claude
-3. Cho phép 9Router
+3. Cho phép tokenhop
 4. ✅ Xong! Dùng model: `cc/claude-opus-4-5-20251101`
 
 #### Cách B: API Key (Cheap Provider)
@@ -86,14 +86,14 @@ Dashboard → Providers → Connect [Free Provider]
 
 ## 4. Dùng trong CLI Tools
 
-Trỏ công cụ code của bạn tới 9Router:
+Trỏ công cụ code của bạn tới tokenhop:
 
 ### Cursor IDE
 
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [from 9router dashboard]
+  OpenAI API Key: [from tokenhop dashboard]
   Model: cc/claude-opus-4-5-20251101
 ```
 
@@ -104,7 +104,7 @@ Sửa `~/.claude/config.json`:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key"
+  "anthropic_api_key": "your-tokenhop-api-key"
 }
 ```
 
@@ -121,7 +121,7 @@ Model: cc/claude-opus-4-5-20251101
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-tokenhop-api-key"
 
 codex "your prompt"
 ```
@@ -256,6 +256,6 @@ Daily routine:
 
 ## Cần trợ giúp?
 
-- **Website**: [9router.com](https://9router.com)
+- **Website**: [tokenhop.ai](https://tokenhop.ai)
 - **GitHub**: [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
 - **Issues**: [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)

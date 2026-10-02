@@ -1,12 +1,12 @@
 # 常见问题
 
-关于 9Router 的常见问题。
+关于 tokenhop 的常见问题。
 
 ---
 
-## 什么是 9Router?
+## 什么是 tokenhop?
 
-**9Router 是一款 AI 模型路由工具,能够最大化你的订阅价值并最小化成本。**
+**tokenhop 是一款 AI 模型路由工具,能够最大化你的订阅价值并最小化成本。**
 
 它使用 3 层回退系统在多个 AI 提供商之间智能路由请求:
 
@@ -25,7 +25,7 @@
 
 ## 价格是如何计算的?
 
-**9Router 采用三层定价策略:**
+**tokenhop 采用三层定价策略:**
 
 ### 第 1 层:订阅(优先使用)
 
@@ -55,9 +55,9 @@
 
 ---
 
-## 9Router 是免费的吗?
+## tokenhop 是免费的吗?
 
-**是的,9Router 本身 100% 免费且开源。**
+**是的,tokenhop 本身 100% 免费且开源。**
 
 **可用的免费层提供商:**
 
@@ -106,7 +106,7 @@
 
 ## 可以同时使用多个提供商吗?
 
-**可以!这正是 9Router 的核心功能。**
+**可以!这正是 tokenhop 的核心功能。**
 
 **通过组合(Combos),你可以把多个提供商串联起来实现自动回退:**
 
@@ -141,7 +141,7 @@
 
 ## 配额跟踪是如何工作的?
 
-**9Router 为所有提供商提供实时配额跟踪:**
+**tokenhop 为所有提供商提供实时配额跟踪:**
 
 **功能:**
 
@@ -169,17 +169,17 @@
 
 ---
 
-## 9Router 能配合 Cursor 使用吗?
+## tokenhop 能配合 Cursor 使用吗?
 
-**可以,但 Cursor 需要使用云端 endpoint。**
+**可以，但 Cursor 需要使用公网 URL。**
 
 **问题:** Cursor IDE 不支持 localhost endpoint。
 
-**解决方案:** 使用 9Router 云端部署:
+**解决方案:** 通过 HTTPS 暴露你的 tokenhop 实例（仪表盘 → **Endpoint** → Cloudflare tunnel 或 Tailscale Funnel），或将其部署在 VPS 上:
 
 ```
 Cursor Settings → Models → Advanced:
-  OpenAI API Base URL: https://9router.com/v1
+  OpenAI API Base URL: https://<your-tokenhop-host>/v1
   OpenAI API Key: [从仪表盘获取]
   Model: cc/claude-opus-4-5-20251101
 ```
@@ -189,7 +189,7 @@ Cursor Settings → Models → Advanced:
 ```bash
 # 部署到 VPS
 git clone https://github.com/tokenhop/tokenhop.git
-cd 9router/app
+cd tokenhop
 npm install && npm run build
 npm start
 
@@ -209,15 +209,15 @@ npm start
 
 ---
 
-## 可以自托管 9Router 吗?
+## 可以自托管 tokenhop 吗?
 
-**可以!9Router 支持多种部署方式:**
+**可以!tokenhop 支持多种部署方式:**
 
 ### Localhost(默认)
 
 ```bash
-npm install -g 9router
-9router
+npm install -g tokenhop
+tokenhop
 → 仪表盘: http://localhost:3000
 → API: http://localhost:20128/v1
 ```
@@ -226,7 +226,7 @@ npm install -g 9router
 
 ```bash
 git clone https://github.com/tokenhop/tokenhop.git
-cd 9router/app
+cd tokenhop
 npm install && npm run build
 
 export JWT_SECRET="your-secure-secret"
@@ -239,25 +239,25 @@ npm start
 ### Docker
 
 ```bash
-docker build -t 9router .
+docker build -t tokenhop .
 docker run -d \
   -p 3000:3000 \
   -e JWT_SECRET="your-secret" \
-  -v 9router-data:/app/data \
-  9router
+  -v tokenhop-data:/app/data \
+  tokenhop
 ```
 
 ### Cloudflare Workers
 
 ```bash
-cd 9router/app
+cd tokenhop
 npm run deploy:cloudflare
 ```
 
 **环境变量:**
 
 - `JWT_SECRET` - **生产环境必须修改!**
-- `DATA_DIR` - 数据库存储路径(默认:`~/.9router`)
+- `DATA_DIR` - 数据库存储路径(默认:`~/.tokenhop`)
 - `INITIAL_PASSWORD` - 仪表盘登录(默认:`123456`)
 - `NODE_ENV` - 部署时设为 `production`
 
@@ -267,12 +267,12 @@ npm run deploy:cloudflare
 
 ## 我的数据安全吗?
 
-**是的,9Router 优先考虑安全和隐私:**
+**是的,tokenhop 优先考虑安全和隐私:**
 
 **本地存储:**
 
-- 所有数据存储在本地 `~/.9router`(或自定义 `DATA_DIR`)
-- 不会发送数据到 9Router 服务器
+- 所有数据存储在本地 `~/.tokenhop`(或自定义 `DATA_DIR`)
+- 不会发送数据到 tokenhop 服务器
 - OAuth tokens 使用 JWT 加密
 
 **无遥测:**
@@ -291,17 +291,17 @@ npm run deploy:cloudflare
 
 - 生产环境修改 `JWT_SECRET`
 - 使用强 `INITIAL_PASSWORD`
-- 云端部署启用 HTTPS
+- 公网部署启用 HTTPS
 - 定期轮换 API keys
 
-**9Router 存储的内容:**
+**tokenhop 存储的内容:**
 
 - 提供商 OAuth tokens(加密)
 - API keys(加密)
 - 使用统计(仅本地)
 - 组合配置
 
-**9Router 不存储的内容:**
+**tokenhop 不存储的内容:**
 
 - 你的 prompt 或响应
 - 你生成的代码
@@ -309,20 +309,20 @@ npm run deploy:cloudflare
 
 ---
 
-## 如何更新 9Router?
+## 如何更新 tokenhop?
 
 **更新方式取决于安装类型:**
 
 ### 全局 NPM 安装
 
 ```bash
-npm update -g 9router
+npm update -g tokenhop
 ```
 
 ### 本地安装
 
 ```bash
-cd 9router/app
+cd tokenhop
 git pull origin main
 npm install
 npm run build
@@ -332,25 +332,25 @@ npm start
 ### Docker
 
 ```bash
-docker pull 9router:latest
-docker stop 9router
-docker rm 9router
+docker pull ghcr.io/tokenhop/tokenhop:latest
+docker stop tokenhop
+docker rm tokenhop
 docker run -d \
   -p 3000:3000 \
-  -v 9router-data:/app/data \
-  9router:latest
+  -v tokenhop-data:/app/data \
+  ghcr.io/tokenhop/tokenhop:latest
 ```
 
 **查看版本:**
 
 ```bash
-9router --version
+tokenhop --version
 ```
 
 **破坏性变更:**
 
 - 查看 [CHANGELOG.md](https://github.com/tokenhop/tokenhop/blob/master/CHANGELOG.md)
-- 大版本更新前备份 `~/.9router`
+- 大版本更新前备份 `~/.tokenhop`
 - 阅读大版本的迁移指南
 
 ---
@@ -373,8 +373,8 @@ docker run -d \
 
    ```bash
    # Fork 仓库
-   git clone https://github.com/YOUR_USERNAME/9router.git
-   cd 9router
+   git clone https://github.com/YOUR_USERNAME/tokenhop.git
+   cd tokenhop
 
    # 创建分支
    git checkout -b feature/your-feature
@@ -416,7 +416,7 @@ docker run -d \
 
 ## 需要更多帮助?
 
-- **文档:** [9router.com/docs](https://9router.com/docs)
+- **文档:** [tokenhop.dev](https://tokenhop.dev)
 - **GitHub:** [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
 - **Issues:** [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 - **故障排除:** [troubleshooting.md](troubleshooting.md)

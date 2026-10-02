@@ -1,6 +1,6 @@
 # Empezar
 
-Pon en marcha 9Router en 5 minutos y comienza a enrutar solicitudes de IA de forma inteligente.
+Pon en marcha tokenhop en 5 minutos y comienza a enrutar solicitudes de IA de forma inteligente.
 
 ---
 
@@ -9,7 +9,7 @@ Pon en marcha 9Router en 5 minutos y comienza a enrutar solicitudes de IA de for
 ### 1. Instalar
 
 ```bash
-npm install -g 9router
+npm install -g tokenhop
 ```
 
 **Requisitos:** Node.js 20+ ([Detalles de instalación](getting-started/installation.md))
@@ -17,7 +17,7 @@ npm install -g 9router
 ### 2. Iniciar
 
 ```bash
-9router
+tokenhop
 ```
 
 🎉 **El dashboard se abre automáticamente** en `http://localhost:20128`
@@ -44,7 +44,7 @@ Dashboard → Providers → Connect [Provider]
 
 1. Clic en "Connect Claude Code"
 2. Inicia sesión con tu cuenta de Claude
-3. Autoriza 9Router
+3. Autoriza tokenhop
 4. ✅ ¡Listo! Usa el modelo: `cc/claude-opus-4-5-20251101`
 
 #### Opción B: API Key (Proveedores baratos)
@@ -86,14 +86,14 @@ Dashboard → Providers → Connect [Free Provider]
 
 ## 4. Usar en herramientas CLI
 
-Apunta tu herramienta de codificación a 9Router:
+Apunta tu herramienta de codificación a tokenhop:
 
 ### Cursor IDE
 
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [desde el dashboard de 9router]
+  OpenAI API Key: [desde el dashboard de tokenhop]
   Model: cc/claude-opus-4-5-20251101
 ```
 
@@ -104,7 +104,7 @@ Edita `~/.claude/config.json`:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key"
+  "anthropic_api_key": "your-tokenhop-api-key"
 }
 ```
 
@@ -121,7 +121,7 @@ Model: cc/claude-opus-4-5-20251101
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-tokenhop-api-key"
 
 codex "your prompt"
 ```
@@ -256,6 +256,6 @@ Rutina diaria:
 
 ## ¿Necesitas ayuda?
 
-- **Sitio web**: [9router.com](https://9router.com)
+- **Sitio web**: [tokenhop.ai](https://tokenhop.ai)
 - **GitHub**: [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
 - **Issues**: [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)

@@ -1,12 +1,12 @@
 # Roo AIアシスタント統合
 
-9RouterをRoo AIアシスタントと統合し、統一インターフェイスから複数のAIモデルにアクセスします。
+tokenhopをRoo AIアシスタントと統合し、統一インターフェイスから複数のAIモデルにアクセスします。
 
 ## 前提条件
 
 - Roo AIアシスタントがインストール済み
-- [ダッシュボード](https://9router.com/dashboard)からの9Router APIキー
-- 9Routerが動作中 (ローカルまたはクラウド)
+- [ダッシュボード](http://localhost:20128/dashboard)からのtokenhop APIキー
+- tokenhopが動作中 (ローカル、または自分で管理するサーバー/トンネル)
 
 ## 設定手順
 
@@ -20,23 +20,23 @@ Roo AIアシスタントを起動し、設定パネルを開きます。
 2. プロバイダータイプとして **Ollama** を選択
 3. 以下の設定を行う:
 
-**ローカル9Router用:**
+**ローカルtokenhop用:**
 
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
 ```
 
-**クラウド9Router用:**
+**リモートtokenhop(VPSまたはトンネルURL)用:**
 
 ```
-Base URL: https://9router.com/v1
+Base URL: https://<your-tokenhop-host>/v1
 API Key: your-api-key-from-dashboard
 ```
 
 ### 3. モデルを選択
 
-利用可能な9Routerモデルから選択:
+利用可能なtokenhopモデルから選択:
 
 **Claudeモデル:**
 
@@ -59,7 +59,7 @@ API Key: your-api-key-from-dashboard
 統合を確認するためにテストメッセージを送信:
 
 ```
-Hello! Can you confirm you're connected through 9Router?
+Hello! Can you confirm you're connected through tokenhop?
 ```
 
 ## 使用例
@@ -96,21 +96,21 @@ Model: cx/deepseek-reasoner
 
 ### 接続失敗
 
-- 9Routerが動作中か確認: `curl http://localhost:20128/health`
+- tokenhopが動作中か確認: `curl http://localhost:20128/health`
 - APIキーが正しいか確認
 - Base URLに `/v1` サフィックスが含まれていることを確認
 
 ### モデルが利用不可
 
 - モデル名が正確に一致するか確認 (大文字小文字を区別)
-- 9Routerプランでモデルが有効か確認
+- tokenhopプランでモデルが有効か確認
 - リストから別のモデルを試す
 
 ### 応答が遅い
 
 - より高速なモデルへ切替 (haiku、flash)
 - ネットワーク接続を確認
-- 問題について9Routerログをモニター
+- 問題についてtokenhopログをモニター
 
 ## 高度な設定
 

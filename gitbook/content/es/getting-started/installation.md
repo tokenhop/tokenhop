@@ -1,6 +1,6 @@
 # Instalación
 
-Guía detallada de instalación de 9Router con consejos de solución de problemas.
+Guía detallada de instalación de tokenhop con consejos de solución de problemas.
 
 ---
 
@@ -31,38 +31,38 @@ npm --version
 
 ### Método 1: Instalación global (Recomendado)
 
-Instala 9Router globalmente para usar desde cualquier lugar:
+Instala tokenhop globalmente para usar desde cualquier lugar:
 
 ```bash
-npm install -g 9router
+npm install -g tokenhop
 ```
 
-**Iniciar 9Router:**
+**Iniciar tokenhop:**
 
 ```bash
-9router
+tokenhop
 ```
 
 **Beneficios:**
 
 - ✅ Ejecuta desde cualquier directorio
-- ✅ Comando simple: `9router`
-- ✅ Auto-actualizaciones con `npm update -g 9router`
+- ✅ Comando simple: `tokenhop`
+- ✅ Auto-actualizaciones con `npm update -g tokenhop`
 
 ### Método 2: Instalación local
 
 Instala en un proyecto específico:
 
 ```bash
-mkdir my-9router
-cd my-9router
-npm install 9router
+mkdir my-tokenhop
+cd my-tokenhop
+npm install tokenhop
 ```
 
-**Iniciar 9Router:**
+**Iniciar tokenhop:**
 
 ```bash
-npx 9router
+npx tokenhop
 ```
 
 **Beneficios:**
@@ -77,7 +77,7 @@ Clona y compila desde GitHub:
 
 ```bash
 git clone https://github.com/tokenhop/tokenhop.git
-cd 9router/app
+cd tokenhop
 npm install
 npm run build
 npm start
@@ -96,14 +96,14 @@ npm start
 ### Iniciar el servidor
 
 ```bash
-9router
+tokenhop
 ```
 
 **Qué sucede:**
 
 1. El servidor inicia en `http://localhost:20128`
 2. El dashboard se abre automáticamente en el navegador
-3. Se crea el directorio de datos en `~/.9router`
+3. Se crea el directorio de datos en `~/.tokenhop`
 4. API key generada automáticamente
 
 ### Login del dashboard
@@ -202,7 +202,7 @@ export JWT_SECRET="your-secure-secret-change-this"
 export INITIAL_PASSWORD="your-password"
 
 # Storage
-export DATA_DIR="~/.9router"
+export DATA_DIR="~/.tokenhop"
 
 # Server
 export PORT="20128"
@@ -214,12 +214,12 @@ export NODE_ENV="production"
 
 ### Directorio de datos
 
-**Ubicación por defecto:** `~/.9router`
+**Ubicación por defecto:** `~/.tokenhop`
 
 **Contenido:**
 
 ```
-~/.9router/
+~/.tokenhop/
   ├── db.json           # Database (providers, combos, usage)
   ├── api-keys.json     # API keys
   └── logs/             # Request logs (if enabled)
@@ -229,7 +229,7 @@ export NODE_ENV="production"
 
 ```bash
 export DATA_DIR="/custom/path"
-9router
+tokenhop
 ```
 
 ### Configuración de puerto
@@ -240,13 +240,13 @@ export DATA_DIR="/custom/path"
 
 ```bash
 export PORT="3000"
-9router
+tokenhop
 ```
 
 **O usa la línea de comandos:**
 
 ```bash
-9router --port 3000
+tokenhop --port 3000
 ```
 
 ---
@@ -274,7 +274,7 @@ kill -9 <PID>
 **Solución 2: Usa otro puerto**
 
 ```bash
-9router --port 3000
+tokenhop --port 3000
 ```
 
 ### Permiso denegado
@@ -282,7 +282,7 @@ kill -9 <PID>
 **Error:**
 
 ```
-Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/9router'
+Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/tokenhop'
 ```
 
 **Solución: Usa sudo (no recomendado) o corrige los permisos de npm**
@@ -295,7 +295,7 @@ echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
 source ~/.bashrc
 
 # Luego instalar nuevamente
-npm install -g 9router
+npm install -g tokenhop
 ```
 
 ### Versión de Node.js muy antigua
@@ -358,23 +358,23 @@ Dashboard → Provider → Disconnect → Reconnect
 
 ### Uso alto de memoria
 
-**Problema:** 9Router usa demasiada RAM
+**Problema:** tokenhop usa demasiada RAM
 
 **Solución: Reinicia el servidor**
 
 ```bash
 # Detener
-pkill -f 9router
+pkill -f tokenhop
 
 # Iniciar
-9router
+tokenhop
 ```
 
 **O usa PM2 para auto-reinicio:**
 
 ```bash
 npm install -g pm2
-pm2 start 9router --name 9router
+pm2 start tokenhop --name tokenhop
 pm2 save
 ```
 
@@ -385,8 +385,8 @@ pm2 save
 ### Desarrollo local
 
 ```bash
-npm install -g 9router
-9router
+npm install -g tokenhop
+tokenhop
 ```
 
 **Caso de uso:** Codificación personal, pruebas
@@ -395,7 +395,7 @@ npm install -g 9router
 
 ```bash
 # Instalar
-npm install -g 9router
+npm install -g tokenhop
 
 # Configurar
 export JWT_SECRET="your-secure-secret"
@@ -404,7 +404,7 @@ export NODE_ENV="production"
 
 # Iniciar con PM2
 npm install -g pm2
-pm2 start 9router --name 9router
+pm2 start tokenhop --name tokenhop
 pm2 save
 pm2 startup
 ```
@@ -414,15 +414,15 @@ pm2 startup
 ### Docker
 
 ```bash
-docker pull 9router/9router:latest
+docker pull ghcr.io/tokenhop/tokenhop:latest
 
 docker run -d \
   -p 20128:20128 \
   -e JWT_SECRET="your-secure-secret" \
   -e INITIAL_PASSWORD="your-password" \
-  -v 9router-data:/root/.9router \
-  --name 9router \
-  9router/9router:latest
+  -v tokenhop-data:/app/data \
+  --name tokenhop \
+  ghcr.io/tokenhop/tokenhop:latest
 ```
 
 **Caso de uso:** Despliegue containerizado, Kubernetes
@@ -457,13 +457,13 @@ server {
 ### Eliminar instalación global
 
 ```bash
-npm uninstall -g 9router
+npm uninstall -g tokenhop
 ```
 
 ### Eliminar el directorio de datos
 
 ```bash
-rm -rf ~/.9router
+rm -rf ~/.tokenhop
 ```
 
 ### Eliminar la configuración
@@ -471,7 +471,7 @@ rm -rf ~/.9router
 ```bash
 # Eliminar variables de entorno del archivo de configuración del shell
 nano ~/.bashrc  # o ~/.zshrc
-# Eliminar exports relacionados con 9router
+# Eliminar exports relacionados con tokenhop
 ```
 
 ---
@@ -486,6 +486,6 @@ nano ~/.bashrc  # o ~/.zshrc
 
 ## ¿Necesitas ayuda?
 
-- **Sitio web**: [9router.com](https://9router.com)
+- **Sitio web**: [tokenhop.ai](https://tokenhop.ai)
 - **GitHub**: [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
 - **Issues**: [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)

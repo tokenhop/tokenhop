@@ -1,12 +1,12 @@
 # Tích hợp Roo AI Assistant
 
-Tích hợp 9Router với Roo AI Assistant để truy cập nhiều model AI qua một giao diện thống nhất.
+Tích hợp tokenhop với Roo AI Assistant để truy cập nhiều model AI qua một giao diện thống nhất.
 
 ## Yêu cầu
 
 - Roo AI Assistant đã cài đặt
-- 9Router API key từ [dashboard](https://9router.com/dashboard)
-- 9Router đang chạy (cục bộ hoặc cloud)
+- tokenhop API key từ [dashboard](http://localhost:20128/dashboard)
+- tokenhop đang chạy (cục bộ, hoặc trên server / tunnel do bạn quản lý)
 
 ## Các bước Cấu hình
 
@@ -20,23 +20,23 @@ Khởi chạy Roo AI Assistant và mở panel settings.
 2. Chọn **Ollama** làm provider type
 3. Cấu hình các settings sau:
 
-**Cho 9Router cục bộ:**
+**Cho tokenhop cục bộ:**
 
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
 ```
 
-**Cho 9Router cloud:**
+**Cho tokenhop từ xa (URL VPS hoặc tunnel của bạn):**
 
 ```
-Base URL: https://9router.com/v1
+Base URL: https://<your-tokenhop-host>/v1
 API Key: your-api-key-from-dashboard
 ```
 
 ### 3. Chọn Model
 
-Chọn từ các model 9Router có sẵn:
+Chọn từ các model tokenhop có sẵn:
 
 **Claude Models:**
 
@@ -59,7 +59,7 @@ Chọn từ các model 9Router có sẵn:
 Gửi tin nhắn test để xác minh tích hợp:
 
 ```
-Hello! Can you confirm you're connected through 9Router?
+Hello! Can you confirm you're connected through tokenhop?
 ```
 
 ## Ví dụ Sử dụng
@@ -96,21 +96,21 @@ Model: cx/deepseek-reasoner
 
 ### Connection Failed
 
-- Xác minh 9Router đang chạy: `curl http://localhost:20128/health`
+- Xác minh tokenhop đang chạy: `curl http://localhost:20128/health`
 - Kiểm tra API key đúng
 - Đảm bảo Base URL bao gồm hậu tố `/v1`
 
 ### Model không khả dụng
 
 - Kiểm tra tên model khớp chính xác (case-sensitive)
-- Xác minh model được bật trong 9Router plan
+- Xác minh model được bật trong tokenhop plan
 - Thử model khác từ danh sách
 
 ### Phản hồi Chậm
 
 - Chuyển sang model nhanh hơn (haiku, flash)
 - Kiểm tra kết nối network
-- Theo dõi logs 9Router để xem vấn đề
+- Theo dõi logs tokenhop để xem vấn đề
 
 ## Cấu hình Nâng cao
 

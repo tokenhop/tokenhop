@@ -1,12 +1,12 @@
 # Câu hỏi thường gặp
 
-Những câu hỏi phổ biến về 9Router.
+Những câu hỏi phổ biến về tokenhop.
 
 ---
 
-## 9Router là gì?
+## tokenhop là gì?
 
-**9Router là bộ định tuyến mô hình AI giúp tối đa hóa giá trị subscription và giảm chi phí.**
+**tokenhop là bộ định tuyến mô hình AI giúp tối đa hóa giá trị subscription và giảm chi phí.**
 
 Nó định tuyến request thông minh qua nhiều provider AI bằng hệ thống fallback 3 tầng:
 
@@ -25,7 +25,7 @@ Nó định tuyến request thông minh qua nhiều provider AI bằng hệ th�
 
 ## Pricing hoạt động thế nào?
 
-**9Router dùng chiến lược pricing 3 tầng:**
+**tokenhop dùng chiến lược pricing 3 tầng:**
 
 ### Tier 1: Subscription (Dùng đầu tiên)
 
@@ -55,9 +55,9 @@ Nó định tuyến request thông minh qua nhiều provider AI bằng hệ th�
 
 ---
 
-## 9Router có miễn phí không?
+## tokenhop có miễn phí không?
 
-**Có, 9Router hoàn toàn miễn phí và mã nguồn mở 100%.**
+**Có, tokenhop hoàn toàn miễn phí và mã nguồn mở 100%.**
 
 **Provider free tier có sẵn:**
 
@@ -106,7 +106,7 @@ Xem [tài liệu providers](providers/subscription.md) để biết chi tiết.
 
 ## Tôi có thể dùng nhiều provider không?
 
-**Có! Đây là tính năng cốt lõi của 9Router.**
+**Có! Đây là tính năng cốt lõi của tokenhop.**
 
 **Combo cho phép bạn nối nhiều provider với fallback tự động:**
 
@@ -141,7 +141,7 @@ Xem [tài liệu combos](features/combos.md) để biết ví dụ.
 
 ## Quota tracking hoạt động thế nào?
 
-**9Router theo dõi quota thời gian thực cho tất cả provider:**
+**tokenhop theo dõi quota thời gian thực cho tất cả provider:**
 
 **Tính năng:**
 
@@ -169,17 +169,17 @@ Xem [tài liệu quota tracking](features/quota-tracking.md) để biết chi ti
 
 ---
 
-## 9Router có hoạt động với Cursor không?
+## tokenhop có hoạt động với Cursor không?
 
-**Có, nhưng Cursor yêu cầu endpoint cloud.**
+**Có, nhưng Cursor cần một URL công khai.**
 
 **Vấn đề:** Cursor IDE không hỗ trợ endpoint localhost.
 
-**Giải pháp:** Dùng 9Router cloud deployment:
+**Giải pháp:** Public tokenhop qua HTTPS (dashboard → **Endpoint** → Cloudflare tunnel hoặc Tailscale Funnel), hoặc deploy lên VPS:
 
 ```
 Cursor Settings → Models → Advanced:
-  OpenAI API Base URL: https://9router.com/v1
+  OpenAI API Base URL: https://<your-tokenhop-host>/v1
   OpenAI API Key: [from dashboard]
   Model: cc/claude-opus-4-5-20251101
 ```
@@ -189,7 +189,7 @@ Cursor Settings → Models → Advanced:
 ```bash
 # Deploy to VPS
 git clone https://github.com/tokenhop/tokenhop.git
-cd 9router/app
+cd tokenhop
 npm install && npm run build
 npm start
 
@@ -209,15 +209,15 @@ Xem [hướng dẫn tích hợp Cursor](integration/cursor.md) để biết chi 
 
 ---
 
-## Tôi có thể self-host 9Router không?
+## Tôi có thể self-host tokenhop không?
 
-**Có! 9Router hỗ trợ nhiều tùy chọn deployment:**
+**Có! tokenhop hỗ trợ nhiều tùy chọn deployment:**
 
 ### Localhost (Mặc định)
 
 ```bash
-npm install -g 9router
-9router
+npm install -g tokenhop
+tokenhop
 → Dashboard: http://localhost:3000
 → API: http://localhost:20128/v1
 ```
@@ -226,7 +226,7 @@ npm install -g 9router
 
 ```bash
 git clone https://github.com/tokenhop/tokenhop.git
-cd 9router/app
+cd tokenhop
 npm install && npm run build
 
 export JWT_SECRET="your-secure-secret"
@@ -239,25 +239,25 @@ npm start
 ### Docker
 
 ```bash
-docker build -t 9router .
+docker build -t tokenhop .
 docker run -d \
   -p 3000:3000 \
   -e JWT_SECRET="your-secret" \
-  -v 9router-data:/app/data \
-  9router
+  -v tokenhop-data:/app/data \
+  tokenhop
 ```
 
 ### Cloudflare Workers
 
 ```bash
-cd 9router/app
+cd tokenhop
 npm run deploy:cloudflare
 ```
 
 **Biến môi trường:**
 
 - `JWT_SECRET` - **PHẢI đổi trong production!**
-- `DATA_DIR` - Đường dẫn lưu database (mặc định: `~/.9router`)
+- `DATA_DIR` - Đường dẫn lưu database (mặc định: `~/.tokenhop`)
 - `INITIAL_PASSWORD` - Đăng nhập Dashboard (mặc định: `123456`)
 - `NODE_ENV` - Đặt `production` để deploy
 
@@ -267,12 +267,12 @@ Xem [hướng dẫn deployment](getting-started/installation.md#deployment) đ�
 
 ## Dữ liệu của tôi có an toàn không?
 
-**Có, 9Router ưu tiên bảo mật và quyền riêng tư:**
+**Có, tokenhop ưu tiên bảo mật và quyền riêng tư:**
 
 **Local storage:**
 
-- Mọi dữ liệu lưu cục bộ tại `~/.9router` (hoặc `DATA_DIR` tùy chỉnh)
-- Không gửi data đến server 9Router
+- Mọi dữ liệu lưu cục bộ tại `~/.tokenhop` (hoặc `DATA_DIR` tùy chỉnh)
+- Không gửi data đến server tokenhop
 - OAuth tokens mã hóa bằng JWT
 
 **Không telemetry:**
@@ -294,14 +294,14 @@ Xem [hướng dẫn deployment](getting-started/installation.md#deployment) đ�
 - Bật HTTPS cho cloud deployment
 - Xoay API key định kỳ
 
-**9Router lưu gì:**
+**tokenhop lưu gì:**
 
 - Tokens OAuth của provider (mã hóa)
 - API keys (mã hóa)
 - Thống kê sử dụng (chỉ cục bộ)
 - Cấu hình combo
 
-**9Router KHÔNG lưu:**
+**tokenhop KHÔNG lưu:**
 
 - Prompts hoặc responses của bạn
 - Code bạn tạo
@@ -309,20 +309,20 @@ Xem [hướng dẫn deployment](getting-started/installation.md#deployment) đ�
 
 ---
 
-## Làm thế nào để cập nhật 9Router?
+## Làm thế nào để cập nhật tokenhop?
 
 **Phương thức cập nhật phụ thuộc loại cài đặt:**
 
 ### Global NPM Install
 
 ```bash
-npm update -g 9router
+npm update -g tokenhop
 ```
 
 ### Local Install
 
 ```bash
-cd 9router/app
+cd tokenhop
 git pull origin main
 npm install
 npm run build
@@ -332,25 +332,25 @@ npm start
 ### Docker
 
 ```bash
-docker pull 9router:latest
-docker stop 9router
-docker rm 9router
+docker pull ghcr.io/tokenhop/tokenhop:latest
+docker stop tokenhop
+docker rm tokenhop
 docker run -d \
   -p 3000:3000 \
-  -v 9router-data:/app/data \
-  9router:latest
+  -v tokenhop-data:/app/data \
+  ghcr.io/tokenhop/tokenhop:latest
 ```
 
 **Kiểm tra version:**
 
 ```bash
-9router --version
+tokenhop --version
 ```
 
 **Breaking changes:**
 
 - Xem [CHANGELOG.md](https://github.com/tokenhop/tokenhop/blob/master/CHANGELOG.md)
-- Backup `~/.9router` trước khi update lớn
+- Backup `~/.tokenhop` trước khi update lớn
 - Xem hướng dẫn migration cho major version
 
 ---
@@ -373,8 +373,8 @@ docker run -d \
 
    ```bash
    # Fork repo
-   git clone https://github.com/YOUR_USERNAME/9router.git
-   cd 9router
+   git clone https://github.com/YOUR_USERNAME/tokenhop.git
+   cd tokenhop
 
    # Create branch
    git checkout -b feature/your-feature
@@ -416,7 +416,7 @@ Xem [CONTRIBUTING.md](https://github.com/tokenhop/tokenhop/blob/main/CONTRIBUTIN
 
 ## Cần trợ giúp thêm?
 
-- **Documentation:** [9router.com/docs](https://9router.com/docs)
+- **Documentation:** [tokenhop.dev](https://tokenhop.dev)
 - **GitHub:** [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
 - **Issues:** [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 - **Troubleshooting:** [troubleshooting.md](troubleshooting.md)

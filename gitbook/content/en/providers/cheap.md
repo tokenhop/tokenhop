@@ -46,10 +46,10 @@ Dashboard → API Keys → Create New
 → Copy API key (starts with "zhipu-")
 ```
 
-**Step 3: Add to 9Router**
+**Step 3: Add to tokenhop**
 
 ```bash
-9router
+tokenhop
 # Dashboard → Providers → Add API Key
 
 Provider: glm
@@ -119,10 +119,10 @@ Dashboard → API Management → Create Key
 → Copy API key
 ```
 
-**Step 3: Add to 9Router**
+**Step 3: Add to tokenhop**
 
 ```bash
-9router
+tokenhop
 # Dashboard → Providers → Add API Key
 
 Provider: minimax
@@ -193,10 +193,10 @@ Dashboard → API Keys → Create New
 → Copy API key
 ```
 
-**Step 3: Add to 9Router**
+**Step 3: Add to tokenhop**
 
 ```bash
-9router
+tokenhop
 # Dashboard → Providers → Add API Key
 
 Provider: kimi
@@ -258,7 +258,7 @@ Total: 10M tokens = $9 flat
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [from 9router dashboard]
+  OpenAI API Key: [from tokenhop dashboard]
   Model: glm/glm-4.7
 ```
 

@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Common issues and solutions when using 9Router.
+Common issues and solutions when using tokenhop.
 
 ---
 
@@ -88,7 +88,7 @@ Common issues and solutions when using 9Router.
 **Solutions:**
 
 1. **Auto-refresh (default):**
-   9Router automatically refreshes tokens. Wait 30 seconds and retry.
+   tokenhop automatically refreshes tokens. Wait 30 seconds and retry.
 
 2. **Manual reconnect:**
 
@@ -151,16 +151,16 @@ Common issues and solutions when using 9Router.
 
 **Causes:**
 
-- 9Router not running
+- tokenhop not running
 - Port 20128 blocked
 - Firewall blocking connection
 
 **Solutions:**
 
-1. **Start 9Router:**
+1. **Start tokenhop:**
 
    ```bash
-   9router
+   tokenhop
    ```
 
    Dashboard should open at <http://localhost:3000>
@@ -180,11 +180,11 @@ Common issues and solutions when using 9Router.
    - Windows: Windows Defender Firewall → Allow app
    - Linux: `sudo ufw allow 20128`
 
-4. **Use cloud endpoint:**
+4. **Use a public URL:**
    If localhost doesn't work (e.g., Cursor IDE):
 
    ```
-   Endpoint: https://9router.com/v1
+   Endpoint: https://<your-tokenhop-host>/v1
    ```
 
 ---
@@ -196,16 +196,16 @@ Common issues and solutions when using 9Router.
 **Causes:**
 
 - Port 3000 already in use
-- 9Router crashed
+- tokenhop crashed
 - Browser cache issues
 
 **Solutions:**
 
-1. **Check if 9Router is running:**
+1. **Check if tokenhop is running:**
 
    ```bash
    # Check process
-   ps aux | grep 9router
+   ps aux | grep tokenhop
 
    # Check port 3000
    lsof -i :3000
@@ -222,14 +222,14 @@ Common issues and solutions when using 9Router.
    taskkill /PID <PID> /F
    ```
 
-3. **Restart 9Router:**
+3. **Restart tokenhop:**
 
    ```bash
    # Stop
-   pkill -f 9router
+   pkill -f tokenhop
 
    # Start
-   9router
+   tokenhop
    ```
 
 4. **Clear browser cache:**
@@ -391,7 +391,7 @@ Common issues and solutions when using 9Router.
 
 **Solutions:**
 
-1. **Recover password sign-in on the host:** Run the `9router` CLI on the machine running 9Router, then select **Settings → Reset Auth Mode to Password**. The CLI sends a PATCH to `/api/settings` with its machine-bound `x-9r-cli-token` header. This recovery action works only on the host, not from a remote browser.
+1. **Recover password sign-in on the host:** Run the `tokenhop` CLI on the machine running tokenhop, then select **Settings → Reset Auth Mode to Password**. The CLI sends a PATCH to `/api/settings` with its machine-bound `x-9r-cli-token` header. This recovery action works only on the host, not from a remote browser.
 2. **Fix and test SSO:** Sign in with a password, open **Settings → Single sign-on**, select **Password + SSO**, complete the OIDC or SAML configuration, and use **Test**. Switch to **SSO only** only after sign-in works.
 
 The dashboard now refuses to save SSO-only sign-in when the selected protocol is not fully configured, and `/login` displays the SSO error when a sign-in attempt fails.
@@ -401,5 +401,5 @@ The dashboard now refuses to save SSO-only sign-in when the selected protocol is
 ## Need More Help?
 
 - **GitHub Issues:** [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
-- **Documentation:** [9router.com/docs](https://9router.com/docs)
+- **Documentation:** [tokenhop.dev](https://tokenhop.dev)
 - **FAQ:** [faq.md](faq.md)

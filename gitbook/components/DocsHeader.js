@@ -29,7 +29,7 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
             href={`/${lang}`}
             className="flex items-center gap-2 font-bold text-2xl text-black hover:opacity-80 transition-opacity"
           >
-            <span>9</span>
+            <img src={DOCS_CONFIG.logoMark} alt="" width={32} height={32} className="rounded-lg" />
             <span className="text-[#E68A6E]">{DOCS_CONFIG.logo} Docs</span>
           </Link>
 
@@ -58,8 +58,14 @@ export default function DocsHeader({ lang = DEFAULT_LANG }) {
 
           <div className="mobile-menu-drawer lg:hidden">
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
-              <span className="font-bold text-lg text-black">
-                <span className="text-[#E68A6E]">9</span>
+              <span className="flex items-center gap-2 font-bold text-lg text-black">
+                <img
+                  src={DOCS_CONFIG.logoMark}
+                  alt=""
+                  width={24}
+                  height={24}
+                  className="rounded-md"
+                />
                 {DOCS_CONFIG.logo} Docs
               </span>
               <button

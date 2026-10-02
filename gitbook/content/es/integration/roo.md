@@ -1,12 +1,12 @@
 # Integración con Roo AI Assistant
 
-Integra 9Router con Roo AI Assistant para acceder a múltiples modelos de IA a través de una interfaz unificada.
+Integra tokenhop con Roo AI Assistant para acceder a múltiples modelos de IA a través de una interfaz unificada.
 
 ## Requisitos previos
 
 - Roo AI Assistant instalado
-- API key de 9Router desde el [dashboard](https://9router.com/dashboard)
-- 9Router ejecutándose (local o en la nube)
+- API key de tokenhop desde el [dashboard](http://localhost:20128/dashboard)
+- tokenhop ejecutándose (localmente, o en un servidor / túnel que tú controlas)
 
 ## Pasos de configuración
 
@@ -20,23 +20,23 @@ Inicia Roo AI Assistant y abre el panel de configuración.
 2. Selecciona **Ollama** como tipo de proveedor
 3. Configura los siguientes ajustes:
 
-**Para 9Router local:**
+**Para tokenhop local:**
 
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
 ```
 
-**Para 9Router en la nube:**
+**Para tokenhop remoto (tu VPS o URL de túnel):**
 
 ```
-Base URL: https://9router.com/v1
+Base URL: https://<your-tokenhop-host>/v1
 API Key: your-api-key-from-dashboard
 ```
 
 ### 3. Seleccionar modelo
 
-Elige entre los modelos disponibles de 9Router:
+Elige entre los modelos disponibles de tokenhop:
 
 **Modelos Claude:**
 
@@ -59,7 +59,7 @@ Elige entre los modelos disponibles de 9Router:
 Envía un mensaje de prueba para verificar la integración:
 
 ```
-Hello! Can you confirm you're connected through 9Router?
+Hello! Can you confirm you're connected through tokenhop?
 ```
 
 ## Ejemplos de uso
@@ -96,21 +96,21 @@ Modelo: cx/deepseek-reasoner
 
 ### Connection Failed
 
-- Verifica que 9Router esté corriendo: `curl http://localhost:20128/health`
+- Verifica que tokenhop esté corriendo: `curl http://localhost:20128/health`
 - Verifica que la API key sea correcta
 - Asegúrate de que la Base URL incluya el sufijo `/v1`
 
 ### Modelo no disponible
 
 - Verifica que el nombre del modelo coincida exactamente (sensible a mayúsculas)
-- Verifica que el modelo esté habilitado en tu plan de 9Router
+- Verifica que el modelo esté habilitado en tu plan de tokenhop
 - Intenta otro modelo de la lista
 
 ### Respuestas lentas
 
 - Cambia a modelos más rápidos (haiku, flash)
 - Verifica la conexión de red
-- Monitorea los logs de 9Router por problemas
+- Monitorea los logs de tokenhop por problemas
 
 ## Configuración avanzada
 
