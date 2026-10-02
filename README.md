@@ -10,8 +10,6 @@ rotation, OAuth credential management and usage tracking, plus a Next.js dashboa
 > Upgrading from 9router? Nothing to do: your data, keys and tool configs carry over.
 > See [UPGRADING.md](UPGRADING.md). Docs: <https://tokenhop.dev>.
 
-**Upgrading?** See [UPGRADING.md](UPGRADING.md) for what v1.0.0 changes and keeps.
-
 ## Dashboard
 
 The Next.js dashboard defaults to dark for new installs, groups its sidebar into
