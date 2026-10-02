@@ -363,6 +363,8 @@ export default function useOAuthFlow({
   const startOAuthFlow = async (mode = authModeRef.current) => {
     if (!provider) return;
     try {
+      // Re-arm the poll: it runs before the callback listener that also clears this.
+      callbackProcessedRef.current = false;
       setError(null);
       if (PROXY_OAUTH_PROVIDERS.has(provider) && mode === "browser") {
         await startProxyFlow(provider);

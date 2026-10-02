@@ -90,7 +90,7 @@ export function useGenericExample(providerId, kind) {
       })
       .catch(() => {});
     // Load active connections of this provider for pinning
-    fetch("/api/providers/client")
+    fetch("/api/providers", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
         const conns = (d.connections || []).filter(
