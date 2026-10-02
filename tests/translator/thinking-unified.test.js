@@ -220,6 +220,24 @@ describe("applyThinking per provider format", () => {
     expect(out.thinking).toEqual({ type: "enabled" });
     expect(out.reasoning_effort).toBe("high");
   });
+  it("MiMo preview honours an explicit thinking disable (YAN-695)", () => {
+    const off = apply(
+      "openai",
+      "mimo-x-flash-preview",
+      { reasoning_effort: "none" },
+      "xiaomi-mimo",
+    );
+    expect(off.thinking).toEqual({ type: "disabled" });
+    const claudeOff = apply(
+      "openai",
+      "mimo-x-pro-preview",
+      { thinking: { type: "disabled" } },
+      "xiaomi-mimo",
+    );
+    expect(claudeOff.thinking).toEqual({ type: "disabled" });
+    const on = apply("openai", "mimo-x-pro-preview", { reasoning_effort: "high" }, "xiaomi-mimo");
+    expect(on.thinking).toEqual({ type: "enabled" });
+  });
   it("Kimi K3 clamps medium to high (K3 accepts low/high/max only); other Kimi models keep medium", () => {
     const k3 = apply("openai", "moonshotai/kimi-k3", { reasoning_effort: "medium" }, "nvidia");
     expect(k3.reasoning_effort).toBe("high");

@@ -408,6 +408,10 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
       body.thinking = { type: none && canDisable ? "disabled" : "adaptive" };
       break;
     }
+    case "mimo":
+      // MiMo previews: binary thinking.type switch, no effort levels.
+      body.thinking = { type: none && canDisable ? "disabled" : "enabled" };
+      break;
     case "hunyuan": {
       if (none && canDisable) {
         body.thinking = { type: "disabled" };

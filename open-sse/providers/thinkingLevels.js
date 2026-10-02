@@ -28,6 +28,7 @@ const FORMAT_LEVELS = {
   deepseek: L.hiMax,
   commandcode: ["none", "low", "medium", "high", "xhigh", "max"],
   minimax: L.onOff,
+  mimo: L.onOff,
   hunyuan: L.base,
   step: L.base,
 };

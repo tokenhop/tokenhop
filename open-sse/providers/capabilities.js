@@ -1367,6 +1367,18 @@ export const PATTERN_CAPABILITIES = [
     pattern: "*mimo*omni*",
     caps: { vision: true, audioInput: true, contextWindow: 262144, maxOutput: 131072 },
   },
+  // Desktop-exclusive previews reason by default and take MiMo's binary
+  // thinking.type switch (the executor defaults it to enabled when unset).
+  {
+    pattern: "*mimo*preview*",
+    caps: {
+      vision: true,
+      reasoning: true,
+      thinkingFormat: "mimo",
+      contextWindow: 262144,
+      maxOutput: 131072,
+    },
+  },
   { pattern: "*mimo*", caps: { vision: true, contextWindow: 262144, maxOutput: 131072 } },
 
   // ── Llama (4 = vision/1M; 3.x = text-only/128K) ──────────────────
