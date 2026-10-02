@@ -738,6 +738,7 @@ export class KiroExecutor extends BaseExecutor {
       hasMetering: false,
       usage: null,
       inThinking: false,
+      thinkTail: "",
       toolValidationError: null,
       validatedFrames: 0,
       finished: false,
@@ -890,6 +891,42 @@ export class KiroExecutor extends BaseExecutor {
         throw new Error("Kiro tool_use stop reason did not include a complete tool call");
       }
     };
+    // Kiro inlines <thinking> blocks into assistantResponseEvent payloads. The
+    // tags can straddle event boundaries and repeat within a single event, so
+    // scan in a loop and park any partial tag in state.thinkTail until it
+    // completes. Thinking text is dropped, not routed to reasoning_content
+    // (reasoningContentEvent is that channel).
+    const stripThinking = (raw) => {
+      let text = state.thinkTail + raw;
+      state.thinkTail = "";
+      let content = "";
+      while (text.length > 0) {
+        const tag = state.inThinking ? "</thinking>" : "<thinking>";
+        const index = text.indexOf(tag);
+        if (index >= 0) {
+          if (!state.inThinking) content += text.slice(0, index);
+          text = text.slice(index + tag.length);
+          if (state.inThinking) text = text.replace(/^\n/u, "");
+          state.inThinking = !state.inThinking;
+          continue;
+        }
+        // No complete tag: hold back the longest suffix that could be the
+        // start of one, so a tag split across events neither leaks into the
+        // output nor wedges inThinking and drops everything after it.
+        const maxTail = Math.min(tag.length - 1, text.length);
+        let tail = 0;
+        for (let length = maxTail; length > 0; length--) {
+          if (text.endsWith(tag.slice(0, length))) {
+            tail = length;
+            break;
+          }
+        }
+        state.thinkTail = text.slice(text.length - tail);
+        if (!state.inThinking) content += text.slice(0, text.length - tail);
+        break;
+      }
+      return content;
+    };
     const processEvent = (event, controller) => {
       const messageType = event.headers[":message-type"];
       if (messageType === "error" || messageType === "exception") {
@@ -907,26 +944,7 @@ export class KiroExecutor extends BaseExecutor {
       const eventCountKey = KIRO_EVENT_TYPES.has(eventType) ? eventType : "other";
       eventCounts[eventCountKey] = (eventCounts[eventCountKey] || 0) + 1;
       if (eventType === "assistantResponseEvent" && typeof event.payload?.content === "string") {
-        let content = event.payload.content;
-        if (state.inThinking) {
-          const end = content.indexOf("</thinking>");
-          if (end < 0) content = "";
-          else {
-            state.inThinking = false;
-            content = content.slice(end + 11).replace(/^\n/u, "");
-          }
-        } else {
-          const start = content.indexOf("<thinking>");
-          if (start >= 0) {
-            const end = content.indexOf("</thinking>", start + 10);
-            if (end < 0) {
-              state.inThinking = true;
-              content = content.slice(0, start);
-            } else {
-              content = content.slice(0, start) + content.slice(end + 11).replace(/^\n/u, "");
-            }
-          }
-        }
+        const content = stripThinking(event.payload.content);
         if (content || !state.hasReasoning) {
           state.hasText ||= content.length > 0;
           state.totalContentLength += content.length;
@@ -1126,6 +1144,14 @@ export class KiroExecutor extends BaseExecutor {
         return;
       }
       state.transportState = "clean_eof";
+      // A partial tag held back at EOF never completed, so outside a thinking
+      // block it is ordinary content and must not be silently dropped.
+      if (!state.inThinking && state.thinkTail) {
+        state.hasText = true;
+        state.totalContentLength += state.thinkTail.length;
+        emitDelta(controller, { content: state.thinkTail });
+        state.thinkTail = "";
+      }
       const declaredDisposition = stopDisposition(state.stopReason, state.sawToolUse);
       // model_context_window_exceeded / max_tokens map to terminal_incomplete. When
       // they arrive after the model already streamed content, fail() threw away a
