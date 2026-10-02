@@ -50,8 +50,10 @@ const ALLOWED_PATHS = [
   // The upgrade guide has to name what is being upgraded from.
   "UPGRADING.md",
   "gitbook/content/**/upgrading*",
-  // Legacy inputs that compatibility tests read.
+  // Legacy inputs that compatibility tests read, and the upgrade E2E that
+  // creates real 9router state on purpose.
   "tests/fixtures/legacy/**",
+  "tests/e2e/upgrade-from-9router*",
   // The guard itself.
   "scripts/brand-guard.mjs",
   "tests/unit/brand-guard.test.js",
