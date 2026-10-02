@@ -294,9 +294,9 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         result.response_format = { type: "json_object" };
       }
     }
-    if (result.text.verbosity !== undefined && result.verbosity === undefined) {
-      result.verbosity = result.text.verbosity;
-    }
+  }
+  if (result.text?.verbosity !== undefined && result.verbosity === undefined) {
+    result.verbosity = result.text.verbosity;
   }
   delete result.text;
 
