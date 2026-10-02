@@ -43,6 +43,54 @@ describe("Codex CLI Responses → OpenAI", () => {
     // A bare file_id is not a valid image URL
     expect(img?.image_url?.url === "file-abc").toBe(false);
   });
+
+  it("tool_choice {type:function|custom,name} becomes the Chat nested form", () => {
+    for (const type of ["function", "custom"]) {
+      const out = R2O({ input: "hi", tool_choice: { type, name: "f" } });
+      expect(out.tool_choice).toEqual({ type: "function", function: { name: "f" } });
+    }
+    expect(R2O({ input: "hi", tool_choice: "required" }).tool_choice).toBe("required");
+  });
+
+  it("text.format json_schema → response_format and text is removed", () => {
+    const schema = { type: "object", properties: { a: { type: "string" } } };
+    const out = R2O({
+      input: "hi",
+      text: { format: { type: "json_schema", name: "n", schema, strict: true }, verbosity: "low" },
+    });
+    expect(out.response_format).toEqual({
+      type: "json_schema",
+      json_schema: { name: "n", schema, strict: true },
+    });
+    expect(out.verbosity).toBe("low");
+    expect(out.text).toBeUndefined();
+    const obj = R2O({ input: "hi", text: { format: { type: "json_object" } } });
+    expect(obj.response_format).toEqual({ type: "json_object" });
+    expect(obj.text).toBeUndefined();
+  });
+
+  it("input_file maps to a Chat file part", () => {
+    const out = R2O({
+      input: [
+        {
+          type: "message",
+          role: "user",
+          content: [
+            {
+              type: "input_file",
+              filename: "a.pdf",
+              file_data: "data:application/pdf;base64,QQ==",
+            },
+            { type: "input_file", file_id: "file-1" },
+          ],
+        },
+      ],
+    });
+    expect(out.messages[0].content).toEqual([
+      { type: "file", file: { filename: "a.pdf", file_data: "data:application/pdf;base64,QQ==" } },
+      { type: "file", file: { file_id: "file-1" } },
+    ]);
+  });
 });
 
 describe("OpenAI → Codex Responses (reverse)", () => {
@@ -75,5 +123,32 @@ describe("OpenAI → Codex Responses (reverse)", () => {
     });
     const fc = out.input.find((i) => i.type === "function_call");
     expect(fc.call_id.length).toBeLessThanOrEqual(64);
+  });
+
+  it("tool_choice function form is flattened, strings pass through", () => {
+    const messages = [{ role: "user", content: "hi" }];
+    const forced = O2R({ messages, tool_choice: { type: "function", function: { name: "f" } } });
+    expect(forced.tool_choice).toEqual({ type: "function", name: "f" });
+    expect(O2R({ messages, tool_choice: "none" }).tool_choice).toBe("none");
+  });
+
+  it("response_format → text.format without clobbering an existing text", () => {
+    const messages = [{ role: "user", content: "hi" }];
+    const json_schema = { name: "n", schema: { type: "object" }, strict: true };
+    expect(O2R({ messages, response_format: { type: "json_schema", json_schema } }).text).toEqual({
+      format: { type: "json_schema", ...json_schema },
+    });
+    expect(O2R({ messages, response_format: { type: "json_object" } }).text).toEqual({
+      format: { type: "json_object" },
+    });
+    const text = { verbosity: "low" };
+    expect(O2R({ messages, text, response_format: { type: "json_object" } }).text).toBe(text);
+  });
+
+  it("file part with only file_id becomes input_file by id", () => {
+    const out = O2R({
+      messages: [{ role: "user", content: [{ type: "file", file: { file_id: "file-1" } }] }],
+    });
+    expect(out.input[0].content).toEqual([{ type: "input_file", file_id: "file-1" }]);
   });
 });
