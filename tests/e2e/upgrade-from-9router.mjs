@@ -9,6 +9,7 @@
 //   docker build --build-arg NEXT_PUBLIC_BRAND=tokenhop -t tokenhop:e2e-upgrade .
 //     (add --build-arg APK_MIRROR=dl-cdn.alpinelinux.org --build-arg
 //      NPM_REGISTRY=https://registry.npmjs.org outside CN)
+//   Docker Compose v2.24+ (the override uses !override / !reset).
 //
 // Run:
 //   node tests/e2e/upgrade-from-9router.mjs --old /tmp/9router-old [--skip-docker]
@@ -441,6 +442,12 @@ if (SKIP_DOCKER) {
   check("old image: data written to the volume", typeof dkey === "string");
   docker("rm", "-f", `${tag}-old`);
 
+  const cv = /v?(\d+)\.(\d+)/.exec(docker("compose", "version", "--short").stdout || "");
+  check(
+    "Docker Compose v2.24+ (override tags)",
+    !!cv && (+cv[1] > 2 || (+cv[1] === 2 && +cv[2] >= 24)),
+    cv?.[0],
+  );
   // The repo's compose.yml, unchanged except for what keeps the run throwaway:
   // the pinned volume name points at this run's volume, the published port is
   // random, the image is the local tokenhop build and the headroom sidecar is off.

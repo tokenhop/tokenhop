@@ -53,7 +53,7 @@ const ALLOWED_PATHS = [
   // Legacy inputs that compatibility tests read, and the upgrade E2E that
   // creates real 9router state on purpose.
   "tests/fixtures/legacy/**",
-  "tests/e2e/upgrade-from-9router*",
+  "tests/e2e/upgrade-from-9router.mjs",
   // The guard itself.
   "scripts/brand-guard.mjs",
   "tests/unit/brand-guard.test.js",
