@@ -1,6 +1,6 @@
 # はじめに
 
-9Routerを5分で起動し、AIリクエストをインテリジェントにルーティングし始めましょう。
+tokenhopを5分で起動し、AIリクエストをインテリジェントにルーティングし始めましょう。
 
 ---
 
@@ -9,7 +9,7 @@
 ### 1. インストール
 
 ```bash
-npm install -g 9router
+npm install -g tokenhop
 ```
 
 **要件:** Node.js 20+ ([インストール詳細](getting-started/installation.md))
@@ -17,7 +17,7 @@ npm install -g 9router
 ### 2. 起動
 
 ```bash
-9router
+tokenhop
 ```
 
 🎉 **ダッシュボードが自動的に開きます** (`http://localhost:20128`)
@@ -44,7 +44,7 @@ Dashboard → Providers → Connect [Provider]
 
 1. 「Connect Claude Code」をクリック
 2. Claudeアカウントでログイン
-3. 9Routerを認可
+3. tokenhopを認可
 4. ✅ 完了! モデルを使用: `cc/claude-opus-4-5-20251101`
 
 #### オプションB: APIキー(低価格プロバイダー)
@@ -86,14 +86,14 @@ Dashboard → Providers → Connect [Free Provider]
 
 ## 4. CLIツールで使用
 
-コーディングツールを9Routerに向けます:
+コーディングツールをtokenhopに向けます:
 
 ### Cursor IDE
 
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [9routerダッシュボードから取得]
+  OpenAI API Key: [tokenhopダッシュボードから取得]
   Model: cc/claude-opus-4-5-20251101
 ```
 
@@ -104,7 +104,7 @@ Settings → Models → Advanced:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key"
+  "anthropic_api_key": "your-tokenhop-api-key"
 }
 ```
 
@@ -121,7 +121,7 @@ Model: cc/claude-opus-4-5-20251101
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-tokenhop-api-key"
 
 codex "your prompt"
 ```
@@ -256,6 +256,6 @@ CLIで使用: premium-coding
 
 ## ヘルプが必要?
 
-- **ウェブサイト**: [9router.com](https://9router.com)
+- **ウェブサイト**: [tokenhop.ai](https://tokenhop.ai)
 - **GitHub**: [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
 - **Issues**: [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)

@@ -1,13 +1,13 @@
 # Continue VSCode拡張機能統合
 
-9RouterをContinue拡張機能と統合し、Visual Studio Codeに直接AIアシスタンスを導入します。
+tokenhopをContinue拡張機能と統合し、Visual Studio Codeに直接AIアシスタンスを導入します。
 
 ## 前提条件
 
 - Visual Studio Codeがインストール済み
 - VSCodeマーケットプレイスからContinue拡張機能がインストール済み
-- [ダッシュボード](https://9router.com/dashboard)からの9Router APIキー
-- 9Routerが動作中 (ローカルまたはクラウド)
+- [ダッシュボード](http://localhost:20128/dashboard)からのtokenhop APIキー
+- tokenhopが動作中 (ローカル、または自分で管理するサーバー/トンネル)
 
 ## 設定手順
 
@@ -18,7 +18,7 @@
 3. 「Continue: Open Config」と入力して選択
 4. `~/.continue/config.json` が開きます
 
-### 2. 9Routerモデル設定を追加
+### 2. tokenhopモデル設定を追加
 
 以下の設定を `config.json` に追加:
 
@@ -28,7 +28,7 @@
 {
   "models": [
     {
-      "title": "9Router - Claude Opus",
+      "title": "tokenhop - Claude Opus",
       "provider": "openai",
       "model": "cc/claude-opus-4-5-20251101",
       "apiKey": "your-api-key-from-dashboard",
@@ -44,28 +44,28 @@
 {
   "models": [
     {
-      "title": "9Router - Claude Opus (Best)",
+      "title": "tokenhop - Claude Opus (Best)",
       "provider": "openai",
       "model": "cc/claude-opus-4-5-20251101",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
-      "title": "9Router - Claude Sonnet (Balanced)",
+      "title": "tokenhop - Claude Sonnet (Balanced)",
       "provider": "openai",
       "model": "cc/claude-sonnet-4-20250514",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
-      "title": "9Router - DeepSeek Chat (Code)",
+      "title": "tokenhop - DeepSeek Chat (Code)",
       "provider": "openai",
       "model": "cx/deepseek-chat",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
-      "title": "9Router - Claude Haiku (Fast)",
+      "title": "tokenhop - Claude Haiku (Fast)",
       "provider": "openai",
       "model": "cc/claude-haiku-4-20250514",
       "apiKey": "your-api-key-from-dashboard",
@@ -75,11 +75,11 @@
 }
 ```
 
-**クラウド9Router用:**
+**リモートtokenhop(VPSまたはトンネルURL)用:**
 `apiBase` を以下に置き換え:
 
 ```json
-"apiBase": "https://9router.com/v1"
+"apiBase": "https://<your-tokenhop-host>/v1"
 ```
 
 ### 3. 保存してリロード
@@ -92,7 +92,7 @@
 
 1. Continueサイドバーを開く (左パネルのContinueアイコンをクリック)
 2. 上部のモデルセレクタードロップダウンをクリック
-3. お好みの9Routerモデルを選択
+3. お好みのtokenhopモデルを選択
 
 ## 利用可能なモデル
 
@@ -149,7 +149,7 @@
 {
   "models": [
     {
-      "title": "9Router - Code Expert",
+      "title": "tokenhop - Code Expert",
       "provider": "openai",
       "model": "cx/deepseek-chat",
       "apiKey": "your-api-key",
@@ -168,7 +168,7 @@
 {
   "models": [
     {
-      "title": "9Router - Creative Writer",
+      "title": "tokenhop - Creative Writer",
       "provider": "openai",
       "model": "cc/claude-opus-4-5-20251101",
       "apiKey": "your-api-key",
@@ -215,14 +215,14 @@ Continueがモデルに送信するコンテキストを設定:
 
 ### モデルが応答しない
 
-- 9Routerが動作中か確認: `curl http://localhost:20128/health`
+- tokenhopが動作中か確認: `curl http://localhost:20128/health`
 - config.jsonのAPIキーを確認
 - エラーについてVSCode開発者コンソールを確認: `Help` → `Toggle Developer Tools`
 
 ### 間違ったモデルが選択されている
 
 - Continueサイドバーのモデルドロップダウンをクリック
-- 正しい9Routerモデルを選択
+- 正しいtokenhopモデルを選択
 - モデル名は正確に一致する必要があります (大文字小文字を区別)
 
 ### 設定が読み込まれない
@@ -235,7 +235,7 @@ Continueがモデルに送信するコンテキストを設定:
 
 - より高速なモデルへ切替 (haiku、flash)
 - contextProvidersでコンテキストサイズを削減
-- 9Routerへのネットワークレイテンシを確認
+- tokenhopへのネットワークレイテンシを確認
 
 ## ベストプラクティス
 

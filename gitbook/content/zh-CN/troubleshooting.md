@@ -1,6 +1,6 @@
 # 故障排除
 
-使用 9Router 时常见的问题与解决方案。
+使用 tokenhop 时常见的问题与解决方案。
 
 ---
 
@@ -88,7 +88,7 @@
 **解决方案:**
 
 1. **自动刷新(默认):**
-   9Router 会自动刷新 token。等待 30 秒后重试。
+   tokenhop 会自动刷新 token。等待 30 秒后重试。
 
 2. **手动重连:**
 
@@ -151,16 +151,16 @@
 
 **原因:**
 
-- 9Router 未运行
+- tokenhop 未运行
 - 端口 20128 被阻止
 - 防火墙拦截连接
 
 **解决方案:**
 
-1. **启动 9Router:**
+1. **启动 tokenhop:**
 
    ```bash
-   9router
+   tokenhop
    ```
 
    仪表盘应该在 <http://localhost:3000> 打开。
@@ -180,11 +180,11 @@
    - Windows: Windows Defender 防火墙 → 允许应用
    - Linux: `sudo ufw allow 20128`
 
-4. **使用云端 endpoint:**
+4. **使用公网 URL:**
    如果 localhost 不行(例如 Cursor IDE):
 
    ```
-   Endpoint: https://9router.com/v1
+   Endpoint: https://<your-tokenhop-host>/v1
    ```
 
 ---
@@ -196,16 +196,16 @@
 **原因:**
 
 - 端口 3000 被占用
-- 9Router 崩溃
+- tokenhop 崩溃
 - 浏览器缓存问题
 
 **解决方案:**
 
-1. **确认 9Router 是否运行:**
+1. **确认 tokenhop 是否运行:**
 
    ```bash
    # 检查进程
-   ps aux | grep 9router
+   ps aux | grep tokenhop
 
    # 检查端口 3000
    lsof -i :3000
@@ -222,14 +222,14 @@
    taskkill /PID <PID> /F
    ```
 
-3. **重启 9Router:**
+3. **重启 tokenhop:**
 
    ```bash
    # 停止
-   pkill -f 9router
+   pkill -f tokenhop
 
    # 启动
-   9router
+   tokenhop
    ```
 
 4. **清除浏览器缓存:**
@@ -386,5 +386,5 @@
 ## 需要更多帮助?
 
 - **GitHub Issues:** [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
-- **文档:** [9router.com/docs](https://9router.com/docs)
+- **文档:** [tokenhop.dev](https://tokenhop.dev)
 - **常见问题:** [faq.md](faq.md)

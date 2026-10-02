@@ -1,12 +1,12 @@
 # Integración con Claude Code
 
-Integra 9Router con Claude Code CLI para enrutar tus solicitudes de la API de Anthropic a través del sistema de enrutamiento inteligente de 9Router.
+Integra tokenhop con Claude Code CLI para enrutar tus solicitudes de la API de Anthropic a través del sistema de enrutamiento inteligente de tokenhop.
 
 ## Requisitos previos
 
 - Claude Code CLI instalado
-- 9Router ejecutándose localmente o endpoint en la nube configurado
-- API key del dashboard de 9Router
+- tokenhop ejecutándose localmente, o en un servidor / túnel que tú controlas
+- API key del dashboard de tokenhop
 
 ## Configuración
 
@@ -15,7 +15,7 @@ Integra 9Router con Claude Code CLI para enrutar tus solicitudes de la API de An
 Establece las siguientes variables de entorno en tu archivo de configuración del shell (`~/.bashrc`, `~/.zshrc`, o `~/.bash_profile`):
 
 ```bash
-# Base URL for 9Router
+# Base URL for tokenhop
 export ANTHROPIC_BASE_URL="http://localhost:20128/v1"
 
 # Optional: Set default models for aliases
@@ -40,7 +40,7 @@ echo $ANTHROPIC_BASE_URL
 
 ## Aliases de modelos
 
-Claude Code soporta los siguientes aliases de modelos que mapean a modelos de 9Router:
+Claude Code soporta los siguientes aliases de modelos que mapean a modelos de tokenhop:
 
 | Alias    | Modelo            | Variable de entorno              |
 | -------- | ----------------- | -------------------------------- |
@@ -86,7 +86,7 @@ Claude Code almacena su configuración en `~/.claude/settings.json`. Puedes edit
 
 Si encuentras errores de conexión:
 
-1. Verifica que 9Router esté corriendo: `curl http://localhost:20128/health`
+1. Verifica que tokenhop esté corriendo: `curl http://localhost:20128/health`
 2. Verifica que las variables de entorno estén configuradas correctamente
 3. Asegúrate de que ningún firewall esté bloqueando el puerto 20128
 
@@ -94,16 +94,16 @@ Si encuentras errores de conexión:
 
 Si obtienes errores de "modelo no encontrado":
 
-1. Verifica que el nombre del modelo coincida con tu configuración de 9Router
-2. Verifica que la conexión del proveedor esté activa en el dashboard de 9Router
+1. Verifica que el nombre del modelo coincida con tu configuración de tokenhop
+2. Verifica que la conexión del proveedor esté activa en el dashboard de tokenhop
 3. Asegúrate de que el modelo esté disponible en tus proveedores conectados
 
-## Endpoint en la nube
+## Endpoint remoto
 
-Para usar el endpoint en la nube de 9Router en lugar de localhost:
+Para usar una instancia de tokenhop en tu VPS, o expuesta con el túnel de Cloudflare o Tailscale Funnel de la página **Endpoint**, en lugar de localhost:
 
 ```bash
-export ANTHROPIC_BASE_URL="https://9router.com"
+export ANTHROPIC_BASE_URL="https://<your-tokenhop-host>"
 ```
 
-Asegúrate de haber configurado tu API key en el dashboard en la nube de 9Router.
+Usa una API key del dashboard de esa instancia (**Endpoint**) y activa **Require API key** para cualquier URL pública.

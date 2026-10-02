@@ -1,6 +1,6 @@
 # 安装
 
-9Router 的详细安装指南,附故障排除技巧。
+tokenhop 的详细安装指南,附故障排除技巧。
 
 ---
 
@@ -34,35 +34,35 @@ npm --version
 全局安装,任何位置都能使用:
 
 ```bash
-npm install -g 9router
+npm install -g tokenhop
 ```
 
-**启动 9Router:**
+**启动 tokenhop:**
 
 ```bash
-9router
+tokenhop
 ```
 
 **优势:**
 
 - ✅ 任意目录均可运行
-- ✅ 命令简单:`9router`
-- ✅ 通过 `npm update -g 9router` 自动更新
+- ✅ 命令简单:`tokenhop`
+- ✅ 通过 `npm update -g tokenhop` 自动更新
 
 ### 方式 2:本地安装
 
 在特定项目中安装:
 
 ```bash
-mkdir my-9router
-cd my-9router
-npm install 9router
+mkdir my-tokenhop
+cd my-tokenhop
+npm install tokenhop
 ```
 
-**启动 9Router:**
+**启动 tokenhop:**
 
 ```bash
-npx 9router
+npx tokenhop
 ```
 
 **优势:**
@@ -77,7 +77,7 @@ npx 9router
 
 ```bash
 git clone https://github.com/tokenhop/tokenhop.git
-cd 9router/app
+cd tokenhop
 npm install
 npm run build
 npm start
@@ -96,14 +96,14 @@ npm start
 ### 启动服务器
 
 ```bash
-9router
+tokenhop
 ```
 
 **发生了什么:**
 
 1. 服务器启动在 `http://localhost:20128`
 2. 仪表盘在浏览器中自动打开
-3. 数据目录创建在 `~/.9router`
+3. 数据目录创建在 `~/.tokenhop`
 4. API key 自动生成
 
 ### 仪表盘登录
@@ -202,7 +202,7 @@ export JWT_SECRET="your-secure-secret-change-this"
 export INITIAL_PASSWORD="your-password"
 
 # Storage
-export DATA_DIR="~/.9router"
+export DATA_DIR="~/.tokenhop"
 
 # Server
 export PORT="20128"
@@ -214,12 +214,12 @@ export NODE_ENV="production"
 
 ### 数据目录
 
-**默认位置:** `~/.9router`
+**默认位置:** `~/.tokenhop`
 
 **内容:**
 
 ```
-~/.9router/
+~/.tokenhop/
   ├── db.json           # 数据库(提供商、组合、使用)
   ├── api-keys.json     # API keys
   └── logs/             # 请求日志(若启用)
@@ -229,7 +229,7 @@ export NODE_ENV="production"
 
 ```bash
 export DATA_DIR="/custom/path"
-9router
+tokenhop
 ```
 
 ### 端口配置
@@ -240,13 +240,13 @@ export DATA_DIR="/custom/path"
 
 ```bash
 export PORT="3000"
-9router
+tokenhop
 ```
 
 **或用命令行:**
 
 ```bash
-9router --port 3000
+tokenhop --port 3000
 ```
 
 ---
@@ -274,7 +274,7 @@ kill -9 <PID>
 **方案 2:使用其他端口**
 
 ```bash
-9router --port 3000
+tokenhop --port 3000
 ```
 
 ### 权限被拒绝
@@ -282,7 +282,7 @@ kill -9 <PID>
 **错误:**
 
 ```
-Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/9router'
+Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/tokenhop'
 ```
 
 **方案:使用 sudo(不推荐)或修复 npm 权限**
@@ -295,7 +295,7 @@ echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
 source ~/.bashrc
 
 # 然后重新安装
-npm install -g 9router
+npm install -g tokenhop
 ```
 
 ### Node.js 版本过低
@@ -358,23 +358,23 @@ ping google.com
 
 ### 内存占用过高
 
-**问题:** 9Router 占用过多 RAM
+**问题:** tokenhop 占用过多 RAM
 
 **方案:重启服务器**
 
 ```bash
 # 停止
-pkill -f 9router
+pkill -f tokenhop
 
 # 启动
-9router
+tokenhop
 ```
 
 **或用 PM2 自动重启:**
 
 ```bash
 npm install -g pm2
-pm2 start 9router --name 9router
+pm2 start tokenhop --name tokenhop
 pm2 save
 ```
 
@@ -385,8 +385,8 @@ pm2 save
 ### 本地开发
 
 ```bash
-npm install -g 9router
-9router
+npm install -g tokenhop
+tokenhop
 ```
 
 **适用场景:** 个人编码、测试
@@ -395,7 +395,7 @@ npm install -g 9router
 
 ```bash
 # 安装
-npm install -g 9router
+npm install -g tokenhop
 
 # 配置
 export JWT_SECRET="your-secure-secret"
@@ -404,7 +404,7 @@ export NODE_ENV="production"
 
 # 用 PM2 启动
 npm install -g pm2
-pm2 start 9router --name 9router
+pm2 start tokenhop --name tokenhop
 pm2 save
 pm2 startup
 ```
@@ -414,15 +414,15 @@ pm2 startup
 ### Docker
 
 ```bash
-docker pull 9router/9router:latest
+docker pull ghcr.io/tokenhop/tokenhop:latest
 
 docker run -d \
   -p 20128:20128 \
   -e JWT_SECRET="your-secure-secret" \
   -e INITIAL_PASSWORD="your-password" \
-  -v 9router-data:/root/.9router \
-  --name 9router \
-  9router/9router:latest
+  -v tokenhop-data:/app/data \
+  --name tokenhop \
+  ghcr.io/tokenhop/tokenhop:latest
 ```
 
 **适用场景:** 容器化部署、Kubernetes
@@ -457,13 +457,13 @@ server {
 ### 移除全局安装
 
 ```bash
-npm uninstall -g 9router
+npm uninstall -g tokenhop
 ```
 
 ### 移除数据目录
 
 ```bash
-rm -rf ~/.9router
+rm -rf ~/.tokenhop
 ```
 
 ### 移除配置
@@ -471,7 +471,7 @@ rm -rf ~/.9router
 ```bash
 # 从 shell 配置中移除环境变量
 nano ~/.bashrc  # 或 ~/.zshrc
-# 删除 9router 相关的 export
+# 删除 tokenhop 相关的 export
 ```
 
 ---
@@ -486,6 +486,6 @@ nano ~/.bashrc  # 或 ~/.zshrc
 
 ## 需要帮助?
 
-- **网站**: [9router.com](https://9router.com)
+- **网站**: [tokenhop.ai](https://tokenhop.ai)
 - **GitHub**: [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
 - **Issues**: [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)

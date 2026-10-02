@@ -45,7 +45,7 @@ import {
 } from "lucide-react";
 
 const PAGE_ICONS = {
-  "Welcome to 9Router": BookOpen,
+  "Welcome to tokenhop": BookOpen,
   Introduction: BookOpen,
   "Getting Started": Rocket,
   "Quick Start": Rocket,

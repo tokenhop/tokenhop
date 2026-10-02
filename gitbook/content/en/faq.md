@@ -1,12 +1,12 @@
 # Frequently Asked Questions
 
-Common questions about 9Router.
+Common questions about tokenhop.
 
 ---
 
-## What is 9Router?
+## What is tokenhop?
 
-**9Router is an AI model router that maximizes your subscription value and minimizes costs.**
+**tokenhop is an AI model router that maximizes your subscription value and minimizes costs.**
 
 It intelligently routes requests across multiple AI providers using a 3-tier fallback system:
 
@@ -25,7 +25,7 @@ It intelligently routes requests across multiple AI providers using a 3-tier fal
 
 ## How does pricing work?
 
-**9Router uses a 3-tier pricing strategy:**
+**tokenhop uses a 3-tier pricing strategy:**
 
 ### Tier 1: Subscription (Maximize First)
 
@@ -55,9 +55,9 @@ It intelligently routes requests across multiple AI providers using a 3-tier fal
 
 ---
 
-## Is 9Router free?
+## Is tokenhop free?
 
-**Yes, 9Router itself is 100% free and open source.**
+**Yes, tokenhop itself is 100% free and open source.**
 
 **Free tier providers available:**
 
@@ -106,7 +106,7 @@ See [providers documentation](providers/subscription.md) for details.
 
 ## Can I use multiple providers?
 
-**Yes! This is 9Router's core feature.**
+**Yes! This is tokenhop's core feature.**
 
 **Combos allow you to chain multiple providers with automatic fallback:**
 
@@ -141,7 +141,7 @@ See [combos documentation](features/combos.md) for examples.
 
 ## How does quota tracking work?
 
-**9Router tracks quota in real-time for all providers:**
+**tokenhop tracks quota in real-time for all providers:**
 
 **Features:**
 
@@ -169,17 +169,17 @@ See [quota tracking documentation](features/quota-tracking.md) for details.
 
 ---
 
-## Does 9Router work with Cursor?
+## Does tokenhop work with Cursor?
 
-**Yes, but Cursor requires a cloud endpoint.**
+**Yes, but Cursor needs a public URL.**
 
 **Problem:** Cursor IDE doesn't support localhost endpoints.
 
-**Solution:** Use 9Router cloud deployment:
+**Solution:** Expose your tokenhop instance over HTTPS (dashboard → **Endpoint** → Cloudflare tunnel or Tailscale Funnel), or deploy it on a VPS:
 
 ```
 Cursor Settings → Models → Advanced:
-  OpenAI API Base URL: https://9router.com/v1
+  OpenAI API Base URL: https://<your-tokenhop-host>/v1
   OpenAI API Key: [from dashboard]
   Model: cc/claude-opus-4-5-20251101
 ```
@@ -189,7 +189,7 @@ Cursor Settings → Models → Advanced:
 ```bash
 # Deploy to VPS
 git clone https://github.com/tokenhop/tokenhop.git
-cd 9router/app
+cd tokenhop
 npm install && npm run build
 npm start
 
@@ -209,15 +209,15 @@ See [Cursor integration guide](integration/cursor.md) for details.
 
 ---
 
-## Can I self-host 9Router?
+## Can I self-host tokenhop?
 
-**Yes! 9Router supports multiple deployment options:**
+**Yes! tokenhop supports multiple deployment options:**
 
 ### Localhost (Default)
 
 ```bash
-npm install -g 9router
-9router
+npm install -g tokenhop
+tokenhop
 → Dashboard: http://localhost:3000
 → API: http://localhost:20128/v1
 ```
@@ -226,7 +226,7 @@ npm install -g 9router
 
 ```bash
 git clone https://github.com/tokenhop/tokenhop.git
-cd 9router/app
+cd tokenhop
 npm install && npm run build
 
 export JWT_SECRET="your-secure-secret"
@@ -239,25 +239,25 @@ npm start
 ### Docker
 
 ```bash
-docker build -t 9router .
+docker build -t tokenhop .
 docker run -d \
   -p 3000:3000 \
   -e JWT_SECRET="your-secret" \
-  -v 9router-data:/app/data \
-  9router
+  -v tokenhop-data:/app/data \
+  tokenhop
 ```
 
 ### Cloudflare Workers
 
 ```bash
-cd 9router/app
+cd tokenhop
 npm run deploy:cloudflare
 ```
 
 **Environment variables:**
 
 - `JWT_SECRET` - **MUST change in production!**
-- `DATA_DIR` - Database storage path (default: `~/.9router`)
+- `DATA_DIR` - Database storage path (default: `~/.tokenhop`)
 - `INITIAL_PASSWORD` - Dashboard login (default: `123456`)
 - `NODE_ENV` - Set to `production` for deploy
 
@@ -267,12 +267,12 @@ See [deployment guide](getting-started/installation.md#deployment) for details.
 
 ## Is my data secure?
 
-**Yes, 9Router prioritizes security and privacy:**
+**Yes, tokenhop prioritizes security and privacy:**
 
 **Local storage:**
 
-- All data stored locally in `~/.9router` (or custom `DATA_DIR`)
-- No data sent to 9Router servers
+- All data stored locally in `~/.tokenhop` (or custom `DATA_DIR`)
+- No data sent to tokenhop servers
 - OAuth tokens encrypted with JWT
 
 **No telemetry:**
@@ -294,14 +294,14 @@ See [deployment guide](getting-started/installation.md#deployment) for details.
 - Enable HTTPS for cloud deployments
 - Rotate API keys regularly
 
-**What 9Router stores:**
+**What tokenhop stores:**
 
 - Provider OAuth tokens (encrypted)
 - API keys (encrypted)
 - Usage statistics (local only)
 - Combo configurations
 
-**What 9Router does NOT store:**
+**What tokenhop does NOT store:**
 
 - Your prompts or responses
 - Code you generate
@@ -309,20 +309,20 @@ See [deployment guide](getting-started/installation.md#deployment) for details.
 
 ---
 
-## How do I update 9Router?
+## How do I update tokenhop?
 
 **Update methods depend on installation type:**
 
 ### Global NPM Install
 
 ```bash
-npm update -g 9router
+npm update -g tokenhop
 ```
 
 ### Local Install
 
 ```bash
-cd 9router/app
+cd tokenhop
 git pull origin main
 npm install
 npm run build
@@ -332,25 +332,25 @@ npm start
 ### Docker
 
 ```bash
-docker pull 9router:latest
-docker stop 9router
-docker rm 9router
+docker pull ghcr.io/tokenhop/tokenhop:latest
+docker stop tokenhop
+docker rm tokenhop
 docker run -d \
   -p 3000:3000 \
-  -v 9router-data:/app/data \
-  9router:latest
+  -v tokenhop-data:/app/data \
+  ghcr.io/tokenhop/tokenhop:latest
 ```
 
 **Check version:**
 
 ```bash
-9router --version
+tokenhop --version
 ```
 
 **Breaking changes:**
 
 - Check [CHANGELOG.md](https://github.com/tokenhop/tokenhop/blob/master/CHANGELOG.md)
-- Backup `~/.9router` before major updates
+- Backup `~/.tokenhop` before major updates
 - Review migration guides for major versions
 
 ---
@@ -373,8 +373,8 @@ docker run -d \
 
    ```bash
    # Fork repo
-   git clone https://github.com/YOUR_USERNAME/9router.git
-   cd 9router
+   git clone https://github.com/YOUR_USERNAME/tokenhop.git
+   cd tokenhop
 
    # Create branch
    git checkout -b feature/your-feature
@@ -416,7 +416,7 @@ See [CONTRIBUTING.md](https://github.com/tokenhop/tokenhop/blob/main/CONTRIBUTIN
 
 ## Need More Help?
 
-- **Documentation:** [9router.com/docs](https://9router.com/docs)
+- **Documentation:** [tokenhop.dev](https://tokenhop.dev)
 - **GitHub:** [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
 - **Issues:** [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 - **Troubleshooting:** [troubleshooting.md](troubleshooting.md)

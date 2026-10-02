@@ -4,6 +4,7 @@ import "./globals.css";
 export const metadata = {
   title: DOCS_CONFIG.title,
   description: DOCS_CONFIG.description,
+  icons: { icon: "/favicon.svg" },
 };
 
 export default function RootLayout({ children }) {

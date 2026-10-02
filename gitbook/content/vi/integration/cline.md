@@ -1,13 +1,13 @@
 # Tích hợp Cline
 
-Tích hợp 9Router với extension Cline VSCode để định tuyến request AI qua hệ thống routing thông minh của 9Router.
+Tích hợp tokenhop với extension Cline VSCode để định tuyến request AI qua hệ thống routing thông minh của tokenhop.
 
 ## Yêu cầu
 
 - Visual Studio Code đã cài đặt
 - Extension Cline đã cài đặt từ VSCode marketplace
-- 9Router đang chạy cục bộ hoặc cloud endpoint đã cấu hình
-- API key từ 9Router dashboard
+- tokenhop đang chạy cục bộ, hoặc trên server / tunnel mà bạn kiểm soát
+- API key từ tokenhop dashboard
 
 ## Setup
 
@@ -25,36 +25,36 @@ Tích hợp 9Router với extension Cline VSCode để định tuyến request A
 
 ### 3. Cấu hình Base URL
 
-Đặt base URL tới endpoint 9Router:
+Đặt base URL tới endpoint tokenhop:
 
-**Cho 9Router cục bộ:**
+**Cho tokenhop cục bộ:**
 
 ```
 http://localhost:20128/v1
 ```
 
-**Cho 9Router cloud:**
+**Cho tokenhop từ xa (URL VPS hoặc tunnel của bạn):**
 
 ```
-https://9router.com
+https://<your-tokenhop-host>/v1
 ```
 
 **Các bước:**
 
-1. Trong field **Base URL**, nhập endpoint 9Router
+1. Trong field **Base URL**, nhập endpoint tokenhop
 2. Đảm bảo bao gồm `/v1` ở cuối
 
 ### 4. Thêm API Key
 
-1. Trong field **API Key**, nhập API key 9Router của bạn
-2. Bạn có thể tìm API key trong 9Router dashboard tại **Settings → API Keys**
-3. Key bắt đầu bằng `sk-9router-`
+1. Trong field **API Key**, nhập API key tokenhop của bạn
+2. Bạn có thể tìm API key trong tokenhop dashboard tại **Settings → API Keys**
+3. Key bắt đầu bằng `sk-`
 
 ### 5. Chọn Model
 
 1. Trong dropdown **Model**, bạn có thể:
    - Chọn từ model có sẵn (nếu Cline auto-detect)
-   - Nhập tên model thủ công từ cấu hình 9Router
+   - Nhập tên model thủ công từ cấu hình tokenhop
 
 2. Tên model phổ biến:
    - `gpt-4`
@@ -74,13 +74,13 @@ Cline settings của bạn nên trông như sau:
 ```
 API Provider: Ollama
 Base URL: http://localhost:20128/v1
-API Key: sk-9router-xxxxxxxxxxxxx
+API Key: sk-xxxxxxxxxxxxxxxx
 Model: gpt-4
 ```
 
 ## Model có sẵn
 
-Bạn có thể dùng bất kỳ model nào đã cấu hình trong 9Router dashboard. Ví dụ phổ biến:
+Bạn có thể dùng bất kỳ model nào đã cấu hình trong tokenhop dashboard. Ví dụ phổ biến:
 
 | Tên Model           | Provider  | Mô tả             |
 | ------------------- | --------- | ----------------- |
@@ -97,65 +97,65 @@ Bạn có thể dùng bất kỳ model nào đã cấu hình trong 9Router dashb
 1. Mở panel Cline trong VSCode
 2. Gõ tin nhắn vào input chat
 3. Nhấn Enter để gửi
-4. Cline sẽ dùng 9Router để xử lý request
+4. Cline sẽ dùng tokenhop để xử lý request
 
 ### Tạo Code
 
 1. Yêu cầu Cline tạo code: "Create a React component for a login form"
-2. Cline sẽ tạo code qua 9Router
+2. Cline sẽ tạo code qua tokenhop
 3. Xem và chấp nhận code được tạo
 
 ### Giải thích Code
 
 1. Chọn code trong editor
 2. Hỏi Cline: "Explain this code"
-3. Nhận giải thích AI qua 9Router
+3. Nhận giải thích AI qua tokenhop
 
 ### Thao tác File
 
 1. Yêu cầu Cline tạo, sửa hoặc xóa files
-2. Cline sẽ dùng 9Router để hiểu context và thực hiện thay đổi
+2. Cline sẽ dùng tokenhop để hiểu context và thực hiện thay đổi
 3. Xem thay đổi trước khi chấp nhận
 
 ## Troubleshooting
 
 ### Lỗi "Connection Failed"
 
-1. Xác minh 9Router đang chạy: `curl http://localhost:20128/health`
+1. Xác minh tokenhop đang chạy: `curl http://localhost:20128/health`
 2. Kiểm tra base URL đúng và bao gồm `/v1`
 3. Đảm bảo không firewall nào chặn port 20128
 4. Thử khởi động lại VSCode
 
 ### Lỗi "Invalid API Key"
 
-1. Xác minh API key trong 9Router dashboard
-2. Đảm bảo bạn sao chép đầy đủ key bao gồm prefix `sk-9router-`
+1. Xác minh API key trong tokenhop dashboard
+2. Đảm bảo bạn sao chép đầy đủ key bao gồm prefix `sk-`
 3. Kiểm tra API key chưa hết hạn
 4. Thử tạo API key mới
 
 ### Lỗi "Model Not Found"
 
-1. Xác minh tên model khớp chính xác với cấu hình 9Router
-2. Kiểm tra kết nối provider đang hoạt động trong 9Router dashboard
+1. Xác minh tên model khớp chính xác với cấu hình tokenhop
+2. Kiểm tra kết nối provider đang hoạt động trong tokenhop dashboard
 3. Đảm bảo model có sẵn trong các provider đã kết nối
 4. Thử dùng tên model đầy đủ (ví dụ: `openai/gpt-4` thay vì `gpt-4`)
 
 ### Cline không phản hồi
 
 1. Kiểm tra panel output Cline để xem thông báo lỗi
-2. Xác minh 9Router instance đang chạy và healthy
+2. Xác minh tokenhop instance đang chạy và healthy
 3. Thử reload cửa sổ VSCode (Cmd/Ctrl + Shift + P → "Reload Window")
-4. Kiểm tra logs 9Router để xem lỗi
+4. Kiểm tra logs tokenhop để xem lỗi
 
 ## Cấu hình Nâng cao
 
-### Dùng Cloud Endpoint
+### Dùng Remote Endpoint
 
-Để dùng 9Router cloud endpoint thay vì localhost:
+Để dùng tokenhop instance trên VPS, hoặc được expose qua Cloudflare tunnel hoặc Tailscale Funnel từ trang Endpoint, thay vì localhost:
 
-1. Trong Cline settings, đặt Base URL: `https://9router.com`
-2. Đảm bảo bạn đã cấu hình API key trong 9Router cloud dashboard
-3. Đảm bảo cloud endpoint đang hoạt động và truy cập được
+1. Trong Cline settings, đặt Base URL: `https://<your-tokenhop-host>/v1`
+2. Dùng API key từ dashboard của instance đó và bật **Require API key** cho mọi URL công khai
+3. Đảm bảo instance đang chạy và truy cập được tại URL đó
 
 ### Nhiều Model
 
@@ -176,16 +176,16 @@ Nếu gặp vấn đề timeout với request lớn:
 ## Best Practices
 
 1. **Dùng Model phù hợp**: Chọn model nhanh (như Haiku hoặc Flash) cho task đơn giản, model mạnh hơn (như Opus hoặc GPT-4) cho task phức tạp
-2. **Theo dõi Usage**: Kiểm tra 9Router dashboard để xem thống kê và chi phí
+2. **Theo dõi Usage**: Kiểm tra tokenhop dashboard để xem thống kê và chi phí
 3. **Quản lý Context**: Giữ cuộc trò chuyện tập trung để giảm token usage
 4. **Chuyển Model**: Chuyển model dựa trên độ phức tạp task để tối ưu chi phí và hiệu năng
 5. **Bảo mật API Key**: Không bao giờ commit API key vào version control
 
-## Tích hợp với Tính năng 9Router
+## Tích hợp với Tính năng tokenhop
 
 ### Định tuyến Model
 
-9Router tự động định tuyến request đến provider tốt nhất hiện có dựa trên:
+tokenhop tự động định tuyến request đến provider tốt nhất hiện có dựa trên:
 
 - Tính khả dụng của model
 - Trạng thái sức khỏe provider
@@ -194,11 +194,11 @@ Nếu gặp vấn đề timeout với request lớn:
 
 ### Hỗ trợ Fallback
 
-Nếu một provider thất bại, 9Router tự động fallback sang provider khác đã cấu hình trong dashboard.
+Nếu một provider thất bại, tokenhop tự động fallback sang provider khác đã cấu hình trong dashboard.
 
 ### Theo dõi Usage
 
-Giám sát usage Cline qua 9Router dashboard:
+Giám sát usage Cline qua tokenhop dashboard:
 
 - Tổng request
 - Token usage

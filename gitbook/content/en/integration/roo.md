@@ -1,12 +1,12 @@
 # Roo AI Assistant Integration
 
-Integrate 9Router with Roo AI Assistant to access multiple AI models through a unified interface.
+Integrate tokenhop with Roo AI Assistant to access multiple AI models through a unified interface.
 
 ## Prerequisites
 
 - Roo AI Assistant installed
-- 9Router API key from [dashboard](https://9router.com/dashboard)
-- 9Router running (local or cloud)
+- tokenhop API key from [dashboard](http://localhost:20128/dashboard)
+- tokenhop running (locally, or on a server / tunnel you control)
 
 ## Configuration Steps
 
@@ -20,23 +20,23 @@ Launch Roo AI Assistant and open the settings panel.
 2. Select **Ollama** as the provider type
 3. Configure the following settings:
 
-**For Local 9Router:**
+**For Local tokenhop:**
 
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
 ```
 
-**For Cloud 9Router:**
+**For Remote tokenhop (your VPS or tunnel URL):**
 
 ```
-Base URL: https://9router.com/v1
+Base URL: https://<your-tokenhop-host>/v1
 API Key: your-api-key-from-dashboard
 ```
 
 ### 3. Select Model
 
-Choose from available 9Router models:
+Choose from available tokenhop models:
 
 **Claude Models:**
 
@@ -59,7 +59,7 @@ Choose from available 9Router models:
 Send a test message to verify the integration:
 
 ```
-Hello! Can you confirm you're connected through 9Router?
+Hello! Can you confirm you're connected through tokenhop?
 ```
 
 ## Usage Examples
@@ -96,21 +96,21 @@ Model: cx/deepseek-reasoner
 
 ### Connection Failed
 
-- Verify 9Router is running: `curl http://localhost:20128/health`
+- Verify tokenhop is running: `curl http://localhost:20128/health`
 - Check API key is correct
 - Ensure Base URL includes `/v1` suffix
 
 ### Model Not Available
 
 - Check model name matches exactly (case-sensitive)
-- Verify model is enabled in your 9Router plan
+- Verify model is enabled in your tokenhop plan
 - Try a different model from the list
 
 ### Slow Responses
 
 - Switch to faster models (haiku, flash)
 - Check network connection
-- Monitor 9Router logs for issues
+- Monitor tokenhop logs for issues
 
 ## Advanced Configuration
 

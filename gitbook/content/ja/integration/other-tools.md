@@ -1,10 +1,10 @@
 # その他ツール統合
 
-9RouterはOpenAI API形式をサポートする任意のツールと互換性があります。このガイドでは、様々なツールやカスタムアプリケーション向けの汎用統合パターンを説明します。
+tokenhopはOpenAI API形式をサポートする任意のツールと互換性があります。このガイドでは、様々なツールやカスタムアプリケーション向けの汎用統合パターンを説明します。
 
 ## 概要
 
-9RouterはOpenAI互換APIエンドポイントを提供し、以下と動作します:
+tokenhopはOpenAI互換APIエンドポイントを提供し、以下と動作します:
 
 - カスタムスクリプトとアプリケーション
 - APIクライアントとテストツール
@@ -14,22 +14,22 @@
 
 ## 汎用セットアップパターン
 
-任意のOpenAI互換ツールは以下の設定で9Routerに接続できます:
+任意のOpenAI互換ツールは以下の設定でtokenhopに接続できます:
 
-**ローカル9Router:**
+**ローカルtokenhop:**
 
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
-Model: 任意の9Routerモデル (cc/*, cx/*, glm/*など)
+Model: 任意のtokenhopモデル (cc/*, cx/*, glm/*など)
 ```
 
-**クラウド9Router:**
+**リモートtokenhop(VPSまたはトンネルURL):**
 
 ```
-Base URL: https://9router.com/v1
+Base URL: https://<your-tokenhop-host>/v1
 API Key: your-api-key-from-dashboard
-Model: 任意の9Routerモデル (cc/*, cx/*, glm/*など)
+Model: 任意のtokenhopモデル (cc/*, cx/*, glm/*など)
 ```
 
 ## 利用可能なモデル
@@ -323,10 +323,10 @@ def chat_with_retry(prompt, max_retries=3):
 
 ### 接続の問題
 
-**問題:** 9Routerに接続できない
+**問題:** tokenhopに接続できない
 
 ```bash
-# 9Routerが動作中か確認
+# tokenhopが動作中か確認
 curl http://localhost:20128/health
 
 # 期待されるレスポンス:
@@ -335,7 +335,7 @@ curl http://localhost:20128/health
 
 **解決策:**
 
-- 9Routerが動作中か確認
+- tokenhopが動作中か確認
 - ポート20128がブロックされていないか確認
 - 正しいbase URLを確認 (`/v1`を含む)
 
@@ -379,7 +379,7 @@ Error: Request timed out after 30s
 
 - クライアント設定でタイムアウトを増やす
 - 時間制約のあるタスクには高速モデルを使用
-- 9Routerへのネットワーク接続を確認
+- tokenhopへのネットワーク接続を確認
 
 ### レート制限
 

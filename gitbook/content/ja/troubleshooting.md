@@ -1,6 +1,6 @@
 # トラブルシューティング
 
-9Router利用時の一般的な問題と解決策。
+tokenhop利用時の一般的な問題と解決策。
 
 ---
 
@@ -88,7 +88,7 @@
 **解決策:**
 
 1. **自動更新(デフォルト):**
-   9Routerは自動的にトークンを更新します。30秒待ってから再試行。
+   tokenhopは自動的にトークンを更新します。30秒待ってから再試行。
 
 2. **手動で再接続:**
 
@@ -151,16 +151,16 @@
 
 **原因:**
 
-- 9Routerが起動していない
+- tokenhopが起動していない
 - ポート20128がブロックされている
 - ファイアウォールが接続をブロック
 
 **解決策:**
 
-1. **9Routerを起動:**
+1. **tokenhopを起動:**
 
    ```bash
-   9router
+   tokenhop
    ```
 
    ダッシュボードが<http://localhost:3000で開くはず>
@@ -180,11 +180,11 @@
    - Windows: Windows Defenderファイアウォール → アプリを許可
    - Linux: `sudo ufw allow 20128`
 
-4. **クラウドエンドポイントを使用:**
+4. **公開URLを使用:**
    localhostが動作しない場合(例: Cursor IDE):
 
    ```
-   Endpoint: https://9router.com/v1
+   Endpoint: https://<your-tokenhop-host>/v1
    ```
 
 ---
@@ -196,16 +196,16 @@
 **原因:**
 
 - ポート3000がすでに使用中
-- 9Routerがクラッシュした
+- tokenhopがクラッシュした
 - ブラウザキャッシュの問題
 
 **解決策:**
 
-1. **9Routerが実行中か確認:**
+1. **tokenhopが実行中か確認:**
 
    ```bash
    # プロセスを確認
-   ps aux | grep 9router
+   ps aux | grep tokenhop
 
    # ポート3000を確認
    lsof -i :3000
@@ -222,14 +222,14 @@
    taskkill /PID <PID> /F
    ```
 
-3. **9Routerを再起動:**
+3. **tokenhopを再起動:**
 
    ```bash
    # 停止
-   pkill -f 9router
+   pkill -f tokenhop
 
    # 起動
-   9router
+   tokenhop
    ```
 
 4. **ブラウザキャッシュをクリア:**
@@ -386,5 +386,5 @@
 ## さらにヘルプが必要?
 
 - **GitHub Issues:** [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
-- **ドキュメント:** [9router.com/docs](https://9router.com/docs)
+- **ドキュメント:** [tokenhop.dev](https://tokenhop.dev)
 - **FAQ:** [faq.md](faq.md)

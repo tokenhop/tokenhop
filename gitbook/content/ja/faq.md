@@ -1,12 +1,12 @@
 # よくある質問
 
-9Routerに関する一般的な質問。
+tokenhopに関する一般的な質問。
 
 ---
 
-## 9Routerとは?
+## tokenhopとは?
 
-**9Routerは、サブスクリプションの価値を最大化し、コストを最小限に抑えるAIモデルルーターです。**
+**tokenhopは、サブスクリプションの価値を最大化し、コストを最小限に抑えるAIモデルルーターです。**
 
 3階層フォールバックシステムを使用して、複数のAIプロバイダー間でリクエストをインテリジェントにルーティングします:
 
@@ -25,7 +25,7 @@
 
 ## 料金体系はどうなっていますか?
 
-**9Routerは3階層の料金戦略を使用します:**
+**tokenhopは3階層の料金戦略を使用します:**
 
 ### Tier 1: サブスクリプション(最初に最大化)
 
@@ -55,9 +55,9 @@
 
 ---
 
-## 9Routerは無料ですか?
+## tokenhopは無料ですか?
 
-**はい、9Router自体は100%無料でオープンソースです。**
+**はい、tokenhop自体は100%無料でオープンソースです。**
 
 **利用可能な無料階層プロバイダー:**
 
@@ -106,7 +106,7 @@
 
 ## 複数のプロバイダーを使用できますか?
 
-**はい! これは9Routerのコア機能です。**
+**はい! これはtokenhopのコア機能です。**
 
 **コンボにより、複数のプロバイダーを自動フォールバック付きで連鎖させることができます:**
 
@@ -141,7 +141,7 @@ Dashboard → Combos → Create New
 
 ## クォータトラッキングはどのように機能しますか?
 
-**9Routerはすべてのプロバイダーのクォータをリアルタイムで追跡します:**
+**tokenhopはすべてのプロバイダーのクォータをリアルタイムで追跡します:**
 
 **機能:**
 
@@ -169,17 +169,17 @@ Dashboard → Providers → Quota Tracking
 
 ---
 
-## 9RouterはCursorで動作しますか?
+## tokenhopはCursorで動作しますか?
 
-**はい、ただしCursorはクラウドエンドポイントが必要です。**
+**はい、ただしCursorには公開URLが必要です。**
 
 **問題:** Cursor IDEはlocalhostエンドポイントをサポートしていません。
 
-**解決策:** 9Routerクラウドデプロイメントを使用:
+**解決策:** tokenhopインスタンスをHTTPSで公開する(ダッシュボード → **Endpoint** → CloudflareトンネルまたはTailscale Funnel)か、VPSにデプロイします:
 
 ```
 Cursor Settings → Models → Advanced:
-  OpenAI API Base URL: https://9router.com/v1
+  OpenAI API Base URL: https://<your-tokenhop-host>/v1
   OpenAI API Key: [ダッシュボードから取得]
   Model: cc/claude-opus-4-5-20251101
 ```
@@ -189,7 +189,7 @@ Cursor Settings → Models → Advanced:
 ```bash
 # VPSへデプロイ
 git clone https://github.com/tokenhop/tokenhop.git
-cd 9router/app
+cd tokenhop
 npm install && npm run build
 npm start
 
@@ -209,15 +209,15 @@ npm start
 
 ---
 
-## 9Routerをセルフホストできますか?
+## tokenhopをセルフホストできますか?
 
-**はい! 9Routerは複数のデプロイメントオプションをサポートします:**
+**はい! tokenhopは複数のデプロイメントオプションをサポートします:**
 
 ### Localhost(デフォルト)
 
 ```bash
-npm install -g 9router
-9router
+npm install -g tokenhop
+tokenhop
 → Dashboard: http://localhost:3000
 → API: http://localhost:20128/v1
 ```
@@ -226,7 +226,7 @@ npm install -g 9router
 
 ```bash
 git clone https://github.com/tokenhop/tokenhop.git
-cd 9router/app
+cd tokenhop
 npm install && npm run build
 
 export JWT_SECRET="your-secure-secret"
@@ -239,25 +239,25 @@ npm start
 ### Docker
 
 ```bash
-docker build -t 9router .
+docker build -t tokenhop .
 docker run -d \
   -p 3000:3000 \
   -e JWT_SECRET="your-secret" \
-  -v 9router-data:/app/data \
-  9router
+  -v tokenhop-data:/app/data \
+  tokenhop
 ```
 
 ### Cloudflare Workers
 
 ```bash
-cd 9router/app
+cd tokenhop
 npm run deploy:cloudflare
 ```
 
 **環境変数:**
 
 - `JWT_SECRET` - **本番環境で必ず変更!**
-- `DATA_DIR` - データベース保存パス(デフォルト: `~/.9router`)
+- `DATA_DIR` - データベース保存パス(デフォルト: `~/.tokenhop`)
 - `INITIAL_PASSWORD` - ダッシュボードログイン(デフォルト: `123456`)
 - `NODE_ENV` - デプロイ時は`production`に設定
 
@@ -267,12 +267,12 @@ npm run deploy:cloudflare
 
 ## データは安全ですか?
 
-**はい、9Routerはセキュリティとプライバシーを優先します:**
+**はい、tokenhopはセキュリティとプライバシーを優先します:**
 
 **ローカルストレージ:**
 
-- すべてのデータは`~/.9router`(またはカスタム`DATA_DIR`)にローカル保存
-- 9Routerサーバーへのデータ送信なし
+- すべてのデータは`~/.tokenhop`(またはカスタム`DATA_DIR`)にローカル保存
+- tokenhopサーバーへのデータ送信なし
 - OAuthトークンはJWTで暗号化
 
 **テレメトリなし:**
@@ -294,14 +294,14 @@ npm run deploy:cloudflare
 - クラウドデプロイでHTTPSを有効化
 - APIキーを定期的にローテーション
 
-**9Routerが保存するもの:**
+**tokenhopが保存するもの:**
 
 - プロバイダーOAuthトークン(暗号化)
 - APIキー(暗号化)
 - 使用統計(ローカルのみ)
 - コンボ設定
 
-**9Routerが保存しないもの:**
+**tokenhopが保存しないもの:**
 
 - プロンプトやレスポンス
 - 生成したコード
@@ -309,20 +309,20 @@ npm run deploy:cloudflare
 
 ---
 
-## 9Routerを更新するには?
+## tokenhopを更新するには?
 
 **更新方法はインストールタイプによって異なります:**
 
 ### グローバルNPMインストール
 
 ```bash
-npm update -g 9router
+npm update -g tokenhop
 ```
 
 ### ローカルインストール
 
 ```bash
-cd 9router/app
+cd tokenhop
 git pull origin main
 npm install
 npm run build
@@ -332,25 +332,25 @@ npm start
 ### Docker
 
 ```bash
-docker pull 9router:latest
-docker stop 9router
-docker rm 9router
+docker pull ghcr.io/tokenhop/tokenhop:latest
+docker stop tokenhop
+docker rm tokenhop
 docker run -d \
   -p 3000:3000 \
-  -v 9router-data:/app/data \
-  9router:latest
+  -v tokenhop-data:/app/data \
+  ghcr.io/tokenhop/tokenhop:latest
 ```
 
 **バージョンを確認:**
 
 ```bash
-9router --version
+tokenhop --version
 ```
 
 **破壊的変更:**
 
 - [CHANGELOG.md](https://github.com/tokenhop/tokenhop/blob/master/CHANGELOG.md)を確認
-- メジャー更新前に`~/.9router`をバックアップ
+- メジャー更新前に`~/.tokenhop`をバックアップ
 - メジャーバージョンの移行ガイドを確認
 
 ---
@@ -373,8 +373,8 @@ docker run -d \
 
    ```bash
    # リポジトリをフォーク
-   git clone https://github.com/YOUR_USERNAME/9router.git
-   cd 9router
+   git clone https://github.com/YOUR_USERNAME/tokenhop.git
+   cd tokenhop
 
    # ブランチを作成
    git checkout -b feature/your-feature
@@ -416,7 +416,7 @@ docker run -d \
 
 ## さらにヘルプが必要?
 
-- **ドキュメント:** [9router.com/docs](https://9router.com/docs)
+- **ドキュメント:** [tokenhop.dev](https://tokenhop.dev)
 - **GitHub:** [github.com/tokenhop/tokenhop](https://github.com/tokenhop/tokenhop)
 - **Issues:** [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)
 - **トラブルシューティング:** [troubleshooting.md](troubleshooting.md)

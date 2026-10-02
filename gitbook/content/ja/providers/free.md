@@ -31,7 +31,7 @@
 **ステップ1: ダッシュボード経由で接続**
 
 ```bash
-9router
+tokenhop
 # Dashboard → Providers → Connect iFlow
 ```
 
@@ -91,7 +91,7 @@ Model: if/kimi-k2-thinking
 **ステップ1: ダッシュボード経由で接続**
 
 ```bash
-9router
+tokenhop
 # Dashboard → Providers → Connect Qwen
 ```
 
@@ -144,7 +144,7 @@ Model: qw/qwen3-coder-plus
 **ステップ1: ダッシュボード経由で接続**
 
 ```bash
-9router
+tokenhop
 # Dashboard → Providers → Connect Kiro
 ```
 
@@ -200,7 +200,7 @@ Model: kr/claude-sonnet-4.5
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [9routerダッシュボードから取得]
+  OpenAI API Key: [tokenhopダッシュボードから取得]
   Model: if/kimi-k2-thinking
 ```
 
@@ -378,14 +378,14 @@ Models:
 1億 × $20/1M = 月$2,000
 ```
 
-**オプション2: 9Router無料階層のみ**
+**オプション2: tokenhop無料階層のみ**
 
 ```
 無料階層経由で1億 = 月$0
 節約: 月$2,000 (100%)
 ```
 
-**オプション3: 9Router完全戦略**
+**オプション3: tokenhop完全戦略**
 
 ```
 Gemini CLI経由で6000万 (無料): $0

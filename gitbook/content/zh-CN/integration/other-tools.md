@@ -1,10 +1,10 @@
 # 其他工具集成
 
-9Router 兼容任何支持 OpenAI API 格式的工具。本指南介绍各种工具和自定义应用的通用集成模式。
+tokenhop 兼容任何支持 OpenAI API 格式的工具。本指南介绍各种工具和自定义应用的通用集成模式。
 
 ## 概览
 
-9Router 提供 OpenAI 兼容的 API endpoint,可与以下场景配合使用:
+tokenhop 提供 OpenAI 兼容的 API endpoint,可与以下场景配合使用:
 
 - 自定义脚本与应用
 - API 客户端与测试工具
@@ -14,22 +14,22 @@
 
 ## 通用设置模式
 
-任何 OpenAI 兼容的工具都可以通过以下设置连接到 9Router:
+任何 OpenAI 兼容的工具都可以通过以下设置连接到 tokenhop:
 
-**本地 9Router:**
+**本地 tokenhop:**
 
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
-Model: 任意 9Router 模型(cc/*, cx/*, glm/*, 等)
+Model: 任意 tokenhop 模型(cc/*, cx/*, glm/*, 等)
 ```
 
-**云端 9Router:**
+**远程 tokenhop（你的 VPS 或隧道 URL）:**
 
 ```
-Base URL: https://9router.com/v1
+Base URL: https://<your-tokenhop-host>/v1
 API Key: your-api-key-from-dashboard
-Model: 任意 9Router 模型(cc/*, cx/*, glm/*, 等)
+Model: 任意 tokenhop 模型(cc/*, cx/*, glm/*, 等)
 ```
 
 ## 可用模型
@@ -323,10 +323,10 @@ def chat_with_retry(prompt, max_retries=3):
 
 ### 连接问题
 
-**问题:** 无法连接到 9Router
+**问题:** 无法连接到 tokenhop
 
 ```bash
-# 检查 9Router 是否运行
+# 检查 tokenhop 是否运行
 curl http://localhost:20128/health
 
 # 预期响应:
@@ -335,7 +335,7 @@ curl http://localhost:20128/health
 
 **方案:**
 
-- 确认 9Router 正在运行
+- 确认 tokenhop 正在运行
 - 检查 20128 端口未被阻止
 - 确保 base URL 正确(包含 `/v1`)
 
@@ -379,7 +379,7 @@ Error: Request timed out after 30s
 
 - 在客户端配置中增大超时
 - 时间敏感任务使用更快的模型
-- 检查到 9Router 的网络连接
+- 检查到 tokenhop 的网络连接
 
 ### 速率限制
 
@@ -402,7 +402,7 @@ Error: Rate limit exceeded
 
 - 将 API key 存储在环境变量中
 - 绝不将 API key 提交到版本控制
-- 云端部署使用 HTTPS
+- 远程部署使用 HTTPS
 - 定期轮换 API keys
 
 ### 性能

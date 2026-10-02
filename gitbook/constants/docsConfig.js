@@ -8,6 +8,7 @@ const NAV_STRUCTURE = [
       { key: "introduction", slug: "" },
       { key: "quickStart", slug: "getting-started/quick-start" },
       { key: "installation", slug: "getting-started/installation" },
+      { key: "upgrading", slug: "upgrading" },
     ],
   },
   {
@@ -61,6 +62,7 @@ const TRANSLATIONS = {
     introduction: "Introduction",
     quickStart: "Quick Start",
     installation: "Installation",
+    upgrading: "Upgrading from 9router", // legacy(9router): page title names the old product
     providers: "Providers",
     subscription: "Subscription (Maximize)",
     cheap: "Cheap (Backup)",
@@ -92,6 +94,7 @@ const TRANSLATIONS = {
     introduction: "Giới thiệu",
     quickStart: "Bắt đầu nhanh",
     installation: "Cài đặt",
+    upgrading: "Nâng cấp từ 9router", // legacy(9router): page title names the old product
     providers: "Nhà cung cấp",
     subscription: "Subscription (Tối đa hóa)",
     cheap: "Giá rẻ (Dự phòng)",
@@ -123,6 +126,7 @@ const TRANSLATIONS = {
     introduction: "简介",
     quickStart: "快速开始",
     installation: "安装",
+    upgrading: "从 9router 升级", // legacy(9router): page title names the old product
     providers: "提供商",
     subscription: "订阅 (最大化)",
     cheap: "低价 (备用)",
@@ -154,6 +158,7 @@ const TRANSLATIONS = {
     introduction: "Introducción",
     quickStart: "Inicio rápido",
     installation: "Instalación",
+    upgrading: "Actualizar desde 9router", // legacy(9router): page title names the old product
     providers: "Proveedores",
     subscription: "Suscripción (Maximizar)",
     cheap: "Económico (Respaldo)",
@@ -185,6 +190,7 @@ const TRANSLATIONS = {
     introduction: "概要",
     quickStart: "クイックスタート",
     installation: "インストール",
+    upgrading: "9routerからのアップグレード", // legacy(9router): page title names the old product
     providers: "プロバイダー",
     subscription: "サブスクリプション (最大化)",
     cheap: "格安 (バックアップ)",
@@ -233,10 +239,11 @@ export function getNavigation(lang) {
 
 // Static config (logo, urls, default English nav for backward compatibility).
 export const DOCS_CONFIG = {
-  title: "9Router Documentation",
+  title: "tokenhop Documentation",
   description: "Smart AI model router - Maximize subscriptions, minimize costs",
-  logo: "9Router",
-  appUrl: "https://9router.com",
+  logo: "tokenhop",
+  logoMark: "/mark.svg",
+  appUrl: "https://tokenhop.ai",
   githubUrl: "https://github.com/tokenhop/tokenhop",
   navigation: getNavigation(DEFAULT_LANG),
 };
