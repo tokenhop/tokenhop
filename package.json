@@ -21,7 +21,7 @@
     "dev:docker": "docker compose -f compose.dev.yml up",
     "dev:docker:down": "docker compose -f compose.dev.yml down",
     "cli:pack": "npm --prefix cli run pack:cli",
-    "cli:publish": "npm --prefix cli run publish:cli",
+    "cli:publish": "node -e \"console.error('The CLI is published only by CI (.github/workflows/release-npm.yml) with npm trusted publishing. Do not publish manually.')\" && exit 1",
     "test": "cd tests && rm -f results.json && npx vitest run --update=new --reporter=json --outputFile=results.json; node __baseline__/verify-no-regression.mjs results.json",
     "lint": "./scripts/style.sh lint",
     "lint:brand": "node scripts/brand-guard.mjs",
