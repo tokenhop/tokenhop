@@ -60,6 +60,17 @@ function encryptForCallback(publicKeyB64Url, plaintext) {
     .toString("base64url");
 }
 
+function encryptPkcs1(publicKeyB64Url, plaintext) {
+  const der = Buffer.from(String(publicKeyB64Url), "base64url");
+  const key = crypto.createPublicKey({ key: der, format: "der", type: "pkcs1" });
+  return crypto
+    .publicEncrypt(
+      { key, padding: crypto.constants.RSA_PKCS1_PADDING },
+      Buffer.from(plaintext, "utf8"),
+    )
+    .toString("base64url");
+}
+
 describe("criterion 1 — Zed proxy starts", () => {
   it("binds 127.0.0.1 and reports a usable callback URL", async () => {
     const started = await startTestProxy();
@@ -73,6 +84,25 @@ describe("criterion 4 — RSA decrypt works", () => {
     const auth = createZedNativeAuthData({}, { nativeAppPort: 1 });
     const encrypted = encryptForCallback(auth.publicKey, "plaintext-token-abc");
     expect(decryptZedAccessToken(encrypted, auth.privateKeyVerifier)).toBe("plaintext-token-abc");
+  });
+
+  it("PKCS#1 v1.5 fallback accepts a token-shaped plaintext", () => {
+    const auth = createZedNativeAuthData({}, { nativeAppPort: 1 });
+    const token = "legacy-pkcs1-token-0123456789";
+    expect(
+      decryptZedAccessToken(encryptPkcs1(auth.publicKey, token), auth.privateKeyVerifier),
+    ).toBe(token);
+  });
+
+  it("PKCS#1 v1.5 fallback rejects short or empty plaintext (implicit-rejection garbage)", () => {
+    // A wrong-key PKCS#1 decrypt returns pseudo-random output instead of
+    // throwing, often "" or a single character. Those must never become a token.
+    const auth = createZedNativeAuthData({}, { nativeAppPort: 1 });
+    for (const garbage of ["", "j", "short-token"]) {
+      expect(() =>
+        decryptZedAccessToken(encryptPkcs1(auth.publicKey, garbage), auth.privateKeyVerifier),
+      ).toThrow(/failed to decrypt/i);
+    }
   });
 
   it("rejects a missing verifier instead of silently failing", () => {
