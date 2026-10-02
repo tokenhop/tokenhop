@@ -151,6 +151,14 @@ function toBudget(cfg, range) {
   return budget;
 }
 
+// Budget for formats that require a concrete budget_tokens whenever thinking is
+// enabled (Anthropic-style enabled shape): auto has no budget of its own, so it
+// maps to the "high" level budget clamped by the model range — the same default
+// the gemini-level and claude-adaptive branches use for auto.
+function toConcreteBudget(cfg, range) {
+  return toBudget(cfg.mode === "auto" ? { mode: "level", level: "high" } : cfg, range);
+}
+
 // Convert unified config to a discrete level string.
 function toLevel(cfg) {
   if (cfg.mode === "level") return cfg.level;
@@ -179,12 +187,36 @@ function toClaudeEffort(level) {
   return level;
 }
 
-function toKimiReasoningEffort(cfg) {
+// Kimi wire enum, ordered low→high. K3 accepts only low/high/max, so levels
+// must clamp into the model's supported set (nearest level; ties round up,
+// e.g. medium → high on K3).
+const KIMI_EFFORT_ORDER = ["low", "medium", "high", "max"];
+
+function clampKimiEffort(level, supportedLevels) {
+  if (!Array.isArray(supportedLevels) || supportedLevels.includes(level)) return level;
+  const idx = KIMI_EFFORT_ORDER.indexOf(level);
+  if (idx < 0) return level;
+  let best = null;
+  let bestDist = Infinity;
+  for (const cand of KIMI_EFFORT_ORDER) {
+    if (!supportedLevels.includes(cand)) continue;
+    const dist = Math.abs(KIMI_EFFORT_ORDER.indexOf(cand) - idx);
+    // ascending iteration: a distance tie keeps the later (higher) candidate
+    if (dist <= bestDist) {
+      best = cand;
+      bestDist = dist;
+    }
+  }
+  return best ?? level;
+}
+
+function toKimiReasoningEffort(cfg, supportedLevels) {
   const level = toLevel(cfg);
   if (level === "auto") return "high";
   if (level === "minimal") return "low";
   if (level === "xhigh") return "max";
-  if (["low", "medium", "high", "max"].includes(level)) return level;
+  if (["low", "medium", "high", "max"].includes(level))
+    return clampKimiEffort(level, supportedLevels);
   return null;
 }
 
@@ -290,11 +322,14 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
         body.thinking = { type: "disabled" };
         break;
       }
-      const budget = toBudget(eff, caps.thinkingRange);
-      body.thinking =
-        budget === -1
-          ? { type: "enabled", ...(display ? { display } : {}) }
-          : { type: "enabled", budget_tokens: budget || 8192, ...(display ? { display } : {}) };
+      // Anthropic requires budget_tokens whenever thinking.type is "enabled",
+      // so auto must resolve to a concrete budget, never {type:"enabled"} alone.
+      const budget = toConcreteBudget(eff, caps.thinkingRange);
+      body.thinking = {
+        type: "enabled",
+        budget_tokens: budget || 8192,
+        ...(display ? { display } : {}),
+      };
       break;
     }
     case "gemini-level": {
@@ -364,7 +399,7 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
         body.thinking = { type: "disabled" };
         break;
       }
-      const effort = toKimiReasoningEffort(eff);
+      const effort = toKimiReasoningEffort(eff, supportedLevels);
       if (effort) body.reasoning_effort = effort;
       break;
     }
@@ -373,14 +408,17 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
       body.thinking = { type: none && canDisable ? "disabled" : "adaptive" };
       break;
     }
+    case "mimo":
+      // MiMo previews: binary thinking.type switch, no effort levels.
+      body.thinking = { type: none && canDisable ? "disabled" : "enabled" };
+      break;
     case "hunyuan": {
       if (none && canDisable) {
         body.thinking = { type: "disabled" };
         break;
       }
-      const budget = toBudget(eff, caps.thinkingRange);
-      body.thinking =
-        budget === -1 ? { type: "enabled" } : { type: "enabled", budget_tokens: budget || 8192 };
+      const budget = toConcreteBudget(eff, caps.thinkingRange);
+      body.thinking = { type: "enabled", budget_tokens: budget || 8192 };
       break;
     }
     case "step": {
