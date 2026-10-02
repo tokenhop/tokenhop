@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore } from "react";
 import Badge from "@/shared/components/Badge";
 import Checkbox from "@/shared/components/Checkbox";
 import SegmentedControl from "@/shared/components/SegmentedControl";
@@ -12,8 +12,21 @@ import ApiKeySelect from "./ApiKeySelect";
 import EndpointSegmentedPicker from "./EndpointSegmentedPicker";
 import SetupScaffold, { NotInstalledBlock, ModelRow } from "./SetupScaffold";
 import { buildClaudeConfig } from "@/lib/cliToolConfigs/claude";
-import { resolveApiKey, manualApiKey, toManualConfigs, savedEndpointUrl } from "./setupCard";
-import { rememberEndpoint } from "./cliEndpointPresets";
+import {
+  resolveApiKey,
+  manualApiKey,
+  toManualConfigs,
+  apiKeyPatch,
+  resolveSelectedApiKey,
+  savedEndpointUrl,
+} from "./setupCard";
+import {
+  rememberEndpoint,
+  readKeyPresets,
+  subscribeKeyPresets,
+  readPresets,
+  subscribePresets,
+} from "./cliEndpointPresets";
 import { deriveToolStatus } from "../lib/toolStatus";
 import { useToolSettings } from "../hooks/useToolSettings";
 import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
@@ -30,6 +43,9 @@ const AUTO_COMPACT_OPTIONS = [
   { label: "500K", value: "498000" },
   { label: "700K", value: "698000" },
 ];
+
+// Stable snapshot for useSyncExternalStore's SSR fallback.
+const EMPTY = [];
 
 export default function ClaudeToolCard({
   tool,
@@ -59,10 +75,12 @@ export default function ClaudeToolCard({
   const [ccFilterNaming, setCcFilterNaming] = useState(ccFilterNamingProp);
   // Endpoint the picker chose at mount; not a user edit, so it isn't saved.
   const [initUrl, setInitUrl] = useState("");
-  // ponytail: typed or browser-preset keys stay in memory only (no raw secrets in the DB);
-  // persisting them comes with the presets move (YAN-642).
+  // ponytail: only typed, unsaved keys stay in memory; saved picks persist by
+  // apiKeyId (dashboard key) or apiKeyPreset (raw key preset, YAN-642).
   const [customKey, setCustomKey] = useState(null);
   const [pickerKey, setPickerKey] = useState(0);
+  const keyPresets = useSyncExternalStore(subscribeKeyPresets, readKeyPresets, () => EMPTY);
+  const savedPresets = useSyncExternalStore(subscribePresets, readPresets, () => EMPTY);
 
   // Stable callback identity across renders — see setupCard.js. The latest
   // callback lives in a ref so the effect below runs once per mount.
@@ -151,22 +169,24 @@ export default function ClaudeToolCard({
     ],
   );
   // A saved endpoint follows its option's current URL (YAN-647).
-  const savedEndpoint = savedEndpointUrl(values, endpointContext);
+  const savedEndpoint = savedEndpointUrl(values, endpointContext, savedPresets);
   const { models: modelMappings, autoCompactWindow, oneMContext, exaMcpEnabled } = values;
   const diskToken = claudeStatus?.installed
     ? claudeStatus.settings?.env?.ANTHROPIC_AUTH_TOKEN || ""
     : "";
-  // Saved key id, else (host) the key in the file, else the first key. A deleted key's id
-  // matches nothing and falls through the same way.
-  const selectedApiKey =
-    customKey ??
-    (apiKeys.find((k) => k.id === values.apiKeyId)?.key || diskToken || apiKeys[0]?.key || "");
+  const selectedApiKey = resolveSelectedApiKey({
+    customKey,
+    apiKeys,
+    keyPresets,
+    values,
+    fallback: diskToken,
+  });
 
   const handleApiKeyChange = (key) => {
-    const match = apiKeys.find((k) => k.key === key);
-    if (!match) return setCustomKey(key);
+    const patch = apiKeyPatch(key, apiKeys, keyPresets);
+    if (!patch) return setCustomKey(key);
     setCustomKey(null);
-    setField("apiKeyId", match.id);
+    settings.setFields(patch);
   };
 
   const handleEndpointChange = (url, meta) => {

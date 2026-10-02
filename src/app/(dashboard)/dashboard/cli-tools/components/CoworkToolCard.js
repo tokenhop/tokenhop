@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import Button from "@/shared/components/Button";
 import Checkbox from "@/shared/components/Checkbox";
@@ -10,6 +10,9 @@ import Modal from "@/shared/components/Modal";
 import IconButton from "@/shared/components/IconButton";
 import {
   useSetupCard,
+  useSetupSettings,
+  asList,
+  asObjectList,
   setupCardPropTypes,
   resolveApiKey,
   manualApiKey,
@@ -28,13 +31,13 @@ import { buildCoworkConfig, buildCoworkMcpServers } from "@/lib/cliToolConfigs/c
 import { useManualPlatform } from "@/store/manualSetupStore";
 
 const ENDPOINT = "/api/cli-tools/cowork-settings";
+const FILE_HINT = "Claude-3p/configLibrary + claude_desktop_config.json";
 // crypto.randomUUID needs a secure context; remote dashboards are often plain HTTP.
 const uuid = () =>
   crypto.randomUUID?.() ??
   "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
     (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16),
   );
-const stripV1 = (url) => (url || "").replace(/\/v1\/?$/, "");
 const ensureV1 = (url) => {
   const t = (url || "").replace(/\/+$/, "");
   return !t ? "" : /\/v1$/.test(t) ? t : `${t}/v1`;
@@ -44,6 +47,8 @@ const ensureV1 = (url) => {
  * Claude Desktop Cowork setup panel: custom inference gateway, models
  * with combo creation, MCP plugins (bundled/marketplace/custom SSE), and
  * local stdio tools. Writes to Claude-3p/configLibrary/<appliedId>.json.
+ * Fields persist via `useSetupSettings` (saved wins, then on-disk, then
+ * defaults); the file POST only ever sends the merged values.
  */
 export default function CoworkToolCard({
   tool,
@@ -62,39 +67,77 @@ export default function CoworkToolCard({
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "cowork" });
   const platform = useManualPlatform();
   const { status } = card;
-  const [selectedModels, setSelectedModels] = useState([]);
-  const [plugins, setPlugins] = useState(DEFAULT_PLUGINS);
-  // Snippet id when the host has none yet (remote, or never applied); stable per mount.
-  // Set after mount so server and client render the same markup.
-  const [draftAppliedId, setDraftAppliedId] = useState("<appliedId>");
-  useEffect(() => setDraftAppliedId(uuid()), []);
-  const [localPlugins, setLocalPlugins] = useState([]);
-  const [customPlugins, setCustomPlugins] = useState([]);
   const [comboModalOpen, setComboModalOpen] = useState(false);
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const [addMcpOpen, setAddMcpOpen] = useState(false);
   const [addMcpForm, setAddMcpForm] = useState({ name: "", url: "" });
+  // Snippet id when the host has none yet (remote, or never applied); stable per mount.
+  // Set after mount so server and client render the same markup.
+  const [draftAppliedId, setDraftAppliedId] = useState("<appliedId>");
+  useEffect(() => setDraftAppliedId(uuid()), []);
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !card.selectedApiKey) card.setSelectedApiKey(apiKeys[0].key);
-  }, [apiKeys, card]);
+  const defaults = useMemo(
+    () => ({
+      models: [],
+      plugins: DEFAULT_PLUGINS,
+      localPlugins: [],
+      customPlugins: [],
+      endpoint: "",
+      apiKeyId: "",
+    }),
+    [],
+  );
+  // On the host, the installed config fills fields the user hasn't saved yet.
+  // Raw secrets stay out: only status.cowork lists and the key id cross over.
+  const disk = useMemo(() => {
+    if (!status?.installed) return null;
+    return {
+      models: status.cowork?.models?.length ? [...status.cowork.models] : undefined,
+      plugins:
+        Array.isArray(status.cowork?.plugins) && status.cowork.plugins.length
+          ? status.cowork.plugins
+          : undefined,
+      localPlugins: Array.isArray(status.cowork?.localPlugins)
+        ? status.cowork.localPlugins
+        : undefined,
+      customPlugins:
+        Array.isArray(status.cowork?.customPlugins) && status.cowork.customPlugins.length
+          ? status.cowork.customPlugins
+          : undefined,
+      apiKeyId: apiKeys.find((k) => k.key === status.config?.inferenceGatewayApiKey)?.id,
+      endpoint: status.cowork?.baseUrl || undefined,
+    };
+  }, [status, apiKeys]);
+  const endpointContext = useMemo(
+    () => ({
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      requiresExternalUrl: tool.requiresExternalUrl,
+    }),
+    [
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      tool.requiresExternalUrl,
+    ],
+  );
+  const setup = useSetupSettings({ toolId: "cowork", apiKeys, defaults, disk, endpointContext });
 
-  useEffect(() => {
-    if (status?.cowork?.models?.length) setSelectedModels(status.cowork.models);
-    if (status?.cowork?.baseUrl && !card.customBaseUrl) {
-      card.setCustomBaseUrl(stripV1(status.cowork.baseUrl));
-    }
-    if (Array.isArray(status?.cowork?.plugins) && status.cowork.plugins.length > 0) {
-      setPlugins(status.cowork.plugins);
-    }
-    if (Array.isArray(status?.cowork?.localPlugins)) setLocalPlugins(status.cowork.localPlugins);
-    if (Array.isArray(status?.cowork?.customPlugins) && status.cowork.customPlugins.length > 0) {
-      setCustomPlugins(status.cowork.customPlugins);
-    }
-  }, [status, card]);
+  // Saved values are read back untrusted; plugin lists keep plain objects with a name and url.
+  const selectedModels = asList(setup.values.models);
+  const plugins = asObjectList(setup.values.plugins);
+  const localPlugins = asList(setup.values.localPlugins);
+  const customPlugins = asObjectList(setup.values.customPlugins);
 
   const currentBaseUrl = status?.cowork?.baseUrl || "";
-  const getEffectiveBaseUrl = () => ensureV1(card.customBaseUrl || baseUrl);
+  const getEffectiveBaseUrl = () => ensureV1(setup.endpoint || baseUrl);
 
   const handleApply = async () => {
     card.setMessage(null);
@@ -109,7 +152,7 @@ export default function CoworkToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
           models: selectedModels,
           plugins,
           localPlugins,
@@ -141,11 +184,8 @@ export default function CoworkToolCard({
       const res = await fetch(ENDPOINT, { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
+        // Saved card preferences stay; "Reset to defaults" clears those.
         card.setMessage({ type: "success", text: "Settings reset successfully." });
-        setSelectedModels([]);
-        setPlugins(DEFAULT_PLUGINS);
-        setLocalPlugins([]);
-        setCustomPlugins([]);
         card.fetchStatus();
       } else {
         card.setMessage({ type: "error", text: data.error || "Failed to reset settings." });
@@ -172,7 +212,7 @@ export default function CoworkToolCard({
         return;
       }
       refreshShellStatus();
-      if (!selectedModels.includes(name)) setSelectedModels((prev) => [...prev, name]);
+      if (!selectedModels.includes(name)) setup.setField("models", [...selectedModels, name]);
       setComboModalOpen(false);
       card.setMessage({ type: "success", text: `Combo "${name}" created and added.` });
     } catch (err) {
@@ -190,7 +230,7 @@ export default function CoworkToolCard({
     toManualConfigs(
       buildCoworkConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(card.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
         models: selectedModels,
         managedMcpServers: buildCoworkMcpServers({ plugins, customPlugins }),
         appliedId: status?.cowork?.appliedId || draftAppliedId,
@@ -203,7 +243,7 @@ export default function CoworkToolCard({
       <SetupScaffold
         tool={tool}
         status={deriveToolStatus(tool, card.status)}
-        checking={card.checking}
+        checking={card.checking || !setup.loaded}
         checkingLabel="Checking Claude Cowork..."
         notInstalled={
           !card.checking && status && !status.installed && !status.error ? (
@@ -225,19 +265,14 @@ export default function CoworkToolCard({
         resetting={card.restoring}
         onManualConfig={() => card.setShowManualModal(true)}
         manualConfigs={getManualConfigs()}
-        fileHint="Claude-3p/configLibrary + claude_desktop_config.json"
+        fileHint={FILE_HINT}
+        {...setup.scaffoldProps(FILE_HINT)}
       >
         <EndpointSegmentedPicker
-          value={card.customBaseUrl || baseUrl}
-          onChange={card.setCustomBaseUrl}
+          key={setup.pickerKey}
+          value={setup.endpoint || baseUrl}
+          {...setup.pickerProps}
           currentUrl={currentBaseUrl}
-          tunnelEnabled={tunnelEnabled}
-          tunnelPublicUrl={tunnelPublicUrl}
-          tailscaleEnabled={tailscaleEnabled}
-          tailscaleUrl={tailscaleUrl}
-          cloudEnabled={cloudEnabled}
-          cloudUrl={cloudUrl}
-          requiresExternalUrl={tool.requiresExternalUrl}
         />
         {currentBaseUrl && (
           <SetupRow label="Current" hint={currentBaseUrl}>
@@ -246,8 +281,8 @@ export default function CoworkToolCard({
         )}
         <SetupRow label="API key">
           <ApiKeySelect
-            value={card.selectedApiKey}
-            onChange={card.setSelectedApiKey}
+            value={setup.selectedApiKey}
+            onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
           />
@@ -270,7 +305,12 @@ export default function CoworkToolCard({
                     {m}
                     <button
                       type="button"
-                      onClick={() => setSelectedModels((prev) => prev.filter((x) => x !== m))}
+                      onClick={() =>
+                        setup.setField(
+                          "models",
+                          selectedModels.filter((x) => x !== m),
+                        )
+                      }
                       aria-label={`Remove ${m}`}
                       className="ms-0.5 flex size-6 items-center justify-center rounded-md transition-colors hover:text-err"
                     >
@@ -313,7 +353,12 @@ export default function CoworkToolCard({
                   <IconButton
                     icon="close"
                     label={`Remove ${p.name}`}
-                    onClick={() => setPlugins((prev) => prev.filter((x) => x.name !== p.name))}
+                    onClick={() =>
+                      setup.setField(
+                        "plugins",
+                        plugins.filter((x) => x.name !== p.name),
+                      )
+                    }
                   />
                 </div>
               ))}
@@ -331,7 +376,12 @@ export default function CoworkToolCard({
                 <IconButton
                   icon="close"
                   label={`Remove ${p.name}`}
-                  onClick={() => setCustomPlugins((prev) => prev.filter((x) => x.name !== p.name))}
+                  onClick={() =>
+                    setup.setField(
+                      "customPlugins",
+                      customPlugins.filter((x) => x.name !== p.name),
+                    )
+                  }
                 />
               </div>
             ))}
@@ -371,8 +421,12 @@ export default function CoworkToolCard({
               checked={exaEnabled}
               onChange={(checked) => {
                 if (checked && exaDef)
-                  setPlugins((prev) => [...prev.filter((p) => p.name !== "exa"), exaDef]);
-                else setPlugins((prev) => prev.filter((p) => p.name !== "exa"));
+                  setup.setField("plugins", [...plugins.filter((p) => p.name !== "exa"), exaDef]);
+                else
+                  setup.setField(
+                    "plugins",
+                    plugins.filter((p) => p.name !== "exa"),
+                  );
               }}
               label="Web search & fetch (Exa)"
               description="Replaces built-in WebSearch/WebFetch. Auto-strips duplicates."
@@ -381,8 +435,11 @@ export default function CoworkToolCard({
               <Checkbox
                 checked={browserEnabled}
                 onChange={(checked) => {
-                  setLocalPlugins((prev) =>
-                    checked ? [...prev, "browsermcp"] : prev.filter((n) => n !== "browsermcp"),
+                  setup.setField(
+                    "localPlugins",
+                    checked
+                      ? [...localPlugins, "browsermcp"]
+                      : localPlugins.filter((n) => n !== "browsermcp"),
                   );
                 }}
                 label="Browser control (Browser MCP)"
@@ -396,8 +453,11 @@ export default function CoworkToolCard({
                   key={p.name}
                   checked={localPlugins.includes(p.name)}
                   onChange={(checked) => {
-                    setLocalPlugins((prev) =>
-                      checked ? [...prev, p.name] : prev.filter((n) => n !== p.name),
+                    setup.setField(
+                      "localPlugins",
+                      checked
+                        ? [...localPlugins, p.name]
+                        : localPlugins.filter((n) => n !== p.name),
                     );
                   }}
                   label={`${p.title || p.name} (local stdio)`}
@@ -423,7 +483,21 @@ export default function CoworkToolCard({
         isOpen={marketplaceOpen}
         onClose={() => setMarketplaceOpen(false)}
         onAdd={(p) => {
-          if (!plugins.some((x) => x.name === p.name)) setPlugins((prev) => [...prev, p]);
+          // Saved plugins reach autosave/validation, so keep flat scalars only.
+          if (plugins.some((x) => x.name === p.name)) return;
+          setup.setField("plugins", [
+            ...plugins,
+            {
+              name: p.name,
+              title: p.title,
+              url: p.url,
+              transport: p.transport,
+              oauth: Boolean(p.oauth),
+              toolNames: Array.isArray(p.toolNames)
+                ? p.toolNames.filter((t) => typeof t === "string")
+                : [],
+            },
+          ]);
         }}
         addedNames={plugins.map((p) => p.name)}
       />
@@ -476,8 +550,8 @@ export default function CoworkToolCard({
                 const n = addMcpForm.name.trim();
                 const u = addMcpForm.url.trim();
                 if (!n || !u) return;
-                setCustomPlugins((prev) => [
-                  ...prev.filter((x) => x.name !== n),
+                setup.setField("customPlugins", [
+                  ...customPlugins.filter((x) => x.name !== n),
                   { name: n, url: u, transport: "sse", custom: true },
                 ]);
                 setAddMcpOpen(false);

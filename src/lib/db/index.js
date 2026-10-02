@@ -88,6 +88,8 @@ export {
   getCliToolSettings,
   setCliToolSettings,
   deleteCliToolSettings,
+  getCliToolPresets,
+  setCliToolPresets,
 } from "./repos/cliToolSettingsRepo.js";
 
 // Pricing
@@ -193,6 +195,7 @@ export async function exportDb() {
     customModels: [],
     mitmAlias: {},
     cliToolSettings: {},
+    cliToolPresets: {},
     pricing: {},
   };
 
@@ -204,6 +207,8 @@ export async function exportDb() {
     out.mitmAlias[r.key] = parseJson(r.value);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'cliToolSettings'`))
     out.cliToolSettings[r.key] = parseJson(r.value);
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'cliToolPresets'`))
+    out.cliToolPresets[r.key] = parseJson(r.value);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'`))
     out.pricing[r.key] = parseJson(r.value);
 
@@ -225,7 +230,7 @@ export async function importDb(payload) {
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
     db.run(
-      `DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'cliToolSettings', 'pricing')`,
+      `DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'cliToolSettings', 'cliToolPresets', 'pricing')`,
     );
 
     // Settings
@@ -343,6 +348,13 @@ export async function importDb(payload) {
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('cliToolSettings', ?, ?)`, [
         tool,
         stringifyJson(settings || {}),
+      ]);
+    }
+    for (const [kind, items] of Object.entries(payload.cliToolPresets || {})) {
+      if (!["endpoints", "apiKeys"].includes(kind) || !Array.isArray(items)) continue;
+      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('cliToolPresets', ?, ?)`, [
+        kind,
+        stringifyJson(items),
       ]);
     }
     for (const [provider, models] of Object.entries(payload.pricing || {})) {

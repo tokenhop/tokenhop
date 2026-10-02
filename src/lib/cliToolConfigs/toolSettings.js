@@ -56,9 +56,16 @@ const validKeys = (obj) =>
   Object.keys(obj).length <= MAX_KEYS &&
   Object.keys(obj).every((k) => k.length <= 128 && !BLOCKED_KEYS.has(k));
 
+const isFlatList = (v) => Array.isArray(v) && v.length <= MAX_KEYS && v.every(isScalar);
+
+// One list item (e.g. a Cowork plugin): scalars and flat scalar lists only.
+const isFlatObject = (v) =>
+  isPlain(v) && validKeys(v) && Object.values(v).every((x) => isScalar(x) || isFlatList(x));
+
 /**
  * Saved settings shape: a plain object of scalars, flat arrays of scalars
- * (e.g. model lists), or one nested plain object of scalars (e.g. `models`).
+ * (e.g. model lists), arrays of flat objects (e.g. Cowork plugins), or one
+ * nested plain object of scalars (e.g. `models`).
  * Signed-in remote users can write it and Apply later reads it on the host,
  * so anything else is rejected.
  */
@@ -67,7 +74,8 @@ export function isValidToolSettings(value) {
   return Object.values(value).every(
     (v) =>
       isScalar(v) ||
-      (Array.isArray(v) && v.length <= MAX_KEYS && v.every(isScalar)) ||
+      isFlatList(v) ||
+      (Array.isArray(v) && v.length <= MAX_KEYS && v.every(isFlatObject)) ||
       (isPlain(v) && validKeys(v) && Object.values(v).every(isScalar)),
   );
 }

@@ -16,3 +16,14 @@ export async function setCliToolSettings(toolId, value) {
 export async function deleteCliToolSettings(toolId) {
   await kv.remove(toolId);
 }
+
+// Saved endpoint / API-key presets (kv scope cliToolPresets, key = kind).
+const presetsKv = makeKv("cliToolPresets");
+
+export async function getCliToolPresets() {
+  return { endpoints: [], apiKeys: [], ...(await presetsKv.getAll()) };
+}
+
+export async function setCliToolPresets(kind, items) {
+  await presetsKv.set(kind, items || []);
+}

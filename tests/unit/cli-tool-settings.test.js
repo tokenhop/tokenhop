@@ -57,6 +57,23 @@ describe("/api/cli-tool-settings/[toolId]", () => {
     expect(await (await get("claude")).json()).toEqual({ settings: {} });
   });
 
+  it("roundtrips plugin-like objects and rejects deeper nesting", async () => {
+    const plugins = [
+      {
+        name: "x",
+        url: "https://x",
+        transport: "http",
+        oauth: false,
+        toolNames: ["a", "b"],
+      },
+    ];
+    const saved = await put("claude", { plugins });
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toEqual({ settings: { plugins } });
+    expect(await (await get("claude")).json()).toEqual({ settings: { plugins } });
+    await del("claude");
+  });
+
   it("rejects bodies outside the settings shape with 400", async () => {
     const bad = [
       "[1]",
@@ -64,7 +81,8 @@ describe("/api/cli-tool-settings/[toolId]", () => {
       '"s"',
       JSON.stringify({ models: { opus: { deep: "x" } } }),
       JSON.stringify({ list: [["a"]] }),
-      JSON.stringify({ list: [{ a: 1 }] }),
+      JSON.stringify({ list: [{ a: { b: 1 } }] }),
+      JSON.stringify({ list: [{ a: [[1]] }] }),
       JSON.stringify({ endpoint: "x".repeat(2049) }),
       '{"__proto__":{"a":1}}',
     ];

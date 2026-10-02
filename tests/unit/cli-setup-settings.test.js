@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let slots;
 let index;
+let keyPresets;
 vi.mock("react", () => ({
   useState(initial) {
     const slot = index++;
     slots[slot] ??= { value: initial };
     return [slots[slot].value, (v) => (slots[slot].value = v)];
   },
+  useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
 }));
 
 const setField = vi.fn();
@@ -29,7 +31,17 @@ vi.mock("../../src/app/(dashboard)/dashboard/cli-tools/hooks/useToolSettings.js"
   ],
 }));
 
-import { useSetupSettings } from "../../src/app/(dashboard)/dashboard/cli-tools/hooks/useSetupSettings.js";
+vi.mock("../../src/app/(dashboard)/dashboard/cli-tools/components/cliEndpointPresets.js", () => ({
+  readPresets: () => [],
+  subscribePresets: () => () => {},
+  readKeyPresets: () => keyPresets,
+  subscribeKeyPresets: () => () => {},
+}));
+
+import {
+  useSetupSettings,
+  asObjectList,
+} from "../../src/app/(dashboard)/dashboard/cli-tools/hooks/useSetupSettings.js";
 
 const apiKeys = [
   { id: "a", key: "sk-a" },
@@ -43,6 +55,7 @@ const render = (endpointContext) => {
 beforeEach(() => {
   slots = [];
   saved = {};
+  keyPresets = [];
   setField.mockClear();
   setFields.mockClear();
 });
@@ -50,12 +63,21 @@ beforeEach(() => {
 describe("useSetupSettings", () => {
   it("saves a known key by id and keeps a typed raw key out of the DB", () => {
     render().onApiKeyChange("sk-b");
-    expect(setField).toHaveBeenCalledWith("apiKeyId", "b");
+    expect(setFields).toHaveBeenCalledWith({ apiKeyId: "b", apiKeyPreset: undefined });
 
-    setField.mockClear();
+    setFields.mockClear();
     render().onApiKeyChange("sk-typed-secret");
-    expect(setField).not.toHaveBeenCalled();
+    expect(setFields).not.toHaveBeenCalled();
     expect(render().selectedApiKey).toBe("sk-typed-secret");
+  });
+
+  it("saves a picked key preset by name and resolves it later", () => {
+    keyPresets.push({ name: "mine", key: "sk-preset" });
+    render().onApiKeyChange("sk-preset");
+    expect(setFields).toHaveBeenCalledWith({ apiKeyPreset: "mine", apiKeyId: undefined });
+
+    saved = { apiKeyPreset: "mine" };
+    expect(render().selectedApiKey).toBe("sk-preset");
   });
 
   it("resolves the saved key id, falling back to the first key when it's gone", () => {
@@ -83,6 +105,18 @@ describe("useSetupSettings", () => {
     const hook = render(ctx);
     expect(hook.endpoint).toBe("https://new/v1");
     expect(hook.pickerProps).toMatchObject({ ...ctx, savedUrl: "https://new/v1" });
+  });
+
+  it("asObjectList keeps whole plain objects that have a string name and url", () => {
+    expect(
+      asObjectList([
+        { name: "a", url: "http://x", oauth: true, toolPolicy: { default: "allow" } },
+        { name: "no-url" },
+        null,
+        "str",
+      ]),
+    ).toEqual([{ name: "a", url: "http://x", oauth: true, toolPolicy: { default: "allow" } }]);
+    expect(asObjectList("nope")).toEqual([]);
   });
 });
 

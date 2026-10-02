@@ -10,7 +10,15 @@ import SetupScaffold, { NotInstalledBlock, SetupRow, SingleModelRow } from "./Se
 import { rememberEndpoint } from "./cliEndpointPresets";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { deriveToolStatus } from "../lib/toolStatus";
-import { asList, asMap, savedEndpointUrl, useSetupSettings } from "../hooks/useSetupSettings";
+import {
+  asList,
+  asMap,
+  asObjectList,
+  apiKeyPatch,
+  resolveSelectedApiKey,
+  savedEndpointUrl,
+  useSetupSettings,
+} from "../hooks/useSetupSettings";
 import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 
@@ -18,8 +26,8 @@ const LOCAL_ONLY = Symbol("localOnly");
 
 /**
  * Shared hook for the panel-style setup cards. Owns status fetching,
- * busy/message state, the selected API key default and the custom endpoint
- * draft. Per-tool cards own their model state and POST bodies.
+ * busy/message state and model aliases. Per-tool cards own their model
+ * state, persisted fields (`useSetupSettings`) and POST bodies.
  */
 export function useSetupCard({
   statusUrl,
@@ -35,8 +43,6 @@ export function useSetupCard({
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
-  const [customBaseUrl, setCustomBaseUrl] = useState("");
-  const [selectedApiKey, setSelectedApiKey] = useState("");
   const [modelAliases, setModelAliases] = useState({});
 
   // Callback-ref pattern: the page re-renders (and passes a new callback
@@ -115,10 +121,6 @@ export function useSetupCard({
     setModalOpen,
     showManualModal,
     setShowManualModal,
-    customBaseUrl,
-    setCustomBaseUrl,
-    selectedApiKey,
-    setSelectedApiKey,
     modelAliases,
   };
 }
@@ -150,6 +152,9 @@ export {
   useSetupSettings,
   asList,
   asMap,
+  asObjectList,
+  resolveSelectedApiKey,
+  apiKeyPatch,
   savedEndpointUrl,
   ApiKeySelect,
   EndpointSegmentedPicker,
