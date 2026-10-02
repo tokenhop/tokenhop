@@ -118,6 +118,27 @@ const LEGACY = Object.freeze({
   trayIconTemplate: false,
 });
 
+/**
+ * Identifiers sent to third-party APIs, the same for every brand. Renaming one
+ * needs evidence the upstream ignores it plus a real provider smoke test, so
+ * they keep their 9router values (YAN-330 audit).
+ * legacy(9router): upstream-facing, keep
+ */
+const UPSTREAM_CLIENT_IDS = Object.freeze({
+  kimiPlatform: "9router", // Kimi X-Msh-Platform
+  clineUserAgentProduct: "9Router", // Cline User-Agent "<product>/<version>"
+  clineClientType: "9router", // Cline X-CLIENT-TYPE
+  devinMcpClientName: "9router", // devin acp initialize clientInfo.name
+  coworkMcpClientName: "9router", // Cowork MCP probe initialize clientInfo.name
+  cursorMcpProvider: "9router", // Cursor MCP server_name/identifier/provider_identifier
+  glmMcpClientName: "9router", // GLM/Z.ai search MCP initialize clientInfo.name
+  xaiUserAgent: "grok-cli/9router", // xAI OAuth User-Agent
+  xiaomiKeyNamePrefix: "9router-xmd-", // Xiaomi MiMo OAuth key_name prefix
+  githubUserAgent: "9Router", // GitHub API User-Agent (connection test)
+  proxyTestUserAgent: "9Router", // User-Agent of the proxy test HEAD request
+  denoRelayKind: "9router-relay", // Deno Deploy app label "custom.kind"
+});
+
 // The repo and image already moved, and the 9router site is upstream's, so
 // these stay on the tokenhop values whichever brand is active.
 const BRAND_INDEPENDENT_KEYS = new Set([
@@ -228,6 +249,7 @@ module.exports = {
   BRAND,
   LEGACY,
   ACTIVE,
+  UPSTREAM_CLIENT_IDS,
   envName,
   readEnv,
   warnLegacyOnce,

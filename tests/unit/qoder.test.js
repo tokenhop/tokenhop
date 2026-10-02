@@ -29,6 +29,7 @@ import {
   buildMultipartFile,
 } from "../../open-sse/shared/qoder/attachments.js";
 import { qoderInferenceBase } from "../../open-sse/shared/qoder/constants.js";
+import { ACTIVE } from "../../src/shared/brand/index.js";
 
 // Convenience aliases — tests were originally written against module-level
 // helpers; the QoderService class wraps them so each test creates its own
@@ -749,5 +750,6 @@ describe("rewriteQoderMessageAttachments", () => {
     expect(text).toContain(`name="file"`);
     expect(text).toContain('filename="image.png"');
     expect(text).toContain(`--${boundary}`);
+    expect(boundary.startsWith(`----${ACTIVE.slug}Qoder`)).toBe(true);
   });
 });

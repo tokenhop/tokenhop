@@ -19,6 +19,7 @@ import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { parseDataUri } from "../../translator/concerns/image.js";
 import { OPENAI_BLOCK, CLAUDE_BLOCK } from "../../translator/schema/blocks.js";
 import { MAX_IMAGE_BYTES } from "../../config/mediaConfig.js";
+import { ACTIVE } from "../../../src/shared/brand/index.js";
 import { buildCosyHeaders } from "./cosy.js";
 import {
   QODER_IMAGE_UPLOAD_SIG_PATH,
@@ -54,7 +55,7 @@ function stubText({ name, mime, bytes, reason }) {
 }
 
 export function buildMultipartFile(buffer, { fieldName = "file", fileName, mediaType } = {}) {
-  const boundary = `----9routerQoder${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+  const boundary = `----${ACTIVE.slug}Qoder${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
   const filename = fileName || `upload.${mimeExt(mediaType)}`;
   const head = Buffer.from(
     `--${boundary}\r\nContent-Disposition: form-data; name="${fieldName}"; filename="${filename}"\r\nContent-Type: ${mediaType || "application/octet-stream"}\r\n\r\n`,

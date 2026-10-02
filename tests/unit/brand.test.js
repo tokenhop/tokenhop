@@ -145,6 +145,29 @@ describe("brand constants", () => {
     expect(ACTIVE).toEqual(BRAND);
   });
 
+  it("UPSTREAM_CLIENT_IDS keeps the audited values under both brands (YAN-330)", () => {
+    const { slug, names } = EXPECTED_LEGACY;
+    const expected = {
+      kimiPlatform: slug,
+      clineUserAgentProduct: names[0],
+      clineClientType: slug,
+      devinMcpClientName: slug,
+      coworkMcpClientName: slug,
+      cursorMcpProvider: slug,
+      glmMcpClientName: slug,
+      xaiUserAgent: `grok-cli/${slug}`,
+      xiaomiKeyNamePrefix: `${slug}-xmd-`,
+      githubUserAgent: names[0],
+      proxyTestUserAgent: names[0],
+      denoRelayKind: `${slug}-relay`,
+    };
+    for (const brand of [undefined, "tokenhop"]) {
+      const { UPSTREAM_CLIENT_IDS } = load(brand);
+      expect(UPSTREAM_CLIENT_IDS).toEqual(expected);
+      expect(Object.isFrozen(UPSTREAM_CLIENT_IDS)).toBe(true);
+    }
+  });
+
   it("envName builds TOKENHOP_ names and rejects bad suffixes", () => {
     const { envName } = load();
     expect(envName("PEER_TOKEN")).toBe("TOKENHOP_PEER_TOKEN");

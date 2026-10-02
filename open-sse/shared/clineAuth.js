@@ -1,4 +1,5 @@
 import pkg from "../../package.json" with { type: "json" };
+import { UPSTREAM_CLIENT_IDS } from "../../src/shared/brand/index.js";
 
 const APP_VERSION = pkg.version || "0.0.0";
 
@@ -26,10 +27,10 @@ export function buildClineHeaders(token, extraHeaders = {}) {
   const headers = {
     "HTTP-Referer": "https://cline.bot",
     "X-Title": "Cline",
-    "User-Agent": `9Router/${APP_VERSION}`,
+    "User-Agent": `${UPSTREAM_CLIENT_IDS.clineUserAgentProduct}/${APP_VERSION}`,
     "X-PLATFORM": process.platform || "unknown",
     "X-PLATFORM-VERSION": process.version || "unknown",
-    "X-CLIENT-TYPE": "9router",
+    "X-CLIENT-TYPE": UPSTREAM_CLIENT_IDS.clineClientType,
     "X-CLIENT-VERSION": APP_VERSION,
     "X-CORE-VERSION": APP_VERSION,
     "X-IS-MULTIROOT": "false",

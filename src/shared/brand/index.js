@@ -9,6 +9,7 @@ export const {
   BRAND,
   LEGACY,
   ACTIVE,
+  UPSTREAM_CLIENT_IDS,
   envName,
   readEnv,
   warnLegacyOnce,

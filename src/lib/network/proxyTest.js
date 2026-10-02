@@ -1,4 +1,5 @@
 import { ProxyAgent, fetch as undiciFetch } from "undici";
+import { UPSTREAM_CLIENT_IDS } from "@/shared/brand";
 
 const DEFAULT_TEST_URL = "https://google.com/";
 const DEFAULT_TIMEOUT_MS = 8000;
@@ -61,7 +62,7 @@ export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
         dispatcher,
         signal: controller.signal,
         headers: {
-          "User-Agent": "9Router",
+          "User-Agent": UPSTREAM_CLIENT_IDS.proxyTestUserAgent,
         },
       });
 

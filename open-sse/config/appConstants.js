@@ -2,6 +2,7 @@ import { platform, arch, hostname } from "os";
 import { PROVIDERS, PROVIDER_OAUTH } from "./providers.js";
 import { ANTIGRAVITY_IDE_USER_AGENT } from "../providers/shared.js";
 import { createRequire } from "module";
+import { UPSTREAM_CLIENT_IDS } from "../../src/shared/brand/index.js";
 
 // === Gemini CLI === derive từ registry gemini-cli.transport
 export const GEMINI_CLI_VERSION = PROVIDERS["gemini-cli"]?.cliVersion;
@@ -260,7 +261,7 @@ export function buildKimiHeaders(deviceId) {
     typeof deviceId === "string" && deviceId.trim() ? deviceId.trim() : `kimi-${Date.now()}`;
 
   return {
-    "X-Msh-Platform": "9router",
+    "X-Msh-Platform": UPSTREAM_CLIENT_IDS.kimiPlatform,
     "X-Msh-Version": getAppPackageVersion(),
     "X-Msh-Device-Name": deviceName,
     "X-Msh-Device-Model": deviceModel,

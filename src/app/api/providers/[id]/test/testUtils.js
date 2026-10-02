@@ -1,6 +1,7 @@
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
+import { UPSTREAM_CLIENT_IDS } from "@/shared/brand";
 import {
   isOpenAICompatibleProvider,
   isAnthropicCompatibleProvider,
@@ -61,7 +62,10 @@ const OAUTH_TEST_CONFIG = {
     method: "GET",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    extraHeaders: { "User-Agent": "9Router", Accept: "application/vnd.github+json" },
+    extraHeaders: {
+      "User-Agent": UPSTREAM_CLIENT_IDS.githubUserAgent,
+      Accept: "application/vnd.github+json",
+    },
   },
   iflow: {
     // iFlow getUserInfo requires accessToken as query param, not header
