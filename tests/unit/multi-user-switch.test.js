@@ -119,6 +119,23 @@ describe("multiUserEnabled setting", () => {
     expect(await (await GET()).json()).not.toHaveProperty("multiUserEnabled");
   });
 
+  it("is not restored from a database backup", async () => {
+    const { exportDb } = await import("@/lib/db/index.js");
+    const { getCliToken } = await import("@/lib/auth/cliToken");
+    const backup = await exportDb();
+    backup.settings = { ...backup.settings, multiUserEnabled: true };
+    const { POST } = await import("@/app/api/settings/database/route.js");
+    const res = await POST(
+      new Request("http://localhost/api/settings/database", {
+        method: "POST",
+        headers: { "x-9r-cli-token": await getCliToken() },
+        body: JSON.stringify(backup),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await (await load()).isMultiUserEnabled()).toBe(false);
+  });
+
   it("has a single reader: only featureSwitch.js names the env var or the setting", () => {
     const hits = gitGrep([
       "-E",
@@ -130,6 +147,7 @@ describe("multiUserEnabled setting", () => {
     ]);
     // Defaults and the denylists name the key to hide or reject it; they never read it.
     expect(hits).toEqual([
+      "src/app/api/settings/database/route.js",
       "src/app/api/settings/route.js",
       "src/app/api/settings/validateSectionSettings.js",
       "src/lib/db/repos/settingsRepo.js",

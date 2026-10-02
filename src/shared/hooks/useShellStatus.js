@@ -176,6 +176,7 @@ function stop() {
  *   badges: { providers: number|null, combos: number|null, quota: number|null },
  *   providerAttention: { count: number, status: "warn"|"err"|null },
  *   enableTranslator: boolean,
+ *   multiUser: boolean,
  *   traffic: { series: number[], total: number }|null,
  *   savingsMilestone: number|null,
  * }}
