@@ -54,6 +54,19 @@ It requires `ANTIGRAVITY_OAUTH_CLIENT_ID` / `_SECRET` (set them via the repo's e
 env) and skips cleanly when the credential DB is unavailable or there is no active
 Antigravity connection with a refresh token and project ID.
 
+## Upgrade end to end
+
+`tests/e2e/` holds the upgrade verification for the rebrand (`UPGRADING.md`). It
+writes real state with the last release before the rebrand, starts the tokenhop
+build of this checkout on it, and checks that nothing was lost: data, keys, SAML
+issuer, tool configs, legacy env vars, backup import, autostart, MITM CA,
+`tokenhop data migrate`, and the Docker volume under the repo's `compose.yml`.
+
+It is not part of `npm test` (vitest only picks up `*.test.js`) and needs prebuilt
+inputs. The script's header lists the exact commands, what it covers, and the
+checks that stay manual. Everything runs under a temp `HOME` and `th344-`-prefixed
+containers and volumes, all removed on exit.
+
 ## Regression check
 
 The suite runs green on a plain checkout. Compare a run against the known failures in `__baseline__/known-fails.txt` (empty since YAN-416 triaged all ~86 pinned failures) instead of reading raw results:
