@@ -30,6 +30,8 @@ export const ZED_HEADERS = {
 };
 
 const PRIVATE_KEY_PREFIX = "zed-rsa-pkcs1:";
+// Shape a PKCS#1 v1.5-decrypted token must have to be trusted (see decryptZedAccessToken).
+const PKCS1_TOKEN_SHAPE = /^[\x21-\x7e]{16,}$/;
 const LLM_TOKEN_TTL_MS = 50 * 60 * 1000;
 const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
 
@@ -155,11 +157,12 @@ export function decryptZedAccessToken(encryptedAccessToken, privateKeyVerifier) 
       const text = crypto
         .privateDecrypt({ key: privateKey, padding: crypto.constants.RSA_PKCS1_PADDING }, encrypted)
         .toString("utf8");
-      // PKCS#1 v1.5 unpadding is not integrity-checked: a wrong-key decrypt
-      // can "succeed" with garbage bytes instead of throwing. Replacement
-      // characters prove the output is not the real UTF-8 token — fail loudly
-      // rather than storing garbage as a credential.
-      if (text.includes("�")) fail(oaepError);
+      // PKCS#1 v1.5 unpadding is not integrity-checked: with OpenSSL's
+      // implicit rejection a wrong-key decrypt "succeeds" with pseudo-random
+      // bytes instead of throwing — often a short or empty string that is
+      // valid UTF-8. A real Zed token is a long printable-ASCII string, so
+      // anything else is rejected rather than stored as a credential.
+      if (!PKCS1_TOKEN_SHAPE.test(text)) fail(oaepError);
       return text;
     } catch (err) {
       if (err.message.startsWith("Failed to decrypt Zed access token")) throw err;
