@@ -53,6 +53,12 @@ describe("sampling params across formats", () => {
       reasoning_effort: "high",
     });
     expect(on.request.generationConfig.temperature).toBe(1);
+    const gemini = openaiToAntigravityRequest("claude-sonnet-4-6", {
+      messages: user,
+      temperature: 0,
+      generationConfig: { thinkingConfig: { thinkingBudget: 1024 } },
+    });
+    expect(gemini.request.generationConfig.temperature).toBe(1);
   });
 
   it("Claude models drop top_p along with temperature", () => {
