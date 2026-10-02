@@ -39,6 +39,7 @@ export const buildHermesConfig = ({
       file: "~/.hermes/config.yaml",
       format: "text",
       merge: true,
+      note: "Replace the model block in the existing file, or add it at the top.",
       value: upsertModelBlock(existingYaml, buildModelBlock(model, withV1(baseUrl))),
     },
   ];
@@ -48,6 +49,7 @@ export const buildHermesConfig = ({
       file: "~/.hermes/.env",
       format: "text",
       merge: true,
+      note: "Add this line to the existing file, replacing any line with the same name.",
       value: upsertEnvVar(existingEnv, API_KEY_ENV, apiKey),
     });
   }

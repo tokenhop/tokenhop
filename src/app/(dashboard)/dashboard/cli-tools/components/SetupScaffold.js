@@ -235,7 +235,7 @@ SetupScaffold.propTypes = {
     PropTypes.shape({
       file: PropTypes.string,
       format: PropTypes.string,
-      merge: PropTypes.bool,
+      mode: PropTypes.string,
       note: PropTypes.string,
       content: PropTypes.string,
     }),

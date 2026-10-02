@@ -19,6 +19,7 @@ export const buildCopilotConfig = ({ baseUrl, apiKey, models, platform }) => {
       file: copilotConfigFile(platform),
       format: "json",
       merge: true,
+      note: "Add this entry to the array in the existing file, replacing any entry with the same name.",
       value: [
         {
           name: CLIENT_NAME,

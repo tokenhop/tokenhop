@@ -55,7 +55,7 @@ function CopyButton({ text, id, copyState, children, variant = "secondary" }) {
   );
 }
 
-function FilePanel({ config, path, single, copyState, idPrefix }) {
+function FilePanel({ config, path, copyState, idPrefix }) {
   return (
     <div className="flex flex-col gap-3 pt-3">
       <div className="flex flex-col gap-1.5">
@@ -66,13 +66,19 @@ function FilePanel({ config, path, single, copyState, idPrefix }) {
           <Badge variant="neutral" size="sm">
             {config.format}
           </Badge>
-          <Badge variant={config.merge ? "info" : "warn"} size="sm">
-            {config.merge ? <>Merge</> : <>Replace</>}
+          <Badge variant={config.mode === "replace" ? "warn" : "info"} size="sm">
+            {config.mode === "merge" ? (
+              <>Merge</>
+            ) : config.mode === "create" ? (
+              <>Create</>
+            ) : (
+              <>Replace</>
+            )}
           </Badge>
         </div>
         <p className="text-[13px] text-muted">
           {config.note ||
-            (config.merge ? (
+            (config.mode === "merge" ? (
               <>Merge these keys into the existing file. Keep everything else.</>
             ) : (
               <>Replace the file with this content, or create it.</>
@@ -86,16 +92,14 @@ function FilePanel({ config, path, single, copyState, idPrefix }) {
         {config.content}
       </pre>
       <div className="flex flex-wrap justify-end gap-2">
-        {single && (
-          <Button
-            variant="ghost"
-            size="sm"
-            icon="download"
-            onClick={() => download(segments(path).at(-1), config.content)}
-          >
-            Download
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          icon="download"
+          onClick={() => download(segments(path).at(-1), config.content)}
+        >
+          Download
+        </Button>
         <CopyButton text={config.content} id={`${idPrefix}-${path}`} copyState={copyState}>
           Copy
         </CopyButton>
@@ -107,7 +111,7 @@ function FilePanel({ config, path, single, copyState, idPrefix }) {
 /**
  * Manual setup dialog: one tab per file with its per-OS path, format and merge
  * mode, readable code, copy/copy all/download, and an OS switch remembered per
- * viewer. Configs come from `toManualConfigs` (`{ file, format, merge, note, content }`).
+ * viewer. Configs come from `toManualConfigs` (`{ file, format, mode, note, content }`).
  */
 export default function ManualConfigModal({
   isOpen,
@@ -125,13 +129,7 @@ export default function ManualConfigModal({
     .join("\n");
 
   const panel = (config, index) => (
-    <FilePanel
-      config={config}
-      path={paths[index]}
-      single={configs.length === 1}
-      copyState={copyState}
-      idPrefix="manualconfig"
-    />
+    <FilePanel config={config} path={paths[index]} copyState={copyState} idPrefix="manualconfig" />
   );
 
   return (
@@ -180,7 +178,7 @@ export default function ManualConfigModal({
 const configShape = PropTypes.shape({
   file: PropTypes.string.isRequired,
   format: PropTypes.string,
-  merge: PropTypes.bool,
+  mode: PropTypes.oneOf(["merge", "replace", "create"]),
   note: PropTypes.string,
   content: PropTypes.string.isRequired,
 });
@@ -196,7 +194,6 @@ CopyButton.propTypes = {
 FilePanel.propTypes = {
   config: configShape.isRequired,
   path: PropTypes.string.isRequired,
-  single: PropTypes.bool,
   copyState: PropTypes.object.isRequired,
   idPrefix: PropTypes.string.isRequired,
 };
