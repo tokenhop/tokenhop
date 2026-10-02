@@ -280,4 +280,53 @@ describe("Antigravity executor", () => {
       inlineData: { mimeType: "application/pdf", data: "JVBE" },
     });
   });
+
+  // YAN-666 — reused tool_call_ids across turns must pair per assistant turn:
+  // each response takes its own call's name/result and repeated ids are made
+  // unique on both sides. Previously a conversation-wide id map made every
+  // earlier turn take the latest turn's name+result (400 from Google).
+  it("reused tool_call_id across turns pairs each response with its own call", () => {
+    const messages = [
+      { role: "user", content: "run 1" },
+      {
+        role: "assistant",
+        tool_calls: [
+          { id: "call_1", type: "function", function: { name: "edit", arguments: "{}" } },
+        ],
+      },
+      { role: "tool", tool_call_id: "call_1", content: "one" },
+      { role: "user", content: "run 2" },
+      {
+        role: "assistant",
+        tool_calls: [
+          { id: "call_1", type: "function", function: { name: "bash", arguments: "{}" } },
+        ],
+      },
+      { role: "tool", tool_call_id: "call_1", content: "two" },
+    ];
+    const opts = { projectId: "project-1", connectionId: "conn-1" };
+
+    for (const model of ["gemini-3.5-flash-low", "claude-sonnet-4-6"]) {
+      const out = openaiToAntigravityRequest(model, { messages }, true, opts);
+      const parts = out.request.contents.flatMap((c) => c.parts);
+      const calls = parts.map((p) => p.functionCall).filter(Boolean);
+      const responses = parts.map((p) => p.functionResponse).filter(Boolean);
+
+      expect(
+        calls.map((fc) => [fc.id, fc.name]),
+        `${model}: call ids not made unique`,
+      ).toEqual([
+        ["call_1", "edit"],
+        ["call_1__2", "bash"],
+      ]);
+      expect(
+        // gemini path wraps the text as {result}, the claude path leaves it plain
+        responses.map((fr) => [fr.id, fr.name, fr.response.result.result ?? fr.response.result]),
+        `${model}: response paired to wrong call`,
+      ).toEqual([
+        ["call_1", "edit", "one"],
+        ["call_1__2", "bash", "two"],
+      ]);
+    }
+  });
 });
