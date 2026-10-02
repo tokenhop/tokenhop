@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCombos, getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
 import { findComboCycle, isModelList, resetComboRotation } from "open-sse/services/combo.js";
+import { isValidComboKind } from "@/shared/constants/mediaProviderKinds";
 
 const BLOCKED_COMBO_NAMES = new Set(["__proto__", "constructor", "prototype"]);
 
@@ -56,6 +57,10 @@ export async function PUT(request, { params }) {
 
     if (body.models !== undefined && !isModelList(body.models)) {
       return NextResponse.json({ error: "Models must be an array of strings" }, { status: 400 });
+    }
+
+    if (body.kind !== undefined && !isValidComboKind(body.kind)) {
+      return NextResponse.json({ error: `Invalid combo kind "${body.kind}"` }, { status: 400 });
     }
 
     if (body.name !== undefined || body.models !== undefined) {
