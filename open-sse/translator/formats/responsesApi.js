@@ -109,6 +109,28 @@ export function coerceResponsesOutput(value) {
 }
 
 /**
+ * Map a Responses `function_call_output.output` to Chat tool-message content.
+ * String output passes through; an array of content items (input_text /
+ * input_image — Codex sends tool screenshots this way) becomes Chat content
+ * parts so images survive as image_url parts instead of JSON text.
+ */
+export function responsesOutputToChatContent(output) {
+  if (typeof output === "string") return output;
+  if (!Array.isArray(output)) return JSON.stringify(output);
+  if (output.length === 0) return "";
+  return output.map((c) => {
+    if (c?.type === RESPONSES_ITEM.INPUT_TEXT || c?.type === RESPONSES_ITEM.OUTPUT_TEXT)
+      return { type: OPENAI_BLOCK.TEXT, text: c.text };
+    if (c?.type === RESPONSES_ITEM.INPUT_IMAGE)
+      return {
+        type: OPENAI_BLOCK.IMAGE_URL,
+        image_url: { url: c.image_url || c.file_id || "", detail: c.detail || "auto" },
+      };
+    return c;
+  });
+}
+
+/**
  * Convert OpenAI Responses API format to standard chat completions format
  * Responses API uses: { input: [...], instructions: "..." }
  * Chat API uses: { messages: [...] }
@@ -198,7 +220,7 @@ export function convertResponsesApiFormat(body) {
       pendingToolResults.push({
         role: ROLE.TOOL,
         tool_call_id: item.call_id,
-        content: typeof item.output === "string" ? item.output : JSON.stringify(item.output),
+        content: responsesOutputToChatContent(item.output),
       });
     } else if (itemType === RESPONSES_ITEM.REASONING) {
     }
