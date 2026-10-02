@@ -177,8 +177,8 @@ async function runHeavyStartup() {
     .then(({ syncQuotaSnapshotPoller }) => syncQuotaSnapshotPoller())
     .catch((e) => console.log("[QuotaSnapshotPoller] scheduler start failed:", e.message));
 
-  // Proactive OAuth token refresh (e.g. grok-cli ~6h TTL). Module is idempotent
-  // and also started from custom-server.js when that entry is used.
+  // Proactive OAuth token refresh (e.g. grok-cli ~6h TTL). Module is idempotent;
+  // this bootstrap is its only start path.
   import("@/sse/services/backgroundTokenRefresh.js")
     .then(({ startBackgroundTokenRefresh }) => startBackgroundTokenRefresh())
     .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
