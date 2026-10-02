@@ -1,4 +1,4 @@
-// YAN-634: skills/9router* are pointer stubs to the tokenhop skills; the
+// YAN-634: the legacy skills are pointer stubs to the tokenhop skills; the
 // gateway serves the tokenhop content under the legacy ids on both brands.
 import fs from "node:fs";
 import path from "node:path";
@@ -44,7 +44,7 @@ afterEach(() => {
 });
 
 describe("legacy skill stubs", () => {
-  it.each(SUFFIXES)("9router%s is a pure pointer to an existing tokenhop skill", (suffix) => {
+  it.each(SUFFIXES)("legacy skill%s is a pure pointer to an existing tokenhop skill", (suffix) => {
     const file = path.join(ROOT, "skills", `${OLD}${suffix}`, "SKILL.md");
     expect(fs.readFileSync(file, "utf8")).toBe(STUB(`${OLD}${suffix}`, `tokenhop${suffix}`));
     // The stub's URL points at a real file in the repo.
@@ -52,7 +52,7 @@ describe("legacy skill stubs", () => {
   });
 
   it.each(SUFFIXES)(
-    "every brand serves the tokenhop content at /skills/9router%s/SKILL.md",
+    "every brand serves the tokenhop content at the legacy skill%s id",
     async (suffix) => {
       const id = `${OLD}${suffix}`;
       const tokenhop = fs.readFileSync(
