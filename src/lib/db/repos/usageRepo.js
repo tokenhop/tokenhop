@@ -3,6 +3,7 @@ import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMetaSync, setMetaSync } from "../helpers/metaStore.js";
+import { isPeriod, PERIOD_DAYS, periodStart, previousPeriodRange } from "@/shared/utils/period";
 
 /** _meta keys for the YAN-408 lifetime savings counter. */
 export const SAVINGS_LIFETIME_KEY = "savingsTokensLifetime";
@@ -87,7 +88,6 @@ function apiKeyIdentity(rawKey, apiKeyMap) {
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
 const RING_CAP = 50;
-const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
 
 // In-memory state shared across Next.js modules
 if (!global._pendingRequests) global._pendingRequests = { byModel: {}, byAccount: {} };
@@ -609,8 +609,7 @@ export async function getUsageStats(period = "all") {
   const useDailySummary = period !== "24h" && period !== "today";
 
   if (useDailySummary) {
-    const periodDays = { "7d": 7, "30d": 30, "60d": 60 };
-    const maxDays = periodDays[period] || null;
+    const maxDays = PERIOD_DAYS[period] || null;
     const dayRows = loadDaysInRange(db, maxDays);
 
     for (const dr of dayRows) {
@@ -789,14 +788,7 @@ export async function getUsageStats(period = "all") {
     }
   } else {
     // 24h / today: live history
-    let cutoff;
-    if (period === "today") {
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-      cutoff = startOfDay.toISOString();
-    } else {
-      cutoff = new Date(Date.now() - PERIOD_MS["24h"]).toISOString();
-    }
+    const cutoff = new Date(periodStart(period, Date.now())).toISOString();
     const filtered = db.all(
       `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
       [cutoff],
@@ -941,9 +933,7 @@ export async function getChartData(period = "7d") {
   if (period === "today") {
     const bucketCount = 24;
     const bucketMs = 3600000;
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const startTime = startOfDay.getTime();
+    const startTime = periodStart(period, now);
     const endTime = startTime + bucketCount * bucketMs;
     const labelFn = (ts) =>
       new Date(ts).toLocaleTimeString("en-US", {
@@ -997,7 +987,7 @@ export async function getChartData(period = "7d") {
         minute: "2-digit",
         hour12: false,
       });
-    const startTime = now - bucketCount * bucketMs;
+    const startTime = periodStart(period, now);
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({
       label: labelFn(startTime + i * bucketMs),
       input: 0,
@@ -1033,7 +1023,7 @@ export async function getChartData(period = "7d") {
     return buckets;
   }
 
-  const bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
+  const bucketCount = PERIOD_DAYS[period];
   const today = new Date();
   const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
@@ -1148,39 +1138,19 @@ export async function getRecentLogs(limit = 200) {
   }
 }
 
-// Mirrored client-side as SUMMARY_PERIODS in src/shared/utils/period.js (YAN-428 unifies them).
-export const SAVINGS_PERIODS = ["today", "7d", "30d"];
-
-const SAVINGS_DAY_MS = 24 * 60 * 60 * 1000;
-
-function savingsPeriodRange(period, now) {
-  if (period === "today") {
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-    return { start: startOfToday.toISOString(), end: new Date(now).toISOString() };
-  }
-  const days = period === "30d" ? 30 : 7;
-  return {
-    start: new Date(now - days * SAVINGS_DAY_MS).toISOString(),
-    end: new Date(now).toISOString(),
-  };
-}
-
 /**
  * Period savings from recorded per-request meta (usageHistory.meta.savings).
  * Estimated only — RTK bytes/4, real Headroom tokens, PXPIPE estimates.
  * PXPIPE uses the same meta source (recorded once per successful request),
  * never the JSONL events file, so there is no double counting.
  */
-export async function getUsageSavings(period = "7d") {
-  if (!SAVINGS_PERIODS.includes(period)) throw new Error(`Invalid period: ${period}`);
+export async function getUsageSavings(period = "7d", now = Date.now()) {
+  if (!isPeriod(period)) throw new Error(`Invalid period: ${period}`);
   const db = await getAdapter();
-  const now = Date.now();
-  const { start, end } = savingsPeriodRange(period, now);
 
   const rows = db.all(
     `SELECT timestamp, provider, model, meta FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
-    [start, end],
+    [new Date(periodStart(period, now)).toISOString(), new Date(now).toISOString()],
   );
 
   const byMethod = {};
@@ -1356,32 +1326,28 @@ export async function getLiveRoutesFeed({ windowMs = 5 * 60 * 1000, limit = 500 
   };
 }
 
-export async function getHomeSummary(period = "7d") {
-  if (!SAVINGS_PERIODS.includes(period)) throw new Error(`Invalid period: ${period}`);
+export async function getHomeSummary(period = "7d", now = Date.now()) {
+  if (!isPeriod(period)) throw new Error(`Invalid period: ${period}`);
   const db = await getAdapter();
-  const now = Date.now();
 
-  const current = savingsPeriodRange(period, now);
-  const spanMs = new Date(current.end).getTime() - new Date(current.start).getTime();
-  const prev = {
-    start: new Date(new Date(current.start).getTime() - spanMs).toISOString(),
-    end: current.start,
-  };
+  const current = { start: periodStart(period, now), end: now };
+  const prev = previousPeriodRange(period, now);
 
   const countIn = (start, end) => {
     const row = db.get(
       `SELECT COUNT(*) AS n FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
-      [start, end],
+      [new Date(start).toISOString(), new Date(end).toISOString()],
     );
     return row?.n || 0;
   };
 
   const requests = countIn(current.start, current.end);
-  const previousRequests = countIn(prev.start, prev.end);
+  // Same half-open previous window as /api/usage/stats?compare=previous.
+  const previousRequests = (await getUsageTotals(prev)).requests;
 
   const rows = db.all(
     `SELECT timestamp, meta FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
-    [current.start, current.end],
+    [new Date(current.start).toISOString(), new Date(current.end).toISOString()],
   );
   const comboCounts = {};
   for (const row of rows) {

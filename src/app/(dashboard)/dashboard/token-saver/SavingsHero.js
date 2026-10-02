@@ -3,7 +3,6 @@
 import PropTypes from "prop-types";
 import { Button, Callout, Card, CountUp, EmptyState, Skeleton } from "@/shared/components";
 import PeriodControl from "@/shared/components/PeriodControl";
-import { SUMMARY_PERIODS, periodOptions } from "@/shared/utils/period";
 import { formatCompact, formatMoney } from "../home/format";
 import {
   SAVINGS_METHOD_LABELS,
@@ -12,10 +11,8 @@ import {
   savingsShare,
 } from "./tokenSaverUtils";
 
-const SAVINGS_OPTIONS = periodOptions(SUMMARY_PERIODS);
-
 /**
- * Page toolbar: Today/7d/30d control. Shell Header owns the title. Renders
+ * Page toolbar: shared period control (Today/24h/7d/30d/60d). Shell Header owns the title. Renders
  * with no selection while the shared period resolves after mount.
  * @param {object} props
  * @param {string|null} props.period
@@ -26,7 +23,6 @@ export function TokenSaverHeader({ period, onPeriodChange }) {
     <div className="flex min-w-0 justify-end">
       <PeriodControl
         aria-label="Savings period"
-        options={SAVINGS_OPTIONS}
         value={period}
         onChange={onPeriodChange}
         className="w-full sm:w-auto"
@@ -50,13 +46,17 @@ const SEGMENT_OPACITY = ["bg-on-lime/90", "bg-on-lime/55", "bg-on-lime/30"];
  */
 const SAVED_COPY = {
   today: { eyebrow: "Saved today" },
+  "24h": { eyebrow: "Saved last 24h" },
   "7d": { eyebrow: "Saved last 7d" },
   "30d": { eyebrow: "Saved last 30d" },
+  "60d": { eyebrow: "Saved last 60d" },
   default: { eyebrow: "Saved in this period" },
 };
 const FALLBACK_COPY = {
+  "24h": { eyebrow: "Saved in the last 24h" },
   "7d": { eyebrow: "Saved in the last 7d" },
   "30d": { eyebrow: "Saved in the last 30d" },
+  "60d": { eyebrow: "Saved in the last 60d" },
   default: { eyebrow: "Saved in this period" },
 };
 const EMPTY_COPY = {
@@ -65,7 +65,9 @@ const EMPTY_COPY = {
 };
 const QUIET_NOTES = {
   today: { caption: "None today" },
+  "24h": { caption: "None in the last 24h" },
   "7d": { caption: "None in the last 7d" },
+  "30d": { caption: "None in the last 30d" },
 };
 
 /**

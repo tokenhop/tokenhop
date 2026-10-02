@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SUMMARY_PERIODS } from "@/shared/utils/period";
+import { PERIOD_VALUES } from "@/shared/utils/period";
 import { fetchJson } from "./tokenSaverApi";
 
 const hasSavings = (data) => Number(data?.tokensSavedEst) > 0;
@@ -9,7 +9,7 @@ const hasSavings = (data) => Number(data?.tokensSavedEst) > 0;
 /**
  * Current-period savings with a best-period fallback. Fetches
  * `/api/usage/savings?period=` for `period`; when it holds no savings the
- * larger SUMMARY_PERIODS are fetched in parallel and the smallest non-empty
+ * larger PERIOD_VALUES are fetched in parallel and the smallest non-empty
  * one wins. `neverSaved` is true only when every larger period loads empty.
  * A failed fallback fetch is not fatal: it leaves `neverSaved` false (the
  * selected period is still known empty). No fetch runs while `period` is
@@ -51,7 +51,7 @@ export function useSavingsWithFallback(period, refreshKey = 0) {
         setState((s) => ({ ...s, savings, loading: false }));
         return;
       }
-      const candidates = SUMMARY_PERIODS.slice(SUMMARY_PERIODS.indexOf(period) + 1);
+      const candidates = PERIOD_VALUES.slice(PERIOD_VALUES.indexOf(period) + 1);
       const results = await Promise.allSettled(candidates.map(get));
       if (controller.signal.aborted) return;
       const hit = results.findIndex((r) => r.status === "fulfilled" && hasSavings(r.value));

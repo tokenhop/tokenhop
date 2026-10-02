@@ -21,10 +21,15 @@ describe("resolvePeriodRange", () => {
     expect(startMs).toBeLessThan(now);
   });
 
-  it("7d/30d span N*24h back", () => {
-    const now = Date.now();
-    expect(resolvePeriodRange("7d", now).startMs).toBe(now - 7 * DAY);
-    expect(resolvePeriodRange("30d", now).startMs).toBe(now - 30 * DAY);
+  it("uses the shared calendar windows for every period", () => {
+    const now = new Date(2026, 8, 29, 12).getTime();
+    expect(resolvePeriodRange("24h", now).startMs).toBe(now - DAY);
+    expect(resolvePeriodRange("7d", now).startMs).toBe(new Date(2026, 8, 23).getTime());
+    expect(resolvePeriodRange("30d", now).startMs).toBe(new Date(2026, 7, 31).getTime());
+    const { startMs, prevStartMs, prevEndMs } = resolvePeriodRange("60d", now);
+    expect(startMs).toBe(new Date(2026, 7, 1).getTime());
+    expect(prevEndMs).toBe(startMs);
+    expect(prevEndMs - prevStartMs).toBe(now - startMs);
   });
 
   it("rejects unknown periods", () => {
@@ -257,6 +262,33 @@ describe("recorded savings (saveRequestUsage -> getUsageSavings)", () => {
     expect(pack.requests).toBe(1);
   });
 
+  it("savings and summary use calendar windows and the shared previous window", async () => {
+    const adapter = await (await import("@/lib/db/driver.js")).getAdapter();
+    adapter.run(`DELETE FROM usageHistory`);
+    const now = new Date(2026, 8, 29, 12).getTime();
+    const start = new Date(2026, 8, 23).getTime(); // 7d = local midnight of today - 6
+    const meta = JSON.stringify({
+      savings: {
+        tokensSavedEst: 10,
+        tokensBeforeEst: 40,
+        byMethod: { rtk: { tokensSavedEst: 10 } },
+      },
+    });
+    // Rolling 7×24h would include start - 1h; the calendar window does not.
+    for (const t of [start, now - H, start - H, start - 2 * DAY]) {
+      adapter.run(`INSERT INTO usageHistory(timestamp, meta) VALUES(?, ?)`, [
+        new Date(t).toISOString(),
+        meta,
+      ]);
+    }
+    expect((await db.getUsageSavings("7d", now)).requestsWithSavings).toBe(2);
+    const summary = await db.getHomeSummary("7d", now);
+    expect(summary.requests).toBe(2);
+    expect(summary.previousRequests).toBe(2);
+    expect((await db.getUsageSavings("24h", now)).requestsWithSavings).toBe(1);
+    expect((await db.getHomeSummary("60d", now)).requests).toBe(4);
+  });
+
   it("getUsageSavings rejects invalid period", async () => {
     await expect(db.getUsageSavings("90d")).rejects.toThrow(/Invalid period/);
   });
@@ -267,6 +299,18 @@ describe("savings route validation", () => {
     const { GET } = await import("../../src/app/api/usage/savings/route.js");
     const res = await GET(new Request("http://localhost/api/usage/savings?period=nope"));
     expect(res.status).toBe(400);
+  });
+
+  it.each(["24h", "60d"])("savings and home summary routes accept %s", async (period) => {
+    const savings = await import("../../src/app/api/usage/savings/route.js");
+    const home = await import("../../src/app/api/home/summary/route.js");
+    for (const [GET, path] of [
+      [savings.GET, "usage/savings"],
+      [home.GET, "home/summary"],
+    ]) {
+      const res = await GET(new Request(`http://localhost/api/${path}?period=${period}`));
+      expect(res.status).toBe(200);
+    }
   });
 
   it("home summary route rejects invalid period with 400", async () => {

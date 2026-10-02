@@ -5,7 +5,6 @@ import useLastActivity from "@/shared/hooks/useLastActivity";
 import useLiveRoutes from "@/shared/hooks/useLiveRoutes";
 import usePeriod from "@/shared/hooks/usePeriod";
 import { isIdle as routesAreIdle, mergeRoutes } from "@/shared/utils/routesMap";
-import { SUMMARY_PERIODS } from "@/shared/utils/period";
 import HomeHeader from "./HomeHeader";
 import { EndpointHeroCard } from "./EndpointHero";
 import { KeysSummaryCard } from "./KeysSummary";
@@ -34,7 +33,7 @@ import {
  * recent requests, quota watch, top combos, provider health.
  */
 export default function HomePageClient() {
-  const { period, setPeriod, options } = usePeriod(SUMMARY_PERIODS);
+  const { period, setPeriod, options } = usePeriod();
   const [origin, setOrigin] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
 
