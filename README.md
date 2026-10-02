@@ -34,6 +34,12 @@ accounts are never included), Environment (read-only `.env` readout) and Danger 
 | ---------------------------------------------------------- | ------------------------------------------------------------ |
 | ![Dashboard, dark theme](images/signal-dashboard-dark.png) | ![Dashboard, light theme](images/signal-dashboard-light.png) |
 
+| Usage: requests, tokens, cache hits and cost over time | Combos: one model name routed across several providers |
+| ------------------------------------------------------ | ------------------------------------------------------ |
+| ![Usage analytics](images/dashboard-usage.png)         | ![Combo editor](images/dashboard-combos.png)           |
+| **Quota: runway left on every subscription account**   | **Providers: connected accounts and their health**     |
+| ![Quota tracking](images/dashboard-quota.png)          | ![Providers](images/dashboard-providers.png)           |
+
 ## What's different here
 
 - **Claude Code client fingerprint is configurable.** The identity sent on `claude`
