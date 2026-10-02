@@ -155,10 +155,35 @@ export function parseCommandCodeError(event) {
   return { statusCode, message, type };
 }
 
+// Length of the byte prefix that holds only complete UTF-8 sequences. A
+// trailing lead byte (or lead + continuation bytes) of an unfinished
+// multi-byte character is excluded.
+function completeUtf8Length(bytes) {
+  let i = bytes.length;
+  while (i > 0 && (bytes[i - 1] & 0xc0) === 0x80) i--;
+  if (i === 0) return bytes.length;
+  const lead = bytes[i - 1];
+  if ((lead & 0x80) === 0) return bytes.length;
+  const need = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : 2;
+  return bytes.length - (i - 1) >= need ? bytes.length : i - 1;
+}
+
+function concatBytes(a, b) {
+  if (!a?.length) return b;
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a, 0);
+  out.set(b, a.length);
+  return out;
+}
+
 export async function inspectAndWrapCommandCodeResponse(originalResponse, model) {
   const reader = originalResponse.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  // Undecoded tail bytes (incomplete multi-byte character). Kept raw so the
+  // replay stream can hand them downstream verbatim — a TextDecoder holding
+  // them would silently drop them when the peek loop stops mid-chunk.
+  let pendingBytes = new Uint8Array(0);
   const bufferedLines = [];
   let detectedError = null;
 
@@ -166,6 +191,10 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
     while (true) {
       const { value, done } = await reader.read();
       if (done) {
+        if (pendingBytes.length) {
+          buffer += decoder.decode(pendingBytes);
+          pendingBytes = new Uint8Array(0);
+        }
         const trimmed = buffer.trim();
         if (trimmed) {
           try {
@@ -183,7 +212,10 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
         break;
       }
 
-      buffer += decoder.decode(value, { stream: true });
+      const bytes = concatBytes(pendingBytes, value);
+      const completeLen = completeUtf8Length(bytes);
+      buffer += decoder.decode(bytes.subarray(0, completeLen));
+      pendingBytes = bytes.subarray(completeLen);
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
 
@@ -273,11 +305,11 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
     );
   }
 
-  const combinedStream = createReplayedStream(bufferedLines, buffer, reader);
+  const combinedStream = createReplayedStream(bufferedLines, buffer, pendingBytes, reader);
   return wrapNdjsonAsOpenAISse(combinedStream, model, originalResponse);
 }
 
-function createReplayedStream(bufferedLines, remainingBuffer, reader) {
+function createReplayedStream(bufferedLines, remainingBuffer, trailingBytes, reader) {
   const encoder = new TextEncoder();
   let replayed = false;
 
@@ -295,6 +327,11 @@ function createReplayedStream(bufferedLines, remainingBuffer, reader) {
         }
         if (prefix) {
           controller.enqueue(encoder.encode(prefix));
+        }
+        // Raw bytes of an unfinished multi-byte character; they precede the
+        // live reader bytes so the downstream decoder reassembles the char.
+        if (trailingBytes?.length) {
+          controller.enqueue(trailingBytes);
         }
       }
 
