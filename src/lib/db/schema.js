@@ -146,6 +146,63 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
   },
+  // Users & teams identity and tenancy (migration 004, YAN-353).
+  users: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      email: "TEXT UNIQUE COLLATE NOCASE",
+      username: "TEXT UNIQUE COLLATE NOCASE",
+      displayName: "TEXT",
+      instanceRole: "TEXT NOT NULL CHECK (instanceRole IN ('owner', 'admin', 'user', 'pending'))",
+      status: "TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled'))",
+      passwordHash: "TEXT",
+      sessionVersion: "INTEGER NOT NULL DEFAULT 1",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+      lastLoginAt: "TEXT",
+    },
+    indexes: [
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_owner ON users(instanceRole) WHERE instanceRole = 'owner'",
+    ],
+  },
+  identities: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      userId: "TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE",
+      provider: "TEXT NOT NULL CHECK (provider IN ('password', 'oidc', 'saml', 'header'))",
+      issuer: "TEXT NOT NULL DEFAULT ''",
+      subject: "TEXT NOT NULL",
+      emailAtLink: "TEXT",
+      createdAt: "TEXT NOT NULL",
+      lastLoginAt: "TEXT",
+    },
+    constraints: ["UNIQUE (provider, issuer, subject)"],
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_identities_user ON identities(userId)"],
+  },
+  workspaces: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      name: "TEXT NOT NULL",
+      kind: "TEXT NOT NULL CHECK (kind IN ('personal', 'shared'))",
+      createdBy: "TEXT REFERENCES users(id) ON DELETE SET NULL",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_personal ON workspaces(createdBy) WHERE kind = 'personal'",
+    ],
+  },
+  memberships: {
+    columns: {
+      workspaceId: "TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE",
+      userId: "TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE",
+      role: "TEXT NOT NULL CHECK (role IN ('owner', 'manager', 'member', 'viewer'))",
+      source: "TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'invite', 'idp'))",
+      createdAt: "TEXT NOT NULL",
+    },
+    primaryKey: "PRIMARY KEY (workspaceId, userId)",
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(userId)"],
+  },
 };
 
 export function buildCreateTableSql(name, def) {

@@ -141,6 +141,40 @@ export {
   getDistinctProviders,
 } from "./repos/requestDetailsRepo.js";
 
+// Users & teams identity and tenancy (YAN-353). Inert until the multi-user
+// switch is on; scoped functions take a Principal (`@/lib/users/principal.js`).
+export {
+  getUser,
+  getUserUnscoped,
+  listUsersUnscoped,
+  getOwnerUnscoped,
+  getUserPasswordHashUnscoped,
+  createUserUnscoped,
+  updateUserUnscoped,
+  deleteUserUnscoped,
+  transferOwnership,
+} from "./repos/usersRepo.js";
+export {
+  listIdentities,
+  unlinkIdentity,
+  findIdentityUnscoped,
+  linkIdentityUnscoped,
+} from "./repos/identitiesRepo.js";
+export {
+  listWorkspaces,
+  getWorkspace,
+  listWorkspacesUnscoped,
+  createSharedWorkspace,
+  renameWorkspace,
+  deleteWorkspace,
+} from "./repos/workspacesRepo.js";
+export {
+  listMemberships,
+  addMembership,
+  updateMembershipRole,
+  removeMembership,
+} from "./repos/membershipsRepo.js";
+
 // Export/import full DB
 export async function exportDb() {
   const db = await getAdapter();
