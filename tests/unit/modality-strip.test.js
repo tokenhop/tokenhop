@@ -221,3 +221,61 @@ describe("stripUnsupportedModalities", () => {
     expect(stripUnsupportedModalities({ messages: [] }, FORMATS.OPENAI, NO_VISION)).toBe(true);
   });
 });
+
+describe("tool-returned media (YAN-664)", () => {
+  const png = { type: "base64", media_type: "image/png", data: "AAAA" };
+  it("detects vision from an image inside a Claude tool_result and a Responses function_call_output", async () => {
+    const { detectRequiredCapabilities } = await import("../../open-sse/services/combo.js");
+    const claude = {
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "tool_result", tool_use_id: "x", content: [{ type: "image", source: png }] },
+          ],
+        },
+      ],
+    };
+    expect(detectRequiredCapabilities(claude).has("vision")).toBe(true);
+    const responses = {
+      input: [
+        {
+          type: "function_call_output",
+          call_id: "c",
+          output: [{ type: "input_image", image_url: "data:image/png;base64,AAAA" }],
+        },
+      ],
+    };
+    expect(detectRequiredCapabilities(responses).has("vision")).toBe(true);
+  });
+
+  it("strips nested tool images for non-vision models without mutating the original", () => {
+    const original = {
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "tool_result", tool_use_id: "x", content: [{ type: "image", source: png }] },
+          ],
+        },
+      ],
+    };
+    const body = { ...original };
+    stripUnsupportedModalities(body, FORMATS.CLAUDE, { vision: false });
+    const nested = body.messages[0].content[0].content;
+    expect(nested.some((b) => b.type === "image")).toBe(false);
+    expect(original.messages[0].content[0].content[0].type).toBe("image");
+
+    const resp = {
+      input: [
+        {
+          type: "function_call_output",
+          call_id: "c",
+          output: [{ type: "input_image", image_url: "data:image/png;base64,AAAA" }],
+        },
+      ],
+    };
+    stripUnsupportedModalities(resp, FORMATS.OPENAI_RESPONSES, { vision: false });
+    expect(resp.input[0].output.some((b) => b.type === "input_image")).toBe(false);
+  });
+});

@@ -166,6 +166,9 @@ export function detectRequiredCapabilities(body) {
     }
     // gemini parts: inlineData/fileData carry a mime
     addByMime(b.inlineData?.mimeType || b.fileData?.mimeType);
+    // Media returned by a tool is nested (Claude tool_result.content[]), and
+    // still needs a capable model (YAN-664).
+    if (t === "tool_result" && Array.isArray(b.content)) for (const c of b.content) scanBlock(c);
   };
 
   const scanContent = (content) => {
@@ -211,7 +214,10 @@ export function detectRequiredCapabilities(body) {
 
   // Modalities: current user turn only (trailing user run across each known shape).
   for (const m of trailingUserItems(body.messages)) scanMessage(m); // openai / claude / hermes / ollama
-  for (const it of trailingUserItems(body.input)) scanContent(it.content); // responses
+  for (const it of trailingUserItems(body.input)) {
+    scanContent(it.content); // responses
+    if (it?.type === "function_call_output") scanContent(it.output); // tool-returned media
+  }
   const contents = body.contents || body.request?.contents; // gemini / antigravity
   for (const c of trailingUserItems(contents)) scanContent(c.parts);
 
