@@ -1983,6 +1983,7 @@
   "active ·": "aktiv ·",
   "adapter on, but no models. 9router tries oc/mimo-v2.5-free; if it can't handle the request, the original route may reject the media.": "Adapter på, men inga modeller. 9Router försöker oc/mimo-v2.5-free; om den inte kan hantera begäran kan den ursprungliga rutten avvisa mediet.",
   "added": "tillagd",
+  "agent id": "Agent-ID",
   "alias": "Alternativnamn",
   "all AI providers": "alla AI-leverantörer",
   "and removes the 9Router configuration from it.": "och tar bort 9Router-konfigurationen från den.",
