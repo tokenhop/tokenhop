@@ -1,3 +1,28 @@
+# v1.0.1 (2026-10-02)
+
+First patch on the tokenhop 1.0 line. 21 backported fixes: translator correctness
+(Codex namespace tools, tool-result images, Gemini functionResponses, tool policy),
+Strict Proxy enforcement on chat, usage and token-refresh paths, atomic sql.js
+persistence, request-scoped routing errors, Ollama streaming default, custom-model
+capability toggles and credential masking in request logs.
+
+## Fixes
+
+- **Translator**: Codex namespace tools, tool-result images and Responses item status (#658); OpenAI/Claude tool_result, tool policy, schema and empty-message fixes (#657); Gemini functionResponses paired per turn, schema keys allowlisted (#653).
+- **Routing**: stream default, model-scoped combo fallback, disabled models, video poll locks, malformed messages (#668); malformed-body and disabled-model errors stay request-scoped (#680).
+- **Proxy**: Strict Proxy enforced on chat, usage, background and token-refresh paths (#651).
+- **Providers**: API-key re-tests and Cloud Code test errors (#660); CodeBuddy system prompts kept, missed Claude auto-ping windows recovered (#646); custom-model capability toggles honoured in routing and media stripping (#678).
+- **Models**: live-catalog visibility and limits in /v1/models, hidden no-auth providers hidden (#659).
+- **SSE**: stream terminals, [DONE], NDJSON, reasoning deltas, mid-stream errors (#652).
+- **Thinking**: concrete auto budgets, K3 effort clamp, MiMo preview disable, OpenCode Go GLM (#649).
+- **Claude**: client anthropic-beta forwarded on passthrough, _ide names no longer leak (#647).
+- **Logs**: credential headers masked in request logs (#644).
+- **DB**: sql.js database persisted atomically (#645).
+- **Search**: stored search keys kept off client URLs, operator-configured internal hosts allowed (#643).
+- **Zed**: implicit-rejection garbage rejected in the PKCS#1 token fallback (#590).
+- **Combos**: explicit Fallback strategy, kind validation, terminal UI combo creation (#665).
+- **Ollama**: API streaming default kept on /v1/api/chat (#677).
+
 # v1.0.0 (2026-10-02)
 
 **9router is now tokenhop.** The product, CLI, image, data directory, environment variables and docs carry the new name. Existing installs upgrade by swapping the image or binary: data, API keys, tool configs, SSO, MITM trust and autostart keep working. Read [UPGRADING.md](UPGRADING.md) for what changes and what stays. tokenhop started as a fork of [9Router](https://github.com/decolua/9router) by decolua (MIT). Includes every fix from v0.6.1.
