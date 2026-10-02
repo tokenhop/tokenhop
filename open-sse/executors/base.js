@@ -163,9 +163,16 @@ export class BaseExecutor {
     };
 
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
-      const url = this.buildUrl(model, stream, urlIndex, credentials, body);
-      const transformedBody = this.transformRequest(model, body, stream, credentials);
-      const headers = this.buildHeaders(credentials, stream, url, model, transformedBody);
+      let url, transformedBody, headers;
+      try {
+        url = this.buildUrl(model, stream, urlIndex, credentials, body);
+        transformedBody = this.transformRequest(model, body, stream, credentials);
+        headers = this.buildHeaders(credentials, stream, url, model, transformedBody);
+      } catch (error) {
+        // Local bug/bad input, not an upstream failure: chatCore must not cool the account down.
+        error.isRequestPrepError = true;
+        throw error;
+      }
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 

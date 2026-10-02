@@ -584,15 +584,22 @@ export async function handleChatCore({
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
     }
-    const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
+    const localPrep = error.isRequestPrepError === true;
+    // Malformed client body (e.g. non-array messages): request-scoped 400 —
+    // checkFallbackError never cools an account down for these, unlike 5xx.
+    const errStatus = localPrep ? HTTP_STATUS.BAD_REQUEST : HTTP_STATUS.BAD_GATEWAY;
+    const errMsg = formatProviderError(error, provider, model, errStatus);
     if (log?.errorLine) {
       log.errorLine(
         reqTag,
         "✗",
-        `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`,
+        `ERROR ${errStatus} · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`,
       );
     }
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+    const errResult = createErrorResult(errStatus, errMsg);
+    // Not an upstream failure: caller must not mark the account unavailable.
+    if (localPrep) errResult.localError = true;
+    return errResult;
   }
 
   // Handle 401/403 - try token refresh (skip for noAuth providers and

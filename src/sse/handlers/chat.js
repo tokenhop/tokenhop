@@ -71,6 +71,9 @@ export async function handleChat(request, clientRawRequest = null, options = nul
   if (body.model !== undefined && typeof body.model !== "string") {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "model must be a string");
   }
+  if (body.messages !== undefined && !Array.isArray(body.messages)) {
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "messages must be an array");
+  }
 
   // Build clientRawRequest for logging (if not provided)
   if (!clientRawRequest) {
@@ -543,6 +546,8 @@ async function handleSingleModelChat(
     });
 
     if (result.success) return result.response;
+    // Local request-prep failure says nothing about the account: no cooldown, no rotation.
+    if (result.localError) return result.response;
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;
