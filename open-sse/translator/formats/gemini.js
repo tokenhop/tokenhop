@@ -7,23 +7,19 @@ import { OPENAI_BLOCK } from "../schema/index.js";
 // "Unknown name ...: Cannot find field". Allowlist, so new/unknown keywords can't leak.
 // Aligned with the keys this cleaner can emit: anyOf is flattened away before Phase 3
 // and example is currently stripped like examples, so neither is listed here.
+// title, format, minLength/maxLength/minItems/maxItems and default stay out: the previous denylist
+// stripped them on purpose (Gemini rejects some; Claude-on-Antigravity rejects default
+// in VALIDATED mode), and this fix must not start sending them.
 const SUPPORTED_SCHEMA_KEYS = new Set([
   "type",
-  "format",
-  "title",
   "description",
   "nullable",
   "enum",
-  "default",
   "items",
   "properties",
   "required",
-  "minItems",
-  "maxItems",
   "minProperties",
   "maxProperties",
-  "minLength",
-  "maxLength",
   "minimum",
   "maximum",
   "pattern",

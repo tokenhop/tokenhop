@@ -41,14 +41,14 @@ describe("cleanJSONSchemaForAntigravity - name maps", () => {
   it("still strips real unsupported keywords from schemas", () => {
     const result = cleanJSONSchemaForAntigravity({
       type: "object",
-      optional: true,
+      title: "Root",
       properties: {
         link: { type: "string", format: "uri", default: "x" },
       },
     });
 
-    expect(result).not.toHaveProperty("optional");
-    expect(result.properties.link).toEqual({ type: "string", format: "uri", default: "x" });
+    expect(result).not.toHaveProperty("title");
+    expect(result.properties.link).toEqual({ type: "string" });
   });
 
   it("does not add type when a param is named 'properties'", () => {
@@ -100,7 +100,7 @@ describe("cleanJSONSchemaForAntigravity - name maps", () => {
     });
 
     expect(JSON.stringify(result)).not.toContain('"$id"');
-    expect(result.properties.a).toEqual({ type: "string", minLength: 1 });
+    expect(result.properties.a).toEqual({ type: "string" });
     expect(result.properties.b).toEqual({
       type: "array",
       items: { type: "string", pattern: "^x" },
