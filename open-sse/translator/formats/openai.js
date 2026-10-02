@@ -100,6 +100,7 @@ export function filterToOpenAIFormat(body, opts = {}) {
             name: tool.name,
             description: String(tool.description || ""),
             parameters: tool.input_schema || { type: "object", properties: {} },
+            ...(typeof tool.strict === "boolean" && { strict: tool.strict }),
           },
         };
       }
