@@ -322,4 +322,63 @@ describe("handleChatCore Headroom diagnostics", () => {
       );
     },
   );
+
+  // pxpipe must honor the same per-request opt-out as every other saver (#516).
+  it("skips pxpipe on Claude-format requests when the client sends the off header", async () => {
+    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    const pxpipeTransform = vi.fn();
+    const body = {
+      model: "claude-sonnet-4.5",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: "Write polished prose. ".repeat(100) }],
+    };
+
+    await handleChatCore({
+      body,
+      modelInfo: { provider: "claude", model: "claude-sonnet-4.5" },
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log,
+      connectionId: "test-conn",
+      pxpipeEnabled: true,
+      pxpipeMinChars: 1,
+      pxpipeTransform,
+      clientRawRequest: {
+        endpoint: "/v1/messages",
+        body: {},
+        headers: { accept: "application/json", [TOKEN_SAVER_HEADER]: "off" },
+      },
+    });
+
+    expect(pxpipeTransform).not.toHaveBeenCalled();
+    expect(executeMock).toHaveBeenCalledOnce();
+  });
+
+  // Control for the off-header case above: without the header, the transform runs.
+  it("runs pxpipe on Claude-format requests without the off header", async () => {
+    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    const pxpipeTransform = vi.fn(async () => ({ applied: false, reason: "passthrough" }));
+    const body = {
+      model: "claude-sonnet-4.5",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: "Write polished prose. ".repeat(100) }],
+    };
+
+    await handleChatCore({
+      body,
+      modelInfo: { provider: "claude", model: "claude-sonnet-4.5" },
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log,
+      connectionId: "test-conn",
+      pxpipeEnabled: true,
+      pxpipeMinChars: 1,
+      pxpipeTransform,
+      clientRawRequest: {
+        endpoint: "/v1/messages",
+        body: {},
+        headers: { accept: "application/json" },
+      },
+    });
+
+    expect(pxpipeTransform).toHaveBeenCalledOnce();
+  });
 });

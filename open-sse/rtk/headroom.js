@@ -1,5 +1,4 @@
-import { claudeToOpenAIRequest } from "../translator/request/claude-to-openai.js";
-import { openaiToClaudeRequest } from "../translator/request/openai-to-claude.js";
+import { CLAUDE_BLOCK, OPENAI_BLOCK, ROLE } from "../translator/schema/index.js";
 import {
   openaiResponsesToOpenAIRequest,
   openaiToOpenAIResponsesRequest,
@@ -191,12 +190,70 @@ function textFromHeadroomMessage(message) {
   return parts.length > 0 ? parts.join("\n") : null;
 }
 
-function applyKiroHeadroomMessages(projection, compressedMessages, diagnostics) {
+// Claude shape: project only string fields (message text, text blocks, non-error
+// tool_result text) so compressed text is written back in place. Everything else
+// (thinking + signatures, images, is_error, cache_control, tool_use) is never
+// sent or rewritten. tool_use blocks ride along as a context-only assistant
+// message (null target) so role:"tool" results keep their tool_calls pairing.
+function collectClaudeHeadroomMessages(body) {
+  if (!Array.isArray(body?.messages)) return null;
+
+  const messages = [];
+  const targets = [];
+
+  const addTextTarget = (role, text, target, extra = {}) => {
+    if (typeof text !== "string") return;
+    messages.push({ role, content: text, ...extra });
+    targets.push(target);
+  };
+
+  for (const msg of body.messages) {
+    if (!msg || typeof msg !== "object") continue;
+    if (typeof msg.content === "string") {
+      addTextTarget(msg.role, msg.content, { object: msg, key: "content" });
+      continue;
+    }
+    if (!Array.isArray(msg.content)) continue;
+
+    const toolCalls = [];
+    for (const block of msg.content) {
+      if (block?.type === CLAUDE_BLOCK.TEXT) {
+        addTextTarget(msg.role, block.text, { object: block, key: "text" });
+      } else if (block?.type === CLAUDE_BLOCK.TOOL_USE) {
+        toolCalls.push({
+          id: block.id,
+          type: OPENAI_BLOCK.FUNCTION,
+          function: { name: block.name || "", arguments: JSON.stringify(block.input || {}) },
+        });
+      } else if (block?.type === CLAUDE_BLOCK.TOOL_RESULT && !block.is_error) {
+        const extra = { tool_call_id: block.tool_use_id };
+        if (typeof block.content === "string") {
+          addTextTarget(ROLE.TOOL, block.content, { object: block, key: "content" }, extra);
+        } else if (Array.isArray(block.content)) {
+          for (const part of block.content) {
+            if (part?.type !== CLAUDE_BLOCK.TEXT) continue;
+            addTextTarget(ROLE.TOOL, part.text, { object: part, key: "text" }, extra);
+          }
+        }
+      }
+    }
+    if (toolCalls.length > 0) {
+      messages.push({ role: ROLE.ASSISTANT, content: "", tool_calls: toolCalls });
+      targets.push(null);
+    }
+  }
+
+  return messages.length > 0 ? { messages, targets } : null;
+}
+
+// Write compressed text back into the projected targets. All-or-nothing: any
+// count/role/text mismatch fails open and leaves the body untouched.
+function applyHeadroomMessages(projection, compressedMessages, diagnostics, label) {
   if (
     !Array.isArray(compressedMessages) ||
     compressedMessages.length !== projection.messages.length
   ) {
-    setDiagnostic(diagnostics, "proxy response did not match Kiro message count");
+    setDiagnostic(diagnostics, `proxy response did not match ${label} message count`);
     return false;
   }
 
@@ -205,16 +262,18 @@ function applyKiroHeadroomMessages(projection, compressedMessages, diagnostics) 
     const expected = projection.messages[i];
     const actual = compressedMessages[i];
     if (!actual || actual.role !== expected.role) {
-      setDiagnostic(diagnostics, "proxy response did not preserve Kiro message order");
+      setDiagnostic(diagnostics, `proxy response did not preserve ${label} message order`);
       return false;
     }
 
+    const target = projection.targets[i];
+    if (!target) continue;
     const text = textFromHeadroomMessage(actual);
     if (text === null) {
-      setDiagnostic(diagnostics, "proxy response missing Kiro text content");
+      setDiagnostic(diagnostics, `proxy response missing ${label} text content`);
       return false;
     }
-    updates.push({ target: projection.targets[i], text });
+    updates.push({ target, text });
   }
 
   for (const update of updates) {
@@ -285,28 +344,29 @@ export async function compressWithHeadroom(
   try {
     if (diagnostics) diagnostics.before = captureSizeSnapshot(body);
 
-    // Claude shape: translate → OpenAI → compress → translate back. Only
-    // messages[] round-trip; `system` is never sent or rewritten. The OpenAI hop
-    // strips the `x-anthropic-billing-header` block cloaking puts at system[0],
-    // and without it Anthropic bills an OAuth request to extra usage, failing
-    // with 400 "You're out of extra usage" once that is spent.
+    // Claude shape: text fields are projected to OpenAI messages for the proxy,
+    // then copied back in place — no translator round-trip, so thinking blocks,
+    // is_error, cache_control and image/text grouping survive untouched. `system`
+    // is never sent or rewritten: the OpenAI hop used to strip the
+    // `x-anthropic-billing-header` block cloaking puts at system[0], and without
+    // it Anthropic bills an OAuth request to extra usage, failing with 400
+    // "You're out of extra usage" once that is spent.
     if (format === "claude") {
-      const oai = claudeToOpenAIRequest(model, { ...body, system: undefined }, false);
-      if (!Array.isArray(oai?.messages)) {
-        setDiagnostic(diagnostics, "Claude request did not translate to messages[]");
+      const projection = collectClaudeHeadroomMessages(body);
+      if (!projection) {
+        setDiagnostic(diagnostics, "Claude request did not project to messages[]");
         return null;
       }
       const data = await callCompress(
         url,
-        oai.messages,
+        projection.messages,
         model,
         timeoutMs,
         compressUserMessages,
         diagnostics || {},
       );
       if (!data) return null;
-      const claudeBody = openaiToClaudeRequest(model, { ...oai, messages: data.messages }, false);
-      if (Array.isArray(claudeBody?.messages)) body.messages = claudeBody.messages;
+      if (!applyHeadroomMessages(projection, data.messages, diagnostics, "Claude")) return null;
       if (diagnostics) diagnostics.after = captureSizeSnapshot(body);
       return data;
     }
@@ -366,7 +426,7 @@ export async function compressWithHeadroom(
         diagnostics || {},
       );
       if (!data) return null;
-      if (!applyKiroHeadroomMessages(projection, data.messages, diagnostics)) return null;
+      if (!applyHeadroomMessages(projection, data.messages, diagnostics, "Kiro")) return null;
       if (diagnostics) diagnostics.after = captureSizeSnapshot(body);
       return data;
     }

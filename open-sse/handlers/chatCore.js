@@ -434,7 +434,7 @@ export async function handleChatCore({
 
   // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch
   let pxpipeSummary = null;
-  if (pxpipeEnabled) {
+  if (tokenSaverEnabled && pxpipeEnabled) {
     const pxpipeResult = await compressWithPxpipe(translatedBody, {
       enabled: true,
       format: finalFormat,
