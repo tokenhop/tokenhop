@@ -12,6 +12,7 @@ import {
   COLORS,
 } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import { extractReasoningText } from "../translator/concerns/reasoning.js";
 import {
   getOpenAIResponsesEventName,
   isOpenAIResponsesTerminalEvent,
@@ -249,7 +250,7 @@ export function createSSEStream(options = {}) {
 
               const delta = parsed.choices?.[0]?.delta;
               const content = delta?.content;
-              const reasoning = delta?.reasoning_content;
+              const reasoning = extractReasoningText(delta);
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
                 accumulatedContent += content;

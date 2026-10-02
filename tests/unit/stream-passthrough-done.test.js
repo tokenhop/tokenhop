@@ -88,6 +88,19 @@ describe("passthrough stream [DONE]", () => {
     expect(out.trimEnd().endsWith("data: [DONE]")).toBe(true);
   });
 
+  it("forwards reasoning-only deltas (delta.reasoning / reasoning_details) (YAN-672)", async () => {
+    const make = (delta) =>
+      `data: ${JSON.stringify({ id: "chatcmpl-abcdefgh", choices: [{ index: 0, delta }] })}\n\n`;
+    const out = await drain(
+      make({ reasoning: "think-a" }) +
+        make({ reasoning_details: [{ type: "reasoning.text", text: "think-b" }] }) +
+        make({ content: "answer" }),
+    );
+    expect(out).toContain("think-a");
+    expect(out).toContain("think-b");
+    expect(out).toContain("answer");
+  });
+
   it("strips an empty delta.role while keeping a valid role (YAN-676)", async () => {
     const make = (delta) =>
       `data: ${JSON.stringify({ id: "chatcmpl-abcdefgh", choices: [{ index: 0, delta }] })}\n\n`;
