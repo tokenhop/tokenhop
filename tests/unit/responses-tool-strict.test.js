@@ -135,7 +135,7 @@ describe("tool strict across the Claude↔OpenAI bridge (YAN-18)", () => {
     expect(out.tools.find((t) => t.name === "subagent").strict).toBe(true);
   });
 
-  it.each(["glm", "anthropic-compatible-x"])(
+  it.each(["glm", "anthropic-compatible-x", "anthropic"])(
     "openai → claude strips strict:true for %s",
     (provider) => {
       const out = translateRequest(
@@ -164,9 +164,20 @@ describe("tool strict across the Claude↔OpenAI bridge (YAN-18)", () => {
     expect("strict" in out.tools.find((t) => t.name === "loose")).toBe(false);
   });
 
-  it("only real Anthropic endpoints declare claudeToolStrict (registry tripwire)", () => {
+  it("claude → claude passthrough keeps strict for any provider", () => {
+    const body = {
+      max_tokens: 10,
+      messages: [{ role: "user", content: "hi" }],
+      tools: [{ name: "t", input_schema: { type: "object" }, strict: true }],
+    };
+    const out = translateRequest(FORMATS.CLAUDE, FORMATS.CLAUDE, "m", body, true, null, "glm");
+    expect(out.tools[0].strict).toBe(true);
+  });
+
+  // `anthropic` is left out until it sends the structured-outputs beta header.
+  it("only endpoints that send the strict beta declare claudeToolStrict (registry tripwire)", () => {
     expect(PROVIDERS.claude?.quirks?.claudeToolStrict).toBe(true);
-    expect(PROVIDERS.anthropic?.quirks?.claudeToolStrict).toBe(true);
+    expect(PROVIDERS.anthropic?.quirks?.claudeToolStrict).toBeUndefined();
     expect(PROVIDERS.glm?.quirks?.claudeToolStrict).toBeUndefined();
     expect(PROVIDERS.minimax?.quirks?.claudeToolStrict).toBeUndefined();
   });
