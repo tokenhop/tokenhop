@@ -9,11 +9,15 @@ import { LIVE_MODEL_PROVIDERS } from "@/shared/constants/providers.js";
 describe("LIVE_MODEL_PROVIDERS", () => {
   it("is derived from the registry features.liveModels flag", () => {
     expect([...LIVE_MODEL_PROVIDERS].sort()).toEqual([
+      "anthropic",
+      "antigravity",
       "claude",
       "cline",
       "clinepass",
       "codex",
       "cursor",
+      "gemini",
+      "gemini-cli",
       "github",
       "grok-cli",
       "kimchi",
@@ -88,6 +92,18 @@ describe("mergeLiveWithStatic", () => {
       { id: "claude-new", name: "claude-new", createdAt: "2026-02-02" },
       { id: "claude-named", name: "Named" },
     ]);
+  });
+
+  it("matches curated entries per kind when one id is both chat and stt", () => {
+    const merged = mergeLiveWithStatic(
+      "gemini",
+      [{ id: "gemini-2.5-pro", name: "live" }],
+      [
+        { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+        { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro (STT)", kind: "stt" },
+      ],
+    );
+    expect(merged).toEqual([{ id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" }]);
   });
 
   it("normalizes qoder ids before matching the static list", () => {

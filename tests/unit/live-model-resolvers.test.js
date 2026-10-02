@@ -89,6 +89,10 @@ describe("resolver registry", () => {
       "github",
       "cline",
       "clinepass",
+      "anthropic",
+      "gemini",
+      "gemini-cli",
+      "antigravity",
     ]) {
       expect(hasLiveModelResolver(id)).toBe(true);
     }

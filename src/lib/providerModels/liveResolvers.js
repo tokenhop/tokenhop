@@ -9,6 +9,11 @@ import { refreshClaudeOAuthToken, updateProviderCredentials } from "@/sse/servic
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { buildOAuthResolver } from "@/lib/providerModels/oauthResolver.js";
 import { resolveCodex } from "@/lib/providerModels/codexModels.js";
+import {
+  resolveAntigravity,
+  resolveGemini,
+  resolveGeminiCli,
+} from "@/lib/providerModels/googleModels.js";
 import { ANTHROPIC_API_VERSION } from "open-sse/providers/shared.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -80,6 +85,19 @@ const resolveClaudeOAuthModels = buildOAuthResolver({
   errorLabel: "Failed to fetch Claude models",
 });
 
+async function resolveAnthropicApiKey(connection, label) {
+  if (!connection.apiKey) return { models: [], warning: "No valid token found" };
+  const response = await fetchAllAnthropicModels({ "x-api-key": connection.apiKey });
+  if (!response.ok) {
+    return {
+      models: [],
+      warning: `Failed to fetch ${label} models: ${response.status} ${await response.text()}`,
+    };
+  }
+  const models = parseAnthropicModels(await response.json());
+  return models.length ? { models } : noModels(label);
+}
+
 async function resolveClaude(connection) {
   if (connection.accessToken) {
     const result = await resolveClaudeOAuthModels(connection);
@@ -88,16 +106,7 @@ async function resolveClaude(connection) {
       ? result
       : { models: [], warning: result.warning || noModels("Claude").warning };
   }
-  if (!connection.apiKey) return { models: [], warning: "No valid token found" };
-  const response = await fetchAllAnthropicModels({ "x-api-key": connection.apiKey });
-  if (!response.ok) {
-    return {
-      models: [],
-      warning: `Failed to fetch Claude models: ${response.status} ${await response.text()}`,
-    };
-  }
-  const models = parseAnthropicModels(await response.json());
-  return models.length ? { models } : noModels("Claude");
+  return resolveAnthropicApiKey(connection, "Claude");
 }
 
 // ── Zed ───────────────────────────────────────────────────────────────────
@@ -239,6 +248,10 @@ const passthrough = (label, resolve) => async (connection, options) => {
 
 export const LIVE_MODEL_RESOLVERS = {
   claude: resolveClaude,
+  anthropic: (conn) => resolveAnthropicApiKey(conn, "Anthropic"),
+  gemini: resolveGemini,
+  "gemini-cli": resolveGeminiCli,
+  antigravity: resolveAntigravity,
   codex: resolveCodex,
   zed: resolveZed,
   kiro: resolveKiro,

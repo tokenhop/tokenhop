@@ -42,16 +42,17 @@ function normalizeLiveModels(providerId, liveModels) {
 /**
  * Build the displayed model list from a live catalog. The live list decides WHICH
  * models exist; for ids the static registry also knows, its curated metadata
- * (name, type, capabilities) wins over whatever the upstream reports.
+ * (name, type, capabilities) wins over whatever the upstream reports. Matching is
+ * per kind: one id can be both a chat and an STT entry (Gemini).
  */
 export function mergeLiveWithStatic(providerId, liveModels, staticModels) {
-  const staticById = new Map(
+  const staticByKey = new Map(
     (Array.isArray(staticModels) ? staticModels : [])
       .filter((model) => model?.id)
-      .map((model) => [model.id, model]),
+      .map((model) => [`${modelKind(model)}:${model.id}`, model]),
   );
   return normalizeLiveModels(providerId, liveModels).map((live) => {
-    const curated = staticById.get(live.id);
+    const curated = staticByKey.get(`${modelKind(live)}:${live.id}`);
     if (curated) return { ...live, ...curated };
     return { ...live, name: live.name || live.id };
   });
