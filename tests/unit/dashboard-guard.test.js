@@ -320,6 +320,24 @@ describe("dashboard guard local-only access", () => {
     expect(aliasDelete.body.code).toBe("LOCAL_ONLY");
   });
 
+  it("lets a signed-in remote user GET, PUT and DELETE CLI tool settings (YAN-636)", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+    const remote = (pathname, method) => ({
+      ...request(pathname, { host: "router.example.com" }),
+      method,
+      cookies: { get: vi.fn(() => ({ value: "jwt" })) },
+    });
+
+    for (const [pathname, method] of [
+      ["/api/cli-tool-settings", "GET"],
+      ["/api/cli-tool-settings/claude", "GET"],
+      ["/api/cli-tool-settings/claude", "PUT"],
+      ["/api/cli-tool-settings/claude", "DELETE"],
+    ]) {
+      expect(await proxy(remote(pathname, method))).toBe(mocks.nextResponse);
+    }
+  });
+
   it("rejects MITM alias PUT for an unknown tool with 400 (YAN-622)", async () => {
     const put = (body) => putMitmAlias({ json: async () => body });
     const bad = await put({ tool: "__proto__", mappings: { a: "b" } });

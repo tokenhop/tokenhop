@@ -19,7 +19,9 @@ import { LoadingState } from "@/shared/components/StateViews";
  * Header (lg tile, name, status pill, detected version), install/not-ready
  * states, aria-live result message, Apply / Manual config / Reset footer and
  * the written-file hint in mono. Per-tool cards own their data fetching and
- * POST bodies; this owns only the layout.
+ * POST bodies; this owns only the layout. The `saveStatus`, `onResetDefaults`,
+ * `differsHint` and `onLoadFromFile` props add one quiet persistence row after
+ * the card fields (host and remote).
  */
 export default function SetupScaffold({
   tool,
@@ -44,6 +46,10 @@ export default function SetupScaffold({
   confirmReset = true,
   hideActions = false,
   children,
+  saveStatus,
+  onResetDefaults,
+  differsHint,
+  onLoadFromFile,
 }) {
   const localOnly = useCliAccessStore((s) => s.localOnly);
   const installedBlock = localOnly ? null : notInstalled;
@@ -104,6 +110,50 @@ export default function SetupScaffold({
       ) : (
         <>
           <div className="flex flex-col gap-4">{children}</div>
+          {(saveStatus || onResetDefaults || (differsHint && onLoadFromFile)) && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+              {saveStatus && (
+                <span
+                  role="status"
+                  aria-live="polite"
+                  className={saveStatus === "error" ? "text-err" : ""}
+                >
+                  {saveStatus === "saving"
+                    ? "Saving…"
+                    : saveStatus === "saved"
+                      ? "Saved"
+                      : "Couldn't save"}
+                </span>
+              )}
+              {onResetDefaults && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  icon="restart_alt"
+                  onClick={onResetDefaults}
+                >
+                  Reset to defaults
+                </Button>
+              )}
+              {differsHint && onLoadFromFile && (
+                <>
+                  <span>
+                    Saved settings differ from <span className="font-mono">{differsHint}</span>
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    icon="upload_file"
+                    onClick={onLoadFromFile}
+                  >
+                    Load from file
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
           {localOnly && Array.isArray(manualConfigs) && (
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-[13px] text-muted">
@@ -245,6 +295,10 @@ SetupScaffold.propTypes = {
   hideActions: PropTypes.bool,
   resetLabel: PropTypes.string,
   children: PropTypes.node,
+  saveStatus: PropTypes.oneOf(["saving", "saved", "error", ""]),
+  onResetDefaults: PropTypes.func,
+  differsHint: PropTypes.node,
+  onLoadFromFile: PropTypes.func,
 };
 
 /**

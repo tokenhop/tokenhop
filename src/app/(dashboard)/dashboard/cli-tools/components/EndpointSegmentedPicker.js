@@ -28,6 +28,9 @@ import { useCliAccessStore } from "@/store/cliAccessStore";
  * @param {string} [props.cloudUrl=""]
  * @param {boolean} [props.withV1=true]
  * @param {string} [props.currentUrl=""] Existing configured URL (prefers its saved preset).
+ * @param {string} [props.savedUrl=""] Persisted URL; when set the mount init
+ *   matches it (saved preset, then built-in) or falls back to Custom showing it,
+ *   and no `onChange` fires — the parent already holds the value.
  * @param {string} [props.className]
  */
 export default function EndpointSegmentedPicker({
@@ -42,6 +45,7 @@ export default function EndpointSegmentedPicker({
   cloudUrl = "",
   withV1 = true,
   currentUrl = "",
+  savedUrl = "",
   className = "",
 }) {
   const [localOrigin, setLocalOrigin] = useState("");
@@ -87,10 +91,29 @@ export default function EndpointSegmentedPicker({
     ],
   );
 
-  // Init: prefer the saved preset matching currentUrl, else the first option.
+  // Init: with savedUrl match the saved preset, then a built-in option, else
+  // Custom showing savedUrl — and never fire onChange, the parent already has
+  // the value. Without savedUrl, behave as before: first option wins.
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-once init; currentUrl/onChange are intentionally snapshot at mount
   useEffect(() => {
-    if (mode !== null || options.length === 0) return;
+    // Wait for localOrigin, or the first pass only sees Custom and picks it.
+    if (mode !== null || options.length === 0 || !localOrigin) return;
+    if (savedUrl) {
+      const target = stripSlash(savedUrl);
+      const matchedSaved = target
+        ? options.find((o) => o.value.startsWith("saved:") && stripSlash(o.url) === target)
+        : null;
+      const matchedBuiltIn = target
+        ? options.find((o) => o.value !== ENDPOINT_CUSTOM_VALUE && stripSlash(o.url) === target)
+        : null;
+      if (matchedSaved) setMode(matchedSaved.value);
+      else if (matchedBuiltIn) setMode(matchedBuiltIn.value);
+      else {
+        setMode(ENDPOINT_CUSTOM_VALUE);
+        setCustomDraft(savedUrl);
+      }
+      return;
+    }
     const current = stripSlash(currentUrl);
     const matchedSaved = current
       ? options.find((o) => o.value.startsWith("saved:") && stripSlash(o.url) === current)
@@ -98,7 +121,7 @@ export default function EndpointSegmentedPicker({
     const target =
       matchedSaved || options.find((o) => o.value !== ENDPOINT_CUSTOM_VALUE) || options[0];
     setMode(target.value);
-    if (target.url) onChange?.(target.url);
+    if (target.url) onChange?.(target.url, { init: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [options, mode]);
 
@@ -205,5 +228,6 @@ EndpointSegmentedPicker.propTypes = {
   cloudUrl: PropTypes.string,
   withV1: PropTypes.bool,
   currentUrl: PropTypes.string,
+  savedUrl: PropTypes.string,
   className: PropTypes.string,
 };
