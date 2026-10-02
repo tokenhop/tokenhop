@@ -13,6 +13,9 @@ const [NODE_MAJOR] = process.versions.node.split(".").map(Number);
 const USE_NAPI_BUILD = NODE_MAJOR >= 22;
 const BETTER_SQLITE3_VERSION = USE_NAPI_BUILD ? "13.0.3" : "12.6.2";
 const SQL_JS_VERSION = "1.14.1";
+// Optional runtime deps (better-sqlite3, systray2) share <data dir>/runtime and must be saved:
+// npm prunes --no-save packages as extraneous on the next install.
+const OPTIONAL_SAVE_ARGS = ["--save-optional", "--save-exact"];
 
 const { requireShared } = require("../src/cli/utils/requireShared");
 
@@ -130,7 +133,7 @@ function runNpmInstall({ cwd, pkgs, extraArgs = [], timeout = 180000 }) {
 
 function npmInstall(pkgs, opts = {}) {
   const cwd = ensureRuntimeDir();
-  const extra = opts.optional ? ["--no-save"] : [];
+  const extra = opts.optional ? [...OPTIONAL_SAVE_ARGS] : [];
   if (opts.ignoreScripts) extra.push("--ignore-scripts");
   if (!opts.silent) console.log("⏳ Installing SQLite engine (first run)...");
   const res = runNpmInstall({ cwd, pkgs, extraArgs: extra, timeout: opts.timeout || 180000 });
@@ -210,4 +213,5 @@ module.exports = {
   getRuntimeNodeModules,
   runNpmInstall,
   summarizeNpmError,
+  OPTIONAL_SAVE_ARGS,
 };

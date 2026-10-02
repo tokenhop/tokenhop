@@ -525,6 +525,9 @@ function startServer() {
     }
   };
 
+  // Before the mode branches: tray and headless return early but still need crash restarts.
+  attachServerEvents();
+
   // Tray-only mode: no TUI, just tray icon
   if (trayMode) {
     // Ignore SIGHUP so macOS terminal close doesn't kill the background tray process
@@ -609,6 +612,7 @@ function startServer() {
           console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
 
           // cleanup() kills server so bgProcess can claim the port fresh
+          isShuttingDown = true;
           cleanup();
           process.exit(0);
         } else if (choice === "exit") {
@@ -621,6 +625,7 @@ function startServer() {
       }
     } catch (err) {
       console.error("Error:", err.message);
+      isShuttingDown = true;
       cleanup();
       process.exit(1);
     }
@@ -681,6 +686,4 @@ function startServer() {
       attachServerEvents();
     }, delay);
   }
-
-  attachServerEvents();
 }
