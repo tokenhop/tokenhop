@@ -1028,7 +1028,6 @@ docker stop tokenhop && docker rm tokenhop
 | `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                    | Соль для стабильного хеширования ID машины                                                                    |
 | `ENABLE_REQUEST_LOGS`                                | `false`                                  | Включить лог запросов/ответов в `logs/`                                                                       |
 | `AUTH_COOKIE_SECURE`                                 | `false`                                  | Принудительный `Secure` cookie аутентификации (задайте `true` за HTTPS reverse proxy)                         |
-| `REQUIRE_API_KEY`                                    | `false`                                  | Требовать Bearer API key на маршрутах `/v1/*` (рекомендуется для развёртываний с выходом в интернет)          |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                                    | Опциональный исходящий прокси для вызовов к провайдерам                                                       |
 
 Примечания:
@@ -1214,7 +1213,7 @@ Authorization: Bearer your-api-key
 Добавлены тестовые скрипты в `tester/security/`:
 
 - `tester/security/test-docker-hardening.sh`
-  - Собирает Docker-образ и проверяет hardening-проверки (`/api/cloud/auth` auth guard, `REQUIRE_API_KEY`, безопасное поведение cookie аутентификации).
+  - Собирает Docker-образ и проверяет hardening-проверки (`/api/cloud/auth` auth guard, безопасное поведение cookie аутентификации).
 - `tester/security/test-cloud-openai-compatible.sh`
   - Отправляет OpenAI-совместимый запрос напрямую на облачный эндпоинт (`${CLOUD_URL}/v1/chat/completions`) с указанной моделью/ключом.
 - `tester/security/test-cloud-sync-and-call.sh`

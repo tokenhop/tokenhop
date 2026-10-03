@@ -202,10 +202,10 @@ describe("tenancy repos", () => {
 });
 
 describe("principal", () => {
-  it("can() stub allows only the owner", async () => {
+  it("can() denies a missing principal and unknown capabilities", async () => {
     const { can } = await import("@/lib/users/principal.js");
     expect(can({ instanceRole: "owner" }, "instance.users.manage")).toBe(true);
-    expect(can({ instanceRole: "admin" }, "instance.users.manage")).toBe(false);
-    expect(can(null, "x")).toBe(false);
+    expect(can({ instanceRole: "owner" }, "x")).toBe(false);
+    expect(can(null, "instance.users.manage")).toBe(false);
   });
 });

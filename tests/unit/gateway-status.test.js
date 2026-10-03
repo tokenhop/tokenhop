@@ -63,13 +63,10 @@ describe("uptimeSecondsSince", () => {
 });
 
 describe("gateway status route auth", () => {
-  it("is not on the dashboard public API allowlist", () => {
-    const source = readFileSync(path.join(repoRoot, "src/dashboardGuard.js"), "utf8");
-    const start = source.indexOf("const PUBLIC_API_PATHS");
-    const end = source.indexOf("];", start);
-    const block = source.slice(start, end);
-    expect(block).not.toContain("/api/gateway");
-    expect(block).toContain("/api/health");
+  it("is not a public route", async () => {
+    const { resolveRoutePolicy } = await import("@/lib/auth/routePolicy");
+    expect(resolveRoutePolicy("/api/gateway/status").public).toBe(false);
+    expect(resolveRoutePolicy("/api/health").public).toBe(true);
   });
 
   it("route is GET-only and exposes no env", () => {

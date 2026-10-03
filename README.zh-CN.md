@@ -1066,7 +1066,6 @@ docker stop tokenhop && docker rm tokenhop
 | `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                | 稳定机器 ID 哈希的盐值                                           |
 | `ENABLE_REQUEST_LOGS`                                | `false`                              | 在 `logs/` 下启用请求/响应日志                                   |
 | `AUTH_COOKIE_SECURE`                                 | `false`                              | 强制 `Secure` auth cookie（在 HTTPS 反向代理后面设置为 `true`）  |
-| `REQUIRE_API_KEY`                                    | `false`                              | 在 `/v1/*` 路由上强制使用 Bearer API key（面向互联网部署时推荐） |
 | `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` | 空                                   | 用于上游提供商调用的可选出站代理                                 |
 
 注意：

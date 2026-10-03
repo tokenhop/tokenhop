@@ -112,8 +112,20 @@ describe("switch on", () => {
     expect(await s.resolvePrincipal(req({ token }))).toBeNull();
   });
 
-  it("only lets the owner's session through the guard until RBAC lands", async () => {
-    expect(await s.hasValidSession(req({ token: await tokenFor(t.b) }))).toBe(false);
+  it("guards routes by capability: user B is authenticated but not an admin (YAN-357)", async () => {
+    const { proxy } = await import("../../src/dashboardGuard.js");
+    const call = async (seeded, path, method = "GET") => {
+      const h = new Headers({ cookie: `auth_token=${await tokenFor(seeded)}` });
+      return proxy(new NextRequest(`http://localhost${path}`, { method, headers: h }));
+    };
+    expect(await s.hasValidSession(req({ token: await tokenFor(t.b) }))).toBe(true);
+    for (const path of ["/api/providers", "/api/settings", "/api/tunnel/status", "/api/nope"]) {
+      expect((await call(t.b, path)).status, path).toBe(403);
+      expect((await call(t.a, path)).status, path).not.toBe(403);
+    }
+    expect((await call(t.b, "/api/keys", "POST")).status).toBe(403);
+    expect((await call(t.b, "/api/gateway/status")).status).not.toBe(403);
+    expect((await call(t.b, "/api/health")).status).not.toBe(403);
   });
 
   it("accepts a legacy sub-less token with one user, rejects it with two", async () => {

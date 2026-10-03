@@ -1,23 +1,10 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { getSettings } from "@/lib/localDb";
 import { formatX509Certificate } from "@/lib/auth/saml.js";
-import { hasValidSession } from "@/lib/users/session";
 import { ACTIVE } from "@/shared/brand";
-
-async function canAccessTestRoute() {
-  const settings = await getSettings();
-  if (settings.requireLogin === false) return true;
-
-  return await hasValidSession({ cookies: await cookies() });
-}
 
 export async function POST(request) {
   try {
-    if (!(await canAccessTestRoute())) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const body = await request.json().catch(() => ({}));
     const settings = await getSettings();
 

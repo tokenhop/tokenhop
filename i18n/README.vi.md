@@ -1007,24 +1007,23 @@ docker stop tokenhop && docker rm tokenhop
 
 ### Biến môi trường
 
-| Biến                                                 | Mặc định                                | Mô tả                                                                                    |
-| ---------------------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `JWT_SECRET`                                         | Tự động sinh (`~/.tokenhop/jwt-secret`) | Bí mật ký JWT cho cookie xác thực bảng điều khiển (đặt để chia sẻ giữa nhiều instance)   |
-| `INITIAL_PASSWORD`                                   | `123456`                                | Mật khẩu đăng nhập đầu tiên khi không có hash đã lưu tồn tại                             |
-| `DATA_DIR`                                           | `~/.tokenhop`                           | ị trí cơ sở dữ liệu ứng dụng chính (`db.json`)                                           |
-| `PORT`                                               | framework default                       | Cổng dịch vụ (`20128` trong các ví dụ)                                                   |
-| `HOSTNAME`                                           | framework default                       | Bind host (Docker mặc định là `0.0.0.0`)                                                 |
-| `NODE_ENV`                                           | runtime default                         | Đặt `production` để triển khai                                                           |
-| `BASE_URL`                                           | `http://localhost:20128`                | URL cơ sở nội bộ phía máy chủ được sử dụng bởi các tác vụ đồng bộ đám mây                |
-| `CLOUD_URL`                                          | `(không đặt)`                           | URL cơ sở endpoint đồng bộ đám mây phía máy chủ                                          |
-| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`                 | URL cơ sở tương thích ngược/công khai (ưu tiên `BASE_URL` cho runtime máy chủ)           |
-| `NEXT_PUBLIC_CLOUD_URL`                              | `(không đặt)`                           | URL đám mây tương thích ngược/công khai (ưu tiên `CLOUD_URL` cho runtime máy chủ)        |
-| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`         | B mật HMAC cho các API key được tạo                                                      |
-| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                   | Salt cho việc băm ID máy ổn định                                                         |
-| `ENABLE_REQUEST_LOGS`                                | `false`                                 | Bật log request/response dưới `logs/`                                                    |
-| `AUTH_COOKIE_SECURE`                                 | `false`                                 | Buộc cookie xác thực `Secure` (đặt `true` phía reverse proxy HTTPS)                      |
-| `REQUIRE_API_KEY`                                    | `false`                                 | Thực thi Bearer API key trên các route `/v1/*` (khuyên dùng cho triển khai xúc internet) |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                                   | Proxy gửi đi tùy chọn cho các lệnh gọi nhà cung cấp upstream                             |
+| Biến                                                 | Mặc định                                | Mô tả                                                                                  |
+| ---------------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------- |
+| `JWT_SECRET`                                         | Tự động sinh (`~/.tokenhop/jwt-secret`) | Bí mật ký JWT cho cookie xác thực bảng điều khiển (đặt để chia sẻ giữa nhiều instance) |
+| `INITIAL_PASSWORD`                                   | `123456`                                | Mật khẩu đăng nhập đầu tiên khi không có hash đã lưu tồn tại                           |
+| `DATA_DIR`                                           | `~/.tokenhop`                           | ị trí cơ sở dữ liệu ứng dụng chính (`db.json`)                                         |
+| `PORT`                                               | framework default                       | Cổng dịch vụ (`20128` trong các ví dụ)                                                 |
+| `HOSTNAME`                                           | framework default                       | Bind host (Docker mặc định là `0.0.0.0`)                                               |
+| `NODE_ENV`                                           | runtime default                         | Đặt `production` để triển khai                                                         |
+| `BASE_URL`                                           | `http://localhost:20128`                | URL cơ sở nội bộ phía máy chủ được sử dụng bởi các tác vụ đồng bộ đám mây              |
+| `CLOUD_URL`                                          | `(không đặt)`                           | URL cơ sở endpoint đồng bộ đám mây phía máy chủ                                        |
+| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`                 | URL cơ sở tương thích ngược/công khai (ưu tiên `BASE_URL` cho runtime máy chủ)         |
+| `NEXT_PUBLIC_CLOUD_URL`                              | `(không đặt)`                           | URL đám mây tương thích ngược/công khai (ưu tiên `CLOUD_URL` cho runtime máy chủ)      |
+| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`         | B mật HMAC cho các API key được tạo                                                    |
+| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                   | Salt cho việc băm ID máy ổn định                                                       |
+| `ENABLE_REQUEST_LOGS`                                | `false`                                 | Bật log request/response dưới `logs/`                                                  |
+| `AUTH_COOKIE_SECURE`                                 | `false`                                 | Buộc cookie xác thực `Secure` (đặt `true` phía reverse proxy HTTPS)                    |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                                   | Proxy gửi đi tùy chọn cho các lệnh gọi nhà cung cấp upstream                           |
 
 Ghi chú:
 
@@ -1209,7 +1208,7 @@ Authorization: Bearer your-api-key
 Đã thêm các kịch bản kiểm tra dưới `tester/security/`:
 
 - `tester/security/test-docker-hardening.sh`
-  - Build image Docker và xác thực các kiểm tra hardening (`/api/cloud/auth` auth guard, `REQUIRE_API_KEY`, hành vi cookie xác thực bảo).
+  - Build image Docker và xác thực các kiểm tra hardening (`/api/cloud/auth` auth guard, hành vi cookie xác thực bảo).
 - `tester/security/test-cloud-openai-compatible.sh`
   - Gửi một yêu cầu tương thích OpenAI trực tiếp đến endpoint đám mây (`https://your-cloud.example.com/v1/chat/completions`) với mô hình/key được cung cấp.
 - `tester/security/test-cloud-sync-and-call.sh`

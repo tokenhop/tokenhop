@@ -110,16 +110,15 @@ curl http://localhost:20128/v1/chat/completions \
 The full env contract is in [`.env.example`](.env.example). `.env` is not baked into the
 image; pass it with `--env-file` / `env_file`.
 
-| Variable                                             | Default                     | Notes                                                           |
-| ---------------------------------------------------- | --------------------------- | --------------------------------------------------------------- |
-| `JWT_SECRET`                                         | generated                   | Dashboard session signing secret. Set it explicitly.            |
-| `INITIAL_PASSWORD`                                   | `123456`                    | First dashboard login. **Override it.**                         |
-| `DATA_DIR`                                           | `/app/data` (image)         | SQLite database and backups.                                    |
-| `PORT` / `HOSTNAME`                                  | `20128` / `0.0.0.0` (image) | Listen address.                                                 |
-| `REQUIRE_API_KEY`                                    | `false`                     | Enforce an API key on `/v1/*`. Enable for any non-local deploy. |
-| `AUTH_COOKIE_SECURE`                                 | `false`                     | Set `true` behind an HTTPS reverse proxy.                       |
-| `API_KEY_SECRET`, `MACHINE_ID_SALT`                  | built-in                    | Secrets for generated API keys / machine IDs.                   |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | —                           | Outbound proxy for upstream calls.                              |
+| Variable                                             | Default                     | Notes                                                |
+| ---------------------------------------------------- | --------------------------- | ---------------------------------------------------- |
+| `JWT_SECRET`                                         | generated                   | Dashboard session signing secret. Set it explicitly. |
+| `INITIAL_PASSWORD`                                   | `123456`                    | First dashboard login. **Override it.**              |
+| `DATA_DIR`                                           | `/app/data` (image)         | SQLite database and backups.                         |
+| `PORT` / `HOSTNAME`                                  | `20128` / `0.0.0.0` (image) | Listen address.                                      |
+| `AUTH_COOKIE_SECURE`                                 | `false`                     | Set `true` behind an HTTPS reverse proxy.            |
+| `API_KEY_SECRET`, `MACHINE_ID_SALT`                  | built-in                    | Secrets for generated API keys / machine IDs.        |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | —                           | Outbound proxy for upstream calls.                   |
 
 **Claude Code fingerprint** — these ship together in each Claude Code release; bump them
 as a set. A malformed value fails startup rather than sending an impossible fingerprint.
