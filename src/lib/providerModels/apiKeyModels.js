@@ -1,5 +1,6 @@
 // Live catalogs for OpenAI-style API-key providers (GET …/models, Bearer key):
-// DeepSeek, Mistral, Groq, Together AI, Fireworks AI and Cerebras. Each list
+// DeepSeek, Mistral, Groq, Together AI, Fireworks AI, Cerebras, Perplexity
+// Agent, Vercel AI Gateway and Chutes. Each list
 // carries every kind the provider serves, so it is authoritative: no static
 // extras are added back.
 
@@ -136,6 +137,67 @@ export function parseCerebrasModels(body, statics = getModelsByProviderId("cereb
   return ids.map((id) => ({ id, name: names.get(id) || id }));
 }
 
+// ── Perplexity Agent ──────────────────────────────────────────────────────
+// Agent API ids (`provider/model`), all chat, no metadata beyond owned_by. The
+// Sonar chat API has no list of its own, so `perplexity` stays static.
+export function parsePerplexityAgentModels(
+  body,
+  statics = getModelsByProviderId("perplexity-agent"),
+) {
+  const names = new Map(statics.map((m) => [m.id, m.name]));
+  const ids = [...new Set(entries(body).map(idOf).filter(Boolean))];
+  return ids.map((id) => ({ id, name: names.get(id) || id }));
+}
+
+// ── Vercel AI Gateway ─────────────────────────────────────────────────────
+// Only chat, embeddings and images are routed here; video, speech,
+// transcription, realtime, reranking and evaluation are dropped.
+const VERCEL_KINDS = { language: "llm", embedding: "embedding", image: "image" };
+export function parseVercelModels(body) {
+  const seen = new Set();
+  const models = [];
+  for (const entry of entries(body)) {
+    const id = idOf(entry);
+    const kind = VERCEL_KINDS[entry?.type];
+    if (!id || !kind || seen.has(id)) continue;
+    seen.add(id);
+    models.push({
+      id,
+      name: entry.name || id,
+      contextLength: positive(entry.context_window),
+      maxOutputTokens: positive(entry.max_tokens),
+      description: entry.description || undefined,
+      ...(Array.isArray(entry.modalities?.input)
+        ? { inputModalities: entry.modalities.input }
+        : {}),
+      ...(kind !== "llm" ? { kind } : {}),
+    });
+  }
+  return models;
+}
+
+// ── Chutes ────────────────────────────────────────────────────────────────
+// Every text-output chute is chat; anything else has no route here.
+export function parseChutesModels(body) {
+  const seen = new Set();
+  const models = [];
+  for (const entry of entries(body)) {
+    const id = idOf(entry);
+    if (!id || seen.has(id)) continue;
+    const outputs = entry.output_modalities;
+    if (Array.isArray(outputs) && !outputs.includes("text")) continue;
+    seen.add(id);
+    models.push({
+      id,
+      name: id,
+      contextLength: positive(entry.context_length),
+      maxOutputTokens: positive(entry.max_output_length),
+      ...(Array.isArray(entry.input_modalities) ? { inputModalities: entry.input_modalities } : {}),
+    });
+  }
+  return models;
+}
+
 const resolver = (label, url, parse) => async (connection) => {
   if (!connection.apiKey) return { models: [], warning: "No valid token found" };
   const response = await fetch(url, {
@@ -181,4 +243,19 @@ export const resolveCerebras = resolver(
   "Cerebras",
   "https://api.cerebras.ai/v1/models",
   parseCerebrasModels,
+);
+export const resolvePerplexityAgent = resolver(
+  "Perplexity Agent",
+  "https://api.perplexity.ai/v1/models",
+  parsePerplexityAgentModels,
+);
+export const resolveVercel = resolver(
+  "Vercel AI Gateway",
+  "https://ai-gateway.vercel.sh/v1/models",
+  parseVercelModels,
+);
+export const resolveChutes = resolver(
+  "Chutes",
+  "https://llm.chutes.ai/v1/models",
+  parseChutesModels,
 );

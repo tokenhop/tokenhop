@@ -19,11 +19,14 @@ import { resolveOpenAI } from "@/lib/providerModels/openaiModels.js";
 import { resolveOpenRouter } from "@/lib/providerModels/openrouterModels.js";
 import {
   resolveCerebras,
+  resolveChutes,
   resolveDeepSeek,
   resolveFireworks,
   resolveGroq,
   resolveMistral,
+  resolvePerplexityAgent,
   resolveTogether,
+  resolveVercel,
 } from "@/lib/providerModels/apiKeyModels.js";
 import { resolveOllama, resolveOllamaLocal } from "@/lib/providerModels/ollamaModels.js";
 import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
@@ -274,6 +277,9 @@ export const LIVE_MODEL_RESOLVERS = {
   together: resolveTogether,
   fireworks: resolveFireworks,
   cerebras: resolveCerebras,
+  "perplexity-agent": resolvePerplexityAgent,
+  "vercel-ai-gateway": resolveVercel,
+  chutes: resolveChutes,
   ollama: resolveOllama,
   "ollama-local": resolveOllamaLocal,
   codex: resolveCodex,

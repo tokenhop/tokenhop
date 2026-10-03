@@ -102,6 +102,9 @@ describe("resolver registry", () => {
       "together",
       "fireworks",
       "cerebras",
+      "perplexity-agent",
+      "vercel-ai-gateway",
+      "chutes",
       "ollama",
       "ollama-local",
     ]) {
