@@ -11,12 +11,14 @@ describe("LIVE_MODEL_PROVIDERS", () => {
     expect([...LIVE_MODEL_PROVIDERS].sort()).toEqual([
       "anthropic",
       "antigravity",
+      "cerebras",
       "claude",
       "cline",
       "clinepass",
       "codex",
       "cursor",
       "deepseek",
+      "fireworks",
       "gemini",
       "gemini-cli",
       "github",
@@ -28,6 +30,7 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "openai",
       "openrouter",
       "qoder",
+      "together",
       "xai",
       "zed",
     ]);

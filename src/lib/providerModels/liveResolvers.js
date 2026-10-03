@@ -17,7 +17,14 @@ import {
 import { resolveXai } from "@/lib/providerModels/xaiModels.js";
 import { resolveOpenAI } from "@/lib/providerModels/openaiModels.js";
 import { resolveOpenRouter } from "@/lib/providerModels/openrouterModels.js";
-import { resolveDeepSeek, resolveGroq, resolveMistral } from "@/lib/providerModels/apiKeyModels.js";
+import {
+  resolveCerebras,
+  resolveDeepSeek,
+  resolveFireworks,
+  resolveGroq,
+  resolveMistral,
+  resolveTogether,
+} from "@/lib/providerModels/apiKeyModels.js";
 import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
 import { ANTHROPIC_API_VERSION } from "open-sse/providers/shared.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
@@ -263,6 +270,9 @@ export const LIVE_MODEL_RESOLVERS = {
   deepseek: resolveDeepSeek,
   mistral: resolveMistral,
   groq: resolveGroq,
+  together: resolveTogether,
+  fireworks: resolveFireworks,
+  cerebras: resolveCerebras,
   codex: resolveCodex,
   zed: resolveZed,
   kiro: resolveKiro,

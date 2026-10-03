@@ -99,10 +99,13 @@ describe("resolver registry", () => {
       "deepseek",
       "mistral",
       "groq",
+      "together",
+      "fireworks",
+      "cerebras",
     ]) {
       expect(hasLiveModelResolver(id)).toBe(true);
     }
-    expect(hasLiveModelResolver("together")).toBe(false);
+    expect(hasLiveModelResolver("nvidia")).toBe(false);
     expect(hasLiveModelResolver("toString")).toBe(false);
   });
 
