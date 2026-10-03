@@ -91,7 +91,7 @@ export function parseTogetherModels(body) {
   const models = [];
   for (const entry of entries(body)) {
     const id = idOf(entry);
-    const kind = TOGETHER_KINDS[entry?.type];
+    const kind = Object.hasOwn(TOGETHER_KINDS, entry?.type) && TOGETHER_KINDS[entry.type];
     if (!id || !kind || seen.has(id)) continue;
     const { input, output } = entry.pricing || {};
     if (input === 0 && output === 0 && !/-free$/i.test(id)) continue;
@@ -158,7 +158,7 @@ export function parseVercelModels(body) {
   const models = [];
   for (const entry of entries(body)) {
     const id = idOf(entry);
-    const kind = VERCEL_KINDS[entry?.type];
+    const kind = Object.hasOwn(VERCEL_KINDS, entry?.type) && VERCEL_KINDS[entry.type];
     if (!id || !kind || seen.has(id)) continue;
     seen.add(id);
     models.push({

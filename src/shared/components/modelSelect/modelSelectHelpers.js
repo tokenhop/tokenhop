@@ -192,6 +192,12 @@ export function groupModels({
     }
 
     if (providerInfo.passthroughModels) {
+      // A live catalog (OpenRouter, Vercel, Perplexity Agent) replaces the static rows.
+      const live = mergeLiveWithStatic(
+        providerId,
+        liveCatalogs[providerId],
+        getModelsByProviderId(providerId),
+      );
       const combined = passthroughModels({
         providerId,
         alias,
@@ -200,7 +206,7 @@ export function groupModels({
         modelAliases,
         customModels,
         getModelKind,
-        getModelsByProviderId,
+        getModelsByProviderId: live.length > 0 ? () => live : getModelsByProviderId,
       });
       if (combined.length > 0) {
         const matchedNode = providerNodes.find((node) => node.id === providerId);
