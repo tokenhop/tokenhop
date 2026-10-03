@@ -161,13 +161,13 @@ export async function GET(request, { params }) {
     // static list. Hidden entries are routable but not offered for selection;
     // the provider page asks for them (?hidden=1) to list them, marked.
     if (hasLiveModelResolver(connection.provider)) {
-      const params = new URL(request.url).searchParams;
-      const forceRefresh = params.get("refresh") === "1";
+      const { searchParams } = new URL(request.url);
+      const forceRefresh = searchParams.get("refresh") === "1";
       const { models, warning } = await resolveLiveModels(connection, { forceRefresh });
       return NextResponse.json({
         provider: connection.provider,
         connectionId: connection.id,
-        models: params.get("hidden") === "1" ? models : models.filter((m) => !m.hidden),
+        models: searchParams.get("hidden") === "1" ? models : models.filter((m) => !m.hidden),
         ...(warning ? { warning } : {}),
       });
     }

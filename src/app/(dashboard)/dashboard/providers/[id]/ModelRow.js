@@ -66,11 +66,12 @@ export default function ModelRow({
           {displayModel}
         </code>
         {model.name || caps || isFree || contextLength > 0 || model.hidden ? (
-          <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted">
-            {model.name ? <span className="truncate">{model.name}</span> : null}
+          <span className="flex min-w-0 flex-wrap items-center gap-x-1 text-[11px] text-muted">
+            {model.name ? <span className="min-w-0 truncate">{model.name}</span> : null}
             {isFree ? <span className="font-semibold text-ok">Free</span> : null}
             {contextLength > 0 ? (
               <span className="shrink-0 tabular-nums" title="Context window (tokens)">
+                <span className="sr-only">Context window: </span>
                 {formatCompact(contextLength)} ctx
               </span>
             ) : null}
@@ -80,6 +81,9 @@ export default function ModelRow({
                 title="Not offered in the provider's own model picker; still routable"
               >
                 Hidden
+                <span className="sr-only">
+                  : not offered in the provider's own model picker; still routable
+                </span>
               </span>
             ) : null}
             <CapacityBadges caps={caps} colorOverride="text-muted" size={12} />
@@ -167,7 +171,7 @@ ModelRow.propTypes = {
   model: PropTypes.shape({
     id: PropTypes.string.isRequired,
     name: PropTypes.string,
-    contextLength: PropTypes.number,
+    contextLength: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
     hidden: PropTypes.bool,
   }).isRequired,
   fullModel: PropTypes.string.isRequired,
