@@ -126,28 +126,27 @@ vi.mock(".../proxyFetch.js", () => ({ proxyAwareFetch: vi.fn(...) }))
 
 ## Files to Change
 
-| File                                                                                | Action             | Justification                           |
-| ----------------------------------------------------------------------------------- | ------------------ | --------------------------------------- |
-| `open-sse/services/metaCode.js`                                                     | CREATE             | Shared mint + subs_usage parser         |
-| `open-sse/providers/registry/meta-code.js`                                          | CREATE             | Provider entry                          |
-| `open-sse/providers/registry/index.js`                                              | UPDATE             | Register entry                          |
-| `open-sse/services/tokenRefresh.js`                                                 | UPDATE             | `meta-code` re-mint handler             |
-| `open-sse/services/usage/meta-code.js`                                              | CREATE             | Quota handler                           |
-| `open-sse/services/usage.js`                                                        | UPDATE             | Dispatch + pass `refreshToken` in ctx   |
-| `src/lib/oauth/providers/meta-code.js`                                              | CREATE             | Device flow + mint                      |
-| `src/lib/oauth/providers/index.js`                                                  | UPDATE             | Register module                         |
-| `src/lib/oauth/constants/oauth.js`                                                  | UPDATE             | `META_CODE_CONFIG` with env client id   |
-| `src/shared/components/OAuthModal.js`                                               | UPDATE             | Device-code provider list               |
-| `src/app/api/oauth/[provider]/[action]/route.js`                                    | UPDATE             | Two no-PKCE lists                       |
-| `src/app/api/providers/[id]/test/testUtils.js`                                      | UPDATE             | OAuth test probe + refresh branch       |
-| `src/app/api/providers/validate/route.js`                                           | UPDATE (if needed) | `/responses` → `/models` probe          |
-| `custom-server.js`                                                                  | UPDATE             | Key-list OAuth defaults incl. meta      |
-| `scripts/write-oauth-clients.cjs`                                                   | UPDATE             | Add meta-code entry                     |
-| `Dockerfile`, `.github/workflows/docker-publish.yml`, `compose.yml`, `.env.example` | UPDATE             | Env plumbing                            |
-| `.env.encrypted`                                                                    | UPDATE             | `META_CODE_OAUTH_CLIENT_ID` via dotenvx |
-| `tests/__baseline__/*-baseline.json`, `verify-alias.mjs`, `verify-oauth-urls.mjs`   | UPDATE             | Snapshots                               |
-| `tests/unit/meta-code-provider.test.js`                                             | CREATE             | Critical-path tests                     |
-| `tests/unit/usage-dispatch.test.js`, `tests/unit/antigravity-oauth-client.test.js`  | UPDATE             | Dispatch list; single-key defaults      |
+| File                                                                                | Action             | Justification                         |
+| ----------------------------------------------------------------------------------- | ------------------ | ------------------------------------- |
+| `open-sse/services/metaCode.js`                                                     | CREATE             | Shared mint + subs_usage parser       |
+| `open-sse/providers/registry/meta-code.js`                                          | CREATE             | Provider entry                        |
+| `open-sse/providers/registry/index.js`                                              | UPDATE             | Register entry                        |
+| `open-sse/services/tokenRefresh.js`                                                 | UPDATE             | `meta-code` re-mint handler           |
+| `open-sse/services/usage/meta-code.js`                                              | CREATE             | Quota handler                         |
+| `open-sse/services/usage.js`                                                        | UPDATE             | Dispatch + pass `refreshToken` in ctx |
+| `src/lib/oauth/providers/meta-code.js`                                              | CREATE             | Device flow + mint                    |
+| `src/lib/oauth/providers/index.js`                                                  | UPDATE             | Register module                       |
+| `src/lib/oauth/constants/oauth.js`                                                  | UPDATE             | `META_CODE_CONFIG` with env client id |
+| `src/shared/components/OAuthModal.js`                                               | UPDATE             | Device-code provider list             |
+| `src/app/api/oauth/[provider]/[action]/route.js`                                    | UPDATE             | Two no-PKCE lists                     |
+| `src/app/api/providers/[id]/test/testUtils.js`                                      | UPDATE             | OAuth test probe + refresh branch     |
+| `src/app/api/providers/validate/route.js`                                           | UPDATE (if needed) | `/responses` → `/models` probe        |
+| `custom-server.js`                                                                  | UPDATE             | Key-list OAuth defaults incl. meta    |
+| `scripts/write-oauth-clients.cjs`                                                   | UPDATE             | Add meta-code entry                   |
+| `Dockerfile`, `.github/workflows/docker-publish.yml`, `compose.yml`, `.env.example` | UPDATE             | Env plumbing                          |
+| `tests/__baseline__/*-baseline.json`, `verify-alias.mjs`, `verify-oauth-urls.mjs`   | UPDATE             | Snapshots                             |
+| `tests/unit/meta-code-provider.test.js`                                             | CREATE             | Critical-path tests                   |
+| `tests/unit/usage-dispatch.test.js`, `tests/unit/antigravity-oauth-client.test.js`  | UPDATE             | Dispatch list; single-key defaults    |
 
 ---
 
@@ -189,7 +188,7 @@ vi.mock(".../proxyFetch.js", () => ({ proxyAwareFetch: vi.fn(...) }))
 
 #### Task 2.1: Secrets + baselines
 
-- **ACTION**: `dotenvx set META_CODE_OAUTH_CLIENT_ID … -f .env.encrypted`; `gh secret set META_CODE_OAUTH_CLIENT_ID`; regenerate baselines (`snapshot-providers.mjs`, `verify-alias.mjs --snapshot`, `verify-oauth-urls.mjs --snapshot`).
+- **ACTION**: `gh secret set META_CODE_OAUTH_CLIENT_ID`; regenerate baselines (`snapshot-providers.mjs`, `verify-alias.mjs --snapshot`, `verify-oauth-urls.mjs --snapshot`).
 - **VALIDATE**: all three verify scripts exit 0.
 
 #### Task 3.1: Tests + live verification

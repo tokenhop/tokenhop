@@ -1,16 +1,13 @@
 # Development container — live reload via bind-mounted source.
-# Secrets: decrypted inside the container by dotenvx from ./.env.encrypted.
-# Decryption key enters through Compose's env_file from the gitignored ./.env.keys.
+# Secrets: resolved on the host by `op run` from the gitignored ./.env.local
+# (1Password op:// references) and passed through by name below.
 #
-# Usage: npm run dev:docker   (or: docker compose -f compose.dev.yml up)
+# Usage: npm run dev:docker   (or: op run --env-file=.env.local -- docker compose -f compose.dev.yml up)
 services:
   tokenhop-dev:
     # Full (non-slim) image ships python3/make/g++ so better-sqlite3's node-gyp build succeeds.
     image: node:22-bookworm
     container_name: tokenhop-dev
-    # dotenvx needs the private key at runtime; host file is gitignored (never committed).
-    env_file:
-      - .env.keys
     working_dir: /app
     ports:
       - "20127:20127"
@@ -29,14 +26,20 @@ services:
       CODEX_CLI_VERSION: 0.155.1
       GROK_CLI_VERSION: 1.0.44
       NEXT_PUBLIC_BRAND: tokenhop
+      # Passed through from the host env populated by `op run`.
+      GEMINI_OAUTH_CLIENT_ID:
+      GEMINI_OAUTH_CLIENT_SECRET:
+      ANTIGRAVITY_OAUTH_CLIENT_ID:
+      ANTIGRAVITY_OAUTH_CLIENT_SECRET:
+      META_CODE_OAUTH_CLIENT_ID:
     volumes:
       - .:/app
       - tokenhop-dev-node-modules:/app/node_modules
       # Keep container build cache off the host checkout (avoids root-owned .next).
       - tokenhop-dev-next:/app/.next
       - tokenhop-dev-data:/app/data
-    # npm ci keeps the mounted checkout reproducible; dev:env decrypts secrets before Next starts.
-    command: sh -c "npm ci && npm run dev:env -- --hostname 0.0.0.0"
+    # npm ci keeps the mounted checkout reproducible.
+    command: sh -c "npm ci && npm run dev -- --hostname 0.0.0.0"
     depends_on:
       - headroom
 
