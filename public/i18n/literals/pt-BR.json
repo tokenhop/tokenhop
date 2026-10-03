@@ -1534,6 +1534,7 @@
   "Quota rows shown": "Linhas de cota exibidas",
   "Quota summary": "Resumo de cota",
   "Quota watch": "Monitoramento de cota",
+  "Qwen Code reads OpenAI-compatible providers from modelProviders in settings.json. tokenhop is added as an openai provider.": "O Qwen Code lê provedores compatíveis com a OpenAI de modelProviders em settings.json. O tokenhop é adicionado como um provedor openai.",
   "Qwen Code supports multiple provider types (openai, anthropic, gemini) via modelProviders in settings.json. 9Router works as an OpenAI-compatible endpoint.": "O Qwen Code suporta vários tipos de provedor (openai, anthropic, gemini) via modelProviders em settings.json. O 9Router funciona como um endpoint compatível com OpenAI.",
   "Qwen Code supports multiple provider types (openai, anthropic, gemini) via modelProviders in settings.json. tokenhop works as an OpenAI-compatible endpoint.": "O Qwen Code suporta vários tipos de provedor (openai, anthropic, gemini) via modelProviders em settings.json. O tokenhop funciona como um endpoint compatível com OpenAI.",
   "Qwen OAuth free tier was discontinued on 2026-04-15. Use 9Router with alicode/openrouter/anthropic/gemini providers instead.": "A camada gratuita do OAuth do Qwen foi descontinuada em 2026-04-15. Use o 9Router com os providers alicode/openrouter/anthropic/gemini.",

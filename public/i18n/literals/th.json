@@ -1555,6 +1555,7 @@
   "Quota summary": "สรุปโควตา",
   "Quota watch": "เฝ้าระวังโควตา",
   "Qwen": "Qwen",
+  "Qwen Code reads OpenAI-compatible providers from modelProviders in settings.json. tokenhop is added as an openai provider.": "Qwen Code อ่านผู้ให้บริการที่เข้ากันได้กับ OpenAI จาก modelProviders ใน settings.json ระบบเพิ่ม tokenhop เป็นผู้ให้บริการ openai แล้ว",
   "Qwen Code supports multiple provider types (openai, anthropic, gemini) via modelProviders in settings.json. 9Router works as an OpenAI-compatible endpoint.": "Qwen Code รองรับ provider types หลายประเภท (openai, anthropic, gemini) ผ่าน modelProviders ใน settings.json 9Router ทำงานเป็น OpenAI-compatible endpoint",
   "Qwen Code supports multiple provider types (openai, anthropic, gemini) via modelProviders in settings.json. tokenhop works as an OpenAI-compatible endpoint.": "Qwen Code รองรับ provider types หลายประเภท (openai, anthropic, gemini) ผ่าน modelProviders ใน settings.json tokenhop ทำงานเป็น OpenAI-compatible endpoint",
   "Qwen OAuth free tier was discontinued on 2026-04-15. Use 9Router with alicode/openrouter/anthropic/gemini providers instead.": "Qwen OAuth free tier ถูกยกเลิกเมื่อ 15 เมษายน 2569 ให้ใช้ 9Router กับ alicode/openrouter/anthropic/gemini providers แทน",

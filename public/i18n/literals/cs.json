@@ -1445,6 +1445,7 @@
   "Quota rows shown": "Zobrazené řádky kvót",
   "Quota summary": "Souhrn kvót",
   "Quota watch": "Sledování kvót",
+  "Qwen Code reads OpenAI-compatible providers from modelProviders in settings.json. tokenhop is added as an openai provider.": "Qwen Code čte poskytovatele kompatibilní s OpenAI z modelProviders v settings.json. tokenhop je přidán jako poskytovatel openai.",
   "Qwen Code supports multiple provider types (openai, anthropic, gemini) via modelProviders in settings.json. 9Router works as an OpenAI-compatible endpoint.": "Qwen Code podporuje více typů poskytovatelů (openai, anthropic, gemini) prostřednictvím modelProviders v settings.json. 9Router funguje jako OpenAI-kompatibilní endpoint.",
   "Qwen Code supports multiple provider types (openai, anthropic, gemini) via modelProviders in settings.json. tokenhop works as an OpenAI-compatible endpoint.": "Qwen Code podporuje více typů poskytovatelů (openai, anthropic, gemini) prostřednictvím modelProviders v settings.json. tokenhop funguje jako OpenAI-kompatibilní endpoint.",
   "Qwen OAuth free tier was discontinued on 2026-04-15. Use 9Router with alicode/openrouter/anthropic/gemini providers instead.": "Qwen OAuth free tier byl ukončen 2026-04-15. Místo toho použijte 9Router s poskytovateli alicode/openrouter/anthropic/gemini.",
