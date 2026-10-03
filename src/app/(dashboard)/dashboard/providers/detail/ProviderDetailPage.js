@@ -79,6 +79,7 @@ export default function ProviderDetailPage() {
     enabled: isLiveCatalog && !isCompatible,
     noAuth: authFlags.isFreeNoAuth,
   });
+  const liveFallback = isLiveCatalog && !isCompatible && liveModels.length === 0 && !!liveError;
   const catalogModels =
     isLiveCatalog && liveModels.length > 0 && !isCompatible
       ? mergeLiveWithStatic(providerId, liveModels, staticModels)
@@ -442,6 +443,7 @@ export default function ProviderDetailPage() {
         catalogModels={catalogModels}
         staticModels={staticModels}
         liveError={liveError}
+        liveFallback={liveFallback}
         refreshLive={refreshLive}
         models={models}
         onDisableAll={(state) => conn.setConfirmState(state)}

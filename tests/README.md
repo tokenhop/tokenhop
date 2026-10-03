@@ -60,6 +60,23 @@ It requires `ANTIGRAVITY_OAUTH_CLIENT_ID` / `_SECRET` (1Password references in t
 gitignored `.env.local`) and skips cleanly when the credential DB is unavailable or there is no active
 Antigravity connection with a refresh token and project ID.
 
+## Kimi live-models E2E fixture (YAN-192)
+
+`tests/e2e/kimi-live-models.mjs` exercises the real production app under a
+disposable `HOME`/`DATA_DIR` plus a loopback mock relay speaking the
+`x-relay-target` / `x-relay-path` protocol. It asserts dashboard
+(`/api/providers/:id/models`) and public (`/v1/models`) endpoints for
+success → 503 failure → refresh recovery, including warning sanitization
+(no synthetic secret echoed) and cache reuse. `--serve` keeps the fixture
+alive for browser checks (`/dashboard/providers/kimi`); SIGINT cleans up the
+app, relay, and temp tree. Not part of `npm test`. Requires a prior
+`npm run build` (parent-gated); do not set `RUN_REAL=1` / `RUN_E2E=1`.
+
+```bash
+node tests/e2e/kimi-live-models.mjs          # headless HTTP assertions
+node tests/e2e/kimi-live-models.mjs --serve  # keep alive for browser protocol
+```
+
 ## Upgrade end to end
 
 `tests/e2e/` holds the upgrade verification for the rebrand (`UPGRADING.md`). It
