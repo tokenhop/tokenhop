@@ -1,8 +1,7 @@
 import crypto from "node:crypto";
 import { DefaultExecutor } from "./default.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
-import { modelTargetFormat } from "../providers/models/schema.js";
-import { getProviderModels } from "../config/providerModels.js";
+import { getModelTargetFormat } from "../config/providerModels.js";
 import {
   normalizeResponsesInput,
   clampResponsesCallId,
@@ -49,11 +48,10 @@ function baseModelId(model) {
     .trim();
 }
 
-// Responses-only per the provider registry (grok-4.6, gpt-5.6-luna, muse-spark, …).
-// Reading the registry keeps this in sync with config — never hardcode model ids here.
+// Responses-only per the provider registry (grok-4.6, gpt-5.6-luna, muse-spark, …),
+// or inferred for live-only ids. Never hardcode model ids here.
 function isResponsesModel(model) {
-  const entry = getProviderModels("opencode-go").find((m) => m.id === baseModelId(model));
-  return modelTargetFormat(entry) === "openai-responses";
+  return getModelTargetFormat("opencode-go", baseModelId(model)) === "openai-responses";
 }
 
 // Flatten Chat Completions tool declarations into the Responses flat shape and

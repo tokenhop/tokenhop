@@ -109,6 +109,7 @@ describe("resolver registry", () => {
       "nebius",
       "siliconflow",
       "hyperbolic",
+      "opencode-go",
       "ollama",
       "ollama-local",
     ]) {

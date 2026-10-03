@@ -19,6 +19,21 @@ export function withCodexReviewModels(models) {
   });
 }
 
+// OpenCode Go's live /models list has ids only. For an id the registry doesn't
+// know, infer its endpoint by vendor prefix from https://opencode.ai/docs/go/
+// (Endpoints): grok-N/gpt-N/muse-spark → /responses only; minimax/qwen also take
+// /messages; everything else is /chat/completions only.
+export function inferOpencodeGoModel(modelId) {
+  const base = String(modelId || "")
+    .replace(/\([^()]+\)\s*$/, "")
+    .trim();
+  if (/^(grok-\d|gpt-\d|muse[-_]?spark)/i.test(base)) {
+    return { targetFormat: "openai-responses", supportedFormats: ["openai-responses"] };
+  }
+  if (/^(minimax|qwen)/i.test(base)) return { supportedFormats: ["openai", "claude"] };
+  return { supportedFormats: ["openai"] };
+}
+
 export function isMuseSparkModel(modelId) {
   if (!modelId || typeof modelId !== "string") return false;
   const clean = modelId.replace(/\([^()]+\)\s*$/, "").trim();

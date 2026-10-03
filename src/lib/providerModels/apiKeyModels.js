@@ -1,7 +1,7 @@
 // Live catalogs for OpenAI-style API-key providers (GET …/models, Bearer key):
 // DeepSeek, Mistral, Groq, Together AI, Fireworks AI, Cerebras, Perplexity
-// Agent, Vercel AI Gateway, Chutes, NVIDIA NIM, Nebius, SiliconFlow and
-// Hyperbolic. Each list carries every kind the provider serves, so it is
+// Agent, Vercel AI Gateway, Chutes, NVIDIA NIM, Nebius, SiliconFlow,
+// Hyperbolic and OpenCode Go. Each list carries every kind the provider serves, so it is
 // authoritative: no static extras are added back (except NIM's speech models).
 
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
@@ -254,6 +254,16 @@ export function parseHyperbolicModels(body) {
   return models;
 }
 
+// ── OpenCode Go ───────────────────────────────────────────────────────────
+// Ids only, all chat, one shared catalog for every subscriber. Registry names
+// kept; the transport for ids the registry lacks is inferred at request time
+// (inferOpencodeGoModel).
+export function parseOpencodeGoModels(body, statics = getModelsByProviderId("opencode-go")) {
+  const names = new Map(statics.map((m) => [m.id, m.name]));
+  const ids = [...new Set(entries(body).map(idOf).filter(Boolean))];
+  return ids.map((id) => ({ id, name: names.get(id) || id }));
+}
+
 const resolver = (label, url, parse) => async (connection) => {
   if (!connection.apiKey) return { models: [], warning: "No valid token found" };
   const response = await fetch(url, {
@@ -334,4 +344,9 @@ export const resolveHyperbolic = resolver(
   "Hyperbolic",
   "https://api.hyperbolic.xyz/v1/models",
   parseHyperbolicModels,
+);
+export const resolveOpencodeGo = resolver(
+  "OpenCode Go",
+  "https://opencode.ai/zen/go/v1/models",
+  parseOpencodeGoModels,
 );
