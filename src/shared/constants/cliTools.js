@@ -368,11 +368,11 @@ export const CLI_TOOLS = {
     codeBlock: {
       language: "yaml",
       code: `models:
-  - name: {{model}}
+  - name: "{{model}}"
     provider: openai
-    model: {{model}}
+    model: "{{model}}"
     apiBase: {{baseUrl}}
-    apiKey: {{apiKey}}
+    apiKey: "{{apiKey}}"
     roles: [chat, edit, apply]`,
     },
   },

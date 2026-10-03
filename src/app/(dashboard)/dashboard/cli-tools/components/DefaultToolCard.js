@@ -86,7 +86,11 @@ export default function DefaultToolCard({
 
   // Tailscale here is Funnel (public *.ts.net), so it reaches tools that call
   // the gateway from their own servers (Cursor) just like Tunnel does.
-  const hasExternalUrl = cloudEnabled || tunnelEnabled || (tailscaleEnabled && !!tailscaleUrl);
+  // Mirrors buildEndpointOptions: an option only counts once its URL exists.
+  const hasExternalUrl =
+    (cloudEnabled && !!cloudUrl) ||
+    (tunnelEnabled && !!tunnelPublicUrl) ||
+    (tailscaleEnabled && !!tailscaleUrl);
 
   const canShowGuide = () => {
     if (tool.requiresExternalUrl && !hasExternalUrl) return false;
