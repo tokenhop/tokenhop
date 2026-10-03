@@ -32,6 +32,12 @@ export async function findIdentityUnscoped({ provider, issuer = "", subject }) {
   );
 }
 
+// Bootstrap path: every identity of one user, before any principal exists.
+export async function listIdentitiesUnscoped(userId) {
+  const db = await getAdapter();
+  return db.all(`SELECT ${COLS} FROM identities WHERE userId = ? ORDER BY createdAt ASC`, [userId]);
+}
+
 // Login/bootstrap/admin path. Callers decide who the identity belongs to.
 export async function linkIdentityUnscoped(
   userId,

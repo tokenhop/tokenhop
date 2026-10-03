@@ -2,6 +2,8 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     // YAN-351: a bad users & teams switch env value fails startup, not the first request.
     await import("@/lib/users/featureSwitch.js");
+    // YAN-356: owner + Default workspace once the switch is on (no-op while off).
+    await import("@/lib/users/bootstrap.js").then((m) => m.ensureOwnerBootstrap());
 
     const { initConsoleLogCapture } = await import("@/lib/consoleLogBuffer");
     initConsoleLogCapture();

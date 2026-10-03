@@ -7,6 +7,8 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { TenancyError, assertCtx, mapConstraintErrors } from "@/lib/users/errors.js";
 import { assertNotLastManager } from "./membershipsRepo.js";
+import { getSettings } from "./settingsRepo.js";
+import { setMetaSync } from "../helpers/metaStore.js";
 
 const COLS =
   "id, email, username, displayName, instanceRole, status, sessionVersion, createdAt, updatedAt, lastLoginAt";
@@ -107,6 +109,18 @@ export async function getUserPasswordHashUnscoped(id) {
   return db.get(`SELECT passwordHash FROM users WHERE id = ?`, [id])?.passwordHash ?? null;
 }
 
+// YAN-356: while login is off every request acts as the owner, so a second
+// active user is refused (created or re-activated). The bootstrap bypasses it.
+async function assertNotSingleUserMode(db, status, exceptId = null) {
+  if (status !== "active" || (await getSettings())?.requireLogin !== false) return;
+  const n = db.get(`SELECT COUNT(*) AS n FROM users WHERE status = 'active' AND id IS NOT ?`, [
+    exceptId,
+  ])?.n;
+  if (n >= 1) {
+    throw new TenancyError("SINGLE_USER_MODE", "Turn on Require login before adding a second user");
+  }
+}
+
 // Creates the user, their personal workspace and its owner membership together.
 export async function createUserUnscoped({
   email,
@@ -117,6 +131,7 @@ export async function createUserUnscoped({
   passwordHash,
 } = {}) {
   const db = await getAdapter();
+  await assertNotSingleUserMode(db, status);
   const now = new Date().toISOString();
   const id = uuidv4();
   const wsId = uuidv4();
@@ -153,6 +168,7 @@ export async function createUserUnscoped({
 
 export async function updateUserUnscoped(id, patch = {}) {
   const db = await getAdapter();
+  if (patch.status === "active") await assertNotSingleUserMode(db, "active", id);
   return mapConstraintErrors(() =>
     db.transaction(() => {
       const row = requireRow(db, id);
@@ -206,6 +222,52 @@ export async function deleteUserUnscoped(id) {
     dropSession(id);
     return db.run(`DELETE FROM users WHERE id = ?`, [id]).changes > 0;
   });
+}
+
+/**
+ * YAN-356 bootstrap (ADR-0003), one transaction: the owner (username "owner",
+ * the settings password hash), their personal workspace, a `password`
+ * identity, and the shared "Default" workspace, whose id goes to
+ * `_meta.defaultWorkspaceId`. A second run fails on idx_users_owner
+ * (OWNER_EXISTS). Bypasses the single-user refusal: it creates the first user.
+ * @param {{ passwordHash?: string|null }} [opts]
+ */
+export async function bootstrapOwnerUnscoped({ passwordHash } = {}) {
+  const db = await getAdapter();
+  return mapConstraintErrors(() =>
+    db.transaction(() => {
+      const now = new Date().toISOString();
+      const id = uuidv4();
+      db.run(
+        `INSERT INTO users(id, username, instanceRole, status, passwordHash, createdAt, updatedAt) VALUES(?, 'owner', 'owner', 'active', ?, ?, ?)`,
+        [id, passwordHash ?? null, now, now],
+      );
+      const workspaces = { Personal: "personal", Default: "shared" };
+      const ids = {};
+      for (const [name, kind] of Object.entries(workspaces)) {
+        ids[name] = uuidv4();
+        db.run(
+          `INSERT INTO workspaces(id, name, kind, createdBy, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+          [ids[name], name, kind, id, now, now],
+        );
+        db.run(
+          `INSERT INTO memberships(workspaceId, userId, role, source, createdAt) VALUES(?, ?, 'owner', 'manual', ?)`,
+          [ids[name], id, now],
+        );
+      }
+      db.run(
+        `INSERT INTO identities(id, userId, provider, issuer, subject, createdAt) VALUES(?, ?, 'password', '', ?, ?)`,
+        [uuidv4(), id, id, now],
+      );
+      setMetaSync(db, "defaultWorkspaceId", ids.Default);
+      dropSession(id);
+      return {
+        ...getRow(db, id),
+        personalWorkspaceId: ids.Personal,
+        defaultWorkspaceId: ids.Default,
+      };
+    }),
+  );
 }
 
 // Owner → admin, target → owner, both sessions revoked. Only the owner may.

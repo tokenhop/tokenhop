@@ -10,6 +10,7 @@ import {
 } from "@/lib/auth/saml.js";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { sessionClaims } from "@/lib/users/session";
+import { takeSetupToken } from "@/lib/users/bootstrap";
 import { resolveAuthModes } from "@/lib/auth/authModes";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 
@@ -54,7 +55,17 @@ export async function POST(request) {
     const samlEmail = pickSamlEmail(profile, settings) || null;
     const samlName = pickSamlDisplayName(profile, settings) || "SAML user";
 
-    const claims = await sessionClaims("saml");
+    // The assertion is signed by the configured IdP (validateSamlResponse), so
+    // its email counts as verified for TOKENHOP_OWNER_EMAIL (ADR-0003).
+    const identity = {
+      provider: "saml",
+      issuer: profile.issuer || "",
+      subject: profile.nameID,
+      email: samlEmail,
+      emailVerified: true,
+    };
+    const setupToken = takeSetupToken(cookieStore);
+    const claims = await sessionClaims("saml", identity, { setupToken });
     if (!claims) return NextResponse.redirect(new URL("/login?error=sso_not_linked", origin));
     recordSuccess(ip);
 

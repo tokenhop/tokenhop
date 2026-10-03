@@ -39,6 +39,12 @@ export async function listWorkspacesUnscoped() {
   return db.all(`SELECT ${COLS} FROM workspaces w ORDER BY w.createdAt ASC`);
 }
 
+// YAN-356 UI gate: how many shared workspaces exist on the instance.
+export async function countSharedWorkspacesUnscoped() {
+  const db = await getAdapter();
+  return db.get(`SELECT COUNT(*) AS n FROM workspaces WHERE kind = 'shared'`)?.n ?? 0;
+}
+
 export async function createSharedWorkspace(ctx, { name }) {
   assertCtx(ctx);
   const db = await getAdapter();

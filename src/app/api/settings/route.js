@@ -16,7 +16,7 @@ import bcrypt from "bcryptjs";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { resolveAuthModes } from "@/lib/auth/authModes";
-import { revokeOwnerSessions } from "@/lib/users/session";
+import { revokeOwnerSessions, singleUserModeAllowed } from "@/lib/users/session";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -403,6 +403,10 @@ export async function PATCH(request) {
     }
     const lockoutError = ssoLockoutError(currentReliability, body);
     if (lockoutError) return NextResponse.json({ error: lockoutError }, { status: 400 });
+    if (body.requireLogin === false && !(await singleUserModeAllowed())) {
+      const error = "Login can't be turned off while more than one active user exists.";
+      return NextResponse.json({ error }, { status: 409 });
+    }
     if (RELIABILITY_KEYS.some((key) => Object.hasOwn(body, key))) {
       for (const key of RELIABILITY_KEYS) {
         if (Object.hasOwn(body, key))
@@ -444,9 +448,10 @@ export async function PATCH(request) {
       }
     }
 
+    // A password change signs the owner out everywhere else (ADR-0004). Owner
+    // first: if that fails, the old password and sessions stay as they were.
+    if (rawNewPassword) await revokeOwnerSessions(request, { passwordHash: body.password });
     const settings = await updateSettings(body);
-    // A password change signs the owner out everywhere else (ADR-0004).
-    if (rawNewPassword) await revokeOwnerSessions(request);
 
     // Full-object reliability edits (nested UI writes) re-resolve here; the
     // sync is additive and never touches other keys.
