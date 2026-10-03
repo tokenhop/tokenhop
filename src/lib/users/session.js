@@ -184,11 +184,9 @@ async function resolvePrincipalOrThrow(request) {
 // Today's connections, combos, keys and usage are unscoped: they belong to the
 // Default workspace (YAN-356). Route-level workspace checks use it until
 // YAN-361+ scope the data and handlers call authorize() per resource.
-// ponytail: cached once found; it never changes after the owner bootstrap.
-let defaultWorkspaceId = null;
+// Read per request (switch on only): a DB import can replace it.
 async function routeWorkspaceId() {
-  defaultWorkspaceId ??= (await getMeta("defaultWorkspaceId")) || null;
-  return defaultWorkspaceId;
+  return (await getMeta("defaultWorkspaceId")) || null;
 }
 
 /**
