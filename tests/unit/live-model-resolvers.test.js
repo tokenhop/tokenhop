@@ -113,6 +113,10 @@ describe("resolver registry", () => {
       "opencode-go",
       "ollama",
       "ollama-local",
+      "venice",
+      "bazaarlink",
+      "llm7",
+      "sambanova",
     ]) {
       expect(hasLiveModelResolver(id)).toBe(true);
     }

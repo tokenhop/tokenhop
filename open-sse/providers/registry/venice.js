@@ -21,8 +21,8 @@ export default {
     validateUrl: "https://api.venice.ai/api/v1/models",
     thinkingFormat: "openai",
   },
-  // Curated seed; the full live catalogue (90+ text models) is fetched via
-  // modelsFetcher and any other id is accepted via passthroughModels.
+  // Curated seed; connections list the full live catalogue (features.liveModels),
+  // the side panel suggests from modelsFetcher, and any id passes through.
   models: [
     { id: "venice-uncensored-1-2", name: "Venice Uncensored 1.2" },
     { id: "zai-org-glm-5", name: "GLM-5" },
@@ -54,6 +54,7 @@ export default {
   imageConfig: {
     baseUrl: "https://api.venice.ai/api/v1/images/generations",
   },
+  features: { liveModels: true },
   modelsFetcher: { url: "https://api.venice.ai/api/v1/models", type: "openai" },
   passthroughModels: true,
 };

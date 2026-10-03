@@ -27,5 +27,6 @@ export default {
     { id: "grok-4.5", name: "Grok 4.5 (LLM7)", contextLength: 500000 },
     { id: "kimi-k3", name: "Kimi K3 (LLM7)", contextLength: 1000000 },
   ],
+  features: { liveModels: true },
   passthroughModels: true,
 };

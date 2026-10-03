@@ -1,7 +1,7 @@
 // Live catalogs for OpenAI-style API-key providers (GET …/models, Bearer key):
 // DeepSeek, Mistral, Groq, Together AI, Fireworks AI, Cerebras, Perplexity
 // Agent, Vercel AI Gateway, Chutes, NVIDIA NIM, Nebius, SiliconFlow,
-// Hyperbolic and OpenCode Go. Each list carries every kind the provider serves, so it is
+// Hyperbolic, OpenCode Go, Venice, Bazaarlink, LLM7 and SambaNova. Each list carries every kind the provider serves, so it is
 // authoritative: no static extras are added back (except NIM's speech models).
 // OpenCode Free is the keyless exception: its Zen catalog is public.
 
@@ -267,6 +267,101 @@ export function parseOpencodeGoModels(body, statics = getModelsByProviderId("ope
   return ids.map((id) => ({ id, name: names.get(id) || id }));
 }
 
+// ── Venice ────────────────────────────────────────────────────────────────
+// Fetched with type=all. Only text, embedding and image have a route here;
+// video, music, speech, upscale and inpaint rows are dropped, as are offline ones.
+const VENICE_KINDS = { text: "llm", embedding: "embedding", image: "image" };
+export function parseVeniceModels(body) {
+  const seen = new Set();
+  const models = [];
+  for (const entry of entries(body)) {
+    const id = idOf(entry);
+    const kind = Object.hasOwn(VENICE_KINDS, entry?.type) && VENICE_KINDS[entry.type];
+    const spec = entry?.model_spec || {};
+    if (!id || !kind || spec.offline || seen.has(`${kind}:${id}`)) continue;
+    seen.add(`${kind}:${id}`);
+    models.push({
+      id,
+      name: spec.name || id,
+      ...(kind === "llm"
+        ? {
+            contextLength: positive(spec.availableContextTokens),
+            maxOutputTokens: positive(spec.maxCompletionTokens),
+            ...(spec.capabilities?.supportsVision ? { inputModalities: ["text", "image"] } : {}),
+          }
+        : { kind }),
+    });
+  }
+  return models;
+}
+
+// ── Bazaarlink ────────────────────────────────────────────────────────────
+// Every text-output row is chat; anything else has no route here.
+export function parseBazaarlinkModels(body) {
+  const seen = new Set();
+  const models = [];
+  for (const entry of entries(body)) {
+    const id = idOf(entry);
+    const outputs = entry?.architecture?.output_modalities;
+    if (!id || seen.has(id) || (Array.isArray(outputs) && !outputs.includes("text"))) continue;
+    seen.add(id);
+    models.push({
+      id,
+      name: entry.name || id,
+      contextLength: positive(entry.context_length),
+      description: entry.description || undefined,
+      ...(Array.isArray(entry.architecture?.input_modalities)
+        ? { inputModalities: entry.architecture.input_modalities }
+        : {}),
+    });
+  }
+  return models;
+}
+
+// ── LLM7 ──────────────────────────────────────────────────────────────────
+// Only chat rows; image, video, transcription and systemone have no route here.
+// A connection may point at a custom base URL (the connection test honours it too).
+export const llm7ModelsUrl = (connection) =>
+  `${(connection?.providerSpecificData?.baseUrl || "https://api.llm7.io/v1").replace(/\/$/, "")}/models`;
+export function parseLlm7Models(body) {
+  const seen = new Set();
+  const models = [];
+  for (const entry of entries(body)) {
+    const id = idOf(entry);
+    if (!id || seen.has(id) || entry.model_type !== "chat") continue;
+    seen.add(id);
+    models.push({
+      id,
+      name: id,
+      contextLength: positive(entry.context_window?.tokens),
+      ...(Array.isArray(entry.modalities?.input)
+        ? { inputModalities: entry.modalities.input }
+        : {}),
+    });
+  }
+  return models;
+}
+
+// ── SambaNova ─────────────────────────────────────────────────────────────
+// All chat; registry names kept.
+export function parseSambanovaModels(body, statics = getModelsByProviderId("sambanova")) {
+  const names = new Map(statics.map((m) => [m.id, m.name]));
+  const seen = new Set();
+  const models = [];
+  for (const entry of entries(body)) {
+    const id = idOf(entry);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    models.push({
+      id,
+      name: names.get(id) || id,
+      contextLength: positive(entry.context_length),
+      maxOutputTokens: positive(entry.max_completion_tokens),
+    });
+  }
+  return models;
+}
+
 // ── OpenCode Free ─────────────────────────────────────────────────────────
 // The Zen catalog lists every model, paid and free; the shared "opencode-free"
 // filter keeps the free ones. Ids the registry lacks default to chat/completions.
@@ -292,9 +387,10 @@ export async function resolveOpencode() {
     : { models: [], warning: "OpenCode Free returned no live models." };
 }
 
+// `url` is a string or a function of the connection (custom base URLs).
 const resolver = (label, url, parse) => async (connection) => {
   if (!connection.apiKey) return { models: [], warning: "No valid token found" };
-  const response = await fetch(url, {
+  const response = await fetch(typeof url === "function" ? url(connection) : url, {
     headers: { Authorization: `Bearer ${connection.apiKey}`, Accept: "application/json" },
     // Failures aren't cached, so an unbounded hang would stall every /v1/models call.
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -377,4 +473,20 @@ export const resolveOpencodeGo = resolver(
   "OpenCode Go",
   "https://opencode.ai/zen/go/v1/models",
   parseOpencodeGoModels,
+);
+export const resolveVenice = resolver(
+  "Venice AI",
+  "https://api.venice.ai/api/v1/models?type=all",
+  parseVeniceModels,
+);
+export const resolveBazaarlink = resolver(
+  "Bazaarlink",
+  "https://bazaarlink.ai/api/v1/models",
+  parseBazaarlinkModels,
+);
+export const resolveLlm7 = resolver("LLM7", llm7ModelsUrl, parseLlm7Models);
+export const resolveSambanova = resolver(
+  "SambaNova",
+  "https://api.sambanova.ai/v1/models",
+  parseSambanovaModels,
 );

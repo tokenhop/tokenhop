@@ -11,6 +11,7 @@ import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
 import { OPENCODE_PUBLIC_HEADERS } from "open-sse/executors/opencode.js";
+import { llm7ModelsUrl } from "@/lib/providerModels/apiKeyModels.js";
 import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
@@ -1159,9 +1160,8 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: exRes.ok, error: exRes.ok ? null : "Invalid personal access token" };
       }
       case "llm7": {
-        const baseUrl = connection.providerSpecificData?.baseUrl || "https://api.llm7.io/v1";
         const res = await fetchWithConnectionProxy(
-          `${baseUrl.replace(/\/$/, "")}/models`,
+          llm7ModelsUrl(connection),
           {
             headers: { Authorization: `Bearer ${connection.apiKey}` },
           },
