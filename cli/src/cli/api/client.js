@@ -423,6 +423,15 @@ async function resetPassword() {
   return makeRequest("POST", "/api/auth/reset-password");
 }
 
+/**
+ * Mint a one-time owner setup token (ADR-0003, multi-user owner SSO linking).
+ * Server responds 404 while users & teams is off.
+ * @returns {Promise<Object>} { success, data: { token, expiresAt }, statusCode }
+ */
+async function mintSetupToken() {
+  return makeRequest("POST", "/api/auth/setup-token");
+}
+
 // ============================================================================
 // MODELS API
 // ============================================================================
@@ -542,6 +551,7 @@ module.exports = {
   getSettings,
   updateSettings,
   resetPassword,
+  mintSetupToken,
 
   // Tunnel
   getTunnelStatus,

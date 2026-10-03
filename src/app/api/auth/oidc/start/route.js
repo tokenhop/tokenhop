@@ -10,6 +10,7 @@ import {
   getPublicOrigin,
 } from "@/lib/auth/oidc";
 import { shouldUseSecureCookie } from "@/lib/auth/dashboardSession";
+import { stashSetupToken } from "@/lib/users/bootstrap";
 
 export async function GET(request) {
   try {
@@ -46,6 +47,7 @@ export async function GET(request) {
     cookieStore.set("oidc_state", state, baseOptions);
     cookieStore.set("oidc_nonce", nonce, baseOptions);
     cookieStore.set("oidc_code_verifier", verifier, baseOptions);
+    await stashSetupToken(request, cookieStore, baseOptions);
 
     return NextResponse.redirect(authUrl);
   } catch (error) {

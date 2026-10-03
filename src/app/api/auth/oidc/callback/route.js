@@ -11,6 +11,7 @@ import {
 } from "@/lib/auth/oidc";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { sessionClaims } from "@/lib/users/session";
+import { takeSetupToken } from "@/lib/users/bootstrap";
 
 function clearOidcCookies(cookieStore) {
   cookieStore.delete("oidc_state");
@@ -84,7 +85,15 @@ export async function GET(request) {
     });
 
     clearOidcCookies(cookieStore);
-    const claims = await sessionClaims("oidc");
+    const identity = {
+      provider: "oidc",
+      issuer: payload.iss || discoveredIssuer,
+      subject: payload.sub,
+      email: pickOidcEmail(payload),
+      emailVerified: payload.email_verified === true,
+    };
+    const setupToken = takeSetupToken(cookieStore);
+    const claims = await sessionClaims("oidc", identity, { setupToken });
     if (!claims) {
       return NextResponse.redirect(
         new URL("/login?error=sso_not_linked", getPublicOrigin(request)),

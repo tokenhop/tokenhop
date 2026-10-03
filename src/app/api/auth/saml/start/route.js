@@ -4,6 +4,7 @@ import { getSettings } from "@/lib/localDb";
 import { buildSamlAuthorizeUrl, getSamlBaseUrl, isSamlConfigured } from "@/lib/auth/saml.js";
 import { resolveAuthModes } from "@/lib/auth/authModes";
 import { shouldUseSecureCookie } from "@/lib/auth/dashboardSession";
+import { stashSetupToken } from "@/lib/users/bootstrap";
 
 export async function GET(request) {
   const settings = await getSettings();
@@ -17,13 +18,15 @@ export async function GET(request) {
     const { authorizeUrl, requestId } = await buildSamlAuthorizeUrl(request, settings);
 
     const cookieStore = await cookies();
-    cookieStore.set("saml_state", requestId, {
+    const cookieOptions = {
       httpOnly: true,
       secure: shouldUseSecureCookie(request),
       sameSite: "lax",
       path: "/",
       maxAge: 10 * 60,
-    });
+    };
+    cookieStore.set("saml_state", requestId, cookieOptions);
+    await stashSetupToken(request, cookieStore, cookieOptions);
 
     return NextResponse.redirect(authorizeUrl);
   } catch (error) {

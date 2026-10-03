@@ -146,6 +146,9 @@ describe("switch on", () => {
   it("acts as the owner in single-user mode (requireLogin=false)", async () => {
     expect(await s.resolvePrincipal(req())).toBeNull();
     await db.updateSettings({ requireLogin: false });
+    // Two active users: login off no longer opens the instance (YAN-356).
+    expect(await s.resolvePrincipal(req())).toBeNull();
+    await db.deleteUserUnscoped(t.b.user.id);
     expect(await s.resolvePrincipal(req())).toMatchObject({ userId: t.a.user.id, via: "local" });
     // Nothing to revoke in single-user mode, so no peer can sign the owner out.
     const { POST } = await import("@/app/api/auth/logout-all/route.js");

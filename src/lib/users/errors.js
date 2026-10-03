@@ -2,7 +2,7 @@
 // `code`, never on SQLite's message text.
 export class TenancyError extends Error {
   /**
-   * @param {"INVALID"|"NOT_FOUND"|"EMAIL_TAKEN"|"USERNAME_TAKEN"|"IDENTITY_TAKEN"|"MEMBERSHIP_EXISTS"|"OWNER_EXISTS"|"OWNER_IMMUTABLE"|"LAST_MANAGER"|"PERSONAL_WORKSPACE"} code
+   * @param {"INVALID"|"NOT_FOUND"|"EMAIL_TAKEN"|"USERNAME_TAKEN"|"IDENTITY_TAKEN"|"MEMBERSHIP_EXISTS"|"OWNER_EXISTS"|"OWNER_IMMUTABLE"|"LAST_MANAGER"|"PERSONAL_WORKSPACE"|"SINGLE_USER_MODE"} code
    * @param {string} message
    */
   constructor(code, message) {

@@ -58,6 +58,18 @@ if (args[0] === "xai" && args[1] === "video") {
   return;
 }
 
+// `auth setup-token` mints a one-time owner setup token from the running server.
+if (args[0] === "auth" && args[1] === "setup-token") {
+  const { run } = require("./src/cli/commands/authSetupToken");
+  run(args.slice(2))
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(`❌ ${err?.message || err}`);
+      process.exit(1);
+    });
+  return;
+}
+
 // `data migrate` moves the legacy data dir; it must run before the self-heal
 // below writes into it. Offered only under the tokenhop brand.
 const dataMigrate = require("./src/cli/commands/dataMigrate");
@@ -135,7 +147,10 @@ Options:
 Commands:
   xai video --prompt "..." --output video.mp4
                       Generate a Grok Imagine video via the running gateway
-                      (see: ${APP_NAME} xai video --help)${
+                      (see: ${APP_NAME} xai video --help)
+  auth setup-token [--port <port>]
+                      Mint a one-time owner setup token for SSO owner linking
+                      (see: ${APP_NAME} auth setup-token --help)${
   dataMigrate.AVAILABLE
     ? `
   data migrate [--dry-run]

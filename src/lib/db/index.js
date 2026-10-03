@@ -153,6 +153,7 @@ export {
   bumpSessionVersion,
   getUserPasswordHashUnscoped,
   createUserUnscoped,
+  bootstrapOwnerUnscoped,
   updateUserUnscoped,
   deleteUserUnscoped,
   transferOwnership,
@@ -161,16 +162,19 @@ export {
   listIdentities,
   unlinkIdentity,
   findIdentityUnscoped,
+  listIdentitiesUnscoped,
   linkIdentityUnscoped,
 } from "./repos/identitiesRepo.js";
 export {
   listWorkspaces,
   getWorkspace,
   listWorkspacesUnscoped,
+  countSharedWorkspacesUnscoped,
   createSharedWorkspace,
   renameWorkspace,
   deleteWorkspace,
 } from "./repos/workspacesRepo.js";
+export { getMeta, setMeta } from "./helpers/metaStore.js";
 export {
   listMemberships,
   addMembership,

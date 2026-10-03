@@ -2,6 +2,8 @@
 // Switch off: tokens are checked by signature only and no principal resolves,
 // exactly today's single-admin behaviour. Switch on: `sub` tokens are checked
 // against users.sessionVersion/status, and every request maps to a Principal.
+// YAN-356: lazy owner bootstrap on the multi-user paths, sessionClaims(method,
+// identity) for SSO owner linking, singleUserMode + owner password hash sync.
 import { cookies, headers } from "next/headers";
 import {
   getDashboardAuthSession,
@@ -18,8 +20,10 @@ import {
   getSettings,
   getUserUnscoped,
   listWorkspaces,
+  updateUserUnscoped,
 } from "@/lib/db/index.js";
 import { isMultiUserEnabled } from "./featureSwitch.js";
+import { ensureOwnerBootstrap, resolveSsoUser } from "./bootstrap.js";
 
 const AUTH_COOKIE = "auth_token";
 
@@ -36,10 +40,36 @@ async function multiUserOn() {
   if (Date.now() - switchCache.at < SWITCH_TTL_MS) return switchCache.on;
   try {
     switchCache = { on: await isMultiUserEnabled(), at: Date.now() };
+    // YAN-356: bootstrap lazily too, so a runtime flip of the stored switch is
+    // covered. A memoised no-op once done; never throws.
+    if (switchCache.on) await ensureOwnerBootstrap();
   } catch {
     return false;
   }
   return switchCache.on;
+}
+
+/**
+ * YAN-356 single-user mode: login not required, and either the switch is off
+ * or at most one active user exists. A restored DB with two users and
+ * `requireLogin=false` no longer opens the instance.
+ * @param {object|null|undefined} settings settings object, or null when unreadable
+ * @returns {Promise<boolean>}
+ */
+export async function singleUserMode(settings) {
+  if (settings?.requireLogin !== false) return false;
+  if (!(await multiUserOn())) return true;
+  try {
+    return (await countActiveUsersUnscoped()) <= 1;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether login may be turned off: switch off, or at most one active user. */
+export async function singleUserModeAllowed() {
+  if (!(await isMultiUserEnabled())) return true;
+  return (await countActiveUsersUnscoped()) <= 1;
 }
 
 /**
@@ -143,8 +173,10 @@ async function resolvePrincipalOrThrow(request) {
   }
   if (await cliTokenAccepted(request)) return principalFor(await getOwnerUnscoped(), "cli");
   // Gateway API keys resolve here once YAN-363 lands (via: "apiKey").
+  // YAN-356: single-user mode no longer trusts requireLogin=false alone — a
+  // restored DB with two users and login off stays closed.
   const settings = await getSettings();
-  if (settings?.requireLogin === false) return principalFor(await getOwnerUnscoped(), "local");
+  if (await singleUserMode(settings)) return principalFor(await getOwnerUnscoped(), "local");
   return null;
 }
 
@@ -156,36 +188,58 @@ export async function getPrincipal() {
 
 /**
  * Claims a fresh login mints (ADR-0004). Switch off, or before an owner exists
- * (YAN-356 bootstraps it), logins keep today's claim set. SSO logins stand for
- * the owner only while the owner is the sole user; with more users they get
- * null (refuse the login: no new `sub`-less token) until YAN-359 links identities.
+ * (YAN-356 bootstraps it), logins keep today's claim set. An SSO login with an
+ * identity linked to the owner stands for the owner even with more users; a
+ * non-owner link is refused (YAN-359). An unlinked, unmatched SSO login keeps
+ * the YAN-355 rule: owner claims while at most one active user, else null.
  * @param {"pwd"|"oidc"|"saml"} method
+ * @param {{ provider: "oidc"|"saml", issuer?: string, subject: string, email?: string, emailVerified?: boolean }} [identity] SSO identity (YAN-356)
+ * @param {{ setupToken?: string }} [opts] presented owner setup token (YAN-356)
  * @returns {Promise<object|null>}
  */
-export async function sessionClaims(method) {
+export async function sessionClaims(method, identity = null, opts = {}) {
   if (!(await isMultiUserEnabled())) return {};
-  if (method !== "pwd" && (await countActiveUsersUnscoped()) > 1) return null;
-  const owner = await getOwnerUnscoped();
-  if (owner?.status !== "active") return {};
-  const principal = await principalFor(owner, "session");
+  await ensureOwnerBootstrap();
+  let user = null;
+  if (method !== "pwd") {
+    const linked = await resolveSsoUser(identity, opts);
+    if (linked) {
+      user = await getUserUnscoped(linked);
+      if (user?.status !== "active" || user.instanceRole !== "owner") return null;
+    }
+  }
+  if (!user) {
+    if (method !== "pwd" && (await countActiveUsersUnscoped()) > 1) return null;
+    const owner = await getOwnerUnscoped();
+    if (owner?.status !== "active") return {};
+    user = owner;
+  }
+  const principal = await principalFor(user, "session");
   return {
-    sub: owner.id,
-    sv: owner.sessionVersion,
+    sub: user.id,
+    sv: user.sessionVersion,
     wid: principal.activeWorkspaceId,
     amr: [method],
   };
 }
 
 /**
- * Revoke every session of the owner (password change or reset). When `request`
- * carries the owner's own session, re-mint its cookie so only other devices
- * are signed out. No-op while the switch is off or before an owner exists.
+ * Revoke every session of the owner (password change or reset). A given
+ * `passwordHash` (or null, the reset case) is copied to the owner first via
+ * updateUserUnscoped, which bumps sv itself (ADR-0004) — no double bump.
+ * When `request` carries the owner's own session, re-mint its cookie so only
+ * other devices are signed out. No-op while the switch is off or before an
+ * owner exists.
+ * @param {Request|null} request
+ * @param {{ passwordHash?: string|null }} [opts] new owner hash (YAN-356)
  */
-export async function revokeOwnerSessions(request) {
+export async function revokeOwnerSessions(request, { passwordHash } = {}) {
   if (!(await isMultiUserEnabled())) return;
+  await ensureOwnerBootstrap();
   const owner = await getOwnerUnscoped();
   if (!owner) return;
-  await bumpSessionVersion(owner.id);
+  if (passwordHash !== undefined) await updateUserUnscoped(owner.id, { passwordHash });
+  else await bumpSessionVersion(owner.id);
   if (!request) return;
   const cookieStore = await cookies();
   const token = cookieStore.get(AUTH_COOKIE)?.value;

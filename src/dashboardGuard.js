@@ -3,7 +3,7 @@ import { getSettings, validateApiKey } from "@/lib/localDb";
 import { resolveFlagSetting, resolveStartPage } from "@/lib/settingsFlags";
 import { extractClientApiKey } from "@/lib/auth/clientApiKey";
 import { isLoopbackHostname, isLoopbackPeer } from "@/lib/auth/trustedPeer";
-import { cliTokenAccepted, hasValidSession } from "@/lib/users/session";
+import { cliTokenAccepted, hasValidSession, singleUserMode } from "@/lib/users/session";
 import { LOCAL_ONLY_CODE } from "@/shared/utils/localOnly";
 
 // Public API paths — no auth required (LLM API has its own key auth inside handler).
@@ -71,6 +71,7 @@ const LOCAL_ONLY_PATHS = [
   "/api/oauth/cursor/auto-import",
   "/api/oauth/kiro/auto-import",
   "/api/auth/reset-password",
+  "/api/auth/setup-token",
   "/api/headroom/start",
   "/api/headroom/stop",
   "/api/headroom/proxy",
@@ -142,9 +143,9 @@ async function loadSettings() {
 
 async function isAuthenticated(request) {
   if (await hasValidSession(request)) return true;
-  const settings = await loadSettings();
-  if (settings && settings.requireLogin === false) return true;
-  return false;
+  // YAN-356: single-user mode, not requireLogin=false alone — a restored DB
+  // with two users and login off stays closed.
+  return singleUserMode(await loadSettings());
 }
 
 function isPublicApi(pathname) {
@@ -243,8 +244,8 @@ export async function proxy(request) {
       // On error, keep defaults (require login, block tunnel)
     }
 
-    // If login not required, allow through
-    if (!requireLogin) {
+    // If login not required (single-user mode), allow through
+    if (!requireLogin && (await singleUserMode({ requireLogin }))) {
       if (isTranslatorPath(pathname) && !translatorEnabled) {
         return NextResponse.redirect(new URL("/dashboard", request.url));
       }

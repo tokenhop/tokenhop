@@ -7,6 +7,7 @@ import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import { resolveAuthModes } from "@/lib/auth/authModes";
 import { isMultiUserEnabled } from "@/lib/users/featureSwitch";
 import { describePrincipal, getPrincipal, isLiveSession } from "@/lib/users/session";
+import { multiUserActive } from "@/lib/users/bootstrap";
 
 export async function GET() {
   try {
@@ -33,7 +34,10 @@ export async function GET() {
     // A revoked session (sessionVersion bumped) no longer counts as signed in.
     const multiUser = await isMultiUserEnabled();
     const principalField = multiUser
-      ? { principal: await describePrincipal(await getPrincipal()) }
+      ? {
+          principal: await describePrincipal(await getPrincipal()),
+          multiUserActive: await multiUserActive(),
+        }
       : {};
     const authenticated = multiUser
       ? await isLiveSession(cookieStore.get("auth_token")?.value)
