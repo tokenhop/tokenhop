@@ -73,6 +73,31 @@ inputs. The script's header lists the exact commands, what it covers, and the
 checks that stay manual. Everything runs under a temp `HOME` and `th344-`-prefixed
 containers and volumes, all removed on exit.
 
+## Tenancy isolation tests
+
+Users & teams (YAN-354). SQLite has no row-level security, so two guards run in `npm test`:
+
+- `unit/tenancy-guard.test.js` fails when a table or `kv` scope is missing from `src/lib/db/tenancy.js`, or when an exported function in `src/lib/db/repos/` touches a `scoped` table or kv scope without taking `ctx` first or ending in `Unscoped`. A new table or kv scope needs a class there. Scoping an existing one moves it from `pending-scope` to `scoped` with its `scopeColumn`.
+- `setup/tenancyHarness.js` seeds owner A, user B, their personal workspaces and a shared workspace (A owner, B member) into the file's isolated DB. `unit/tenancy-isolation.test.js` is the sample.
+
+```js
+import { callRoute, denied, seedTenancy } from "../setup/tenancyHarness.js";
+
+const { a, b, shared } = await seedTenancy(); // { user, ctx, personal } each
+expect(await denied(db.getWorkspace(b.ctx, a.personal))).toBe(true);
+const res = await callRoute(GET, "/api/keys", { as: b }); // or { apiKey: "sk-…" }
+```
+
+`denied()` is true for `null`/`false` or a `TenancyError` `NOT_FOUND`/`FORBIDDEN`, and rethrows anything else; for lists, assert the other user's ids are absent. `callRoute()` signs a session cookie with the `sub`, `sv` and `wid` claims (ADR-0004), or sends `Authorization: Bearer`, and passes `{ params }` like Next.js.
+
+Every scoping PR lists its negative tests in an isolation matrix:
+
+```markdown
+| Resource               | Read | List | Update | Delete | Use | Test                             |
+| ---------------------- | ---- | ---- | ------ | ------ | --- | -------------------------------- |
+| workspace (A personal) | ✅   | ✅   | ✅     | ✅     | n/a | `unit/tenancy-isolation.test.js` |
+```
+
 ## Regression check
 
 The suite runs green on a plain checkout. Compare a run against the known failures in `__baseline__/known-fails.txt` (empty since YAN-416 triaged all ~86 pinned failures) instead of reading raw results:
