@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
-import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { resolveFlagSetting, resolveStartPage } from "@/lib/settingsFlags";
 import { extractClientApiKey } from "@/lib/auth/clientApiKey";
-import { hasValidCliToken } from "@/lib/auth/cliToken";
-import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
+import { isLoopbackHostname, isLoopbackPeer } from "@/lib/auth/trustedPeer";
+import { cliTokenAccepted, hasValidSession } from "@/lib/users/session";
 import { LOCAL_ONLY_CODE } from "@/shared/utils/localOnly";
 
 // Public API paths — no auth required (LLM API has its own key auth inside handler).
@@ -89,37 +88,6 @@ const REMOTE_ALLOWED_METHODS = new Map([
   ["/api/cli-tools/antigravity-mitm/alias", new Set(["GET", "PUT"])],
 ]);
 
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
-
-// Accepts a Host header, a URL hostname or a raw socket address. Splitting on the first
-// colon only works for IPv4 and would reduce every IPv6 form to "", so a dual-stack
-// listener handing back ::ffff:127.0.0.1 would not read as loopback.
-function isLoopbackHostname(h) {
-  if (!h) return false;
-  let name = String(h).trim().toLowerCase();
-  if (name.startsWith("[")) {
-    const end = name.indexOf("]");
-    if (end === -1) return false;
-    name = name.slice(1, end);
-  } else if (name.indexOf(":") !== -1 && name.indexOf(":") === name.lastIndexOf(":")) {
-    name = name.slice(0, name.indexOf(":"));
-  }
-  if (name.startsWith("::ffff:")) name = name.slice(7);
-  return LOOPBACK_HOSTS.has(name);
-}
-
-function isLoopbackPeer(request) {
-  if (hasTrustedPeerHeaders(request)) {
-    return isLoopbackHostname(request.headers.get("x-9r-real-ip"));
-  }
-  // Bare `next dev` forks its server, so the wrapper never loads and no peer address
-  // reaches us. Host is spoofable, so this stays confined to development.
-  if (process.env.NODE_ENV === "development") {
-    return isLoopbackHostname(request.headers.get("host"));
-  }
-  return false;
-}
-
 export function isLocalRequest(request) {
   // Stamped by custom-server.js when forwarding headers exist: request came through
   // a reverse proxy, so the loopback socket is the proxy hop, not the end-user.
@@ -152,20 +120,15 @@ async function hasValidApiKey(request) {
 
 async function canAccessPublicLlmApi(request) {
   if (isLocalRequest(request)) return true;
-  if (await hasValidCliToken(request)) return true;
+  if (await cliTokenAccepted(request)) return true;
   return await hasValidApiKey(request);
 }
 
 async function canAccessLocalOnlyRoute(request) {
-  if (await hasValidCliToken(request)) return true;
+  if (await cliTokenAccepted(request)) return true;
   // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + auth (JWT or requireLogin=false)
   if (isLocalRequest(request) && (await isAuthenticated(request))) return true;
   return false;
-}
-
-async function hasValidToken(request) {
-  const token = request.cookies.get("auth_token")?.value;
-  return await verifyDashboardAuthToken(token);
 }
 
 // Read settings directly from DB to avoid self-fetch deadlock in proxy
@@ -178,7 +141,7 @@ async function loadSettings() {
 }
 
 async function isAuthenticated(request) {
-  if (await hasValidToken(request)) return true;
+  if (await hasValidSession(request)) return true;
   const settings = await loadSettings();
   if (settings && settings.requireLogin === false) return true;
   return false;
@@ -227,7 +190,7 @@ export async function proxy(request) {
 
   // Always protected - require valid JWT or local CLI token (machineId-based)
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
-    if ((await hasValidCliToken(request)) || (await hasValidToken(request)))
+    if ((await cliTokenAccepted(request)) || (await hasValidSession(request)))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -240,7 +203,7 @@ export async function proxy(request) {
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();
-    if ((await hasValidCliToken(request)) || (await isAuthenticated(request)))
+    if ((await cliTokenAccepted(request)) || (await isAuthenticated(request)))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -291,7 +254,7 @@ export async function proxy(request) {
     // Verify JWT token
     const token = request.cookies.get("auth_token")?.value;
     if (token) {
-      if (await verifyDashboardAuthToken(token)) {
+      if (await hasValidSession(request)) {
         // YAN-312: the Translator debug page honors the resolved flag.
         if (isTranslatorPath(pathname) && !translatorEnabled) {
           return NextResponse.redirect(new URL("/dashboard", request.url));

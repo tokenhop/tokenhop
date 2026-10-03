@@ -29,6 +29,12 @@ vi.mock("@/shared/utils/machineId", () => ({
   getConsistentMachineId: mocks.getConsistentMachineId,
 }));
 
+// Today's single-admin behaviour; the switch-on paths live in principal-sessions.test.js.
+vi.mock("@/lib/users/featureSwitch", () => ({
+  isMultiUserEnabled: async () => false,
+  requireMultiUser: async () => null,
+}));
+
 vi.mock("@/lib/auth/dashboardSession", () => ({
   verifyDashboardAuthToken: mocks.verifyDashboardAuthToken,
 }));

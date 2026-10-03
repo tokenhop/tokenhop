@@ -9,6 +9,7 @@ import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { resolveAuthModes } from "@/lib/auth/authModes";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 import { isLocalRequest } from "@/dashboardGuard";
+import { sessionClaims } from "@/lib/users/session";
 import { ACTIVE } from "@/shared/brand";
 
 const RESET_HINT = `Forgot password? Reset to default via ${ACTIVE.name} CLI → Settings → Reset password to default.`;
@@ -111,7 +112,7 @@ export async function POST(request) {
       }
 
       const cookieStore = await cookies();
-      await setDashboardAuthCookie(cookieStore, request);
+      await setDashboardAuthCookie(cookieStore, request, await sessionClaims("pwd"));
 
       return NextResponse.json(
         {

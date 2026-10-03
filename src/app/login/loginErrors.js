@@ -14,6 +14,8 @@ const MESSAGES = {
     "SAML sign-in failed. Check the SAML settings and the server log, then try again.",
   too_many_attempts: "Too many failed sign-in attempts. Wait a few minutes and try again.",
   access_denied: "The identity provider refused the sign-in request. Try again.",
+  sso_not_linked:
+    "This single sign-on account isn't linked to a user here. Sign in with a password or ask an admin.",
 };
 
 /**

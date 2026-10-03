@@ -7,15 +7,13 @@ import {
   probeOidcClientSecret,
   summarizeOidcSigning,
 } from "@/lib/auth/oidc";
-import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { hasValidSession } from "@/lib/users/session";
 
 async function canAccessTestRoute() {
   const settings = await getSettings();
   if (settings.requireLogin === false) return true;
 
-  const cookieStore = await cookies();
-  const token = cookieStore.get("auth_token")?.value;
-  return await verifyDashboardAuthToken(token);
+  return await hasValidSession({ cookies: await cookies() });
 }
 
 async function countJwksKeys(jwksUri) {

@@ -9,6 +9,7 @@ import {
   validateSamlResponse,
 } from "@/lib/auth/saml.js";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { sessionClaims } from "@/lib/users/session";
 import { resolveAuthModes } from "@/lib/auth/authModes";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 
@@ -53,9 +54,12 @@ export async function POST(request) {
     const samlEmail = pickSamlEmail(profile, settings) || null;
     const samlName = pickSamlDisplayName(profile, settings) || "SAML user";
 
+    const claims = await sessionClaims("saml");
+    if (!claims) return NextResponse.redirect(new URL("/login?error=sso_not_linked", origin));
     recordSuccess(ip);
 
     await setDashboardAuthCookie(cookieStore, request, {
+      ...claims,
       saml: true,
       samlEmail,
       samlName,
