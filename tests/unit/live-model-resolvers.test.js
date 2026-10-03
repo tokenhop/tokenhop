@@ -152,7 +152,7 @@ describe("TTL cache", () => {
 });
 
 describe("Qoder hidden models", () => {
-  it("are filtered from the dashboard route", async () => {
+  it("are filtered from the dashboard route unless asked for, then flagged", async () => {
     const conn = await seedQoder();
 
     const res = await dashboardModels(conn.id);
@@ -161,6 +161,11 @@ describe("Qoder hidden models", () => {
     const { models } = await res.json();
     expect(models.map((m) => m.id)).toEqual(["qoder/q-visible"]);
     expect(models[0]).toMatchObject({ name: "Qoder Visible", contextLength: 128000 });
+
+    const all = await (await dashboardModels(conn.id, "?hidden=1")).json();
+    expect(all.models.map((m) => m.id)).toEqual(["qoder/q-visible", "qoder/q-hidden"]);
+    expect(all.models[0].hidden).toBeUndefined();
+    expect(all.models[1]).toMatchObject({ hidden: true });
   });
 
   it("are still listed by /v1/models, without a doubled prefix", async () => {

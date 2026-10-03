@@ -91,7 +91,8 @@ export default function ModelsSection({
     return "https://opencode.ai";
   })();
 
-  const activeIds = models.enabledModels.map((model) => model.id);
+  // Hidden live entries are listed for reference, not counted or bulk-disabled.
+  const activeIds = models.enabledModels.filter((model) => !model.hidden).map((model) => model.id);
   // Large live catalogs (OpenRouter lists hundreds) get search and filters.
   // Plain Input, not ToolbarSearch: its page-wide "/" shortcut belongs to page toolbars.
   const showFilters = isLiveCatalog && models.enabledModels.length > FILTER_THRESHOLD;
@@ -121,7 +122,7 @@ export default function ModelsSection({
       subtitle={
         isCompatible
           ? `Manual ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible catalog`
-          : `${models.enabledModels.length} active${models.disabledModels.length > 0 ? ` · ${models.disabledModels.length} disabled` : ""}`
+          : `${activeIds.length} active${models.disabledModels.length > 0 ? ` · ${models.disabledModels.length} disabled` : ""}`
       }
       action={
         <div className="flex flex-wrap items-center gap-2">

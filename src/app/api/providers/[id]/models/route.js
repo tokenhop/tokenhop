@@ -158,14 +158,16 @@ export async function GET(request, { params }) {
 
     // Live catalogs shared with /v1/models. Always 200: an empty or failed
     // fetch comes back as models: [] + warning so the dashboard keeps its
-    // static list. Hidden entries are routable but not offered for selection.
+    // static list. Hidden entries are routable but not offered for selection;
+    // the provider page asks for them (?hidden=1) to list them, marked.
     if (hasLiveModelResolver(connection.provider)) {
-      const forceRefresh = new URL(request.url).searchParams.get("refresh") === "1";
+      const { searchParams } = new URL(request.url);
+      const forceRefresh = searchParams.get("refresh") === "1";
       const { models, warning } = await resolveLiveModels(connection, { forceRefresh });
       return NextResponse.json({
         provider: connection.provider,
         connectionId: connection.id,
-        models: models.filter((m) => !m.hidden),
+        models: searchParams.get("hidden") === "1" ? models : models.filter((m) => !m.hidden),
         ...(warning ? { warning } : {}),
       });
     }

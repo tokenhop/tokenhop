@@ -83,9 +83,10 @@ export function selectModelsToImport({
   );
   const aliasTargets = new Set(Object.values(modelAliases || {}));
 
-  // Imports are always added as llm custom models, so non-chat live entries are skipped.
+  // Imports are always added as llm custom models, so non-chat live entries are skipped,
+  // and so are hidden ones (routable, but not offered for selection).
   return normalizeLiveModels(providerId, liveModels)
-    .filter((model) => modelKind(model) === "llm")
+    .filter((model) => modelKind(model) === "llm" && !model.hidden)
     .map((model) => model.id)
     .filter(
       (id) =>
