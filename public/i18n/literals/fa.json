@@ -1947,6 +1947,7 @@
   "Support tokenhop": "پشتیبانی از tokenhop",
   "Supports image input": "پشتیبانی از ورودی تصویر",
   "Supports reasoning / thinking": "پشتیبانی از استدلال / تفکر",
+  "Supports video input": "پشتیبانی از ورودی ویدیو",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "بله، خوشحالم که کمک کنم. به نظر می‌رسد مشکل این است که تابع شما قبل از اتمام حلقه برمی‌گردد، پس…",
   "System": "سیستم",
   "Tailscale": "Tailscale",

@@ -1822,6 +1822,7 @@
   "Support tokenhop": "Wesprzyj tokenhop",
   "Supports image input": "Obsługuje wejście obrazowe",
   "Supports reasoning / thinking": "Obsługuje rozumowanie / myślenie",
+  "Supports video input": "Obsługuje wejście wideo",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Oczywiście, chętnie pomogę. Wygląda na to, że problem polega na tym, że funkcja zwraca wartość przed zakończeniem pętli, więc…",
   "System": "System operacyjny",
   "Tailscale": "Tailscale",

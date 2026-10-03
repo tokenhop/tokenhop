@@ -1820,6 +1820,7 @@
   "Support tokenhop": "Supporta tokenhop",
   "Supports image input": "Stöder bildinmatning",
   "Supports reasoning / thinking": "Stöder resonemang / tänkande",
+  "Supports video input": "Stöder videoinmatning",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Klart, gärna. Det verkar som att problemet är att din funktion returnerar innan loopen hinner avslutas, så…",
   "System": "Datorsystem",
   "Tailscale": "Tailscale",

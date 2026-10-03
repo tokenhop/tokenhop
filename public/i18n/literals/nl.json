@@ -1812,6 +1812,7 @@
   "Support tokenhop": "Ondersteun tokenhop",
   "Supports image input": "Ondersteunt afbeeldingsinvoer",
   "Supports reasoning / thinking": "Ondersteunt redeneren / denken",
+  "Supports video input": "Ondersteunt video-invoer",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Natuurlijk, graag geholpen. Het lijkt erop dat het probleem is dat uw functie terugkeert voordat de loop de kans krijgt om te voltooien, dus…",
   "System": "Systeem",
   "Tailscale": "Tailscale",

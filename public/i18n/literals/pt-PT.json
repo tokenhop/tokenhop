@@ -1822,6 +1822,7 @@
   "Support tokenhop": "Apoiar tokenhop",
   "Supports image input": "Suporta entrada de imagem",
   "Supports reasoning / thinking": "Suporta raciocínio / reflexão",
+  "Supports video input": "Suporta entrada de vídeo",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Claro, com prazer em ajudar. Parece que o problema é que a sua função retorna antes do ciclo ter a oportunidade de terminar, pelo que…",
   "System": "Sistema",
   "Tailscale": "Tailscale",

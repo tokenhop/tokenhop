@@ -1827,6 +1827,7 @@
   "Support tokenhop": "支援 tokenhop",
   "Supports image input": "支援圖片輸入",
   "Supports reasoning / thinking": "支援推理／思考",
+  "Supports video input": "支援影片輸入",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "當然，很高興能幫上忙。看起來問題在於您的函式在迴圈有機會完成之前就回傳了，因此…",
   "System": "系統",
   "Tailscale": "Tailscale",

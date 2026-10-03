@@ -1826,6 +1826,7 @@
   "Support tokenhop": "תמיכה ב-tokenhop",
   "Supports image input": "תומך בקלט תמונה",
   "Supports reasoning / thinking": "תומך בהיגיון / חשיבה",
+  "Supports video input": "תומך בקלט וידאו",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "בטח, שמח לעזור. נראה שהבעיה היא שהפונקציה שלך מחזירה לפני שללולאה יש ס chance לסיים, אז…",
   "System": "מערכת",
   "Tailscale": "Tailscale",

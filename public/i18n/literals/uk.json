@@ -1828,6 +1828,7 @@
   "Support tokenhop": "Підтримка tokenhop",
   "Supports image input": "Підтримує введення зображень",
   "Supports reasoning / thinking": "Підтримує міркування / thinking",
+  "Supports video input": "Підтримує введення відео",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Звісно, радий допомогти. Схоже, проблема в тому, що ваша функція повертає результат до того, як цикл встигає завершитися, тому…",
   "System": "Система",
   "Tailscale": "Tailscale",

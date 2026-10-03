@@ -1828,6 +1828,7 @@
   "Support tokenhop": "tokenhop をサポート",
   "Supports image input": "画像入力に対応",
   "Supports reasoning / thinking": "推論/思考に対応",
+  "Supports video input": "動画入力に対応",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "もちろん、喜んでお手伝いします。問題は、ループが終了する前に関数が返却されているようです。…",
   "System": "システム",
   "Tailscale": "Tailscale",

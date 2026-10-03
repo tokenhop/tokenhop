@@ -1825,6 +1825,7 @@
   "Support tokenhop": "tokenhop'u destekleyin",
   "Supports image input": "Görüntü girişini destekler",
   "Supports reasoning / thinking": "Akıl yürütmeyi / düşünmeyi destekler",
+  "Supports video input": "Video girişini destekler",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Tabii, yardımcı olmaktan memnuniyet duyarım. Sorun, fonksiyonunuzun döngü bitmeden önce dönmesi gibi görünüyor, bu yüzden…",
   "System": "Sistem",
   "Tailscale": "Tailscale",

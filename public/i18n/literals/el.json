@@ -1827,6 +1827,7 @@
   "Support tokenhop": "Υποστήριξη tokenhop",
   "Supports image input": "Υποστηρίζει είσοδο εικόνας",
   "Supports reasoning / thinking": "Υποστηρίζει συλλογισμό / σκέψη",
+  "Supports video input": "Υποστηρίζει είσοδο βίντεο",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Φυσικά, χαίρομαι να βοηθήσω. Φαίνεται ότι το πρόβλημα είναι ότι η συνάρτησή σας επιστρέφει πριν ο βρόχος έχει την ευκαιρία να ολοκληρωθεί, οπότε...",
   "System": "Σύστημα",
   "Tailscale": "Tailscale",

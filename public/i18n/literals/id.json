@@ -1935,6 +1935,7 @@
   "Support tokenhop": "Dukungan tokenhop",
   "Supports image input": "Mendukung input gambar",
   "Supports reasoning / thinking": "Mendukung penalaran / pemikiran",
+  "Supports video input": "Mendukung input video",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Tentu, senang bisa membantu. Sepertinya masalahnya adalah fungsi Anda mengembalikan nilai sebelum loop memiliki kesempatan untuk selesai, jadi…",
   "System": "Sistem",
   "Tailscale": "Tailscale",

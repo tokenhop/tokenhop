@@ -1820,6 +1820,7 @@
   "Support tokenhop": "Susțineți tokenhop",
   "Supports image input": "Acceptă intrare de tip imagine",
   "Supports reasoning / thinking": "Acceptă raționament / gândire",
+  "Supports video input": "Suportă intrare video",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Sigur, cu plăcere. Se pare că problema este că funcția ta se întoarce înainte ca bucla să poată finaliza, așa că…",
   "System": "Sistem",
   "Tailscale": "Tailscale",

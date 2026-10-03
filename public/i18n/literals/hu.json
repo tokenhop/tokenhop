@@ -1823,6 +1823,7 @@
   "Support tokenhop": "tokenhop támogatása",
   "Supports image input": "Támogatja a képbemenetet",
   "Supports reasoning / thinking": "Támogatja a gondolkodást / érvelést",
+  "Supports video input": "Videóbemenet támogatott",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Persze, szívesen segítek. Úgy tűnik, a probléma az, hogy a függvényed visszatér, mielőtt a loop befejeződne, ezért…",
   "System": "Rendszer",
   "Tailscale": "Tailscale",

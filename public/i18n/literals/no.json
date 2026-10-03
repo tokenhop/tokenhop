@@ -1822,6 +1822,7 @@
   "Support tokenhop": "Støtt tokenhop",
   "Supports image input": "Støtter bildeinngang",
   "Supports reasoning / thinking": "Støtter resonnering / tenkning",
+  "Supports video input": "Støtter videoinndata",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Selvfølgelig, hyggelig å hjelpe. Det ser ut til at problemet er at funksjonen din returnerer før løkken rekker å fullføre, så…",
   "System": "Hovedsystem",
   "Tailscale": "Tailscale",
