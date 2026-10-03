@@ -1,6 +1,7 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
 import {
   AI_PROVIDERS,
+  VISIBLE_NO_AUTH_PROVIDERS,
   getProviderAlias,
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
@@ -8,7 +9,11 @@ import {
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { requireClientApiKey } from "@/lib/auth/requireClientApiKey";
-import { hasLiveModelResolver, resolveLiveModels } from "@/lib/providerModels/liveResolvers.js";
+import {
+  hasLiveModelResolver,
+  noAuthConnection,
+  resolveLiveModels,
+} from "@/lib/providerModels/liveResolvers.js";
 import {
   capabilitiesFromServiceKind,
   getCapabilitiesForModel,
@@ -211,6 +216,13 @@ export async function buildModelsList(kindFilter, options = {}) {
   for (const conn of connections) {
     if (!activeConnectionByProvider.has(conn.provider)) {
       activeConnectionByProvider.set(conn.provider, conn);
+    }
+  }
+  // Keyless free providers (opencode) have no connection row; a synthetic one
+  // lets the per-provider loop below serve their live catalog the same way.
+  for (const provider of VISIBLE_NO_AUTH_PROVIDERS) {
+    if (hasLiveModelResolver(provider.id) && !activeConnectionByProvider.has(provider.id)) {
+      activeConnectionByProvider.set(provider.id, noAuthConnection(provider.id));
     }
   }
 

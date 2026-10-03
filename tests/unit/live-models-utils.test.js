@@ -34,6 +34,7 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "ollama",
       "ollama-local",
       "openai",
+      "opencode",
       "opencode-go",
       "openrouter",
       "perplexity-agent",

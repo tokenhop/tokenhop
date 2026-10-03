@@ -310,6 +310,10 @@ describe("model select helpers", () => {
     );
     expect(JSON.parse(key)).toEqual([["live", ["c1", "c3"]]]);
     expect(liveCatalogRequestKey([{ provider: "live" }], ["live"])).toBeNull();
+    // Keyless live providers key on their own id; keyless static ones are skipped.
+    expect(JSON.parse(liveCatalogRequestKey([], ["live"], ["live", "static"]))).toEqual([
+      ["live", ["live"]],
+    ]);
   });
 
   it("reads a model choice value", () => {

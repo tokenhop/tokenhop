@@ -27,6 +27,7 @@ import {
   resolveMistral,
   resolveNebius,
   resolveNvidia,
+  resolveOpencode,
   resolveOpencodeGo,
   resolvePerplexityAgent,
   resolveSiliconFlow,
@@ -290,6 +291,7 @@ export const LIVE_MODEL_RESOLVERS = {
   siliconflow: resolveSiliconFlow,
   hyperbolic: resolveHyperbolic,
   "opencode-go": resolveOpencodeGo,
+  opencode: resolveOpencode,
   ollama: resolveOllama,
   "ollama-local": resolveOllamaLocal,
   codex: resolveCodex,
@@ -354,6 +356,17 @@ export function hasLiveModelResolver(providerId) {
   return Object.hasOwn(LIVE_MODEL_RESOLVERS, providerId);
 }
 
+// Synthetic connection standing in for keyless noAuth providers (same "noauth"
+// id auth.js injects for them), so live plumbing keyed on connections reaches
+// them. Cache sharing follows the resolver key `<provider>:noauth`.
+const NO_AUTH_CONNECTION_ID = "noauth";
+const NO_AUTH_FAILURE_TTL_MS = 15_000;
+export const noAuthConnection = (provider) => ({
+  id: NO_AUTH_CONNECTION_ID,
+  provider,
+  isActive: true,
+});
+
 const cache = new Map();
 
 export function clearLiveModelsCache() {
@@ -363,7 +376,7 @@ export function clearLiveModelsCache() {
 /**
  * Resolve a connection's live model catalog. Never throws: a failure becomes
  * { models: [], warning }. Only non-empty results are cached, so a failed
- * fetch is retried on the next call.
+ * fetch is retried on the next call (keyless connections: after 15s).
  */
 export async function resolveLiveModels(connection, { forceRefresh = false } = {}) {
   const resolver = LIVE_MODEL_RESOLVERS[connection?.provider];
@@ -390,6 +403,10 @@ export async function resolveLiveModels(connection, { forceRefresh = false } = {
   }
   if (result.models.length > 0)
     cache.set(key, { result, expiresAt: Date.now() + LIVE_MODELS_TTL_MS });
+  // Keyless catalogs are fetched on every /v1/models call, so an outage is held
+  // briefly instead of stalling each call on the timeout; ?refresh=1 still retries.
+  else if (connection.id === NO_AUTH_CONNECTION_ID)
+    cache.set(key, { result, expiresAt: Date.now() + NO_AUTH_FAILURE_TTL_MS });
   else cache.delete(key);
   return result;
 }

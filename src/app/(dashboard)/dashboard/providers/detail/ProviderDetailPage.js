@@ -77,6 +77,7 @@ export default function ProviderDetailPage() {
     providerId,
     connections: conn.connections,
     enabled: isLiveCatalog && !isCompatible,
+    noAuth: authFlags.isFreeNoAuth,
   });
   const catalogModels =
     isLiveCatalog && liveModels.length > 0 && !isCompatible

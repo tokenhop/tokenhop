@@ -16,6 +16,12 @@ import {
 } from "../translator/formats/responsesApi.js";
 
 const OPENCODE_UA = "opencode/1.18.31";
+// Public catalog/chat auth the Zen endpoint answers without a key; shared with
+// the live model resolver and the connection test.
+export const OPENCODE_PUBLIC_HEADERS = {
+  Authorization: "Bearer public",
+  "User-Agent": OPENCODE_UA,
+};
 const MAX_SESSION_LENGTH = 256;
 const MAX_TOOL_NAME_LEN = 128;
 const SESSION_HEADER = "x-opencode-session";

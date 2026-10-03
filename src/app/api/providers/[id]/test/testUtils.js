@@ -10,6 +10,7 @@ import {
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
+import { OPENCODE_PUBLIC_HEADERS } from "open-sse/executors/opencode.js";
 import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
@@ -1083,9 +1084,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       case "opencode": {
         const res = await fetchWithConnectionProxy(
           "https://opencode.ai/zen/v1/models",
-          {
-            headers: { Authorization: "Bearer public", "User-Agent": "opencode/1.18.31" },
-          },
+          { headers: OPENCODE_PUBLIC_HEADERS },
           effectiveProxy,
         );
         return { valid: res.ok, error: res.ok ? null : "OpenCode free tier unavailable" };

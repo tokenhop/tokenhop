@@ -71,7 +71,7 @@ async function fetchConnectionModels(connectionId) {
 // fan out inside ONE effect so the hook count never depends on the provider list.
 function useLiveProviderCatalogs(isOpen, activeProviders) {
   const requestKey = useMemo(
-    () => liveCatalogRequestKey(activeProviders, LIVE_MODEL_PROVIDERS),
+    () => liveCatalogRequestKey(activeProviders, LIVE_MODEL_PROVIDERS, NO_AUTH_PROVIDER_IDS),
     [activeProviders],
   );
   const key = isOpen ? requestKey : null;

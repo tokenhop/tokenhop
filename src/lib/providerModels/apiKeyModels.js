@@ -3,8 +3,11 @@
 // Agent, Vercel AI Gateway, Chutes, NVIDIA NIM, Nebius, SiliconFlow,
 // Hyperbolic and OpenCode Go. Each list carries every kind the provider serves, so it is
 // authoritative: no static extras are added back (except NIM's speech models).
+// OpenCode Free is the keyless exception: its Zen catalog is public.
 
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
+import { OPENCODE_PUBLIC_HEADERS } from "open-sse/executors/opencode.js";
+import { FILTERS } from "@/app/api/providers/suggested-models/filters.js";
 import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
 
 const FETCH_TIMEOUT_MS = 10_000;
@@ -262,6 +265,31 @@ export function parseOpencodeGoModels(body, statics = getModelsByProviderId("ope
   const names = new Map(statics.map((m) => [m.id, m.name]));
   const ids = [...new Set(entries(body).map(idOf).filter(Boolean))];
   return ids.map((id) => ({ id, name: names.get(id) || id }));
+}
+
+// ── OpenCode Free ─────────────────────────────────────────────────────────
+// The Zen catalog lists every model, paid and free; the shared "opencode-free"
+// filter keeps the free ones. Ids the registry lacks default to chat/completions.
+export const parseOpencodeFreeModels = (body) => FILTERS["opencode-free"](entries(body));
+
+// No key: the endpoint answers "Bearer public", so this isn't built by resolver().
+// ponytail: skips the noAuth proxy pool chat uses; resolve via resolveConnectionProxyConfig if blocked.
+export async function resolveOpencode() {
+  const response = await fetch("https://opencode.ai/zen/v1/models", {
+    headers: { ...OPENCODE_PUBLIC_HEADERS, Accept: "application/json" },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    const text = (await response.text()).slice(0, 300);
+    return {
+      models: [],
+      warning: `Failed to fetch OpenCode Free models: ${response.status} ${text}`,
+    };
+  }
+  const models = parseOpencodeFreeModels(await response.json());
+  return models.length
+    ? { models }
+    : { models: [], warning: "OpenCode Free returned no live models." };
 }
 
 const resolver = (label, url, parse) => async (connection) => {

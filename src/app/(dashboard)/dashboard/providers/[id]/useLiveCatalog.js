@@ -24,11 +24,15 @@ function toCatalog(key, { models, warning }) {
 /**
  * Live per-connection model catalog for providers flagged `features.liveModels`.
  * Resolves from the first active connection whenever the provider or that connection
- * changes — no polling. The server caches the catalog; `refresh()` bypasses it.
+ * changes — no polling. Keyless (`noAuth`) providers key on the provider id; the
+ * route falls back to the synthetic noauth connection. The server caches the
+ * catalog; `refresh()` bypasses it.
  */
-export function useLiveCatalog({ providerId, connections, enabled }) {
+export function useLiveCatalog({ providerId, connections, enabled, noAuth }) {
   const connectionId = enabled
-    ? (connections || []).find((connection) => connection.isActive !== false)?.id || null
+    ? noAuth
+      ? providerId
+      : (connections || []).find((connection) => connection.isActive !== false)?.id || null
     : null;
   const key = connectionId ? `${providerId}:${connectionId}` : null;
   // Results are tagged with the key they were fetched for, so a switch of provider or
