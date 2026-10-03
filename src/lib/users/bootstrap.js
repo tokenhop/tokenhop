@@ -92,9 +92,10 @@ async function maybePrintSetupToken(owner, settings) {
   if (ids.some((i) => i.provider === "oidc" || i.provider === "saml")) return;
   if (await liveSetupToken()) return;
   const { token, expiresAt } = await mintSetupToken();
-  console.log(
+  // stdout, not console.*: the console-log buffer is readable over the API.
+  process.stdout.write(
     `[users] Owner SSO setup token (single use, expires ${expiresAt}): ${token}\n` +
-      "[users] Sign in once via /api/auth/oidc/start?setupToken=<token> (or /api/auth/saml/start?setupToken=<token>) to link your SSO account to the owner. New token: `tokenhop auth setup-token`.",
+      "[users] Sign in once via /api/auth/oidc/start?setupToken=<token> (or /api/auth/saml/start?setupToken=<token>) to link your SSO account to the owner. New token: `tokenhop auth setup-token`.\n",
   );
 }
 

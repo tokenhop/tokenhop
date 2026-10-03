@@ -61,10 +61,12 @@ afterAll(() => {
 
 describe("switch on", () => {
   let log;
+  let out;
   beforeEach(async () => {
     delete process.env.TOKENHOP_OWNER_EMAIL;
     await load("on");
     log = vi.spyOn(console, "log").mockImplementation(() => {});
+    out = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   });
 
   it("mints one owner with the settings password hash and a Default workspace, idempotently", async () => {
@@ -90,6 +92,30 @@ describe("switch on", () => {
     expect(await db.getMeta("ownerSetupTokenHash")).toBeNull();
   });
 
+  it("aborts without rows when the backup fails, and retries later", async () => {
+    await legacy({});
+    const backup = await import("@/lib/db/backup.js");
+    const spy = vi.spyOn(backup, "backupDbLite").mockImplementation(() => {
+      throw new Error("disk full");
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await b.ensureOwnerBootstrap();
+    spy.mockRestore();
+    expect(count(`SELECT COUNT(*) AS c FROM users`)).toBe(0);
+    expect(globalThis.__tokenhopOwnerBootstrap.failedAt).toBeGreaterThan(0);
+  });
+
+  it("syncs a password change and reset to the owner and bumps sv", async () => {
+    await legacy({});
+    await b.ensureOwnerBootstrap();
+    const owner = await db.getOwnerUnscoped();
+    await s.revokeOwnerSessions(null, { passwordHash: "h2" });
+    expect(await db.getUserPasswordHashUnscoped(owner.id)).toBe("h2");
+    await s.revokeOwnerSessions(null, { passwordHash: null });
+    expect(await db.getUserPasswordHashUnscoped(owner.id)).toBeNull();
+    expect((await db.getOwnerUnscoped()).sessionVersion).toBe(owner.sessionVersion + 2);
+  });
+
   it("keeps the default-password path when no hash is stored", async () => {
     await legacy({});
     await b.ensureOwnerBootstrap();
@@ -105,7 +131,9 @@ describe("switch on", () => {
     await legacy(settings);
     await b.ensureOwnerBootstrap();
     expect(count(`SELECT COUNT(*) AS c FROM identities WHERE provider != 'password'`)).toBe(0);
-    const printed = log.mock.calls
+    // Printed to stdout only, never through console.* (the console-log buffer).
+    expect(log.mock.calls.flat().join("\n")).not.toMatch(/setup token \(/);
+    const printed = out.mock.calls
       .flat()
       .join("\n")
       .match(/setup token \(.*?\): (\S+)/);
