@@ -52,25 +52,44 @@ export async function getOwnerUnscoped() {
   return db.get(`SELECT ${COLS} FROM users WHERE instanceRole = 'owner'`) ?? null;
 }
 
-export async function countActiveUsersUnscoped() {
-  const db = await getAdapter();
-  return db.get(`SELECT COUNT(*) AS n FROM users WHERE status = 'active'`)?.n ?? 0;
-}
-
-// Session validation reads (ADR-0004): cached <= 5 s, dropped by every
-// sessionVersion write in this process, so revocation lands on the next request.
+// Session validation reads (ADR-0004), asked by the guard on every request:
+// cached <= 5 s and dropped by every write in this repo that changes them, so
+// revocation lands on the next request.
+// ponytail: single process. Another process sharing DATA_DIR sees a bump only
+// when its entry expires (<= 5 s); a sessions table or shared invalidation lifts that.
 const SESSION_TTL_MS = 5000;
+const SESSION_COLS = "id, instanceRole, status, sessionVersion";
+const ACTIVE_COUNT = Symbol.for("tokenhop.activeUserCount");
 // On globalThis: Next bundles the proxy and route handlers separately, each with
 // its own copy of this module, and a bump in a route must reach the guard's cache.
 globalThis.__tokenhopSessionCache ??= new Map();
 const sessionCache = globalThis.__tokenhopSessionCache;
 
+function cached(key, read) {
+  const hit = sessionCache.get(key);
+  if (hit && Date.now() - hit.at < SESSION_TTL_MS) return hit.value;
+  const value = read();
+  sessionCache.set(key, { value, at: Date.now() });
+  return value;
+}
+
+function dropSession(...ids) {
+  for (const id of ids) sessionCache.delete(id);
+  sessionCache.delete(ACTIVE_COUNT);
+}
+
+export async function countActiveUsersUnscoped() {
+  const db = await getAdapter();
+  return cached(
+    ACTIVE_COUNT,
+    () => db.get(`SELECT COUNT(*) AS n FROM users WHERE status = 'active'`)?.n ?? 0,
+  );
+}
+
+/** `{ id, instanceRole, status, sessionVersion }` or null. */
 export async function getSessionUserUnscoped(id) {
-  const hit = sessionCache.get(id);
-  if (hit && Date.now() - hit.at < SESSION_TTL_MS) return hit.row;
-  const row = await getUserUnscoped(id);
-  sessionCache.set(id, { row, at: Date.now() });
-  return row;
+  const db = await getAdapter();
+  return cached(id, () => db.get(`SELECT ${SESSION_COLS} FROM users WHERE id = ?`, [id]) ?? null);
 }
 
 export async function bumpSessionVersion(id) {
@@ -79,7 +98,7 @@ export async function bumpSessionVersion(id) {
     `UPDATE users SET sessionVersion = sessionVersion + 1, updatedAt = ? WHERE id = ?`,
     [new Date().toISOString(), id],
   ).changes;
-  sessionCache.delete(id);
+  dropSession(id);
   return changed > 0;
 }
 
@@ -126,6 +145,7 @@ export async function createUserUnscoped({
         `INSERT INTO memberships(workspaceId, userId, role, source, createdAt) VALUES(?, ?, 'owner', 'manual', ?)`,
         [wsId, id, now],
       );
+      dropSession(id);
       return { ...getRow(db, id), personalWorkspaceId: wsId };
     }),
   );
@@ -163,7 +183,7 @@ export async function updateUserUnscoped(id, patch = {}) {
         new Date().toISOString(),
         id,
       ]);
-      sessionCache.delete(id);
+      dropSession(id);
       return getRow(db, id);
     }),
   );
@@ -183,7 +203,7 @@ export async function deleteUserUnscoped(id) {
     for (const { workspaceId } of shared) assertNotLastManager(db, workspaceId, id);
     db.run(`DELETE FROM workspaces WHERE createdBy = ? AND kind = 'personal'`, [id]);
     // identities and memberships cascade.
-    sessionCache.delete(id);
+    dropSession(id);
     return db.run(`DELETE FROM users WHERE id = ?`, [id]).changes > 0;
   });
 }
@@ -207,8 +227,7 @@ export async function transferOwnership(ctx, toUserId) {
     // Demote first: idx_users_owner allows one owner at a time.
     db.run(sql, ["admin", now, from.id]);
     db.run(sql, ["owner", now, to.id]);
-    sessionCache.delete(from.id);
-    sessionCache.delete(to.id);
+    dropSession(from.id, to.id);
     return getRow(db, to.id);
   });
 }

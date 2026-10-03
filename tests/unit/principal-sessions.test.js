@@ -68,8 +68,9 @@ describe("switch on", () => {
       wid: t.a.personal,
       amr: ["pwd"],
     });
-    // Two users: an SSO login can't stand for the owner (YAN-359 links identities).
-    expect(await s.sessionClaims("oidc")).toEqual({});
+    // Two users: an SSO login can't stand for the owner (YAN-359 links identities),
+    // so it is refused rather than minted sub-less.
+    expect(await s.sessionClaims("oidc")).toBeNull();
   });
 
   it("resolves the session principal and honours wid only for own workspaces", async () => {
@@ -89,6 +90,19 @@ describe("switch on", () => {
     await db.bumpSessionVersion(t.a.user.id);
     expect(await s.hasValidSession(req({ token }))).toBe(false);
     expect(await s.resolvePrincipal(req({ token }))).toBeNull();
+  });
+
+  it("picks up an out-of-process sessionVersion change once the cache expires", async () => {
+    const token = await tokenFor(t.a);
+    expect(await s.hasValidSession(req({ token }))).toBe(true);
+    const adapter = await (await import("@/lib/db/driver.js")).getAdapter();
+    adapter.run("UPDATE users SET sessionVersion = sessionVersion + 1 WHERE id = ?", [t.a.user.id]);
+    vi.useFakeTimers({ now: Date.now() + 5001, toFake: ["Date"] });
+    try {
+      expect(await s.hasValidSession(req({ token }))).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("rejects a disabled user's session", async () => {
@@ -133,6 +147,9 @@ describe("switch on", () => {
     expect(await s.resolvePrincipal(req())).toBeNull();
     await db.updateSettings({ requireLogin: false });
     expect(await s.resolvePrincipal(req())).toMatchObject({ userId: t.a.user.id, via: "local" });
+    // Nothing to revoke in single-user mode, so no peer can sign the owner out.
+    const { POST } = await import("@/app/api/auth/logout-all/route.js");
+    expect((await POST()).status).toBe(401);
   });
 
   it("describes the principal without secrets", async () => {
@@ -163,7 +180,7 @@ describe("switch on: route handlers", () => {
 
   it("a password change signs out other devices but re-mints the caller's cookie", async () => {
     const other = await tokenFor(t.a);
-    jar.cookies.set("auth_token", await tokenFor(t.a, { amr: ["oidc"] }));
+    jar.cookies.set("auth_token", await tokenFor(t.a, { amr: ["oidc"], wid: t.shared.id }));
     await s.revokeOwnerSessions(req());
     expect(await s.hasValidSession(req({ token: other }))).toBe(false);
     const mine = jar.cookies.get("auth_token");
@@ -171,7 +188,15 @@ describe("switch on: route handlers", () => {
     expect(await jwt.getDashboardAuthSession(mine)).toMatchObject({
       sub: t.a.user.id,
       amr: ["oidc"],
+      wid: t.shared.id,
     });
+  });
+
+  it("a password reset signs the owner out everywhere", async () => {
+    const token = await tokenFor(t.a);
+    const { POST } = await import("@/app/api/auth/reset-password/route.js");
+    expect((await POST()).status).toBe(200);
+    expect(await s.hasValidSession(req({ token }))).toBe(false);
   });
 
   it("status reports the principal without secrets and drops revoked sessions", async () => {

@@ -16,6 +16,7 @@ import {
   getOwnerUnscoped,
   getSessionUserUnscoped,
   getSettings,
+  getUserUnscoped,
   listWorkspaces,
 } from "@/lib/db/index.js";
 import { isMultiUserEnabled } from "./featureSwitch.js";
@@ -24,21 +25,29 @@ const AUTH_COOKIE = "auth_token";
 
 /** @typedef {import("./principal.js").Principal} Principal */
 
-/**
- * The validated session's user row, `{ legacy: true }` for an accepted
- * pre-users token, or null. Switch off: signature only (`{ legacy: true }`).
- */
-// The switch read hits the DB unless its env override is set. If it fails,
-// stay on today's signature-only path rather than 500 every request.
+// The switch read hits the DB unless its env override is set, and the guard asks
+// on every request carrying a cookie or CLI token. Cache it briefly; if the read
+// fails, stay on today's signature-only path rather than 500 every request.
+// ponytail: 5 s staleness after a DB import flips the stored switch; restart-free
+// flips would need featureSwitch to own an invalidated cache.
+const SWITCH_TTL_MS = 5000;
+let switchCache = { on: false, at: 0 };
 async function multiUserOn() {
+  if (Date.now() - switchCache.at < SWITCH_TTL_MS) return switchCache.on;
   try {
-    return await isMultiUserEnabled();
+    switchCache = { on: await isMultiUserEnabled(), at: Date.now() };
   } catch {
     return false;
   }
+  return switchCache.on;
 }
 
+/**
+ * `{ user, payload }` for a live session, `{ legacy: true }` for an accepted
+ * pre-users token, or null. Switch off: signature only (`{ legacy: true }`).
+ */
 async function validateSessionToken(token) {
+  if (!token) return null;
   if (!(await multiUserOn())) {
     return (await verifyDashboardAuthToken(token)) ? { legacy: true } : null;
   }
@@ -117,7 +126,15 @@ async function principalFor(user, via, wid) {
  * @returns {Promise<Principal|null>}
  */
 export async function resolvePrincipal(request) {
-  if (!(await isMultiUserEnabled())) return null;
+  try {
+    return await resolvePrincipalOrThrow(request);
+  } catch {
+    return null; // same fail-closed posture as the guard
+  }
+}
+
+async function resolvePrincipalOrThrow(request) {
+  if (!(await multiUserOn())) return null;
   const token = request.cookies.get(AUTH_COOKIE)?.value;
   if (token) {
     const session = await validateSessionToken(token);
@@ -140,15 +157,16 @@ export async function getPrincipal() {
 /**
  * Claims a fresh login mints (ADR-0004). Switch off, or before an owner exists
  * (YAN-356 bootstraps it), logins keep today's claim set. SSO logins stand for
- * the owner only while the owner is the sole user; YAN-359 links SSO identities.
+ * the owner only while the owner is the sole user; with more users they get
+ * null (refuse the login: no new `sub`-less token) until YAN-359 links identities.
  * @param {"pwd"|"oidc"|"saml"} method
- * @returns {Promise<object>}
+ * @returns {Promise<object|null>}
  */
 export async function sessionClaims(method) {
   if (!(await isMultiUserEnabled())) return {};
+  if (method !== "pwd" && (await countActiveUsersUnscoped()) > 1) return null;
   const owner = await getOwnerUnscoped();
   if (owner?.status !== "active") return {};
-  if (method !== "pwd" && (await countActiveUsersUnscoped()) > 1) return {};
   const principal = await principalFor(owner, "session");
   return {
     sub: owner.id,
@@ -176,14 +194,19 @@ export async function revokeOwnerSessions(request) {
   // (it carries no sv, so this upgrades it). Keep how they signed in (amr).
   const ownSession = session?.sub ? session.sub === owner.id : await isLiveSession(token);
   if (!ownSession) return;
-  const amr = Array.isArray(session.amr) ? session.amr : ["pwd"];
-  await setDashboardAuthCookie(cookieStore, request, { ...(await sessionClaims("pwd")), amr });
+  const claims = await sessionClaims("pwd");
+  claims.amr = Array.isArray(session.amr) ? session.amr : ["pwd"];
+  // Keep the caller's active workspace if it is still one of the owner's.
+  const ownWorkspaces = (await listWorkspaces({ userId: owner.id })).map((w) => w.id);
+  if (ownWorkspaces.includes(session.wid)) claims.wid = session.wid;
+  await setDashboardAuthCookie(cookieStore, request, claims);
 }
 
 /** Public view of a principal for /api/auth/status: no secrets, no hashes. */
 export async function describePrincipal(principal) {
   if (!principal) return null;
-  const user = await getSessionUserUnscoped(principal.userId);
+  const user = await getUserUnscoped(principal.userId);
+  if (!user) return null;
   const workspaces = await listWorkspaces(principal);
   return {
     user: {

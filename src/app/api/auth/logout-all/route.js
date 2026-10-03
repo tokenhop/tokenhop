@@ -11,7 +11,11 @@ export async function POST() {
   const hidden = await requireMultiUser();
   if (hidden) return hidden;
   const principal = await getPrincipal();
-  if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Only a signed-in session has sessions to revoke; single-user mode (via
+  // "local") would let any peer sign the owner out.
+  if (principal?.via !== "session") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   await bumpSessionVersion(principal.userId);
   clearDashboardAuthCookie(await cookies());
   return NextResponse.json({ success: true }, { headers: { "Cache-Control": "no-store" } });

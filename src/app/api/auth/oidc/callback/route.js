@@ -84,8 +84,14 @@ export async function GET(request) {
     });
 
     clearOidcCookies(cookieStore);
+    const claims = await sessionClaims("oidc");
+    if (!claims) {
+      return NextResponse.redirect(
+        new URL("/login?error=sso_not_linked", getPublicOrigin(request)),
+      );
+    }
     await setDashboardAuthCookie(cookieStore, request, {
-      ...(await sessionClaims("oidc")),
+      ...claims,
       oidc: true,
       oidcSub: payload.sub || null,
       oidcEmail: pickOidcEmail(payload) || null,

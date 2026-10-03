@@ -54,10 +54,12 @@ export async function POST(request) {
     const samlEmail = pickSamlEmail(profile, settings) || null;
     const samlName = pickSamlDisplayName(profile, settings) || "SAML user";
 
+    const claims = await sessionClaims("saml");
+    if (!claims) return NextResponse.redirect(new URL("/login?error=sso_not_linked", origin));
     recordSuccess(ip);
 
     await setDashboardAuthCookie(cookieStore, request, {
-      ...(await sessionClaims("saml")),
+      ...claims,
       saml: true,
       samlEmail,
       samlName,

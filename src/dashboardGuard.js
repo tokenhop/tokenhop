@@ -3,7 +3,7 @@ import { getSettings, validateApiKey } from "@/lib/localDb";
 import { resolveFlagSetting, resolveStartPage } from "@/lib/settingsFlags";
 import { extractClientApiKey } from "@/lib/auth/clientApiKey";
 import { isLoopbackHostname, isLoopbackPeer } from "@/lib/auth/trustedPeer";
-import { cliTokenAccepted as hasValidCliToken, hasValidSession } from "@/lib/users/session";
+import { cliTokenAccepted, hasValidSession } from "@/lib/users/session";
 import { LOCAL_ONLY_CODE } from "@/shared/utils/localOnly";
 
 // Public API paths — no auth required (LLM API has its own key auth inside handler).
@@ -120,19 +120,15 @@ async function hasValidApiKey(request) {
 
 async function canAccessPublicLlmApi(request) {
   if (isLocalRequest(request)) return true;
-  if (await hasValidCliToken(request)) return true;
+  if (await cliTokenAccepted(request)) return true;
   return await hasValidApiKey(request);
 }
 
 async function canAccessLocalOnlyRoute(request) {
-  if (await hasValidCliToken(request)) return true;
+  if (await cliTokenAccepted(request)) return true;
   // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + auth (JWT or requireLogin=false)
   if (isLocalRequest(request) && (await isAuthenticated(request))) return true;
   return false;
-}
-
-async function hasValidToken(request) {
-  return await hasValidSession(request);
 }
 
 // Read settings directly from DB to avoid self-fetch deadlock in proxy
@@ -145,7 +141,7 @@ async function loadSettings() {
 }
 
 async function isAuthenticated(request) {
-  if (await hasValidToken(request)) return true;
+  if (await hasValidSession(request)) return true;
   const settings = await loadSettings();
   if (settings && settings.requireLogin === false) return true;
   return false;
@@ -194,7 +190,7 @@ export async function proxy(request) {
 
   // Always protected - require valid JWT or local CLI token (machineId-based)
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
-    if ((await hasValidCliToken(request)) || (await hasValidToken(request)))
+    if ((await cliTokenAccepted(request)) || (await hasValidSession(request)))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -207,7 +203,7 @@ export async function proxy(request) {
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();
-    if ((await hasValidCliToken(request)) || (await isAuthenticated(request)))
+    if ((await cliTokenAccepted(request)) || (await isAuthenticated(request)))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -258,7 +254,7 @@ export async function proxy(request) {
     // Verify JWT token
     const token = request.cookies.get("auth_token")?.value;
     if (token) {
-      if (await hasValidToken(request)) {
+      if (await hasValidSession(request)) {
         // YAN-312: the Translator debug page honors the resolved flag.
         if (isTranslatorPath(pathname) && !translatorEnabled) {
           return NextResponse.redirect(new URL("/dashboard", request.url));
