@@ -40,7 +40,9 @@ function upsert(db, n) {
     `INSERT INTO providerNodes(id, type, name, data, createdAt, updatedAt, workspaceId, createdByUserId)
      VALUES(?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
-       type=excluded.type, name=excluded.name, data=excluded.data, updatedAt=excluded.updatedAt`,
+       type=excluded.type, name=excluded.name, data=excluded.data, updatedAt=excluded.updatedAt,
+       workspaceId=COALESCE(workspaceId, excluded.workspaceId),
+       createdByUserId=COALESCE(createdByUserId, excluded.createdByUserId)`,
     [r.id, r.type, r.name, r.data, r.createdAt, r.updatedAt, r.workspaceId, r.createdByUserId],
   );
 }

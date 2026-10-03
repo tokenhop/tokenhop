@@ -18,6 +18,8 @@ export async function POST(request, { params }) {
   try {
     const { id } = await params;
     // YAN-361: the row must be usable by the principal before the test writes to it.
+    // testSingleConnection re-reads it unscoped: safe while ownership is immutable
+    // (moves, YAN-701, must pass the loaded row instead).
     const loaded = await loadConnection("workspace.connections.use", id);
     if (loaded instanceof Response) return loaded;
     const result = await testSingleConnection(id);

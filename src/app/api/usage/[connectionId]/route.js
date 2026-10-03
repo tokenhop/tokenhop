@@ -2,6 +2,8 @@
 import "open-sse/index.js";
 
 import { getProviderConnectionByIdUnscoped, updateProviderConnectionUnscoped } from "@/lib/localDb";
+import { getConnection } from "@/lib/db/index.js";
+import { loadScoped } from "@/lib/users/workspaceScope.js";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
@@ -136,11 +138,17 @@ export async function GET(request, { params }) {
     const { connectionId } = await params;
     const force = new URL(request.url).searchParams.get("force") === "1";
 
-    // Get connection from database
-    connection = await getProviderConnectionByIdUnscoped(connectionId);
-    if (!connection) {
-      return Response.json({ error: "Connection not found" }, { status: 404 });
-    }
+    // YAN-361: switch on, only a connection in the principal's workspaces.
+    // `force=1` refreshes (rotates) the row's tokens, so it needs `use`.
+    const loaded = await loadScoped(
+      force ? "workspace.connections.use" : "workspace.usage.read",
+      connectionId,
+      getConnection,
+      getProviderConnectionByIdUnscoped,
+      "Connection not found",
+    );
+    if (loaded instanceof Response) return loaded;
+    connection = loaded.row;
 
     // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/kiro/...)
     // Kiro's headless api-key flow persists authType "api_key" (underscore) while

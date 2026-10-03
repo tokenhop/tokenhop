@@ -178,8 +178,8 @@ export const ROUTE_POLICY = {
   "/api/keys/[id]": { cap: "workspace.keys.manage" },
 
   // Usage and dashboard summaries.
-  "/api/usage/[connectionId]": { cap: USAGE },
-  "/api/usage/[connectionId]/codex-reset-credits": read(USAGE, CONN),
+  "/api/usage/[connectionId]": scoped({ cap: USAGE }),
+  "/api/usage/[connectionId]/codex-reset-credits": scoped(read(USAGE, CONN)),
   "/api/usage/chart": { cap: USAGE },
   "/api/usage/history": { cap: USAGE },
   "/api/usage/last-activity": { cap: USAGE },

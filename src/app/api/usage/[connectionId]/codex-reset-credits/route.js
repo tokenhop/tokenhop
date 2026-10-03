@@ -2,6 +2,8 @@
 import "open-sse/index.js";
 
 import { getProviderConnectionByIdUnscoped } from "@/lib/localDb";
+import { getConnection } from "@/lib/db/index.js";
+import { loadScoped } from "@/lib/users/workspaceScope.js";
 import {
   consumeCodexRateLimitResetCredit,
   getCodexRateLimitResetCredits,
@@ -56,11 +58,17 @@ function getResponseForConsumeResult(result, redeemRequestId) {
   );
 }
 
-async function getCodexConnection(connectionId) {
-  const connection = await getProviderConnectionByIdUnscoped(connectionId);
-  if (!connection) {
-    return { response: Response.json({ error: "Connection not found" }, { status: 404 }) };
-  }
+// YAN-361: switch on, only a connection the principal may read (GET) or manage (POST).
+async function getCodexConnection(connectionId, capability) {
+  const loaded = await loadScoped(
+    capability,
+    connectionId,
+    getConnection,
+    getProviderConnectionByIdUnscoped,
+    "Connection not found",
+  );
+  if (loaded instanceof Response) return { response: loaded };
+  const connection = loaded.row;
 
   if (connection.provider !== "codex") {
     return {
@@ -114,7 +122,7 @@ export async function GET(_request, { params }) {
   let connection;
   try {
     const { connectionId } = await params;
-    const resolved = await getCodexConnection(connectionId);
+    const resolved = await getCodexConnection(connectionId, "workspace.usage.read");
     if (resolved.response) return resolved.response;
     ({ connection } = resolved);
     const { isOAuth, proxyOptions } = resolved;
@@ -155,7 +163,7 @@ export async function POST(request, { params }) {
   let connection;
   try {
     const { connectionId } = await params;
-    const resolved = await getCodexConnection(connectionId);
+    const resolved = await getCodexConnection(connectionId, "workspace.connections.manage");
     if (resolved.response) return resolved.response;
     ({ connection } = resolved);
     const { isOAuth, proxyOptions } = resolved;

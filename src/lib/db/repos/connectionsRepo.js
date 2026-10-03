@@ -109,7 +109,9 @@ function upsert(db, c) {
      ON CONFLICT(id) DO UPDATE SET
        provider=excluded.provider, authType=excluded.authType, name=excluded.name,
        email=excluded.email, priority=excluded.priority, isActive=excluded.isActive,
-       data=excluded.data, updatedAt=excluded.updatedAt`,
+       data=excluded.data, updatedAt=excluded.updatedAt,
+       workspaceId=COALESCE(workspaceId, excluded.workspaceId),
+       createdByUserId=COALESCE(createdByUserId, excluded.createdByUserId)`,
     [
       r.id,
       r.provider,

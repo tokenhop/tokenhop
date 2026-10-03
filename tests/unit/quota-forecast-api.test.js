@@ -10,6 +10,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock("open-sse/index.js", () => ({}), { virtual: true });
 vi.mock("@/lib/db/index.js", () => ({
   getProviderConnectionsUnscoped: mocks.getProviderConnectionsUnscoped,
+  getConnection: vi.fn(),
+}));
+// Single-user scope (YAN-361): the route loads the row unscoped.
+vi.mock("@/lib/users/workspaceScope.js", () => ({
+  loadScoped: async (_cap, id, _scoped, unscoped) => ({ scope: null, row: await unscoped(id) }),
 }));
 vi.mock("@/lib/localDb", () => ({
   getProviderConnectionByIdUnscoped: mocks.getProviderConnectionByIdUnscoped,

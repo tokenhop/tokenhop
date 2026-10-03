@@ -176,6 +176,14 @@ describe("switch on: two users", () => {
     expect((await as(b, item.DELETE, `/api/providers/${c.id}`, del)).status).toBe(404);
     const tst = { method: "POST", params: p };
     expect((await as(b, test.POST, `/api/providers/${c.id}/test`, tst)).status).toBe(404);
+    const usage = await import("@/app/api/usage/[connectionId]/route.js");
+    const reset = await import("@/app/api/usage/[connectionId]/codex-reset-credits/route.js");
+    const up = { params: { connectionId: c.id } };
+    expect((await as(b, usage.GET, `/api/usage/${c.id}?force=1`, up)).status).toBe(404);
+    const rp = { method: "POST", params: { connectionId: c.id } };
+    expect((await as(b, reset.POST, `/api/usage/${c.id}/codex-reset-credits`, rp)).status).toBe(
+      404,
+    );
     const np = { method: "DELETE", params: { id: n.id } };
     expect((await as(b, nodes.DELETE, `/api/provider-nodes/${n.id}`, np)).status).toBe(404);
     expect(await db.getNode(a.ctx, n.id)).not.toBeNull();
@@ -196,7 +204,7 @@ describe("switch on: two users", () => {
     ).json();
     expect(one.connection.apiKey).toBeUndefined();
     expect(one.connection.name).toBe("team");
-  });
+  }, 30_000); // cold imports of the route modules (open-sse) under a loaded run
 });
 
 describe("switch off: single-user regression", () => {
@@ -213,5 +221,5 @@ describe("switch off: single-user regression", () => {
     const all = await (await callRoute(list.GET, "/api/providers")).json();
     expect(all.connections.map((c) => c.id)).toContain(connection.id);
     expect(all.connections.every((c) => c.apiKey === undefined)).toBe(true);
-  });
+  }, 30_000);
 });
