@@ -1,12 +1,14 @@
 // Live catalogs for OpenAI-style API-key providers (GET …/models, Bearer key):
-// DeepSeek, Mistral and Groq. Each list carries every kind the provider
-// serves, so it is authoritative: no static extras are added back.
+// DeepSeek, Mistral, Groq, Together AI, Fireworks AI and Cerebras. Each list
+// carries every kind the provider serves, so it is authoritative: no static
+// extras are added back.
 
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 
 const FETCH_TIMEOUT_MS = 10_000;
 const positive = (value) => (Number.isFinite(value) && value > 0 ? value : undefined);
-const entries = (body) => (Array.isArray(body?.data) ? body.data : []);
+// Together (and some Fireworks responses) return a bare array, not { data }.
+const entries = (body) => (Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : []);
 const idOf = (entry) => (typeof entry?.id === "string" ? entry.id.trim() : "");
 
 // ── DeepSeek ──────────────────────────────────────────────────────────────
@@ -78,6 +80,62 @@ export function parseGroqModels(body) {
   return models;
 }
 
+// ── Together AI ───────────────────────────────────────────────────────────
+// Only chat and embeddings are routed here; image, rerank and moderation are
+// dropped. Rows priced 0/0 are dedicated-endpoint models a serverless key
+// can't call, except the explicit "-Free" serverless ids.
+const TOGETHER_KINDS = { chat: "llm", language: "llm", code: "llm", embedding: "embedding" };
+export function parseTogetherModels(body) {
+  const seen = new Set();
+  const models = [];
+  for (const entry of entries(body)) {
+    const id = idOf(entry);
+    const kind = TOGETHER_KINDS[entry?.type];
+    if (!id || !kind || seen.has(id)) continue;
+    const { input, output } = entry.pricing || {};
+    if (input === 0 && output === 0 && !/-free$/i.test(id)) continue;
+    seen.add(id);
+    models.push({
+      id,
+      name: entry.display_name || id,
+      contextLength: positive(entry.context_length),
+      ...(kind !== "llm" ? { kind } : {}),
+    });
+  }
+  return models;
+}
+
+// ── Fireworks AI ──────────────────────────────────────────────────────────
+// `kind` decides: embedding models also report supports_chat. Rerankers share
+// EMBEDDING_MODEL and have no route here; FLUMINA (image) models neither.
+export function parseFireworksModels(body) {
+  const seen = new Set();
+  const models = [];
+  for (const entry of entries(body)) {
+    const id = idOf(entry);
+    if (!id || seen.has(id)) continue;
+    const embedding = entry.kind === "EMBEDDING_MODEL";
+    if (embedding ? /rerank/i.test(id) : !entry.supports_chat) continue;
+    if (/^FLUMINA/.test(entry.kind || "")) continue;
+    seen.add(id);
+    models.push({
+      id,
+      name: id.split("/").pop(),
+      contextLength: positive(entry.context_length),
+      ...(embedding ? { kind: "embedding" } : {}),
+    });
+  }
+  return models;
+}
+
+// ── Cerebras ──────────────────────────────────────────────────────────────
+// Ids only, all chat; the registry's display name is kept when known.
+export function parseCerebrasModels(body, statics = getModelsByProviderId("cerebras")) {
+  const names = new Map(statics.map((m) => [m.id, m.name]));
+  const ids = [...new Set(entries(body).map(idOf).filter(Boolean))];
+  return ids.map((id) => ({ id, name: names.get(id) || id }));
+}
+
 const resolver = (label, url, parse) => async (connection) => {
   if (!connection.apiKey) return { models: [], warning: "No valid token found" };
   const response = await fetch(url, {
@@ -108,4 +166,19 @@ export const resolveGroq = resolver(
   "Groq",
   "https://api.groq.com/openai/v1/models",
   parseGroqModels,
+);
+export const resolveTogether = resolver(
+  "Together AI",
+  "https://api.together.xyz/v1/models",
+  parseTogetherModels,
+);
+export const resolveFireworks = resolver(
+  "Fireworks AI",
+  "https://api.fireworks.ai/inference/v1/models",
+  parseFireworksModels,
+);
+export const resolveCerebras = resolver(
+  "Cerebras",
+  "https://api.cerebras.ai/v1/models",
+  parseCerebrasModels,
 );
