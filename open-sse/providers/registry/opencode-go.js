@@ -111,5 +111,6 @@ export default {
   features: {
     usage: true,
     usageApikey: true,
+    liveModels: true,
   },
 };

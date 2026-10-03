@@ -9,7 +9,11 @@ import {
   modelSupportedFormats,
   normalizeModelId,
 } from "../providers/models/schema.js";
-import { CODEX_REVIEW_SUFFIX, isMuseSparkModel } from "../providers/models/helpers.js";
+import {
+  CODEX_REVIEW_SUFFIX,
+  inferOpencodeGoModel,
+  isMuseSparkModel,
+} from "../providers/models/helpers.js";
 import { FORMATS } from "../translator/formats.js";
 export { PROVIDER_MODELS };
 
@@ -71,7 +75,7 @@ export function getModelTargetFormat(aliasOrId, modelId) {
   }
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return null;
-  return modelTargetFormat(findModel(models, modelId, aliasOrId));
+  return modelTargetFormat(findModelOrInferred(models, modelId, aliasOrId));
 }
 
 // Declared upstream formats for a model (registry `supportedFormats`). Drives the
@@ -79,7 +83,15 @@ export function getModelTargetFormat(aliasOrId, modelId) {
 export function getModelSupportedFormats(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return null;
-  return modelSupportedFormats(findModel(models, modelId, aliasOrId));
+  return modelSupportedFormats(findModelOrInferred(models, modelId, aliasOrId));
+}
+
+// OpenCode Go's live catalog lists ids the registry may not know yet; give
+// those the documented endpoint for their vendor instead of no guard at all.
+function findModelOrInferred(models, modelId, aliasOrId) {
+  const found = findModel(models, modelId, aliasOrId);
+  if (found || aliasOrId !== "opencode-go") return found;
+  return inferOpencodeGoModel(modelId);
 }
 
 export function getModelType(aliasOrId, modelId) {
