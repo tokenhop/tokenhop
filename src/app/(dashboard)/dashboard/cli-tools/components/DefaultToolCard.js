@@ -16,7 +16,7 @@ import { getToolBrand } from "../lib/toolStatus";
 import { ACTIVE } from "@/shared/brand";
 import { API_KEY_PLACEHOLDER } from "@/lib/cliToolConfigs/shared";
 
-const NOTE_VARIANT = { warning: "warn", cloudCheck: "err", info: "info" };
+const NOTE_VARIANT = { warning: "warn", cloudCheck: "err", error: "err", info: "info" };
 
 /**
  * Guide-style setup panel for tools without a config-file writer
@@ -37,6 +37,7 @@ export default function DefaultToolCard({
   tunnelPublicUrl = "",
   tailscaleEnabled = false,
   tailscaleUrl = "",
+  modelAliases = {},
 }) {
   const [showModelModal, setShowModelModal] = useState(false);
   const { copied, error, copy } = useCopyToClipboard();
@@ -83,17 +84,19 @@ export default function DefaultToolCard({
       .replace(/\{\{model\}\}/g, setup.model || "provider/model-id");
   };
 
+  // Tailscale here is Funnel (public *.ts.net), so it reaches tools that call
+  // the gateway from their own servers (Cursor) just like Tunnel does.
+  const hasExternalUrl = cloudEnabled || tunnelEnabled || (tailscaleEnabled && !!tailscaleUrl);
+
   const canShowGuide = () => {
-    if (tool.requiresExternalUrl && !cloudEnabled && !tunnelEnabled) return false;
+    if (tool.requiresExternalUrl && !hasExternalUrl) return false;
     if (tool.requiresCloud && !cloudEnabled) return false;
     return true;
   };
 
   const brand = getToolBrand(tool);
 
-  const notes = (tool.notes || []).filter(
-    (n) => !(n.type === "cloudCheck" && (cloudEnabled || tunnelEnabled)),
-  );
+  const notes = (tool.notes || []).filter((n) => !(n.type === "cloudCheck" && hasExternalUrl));
 
   return (
     <SetupScaffold tool={tool} hideActions checking={!setup.loaded} {...setup.scaffoldProps("")}>
@@ -102,6 +105,17 @@ export default function DefaultToolCard({
           {note.text}
         </Callout>
       ))}
+
+      {tool.docsUrl && (
+        <a
+          href={tool.docsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-fit text-[13px] text-coral-ink underline hover:text-coral"
+        >
+          {tool.name} docs
+        </a>
+      )}
 
       {usesBaseUrl && (
         <EndpointSegmentedPicker
@@ -203,6 +217,7 @@ export default function DefaultToolCard({
           }}
           selectedModel={setup.model}
           activeProviders={activeProviders}
+          modelAliases={modelAliases}
           title="Select model"
         />
       )}
@@ -217,6 +232,7 @@ DefaultToolCard.propTypes = {
     color: PropTypes.string,
     notes: PropTypes.array,
     guideSteps: PropTypes.array,
+    docsUrl: PropTypes.string,
     codeBlock: PropTypes.object,
     defaultModels: PropTypes.array,
     requiresExternalUrl: PropTypes.bool,
@@ -231,4 +247,5 @@ DefaultToolCard.propTypes = {
   tunnelPublicUrl: PropTypes.string,
   tailscaleEnabled: PropTypes.bool,
   tailscaleUrl: PropTypes.string,
+  modelAliases: PropTypes.object,
 };
