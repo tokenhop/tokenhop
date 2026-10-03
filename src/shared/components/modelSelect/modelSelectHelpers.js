@@ -96,13 +96,19 @@ export function modelChoiceValue(model) {
   return model?.value || model?.name || model;
 }
 
-/** JSON key of `{provider: connectionIds}` for live-catalog providers, or null. */
-export function liveCatalogRequestKey(activeProviders, liveModelProviders) {
+/**
+ * JSON key of `{provider: connectionIds}` for live-catalog providers, or null.
+ * Keyless providers have no row; their provider id doubles as the connection id.
+ */
+export function liveCatalogRequestKey(activeProviders, liveModelProviders, noAuthIds = []) {
   const byProvider = {};
   for (const provider of activeProviders) {
     if (!provider?.id || !liveModelProviders.includes(provider.provider)) continue;
     if (!byProvider[provider.provider]) byProvider[provider.provider] = [];
     byProvider[provider.provider].push(provider.id);
+  }
+  for (const id of noAuthIds) {
+    if (liveModelProviders.includes(id) && !byProvider[id]) byProvider[id] = [id];
   }
   const entries = Object.entries(byProvider);
   return entries.length > 0 ? JSON.stringify(entries) : null;

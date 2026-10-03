@@ -27,8 +27,8 @@ beforeEach(async () => {
 
 afterEach(() => vi.unstubAllGlobals());
 
-const dashboardModels = async (id = "opencode") => {
-  const res = await GET(new Request(`http://localhost/api/providers/${id}/models`), {
+const dashboardModels = async (id = "opencode", query = "") => {
+  const res = await GET(new Request(`http://localhost/api/providers/${id}/models${query}`), {
     params: Promise.resolve({ id }),
   });
   return { status: res.status, body: await res.json() };
@@ -72,7 +72,7 @@ describe("OpenCode Free live catalog", () => {
     expect(ids).not.toContain("oc/gpt-5");
   });
 
-  it("falls back to the static list on failure and does not cache it", async () => {
+  it("falls back to the static list on failure, holds it briefly, and refresh retries", async () => {
     respond = () => new Response("overloaded", { status: 503 });
 
     const { body } = await dashboardModels();
@@ -82,9 +82,11 @@ describe("OpenCode Free live catalog", () => {
     await connectUnrelated();
     const ids = (await buildModelsList(["llm"])).map((m) => m.id);
     expect(ids).toContain("oc/union-alpha");
+    // The outage is held: /v1/models didn't refetch.
+    expect(calls).toHaveLength(1);
 
     respond = () => Response.json({ data: [{ id: "space-bunny-free" }] });
-    const retry = await dashboardModels();
+    const retry = await dashboardModels("opencode", "?refresh=1");
     expect(retry.body.models).toEqual([{ id: "space-bunny-free", name: "space-bunny-free" }]);
   });
 
