@@ -36,4 +36,5 @@ export default {
     { id: "MiniMaxAI/MiniMax-M2.5", name: "MiniMax M2.5" },
     { id: "inclusionAI/Ling-flash-2.0", name: "Ling Flash 2.0" },
   ],
+  features: { liveModels: true },
 };

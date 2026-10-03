@@ -1,10 +1,11 @@
 // Live catalogs for OpenAI-style API-key providers (GET …/models, Bearer key):
 // DeepSeek, Mistral, Groq, Together AI, Fireworks AI, Cerebras, Perplexity
-// Agent, Vercel AI Gateway and Chutes. Each list
-// carries every kind the provider serves, so it is authoritative: no static
-// extras are added back.
+// Agent, Vercel AI Gateway, Chutes, NVIDIA NIM, Nebius, SiliconFlow and
+// Hyperbolic. Each list carries every kind the provider serves, so it is
+// authoritative: no static extras are added back (except NIM's speech models).
 
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
+import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
 
 const FETCH_TIMEOUT_MS = 10_000;
 const positive = (value) => (Number.isFinite(value) && value > 0 ? value : undefined);
@@ -198,6 +199,61 @@ export function parseChutesModels(body) {
   return models;
 }
 
+// ── NVIDIA NIM ────────────────────────────────────────────────────────────
+// Ids only, no kind field: classified by id. Embedders keep their kind; safety,
+// reward, parsing, detection and CLIP models have no route here. Static TTS/STT
+// rows aren't listed upstream and are added back.
+const NIM_UNROUTED =
+  /(^|[-/])(nemo|nv)?(guard|safety|topic-control|reward|parse|detector|clip|deplot)(\b|$)/i;
+export function parseNvidiaModels(body, statics = getModelsByProviderId("nvidia")) {
+  const names = new Map(statics.map((m) => [m.id, m.name]));
+  const ids = [...new Set(entries(body).map(idOf).filter(Boolean))];
+  const models = ids
+    .filter((id) => !NIM_UNROUTED.test(id))
+    .map((id) => ({
+      id,
+      name: names.get(id) || id,
+      ...(/embed/i.test(id) ? { kind: "embedding" } : {}),
+    }));
+  return models.length ? withStaticNonChatModels("nvidia", models) : models;
+}
+
+// ── Nebius ────────────────────────────────────────────────────────────────
+// Ids only. Embedders keep their kind; image and guard models have no route.
+export function parseNebiusModels(body) {
+  const ids = [...new Set(entries(body).map(idOf).filter(Boolean))];
+  return ids
+    .filter((id) => !/flux|sdxl|stable-diffusion|kandinsky|video|guard/i.test(id))
+    .map((id) => ({ id, name: id, ...(/embed/i.test(id) ? { kind: "embedding" } : {}) }));
+}
+
+// ── SiliconFlow ───────────────────────────────────────────────────────────
+// Fetched with sub_type=chat, so every row is chat; registry names kept.
+export function parseSiliconFlowModels(body, statics = getModelsByProviderId("siliconflow")) {
+  const names = new Map(statics.map((m) => [m.id, m.name]));
+  const ids = [...new Set(entries(body).map(idOf).filter(Boolean))];
+  return ids.map((id) => ({ id, name: names.get(id) || id }));
+}
+
+// ── Hyperbolic ────────────────────────────────────────────────────────────
+// Image and audio rows report supports_chat: false and have no route here.
+export function parseHyperbolicModels(body) {
+  const seen = new Set();
+  const models = [];
+  for (const entry of entries(body)) {
+    const id = idOf(entry);
+    if (!id || seen.has(id) || entry.supports_chat === false) continue;
+    seen.add(id);
+    models.push({
+      id,
+      name: id,
+      contextLength: positive(entry.context_length),
+      ...(entry.supports_image_input ? { inputModalities: ["text", "image"] } : {}),
+    });
+  }
+  return models;
+}
+
 const resolver = (label, url, parse) => async (connection) => {
   if (!connection.apiKey) return { models: [], warning: "No valid token found" };
   const response = await fetch(url, {
@@ -258,4 +314,24 @@ export const resolveChutes = resolver(
   "Chutes",
   "https://llm.chutes.ai/v1/models",
   parseChutesModels,
+);
+export const resolveNvidia = resolver(
+  "NVIDIA NIM",
+  "https://integrate.api.nvidia.com/v1/models",
+  parseNvidiaModels,
+);
+export const resolveNebius = resolver(
+  "Nebius",
+  "https://api.studio.nebius.ai/v1/models",
+  parseNebiusModels,
+);
+export const resolveSiliconFlow = resolver(
+  "SiliconFlow",
+  "https://api.siliconflow.com/v1/models?sub_type=chat",
+  parseSiliconFlowModels,
+);
+export const resolveHyperbolic = resolver(
+  "Hyperbolic",
+  "https://api.hyperbolic.xyz/v1/models",
+  parseHyperbolicModels,
 );

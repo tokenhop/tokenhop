@@ -30,4 +30,5 @@ export default {
     { id: "Qwen/Qwen2.5-Coder-32B-Instruct", name: "Qwen 2.5 Coder 32B" },
     { id: "NousResearch/Hermes-3-Llama-3.1-70B", name: "Hermes 3 70B" },
   ],
+  features: { liveModels: true },
 };
