@@ -96,6 +96,9 @@ describe("resolver registry", () => {
       "xai",
       "openai",
       "openrouter",
+      "deepseek",
+      "mistral",
+      "groq",
     ]) {
       expect(hasLiveModelResolver(id)).toBe(true);
     }

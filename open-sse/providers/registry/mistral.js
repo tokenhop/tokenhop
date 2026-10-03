@@ -32,4 +32,5 @@ export default {
     authType: "apikey",
     authHeader: "bearer",
   },
+  features: { liveModels: true },
 };

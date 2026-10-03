@@ -17,6 +17,7 @@ import {
 import { resolveXai } from "@/lib/providerModels/xaiModels.js";
 import { resolveOpenAI } from "@/lib/providerModels/openaiModels.js";
 import { resolveOpenRouter } from "@/lib/providerModels/openrouterModels.js";
+import { resolveDeepSeek, resolveGroq, resolveMistral } from "@/lib/providerModels/apiKeyModels.js";
 import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
 import { ANTHROPIC_API_VERSION } from "open-sse/providers/shared.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
@@ -259,6 +260,9 @@ export const LIVE_MODEL_RESOLVERS = {
   xai: resolveXai,
   openai: resolveOpenAI,
   openrouter: resolveOpenRouter,
+  deepseek: resolveDeepSeek,
+  mistral: resolveMistral,
+  groq: resolveGroq,
   codex: resolveCodex,
   zed: resolveZed,
   kiro: resolveKiro,
