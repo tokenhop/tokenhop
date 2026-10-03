@@ -22,25 +22,27 @@ export function parseDeepSeekModels(body, statics = getModelsByProviderId("deeps
 }
 
 // ── Mistral ───────────────────────────────────────────────────────────────
-// Deprecated entries are dropped; an alias group (dated id + `-latest`) is
-// listed once, under the `-latest` id the registry uses. OCR, moderation and
-// classifier models have no route here.
-export function parseMistralModels(body) {
+// Models past their deprecation date are dropped (an announced date still
+// serves). An alias group (dated id + `-latest`) is listed once, under the
+// `-latest` id the registry uses; undated ids keep their own name. OCR,
+// moderation and classifier models have no route here.
+export function parseMistralModels(body, now = Date.now()) {
   const seen = new Set();
   const models = [];
   for (const entry of entries(body)) {
     const id = idOf(entry);
-    if (!id || entry.deprecation) continue;
-    const names = [id, ...(Array.isArray(entry.aliases) ? entry.aliases : [])];
-    const primary = names.find((n) => n.endsWith("-latest")) || id;
-    if (names.some((n) => seen.has(n))) continue;
-    for (const n of names) seen.add(n);
+    if (!id || Date.parse(entry.deprecation) <= now) continue;
     const kind = /embed/i.test(id)
       ? "embedding"
       : entry.capabilities?.completion_chat
         ? "llm"
         : null;
     if (!kind) continue;
+    const names = [id, ...(Array.isArray(entry.aliases) ? entry.aliases : [])];
+    if (names.some((n) => seen.has(n))) continue;
+    for (const n of names) seen.add(n);
+    const latest = names.find((n) => n.endsWith("-latest"));
+    const primary = /-\d{4,}$/.test(id) && latest ? latest : id;
     models.push({
       id: primary,
       name: entry.name || primary,
@@ -61,7 +63,7 @@ export function parseGroqModels(body) {
     const id = idOf(entry);
     if (!id || seen.has(id) || entry.active === false) continue;
     seen.add(id);
-    if (/tts|orpheus/i.test(id)) continue;
+    if (/(^|[-/])tts\b|orpheus/i.test(id)) continue;
     if (/whisper/i.test(id)) {
       models.push({ id, name: id, kind: "stt" });
       continue;
@@ -84,7 +86,8 @@ const resolver = (label, url, parse) => async (connection) => {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!response.ok) {
-    const text = (await response.text()).slice(0, 300);
+    // The warning reaches the dashboard: never echo the key back.
+    const text = (await response.text()).replaceAll(connection.apiKey, "***").slice(0, 300);
     return { models: [], warning: `Failed to fetch ${label} models: ${response.status} ${text}` };
   }
   const models = parse(await response.json());

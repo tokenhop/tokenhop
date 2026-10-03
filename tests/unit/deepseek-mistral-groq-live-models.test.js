@@ -64,6 +64,22 @@ describe("parsers", () => {
         },
         { id: "mistral-large-latest", aliases: ["mistral-large-2512"], capabilities: {} },
         {
+          id: "codestral-latest",
+          aliases: ["codestral-2508"],
+          capabilities: { completion_chat: true },
+        },
+        { id: "codestral-2508", aliases: ["codestral-latest"], capabilities: {} },
+        {
+          id: "open-mistral-nemo",
+          aliases: ["mistral-tiny-latest"],
+          capabilities: { completion_chat: true },
+        },
+        {
+          id: "mistral-medium-2505",
+          deprecation: "2999-01-01T00:00:00Z",
+          capabilities: { completion_chat: true },
+        },
+        {
           id: "mistral-small-2402",
           deprecation: "2025-01-01",
           capabilities: { completion_chat: true },
@@ -73,21 +89,15 @@ describe("parsers", () => {
         { id: "mistral-moderation-latest", capabilities: { moderation: true } },
       ],
     };
-    expect(parseMistralModels(body)).toEqual([
-      {
-        id: "mistral-large-latest",
-        name: "mistral-large-latest",
-        contextLength: 256000,
-        description: undefined,
-      },
-      {
-        id: "mistral-embed",
-        name: "mistral-embed",
-        contextLength: undefined,
-        description: undefined,
-        kind: "embedding",
-      },
+    const parsed = parseMistralModels(body);
+    expect(parsed.map((m) => [m.id, m.kind])).toEqual([
+      ["mistral-large-latest", undefined],
+      ["codestral-latest", undefined],
+      ["open-mistral-nemo", undefined],
+      ["mistral-medium-2505", undefined],
+      ["mistral-embed", "embedding"],
     ]);
+    expect(parsed[0].contextLength).toBe(256000);
   });
 
   it("groq drops inactive and TTS models, classifies whisper as stt, maps limits", () => {

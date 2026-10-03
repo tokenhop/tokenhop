@@ -43,5 +43,10 @@ All three are OpenAI-style `GET …/models` with `Authorization: Bearer <key>`.
 
 ## Not done
 
+- Static ids the live list omits (e.g. DeepSeek `deepseek-v4-flash-vision-exp`) leave the
+  dashboard picker, same as every other live provider; the live list is authoritative.
+- `/v1/models` resolves live providers one after another; prefetch them in parallel
+  when more providers go live.
+
 - Groq guard-model tag: nothing consumes a tag yet; add with a dashboard filter.
 - Mistral `vision`/`function_calling` caps: same partial-caps limit as Copilot.
