@@ -108,6 +108,10 @@ export default function ModelsSection({
           (!inputModality || model.inputModalities?.includes(inputModality)),
       )
     : models.enabledModels;
+  const visibleLiveIds = new Set(
+    isLiveCatalog && !liveFallback ? visibleModels.map((model) => model.id) : [],
+  );
+  const customModelRows = models.customModelRows.filter((row) => !visibleLiveIds.has(row.id));
   const addedFullModels = new Set([
     ...Object.values(models.modelAliases),
     ...models.customModelRows.map((row) => row.fullModel),
@@ -188,7 +192,7 @@ export default function ModelsSection({
         compatibleSection
       ) : (
         <div className="flex flex-col gap-4">
-          {models.enabledModels.length === 0 && models.customModelRows.length === 0 ? (
+          {models.enabledModels.length === 0 && customModelRows.length === 0 ? (
             <EmptyState
               icon="smart_toy"
               title="No models available"
@@ -228,7 +232,7 @@ export default function ModelsSection({
                 </p>
               ) : null}
               <ul className="flex min-w-0 flex-col gap-2">
-                {models.customModelRows.map((row) => (
+                {customModelRows.map((row) => (
                   <ModelRow
                     key={`${row.source}-${row.fullModel}`}
                     model={{ id: row.id, name: row.name }}
