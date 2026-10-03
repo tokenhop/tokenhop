@@ -7,6 +7,7 @@ import { createProviderConnection, deleteProviderConnectionsByProvider } from "@
 import { getProviderAlias } from "@/shared/constants/providers";
 import { clearLiveModelsCache } from "@/lib/providerModels/liveResolvers.js";
 import {
+  PROVIDER_ID_TO_ALIAS,
   getModelSupportedFormats,
   getModelTargetFormat,
 } from "../../open-sse/config/providerModels.js";
@@ -78,9 +79,15 @@ describe("transport for live-only ids", () => {
     ["qwen3.5-plus", null, ["openai", "claude"]],
     ["minimax-m4", null, ["openai", "claude"]],
     ["mimo-v2.6-pro", null, ["openai"]],
+    ["gpt-oss-120b", null, ["openai"]],
   ])("%s", (id, target, formats) => {
     expect(getModelTargetFormat("opencode-go", id)).toBe(target);
     expect(getModelSupportedFormats("opencode-go", id)).toEqual(formats);
+  });
+
+  it("is keyed by the alias chatCore passes", () => {
+    const alias = PROVIDER_ID_TO_ALIAS["opencode-go"] || "opencode-go";
+    expect(getModelTargetFormat(alias, "grok-4.7(high)")).toBe("openai-responses");
   });
 
   it("keeps registry metadata for known ids and leaves other providers alone", () => {
