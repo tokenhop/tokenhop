@@ -53,6 +53,7 @@ describe("parsers", () => {
       data: [
         { id: "moonshotai/kimi-k2.6" },
         { id: "acme/new-chat" },
+        { id: "acme/sparse-eclipse-chat" },
         { id: "nvidia/nv-embedqa-e5-v5" },
         { id: "nvidia/llama-3.1-nemoguard-8b-content-safety" },
         { id: "nvidia/nemotron-4-340b-reward" },
@@ -60,13 +61,14 @@ describe("parsers", () => {
       ],
     };
     const models = parseNvidiaModels(body);
-    expect(models.slice(0, 3)).toEqual([
+    expect(models.slice(0, 4)).toEqual([
       { id: "moonshotai/kimi-k2.6", name: "Kimi K2.6" },
       { id: "acme/new-chat", name: "acme/new-chat" },
+      { id: "acme/sparse-eclipse-chat", name: "acme/sparse-eclipse-chat" },
       { id: "nvidia/nv-embedqa-e5-v5", name: "NV EmbedQA E5 v5", kind: "embedding" },
     ]);
     expect(models.map((m) => m.kind)).toEqual(expect.arrayContaining(["tts", "stt"]));
-    expect(models.some((m) => /guard|reward|parse/.test(m.id))).toBe(false);
+    expect(models.some((m) => /nemoguard|-reward|-parse/.test(m.id))).toBe(false);
     expect(parseNvidiaModels({ data: [] })).toEqual([]);
   });
 

@@ -203,7 +203,8 @@ export function parseChutesModels(body) {
 // Ids only, no kind field: classified by id. Embedders keep their kind; safety,
 // reward, parsing, detection and CLIP models have no route here. Static TTS/STT
 // rows aren't listed upstream and are added back.
-const NIM_UNROUTED = /guard|safety|topic-control|reward|parse|detector|clip|deplot/i;
+const NIM_UNROUTED =
+  /(^|[-/])(nemo|nv)?(guard|safety|topic-control|reward|parse|detector|clip|deplot)(\b|$)/i;
 export function parseNvidiaModels(body, statics = getModelsByProviderId("nvidia")) {
   const names = new Map(statics.map((m) => [m.id, m.name]));
   const ids = [...new Set(entries(body).map(idOf).filter(Boolean))];
@@ -222,7 +223,7 @@ export function parseNvidiaModels(body, statics = getModelsByProviderId("nvidia"
 export function parseNebiusModels(body) {
   const ids = [...new Set(entries(body).map(idOf).filter(Boolean))];
   return ids
-    .filter((id) => !/flux|sdxl|stable-diffusion|guard/i.test(id))
+    .filter((id) => !/flux|sdxl|stable-diffusion|kandinsky|video|guard/i.test(id))
     .map((id) => ({ id, name: id, ...(/embed/i.test(id) ? { kind: "embedding" } : {}) }));
 }
 
