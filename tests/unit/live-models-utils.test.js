@@ -27,6 +27,8 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "kimchi",
       "kiro",
       "mistral",
+      "ollama",
+      "ollama-local",
       "openai",
       "openrouter",
       "qoder",
