@@ -87,7 +87,7 @@ during `init`).
 
 ## Security
 
-- **Never** commit `.env`, `.env.encrypted`, tokens, API keys, service
+- **Never** commit `.env`, `.env.local`, tokens, API keys, service
   credentials, or any secret material.
 - Configuration must come from environment variables or a secret-management
   system — never hard-coded.
