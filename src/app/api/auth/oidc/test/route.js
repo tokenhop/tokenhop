@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { getSettings } from "@/lib/localDb";
 import {
   fetchOidcDiscovery,
@@ -7,14 +6,6 @@ import {
   probeOidcClientSecret,
   summarizeOidcSigning,
 } from "@/lib/auth/oidc";
-import { hasValidSession } from "@/lib/users/session";
-
-async function canAccessTestRoute() {
-  const settings = await getSettings();
-  if (settings.requireLogin === false) return true;
-
-  return await hasValidSession({ cookies: await cookies() });
-}
 
 async function countJwksKeys(jwksUri) {
   if (!jwksUri) return null;
@@ -33,10 +24,6 @@ async function countJwksKeys(jwksUri) {
 
 export async function POST(request) {
   try {
-    if (!(await canAccessTestRoute())) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const body = await request.json().catch(() => ({}));
     const settings = await getSettings();
 

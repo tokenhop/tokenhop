@@ -3,91 +3,21 @@ import { getSettings, validateApiKey } from "@/lib/localDb";
 import { resolveFlagSetting, resolveStartPage } from "@/lib/settingsFlags";
 import { extractClientApiKey } from "@/lib/auth/clientApiKey";
 import { isLoopbackHostname, isLoopbackPeer } from "@/lib/auth/trustedPeer";
-import { cliTokenAccepted, hasValidSession, singleUserMode } from "@/lib/users/session";
+import { resolveRoutePolicy } from "@/lib/auth/routePolicy";
+import {
+  cliTokenAccepted,
+  hasValidSession,
+  principalCan,
+  singleUserMode,
+} from "@/lib/users/session";
 import { LOCAL_ONLY_CODE } from "@/shared/utils/localOnly";
-
-// Public API paths — no auth required (LLM API has its own key auth inside handler).
-const PUBLIC_API_PATHS = [
-  "/api/health",
-  "/api/init",
-  "/api/locale",
-  "/api/auth/login",
-  "/api/auth/logout",
-  "/api/auth/status",
-  "/api/auth/oidc",
-  "/api/auth/saml",
-  "/api/settings/require-login",
-];
-
-// Public top-level prefixes (LLM API endpoints with their own API key auth).
-// Keep root-level rewrites here too: middleware runs before Next.js rewrites.
-const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex", "/responses"];
 
 // Skill markdown reads: static content any network peer may fetch (the URL is
 // pasted to AI agents), so /skills never requires auth or an API key. Still
 // only exact allowlisted ids resolve; traversal/unknown ids 404 in the route.
 const PUBLIC_PAGE_PREFIXES = ["/skills"];
 
-// Always require JWT token regardless of requireLogin setting
-const ALWAYS_PROTECTED = [
-  "/api/shutdown",
-  "/api/settings/database",
-  "/api/version/shutdown",
-  "/api/oauth/cursor/auto-import",
-  "/api/oauth/kiro/auto-import",
-];
-
-// Require auth, but allow through if requireLogin is disabled
-const PROTECTED_API_PATHS = [
-  "/api/settings",
-  "/api/keys",
-  "/api/providers",
-  "/api/provider-nodes",
-  "/api/proxy-pools",
-  "/api/combos",
-  "/api/models",
-  "/api/usage",
-  "/api/oauth",
-  "/api/cloud",
-  "/api/media-providers",
-  "/api/pricing",
-  "/api/tags",
-  "/api/cli-tools",
-  "/api/mcp",
-  "/api/translator",
-  "/api/tunnel",
-];
-
-// Routes that spawn child processes or read host secrets — restrict to localhost.
-const LOCAL_ONLY_PATHS = [
-  "/api/cli-tools/",
-  "/api/mcp/",
-  "/api/tunnel/tailscale-install",
-  "/api/tunnel/tailscale-enable",
-  "/api/tunnel/tailscale-disable",
-  "/api/tunnel/tailscale-check",
-  "/api/tunnel/enable",
-  "/api/tunnel/disable",
-  "/api/oauth/cursor/auto-import",
-  "/api/oauth/kiro/auto-import",
-  "/api/auth/reset-password",
-  "/api/auth/setup-token",
-  "/api/headroom/start",
-  "/api/headroom/stop",
-  "/api/headroom/proxy",
-];
-
-// Remote-accessible routes under a local-only prefix, mapped to their allowed
-// HTTP methods (still behind the /api/* auth below). The Cowork MCP registry
-// fetches a fixed public upstream and reads no files or secrets; the MITM alias
-// route only reads/writes the alias map (DB + aliases.json), spawns nothing and
-// reads no host secrets (YAN-622). Everything else stays local-only, including
-// the /api/cli-tools/antigravity-mitm control route (POST start, PATCH DNS,
-// DELETE stop).
-const REMOTE_ALLOWED_METHODS = new Map([
-  ["/api/cli-tools/cowork-mcp-registry", new Set(["GET"])],
-  ["/api/cli-tools/antigravity-mitm/alias", new Set(["GET", "PUT"])],
-]);
+// Every /api/* route and the LLM API prefixes: src/lib/auth/routePolicy.js.
 
 export function isLocalRequest(request) {
   // Stamped by custom-server.js when forwarding headers exist: request came through
@@ -106,7 +36,7 @@ export function isLocalRequest(request) {
 }
 
 function isPublicLlmApi(pathname) {
-  return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  return resolveRoutePolicy(pathname)?.gateway === true;
 }
 
 function extractApiKey(request) {
@@ -125,8 +55,8 @@ async function canAccessPublicLlmApi(request) {
   return await hasValidApiKey(request);
 }
 
-async function canAccessLocalOnlyRoute(request) {
-  if (await cliTokenAccepted(request)) return true;
+async function canAccessLocalOnlyRoute(request, cliAllowed = true) {
+  if (cliAllowed && (await cliTokenAccepted(request))) return true;
   // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + auth (JWT or requireLogin=false)
   if (isLocalRequest(request) && (await isAuthenticated(request))) return true;
   return false;
@@ -146,11 +76,6 @@ async function isAuthenticated(request) {
   // YAN-356: single-user mode, not requireLogin=false alone — a restored DB
   // with two users and login off stays closed.
   return singleUserMode(await loadSettings());
-}
-
-function isPublicApi(pathname) {
-  if (isPublicLlmApi(pathname)) return true;
-  return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 export const __test__ = {
@@ -173,40 +98,45 @@ function isTranslatorPath(pathname) {
   return pathname === "/dashboard/translator" || pathname.startsWith("/dashboard/translator/");
 }
 
+/**
+ * Apply a routePolicy row: local-only gate, then public / gateway / session
+ * auth, then the capability. Null when allowed, else the error response.
+ */
+async function checkApiPolicy(request, policy) {
+  // Local-only gate for spawn-capable / host-secret routes.
+  if (policy.localOnly && !(await canAccessLocalOnlyRoute(request, policy.cliAllowed))) {
+    return NextResponse.json(
+      { error: "Local only: CLI token required", code: LOCAL_ONLY_CODE },
+      { status: 403 },
+    );
+  }
+  if (policy.public) return null;
+  if (policy.gateway) {
+    if (await canAccessPublicLlmApi(request)) return null;
+    return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+  }
+  const cli = policy.cliAllowed && (await cliTokenAccepted(request));
+  // alwaysProtected: a session or the CLI token; single-user mode doesn't open it.
+  const authed =
+    cli ||
+    (policy.alwaysProtected ? await hasValidSession(request) : await isAuthenticated(request));
+  if (!authed) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await principalCan(request, policy.capability))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  return null;
+}
+
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
 
   if (isPublicPage(pathname)) return NextResponse.next();
 
-  // Local-only gate for spawn-capable / host-secret routes.
-  const remoteAllowed = REMOTE_ALLOWED_METHODS.get(pathname)?.has(request.method) === true;
-  if (!remoteAllowed && LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
-    if (!(await canAccessLocalOnlyRoute(request))) {
-      return NextResponse.json(
-        { error: "Local only: CLI token required", code: LOCAL_ONLY_CODE },
-        { status: 403 },
-      );
-    }
-  }
-
-  // Always protected - require valid JWT or local CLI token (machineId-based)
-  if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
-    if ((await cliTokenAccepted(request)) || (await hasValidSession(request)))
-      return NextResponse.next();
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  if (isPublicLlmApi(pathname)) {
-    if (await canAccessPublicLlmApi(request)) return NextResponse.next();
-    return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
-  }
-
-  // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
-  if (pathname.startsWith("/api/")) {
-    if (isPublicApi(pathname)) return NextResponse.next();
-    if ((await cliTokenAccepted(request)) || (await isAuthenticated(request)))
-      return NextResponse.next();
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const policy = resolveRoutePolicy(pathname, request.method);
+  if (policy) {
+    const denied = await checkApiPolicy(request, policy);
+    if (denied) return denied;
+    return NextResponse.next();
   }
 
   // Protect all dashboard routes
@@ -255,7 +185,8 @@ export async function proxy(request) {
     // Verify JWT token
     const token = request.cookies.get("auth_token")?.value;
     if (token) {
-      if (await hasValidSession(request)) {
+      // Switch on: a live session of a pending user is not a dashboard login.
+      if ((await hasValidSession(request)) && (await principalCan(request, "self.session"))) {
         // YAN-312: the Translator debug page honors the resolved flag.
         if (isTranslatorPath(pathname) && !translatorEnabled) {
           return NextResponse.redirect(new URL("/dashboard", request.url));

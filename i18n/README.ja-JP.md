@@ -1027,7 +1027,6 @@ docker stop tokenhop && docker rm tokenhop
 | `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                | 安定したマシンIDハッシュのソルト                                                          |
 | `ENABLE_REQUEST_LOGS`                                | `false`                              | `logs/` 配下のリクエスト/レスポンスログを有効化                                           |
 | `AUTH_COOKIE_SECURE`                                 | `false`                              | 認証クッキーに`Secure`を強制（HTTPSリバースプロキシの背後では`true`に設定）               |
-| `REQUIRE_API_KEY`                                    | `false`                              | `/v1/*` ルートでBearer APIキーを必須にする（インターネット公開デプロイで推奨）            |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | 空                                   | アップストリームプロバイダー呼び出し用のオプショナルアウトバウンドプロキシ                |
 
 注意事項：

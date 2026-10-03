@@ -104,7 +104,7 @@ Important compatibility routes:
 - `src/app/api/v1beta/models/route.js`
 - `src/app/api/v1beta/models/[...path]/route.js`
 
-Management domains (deny-by-default in `dashboardGuard`, except public allowlists and LLM prefixes):
+Management domains (deny-by-default in `dashboardGuard`; every route's access is declared in the route → capability table `src/lib/auth/routePolicy.js`, and unmapped routes fail closed):
 
 - Home feeds: `src/app/api/home/{summary, live-routes, quota}`
 - Auth/settings: `src/app/api/auth/*`, `src/app/api/settings/*` (incl. `/config/{export,import}`, `/database`)
@@ -456,7 +456,7 @@ Runtime visibility sources:
 
 ## Security-Sensitive Boundaries
 
-Layered auth (enforced in `src/proxy.js` → `src/dashboardGuard.js`; deny-by-default for `/api/*` beyond public allowlists):
+Layered auth (enforced in `src/proxy.js` → `src/dashboardGuard.js`; every `/api/*` route and method maps to a capability in `src/lib/auth/routePolicy.js`; unmapped routes fail closed):
 
 - Public LLM prefixes (`/v1`, `/v1beta`, `/codex`, `/responses`): local peer (loopback host+origin, trusted peer headers only from loopback reverse proxy via `custom-server.js`), or validated CLI token, or valid API key.
 - Ordinary management `/api/*`: JWT session, validated CLI token (`machineId`-bound), or `requireLogin=false` broadens access — never assume every management API requires JWT.

@@ -15,6 +15,7 @@ import { isLoopbackPeer } from "@/lib/auth/trustedPeer";
 import {
   bumpSessionVersion,
   countActiveUsersUnscoped,
+  getMeta,
   getOwnerUnscoped,
   getSessionUserUnscoped,
   getSettings,
@@ -22,8 +23,10 @@ import {
   listWorkspaces,
   updateUserUnscoped,
 } from "@/lib/db/index.js";
+import { NextResponse } from "next/server";
 import { isMultiUserEnabled } from "./featureSwitch.js";
 import { ensureOwnerBootstrap, resolveSsoUser } from "./bootstrap.js";
+import { can } from "./principal.js";
 
 const AUTH_COOKIE = "auth_token";
 
@@ -95,15 +98,12 @@ async function validateSessionToken(token) {
 }
 
 /**
- * Whether the dashboard cookie authenticates the request. Until YAN-357 maps
- * routes to capabilities, only the owner's session passes the guard.
- * ponytail: owner-only; YAN-357 swaps this for the route → capability table.
+ * Whether the dashboard cookie authenticates the request (any live session).
+ * What the session may do is the route table's job (principalCan, YAN-357).
  */
 export async function hasValidSession(request) {
   try {
-    const session = await validateSessionToken(request.cookies.get(AUTH_COOKIE)?.value);
-    if (!session) return false;
-    return session.legacy === true || session.user.instanceRole === "owner";
+    return Boolean(await validateSessionToken(request.cookies.get(AUTH_COOKIE)?.value));
   } catch {
     return false; // fail closed: a broken users table never admits anyone
   }
@@ -143,6 +143,7 @@ async function principalFor(user, via, wid) {
     userId: user.id,
     instanceRole: user.instanceRole,
     workspaceIds,
+    workspaceRoles: Object.fromEntries(workspaces.map((w) => [w.id, w.role])),
     activeWorkspaceId: workspaceIds.includes(wid) ? wid : personal,
     via,
   };
@@ -178,6 +179,55 @@ async function resolvePrincipalOrThrow(request) {
   const settings = await getSettings();
   if (await singleUserMode(settings)) return principalFor(await getOwnerUnscoped(), "local");
   return null;
+}
+
+// Today's connections, combos, keys and usage are unscoped: they belong to the
+// Default workspace (YAN-356). Route-level workspace checks use it until
+// YAN-361+ scope the data and handlers call authorize() per resource.
+// Read per request (switch on only): a DB import can replace it.
+async function routeWorkspaceId() {
+  return (await getMeta("defaultWorkspaceId")) || null;
+}
+
+/**
+ * Whether the request's principal holds the route's `capability` (YAN-357).
+ * Switch off: true (every authenticated caller is the single admin). Switch
+ * on with no principal: only before any user exists (the sole admin, before
+ * the owner bootstrap). Fails closed.
+ * @param {{ headers: Headers, cookies: { get(name: string): { value: string }|undefined } }} request
+ * @param {string|null} capability
+ * @returns {Promise<boolean>}
+ */
+export async function principalCan(request, capability) {
+  if (!capability || !(await multiUserOn())) return true;
+  try {
+    const principal = await resolvePrincipalOrThrow(request);
+    if (!principal) return (await countActiveUsersUnscoped()) === 0;
+    const workspaceId = await routeWorkspaceId();
+    if (can(principal, capability, { workspaceId })) return true;
+    // No Default workspace yet: the unscoped data is the owner's alone.
+    return (
+      !workspaceId && capability.startsWith("workspace.") && principal.instanceRole === "owner"
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Per-resource check for route handlers (ADR-0002). Null when allowed, else a
+ * 401/403 response. Switch off: always null (today's single admin).
+ * Usage: `const denied = await authorize("workspace.keys.manage", { workspaceId }); if (denied) return denied;`
+ * @param {string} capability
+ * @param {{ workspaceId?: string|null }} [resource]
+ * @returns {Promise<Response|null>}
+ */
+export async function authorize(capability, resource = {}) {
+  if (!(await multiUserOn())) return null;
+  const principal = await getPrincipal();
+  if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (can(principal, capability, resource)) return null;
+  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 }
 
 /** The current route handler's principal. */

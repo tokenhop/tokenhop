@@ -88,7 +88,7 @@ names are removed in v2.0.0.
 A few internal names are plain renames with no alias because users could never
 set them (`NINEROUTER_PEER_TOKEN` → `TOKENHOP_PEER_TOKEN`, rewritten at every
 boot, and the `NINE_ROUTER_PROXY_*` in-process bookkeeping). Variables such as
-`JWT_SECRET`, `DATA_DIR` and `REQUIRE_API_KEY` never had a brand name and are
+`JWT_SECRET` and `DATA_DIR` never had a brand name and are
 unchanged.
 
 ## 4. CLI

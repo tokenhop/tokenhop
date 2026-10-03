@@ -1038,7 +1038,6 @@ docker stop tokenhop && docker rm tokenhop
 | `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                | 稳定机器 ID 哈希的盐值                                                                                                        |
 | `ENABLE_REQUEST_LOGS`                                | `false`                              | 在 `logs/` 下启用请求/响应日志                                                                                                |
 | `AUTH_COOKIE_SECURE`                                 | `false`                              | 强制 `Secure` 认证 cookie（在 HTTPS 反向代理后设置 `true`）                                                                   |
-| `REQUIRE_API_KEY`                                    | `false`                              | 在 `/v1/*` 路由上强制执行 Bearer API key推荐用于暴露在互联网的部署）                                                          |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | 空                                   | 上游提供商调用的可选出站代理                                                                                                  |
 
 注意：
@@ -1222,7 +1221,7 @@ Authorization: Bearer your-api-key
 在 `tester/security/` 下添加了测试脚本：
 
 - `tester/security/test-docker-hardening.sh`
-  - 构建 Docker 镜像并验证加固检查（`/api/cloud/auth` 认证保护、`REQUIRE_API_KEY`、安全认证 cookie 行为）。
+  - 构建 Docker 镜像并验证加固检查（`/api/cloud/auth` 认证保护、安全认证 cookie 行为）。
 - `tester/security/test-cloud-openai-compatible.sh`
   - 使用提供的模型/密钥向云端端点（`$CLOUD_URL/v1/chat/completions`，如已配置）发送直接的 OpenAI 兼容请求。
 - `tester/security/test-cloud-sync-and-call.sh`

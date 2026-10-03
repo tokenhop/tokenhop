@@ -1,0 +1,300 @@
+// Route → capability table (YAN-357, ADR-0002). Every src/app/api/**/route.js
+// has a row; tests/unit/route-policy.test.js fails on any unmapped route or
+// method. dashboardGuard reads it. Pure: no imports, it sits in the proxy bundle.
+//
+// Row fields (all optional except `cap`):
+//   cap              capability, or { METHOD: capability } per method
+//   public           no auth at all (login, health, SSO callbacks…)
+//   gateway          LLM API: local peer, CLI token or a gateway API key
+//   localOnly        loopback peer + loopback Origin, or the CLI token
+//   remoteMethods    methods exempt from localOnly (exact path only)
+//   alwaysProtected  session or CLI token; single-user mode does not open it
+//   cliAllowed       the CLI token authenticates (default true)
+// With the users & teams switch off every authenticated principal is the
+// owner, so `cap` changes nothing; the flags reproduce the old path lists.
+
+const HOST = "instance.hostOps";
+const SETTINGS = "instance.settings.manage";
+const META = "workspace.connections.metadata.read";
+const CONN = "workspace.connections.manage";
+const USE = "workspace.connections.use";
+const COMBOS = "workspace.combos.manage";
+const USAGE = "workspace.usage.read";
+const SELF = "self.session";
+
+const PUBLIC = { cap: null, public: true };
+const LOCAL_HOST = { cap: HOST, localOnly: true };
+const read = (getCap, writeCap) => ({
+  cap: { GET: getCap, POST: writeCap, PUT: writeCap, PATCH: writeCap, DELETE: writeCap },
+});
+
+/** @type {Record<string, object>} */
+export const ROUTE_POLICY = {
+  // Auth and bootstrap.
+  "/api/auth/login": PUBLIC,
+  "/api/auth/logout": PUBLIC,
+  "/api/auth/logout-all": { cap: SELF },
+  "/api/auth/status": PUBLIC,
+  "/api/auth/oidc/start": PUBLIC,
+  "/api/auth/oidc/callback": PUBLIC,
+  "/api/auth/oidc/test": { cap: SETTINGS, cliAllowed: false },
+  "/api/auth/saml/start": PUBLIC,
+  "/api/auth/saml/acs": PUBLIC,
+  "/api/auth/saml/metadata": PUBLIC,
+  "/api/auth/saml/test": { cap: SETTINGS, cliAllowed: false },
+  "/api/auth/reset-password": LOCAL_HOST,
+  "/api/auth/setup-token": { cap: "instance.ownership.transfer", localOnly: true },
+  "/api/health": PUBLIC,
+  "/api/init": PUBLIC,
+  "/api/locale": PUBLIC,
+  "/api/settings/require-login": PUBLIC,
+
+  // Host operations.
+  "/api/shutdown": { cap: HOST, alwaysProtected: true },
+  "/api/version/shutdown": { cap: HOST, alwaysProtected: true },
+  "/api/settings/database": { cap: HOST, alwaysProtected: true },
+  "/api/settings/config/export": { cap: HOST },
+  "/api/settings/config/import": { cap: HOST },
+  "/api/cli-tool-presets": { cap: HOST },
+  "/api/cli-tool-settings": { cap: HOST },
+  "/api/cli-tool-settings/[toolId]": { cap: HOST },
+  "/api/cli-tools/all-statuses": LOCAL_HOST,
+  "/api/cli-tools/antigravity-mitm": LOCAL_HOST,
+  "/api/cli-tools/antigravity-mitm/alias": { ...LOCAL_HOST, remoteMethods: ["GET", "PUT"] },
+  "/api/cli-tools/claude-settings": LOCAL_HOST,
+  "/api/cli-tools/cline-settings": LOCAL_HOST,
+  "/api/cli-tools/codex-settings": LOCAL_HOST,
+  "/api/cli-tools/copilot-settings": LOCAL_HOST,
+  "/api/cli-tools/cowork-mcp-registry": { ...LOCAL_HOST, remoteMethods: ["GET"] },
+  "/api/cli-tools/cowork-mcp-tools": LOCAL_HOST,
+  "/api/cli-tools/cowork-settings": LOCAL_HOST,
+  "/api/cli-tools/deepseek-tui-settings": LOCAL_HOST,
+  "/api/cli-tools/devin-settings": LOCAL_HOST,
+  "/api/cli-tools/droid-settings": LOCAL_HOST,
+  "/api/cli-tools/grok-build-settings": LOCAL_HOST,
+  "/api/cli-tools/hermes-settings": LOCAL_HOST,
+  "/api/cli-tools/jcode-settings": LOCAL_HOST,
+  "/api/cli-tools/kilo-settings": LOCAL_HOST,
+  "/api/cli-tools/openclaw-settings": LOCAL_HOST,
+  "/api/cli-tools/opencode-settings": LOCAL_HOST,
+  "/api/mcp/[plugin]/message": LOCAL_HOST,
+  "/api/mcp/[plugin]/sse": LOCAL_HOST,
+  "/api/headroom/start": LOCAL_HOST,
+  "/api/headroom/stop": LOCAL_HOST,
+  "/api/headroom/proxy/[...path]": LOCAL_HOST,
+  "/api/headroom/restart": { cap: HOST },
+  "/api/headroom/extras": { cap: HOST },
+  "/api/headroom/status": { cap: HOST },
+  "/api/pxpipe/health": { cap: HOST },
+  "/api/pxpipe/install": { cap: HOST },
+  "/api/pxpipe/logs": { cap: HOST },
+  "/api/pxpipe/restart": { cap: HOST },
+  "/api/pxpipe/start": { cap: HOST },
+  "/api/pxpipe/stats": { cap: HOST },
+  "/api/pxpipe/status": { cap: HOST },
+  "/api/pxpipe/stop": { cap: HOST },
+  "/api/translator/console-logs": { cap: HOST },
+  "/api/translator/console-logs/stream": { cap: HOST },
+  "/api/translator/load": { cap: HOST },
+  "/api/translator/save": { cap: HOST },
+  "/api/translator/send": { cap: HOST },
+  "/api/translator/translate": { cap: HOST },
+  "/api/tunnel/enable": LOCAL_HOST,
+  "/api/tunnel/disable": LOCAL_HOST,
+  "/api/tunnel/tailscale-check": LOCAL_HOST,
+  "/api/tunnel/tailscale-enable": LOCAL_HOST,
+  "/api/tunnel/tailscale-disable": LOCAL_HOST,
+  "/api/tunnel/tailscale-install": LOCAL_HOST,
+  "/api/tunnel/status": { cap: HOST },
+  "/api/oauth/cursor/auto-import": { ...LOCAL_HOST, alwaysProtected: true },
+  "/api/oauth/kiro/auto-import": { ...LOCAL_HOST, alwaysProtected: true },
+  "/api/oauth/xiaomi-mimo/auto-import": { cap: HOST },
+
+  // Instance settings (proxy pools and pricing stay instance-level, ADR-0001).
+  "/api/settings": { cap: SETTINGS },
+  "/api/settings/environment": { cap: SETTINGS },
+  "/api/settings/proxy-test": { cap: SETTINGS },
+  "/api/pricing": { cap: SETTINGS },
+  "/api/proxy-pools": { cap: SETTINGS },
+  "/api/proxy-pools/[id]": { cap: SETTINGS },
+  "/api/proxy-pools/[id]/test": { cap: SETTINGS },
+  "/api/proxy-pools/cloudflare-deploy": { cap: SETTINGS },
+  "/api/proxy-pools/deno-deploy": { cap: SETTINGS },
+  "/api/proxy-pools/vercel-deploy": { cap: SETTINGS },
+  "/api/models/catalog-sync": read(META, SETTINGS),
+
+  // Connections, nodes and OAuth connect flows.
+  "/api/providers": read(META, CONN),
+  "/api/providers/[id]": read(META, CONN),
+  "/api/providers/[id]/models": { cap: META },
+  "/api/providers/[id]/test": { cap: USE },
+  "/api/providers/[id]/test-models": { cap: USE },
+  "/api/providers/test-batch": { cap: USE },
+  "/api/providers/validate": { cap: CONN },
+  "/api/providers/client": { cap: META },
+  "/api/providers/kilo/free-models": { cap: META },
+  "/api/providers/suggested-models": { cap: META },
+  "/api/provider-nodes": read(META, CONN),
+  "/api/provider-nodes/[id]": { cap: CONN },
+  "/api/provider-nodes/validate": { cap: CONN },
+  "/api/oauth/[provider]/[action]": { cap: CONN },
+  "/api/oauth/codex/bulk-import": { cap: CONN },
+  "/api/oauth/codex/import-token": { cap: CONN },
+  "/api/oauth/cursor/import": { cap: CONN },
+  "/api/oauth/gitlab/pat": { cap: CONN },
+  "/api/oauth/grok-cli/bulk-import": { cap: CONN },
+  "/api/oauth/iflow/cookie": { cap: CONN },
+  "/api/oauth/kiro/api-key": { cap: CONN },
+  "/api/oauth/kiro/import": { cap: CONN },
+  "/api/oauth/kiro/import-cli-proxy": { cap: CONN },
+  "/api/oauth/kiro/social-authorize": { cap: CONN },
+  "/api/oauth/kiro/social-exchange": { cap: CONN },
+  "/api/oauth/xiaomi-mimo/api-key": { cap: CONN },
+  "/api/media-providers/tts/voices": { cap: USE },
+  "/api/media-providers/tts/deepgram/voices": { cap: USE },
+  "/api/media-providers/tts/elevenlabs/voices": { cap: USE },
+  "/api/media-providers/tts/inworld/voices": { cap: USE },
+  "/api/media-providers/tts/minimax/voices": { cap: USE },
+
+  // Combos, aliases, custom and disabled models.
+  "/api/combos": read(META, COMBOS),
+  "/api/combos/[id]": read(META, COMBOS),
+  "/api/combos/[id]/headroom": { cap: META },
+  "/api/combos/[id]/test": { cap: USE },
+  "/api/models": read(META, COMBOS),
+  "/api/models/alias": read(META, COMBOS),
+  "/api/models/custom": read(META, COMBOS),
+  "/api/models/disabled": read(META, COMBOS),
+  "/api/models/availability": read(META, USE),
+  "/api/models/test": { cap: USE },
+  "/api/tags": { cap: META },
+
+  // Gateway API keys.
+  "/api/keys": { cap: { GET: "workspace.keys.manage", POST: "workspace.keys.create" } },
+  "/api/keys/[id]": { cap: "workspace.keys.manage" },
+
+  // Usage and dashboard summaries.
+  "/api/usage/[connectionId]": { cap: USAGE },
+  "/api/usage/[connectionId]/codex-reset-credits": read(USAGE, CONN),
+  "/api/usage/chart": { cap: USAGE },
+  "/api/usage/history": { cap: USAGE },
+  "/api/usage/last-activity": { cap: USAGE },
+  "/api/usage/logs": { cap: USAGE },
+  "/api/usage/providers": { cap: USAGE },
+  "/api/usage/request-details": { cap: USAGE },
+  "/api/usage/request-logs": { cap: USAGE },
+  "/api/usage/savings": { cap: USAGE },
+  "/api/usage/stats": { cap: USAGE },
+  "/api/usage/stream": { cap: USAGE },
+  "/api/home/live-routes": { cap: USAGE },
+  "/api/home/quota": { cap: USAGE },
+  "/api/home/summary": { cap: USAGE },
+  "/api/shell/summary": { cap: USAGE },
+  "/api/shell/savings-milestone": { cap: USAGE },
+  "/api/gateway/status": { cap: SELF },
+};
+
+// LLM API prefixes (boundary match). Middleware runs before next.config
+// rewrites, so the root-level aliases need rows too.
+export const GATEWAY_PREFIXES = Object.freeze([
+  "/v1",
+  "/v1beta",
+  "/codex",
+  "/responses",
+  "/api/v1",
+  "/api/v1beta",
+]);
+const GATEWAY = Object.freeze({ cap: "gateway.use", gateway: true });
+
+/**
+ * Any /api/* path without a row (no route file: Next answers 404) gets the
+ * strictest gate: local-only, session or CLI token, hostOps. Covers the old
+ * bare-prefix near misses such as /api/shutdownX or /api/cli-tools/unknown.
+ */
+export const UNMAPPED = "unmapped";
+const UNMAPPED_ROW = Object.freeze({ cap: HOST, localOnly: true, alwaysProtected: true });
+
+// Segment kinds rank like Next's router: static before [param] before [...rest].
+const rank = (seg) => (seg.startsWith("[...") ? 2 : seg.startsWith("[") ? 1 : 0);
+const PATTERNS = Object.keys(ROUTE_POLICY)
+  .filter((key) => key.includes("["))
+  .map((key) => ({ key, segs: key.split("/").slice(1) }))
+  .sort((a, b) => {
+    for (let i = 0; i < Math.min(a.segs.length, b.segs.length); i++) {
+      const d = rank(a.segs[i]) - rank(b.segs[i]);
+      if (d) return d;
+    }
+    return b.segs.length - a.segs.length;
+  });
+
+function matches(segs, path) {
+  for (let i = 0; i < segs.length; i++) {
+    if (segs[i].startsWith("[...")) return i < path.length;
+    if (i >= path.length) return false;
+    if (!segs[i].startsWith("[") && segs[i] !== path[i]) return false;
+  }
+  return segs.length === path.length;
+}
+
+/** Decoded path segments, or null when the path can't be decoded. */
+function segmentsOf(pathname) {
+  try {
+    return String(pathname || "")
+      .split("/")
+      .filter(Boolean)
+      .map((s) => decodeURIComponent(s));
+  } catch {
+    return null;
+  }
+}
+
+/** The row key for a path, `UNMAPPED`, or null when the path isn't an API path. */
+function routeKey(pathname) {
+  const segs = segmentsOf(pathname);
+  if (!segs) return String(pathname).startsWith("/api") ? UNMAPPED : null;
+  const clean = `/${segs.join("/")}`;
+  // An encoded "/" or dot segment never names a static route: Next would serve
+  // it through a dynamic param (or 404), so don't let it borrow another row.
+  if (segs.some((s) => s.includes("/") || s === "." || s === "..")) {
+    if (segs[0] === "api" || segs[0]?.startsWith("api/")) return UNMAPPED;
+    return GATEWAY_PREFIXES.includes(`/${segs[0]}`) ? "gateway" : null;
+  }
+  if (GATEWAY_PREFIXES.some((p) => clean === p || clean.startsWith(`${p}/`))) return "gateway";
+  if (Object.hasOwn(ROUTE_POLICY, clean) && !clean.includes("[")) return clean;
+  const hit = PATTERNS.find((p) => matches(p.segs, segs));
+  if (hit) return hit.key;
+  return segs[0] === "api" ? UNMAPPED : null;
+}
+
+/**
+ * The policy for a request, or null for non-API paths (dashboard pages,
+ * /skills, /login…), which dashboardGuard handles itself.
+ * @param {string} pathname
+ * @param {string} [method]
+ * @returns {{ key: string, capability: string|null, public: boolean, gateway: boolean, localOnly: boolean, alwaysProtected: boolean, cliAllowed: boolean }|null}
+ */
+export function resolveRoutePolicy(pathname, method = "GET") {
+  const key = routeKey(pathname);
+  if (!key) return null;
+  if (key === "gateway") return { key, ...flags(GATEWAY), capability: GATEWAY.cap };
+  if (key === UNMAPPED) return { key, ...flags(UNMAPPED_ROW), capability: HOST };
+  const row = ROUTE_POLICY[key];
+  const m = String(method || "GET").toUpperCase();
+  let capability = row.cap;
+  if (capability && typeof capability === "object") {
+    // HEAD runs the GET handler; any other unlisted method fails closed.
+    capability = capability[m] ?? (m === "HEAD" ? capability.GET : null) ?? HOST;
+  }
+  const localOnly = row.localOnly === true && !row.remoteMethods?.includes(m);
+  return { key, ...flags(row), localOnly, capability };
+}
+
+function flags(row) {
+  return {
+    public: row.public === true,
+    gateway: row.gateway === true,
+    localOnly: row.localOnly === true,
+    alwaysProtected: row.alwaysProtected === true,
+    cliAllowed: row.cliAllowed !== false,
+  };
+}
