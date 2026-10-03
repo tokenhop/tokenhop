@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const dbMocks = vi.hoisted(() => ({
-  getProviderConnections: vi.fn(),
-  updateProviderConnection: vi.fn(),
+  getProviderConnectionsUnscoped: vi.fn(),
+  updateProviderConnectionUnscoped: vi.fn(),
 }));
 
 vi.mock("@/lib/localDb", () => dbMocks);
@@ -20,7 +20,7 @@ const { markAccountUnavailable } = await import("../../src/sse/services/auth.js"
 
 beforeEach(() => {
   vi.clearAllMocks();
-  dbMocks.getProviderConnections.mockResolvedValue([
+  dbMocks.getProviderConnectionsUnscoped.mockResolvedValue([
     {
       id: "github-a",
       provider: "github",
@@ -44,7 +44,7 @@ describe("GitHub monthly usage exhaustion", () => {
         "claude-fable-5",
       );
 
-      expect(dbMocks.updateProviderConnection).toHaveBeenCalledWith(
+      expect(dbMocks.updateProviderConnectionUnscoped).toHaveBeenCalledWith(
         "github-a",
         expect.objectContaining({
           modelLock___all: "2026-09-01T00:00:00.000Z",
@@ -53,7 +53,7 @@ describe("GitHub monthly usage exhaustion", () => {
           backoffLevel: 0,
         }),
       );
-      expect(dbMocks.updateProviderConnection.mock.calls[0][1]).not.toHaveProperty(
+      expect(dbMocks.updateProviderConnectionUnscoped.mock.calls[0][1]).not.toHaveProperty(
         "modelLock_claude-fable-5",
       );
     } finally {
@@ -68,13 +68,13 @@ describe("GitHub monthly usage exhaustion", () => {
     try {
       await markAccountUnavailable("github-a", 402, "Payment required", "github", "claude-fable-5");
 
-      expect(dbMocks.updateProviderConnection).toHaveBeenCalledWith(
+      expect(dbMocks.updateProviderConnectionUnscoped).toHaveBeenCalledWith(
         "github-a",
         expect.objectContaining({
           "modelLock_claude-fable-5": "2026-08-04T19:32:00.000Z",
         }),
       );
-      expect(dbMocks.updateProviderConnection.mock.calls[0][1]).not.toHaveProperty(
+      expect(dbMocks.updateProviderConnectionUnscoped.mock.calls[0][1]).not.toHaveProperty(
         "modelLock___all",
       );
     } finally {

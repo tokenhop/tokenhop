@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createProviderConnection } from "@/models";
+import { createProviderConnectionUnscoped } from "@/models";
 import { extractCodexAccountInfo } from "@/lib/oauth/providers";
 
 /**
@@ -44,7 +44,7 @@ export async function POST(request) {
   let success = 0;
   let failed = 0;
 
-  // SERIAL loop — createProviderConnection reads max(priority) and reorders
+  // SERIAL loop — createProviderConnectionUnscoped reads max(priority) and reorders
   // inside a transaction. Parallel calls would race on priority assignment.
   for (let i = 0; i < accounts.length; i++) {
     const raw = accounts[i];
@@ -97,7 +97,7 @@ export async function POST(request) {
       if (item.isActive === undefined) item.isActive = true;
       if (!item.lastRefreshAt) item.lastRefreshAt = new Date().toISOString();
 
-      const created = await createProviderConnection({
+      const created = await createProviderConnectionUnscoped({
         provider: "codex",
         authType: "oauth",
         ...item,

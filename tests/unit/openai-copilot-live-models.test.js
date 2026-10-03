@@ -16,7 +16,10 @@ vi.mock("open-sse/services/tokenRefresh.js", async (importOriginal) => ({
 
 import { GET } from "@/app/api/providers/[id]/models/route.js";
 import { buildModelsList } from "@/app/api/v1/models/route.js";
-import { createProviderConnection, deleteProviderConnectionsByProvider } from "@/models/index.js";
+import {
+  createProviderConnectionUnscoped,
+  deleteProviderConnectionsByProviderUnscoped,
+} from "@/models/index.js";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { clearLiveModelsCache } from "@/lib/providerModels/liveResolvers.js";
 import { clearCopilotModelCache } from "open-sse/services/copilotModels.js";
@@ -28,8 +31,8 @@ beforeEach(async () => {
   clearLiveModelsCache();
   clearCopilotModelCache();
   copilot.refreshCopilotToken.mockReset();
-  await deleteProviderConnectionsByProvider("openai");
-  await deleteProviderConnectionsByProvider("github");
+  await deleteProviderConnectionsByProviderUnscoped("openai");
+  await deleteProviderConnectionsByProviderUnscoped("github");
   const nativeFetch = globalThis.fetch.bind(globalThis);
   vi.stubGlobal("fetch", async (url, init = {}) => {
     if (!String(url).startsWith("https://api.openai.com/")) return nativeFetch(url, init);
@@ -79,7 +82,7 @@ describe("openai live catalog", () => {
       Response.json({
         data: [{ id: "gpt-6" }, { id: "text-embedding-4" }, { id: "gpt-realtime" }],
       });
-    const conn = await createProviderConnection({
+    const conn = await createProviderConnectionUnscoped({
       provider: "openai",
       authType: "apikey",
       apiKey: "sk-test",
@@ -104,7 +107,7 @@ describe("openai live catalog", () => {
 
   it("returns a warning (static fallback) when the key is rejected", async () => {
     stub.respond = () => new Response("bad key", { status: 401 });
-    const conn = await createProviderConnection({
+    const conn = await createProviderConnectionUnscoped({
       provider: "openai",
       authType: "apikey",
       apiKey: "sk-bad",
@@ -142,7 +145,7 @@ describe("github copilot live catalog", () => {
     copilot.refreshCopilotToken.mockResolvedValue({ token: "fresh", expiresAt: 1 });
     stub.respond = ({ auth }) =>
       auth === "Bearer stale" ? new Response("", { status: 401 }) : Response.json(catalog);
-    const conn = await createProviderConnection({
+    const conn = await createProviderConnectionUnscoped({
       provider: "github",
       authType: "oauth",
       accessToken: "gh",
@@ -169,7 +172,7 @@ describe("github copilot live catalog", () => {
 
   it("warns and keeps the static list when the catalog fails", async () => {
     stub.respond = () => new Response("down", { status: 500 });
-    const conn = await createProviderConnection({
+    const conn = await createProviderConnectionUnscoped({
       provider: "github",
       authType: "oauth",
       accessToken: "gh",

@@ -1,7 +1,11 @@
 // Quota auto-ping scheduler: warms 5h windows by sending tiny opt-in requests right after reset.
 import "open-sse/index.js";
 
-import { getSettings, getProviderConnections, updateProviderConnection } from "@/lib/localDb";
+import {
+  getSettings,
+  getProviderConnectionsUnscoped,
+  updateProviderConnectionUnscoped,
+} from "@/lib/localDb";
 import { getClaudeUsage } from "open-sse/services/usage/claude.js";
 import { getCodexUsage } from "open-sse/services/usage/codex.js";
 import { getExecutor } from "open-sse/executors/index.js";
@@ -297,7 +301,7 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   }
 
   delete state.failureCache[key];
-  await deps.updateProviderConnection(connection.id, {
+  await deps.updateProviderConnectionUnscoped(connection.id, {
     lastPingedResetAt: resetAt,
     lastPingedResetKey: resetKey,
     lastPingAt: new Date().toISOString(),
@@ -309,8 +313,8 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
 function createDefaultDeps() {
   return {
     getSettings,
-    getProviderConnections,
-    updateProviderConnection,
+    getProviderConnectionsUnscoped,
+    updateProviderConnectionUnscoped,
     resolveConnectionProxyConfig,
     refreshAndUpdateCredentials,
     proxyAwareFetch,
@@ -331,7 +335,7 @@ export async function runQuotaAutoPingTick(deps = createDefaultDeps(), state = g
       const enabledMap = settings?.[providerConfig.settingsKey]?.connections || {};
       if (Object.keys(enabledMap).length === 0) continue;
 
-      const conns = await deps.getProviderConnections({ provider, isActive: true });
+      const conns = await deps.getProviderConnectionsUnscoped({ provider, isActive: true });
       const targets = conns.filter(
         (conn) => conn.authType === "oauth" && enabledMap[conn.id] === true,
       );

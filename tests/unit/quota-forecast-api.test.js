@@ -1,17 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  getProviderConnectionById: vi.fn(),
-  updateProviderConnection: vi.fn(),
+  getProviderConnectionByIdUnscoped: vi.fn(),
+  updateProviderConnectionUnscoped: vi.fn(),
   getUsageForProvider: vi.fn(),
-  getProviderConnections: vi.fn(),
+  getProviderConnectionsUnscoped: vi.fn(),
 }));
 
 vi.mock("open-sse/index.js", () => ({}), { virtual: true });
-vi.mock("@/lib/db/index.js", () => ({ getProviderConnections: mocks.getProviderConnections }));
+vi.mock("@/lib/db/index.js", () => ({
+  getProviderConnectionsUnscoped: mocks.getProviderConnectionsUnscoped,
+}));
 vi.mock("@/lib/localDb", () => ({
-  getProviderConnectionById: mocks.getProviderConnectionById,
-  updateProviderConnection: mocks.updateProviderConnection,
+  getProviderConnectionByIdUnscoped: mocks.getProviderConnectionByIdUnscoped,
+  updateProviderConnectionUnscoped: mocks.updateProviderConnectionUnscoped,
 }));
 vi.mock("open-sse/services/usage.js", () => ({ getUsageForProvider: mocks.getUsageForProvider }));
 vi.mock("open-sse/executors/index.js", () => ({
@@ -59,7 +61,7 @@ beforeEach(() => {
   clearQuotaSnapshots();
   forecastStore._resetQuotaForecastStore();
   sync._resetQuotaSnapshotSync();
-  mocks.getProviderConnectionById.mockResolvedValue({
+  mocks.getProviderConnectionByIdUnscoped.mockResolvedValue({
     id: "a",
     provider: "claude",
     authType: "oauth",
@@ -156,7 +158,7 @@ describe("home quota forecast", () => {
         NOW - 30 * MIN + i * 10 * MIN,
       );
     }
-    mocks.getProviderConnections.mockResolvedValue([
+    mocks.getProviderConnectionsUnscoped.mockResolvedValue([
       { id: "c1", provider: "claude", name: "Work", isActive: true },
       { id: "c2", provider: "codex", name: "Main", isActive: true },
     ]);

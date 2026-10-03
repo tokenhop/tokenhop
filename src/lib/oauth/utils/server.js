@@ -231,7 +231,7 @@ export function startCodexProxy(appPort) {
 
           // Lazy import to avoid circular deps
           const { exchangeTokens } = await import("../providers.js");
-          const { createProviderConnection } = await import("@/models");
+          const { createProviderConnectionUnscoped } = await import("@/models");
 
           const tokenData = await exchangeTokens(
             "codex",
@@ -240,7 +240,7 @@ export function startCodexProxy(appPort) {
             session.codeVerifier,
             state,
           );
-          const connection = await createProviderConnection({
+          const connection = await createProviderConnectionUnscoped({
             provider: "codex",
             authType: "oauth",
             ...tokenData,
@@ -373,7 +373,7 @@ export function startXaiProxy(appPort) {
           if (!code) throw new Error("No authorization code received");
 
           const { exchangeTokens } = await import("../providers.js");
-          const { createProviderConnection } = await import("@/models");
+          const { createProviderConnectionUnscoped } = await import("@/models");
 
           const tokenData = await exchangeTokens(
             "xai",
@@ -382,7 +382,7 @@ export function startXaiProxy(appPort) {
             session.codeVerifier,
             state,
           );
-          const connection = await createProviderConnection({
+          const connection = await createProviderConnectionUnscoped({
             provider: "xai",
             authType: "oauth",
             ...tokenData,
@@ -510,9 +510,9 @@ export function startTraeProxy() {
       const rawCallback = `${url.pathname}?${url.searchParams.toString()}`;
       try {
         const { exchangeTokens } = await import("../providers.js");
-        const { createProviderConnection } = await import("@/models");
+        const { createProviderConnectionUnscoped } = await import("@/models");
         const tokenData = await exchangeTokens("trae", rawCallback);
-        const connection = await createProviderConnection({
+        const connection = await createProviderConnectionUnscoped({
           provider: "trae",
           authType: "oauth",
           ...tokenData,
@@ -626,9 +626,9 @@ export function startWindsurfProxy() {
       const rawCallback = `${url.pathname}?${url.searchParams.toString()}`;
       try {
         const { exchangeTokens } = await import("../providers.js");
-        const { createProviderConnection } = await import("@/models");
+        const { createProviderConnectionUnscoped } = await import("@/models");
         const tokenData = await exchangeTokens("windsurf", rawCallback, null, null, session.state);
-        const connection = await createProviderConnection({
+        const connection = await createProviderConnectionUnscoped({
           provider: "windsurf",
           authType: "api_key",
           ...tokenData,
@@ -781,7 +781,7 @@ export function startZedProxy(preferredPort = 0) {
         : url.pathname;
       try {
         const { exchangeTokens } = await import("../providers.js");
-        const { createProviderConnection } = await import("@/models");
+        const { createProviderConnectionUnscoped } = await import("@/models");
         const tokenData = await exchangeTokens(
           "zed",
           rawCallback,
@@ -790,7 +790,7 @@ export function startZedProxy(preferredPort = 0) {
           session.state,
           session.systemId ? { systemId: session.systemId } : undefined,
         );
-        const connection = await createProviderConnection({
+        const connection = await createProviderConnectionUnscoped({
           provider: "zed",
           authType: "oauth",
           ...tokenData,

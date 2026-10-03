@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionById } from "@/lib/localDb";
+import { getProviderConnectionByIdUnscoped } from "@/lib/localDb";
+import { getConnection } from "@/lib/db/index.js";
+import { loadScoped } from "@/lib/users/workspaceScope.js";
 import { getProviderModels, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
 import {
   isOpenAICompatibleProvider,
@@ -17,7 +19,15 @@ import { GET as listProviderModels } from "../models/route.js";
 export async function POST(request, { params }) {
   try {
     const { id } = await params;
-    const connection = await getProviderConnectionById(id);
+    const loaded = await loadScoped(
+      "workspace.connections.use",
+      id,
+      getConnection,
+      getProviderConnectionByIdUnscoped,
+      "Connection not found",
+    );
+    if (loaded instanceof Response) return loaded;
+    const connection = loaded.row;
     if (!connection) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }

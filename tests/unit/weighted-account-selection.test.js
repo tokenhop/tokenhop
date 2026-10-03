@@ -3,17 +3,17 @@ import { clearQuotaSnapshots, recordProbeWindows } from "open-sse/services/quota
 import { MODEL_LOCK_ALL } from "open-sse/services/accountFallback.js";
 
 const mocks = vi.hoisted(() => ({
-  getProviderConnections: vi.fn(),
+  getProviderConnectionsUnscoped: vi.fn(),
   getSettings: vi.fn(),
-  updateProviderConnection: vi.fn(),
+  updateProviderConnectionUnscoped: vi.fn(),
 }));
 
 vi.mock("@/lib/localDb", () => ({
-  getProviderConnections: mocks.getProviderConnections,
+  getProviderConnectionsUnscoped: mocks.getProviderConnectionsUnscoped,
   getSettings: mocks.getSettings,
   getProxyPools: vi.fn(),
   validateApiKey: vi.fn(),
-  updateProviderConnection: mocks.updateProviderConnection,
+  updateProviderConnectionUnscoped: mocks.updateProviderConnectionUnscoped,
 }));
 vi.mock("@/lib/network/connectionProxy", () => ({
   resolveConnectionProxyConfig: vi.fn(async () => ({})),
@@ -142,12 +142,12 @@ describe("getProviderCredentials account strategies", () => {
       planTier: "default_claude_max_20x",
     });
     mocks.getSettings.mockResolvedValue({ fallbackStrategy: "weighted" });
-    mocks.getProviderConnections.mockResolvedValue([{ id: "big" }, { id: "small" }]);
+    mocks.getProviderConnectionsUnscoped.mockResolvedValue([{ id: "big" }, { id: "small" }]);
 
     await expect(getProviderCredentials("claude", "big")).resolves.toMatchObject({
       connectionId: "small",
     });
-    expect(mocks.updateProviderConnection).toHaveBeenCalledWith("small", {
+    expect(mocks.updateProviderConnectionUnscoped).toHaveBeenCalledWith("small", {
       lastUsedAt: expect.any(String),
       consecutiveUseCount: 1,
     });
@@ -155,19 +155,19 @@ describe("getProviderCredentials account strategies", () => {
     await expect(
       getProviderCredentials("claude", null, null, { preferredConnectionId: "small" }),
     ).resolves.toMatchObject({ connectionId: "small" });
-    expect(mocks.updateProviderConnection).toHaveBeenCalledTimes(1);
+    expect(mocks.updateProviderConnectionUnscoped).toHaveBeenCalledTimes(1);
   });
 
   it("weighted increments sticky count for current account", async () => {
     mocks.getSettings.mockResolvedValue({
       providerStrategies: { codex: { fallbackStrategy: "weighted" } },
     });
-    mocks.getProviderConnections.mockResolvedValue([
+    mocks.getProviderConnectionsUnscoped.mockResolvedValue([
       { id: "a", lastUsedAt: "2026-08-31T00:00:00.000Z", consecutiveUseCount: 1 },
       { id: "b" },
     ]);
     await expect(getProviderCredentials("codex")).resolves.toMatchObject({ connectionId: "a" });
-    expect(mocks.updateProviderConnection).toHaveBeenCalledWith("a", {
+    expect(mocks.updateProviderConnectionUnscoped).toHaveBeenCalledWith("a", {
       lastUsedAt: expect.any(String),
       consecutiveUseCount: 2,
     });
@@ -175,11 +175,11 @@ describe("getProviderCredentials account strategies", () => {
 
   it("fill-first picks first available priority account without persistence", async () => {
     mocks.getSettings.mockResolvedValue({});
-    mocks.getProviderConnections.mockResolvedValue([{ id: "p1" }, { id: "p2" }]);
+    mocks.getProviderConnectionsUnscoped.mockResolvedValue([{ id: "p1" }, { id: "p2" }]);
     await expect(getProviderCredentials("openai", "p1")).resolves.toMatchObject({
       connectionId: "p2",
     });
-    expect(mocks.updateProviderConnection).not.toHaveBeenCalled();
+    expect(mocks.updateProviderConnectionUnscoped).not.toHaveBeenCalled();
   });
 
   it("round-robin keeps current until sticky limit, then least recently used", async () => {
@@ -188,22 +188,22 @@ describe("getProviderCredentials account strategies", () => {
       stickyRoundRobinLimit: 2,
     });
     const old = { id: "old", lastUsedAt: "2026-08-30T00:00:00.000Z" };
-    mocks.getProviderConnections.mockResolvedValue([
+    mocks.getProviderConnectionsUnscoped.mockResolvedValue([
       old,
       { id: "cur", lastUsedAt: "2026-08-31T00:00:00.000Z", consecutiveUseCount: 1 },
     ]);
     await expect(getProviderCredentials("openai")).resolves.toMatchObject({ connectionId: "cur" });
-    expect(mocks.updateProviderConnection).toHaveBeenLastCalledWith("cur", {
+    expect(mocks.updateProviderConnectionUnscoped).toHaveBeenLastCalledWith("cur", {
       lastUsedAt: expect.any(String),
       consecutiveUseCount: 2,
     });
 
-    mocks.getProviderConnections.mockResolvedValue([
+    mocks.getProviderConnectionsUnscoped.mockResolvedValue([
       old,
       { id: "cur", lastUsedAt: "2026-08-31T00:00:00.000Z", consecutiveUseCount: 2 },
     ]);
     await expect(getProviderCredentials("openai")).resolves.toMatchObject({ connectionId: "old" });
-    expect(mocks.updateProviderConnection).toHaveBeenLastCalledWith("old", {
+    expect(mocks.updateProviderConnectionUnscoped).toHaveBeenLastCalledWith("old", {
       lastUsedAt: expect.any(String),
       consecutiveUseCount: 1,
     });
@@ -220,7 +220,7 @@ describe("getProviderCredentials quota-exhausted skip", () => {
     vi.clearAllMocks();
     clearQuotaSnapshots();
     resetAccountSelection();
-    mocks.getProviderConnections.mockResolvedValue([{ id: "dry" }, { id: "wet" }]);
+    mocks.getProviderConnectionsUnscoped.mockResolvedValue([{ id: "dry" }, { id: "wet" }]);
   });
 
   it.each([[{}], [{ fallbackStrategy: "round-robin" }], [{ fallbackStrategy: "weighted" }]])(
@@ -279,7 +279,7 @@ describe("getProviderCredentials allRateLimited error owner", () => {
   it("reports lastError from the earliest-expiring lock, not the first connection", async () => {
     const soon = new Date(Date.now() + 30_000).toISOString();
     mocks.getSettings.mockResolvedValue({});
-    mocks.getProviderConnections.mockResolvedValue([
+    mocks.getProviderConnectionsUnscoped.mockResolvedValue([
       {
         id: "a",
         [MODEL_LOCK_ALL]: new Date(Date.now() + 120_000).toISOString(),

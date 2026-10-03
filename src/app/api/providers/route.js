@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import {
-  getProviderConnections,
-  createProviderConnection,
-  getProviderNodeById,
-  getProviderNodes,
+  getProviderConnectionsUnscoped,
+  createProviderConnectionUnscoped,
+  getProviderNodeByIdUnscoped,
+  getProviderNodesUnscoped,
   getProxyPoolById,
 } from "@/models";
+import { createConnection, getNode, listConnections, listNodes } from "@/lib/db/index.js";
+import { workspaceScope } from "@/lib/users/workspaceScope.js";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import {
   AI_PROVIDERS,
@@ -71,14 +73,21 @@ async function normalizeProxyPoolId(proxyPoolId) {
 }
 
 // GET /api/providers - List all connections
-export async function GET() {
+export async function GET(request) {
   try {
-    const connections = await getProviderConnections();
+    // YAN-361: switch on → one workspace's connections; off → all (today).
+    const scope = await workspaceScope(request, "workspace.connections.metadata.read");
+    if (scope instanceof Response) return scope;
+    const connections = scope
+      ? await listConnections(scope.ctx, scope.workspaceId)
+      : await getProviderConnectionsUnscoped();
 
     // Build nodeNameMap for compatible providers (id → name)
     const nodeNameMap = {};
     try {
-      const nodes = await getProviderNodes();
+      const nodes = scope
+        ? await listNodes(scope.ctx, scope.workspaceId)
+        : await getProviderNodesUnscoped();
       for (const node of nodes) {
         if (node.id && node.name) nodeNameMap[node.id] = node.name;
       }
@@ -114,6 +123,14 @@ export async function GET() {
 // POST /api/providers - Create new connection (API key only, OAuth via separate flow)
 export async function POST(request) {
   try {
+    const scope = await workspaceScope(request, "workspace.connections.manage");
+    if (scope instanceof Response) return scope;
+    // A node outside the target workspace reads as not found.
+    const nodeById = async (id) => {
+      if (!scope) return getProviderNodeByIdUnscoped(id);
+      const node = await getNode(scope.ctx, id);
+      return node?.workspaceId === scope.workspaceId ? node : null;
+    };
     const body = await request.json();
     const provider = normalizeProviderId(body.provider);
     const { apiKey, name, displayName, priority, globalPriority, defaultModel, testStatus } = body;
@@ -165,7 +182,7 @@ export async function POST(request) {
     // Compatible LLM nodes support multiple API-key connections (key pool); runtime
     // rotates/fails over via getProviderCredentials. Embedding nodes stay single-connection.
     if (isOpenAICompatibleProvider(provider)) {
-      const node = await getProviderNodeById(provider);
+      const node = await nodeById(provider);
       if (!node) {
         return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
       }
@@ -176,7 +193,7 @@ export async function POST(request) {
         nodeName: node.name,
       };
     } else if (isAnthropicCompatibleProvider(provider)) {
-      const node = await getProviderNodeById(provider);
+      const node = await nodeById(provider);
       if (!node) {
         return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
       }
@@ -186,7 +203,7 @@ export async function POST(request) {
         nodeName: node.name,
       };
     } else if (isCustomEmbeddingProvider(provider)) {
-      const node = await getProviderNodeById(provider);
+      const node = await nodeById(provider);
       if (!node) {
         return NextResponse.json({ error: "Custom Embedding node not found" }, { status: 404 });
       }
@@ -209,9 +226,12 @@ export async function POST(request) {
     }
 
     const authType = isWebCookieProvider ? "cookie" : "apikey";
-    // createProviderConnection upserts apikey rows by name; reject inside its
+    // createProviderConnectionUnscoped upserts apikey rows by name; reject inside its
     // transaction so a reused name never silently replaces another connection's key.
-    const newConnection = await createProviderConnection(
+    const create = scope
+      ? (data, opts) => createConnection(scope.ctx, scope.workspaceId, data, opts)
+      : createProviderConnectionUnscoped;
+    const newConnection = await create(
       {
         provider,
         authType,

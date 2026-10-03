@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  getProviderConnectionById: vi.fn(),
+  getProviderConnectionByIdUnscoped: vi.fn(),
   getApiKeys: vi.fn(),
   getConsistentMachineId: vi.fn(),
 }));
 
 vi.mock("@/lib/localDb", () => ({
-  getProviderConnectionById: mocks.getProviderConnectionById,
+  getProviderConnectionByIdUnscoped: mocks.getProviderConnectionByIdUnscoped,
   getApiKeys: mocks.getApiKeys,
 }));
 
@@ -34,7 +34,7 @@ const { POST } = await import("../../src/app/api/providers/[id]/test-models/rout
 describe("provider test-models route kind routing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getProviderConnectionById.mockResolvedValue({
+    mocks.getProviderConnectionByIdUnscoped.mockResolvedValue({
       id: "conn-hf",
       provider: "huggingface",
     });
@@ -96,7 +96,7 @@ describe("provider test-models route kind routing", () => {
 
   // YAN-107: the login-gated /api/providers/:id/models route must not be self-fetched.
   it("lists compatible node models in-process instead of an unauthenticated self-fetch", async () => {
-    mocks.getProviderConnectionById.mockResolvedValue({
+    mocks.getProviderConnectionByIdUnscoped.mockResolvedValue({
       id: "conn-oc",
       provider: "openai-compatible-node1",
       apiKey: "sk-node",

@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import {
-  getProviderConnectionById,
+  getProviderConnectionByIdUnscoped,
   getProxyPoolById,
-  updateProviderConnection,
-  deleteProviderConnection,
+  updateProviderConnectionUnscoped,
+  deleteProviderConnectionUnscoped,
 } from "@/models";
+import { deleteConnection, getConnection, updateConnection } from "@/lib/db/index.js";
+import { loadScoped } from "@/lib/users/workspaceScope.js";
 import { PLAN_CAPACITY } from "open-sse/config/quotaSnapshot.js";
 import { sanitizePlanTier, clearSnapshotPlanTier } from "open-sse/services/quotaSnapshot.js";
 
@@ -117,15 +119,23 @@ function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, has
   return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField;
 }
 
+// YAN-361: switch on, the row must be in one of the principal's workspaces.
+const load = (capability, id) =>
+  loadScoped(
+    capability,
+    id,
+    getConnection,
+    getProviderConnectionByIdUnscoped,
+    "Connection not found",
+  );
+
 // GET /api/providers/[id] - Get single connection
 export async function GET(request, { params }) {
   try {
     const { id } = await params;
-    const connection = await getProviderConnectionById(id);
-
-    if (!connection) {
-      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
-    }
+    const loaded = await load("workspace.connections.metadata.read", id);
+    if (loaded instanceof Response) return loaded;
+    const connection = loaded.row;
 
     // Hide sensitive fields
     const result = { ...connection };
@@ -159,10 +169,9 @@ export async function PUT(request, { params }) {
       providerSpecificData,
     } = body;
 
-    const existing = await getProviderConnectionById(id);
-    if (!existing) {
-      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
-    }
+    const loaded = await load("workspace.connections.manage", id);
+    if (loaded instanceof Response) return loaded;
+    const existing = loaded.row;
 
     if (
       providerSpecificData != null &&
@@ -236,7 +245,9 @@ export async function PUT(request, { params }) {
       }
     }
 
-    const updated = await updateProviderConnection(id, updateData);
+    const updated = loaded.scope
+      ? await updateConnection(loaded.scope.ctx, id, updateData)
+      : await updateProviderConnectionUnscoped(id, updateData);
     const oldManualTier =
       existing.providerSpecificData?.planTierManual === true
         ? sanitizePlanTier(existing.providerSpecificData.planTier)
@@ -266,8 +277,12 @@ export async function PUT(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const { id } = await params;
+    const loaded = await load("workspace.connections.manage", id);
+    if (loaded instanceof Response) return loaded;
 
-    const deleted = await deleteProviderConnection(id);
+    const deleted = loaded.scope
+      ? await deleteConnection(loaded.scope.ctx, id)
+      : await deleteProviderConnectionUnscoped(id);
     if (!deleted) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }

@@ -12,7 +12,7 @@ import { QUOTA_SNAPSHOT } from "open-sse/config/quotaSnapshot.js";
 import { recordQuotaSample } from "@/lib/quota/forecastStore.js";
 import { fetchClaudePlanTier } from "open-sse/services/usage/claude.js";
 import { cursorPlanTier } from "open-sse/services/usage/cursor.js";
-import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { getProviderConnectionByIdUnscoped, updateProviderConnectionUnscoped } from "@/lib/localDb";
 
 export { getSnapshot };
 
@@ -188,14 +188,14 @@ async function persistPlanTier(connectionId, rawTier, { markChecked = false } = 
     return tier;
   }
 
-  const existing = await getProviderConnectionById(connectionId);
+  const existing = await getProviderConnectionByIdUnscoped(connectionId);
   if (!existing) return null;
   const psd = existing.providerSpecificData || {};
   // Manual tier (set via PUT) is never overwritten; check time still persists.
   const changed =
     psd.planTierManual !== true && tier !== null && tier !== sanitizePlanTier(psd.planTier);
   if (changed || markChecked) {
-    await updateProviderConnection(connectionId, {
+    await updateProviderConnectionUnscoped(connectionId, {
       providerSpecificData: {
         ...psd,
         ...(changed ? { planTier: tier } : {}),

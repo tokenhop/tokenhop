@@ -37,11 +37,15 @@ export const TABLES = {
       data: "TEXT NOT NULL",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
+      // YAN-361 (migration 005): owning workspace and creator.
+      workspaceId: "TEXT REFERENCES workspaces(id) ON DELETE CASCADE",
+      createdByUserId: "TEXT REFERENCES users(id) ON DELETE SET NULL",
     },
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_pc_provider ON providerConnections(provider)",
       "CREATE INDEX IF NOT EXISTS idx_pc_provider_active ON providerConnections(provider, isActive)",
       "CREATE INDEX IF NOT EXISTS idx_pc_priority ON providerConnections(provider, priority)",
+      "CREATE INDEX IF NOT EXISTS idx_pc_ws_provider ON providerConnections(workspaceId, provider)",
     ],
   },
   providerNodes: {
@@ -52,8 +56,13 @@ export const TABLES = {
       data: "TEXT NOT NULL",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
+      workspaceId: "TEXT REFERENCES workspaces(id) ON DELETE CASCADE",
+      createdByUserId: "TEXT REFERENCES users(id) ON DELETE SET NULL",
     },
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_pn_type ON providerNodes(type)"],
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_pn_type ON providerNodes(type)",
+      "CREATE INDEX IF NOT EXISTS idx_pn_ws_type ON providerNodes(workspaceId, type)",
+    ],
   },
   proxyPools: {
     columns: {

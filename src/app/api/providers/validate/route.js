@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { getProviderNodeById } from "@/models";
+import { getProviderNodeByIdUnscoped } from "@/models";
+import { getNode } from "@/lib/db/index.js";
+import { principalScope } from "@/lib/users/workspaceScope.js";
 import {
   isOpenAICompatibleProvider,
   isAnthropicCompatibleProvider,
@@ -23,6 +25,10 @@ import {
 
 // POST /api/providers/validate - Validate API key with provider
 export async function POST(request) {
+  // YAN-361: switch on, a node in another workspace reads as not found.
+  const scope = await principalScope();
+  if (scope instanceof Response) return scope;
+  const nodeById = (id) => (scope ? getNode(scope.ctx, id) : getProviderNodeByIdUnscoped(id));
   try {
     const body = await request.json();
     const provider = normalizeProviderId(body.provider);
@@ -39,7 +45,7 @@ export async function POST(request) {
     // Validate with each provider
     try {
       if (isOpenAICompatibleProvider(provider)) {
-        const node = await getProviderNodeById(provider);
+        const node = await nodeById(provider);
         if (!node) {
           return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
         }
@@ -56,7 +62,7 @@ export async function POST(request) {
 
       // Custom Embedding nodes: probe /models (most embedding APIs are OpenAI-compatible)
       if (isCustomEmbeddingProvider(provider)) {
-        const node = await getProviderNodeById(provider);
+        const node = await nodeById(provider);
         if (!node) {
           return NextResponse.json({ error: "Custom Embedding node not found" }, { status: 404 });
         }
@@ -86,7 +92,7 @@ export async function POST(request) {
       }
 
       if (isAnthropicCompatibleProvider(provider)) {
-        const node = await getProviderNodeById(provider);
+        const node = await nodeById(provider);
         if (!node) {
           return NextResponse.json(
             { error: "Anthropic Compatible node not found" },

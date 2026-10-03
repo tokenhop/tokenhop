@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections } from "@/lib/localDb";
+import { getProviderConnectionsUnscoped } from "@/lib/localDb";
 
 const langNames = new Intl.DisplayNames(["en"], { type: "language" });
 
@@ -13,7 +13,10 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const langFilter = searchParams.get("lang");
 
-    const connections = await getProviderConnections({ provider: "deepgram", isActive: true });
+    const connections = await getProviderConnectionsUnscoped({
+      provider: "deepgram",
+      isActive: true,
+    });
     const apiKey = connections[0]?.apiKey;
     if (!apiKey)
       return NextResponse.json({ error: "No Deepgram connection found" }, { status: 400 });

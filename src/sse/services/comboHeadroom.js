@@ -1,6 +1,6 @@
 // Weighted combo headroom (YAN-261). App-side: open-sse must not import localDb,
 // so handlers build this fn here and inject it into handleComboChat.
-import { getProviderConnections } from "@/lib/localDb";
+import { getProviderConnectionsUnscoped } from "@/lib/localDb";
 import { getProviderHeadroom } from "open-sse/services/quotaSnapshot.js";
 import { parseModel } from "./model.js";
 
@@ -45,11 +45,11 @@ function detailFor(modelStr, idsByProvider) {
  * probe). One active-connections query per call; never throws. Unknown
  * models, aliases, nested combo names and custom-node prefixes get
  * headroom 1 / "static". DB errors give 1 / "static" for all.
- * @param {{ getProviderConnections?: Function }} [deps]
+ * @param {{ getProviderConnectionsUnscoped?: Function }} [deps]
  * @returns {Promise<(modelStr: string) => { headroom: number, source: "static"|"header"|"probe" }>}
  */
 export async function loadComboHeadroomDetailFn({
-  getProviderConnections: listConnections = getProviderConnections,
+  getProviderConnectionsUnscoped: listConnections = getProviderConnectionsUnscoped,
 } = {}) {
   let idsByProvider;
   try {
@@ -75,7 +75,7 @@ export async function loadComboHeadroomDetailFn({
 /**
  * Build a synchronous, memoized `(modelStr) => headroom` for combo members.
  * Thin wrapper over `loadComboHeadroomDetailFn`, kept for the chat handlers.
- * @param {{ getProviderConnections?: Function }} [deps]
+ * @param {{ getProviderConnectionsUnscoped?: Function }} [deps]
  * @returns {Promise<(modelStr: string) => number>}
  */
 export async function loadComboHeadroomFn(deps = {}) {

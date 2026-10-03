@@ -1,18 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  getProviderConnections: vi.fn(),
+  getProviderConnectionsUnscoped: vi.fn(),
   getSettings: vi.fn(),
   resolveConnectionProxyConfig: vi.fn(),
   getAntigravityUsage: vi.fn(),
 }));
 
 vi.mock("@/lib/localDb", () => ({
-  getProviderConnections: mocks.getProviderConnections,
+  getProviderConnectionsUnscoped: mocks.getProviderConnectionsUnscoped,
   getSettings: mocks.getSettings,
   getProxyPools: vi.fn(),
   validateApiKey: vi.fn(),
-  updateProviderConnection: vi.fn(),
+  updateProviderConnectionUnscoped: vi.fn(),
 }));
 vi.mock("@/lib/network/connectionProxy", () => ({
   resolveConnectionProxyConfig: mocks.resolveConnectionProxyConfig,
@@ -71,7 +71,7 @@ describe("Antigravity quota-aware routing", () => {
   it("skips exhausted account/model and selects the next account", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
-    mocks.getProviderConnections.mockResolvedValue([
+    mocks.getProviderConnectionsUnscoped.mockResolvedValue([
       { id: "ag-a", email: "a@example.com", isActive: true },
       { id: "ag-b", email: "b@example.com", isActive: true },
     ]);
@@ -92,7 +92,7 @@ describe("Antigravity quota-aware routing", () => {
   it("reports retry time when every account is cache-blocked", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
-    mocks.getProviderConnections.mockResolvedValue([
+    mocks.getProviderConnectionsUnscoped.mockResolvedValue([
       { id: "ag-a", email: "a@example.com", isActive: true },
     ]);
     getAntigravityQuotaCache().set("ag-a", {
@@ -112,7 +112,7 @@ describe("Antigravity quota-aware routing", () => {
   it("lets account back into rotation once reset time has passed", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-01T00:00:01.000Z"));
-    mocks.getProviderConnections.mockResolvedValue([
+    mocks.getProviderConnectionsUnscoped.mockResolvedValue([
       { id: "ag-a", email: "a@example.com", isActive: true },
     ]);
     getAntigravityQuotaCache().set("ag-a", {

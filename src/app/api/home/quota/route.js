@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections } from "@/lib/db/index.js";
+import { getProviderConnectionsUnscoped } from "@/lib/db/index.js";
 import { buildQuotaSnapshotView } from "@/sse/services/quotaSnapshotSync.js";
 import { getQuotaForecasts } from "@/lib/quota/forecastStore.js";
 import { deriveQuotaAccounts } from "@/lib/home/quota.js";
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
-    const connections = await getProviderConnections();
+    const connections = await getProviderConnectionsUnscoped();
     const active = (connections || []).filter((c) => c?.isActive !== false);
     return NextResponse.json({
       accounts: deriveQuotaAccounts(

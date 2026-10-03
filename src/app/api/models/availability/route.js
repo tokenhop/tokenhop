@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections, updateProviderConnection } from "@/lib/localDb";
+import { getProviderConnectionsUnscoped, updateProviderConnectionUnscoped } from "@/lib/localDb";
 
 const MODEL_LOCK_PREFIX = "modelLock_";
 
@@ -18,7 +18,7 @@ function getActiveModelLocks(connection) {
 
 export async function GET() {
   try {
-    const connections = await getProviderConnections();
+    const connections = await getProviderConnectionsUnscoped();
     const models = [];
 
     for (const connection of connections) {
@@ -65,14 +65,14 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const connections = await getProviderConnections({ provider });
+    const connections = await getProviderConnectionsUnscoped({ provider });
     const lockKey = `${MODEL_LOCK_PREFIX}${model}`;
 
     await Promise.all(
       connections
         .filter((connection) => connection[lockKey])
         .map((connection) =>
-          updateProviderConnection(connection.id, {
+          updateProviderConnectionUnscoped(connection.id, {
             [lockKey]: null,
             ...(connection.testStatus === "unavailable"
               ? {

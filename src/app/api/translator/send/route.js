@@ -1,4 +1,4 @@
-import { getProviderConnections, updateProviderConnection } from "@/lib/localDb.js";
+import { getProviderConnectionsUnscoped, updateProviderConnectionUnscoped } from "@/lib/localDb.js";
 import { getExecutor } from "open-sse/index.js";
 
 async function persistRefreshedCredentials(connection, newCredentials) {
@@ -30,7 +30,7 @@ async function persistRefreshedCredentials(connection, newCredentials) {
   }
 
   if (Object.keys(updateData).length > 0) {
-    await updateProviderConnection(connection.id, updateData);
+    await updateProviderConnectionUnscoped(connection.id, updateData);
   }
 }
 
@@ -45,7 +45,7 @@ export async function POST(request) {
       );
     }
 
-    const connections = await getProviderConnections({ provider });
+    const connections = await getProviderConnectionsUnscoped({ provider });
     const connection = connections.find((c) => c.isActive !== false);
     if (!connection) {
       return Response.json(

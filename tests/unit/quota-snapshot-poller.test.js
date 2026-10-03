@@ -4,11 +4,11 @@ vi.mock("open-sse/index.js", () => ({}), { virtual: true });
 
 vi.mock("@/lib/localDb", () => ({
   getSettings: vi.fn(),
-  getProviderConnections: vi.fn(),
-  getProviderConnectionById: vi.fn(),
+  getProviderConnectionsUnscoped: vi.fn(),
+  getProviderConnectionByIdUnscoped: vi.fn(),
   getCombos: vi.fn(),
   getModelAliases: vi.fn(async () => ({})),
-  updateProviderConnection: vi.fn(),
+  updateProviderConnectionUnscoped: vi.fn(),
 }));
 
 vi.mock("@/lib/network/connectionProxy", () => ({
@@ -43,8 +43,8 @@ describe("quota snapshot sync", () => {
     vi.setSystemTime(NOW);
 
     db = await import("@/lib/localDb");
-    db.getProviderConnectionById.mockReset();
-    db.updateProviderConnection.mockReset();
+    db.getProviderConnectionByIdUnscoped.mockReset();
+    db.updateProviderConnectionUnscoped.mockReset();
     ({ fetchClaudePlanTier } = await import("open-sse/services/usage/claude.js"));
     fetchClaudePlanTier.mockReset();
     store = await import("open-sse/services/quotaSnapshot.js");
@@ -90,8 +90,8 @@ describe("quota snapshot sync", () => {
     });
 
     expect(store.getSnapshot("codex-fallback")).toMatchObject({ planTier: "pro" });
-    expect(db.getProviderConnectionById).not.toHaveBeenCalled();
-    expect(db.updateProviderConnection).not.toHaveBeenCalled();
+    expect(db.getProviderConnectionByIdUnscoped).not.toHaveBeenCalled();
+    expect(db.updateProviderConnectionUnscoped).not.toHaveBeenCalled();
   });
 
   it("classifies Codex windows by windowMinutes rather than slot name", async () => {
@@ -155,7 +155,7 @@ describe("quota snapshot sync", () => {
   });
 
   it("persists changed plan tier while preserving provider-specific data", async () => {
-    db.getProviderConnectionById.mockResolvedValue({
+    db.getProviderConnectionByIdUnscoped.mockResolvedValue({
       id: "codex-tier",
       providerSpecificData: { workspaceId: "ws-1", planTier: "plus" },
     });
@@ -166,13 +166,13 @@ describe("quota snapshot sync", () => {
       usage: { plan: "Pro", quotas: {} },
     });
 
-    expect(db.updateProviderConnection).toHaveBeenCalledWith("codex-tier", {
+    expect(db.updateProviderConnectionUnscoped).toHaveBeenCalledWith("codex-tier", {
       providerSpecificData: { workspaceId: "ws-1", planTier: "pro" },
     });
   });
 
   it("does not write the same plan tier again within one hour", async () => {
-    db.getProviderConnectionById.mockResolvedValue({
+    db.getProviderConnectionByIdUnscoped.mockResolvedValue({
       id: "codex-tier",
       providerSpecificData: { keep: true, planTier: "plus" },
     });
@@ -185,13 +185,16 @@ describe("quota snapshot sync", () => {
     await sync.recordUsageSnapshot(input);
     await sync.recordUsageSnapshot(input);
 
-    expect(db.getProviderConnectionById).toHaveBeenCalledTimes(1);
-    expect(db.updateProviderConnection).toHaveBeenCalledTimes(1);
+    expect(db.getProviderConnectionByIdUnscoped).toHaveBeenCalledTimes(1);
+    expect(db.updateProviderConnectionUnscoped).toHaveBeenCalledTimes(1);
   });
 
   it("fails open when plan tier persistence fails", async () => {
-    db.getProviderConnectionById.mockResolvedValue({ id: "codex-tier", providerSpecificData: {} });
-    db.updateProviderConnection.mockRejectedValue(new Error("db unavailable"));
+    db.getProviderConnectionByIdUnscoped.mockResolvedValue({
+      id: "codex-tier",
+      providerSpecificData: {},
+    });
+    db.updateProviderConnectionUnscoped.mockRejectedValue(new Error("db unavailable"));
 
     await expect(
       sync.recordUsageSnapshot({
@@ -204,7 +207,7 @@ describe("quota snapshot sync", () => {
 
   it("handles a Claude profile 403/null result without persisting a tier or throwing", async () => {
     fetchClaudePlanTier.mockResolvedValue(null);
-    db.getProviderConnectionById.mockResolvedValue({
+    db.getProviderConnectionByIdUnscoped.mockResolvedValue({
       id: "claude-403",
       providerSpecificData: { workspaceId: "ws-1" },
     });
@@ -218,7 +221,7 @@ describe("quota snapshot sync", () => {
     ).resolves.toBeNull();
 
     expect(fetchClaudePlanTier).toHaveBeenCalledWith("setup-token", null);
-    expect(db.updateProviderConnection).toHaveBeenCalledWith(
+    expect(db.updateProviderConnectionUnscoped).toHaveBeenCalledWith(
       "claude-403",
       expect.objectContaining({
         providerSpecificData: expect.not.objectContaining({ planTier: expect.anything() }),
@@ -333,7 +336,7 @@ describe("quota snapshot poller", () => {
     const db = await import("@/lib/localDb");
     db.getSettings.mockReset().mockResolvedValue({});
     db.getCombos.mockReset().mockResolvedValue([]);
-    db.getProviderConnections.mockReset().mockResolvedValue([]);
+    db.getProviderConnectionsUnscoped.mockReset().mockResolvedValue([]);
     store = await import("open-sse/services/quotaSnapshot.js");
     poller = await import("../../src/shared/services/quotaSnapshotPoller.js");
     store.clearQuotaSnapshots();
@@ -343,7 +346,7 @@ describe("quota snapshot poller", () => {
         providerStrategies: { codex: { fallbackStrategy: "weighted" } },
       }),
       getCombos: vi.fn().mockResolvedValue([]),
-      getProviderConnections: vi.fn(),
+      getProviderConnectionsUnscoped: vi.fn(),
       resolveConnectionProxyConfig: vi.fn().mockResolvedValue({ connectionProxyEnabled: false }),
       refreshAndUpdateCredentials: vi.fn(async (connection) => ({ connection, refreshed: false })),
       getUsageForProvider: vi.fn().mockResolvedValue({
@@ -363,7 +366,7 @@ describe("quota snapshot poller", () => {
     const fresh = { id: "fresh", provider: "codex", authType: "oauth" };
     const stale = { id: "stale", provider: "codex", authType: "oauth" };
     const missing = { id: "missing", provider: "codex", authType: "oauth" };
-    deps.getProviderConnections.mockResolvedValue([fresh, stale, missing]);
+    deps.getProviderConnectionsUnscoped.mockResolvedValue([fresh, stale, missing]);
     store.recordProbeWindows(
       fresh.id,
       fresh.provider,
@@ -381,7 +384,10 @@ describe("quota snapshot poller", () => {
 
     await poller.runQuotaSnapshotTick(deps, state);
 
-    expect(deps.getProviderConnections).toHaveBeenCalledWith({ provider: "codex", isActive: true });
+    expect(deps.getProviderConnectionsUnscoped).toHaveBeenCalledWith({
+      provider: "codex",
+      isActive: true,
+    });
     expect(deps.refreshAndUpdateCredentials).toHaveBeenCalledTimes(2);
     expect(deps.refreshAndUpdateCredentials).toHaveBeenCalledWith(
       stale,
@@ -403,7 +409,7 @@ describe("quota snapshot poller", () => {
 
   it("caches failures and skips the connection during cooldown", async () => {
     const connection = { id: "broken", provider: "codex", authType: "oauth" };
-    deps.getProviderConnections.mockResolvedValue([connection]);
+    deps.getProviderConnectionsUnscoped.mockResolvedValue([connection]);
     deps.getUsageForProvider.mockRejectedValue(new Error("quota endpoint down"));
 
     await poller.runQuotaSnapshotTick(deps, state);
@@ -424,13 +430,16 @@ describe("quota snapshot poller", () => {
     deps.getCombos.mockResolvedValue([
       { name: "mix", models: [null, 123, {}, throwing, "cx/gpt-5"] },
     ]);
-    deps.getProviderConnections.mockResolvedValue([
+    deps.getProviderConnectionsUnscoped.mockResolvedValue([
       { id: "cx-1", provider: "codex", authType: "oauth" },
     ]);
 
     await poller.runQuotaSnapshotTick(deps, state);
 
-    expect(deps.getProviderConnections).toHaveBeenCalledWith({ provider: "codex", isActive: true });
+    expect(deps.getProviderConnectionsUnscoped).toHaveBeenCalledWith({
+      provider: "codex",
+      isActive: true,
+    });
     expect(deps.getUsageForProvider).toHaveBeenCalledTimes(1);
   });
 
@@ -456,7 +465,7 @@ describe("quota snapshot poller", () => {
 
     await poller.runQuotaSnapshotTick(deps, state);
 
-    expect(deps.getProviderConnections).not.toHaveBeenCalled();
+    expect(deps.getProviderConnectionsUnscoped).not.toHaveBeenCalled();
   });
 
   it("isWeightedProvider reflects weighted strategy and fails closed", async () => {

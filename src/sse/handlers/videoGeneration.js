@@ -5,7 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings, getProviderConnectionById } from "@/lib/localDb";
+import { getSettings, getProviderConnectionByIdUnscoped } from "@/lib/localDb";
 import { header, legacyHeaderNames } from "@/shared/brand";
 import { getModelInfo } from "../services/model.js";
 import {
@@ -29,7 +29,7 @@ const DEFAULT_VIDEO_PROVIDER = "xai";
  */
 async function resolveGetProvider(request, connectionId) {
   if (connectionId) {
-    const conn = await getProviderConnectionById(connectionId).catch(() => null);
+    const conn = await getProviderConnectionByIdUnscoped(connectionId).catch(() => null);
     if (conn?.provider && getVideoConfig(conn.provider)) return conn.provider;
   }
   const queried = new URL(request.url).searchParams.get("provider");

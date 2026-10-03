@@ -3,7 +3,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 import { GET } from "@/app/api/providers/[id]/models/route.js";
 import { buildModelsList } from "@/app/api/v1/models/route.js";
-import { createProviderConnection, deleteProviderConnectionsByProvider } from "@/models/index.js";
+import {
+  createProviderConnectionUnscoped,
+  deleteProviderConnectionsByProviderUnscoped,
+} from "@/models/index.js";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { clearLiveModelsCache } from "@/lib/providerModels/liveResolvers.js";
 import { parseOpenRouterModels } from "@/lib/providerModels/openrouterModels.js";
@@ -40,7 +43,7 @@ beforeEach(async () => {
   calls = [];
   respond = () => Response.json(catalog);
   clearLiveModelsCache();
-  await deleteProviderConnectionsByProvider("openrouter");
+  await deleteProviderConnectionsByProviderUnscoped("openrouter");
   const nativeFetch = globalThis.fetch.bind(globalThis);
   vi.stubGlobal("fetch", async (url, init = {}) => {
     if (!String(url).startsWith("https://openrouter.ai/")) return nativeFetch(url, init);
@@ -52,7 +55,7 @@ beforeEach(async () => {
 afterEach(() => vi.unstubAllGlobals());
 
 const connect = () =>
-  createProviderConnection({
+  createProviderConnectionUnscoped({
     provider: "openrouter",
     authType: "apikey",
     apiKey: "or-key",

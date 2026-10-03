@@ -28,7 +28,7 @@ vi.mock("@/lib/oauth/providers", () => ({
 }));
 
 vi.mock("@/models", () => ({
-  createProviderConnection: vi.fn(async (d) => ({ id: "conn-1", ...d })),
+  createProviderConnectionUnscoped: vi.fn(async (d) => ({ id: "conn-1", ...d })),
 }));
 
 vi.mock("open-sse/shared/mimoAccount.js", () => ({
@@ -149,12 +149,12 @@ describe("xiaomi-mimo OAuth session lifecycle", () => {
   });
 
   it("persists the Desktop passToken onto the connection (Preview models need it)", async () => {
-    const { createProviderConnection } = await import("@/models");
+    const { createProviderConnectionUnscoped } = await import("@/models");
     sessions.set("st3", { status: "done", result: { uid: "u1", accessToken: "sk-x" } });
 
     await exchange("st3");
 
-    const arg = createProviderConnection.mock.calls.at(-1)[0];
+    const arg = createProviderConnectionUnscoped.mock.calls.at(-1)[0];
     expect(arg.provider).toBe("xiaomi-mimo");
     expect(arg.providerSpecificData.mimoPassToken).toBe("pt-abc");
     expect(arg.providerSpecificData.mimoUserId).toBe("u1");

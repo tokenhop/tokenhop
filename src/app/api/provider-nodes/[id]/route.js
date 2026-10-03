@@ -1,12 +1,30 @@
 import { NextResponse } from "next/server";
 import {
-  deleteProviderConnectionsByProvider,
-  deleteProviderNode,
-  getProviderConnections,
-  getProviderNodeById,
-  updateProviderConnection,
-  updateProviderNode,
+  deleteProviderConnectionsByProviderUnscoped,
+  deleteProviderNodeUnscoped,
+  getProviderConnectionsUnscoped,
+  getProviderNodeByIdUnscoped,
+  updateProviderConnectionUnscoped,
+  updateProviderNodeUnscoped,
 } from "@/models";
+import {
+  deleteNode,
+  getNode,
+  listConnections,
+  updateConnection,
+  updateNode,
+} from "@/lib/db/index.js";
+import { loadScoped } from "@/lib/users/workspaceScope.js";
+
+// YAN-361: switch on, the node must be in one of the principal's workspaces.
+const load = (id) =>
+  loadScoped(
+    "workspace.connections.manage",
+    id,
+    getNode,
+    getProviderNodeByIdUnscoped,
+    "Provider node not found",
+  );
 
 // PUT /api/provider-nodes/[id] - Update provider node
 export async function PUT(request, { params }) {
@@ -14,11 +32,9 @@ export async function PUT(request, { params }) {
     const { id } = await params;
     const body = await request.json();
     const { name, prefix, apiType, baseUrl } = body;
-    const node = await getProviderNodeById(id);
-
-    if (!node) {
-      return NextResponse.json({ error: "Provider node not found" }, { status: 404 });
-    }
+    const loaded = await load(id);
+    if (loaded instanceof Response) return loaded;
+    const { scope, row: node } = loaded;
 
     if (!name?.trim()) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -68,12 +84,19 @@ export async function PUT(request, { params }) {
       updates.apiType = apiType;
     }
 
-    const updated = await updateProviderNode(id, updates);
+    const updated = scope
+      ? await updateNode(scope.ctx, id, updates)
+      : await updateProviderNodeUnscoped(id, updates);
 
-    const connections = await getProviderConnections({ provider: id });
+    const connections = scope
+      ? await listConnections(scope.ctx, node.workspaceId, { provider: id })
+      : await getProviderConnectionsUnscoped({ provider: id });
+    const update = scope
+      ? (cid, data) => updateConnection(scope.ctx, cid, data)
+      : updateProviderConnectionUnscoped;
     await Promise.all(
       connections.map((connection) =>
-        updateProviderConnection(connection.id, {
+        update(connection.id, {
           providerSpecificData: {
             ...(connection.providerSpecificData || {}),
             prefix: prefix.trim(),
@@ -87,6 +110,9 @@ export async function PUT(request, { params }) {
 
     return NextResponse.json({ node: updated });
   } catch (error) {
+    if (error?.code === "PREFIX_TAKEN") {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     console.log("Error updating provider node:", error);
     return NextResponse.json({ error: "Failed to update provider node" }, { status: 500 });
   }
@@ -96,14 +122,16 @@ export async function PUT(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const { id } = await params;
-    const node = await getProviderNodeById(id);
+    const loaded = await load(id);
+    if (loaded instanceof Response) return loaded;
+    const { scope, row: node } = loaded;
 
-    if (!node) {
-      return NextResponse.json({ error: "Provider node not found" }, { status: 404 });
+    if (scope) {
+      await deleteNode(scope.ctx, id); // node + its connections, one transaction
+    } else {
+      await deleteProviderConnectionsByProviderUnscoped(id);
+      await deleteProviderNodeUnscoped(id);
     }
-
-    await deleteProviderConnectionsByProvider(id);
-    await deleteProviderNode(id);
 
     return NextResponse.json({ success: true });
   } catch (error) {

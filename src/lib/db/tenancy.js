@@ -15,8 +15,12 @@
 export const TABLE_CLASSES = {
   _meta: { class: "system" },
   settings: { class: "pending-scope", issue: "YAN-362", note: "split into instance + workspace" },
-  providerConnections: { class: "pending-scope", issue: "YAN-361" },
-  providerNodes: { class: "pending-scope", issue: "YAN-361" },
+  providerConnections: {
+    class: "scoped",
+    scopeColumn: "workspaceId",
+    note: "NULL until the owner bootstrap adopts rows into Default (YAN-361)",
+  },
+  providerNodes: { class: "scoped", scopeColumn: "workspaceId" },
   proxyPools: { class: "instance" },
   apiKeys: { class: "pending-scope", issue: "YAN-363" },
   combos: { class: "pending-scope", issue: "YAN-364" },

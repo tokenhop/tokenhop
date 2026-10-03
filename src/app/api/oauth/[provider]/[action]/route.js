@@ -7,7 +7,7 @@ import {
   requestDeviceCode,
   pollForToken,
 } from "@/lib/oauth/providers";
-import { createProviderConnection } from "@/models";
+import { createProviderConnectionUnscoped } from "@/models";
 import { readDesktopPassToken } from "open-sse/shared/mimoAccount.js";
 import {
   startCodexProxy,
@@ -59,7 +59,7 @@ async function completeXaiManualCode(code, state) {
       session.codeVerifier,
       state,
     );
-    const connection = await createProviderConnection({
+    const connection = await createProviderConnectionUnscoped({
       provider: "xai",
       authType: "oauth",
       ...tokenData,
@@ -394,7 +394,7 @@ export async function POST(request, { params }) {
         }
 
         try {
-          const connection = await createProviderConnection({
+          const connection = await createProviderConnectionUnscoped({
             provider: "xiaomi-mimo",
             authType: "oauth",
             accessToken,
@@ -439,7 +439,7 @@ export async function POST(request, { params }) {
         }
         try {
           const tokenData = await exchangeTokens(provider, token, null, null, state);
-          const connection = await createProviderConnection({
+          const connection = await createProviderConnectionUnscoped({
             provider,
             authType: provider === "windsurf" ? "api_key" : "oauth",
             ...tokenData,
@@ -484,7 +484,7 @@ export async function POST(request, { params }) {
         if (accountId) providerSpecificData.chatgptAccountId = accountId;
         if (planType) providerSpecificData.chatgptPlanType = planType;
 
-        const connection = await createProviderConnection({
+        const connection = await createProviderConnectionUnscoped({
           provider,
           authType: "access_token",
           accessToken: code,
@@ -519,7 +519,7 @@ export async function POST(request, { params }) {
       });
 
       // Save to database
-      const connection = await createProviderConnection({
+      const connection = await createProviderConnectionUnscoped({
         provider,
         authType: "oauth",
         ...tokenData,
@@ -584,7 +584,7 @@ export async function POST(request, { params }) {
       if (result.success) {
         // Save to database (legacy kimi-coding OAuth → dual-auth kimi)
         const providerId = provider === "kimi-coding" ? "kimi" : provider;
-        const connection = await createProviderConnection({
+        const connection = await createProviderConnectionUnscoped({
           provider: providerId,
           authType: "oauth",
           ...result.tokens,

@@ -13,7 +13,10 @@ vi.mock("@/sse/services/tokenRefresh", async (importOriginal) => ({
 
 import { GET } from "@/app/api/providers/[id]/models/route.js";
 import { buildModelsList } from "@/app/api/v1/models/route.js";
-import { createProviderConnection, deleteProviderConnectionsByProvider } from "@/models/index.js";
+import {
+  createProviderConnectionUnscoped,
+  deleteProviderConnectionsByProviderUnscoped,
+} from "@/models/index.js";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { clearLiveModelsCache } from "@/lib/providerModels/liveResolvers.js";
 import {
@@ -37,7 +40,7 @@ beforeEach(async () => {
   tokenMocks.refreshGoogleToken.mockReset();
   tokenMocks.updateProviderCredentials.mockClear();
   for (const p of ["anthropic", "gemini", "gemini-cli", "antigravity"]) {
-    await deleteProviderConnectionsByProvider(p);
+    await deleteProviderConnectionsByProviderUnscoped(p);
   }
   const nativeFetch = globalThis.fetch.bind(globalThis);
   vi.stubGlobal("fetch", async (url, init = {}) => {
@@ -52,7 +55,7 @@ afterEach(() => {
 });
 
 const seed = (provider, extra = {}) =>
-  createProviderConnection({ provider, testStatus: "active", ...extra });
+  createProviderConnectionUnscoped({ provider, testStatus: "active", ...extra });
 
 async function dashboardModels(connectionId) {
   const res = await GET(new Request(`http://localhost/api/providers/${connectionId}/models`), {

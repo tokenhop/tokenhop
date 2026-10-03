@@ -2,15 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clearQuotaSnapshots, recordProbeWindows } from "open-sse/services/quotaSnapshot.js";
 
 const mocks = vi.hoisted(() => ({
-  getProviderConnections: vi.fn(),
-  getProviderConnectionById: vi.fn(),
+  getProviderConnectionsUnscoped: vi.fn(),
+  getProviderConnectionByIdUnscoped: vi.fn(),
   getUsageForProvider: vi.fn(),
 }));
 
 vi.mock("open-sse/index.js", () => ({}), { virtual: true });
 vi.mock("@/lib/localDb", () => ({
-  getProviderConnectionById: mocks.getProviderConnectionById,
-  updateProviderConnection: vi.fn(),
+  getProviderConnectionByIdUnscoped: mocks.getProviderConnectionByIdUnscoped,
+  updateProviderConnectionUnscoped: vi.fn(),
 }));
 vi.mock("open-sse/services/usage.js", () => ({ getUsageForProvider: mocks.getUsageForProvider }));
 vi.mock("open-sse/executors/index.js", () => ({
@@ -32,10 +32,10 @@ vi.mock("next/server", () => ({
   NextResponse: { json: (body, init) => ({ status: init?.status || 200, body }) },
 }));
 vi.mock("@/models", () => ({
-  getProviderConnections: mocks.getProviderConnections,
-  getProviderNodes: vi.fn(async () => []),
-  createProviderConnection: vi.fn(),
-  getProviderNodeById: vi.fn(),
+  getProviderConnectionsUnscoped: mocks.getProviderConnectionsUnscoped,
+  getProviderNodesUnscoped: vi.fn(async () => []),
+  createProviderConnectionUnscoped: vi.fn(),
+  getProviderNodeByIdUnscoped: vi.fn(),
   getProxyPoolById: vi.fn(),
 }));
 
@@ -47,7 +47,7 @@ describe("GET /api/providers effectiveWeight", () => {
   it("adds decomposed weight using manual tier/weight and hides credentials", async () => {
     // Snapshot detected pro, but manual tier wins; one has manual weight override.
     recordProbeWindows("a", "claude", [{ kind: "5h", usedFraction: 0.5 }], { planTier: "pro" });
-    mocks.getProviderConnections.mockResolvedValue([
+    mocks.getProviderConnectionsUnscoped.mockResolvedValue([
       {
         id: "a",
         provider: "claude",
@@ -80,7 +80,7 @@ describe("GET /api/providers effectiveWeight", () => {
   });
 
   it("usage GET returns a stale base-weight view when no snapshot exists", async () => {
-    mocks.getProviderConnectionById.mockResolvedValue({
+    mocks.getProviderConnectionByIdUnscoped.mockResolvedValue({
       id: "a",
       provider: "claude",
       authType: "oauth",

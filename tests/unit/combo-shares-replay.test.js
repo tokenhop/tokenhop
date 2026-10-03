@@ -96,7 +96,7 @@ describe("combo headroom quota source (additive API)", () => {
       "../../src/sse/services/comboHeadroom.js"
     );
     const deps = {
-      getProviderConnections: async () => [{ id: "conn-1", provider: "p" }],
+      getProviderConnectionsUnscoped: async () => [{ id: "conn-1", provider: "p" }],
     };
     const detail = await loadComboHeadroomDetailFn(deps);
     expect(detail("p/model")).toEqual({ headroom: 1, source: "static" });

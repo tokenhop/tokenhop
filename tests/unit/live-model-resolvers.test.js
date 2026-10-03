@@ -18,7 +18,10 @@ vi.mock("open-sse/services/qoderModels.js", async (importOriginal) => {
 
 import { GET as getProviderModels } from "@/app/api/providers/[id]/models/route.js";
 import { buildModelsList } from "@/app/api/v1/models/route.js";
-import { createProviderConnection, deleteProviderConnectionsByProvider } from "@/models/index.js";
+import {
+  createProviderConnectionUnscoped,
+  deleteProviderConnectionsByProviderUnscoped,
+} from "@/models/index.js";
 import { getProviderAlias } from "@/shared/constants/providers";
 import {
   clearLiveModelsCache,
@@ -38,8 +41,8 @@ beforeEach(async () => {
   anthropicCalls = 0;
   anthropicStatus = 200;
   qoder.resolveQoderModels.mockClear();
-  await deleteProviderConnectionsByProvider("claude");
-  await deleteProviderConnectionsByProvider("qoder");
+  await deleteProviderConnectionsByProviderUnscoped("claude");
+  await deleteProviderConnectionsByProviderUnscoped("qoder");
   const nativeFetch = globalThis.fetch.bind(globalThis);
   vi.stubGlobal("fetch", async (url, init) => {
     if (!String(url).startsWith("https://api.anthropic.com/v1/models"))
@@ -59,7 +62,7 @@ async function dashboardModels(connectionId, query = "") {
 }
 
 const seedClaude = (providerSpecificData) =>
-  createProviderConnection({
+  createProviderConnectionUnscoped({
     provider: "claude",
     authType: "apikey",
     apiKey: `sk-ant-api03-${Date.now()}-${Math.random()}`,
@@ -67,7 +70,7 @@ const seedClaude = (providerSpecificData) =>
     ...(providerSpecificData ? { providerSpecificData } : {}),
   });
 const seedQoder = () =>
-  createProviderConnection({
+  createProviderConnectionUnscoped({
     provider: "qoder",
     authType: "oauth",
     accessToken: `qoder-${Date.now()}-${Math.random()}`,

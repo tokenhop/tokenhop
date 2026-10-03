@@ -3,7 +3,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 import { GET } from "@/app/api/providers/[id]/models/route.js";
 import { buildModelsList } from "@/app/api/v1/models/route.js";
-import { createProviderConnection, deleteProviderConnectionsByProvider } from "@/models/index.js";
+import {
+  createProviderConnectionUnscoped,
+  deleteProviderConnectionsByProviderUnscoped,
+} from "@/models/index.js";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { clearLiveModelsCache } from "@/lib/providerModels/liveResolvers.js";
 import {
@@ -25,7 +28,7 @@ beforeEach(async () => {
   respond = () => new Response("unexpected", { status: 500 });
   clearLiveModelsCache();
   for (const p of ["together", "fireworks", "cerebras"])
-    await deleteProviderConnectionsByProvider(p);
+    await deleteProviderConnectionsByProviderUnscoped(p);
   const nativeFetch = globalThis.fetch.bind(globalThis);
   vi.stubGlobal("fetch", async (url, init = {}) => {
     if (!HOSTS.some((h) => String(url).startsWith(h))) return nativeFetch(url, init);
@@ -43,7 +46,7 @@ async function dashboardModels(id) {
 }
 
 const connect = (provider, apiKey = "k") =>
-  createProviderConnection({ provider, authType: "apikey", apiKey, testStatus: "active" });
+  createProviderConnectionUnscoped({ provider, authType: "apikey", apiKey, testStatus: "active" });
 
 const paid = { input: 1, output: 2 };
 

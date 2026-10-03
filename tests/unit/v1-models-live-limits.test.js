@@ -13,18 +13,21 @@ vi.mock("open-sse/services/grokCliModels.js", async (importOriginal) => ({
 }));
 
 import { buildModelsList } from "@/app/api/v1/models/route.js";
-import { createProviderConnection, deleteProviderConnectionsByProvider } from "@/models/index.js";
+import {
+  createProviderConnectionUnscoped,
+  deleteProviderConnectionsByProviderUnscoped,
+} from "@/models/index.js";
 import { clearLiveModelsCache } from "@/lib/providerModels/liveResolvers.js";
 import { getProviderAlias } from "@/shared/constants/providers";
 
 beforeEach(async () => {
   clearLiveModelsCache();
-  await deleteProviderConnectionsByProvider("grok-cli");
+  await deleteProviderConnectionsByProviderUnscoped("grok-cli");
 });
 
 describe("/v1/models live catalog limits (YAN-683)", () => {
   it("reports the live catalog's context and output limits", async () => {
-    await createProviderConnection({
+    await createProviderConnectionUnscoped({
       provider: "grok-cli",
       authType: "oauth",
       accessToken: "at-grok",

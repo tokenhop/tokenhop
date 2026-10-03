@@ -9,6 +9,7 @@ import { TenancyError, assertCtx, mapConstraintErrors } from "@/lib/users/errors
 import { assertNotLastManager } from "./membershipsRepo.js";
 import { getSettings } from "./settingsRepo.js";
 import { setMetaSync } from "../helpers/metaStore.js";
+import { adoptOwnerlessRowsUnscoped } from "./ownership.js";
 
 const COLS =
   "id, email, username, displayName, instanceRole, status, sessionVersion, createdAt, updatedAt, lastLoginAt";
@@ -260,6 +261,7 @@ export async function bootstrapOwnerUnscoped({ passwordHash } = {}) {
         [uuidv4(), id, id, now],
       );
       setMetaSync(db, "defaultWorkspaceId", ids.Default);
+      adoptOwnerlessRowsUnscoped(db); // YAN-361: existing connections/nodes → Default
       dropSession(id);
       return {
         ...getRow(db, id),

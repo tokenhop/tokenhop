@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { getUsageStats } from "@/lib/usageDb";
+import { getUsageStatsUnscoped } from "@/lib/usageDb";
 
 export async function GET() {
   try {
-    const stats = await getUsageStats();
+    const stats = await getUsageStatsUnscoped();
     return NextResponse.json(stats);
   } catch (error) {
     console.error("Error fetching usage stats:", error);

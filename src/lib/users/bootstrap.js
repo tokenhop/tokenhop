@@ -5,6 +5,7 @@
 // once at mint and stored as SHA-256 only.
 import crypto from "node:crypto";
 import {
+  adoptOwnerlessUnscoped,
   bootstrapOwnerUnscoped,
   countActiveUsersUnscoped,
   countSharedWorkspacesUnscoped,
@@ -100,7 +101,13 @@ async function maybePrintSetupToken(owner, settings) {
 }
 
 async function runBootstrap() {
-  if (await getOwnerUnscoped()) return;
+  if (await getOwnerUnscoped()) {
+    // Installs bootstrapped before YAN-361, or rows written while the switch
+    // was back off: adopt ownerless connections and nodes into Default.
+    const n = await adoptOwnerlessUnscoped();
+    if (n) console.log(`[users] Moved ${n} ownerless connection(s)/node(s) into Default`);
+    return;
+  }
   // Irreversible step (ADR-0009): back up first, abort if that fails.
   backupDbLite(await getAdapter(), makeBackupDir("users-bootstrap"));
   pruneOldBackups();

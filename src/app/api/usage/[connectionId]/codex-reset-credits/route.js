@@ -1,7 +1,7 @@
 // Ensure proxyFetch is loaded to patch globalThis.fetch
 import "open-sse/index.js";
 
-import { getProviderConnectionById } from "@/lib/localDb";
+import { getProviderConnectionByIdUnscoped } from "@/lib/localDb";
 import {
   consumeCodexRateLimitResetCredit,
   getCodexRateLimitResetCredits,
@@ -57,7 +57,7 @@ function getResponseForConsumeResult(result, redeemRequestId) {
 }
 
 async function getCodexConnection(connectionId) {
-  const connection = await getProviderConnectionById(connectionId);
+  const connection = await getProviderConnectionByIdUnscoped(connectionId);
   if (!connection) {
     return { response: Response.json({ error: "Connection not found" }, { status: 404 }) };
   }

@@ -84,7 +84,7 @@ describe("nested combo fallback and probe isolation", () => {
     resetProbeRateLimit();
     global._fallbackHops = [];
     await db.updateSettings({ requireApiKey: false });
-    await db.createProviderConnection({
+    await db.createProviderConnectionUnscoped({
       provider: "openai",
       name: "conn-a",
       apiKey: "sk-a",

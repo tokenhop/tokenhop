@@ -8,8 +8,8 @@ vi.mock("@/lib/localDb", () => ({
   updateSettings: vi.fn(),
   getCombos: vi.fn(),
   getModelAliases: vi.fn(async () => ({})),
-  getProviderConnections: vi.fn(),
-  updateProviderConnection: vi.fn(),
+  getProviderConnectionsUnscoped: vi.fn(),
+  updateProviderConnectionUnscoped: vi.fn(),
 }));
 vi.mock("@/lib/network/outboundProxy", () => ({ applyOutboundProxyEnv: vi.fn() }));
 vi.mock("open-sse/services/combo.js", () => ({ resetComboRotation: vi.fn() }));
@@ -25,7 +25,12 @@ vi.mock("@/sse/services/quotaSnapshotSync", () => ({
   recordUsageSnapshot: vi.fn(),
 }));
 
-import { getCombos, getProviderConnections, getSettings, updateSettings } from "@/lib/localDb";
+import {
+  getCombos,
+  getProviderConnectionsUnscoped,
+  getSettings,
+  updateSettings,
+} from "@/lib/localDb";
 import { resetAccountSelection } from "@/sse/services/auth";
 import { PATCH } from "../../src/app/api/settings/route.js";
 import {
@@ -48,7 +53,7 @@ beforeEach(() => {
   // Scheduler start runs one real-deps tick; keep it inert.
   getSettings.mockResolvedValue({});
   getCombos.mockResolvedValue([]);
-  getProviderConnections.mockResolvedValue([]);
+  getProviderConnectionsUnscoped.mockResolvedValue([]);
   vi.useFakeTimers();
 });
 afterEach(() => {
@@ -123,18 +128,18 @@ describe("global weighted poller", () => {
       }),
     ).toBe(false);
 
-    const getProviderConnections = vi.fn(async ({ provider }) =>
+    const getProviderConnectionsUnscoped = vi.fn(async ({ provider }) =>
       provider ? [] : [{ provider: "claude" }, { provider: "codex" }],
     );
     await runQuotaSnapshotTick(
       {
         getSettings: async () => settings,
         getCombos: async () => [],
-        getProviderConnections,
+        getProviderConnectionsUnscoped,
       },
       { running: false, failureCache: {} },
     );
-    expect(getProviderConnections.mock.calls.map(([filter]) => filter)).toEqual([
+    expect(getProviderConnectionsUnscoped.mock.calls.map(([filter]) => filter)).toEqual([
       { isActive: true },
       { provider: "claude", isActive: true },
     ]);
@@ -166,18 +171,18 @@ describe("non-weighted combo members (YAN-384)", () => {
   });
 
   it("tick polls non-weighted combo member providers", async () => {
-    const getProviderConnections = vi.fn(async ({ provider }) =>
+    const getProviderConnectionsUnscoped = vi.fn(async ({ provider }) =>
       provider ? [] : [{ provider: "claude" }],
     );
     await runQuotaSnapshotTick(
       {
         getSettings: async () => ({ fallbackStrategy: "fill-first" }),
         getCombos: async () => [combo],
-        getProviderConnections,
+        getProviderConnectionsUnscoped,
       },
       { running: false, failureCache: {} },
     );
-    expect(getProviderConnections.mock.calls.map(([filter]) => filter)).toEqual([
+    expect(getProviderConnectionsUnscoped.mock.calls.map(([filter]) => filter)).toEqual([
       { provider: "codex", isActive: true },
     ]);
   });
@@ -228,17 +233,20 @@ describe("alias combo members (YAN-386)", () => {
   });
 
   it("tick polls the aliased provider", async () => {
-    const getProviderConnections = vi.fn(async () => []);
+    const getProviderConnectionsUnscoped = vi.fn(async () => []);
     await runQuotaSnapshotTick(
       {
         getSettings: async () => ({ fallbackStrategy: "fill-first" }),
         getCombos: async () => [{ name: "c", models: ["my-opus"] }],
         getModelAliases: async () => aliases,
-        getProviderConnections,
+        getProviderConnectionsUnscoped,
       },
       { running: false, failureCache: {} },
     );
-    expect(getProviderConnections).toHaveBeenCalledWith({ provider: "claude", isActive: true });
+    expect(getProviderConnectionsUnscoped).toHaveBeenCalledWith({
+      provider: "claude",
+      isActive: true,
+    });
   });
 
   it("sync keeps a running scheduler when the aliases read fails", async () => {

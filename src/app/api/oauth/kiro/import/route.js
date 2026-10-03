@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
-import { createProviderConnection } from "@/models";
+import { createProviderConnectionUnscoped } from "@/models";
 
 /**
  * POST /api/oauth/kiro/import
@@ -33,7 +33,7 @@ export async function POST(request) {
     const providerLabel = isIdc ? "Enterprise" : "Imported";
     const resolvedProfileArn = profileArn || tokenData.profileArn || null;
 
-    const connection = await createProviderConnection({
+    const connection = await createProviderConnectionUnscoped({
       provider: "kiro",
       authType: "oauth",
       accessToken: tokenData.accessToken,

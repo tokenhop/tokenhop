@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { getLiveRoutesFeed, getProviderConnections, getProviderNodes } from "@/lib/db/index.js";
+import {
+  getLiveRoutesFeed,
+  getProviderConnectionsUnscoped,
+  getProviderNodesUnscoped,
+} from "@/lib/db/index.js";
 import { buildLiveRoutes, WINDOW_MS } from "@/lib/home/liveRoutes.js";
 
 // /api/* is deny-by-default protected by src/dashboardGuard.js (proxy middleware).
@@ -14,8 +18,8 @@ export async function GET() {
   try {
     const [feed, connections, nodes] = await Promise.all([
       getLiveRoutesFeed({ windowMs: WINDOW_MS }),
-      getProviderConnections().catch(() => []),
-      getProviderNodes().catch(() => []),
+      getProviderConnectionsUnscoped().catch(() => []),
+      getProviderNodesUnscoped().catch(() => []),
     ]);
     const providerNames = {};
     for (const node of nodes || []) {

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections } from "@/models";
+import { getProviderConnectionsUnscoped } from "@/models";
+import { listConnections } from "@/lib/db/index.js";
+import { workspaceScope } from "@/lib/users/workspaceScope.js";
 import {
   FREE_PROVIDERS,
   OAUTH_PROVIDERS,
@@ -51,7 +53,12 @@ export async function POST(request) {
       return NextResponse.json({ error: "mode is required" }, { status: 400 });
     }
 
-    const allConnections = await getProviderConnections({ isActive: true });
+    // YAN-361: switch on, only the selected workspace's connections.
+    const scope = await workspaceScope(request, "workspace.connections.use");
+    if (scope instanceof Response) return scope;
+    const allConnections = scope
+      ? await listConnections(scope.ctx, scope.workspaceId, { isActive: true })
+      : await getProviderConnectionsUnscoped({ isActive: true });
 
     let connectionsToTest = [];
     if (mode === "provider" && providerId) {

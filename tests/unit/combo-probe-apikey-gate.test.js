@@ -68,7 +68,7 @@ describe("probe API-key gate (merge gate)", () => {
     resetProbeRateLimit();
     // Default settings: requireApiKey true (DEFAULT_SETTINGS).
     await db.updateSettings({ requireApiKey: true });
-    await db.createProviderConnection({
+    await db.createProviderConnectionUnscoped({
       provider: "openai",
       name: "probe-conn",
       apiKey: "sk-probe",

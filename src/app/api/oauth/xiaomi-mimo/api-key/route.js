@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createProviderConnection } from "@/models";
+import { createProviderConnectionUnscoped } from "@/models";
 
 /**
  * POST /api/oauth/xiaomi-mimo/api-key
@@ -53,14 +53,16 @@ export async function POST(request) {
     }
 
     // Dedup: if a connection with the same uid or same key already exists, update it
-    const { getProviderConnections, updateProviderConnection } = await import("@/models");
-    const existing = (await getProviderConnections()).find(
+    const { getProviderConnectionsUnscoped, updateProviderConnectionUnscoped } = await import(
+      "@/models"
+    );
+    const existing = (await getProviderConnectionsUnscoped()).find(
       (c) =>
         c.provider === "xiaomi-mimo" &&
         ((uid && c.email === `${uid}@xiaomi`) || c.accessToken === key),
     );
     if (existing) {
-      const updated = await updateProviderConnection(existing.id, {
+      const updated = await updateProviderConnectionUnscoped(existing.id, {
         accessToken: key,
         providerSpecificData: {
           ...existing.providerSpecificData,
@@ -88,7 +90,7 @@ export async function POST(request) {
       });
     }
 
-    const connection = await createProviderConnection({
+    const connection = await createProviderConnectionUnscoped({
       provider: "xiaomi-mimo",
       authType: "api_key",
       accessToken: key,

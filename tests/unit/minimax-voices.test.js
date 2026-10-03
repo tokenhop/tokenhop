@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../../src/lib/localDb.js", () => ({
-  getProviderConnections: vi.fn(),
+  getProviderConnectionsUnscoped: vi.fn(),
 }));
 
-import { getProviderConnections } from "../../src/lib/localDb.js";
+import { getProviderConnectionsUnscoped } from "../../src/lib/localDb.js";
 import { GET } from "../../src/app/api/media-providers/tts/minimax/voices/route.js";
 
 const originalFetch = global.fetch;
@@ -20,7 +20,7 @@ describe("MiniMax voices API", () => {
   });
 
   it("fetches global MiniMax voices with stored API key", async () => {
-    getProviderConnections.mockResolvedValueOnce([{ apiKey: "test-key" }]);
+    getProviderConnectionsUnscoped.mockResolvedValueOnce([{ apiKey: "test-key" }]);
     global.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -41,7 +41,10 @@ describe("MiniMax voices API", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(getProviderConnections).toHaveBeenCalledWith({ provider: "minimax", isActive: true });
+    expect(getProviderConnectionsUnscoped).toHaveBeenCalledWith({
+      provider: "minimax",
+      isActive: true,
+    });
     expect(global.fetch).toHaveBeenCalledWith(
       "https://api.minimax.io/v1/get_voice",
       expect.objectContaining({
@@ -65,7 +68,7 @@ describe("MiniMax voices API", () => {
   });
 
   it("fetches China MiniMax voices when provider=minimax-cn", async () => {
-    getProviderConnections.mockResolvedValueOnce([{ apiKey: "test-key" }]);
+    getProviderConnectionsUnscoped.mockResolvedValueOnce([{ apiKey: "test-key" }]);
     global.fetch.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -84,7 +87,10 @@ describe("MiniMax voices API", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(getProviderConnections).toHaveBeenCalledWith({ provider: "minimax-cn", isActive: true });
+    expect(getProviderConnectionsUnscoped).toHaveBeenCalledWith({
+      provider: "minimax-cn",
+      isActive: true,
+    });
     expect(global.fetch.mock.calls[0][0]).toBe("https://api.minimaxi.com/v1/get_voice");
     expect(body.byLang["Chinese (Mandarin)"].voices[0].id).toBe(
       "Chinese (Mandarin)_female_beijing",

@@ -8,7 +8,7 @@
 // In-flight logins are held in `sessions` keyed by state. The OAuthModal
 // device_code flow starts one via requestDeviceCode(); pollToken() peeks
 // at the resolved token; the generic [provider]/[action] route calls
-// createProviderConnection with the real token.
+// createProviderConnectionUnscoped with the real token.
 import { randomBytes } from "node:crypto";
 import { startLocalServer } from "../utils/server.js";
 import { KIMCHI_CONFIG } from "../constants/oauth.js";

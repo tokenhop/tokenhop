@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { createProviderNode, getProviderNodes } from "@/models";
+import { createProviderNodeUnscoped, getProviderNodesUnscoped } from "@/models";
+import { createNode, listNodes } from "@/lib/db/index.js";
+import { workspaceScope } from "@/lib/users/workspaceScope.js";
 import {
   OPENAI_COMPATIBLE_PREFIX,
   ANTHROPIC_COMPATIBLE_PREFIX,
@@ -22,9 +24,14 @@ const CUSTOM_EMBEDDING_DEFAULTS = {
 };
 
 // GET /api/provider-nodes - List all provider nodes
-export async function GET() {
+export async function GET(request) {
   try {
-    const nodes = await getProviderNodes();
+    // YAN-361: switch on, one workspace's nodes.
+    const scope = await workspaceScope(request, "workspace.connections.metadata.read");
+    if (scope instanceof Response) return scope;
+    const nodes = scope
+      ? await listNodes(scope.ctx, scope.workspaceId)
+      : await getProviderNodesUnscoped();
     return NextResponse.json({ nodes });
   } catch (error) {
     console.log("Error fetching provider nodes:", error);
@@ -35,6 +42,12 @@ export async function GET() {
 // POST /api/provider-nodes - Create provider node
 export async function POST(request) {
   try {
+    const scope = await workspaceScope(request, "workspace.connections.manage");
+    if (scope instanceof Response) return scope;
+    // Switch on: owned by the workspace, prefix unique inside it.
+    const createProviderNode = scope
+      ? (data) => createNode(scope.ctx, scope.workspaceId, data)
+      : createProviderNodeUnscoped;
     const body = await request.json();
     const { name, prefix, apiType, baseUrl, type } = body;
 
@@ -106,6 +119,9 @@ export async function POST(request) {
 
     return NextResponse.json({ error: "Invalid provider node type" }, { status: 400 });
   } catch (error) {
+    if (error?.code === "PREFIX_TAKEN") {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     console.log("Error creating provider node:", error);
     return NextResponse.json({ error: "Failed to create provider node" }, { status: 500 });
   }

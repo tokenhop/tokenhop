@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections } from "@/lib/localDb";
+import { getProviderConnectionsUnscoped } from "@/lib/localDb";
 
 const MINIMAX_VOICE_ENDPOINTS = {
   minimax: "https://api.minimax.io/v1/get_voice",
@@ -69,7 +69,7 @@ export async function GET(request) {
     const voiceType = searchParams.get("voice_type") || "all";
     const langFilter = searchParams.get("lang");
 
-    const connections = await getProviderConnections({ provider, isActive: true });
+    const connections = await getProviderConnectionsUnscoped({ provider, isActive: true });
     const apiKey = connections[0]?.apiKey;
     if (!apiKey) {
       return NextResponse.json({ error: `No ${provider} connection found` }, { status: 400 });

@@ -1,5 +1,5 @@
 // End-to-end: a cache-bearing request flows through canonicalizeUsage →
-// saveRequestUsage → getUsageStats, proving cached tokens are persisted,
+// saveRequestUsage → getUsageStatsUnscoped, proving cached tokens are persisted,
 // aggregated, and cost is computed correctly (the bug this branch fixes).
 import fs from "node:fs";
 import os from "node:os";
@@ -45,7 +45,7 @@ describe("cached-token end-to-end (persist + aggregate + cost)", () => {
       status: "ok",
     });
 
-    const stats = await db.getUsageStats("24h");
+    const stats = await db.getUsageStatsUnscoped("24h");
     expect(stats.totalCachedTokens).toBe(200);
     expect(stats.totalPromptTokens).toBe(330);
     expect(stats.byProvider.anthropic.cachedTokens).toBe(200);

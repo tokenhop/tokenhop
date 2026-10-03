@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionById } from "@/models";
+import { getProviderConnectionByIdUnscoped } from "@/models";
+import { getConnection } from "@/lib/db/index.js";
+import { principalScope, denyRow } from "@/lib/users/workspaceScope.js";
 import {
   FREE_PROVIDERS,
   isOpenAICompatibleProvider,
@@ -73,9 +75,16 @@ export async function GET(request, { params }) {
     const { id } = await params;
     // Keyless free providers have no row: fall back to the synthetic noauth
     // connection so the live branch below still serves them.
+    // YAN-361: switch on, only a connection in one of the principal's workspaces.
+    const scope = await principalScope();
+    if (scope instanceof Response) return scope;
+    const row = scope
+      ? await getConnection(scope.ctx, id)
+      : await getProviderConnectionByIdUnscoped(id);
+    const denied = row && denyRow(scope, "workspace.connections.metadata.read", row);
+    if (denied) return denied;
     const connection =
-      (await getProviderConnectionById(id)) ||
-      (FREE_PROVIDERS[id]?.noAuth && hasLiveModelResolver(id) ? noAuthConnection(id) : null);
+      row || (FREE_PROVIDERS[id]?.noAuth && hasLiveModelResolver(id) ? noAuthConnection(id) : null);
 
     if (!connection) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
