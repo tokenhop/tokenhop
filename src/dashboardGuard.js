@@ -185,7 +185,8 @@ export async function proxy(request) {
     // Verify JWT token
     const token = request.cookies.get("auth_token")?.value;
     if (token) {
-      if (await hasValidSession(request)) {
+      // Switch on: a live session of a pending user is not a dashboard login.
+      if ((await hasValidSession(request)) && (await principalCan(request, "self.session"))) {
         // YAN-312: the Translator debug page honors the resolved flag.
         if (isTranslatorPath(pathname) && !translatorEnabled) {
           return NextResponse.redirect(new URL("/dashboard", request.url));

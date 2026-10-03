@@ -119,13 +119,18 @@ describe("switch on", () => {
       return proxy(new NextRequest(`http://localhost${path}`, { method, headers: h }));
     };
     expect(await s.hasValidSession(req({ token: await tokenFor(t.b) }))).toBe(true);
-    for (const path of ["/api/providers", "/api/settings", "/api/tunnel/status", "/api/nope"]) {
+    for (const path of ["/api/providers", "/api/settings", "/api/tunnel/status"]) {
       expect((await call(t.b, path)).status, path).toBe(403);
       expect((await call(t.a, path)).status, path).not.toBe(403);
     }
     expect((await call(t.b, "/api/keys", "POST")).status).toBe(403);
     expect((await call(t.b, "/api/gateway/status")).status).not.toBe(403);
     expect((await call(t.b, "/api/health")).status).not.toBe(403);
+    await db.updateUserUnscoped(t.b.user.id, { instanceRole: "pending" });
+    t.b.user = await db.getUserUnscoped(t.b.user.id);
+    expect((await call(t.b, "/dashboard")).status).toBe(307);
+    expect((await call(t.b, "/dashboard")).headers.get("location")).toContain("/login");
+    expect((await call(t.a, "/dashboard")).headers.get("location")).toBeNull();
   });
 
   it("accepts a legacy sub-less token with one user, rejects it with two", async () => {

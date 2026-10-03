@@ -225,7 +225,7 @@ export async function principalCan(request, capability) {
  * @returns {Promise<Response|null>}
  */
 export async function authorize(capability, resource = {}) {
-  if (!(await isMultiUserEnabled())) return null;
+  if (!(await multiUserOn())) return null;
   const principal = await getPrincipal();
   if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (can(principal, capability, resource)) return null;

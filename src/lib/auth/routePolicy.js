@@ -206,8 +206,13 @@ export const GATEWAY_PREFIXES = Object.freeze([
 ]);
 const GATEWAY = Object.freeze({ cap: "gateway.use", gateway: true });
 
-/** Any /api/* path or method without a row: authenticated hostOps, fail closed. */
+/**
+ * Any /api/* path without a row (no route file: Next answers 404) gets the
+ * strictest gate: local-only, session or CLI token, hostOps. Covers the old
+ * bare-prefix near misses such as /api/shutdownX or /api/cli-tools/unknown.
+ */
 export const UNMAPPED = "unmapped";
+const UNMAPPED_ROW = Object.freeze({ cap: HOST, localOnly: true, alwaysProtected: true });
 
 // Segment kinds rank like Next's router: static before [param] before [...rest].
 const rank = (seg) => (seg.startsWith("[...") ? 2 : seg.startsWith("[") ? 1 : 0);
@@ -248,6 +253,12 @@ function routeKey(pathname) {
   const segs = segmentsOf(pathname);
   if (!segs) return String(pathname).startsWith("/api") ? UNMAPPED : null;
   const clean = `/${segs.join("/")}`;
+  // An encoded "/" or dot segment never names a static route: Next would serve
+  // it through a dynamic param (or 404), so don't let it borrow another row.
+  if (segs.some((s) => s.includes("/") || s === "." || s === "..")) {
+    if (segs[0] === "api" || segs[0]?.startsWith("api/")) return UNMAPPED;
+    return GATEWAY_PREFIXES.includes(`/${segs[0]}`) ? "gateway" : null;
+  }
   if (GATEWAY_PREFIXES.some((p) => clean === p || clean.startsWith(`${p}/`))) return "gateway";
   if (Object.hasOwn(ROUTE_POLICY, clean) && !clean.includes("[")) return clean;
   const hit = PATTERNS.find((p) => matches(p.segs, segs));
@@ -266,7 +277,7 @@ export function resolveRoutePolicy(pathname, method = "GET") {
   const key = routeKey(pathname);
   if (!key) return null;
   if (key === "gateway") return { key, ...flags(GATEWAY), capability: GATEWAY.cap };
-  if (key === UNMAPPED) return { key, ...flags({}), capability: HOST };
+  if (key === UNMAPPED) return { key, ...flags(UNMAPPED_ROW), capability: HOST };
   const row = ROUTE_POLICY[key];
   const m = String(method || "GET").toUpperCase();
   let capability = row.cap;

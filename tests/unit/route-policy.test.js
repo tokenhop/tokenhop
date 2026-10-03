@@ -133,11 +133,48 @@ describe("route coverage", () => {
 
   it("fails closed on unknown API paths and methods", () => {
     const unknown = resolveRoutePolicy("/api/does-not-exist", "GET");
-    expect(unknown).toMatchObject({ key: UNMAPPED, public: false, capability: "instance.hostOps" });
+    expect(unknown).toMatchObject({
+      key: UNMAPPED,
+      public: false,
+      localOnly: true,
+      alwaysProtected: true,
+      capability: "instance.hostOps",
+    });
     expect(resolveRoutePolicy("/api/providers", "TRACE").capability).toBe("instance.hostOps");
     expect(resolveRoutePolicy("/api/providers/%E0%A4%A", "GET").key).toBe(UNMAPPED);
     expect(resolveRoutePolicy("/dashboard/providers", "GET")).toBeNull();
     expect(resolveRoutePolicy("/skills/x", "GET")).toBeNull();
+  });
+});
+
+describe("adversarial paths never get a weaker gate than the old guard", () => {
+  // Paths with no route file: the old bare-prefix lists caught some of them;
+  // now every one gets the strictest gate. Encoded separators and dot
+  // segments never borrow a static row.
+  const STRICT = { localOnly: true, alwaysProtected: true, public: false, gateway: false };
+  for (const p of [
+    "/api",
+    "/api/shutdownX",
+    "/api/settings/databaseX",
+    "/api/cli-tools/unknown",
+    "/api/mcp/foo",
+    "/api/headroom/proxy",
+    "/api/auth/oidcX",
+    "/api/settings%2Fdatabase",
+    "/api/settings/%2e%2e/database",
+    "/api/v1/../settings",
+    "/api/providers/a%2Fb",
+  ]) {
+    it(p, () => {
+      for (const m of ["GET", "POST"]) expect(resolveRoutePolicy(p, m)).toMatchObject(STRICT);
+    });
+  }
+
+  it("keeps trailing and doubled slashes on their own row", () => {
+    expect(resolveRoutePolicy("/api/shutdown/", "POST").key).toBe("/api/shutdown");
+    expect(resolveRoutePolicy("/api//cli-tools/claude-settings", "GET").localOnly).toBe(true);
+    expect(resolveRoutePolicy("/%76%31/chat/completions", "POST").gateway).toBe(true);
+    expect(resolveRoutePolicy("/v1/models/%2e%2e", "GET").gateway).toBe(true);
   });
 });
 
