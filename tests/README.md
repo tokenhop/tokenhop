@@ -49,15 +49,15 @@ RUN_REAL=1 npx vitest run translator/real/antigravity-cache
 
 The Antigravity prompt-cache probe also lives in `real/` and reads connections from the
 real SQLite DB through the app DB layer. The OAuth client credentials are read at module
-load, so they must be present in the environment before vitest starts — use the dotenvx
+load, so they must be present in the environment before vitest starts — use the `op run`
 wrapper rather than a bare `RUN_REAL=1` prefix:
 
 ```bash
-RUN_REAL=1 npx dotenvx run -f ../.env.encrypted -- npx vitest run translator/real/antigravity-cache
+RUN_REAL=1 op run --env-file=../.env.local -- npx vitest run translator/real/antigravity-cache
 ```
 
-It requires `ANTIGRAVITY_OAUTH_CLIENT_ID` / `_SECRET` (set them via the repo's encrypted
-env) and skips cleanly when the credential DB is unavailable or there is no active
+It requires `ANTIGRAVITY_OAUTH_CLIENT_ID` / `_SECRET` (1Password references in the
+gitignored `.env.local`) and skips cleanly when the credential DB is unavailable or there is no active
 Antigravity connection with a refresh token and project ID.
 
 ## Upgrade end to end
