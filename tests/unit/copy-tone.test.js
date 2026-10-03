@@ -33,11 +33,13 @@ const COPY_TONE_ALLOWLIST = new Map([
   ["Reset judge to Auto", "cites the Auto select option"],
   ["Public HTTPS URL. Needs Require API key.", "cites the Require API key setting"],
   ["more providers — open Edit pricing for full details.", "cites the Edit pricing button"],
-  ['Click "View All Model" → "Add Custom Model"', "quoted Cursor UI labels"],
+  ['Paste it into "OpenAI API Key" and turn the key on.', "quoted Cursor UI labels"],
+  ['Turn on "Override OpenAI Base URL" and paste:', "quoted Cursor UI labels"],
+  ['API Provider → "OpenAI Compatible"', "quoted Roo Code UI labels"],
   // Third-party UI labels quoted verbatim (VS Code, Claude Desktop, Okta…).
   [
-    "Cursor routes requests through its own server, so local endpoint is not supported. Please enable Tunnel or Cloud Endpoint in Settings.",
-    "Cursor Tunnel / Cloud Endpoint settings options",
+    "Cursor calls the base URL from its own servers, so a local or tailnet-only address won't work. Enable Tunnel, Tailscale (Funnel) or Cloud in Settings.",
+    "Tunnel / Tailscale / Cloud settings options",
   ],
   [
     "In VS Code, open Extensions (Ctrl+Shift+X or Cmd+Shift+X), search for '9Router for GitHub Copilot' and click Install.", // legacy(9router): third-party extension name

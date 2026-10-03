@@ -291,20 +291,26 @@ export const CLI_TOOLS = {
       { type: "warning", text: "Requires Cursor Pro account to use this feature." },
       {
         type: "cloudCheck",
-        text: "Cursor routes requests through its own server, so local endpoint is not supported. Please enable Tunnel or Cloud Endpoint in Settings.",
+        text: "Cursor calls the base URL from its own servers, so a local or tailnet-only address won't work. Enable Tunnel, Tailscale (Funnel) or Cloud in Settings.",
       },
     ],
     guideSteps: [
-      { step: 1, title: "Open Settings", desc: "Go to Settings → Models" },
-      { step: 2, title: "Enable OpenAI API", desc: 'Enable "OpenAI API key" option' },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
-      { step: 4, title: "API key", type: "apiKeySelector" },
+      { step: 1, title: "Open Settings", desc: "Cursor Settings → Models" },
       {
-        step: 5,
-        title: "Add custom model",
-        desc: 'Click "View All Model" → "Add Custom Model"',
+        step: 2,
+        title: "API key",
+        desc: 'Paste it into "OpenAI API Key" and turn the key on.',
+        type: "apiKeySelector",
       },
-      { step: 6, title: "Select model", type: "modelSelector" },
+      {
+        step: 3,
+        title: "Base URL",
+        desc: 'Turn on "Override OpenAI Base URL" and paste:',
+        value: "{{baseUrl}}",
+        copyable: true,
+      },
+      { step: 4, title: "Add custom model", desc: "Add the model id below to the model list." },
+      { step: 5, title: "Select model", type: "modelSelector" },
     ],
   },
   cline: {
@@ -331,11 +337,11 @@ export const CLI_TOOLS = {
     description: "Roo AI assistant",
     configType: "guide",
     guideSteps: [
-      { step: 1, title: "Open Settings", desc: "Go to Roo Settings panel" },
-      { step: 2, title: "Select provider", desc: "Choose API provider → Ollama" },
+      { step: 1, title: "Open Settings", desc: "Open the Roo Code settings panel." },
+      { step: 2, title: "Select provider", desc: 'API Provider → "OpenAI Compatible"' },
       { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
       { step: 4, title: "API key", type: "apiKeySelector" },
-      { step: 5, title: "Select model", type: "modelSelector" },
+      { step: 5, title: "Model ID", type: "modelSelector" },
     ],
   },
   continue: {
@@ -346,24 +352,28 @@ export const CLI_TOOLS = {
     description: "Continue AI assistant",
     configType: "guide",
     guideSteps: [
-      { step: 1, title: "Open config", desc: "Open Continue configuration file" },
+      {
+        step: 1,
+        title: "Open config",
+        desc: "Open ~/.continue/config.yaml (Windows: %USERPROFILE%\\.continue\\config.yaml).",
+      },
       { step: 2, title: "API key", type: "apiKeySelector" },
       { step: 3, title: "Select model", type: "modelSelector" },
       {
         step: 4,
         title: "Add model config",
-        desc: "Add the following configuration to your models array:",
+        desc: "Add this entry to the models list:",
       },
     ],
     codeBlock: {
-      language: "json",
-      code: `{
-  "apiBase": "{{baseUrl}}",
-  "title": "{{model}}",
-  "model": "{{model}}",
-  "provider": "openai",
-  "apiKey": "{{apiKey}}"
-}`,
+      language: "yaml",
+      code: `models:
+  - name: "{{model}}"
+    provider: openai
+    model: "{{model}}"
+    apiBase: {{baseUrl}}
+    apiKey: "{{apiKey}}"
+    roles: [chat, edit, apply]`,
     },
   },
   amp: {
@@ -372,44 +382,38 @@ export const CLI_TOOLS = {
     image: "/providers/amp.webp",
     color: "#F97316",
     description: "Sourcegraph Amp coding assistant CLI",
-    docsUrl: "/docs?section=cli-tools&tool=amp",
+    docsUrl: "https://ampcode.com/docs/customize/model-routing",
     configType: "guide",
     defaultCommand: "amp",
-    modelAliases: ["g25p", "g25f", "cs45", "g54"],
     notes: [
       {
         type: "info",
-        text: `Use ${ACTIVE.name} model aliases to keep Amp shorthand mappings stable across provider updates.`,
-      },
-      {
-        type: "warning",
-        text: "Suggested shorthand examples: g25p → gemini/gemini-2.5-pro, g25f → gemini/gemini-2.5-flash, cs45 → cc/claude-sonnet-4-5-20250929.",
+        text: `Amp reaches ${ACTIVE.name} through a custom URL connection in its model routing settings, then maps its models to ${ACTIVE.name} model ids.`,
       },
     ],
     guideSteps: [
       {
         step: 1,
-        title: "Install Amp",
-        desc: "Install the Amp CLI using the package manager supported by your environment.",
+        title: "Open model routing",
+        desc: "ampcode.com → Settings → Model Routing, or run: amp config model-providers add",
       },
-      { step: 2, title: "API key", type: "apiKeySelector" },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
+      {
+        step: 2,
+        title: "Add a custom URL connection",
+        desc: 'Format "chat-completions", base URL:',
+        value: "{{baseUrl}}",
+        copyable: true,
+      },
+      { step: 3, title: "API key", type: "apiKeySelector" },
       { step: 4, title: "Select model", type: "modelSelector" },
       {
         step: 5,
-        title: "Add shorthands",
-        desc: `Map Amp shorthand names such as g25p or cs45 to ${ACTIVE.name} aliases in your local config.`,
+        title: "Map models",
+        desc: "Map the Amp model you want to route to this model id:",
+        value: "{{model}}",
+        copyable: true,
       },
     ],
-    codeBlock: {
-      language: "bash",
-      code: `export OPENAI_API_KEY="{{apiKey}}"
-export OPENAI_BASE_URL="{{baseUrl}}"
-amp --model "{{model}}"
-# Example shorthand aliases you can map locally:
-# g25p -> gemini/gemini-2.5-pro
-# cs45 -> cc/claude-sonnet-4-5-20250929`,
-    },
   },
   qwen: {
     id: "qwen",
@@ -423,7 +427,7 @@ amp --model "{{model}}"
     notes: [
       {
         type: "info",
-        text: `Qwen Code supports multiple provider types (openai, anthropic, gemini) via modelProviders in settings.json. ${ACTIVE.name} works as an OpenAI-compatible endpoint.`,
+        text: `Qwen Code reads OpenAI-compatible providers from modelProviders in settings.json. ${ACTIVE.name} is added as an openai provider.`,
       },
       {
         type: "info",
@@ -438,75 +442,6 @@ amp --model "{{model}}"
         text: `Qwen OAuth free tier was discontinued on 2026-04-15. Use ${ACTIVE.name} with alicode/openrouter/anthropic/gemini providers instead.`,
       },
     ],
-    modelAliases: [
-      "coder-model",
-      "qwen3-coder-plus",
-      "qwen3-coder-flash",
-      "vision-model",
-      "claude-sonnet-4-6",
-      "claude-opus-4-6-thinking",
-      "gemini-3-flash",
-      "gemini-3.1-pro-high",
-    ],
-    defaultModels: [
-      {
-        id: "coder-model",
-        name: "Coder Model (Qwen 3.6 Plus)",
-        alias: "coder-model",
-        envKey: "OPENAI_MODEL",
-        defaultValue: "coder-model",
-        isTopLevel: true,
-      },
-      {
-        id: "qwen3-coder-plus",
-        name: "Qwen 3 Coder Plus",
-        alias: "qwen3-coder-plus",
-        envKey: "OPENAI_MODEL",
-        defaultValue: "qwen3-coder-plus",
-      },
-      {
-        id: "qwen3-coder-flash",
-        name: "Qwen 3 Coder Flash",
-        alias: "qwen3-coder-flash",
-        envKey: "OPENAI_MODEL",
-        defaultValue: "qwen3-coder-flash",
-      },
-      {
-        id: "vision-model",
-        name: "Vision Model (Multimodal)",
-        alias: "vision-model",
-        envKey: "OPENAI_MODEL",
-        defaultValue: "vision-model",
-      },
-      {
-        id: "claude-sonnet-4-6",
-        name: "Claude Sonnet 4.6",
-        alias: "claude-sonnet-4-6",
-        envKey: "OPENAI_MODEL",
-        defaultValue: "claude-sonnet-4-6",
-      },
-      {
-        id: "claude-opus-4-6-thinking",
-        name: "Claude Opus 4.6 Thinking",
-        alias: "claude-opus-4-6-thinking",
-        envKey: "OPENAI_MODEL",
-        defaultValue: "claude-opus-4-6-thinking",
-      },
-      {
-        id: "gemini-3.1-pro-high",
-        name: "Gemini 3.1 Pro High",
-        alias: "gemini-3.1-pro-high",
-        envKey: "OPENAI_MODEL",
-        defaultValue: "gemini-3.1-pro-high",
-      },
-      {
-        id: "gemini-3-flash",
-        name: "Gemini 3 Flash",
-        alias: "gemini-3-flash",
-        envKey: "OPENAI_MODEL",
-        defaultValue: "gemini-3-flash",
-      },
-    ],
     guideSteps: [
       { step: 1, title: "Install Qwen Code", desc: "npm install -g @qwen-code/qwen-code" },
       { step: 2, title: "API key", type: "apiKeySelector" },
@@ -515,22 +450,24 @@ amp --model "{{model}}"
       {
         step: 5,
         title: "Save config",
-        desc: "Copy the JSON below to your ~/.qwen/settings.json file.",
+        desc: "Merge the JSON below into ~/.qwen/settings.json.",
       },
     ],
     codeBlock: {
       language: "json",
       code: `{
-  "security": {
-    "auth": {
-      "selectedType": "openai",
-      "apiKey": "{{apiKey}}",
-      "baseUrl": "{{baseUrl}}"
-    }
+  "modelProviders": {
+    "openai": [
+      {
+        "id": "{{model}}",
+        "envKey": "OPENAI_API_KEY",
+        "baseUrl": "{{baseUrl}}"
+      }
+    ]
   },
-  "model": {
-    "name": "{{model}}"
-  }
+  "env": { "OPENAI_API_KEY": "{{apiKey}}" },
+  "security": { "auth": { "selectedType": "openai" } },
+  "model": { "name": "{{model}}" }
 }`,
     },
   },
@@ -655,11 +592,15 @@ amp --model "{{model}}"
     notes: [
       {
         type: "info",
-        text: "This is a local dependency, not a routed CLI. The Devin CLI provider spawns `devin acp --agent-type summarizer` and relays its output.",
+        text: "This is a local dependency, not a routed CLI. The Devin CLI provider spawns `devin acp` (full agent, DEVIN_PERMISSION_MODE=bypass) and relays its output. Set CLI_DEVIN_AGENT_TYPE=summarizer for a tool-less, text-only agent.",
       },
       {
         type: "warning",
-        text: "Install the Devin CLI and run `devin auth login` — without it, the provider returns a spawn error on first request.",
+        text: `Install the Devin CLI and run \`devin auth login\` on the machine running the ${ACTIVE.name} gateway, not the one you browse from. Without it, the provider returns a spawn error on first request.`,
+      },
+      {
+        type: "info",
+        text: "Gateway env vars: CLI_DEVIN_BIN (binary path), CLI_DEVIN_AGENT_TYPE (agent type), DEVIN_MCP_SERVERS (JSON MCP servers for the agent).",
       },
     ],
     guideSteps: [
