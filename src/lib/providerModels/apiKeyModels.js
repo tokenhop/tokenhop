@@ -1,8 +1,9 @@
 // Live catalogs for OpenAI-style API-key providers (GET …/models, Bearer key):
 // DeepSeek, Mistral, Groq, Together AI, Fireworks AI, Cerebras, Perplexity
 // Agent, Vercel AI Gateway, Chutes, NVIDIA NIM, Nebius, SiliconFlow,
-// Hyperbolic, OpenCode Go, Venice, Bazaarlink, LLM7 and SambaNova. Each list carries every kind the provider serves, so it is
-// authoritative: no static extras are added back (except NIM's speech models).
+// Hyperbolic, OpenCode Go, Venice, Bazaarlink, LLM7 and SambaNova. Each list
+// carries every kind the provider serves, so it is authoritative: no static
+// extras are added back (except NIM's speech models).
 // OpenCode Free is the keyless exception: its Zen catalog is public.
 
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
@@ -320,9 +321,8 @@ export function parseBazaarlinkModels(body) {
 
 // ── LLM7 ──────────────────────────────────────────────────────────────────
 // Only chat rows; image, video, transcription and systemone have no route here.
-// A connection may point at a custom base URL (the connection test honours it too).
-export const llm7ModelsUrl = (connection) =>
-  `${(connection?.providerSpecificData?.baseUrl || "https://api.llm7.io/v1").replace(/\/$/, "")}/models`;
+// Always the official host: chat ignores providerSpecificData.baseUrl for llm7,
+// so listing from it would disagree with routing and send the key elsewhere.
 export function parseLlm7Models(body) {
   const seen = new Set();
   const models = [];
@@ -387,10 +387,11 @@ export async function resolveOpencode() {
     : { models: [], warning: "OpenCode Free returned no live models." };
 }
 
-// `url` is a string or a function of the connection (custom base URLs).
+// ponytail: ignores the per-connection proxy the connection test uses; route
+// through resolveConnectionProxyConfig if a proxied connection can't list.
 const resolver = (label, url, parse) => async (connection) => {
   if (!connection.apiKey) return { models: [], warning: "No valid token found" };
-  const response = await fetch(typeof url === "function" ? url(connection) : url, {
+  const response = await fetch(url, {
     headers: { Authorization: `Bearer ${connection.apiKey}`, Accept: "application/json" },
     // Failures aren't cached, so an unbounded hang would stall every /v1/models call.
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -484,7 +485,7 @@ export const resolveBazaarlink = resolver(
   "https://bazaarlink.ai/api/v1/models",
   parseBazaarlinkModels,
 );
-export const resolveLlm7 = resolver("LLM7", llm7ModelsUrl, parseLlm7Models);
+export const resolveLlm7 = resolver("LLM7", "https://api.llm7.io/v1/models", parseLlm7Models);
 export const resolveSambanova = resolver(
   "SambaNova",
   "https://api.sambanova.ai/v1/models",

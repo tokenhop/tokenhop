@@ -17,7 +17,6 @@ const HOSTS = [
   "https://api.venice.ai/",
   "https://bazaarlink.ai/",
   "https://api.llm7.io/",
-  "https://llm7.example.test/",
   "https://api.sambanova.ai/",
 ];
 
@@ -146,17 +145,14 @@ describe("parsers", () => {
 });
 
 describe("live catalogs end to end", () => {
-  it("llm7 honours a custom base URL and lists live ids in /v1/models", async () => {
+  it("llm7 lists from the official host (chat ignores a custom base URL) into /v1/models", async () => {
     respond = () => Response.json({ data: [{ id: "acme-chat", model_type: "chat" }] });
     const conn = await connect("llm7", "l7-test", { baseUrl: "https://llm7.example.test/v1/" });
 
     const body = await dashboardModels(conn.id);
     expect(body.warning).toBeUndefined();
     expect(body.models.map((m) => m.id)).toEqual(["acme-chat"]);
-    expect(calls[0]).toEqual({
-      url: "https://llm7.example.test/v1/models",
-      auth: "Bearer l7-test",
-    });
+    expect(calls[0]).toEqual({ url: "https://api.llm7.io/v1/models", auth: "Bearer l7-test" });
     const alias = getProviderAlias("llm7");
     expect((await buildModelsList(["llm"])).map((m) => m.id)).toContain(`${alias}/acme-chat`);
   });

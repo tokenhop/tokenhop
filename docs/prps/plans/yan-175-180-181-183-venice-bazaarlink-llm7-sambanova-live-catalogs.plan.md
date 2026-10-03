@@ -10,7 +10,7 @@ every failure keeps the static catalog plus a warning.
 | ---------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Venice     | `GET https://api.venice.ai/api/v1/models?type=all` | `type` (text/embedding/image/video/tts/asr/…), `model_spec.{name,availableContextTokens,maxCompletionTokens,capabilities.supportsVision,offline}` |
 | Bazaarlink | `GET https://bazaarlink.ai/api/v1/models`          | `name`, `description`, `context_length`, `architecture.{input,output}_modalities`                                                                 |
-| LLM7       | `GET {baseUrl \|\| https://api.llm7.io/v1}/models` | `model_type` (chat/image/video/audio_to_text/systemone), `context_window.tokens`, `modalities.input`                                              |
+| LLM7       | `GET https://api.llm7.io/v1/models`                | `model_type` (chat/image/video/audio_to_text/systemone), `context_window.tokens`, `modalities.input`                                              |
 | SambaNova  | `GET https://api.sambanova.ai/v1/models`           | `context_length`, `max_completion_tokens` (ids only otherwise)                                                                                    |
 
 ## Decisions
@@ -20,23 +20,22 @@ every failure keeps the static catalog plus a warning.
   upscale, inpaint have no route here and are dropped, as are `offline` rows.
   Static image rows keep their `params` through `mergeLiveWithStatic`.
 - **Bazaarlink:** rows without text output are dropped; everything else is chat.
-- **LLM7:** only `model_type: "chat"`; the rest has no route. The custom
-  `providerSpecificData.baseUrl` the connection test already honours moves into
-  one helper (`llm7ModelsUrl`) used by both.
+- **LLM7:** only `model_type: "chat"`; the rest has no route. Always the
+  official host: chat ignores `providerSpecificData.baseUrl` for llm7, so a
+  custom URL would list models chat can't reach and send the key elsewhere
+  (review finding on #752).
 - **SambaNova:** ids only, all chat; registry names kept.
-- `resolver()` accepts a URL function of the connection (LLM7 only).
 - `modelsFetcher` stays on Venice: the side panel uses it without a connection,
   and the chips drop out once live ids cover them (OpenRouter precedent).
 
 ## Files
 
-- `src/lib/providerModels/apiKeyModels.js`: four parsers + resolvers, `llm7ModelsUrl`.
+- `src/lib/providerModels/apiKeyModels.js`: four parsers + resolvers.
 - `src/lib/providerModels/liveResolvers.js`: register them.
 - `open-sse/providers/registry/{venice,bazaarlink,llm7,sambanova}.js`: `features: { liveModels: true }`.
-- `src/app/api/providers/[id]/test/testUtils.js`: use `llm7ModelsUrl`.
 - Tests: `live-model-resolvers.test.js`, `live-models-utils.test.js` exact lists;
   new `tests/unit/venice-bazaarlink-llm7-sambanova-live-models.test.js`
-  (parsers, LLM7 custom base URL, failure warning without key echo).
+  (parsers, LLM7 official host, failure warning without key echo).
 
 ## Validation
 
