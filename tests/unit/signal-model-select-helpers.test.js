@@ -147,6 +147,33 @@ describe("model select helpers", () => {
     expect(groups.talky.models.map((m) => m.value)).toEqual(["talky/painter"]);
   });
 
+  it("lists a passthrough provider's live catalog, by kind", () => {
+    const args = {
+      filteredActiveProviders: [{ provider: "gw" }],
+      activeProviders: [{ provider: "gw" }],
+      modelAliases: {},
+      allProviders: { gw: { name: "GW", color: "#111", passthroughModels: true } },
+      providerNodes: [],
+      customModels: [],
+      disabledModels: {},
+      liveCatalogs: { gw: [{ id: "a/chat" }, { id: "a/embed", kind: "embedding" }] },
+      providerOrder: ["gw"],
+      noAuthIds: [],
+      getModelKind,
+      getModelsByProviderId: () => [{ id: "static-only" }],
+      getProviderAlias: (id) => id,
+      isOpenAICompatibleProvider: () => false,
+      isAnthropicCompatibleProvider: () => false,
+      mergeLiveWithStatic: (_id, live) => live || [],
+    };
+    expect(groupModels({ ...args, kindFilter: null }).gw.models.map((m) => m.value)).toEqual([
+      "gw/a/chat",
+    ]);
+    expect(groupModels({ ...args, kindFilter: "embedding" }).gw.models.map((m) => m.value)).toEqual(
+      ["gw/a/embed"],
+    );
+  });
+
   it("builds a provider-as-model group and drops disabled ids", () => {
     const groups = groupModels({
       filteredActiveProviders: [{ provider: "searchy" }],

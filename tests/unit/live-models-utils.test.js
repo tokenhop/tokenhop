@@ -12,6 +12,7 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "anthropic",
       "antigravity",
       "cerebras",
+      "chutes",
       "claude",
       "cline",
       "clinepass",
@@ -31,8 +32,10 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "ollama-local",
       "openai",
       "openrouter",
+      "perplexity-agent",
       "qoder",
       "together",
+      "vercel-ai-gateway",
       "xai",
       "zed",
     ]);

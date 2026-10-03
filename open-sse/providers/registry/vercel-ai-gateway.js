@@ -33,10 +33,10 @@ export default {
     defaultModel: "openai/gpt-4o-mini",
     pricingUrl: "https://vercel.com/docs/ai-gateway/pricing",
   },
-  modelsFetcher: { url: "https://ai-gateway.vercel.sh/v1/models", type: "openai" },
   passthroughModels: true,
   features: {
     usage: true,
     usageApikey: true,
+    liveModels: true,
   },
 };
