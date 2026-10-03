@@ -24,9 +24,9 @@ beforeAll(async () => {
   }
 });
 
-describe.each(["24h", "7d"])("getUsageStats(%s) byAccount", (period) => {
+describe.each(["24h", "7d"])("getUsageStatsUnscoped(%s) byAccount", (period) => {
   it("splits an account's usage per model", async () => {
-    const stats = await db.getUsageStats(period);
+    const stats = await db.getUsageStatsUnscoped(period);
     const rows = Object.values(stats.byAccount).filter((r) => r.connectionId === "conn-yan64-0001");
     const byModel = Object.fromEntries(rows.map((r) => [r.rawModel, r.requests]));
     expect(byModel).toEqual({ "gpt-4o": 2, "gpt-4o-mini": 1 });
@@ -43,7 +43,7 @@ it("still reads day rows saved before YAN-64 (bare connectionId key)", async () 
     "2000-01-01",
     JSON.stringify(day),
   ]);
-  const stats = await db.getUsageStats("all");
+  const stats = await db.getUsageStatsUnscoped("all");
   const row = Object.values(stats.byAccount).find((r) => r.connectionId === "conn-legacy-0001");
   expect(row).toMatchObject({ rawModel: "gpt-4o", requests: 4 });
 });

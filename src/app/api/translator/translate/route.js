@@ -3,7 +3,7 @@ import { detectFormat, getTargetFormat } from "open-sse/services/provider.js";
 import { translateRequest } from "open-sse/translator/index.js";
 import { FORMATS } from "open-sse/translator/formats.js";
 import { getModelInfo } from "@/sse/services/model.js";
-import { getProviderConnections } from "@/lib/localDb.js";
+import { getProviderConnectionsUnscoped } from "@/lib/localDb.js";
 import { getExecutor } from "open-sse/executors/index.js";
 
 export async function POST(request) {
@@ -82,7 +82,7 @@ export async function POST(request) {
         delete translated._toolNameMap;
 
         // Build URL + headers via executor (same as chatCore → executor.execute)
-        const connections = await getProviderConnections({ provider });
+        const connections = await getProviderConnectionsUnscoped({ provider });
         const connection = connections.find((c) => c.isActive !== false);
         if (!connection) {
           return NextResponse.json(

@@ -181,9 +181,9 @@ async function resolvePrincipalOrThrow(request) {
   return null;
 }
 
-// Today's connections, combos, keys and usage are unscoped: they belong to the
-// Default workspace (YAN-356). Route-level workspace checks use it until
-// YAN-361+ scope the data and handlers call authorize() per resource.
+// Combos, keys and usage are still unscoped: they belong to the Default
+// workspace (YAN-356), so non-`scoped` route rows check it until YAN-363/364/370.
+// Connections and nodes (YAN-361) are `scoped`: their handlers check the row.
 // Read per request (switch on only): a DB import can replace it.
 async function routeWorkspaceId() {
   return (await getMeta("defaultWorkspaceId")) || null;
@@ -195,14 +195,22 @@ async function routeWorkspaceId() {
  * on with no principal: only before any user exists (the sole admin, before
  * the owner bootstrap). Fails closed.
  * @param {{ headers: Headers, cookies: { get(name: string): { value: string }|undefined } }} request
+ * `anyWorkspace` (routePolicy `scoped`, YAN-361): the capability in any of the
+ * principal's workspaces; the handler then checks the row's own workspace.
  * @param {string|null} capability
+ * @param {{ anyWorkspace?: boolean }} [opts]
  * @returns {Promise<boolean>}
  */
-export async function principalCan(request, capability) {
+export async function principalCan(request, capability, { anyWorkspace = false } = {}) {
   if (!capability || !(await multiUserOn())) return true;
   try {
     const principal = await resolvePrincipalOrThrow(request);
     if (!principal) return (await countActiveUsersUnscoped()) === 0;
+    if (
+      anyWorkspace &&
+      principal.workspaceIds.some((w) => can(principal, capability, { workspaceId: w }))
+    )
+      return true;
     const workspaceId = await routeWorkspaceId();
     if (can(principal, capability, { workspaceId })) return true;
     // No Default workspace yet: the unscoped data is the owner's alone.

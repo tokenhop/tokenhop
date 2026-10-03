@@ -13,7 +13,10 @@ vi.mock("@/sse/services/tokenRefresh", async (importOriginal) => ({
 
 import { GET } from "@/app/api/providers/[id]/models/route.js";
 import { buildModelsList } from "@/app/api/v1/models/route.js";
-import { createProviderConnection, deleteProviderConnectionsByProvider } from "@/models/index.js";
+import {
+  createProviderConnectionUnscoped,
+  deleteProviderConnectionsByProviderUnscoped,
+} from "@/models/index.js";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { clearLiveModelsCache } from "@/lib/providerModels/liveResolvers.js";
 import { parseCodexModels } from "@/lib/providerModels/codexModels.js";
@@ -53,7 +56,7 @@ beforeEach(async () => {
   clearLiveModelsCache();
   tokenMocks.refreshCodexToken.mockReset();
   tokenMocks.updateProviderCredentials.mockClear();
-  await deleteProviderConnectionsByProvider("codex");
+  await deleteProviderConnectionsByProviderUnscoped("codex");
   const nativeFetch = globalThis.fetch.bind(globalThis);
   vi.stubGlobal("fetch", async (url, init) => {
     if (!String(url).startsWith(CODEX_URL)) return nativeFetch(url, init);
@@ -66,7 +69,7 @@ afterEach(() => {
 });
 
 const seedCodex = (extra = {}) =>
-  createProviderConnection({
+  createProviderConnectionUnscoped({
     provider: "codex",
     authType: "oauth",
     accessToken: `at-${Date.now()}-${Math.random()}`,

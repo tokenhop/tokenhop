@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createProviderConnection } from "@/models";
+import { createProviderConnectionUnscoped } from "@/models";
 import { decodeXaiIdTokenEmail, extractEmailFromAccessToken } from "@/lib/oauth/providerHelpers";
 
 /**
@@ -78,7 +78,7 @@ export async function POST(request) {
         ...(raw.providerSpecificData || {}),
       };
 
-      const created = await createProviderConnection({
+      const created = await createProviderConnectionUnscoped({
         provider: "grok-cli",
         authType: "oauth",
         accessToken,

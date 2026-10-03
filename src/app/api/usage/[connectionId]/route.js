@@ -1,7 +1,9 @@
 // Ensure proxyFetch is loaded to patch globalThis.fetch
 import "open-sse/index.js";
 
-import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { getProviderConnectionByIdUnscoped, updateProviderConnectionUnscoped } from "@/lib/localDb";
+import { getConnection } from "@/lib/db/index.js";
+import { loadScoped } from "@/lib/users/workspaceScope.js";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
@@ -112,7 +114,7 @@ export async function refreshAndUpdateCredentials(connection, force = false, pro
   }
 
   // Update database
-  await updateProviderConnection(connection.id, updateData);
+  await updateProviderConnectionUnscoped(connection.id, updateData);
 
   // Return updated connection
   const updatedConnection = {
@@ -136,11 +138,17 @@ export async function GET(request, { params }) {
     const { connectionId } = await params;
     const force = new URL(request.url).searchParams.get("force") === "1";
 
-    // Get connection from database
-    connection = await getProviderConnectionById(connectionId);
-    if (!connection) {
-      return Response.json({ error: "Connection not found" }, { status: 404 });
-    }
+    // YAN-361: switch on, only a connection in the principal's workspaces.
+    // OAuth reads refresh (rotate) the row's tokens, so they need `use`.
+    const loaded = await loadScoped(
+      "workspace.connections.use",
+      connectionId,
+      getConnection,
+      getProviderConnectionByIdUnscoped,
+      "Connection not found",
+    );
+    if (loaded instanceof Response) return loaded;
+    connection = loaded.row;
 
     // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/kiro/...)
     // Kiro's headless api-key flow persists authType "api_key" (underscore) while

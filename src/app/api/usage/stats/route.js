@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getUsageStats, getUsageTotals } from "@/lib/usageDb";
+import { getUsageStatsUnscoped, getUsageTotals } from "@/lib/usageDb";
 import { isPeriod, periodStart, previousPeriodRange } from "@/shared/utils/period";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ export async function GET(request) {
       return NextResponse.json({ error: "Invalid compare" }, { status: 400 });
     }
 
-    const stats = await getUsageStats(period);
+    const stats = await getUsageStatsUnscoped(period);
     if (compare === "previous") {
       const now = Date.now();
       const currentRange = { start: periodStart(period, now), end: now };

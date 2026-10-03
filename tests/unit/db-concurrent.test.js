@@ -41,7 +41,7 @@ describe("DB Concurrency — atomic safety", () => {
     }
     await Promise.all(promises);
 
-    const stats = await db.getUsageStats("24h");
+    const stats = await db.getUsageStatsUnscoped("24h");
     expect(stats.totalRequests).toBe(N);
     expect(stats.byProvider.openai.requests).toBe(N);
     expect(stats.byProvider.openai.promptTokens).toBe(N * 10);
@@ -68,7 +68,7 @@ describe("DB Concurrency — atomic safety", () => {
     );
 
     expect((await db.getUsageHistory({ provider: "same-ms" })).length).toBe(N);
-    const stats = await db.getUsageStats("7d");
+    const stats = await db.getUsageStatsUnscoped("7d");
     expect(stats.byProvider["same-ms"].requests).toBe(N);
     expect(stats.byProvider["same-ms"].promptTokens).toBe(N * 7);
   });
@@ -124,7 +124,7 @@ describe("DB Concurrency — atomic safety", () => {
     const disabled = await db.getDisabledByProvider("openai");
     expect(disabled.length).toBeGreaterThanOrEqual(50);
 
-    const stats = await db.getUsageStats("24h");
+    const stats = await db.getUsageStatsUnscoped("24h");
     expect(stats.byProvider.anthropic.requests).toBe(50);
   }, 30000);
 
@@ -142,8 +142,8 @@ describe("DB Concurrency — atomic safety", () => {
     }
   });
 
-  it("OAuth refresh race: parallel updateProviderConnection on same id", async () => {
-    const conn = await db.createProviderConnection({
+  it("OAuth refresh race: parallel updateProviderConnectionUnscoped on same id", async () => {
+    const conn = await db.createProviderConnectionUnscoped({
       provider: "oauth-test",
       authType: "oauth",
       email: "x@y.com",
@@ -155,11 +155,11 @@ describe("DB Concurrency — atomic safety", () => {
     const N = 20;
     const promises = [];
     for (let i = 0; i < N; i++) {
-      promises.push(db.updateProviderConnection(conn.id, { [`marker${i}`]: i }));
+      promises.push(db.updateProviderConnectionUnscoped(conn.id, { [`marker${i}`]: i }));
     }
     await Promise.all(promises);
 
-    const after = await db.getProviderConnectionById(conn.id);
+    const after = await db.getProviderConnectionByIdUnscoped(conn.id);
     for (let i = 0; i < N; i++) {
       expect(after[`marker${i}`]).toBe(i); // no field lost
     }
@@ -210,7 +210,7 @@ describe("DB Concurrency — atomic safety", () => {
     }
     await Promise.all(promises);
 
-    const stats = await db.getUsageStats("7d");
+    const stats = await db.getUsageStatsUnscoped("7d");
     const g = stats.byProvider.google;
     expect(g).toBeDefined();
     expect(g.requests).toBe(N);

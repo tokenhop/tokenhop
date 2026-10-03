@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCombos, getProviderConnections, getSettings } from "@/lib/localDb";
+import { getCombos, getProviderConnectionsUnscoped, getSettings } from "@/lib/localDb";
 import { getRequestRateSeries, getSavingsLifetime } from "@/lib/db/index.js";
 import { resolveFlagSetting } from "@/lib/settingsFlags";
 import { resolveListenPort, shapeGatewayStatus } from "@/lib/gatewayStatus";
@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const [connections, combos, settings, traffic, savingsLifetime, multiUser] = await Promise.all([
-      getProviderConnections(),
+      getProviderConnectionsUnscoped(),
       getCombos(),
       getSettings(),
       getRequestRateSeries().catch(() => null),

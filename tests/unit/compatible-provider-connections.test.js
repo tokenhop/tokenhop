@@ -21,14 +21,16 @@ async function setupTestContext(nodeData) {
   }));
 
   const { POST } = await import("@/app/api/providers/route.js");
-  const { createProviderNode, getProviderConnections } = await import("@/models/index.js");
+  const { createProviderNodeUnscoped, getProviderConnectionsUnscoped } = await import(
+    "@/models/index.js"
+  );
 
-  const node = await createProviderNode(nodeData);
+  const node = await createProviderNodeUnscoped(nodeData);
 
   return {
     node,
     POST,
-    getProviderConnections,
+    getProviderConnectionsUnscoped,
     cleanup() {
       fs.rmSync(tempDir, { recursive: true, force: true });
     },
@@ -94,7 +96,7 @@ describe("compatible provider connections API", () => {
     const response = await ctx.POST(makeRequest(ctx.node.id));
     const body = await response.json();
     const connection = body.connection;
-    const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
+    const storedConnections = await ctx.getProviderConnectionsUnscoped({ provider: ctx.node.id });
 
     expect(response.status).toBe(201);
     expect(storedConnections).toHaveLength(1);
@@ -125,7 +127,7 @@ describe("compatible provider connections API", () => {
     const response = await ctx.POST(makeRequest(ctx.node.id));
     const body = await response.json();
     const connection = body.connection;
-    const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
+    const storedConnections = await ctx.getProviderConnectionsUnscoped({ provider: ctx.node.id });
 
     expect(response.status).toBe(201);
     expect(storedConnections).toHaveLength(1);
@@ -155,7 +157,7 @@ describe("compatible provider connections API", () => {
 
     const firstResponse = await ctx.POST(makeRequest(ctx.node.id, "Key A"));
     const secondResponse = await ctx.POST(makeRequest(ctx.node.id, "Key B"));
-    const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
+    const storedConnections = await ctx.getProviderConnectionsUnscoped({ provider: ctx.node.id });
 
     expect(firstResponse.status).toBe(201);
     expect(secondResponse.status).toBe(201);
@@ -178,7 +180,7 @@ describe("compatible provider connections API", () => {
     const firstResponse = await ctx.POST(makeRequest(ctx.node.id, "Key A", "original-key"));
     const secondResponse = await ctx.POST(makeRequest(ctx.node.id, "Key A", "replacement-key"));
     const body = await secondResponse.json();
-    const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
+    const storedConnections = await ctx.getProviderConnectionsUnscoped({ provider: ctx.node.id });
 
     expect(firstResponse.status).toBe(201);
     expect(secondResponse.status).toBe(409);
@@ -202,7 +204,7 @@ describe("compatible provider connections API", () => {
       ctx.POST(makeRequest(ctx.node.id, "Key A", "key-1")),
       ctx.POST(makeRequest(ctx.node.id, "Key A", "key-2")),
     ]);
-    const storedConnections = await ctx.getProviderConnections({ provider: ctx.node.id });
+    const storedConnections = await ctx.getProviderConnectionsUnscoped({ provider: ctx.node.id });
     const created = await responses.find((r) => r.status === 201).json();
 
     expect(responses.map((r) => r.status).sort()).toEqual([201, 409]);

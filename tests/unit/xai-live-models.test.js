@@ -12,7 +12,10 @@ vi.mock("@/sse/services/tokenRefresh", async (importOriginal) => ({
 
 import { GET } from "@/app/api/providers/[id]/models/route.js";
 import { buildModelsList } from "@/app/api/v1/models/route.js";
-import { createProviderConnection, deleteProviderConnectionsByProvider } from "@/models/index.js";
+import {
+  createProviderConnectionUnscoped,
+  deleteProviderConnectionsByProviderUnscoped,
+} from "@/models/index.js";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { clearLiveModelsCache } from "@/lib/providerModels/liveResolvers.js";
 import { parseXaiModels, reconcileXaiAliases } from "@/lib/providerModels/xaiModels.js";
@@ -25,7 +28,7 @@ beforeEach(async () => {
   clearLiveModelsCache();
   tokenMocks.refreshTokenByProvider.mockReset();
   tokenMocks.updateProviderCredentials.mockClear();
-  await deleteProviderConnectionsByProvider("xai");
+  await deleteProviderConnectionsByProviderUnscoped("xai");
   const nativeFetch = globalThis.fetch.bind(globalThis);
   vi.stubGlobal("fetch", async (url, init = {}) => {
     if (!String(url).startsWith("https://api.x.ai/")) return nativeFetch(url, init);
@@ -68,7 +71,7 @@ describe("xai parsing", () => {
 describe("xai live catalog", () => {
   it("lists language, image and video models for an API key", async () => {
     respond = serve;
-    const conn = await createProviderConnection({
+    const conn = await createProviderConnectionUnscoped({
       provider: "xai",
       authType: "apikey",
       apiKey: "xai-key",
@@ -95,7 +98,7 @@ describe("xai live catalog", () => {
       call.url.endsWith("video-generation-models")
         ? new Response("no", { status: 404 })
         : serve(call);
-    const conn = await createProviderConnection({
+    const conn = await createProviderConnectionUnscoped({
       provider: "xai",
       authType: "apikey",
       apiKey: "xai-key",
@@ -111,7 +114,7 @@ describe("xai live catalog", () => {
     tokenMocks.refreshTokenByProvider.mockResolvedValue({ accessToken: "fresh" });
     respond = (call) =>
       call.auth === "Bearer stale" ? new Response("", { status: 401 }) : serve(call);
-    const conn = await createProviderConnection({
+    const conn = await createProviderConnectionUnscoped({
       provider: "xai",
       authType: "oauth",
       accessToken: "stale",

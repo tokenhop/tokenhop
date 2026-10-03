@@ -117,10 +117,10 @@ describe.skipIf(!RUN_REAL)("Antigravity cache behavior (real API)", () => {
       const dataDir = process.env.DATA_DIR || dataDirResolver.defaultDataDir();
       const dbSqlite = path.join(dataDir, "db", "data.sqlite");
       if (!fs.existsSync(dbSqlite)) return;
-      const { getProviderConnections } = await import("../../../src/lib/localDb.js");
-      conns = (await getProviderConnections({ provider: "antigravity", isActive: true })).filter(
-        (c) => c.refreshToken && c.projectId,
-      );
+      const { getProviderConnectionsUnscoped } = await import("../../../src/lib/localDb.js");
+      conns = (
+        await getProviderConnectionsUnscoped({ provider: "antigravity", isActive: true })
+      ).filter((c) => c.refreshToken && c.projectId);
     } catch (e) {
       loadError = e;
       return;

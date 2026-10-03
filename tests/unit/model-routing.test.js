@@ -10,11 +10,11 @@ async function setupDb() {
   process.env.DATA_DIR = tempDir;
   vi.resetModules();
 
-  const { createProviderNode } = await import("@/models/index.js");
+  const { createProviderNodeUnscoped } = await import("@/models/index.js");
   const { getModelInfo } = await import("@/sse/services/model.js");
 
   return {
-    createProviderNode,
+    createProviderNodeUnscoped,
     getModelInfo,
     cleanup() {
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -42,7 +42,7 @@ describe("model routing", () => {
     const ctx = await setupDb();
     cleanup = ctx.cleanup;
 
-    await ctx.createProviderNode({
+    await ctx.createProviderNodeUnscoped({
       id: "openai-compatible-chat-test",
       type: "openai-compatible",
       name: "Compatible CF Collision",
@@ -61,7 +61,7 @@ describe("model routing", () => {
     const ctx = await setupDb();
     cleanup = ctx.cleanup;
 
-    await ctx.createProviderNode({
+    await ctx.createProviderNodeUnscoped({
       id: "openai-compatible-chat-test",
       type: "openai-compatible",
       name: "Compatible OCT",

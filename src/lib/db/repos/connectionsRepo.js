@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { assertCtx } from "@/lib/users/errors.js";
+import { defaultWorkspaceIdUnscoped, memberWorkspaceId } from "./ownership.js";
 
 const OPTIONAL_FIELDS = [
   "displayName",
@@ -62,13 +64,30 @@ function rowToConn(row) {
     isActive: row.isActive === 1 || row.isActive === true,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    // YAN-361: owner columns, only once set (pre-bootstrap rows look as before).
+    ...(row.workspaceId ? { workspaceId: row.workspaceId } : {}),
+    ...(row.createdByUserId ? { createdByUserId: row.createdByUserId } : {}),
   };
 }
 
 function connToRow(c) {
-  const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } =
-    c;
+  const {
+    id,
+    provider,
+    authType,
+    name,
+    email,
+    priority,
+    isActive,
+    createdAt,
+    updatedAt,
+    workspaceId,
+    createdByUserId,
+    ...rest
+  } = c;
   return {
+    workspaceId: workspaceId ?? null,
+    createdByUserId: createdByUserId ?? null,
     id,
     provider,
     authType,
@@ -85,12 +104,14 @@ function connToRow(c) {
 function upsert(db, c) {
   const r = connToRow(c);
   db.run(
-    `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
-     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt, workspaceId, createdByUserId)
+     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        provider=excluded.provider, authType=excluded.authType, name=excluded.name,
        email=excluded.email, priority=excluded.priority, isActive=excluded.isActive,
-       data=excluded.data, updatedAt=excluded.updatedAt`,
+       data=excluded.data, updatedAt=excluded.updatedAt,
+       workspaceId=COALESCE(workspaceId, excluded.workspaceId),
+       createdByUserId=COALESCE(createdByUserId, excluded.createdByUserId)`,
     [
       r.id,
       r.provider,
@@ -102,6 +123,8 @@ function upsert(db, c) {
       r.data,
       r.createdAt,
       r.updatedAt,
+      r.workspaceId,
+      r.createdByUserId,
     ],
   );
 }
@@ -119,7 +142,7 @@ function deriveConnectionName(data, fallbackName) {
   return fallbackName;
 }
 
-export async function getProviderConnections(filter = {}) {
+export async function getProviderConnectionsUnscoped(filter = {}) {
   const db = await getAdapter();
   const where = [];
   const params = [];
@@ -138,16 +161,20 @@ export async function getProviderConnections(filter = {}) {
   return list;
 }
 
-export async function getProviderConnectionById(id) {
+export async function getProviderConnectionByIdUnscoped(id) {
   const db = await getAdapter();
   const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
   return rowToConn(row);
 }
 
 // Internal sync reorder — must be called INSIDE a transaction
-function reorderInTx(db, providerId) {
+// Priority is dense 1..N per (workspace, provider).
+function reorderInTx(db, providerId, workspaceId = null) {
   const list = db
-    .all(`SELECT * FROM providerConnections WHERE provider = ?`, [providerId])
+    .all(`SELECT * FROM providerConnections WHERE provider = ? AND workspaceId IS ?`, [
+      providerId,
+      workspaceId,
+    ])
     .map(rowToConn);
   list.sort((a, b) => {
     const pDiff = (a.priority || 0) - (b.priority || 0);
@@ -189,145 +216,157 @@ function mergeReloginProviderData(previous, fresh, provider) {
 // rejectDuplicateName: throw DUPLICATE_CONNECTION_NAME instead of upserting an
 // apikey row with the same name. The check runs in the transaction, so two
 // concurrent creates cannot both pass it.
-export async function createProviderConnection(data, { rejectDuplicateName = false } = {}) {
+export async function createProviderConnectionUnscoped(data, opts = {}) {
   const db = await getAdapter();
+  return db.transaction(() =>
+    createInTx(db, data, opts, { workspaceId: defaultWorkspaceIdUnscoped(db) }),
+  );
+}
+
+// Dedup and priority partition by workspace: the same account in two
+// workspaces is two rows, never a merge (YAN-361).
+function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}) {
   const now = new Date().toISOString();
-  let result;
+  const workspaceId = owner.workspaceId ?? null;
+  const all = db
+    .all(`SELECT * FROM providerConnections WHERE provider = ? AND workspaceId IS ?`, [
+      data.provider,
+      workspaceId,
+    ])
+    .map(rowToConn);
 
-  db.transaction(() => {
-    const all = db
-      .all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider])
-      .map(rowToConn);
+  let existing = null;
+  if (data.authType === "oauth" && data.email) {
+    const incomingUsername = data.providerSpecificData?.username;
+    const incomingWs = data.providerSpecificData?.chatgptAccountId;
+    existing = all.find((c) => {
+      if (c.authType !== "oauth" || c.email !== data.email) return false;
 
-    let existing = null;
-    if (data.authType === "oauth" && data.email) {
-      const incomingUsername = data.providerSpecificData?.username;
-      const incomingWs = data.providerSpecificData?.chatgptAccountId;
-      existing = all.find((c) => {
-        if (c.authType !== "oauth" || c.email !== data.email) return false;
-
-        // Codex/OpenAI can issue multiple OAuth grants for the same email.
-        // Refresh tokens are rotated single-use; collapsing a new login onto an
-        // existing bare-email row overwrites the first account's token pair and
-        // makes it look "invalid" after adding a second account. Only update an
-        // existing Codex row when both rows expose the same ChatGPT account ID.
-        if (data.provider === "codex") {
-          const existingWs = c.providerSpecificData?.chatgptAccountId;
-          return !!incomingWs && !!existingWs && incomingWs === existingWs;
-        }
-
-        // Workspace providers use workspace ID when both sides have it
+      // Codex/OpenAI can issue multiple OAuth grants for the same email.
+      // Refresh tokens are rotated single-use; collapsing a new login onto an
+      // existing bare-email row overwrites the first account's token pair and
+      // makes it look "invalid" after adding a second account. Only update an
+      // existing Codex row when both rows expose the same ChatGPT account ID.
+      if (data.provider === "codex") {
         const existingWs = c.providerSpecificData?.chatgptAccountId;
-        if (incomingWs && existingWs) return incomingWs === existingWs;
-        if (incomingWs && !existingWs) return false;
-        if (!incomingWs && existingWs) return false;
-        // Non-workspace providers: match on (email + username) so cross-IdP
-        // accounts don't overwrite each other. Require username on both sides
-        // — if only one side has it, treat as a distinct identity rather than
-        // collapsing onto the bare-email fallback (which would re-introduce
-        // the cross-IdP overwrite).
-        const existingUsername = c.providerSpecificData?.username;
-        if (incomingUsername && existingUsername) {
-          return incomingUsername === existingUsername;
-        }
-        if (incomingUsername || existingUsername) return false;
-        return true;
-      });
-    } else if (data.authType === "apikey" && data.name) {
-      existing = all.find((c) => c.authType === "apikey" && c.name === data.name);
-      if (existing && rejectDuplicateName) {
-        const err = new Error(`A connection named "${data.name}" already exists for this provider`);
-        err.code = "DUPLICATE_CONNECTION_NAME";
-        throw err;
+        return !!incomingWs && !!existingWs && incomingWs === existingWs;
       }
-    }
-    // access_token: never dedup — user manages duplicates manually
 
-    if (existing) {
-      const normalized = resetHealthStateOnActivation(existing, data);
-      const merged = { ...existing, ...normalized, updatedAt: now };
-      if (data.authType === "oauth") {
-        const providerSpecificData = mergeReloginProviderData(
-          existing.providerSpecificData,
-          data.providerSpecificData,
-          data.provider,
-        );
-        if (providerSpecificData) merged.providerSpecificData = providerSpecificData;
+      // Workspace providers use workspace ID when both sides have it
+      const existingWs = c.providerSpecificData?.chatgptAccountId;
+      if (incomingWs && existingWs) return incomingWs === existingWs;
+      if (incomingWs && !existingWs) return false;
+      if (!incomingWs && existingWs) return false;
+      // Non-workspace providers: match on (email + username) so cross-IdP
+      // accounts don't overwrite each other. Require username on both sides
+      // — if only one side has it, treat as a distinct identity rather than
+      // collapsing onto the bare-email fallback (which would re-introduce
+      // the cross-IdP overwrite).
+      const existingUsername = c.providerSpecificData?.username;
+      if (incomingUsername && existingUsername) {
+        return incomingUsername === existingUsername;
       }
-      upsert(db, merged);
-      result = merged;
-      return;
+      if (incomingUsername || existingUsername) return false;
+      return true;
+    });
+  } else if (data.authType === "apikey" && data.name) {
+    existing = all.find((c) => c.authType === "apikey" && c.name === data.name);
+    if (existing && rejectDuplicateName) {
+      const err = new Error(`A connection named "${data.name}" already exists for this provider`);
+      err.code = "DUPLICATE_CONNECTION_NAME";
+      throw err;
     }
+  }
+  // access_token: never dedup — user manages duplicates manually
 
-    let connectionName = data.name || null;
-    if (!connectionName && (data.authType === "oauth" || data.authType === "access_token")) {
-      connectionName = deriveConnectionName(data, data.email || `Account ${all.length + 1}`);
+  if (existing) {
+    const normalized = resetHealthStateOnActivation(existing, data);
+    const merged = { ...existing, ...normalized, updatedAt: now };
+    if (data.authType === "oauth") {
+      const providerSpecificData = mergeReloginProviderData(
+        existing.providerSpecificData,
+        data.providerSpecificData,
+        data.provider,
+      );
+      if (providerSpecificData) merged.providerSpecificData = providerSpecificData;
     }
-    let connectionPriority = data.priority;
-    if (!connectionPriority) {
-      connectionPriority = all.reduce((m, c) => Math.max(m, c.priority || 0), 0) + 1;
-    }
+    upsert(db, merged);
+    return merged;
+  }
 
-    const conn = {
-      id: uuidv4(),
-      provider: data.provider,
-      authType: data.authType || "oauth",
-      name: connectionName,
-      priority: connectionPriority,
-      isActive: data.isActive !== undefined ? data.isActive : true,
-      createdAt: now,
-      updatedAt: now,
-    };
-    for (const f of OPTIONAL_FIELDS) {
-      if (data[f] !== undefined && data[f] !== null) conn[f] = data[f];
-    }
-    if (data.providerSpecificData && Object.keys(data.providerSpecificData).length > 0) {
-      conn.providerSpecificData = data.providerSpecificData;
-    }
-    if (data.email !== undefined) conn.email = data.email;
+  let connectionName = data.name || null;
+  if (!connectionName && (data.authType === "oauth" || data.authType === "access_token")) {
+    connectionName = deriveConnectionName(data, data.email || `Account ${all.length + 1}`);
+  }
+  let connectionPriority = data.priority;
+  if (!connectionPriority) {
+    connectionPriority = all.reduce((m, c) => Math.max(m, c.priority || 0), 0) + 1;
+  }
 
-    upsert(db, conn);
-    reorderInTx(db, data.provider);
-    result = conn;
-  });
+  const conn = {
+    id: uuidv4(),
+    provider: data.provider,
+    authType: data.authType || "oauth",
+    name: connectionName,
+    priority: connectionPriority,
+    isActive: data.isActive !== undefined ? data.isActive : true,
+    createdAt: now,
+    updatedAt: now,
+    // Owner fields only once set: switch-off responses keep today's shape.
+    ...(workspaceId ? { workspaceId } : {}),
+    ...(owner.createdByUserId ? { createdByUserId: owner.createdByUserId } : {}),
+  };
+  for (const f of OPTIONAL_FIELDS) {
+    if (data[f] !== undefined && data[f] !== null) conn[f] = data[f];
+  }
+  if (data.providerSpecificData && Object.keys(data.providerSpecificData).length > 0) {
+    conn.providerSpecificData = data.providerSpecificData;
+  }
+  if (data.email !== undefined) conn.email = data.email;
 
-  return result;
+  upsert(db, conn);
+  reorderInTx(db, data.provider, workspaceId);
+  return conn;
 }
 
 // Critical: OAuth refresh token race — atomic merge inside transaction
-export async function updateProviderConnection(id, data) {
+export async function updateProviderConnectionUnscoped(id, data) {
   const db = await getAdapter();
-  let result;
-  db.transaction(() => {
-    const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
-    if (!row) {
-      result = null;
-      return;
-    }
-    const existing = rowToConn(row);
-    const normalized = resetHealthStateOnActivation(existing, data);
-    const merged = { ...existing, ...normalized, updatedAt: new Date().toISOString() };
-    upsert(db, merged);
-    if (data.priority !== undefined) reorderInTx(db, existing.provider);
-    result = merged;
-  });
-  return result;
+  return db.transaction(() =>
+    updateInTx(db, db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]), data),
+  );
 }
 
-export async function deleteProviderConnection(id) {
-  const db = await getAdapter();
-  let ok = false;
-  db.transaction(() => {
-    const row = db.get(`SELECT provider FROM providerConnections WHERE id = ?`, [id]);
-    if (!row) return;
-    db.run(`DELETE FROM providerConnections WHERE id = ?`, [id]);
-    reorderInTx(db, row.provider);
-    ok = true;
-  });
-  return ok;
+// Ownership is immutable here: moves between workspaces are YAN-701.
+function updateInTx(db, row, data) {
+  if (!row) return null;
+  const existing = rowToConn(row);
+  const { workspaceId: _ws, createdByUserId: _by, ...patch } = data || {};
+  const normalized = resetHealthStateOnActivation(existing, patch);
+  const merged = { ...existing, ...normalized, updatedAt: new Date().toISOString() };
+  upsert(db, merged);
+  if (patch.priority !== undefined) reorderInTx(db, existing.provider, row.workspaceId);
+  return merged;
 }
 
-export async function deleteProviderConnectionsByProvider(providerId) {
+export async function deleteProviderConnectionUnscoped(id) {
+  const db = await getAdapter();
+  return db.transaction(() =>
+    deleteInTx(
+      db,
+      db.get(`SELECT id, provider, workspaceId FROM providerConnections WHERE id = ?`, [id]),
+    ),
+  );
+}
+
+function deleteInTx(db, row) {
+  if (!row) return false;
+  db.run(`DELETE FROM providerConnections WHERE id = ?`, [row.id]);
+  reorderInTx(db, row.provider, row.workspaceId);
+  return true;
+}
+
+export async function deleteProviderConnectionsByProviderUnscoped(providerId) {
   const db = await getAdapter();
   const before = db.get(`SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ?`, [
     providerId,
@@ -336,12 +375,18 @@ export async function deleteProviderConnectionsByProvider(providerId) {
   return before?.n || 0;
 }
 
-export async function reorderProviderConnections(providerId) {
+export async function reorderProviderConnectionsUnscoped(providerId) {
   const db = await getAdapter();
-  db.transaction(() => reorderInTx(db, providerId));
+  db.transaction(() => {
+    const parts = db.all(
+      `SELECT DISTINCT workspaceId FROM providerConnections WHERE provider = ?`,
+      [providerId],
+    );
+    for (const { workspaceId } of parts) reorderInTx(db, providerId, workspaceId);
+  });
 }
 
-export async function cleanupProviderConnections() {
+export async function cleanupProviderConnectionsUnscoped() {
   const db = await getAdapter();
   const fieldsToCheck = [
     "displayName",
@@ -387,4 +432,56 @@ export async function cleanupProviderConnections() {
     }
   });
   return cleaned;
+}
+
+// ─── Scoped API (YAN-361): every call takes the request principal ─────────
+// Rows are looked up by (id, member workspace), so an id from another
+// workspace reads as "not found" (no IDOR). `workspaceId` arguments are only
+// selectors: membership is re-verified in SQL. Role checks are the route's job.
+const MEMBER_ROW = `SELECT pc.* FROM providerConnections pc JOIN memberships m ON m.workspaceId = pc.workspaceId WHERE pc.id = ? AND m.userId = ?`;
+
+/** Connections of one workspace the principal belongs to, by priority. */
+export async function listConnections(ctx, workspaceId, filter = {}) {
+  const db = await getAdapter();
+  memberWorkspaceId(ctx, db, workspaceId);
+  const where = ["workspaceId = ?"];
+  const params = [workspaceId];
+  if (filter.provider) {
+    where.push("provider = ?");
+    params.push(filter.provider);
+  }
+  if (filter.isActive !== undefined) {
+    where.push("isActive = ?");
+    params.push(filter.isActive ? 1 : 0);
+  }
+  const rows = db.all(`SELECT * FROM providerConnections WHERE ${where.join(" AND ")}`, params);
+  return rows.map(rowToConn).sort((a, b) => (a.priority || 999) - (b.priority || 999));
+}
+
+/** A connection in any workspace the principal belongs to, else null. */
+export async function getConnection(ctx, id) {
+  assertCtx(ctx);
+  const db = await getAdapter();
+  return rowToConn(db.get(MEMBER_ROW, [id, ctx.userId]));
+}
+
+/** Create (or re-login upsert) inside `workspaceId`; the creator is the principal. */
+export async function createConnection(ctx, workspaceId, data, opts = {}) {
+  const db = await getAdapter();
+  return db.transaction(() => {
+    memberWorkspaceId(ctx, db, workspaceId);
+    return createInTx(db, data, opts, { workspaceId, createdByUserId: ctx.userId });
+  });
+}
+
+export async function updateConnection(ctx, id, data) {
+  assertCtx(ctx);
+  const db = await getAdapter();
+  return db.transaction(() => updateInTx(db, db.get(MEMBER_ROW, [id, ctx.userId]), data));
+}
+
+export async function deleteConnection(ctx, id) {
+  assertCtx(ctx);
+  const db = await getAdapter();
+  return db.transaction(() => deleteInTx(db, db.get(MEMBER_ROW, [id, ctx.userId])));
 }

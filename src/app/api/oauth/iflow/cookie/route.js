@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createProviderConnection } from "@/models";
+import { createProviderConnectionUnscoped } from "@/models";
 
 /**
  * iFlow Cookie-Based Authentication
@@ -108,7 +108,7 @@ export async function POST(request) {
     const cookieToSave = bxAuth ? `BXAuth=${bxAuth};` : "";
 
     // Save to database
-    const connection = await createProviderConnection({
+    const connection = await createProviderConnectionUnscoped({
       provider: "iflow",
       authType: "cookie",
       name: refreshedKey.name || keyData.name,

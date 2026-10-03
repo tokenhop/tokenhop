@@ -2,6 +2,7 @@
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
 import { latestVersion } from "./migrations/index.js";
+import { adoptOwnerlessRowsUnscoped } from "./repos/ownership.js";
 
 // Settings
 export {
@@ -15,23 +16,34 @@ export {
 
 // Provider connections
 export {
-  getProviderConnections,
-  getProviderConnectionById,
-  createProviderConnection,
-  updateProviderConnection,
-  deleteProviderConnection,
-  deleteProviderConnectionsByProvider,
-  reorderProviderConnections,
-  cleanupProviderConnections,
+  getProviderConnectionsUnscoped,
+  getProviderConnectionByIdUnscoped,
+  createProviderConnectionUnscoped,
+  updateProviderConnectionUnscoped,
+  deleteProviderConnectionUnscoped,
+  deleteProviderConnectionsByProviderUnscoped,
+  reorderProviderConnectionsUnscoped,
+  cleanupProviderConnectionsUnscoped,
+  listConnections,
+  getConnection,
+  createConnection,
+  updateConnection,
+  deleteConnection,
 } from "./repos/connectionsRepo.js";
+export { adoptOwnerlessUnscoped } from "./repos/ownership.js";
 
 // Provider nodes
 export {
-  getProviderNodes,
-  getProviderNodeById,
-  createProviderNode,
-  updateProviderNode,
-  deleteProviderNode,
+  getProviderNodesUnscoped,
+  getProviderNodeByIdUnscoped,
+  createProviderNodeUnscoped,
+  updateProviderNodeUnscoped,
+  deleteProviderNodeUnscoped,
+  listNodes,
+  getNode,
+  createNode,
+  updateNode,
+  deleteNode,
 } from "./repos/nodesRepo.js";
 
 // Proxy pools
@@ -119,7 +131,7 @@ export {
   getLiveSnapshot,
   saveRequestUsage,
   getUsageHistory,
-  getUsageStats,
+  getUsageStatsUnscoped,
   getChartData,
   getUsageSavings,
   getUsageTotals,
@@ -130,7 +142,7 @@ export {
   getSavingsLifetime,
   recordFallbackHop,
   appendRequestLog,
-  getRecentLogs,
+  getRecentLogsUnscoped,
 } from "./repos/usageRepo.js";
 
 // Request details
@@ -307,6 +319,8 @@ export async function importDb(payload) {
         isActive,
         createdAt,
         updatedAt,
+        workspaceId: _ws,
+        createdByUserId: _by,
         ...rest
       } = c;
       db.run(
@@ -326,7 +340,16 @@ export async function importDb(payload) {
       );
     }
     for (const n of payload.providerNodes || []) {
-      const { id, type, name, createdAt, updatedAt, ...rest } = n;
+      const {
+        id,
+        type,
+        name,
+        createdAt,
+        updatedAt,
+        workspaceId: _ws,
+        createdByUserId: _by,
+        ...rest
+      } = n;
       db.run(
         `INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
         [
@@ -418,6 +441,8 @@ export async function importDb(payload) {
         stringifyJson(models || {}),
       ]);
     }
+    // YAN-361: imported connections and nodes belong to Default (no-op before bootstrap).
+    adoptOwnerlessRowsUnscoped(db);
   });
 
   return await exportDb();

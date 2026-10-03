@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections } from "@/lib/localDb";
+import { scopedConnections } from "@/lib/users/workspaceScope.js";
 import { fetchElevenLabsVoices } from "open-sse/handlers/ttsCore.js";
 
 const langNames = new Intl.DisplayNames(["en"], { type: "language" });
@@ -15,7 +15,13 @@ export async function GET(request) {
     const langFilter = searchParams.get("lang");
 
     // Direct DB read - bypass auth mutex used for TTS inference
-    const connections = await getProviderConnections({ provider: "elevenlabs", isActive: true });
+    // YAN-361: switch on, only the selected workspace's key.
+    const scoped = await scopedConnections(request, "workspace.connections.use", {
+      provider: "elevenlabs",
+      isActive: true,
+    });
+    if (scoped instanceof Response) return scoped;
+    const { connections } = scoped;
     const apiKey = connections[0]?.apiKey;
     if (!apiKey) {
       return NextResponse.json({ error: "No ElevenLabs connection found" }, { status: 400 });

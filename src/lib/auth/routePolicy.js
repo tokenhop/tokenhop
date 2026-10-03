@@ -10,6 +10,9 @@
 //   remoteMethods    methods exempt from localOnly (exact path only)
 //   alwaysProtected  session or CLI token; single-user mode does not open it
 //   cliAllowed       the CLI token authenticates (default true)
+//   scoped           workspace-scoped handler (YAN-361): the guard asks for the
+//                    capability in any of the principal's workspaces and the
+//                    handler checks the row's workspace
 // With the users & teams switch off every authenticated principal is the
 // owner, so `cap` changes nothing; the flags reproduce the old path lists.
 
@@ -27,6 +30,7 @@ const LOCAL_HOST = { cap: HOST, localOnly: true };
 const read = (getCap, writeCap) => ({
   cap: { GET: getCap, POST: writeCap, PUT: writeCap, PATCH: writeCap, DELETE: writeCap },
 });
+const scoped = (row) => ({ ...row, scoped: true });
 
 /** @type {Record<string, object>} */
 export const ROUTE_POLICY = {
@@ -124,18 +128,18 @@ export const ROUTE_POLICY = {
   "/api/models/catalog-sync": read(META, SETTINGS),
 
   // Connections, nodes and OAuth connect flows.
-  "/api/providers": read(META, CONN),
-  "/api/providers/[id]": read(META, CONN),
-  "/api/providers/[id]/models": { cap: META },
-  "/api/providers/[id]/test": { cap: USE },
-  "/api/providers/[id]/test-models": { cap: USE },
-  "/api/providers/test-batch": { cap: USE },
-  "/api/providers/validate": { cap: CONN },
-  "/api/providers/client": { cap: META },
+  "/api/providers": scoped(read(META, CONN)),
+  "/api/providers/[id]": scoped(read(META, CONN)),
+  "/api/providers/[id]/models": scoped({ cap: META }),
+  "/api/providers/[id]/test": scoped({ cap: USE }),
+  "/api/providers/[id]/test-models": scoped({ cap: USE }),
+  "/api/providers/test-batch": scoped({ cap: USE }),
+  "/api/providers/validate": scoped({ cap: CONN }),
+  "/api/providers/client": scoped({ cap: META }),
   "/api/providers/kilo/free-models": { cap: META },
   "/api/providers/suggested-models": { cap: META },
-  "/api/provider-nodes": read(META, CONN),
-  "/api/provider-nodes/[id]": { cap: CONN },
+  "/api/provider-nodes": scoped(read(META, CONN)),
+  "/api/provider-nodes/[id]": scoped({ cap: CONN }),
   "/api/provider-nodes/validate": { cap: CONN },
   "/api/oauth/[provider]/[action]": { cap: CONN },
   "/api/oauth/codex/bulk-import": { cap: CONN },
@@ -151,10 +155,10 @@ export const ROUTE_POLICY = {
   "/api/oauth/kiro/social-exchange": { cap: CONN },
   "/api/oauth/xiaomi-mimo/api-key": { cap: CONN },
   "/api/media-providers/tts/voices": { cap: USE },
-  "/api/media-providers/tts/deepgram/voices": { cap: USE },
-  "/api/media-providers/tts/elevenlabs/voices": { cap: USE },
-  "/api/media-providers/tts/inworld/voices": { cap: USE },
-  "/api/media-providers/tts/minimax/voices": { cap: USE },
+  "/api/media-providers/tts/deepgram/voices": scoped({ cap: USE }),
+  "/api/media-providers/tts/elevenlabs/voices": scoped({ cap: USE }),
+  "/api/media-providers/tts/inworld/voices": scoped({ cap: USE }),
+  "/api/media-providers/tts/minimax/voices": scoped({ cap: USE }),
 
   // Combos, aliases, custom and disabled models.
   "/api/combos": read(META, COMBOS),
@@ -165,7 +169,7 @@ export const ROUTE_POLICY = {
   "/api/models/alias": read(META, COMBOS),
   "/api/models/custom": read(META, COMBOS),
   "/api/models/disabled": read(META, COMBOS),
-  "/api/models/availability": read(META, USE),
+  "/api/models/availability": scoped(read(META, USE)),
   "/api/models/test": { cap: USE },
   "/api/tags": { cap: META },
 
@@ -174,8 +178,8 @@ export const ROUTE_POLICY = {
   "/api/keys/[id]": { cap: "workspace.keys.manage" },
 
   // Usage and dashboard summaries.
-  "/api/usage/[connectionId]": { cap: USAGE },
-  "/api/usage/[connectionId]/codex-reset-credits": read(USAGE, CONN),
+  "/api/usage/[connectionId]": scoped({ cap: USAGE }),
+  "/api/usage/[connectionId]/codex-reset-credits": scoped(read(USAGE, CONN)),
   "/api/usage/chart": { cap: USAGE },
   "/api/usage/history": { cap: USAGE },
   "/api/usage/last-activity": { cap: USAGE },
@@ -187,7 +191,7 @@ export const ROUTE_POLICY = {
   "/api/usage/stats": { cap: USAGE },
   "/api/usage/stream": { cap: USAGE },
   "/api/home/live-routes": { cap: USAGE },
-  "/api/home/quota": { cap: USAGE },
+  "/api/home/quota": scoped({ cap: USAGE }),
   "/api/home/summary": { cap: USAGE },
   "/api/shell/summary": { cap: USAGE },
   "/api/shell/savings-milestone": { cap: USAGE },
@@ -271,7 +275,7 @@ function routeKey(pathname) {
  * /skills, /login…), which dashboardGuard handles itself.
  * @param {string} pathname
  * @param {string} [method]
- * @returns {{ key: string, capability: string|null, public: boolean, gateway: boolean, localOnly: boolean, alwaysProtected: boolean, cliAllowed: boolean }|null}
+ * @returns {{ key: string, capability: string|null, public: boolean, gateway: boolean, localOnly: boolean, alwaysProtected: boolean, cliAllowed: boolean, scoped: boolean }|null}
  */
 export function resolveRoutePolicy(pathname, method = "GET") {
   const key = routeKey(pathname);
@@ -296,5 +300,6 @@ function flags(row) {
     localOnly: row.localOnly === true,
     alwaysProtected: row.alwaysProtected === true,
     cliAllowed: row.cliAllowed !== false,
+    scoped: row.scoped === true,
   };
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDistinctProviders } from "@/lib/requestDetailsDb";
-import { getProviderNodes } from "@/lib/localDb";
+import { getProviderNodesUnscoped } from "@/lib/localDb";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
 
 /**
@@ -13,7 +13,7 @@ export async function GET() {
     // full JSON blob (can be hundreds of MB), which previously caused OOM.
     const providerIds = await getDistinctProviders();
 
-    const providerNodes = await getProviderNodes();
+    const providerNodes = await getProviderNodesUnscoped();
     const nodeMap = {};
     for (const node of providerNodes) {
       nodeMap[node.id] = node.name;

@@ -490,25 +490,26 @@ function loadDaysInRange(adapter, maxDays) {
   return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ?`, [cutoffKey]);
 }
 
-export async function getUsageStats(period = "all") {
+export async function getUsageStatsUnscoped(period = "all") {
   const db = await getAdapter();
 
-  const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }] = await Promise.all([
-    import("./connectionsRepo.js"),
-    import("./apiKeysRepo.js"),
-    import("./nodesRepo.js"),
-  ]);
+  const [{ getProviderConnectionsUnscoped }, { getApiKeys }, { getProviderNodesUnscoped }] =
+    await Promise.all([
+      import("./connectionsRepo.js"),
+      import("./apiKeysRepo.js"),
+      import("./nodesRepo.js"),
+    ]);
 
   let allConnections = [];
   try {
-    allConnections = await getProviderConnections();
+    allConnections = await getProviderConnectionsUnscoped();
   } catch {}
   const connectionMap = {};
   for (const c of allConnections) connectionMap[c.id] = c.name || c.email || c.id;
 
   const providerNodeNameMap = {};
   try {
-    const nodes = await getProviderNodes();
+    const nodes = await getProviderNodesUnscoped();
     for (const n of nodes) if (n.id && n.name) providerNodeNameMap[n.id] = n.name;
   } catch {}
 
@@ -1105,7 +1106,7 @@ function formatLogDate(date = new Date()) {
 // No-op: request log is now derived from usageHistory table on read.
 export async function appendRequestLog() {}
 
-export async function getRecentLogs(limit = 200) {
+export async function getRecentLogsUnscoped(limit = 200) {
   try {
     const db = await getAdapter();
     const rows = db.all(
@@ -1116,8 +1117,8 @@ export async function getRecentLogs(limit = 200) {
 
     const connMap = {};
     try {
-      const { getProviderConnections } = await import("./connectionsRepo.js");
-      const connections = await getProviderConnections();
+      const { getProviderConnectionsUnscoped } = await import("./connectionsRepo.js");
+      const connections = await getProviderConnectionsUnscoped();
       for (const c of connections) connMap[c.id] = c.name || c.email || "";
     } catch {}
 
@@ -1133,7 +1134,7 @@ export async function getRecentLogs(limit = 200) {
       return `${ts} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${r.status || "-"}`;
     });
   } catch (e) {
-    console.error("[usageRepo] getRecentLogs failed:", e.message);
+    console.error("[usageRepo] getRecentLogsUnscoped failed:", e.message);
     return [];
   }
 }

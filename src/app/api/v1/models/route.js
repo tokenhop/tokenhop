@@ -6,7 +6,12 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import {
+  getProviderConnectionsUnscoped,
+  getCombos,
+  getCustomModels,
+  getModelAliases,
+} from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { requireClientApiKey } from "@/lib/auth/requireClientApiKey";
 import {
@@ -176,7 +181,7 @@ export async function buildModelsList(kindFilter, options = {}) {
   const skipDynamicFetch = options.skipDynamicFetch === true;
   let connections = [];
   try {
-    connections = await getProviderConnections();
+    connections = await getProviderConnectionsUnscoped();
     connections = connections.filter((c) => c.isActive !== false);
   } catch (e) {
     console.log("Could not fetch providers, returning all models");

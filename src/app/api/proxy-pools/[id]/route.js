@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   deleteProxyPool,
-  getProviderConnections,
+  getProviderConnectionsUnscoped,
   getProxyPoolById,
   updateProxyPool,
 } from "@/models";
@@ -103,7 +103,7 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: "Proxy pool not found" }, { status: 404 });
     }
 
-    const connections = await getProviderConnections();
+    const connections = await getProviderConnectionsUnscoped();
     const boundConnectionCount = countBoundConnections(connections, id);
 
     if (boundConnectionCount > 0) {

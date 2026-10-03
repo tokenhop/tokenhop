@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { CursorService } from "@/lib/oauth/services/cursor";
-import { createProviderConnection } from "@/models";
+import { createProviderConnectionUnscoped } from "@/models";
 
 // Cursor session JWTs are ~1 KB; anything this large is not a real token.
 const MAX_TOKEN_LENGTH = 16384;
@@ -52,7 +52,7 @@ export async function POST(request) {
     const userInfo = cursorService.extractUserInfo(tokenData.accessToken);
 
     // Save to database
-    const connection = await createProviderConnection({
+    const connection = await createProviderConnectionUnscoped({
       provider: "cursor",
       authType: "oauth",
       accessToken: tokenData.accessToken,

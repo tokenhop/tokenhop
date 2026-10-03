@@ -78,7 +78,7 @@ const qoder = {
     const rawEmail = (tokens._qoderEmail || "").trim();
     const displayName = (tokens._qoderName || "").trim() || null;
     const userId = tokens._qoderUserId || "";
-    // Dedup in createProviderConnection requires a non-empty email. When
+    // Dedup in createProviderConnectionUnscoped requires a non-empty email. When
     // fetchUserInfo silently fails (returns ""), fall back to a stable
     // synthetic identifier derived from userId so re-logins update the
     // existing row instead of accumulating "Account N" duplicates.

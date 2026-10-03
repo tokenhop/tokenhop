@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   json: vi.fn((body, init) => ({ status: init?.status || 200, body })),
-  getProviderConnectionById: vi.fn(),
-  updateProviderConnection: vi.fn(async (id, data) => ({ id, ...data })),
+  getProviderConnectionByIdUnscoped: vi.fn(),
+  updateProviderConnectionUnscoped: vi.fn(async (id, data) => ({ id, ...data })),
 }));
 
 vi.mock("next/server", () => ({
@@ -11,11 +11,11 @@ vi.mock("next/server", () => ({
 }));
 
 vi.mock("@/models", () => ({
-  getProviderNodeById: vi.fn(),
-  getProviderConnectionById: mocks.getProviderConnectionById,
+  getProviderNodeByIdUnscoped: vi.fn(),
+  getProviderConnectionByIdUnscoped: mocks.getProviderConnectionByIdUnscoped,
   getProxyPoolById: vi.fn(),
-  updateProviderConnection: mocks.updateProviderConnection,
-  deleteProviderConnection: vi.fn(),
+  updateProviderConnectionUnscoped: mocks.updateProviderConnectionUnscoped,
+  deleteProviderConnectionUnscoped: vi.fn(),
 }));
 
 function jsonRequest(url, method, body) {
@@ -72,7 +72,7 @@ describe("cookie connection credential update", () => {
     vi.resetModules();
     vi.clearAllMocks();
     const { PUT } = await import("../../src/app/api/providers/[id]/route.js");
-    mocks.getProviderConnectionById.mockResolvedValue({
+    mocks.getProviderConnectionByIdUnscoped.mockResolvedValue({
       id: "c1",
       provider: "grok-web",
       authType: "cookie",
@@ -84,7 +84,9 @@ describe("cookie connection credential update", () => {
       { params: Promise.resolve({ id: "c1" }) },
     );
 
-    expect(mocks.updateProviderConnection).toHaveBeenCalledWith("c1", { apiKey: "new-cookie" });
+    expect(mocks.updateProviderConnectionUnscoped).toHaveBeenCalledWith("c1", {
+      apiKey: "new-cookie",
+    });
     expect(response.body.connection).not.toHaveProperty("apiKey");
   });
 });

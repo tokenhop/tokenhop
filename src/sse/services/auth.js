@@ -1,7 +1,7 @@
 import {
-  getProviderConnections,
+  getProviderConnectionsUnscoped,
   validateApiKey,
-  updateProviderConnection,
+  updateProviderConnectionUnscoped,
   getSettings,
   getProxyPools,
 } from "@/lib/localDb";
@@ -111,7 +111,10 @@ export async function getProviderCredentials(
       };
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    const connections = await getProviderConnectionsUnscoped({
+      provider: providerId,
+      isActive: true,
+    });
     log.debug(
       "AUTH",
       `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`,
@@ -261,7 +264,7 @@ export async function getProviderCredentials(
       connection = result.connection ?? availableConnections[0];
       weightedStates.set(providerId, result.nextState);
       // Persist sticky window exactly as round-robin does.
-      await updateProviderConnection(connection.id, {
+      await updateProviderConnectionUnscoped(connection.id, {
         lastUsedAt: new Date().toISOString(),
         consecutiveUseCount: result.continued ? (connection.consecutiveUseCount || 0) + 1 : 1,
       });
@@ -284,7 +287,7 @@ export async function getProviderCredentials(
         // Stay with current account
         connection = current;
         // Update lastUsedAt and increment count (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
+        await updateProviderConnectionUnscoped(connection.id, {
           lastUsedAt: new Date().toISOString(),
           consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1,
         });
@@ -300,13 +303,13 @@ export async function getProviderCredentials(
         connection = sortedByOldest[0];
 
         // Update lastUsedAt and reset count to 1 (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
+        await updateProviderConnectionUnscoped(connection.id, {
           lastUsedAt: new Date().toISOString(),
           consecutiveUseCount: 1,
         });
       }
     } else {
-      // Default: fill-first (already sorted by priority in getProviderConnections)
+      // Default: fill-first (already sorted by priority in getProviderConnectionsUnscoped)
       connection = availableConnections[0];
     }
 
@@ -365,7 +368,7 @@ export async function markAccountUnavailable(
   resetsAtMs = null,
 ) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
-  const connections = await getProviderConnections({ provider });
+  const connections = await getProviderConnectionsUnscoped({ provider });
   const conn = connections.find((c) => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
 
@@ -399,7 +402,7 @@ export async function markAccountUnavailable(
   const reason = typeof errorText === "string" ? errorText.slice(0, 200) : "Provider error";
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
-  await updateProviderConnection(connectionId, {
+  await updateProviderConnectionUnscoped(connectionId, {
     ...lockUpdate,
     testStatus: "unavailable",
     lastError: reason,
@@ -469,7 +472,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
     });
   }
 
-  await updateProviderConnection(connectionId, clearObj);
+  await updateProviderConnectionUnscoped(connectionId, clearObj);
 }
 
 /**

@@ -179,8 +179,8 @@ describe("criterion 3 — real callback completes session + saves connection", (
     expect(session.status).toBe("done");
     expect(session.connectionId).toBeTruthy();
 
-    const { getProviderConnectionById } = await import("@/models/index.js");
-    const conn = await getProviderConnectionById(session.connectionId);
+    const { getProviderConnectionByIdUnscoped } = await import("@/models/index.js");
+    const conn = await getProviderConnectionByIdUnscoped(session.connectionId);
     expect(conn).toBeTruthy();
     expect(conn.provider).toBe("zed");
     expect(conn.accessToken).toBe("decrypted-token-xyz");
@@ -302,8 +302,8 @@ describe("YAN-5 / #1 — callback accepted on any path (upstream Zed parity)", (
 
     const session = getZedSessionStatus(state);
     expect(session?.status).toBe("done");
-    const { getProviderConnectionById } = await import("@/models/index.js");
-    const conn = await getProviderConnectionById(session.connectionId);
+    const { getProviderConnectionByIdUnscoped } = await import("@/models/index.js");
+    const conn = await getProviderConnectionByIdUnscoped(session.connectionId);
     expect(conn.accessToken).toBe("any-path-token");
   });
 
@@ -350,8 +350,8 @@ describe("YAN-5 / #1 — manual callback-URL paste completes via /exchange", () 
     expect(res.status).toBe(200);
     expect(data.success).toBe(true);
 
-    const { getProviderConnectionById } = await import("@/models/index.js");
-    const conn = await getProviderConnectionById(data.connection.id);
+    const { getProviderConnectionByIdUnscoped } = await import("@/models/index.js");
+    const conn = await getProviderConnectionByIdUnscoped(data.connection.id);
     expect(conn.provider).toBe("zed");
     expect(conn.accessToken).toBe("pasted-token");
     expect(conn.providerSpecificData?.userId).toBe("user-789");

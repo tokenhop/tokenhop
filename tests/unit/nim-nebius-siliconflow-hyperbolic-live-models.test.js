@@ -2,7 +2,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { GET } from "@/app/api/providers/[id]/models/route.js";
 import { buildModelsList } from "@/app/api/v1/models/route.js";
-import { createProviderConnection, deleteProviderConnectionsByProvider } from "@/models/index.js";
+import {
+  createProviderConnectionUnscoped,
+  deleteProviderConnectionsByProviderUnscoped,
+} from "@/models/index.js";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { clearLiveModelsCache } from "@/lib/providerModels/liveResolvers.js";
 import {
@@ -26,7 +29,7 @@ beforeEach(async () => {
   calls.length = 0;
   respond = () => new Response("unexpected", { status: 500 });
   clearLiveModelsCache();
-  for (const p of PROVIDERS) await deleteProviderConnectionsByProvider(p);
+  for (const p of PROVIDERS) await deleteProviderConnectionsByProviderUnscoped(p);
   const nativeFetch = globalThis.fetch.bind(globalThis);
   vi.stubGlobal("fetch", async (url, init = {}) => {
     if (!HOSTS.some((h) => String(url).startsWith(h))) return nativeFetch(url, init);
@@ -38,7 +41,7 @@ beforeEach(async () => {
 afterEach(() => vi.unstubAllGlobals());
 
 const connect = (provider, apiKey) =>
-  createProviderConnection({ provider, authType: "apikey", apiKey, testStatus: "active" });
+  createProviderConnectionUnscoped({ provider, authType: "apikey", apiKey, testStatus: "active" });
 
 const dashboardModels = async (id) => {
   const res = await GET(new Request(`http://localhost/api/providers/${id}/models`), {

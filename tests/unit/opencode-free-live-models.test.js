@@ -3,7 +3,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { GET } from "@/app/api/providers/[id]/models/route.js";
 import { buildModelsList } from "@/app/api/v1/models/route.js";
-import { createProviderConnection, deleteProviderConnectionsByProvider } from "@/models/index.js";
+import {
+  createProviderConnectionUnscoped,
+  deleteProviderConnectionsByProviderUnscoped,
+} from "@/models/index.js";
 import { clearLiveModelsCache } from "@/lib/providerModels/liveResolvers.js";
 import { parseOpencodeFreeModels } from "@/lib/providerModels/apiKeyModels.js";
 import { OPENCODE_PUBLIC_HEADERS } from "../../open-sse/executors/opencode.js";
@@ -15,8 +18,8 @@ const calls = [];
 beforeEach(async () => {
   calls.length = 0;
   clearLiveModelsCache();
-  await deleteProviderConnectionsByProvider("opencode");
-  await deleteProviderConnectionsByProvider("cohere");
+  await deleteProviderConnectionsByProviderUnscoped("opencode");
+  await deleteProviderConnectionsByProviderUnscoped("cohere");
   const nativeFetch = globalThis.fetch.bind(globalThis);
   vi.stubGlobal("fetch", async (url, init = {}) => {
     if (String(url) !== URL_) return nativeFetch(url, init);
@@ -37,7 +40,7 @@ const dashboardModels = async (id = "opencode", query = "") => {
 // cohere has no live resolver, so it forces the non-empty /v1/models branch
 // without adding a fetch of its own.
 const connectUnrelated = () =>
-  createProviderConnection({
+  createProviderConnectionUnscoped({
     provider: "cohere",
     authType: "apikey",
     apiKey: "sk-co",

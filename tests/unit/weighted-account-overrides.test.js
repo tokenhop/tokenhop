@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   json: vi.fn((body, init) => ({ status: init?.status || 200, body })),
-  getProviderConnectionById: vi.fn(),
-  updateProviderConnection: vi.fn(async () => true),
-  getProviderConnections: vi.fn(async () => []),
+  getProviderConnectionByIdUnscoped: vi.fn(),
+  updateProviderConnectionUnscoped: vi.fn(async () => true),
+  getProviderConnectionsUnscoped: vi.fn(async () => []),
   getProviderConnectionByIdSync: vi.fn(),
 }));
 
@@ -16,10 +16,10 @@ vi.mock("open-sse/index.js", () => ({}), { virtual: true });
 
 vi.mock("@/lib/localDb", () => ({
   getSettings: vi.fn(async () => ({})),
-  getProviderConnections: mocks.getProviderConnections,
-  getProviderConnectionById: mocks.getProviderConnectionById,
+  getProviderConnectionsUnscoped: mocks.getProviderConnectionsUnscoped,
+  getProviderConnectionByIdUnscoped: mocks.getProviderConnectionByIdUnscoped,
   getCombos: vi.fn(async () => []),
-  updateProviderConnection: mocks.updateProviderConnection,
+  updateProviderConnectionUnscoped: mocks.updateProviderConnectionUnscoped,
 }));
 
 vi.mock("@/lib/network/connectionProxy", () => ({
@@ -51,7 +51,7 @@ describe("weighted account overrides", () => {
     sync = await import("../../src/sse/services/quotaSnapshotSync.js");
     store.clearQuotaSnapshots();
     sync._resetQuotaSnapshotSync();
-    mocks.getProviderConnections.mockResolvedValue([]);
+    mocks.getProviderConnectionsUnscoped.mockResolvedValue([]);
   });
 
   function putRequest(id, providerSpecificData) {
@@ -63,7 +63,7 @@ describe("weighted account overrides", () => {
   }
 
   it("accepts weight and manual tier while preserving unrelated psd fields", async () => {
-    mocks.getProviderConnectionById.mockResolvedValue({
+    mocks.getProviderConnectionByIdUnscoped.mockResolvedValue({
       id: "c1",
       provider: "claude",
       providerSpecificData: { region: "us", weight: 2 },
@@ -79,7 +79,7 @@ describe("weighted account overrides", () => {
     );
 
     expect(response.body).not.toHaveProperty("error");
-    expect(mocks.updateProviderConnection).toHaveBeenCalledWith("c1", {
+    expect(mocks.updateProviderConnectionUnscoped).toHaveBeenCalledWith("c1", {
       providerSpecificData: expect.objectContaining({
         region: "us",
         planTier: "default_claude_max_20x",
@@ -90,7 +90,7 @@ describe("weighted account overrides", () => {
   });
 
   it("clears weighted overrides with null without touching other psd fields", async () => {
-    mocks.getProviderConnectionById.mockResolvedValue({
+    mocks.getProviderConnectionByIdUnscoped.mockResolvedValue({
       id: "c1",
       provider: "claude",
       providerSpecificData: { region: "us", weight: 5, planTier: "pro", planTierManual: true },
@@ -103,7 +103,7 @@ describe("weighted account overrides", () => {
       params: Promise.resolve({ id: "c1" }),
     });
 
-    expect(mocks.updateProviderConnection).toHaveBeenCalledWith("c1", {
+    expect(mocks.updateProviderConnectionUnscoped).toHaveBeenCalledWith("c1", {
       providerSpecificData: { region: "us" },
     });
     expect(store.getSnapshot("c1").planTier).toBeNull();
@@ -111,7 +111,7 @@ describe("weighted account overrides", () => {
   });
 
   it("clears a manual snapshot tier when plan alone is reset", async () => {
-    mocks.getProviderConnectionById.mockResolvedValue({
+    mocks.getProviderConnectionByIdUnscoped.mockResolvedValue({
       id: "c1",
       provider: "claude",
       providerSpecificData: { planTier: "pro", planTierManual: true },
@@ -126,7 +126,7 @@ describe("weighted account overrides", () => {
   });
 
   it("rejects out-of-range weights, unknown tiers, and dangerous keys", async () => {
-    mocks.getProviderConnectionById.mockResolvedValue({
+    mocks.getProviderConnectionByIdUnscoped.mockResolvedValue({
       id: "c1",
       provider: "claude",
       providerSpecificData: {},
@@ -147,7 +147,7 @@ describe("weighted account overrides", () => {
 
       expect(response.status).toBe(400);
     }
-    expect(mocks.updateProviderConnection).not.toHaveBeenCalled();
+    expect(mocks.updateProviderConnectionUnscoped).not.toHaveBeenCalled();
   });
 
   it("does not refresh a blocked snapshot from a fallback tier alone", async () => {
@@ -175,7 +175,7 @@ describe("weighted account overrides", () => {
   });
 
   it("never overwrites a manual plan tier during auto detection", async () => {
-    mocks.getProviderConnectionById.mockResolvedValue({
+    mocks.getProviderConnectionByIdUnscoped.mockResolvedValue({
       id: "codex-manual",
       providerSpecificData: { planTier: "plus", planTierManual: true },
     });
@@ -186,13 +186,15 @@ describe("weighted account overrides", () => {
       usage: { plan: "Pro", quotas: {} },
     });
 
-    expect(mocks.updateProviderConnection).not.toHaveBeenCalled();
+    expect(mocks.updateProviderConnectionUnscoped).not.toHaveBeenCalled();
     expect(store.getSnapshot("codex-manual")).toMatchObject({ planTier: "pro" });
   });
 
   it("preserves manual overrides on OAuth re-login while updating fresh tokens", async () => {
-    const { createProviderConnection } = await import("../../src/lib/db/repos/connectionsRepo.js");
-    const created = await createProviderConnection({
+    const { createProviderConnectionUnscoped } = await import(
+      "../../src/lib/db/repos/connectionsRepo.js"
+    );
+    const created = await createProviderConnectionUnscoped({
       provider: "claude",
       authType: "oauth",
       email: "user@example.com",
@@ -205,7 +207,7 @@ describe("weighted account overrides", () => {
       },
     });
 
-    const relogin = await createProviderConnection({
+    const relogin = await createProviderConnectionUnscoped({
       provider: "claude",
       authType: "oauth",
       email: "user@example.com",
@@ -228,8 +230,10 @@ describe("weighted account overrides", () => {
   });
 
   it("clears stale auto-detected tier on OAuth re-login so it re-detects", async () => {
-    const { createProviderConnection } = await import("../../src/lib/db/repos/connectionsRepo.js");
-    const created = await createProviderConnection({
+    const { createProviderConnectionUnscoped } = await import(
+      "../../src/lib/db/repos/connectionsRepo.js"
+    );
+    const created = await createProviderConnectionUnscoped({
       provider: "claude",
       authType: "oauth",
       email: "auto@example.com",
@@ -241,7 +245,7 @@ describe("weighted account overrides", () => {
       },
     });
 
-    const relogin = await createProviderConnection({
+    const relogin = await createProviderConnectionUnscoped({
       provider: "claude",
       authType: "oauth",
       email: "auto@example.com",

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections } from "@/lib/localDb";
+import { scopedConnections } from "@/lib/users/workspaceScope.js";
 
 const MINIMAX_VOICE_ENDPOINTS = {
   minimax: "https://api.minimax.io/v1/get_voice",
@@ -69,7 +69,13 @@ export async function GET(request) {
     const voiceType = searchParams.get("voice_type") || "all";
     const langFilter = searchParams.get("lang");
 
-    const connections = await getProviderConnections({ provider, isActive: true });
+    // YAN-361: switch on, only the selected workspace's key.
+    const scoped = await scopedConnections(request, "workspace.connections.use", {
+      provider,
+      isActive: true,
+    });
+    if (scoped instanceof Response) return scoped;
+    const { connections } = scoped;
     const apiKey = connections[0]?.apiKey;
     if (!apiKey) {
       return NextResponse.json({ error: `No ${provider} connection found` }, { status: 400 });

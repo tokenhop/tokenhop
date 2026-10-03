@@ -3,7 +3,12 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
 import { ACTIVE, readEnv } from "@/shared/brand";
-import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
+import {
+  cleanupProviderConnectionsUnscoped,
+  getSettings,
+  updateSettings,
+  getApiKeys,
+} from "@/lib/localDb";
 import { runShutdownFlushers } from "@/lib/db/shutdownFlushers.js";
 import {
   enableTunnel,
@@ -127,7 +132,7 @@ export async function initializeApp() {
 }
 
 async function runHeavyStartup() {
-  await cleanupProviderConnections();
+  await cleanupProviderConnectionsUnscoped();
   const settings = await getSettings();
 
   // Auto-resume tunnel (once per process)

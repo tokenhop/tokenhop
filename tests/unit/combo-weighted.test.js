@@ -239,7 +239,7 @@ describe("loadComboHeadroomFn", () => {
     clearQuotaSnapshots();
     recordHeaderWindows("conn-1", "claude", [{ kind: "5h", usedFraction: 0.8 }]);
     const headroom = await loadComboHeadroomFn({
-      getProviderConnections: async () => [{ id: "conn-1", provider: "claude" }],
+      getProviderConnectionsUnscoped: async () => [{ id: "conn-1", provider: "claude" }],
     });
     expect(headroom("cc")).toBeCloseTo(0.2);
     expect(headroom("cc/claude-opus")).toBeCloseTo(0.2);

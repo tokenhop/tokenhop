@@ -36,8 +36,8 @@ async function runTest(connection, responses) {
   global.fetch = fetchMock;
   const updates = [];
   vi.doMock("@/lib/localDb", () => ({
-    getProviderConnectionById: vi.fn(async () => connection),
-    updateProviderConnection: vi.fn(async (_id, data) => updates.push(data)),
+    getProviderConnectionByIdUnscoped: vi.fn(async () => connection),
+    updateProviderConnectionUnscoped: vi.fn(async (_id, data) => updates.push(data)),
   }));
   // proxyFetch.js patches globalThis.fetch on import and DNS-bypasses Cursor hosts
   // (real network); replace it wholesale so every call hits the mock.

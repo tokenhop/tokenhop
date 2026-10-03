@@ -19,8 +19,8 @@ async function runTest(connection, tokenResponse) {
   global.fetch = fetchMock;
   const updates = [];
   vi.doMock("@/lib/localDb", () => ({
-    getProviderConnectionById: vi.fn(async () => connection),
-    updateProviderConnection: vi.fn(async (_id, data) => updates.push(data)),
+    getProviderConnectionByIdUnscoped: vi.fn(async () => connection),
+    updateProviderConnectionUnscoped: vi.fn(async (_id, data) => updates.push(data)),
   }));
   vi.doMock("@/lib/network/connectionProxy", () => ({
     resolveConnectionProxyConfig: vi.fn(async () => ({})),

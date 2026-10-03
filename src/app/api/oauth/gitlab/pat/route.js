@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createProviderConnection } from "@/models";
+import { createProviderConnectionUnscoped } from "@/models";
 
 const GITLAB_DEFAULT_BASE = "https://gitlab.com";
 
@@ -39,7 +39,7 @@ export async function POST(request) {
     const user = await userRes.json();
     const email = user.email || user.public_email || "";
 
-    await createProviderConnection({
+    await createProviderConnectionUnscoped({
       provider: "gitlab",
       authType: "oauth",
       accessToken: token.trim(),

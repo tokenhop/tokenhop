@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  getProviderConnections: vi.fn(),
+  getProviderConnectionsUnscoped: vi.fn(),
   getCombos: vi.fn(),
   getSettings: vi.fn(),
   snapshots: {},
@@ -11,7 +11,7 @@ vi.mock("next/server", () => ({
   NextResponse: { json: (body, init) => ({ status: init?.status || 200, body, init }) },
 }));
 vi.mock("@/lib/localDb", () => ({
-  getProviderConnections: mocks.getProviderConnections,
+  getProviderConnectionsUnscoped: mocks.getProviderConnectionsUnscoped,
   getCombos: mocks.getCombos,
   getSettings: mocks.getSettings,
 }));
@@ -106,7 +106,7 @@ describe("buildShellSummary", () => {
 
 describe("GET /api/shell/summary", () => {
   it("returns the summary with no-store and hides connection data", async () => {
-    mocks.getProviderConnections.mockResolvedValue([
+    mocks.getProviderConnectionsUnscoped.mockResolvedValue([
       { id: "a", provider: "openai", testStatus: "active", apiKey: "sk-secret" },
     ]);
     mocks.getCombos.mockResolvedValue([{ name: "c1" }]);

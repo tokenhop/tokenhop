@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections } from "@/lib/localDb";
+import { getProviderConnectionsUnscoped } from "@/lib/localDb";
+import { listConnections } from "@/lib/db/index.js";
+import { workspaceScope } from "@/lib/users/workspaceScope.js";
 import { backfillCodexEmails } from "@/lib/oauth/providers";
 import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
@@ -119,7 +121,12 @@ export async function GET(request) {
       MAX_PAGE_SIZE,
     );
 
-    const allConnections = await getProviderConnections();
+    // YAN-361: switch on, only the selected workspace's connections.
+    const scope = await workspaceScope(request, "workspace.connections.metadata.read");
+    if (scope instanceof Response) return scope;
+    const allConnections = scope
+      ? await listConnections(scope.ctx, scope.workspaceId)
+      : await getProviderConnectionsUnscoped();
     const eligibleConnections = allConnections.filter(isUsageEligible);
     const providerOptions = Array.from(
       new Set(eligibleConnections.map((conn) => conn.provider)),

@@ -152,7 +152,7 @@ describe("Kiro external_idp (CLIProxyAPI) import and refresh", () => {
       },
     }));
     vi.doMock("@/models", () => ({
-      createProviderConnection: vi.fn(async (data) => {
+      createProviderConnectionUnscoped: vi.fn(async (data) => {
         const connection = { id: "conn-1", ...data };
         createdConnections.push(connection);
         return connection;

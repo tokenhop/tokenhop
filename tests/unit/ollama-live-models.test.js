@@ -3,7 +3,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 import { GET } from "@/app/api/providers/[id]/models/route.js";
 import { buildModelsList } from "@/app/api/v1/models/route.js";
-import { createProviderConnection, deleteProviderConnectionsByProvider } from "@/models/index.js";
+import {
+  createProviderConnectionUnscoped,
+  deleteProviderConnectionsByProviderUnscoped,
+} from "@/models/index.js";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { clearLiveModelsCache } from "@/lib/providerModels/liveResolvers.js";
 import { parseOllamaTags } from "@/lib/providerModels/ollamaModels.js";
@@ -16,7 +19,7 @@ beforeEach(async () => {
   calls.length = 0;
   respond = () => new Response("unexpected", { status: 500 });
   clearLiveModelsCache();
-  for (const p of ["ollama", "ollama-local"]) await deleteProviderConnectionsByProvider(p);
+  for (const p of ["ollama", "ollama-local"]) await deleteProviderConnectionsByProviderUnscoped(p);
   const nativeFetch = globalThis.fetch.bind(globalThis);
   vi.stubGlobal("fetch", async (url, init = {}) => {
     if (!HOSTS.some((h) => String(url).startsWith(h))) return nativeFetch(url, init);
@@ -58,7 +61,7 @@ it("parseOllamaTags maps model/name to id, dedupes and drops embedding models", 
 describe("live catalogs end to end", () => {
   it("ollama cloud lists live models on the dashboard and in /v1/models", async () => {
     respond = () => tags({ name: "glm-9", model: "glm-9" });
-    const conn = await createProviderConnection({
+    const conn = await createProviderConnectionUnscoped({
       provider: "ollama",
       authType: "apikey",
       apiKey: "ol-test",
@@ -76,7 +79,7 @@ describe("live catalogs end to end", () => {
 
   it("ollama cloud warns without echoing the key when it is rejected", async () => {
     respond = () => new Response("bad key ol-secret", { status: 401 });
-    const conn = await createProviderConnection({
+    const conn = await createProviderConnectionUnscoped({
       provider: "ollama",
       authType: "apikey",
       apiKey: "ol-secret",
@@ -90,7 +93,7 @@ describe("live catalogs end to end", () => {
 
   it("ollama local reads the configured host", async () => {
     respond = () => tags({ name: "qwen3:8b", model: "qwen3:8b" });
-    const conn = await createProviderConnection({
+    const conn = await createProviderConnectionUnscoped({
       provider: "ollama-local",
       authType: "apikey",
       testStatus: "active",
@@ -109,7 +112,7 @@ describe("live catalogs end to end", () => {
     respond = () => {
       throw new TypeError("fetch failed");
     };
-    const conn = await createProviderConnection({
+    const conn = await createProviderConnectionUnscoped({
       provider: "ollama-local",
       authType: "apikey",
       testStatus: "active",

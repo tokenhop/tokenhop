@@ -5,10 +5,10 @@ import "open-sse/index.js";
 
 import {
   getSettings,
-  getProviderConnections,
+  getProviderConnectionsUnscoped,
   getCombos,
   getModelAliases,
-  updateProviderConnection,
+  updateProviderConnectionUnscoped,
 } from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getSnapshot } from "open-sse/services/quotaSnapshot.js";
@@ -55,10 +55,10 @@ function isEligible(connection) {
 export function createDefaultDeps() {
   return {
     getSettings,
-    getProviderConnections,
+    getProviderConnectionsUnscoped,
     getCombos,
     getModelAliases,
-    updateProviderConnection,
+    updateProviderConnectionUnscoped,
     resolveConnectionProxyConfig,
     refreshAndUpdateCredentials,
     getUsageForProvider,
@@ -138,9 +138,9 @@ export async function runQuotaSnapshotTick(deps = createDefaultDeps(), state = g
       ...weightedProviders(settings, combos, [], aliases),
       ...comboMemberProviders(combos, aliases),
     ]);
-    if (settings?.fallbackStrategy === "weighted" && deps.getProviderConnections) {
+    if (settings?.fallbackStrategy === "weighted" && deps.getProviderConnectionsUnscoped) {
       try {
-        const all = await deps.getProviderConnections({ isActive: true });
+        const all = await deps.getProviderConnectionsUnscoped({ isActive: true });
         providers = new Set([
           ...weightedProviders(
             settings,
@@ -159,7 +159,7 @@ export async function runQuotaSnapshotTick(deps = createDefaultDeps(), state = g
     for (const provider of providers) {
       let connections = [];
       try {
-        connections = await deps.getProviderConnections({ provider, isActive: true });
+        connections = await deps.getProviderConnectionsUnscoped({ provider, isActive: true });
       } catch {
         continue;
       }

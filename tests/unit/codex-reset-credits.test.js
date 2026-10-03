@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   proxyAwareFetch: vi.fn(),
-  getProviderConnectionById: vi.fn(),
+  getProviderConnectionByIdUnscoped: vi.fn(),
   resolveConnectionProxyConfig: vi.fn(),
   refreshAndUpdateCredentials: vi.fn(),
   getCodexRateLimitResetCredits: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 vi.mock("open-sse/index.js", () => ({}));
 
 vi.mock("@/lib/localDb", () => ({
-  getProviderConnectionById: mocks.getProviderConnectionById,
+  getProviderConnectionByIdUnscoped: mocks.getProviderConnectionByIdUnscoped,
 }));
 
 vi.mock("@/lib/network/connectionProxy", () => ({
@@ -132,7 +132,7 @@ describe("Codex reset credits", () => {
         },
       ],
     };
-    mocks.getProviderConnectionById.mockResolvedValue(connection);
+    mocks.getProviderConnectionByIdUnscoped.mockResolvedValue(connection);
     mocks.resolveConnectionProxyConfig.mockResolvedValue({
       connectionProxyEnabled: true,
       connectionProxyUrl: "http://proxy.local",
@@ -184,7 +184,7 @@ describe("Codex reset credits", () => {
     const refreshedConnection = { ...connection, accessToken: "new-token" };
     const forcedConnection = { ...connection, accessToken: "forced-token" };
     const resetCredits = { availableCount: 0, credits: [] };
-    mocks.getProviderConnectionById.mockResolvedValue(connection);
+    mocks.getProviderConnectionByIdUnscoped.mockResolvedValue(connection);
     mocks.refreshAndUpdateCredentials
       .mockResolvedValueOnce({ connection: refreshedConnection })
       .mockResolvedValueOnce({ connection: forcedConnection });
@@ -225,7 +225,7 @@ describe("Codex reset credits", () => {
   });
 
   it("POST returns 409 when there are no reset credits to consume", async () => {
-    mocks.getProviderConnectionById.mockResolvedValue({
+    mocks.getProviderConnectionByIdUnscoped.mockResolvedValue({
       id: "conn_1",
       provider: "codex",
       authType: "access_token",

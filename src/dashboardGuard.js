@@ -121,7 +121,7 @@ async function checkApiPolicy(request, policy) {
     cli ||
     (policy.alwaysProtected ? await hasValidSession(request) : await isAuthenticated(request));
   if (!authed) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!(await principalCan(request, policy.capability))) {
+  if (!(await principalCan(request, policy.capability, { anyWorkspace: policy.scoped }))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   return null;

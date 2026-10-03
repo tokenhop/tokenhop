@@ -173,7 +173,7 @@ describe("kimchi validateToken", () => {
 });
 
 // ── OAuth dedup logic (pure clone of connectionsRepo matcher) ──
-// Mimics the find() predicate in createProviderConnection for OAuth
+// Mimics the find() predicate in createProviderConnectionUnscoped for OAuth
 // connections, so we can test the IdP-collision fix in isolation.
 function findExistingOAuth(all, incoming) {
   const incomingEmail = incoming.email;

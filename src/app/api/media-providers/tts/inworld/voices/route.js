@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections } from "@/lib/localDb";
+import { scopedConnections } from "@/lib/users/workspaceScope.js";
 
 const langNames = new Intl.DisplayNames(["en"], { type: "language" });
 
@@ -12,7 +12,13 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const langFilter = searchParams.get("lang");
 
-    const connections = await getProviderConnections({ provider: "inworld", isActive: true });
+    // YAN-361: switch on, only the selected workspace's key.
+    const scoped = await scopedConnections(request, "workspace.connections.use", {
+      provider: "inworld",
+      isActive: true,
+    });
+    if (scoped instanceof Response) return scoped;
+    const { connections } = scoped;
     const apiKey = connections[0]?.apiKey;
     if (!apiKey)
       return NextResponse.json({ error: "No Inworld connection found" }, { status: 400 });

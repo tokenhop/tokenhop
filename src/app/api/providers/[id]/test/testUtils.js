@@ -1,4 +1,4 @@
-import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { getProviderConnectionByIdUnscoped, updateProviderConnectionUnscoped } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { probeApiKeyProvider } from "@/lib/providerKeyProbes";
@@ -1226,7 +1226,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
  * Test a single connection by ID, update DB, and return result.
  */
 export async function testSingleConnection(id) {
-  const connection = await getProviderConnectionById(id);
+  const connection = await getProviderConnectionByIdUnscoped(id);
   if (!connection)
     return {
       valid: false,
@@ -1245,7 +1245,7 @@ export async function testSingleConnection(id) {
     const proxyResult = await testProxyUrl({ proxyUrl: effectiveProxy.connectionProxyUrl });
     if (!proxyResult.ok) {
       const proxyError = proxyResult.error || `Proxy test failed with status ${proxyResult.status}`;
-      await updateProviderConnection(id, {
+      await updateProviderConnectionUnscoped(id, {
         testStatus: "error",
         lastError: proxyError,
         lastErrorAt: new Date().toISOString(),
@@ -1298,7 +1298,7 @@ export async function testSingleConnection(id) {
     }
   }
 
-  await updateProviderConnection(id, updateData);
+  await updateProviderConnectionUnscoped(id, updateData);
 
   return {
     valid: result.valid,

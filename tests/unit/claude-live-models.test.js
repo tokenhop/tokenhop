@@ -13,7 +13,7 @@ vi.mock("@/sse/services/tokenRefresh", async (importOriginal) => ({
 }));
 
 import { GET } from "@/app/api/providers/[id]/models/route.js";
-import { createProviderConnection } from "@/models/index.js";
+import { createProviderConnectionUnscoped } from "@/models/index.js";
 import { clearLiveModelsCache } from "@/lib/providerModels/liveResolvers.js";
 
 const LIVE_MODELS = {
@@ -51,7 +51,7 @@ async function getModels(connectionId) {
 }
 
 const seedOAuth = (extra = {}) =>
-  createProviderConnection({
+  createProviderConnectionUnscoped({
     provider: "claude",
     authType: "oauth",
     accessToken: `sk-ant-oat01-${Date.now()}-${Math.random()}`,
@@ -59,7 +59,7 @@ const seedOAuth = (extra = {}) =>
     ...extra,
   });
 const seedApiKey = () =>
-  createProviderConnection({
+  createProviderConnectionUnscoped({
     provider: "claude",
     authType: "apikey",
     apiKey: `sk-ant-api03-${Date.now()}-${Math.random()}`,

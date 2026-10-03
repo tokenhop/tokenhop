@@ -2,7 +2,7 @@
 //   GET /api/providers/[connectionId]/models  →  resolveZedModels  →  UI rows
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { GET } from "@/app/api/providers/[id]/models/route.js";
-import { createProviderConnection } from "@/models/index.js";
+import { createProviderConnectionUnscoped } from "@/models/index.js";
 
 // Transport stub BELOW resolveZedModels: proxyAwareFetch captures the native
 // fetch at import time, so stubbing globalThis.fetch cannot intercept it.
@@ -81,7 +81,7 @@ afterEach(() => {
 });
 
 async function seedZed(n) {
-  return createProviderConnection({
+  return createProviderConnectionUnscoped({
     provider: "zed",
     authType: "oauth",
     accessToken: `tok-live-${n}-${Date.now()}`,
@@ -167,14 +167,14 @@ describe("criterion 6 (route) — unknown connection → 404", () => {
 
 describe("criterion 5 (guard) — unsupported provider unchanged", () => {
   it("still 400s for providers without a models config", async () => {
-    const conn = await createProviderConnection({
+    const conn = await createProviderConnectionUnscoped({
       provider: "kimchi-nope",
       authType: "oauth",
       accessToken: "x",
       email: `guard-${Date.now()}@example.com`,
       testStatus: "active",
     }).catch(() => null);
-    // createProviderConnection may reject unknown providers; either way the
+    // createProviderConnectionUnscoped may reject unknown providers; either way the
     // route must not have gained a zed-shaped branch for others.
     if (!conn) return;
     const res = await getModels(conn.id);
