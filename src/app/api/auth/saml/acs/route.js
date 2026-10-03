@@ -9,6 +9,7 @@ import {
   validateSamlResponse,
 } from "@/lib/auth/saml.js";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { sessionClaims } from "@/lib/users/session";
 import { resolveAuthModes } from "@/lib/auth/authModes";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 
@@ -56,6 +57,7 @@ export async function POST(request) {
     recordSuccess(ip);
 
     await setDashboardAuthCookie(cookieStore, request, {
+      ...(await sessionClaims("saml")),
       saml: true,
       samlEmail,
       samlName,

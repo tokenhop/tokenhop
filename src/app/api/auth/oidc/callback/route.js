@@ -10,6 +10,7 @@ import {
   verifyOidcIdToken,
 } from "@/lib/auth/oidc";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { sessionClaims } from "@/lib/users/session";
 
 function clearOidcCookies(cookieStore) {
   cookieStore.delete("oidc_state");
@@ -84,6 +85,7 @@ export async function GET(request) {
 
     clearOidcCookies(cookieStore);
     await setDashboardAuthCookie(cookieStore, request, {
+      ...(await sessionClaims("oidc")),
       oidc: true,
       oidcSub: payload.sub || null,
       oidcEmail: pickOidcEmail(payload) || null,

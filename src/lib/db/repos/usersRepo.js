@@ -52,6 +52,37 @@ export async function getOwnerUnscoped() {
   return db.get(`SELECT ${COLS} FROM users WHERE instanceRole = 'owner'`) ?? null;
 }
 
+export async function countActiveUsersUnscoped() {
+  const db = await getAdapter();
+  return db.get(`SELECT COUNT(*) AS n FROM users WHERE status = 'active'`)?.n ?? 0;
+}
+
+// Session validation reads (ADR-0004): cached <= 5 s, dropped by every
+// sessionVersion write in this process, so revocation lands on the next request.
+const SESSION_TTL_MS = 5000;
+// On globalThis: Next bundles the proxy and route handlers separately, each with
+// its own copy of this module, and a bump in a route must reach the guard's cache.
+globalThis.__tokenhopSessionCache ??= new Map();
+const sessionCache = globalThis.__tokenhopSessionCache;
+
+export async function getSessionUserUnscoped(id) {
+  const hit = sessionCache.get(id);
+  if (hit && Date.now() - hit.at < SESSION_TTL_MS) return hit.row;
+  const row = await getUserUnscoped(id);
+  sessionCache.set(id, { row, at: Date.now() });
+  return row;
+}
+
+export async function bumpSessionVersion(id) {
+  const db = await getAdapter();
+  const changed = db.run(
+    `UPDATE users SET sessionVersion = sessionVersion + 1, updatedAt = ? WHERE id = ?`,
+    [new Date().toISOString(), id],
+  ).changes;
+  sessionCache.delete(id);
+  return changed > 0;
+}
+
 export async function getUserPasswordHashUnscoped(id) {
   const db = await getAdapter();
   return db.get(`SELECT passwordHash FROM users WHERE id = ?`, [id])?.passwordHash ?? null;
@@ -132,6 +163,7 @@ export async function updateUserUnscoped(id, patch = {}) {
         new Date().toISOString(),
         id,
       ]);
+      sessionCache.delete(id);
       return getRow(db, id);
     }),
   );
@@ -151,6 +183,7 @@ export async function deleteUserUnscoped(id) {
     for (const { workspaceId } of shared) assertNotLastManager(db, workspaceId, id);
     db.run(`DELETE FROM workspaces WHERE createdBy = ? AND kind = 'personal'`, [id]);
     // identities and memberships cascade.
+    sessionCache.delete(id);
     return db.run(`DELETE FROM users WHERE id = ?`, [id]).changes > 0;
   });
 }
@@ -174,6 +207,8 @@ export async function transferOwnership(ctx, toUserId) {
     // Demote first: idx_users_owner allows one owner at a time.
     db.run(sql, ["admin", now, from.id]);
     db.run(sql, ["owner", now, to.id]);
+    sessionCache.delete(from.id);
+    sessionCache.delete(to.id);
     return getRow(db, to.id);
   });
 }

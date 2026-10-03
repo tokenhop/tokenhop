@@ -86,7 +86,7 @@ describe("requireMultiUser", () => {
 
   it("hides every guarded route while off", async () => {
     // Add each multi-user route here as it lands: a route missing the guard fails.
-    const GUARDED_ROUTES = [];
+    const GUARDED_ROUTES = ["src/app/api/auth/logout-all/route.js"];
     const found = gitGrep(["requireMultiUser", "--", "src/app/**/route.js"]);
     expect(found).toEqual([...GUARDED_ROUTES].sort());
     process.env[ENV] = "off";

@@ -5,6 +5,8 @@ import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import { resolveAuthModes } from "@/lib/auth/authModes";
+import { isMultiUserEnabled } from "@/lib/users/featureSwitch";
+import { describePrincipal, getPrincipal, isLiveSession } from "@/lib/users/session";
 
 export async function GET() {
   try {
@@ -27,6 +29,15 @@ export async function GET() {
       (session?.saml ? "SAML user" : session?.oidc ? "OIDC user" : "Password user");
 
     const loginMethod = session?.saml ? "SAML" : session?.oidc ? "OIDC" : "Password";
+    // Users & teams (YAN-355): who the request acts as. Absent while the switch is off.
+    // A revoked session (sessionVersion bumped) no longer counts as signed in.
+    const multiUser = await isMultiUserEnabled();
+    const principalField = multiUser
+      ? { principal: await describePrincipal(await getPrincipal()) }
+      : {};
+    const authenticated = multiUser
+      ? await isLiveSession(cookieStore.get("auth_token")?.value)
+      : !!session;
 
     return NextResponse.json({
       requireLogin,
@@ -41,7 +52,8 @@ export async function GET() {
       hasPassword: !!settings.password,
       displayName,
       loginMethod,
-      authenticated: !!session,
+      ...principalField,
+      authenticated,
       oidcName: oidcName || null,
       oidcEmail: oidcEmail || null,
       oidcLogin: !!session?.oidc,

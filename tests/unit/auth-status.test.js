@@ -27,6 +27,12 @@ vi.mock("@/lib/auth/oidc", () => ({
   isOidcConfigured: mocks.isOidcConfigured,
 }));
 
+// Today's single-admin behaviour; the switch-on paths live in principal-sessions.test.js.
+vi.mock("@/lib/users/featureSwitch", () => ({
+  isMultiUserEnabled: async () => false,
+  requireMultiUser: async () => null,
+}));
+
 vi.mock("@/lib/auth/dashboardSession", () => ({
   getDashboardAuthSession: mocks.getDashboardAuthSession,
 }));

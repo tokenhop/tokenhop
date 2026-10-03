@@ -16,6 +16,7 @@ import bcrypt from "bcryptjs";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { resolveAuthModes } from "@/lib/auth/authModes";
+import { revokeOwnerSessions } from "@/lib/users/session";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -444,6 +445,8 @@ export async function PATCH(request) {
     }
 
     const settings = await updateSettings(body);
+    // A password change signs the owner out everywhere else (ADR-0004).
+    if (rawNewPassword) await revokeOwnerSessions(request);
 
     // Full-object reliability edits (nested UI writes) re-resolve here; the
     // sync is additive and never touches other keys.
