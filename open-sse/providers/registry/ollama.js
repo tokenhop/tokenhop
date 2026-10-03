@@ -43,6 +43,7 @@ export default {
     timeoutMs: 30000,
   },
   features: {
+    liveModels: true,
     usage: true,
     usageApikey: true,
   },

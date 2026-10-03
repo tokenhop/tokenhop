@@ -419,6 +419,14 @@ const CODEX_GPT_56_DEFAULT_CAPS = {
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
+const OLLAMA_DEEPSEEK_V41_FLASH = {
+  vision: true,
+  reasoning: true,
+  thinkingFormat: "deepseek",
+  contextWindow: 1000000,
+  maxOutput: 384000,
+};
+
 export const PROVIDER_CAPABILITIES = {
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
@@ -813,14 +821,10 @@ export const PROVIDER_CAPABILITIES = {
   // low/medium/high/max), which no format in thinkingUnified.js emits yet —
   // openai-to-ollama.js drops it. Wire a "think" format when thinking on
   // Ollama Cloud is actually needed.
+  // The live /api/tags catalog lists the bare id; older configs keep ":cloud".
   ollama: {
-    "deepseek-v4.1-flash:cloud": {
-      vision: true,
-      reasoning: true,
-      thinkingFormat: "deepseek",
-      contextWindow: 1000000,
-      maxOutput: 384000,
-    },
+    "deepseek-v4.1-flash": OLLAMA_DEEPSEEK_V41_FLASH,
+    "deepseek-v4.1-flash:cloud": OLLAMA_DEEPSEEK_V41_FLASH,
   },
 };
 

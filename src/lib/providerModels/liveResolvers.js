@@ -25,6 +25,7 @@ import {
   resolveMistral,
   resolveTogether,
 } from "@/lib/providerModels/apiKeyModels.js";
+import { resolveOllama, resolveOllamaLocal } from "@/lib/providerModels/ollamaModels.js";
 import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
 import { ANTHROPIC_API_VERSION } from "open-sse/providers/shared.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
@@ -273,6 +274,8 @@ export const LIVE_MODEL_RESOLVERS = {
   together: resolveTogether,
   fireworks: resolveFireworks,
   cerebras: resolveCerebras,
+  ollama: resolveOllama,
+  "ollama-local": resolveOllamaLocal,
   codex: resolveCodex,
   zed: resolveZed,
   kiro: resolveKiro,

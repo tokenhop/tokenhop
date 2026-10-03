@@ -4,7 +4,6 @@ import {
   isOpenAICompatibleProvider,
   isAnthropicCompatibleProvider,
 } from "@/shared/constants/providers";
-import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { hasLiveModelResolver, resolveLiveModels } from "@/lib/providerModels/liveResolvers.js";
 
 const parseOpenAIStyleModels = (data) => {
@@ -61,29 +60,11 @@ const PROVIDER_MODELS_CONFIG = {
   nebius: createOpenAIModelsConfig("https://api.studio.nebius.ai/v1/models"),
   siliconflow: createOpenAIModelsConfig("https://api.siliconflow.com/v1/models"),
   hyperbolic: createOpenAIModelsConfig("https://api.hyperbolic.xyz/v1/models"),
-  ollama: createOpenAIModelsConfig("https://ollama.com/api/tags"),
-  // ollama-local: url resolved dynamically below via providerSpecificData.baseUrl
   nanobanana: createOpenAIModelsConfig("https://api.nanobananaapi.ai/v1/models"),
   chutes: createOpenAIModelsConfig("https://llm.chutes.ai/v1/models"),
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
   assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models"),
   "vercel-ai-gateway": createOpenAIModelsConfig("https://ai-gateway.vercel.sh/v1/models"),
-  "ollama-local": {
-    customResolver: async (connection) => {
-      const url = `${resolveOllamaLocalHost(connection)}/api/tags`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.log("Error fetching models from ollama-local:", errorText);
-        return { error: `Failed to fetch models: ${response.status}`, status: response.status };
-      }
-      const data = await response.json();
-      return { models: parseOpenAIStyleModels(data) };
-    },
-  },
 };
 
 /**

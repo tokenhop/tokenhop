@@ -16,4 +16,5 @@ export default {
     format: "ollama",
   },
   serviceKinds: ["llm"],
+  features: { liveModels: true },
 };

@@ -102,6 +102,8 @@ describe("resolver registry", () => {
       "together",
       "fireworks",
       "cerebras",
+      "ollama",
+      "ollama-local",
     ]) {
       expect(hasLiveModelResolver(id)).toBe(true);
     }
