@@ -37,7 +37,7 @@ function walk(dir, out = []) {
 
 const KV_SCOPE_PATTERNS = [
   /makeKv\(\s*["'`](\w+)["'`]\s*\)/g,
-  /\bscope\s*=\s*'(\w+)'/g,
+  /\b(?:WHERE|AND|OR)\s+scope\s*=\s*["'`](\w+)["'`]/gi,
   /kv\s*\(\s*scope[^)]*\)\s*VALUES\s*\(\s*'(\w+)'/g,
   /\bSCOPE\s*=\s*["'`](\w+)["'`]/g,
 ];
@@ -49,10 +49,10 @@ function kvScopesIn(src) {
 }
 
 /**
- * Per top-level function in a repo file: its first parameter, the tables and
- * kv scopes it touches, directly or through same-file calls.
+ * Per top-level function in a repo file: its first parameter and the tables
+ * and kv scopes its own body touches.
  */
-function analyzeRepo(src) {
+function analyzeRepo(file, src) {
   const decl = /^(export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)/gm;
   const heads = [...src.matchAll(decl)];
   const consts = Object.fromEntries(
@@ -63,7 +63,7 @@ function analyzeRepo(src) {
       (m) => [m[1], m[2] ?? consts[m[3]]],
     ),
   );
-  const fns = heads.map((m, i) => {
+  return heads.map((m, i) => {
     const body = src.slice(m.index, heads[i + 1]?.index ?? src.length);
     const tables = new Set(
       [...body.matchAll(/\b(?:FROM|JOIN|INTO|UPDATE)\s+(\w+)/g)].map((t) => t[1]),
@@ -82,9 +82,16 @@ function analyzeRepo(src) {
       }
     }
     const firstParam = m[3].split(",")[0].trim().split(/\s|=/)[0];
-    return { name: m[2], exported: Boolean(m[1]), firstParam, body, tables, scopes };
+    return { file, name: m[2], exported: Boolean(m[1]), firstParam, body, tables, scopes };
   });
-  // Fold in same-file callees until nothing changes.
+}
+
+/**
+ * Analyze `[file, src]` pairs, folding in what callees touch: any function in
+ * the same file, or an exported one from another repo, until nothing changes.
+ */
+function analyzeRepos(sources) {
+  const fns = sources.flatMap(([file, src]) => analyzeRepo(file, src));
   const merge = (into, from) => {
     const before = into.size;
     for (const x of from) into.add(x);
@@ -94,7 +101,8 @@ function analyzeRepo(src) {
     changed = false;
     for (const f of fns) {
       for (const g of fns) {
-        if (g === f || !new RegExp(`\\b${g.name}\\(`).test(f.body)) continue;
+        if (g === f || (g.file !== f.file && !g.exported)) continue;
+        if (!new RegExp(`\\b${g.name}\\(`).test(f.body)) continue;
         if (merge(f.tables, g.tables)) changed = true;
         if (merge(f.scopes, g.scopes)) changed = true;
       }
@@ -106,16 +114,16 @@ function analyzeRepo(src) {
 const isScoped = (cls) => cls?.class === "scoped";
 
 /** Exported functions that touch a scoped table/kv scope without `ctx`. */
-function unscopedViolations(file, src) {
-  return analyzeRepo(src)
+function unscopedViolations(sources) {
+  return analyzeRepos(sources)
     .filter((f) => f.exported && f.firstParam !== "ctx" && !f.name.endsWith("Unscoped"))
-    .filter((f) => !HELPER_ALLOWLIST.has(`${file}:${f.name}`))
+    .filter((f) => !HELPER_ALLOWLIST.has(`${f.file}:${f.name}`))
     .filter(
       (f) =>
         [...f.tables].some((t) => t !== "kv" && isScoped(TABLE_CLASSES[t])) ||
         [...f.scopes].some((s) => isScoped(KV_SCOPE_CLASSES[s])),
     )
-    .map((f) => `${file}:${f.name}`);
+    .map((f) => `${f.file}:${f.name}`);
 }
 
 describe("tenancy classification", () => {
@@ -139,7 +147,7 @@ describe("tenancy classification", () => {
   });
 
   it("fails on an unclassified table or kv scope", async () => {
-    vi.spyOn(console, "log").mockImplementation(() => {});
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const { createSqlJsAdapter } = await import("@/lib/db/adapters/sqljsAdapter.js");
     const { runVersionedMigrations } = await import("@/lib/db/migrate.js");
     const db = await createSqlJsAdapter(path.join(process.env.TOKENHOP_TEST_ROOT, "rogue.sqlite"));
@@ -151,6 +159,7 @@ describe("tenancy classification", () => {
       kvScopes: ["rogueScope"],
     });
     db.close();
+    log.mockRestore();
   });
 
   it("every class is known and every scoped entry names its scope column", () => {
@@ -174,13 +183,11 @@ describe("repo lint", () => {
       ),
     );
     expect(arrows).toEqual([]);
-    const violations = files.flatMap((f) =>
-      unscopedViolations(f, fs.readFileSync(path.join(REPOS, f), "utf8")),
-    );
-    expect(violations).toEqual([]);
+    const sources = files.map((f) => [f, fs.readFileSync(path.join(REPOS, f), "utf8")]);
+    expect(unscopedViolations(sources)).toEqual([]);
   });
 
-  it("flags an unscoped reader, directly or through a helper", () => {
+  it("flags an unscoped reader, directly or through a same-file or imported helper", () => {
     const src = `
 const k = makeKv("modelAliases");
 function rows(db) { return db.all(\`SELECT * FROM memberships\`); }
@@ -189,6 +196,17 @@ export async function listMine(ctx) { return rows(await getAdapter()); }
 export async function listAllUnscoped() { return rows(await getAdapter()); }
 export async function getProxy() { return db.get(\`SELECT * FROM proxyPools\`); }
 `;
-    expect(unscopedViolations("fixture.js", src)).toEqual(["fixture.js:listAll"]);
+    const other = `
+import { membershipRole } from "./membershipsRepo.js";
+export async function roleOf(id) { return membershipRole(await getAdapter(), id, id); }
+`;
+    const memberships = fs.readFileSync(path.join(REPOS, "membershipsRepo.js"), "utf8");
+    expect(
+      unscopedViolations([
+        ["fixture.js", src],
+        ["other.js", other],
+        ["membershipsRepo.js", memberships],
+      ]),
+    ).toEqual(["fixture.js:listAll", "other.js:roleOf"]);
   });
 });
