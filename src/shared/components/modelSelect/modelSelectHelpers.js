@@ -310,8 +310,10 @@ export function groupModels({
         ...customAliasModels,
         ...customRegisteredModels,
       ].filter((model) => {
-        if (seen.has(model.value)) return false;
-        seen.add(model.value);
+        // Per kind: one live id can be both an image and a chat model.
+        const key = `${model.kind || "llm"}:${model.value}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
         return true;
       }),
       kindFilter,

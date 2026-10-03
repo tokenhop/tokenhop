@@ -1,12 +1,22 @@
 "use client";
 
+import { useState } from "react";
 import PropTypes from "prop-types";
-import { Button, Card, Callout, EmptyState, Select } from "@/shared/components";
+import { Button, Card, Callout, Checkbox, EmptyState, Input, Select } from "@/shared/components";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import ModelRow from "../[id]/ModelRow";
 import FetchModelsButton from "../[id]/FetchModelsButton";
+
+const FILTER_THRESHOLD = 30;
+const INPUT_FILTERS = [
+  { value: "", label: "Any input" },
+  { value: "image", label: "Image input" },
+  { value: "audio", label: "Audio input" },
+  { value: "video", label: "Video input" },
+  { value: "file", label: "File input" },
+];
 
 /**
  * Signal available-models card: thinking level, Active/Disable all,
@@ -35,6 +45,9 @@ export default function ModelsSection({
   const { getCaps } = useModelCaps();
   const { copied, error: copyError, copy } = useCopyToClipboard();
   const effectiveKind = kind || "llm";
+  const [query, setQuery] = useState("");
+  const [freeOnly, setFreeOnly] = useState(false);
+  const [inputModality, setInputModality] = useState("");
 
   const hasActiveConnection = connections.some((entry) => entry.isActive !== false);
   // Legacy media card always showed Test; Signal gates on connections. Keep
@@ -79,6 +92,20 @@ export default function ModelsSection({
   })();
 
   const activeIds = models.enabledModels.map((model) => model.id);
+  // Large live catalogs (OpenRouter lists hundreds) get search and filters.
+  // Plain Input, not ToolbarSearch: its page-wide "/" shortcut belongs to page toolbars.
+  const showFilters = isLiveCatalog && models.enabledModels.length > FILTER_THRESHOLD;
+  const needle = query.trim().toLowerCase();
+  const visibleModels = showFilters
+    ? models.enabledModels.filter(
+        (model) =>
+          (!needle ||
+            model.id.toLowerCase().includes(needle) ||
+            model.name?.toLowerCase().includes(needle)) &&
+          (!freeOnly || model.isFree) &&
+          (!inputModality || model.inputModalities?.includes(inputModality)),
+      )
+    : models.enabledModels;
   const addedFullModels = new Set([
     ...Object.values(models.modelAliases),
     ...models.customModelRows.map((row) => row.fullModel),
@@ -160,60 +187,93 @@ export default function ModelsSection({
               body="Add a custom model or fetch the live catalog."
             />
           ) : (
-            <ul className="flex min-w-0 flex-col gap-2">
-              {models.customModelRows.map((row) => (
-                <ModelRow
-                  key={`${row.source}-${row.fullModel}`}
-                  model={{ id: row.id, name: row.name }}
-                  fullModel={`${displayAlias}/${row.id}`}
-                  copied={copied}
-                  copyError={copyError}
-                  onCopy={copy}
-                  onDeleteAlias={() => {
-                    if (row.source === "custom") {
-                      models.deleteCustomModel(row.id, effectiveKind, storageAlias);
-                    } else if (row.alias) {
-                      models.deleteAlias(row.alias);
-                    }
-                  }}
-                  testStatus={models.testResults[row.id]}
-                  onTest={showTestButton ? () => testModel(row.id) : undefined}
-                  isTesting={models.testingIds.has(row.id)}
-                  isCustom
-                  caps={getCaps(`${providerId}/${row.id}`)}
-                  thinkingSuffix={resolveThinkingSuffix(row.id)}
-                />
-              ))}
-              {models.enabledModels.map((model) => {
-                const fullModel = `${storageAlias}/${model.id}`;
-                const oldFormatModel = `${providerId}/${model.id}`;
-                const existingAlias = Object.entries(models.modelAliases).find(
-                  ([, target]) => target === fullModel || target === oldFormatModel,
-                )?.[0];
-                return (
+            <>
+              {showFilters ? (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <Input
+                    type="search"
+                    aria-label="Search models"
+                    placeholder="Search models"
+                    icon="search"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    className="min-w-[200px] flex-1"
+                    inputClassName="py-1.5 text-xs sm:text-xs"
+                  />
+                  <Checkbox label="Free only" checked={freeOnly} onChange={setFreeOnly} />
+                  <Select
+                    aria-label="Filter by input type"
+                    value={inputModality}
+                    onChange={(event) => setInputModality(event.target.value)}
+                    options={INPUT_FILTERS}
+                    placeholder={null}
+                    selectClassName="py-1.5 text-xs sm:text-xs"
+                  />
+                  <span className="text-xs text-muted" aria-live="polite">
+                    {visibleModels.length} of {models.enabledModels.length}
+                  </span>
+                </div>
+              ) : null}
+              {showFilters && visibleModels.length === 0 ? (
+                <p className="text-xs text-muted" aria-hidden="true">
+                  No models match the filters.
+                </p>
+              ) : null}
+              <ul className="flex min-w-0 flex-col gap-2">
+                {models.customModelRows.map((row) => (
                   <ModelRow
-                    key={model.id}
-                    model={model}
-                    fullModel={`${displayAlias}/${model.id}`}
-                    alias={existingAlias}
+                    key={`${row.source}-${row.fullModel}`}
+                    model={{ id: row.id, name: row.name }}
+                    fullModel={`${displayAlias}/${row.id}`}
                     copied={copied}
                     copyError={copyError}
                     onCopy={copy}
-                    onSetAlias={(next) => models.setAlias(model.id, next, storageAlias)}
-                    onDeleteAlias={
-                      existingAlias ? () => models.deleteAlias(existingAlias) : undefined
-                    }
-                    testStatus={models.testResults[model.id]}
-                    onTest={showTestButton ? () => testModel(model.id) : undefined}
-                    isTesting={models.testingIds.has(model.id)}
-                    isFree={model.isFree}
-                    onDisable={() => models.disableModel(model.id)}
-                    caps={getCaps(`${providerId}/${model.id}`)}
-                    thinkingSuffix={resolveThinkingSuffix(model.id)}
+                    onDeleteAlias={() => {
+                      if (row.source === "custom") {
+                        models.deleteCustomModel(row.id, effectiveKind, storageAlias);
+                      } else if (row.alias) {
+                        models.deleteAlias(row.alias);
+                      }
+                    }}
+                    testStatus={models.testResults[row.id]}
+                    onTest={showTestButton ? () => testModel(row.id) : undefined}
+                    isTesting={models.testingIds.has(row.id)}
+                    isCustom
+                    caps={getCaps(`${providerId}/${row.id}`)}
+                    thinkingSuffix={resolveThinkingSuffix(row.id)}
                   />
-                );
-              })}
-            </ul>
+                ))}
+                {visibleModels.map((model) => {
+                  const fullModel = `${storageAlias}/${model.id}`;
+                  const oldFormatModel = `${providerId}/${model.id}`;
+                  const existingAlias = Object.entries(models.modelAliases).find(
+                    ([, target]) => target === fullModel || target === oldFormatModel,
+                  )?.[0];
+                  return (
+                    <ModelRow
+                      key={model.id}
+                      model={model}
+                      fullModel={`${displayAlias}/${model.id}`}
+                      alias={existingAlias}
+                      copied={copied}
+                      copyError={copyError}
+                      onCopy={copy}
+                      onSetAlias={(next) => models.setAlias(model.id, next, storageAlias)}
+                      onDeleteAlias={
+                        existingAlias ? () => models.deleteAlias(existingAlias) : undefined
+                      }
+                      testStatus={models.testResults[model.id]}
+                      onTest={showTestButton ? () => testModel(model.id) : undefined}
+                      isTesting={models.testingIds.has(model.id)}
+                      isFree={model.isFree}
+                      onDisable={() => models.disableModel(model.id)}
+                      caps={getCaps(`${providerId}/${model.id}`)}
+                      thinkingSuffix={resolveThinkingSuffix(model.id)}
+                    />
+                  );
+                })}
+              </ul>
+            </>
           )}
           <div className="flex flex-wrap items-center gap-2">
             <Button

@@ -16,6 +16,7 @@ import {
 } from "@/lib/providerModels/googleModels.js";
 import { resolveXai } from "@/lib/providerModels/xaiModels.js";
 import { resolveOpenAI } from "@/lib/providerModels/openaiModels.js";
+import { resolveOpenRouter } from "@/lib/providerModels/openrouterModels.js";
 import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
 import { ANTHROPIC_API_VERSION } from "open-sse/providers/shared.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
@@ -257,6 +258,7 @@ export const LIVE_MODEL_RESOLVERS = {
   antigravity: resolveAntigravity,
   xai: resolveXai,
   openai: resolveOpenAI,
+  openrouter: resolveOpenRouter,
   codex: resolveCodex,
   zed: resolveZed,
   kiro: resolveKiro,

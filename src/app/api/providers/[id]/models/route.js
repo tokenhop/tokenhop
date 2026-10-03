@@ -23,7 +23,6 @@ const createOpenAIModelsConfig = (url) => ({
 
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
-  openrouter: createOpenAIModelsConfig("https://openrouter.ai/api/v1/models"),
   alicode: {
     url: "https://coding.dashscope.aliyuncs.com/v1/models",
     method: "GET",

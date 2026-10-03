@@ -95,10 +95,11 @@ describe("resolver registry", () => {
       "antigravity",
       "xai",
       "openai",
+      "openrouter",
     ]) {
       expect(hasLiveModelResolver(id)).toBe(true);
     }
-    expect(hasLiveModelResolver("openrouter")).toBe(false);
+    expect(hasLiveModelResolver("together")).toBe(false);
     expect(hasLiveModelResolver("toString")).toBe(false);
   });
 

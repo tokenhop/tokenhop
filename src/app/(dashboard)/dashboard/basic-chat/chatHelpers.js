@@ -136,6 +136,9 @@ export function normalizeStaticModel(model, connection) {
 export function normalizeLiveModel(model, connection) {
   const rawId = typeof model === "string" ? model : model?.id || model?.name || model?.model || "";
   if (!rawId) return null;
+  // Live catalogs can list image/video/embedding models; only chat ones belong here.
+  const kind = typeof model === "string" ? "llm" : model?.kind || model?.type || "llm";
+  if (kind !== "llm") return null;
 
   const displayName =
     typeof model === "string" ? model : model?.name || model?.displayName || rawId;

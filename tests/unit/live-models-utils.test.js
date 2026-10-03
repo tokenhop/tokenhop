@@ -23,6 +23,7 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "kimchi",
       "kiro",
       "openai",
+      "openrouter",
       "qoder",
       "xai",
       "zed",

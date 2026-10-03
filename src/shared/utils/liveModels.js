@@ -26,14 +26,16 @@ export function normalizeLiveModelId(providerId, id) {
 }
 
 // Normalized, deduped live entries in upstream order; entries without a usable id are dropped.
+// Deduped per kind: one id can be listed as several kinds (OpenRouter image+text models).
 function normalizeLiveModels(providerId, liveModels) {
   const seen = new Set();
   const result = [];
   for (const model of Array.isArray(liveModels) ? liveModels : []) {
     if (!model || typeof model !== "object") continue;
     const id = normalizeLiveModelId(providerId, model.id);
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
+    const key = `${modelKind(model)}:${id}`;
+    if (!id || seen.has(key)) continue;
+    seen.add(key);
     result.push({ ...model, id });
   }
   return result;
