@@ -105,12 +105,16 @@ describe("resolver registry", () => {
       "perplexity-agent",
       "vercel-ai-gateway",
       "chutes",
+      "nvidia",
+      "nebius",
+      "siliconflow",
+      "hyperbolic",
       "ollama",
       "ollama-local",
     ]) {
       expect(hasLiveModelResolver(id)).toBe(true);
     }
-    expect(hasLiveModelResolver("nvidia")).toBe(false);
+    expect(hasLiveModelResolver("cohere")).toBe(false);
     expect(hasLiveModelResolver("toString")).toBe(false);
   });
 

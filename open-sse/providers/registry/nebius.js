@@ -24,4 +24,5 @@ export default {
   ],
   serviceKinds: ["llm", "embedding"],
   embeddingConfig: { baseUrl: "https://api.tokenfactory.nebius.com/v1/embeddings" },
+  features: { liveModels: true },
 };
