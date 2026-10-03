@@ -93,6 +93,7 @@ export default function ModelsSection({
 
   const activeIds = models.enabledModels.map((model) => model.id);
   // Large live catalogs (OpenRouter lists hundreds) get search and filters.
+  // Plain Input, not ToolbarSearch: its page-wide "/" shortcut belongs to page toolbars.
   const showFilters = isLiveCatalog && models.enabledModels.length > FILTER_THRESHOLD;
   const needle = query.trim().toLowerCase();
   const visibleModels = showFilters
@@ -197,6 +198,7 @@ export default function ModelsSection({
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     className="min-w-[200px] flex-1"
+                    inputClassName="py-1.5 text-xs sm:text-xs"
                   />
                   <Checkbox label="Free only" checked={freeOnly} onChange={setFreeOnly} />
                   <Select
@@ -213,7 +215,9 @@ export default function ModelsSection({
                 </div>
               ) : null}
               {showFilters && visibleModels.length === 0 ? (
-                <p className="text-xs text-muted">No models match the filters.</p>
+                <p className="text-xs text-muted" aria-hidden="true">
+                  No models match the filters.
+                </p>
               ) : null}
               <ul className="flex min-w-0 flex-col gap-2">
                 {models.customModelRows.map((row) => (

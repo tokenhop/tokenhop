@@ -124,6 +124,29 @@ describe("model select helpers", () => {
     expect(missed).toEqual({});
   });
 
+  it("keeps the chat row of a live id also listed as an image model", () => {
+    const groups = groupModels({
+      filteredActiveProviders: [{ provider: "talky" }],
+      activeProviders: [{ provider: "talky" }],
+      kindFilter: null,
+      modelAliases: {},
+      allProviders: { talky: { name: "Talky", color: "#111" } },
+      providerNodes: [],
+      customModels: [],
+      disabledModels: {},
+      liveCatalogs: { talky: [{ id: "painter", kind: "image" }, { id: "painter" }] },
+      providerOrder: ["talky"],
+      noAuthIds: [],
+      getModelKind,
+      getModelsByProviderId: () => [],
+      getProviderAlias: (id) => id,
+      isOpenAICompatibleProvider: () => false,
+      isAnthropicCompatibleProvider: () => false,
+      mergeLiveWithStatic: (_id, live) => live || [],
+    });
+    expect(groups.talky.models.map((m) => m.value)).toEqual(["talky/painter"]);
+  });
+
   it("builds a provider-as-model group and drops disabled ids", () => {
     const groups = groupModels({
       filteredActiveProviders: [{ provider: "searchy" }],

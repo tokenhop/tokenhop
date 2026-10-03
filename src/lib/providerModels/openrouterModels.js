@@ -22,6 +22,10 @@ const KIND_BY_OUTPUT = {
 const isZero = (value) => value != null && value !== "" && Number(value) === 0;
 const positive = (value) => (Number.isFinite(value) && value > 0 ? value : undefined);
 
+const list = (value, fallback) => (Array.isArray(value) ? value : fallback);
+
+// One entry per (id, kind): an image+text model is listed as both kinds, so
+// downstream dedupe must key on kind + id, never id alone.
 export function parseOpenRouterModels(body) {
   const seen = new Set();
   const models = [];
@@ -29,7 +33,7 @@ export function parseOpenRouterModels(body) {
     const id = typeof entry?.id === "string" ? entry.id.trim() : "";
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    const outputs = entry.architecture?.output_modalities || ["text"];
+    const outputs = list(entry.architecture?.output_modalities, ["text"]);
     const kinds = [...new Set(outputs.map((m) => KIND_BY_OUTPUT[m]).filter(Boolean))];
     const base = {
       id,
@@ -37,7 +41,7 @@ export function parseOpenRouterModels(body) {
       contextLength: positive(entry.context_length),
       maxOutputTokens: positive(entry.top_provider?.max_completion_tokens),
       isFree: isZero(entry.pricing?.prompt) && isZero(entry.pricing?.completion),
-      inputModalities: entry.architecture?.input_modalities || [],
+      inputModalities: list(entry.architecture?.input_modalities, []),
     };
     for (const kind of kinds) models.push({ ...base, ...(kind !== "llm" ? { kind } : {}) });
   }
@@ -52,7 +56,8 @@ async function fetchList(url, apiKey) {
     },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+  // Error pages can be large HTML; the warning only needs the start.
+  if (!response.ok) throw new Error(`${response.status} ${(await response.text()).slice(0, 300)}`);
   return parseOpenRouterModels(await response.json());
 }
 
