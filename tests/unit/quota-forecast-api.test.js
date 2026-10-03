@@ -15,6 +15,10 @@ vi.mock("@/lib/db/index.js", () => ({
 // Single-user scope (YAN-361): the route loads the row unscoped.
 vi.mock("@/lib/users/workspaceScope.js", () => ({
   loadScoped: async (_cap, id, _scoped, unscoped) => ({ scope: null, row: await unscoped(id) }),
+  scopedConnections: async () => ({
+    scope: null,
+    connections: await mocks.getProviderConnectionsUnscoped(),
+  }),
 }));
 vi.mock("@/lib/localDb", () => ({
   getProviderConnectionByIdUnscoped: mocks.getProviderConnectionByIdUnscoped,

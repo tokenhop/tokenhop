@@ -159,7 +159,11 @@ describe("switch on: two users", () => {
     const list = await import("@/app/api/providers/route.js");
     const nodes = await import("@/app/api/provider-nodes/[id]/route.js");
     const c = await db.createConnection(a.ctx, a.personal, apiKeyConn("a-key"));
-    const sc = await db.createConnection(a.ctx, shared.id, apiKeyConn("team"));
+    const sc = await db.createConnection(
+      a.ctx,
+      shared.id,
+      apiKeyConn("team", { providerSpecificData: { copilotToken: "secret-psd" } }),
+    );
     const n = await db.createNode(a.ctx, a.personal, {
       id: "openai-compatible-chat-n1",
       type: "openai-compatible",
@@ -184,6 +188,17 @@ describe("switch on: two users", () => {
     expect((await as(b, reset.POST, `/api/usage/${c.id}/codex-reset-credits`, rp)).status).toBe(
       404,
     );
+    // Collection routes that touch connections by provider stay in B's workspace.
+    const avail = await import("@/app/api/models/availability/route.js");
+    await db.updateConnection(a.ctx, c.id, { "modelLock_gpt-5": "2999-01-01T00:00:00Z" });
+    const clear = {
+      method: "POST",
+      body: { action: "clearCooldown", provider: "openai", model: "gpt-5" },
+    };
+    expect(
+      (await as(b, avail.POST, `/api/models/availability?workspaceId=${b.personal}`, clear)).status,
+    ).toBe(200);
+    expect((await db.getConnection(a.ctx, c.id))["modelLock_gpt-5"]).toBeTruthy();
     const np = { method: "DELETE", params: { id: n.id } };
     expect((await as(b, nodes.DELETE, `/api/provider-nodes/${n.id}`, np)).status).toBe(404);
     expect(await db.getNode(a.ctx, n.id)).not.toBeNull();
@@ -199,6 +214,7 @@ describe("switch on: two users", () => {
     const { connections } = await res.json();
     expect(connections.map((x) => x.id)).toEqual([sc.id]);
     expect(connections[0].apiKey).toBeUndefined();
+    expect(connections[0].providerSpecificData?.copilotToken).toBeUndefined();
     const one = await (
       await as(a, item.GET, `/api/providers/${sc.id}`, { params: { id: sc.id } })
     ).json();

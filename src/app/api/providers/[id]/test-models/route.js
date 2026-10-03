@@ -28,9 +28,6 @@ export async function POST(request, { params }) {
     );
     if (loaded instanceof Response) return loaded;
     const connection = loaded.row;
-    if (!connection) {
-      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
-    }
 
     const providerId = connection.provider;
     const isCompatible =

@@ -139,9 +139,9 @@ export async function GET(request, { params }) {
     const force = new URL(request.url).searchParams.get("force") === "1";
 
     // YAN-361: switch on, only a connection in the principal's workspaces.
-    // `force=1` refreshes (rotates) the row's tokens, so it needs `use`.
+    // OAuth reads refresh (rotate) the row's tokens, so they need `use`.
     const loaded = await loadScoped(
-      force ? "workspace.connections.use" : "workspace.usage.read",
+      "workspace.connections.use",
       connectionId,
       getConnection,
       getProviderConnectionByIdUnscoped,

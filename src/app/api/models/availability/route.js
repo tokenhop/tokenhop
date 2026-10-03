@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionsUnscoped, updateProviderConnectionUnscoped } from "@/lib/localDb";
+import { updateProviderConnectionUnscoped } from "@/lib/localDb";
+import { updateConnection } from "@/lib/db/index.js";
+import { scopedConnections } from "@/lib/users/workspaceScope.js";
 
 const MODEL_LOCK_PREFIX = "modelLock_";
 
@@ -16,9 +18,12 @@ function getActiveModelLocks(connection) {
     .filter((lock) => lock.active);
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
-    const connections = await getProviderConnectionsUnscoped();
+    // YAN-361: switch on, only the selected workspace's connections.
+    const scoped = await scopedConnections(request, "workspace.connections.metadata.read");
+    if (scoped instanceof Response) return scoped;
+    const { connections } = scoped;
     const models = [];
 
     for (const connection of connections) {
@@ -65,14 +70,19 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    const connections = await getProviderConnectionsUnscoped({ provider });
+    const scoped = await scopedConnections(request, "workspace.connections.use", { provider });
+    if (scoped instanceof Response) return scoped;
+    const { scope, connections } = scoped;
+    const update = scope
+      ? (id, data) => updateConnection(scope.ctx, id, data)
+      : updateProviderConnectionUnscoped;
     const lockKey = `${MODEL_LOCK_PREFIX}${model}`;
 
     await Promise.all(
       connections
         .filter((connection) => connection[lockKey])
         .map((connection) =>
-          updateProviderConnectionUnscoped(connection.id, {
+          update(connection.id, {
             [lockKey]: null,
             ...(connection.testStatus === "unavailable"
               ? {

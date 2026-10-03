@@ -6,7 +6,7 @@ import {
   deleteProviderConnectionUnscoped,
 } from "@/models";
 import { deleteConnection, getConnection, updateConnection } from "@/lib/db/index.js";
-import { loadScoped } from "@/lib/users/workspaceScope.js";
+import { loadScoped, redactConnection } from "@/lib/users/workspaceScope.js";
 import { PLAN_CAPACITY } from "open-sse/config/quotaSnapshot.js";
 import { sanitizePlanTier, clearSnapshotPlanTier } from "open-sse/services/quotaSnapshot.js";
 
@@ -138,7 +138,7 @@ export async function GET(request, { params }) {
     const connection = loaded.row;
 
     // Hide sensitive fields
-    const result = { ...connection };
+    const result = { ...redactConnection(loaded.scope, connection) };
     delete result.apiKey;
     delete result.accessToken;
     delete result.refreshToken;
@@ -260,7 +260,7 @@ export async function PUT(request, { params }) {
     }
 
     // Hide sensitive fields
-    const result = { ...updated };
+    const result = { ...redactConnection(loaded.scope, updated) };
     delete result.apiKey;
     delete result.accessToken;
     delete result.refreshToken;

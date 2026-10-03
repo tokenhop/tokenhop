@@ -7,7 +7,7 @@ import {
   getProxyPoolById,
 } from "@/models";
 import { createConnection, getNode, listConnections, listNodes } from "@/lib/db/index.js";
-import { workspaceScope } from "@/lib/users/workspaceScope.js";
+import { redactConnection, workspaceScope } from "@/lib/users/workspaceScope.js";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import {
   AI_PROVIDERS,
@@ -102,7 +102,7 @@ export async function GET(request) {
         : c.name;
       const snapshot = getSnapshot(c.id);
       return {
-        ...c,
+        ...redactConnection(scope, c),
         name,
         effectiveWeight: effectiveWeightFor(c, { snapshot }),
         quotaRemaining: quotaRemainingFor(snapshot),
@@ -248,7 +248,7 @@ export async function POST(request) {
     );
 
     // Hide sensitive fields
-    const result = { ...newConnection };
+    const result = { ...redactConnection(scope, newConnection) };
     delete result.apiKey;
 
     return NextResponse.json({ connection: result }, { status: 201 });

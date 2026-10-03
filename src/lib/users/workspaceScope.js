@@ -4,7 +4,8 @@
 // selected workspace. `?workspaceId=` is only a selector: it must be one of
 // the principal's workspaces, and the repos re-verify membership in SQL.
 import { NextResponse } from "next/server";
-import { countActiveUsersUnscoped, getMeta } from "@/lib/db/index.js";
+import { countActiveUsersUnscoped, getMeta, listConnections } from "@/lib/db/index.js";
+import { getProviderConnectionsUnscoped } from "@/lib/localDb";
 import { isMultiUserEnabled } from "./featureSwitch.js";
 import { can } from "./principal.js";
 import { getPrincipal } from "./session.js";
@@ -62,4 +63,31 @@ export async function loadScoped(capability, id, getScoped, getUnscoped, notFoun
   const row = scope ? await getScoped(scope.ctx, id) : await getUnscoped(id);
   if (!row) return json(notFound, 404);
   return denyRow(scope, capability, row) ?? { scope, row };
+}
+
+/**
+ * Collection routes that only read or touch connections: the selected
+ * workspace's rows (switch on, 2+ users), else today's unscoped list.
+ * @returns {Promise<Response|{ scope: object|null, connections: object[] }>}
+ */
+export async function scopedConnections(request, capability, filter = {}) {
+  const scope = await workspaceScope(request, capability);
+  if (scope instanceof Response) return scope;
+  const connections = scope
+    ? await listConnections(scope.ctx, scope.workspaceId, filter)
+    : await getProviderConnectionsUnscoped(filter);
+  return { scope, connections };
+}
+
+// providerSpecificData keys that carry credentials (ADR-0002: metadata.read
+// never returns secrets). Switch on only; off keeps today's response shape.
+const PSD_SECRETS = ["apiKey", "copilotToken", "mimoPassToken", "clientSecret", "secretAccessKey"];
+
+/** A connection for a scoped response: provider-specific secrets removed. */
+export function redactConnection(scope, connection) {
+  const psd = connection?.providerSpecificData;
+  if (!scope || !psd || !PSD_SECRETS.some((k) => k in psd)) return connection;
+  const clean = { ...psd };
+  for (const k of PSD_SECRETS) delete clean[k];
+  return { ...connection, providerSpecificData: clean };
 }

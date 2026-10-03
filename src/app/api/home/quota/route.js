@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionsUnscoped } from "@/lib/db/index.js";
+import { scopedConnections } from "@/lib/users/workspaceScope.js";
 import { buildQuotaSnapshotView } from "@/sse/services/quotaSnapshotSync.js";
 import { getQuotaForecasts } from "@/lib/quota/forecastStore.js";
 import { deriveQuotaAccounts } from "@/lib/home/quota.js";
@@ -13,9 +13,12 @@ export const dynamic = "force-dynamic";
  * `remaining: null` per account.
  * Auth via the existing dashboardGuard deny-by-default for /api/*.
  */
-export async function GET() {
+export async function GET(request) {
   try {
-    const connections = await getProviderConnectionsUnscoped();
+    // YAN-361: switch on, only the selected workspace's accounts.
+    const scoped = await scopedConnections(request, "workspace.usage.read");
+    if (scoped instanceof Response) return scoped;
+    const { connections } = scoped;
     const active = (connections || []).filter((c) => c?.isActive !== false);
     return NextResponse.json({
       accounts: deriveQuotaAccounts(

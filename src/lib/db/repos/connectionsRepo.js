@@ -228,109 +228,105 @@ export async function createProviderConnectionUnscoped(data, opts = {}) {
 function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}) {
   const now = new Date().toISOString();
   const workspaceId = owner.workspaceId ?? null;
-  let result;
-  {
-    const all = db
-      .all(`SELECT * FROM providerConnections WHERE provider = ? AND workspaceId IS ?`, [
-        data.provider,
-        workspaceId,
-      ])
-      .map(rowToConn);
+  const all = db
+    .all(`SELECT * FROM providerConnections WHERE provider = ? AND workspaceId IS ?`, [
+      data.provider,
+      workspaceId,
+    ])
+    .map(rowToConn);
 
-    let existing = null;
-    if (data.authType === "oauth" && data.email) {
-      const incomingUsername = data.providerSpecificData?.username;
-      const incomingWs = data.providerSpecificData?.chatgptAccountId;
-      existing = all.find((c) => {
-        if (c.authType !== "oauth" || c.email !== data.email) return false;
+  let existing = null;
+  if (data.authType === "oauth" && data.email) {
+    const incomingUsername = data.providerSpecificData?.username;
+    const incomingWs = data.providerSpecificData?.chatgptAccountId;
+    existing = all.find((c) => {
+      if (c.authType !== "oauth" || c.email !== data.email) return false;
 
-        // Codex/OpenAI can issue multiple OAuth grants for the same email.
-        // Refresh tokens are rotated single-use; collapsing a new login onto an
-        // existing bare-email row overwrites the first account's token pair and
-        // makes it look "invalid" after adding a second account. Only update an
-        // existing Codex row when both rows expose the same ChatGPT account ID.
-        if (data.provider === "codex") {
-          const existingWs = c.providerSpecificData?.chatgptAccountId;
-          return !!incomingWs && !!existingWs && incomingWs === existingWs;
-        }
-
-        // Workspace providers use workspace ID when both sides have it
+      // Codex/OpenAI can issue multiple OAuth grants for the same email.
+      // Refresh tokens are rotated single-use; collapsing a new login onto an
+      // existing bare-email row overwrites the first account's token pair and
+      // makes it look "invalid" after adding a second account. Only update an
+      // existing Codex row when both rows expose the same ChatGPT account ID.
+      if (data.provider === "codex") {
         const existingWs = c.providerSpecificData?.chatgptAccountId;
-        if (incomingWs && existingWs) return incomingWs === existingWs;
-        if (incomingWs && !existingWs) return false;
-        if (!incomingWs && existingWs) return false;
-        // Non-workspace providers: match on (email + username) so cross-IdP
-        // accounts don't overwrite each other. Require username on both sides
-        // — if only one side has it, treat as a distinct identity rather than
-        // collapsing onto the bare-email fallback (which would re-introduce
-        // the cross-IdP overwrite).
-        const existingUsername = c.providerSpecificData?.username;
-        if (incomingUsername && existingUsername) {
-          return incomingUsername === existingUsername;
-        }
-        if (incomingUsername || existingUsername) return false;
-        return true;
-      });
-    } else if (data.authType === "apikey" && data.name) {
-      existing = all.find((c) => c.authType === "apikey" && c.name === data.name);
-      if (existing && rejectDuplicateName) {
-        const err = new Error(`A connection named "${data.name}" already exists for this provider`);
-        err.code = "DUPLICATE_CONNECTION_NAME";
-        throw err;
+        return !!incomingWs && !!existingWs && incomingWs === existingWs;
       }
-    }
-    // access_token: never dedup — user manages duplicates manually
 
-    if (existing) {
-      const normalized = resetHealthStateOnActivation(existing, data);
-      const merged = { ...existing, ...normalized, updatedAt: now };
-      if (data.authType === "oauth") {
-        const providerSpecificData = mergeReloginProviderData(
-          existing.providerSpecificData,
-          data.providerSpecificData,
-          data.provider,
-        );
-        if (providerSpecificData) merged.providerSpecificData = providerSpecificData;
+      // Workspace providers use workspace ID when both sides have it
+      const existingWs = c.providerSpecificData?.chatgptAccountId;
+      if (incomingWs && existingWs) return incomingWs === existingWs;
+      if (incomingWs && !existingWs) return false;
+      if (!incomingWs && existingWs) return false;
+      // Non-workspace providers: match on (email + username) so cross-IdP
+      // accounts don't overwrite each other. Require username on both sides
+      // — if only one side has it, treat as a distinct identity rather than
+      // collapsing onto the bare-email fallback (which would re-introduce
+      // the cross-IdP overwrite).
+      const existingUsername = c.providerSpecificData?.username;
+      if (incomingUsername && existingUsername) {
+        return incomingUsername === existingUsername;
       }
-      upsert(db, merged);
-      return merged;
+      if (incomingUsername || existingUsername) return false;
+      return true;
+    });
+  } else if (data.authType === "apikey" && data.name) {
+    existing = all.find((c) => c.authType === "apikey" && c.name === data.name);
+    if (existing && rejectDuplicateName) {
+      const err = new Error(`A connection named "${data.name}" already exists for this provider`);
+      err.code = "DUPLICATE_CONNECTION_NAME";
+      throw err;
     }
-
-    let connectionName = data.name || null;
-    if (!connectionName && (data.authType === "oauth" || data.authType === "access_token")) {
-      connectionName = deriveConnectionName(data, data.email || `Account ${all.length + 1}`);
-    }
-    let connectionPriority = data.priority;
-    if (!connectionPriority) {
-      connectionPriority = all.reduce((m, c) => Math.max(m, c.priority || 0), 0) + 1;
-    }
-
-    const conn = {
-      id: uuidv4(),
-      provider: data.provider,
-      authType: data.authType || "oauth",
-      name: connectionName,
-      priority: connectionPriority,
-      isActive: data.isActive !== undefined ? data.isActive : true,
-      createdAt: now,
-      updatedAt: now,
-      // Owner fields only once set: switch-off responses keep today's shape.
-      ...(workspaceId ? { workspaceId } : {}),
-      ...(owner.createdByUserId ? { createdByUserId: owner.createdByUserId } : {}),
-    };
-    for (const f of OPTIONAL_FIELDS) {
-      if (data[f] !== undefined && data[f] !== null) conn[f] = data[f];
-    }
-    if (data.providerSpecificData && Object.keys(data.providerSpecificData).length > 0) {
-      conn.providerSpecificData = data.providerSpecificData;
-    }
-    if (data.email !== undefined) conn.email = data.email;
-
-    upsert(db, conn);
-    reorderInTx(db, data.provider, workspaceId);
-    result = conn;
   }
-  return result;
+  // access_token: never dedup — user manages duplicates manually
+
+  if (existing) {
+    const normalized = resetHealthStateOnActivation(existing, data);
+    const merged = { ...existing, ...normalized, updatedAt: now };
+    if (data.authType === "oauth") {
+      const providerSpecificData = mergeReloginProviderData(
+        existing.providerSpecificData,
+        data.providerSpecificData,
+        data.provider,
+      );
+      if (providerSpecificData) merged.providerSpecificData = providerSpecificData;
+    }
+    upsert(db, merged);
+    return merged;
+  }
+
+  let connectionName = data.name || null;
+  if (!connectionName && (data.authType === "oauth" || data.authType === "access_token")) {
+    connectionName = deriveConnectionName(data, data.email || `Account ${all.length + 1}`);
+  }
+  let connectionPriority = data.priority;
+  if (!connectionPriority) {
+    connectionPriority = all.reduce((m, c) => Math.max(m, c.priority || 0), 0) + 1;
+  }
+
+  const conn = {
+    id: uuidv4(),
+    provider: data.provider,
+    authType: data.authType || "oauth",
+    name: connectionName,
+    priority: connectionPriority,
+    isActive: data.isActive !== undefined ? data.isActive : true,
+    createdAt: now,
+    updatedAt: now,
+    // Owner fields only once set: switch-off responses keep today's shape.
+    ...(workspaceId ? { workspaceId } : {}),
+    ...(owner.createdByUserId ? { createdByUserId: owner.createdByUserId } : {}),
+  };
+  for (const f of OPTIONAL_FIELDS) {
+    if (data[f] !== undefined && data[f] !== null) conn[f] = data[f];
+  }
+  if (data.providerSpecificData && Object.keys(data.providerSpecificData).length > 0) {
+    conn.providerSpecificData = data.providerSpecificData;
+  }
+  if (data.email !== undefined) conn.email = data.email;
+
+  upsert(db, conn);
+  reorderInTx(db, data.provider, workspaceId);
+  return conn;
 }
 
 // Critical: OAuth refresh token race — atomic merge inside transaction

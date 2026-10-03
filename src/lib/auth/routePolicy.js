@@ -155,10 +155,10 @@ export const ROUTE_POLICY = {
   "/api/oauth/kiro/social-exchange": { cap: CONN },
   "/api/oauth/xiaomi-mimo/api-key": { cap: CONN },
   "/api/media-providers/tts/voices": { cap: USE },
-  "/api/media-providers/tts/deepgram/voices": { cap: USE },
-  "/api/media-providers/tts/elevenlabs/voices": { cap: USE },
-  "/api/media-providers/tts/inworld/voices": { cap: USE },
-  "/api/media-providers/tts/minimax/voices": { cap: USE },
+  "/api/media-providers/tts/deepgram/voices": scoped({ cap: USE }),
+  "/api/media-providers/tts/elevenlabs/voices": scoped({ cap: USE }),
+  "/api/media-providers/tts/inworld/voices": scoped({ cap: USE }),
+  "/api/media-providers/tts/minimax/voices": scoped({ cap: USE }),
 
   // Combos, aliases, custom and disabled models.
   "/api/combos": read(META, COMBOS),
@@ -169,7 +169,7 @@ export const ROUTE_POLICY = {
   "/api/models/alias": read(META, COMBOS),
   "/api/models/custom": read(META, COMBOS),
   "/api/models/disabled": read(META, COMBOS),
-  "/api/models/availability": read(META, USE),
+  "/api/models/availability": scoped(read(META, USE)),
   "/api/models/test": { cap: USE },
   "/api/tags": { cap: META },
 
@@ -191,7 +191,7 @@ export const ROUTE_POLICY = {
   "/api/usage/stats": { cap: USAGE },
   "/api/usage/stream": { cap: USAGE },
   "/api/home/live-routes": { cap: USAGE },
-  "/api/home/quota": { cap: USAGE },
+  "/api/home/quota": scoped({ cap: USAGE }),
   "/api/home/summary": { cap: USAGE },
   "/api/shell/summary": { cap: USAGE },
   "/api/shell/savings-milestone": { cap: USAGE },
