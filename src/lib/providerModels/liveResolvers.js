@@ -18,20 +18,24 @@ import { resolveXai } from "@/lib/providerModels/xaiModels.js";
 import { resolveOpenAI } from "@/lib/providerModels/openaiModels.js";
 import { resolveOpenRouter } from "@/lib/providerModels/openrouterModels.js";
 import {
+  resolveBazaarlink,
   resolveCerebras,
   resolveChutes,
   resolveDeepSeek,
   resolveFireworks,
   resolveGroq,
   resolveHyperbolic,
+  resolveLlm7,
   resolveMistral,
   resolveNebius,
   resolveNvidia,
   resolveOpencode,
   resolveOpencodeGo,
   resolvePerplexityAgent,
+  resolveSambanova,
   resolveSiliconFlow,
   resolveTogether,
+  resolveVenice,
   resolveVercel,
 } from "@/lib/providerModels/apiKeyModels.js";
 import { resolveOllama, resolveOllamaLocal } from "@/lib/providerModels/ollamaModels.js";
@@ -292,6 +296,10 @@ export const LIVE_MODEL_RESOLVERS = {
   hyperbolic: resolveHyperbolic,
   "opencode-go": resolveOpencodeGo,
   opencode: resolveOpencode,
+  venice: resolveVenice,
+  bazaarlink: resolveBazaarlink,
+  llm7: resolveLlm7,
+  sambanova: resolveSambanova,
   ollama: resolveOllama,
   "ollama-local": resolveOllamaLocal,
   codex: resolveCodex,

@@ -44,4 +44,5 @@ export default {
     { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", contextLength: 1000000 },
     { id: "nemotron-3-super-120b-a12b", name: "Nemotron 3 Super", contextLength: 1000000 },
   ],
+  features: { liveModels: true },
 };
