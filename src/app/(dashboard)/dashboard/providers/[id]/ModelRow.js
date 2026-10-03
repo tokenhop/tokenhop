@@ -2,6 +2,7 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { CapacityBadges, IconButton } from "@/shared/components";
 import CopyStatus from "@/shared/components/CopyStatus";
+import { formatCompact } from "@/shared/utils/format";
 
 const STATUS_ICON = { ok: "check_circle", error: "cancel" };
 const STATUS_TONE = { ok: "text-ok border-ok/40", error: "text-err border-err/40" };
@@ -31,6 +32,7 @@ export default function ModelRow({
   thinkingSuffix,
 }) {
   const displayModel = thinkingSuffix ? `${fullModel}(${thinkingSuffix})` : fullModel;
+  const contextLength = Number(model.contextLength);
   const [aliasDraft, setAliasDraft] = useState("");
   const [aliasOpen, setAliasOpen] = useState(false);
   const tone = STATUS_TONE[testStatus] || "text-muted border-line";
@@ -63,10 +65,23 @@ export default function ModelRow({
         <code className="truncate font-mono text-xs text-text sm:max-w-[360px]">
           {displayModel}
         </code>
-        {model.name || caps || isFree ? (
+        {model.name || caps || isFree || contextLength > 0 || model.hidden ? (
           <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted">
             {model.name ? <span className="truncate">{model.name}</span> : null}
             {isFree ? <span className="font-semibold text-ok">Free</span> : null}
+            {contextLength > 0 ? (
+              <span className="shrink-0 tabular-nums" title="Context window (tokens)">
+                {formatCompact(contextLength)} ctx
+              </span>
+            ) : null}
+            {model.hidden ? (
+              <span
+                className="shrink-0 font-semibold text-warn"
+                title="Not offered in the provider's own model picker; still routable"
+              >
+                Hidden
+              </span>
+            ) : null}
             <CapacityBadges caps={caps} colorOverride="text-muted" size={12} />
           </span>
         ) : null}
@@ -152,6 +167,8 @@ ModelRow.propTypes = {
   model: PropTypes.shape({
     id: PropTypes.string.isRequired,
     name: PropTypes.string,
+    contextLength: PropTypes.number,
+    hidden: PropTypes.bool,
   }).isRequired,
   fullModel: PropTypes.string.isRequired,
   alias: PropTypes.string,

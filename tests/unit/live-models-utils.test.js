@@ -207,6 +207,14 @@ describe("selectModelsToImport", () => {
     expect(ids).toEqual(["chat"]);
   });
 
+  it("skips hidden live entries", () => {
+    const ids = selectModelsToImport({
+      ...base,
+      liveModels: [{ id: "shown" }, { id: "secret", hidden: true }],
+    });
+    expect(ids).toEqual(["shown"]);
+  });
+
   it("returns an empty list for empty or invalid live catalogs", () => {
     expect(selectModelsToImport({ ...base, liveModels: [] })).toEqual([]);
     expect(selectModelsToImport({ ...base, liveModels: undefined })).toEqual([]);

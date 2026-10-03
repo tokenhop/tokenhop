@@ -6,7 +6,8 @@ const NO_LIVE_MODELS = "No live models returned.";
 const EMPTY_CATALOG = { key: null, models: [], error: null };
 
 async function fetchLiveCatalog(connectionId, { refresh = false } = {}) {
-  const query = refresh ? "?refresh=1" : "";
+  // hidden=1: also list routable entries the upstream hides from its own picker (marked).
+  const query = refresh ? "?hidden=1&refresh=1" : "?hidden=1";
   const res = await fetch(`/api/providers/${connectionId}/models${query}`, { cache: "no-store" });
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(data?.error || `Failed to fetch models (HTTP ${res.status})`);
