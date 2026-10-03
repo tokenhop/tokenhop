@@ -54,4 +54,10 @@ export const CAPACITY_META = {
     desc: "Supports reasoning / thinking",
     color: "text-amber-500",
   },
+  videoInput: {
+    icon: "movie",
+    label: "Video input",
+    desc: "Supports video input",
+    color: "text-violet-500",
+  },
 };

@@ -87,6 +87,7 @@ export default {
     authorizeDeviceUrl: "https://www.kimi.com/code/authorize_device",
   },
   features: {
+    liveModels: true,
     usage: true,
     // API-key connections also hit /v1/usages (x-api-key) — need usageApikey
     // so isUsageEligible + /api/usage allow non-oauth authType.

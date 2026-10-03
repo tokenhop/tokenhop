@@ -35,6 +35,7 @@ export default function ModelsSection({
   catalogModels,
   staticModels,
   liveError,
+  liveFallback = false,
   refreshLive,
   models,
   compatibleSection,
@@ -175,7 +176,13 @@ export default function ModelsSection({
         </div>
       )}
       {isLiveCatalog && liveError ? (
-        <p className="mb-3 text-xs break-words text-err">{liveError}</p>
+        <div className="mb-3">
+          <Callout variant="warn" icon={liveFallback ? "cloud_off" : undefined}>
+            {liveFallback
+              ? `Live model list unavailable — showing the built-in list. ${liveError}`
+              : liveError}
+          </Callout>
+        </div>
       ) : null}
       {isCompatible ? (
         compatibleSection
@@ -268,7 +275,7 @@ export default function ModelsSection({
                       isTesting={models.testingIds.has(model.id)}
                       isFree={model.isFree}
                       onDisable={() => models.disableModel(model.id)}
-                      caps={getCaps(`${providerId}/${model.id}`)}
+                      caps={{ ...getCaps(`${providerId}/${model.id}`), ...model.capabilities }}
                       thinkingSuffix={resolveThinkingSuffix(model.id)}
                     />
                   );
@@ -361,6 +368,7 @@ ModelsSection.propTypes = {
   catalogModels: PropTypes.array.isRequired,
   staticModels: PropTypes.array.isRequired,
   liveError: PropTypes.string,
+  liveFallback: PropTypes.bool,
   refreshLive: PropTypes.func,
   models: PropTypes.object.isRequired,
   compatibleSection: PropTypes.node,

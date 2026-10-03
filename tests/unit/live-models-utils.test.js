@@ -28,6 +28,7 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "groq",
       "hyperbolic",
       "kimchi",
+      "kimi",
       "kiro",
       "llm7",
       "mistral",

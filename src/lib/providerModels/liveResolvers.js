@@ -15,6 +15,7 @@ import {
   resolveGeminiCli,
 } from "@/lib/providerModels/googleModels.js";
 import { resolveXai } from "@/lib/providerModels/xaiModels.js";
+import { resolveKimi } from "@/lib/providerModels/kimiModels.js";
 import { resolveOpenAI } from "@/lib/providerModels/openaiModels.js";
 import { resolveOpenRouter } from "@/lib/providerModels/openrouterModels.js";
 import {
@@ -305,6 +306,7 @@ export const LIVE_MODEL_RESOLVERS = {
   codex: resolveCodex,
   zed: resolveZed,
   kiro: resolveKiro,
+  kimi: resolveKimi,
   qoder: resolveQoder,
   "grok-cli": resolveGrokCli,
   cursor: passthrough("Cursor", (conn, { forceRefresh }) =>
