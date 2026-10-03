@@ -43,12 +43,17 @@ async function fetchTags(label, url, { headers = {}, timeoutMs, secret }) {
 }
 
 // The cloud list is public; the key is sent anyway so an account-scoped list wins.
-export const resolveOllama = (connection) =>
-  fetchTags("Ollama Cloud", CLOUD_TAGS_URL, {
-    headers: connection.apiKey ? { Authorization: `Bearer ${connection.apiKey}` } : {},
-    timeoutMs: CLOUD_TIMEOUT_MS,
-    secret: connection.apiKey,
-  });
+export async function resolveOllama(connection) {
+  try {
+    return await fetchTags("Ollama Cloud", CLOUD_TAGS_URL, {
+      headers: connection.apiKey ? { Authorization: `Bearer ${connection.apiKey}` } : {},
+      timeoutMs: CLOUD_TIMEOUT_MS,
+      secret: connection.apiKey,
+    });
+  } catch (error) {
+    return { models: [], warning: `Ollama Cloud not reachable: ${error?.message || error}` };
+  }
+}
 
 export async function resolveOllamaLocal(connection) {
   const host = resolveOllamaLocalHost(connection);

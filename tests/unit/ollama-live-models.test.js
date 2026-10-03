@@ -74,6 +74,20 @@ describe("live catalogs end to end", () => {
     expect((await buildModelsList(["llm"])).map((m) => m.id)).toContain(`${alias}/glm-9`);
   });
 
+  it("ollama cloud warns without echoing the key when it is rejected", async () => {
+    respond = () => new Response("bad key ol-secret", { status: 401 });
+    const conn = await createProviderConnection({
+      provider: "ollama",
+      authType: "apikey",
+      apiKey: "ol-secret",
+      testStatus: "active",
+    });
+
+    const body = await dashboardModels(conn.id);
+    expect(body.models).toEqual([]);
+    expect(body.warning).toBe("Failed to fetch Ollama Cloud models: 401 bad key ***");
+  });
+
   it("ollama local reads the configured host", async () => {
     respond = () => tags({ name: "qwen3:8b", model: "qwen3:8b" });
     const conn = await createProviderConnection({
