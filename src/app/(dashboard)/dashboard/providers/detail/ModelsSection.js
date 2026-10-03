@@ -285,7 +285,7 @@ export default function ModelsSection({
             >
               Add model
             </Button>
-            {isLiveCatalog && hasActiveConnection ? (
+            {isLiveCatalog && (hasActiveConnection || isFreeNoAuth) ? (
               <FetchModelsButton
                 providerId={providerId}
                 refresh={refreshLive}

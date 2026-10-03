@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
 import {
+  FREE_PROVIDERS,
   isOpenAICompatibleProvider,
   isAnthropicCompatibleProvider,
 } from "@/shared/constants/providers";
-import { hasLiveModelResolver, resolveLiveModels } from "@/lib/providerModels/liveResolvers.js";
+import {
+  hasLiveModelResolver,
+  noAuthConnection,
+  resolveLiveModels,
+} from "@/lib/providerModels/liveResolvers.js";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -66,7 +71,11 @@ const PROVIDER_MODELS_CONFIG = {
 export async function GET(request, { params }) {
   try {
     const { id } = await params;
-    const connection = await getProviderConnectionById(id);
+    // Keyless free providers have no row: fall back to the synthetic noauth
+    // connection so the live branch below still serves them.
+    const connection =
+      (await getProviderConnectionById(id)) ||
+      (FREE_PROVIDERS[id]?.noAuth && hasLiveModelResolver(id) ? noAuthConnection(id) : null);
 
     if (!connection) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });

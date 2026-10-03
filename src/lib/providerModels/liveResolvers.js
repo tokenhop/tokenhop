@@ -27,6 +27,7 @@ import {
   resolveMistral,
   resolveNebius,
   resolveNvidia,
+  resolveOpencode,
   resolveOpencodeGo,
   resolvePerplexityAgent,
   resolveSiliconFlow,
@@ -290,6 +291,7 @@ export const LIVE_MODEL_RESOLVERS = {
   siliconflow: resolveSiliconFlow,
   hyperbolic: resolveHyperbolic,
   "opencode-go": resolveOpencodeGo,
+  opencode: resolveOpencode,
   ollama: resolveOllama,
   "ollama-local": resolveOllamaLocal,
   codex: resolveCodex,
@@ -353,6 +355,11 @@ export const LIVE_MODEL_RESOLVERS = {
 export function hasLiveModelResolver(providerId) {
   return Object.hasOwn(LIVE_MODEL_RESOLVERS, providerId);
 }
+
+// Synthetic connection standing in for keyless noAuth providers (same "noauth"
+// id auth.js injects for them), so live plumbing keyed on connections reaches
+// them. Cache sharing follows the resolver key `<provider>:noauth`.
+export const noAuthConnection = (provider) => ({ id: "noauth", provider, isActive: true });
 
 const cache = new Map();
 
