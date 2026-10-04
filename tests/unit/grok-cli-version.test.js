@@ -29,15 +29,42 @@ describe("GROK_CLI_VERSION", () => {
     const fetchMock = vi.fn(async () => Response.json({ device_code: "dc" }));
     vi.stubGlobal("fetch", fetchMock);
     const { default: grokCli } = await import("@/lib/oauth/providers/grok-cli.js");
-    await grokCli.requestDeviceCode({
-      deviceCodeUrl: "https://auth.x.ai/device",
-      clientId: "id",
-      scope: "openid",
+    await grokCli.requestDeviceCode(grokCli.config);
+    const { headers, body } = fetchMock.mock.calls[0][1];
+    expect(headers).toEqual({
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "*/*",
+      "User-Agent": "grok-shell/9.8.7 (linux; x86_64)",
+      "x-grok-client-version": "9.8.7",
+      "x-grok-client-surface": "headless",
     });
-    const { headers } = fetchMock.mock.calls[0][1];
-    expect(headers["User-Agent"]).toBe("grok-shell/9.8.7 (linux; x86_64)");
-    expect(headers["x-grok-client-version"]).toBe("9.8.7");
+    expect(body.get("scope").split(" ")).toEqual(
+      expect.arrayContaining(["workspaces:read", "workspaces:write"]),
+    );
+    expect(body.get("referrer")).toBe("grok-build");
+    expect(body.get("client_id")).toBe(grokCli.config.clientId);
   });
+
+  it.each(["authorization_pending", "slow_down"])(
+    "keeps %s polling and shared override headers",
+    async (error) => {
+      process.env.GROK_CLI_VERSION = "9.8.7";
+      const fetchMock = vi.fn(async () => Response.json({ error }, { status: 400 }));
+      vi.stubGlobal("fetch", fetchMock);
+      const { default: grokCli } = await import("@/lib/oauth/providers/grok-cli.js");
+      expect(await grokCli.pollToken(grokCli.config, "dc")).toEqual({ ok: true, data: { error } });
+      const { headers, body } = fetchMock.mock.calls[0][1];
+      expect(headers).toEqual({
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "*/*",
+        "User-Agent": "grok-shell/9.8.7 (linux; x86_64)",
+        "x-grok-client-version": "9.8.7",
+        "x-grok-client-surface": "headless",
+      });
+      expect(body.get("device_code")).toBe("dc");
+      expect(body.get("client_id")).toBe(grokCli.config.clientId);
+    },
+  );
 
   it("fails fast on a malformed value", async () => {
     process.env.GROK_CLI_VERSION = "v1.0";

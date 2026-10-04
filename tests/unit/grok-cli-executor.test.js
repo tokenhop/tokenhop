@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+
+const { outboundFetch } = vi.hoisted(() => ({ outboundFetch: vi.fn() }));
+vi.mock("../../open-sse/utils/proxyFetch.js", () => ({ proxyAwareFetch: outboundFetch }));
 import { BaseExecutor } from "../../open-sse/executors/base.js";
 import {
   GrokCliExecutor,
@@ -64,9 +67,11 @@ describe("grok-cli registry", () => {
 
 describe("GrokCliExecutor", () => {
   let executor;
+  let executor2;
 
   beforeEach(() => {
     _resetGrokCliTurnStore();
+    outboundFetch.mockReset();
     executor = new GrokCliExecutor();
   });
 
@@ -81,54 +86,85 @@ describe("GrokCliExecutor", () => {
     expect(executor.buildUrl()).toBe("https://cli-chat-proxy.grok.com/v1/responses");
   });
 
-  it("buildHeaders sets CLI fingerprint + session headers", () => {
-    executor._currentSessionId = "sess-abc";
-    executor._currentReqId = "req-xyz";
-    executor._agentId = "agent-1";
-    executor._currentModel = "grok-4.5";
-    executor._currentTurnIdx = 3;
+  it("buildHeaders sets trusted Responses fingerprint without identity (task2.1)", () => {
+    // Real BaseExecutor.execute contract: transformRequest, then buildHeaders
+    // with the transformed body. Request state rides the body Symbol, not the
+    // shared singleton fields.
+    const creds = {
+      accessToken: "tok_test",
+      connectionId: "conn-hdr",
+      rawHeaders: { "x-session-id": "sess-abc" },
+      providerSpecificData: { email: "u@example.com", userId: "uid-1", deviceId: "agent-1" },
+    };
+
+    let body;
+    for (let i = 0; i < 3; i += 1) {
+      body = executor.transformRequest(
+        "grok-4.5",
+        { model: "grok-4.5", input: [{ type: "message", role: "user", content: "hi" }] },
+        true,
+        creds,
+      );
+    }
 
     const headers = executor.buildHeaders(
-      {
-        accessToken: "tok_test",
-        providerSpecificData: { email: "u@example.com", userId: "uid-1" },
-      },
+      creds,
       true,
+      "https://cli-chat-proxy.grok.com/v1/responses",
+      null,
+      body,
     );
 
     expect(headers.Authorization).toBe("Bearer tok_test");
     expect(headers.Accept).toBe("text/event-stream");
-    expect(headers["x-xai-token-auth"]).toBeUndefined();
     expect(headers["x-grok-client-identifier"]).toBe("grok-shell");
     expect(headers["x-grok-client-version"]).toBe(GROK_CLI_VERSION);
     expect(headers["x-grok-session-id"]).toBe("sess-abc");
     expect(headers["x-grok-conv-id"]).toBe("sess-abc");
-    expect(headers["x-grok-req-id"]).toBe("req-xyz");
+    expect(headers["x-grok-req-id"]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
     expect(headers["x-grok-turn-idx"]).toBe("3");
     expect(headers["x-grok-agent-id"]).toBe("agent-1");
     expect(headers["x-grok-model-override"]).toBe("grok-4.5");
+    // Trusted-proxy-only fingerprint
+    expect(headers["x-xai-token-auth"]).toBe("xai-grok-cli");
+    expect(headers["x-authenticateresponse"]).toBe("authenticate-response");
+    expect(headers["x-grok-client-mode"]).toBe("headless");
+    expect(headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-00$/);
+    // Responses construction must not carry user identity
+    expect(headers["x-email"]).toBeUndefined();
+    expect(headers["x-userid"]).toBeUndefined();
+    // Policy headers deliberately absent
     expect(headers["x-compaction-at"]).toBeUndefined();
-    expect(headers["x-email"]).toBe("u@example.com");
-    expect(headers["x-userid"]).toBe("uid-1");
-    expect(headers["x-authenticateresponse"]).toBeUndefined();
+    expect(headers["x-uncompacted-prefix-count"]).toBeUndefined();
+    expect(headers["x-doom-loop-detected"]).toBeUndefined();
   });
 
-  it("buildHeaders falls back to top-level email/userId (OAuth mapTokens shape)", () => {
-    executor._currentSessionId = "sess-top";
-    executor._currentReqId = "req-top";
+  it("buildHeaders omits proxy fingerprint off the trusted origin", () => {
+    executor._currentSessionId = "sess-untrusted";
+    executor._currentReqId = "req-untrusted";
 
     const headers = executor.buildHeaders(
-      {
-        accessToken: "tok_test",
-        email: "top@example.com",
-        // userId only top-level; psd has neither email nor userId
-        providerSpecificData: { authMethod: "device_code" },
-      },
+      { accessToken: "tok_test" },
       true,
+      "https://evil-cli-chat-proxy.grok.com.attacker.example/v1/responses",
     );
 
-    expect(headers["x-email"]).toBe("top@example.com");
-    expect(headers["x-userid"]).toBeUndefined();
+    expect(headers["x-xai-token-auth"]).toBeUndefined();
+    expect(headers["x-authenticateresponse"]).toBeUndefined();
+    expect(headers["x-grok-client-mode"]).toBeUndefined();
+    expect(headers["x-grok-conv-group-id"]).toBeUndefined();
+    expect(headers["x-grok-session-id"]).toBe("sess-untrusted");
+    expect(headers.Authorization).toBe("Bearer tok_test");
+  });
+
+  it("each attempt gets a fresh traceparent", () => {
+    executor._currentSessionId = "sess-t";
+    const h1 = executor.buildHeaders({ accessToken: "t" }, true);
+    const h2 = executor.buildHeaders({ accessToken: "t" }, true);
+    expect(h1.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-00$/);
+    expect(h1.traceparent).not.toBe(h2.traceparent);
   });
 
   it("transformRequest normalizes Responses body like official CLI", () => {
@@ -550,6 +586,337 @@ describe("GrokCliExecutor", () => {
     expect(err.status).toBe(402);
     expect(err.code).toBe("personal-team-blocked:spending-limit");
     expect(err.message).toMatch(/credits/i);
+  });
+
+  it("defaults missing model to grok-4.6 with high effort and concise summary", () => {
+    const out = executor.transformRequest(
+      undefined,
+      {
+        input: [{ type: "message", role: "user", content: "hi" }],
+      },
+      true,
+      { connectionId: "default-conn" },
+    );
+    expect(out.model).toBe("grok-4.6");
+    expect(out.reasoning).toEqual({ effort: "high", summary: "concise" });
+    expect(out.include).toContain("reasoning.encrypted_content");
+    expect(out.include).toContain("no_inline_citations");
+  });
+
+  it("grok-4.7 sends concise summary with effort omitted and no invented limits", () => {
+    const out = executor.transformRequest(
+      "grok-4.7-high",
+      {
+        model: "grok-4.7-high",
+        input: "hi",
+      },
+      true,
+      { connectionId: "c47" },
+    );
+    expect(out.model).toBe("grok-4.7");
+    expect(out.reasoning.effort).toBeUndefined();
+    expect(out.reasoning.summary).toBe("concise");
+    expect(out.max_output_tokens).toBeUndefined();
+  });
+
+  it("valid prompt_cache_key kept verbatim; malformed dropped and replaced by session", () => {
+    const kept = executor.transformRequest(
+      "grok-4.5",
+      {
+        model: "grok-4.5",
+        input: "hi",
+        prompt_cache_key: "  stable-key  ",
+      },
+      true,
+      { connectionId: "cache-conn" },
+    );
+    expect(kept.prompt_cache_key).toBe("  stable-key  ");
+
+    executor2 = new GrokCliExecutor();
+    const tooLong = executor2.transformRequest(
+      "grok-4.5",
+      {
+        model: "grok-4.5",
+        input: "hi",
+        prompt_cache_key: "x".repeat(257),
+      },
+      true,
+      { connectionId: "cache-conn" },
+    );
+    expect(tooLong.prompt_cache_key).toBe(executor2._currentSessionId);
+
+    const ctrl = executor2.transformRequest(
+      "grok-4.5",
+      {
+        model: "grok-4.5",
+        input: "hi",
+        prompt_cache_key: "bad\u0000key",
+      },
+      true,
+      { connectionId: "cache-conn" },
+    );
+    expect(ctrl.prompt_cache_key).toBe(executor2._currentSessionId);
+  });
+
+  it("includes dedupe + summary none keeps encrypted continuity without summary field", () => {
+    const out = executor.transformRequest(
+      "grok-4.5",
+      {
+        model: "grok-4.5",
+        input: "hi",
+        include: [
+          "reasoning.encrypted_content",
+          "reasoning.encrypted_content",
+          42,
+          " other.include ",
+        ],
+        reasoning: { summary: "none" },
+      },
+      true,
+      { connectionId: "inc-conn" },
+    );
+    expect(out.include.filter((v) => v === "reasoning.encrypted_content")).toHaveLength(1);
+    expect(out.include).toContain("other.include");
+    expect(out.include).toContain("no_inline_citations");
+    expect(out.reasoning.summary).toBeUndefined();
+  });
+
+  it("no_inline_citations only on trusted config URL", () => {
+    const saved = executor.config.baseUrl;
+    executor.config.baseUrl = "https://elsewhere.example/v1/responses";
+    try {
+      const out = executor.transformRequest(
+        "grok-4.5",
+        {
+          model: "grok-4.5",
+          input: "hi",
+        },
+        true,
+        { connectionId: "inc-untrusted" },
+      );
+      expect(out.include).not.toContain("no_inline_citations");
+      expect(out.include).toContain("reasoning.encrypted_content");
+    } finally {
+      executor.config.baseUrl = saved;
+    }
+  });
+
+  it("same conversation gets stable conv-group UUID; request state isolated per body", () => {
+    const creds = { connectionId: "group-conn", rawHeaders: { "x-session-id": "conv-1" } };
+    const b1 = executor.transformRequest(
+      "grok-4.5",
+      { model: "grok-4.5", input: "hi" },
+      true,
+      creds,
+    );
+    const h1 = executor.buildHeaders(
+      creds,
+      true,
+      "https://cli-chat-proxy.grok.com/v1/responses",
+      null,
+      b1,
+    );
+    const b2 = executor.transformRequest(
+      "grok-4.5",
+      { model: "grok-4.5", input: "again" },
+      true,
+      creds,
+    );
+    const h2 = executor.buildHeaders(
+      creds,
+      true,
+      "https://cli-chat-proxy.grok.com/v1/responses",
+      null,
+      b2,
+    );
+    expect(h1["x-grok-conv-group-id"]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(h2["x-grok-conv-group-id"]).toBe(h1["x-grok-conv-group-id"]);
+
+    const credsB = { connectionId: "group-conn-b", rawHeaders: { "x-session-id": "conv-2" } };
+    const bB = executor.transformRequest(
+      "grok-4.6",
+      { model: "grok-4.6", input: "other convo" },
+      true,
+      credsB,
+    );
+    const hB = executor.buildHeaders(
+      credsB,
+      true,
+      "https://cli-chat-proxy.grok.com/v1/responses",
+      null,
+      bB,
+    );
+    expect(hB["x-grok-conv-group-id"]).not.toBe(h1["x-grok-conv-group-id"]);
+
+    // Build headers from older bodies AFTER another request changed singleton fields.
+    const delayed1 = executor.buildHeaders(creds, true, executor.config.baseUrl, null, b1);
+    const delayed2 = executor.buildHeaders(creds, true, executor.config.baseUrl, null, b2);
+    expect(delayed1["x-grok-session-id"]).toBe("conv-1");
+    expect(delayed1["x-grok-req-id"]).toBe(h1["x-grok-req-id"]);
+    expect(delayed1["x-grok-turn-idx"]).toBe("1");
+    expect(delayed2["x-grok-turn-idx"]).toBe("2");
+    expect(delayed1["x-grok-model-override"]).toBe("grok-4.5");
+    expect(hB["x-grok-session-id"]).toBe("conv-2");
+  });
+
+  it("execute sends per-request headers through one outbound fetch and keeps interleaved requests isolated", async () => {
+    const resolvers = [];
+    outboundFetch.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+    const makeCreds = (session) => ({
+      accessToken: `tok_${session}`,
+      connectionId: `conn-${session}`,
+      rawHeaders: { "x-session-id": session },
+      providerSpecificData: { deviceId: `agent-${session}` },
+    });
+    // Avoid unrelated asynchronous machine-ID initialization in this wire test.
+    executor._machineAgentId = "machine-test";
+    const makeBody = (model) => ({
+      model,
+      input: [{ type: "message", role: "user", content: "hi" }],
+    });
+
+    const callA = executor.execute({
+      model: "grok-4.5",
+      body: makeBody("grok-4.5"),
+      stream: true,
+      credentials: makeCreds("sess-A"),
+    });
+    const callB = executor.execute({
+      model: "grok-4.6",
+      body: makeBody("grok-4.6"),
+      stream: true,
+      credentials: makeCreds("sess-B"),
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(outboundFetch).toHaveBeenCalledTimes(2);
+
+    const [urlA, optsA] = outboundFetch.mock.calls[0];
+    const [, optsB] = outboundFetch.mock.calls[1];
+    expect(urlA).toBe("https://cli-chat-proxy.grok.com/v1/responses");
+    const hA = optsA.headers;
+    const hB = optsB.headers;
+    expect(hA.Authorization).toBe("Bearer tok_sess-A");
+    expect(hB.Authorization).toBe("Bearer tok_sess-B");
+    expect(hA["x-grok-session-id"]).toBe("sess-A");
+    expect(hB["x-grok-session-id"]).toBe("sess-B");
+    expect(hA["x-grok-model-override"]).toBe("grok-4.5");
+    expect(hB["x-grok-model-override"]).toBe("grok-4.6");
+    expect(hA["x-grok-req-id"]).toMatch(/^[0-9a-f]{8}-/);
+    expect(hB["x-grok-req-id"]).toMatch(/^[0-9a-f]{8}-/);
+    expect(hA["x-grok-req-id"]).not.toBe(hB["x-grok-req-id"]);
+    expect(hA.traceparent).not.toBe(hB.traceparent);
+    const bodyA = JSON.parse(optsA.body);
+    const bodyB = JSON.parse(optsB.body);
+    expect(bodyA.prompt_cache_key).toBe("sess-A");
+    expect(bodyB.prompt_cache_key).toBe("sess-B");
+    expect(bodyA.model).toBe("grok-4.5");
+    expect(bodyB.model).toBe("grok-4.6");
+
+    for (const resolve of resolvers) {
+      resolve(
+        new Response('data: {"type":"response.completed","response":{}}\n\n', {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+      );
+    }
+    const [resultA, resultB] = await Promise.all([callA, callB]);
+    expect(resultA.response.status).toBe(200);
+    expect(resultB.response.status).toBe(200);
+  });
+
+  it("outbound execute ignores attacker-controlled inbound fingerprint/trace headers", async () => {
+    const resolvers = [];
+    outboundFetch.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+    const credentials = {
+      accessToken: "tok_guard",
+      connectionId: "conn-guard",
+      rawHeaders: {
+        "x-session-id": "sess-guard",
+        traceparent: "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01",
+        "x-xai-token-auth": "forged",
+        "x-grok-client-mode": "forged",
+        "x-attacker": "inject",
+      },
+    };
+    const call = executor.execute({
+      model: "grok-4.5",
+      body: { model: "grok-4.5", input: [{ type: "message", role: "user", content: "hi" }] },
+      stream: true,
+      credentials,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(outboundFetch).toHaveBeenCalledTimes(1);
+    const headers = outboundFetch.mock.calls[0][1].headers;
+    expect(headers["x-xai-token-auth"]).toBe("xai-grok-cli");
+    expect(headers["x-grok-client-mode"]).toBe("headless");
+    expect(headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-00$/);
+    expect(headers.traceparent).not.toBe(credentials.rawHeaders.traceparent);
+    expect(headers["x-attacker"]).toBeUndefined();
+    for (const resolve of resolvers) {
+      resolve(
+        new Response('data: {"type":"response.completed","response":{}}\n\n', {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+      );
+    }
+    await call;
+  });
+
+  it("drops a non-string prompt_cache_key before resolving cache identity", () => {
+    const body = executor.transformRequest(
+      "grok-4.5",
+      {
+        model: "grok-4.5",
+        input: [{ type: "message", role: "user", content: "hi" }],
+        prompt_cache_key: 42,
+      },
+      true,
+      { accessToken: "tok", connectionId: "conn-cache" },
+    );
+    expect(typeof body.prompt_cache_key).toBe("string");
+    expect(body.prompt_cache_key).toBe(executor._currentSessionId);
+  });
+
+  it("426 redacts plain bearer secrets from text detail", () => {
+    const err = executor.parseError(
+      { status: 426 },
+      "client too old; Authorization: Bearer tok_live_secret_123456789 rejected",
+    );
+    expect(err.status).toBe(426);
+    expect(err.message).toContain("GROK_CLI_VERSION");
+    expect(err.message).not.toContain("tok_live_secret_123456789");
+  });
+
+  it("parseError 426 stays 426 with GROK_CLI_VERSION hint and safe detail", () => {
+    const cases = [
+      "Upgrade required: client too old",
+      JSON.stringify({ message: "unsupported version" }),
+      JSON.stringify({ error: { message: "version too old", code: "version_gate" } }),
+      "{not json",
+      "",
+      JSON.stringify({ error: "token=eyJhbGciOi.abc.def rejected" }),
+    ];
+    for (const bodyText of cases) {
+      const err = executor.parseError({ status: 426 }, bodyText);
+      expect(err.status).toBe(426);
+      expect(err.message).toContain("GROK_CLI_VERSION");
+      expect(err.message).not.toMatch(/eyJ[A-Za-z0-9_-]/);
+      expect(err.message.length).toBeLessThan(500);
+    }
   });
 
   it("sends x-grok-agent-id without deviceId and never leaks another connection's id (YAN-26)", async () => {
