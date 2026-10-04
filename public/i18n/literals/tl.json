@@ -780,6 +780,7 @@
   "Full": "Puno",
   "Full payloads in Usage → Request log.": "Buong payload sa Usage → Request log.",
   "Full-height inline-end panel. Esc closes.": "Panel na buong taas sa inline-end. Isinasara ng Esc.",
+  "Full-instance backup (format v2)": "Backup ng buong-instance (format v2)",
   "Fusion": "Pagsasanib",
   "Gateway env vars: CLI_DEVIN_BIN (binary path), CLI_DEVIN_AGENT_TYPE (agent type), DEVIN_MCP_SERVERS (JSON MCP servers for the agent).": "Mga env var ng gateway: CLI_DEVIN_BIN (path ng binary), CLI_DEVIN_AGENT_TYPE (uri ng agent), DEVIN_MCP_SERVERS (mga JSON MCP server para sa agent).",
   "Gateway listening on :20128": "Gateway nakikinig sa :20128",

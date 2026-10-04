@@ -2367,6 +2367,7 @@
   "not installed": "نصب نشده",
   "on GitHub": "در GitHub",
   "openai → target + URL + headers": "openai → هدف + URL + هدرها",
+  "openai/gpt-4o, anthropic/claude": "openai/gpt-4o، anthropic/claude",
   "openid profile email": "openid profile email",
   "optional context to improve accuracy": "زمینه اختیاری برای بهبود دقت",
   "optional, e.g. 512, 1024 (leave empty for default)": "اختیاری، مثلاً 512، 1024 (برای پیش‌فرض خالی بگذارید)",
