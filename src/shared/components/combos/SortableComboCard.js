@@ -39,32 +39,29 @@ export default function SortableComboCard({
       ref={setNodeRef}
       style={style}
       aria-label={`${combo.name}, position ${index + 1} of ${total}`}
-      className={`flex items-center gap-1 rounded-2xl border p-1 transition-colors ${
-        isDragging ? "border-coral shadow-card" : "border-transparent"
-      }`}
+      className={`relative rounded-2xl ${isDragging ? "shadow-card" : ""}`}
     >
+      <ComboListCard
+        combo={combo}
+        strategy={strategy}
+        strategyLabel={strategyLabel}
+        strategyVariant={strategyVariant}
+        usageToday={usageToday}
+        selected={selected}
+        onSelect={onSelect}
+        className="ps-11"
+      />
       <button
         type="button"
         {...attributes}
         {...listeners}
         aria-label={`Reorder ${combo.name}`}
-        className="inline-flex size-10 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-muted transition-colors hover:text-text focus-visible:shadow-focus focus-visible:outline-none active:cursor-grabbing"
+        className="absolute start-1.5 top-1/2 inline-flex size-8 -translate-y-1/2 cursor-grab touch-none items-center justify-center rounded-lg text-muted transition-colors hover:text-text focus-visible:shadow-focus focus-visible:outline-none active:cursor-grabbing"
       >
-        <span className="material-symbols-outlined text-base" aria-hidden="true">
+        <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
           drag_indicator
         </span>
       </button>
-      <div className="min-w-0 flex-1">
-        <ComboListCard
-          combo={combo}
-          strategy={strategy}
-          strategyLabel={strategyLabel}
-          strategyVariant={strategyVariant}
-          usageToday={usageToday}
-          selected={selected}
-          onSelect={onSelect}
-        />
-      </div>
     </li>
   );
 }

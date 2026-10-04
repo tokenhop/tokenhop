@@ -26,6 +26,7 @@ export default function ComboListCard({
   usageToday = 0,
   selected = false,
   onSelect,
+  className = "",
 }) {
   const models = combo?.models || [];
   const tiles = models.slice(0, 3).map((m, i) => ({ key: `${m}-${i}`, short: m }));
@@ -35,7 +36,7 @@ export default function ComboListCard({
       onClick={() => onSelect?.(combo.id)}
       aria-pressed={selected}
       aria-label={`${combo.name} combo, ${strategyLabel || strategy}, ${models.length} models`}
-      className={`flex w-full flex-col gap-2 rounded-2xl border bg-panel p-4 text-start transition-colors focus-visible:shadow-focus focus-visible:outline-none ${
+      className={`flex w-full flex-col gap-2 rounded-2xl border bg-panel p-4 text-start transition-colors focus-visible:shadow-focus focus-visible:outline-none ${className} ${
         selected
           ? "border-coral shadow-[0_0_0_3px_var(--signal-coral-bg)]"
           : "border-line hover:border-subtle"
@@ -88,6 +89,7 @@ ComboListCard.propTypes = {
   strategyLabel: PropTypes.string,
   strategyVariant: PropTypes.oneOf(["brand", "info", "live", "warn"]),
   usageToday: PropTypes.number,
+  className: PropTypes.string,
   selected: PropTypes.bool,
   onSelect: PropTypes.func,
 };
