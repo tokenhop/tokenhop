@@ -214,6 +214,40 @@ export const TABLES = {
   },
 };
 
+// YAN-363: the final hashed apiKeys shape, INERT here. Nothing reads it at
+// runtime yet — the (later) switch-on migration rebuilds apiKeys into this
+// definition and stamps _meta.apiKeysHashedVersion/apiKeysHashKid; until then
+// TABLES.apiKeys above stays the legacy raw-key table, byte-identical.
+// Hash-only (no raw `key`, no budgetId); user/workspace keys cascade,
+// creator provenance SET NULL only, and usage attribution lives in
+// usageHistory with no FK back to apiKeys (rows are tombstoned, not deleted).
+export const HASHED_API_KEYS_TABLE = {
+  columns: {
+    id: "TEXT PRIMARY KEY",
+    workspaceId: "TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE",
+    userId: "TEXT REFERENCES users(id) ON DELETE CASCADE",
+    createdByUserId: "TEXT REFERENCES users(id) ON DELETE SET NULL",
+    keyHash: "TEXT UNIQUE NOT NULL",
+    hashKid: "TEXT NOT NULL",
+    prefix: "TEXT NOT NULL",
+    name: "TEXT",
+    machineId: "TEXT",
+    legacy: "INTEGER NOT NULL DEFAULT 0",
+    isActive: "INTEGER NOT NULL DEFAULT 1",
+    revokedAt: "TEXT",
+    allowedModels: "TEXT NOT NULL DEFAULT '[]'",
+    allowedCombos: "TEXT NOT NULL DEFAULT '[]'",
+    expiresAt: "TEXT",
+    lastUsedAt: "TEXT",
+    createdAt: "TEXT NOT NULL",
+  },
+  indexes: [
+    "CREATE INDEX IF NOT EXISTS idx_ak_ws ON apiKeys(workspaceId)",
+    "CREATE INDEX IF NOT EXISTS idx_ak_ws_user ON apiKeys(workspaceId, userId)",
+    "CREATE INDEX IF NOT EXISTS idx_ak_kid ON apiKeys(hashKid)",
+  ],
+};
+
 export function buildCreateTableSql(name, def) {
   const cols = Object.entries(def.columns).map(([k, v]) => `${k} ${v}`);
   if (def.primaryKey) cols.push(def.primaryKey);

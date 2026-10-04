@@ -1,12 +1,11 @@
-import { extractClientApiKey } from "@/lib/auth/clientApiKey";
+import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
 import { handleChat } from "@/sse/handlers/chat.js";
 import {
   clearAccountError,
   getProviderCredentials,
-  isValidApiKey,
   markAccountUnavailable,
 } from "@/sse/services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import { getModelInfo } from "@/sse/services/model.js";
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { initTranslators } from "open-sse/translator/index.js";
@@ -55,6 +54,9 @@ export async function POST(request, { params }) {
   await ensureInitialized();
 
   try {
+    const auth = await resolveGatewayAuth(request);
+    if (auth instanceof Response) return auth;
+    const gateway = auth.principal;
     const { path } = await params;
     // path = ["provider", "model:action"] or ["model:action"]. Model ids may
     // themselves contain ":" (e.g. "ollama/llama3:8b"), so the action is the
@@ -86,8 +88,6 @@ export async function POST(request, { params }) {
     }
 
     if (actionName === "countTokens") {
-      const authError = await validateGeminiNativeClientKey(request);
-      if (authError) return authError;
       return Response.json(
         { totalTokens: countGeminiTextTokens(body) },
         { headers: { "Access-Control-Allow-Origin": "*" } },
@@ -95,7 +95,7 @@ export async function POST(request, { params }) {
     }
 
     if (isGeminiNativeTtsRequest(model, body)) {
-      return await forwardGeminiNativeRequest(request, body, model, action);
+      return await forwardGeminiNativeRequest(request, body, model, action, gateway);
     }
 
     // Streaming is determined by URL action suffix:
@@ -103,17 +103,34 @@ export async function POST(request, { params }) {
     //   :generateContent       => stream: false (plain JSON)
     const stream = action === ":streamGenerateContent";
 
+    // Canonical scope check before any upstream work; handleChat re-enforces
+    // combos/aliases downstream with the same principal.
+    const translatedInfo = await getModelInfo(model, gateway ? { principal: gateway } : {});
+    if (translatedInfo?.provider) {
+      const denied = authorizeGatewayTarget(gateway, {
+        modelId: `${translatedInfo.provider}/${translatedInfo.model}`,
+      });
+      if (denied) return denied;
+    }
+
     // Convert Gemini request format to OpenAI/internal format
     const convertedBody = convertGeminiToInternal(body, model, stream);
 
-    // Create new request with converted body
+    // Preserve incoming identity/carriers verbatim (headers + ?key= URL) and
+    // thread the already-authorized principal so handleChat never re-derives
+    // or synthesizes a different authority. Body is forwarded as text: the
+    // original request was already consumed once above.
     const newRequest = new Request(request.url, {
       method: "POST",
       headers: request.headers,
       body: JSON.stringify(convertedBody),
     });
 
-    const response = await handleChat(newRequest);
+    const response = await handleChat(
+      newRequest,
+      null,
+      gateway ? { principal: gateway } : undefined,
+    );
 
     if (stream) {
       // Transform OpenAI SSE => Gemini SSE on the fly.
@@ -206,23 +223,6 @@ function buildGeminiNativeUrl(requestUrl, model, action) {
   return upstreamUrl.toString();
 }
 
-async function validateGeminiNativeClientKey(request) {
-  const settings = await getSettings();
-  if (!settings.requireApiKey) return null;
-
-  const apiKey = extractClientApiKey(request);
-  if (!apiKey) {
-    return Response.json({ error: { message: "Missing API key" } }, { status: 401 });
-  }
-
-  const valid = await isValidApiKey(apiKey);
-  if (!valid) {
-    return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
-  }
-
-  return null;
-}
-
 function buildGeminiNativeAuthHeaders(credentials) {
   if (credentials?.apiKey) return { "x-goog-api-key": credentials.apiKey };
   if (credentials?.accessToken) return { Authorization: `Bearer ${credentials.accessToken}` };
@@ -264,21 +264,26 @@ function getSafeGeminiNativeErrorText(error) {
   return `${message} (${code})`;
 }
 
-async function forwardGeminiNativeRequest(request, body, model, action) {
-  const authError = await validateGeminiNativeClientKey(request);
-  if (authError) return authError;
-
+async function forwardGeminiNativeRequest(request, body, model, action, gateway) {
   const modelId = normalizeGeminiNativeModel(model);
   if (!GEMINI_NATIVE_MODEL_PATTERN.test(modelId)) {
     return Response.json({ error: { message: "Invalid model" } }, { status: 400 });
   }
+  const denied = authorizeGatewayTarget(gateway, { modelId: `gemini/${modelId}` });
+  if (denied) return denied;
+  const gatewayCreds = gateway ? { principal: gateway } : {};
   const excludeConnectionIds = new Set();
   const bodyText = JSON.stringify(body);
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials("gemini", excludeConnectionIds, modelId);
+    const credentials = await getProviderCredentials(
+      "gemini",
+      excludeConnectionIds,
+      modelId,
+      gatewayCreds,
+    );
     if (!credentials || credentials.allRateLimited) {
       console.log(
         `[GEMINI_NATIVE] exhausted model=${modelId} status=${lastStatus || Number(credentials?.lastErrorCode) || 503} error=${lastError || credentials?.lastError || "No active credentials for provider: gemini"}`,

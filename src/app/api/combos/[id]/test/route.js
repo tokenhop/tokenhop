@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 // POST /api/combos/[id]/test - Dry-run probe through the real combo pipeline.
 // Auth: same dashboard guard as every /api/combos/* route (proxy-level).
 // Rate limit: 1 probe per combo per 10s. Timeout: 60s server-side.
-export async function POST(_request, { params }) {
+export async function POST(request, { params }) {
   try {
     const { id } = await params;
     if (typeof id !== "string" || id.length === 0 || id.length > 128) {
@@ -39,6 +39,10 @@ export async function POST(_request, { params }) {
     // Timeout returns 504 to the client; the probe itself is not aborted
     // (no signal threads into executors), so it may finish in the background.
     // Timer is cleared on settle so it never holds the event loop.
+    // YAN-363: the probe derives its gateway principal from this management
+    // request (session/CLI → live user; else single-admin owner) — hashed
+    // storage never sees a principal-less probe, and legacy keeps the
+    // in-process shape.
     let timer;
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(() => {
@@ -47,8 +51,8 @@ export async function POST(_request, { params }) {
         reject(error);
       }, PROBE_TIMEOUT_MS);
     });
-    const result = await Promise.race([runComboProbe({ comboId: id }), timeout]).finally(() =>
-      clearTimeout(timer),
+    const result = await Promise.race([runComboProbe({ comboId: id, request }), timeout]).finally(
+      () => clearTimeout(timer),
     );
 
     return NextResponse.json({

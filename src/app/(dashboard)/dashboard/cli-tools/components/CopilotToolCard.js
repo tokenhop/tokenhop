@@ -45,11 +45,16 @@ export default function CopilotToolCard({
   tailscaleEnabled = false,
   tailscaleUrl = "",
   onStatusUpdate,
+  hashedContext = false,
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "copilot" });
   const platform = useManualPlatform();
   const { status } = card;
   const selectedModelsRef = useRef([]);
+  // YAN-363: this route reports storage/credentialConfigured directly; the
+  // shared context only breaks ties. Hashed: pasted key or omission — the
+  // server preserves the disk credential for an unchanged destination.
+  const hashed = status?.storage === "hashed" || hashedContext;
 
   const defaults = useMemo(() => ({ models: [], endpoint: "", apiKeyId: "" }), []);
   // The host's chatLanguageModels.json fills values the user hasn't saved yet.
@@ -102,7 +107,7 @@ export default function CopilotToolCard({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed }),
         models: nextModels,
       }),
     }).catch(() => {});
@@ -117,7 +122,7 @@ export default function CopilotToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed }),
           models,
         }),
       });
@@ -165,7 +170,7 @@ export default function CopilotToolCard({
     toManualConfigs(
       buildCopilotConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed }),
         models,
         platform,
       }),
@@ -207,7 +212,14 @@ export default function CopilotToolCard({
             onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
+            hashed={hashed}
+            existingConfigured={Boolean(status?.credentialConfigured)}
           />
+          {hashed && !setup.selectedApiKey?.trim() && (
+            <span className="text-[11px] text-subtle">
+              Manual configuration needs a pasted key — a stored one can't be shown.
+            </span>
+          )}
         </SetupRow>
         <SetupRow label="Models">
           <div className="flex flex-col gap-1.5">

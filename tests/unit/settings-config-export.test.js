@@ -119,6 +119,24 @@ describe("YAN-313 config export/import routes", () => {
     expect(oversized.status).toBe(413);
   });
 
+  it("never exports the MITM internal verifier and rejects it on import (YAN-363)", async () => {
+    const { updateSettings } = await import("@/lib/localDb");
+    await updateSettings({ mitmInternalVerifier: "a".repeat(64) });
+
+    const doc = await (await exportConfig()).json();
+    expect(doc.settings).not.toHaveProperty("mitmInternalVerifier");
+
+    const smuggled = await importConfig(
+      { ...doc, settings: { ...doc.settings, mitmInternalVerifier: "b".repeat(64) } },
+      { mode: "preview" },
+    );
+    expect(smuggled.status).toBe(400);
+    expect((await smuggled.json()).errors.join("\n")).toContain("mitmInternalVerifier");
+
+    expect((await readStored()).mitmInternalVerifier).toBe("a".repeat(64));
+    await updateSettings({ mitmInternalVerifier: null });
+  });
+
   it("rejects combo cycles the same way the Combos page does", async () => {
     const doc = await (await exportConfig()).json();
     const cycling = await importConfig(

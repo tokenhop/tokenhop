@@ -288,29 +288,94 @@ async function updateConnection(id, data) {
 // ============================================================================
 
 /**
- * Get all API keys
- * @returns {Promise<Object>} { success, data: { keys } }
+ * Encode an optional workspaceId query for hashed-storage management routes.
+ * No workspaceId → path unchanged (pristine legacy request).
  */
-async function getApiKeys() {
-  return makeRequest("GET", "/api/keys");
+function withWorkspace(path, workspaceId) {
+  return workspaceId === undefined
+    ? path
+    : `${path}?workspaceId=${encodeURIComponent(workspaceId)}`;
 }
 
 /**
- * Create new API key
- * @param {string} name - Key name
- * @returns {Promise<Object>} { success, data: { key, name, id, machineId } }
+ * Get the authenticated key-management context: storage mode, workspace and
+ * capabilities. Existing CLI token transport (makeRequest) reused as-is.
+ *
+ * Context 401 ordinarily means the ordinary off-legacy install with no
+ * principal; there and only there the menu may keep legacy behavior — but
+ * only after the legacy collection itself confirms the pristine envelope
+ * (no `storage` field, `keys[]` each carrying raw `key`).
+ * @returns {Promise<Object>} { success, data: context|{storage:'legacy'} }
  */
-async function createApiKey(name) {
-  return makeRequest("POST", "/api/keys", { name });
+async function getApiKeysContext() {
+  const result = await makeRequest("GET", "/api/keys/context");
+  if (!result.success) {
+    // Ordinary users-off legacy installs have no principal for context.
+    // Only a confirmed legacy collection permits this narrow fallback.
+    if (result.statusCode !== 401) return result;
+    const legacy = await getApiKeys();
+    if (
+      legacy.success &&
+      legacy.data.storage === undefined &&
+      Array.isArray(legacy.data.keys) &&
+      legacy.data.keys.every((key) => typeof key.key === "string")
+    ) {
+      return { success: true, data: { storage: "legacy" } };
+    }
+    return result;
+  }
+  const ctx = result.data;
+  if (
+    !["legacy", "hashed"].includes(ctx.storage) ||
+    typeof ctx.workspaceId !== "string" ||
+    !ctx.workspaceId.trim() ||
+    [ctx.canCreate, ctx.canManage, ctx.canCreateService].some((value) => typeof value !== "boolean")
+  ) {
+    return { success: false, error: "Invalid key context" };
+  }
+  return result;
 }
 
 /**
- * Delete API key
- * @param {string} id - Key ID
- * @returns {Promise<Object>} { success, data: { success } }
+ * Get all API keys — pristine legacy shape `getApiKeys()`.
+ * Hashed storage threads the context workspaceId: `getApiKeys(workspaceId)`.
  */
-async function deleteApiKey(id) {
-  return makeRequest("DELETE", `/api/keys/${id}`);
+async function getApiKeys(workspaceId) {
+  return makeRequest("GET", withWorkspace("/api/keys", workspaceId));
+}
+
+async function getApiKeyById(id, workspaceId) {
+  if (!id) return { success: false, error: "Key ID is required" };
+  return makeRequest("GET", withWorkspace(`/api/keys/${id}`, workspaceId));
+}
+
+/**
+ * Create new API key — pristine legacy shape `createApiKey(name)`.
+ * Hashed storage: `createApiKey(name, { workspaceId, type })`; only `type`
+ * and the trimmed name are sent.
+ */
+async function createApiKey(name, options) {
+  if (options === undefined) return makeRequest("POST", "/api/keys", { name });
+  const { workspaceId, type = "user" } = options;
+  if (typeof workspaceId !== "string" || !workspaceId.trim()) {
+    return { success: false, error: "Workspace ID is required" };
+  }
+  if (type !== "user" && type !== "service") {
+    return { success: false, error: "Invalid key type" };
+  }
+  if (typeof name !== "string" || !name.trim()) {
+    return { success: false, error: "Invalid key name" };
+  }
+  return makeRequest("POST", withWorkspace("/api/keys", workspaceId), { type, name: name.trim() });
+}
+
+/**
+ * Delete API key — pristine legacy shape `deleteApiKey(id)`.
+ * Second arg workspaceId threads the hashed query param with no body.
+ */
+async function deleteApiKey(id, workspaceId) {
+  if (!id) return { success: false, error: "Key ID is required" };
+  return makeRequest("DELETE", withWorkspace(`/api/keys/${id}`, workspaceId));
 }
 
 // ============================================================================
@@ -531,7 +596,9 @@ module.exports = {
   createApiKeyProvider,
 
   // API Keys
+  getApiKeysContext,
   getApiKeys,
+  getApiKeyById,
   createApiKey,
   deleteApiKey,
 

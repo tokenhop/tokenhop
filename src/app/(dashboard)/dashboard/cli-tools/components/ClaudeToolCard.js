@@ -171,6 +171,9 @@ export default function ClaudeToolCard({
   // A saved endpoint follows its option's current URL (YAN-647).
   const savedEndpoint = savedEndpointUrl(values, endpointContext, savedPresets);
   const { models: modelMappings, autoCompactWindow, oneMContext, exaMcpEnabled } = values;
+  // YAN-363 hashed storage: the GET is sanitized (no ANTHROPIC_AUTH_TOKEN),
+  // so reuse means omitting the key; only a pasted key is ever written.
+  const hashed = claudeStatus?.storage === "hashed";
   const diskToken = claudeStatus?.installed
     ? claudeStatus.settings?.env?.ANTHROPIC_AUTH_TOKEN || ""
     : "";
@@ -265,7 +268,12 @@ export default function ClaudeToolCard({
     setApplying(true);
     setMessage(null);
     try {
-      const env = buildEnv(resolveApiKey(selectedApiKey, apiKeys, cloudEnabled));
+      const env = buildEnv(resolveApiKey(selectedApiKey, apiKeys, cloudEnabled, { hashed }));
+      if (hashed && env.ANTHROPIC_AUTH_TOKEN === undefined) {
+        // Omitted slot: the server reuses the stored disk credential for the
+        // same destination, and 400s when it can't — no invented fallback.
+        delete env.ANTHROPIC_AUTH_TOKEN;
+      }
       const res = await fetch("/api/cli-tools/claude-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -311,11 +319,15 @@ export default function ClaudeToolCard({
   const getManualConfigs = () =>
     toManualConfigs(
       buildClaudeConfig({
-        env: buildEnv(manualApiKey(selectedApiKey, apiKeys, cloudEnabled)),
+        env: buildEnv(manualApiKey(selectedApiKey, apiKeys, cloudEnabled, { hashed })),
         exaMcpEnabled,
         autoCompactWindow,
       }),
     );
+  // On hashed storage Apply may reuse the stored key the browser cannot read,
+  // but the manual dialog can only print an explicitly pasted key — never a
+  // prefix or default pretending to be one.
+  const manualKeyReady = !hashed || Boolean(selectedApiKey?.trim());
 
   const derived = deriveToolStatus(tool, claudeStatus);
   const isCombo = (val) => {
@@ -379,7 +391,14 @@ export default function ClaudeToolCard({
             onChange={handleApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
+            hashed={hashed}
+            existingConfigured={Boolean(claudeStatus?.credentialConfigured)}
           />
+          {hashed && !manualKeyReady && (
+            <span className="text-[11px] text-subtle">
+              Manual configuration needs a pasted key — a stored one can't be shown.
+            </span>
+          )}
         </div>
 
         <div className="flex flex-col gap-2">

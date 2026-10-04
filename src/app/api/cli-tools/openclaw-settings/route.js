@@ -1,6 +1,12 @@
 "use server";
 
 import { NextResponse } from "next/server";
+import {
+  boundaryError,
+  configCopy,
+  hashedStorageMode,
+  resolveCredential,
+} from "@/lib/cliToolConfigs/credentialBoundary";
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
@@ -92,6 +98,12 @@ const readAgentModel = async (agentDir) => {
 
 // GET - Check openclaw CLI and read current settings
 export async function GET() {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const isInstalled = await checkOpenClawInstalled();
 
@@ -104,6 +116,36 @@ export async function GET() {
     }
 
     const settings = await readSettings();
+    if (hashed) {
+      // Targeted sanitization: only our provider creds in openclaw.json are
+      // withheld; unrelated providers and per-agent files pass through as-is.
+      // Iterate every known client slot (current + legacy): matching entries
+      // each lose their credential in the returned copy only.
+      const copy = configCopy(settings);
+      const providers = copy?.models?.providers;
+      let configured = false;
+      for (const key of ALL_CLIENT_KEYS) {
+        const slot = providers?.[key];
+        if (typeof slot?.apiKey === "string" && slot.apiKey.length > 0) configured = true;
+        if (slot) delete slot.apiKey;
+      }
+      const agentList = settings?.agents?.list || [];
+      const enrichedAgents = await Promise.all(
+        agentList.map(async (agent) => {
+          const agentModel = agent.agentDir ? await readAgentModel(agent.agentDir) : null;
+          return { ...agent, model: resolveAgentModel(agent.model), currentModel: agentModel };
+        }),
+      );
+      return NextResponse.json({
+        installed: true,
+        settings: copy,
+        agents: enrichedAgents,
+        hasTokenhop: hasTokenhopConfig(settings),
+        credentialConfigured: configured,
+        storage: "hashed",
+        settingsPath: getOpenClawSettingsPath(),
+      });
+    }
 
     // Enrich agents list with current per-agent model from models.json.
     // Coerce agent.model to its string id when OpenClaw stores it as
@@ -124,6 +166,7 @@ export async function GET() {
       settingsPath: getOpenClawSettingsPath(),
     });
   } catch (error) {
+    if (hashed) return boundaryError(error);
     console.log("Error checking openclaw settings:", error);
     return NextResponse.json({ error: "Failed to check openclaw settings" }, { status: 500 });
   }
@@ -143,6 +186,12 @@ const writeAgentModels = async ({ file, value }) => {
 
 // POST - Update our provider settings (merge with existing settings)
 export async function POST(request) {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     // agentModels: { [agentId]: modelId } for per-agent override
     const { baseUrl, apiKey, model, agentModels = {} } = await request.json();
@@ -154,8 +203,6 @@ export async function POST(request) {
     const openclawDir = getOpenClawDir();
     const settingsPath = getOpenClawSettingsPath();
 
-    await fs.mkdir(openclawDir, { recursive: true });
-
     const settings = (await readJsonConfig(settingsPath)) ?? {};
 
     if (!settings.agents) settings.agents = {};
@@ -165,9 +212,25 @@ export async function POST(request) {
     if (!settings.models) settings.models = {};
     if (!settings.models.providers) settings.models.providers = {};
 
+    // Hashed storage: reuse the stored key only for the SAME destination; a
+    // changed or missing one is an actionable 400 before a file is touched —
+    // never the default-key fallback.
+    let effectiveApiKey = apiKey || ACTIVE.defaultApiKey;
+    if (hashed) {
+      const owned = ALL_CLIENT_KEYS.map((key) => settings.models.providers?.[key]).filter(
+        (entry) => typeof entry?.apiKey === "string" && entry.apiKey,
+      );
+      effectiveApiKey = resolveCredential({
+        provided: apiKey,
+        baseUrl,
+        existing: owned.map((entry) => ({ key: entry.apiKey, url: entry.baseUrl })),
+      });
+    }
+    await fs.mkdir(openclawDir, { recursive: true });
+
     const [main, ...agentFiles] = buildOpenClawConfig({
       baseUrl,
-      apiKey: apiKey || ACTIVE.defaultApiKey,
+      apiKey: effectiveApiKey,
       model,
       agents: settings.agents.list ?? [],
       agentModels,
@@ -234,6 +297,7 @@ export async function POST(request) {
       settingsPath,
     });
   } catch (error) {
+    if (hashed) return boundaryError(error);
     const configRes = configErrorResponse(error);
     if (configRes) return configRes;
     console.log("Error updating openclaw settings:", error);

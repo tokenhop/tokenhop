@@ -16,6 +16,28 @@ import { ACTIVE } from "@/shared/brand";
 const DEFAULT_DATABASE_FILE = `~/.${ACTIVE.dataDirName}/db/data.sqlite`;
 
 /**
+ * Read-only envelope facts of a picked backup file: the actual formatVersion /
+ * schemaVersion / apiKeyStorage the file carries, never a guessed schema.
+ * v2 (`formatVersion: 2`) is the full-instance hashed snapshot; anything else
+ * keeps the legacy v1 shape.
+ */
+export const readBackupEnvelope = (payload) => {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const version = Number.isInteger(payload.formatVersion) ? payload.formatVersion : null;
+  return {
+    formatVersion: version,
+    schemaVersion: Number.isInteger(payload.schemaVersion) ? payload.schemaVersion : null,
+    hashed: version === 2 && payload.apiKeyStorage?.storage === "hashed",
+    apiKeyStorageVersion:
+      version === 2 && Number.isInteger(payload.apiKeyStorage?.version)
+        ? payload.apiKeyStorage.version
+        : null,
+    hashKid:
+      typeof payload.apiKeyStorage?.hashKid === "string" ? payload.apiKeyStorage.hashKid : null,
+  };
+};
+
+/**
  * Data & backup section: read-only DB location and password-gated
  * download/import backup actions (parity with the legacy profile page),
  * plus the honest cloud-sync readout (the sync worker is not in this repo).
@@ -24,6 +46,9 @@ export default function DataSection({ onSettingsChange }) {
   const [status, setStatus] = useState({ type: "", message: "" });
   const [loading, setLoading] = useState(false);
   const [auth, setAuth] = useState({ open: false, mode: "", password: "" });
+  // Envelope facts of the picked backup (read-only; never a secret). Shown
+  // in the restore warning; cleared whenever the pick is used or dismissed.
+  const [pendingEnvelope, setPendingEnvelope] = useState(null);
   const pendingFileRef = useRef(null);
   const importFileRef = useRef(null);
   const [databaseFile, setDatabaseFile] = useState(DEFAULT_DATABASE_FILE);
@@ -71,13 +96,20 @@ export default function DataSection({ onSettingsChange }) {
     }
   };
 
-  const handleImportPick = (event) => {
+  const handleImportPick = async (event) => {
     const file = event.target.files?.[0];
     if (importFileRef.current) importFileRef.current.value = "";
     if (!file) return;
     pendingFileRef.current = file;
     setStatus({ type: "", message: "" });
-    setAuth({ open: true, mode: "import", password: "" });
+    // Envelope-only preview for the restore warning; a file that won't parse
+    // still opens the dialog so the error can surface on confirm.
+    try {
+      setPendingEnvelope(readBackupEnvelope(JSON.parse(await file.text())));
+    } catch {
+      setPendingEnvelope(null);
+    }
+    setAuth({ open: true, mode: "restore", password: "" });
   };
 
   const runImport = async (password) => {
@@ -95,11 +127,12 @@ export default function DataSection({ onSettingsChange }) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to import database");
       onSettingsChange?.();
-      setStatus({ type: "ok", message: "Database imported successfully" });
+      setStatus({ type: "ok", message: "Database imported successfully. Restart to apply." });
     } catch (err) {
       setStatus({ type: "err", message: err.message || "Invalid backup file" });
     } finally {
       pendingFileRef.current = null;
+      setPendingEnvelope(null);
       setLoading(false);
     }
   };
@@ -108,7 +141,7 @@ export default function DataSection({ onSettingsChange }) {
     const { mode, password } = auth;
     setAuth({ open: false, mode: "", password: "" });
     if (mode === "export") await handleExport(password);
-    else if (mode === "import") await runImport(password);
+    else if (mode === "import" || mode === "restore") await runImport(password);
   };
 
   return (
@@ -132,7 +165,10 @@ export default function DataSection({ onSettingsChange }) {
         <div className="py-4 space-y-3">
           <div>
             <p className="text-[15px] font-semibold text-text">Backup</p>
-            <p className="mt-0.5 text-[13px] text-muted">Both ask for your password.</p>
+            <p className="mt-0.5 text-[13px] text-muted">
+              Both ask for your password. A full-instance backup holds identities and provider
+              secrets — keep the file private.
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -187,7 +223,7 @@ export default function DataSection({ onSettingsChange }) {
       <Modal
         isOpen={auth.open}
         onClose={() => setAuth({ open: false, mode: "", password: "" })}
-        title="Confirm password"
+        title={auth.mode === "restore" ? "Replace database with this backup?" : "Confirm password"}
         size="sm"
         footer={
           <>
@@ -199,14 +235,62 @@ export default function DataSection({ onSettingsChange }) {
               Cancel
             </Button>
             <Button onClick={handleAuthConfirm} loading={loading} disabled={!auth.password}>
-              Confirm
+              {auth.mode === "restore" ? "Replace" : "Confirm"}
             </Button>
           </>
         }
       >
+        {auth.mode === "restore" && (
+          <div className="mb-3 space-y-2" role="alert">
+            <Callout variant="warn" title="Import replaces this instance's data">
+              <p>
+                Everything in the current database — settings, connections, keys, combos — is
+                replaced by the backup's contents. Download a fresh backup first if you might need
+                the current state.
+              </p>
+            </Callout>
+            {pendingEnvelope?.hashed && (
+              <Callout variant="info" title="Full-instance backup (format v2)">
+                <ul className="list-disc space-y-1 ps-5">
+                  <li>
+                    Contains user identities and password hashes, key references (no raw keys) and
+                    provider secrets. Protect this file.
+                  </li>
+                  <li>
+                    The master key is <strong>not</strong> in the file. It must already be
+                    provisioned on this machine — the {ACTIVE.dataDirName} master-key file or the
+                    operator's env — before restoring. It is never entered in this page.
+                  </li>
+                  <li>
+                    A missing or mismatched master key fails the pre-restore check with nothing
+                    changed; other failures mid-restore are not.
+                  </li>
+                </ul>
+              </Callout>
+            )}
+            {pendingEnvelope && (
+              <p className="text-[13px] text-muted">
+                Backup file:{" "}
+                {pendingEnvelope.formatVersion
+                  ? `format v${pendingEnvelope.formatVersion}`
+                  : "legacy format"}
+                {pendingEnvelope.schemaVersion != null &&
+                  ` · schema ${pendingEnvelope.schemaVersion}`}
+                {pendingEnvelope.hashed &&
+                  ` · key storage v${pendingEnvelope.apiKeyStorageVersion}`}{" "}
+                · restart to apply.
+              </p>
+            )}
+            {!pendingEnvelope && (
+              <p className="text-[13px] text-warn">
+                File could not be previewed; only its contents will decide.
+              </p>
+            )}
+          </div>
+        )}
         <p className="mb-3 text-sm text-muted">
-          Enter your current password to {auth.mode === "export" ? "export" : "import"} the
-          database.
+          Enter your current password to{" "}
+          {auth.mode === "export" ? "export" : "replace the database with this backup"}.
         </p>
         <Input
           type="password"

@@ -8,6 +8,9 @@ import path from "path";
 import os from "os";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
 import { buildOpenCodeConfig } from "@/lib/cliToolConfigs/opencode";
+import { withV1 } from "@/lib/cliToolConfigs/shared";
+import { readApiKeyStorageState } from "@/lib/db/apiKeyState";
+import { getAdapter } from "@/lib/db/driver";
 import {
   ALL_CLIENT_KEYS,
   CLIENT_KEY,
@@ -62,8 +65,55 @@ const readConfig = async () => {
 
 const hasTokenhopConfig = (config) => !!findClientEntry(config?.provider);
 
+// YAN-363: hashed durable mode gates credential handling on this route.
+// Legacy storage keeps today's exact behavior; an invalid durable marker
+// fails closed as 503, never silently legacy.
+async function hashedStorageMode() {
+  const state = readApiKeyStorageState(await getAdapter());
+  return state.storage === "hashed";
+}
+
+// Compare the URL the builder will persist; URL resolves dot segments and
+// normalizes host casing/default ports without equating distinct hostnames.
+function destinationIdentity(raw, applyV1 = false) {
+  const url = new URL(raw);
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error("Invalid credential destination");
+  }
+  const pathname = url.pathname.replace(/\/$/, "");
+  url.pathname = applyV1 ? withV1(pathname) : pathname;
+  return `${url.origin}${url.pathname.replace(/\/$/, "")}`;
+}
+
+// Targeted sanitization of OUR provider entry only; unrelated external
+// provider entries pass through untouched.
+function sanitizedConfigCopy(config) {
+  const copy = config ? JSON.parse(JSON.stringify(config)) : null;
+  for (const key of ALL_CLIENT_KEYS) {
+    if (copy?.provider?.[key]?.options) delete copy.provider[key].options.apiKey;
+  }
+  return copy;
+}
+
+function credentialConfiguredOf(config) {
+  const entry = findClientEntry(config?.provider);
+  return typeof entry?.options?.apiKey === "string" && entry.options.apiKey.length > 0;
+}
+
 // GET - Check opencode CLI and read current settings
 export async function GET() {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const isInstalled = await checkOpenCodeInstalled();
 
@@ -76,6 +126,26 @@ export async function GET() {
     }
 
     const config = await readConfig();
+
+    if (hashed) {
+      const copy = sanitizedConfigCopy(config);
+      const providerConfig = findClientEntry(copy?.provider);
+      const modelMap = providerConfig?.models || {};
+      return NextResponse.json({
+        installed: true,
+        config: copy,
+        hasTokenhop: hasTokenhopConfig(config),
+        credentialConfigured: credentialConfiguredOf(config),
+        storage: "hashed",
+        configPath: getConfigPath(),
+        opencode: {
+          models: Object.keys(modelMap),
+          activeModel: splitModelRef(copy?.model)?.model ?? null,
+          baseURL: providerConfig?.options?.baseURL || null,
+        },
+      });
+    }
+
     const providerConfig = findClientEntry(config?.provider);
     const modelMap = providerConfig?.models || {};
 
@@ -91,15 +161,22 @@ export async function GET() {
       },
     });
   } catch (error) {
-    console.log("Error checking opencode settings:", error);
+    console.log("Error checking opencode settings:", hashed ? "Config operation failed" : error);
     return NextResponse.json({ error: "Failed to check opencode settings" }, { status: 500 });
   }
 }
 
 // POST - Apply our provider as openai-compatible provider (multi-model support)
 export async function POST(request) {
+  let hashed = false;
   try {
-    const { baseUrl, apiKey, model, models, activeModel, subagentModel } = await request.json();
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
+  try {
+    const body = await request.json();
+    const { baseUrl, apiKey, model, models, activeModel, subagentModel } = body;
 
     // Accept either `model` (string, legacy) or `models` (array of strings)
     const modelsArray = Array.isArray(models)
@@ -123,14 +200,39 @@ export async function POST(request) {
     // Read existing config or start fresh
     const config = (await readJsonConfig(configPath)) ?? {};
 
+    let destination = baseUrl;
+    let effectiveApiKey = typeof apiKey === "string" && apiKey ? apiKey : null;
+    if (hashed) {
+      const existingEntry = findClientEntry(config?.provider);
+      const existing =
+        typeof existingEntry?.options?.apiKey === "string" ? existingEntry.options.apiKey : null;
+      try {
+        destination = destinationIdentity(baseUrl, true);
+        if (!effectiveApiKey) {
+          if (!existing || destinationIdentity(existingEntry?.options?.baseURL) !== destination) {
+            return NextResponse.json(
+              { error: "Provide apiKey for this destination" },
+              { status: 400 },
+            );
+          }
+          effectiveApiKey = existing;
+        }
+      } catch {
+        return NextResponse.json({ error: "Invalid baseUrl" }, { status: 400 });
+      }
+    }
+
     const built = buildOpenCodeConfig({
-      baseUrl,
-      apiKey,
+      baseUrl: destination,
+      apiKey: effectiveApiKey ?? "",
       models: modelsArray,
       activeModel,
       subagentModel,
     })[0].value;
     const builtProvider = built.provider[CLIENT_KEY];
+    // The builder's default key is legacy-only. In hashed mode with no
+    // explicit/stored credential, persist no secret rather than a brand key.
+    if (hashed && !effectiveApiKey) delete builtProvider.options.apiKey;
 
     // Ensure provider object
     if (!config.provider) config.provider = {};
@@ -194,6 +296,10 @@ export async function POST(request) {
       configPath,
     });
   } catch (error) {
+    if (hashed) {
+      console.log("Error applying opencode settings");
+      return NextResponse.json({ error: "Failed to apply settings" }, { status: 500 });
+    }
     const configRes = configErrorResponse(error);
     if (configRes) return configRes;
     console.log("Error applying opencode settings:", error);

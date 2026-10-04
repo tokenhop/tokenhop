@@ -1,4 +1,4 @@
-import { requireClientApiKey } from "@/lib/auth/requireClientApiKey";
+import { resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -75,8 +75,8 @@ export function estimateAnthropicInputTokens(body = {}) {
  * POST /v1/messages/count_tokens - Mock token count response
  */
 export async function POST(request) {
-  const denied = await requireClientApiKey(request);
-  if (denied) return denied;
+  const auth = await resolveGatewayAuth(request);
+  if (auth instanceof Response) return auth;
   let body;
   try {
     body = await request.json();

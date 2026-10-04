@@ -1,6 +1,12 @@
 "use server";
 
 import { NextResponse } from "next/server";
+import {
+  boundaryError,
+  configCopy,
+  hashedStorageMode,
+  resolveCredential,
+} from "@/lib/cliToolConfigs/credentialBoundary";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -209,6 +215,12 @@ async function writeSkipApprovals(skip) {
 }
 
 export async function GET() {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const installed = await checkInstalled();
     if (!installed) {
@@ -248,11 +260,32 @@ export async function GET() {
       )
       .map((m) => ({ name: m.name, url: m.url, transport: m.transport, custom: true }));
 
+    // Hashed storage: targeted sanitization — only our gateway key slot is
+    // withheld from the copy; everything else keeps its exact legacy shape.
+    let sanitizedConfig = config;
+    let credentialConfigured = false;
+    if (hashed) {
+      sanitizedConfig = configCopy(config);
+      credentialConfigured =
+        typeof sanitizedConfig?.inferenceGatewayApiKey === "string" &&
+        sanitizedConfig.inferenceGatewayApiKey.length > 0;
+      if (sanitizedConfig) {
+        delete sanitizedConfig.inferenceGatewayApiKey;
+        // Local bridge entries carry the machine-bound CLI token; it stays on disk.
+        for (const m of sanitizedConfig.managedMcpServers ?? []) {
+          if (m?.headers) {
+            delete m.headers[CLI_TOKEN_HEADER];
+            if (Object.keys(m.headers).length === 0) delete m.headers;
+          }
+        }
+      }
+    }
     return NextResponse.json({
       installed: true,
-      config,
+      config: hashed ? sanitizedConfig : config,
       hasTokenhop,
       configPath,
+      ...(hashed && { credentialConfigured, storage: "hashed" }),
       cowork: {
         appliedId,
         baseUrl,
@@ -293,17 +326,54 @@ export async function GET() {
       localStdioPlugins: LOCAL_STDIO_PLUGINS,
     });
   } catch (error) {
+    if (hashed) return boundaryError(error);
     console.log("Error reading cowork settings:", error);
     return NextResponse.json({ error: "Failed to read cowork settings" }, { status: 500 });
   }
 }
 
 export async function POST(request) {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const { baseUrl, apiKey, models, plugins, localPlugins, customPlugins } = await request.json();
 
-    if (!baseUrl || !apiKey) {
+    // Hashed storage: reuse the stored key only for the SAME destination; a
+    // changed or missing one is an actionable 400 before a file is touched —
+    // legacy still requires the pair, so the check stays outside the branch.
+    let effectiveApiKey = apiKey;
+    if (!hashed && (!baseUrl || !apiKey)) {
       return NextResponse.json({ error: "baseUrl and apiKey are required" }, { status: 400 });
+    }
+    if (hashed) {
+      if (!baseUrl) return NextResponse.json({ error: "baseUrl is required" }, { status: 400 });
+      let existingRecord = null;
+      try {
+        existingRecord = await readJson(
+          path.join(
+            getWriteConfigDir(),
+            `${(await readJson(await getMetaPath()))?.appliedId}.json`,
+          ),
+        );
+      } catch {
+        existingRecord = null;
+      }
+      effectiveApiKey = resolveCredential({
+        provided: apiKey,
+        baseUrl,
+        existing: existingRecord?.inferenceGatewayApiKey
+          ? [
+              {
+                key: existingRecord.inferenceGatewayApiKey,
+                url: existingRecord.inferenceGatewayBaseUrl,
+              },
+            ]
+          : [],
+      });
     }
     const modelsArray = Array.isArray(models)
       ? models.filter((m) => typeof m === "string" && m.trim())
@@ -334,7 +404,7 @@ export async function POST(request) {
     // Same fragments as the manual snippet: [1p deploymentMode, _meta, config, config.json].
     const [, , configFragment, skipFragment] = buildCoworkConfig({
       baseUrl,
-      apiKey,
+      apiKey: effectiveApiKey,
       models: modelsArray,
       managedMcpServers,
       appliedId: meta.appliedId,
@@ -369,6 +439,7 @@ export async function POST(request) {
       localMcp: localMcpResult,
     });
   } catch (error) {
+    if (hashed) return boundaryError(error);
     const res = configErrorResponse(error);
     if (res) return res;
     console.log("Error applying cowork settings:", error);

@@ -25,8 +25,11 @@ const SETTINGS_RESPONSE_HEADERS = {
   "Cache-Control": "no-store",
 };
 
-// Secrets must never be mass-assigned from request body (CWE-915)
-const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
+// Secrets must never be mass-assigned from request body (CWE-915).
+// The MITM internal verifier rides the internal settings lifecycle only —
+// user PATCH can't smuggle it in alongside the password/mitmSudoEncrypted
+// strip above.
+const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted", "mitmInternalVerifier"];
 const VALID_COMBO_NAME = /^[a-zA-Z0-9_.-]+$/;
 const BLOCKED_COMBO_NAMES = new Set(["__proto__", "constructor", "prototype"]);
 

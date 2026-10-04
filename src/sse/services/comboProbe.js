@@ -13,8 +13,9 @@
  *   console request log lines remain visible for debugging.
  */
 
-import { getComboById } from "@/lib/localDb";
-import { getSettings } from "@/lib/localDb";
+import { getComboById, getSettings } from "@/lib/localDb";
+import { getAdapter } from "@/lib/db/driver.js";
+import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
 import { handleChat } from "@/sse/handlers/chat.js";
 import { ACTIVE } from "@/shared/brand";
 
@@ -99,13 +100,110 @@ export function summarizeProbe(attempts, totalMs) {
 }
 
 /**
+ * Caller-derived probe principal: the dashboard session/CLI request already in
+ * hand, mapped to the Default workspace with live membership and capability
+ * re-read from the DB (workspace.combos.manage + workspace.connections.use).
+ * Never widens the caller: credentials resolve inside that workspace only.
+ * No request, or an unauthorized caller, means no principal — the hashed store
+ * then refuses the probe instead of routing against someone else's authority.
+ * ponytail: `via` is "local" for session callers too — gatewayResources'
+ * GATEWAY_VIA tuple has no "session"/"dashboard" member yet; extend it there
+ * when the auth lane lands and tag honestly.
+ */
+async function resolveProbeCaller(nextRequest) {
+  const { resolvePrincipal } = await import("@/lib/users/session.js");
+  const { can } = await import("@/lib/users/principal.js");
+  if (!nextRequest) return null;
+  let session = await resolvePrincipal(nextRequest).catch(() => null);
+  if (!session) {
+    // Switch-off session resolver deliberately yields null. Authenticate the
+    // cookie here; do not turn a missing/invalid cookie into owner authority.
+    const { getDashboardAuthSession } = await import("@/lib/auth/dashboardSession.js");
+    const cookie =
+      nextRequest.cookies?.get("auth_token")?.value ||
+      nextRequest.headers
+        ?.get("cookie")
+        ?.split(";")
+        .map((part) => part.trim())
+        .find((part) => part.startsWith("auth_token="))
+        ?.slice(11);
+    const payload = cookie ? await getDashboardAuthSession(cookie) : null;
+    if (!payload) return null;
+    const db = await getAdapter();
+    if (payload.sub) {
+      const user = db.get("SELECT id, status, sessionVersion FROM users WHERE id = ?", [
+        payload.sub,
+      ]);
+      if (user?.status !== "active" || user.sessionVersion !== payload.sv) return null;
+      session = { userId: user.id, via: "session" };
+    } else {
+      if (db.get("SELECT COUNT(*) AS n FROM users WHERE status = 'active'").n !== 1) return null;
+      const owner = db.get(
+        "SELECT id FROM users WHERE instanceRole = 'owner' AND status = 'active'",
+      );
+      if (!owner) return null;
+      session = { userId: owner.id, via: "session" };
+    }
+  }
+  if (!["session", "cli"].includes(session.via) || session.apiKeyId) return null;
+  try {
+    const db = await getAdapter();
+    const workspaceId = db.get(
+      `SELECT w.id AS id FROM _meta m JOIN workspaces w ON w.id = m.value WHERE m.key = 'defaultWorkspaceId'`,
+    )?.id;
+    if (!workspaceId) return null;
+    const live = await liveProbeAccess(db, session, workspaceId, can);
+    if (!live.combosManage || !live.connectionsUse) return null;
+    return Object.freeze({
+      userId: session.userId ?? null,
+      workspaceId,
+      apiKeyId: null,
+      scopes: Object.freeze({
+        allowedModels: Object.freeze([]),
+        allowedCombos: Object.freeze([]),
+      }),
+      via: "local",
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Live role/status snapshot for the probe caller in the Default workspace. */
+async function liveProbeAccess(db, session, workspaceId, can) {
+  const user = db.get(`SELECT instanceRole, status FROM users WHERE id = ?`, [session.userId]);
+  if (user?.status !== "active") return { combosManage: false, connectionsUse: false };
+  const role = db.get(`SELECT role FROM memberships WHERE workspaceId = ? AND userId = ?`, [
+    workspaceId,
+    session.userId,
+  ])?.role;
+  const principal = {
+    userId: session.userId,
+    instanceRole: user.instanceRole,
+    workspaceIds: [workspaceId],
+    workspaceRoles: role ? { [workspaceId]: role } : {},
+    activeWorkspaceId: workspaceId,
+    via: "session",
+  };
+  return {
+    combosManage: can(principal, "workspace.combos.manage", { workspaceId }),
+    connectionsUse: can(principal, "workspace.connections.use", { workspaceId }),
+  };
+}
+
+/**
  * Run a dry-run probe through the real combo pipeline.
  *
  * @param {object} options
  * @param {string} options.comboId - Combo id (validated by the API route).
+ * @param {object|null} [options.principal] - Authorized caller principal; when
+ *   absent the resolver derives the management principal above.
+ * @param {object|null} [options.request] - Dashboard request for caller context
+ *   (session/CLI); passed by the API route. Tests pass neither; probe then
+ *   behaves legacy-only unless the store permits.
  * @returns {Promise<{ attempts: Array, served: object|null, totalMs: number, summary: string, strategy: string, comboName: string }>}
  */
-export async function runComboProbe({ comboId }) {
+export async function runComboProbe({ comboId, principal = null, request = null }) {
   const combo = await getComboById(comboId);
   if (!combo) {
     const error = new Error("Combo not found");
@@ -121,6 +219,25 @@ export async function runComboProbe({ comboId }) {
   const settings = await getSettings();
   const { strategy } = resolveComboStrategy(settings, combo.name);
 
+  // Dashboard callers pass their own session/CLI principal; anything reaching
+  // here without one is trusted only on the legacy store. On the hashed store
+  // a principal-less probe answers as nobody — it must refuse in-process
+  // rather than route against all connections/install default.
+  const management = principal || (await resolveProbeCaller(request));
+  if (!management) {
+    let storage = "legacy";
+    try {
+      storage = readApiKeyStorageState(await getAdapter()).storage;
+    } catch {
+      storage = "unknown";
+    }
+    if (storage !== "legacy") {
+      const error = new Error("Probe failed (gateway storage unavailable)");
+      error.status = 503;
+      throw error;
+    }
+  }
+
   const probeBody = buildProbeBody(combo.name);
 
   const attempts = [];
@@ -130,7 +247,7 @@ export async function runComboProbe({ comboId }) {
   // advances round-robin/weighted rotation counters, and leaf account
   // fallback may set/clear per-account cooldowns and strikes. Only quota
   // impact is the tiny probe body itself; probes never persist usage/cost.
-  const request = {
+  const probeRequest = {
     url: `http://localhost${COMBO_PROBE_ENDPOINT}`,
     headers: {
       get: (name) => {
@@ -147,7 +264,15 @@ export async function runComboProbe({ comboId }) {
   // Dashboard auth already enforced at the API route; the probe carries no
   // client API key, so the engine gate is skipped via an explicit in-process
   // option (unreachable from request content).
-  const response = await handleChat(request, null, { onAttempt, skipApiKeyCheck: true });
+  // YAN-363: a probe runs as an explicit authorized principal when the caller
+  // supplies one; skipApiKeyCheck alone is accepted only while storage is
+  // legacy (handleChat enforces that — hashed storage rejects a principal-less
+  // probe instead of escalating to owner/all connections).
+  const response = await handleChat(probeRequest, null, {
+    onAttempt,
+    skipApiKeyCheck: true,
+    ...(management ? { principal: management } : {}),
+  });
   const totalMs = Date.now() - t0;
 
   if (!response?.ok) {

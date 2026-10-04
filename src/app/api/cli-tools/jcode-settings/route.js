@@ -10,6 +10,12 @@ import { parseTOML, stringifyTOML } from "confbox";
 import { configErrorResponse, readTomlConfig } from "@/lib/cliToolConfig";
 import { buildJcodeConfig, JCODE_DEFAULT_MODEL } from "@/lib/cliToolConfigs/jcode";
 import {
+  boundaryError,
+  configCopy,
+  hashedStorageMode,
+  resolveCredential,
+} from "@/lib/cliToolConfigs/credentialBoundary";
+import {
   ALL_CLIENT_KEYS,
   ALL_JCODE_API_KEY_ENVS,
   CLIENT_KEY,
@@ -130,37 +136,84 @@ const readSavedApiKey = async () => {
 };
 
 export async function GET() {
-  const isInstalled = await checkJcodeInstalled();
-
-  if (!isInstalled) {
-    return NextResponse.json({
-      installed: false,
-      message:
-        "jcode not installed. Install via: curl -fsSL https://raw.githubusercontent.com/1jehuang/jcode/master/scripts/install.sh | bash",
-    });
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
   }
+  try {
+    const isInstalled = await checkJcodeInstalled();
 
-  const config = await readConfig();
+    if (!isInstalled) {
+      return NextResponse.json({
+        installed: false,
+        message:
+          "jcode not installed. Install via: curl -fsSL https://raw.githubusercontent.com/1jehuang/jcode/master/scripts/install.sh | bash",
+      });
+    }
 
-  return NextResponse.json({
-    installed: true,
-    config,
-    hasTokenhop: hasTokenhopConfig(config),
-    // The card preselects the saved key; local-only route, like claude-settings' env.
-    envApiKey: await readSavedApiKey(),
-    configPath: getConfigPath(),
-  });
+    const config = await readConfig();
+
+    if (hashed) {
+      // Targeted sanitization: the key copy never leaves the env file or our
+      // provider slots; everything else passes through untouched.
+      const copy = configCopy(config);
+      for (const key of ALL_CLIENT_KEYS) delete copy?.providers?.[key]?.api_key;
+      return NextResponse.json({
+        installed: true,
+        config: copy,
+        hasTokenhop: hasTokenhopConfig(config),
+        credentialConfigured: Boolean(await readSavedApiKey()),
+        storage: "hashed",
+        configPath: getConfigPath(),
+      });
+    }
+
+    return NextResponse.json({
+      installed: true,
+      config,
+      hasTokenhop: hasTokenhopConfig(config),
+      // The card preselects the saved key; local-only route, like claude-settings' env.
+      envApiKey: await readSavedApiKey(),
+      configPath: getConfigPath(),
+    });
+  } catch (error) {
+    if (!hashed) throw error;
+    return boundaryError(error);
+  }
 }
 
 export async function POST(request) {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const { baseUrl, apiKey, models } = await request.json();
 
-    if (!baseUrl || !apiKey) {
+    if (!baseUrl || (!hashed && !apiKey)) {
       return NextResponse.json({ error: "baseUrl and apiKey are required" }, { status: 400 });
     }
 
     const config = (await readTomlConfig(getConfigPath())) ?? {};
+
+    // Hashed storage: reuse the stored secret only for the SAME destination;
+    // anything else is an actionable 400 before a single file is touched.
+    let effectiveKey = apiKey;
+    if (hashed) {
+      const saved = await readSavedApiKey();
+      const priors = ALL_CLIENT_KEYS.map((key) => config.providers?.[key]).filter(
+        (entry) => typeof entry?.base_url === "string" && entry.base_url,
+      );
+      effectiveKey = resolveCredential({
+        provided: apiKey,
+        baseUrl,
+        existing: priors.map((entry) => ({ key: saved, url: entry.base_url })),
+      });
+    }
 
     config.providers ??= {};
     const existing = config.providers[CLIENT_KEY];
@@ -170,7 +223,7 @@ export async function POST(request) {
     const xdgConfigHome = process.env.XDG_CONFIG_HOME;
     const [{ value: built }] = buildJcodeConfig({
       baseUrl,
-      apiKey,
+      apiKey: effectiveKey,
       model: models?.[0] || legacy.default_model || JCODE_DEFAULT_MODEL,
       envDir: xdgConfigHome ? `${xdgConfigHome}/jcode` : undefined,
     });
@@ -200,7 +253,7 @@ export async function POST(request) {
     for (const file of LEGACY_ENV_FILES) Object.assign(env, await readProviderEnv(file));
     Object.assign(env, await readProviderEnv());
     for (const name of ALL_JCODE_API_KEY_ENVS) delete env[name];
-    env[JCODE_API_KEY_ENV] = apiKey;
+    env[JCODE_API_KEY_ENV] = effectiveKey;
     await writeProviderEnv(env);
 
     await writeConfig(config);
@@ -218,6 +271,7 @@ export async function POST(request) {
       configPath: getConfigPath(),
     });
   } catch (error) {
+    if (hashed) return boundaryError(error);
     const configRes = configErrorResponse(error);
     if (configRes) return configRes;
     console.error("Error configuring jcode:", error);

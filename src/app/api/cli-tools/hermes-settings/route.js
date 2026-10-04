@@ -1,6 +1,12 @@
 "use server";
 
 import { NextResponse } from "next/server";
+import {
+  boundaryError,
+  configCopy,
+  hashedStorageMode,
+  resolveCredential,
+} from "@/lib/cliToolConfigs/credentialBoundary";
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
@@ -77,6 +83,12 @@ const hasTokenhopConfig = (modelCfg) => {
 };
 
 export async function GET() {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const installed = await checkHermesInstalled();
     if (!installed) {
@@ -88,6 +100,21 @@ export async function GET() {
     }
     const yaml = await readConfigYaml();
     const model = parseModelBlock(yaml);
+    if (hashed) {
+      // Targeted sanitization: withhold only the inline api_key hint; the .env
+      // file itself is never read back in either storage mode.
+      const copy = configCopy(model);
+      const configured = typeof copy?.api_key === "string" && copy.api_key.length > 0;
+      if (copy) delete copy.api_key;
+      return NextResponse.json({
+        installed: true,
+        settings: { model: copy },
+        hasTokenhop: hasTokenhopConfig(model),
+        credentialConfigured: configured,
+        storage: "hashed",
+        configPath: getHermesConfigPath(),
+      });
+    }
     return NextResponse.json({
       installed: true,
       settings: { model },
@@ -95,18 +122,51 @@ export async function GET() {
       configPath: getHermesConfigPath(),
     });
   } catch (error) {
+    if (hashed) return boundaryError(error);
     console.log("Error checking hermes settings:", error);
     return NextResponse.json({ error: "Failed to check hermes settings" }, { status: 500 });
   }
 }
 
 export async function POST(request) {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const { baseUrl, apiKey, model } = await request.json();
     if (!baseUrl || !model) {
       return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
     }
 
+    // Hashed storage: reuse the stored key only for the SAME destination; a
+    // changed or missing one is an actionable 400 before a file is touched.
+    // The .env write stays omission-safe: only an explicit key reaches it.
+    let effectiveApiKey = apiKey;
+    if (hashed) {
+      const stored = {};
+      for (const line of (await readEnvFile()).split("\n")) {
+        const eq = line.indexOf("=");
+        if (eq <= 0) continue;
+        let value = line.slice(eq + 1).trim();
+        if (
+          (value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))
+        ) {
+          value = value.slice(1, -1);
+        }
+        stored[line.slice(0, eq).trim()] = value;
+      }
+      effectiveApiKey = resolveCredential({
+        provided: apiKey,
+        baseUrl,
+        existing: stored.OPENAI_API_KEY
+          ? [{ key: stored.OPENAI_API_KEY, url: parseModelBlock(await readConfigYaml())?.base_url }]
+          : [],
+      });
+    }
     const dir = getHermesDir();
     await fs.mkdir(dir, { recursive: true });
 
@@ -114,10 +174,10 @@ export async function POST(request) {
     // .env (upsert OPENAI_API_KEY only when caller provides one)
     const fragments = buildHermesConfig({
       baseUrl,
-      apiKey,
+      apiKey: effectiveApiKey,
       model,
       existingYaml: await readConfigYaml(),
-      existingEnv: apiKey ? await readEnvFile() : "",
+      existingEnv: effectiveApiKey ? await readEnvFile() : "",
     });
     const paths = {
       "~/.hermes/config.yaml": getHermesConfigPath(),
@@ -131,6 +191,7 @@ export async function POST(request) {
       configPath: getHermesConfigPath(),
     });
   } catch (error) {
+    if (hashed) return boundaryError(error);
     console.log("Error updating hermes settings:", error);
     return NextResponse.json({ error: "Failed to update hermes settings" }, { status: 500 });
   }

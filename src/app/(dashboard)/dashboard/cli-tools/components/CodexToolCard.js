@@ -85,6 +85,9 @@ export default function CodexToolCard({
   const setup = useSetupSettings({ toolId: "codex", apiKeys, defaults, disk, endpointContext });
   const subagentModel =
     typeof setup.values.subagentModel === "string" ? setup.values.subagentModel : "";
+  // YAN-363 hashed storage: the GET is sanitized (no Authorization header),
+  // so reuse means omitting apiKey; only a pasted key is ever written.
+  const hashed = card.status?.storage === "hashed";
 
   const currentBaseUrl = status?.config?.match(/base_url\s*=\s*"([^"]+)"/)?.[1] || "";
 
@@ -97,16 +100,24 @@ export default function CodexToolCard({
     card.setApplying(true);
     card.setMessage(null);
     try {
-      const keyToUse = resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled);
+      const keyToUse = resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed });
+      const body =
+        hashed && keyToUse === undefined
+          ? {
+              baseUrl: getEffectiveBaseUrl(),
+              model: setup.model,
+              subagentModel: subagentModel || setup.model,
+            }
+          : {
+              baseUrl: getEffectiveBaseUrl(),
+              apiKey: keyToUse,
+              model: setup.model,
+              subagentModel: subagentModel || setup.model,
+            };
       const res = await fetch("/api/cli-tools/codex-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyToUse,
-          model: setup.model,
-          subagentModel: subagentModel || setup.model,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (res.ok) {
@@ -149,7 +160,7 @@ export default function CodexToolCard({
     toManualConfigs(
       buildCodexConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed }),
         model: setup.model,
         subagentModel: subagentModel || setup.model,
       }),
@@ -177,7 +188,9 @@ export default function CodexToolCard({
         message={card.message}
         onApply={handleApply}
         applyDisabled={
-          (!setup.selectedApiKey && cloudEnabled && apiKeys.length > 0) || !setup.model
+          // Hashed storage: "use existing" applies without a browser-held key
+          // (the server preserves the disk credential), so never gate on one.
+          (!hashed && !setup.selectedApiKey && cloudEnabled && apiKeys.length > 0) || !setup.model
         }
         applying={card.applying}
         onReset={handleReset}
@@ -204,7 +217,14 @@ export default function CodexToolCard({
             onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
+            hashed={hashed}
+            existingConfigured={Boolean(card.status?.credentialConfigured)}
           />
+          {hashed && !setup.selectedApiKey?.trim() && (
+            <span className="text-[11px] text-subtle">
+              Manual configuration needs a pasted key — a stored one can't be shown.
+            </span>
+          )}
         </SetupRow>
         <SetupRow label="Model">
           <SingleModelRow

@@ -1,6 +1,12 @@
 "use server";
 
 import { NextResponse } from "next/server";
+import {
+  boundaryError,
+  configCopy,
+  hashedStorageMode,
+  resolveCredential,
+} from "@/lib/cliToolConfigs/credentialBoundary";
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
@@ -78,6 +84,12 @@ const normalizeSubagentModels = (value) => {
 const hasTokenhopConfig = (settings) => Boolean(settings?.model?.base_url);
 
 export async function GET() {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const installed = await checkGrokInstalled();
     if (!installed) {
@@ -89,6 +101,27 @@ export async function GET() {
     }
 
     const settings = parseGrokBuildConfig(await readConfigToml());
+    if (hashed) {
+      // Targeted sanitization: withhold only our main model slot's api_key; an
+      // external peer slot passes through untouched and disk is never modified.
+      const copy = configCopy(settings);
+      const configured = [copy?.model, ...Object.values(copy?.subagentModels ?? {})].some(
+        (slot) => typeof slot?.api_key === "string" && slot.api_key.length > 0,
+      );
+      for (const slot of [copy?.model, ...Object.values(copy?.subagentModels ?? {})]) {
+        if (!slot) continue;
+        delete slot.api_key;
+        slot.raw = slot.raw?.replace(/^[ \t]*api_key[ \t]*=[^\r\n]*\r?\n?/gim, "");
+      }
+      return NextResponse.json({
+        installed: true,
+        settings: copy,
+        hasTokenhop: hasTokenhopConfig(settings),
+        credentialConfigured: configured,
+        storage: "hashed",
+        configPath: getGrokConfigPath(),
+      });
+    }
     return NextResponse.json({
       installed: true,
       settings,
@@ -96,12 +129,19 @@ export async function GET() {
       configPath: getGrokConfigPath(),
     });
   } catch (error) {
+    if (hashed) return boundaryError(error);
     console.log("Error checking grok-build settings:", error);
     return NextResponse.json({ error: "Failed to check grok-build settings" }, { status: 500 });
   }
 }
 
 export async function POST(request) {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const { baseUrl, apiKey, model, contextWindow, subagentModels } = await request.json();
     const selectedModel = typeof model === "string" ? model.trim() : "";
@@ -109,15 +149,30 @@ export async function POST(request) {
       return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
     }
 
-    await fs.mkdir(getGrokDir(), { recursive: true });
+    // Hashed storage: reuse the stored key only for the SAME destination; a
+    // changed or missing one is an actionable 400 before the file is written —
+    // never the default-key fallback.
+    let effectiveApiKey = apiKey || ACTIVE.defaultApiKey;
+    if (hashed) {
+      const existing = parseGrokBuildConfig(await readConfigToml());
+      const slots = [existing?.model, ...Object.values(existing?.subagentModels ?? {})];
+      effectiveApiKey = resolveCredential({
+        provided: apiKey,
+        baseUrl: withV1(baseUrl),
+        existing: slots
+          .filter((slot) => typeof slot?.api_key === "string" && slot.api_key)
+          .map((slot) => ({ key: slot.api_key, url: slot.base_url })),
+      });
+    }
     const [{ value: toml }] = buildGrokBuildConfig({
       baseUrl: withV1(baseUrl),
-      apiKey: apiKey || ACTIVE.defaultApiKey,
+      apiKey: effectiveApiKey,
       model: selectedModel,
       contextWindow: normalizeContextWindow(contextWindow, selectedModel),
       subagentModels: normalizeSubagentModels(subagentModels),
       existingToml: await readConfigToml(),
     });
+    await fs.mkdir(getGrokDir(), { recursive: true });
     await fs.writeFile(getGrokConfigPath(), toml);
 
     return NextResponse.json({
@@ -127,6 +182,7 @@ export async function POST(request) {
       modelSlot: GROK_MAIN_MODEL_SLOT,
     });
   } catch (error) {
+    if (hashed) return boundaryError(error);
     console.log("Error updating grok-build settings:", error);
     return NextResponse.json({ error: "Failed to update grok-build settings" }, { status: 500 });
   }

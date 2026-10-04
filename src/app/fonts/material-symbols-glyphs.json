@@ -234,6 +234,7 @@
   "tag",
   "target",
   "task",
+  "tenancy",
   "terminal",
   "title",
   "today",
@@ -265,5 +266,6 @@
   "width",
   "wifi_tethering",
   "window",
-  "work"
+  "work",
+  "workspaces"
 ]

@@ -3,8 +3,8 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
-  isValidApiKey,
 } from "../services/auth.js";
+import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
 import { getSettings, getCombos } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleFetchCore } from "open-sse/handlers/fetch/index.js";
@@ -41,26 +41,18 @@ export async function handleFetch(request) {
 
   log.request("POST", `${reqUrl.pathname} | ${providerInput}`);
 
-  // Log API key (masked)
-  const apiKey = extractApiKey(request);
+  // YAN-363 shared gateway auth: hashed-storage bearer keys resolve to a
+  // workspace principal; legacy storage keeps today's raw-key behavior.
+  const auth = await resolveGatewayAuth(request);
+  if (auth instanceof Response) return auth;
+  const gateway = auth.principal;
+  const apiKey = auth.legacy ? extractApiKey(request) : null;
   if (apiKey) {
     log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}`);
+  } else if (!auth.legacy) {
+    log.debug("AUTH", `Gateway principal: ${gateway?.via || "unknown"}`);
   } else {
     log.debug("AUTH", "No API key provided (local mode)");
-  }
-
-  // Enforce API key if enabled in settings
-  const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-    }
   }
 
   if (!providerInput || typeof providerInput !== "string") {
@@ -92,8 +84,25 @@ export async function handleFetch(request) {
 
   // Combo expansion: providerInput may be a combo name → run fallback/round-robin across providers
   const combos = await getCombos();
+  // Authorize the requested combo ID first: a key scoped to other models
+  // must 403 before expansion runs zero upstream for forbidden members.
+  if (gateway && !providerInput.includes("/")) {
+    const combo = combos.find((c) => c.name === providerInput);
+    if (combo) {
+      const denied = authorizeGatewayTarget(gateway, { comboId: combo.id });
+      if (denied) return denied;
+    }
+  }
   const comboModels = getComboModelsFromData(providerInput, combos);
   if (comboModels) {
+    // Combo fallback treats upstream 403 as retryable. Reject scoped leaves
+    // before dispatch so authorization denial never enters that loop.
+    for (const member of comboModels) {
+      const providerId = resolveProviderId(member.replace(/\/fetch$/, ""));
+      const denied = authorizeGatewayTarget(gateway, { modelId: `${providerId}/fetch` });
+      if (denied) return denied;
+    }
+    const settings = await getSettings();
     const {
       strategy: comboStrategy,
       stickyLimit: comboStickyLimit,
@@ -107,7 +116,7 @@ export async function handleFetch(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderFetch(b, m, request, apiKey, settings),
+      handleSingleModel: (b, m) => handleSingleProviderFetch(b, m, request, gateway),
       log,
       comboName: providerInput,
       comboStrategy,
@@ -117,10 +126,10 @@ export async function handleFetch(request) {
     });
   }
 
-  return handleSingleProviderFetch(body, providerInput, request, apiKey, settings);
+  return handleSingleProviderFetch(body, providerInput, request, gateway);
 }
 
-async function handleSingleProviderFetch(body, providerInput, request, apiKey, settings) {
+async function handleSingleProviderFetch(body, providerInput, request, gateway) {
   const targetUrl = body.url;
   const format = body.format;
   const maxCharacters = body.max_characters;
@@ -147,6 +156,9 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   } else {
     log.info("ROUTING", `Provider: ${providerId}`);
   }
+
+  const denied = authorizeGatewayTarget(gateway, { modelId: `${providerId}/fetch` });
+  if (denied) return denied;
 
   // No-auth fetch path (kept for parity though no current fetch provider sets noAuth)
   if (resolvedProvider.noAuth) {
@@ -178,11 +190,15 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   // failure must not take the account offline for LLM requests.
   const fetchLockKey = `webfetch:${providerId}`;
 
+  const gatewayCreds = gateway ? { principal: gateway } : {};
   while (true) {
+    const denied = authorizeGatewayTarget(gateway, { modelId: `${providerId}/fetch` });
+    if (denied) return denied;
     const credentials = await getProviderCredentials(
       providerId,
       excludeConnectionIds,
       fetchLockKey,
+      gatewayCreds,
     );
 
     if (!credentials || credentials.allRateLimited) {

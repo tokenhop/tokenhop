@@ -13,7 +13,9 @@ import {
   getModelAliases,
 } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
-import { requireClientApiKey } from "@/lib/auth/requireClientApiKey";
+import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
+import { getGatewayConnections } from "@/lib/auth/gatewayResources.js";
+import { getModelInfo } from "@/sse/services/model.js";
 import {
   hasLiveModelResolver,
   noAuthConnection,
@@ -179,12 +181,20 @@ export async function buildModelsList(kindFilter, options = {}) {
   // tokenhop instance's fetchCompatibleModelIds — skip dynamic fetch to break
   // cross-instance recursive loops.
   const skipDynamicFetch = options.skipDynamicFetch === true;
+  // options.principal (hashed gateway auth) scopes the catalog to the
+  // principal's workspace connections and exact allowedModels/allowedCombos.
+  const principal = options.principal || null;
   let connections = [];
-  try {
-    connections = await getProviderConnectionsUnscoped();
-    connections = connections.filter((c) => c.isActive !== false);
-  } catch (e) {
-    console.log("Could not fetch providers, returning all models");
+  if (principal) {
+    // No fallback: a storage error here surfaces, it never widens the catalog.
+    connections = (await getGatewayConnections(principal, {})).filter((c) => c.isActive !== false);
+  } else {
+    try {
+      connections = await getProviderConnectionsUnscoped();
+      connections = connections.filter((c) => c.isActive !== false);
+    } catch (e) {
+      console.log("Could not fetch providers, returning all models");
+    }
   }
 
   let combos = [];
@@ -217,6 +227,11 @@ export async function buildModelsList(kindFilter, options = {}) {
   const isDisabled = (alias, modelId) =>
     Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
 
+  // Scope gates: exact canonical allowedModels/allowedCombos (same ids chat
+  // authorizes), or unrestricted when the principal has no scope list.
+  const allowsCombo = (comboId) =>
+    !principal || authorizeGatewayTarget(principal, { comboId }) === null;
+
   const activeConnectionByProvider = new Map();
   for (const conn of connections) {
     if (!activeConnectionByProvider.has(conn.provider)) {
@@ -236,6 +251,7 @@ export async function buildModelsList(kindFilter, options = {}) {
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
     if (!comboMatchesKinds(combo, kindFilter)) continue;
+    if (!allowsCombo(combo.id)) continue;
     const entry = {
       id: combo.name,
       object: "model",
@@ -247,7 +263,7 @@ export async function buildModelsList(kindFilter, options = {}) {
     models.push(entry);
   }
 
-  if (connections.length === 0) {
+  if (connections.length === 0 && !principal) {
     // DB unavailable -> return static models, filtered by per-model kind
     const aliasToProviderId = Object.fromEntries(
       Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id]),
@@ -285,7 +301,6 @@ export async function buildModelsList(kindFilter, options = {}) {
   } else {
     for (const [providerId, conn] of activeConnectionByProvider.entries()) {
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
-
       const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
       const outputAlias = (
         conn?.providerSpecificData?.prefix ||
@@ -474,6 +489,31 @@ export async function buildModelsList(kindFilter, options = {}) {
     }
   }
 
+  // Scoped key: keep exactly the canonical allowedModels. Each emitted id is
+  // canonicalized the same way the chat path does it (alias mapping reuse via
+  // getModelInfo), so an alias-prefixed or custom-prefixed entry whose target
+  // is allowed still lists, and everything else drops.
+  if (principal && principal.scopes?.allowedModels?.length > 0) {
+    for (let i = models.length - 1; i >= 0; i--) {
+      const entry = models[i];
+      if (entry.owned_by === "combo") continue; // combos gate by combo id above
+      let canonical = null;
+      try {
+        canonical = await getModelInfo(entry.id, { principal });
+      } catch {
+        canonical = null;
+      }
+      if (
+        !canonical?.provider ||
+        authorizeGatewayTarget(principal, {
+          modelId: `${canonical.provider}/${canonical.model}`,
+        }) !== null
+      ) {
+        models.splice(i, 1);
+      }
+    }
+  }
+
   const dedupedModels = [];
   const seenModelIds = new Set();
   for (const model of models) {
@@ -503,12 +543,16 @@ export async function OPTIONS() {
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
  */
 export async function GET(request) {
-  const denied = await requireClientApiKey(request);
-  if (denied) return denied;
+  const auth = await resolveGatewayAuth(request);
+  if (auth instanceof Response) return auth;
+  const { principal } = auth;
   try {
     // Detect cross-instance recursive /models fetch (another tokenhop fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    const data = await buildModelsList([LLM_KIND], {
+      ...(skipDynamicFetch && { skipDynamicFetch }),
+      ...(principal && { principal }),
+    });
     return Response.json(
       { object: "list", data },
       {

@@ -9,6 +9,12 @@ import os from "os";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
 import { CLIENT_NAME, isCustomModelId, isOwnedCustomModelId } from "@/lib/cliToolBrand";
 import { buildDroidConfig } from "@/lib/cliToolConfigs/droid";
+import {
+  boundaryError,
+  configCopy,
+  hashedStorageMode,
+  resolveCredential,
+} from "@/lib/cliToolConfigs/credentialBoundary";
 import { ACTIVE } from "@/shared/brand";
 
 const execAsync = promisify(exec);
@@ -58,6 +64,12 @@ const hasTokenhopConfig = (settings) => {
 
 // GET - Check droid CLI and read current settings
 export async function GET() {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const isInstalled = await checkDroidInstalled();
 
@@ -71,6 +83,25 @@ export async function GET() {
 
     const settings = await readSettings();
 
+    if (hashed) {
+      // Targeted sanitization: only our customModels entries lose their key.
+      const copy = configCopy(settings);
+      let credentialConfigured = false;
+      for (const m of Array.isArray(copy?.customModels) ? copy.customModels : []) {
+        if (!isOwnedCustomModelId(m?.id)) continue;
+        credentialConfigured ||= typeof m.apiKey === "string" && m.apiKey.length > 0;
+        delete m.apiKey;
+      }
+      return NextResponse.json({
+        installed: true,
+        settings: copy,
+        hasTokenhop: hasTokenhopConfig(settings),
+        credentialConfigured,
+        storage: "hashed",
+        settingsPath: getDroidSettingsPath(),
+      });
+    }
+
     return NextResponse.json({
       installed: true,
       settings,
@@ -78,8 +109,11 @@ export async function GET() {
       settingsPath: getDroidSettingsPath(),
     });
   } catch (error) {
-    console.log("Error checking droid settings:", error);
-    return NextResponse.json({ error: "Failed to check droid settings" }, { status: 500 });
+    if (!hashed) {
+      console.log("Error checking droid settings:", error);
+      return NextResponse.json({ error: "Failed to check droid settings" }, { status: 500 });
+    }
+    return boundaryError(error);
   }
 }
 
@@ -87,6 +121,12 @@ export async function GET() {
 // Accepts either `model` (string, legacy single-model) or `models` (array of strings, multi-model)
 // Also accepts `activeModel` to set which model is active/primary
 export async function POST(request) {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const { baseUrl, apiKey, model, models, activeModel } = await request.json();
 
@@ -107,11 +147,26 @@ export async function POST(request) {
     const droidDir = getDroidDir();
     const settingsPath = getDroidSettingsPath();
 
-    // Ensure directory exists
-    await fs.mkdir(droidDir, { recursive: true });
-
     // Read existing settings or create new
     const settings = (await readJsonConfig(settingsPath)) ?? {};
+
+    // Hashed storage: reuse the stored key only for the SAME destination; a
+    // changed or missing one is an actionable 400 before anything is written —
+    // never the default-key fallback.
+    let effectiveApiKey = apiKey || ACTIVE.defaultApiKey;
+    if (hashed) {
+      const ours = (settings.customModels ?? []).filter(
+        (m) => isOwnedCustomModelId(m?.id) && typeof m.apiKey === "string" && m.apiKey,
+      );
+      effectiveApiKey = resolveCredential({
+        provided: apiKey,
+        baseUrl,
+        existing: ours.map((m) => ({ key: m.apiKey, url: m.baseUrl })),
+      });
+    }
+
+    // Ensure the directory exists before writing
+    await fs.mkdir(droidDir, { recursive: true });
 
     // Ensure customModels array exists
     if (!settings.customModels) {
@@ -124,7 +179,7 @@ export async function POST(request) {
     // Our entries (active model first) come from the builder the manual snippet uses
     const fragments = buildDroidConfig({
       baseUrl,
-      apiKey: apiKey || ACTIVE.defaultApiKey,
+      apiKey: effectiveApiKey,
       models: modelsArray,
       activeModel,
     });
@@ -143,6 +198,7 @@ export async function POST(request) {
       settingsPath,
     });
   } catch (error) {
+    if (hashed) return boundaryError(error);
     const configRes = configErrorResponse(error);
     if (configRes) return configRes;
     console.log("Error updating droid settings:", error);

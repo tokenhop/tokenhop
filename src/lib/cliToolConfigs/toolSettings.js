@@ -79,3 +79,68 @@ export function isValidToolSettings(value) {
       (isPlain(v) && validKeys(v) && Object.values(v).every(isScalar)),
   );
 }
+
+// ─── YAN-363 hashed-mode credential containment (pure; repo passes context) ───
+// Known credential slot names used by the actual card clients. Only these are
+// treated as secrets; every other preference passes through untouched.
+const SECRET_SLOTS = ["apiKey", "api_key"];
+
+const reject = () => {
+  throw Object.assign(new Error("Credential setting rejected; values withheld"), { status: 400 });
+};
+
+/**
+ * Canonicalize one credential-slot value against hashed storage.
+ * - raw string matching an HMAC'd row (any isActive/revoked state) → `{ apiKeyId }`
+ * - `{ apiKeyId }` ref → live authorization re-checked via `context.ref`
+ * - `{ external: true, externalRef }` round-trip marker → stored raw preserved
+ *   byte-for-byte when the ref matches the stored value (same binding only)
+ * - unknown raw on write → rejected before mutation (no raw stash)
+ * - unknown raw on read (redact) → opaque external marker, raw never leaves
+ */
+function containSlot(value, prev, context, redact) {
+  if (isPlain(value)) {
+    const keys = Object.keys(value);
+    if (keys.length === 1 && typeof value.apiKeyId === "string") {
+      context.ref(value.apiKeyId); // throws 403 unless authorized in its workspace
+      return value;
+    }
+    if (
+      keys.length === 2 &&
+      value.external === true &&
+      typeof value.externalRef === "string" &&
+      typeof prev === "string" &&
+      context.hash(`cli-tool-setting:${prev}`) === value.externalRef
+    ) {
+      return prev; // same destination binding: keep stored external bytes
+    }
+    reject();
+  }
+  if (typeof value === "string") {
+    const row = context.rawRow(value);
+    if (row && context.authorized(row)) return { apiKeyId: row.id };
+    if (redact) return { external: true, externalRef: context.hash(`cli-tool-setting:${value}`) };
+    reject(); // unknown or foreign raw: no stash, no foreign ref leak
+  }
+  reject();
+}
+
+/**
+ * Contain credential slots of a tool-settings object in hashed mode.
+ * Omitted secret slots preserve the stored value (a redacted GET→PUT round
+ * trip must not erase credentials); non-secret preferences pass through.
+ * `context` is the repo-built credential context; null disables containment.
+ */
+export function containToolSettings(values, old, context, redact = false) {
+  if (!isPlain(values) || !context) return values;
+  const out = { ...values };
+  for (const slot of SECRET_SLOTS) {
+    const prev = isPlain(old) ? old[slot] : undefined;
+    if (!Object.hasOwn(out, slot)) {
+      if (prev !== undefined) out[slot] = prev; // caller cannot delete what it cannot see
+      continue;
+    }
+    out[slot] = containSlot(out[slot], prev, context, redact);
+  }
+  return out;
+}

@@ -1,5 +1,6 @@
 // Re-export from open-sse with localDb integration
 import { getModelAliases, getComboByName, getProviderNodesUnscoped } from "@/lib/localDb";
+import { getGatewayNodes, requireGatewayWorkspace } from "@/lib/auth/gatewayResources.js";
 import {
   parseModel as parseModelCore,
   resolveModelAliasFromMap,
@@ -37,31 +38,34 @@ export async function resolveModelAlias(alias) {
 }
 
 /**
- * Get full model info (parse or resolve)
+ * Get full model info (parse or resolve).
+ * With options.principal (hashed gateway auth), provider-node prefix matches
+ * come from the principal's workspace only; combos/aliases stay instance
+ * config (they carry no credentials).
  */
-export async function getModelInfo(modelStr) {
+export async function getModelInfo(modelStr, options = {}) {
+  const principal = options.principal || null;
+  await requireGatewayWorkspace(principal);
   const parsed = parseModel(modelStr);
 
   if (!parsed.isAlias) {
     // Provider-node prefixes are user-defined. They must not override built-in
     // provider ids/aliases such as `cf`, `cloudflare-ai`, `openai`, or `hf`.
     if (!RESERVED_PROVIDER_PREFIXES.has(parsed.providerAlias)) {
-      const openaiNodes = await getProviderNodesUnscoped({ type: "openai-compatible" });
-      const matchedOpenAI = openaiNodes.find((node) => node.prefix === parsed.providerAlias);
-      if (matchedOpenAI) {
-        return { provider: matchedOpenAI.id, model: parsed.model };
+      const nodeTypes = ["openai-compatible", "anthropic-compatible", "custom-embedding"];
+      let nodes;
+      if (principal) {
+        nodes = await getGatewayNodes(principal, {});
+        nodes = nodes.filter((node) => nodeTypes.includes(node.type));
+      } else {
+        const byType = await Promise.all(
+          nodeTypes.map((type) => getProviderNodesUnscoped({ type })),
+        );
+        nodes = byType.flat();
       }
-
-      const anthropicNodes = await getProviderNodesUnscoped({ type: "anthropic-compatible" });
-      const matchedAnthropic = anthropicNodes.find((node) => node.prefix === parsed.providerAlias);
-      if (matchedAnthropic) {
-        return { provider: matchedAnthropic.id, model: parsed.model };
-      }
-
-      const embeddingNodes = await getProviderNodesUnscoped({ type: "custom-embedding" });
-      const matchedEmbedding = embeddingNodes.find((node) => node.prefix === parsed.providerAlias);
-      if (matchedEmbedding) {
-        return { provider: matchedEmbedding.id, model: parsed.model };
+      const matchedNode = nodes.find((node) => node.prefix === parsed.providerAlias);
+      if (matchedNode) {
+        return { provider: matchedNode.id, model: parsed.model };
       }
     }
     return {
@@ -79,6 +83,10 @@ export async function getModelInfo(modelStr) {
     return { provider: null, model: parsed.model };
   }
 
+  if (principal) {
+    const resolved = await resolveModelAlias(modelStr);
+    if (resolved) return getModelInfo(`${resolved.provider}/${resolved.model}`, options);
+  }
   return getModelInfoCore(modelStr, getModelAliases);
 }
 

@@ -1,7 +1,7 @@
 import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
 import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { getModelKind } from "@/shared/constants/models";
-import { requireClientApiKey } from "@/lib/auth/requireClientApiKey";
+import { resolveGatewayAuth, authorizeGatewayTarget } from "@/lib/auth/gatewayAuth.js";
 
 const KIND_ENDPOINT = {
   llm: "/v1/chat/completions",
@@ -44,7 +44,7 @@ function buildInfo({ alias, providerId, model, kind, providerInfo }) {
 // id format: "{alias}/{modelId}" - alias may also be providerId
 // requestedKind: optional, disambiguates duplicate ids across kinds (e.g. gemini-2.5-pro llm vs stt)
 function lookup(fullId, requestedKind) {
-  if (!fullId || !fullId.includes("/")) return null;
+  if (!fullId?.includes("/")) return null;
   const slash = fullId.indexOf("/");
   const alias = fullId.slice(0, slash);
   const modelId = fullId.slice(slash + 1);
@@ -107,8 +107,18 @@ export async function OPTIONS() {
 
 // GET /v1/models/info?id={alias}/{modelId} — metadata for a single model
 export async function GET(request) {
-  const denied = await requireClientApiKey(request);
-  if (denied) return denied;
+  let auth;
+  try {
+    auth = await resolveGatewayAuth(request);
+  } catch {
+    // Auth/state failures must fail closed as 503: never null-principal
+    // discovery, never the legacy global path.
+    return Response.json(
+      { error: { message: "Gateway authentication unavailable", type: "server_error" } },
+      { status: 503, headers: { "Access-Control-Allow-Origin": "*" } },
+    );
+  }
+  if (auth instanceof Response) return auth;
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   const kind = searchParams.get("kind");
@@ -125,10 +135,29 @@ export async function GET(request) {
   }
   const info = lookup(id, kind);
   if (!info) {
+    // Missing "/" means malformed id, not an unknown model: say so explicitly.
+    if (!id.includes("/")) {
+      return Response.json(
+        {
+          error: {
+            message:
+              "Invalid model id: expected format {provider}/{model} (e.g. gpt-4o → openai/gpt-4o)",
+            type: "invalid_request_error",
+          },
+        },
+        { status: 400, headers: { "Access-Control-Allow-Origin": "*" } },
+      );
+    }
     return Response.json(
       { error: { message: `Model not found: ${id}`, type: "not_found" } },
       { status: 404, headers: { "Access-Control-Allow-Origin": "*" } },
     );
   }
+  const slash = id.indexOf("/");
+  const provider = id.slice(0, slash);
+  const denied = authorizeGatewayTarget(auth.principal, {
+    modelId: `${ALIAS_TO_ID[provider] || provider}/${id.slice(slash + 1)}`,
+  });
+  if (denied) return denied;
   return Response.json(info, { headers: { "Access-Control-Allow-Origin": "*" } });
 }

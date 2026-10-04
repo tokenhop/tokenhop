@@ -20,7 +20,7 @@ export async function GET(_request, { params }) {
     const { toolId } = await params;
     const bad = unknownTool(toolId);
     if (bad) return bad;
-    return NextResponse.json({ settings: await getCliToolSettings(toolId) });
+    return NextResponse.json({ settings: await getCliToolSettings(undefined, toolId) });
   } catch (error) {
     console.log("Error fetching CLI tool settings:", error.message);
     return NextResponse.json({ error: "Failed to fetch settings" }, { status: 500 });
@@ -55,7 +55,7 @@ export async function PUT(request, { params }) {
       );
     }
 
-    await setCliToolSettings(toolId, parsed);
+    await setCliToolSettings(undefined, toolId, parsed);
     return NextResponse.json({ settings: parsed });
   } catch (error) {
     console.log("Error saving CLI tool settings:", error.message);
@@ -69,7 +69,7 @@ export async function DELETE(_request, { params }) {
     const { toolId } = await params;
     const bad = unknownTool(toolId);
     if (bad) return bad;
-    await deleteCliToolSettings(toolId);
+    await deleteCliToolSettings(undefined, toolId);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.log("Error deleting CLI tool settings:", error.message);

@@ -3,8 +3,8 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
-  isValidApiKey,
 } from "../services/auth.js";
+import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
 import { getSettings, getCombos } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleSearchCore } from "open-sse/handlers/search/index.js";
@@ -38,26 +38,18 @@ export async function handleSearch(request) {
 
   log.request("POST", `${url.pathname} | ${providerInput}`);
 
-  // Log API key (masked)
-  const apiKey = extractApiKey(request);
+  // YAN-363 shared gateway auth: hashed-storage bearer keys resolve to a
+  // workspace principal; legacy storage keeps today's raw-key behavior.
+  const auth = await resolveGatewayAuth(request);
+  if (auth instanceof Response) return auth;
+  const gateway = auth.principal;
+  const apiKey = auth.legacy ? extractApiKey(request) : null;
   if (apiKey) {
     log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}`);
+  } else if (!auth.legacy) {
+    log.debug("AUTH", `Gateway principal: ${gateway?.via || "unknown"}`);
   } else {
     log.debug("AUTH", "No API key provided (local mode)");
-  }
-
-  // Enforce API key if enabled in settings
-  const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-    }
   }
 
   if (!providerInput || typeof providerInput !== "string") {
@@ -72,8 +64,25 @@ export async function handleSearch(request) {
 
   // Combo expansion: providerInput may be a combo name → run fallback/round-robin across providers
   const combos = await getCombos();
+  // Authorize the requested combo ID first: a key scoped to other models
+  // must 403 before expansion runs zero upstream for forbidden members.
+  if (gateway && !providerInput.includes("/")) {
+    const combo = combos.find((c) => c.name === providerInput);
+    if (combo) {
+      const denied = authorizeGatewayTarget(gateway, { comboId: combo.id });
+      if (denied) return denied;
+    }
+  }
   const comboModels = getComboModelsFromData(providerInput, combos);
   if (comboModels) {
+    // Combo fallback treats upstream 403 as retryable. Reject scoped leaves
+    // before dispatch so authorization denial never enters that loop.
+    for (const member of comboModels) {
+      const providerId = resolveProviderId(member.replace(/\/search$/, ""));
+      const denied = authorizeGatewayTarget(gateway, { modelId: `${providerId}/search` });
+      if (denied) return denied;
+    }
+    const settings = await getSettings();
     const {
       strategy: comboStrategy,
       stickyLimit: comboStickyLimit,
@@ -87,7 +96,7 @@ export async function handleSearch(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderSearch(b, m, request, apiKey, settings),
+      handleSingleModel: (b, m) => handleSingleProviderSearch(b, m, request, gateway),
       log,
       comboName: providerInput,
       comboStrategy,
@@ -97,10 +106,10 @@ export async function handleSearch(request) {
     });
   }
 
-  return handleSingleProviderSearch(body, providerInput, request, apiKey, settings);
+  return handleSingleProviderSearch(body, providerInput, request, gateway);
 }
 
-async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings) {
+async function handleSingleProviderSearch(body, providerInput, request, gateway) {
   const query = body.query;
   // /v1/models/web advertises search providers as "{alias}/search".
   const providerId = resolveProviderId(providerInput.replace(/\/search$/, ""));
@@ -143,6 +152,9 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
     provider_options: body.provider_options,
   };
 
+  const denied = authorizeGatewayTarget(gateway, { modelId: `${providerId}/search` });
+  if (denied) return denied;
+
   // No-auth providers (e.g. searxng) bypass credential lookup
   if (resolvedProvider.noAuth) {
     log.info("AUTH", `\x1b[32m${providerId} no-auth mode\x1b[0m`);
@@ -175,10 +187,17 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
   const searchLockKey = `websearch:${providerId}`;
 
   while (true) {
+    const denied = authorizeGatewayTarget(gateway, { modelId: `${providerId}/search` });
+    if (denied) return denied;
     // Provider that actually owns the connection in use — differs from
     // providerId once we fall back, and error locks must be attributed to it.
     let credentialProviderId = providerId;
-    let credentials = await getProviderCredentials(providerId, excludeConnectionIds, searchLockKey);
+    let credentials = await getProviderCredentials(
+      providerId,
+      excludeConnectionIds,
+      searchLockKey,
+      { principal: gateway },
+    );
 
     // Fall back to the related chat provider's credentials when this search
     // provider has none of its own (one key, chat + search).
@@ -187,6 +206,7 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
         fallbackProviderId,
         excludeConnectionIds,
         searchLockKey,
+        { principal: gateway },
       );
       if (credentials) {
         credentialProviderId = fallbackProviderId;

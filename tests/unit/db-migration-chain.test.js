@@ -8,20 +8,26 @@ import { LEGACY } from "@/shared/brand";
 let tempDir;
 const originalDataDir = process.env.DATA_DIR;
 
+function resetAdapter() {
+  if (!tempDir) return;
+  const adapters = globalThis[Symbol.for(`tokenhop.dbAdapters.${process.pid}`)];
+  const dataFile = path.join(tempDir, "db", "data.sqlite");
+  try {
+    adapters?.get(dataFile)?.instance?.close?.();
+  } finally {
+    adapters?.delete(dataFile);
+  }
+}
+
 beforeEach(() => {
+  resetAdapter();
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-mig-"));
   process.env.DATA_DIR = tempDir;
-  // Reset global singleton so each test gets fresh adapter pointed at tempDir
-  delete global._dbAdapter;
   vi.resetModules();
 });
 
 afterEach(() => {
-  // Close adapter to release file handles before rm
-  try {
-    global._dbAdapter?.instance?.close?.();
-  } catch {}
-  delete global._dbAdapter;
+  resetAdapter();
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
@@ -62,10 +68,9 @@ describe("Schema migrations", () => {
       ['{"foo":"bar"}'],
     );
     db.run(`UPDATE _meta SET value = '0' WHERE key = 'schemaVersion'`);
-    db.close?.();
 
     // 2nd boot: full reset to simulate process restart
-    delete global._dbAdapter;
+    resetAdapter();
     vi.resetModules();
     const { getAdapter: getAdapter2 } = await import("@/lib/db/driver.js");
     const { latestVersion } = await import("@/lib/db/migrations/index.js");
@@ -112,7 +117,6 @@ describe("Schema migrations", () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
     expect(db.all(`SELECT * FROM providerConnections`)).toHaveLength(0);
-    db.close?.();
 
     // User fixes db.json (duplicate names are now tolerated) and restarts
     fs.writeFileSync(
@@ -125,7 +129,7 @@ describe("Schema migrations", () => {
         ],
       }),
     );
-    delete global._dbAdapter;
+    resetAdapter();
     vi.resetModules();
     const { getAdapter: getAdapter2 } = await import("@/lib/db/driver.js");
     const db2 = await getAdapter2();
@@ -139,13 +143,12 @@ describe("Schema migrations", () => {
     db.run(
       `INSERT INTO combos(id, name, models, createdAt, updatedAt) VALUES('mine', 'mine', '[]', 'x', 'x')`,
     );
-    db.close?.();
 
     fs.writeFileSync(
       path.join(tempDir, "db.json"),
       JSON.stringify({ combos: [{ id: "legacy", name: "legacy", models: [] }] }),
     );
-    delete global._dbAdapter;
+    resetAdapter();
     vi.resetModules();
     const { getAdapter: getAdapter2 } = await import("@/lib/db/driver.js");
     const db2 = await getAdapter2();
@@ -159,9 +162,8 @@ describe("Schema migrations", () => {
     expect(db.all(`PRAGMA index_list(providerNodes)`).map((i) => i.name)).not.toContain(
       "idx_pn_type",
     );
-    db.close?.();
 
-    delete global._dbAdapter;
+    resetAdapter();
     vi.resetModules();
     const { getAdapter: getAdapter2 } = await import("@/lib/db/driver.js");
     const db2 = await getAdapter2();

@@ -3,9 +3,12 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
-  isValidApiKey,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import {
+  authorizeGatewayTarget,
+  gatewayKeyContext,
+  resolveGatewayAuth,
+} from "@/lib/auth/gatewayAuth.js";
 import { getModelInfo } from "../services/model.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -49,26 +52,18 @@ export async function handleEmbeddings(request) {
 
   log.request("POST", `${url.pathname} | ${modelStr}`);
 
-  // Log API key (masked)
-  const apiKey = extractApiKey(request);
+  // YAN-363 shared gateway auth: hashed-storage bearer keys resolve to a
+  // workspace principal; legacy storage keeps today's raw-key behavior.
+  const auth = await resolveGatewayAuth(request);
+  if (auth instanceof Response) return auth;
+  const gateway = auth.principal;
+  const apiKey = auth.legacy ? extractApiKey(request) : null;
   if (apiKey) {
     log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}`);
+  } else if (!auth.legacy) {
+    log.debug("AUTH", `Gateway principal: ${gateway?.via || "unknown"}`);
   } else {
     log.debug("AUTH", "No API key provided (local mode)");
-  }
-
-  // Enforce API key if enabled in settings
-  const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-    }
   }
 
   if (!modelStr) {
@@ -81,13 +76,16 @@ export async function handleEmbeddings(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
   }
 
-  const modelInfo = await getModelInfo(modelStr);
+  const modelInfo = await getModelInfo(modelStr, gateway ? { principal: gateway } : {});
   if (!modelInfo.provider) {
     log.warn("EMBEDDINGS", "Invalid model format", { model: modelStr });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
   }
 
   const { provider, model } = modelInfo;
+
+  const denied = authorizeGatewayTarget(gateway, { modelId: `${provider}/${model}` });
+  if (denied) return denied;
 
   if (modelStr !== `${provider}/${model}`) {
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);
@@ -101,7 +99,12 @@ export async function handleEmbeddings(request) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(
+      provider,
+      excludeConnectionIds,
+      model,
+      gateway ? { principal: gateway } : {},
+    );
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -160,6 +163,7 @@ export async function handleEmbeddings(request) {
           model,
           connectionId: credentials.connectionId,
           apiKey,
+          ...gatewayKeyContext(gateway),
           endpoint: url.pathname,
           tokens: usage,
           status: "success",

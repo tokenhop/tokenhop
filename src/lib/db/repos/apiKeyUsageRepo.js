@@ -2,7 +2,10 @@ import { getAdapter } from "../driver.js";
 
 /**
  * Per-client-API-key usage from the usageHistory table.
- * Two maps, keyed by raw api key value:
+ * Two maps, keyed by the stored credential slot:
+ * - legacy storage: raw api key value (today's behavior, byte-identical).
+ * - hashed storage: key id / pseudonym — the sink (`usageRepo.saveRequestUsage`)
+ *   stores the identity there, so the raw never reaches history to begin with.
  * - lastUsed: most recent timestamp the key made a request (null when never used)
  * - today: requests today (local midnight)
  */

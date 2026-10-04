@@ -2,6 +2,9 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { loadKeyContext, loadKeyList } from "../../endpoint/hooks/useApiKeys";
+
+import { setKeyPresetStorageMode } from "../components/cliEndpointPresets";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL || "";
 
@@ -20,17 +23,32 @@ export function useToolSetupData() {
   const [tailscaleEnabled, setTailscaleEnabled] = useState(false);
   const [tailscaleUrl, setTailscaleUrl] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+  const [keyContext, setKeyContext] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
+    setKeyPresetStorageMode(null);
     try {
-      const [provRes, settingsRes, tunnelRes, keysRes, aliasRes] = await Promise.all([
+      const [provRes, settingsRes, tunnelRes, aliasRes] = await Promise.all([
         fetch("/api/providers"),
         fetch("/api/settings"),
         fetch("/api/tunnel/status"),
-        fetch("/api/keys"),
         fetch("/api/models/alias"),
       ]);
+      // Keys follow the YAN-363 context envelope: hashed storage lists
+      // workspace-scoped metadata (managers only, no raws); legacy keeps the
+      // exact old /api/keys fetch. A key failure never blocks the rest.
+      try {
+        const ctx = await loadKeyContext();
+        const keys = await loadKeyList(ctx);
+        setKeyPresetStorageMode(ctx.storage);
+        setKeyContext(ctx);
+        setApiKeys(keys);
+      } catch (err) {
+        setKeyPresetStorageMode(null);
+        setKeyContext(null);
+        console.error("Error loading API keys:", err);
+      }
       if (provRes.ok) {
         const d = await provRes.json();
         setConnections(d.connections || []);
@@ -46,10 +64,6 @@ export function useToolSetupData() {
         setTunnelPublicUrl(d.tunnel?.publicUrl || "");
         setTailscaleEnabled(Boolean(d.tailscale?.enabled || d.tailscale?.settingsEnabled));
         setTailscaleUrl(d.tailscale?.tunnelUrl || "");
-      }
-      if (keysRes.ok) {
-        const d = await keysRes.json();
-        setApiKeys(d.keys || []);
       }
       if (aliasRes.ok) {
         const d = await aliasRes.json();
@@ -142,6 +156,7 @@ export function useToolSetupData() {
     availableModels,
     hasActiveProviders,
     apiKeys,
+    keyContext,
     cloudEnabled,
     ccFilterNaming,
     cloudUrl: CLOUD_URL,

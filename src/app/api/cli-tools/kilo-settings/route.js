@@ -16,6 +16,27 @@ import {
 } from "@/lib/cliToolBrand";
 import { buildKiloConfig } from "@/lib/cliToolConfigs/kilo";
 
+import { getAdapter } from "@/lib/db/driver.js";
+import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
+
+async function hashedStorageMode() {
+  return readApiKeyStorageState(await getAdapter()).storage === "hashed";
+}
+
+function destination(raw) {
+  const url = new URL(raw);
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  )
+    throw new Error("Invalid destination");
+  // Match the builder's API-root normalization while preserving path identity.
+  return `${url.origin}${url.pathname.replace(/\/$/, "").replace(/\/v1$/, "")}`;
+}
+
 const execAsync = promisify(exec);
 
 const getDataDir = () => path.join(os.homedir(), ".local", "share", "kilo");
@@ -59,6 +80,12 @@ const hasTokenhopConfig = (auth) => {
 };
 
 export async function GET() {
+  let hashed;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const installed = await checkInstalled();
     if (!installed) {
@@ -69,33 +96,63 @@ export async function GET() {
       });
     }
     const auth = await readJson(getAuthPath());
+    const credentialConfigured = !!(auth?.["openai-compatible"] || findClientEntry(auth))?.apiKey;
     return NextResponse.json({
       installed: true,
+      ...(hashed ? { storage: "hashed", credentialConfigured } : {}),
       settings: { auth: auth ? Object.keys(auth) : [] },
       hasTokenhop: hasTokenhopConfig(auth),
       authPath: getAuthPath(),
     });
   } catch (error) {
-    console.log("Error checking kilo settings:", error);
+    console.log("Error checking kilo settings:", hashed ? "Config operation failed" : error);
     return NextResponse.json({ error: "Failed to check kilo settings" }, { status: 500 });
   }
 }
 
 export async function POST(request) {
+  let hashed;
   try {
-    const { baseUrl, apiKey, model } = await request.json();
-    if (!baseUrl || !apiKey || !model) {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
+  try {
+    let { baseUrl, apiKey, model } = await request.json();
+    if (!baseUrl || (!hashed && !apiKey) || !model) {
       return NextResponse.json(
         { error: "baseUrl, apiKey and model are required" },
         { status: 400 },
       );
     }
 
+    const auth = (await readJsonConfig(getAuthPath())) || {};
+    if (hashed) {
+      const existing = auth["openai-compatible"] || findClientEntry(auth);
+      let intended;
+      try {
+        intended = destination(baseUrl);
+        if (
+          !apiKey &&
+          (!existing?.apiKey || destination(existing.baseUrl || existing.baseURL) !== intended)
+        ) {
+          return NextResponse.json(
+            { error: "Provide apiKey for this destination" },
+            { status: 400 },
+          );
+        }
+      } catch {
+        return NextResponse.json(
+          { error: "Invalid baseUrl; provide an explicit credential" },
+          { status: 400 },
+        );
+      }
+      apiKey = apiKey || existing?.apiKey;
+      baseUrl = intended;
+    }
+    const [authFragment, vscodeFragment] = buildKiloConfig({ baseUrl, apiKey, model });
     await fs.mkdir(getDataDir(), { recursive: true });
 
-    const [authFragment, vscodeFragment] = buildKiloConfig({ baseUrl, apiKey, model });
-
-    const auth = (await readJsonConfig(getAuthPath())) || {};
     // Drop legacy-named entries (tokenhop brand only): their type/apiKey/baseUrl/model are
     // all superseded by the openai-compatible entry written below
     takeLegacyEntry(auth);
@@ -118,6 +175,8 @@ export async function POST(request) {
       authPath: getAuthPath(),
     });
   } catch (error) {
+    if (hashed)
+      return NextResponse.json({ error: "Failed to update kilo settings" }, { status: 500 });
     const res = configErrorResponse(error);
     if (res) return res;
     console.log("Error updating kilo settings:", error);

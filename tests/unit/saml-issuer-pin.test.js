@@ -9,18 +9,26 @@ import { ACTIVE, LEGACY } from "@/shared/brand";
 let tempDir;
 const originalDataDir = process.env.DATA_DIR;
 
+function resetAdapter() {
+  if (!tempDir) return;
+  const adapters = globalThis[Symbol.for(`tokenhop.dbAdapters.${process.pid}`)];
+  const dataFile = path.join(tempDir, "db", "data.sqlite");
+  try {
+    adapters?.get(dataFile)?.instance?.close?.();
+  } finally {
+    adapters?.delete(dataFile);
+  }
+}
+
 beforeEach(() => {
+  resetAdapter();
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "th-saml-pin-"));
   process.env.DATA_DIR = tempDir;
-  delete global._dbAdapter;
   vi.resetModules();
 });
 
 afterEach(() => {
-  try {
-    global._dbAdapter?.instance?.close?.();
-  } catch {}
-  delete global._dbAdapter;
+  resetAdapter();
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
@@ -39,8 +47,7 @@ async function upgrade(seed) {
   const db = await getAdapter();
   seed(db);
   db.run(`UPDATE _meta SET value = '2' WHERE key = 'schemaVersion'`);
-  db.close?.();
-  delete global._dbAdapter;
+  resetAdapter();
   vi.resetModules();
   const { getAdapter: reopen } = await import("@/lib/db/driver.js");
   return reopen();

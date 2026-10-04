@@ -10,8 +10,18 @@ import {
   Toggle,
   EmptyState,
   StatusPill,
+  Callout,
 } from "@/shared/components";
-import { maskKey, formatLastUsed, isNewKey, formatNumber } from "../endpointLogic";
+import {
+  maskKey,
+  formatPrefix,
+  formatLastUsed,
+  isNewKey,
+  formatNumber,
+  formatExpiry,
+  isKeyExpired,
+  scopeSummary,
+} from "../endpointLogic";
 import CopyStatus from "@/shared/components/CopyStatus";
 import { LoadingState } from "@/shared/components/StateViews";
 
@@ -86,6 +96,21 @@ function KeyStatusTags({ apiKey }) {
           New
         </StatusPill>
       )}
+      {apiKey.type && (
+        <StatusPill variant="neutral" size="sm">
+          {apiKey.type === "service" ? "Service" : "User"}
+        </StatusPill>
+      )}
+      {Boolean(apiKey.legacy) && (
+        <StatusPill variant="neutral" size="sm" title="Rotate recommended">
+          Legacy
+        </StatusPill>
+      )}
+      {isKeyExpired(apiKey.expiresAt) && (
+        <StatusPill variant="warn" size="sm">
+          Expired
+        </StatusPill>
+      )}
     </>
   );
 }
@@ -94,6 +119,9 @@ KeyStatusTags.propTypes = {
   apiKey: PropTypes.shape({
     isActive: PropTypes.bool,
     createdAt: PropTypes.string,
+    type: PropTypes.string,
+    legacy: PropTypes.oneOfType([PropTypes.bool, PropTypes.number]),
+    expiresAt: PropTypes.string,
   }).isRequired,
 };
 
@@ -228,12 +256,65 @@ KeyName.propTypes = {
 };
 
 /**
+ * One-time migration notice for hashed storage: keys keep working, but only
+ * the prefix shows from now on. Authority is the server-side spec214 flag in
+ * the key context — visible until `migrationAcknowledged` is true, including
+ * across browsers and reloads. The dismiss action renders for managers only
+ * and hides the notice only on PATCH success; failure keeps the notice with
+ * the nonsecret server error. Members/viewers see the notice, no action.
+ */
+function MigrationNotice({ notice }) {
+  if (!notice.visible) return null;
+  return (
+    <div className="mb-4">
+      <Callout variant="info" title="Keys are now stored as hashes">
+        Existing keys keep working. Full keys are no longer stored or shown — only the prefix is
+        displayed. Create a new key to get a copyable secret.
+        {notice.canDismiss && (
+          <div className="mt-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={notice.dismiss}
+              disabled={notice.dismissing}
+              loading={notice.dismissing}
+            >
+              Got it
+            </Button>
+            {notice.error && (
+              <p className="mt-1 text-xs text-err" role="alert">
+                {notice.error}
+              </p>
+            )}
+          </div>
+        )}
+      </Callout>
+    </div>
+  );
+}
+
+MigrationNotice.propTypes = {
+  notice: PropTypes.shape({
+    visible: PropTypes.bool.isRequired,
+    canDismiss: PropTypes.bool.isRequired,
+    dismissing: PropTypes.bool.isRequired,
+    error: PropTypes.string,
+    dismiss: PropTypes.func.isRequired,
+  }).isRequired,
+};
+
+/**
  * API keys management card: require-key gate, one-time reveal banner, key
  * table on desktop and stacked cards on mobile. The create/delete modals live
  * in the parent — this card only fires callbacks.
  *
+ * Hashed storage (`hashedMode`): prefix-only rows with no eye/copy
+ * affordances, Type/Scope/Expires columns, a one-time migration notice plus a
+ * persistent legacy-rotation callout, and a capability-gated Create button
+ * (viewers get no affordance). Legacy render is byte-identical to before.
+ *
  * @param {object} props
- * @param {Array} props.keys Key rows {id,name,key,isActive,createdAt,lastUsed,requestsToday}.
+ * @param {Array} props.keys Key rows {id,name,key?,prefix?,type?,legacy?,allowedModels?,expiresAt?,isActive,createdAt,lastUsed,requestsToday}.
  * @param {boolean} props.requireApiKey Toggle state for the 401 gate.
  * @param {(checked: boolean) => void} props.onToggleRequireApiKey
  * @param {() => void} props.onCreateKey Opens the create modal in the parent.
@@ -241,7 +322,7 @@ KeyName.propTypes = {
  * @param {() => void} props.onDismissBanner
  * @param {(text: string, id: string) => void} props.onCopy
  * @param {string|null} props.copiedId
- * @param {Set<string>} props.visibleIds Unmasked key ids.
+ * @param {Set<string>} props.visibleIds Unmasked key ids (legacy only).
  * @param {(id: string) => void} props.onToggleVisibility
  * @param {string|null} props.togglingId Row id mid-toggle.
  * @param {(id: string, checked: boolean) => void} props.onToggleKey
@@ -252,6 +333,9 @@ KeyName.propTypes = {
  * @param {Record<string, string>} props.renameErrors Per-row rename errors.
  * @param {(id: string) => void} props.clearRenameError
  * @param {boolean} props.loading Initial list load.
+ * @param {boolean} [props.hashedMode] Stored-prefix rendering + hashed chrome.
+ * @param {boolean} [props.canCreate] Viewer gate for the Create button.
+ * @param {{ visible: boolean, canDismiss: boolean, dismissing: boolean, error: string|null, dismiss: () => void }|null} [props.migrationNotice] Server-flag migration notice state.
  */
 export default function ApiKeysCard({
   keys,
@@ -274,9 +358,19 @@ export default function ApiKeysCard({
   renameErrors,
   clearRenameError,
   loading,
+  hashedMode = false,
+  canCreate = true,
+  migrationNotice = null,
 }) {
   const [editingId, setEditingId] = useState(null);
-  const showValue = (apiKey) => (visibleIds.has(apiKey.id) ? apiKey.key : maskKey(apiKey.key));
+  const showValue = (apiKey) =>
+    hashedMode
+      ? formatPrefix(apiKey.prefix)
+      : visibleIds.has(apiKey.id)
+        ? apiKey.key
+        : maskKey(apiKey.key);
+  const toggleDisabled = (apiKey) =>
+    togglingId === apiKey.id || (hashedMode && isKeyExpired(apiKey.expiresAt));
   const renderName = (apiKey) => (
     <KeyName
       apiKey={apiKey}
@@ -288,6 +382,7 @@ export default function ApiKeysCard({
       clearRenameError={clearRenameError}
     />
   );
+  const hasLegacy = hashedMode && keys.some((k) => Boolean(k.legacy));
 
   return (
     <Card
@@ -299,9 +394,11 @@ export default function ApiKeysCard({
           <StatusPill variant="neutral" size="sm">
             {keys.length}
           </StatusPill>
-          <Button variant="primary" size="sm" icon="add" onClick={onCreateKey}>
-            Create key
-          </Button>
+          {canCreate && (
+            <Button variant="primary" size="sm" icon="add" onClick={onCreateKey}>
+              Create key
+            </Button>
+          )}
         </>
       }
     >
@@ -328,6 +425,16 @@ export default function ApiKeysCard({
         />
       )}
 
+      {hashedMode && migrationNotice && <MigrationNotice notice={migrationNotice} />}
+
+      {hasLegacy && (
+        <div className="mb-4">
+          <Callout variant="warn" title="Legacy keys still work but are weaker">
+            Create a new key and delete the old one to rotate.
+          </Callout>
+        </div>
+      )}
+
       <CopyStatus
         copied={copiedId === "created-banner" ? null : copiedId}
         error={copyError === "created-banner" ? null : copyError}
@@ -340,9 +447,11 @@ export default function ApiKeysCard({
           title="No API keys yet"
           body="Create your first API key to call the endpoint."
           action={
-            <Button variant="secondary" icon="add" onClick={onCreateKey}>
-              Create key
-            </Button>
+            canCreate ? (
+              <Button variant="secondary" icon="add" onClick={onCreateKey}>
+                Create key
+              </Button>
+            ) : undefined
           }
         />
       ) : (
@@ -358,6 +467,16 @@ export default function ApiKeysCard({
                   <th scope="col" className="py-2 pe-3 text-start font-semibold">
                     Key
                   </th>
+                  {hashedMode && (
+                    <>
+                      <th scope="col" className="py-2 pe-3 text-start font-semibold">
+                        Scope
+                      </th>
+                      <th scope="col" className="py-2 pe-3 text-start font-semibold">
+                        Expires
+                      </th>
+                    </>
+                  )}
                   <th scope="col" className="py-2 pe-3 text-start font-semibold">
                     Created
                   </th>
@@ -384,6 +503,14 @@ export default function ApiKeysCard({
                         {showValue(apiKey)}
                       </code>
                     </td>
+                    {hashedMode && (
+                      <>
+                        <td className="py-3 pe-3 text-muted">
+                          {scopeSummary(apiKey.allowedModels, apiKey.allowedCombos)}
+                        </td>
+                        <td className="py-3 pe-3 text-muted">{formatExpiry(apiKey.expiresAt)}</td>
+                      </>
+                    )}
                     <td className="py-3 pe-3 text-muted">
                       {apiKey.createdAt ? new Date(apiKey.createdAt).toLocaleDateString() : "—"}
                     </td>
@@ -395,33 +522,42 @@ export default function ApiKeysCard({
                       <Toggle
                         size="sm"
                         checked={apiKey.isActive !== false}
-                        disabled={togglingId === apiKey.id}
+                        disabled={toggleDisabled(apiKey)}
+                        title={
+                          hashedMode && isKeyExpired(apiKey.expiresAt)
+                            ? "This key expired"
+                            : undefined
+                        }
                         onChange={(checked) => onToggleKey(apiKey.id, checked)}
                         aria-label={`Enable key ${apiKey.name}`}
                       />
                     </td>
                     <td className="py-3">
                       <div className="flex items-center justify-end gap-1">
-                        <IconButton
-                          icon={visibleIds.has(apiKey.id) ? "visibility_off" : "visibility"}
-                          aria-label={visibleIds.has(apiKey.id) ? "Hide key" : "Show key"}
-                          onClick={() => onToggleVisibility(apiKey.id)}
-                        />
-                        <IconButton
-                          icon={
-                            copiedId === apiKey.id
-                              ? "check"
-                              : copyError === apiKey.id
-                                ? "error"
-                                : "content_copy"
-                          }
-                          aria-label={
-                            copyError === apiKey.id
-                              ? `Couldn't copy key ${apiKey.name}`
-                              : `Copy key ${apiKey.name}`
-                          }
-                          onClick={() => onCopy(apiKey.key, apiKey.id)}
-                        />
+                        {!hashedMode && (
+                          <>
+                            <IconButton
+                              icon={visibleIds.has(apiKey.id) ? "visibility_off" : "visibility"}
+                              aria-label={visibleIds.has(apiKey.id) ? "Hide key" : "Show key"}
+                              onClick={() => onToggleVisibility(apiKey.id)}
+                            />
+                            <IconButton
+                              icon={
+                                copiedId === apiKey.id
+                                  ? "check"
+                                  : copyError === apiKey.id
+                                    ? "error"
+                                    : "content_copy"
+                              }
+                              aria-label={
+                                copyError === apiKey.id
+                                  ? `Couldn't copy key ${apiKey.name}`
+                                  : `Copy key ${apiKey.name}`
+                              }
+                              onClick={() => onCopy(apiKey.key, apiKey.id)}
+                            />
+                          </>
+                        )}
                         <IconButton
                           icon="delete"
                           aria-label={`Delete key ${apiKey.name}`}
@@ -452,27 +588,37 @@ export default function ApiKeysCard({
                   >
                     {showValue(apiKey)}
                   </code>
-                  <IconButton
-                    icon={visibleIds.has(apiKey.id) ? "visibility_off" : "visibility"}
-                    aria-label={visibleIds.has(apiKey.id) ? "Hide key" : "Show key"}
-                    onClick={() => onToggleVisibility(apiKey.id)}
-                  />
-                  <IconButton
-                    icon={
-                      copiedId === apiKey.id
-                        ? "check"
-                        : copyError === apiKey.id
-                          ? "error"
-                          : "content_copy"
-                    }
-                    aria-label={
-                      copyError === apiKey.id
-                        ? `Couldn't copy key ${apiKey.name}`
-                        : `Copy key ${apiKey.name}`
-                    }
-                    onClick={() => onCopy(apiKey.key, apiKey.id)}
-                  />
+                  {!hashedMode && (
+                    <>
+                      <IconButton
+                        icon={visibleIds.has(apiKey.id) ? "visibility_off" : "visibility"}
+                        aria-label={visibleIds.has(apiKey.id) ? "Hide key" : "Show key"}
+                        onClick={() => onToggleVisibility(apiKey.id)}
+                      />
+                      <IconButton
+                        icon={
+                          copiedId === apiKey.id
+                            ? "check"
+                            : copyError === apiKey.id
+                              ? "error"
+                              : "content_copy"
+                        }
+                        aria-label={
+                          copyError === apiKey.id
+                            ? `Couldn't copy key ${apiKey.name}`
+                            : `Copy key ${apiKey.name}`
+                        }
+                        onClick={() => onCopy(apiKey.key, apiKey.id)}
+                      />
+                    </>
+                  )}
                 </div>
+                {hashedMode && (
+                  <p className="text-xs text-muted">
+                    {scopeSummary(apiKey.allowedModels, apiKey.allowedCombos)} · Expires{" "}
+                    {formatExpiry(apiKey.expiresAt)}
+                  </p>
+                )}
                 <p className="text-xs text-muted">
                   Created {apiKey.createdAt ? new Date(apiKey.createdAt).toLocaleDateString() : "—"}{" "}
                   · {formatLastUsed(apiKey.lastUsed)} · {formatNumber(apiKey.requestsToday)} today
@@ -481,7 +627,10 @@ export default function ApiKeysCard({
                   <Toggle
                     size="sm"
                     checked={apiKey.isActive !== false}
-                    disabled={togglingId === apiKey.id}
+                    disabled={toggleDisabled(apiKey)}
+                    title={
+                      hashedMode && isKeyExpired(apiKey.expiresAt) ? "This key expired" : undefined
+                    }
                     onChange={(checked) => onToggleKey(apiKey.id, checked)}
                     aria-label={`Enable key ${apiKey.name}`}
                   />
@@ -507,7 +656,13 @@ ApiKeysCard.propTypes = {
     PropTypes.shape({
       id: PropTypes.string.isRequired,
       name: PropTypes.string.isRequired,
-      key: PropTypes.string.isRequired,
+      key: PropTypes.string,
+      prefix: PropTypes.string,
+      type: PropTypes.string,
+      legacy: PropTypes.oneOfType([PropTypes.bool, PropTypes.number]),
+      allowedModels: PropTypes.arrayOf(PropTypes.string),
+      allowedCombos: PropTypes.arrayOf(PropTypes.string),
+      expiresAt: PropTypes.string,
       isActive: PropTypes.bool,
       createdAt: PropTypes.string,
       lastUsed: PropTypes.string,
@@ -536,4 +691,13 @@ ApiKeysCard.propTypes = {
   renameErrors: PropTypes.objectOf(PropTypes.string).isRequired,
   clearRenameError: PropTypes.func.isRequired,
   loading: PropTypes.bool.isRequired,
+  hashedMode: PropTypes.bool,
+  canCreate: PropTypes.bool,
+  migrationNotice: PropTypes.shape({
+    visible: PropTypes.bool.isRequired,
+    canDismiss: PropTypes.bool.isRequired,
+    dismissing: PropTypes.bool.isRequired,
+    error: PropTypes.string,
+    dismiss: PropTypes.func.isRequired,
+  }),
 };

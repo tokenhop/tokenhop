@@ -25,6 +25,13 @@ vi.mock("@/lib/localDb", () => ({
   getCombos: mocks.getCombos,
 }));
 
+// Legacy-storage auth: requireApiKey=false passes through with no principal,
+// matching the pre-shared-resolver behavior this account-state suite expects.
+vi.mock("@/lib/auth/gatewayAuth.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  resolveGatewayAuth: vi.fn(async () => ({ principal: null, legacy: true })),
+}));
+
 vi.mock("open-sse/handlers/fetch/index.js", () => ({
   handleFetchCore: mocks.handleFetchCore,
 }));
@@ -93,6 +100,7 @@ describe("web fetch account state", () => {
       "jina-reader",
       expect.any(Set),
       "webfetch:jina-reader",
+      {},
     );
     expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();
   });

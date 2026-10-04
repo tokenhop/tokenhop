@@ -19,14 +19,19 @@ const LANGUAGES = [
  * secret). The full key is also never shown from the eye-reveal state — only
  * the just-created banner or explicit per-row reveal shows it.
  *
+ * Hashed storage: rows are prefix-only, so only the just-created key (held in
+ * memory via `revealed`) can produce a copyable snippet; other keys render the
+ * placeholder mask and disable Copy with a helper line.
+ *
  * @param {object} props
  * @param {string} props.baseUrl Endpoint root (e.g. http://localhost:20128/v1).
  * @param {string|null} props.selectedKeyId
- * @param {Array} props.keys Key rows {id,name,key}.
+ * @param {Array} props.keys Key rows {id,name,key?,prefix?}.
  * @param {{ id: string, plain: string }|null} props.revealed Just-created key plain text.
  * @param {(id: string) => void} props.onSelectKey
  * @param {(text: string, id: string) => void} props.onCopy
  * @param {string|null} props.copiedId
+ * @param {boolean} [props.hashedMode] Prefix-only rows; restricts copy to the just-created key.
  */
 export default function QuickConnectCard({
   baseUrl,
@@ -37,6 +42,7 @@ export default function QuickConnectCard({
   onCopy,
   copiedId,
   copyError,
+  hashedMode = false,
 }) {
   const [language, setLanguage] = useState("shell");
   const selected = keys.find((key) => key.id === selectedKeyId) ?? null;
@@ -94,6 +100,12 @@ export default function QuickConnectCard({
           </div>
         </div>
 
+        {hashedMode && !canCopy && keys.length > 0 && (
+          <p className="text-xs text-muted">
+            Create a new key to copy a snippet — full keys aren&apos;t stored.
+          </p>
+        )}
+
         <div className="border-t border-line pt-3">
           <Link
             href="/dashboard/cli-tools"
@@ -114,7 +126,8 @@ QuickConnectCard.propTypes = {
     PropTypes.shape({
       id: PropTypes.string.isRequired,
       name: PropTypes.string.isRequired,
-      key: PropTypes.string.isRequired,
+      key: PropTypes.string,
+      prefix: PropTypes.string,
     }),
   ).isRequired,
   revealed: PropTypes.shape({
@@ -125,4 +138,5 @@ QuickConnectCard.propTypes = {
   onCopy: PropTypes.func.isRequired,
   copiedId: PropTypes.string,
   copyError: PropTypes.string,
+  hashedMode: PropTypes.bool,
 };

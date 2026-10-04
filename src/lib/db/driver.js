@@ -1,8 +1,15 @@
 import { ensureDirs, DATA_FILE } from "./paths.js";
+import { DATA_DIR } from "../dataDir.js";
+import { acquireExclusiveWriterLock } from "./processLock.js";
 
-// Use global to survive Next.js dev hot-reload (module state resets on reload)
-if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false };
-const state = global._dbAdapter;
+// Module state keyed by DATA_FILE on globalThis: distinct DATA_DIRs never
+// share an adapter, and Next dev HMR keeps the established adapter.
+const adaptersKey = Symbol.for(`tokenhop.dbAdapters.${process.pid}`);
+globalThis[adaptersKey] ??= new Map();
+const adapters = globalThis[adaptersKey];
+if (!adapters.has(DATA_FILE))
+  adapters.set(DATA_FILE, { instance: null, initPromise: null, logged: false });
+const state = adapters.get(DATA_FILE);
 
 async function tryBunSqlite() {
   // Bun runtime only — built-in, no install needed
@@ -57,6 +64,11 @@ async function trySqlJs() {
 }
 
 async function initAdapter() {
+  // YAN-363: one DATA_DIR has exactly one writer process. The driver claims
+  // it for the process lifetime before any adapter open/migrate. Direct
+  // read-only SQLite handles open outside this driver and need no claim;
+  // parallel tests each own their own DATA_DIR.
+  acquireExclusiveWriterLock(DATA_DIR);
   ensureDirs();
   // Order per runtime:
   //   Bun:  bun:sqlite → sql.js

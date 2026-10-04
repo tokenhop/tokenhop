@@ -11,12 +11,17 @@ export const withV1 = (url) => (url.endsWith("/v1") ? url : `${url}/v1`);
 export const withoutV1 = (url) => (url.endsWith("/v1") ? url.slice(0, -3) : url);
 
 /** Key Apply sends: selected key, first key, or the brand default key when not cloud. */
-export const resolveApiKey = (selectedApiKey, apiKeys, cloudEnabled) =>
-  selectedApiKey?.trim() || apiKeys?.[0]?.key || (!cloudEnabled ? ACTIVE.defaultApiKey : null);
+export const resolveApiKey = (selectedApiKey, apiKeys, cloudEnabled, { hashed = false } = {}) =>
+  hashed
+    ? // Hashed storage: only an explicitly pasted key is ever sent; omission
+      // lets the server preserve the stored disk credential. No first-key or
+      // brand-default substitution — those secrets are not recoverable here.
+      selectedApiKey?.trim() || undefined
+    : selectedApiKey?.trim() || apiKeys?.[0]?.key || (!cloudEnabled ? ACTIVE.defaultApiKey : null);
 
 /** Key a manual snippet shows: the same key Apply would send, else the placeholder. */
-export const manualApiKey = (selectedApiKey, apiKeys, cloudEnabled) =>
-  resolveApiKey(selectedApiKey, apiKeys, cloudEnabled) ?? API_KEY_PLACEHOLDER;
+export const manualApiKey = (selectedApiKey, apiKeys, cloudEnabled, opts) =>
+  resolveApiKey(selectedApiKey, apiKeys, cloudEnabled, opts) ?? API_KEY_PLACEHOLDER;
 
 /**
  * A builder fragment: `{ file, format: "json" | "toml" | "text", merge: boolean, value }`; merge

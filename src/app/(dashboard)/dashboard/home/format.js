@@ -52,6 +52,18 @@ export function maskApiKey(fullKey) {
 }
 
 /**
+ * Display value for one key row: raw legacy keys mask as before; hashed rows
+ * show the stored prefix only.
+ * @param {{ key?: string, prefix?: string }} key
+ * @returns {string}
+ */
+export function keyRowDisplay(key) {
+  if (typeof key?.key === "string") return maskApiKey(key.key);
+  if (typeof key?.prefix === "string" && key.prefix) return key.prefix;
+  return "—";
+}
+
+/**
  * Cached-token share of prompt tokens as a whole percent.
  * @param {number} cachedTokens
  * @param {number} promptTokens

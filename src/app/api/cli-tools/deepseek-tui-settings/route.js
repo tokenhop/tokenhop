@@ -1,6 +1,12 @@
 "use server";
 
 import { NextResponse } from "next/server";
+import {
+  boundaryError,
+  configCopy,
+  hashedStorageMode,
+  resolveCredential,
+} from "@/lib/cliToolConfigs/credentialBoundary";
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
@@ -92,6 +98,12 @@ const hasTokenhopConfig = (config) => {
 };
 
 export async function GET() {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const installed = await checkDeepSeekInstalled();
     if (!installed) {
@@ -103,6 +115,21 @@ export async function GET() {
     }
     const toml = await readConfigToml();
     const config = parseToml(toml);
+    if (hashed) {
+      // Targeted sanitization: withhold only the providers.openai api_key copy.
+      const copy = configCopy(config);
+      const section = copy?.["providers.openai"];
+      const configured = typeof section?.api_key === "string" && section.api_key.length > 0;
+      if (section) delete section.api_key;
+      return NextResponse.json({
+        installed: true,
+        settings: copy,
+        hasTokenhop: hasTokenhopConfig(config),
+        credentialConfigured: configured,
+        storage: "hashed",
+        configPath: getDeepSeekConfigPath(),
+      });
+    }
     return NextResponse.json({
       installed: true,
       settings: config,
@@ -110,22 +137,48 @@ export async function GET() {
       configPath: getDeepSeekConfigPath(),
     });
   } catch (error) {
+    if (hashed) return boundaryError(error);
     console.log("Error checking deepseek-tui settings:", error);
     return NextResponse.json({ error: "Failed to check deepseek-tui settings" }, { status: 500 });
   }
 }
 
 export async function POST(request) {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const { baseUrl, apiKey, model } = await request.json();
     if (!baseUrl || !model) {
       return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
     }
 
-    const dir = getDeepSeekDir();
-    await fs.mkdir(dir, { recursive: true });
+    // Hashed storage: reuse the stored key only for the SAME destination; a
+    // changed or missing one is an actionable 400 before the file is written —
+    // never the default-key fallback.
+    let effectiveApiKey = apiKey;
+    if (hashed) {
+      let record = null;
+      try {
+        record = parseToml(await readConfigToml());
+      } catch {
+        record = null;
+      }
+      const section = record?.["providers.openai"];
+      effectiveApiKey = resolveCredential({
+        provided: apiKey,
+        baseUrl,
+        existing: section?.api_key ? [{ key: section.api_key, url: section.base_url }] : [],
+      });
+    }
 
-    const [fragment] = buildDeepSeekTuiConfig({ baseUrl, apiKey, model });
+    const dir = getDeepSeekDir();
+
+    const [fragment] = buildDeepSeekTuiConfig({ baseUrl, apiKey: effectiveApiKey, model });
+    await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(getDeepSeekConfigPath(), renderFragment(fragment));
 
     return NextResponse.json({
@@ -134,6 +187,7 @@ export async function POST(request) {
       configPath: getDeepSeekConfigPath(),
     });
   } catch (error) {
+    if (hashed) return boundaryError(error);
     console.log("Error updating deepseek-tui settings:", error);
     return NextResponse.json({ error: "Failed to update deepseek-tui settings" }, { status: 500 });
   }

@@ -82,7 +82,7 @@ volumes:
 ```
 
 State (SQLite at `/app/data/db/data.sqlite`) lives in the mounted volume. Existing installs keep
-their old volume; see [UPGRADING.md](UPGRADING.md#9-docker).
+their old volume; see [UPGRADING.md](UPGRADING.md#10-docker).
 
 ## Using it
 

@@ -1,6 +1,7 @@
 // Workspace memberships (YAN-353). Scoped: the principal must belong to the
 // workspace. Role checks (who may manage members) belong to YAN-357.
 import { getAdapter } from "../driver.js";
+import { revokeUserApiKeysSync } from "./apiKeysRepo.js";
 import { TenancyError, assertCtx, mapConstraintErrors } from "@/lib/users/errors.js";
 
 const MANAGER_ROLES = ["owner", "manager"];
@@ -106,6 +107,7 @@ export async function updateMembershipRole(ctx, workspaceId, userId, role) {
 
 export async function removeMembership(ctx, workspaceId, userId) {
   const db = await getAdapter();
+  const now = new Date().toISOString();
   return db.transaction(() => {
     sharedWorkspace(db, ctx, workspaceId);
     assertNotLastManager(db, workspaceId, userId);
@@ -113,6 +115,7 @@ export async function removeMembership(ctx, workspaceId, userId) {
       workspaceId,
       userId,
     ]);
+    if (changes > 0) revokeUserApiKeysSync(db, userId, { workspaceId, now });
     return changes > 0;
   });
 }

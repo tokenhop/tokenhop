@@ -10,6 +10,27 @@ import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
 import { CLIENT_NAME, urlNamesClient } from "@/lib/cliToolBrand";
 import { buildClineConfig } from "@/lib/cliToolConfigs/cline";
 
+import { getAdapter } from "@/lib/db/driver.js";
+import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
+
+async function hashedStorageMode() {
+  return readApiKeyStorageState(await getAdapter()).storage === "hashed";
+}
+
+function destination(raw) {
+  const url = new URL(raw);
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  )
+    throw new Error("Invalid destination");
+  // Match the builder's API-root normalization while preserving path identity.
+  return `${url.origin}${url.pathname.replace(/\/$/, "").replace(/\/v1$/, "")}`;
+}
+
 const execAsync = promisify(exec);
 
 const getDataDir = () => path.join(os.homedir(), ".cline", "data");
@@ -55,6 +76,12 @@ const hasTokenhopConfig = (globalState) => {
 };
 
 export async function GET() {
+  let hashed;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const installed = await checkInstalled();
     if (!installed) {
@@ -65,8 +92,10 @@ export async function GET() {
       });
     }
     const globalState = await readJson(getGlobalStatePath());
+    const credentialConfigured = !!(await readJson(getSecretsPath()))?.openAiApiKey;
     return NextResponse.json({
       installed: true,
+      ...(hashed ? { storage: "hashed", credentialConfigured } : {}),
       settings: {
         actModeApiProvider: globalState?.actModeApiProvider,
         planModeApiProvider: globalState?.planModeApiProvider,
@@ -77,28 +106,54 @@ export async function GET() {
       globalStatePath: getGlobalStatePath(),
     });
   } catch (error) {
-    console.log("Error checking cline settings:", error);
+    console.log("Error checking cline settings:", hashed ? "Config operation failed" : error);
     return NextResponse.json({ error: "Failed to check cline settings" }, { status: 500 });
   }
 }
 
 export async function POST(request) {
+  let hashed;
   try {
-    const { baseUrl, apiKey, model } = await request.json();
-    if (!baseUrl || !apiKey || !model) {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
+  try {
+    let { baseUrl, apiKey, model } = await request.json();
+    if (!baseUrl || (!hashed && !apiKey) || !model) {
       return NextResponse.json(
         { error: "baseUrl, apiKey and model are required" },
         { status: 400 },
       );
     }
 
-    await fs.mkdir(getDataDir(), { recursive: true });
-
-    const [globalStateFragment, secretsFragment] = buildClineConfig({ baseUrl, apiKey, model });
-
-    // Read both before writing either, so a parse error can't leave a half-applied config.
     const globalState = (await readJsonConfig(getGlobalStatePath())) || {};
     const secrets = (await readJsonConfig(getSecretsPath())) || {};
+    if (hashed) {
+      let intended;
+      try {
+        intended = destination(baseUrl);
+        if (
+          !apiKey &&
+          (!secrets.openAiApiKey || destination(globalState.openAiBaseUrl) !== intended)
+        ) {
+          return NextResponse.json(
+            { error: "Provide apiKey for this destination" },
+            { status: 400 },
+          );
+        }
+      } catch {
+        return NextResponse.json(
+          { error: "Invalid baseUrl; provide an explicit credential" },
+          { status: 400 },
+        );
+      }
+      apiKey = apiKey || secrets.openAiApiKey;
+      baseUrl = intended;
+    }
+    const [globalStateFragment, secretsFragment] = buildClineConfig({ baseUrl, apiKey, model });
+    await fs.mkdir(getDataDir(), { recursive: true });
+
     Object.assign(globalState, globalStateFragment.value);
     await fs.writeFile(getGlobalStatePath(), JSON.stringify(globalState, null, 2));
 
@@ -111,6 +166,8 @@ export async function POST(request) {
       globalStatePath: getGlobalStatePath(),
     });
   } catch (error) {
+    if (hashed)
+      return NextResponse.json({ error: "Failed to update cline settings" }, { status: 500 });
     const res = configErrorResponse(error);
     if (res) return res;
     console.log("Error updating cline settings:", error);

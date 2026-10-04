@@ -22,6 +22,13 @@ vi.mock("@/lib/localDb", async (importOriginal) => ({
   getCombos: vi.fn(async () => []),
 }));
 
+// Legacy-storage auth: requireApiKey=false passes through with no principal,
+// matching the pre-shared-resolver behavior these model-id tests were built on.
+vi.mock("@/lib/auth/gatewayAuth.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  resolveGatewayAuth: vi.fn(async () => ({ principal: null, legacy: true })),
+}));
+
 vi.mock("open-sse/handlers/search/index.js", () => ({ handleSearchCore: mocks.handleSearchCore }));
 vi.mock("open-sse/handlers/fetch/index.js", () => ({ handleFetchCore: mocks.handleFetchCore }));
 
@@ -83,6 +90,14 @@ describe("web model ids from /v1/models/web", () => {
     expect(res.status).toBe(200);
     expect(mocks.handleFetchCore.mock.calls[0][0].provider).toBe("tavily");
     expect(mocks.getProviderCredentials.mock.calls[0][0]).toBe("tavily");
+    // Legacy shape here is `{}` (no principal threading); provider + scoped
+    // lock key still assert the original behavioral contract.
+    expect(mocks.getProviderCredentials).toHaveBeenCalledWith(
+      "tavily",
+      expect.any(Set),
+      "webfetch:tavily",
+      {},
+    );
   });
 
   it("/v1/search still rejects a fetch id", async () => {
