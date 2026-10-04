@@ -1816,6 +1816,7 @@
   "Support tokenhop": "tokenhop unterstützen",
   "Supports image input": "Unterstützt Bildeingabe",
   "Supports reasoning / thinking": "Unterstützt Reasoning / Thinking",
+  "Supports video input": "Unterstützt Videoeingabe",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Gerne, ich helfe gerne. Es scheint, dass das Problem darin liegt, dass Ihre Funktion zurückkehrt, bevor die Schleife die Chance hat, abzuschließen, sodass…",
   "System": "Anlage",
   "Tailscale": "Tailscale",

@@ -1820,6 +1820,7 @@
   "Support tokenhop": "Podpořte tokenhop",
   "Supports image input": "Podporuje vstup obrázků",
   "Supports reasoning / thinking": "Podporuje uvažování / myšlení",
+  "Supports video input": "Podporuje video vstup",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Jistě, rád pomohu. Vypadá to, že problém je, že vaše funkce vrací hodnotu dříve, než má smyčka šanci dokončit, takže…",
   "System": "Systém",
   "Tailscale": "Tailscale",

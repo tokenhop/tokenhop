@@ -1812,6 +1812,7 @@
   "Support tokenhop": "Tue tokenhopia",
   "Supports image input": "Tukee kuvasyötettä",
   "Supports reasoning / thinking": "Tukee päättelyä / ajattelua",
+  "Supports video input": "Tukee videosyötettä",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Kyllä, autan mielelläni. Vaikuttaa siltä, että ongelma on se, että funktiosi palauttaa ennen kuin silmukka ehtii päättää, joten…",
   "System": "Järjestelmä",
   "Tailscale": "Tailscale",

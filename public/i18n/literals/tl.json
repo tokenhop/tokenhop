@@ -1813,6 +1813,7 @@
   "Support tokenhop": "Suportahan ang tokenhop",
   "Supports image input": "Sinusuportahan ang input ng larawan",
   "Supports reasoning / thinking": "Sinusuportahan ang pagpapaisip / pag-iisip",
+  "Supports video input": "Sumusuporta ng pagpasok ng bidyo",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Sige, masaya akong makatulong. Tila ang problema ay bumabalik ang iyong bago matapos ang loop na magkaroon ng pagkakataong matapos, kaya...",
   "System": "Sistema",
   "Tailscale": "Tailscale",

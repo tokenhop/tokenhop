@@ -1947,6 +1947,7 @@
   "Support tokenhop": "支持 tokenhop",
   "Supports image input": "支持图像输入",
   "Supports reasoning / thinking": "支持推理 / 思考",
+  "Supports video input": "支持视频输入",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "当然，很高兴能帮忙。看起来问题在于您的函数在循环完成前就返回了，所以……",
   "System": "系统",
   "Tailscale": "Tailscale",

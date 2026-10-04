@@ -1944,6 +1944,7 @@
   "Support tokenhop": "គាំទ្រ tokenhop",
   "Supports image input": "គាំទ្រការបញ្ចូលរូបភាព",
   "Supports reasoning / thinking": "គាំទ្រការវិភាគ / ការគិត",
+  "Supports video input": "គាំទ្រការបញ្ចូលវីដេអូ",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "ប្រាកដជា រីករាយជួយ។ វាហាក់ដូចជាបញ្ហាគឺថាអនុគមន៍របស់អ្នកត្រឡប់មុនដង់ស៊ីតេមានឱកាសបញ្ចប់ ដូច្នេះ…",
   "System": "ប្រព័ន្ធ",
   "Tailscale": "Tailscale",

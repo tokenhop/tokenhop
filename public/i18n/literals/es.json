@@ -1825,6 +1825,7 @@
   "Support tokenhop": "Apoyar a tokenhop",
   "Supports image input": "Admite entrada de imágenes",
   "Supports reasoning / thinking": "Admite razonamiento / pensamiento",
+  "Supports video input": "Admite entrada de video",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Claro, encantado de ayudar. Parece que el problema es que tu función retorna antes de que el bucle tenga la oportunidad de finalizar, así que…",
   "System": "Sistema",
   "Tailscale": "Tailscale",

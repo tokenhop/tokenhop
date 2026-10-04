@@ -1947,6 +1947,7 @@
   "Support tokenhop": "สนับสนุน tokenhop",
   "Supports image input": "รองรับการป้อนภาพ",
   "Supports reasoning / thinking": "รองรับการใช้เหตุผล / คิด",
+  "Supports video input": "รองรับอินพุตวิดีโอ",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "ได้เลย ยินดีช่วย ดูเหมือนปัญหาคือฟังก์ชันของคุณส่งค่ากลับก่อนที่ลูปจะมีโอกาสทำงานเสร็จ ดังนั้น…",
   "System": "ระบบ",
   "Tailscale": "Tailscale",

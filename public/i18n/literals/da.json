@@ -1816,6 +1816,7 @@
   "Support tokenhop": "Understøt tokenhop",
   "Supports image input": "Understøtter billedinput",
   "Supports reasoning / thinking": "Understøtter ræsonnering / tænkning",
+  "Supports video input": "Understøtter videoinput",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Selvfølgelig, glad for at hjælpe. Det ser ud til, at problemet er, at din funktion returnerer, før loopet får en chance for at afslutte, så…",
   "System": "Systemindstillinger",
   "Tailscale": "Tailscale",

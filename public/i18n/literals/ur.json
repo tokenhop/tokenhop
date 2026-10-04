@@ -1828,6 +1828,7 @@
   "Support tokenhop": "tokenhop کی مدد کریں",
   "Supports image input": "تصویری اندراج کی سہولت دیتا ہے",
   "Supports reasoning / thinking": "استدلال / سوچنے کی سہولت دیتا ہے",
+  "Supports video input": "ویڈیو ان پٹ کو سپورٹ کرتا ہے",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "بالکل، مدد کرنے کو خوش ہوں۔ لگتا ہے کہ مسئلہ یہ ہے کہ آپ کا فنکشن لوپ کے ختم ہونے سے پہلے واپس آ جاتا ہے، اس لیے…",
   "System": "نظام",
   "Tailscale": "Tailscale",

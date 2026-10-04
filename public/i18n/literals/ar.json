@@ -1827,6 +1827,7 @@
   "Support tokenhop": "دعم tokenhop",
   "Supports image input": "يدعم إدخال الصور",
   "Supports reasoning / thinking": "يدعم الاستدلال / التفكير",
+  "Supports video input": "يدعم إدخال الفيديو",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "بالتأكيد، يسعدني المساعدة. يبدو أن المشكلة هي أن دالتك تُرجع قبل أن تنتهي الحلقة، لذا...",
   "System": "النظام",
   "Tailscale": "Tailscale",

@@ -1823,6 +1823,7 @@
   "Support tokenhop": "Hỗ trợ tokenhop",
   "Supports image input": "Hỗ trợ nhập ảnh",
   "Supports reasoning / thinking": "Hỗ trợ suy luận / tư duy",
+  "Supports video input": "Hỗ trợ đầu vào video",
   "Sure, happy to help. It looks like the issue is that your function returns before the loop has a chance to finish, so…": "Chắc chắn, vui lòng giúp đỡ. Có vẻ như vấn đề là hàm của bạn trả lời trước khi vòng lặp có cơ hội hoàn thành, vì vậy…",
   "System": "Hệ thống",
   "Tailscale": "Tailscale",
