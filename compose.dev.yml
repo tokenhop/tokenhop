@@ -38,8 +38,11 @@ services:
       # Keep container build cache off the host checkout (avoids root-owned .next).
       - tokenhop-dev-next:/app/.next
       - tokenhop-dev-data:/app/data
+    # init reaps zombies and forwards SIGTERM; exec drops the sh wrapper so the
+    # dev server gets the signal and can release the DATA_DIR writer lock.
+    init: true
     # npm ci keeps the mounted checkout reproducible.
-    command: sh -c "npm ci && npm run dev -- --hostname 0.0.0.0"
+    command: sh -c "npm ci && exec npm run dev -- --hostname 0.0.0.0"
     depends_on:
       - headroom
 
