@@ -12,6 +12,7 @@
 import {
   GROK_CLI_BASE_URL,
   GROK_CLI_CLIENT_IDENTIFIER,
+  GROK_CLI_DEFAULT_MODEL,
   GROK_CLI_MODEL,
   GROK_CLI_USER_AGENT,
   GROK_CLI_VERSION,
@@ -68,6 +69,8 @@ export default {
     },
   },
   models: [
+    { id: GROK_CLI_DEFAULT_MODEL, name: "Grok 4.6", contextLength: 500000 },
+    { id: "grok-4.7", name: "Grok 4.7" },
     {
       id: GROK_CLI_MODEL,
       name: "Grok Build",
@@ -89,9 +92,9 @@ export default {
     deviceCodeUrl: "https://auth.x.ai/oauth2/device/code",
     tokenUrl: "https://auth.x.ai/oauth2/token",
     refreshUrl: "https://auth.x.ai/oauth2/token",
-    // HAR scope includes conversations read/write beyond the api-only xai scope
+    // Official CLI scope includes conversation and workspace access beyond api-only xai
     scope:
-      "openid profile email offline_access grok-cli:access api:access conversations:read conversations:write",
+      "openid profile email offline_access grok-cli:access api:access conversations:read conversations:write workspaces:read workspaces:write",
     referrer: "grok-build",
     refreshLeadMs: 5 * 60 * 1000,
   },

@@ -153,6 +153,13 @@ so a stale version breaks every `grok-cli` request. Bump this with your Grok CLI
 | ------------------ | -------- | -------------------------------------------------------- |
 | `GROK_CLI_VERSION` | `1.0.44` | `x-grok-client-version` and `User-Agent: grok-shell/<v>` |
 
+The default model is `grok-4.6`; Grok Build (`grok-build`) stays selectable as a separate
+model with its own limits. `grok-4.7` is listed without asserted limits or effort levels
+until upstream metadata is verified. On HTTP 426, set `GROK_CLI_VERSION` to a supported
+official version (and the compose pin, if used) and restart tokenhop. Compaction and
+doom-loop headers are intentionally not sent — tokenhop does not implement their
+server-assisted state.
+
 **Google OAuth clients** — required only for OAuth login and token refresh on these
 providers. Official Docker images and the npm package ship these built in, so login
 just works. Set the env vars only to override the built-in pair, or when running from

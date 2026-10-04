@@ -1,4 +1,5 @@
 import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
+import { GROK_CLI_AUTH_HEADERS } from "../../config/grokCli.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, buildKimiHeaders } from "../../config/appConstants.js";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { mintMetaCodeKey } from "../metaCode.js";
@@ -30,6 +31,75 @@ export async function refreshXaiToken(refreshToken, log, proxyOptions = null) {
         if (msg.includes("invalid_grant") || msg.includes("invalid_request")) {
           return { error: "invalid_grant" };
         }
+        return null;
+      }
+    },
+    log,
+  );
+}
+
+// Dedicated Grok CLI refresh: same token endpoint/client as onboarding, full onboarding
+// fingerprint via GROK_CLI_AUTH_HEADERS. Mirrors refreshXaiToken's return contract
+// (rotation fallback, expiresIn, idToken, null on transient, permanent invalid_grant).
+// Failure logs carry status/category only, never token bodies.
+export async function refreshGrokCliToken(refreshToken, log, proxyOptions = null) {
+  if (!refreshToken) return null;
+  return dedupRefresh(
+    "grok-cli",
+    refreshToken,
+    async () => {
+      try {
+        const { tokenUrl, clientId } = PROVIDER_OAUTH["grok-cli"] || {};
+        if (!tokenUrl || !clientId) {
+          log?.warn?.("TOKEN_REFRESH", "grok-cli refresh misconfigured: missing tokenUrl/clientId");
+          return null;
+        }
+        const response = await proxyAwareFetch(
+          tokenUrl,
+          {
+            method: "POST",
+            headers: { ...GROK_CLI_AUTH_HEADERS },
+            body: new URLSearchParams({
+              grant_type: "refresh_token",
+              client_id: clientId,
+              refresh_token: refreshToken,
+            }),
+          },
+          proxyOptions,
+        );
+        if (!response.ok) {
+          const errorText = await response.text();
+          log?.warn?.("TOKEN_REFRESH", `grok-cli refresh failed: HTTP ${response.status}`);
+          // Permanent only on an auth client error; 5xx bodies mentioning
+          // invalid_grant/invalid_request are transient.
+          if (
+            response.status >= 400 &&
+            response.status < 500 &&
+            (errorText.includes("invalid_grant") || errorText.includes("invalid_request"))
+          ) {
+            return { error: "invalid_grant" };
+          }
+          return null;
+        }
+        let tokens;
+        try {
+          tokens = await response.json();
+        } catch {
+          log?.warn?.("TOKEN_REFRESH", "grok-cli refresh failed: malformed token response");
+          return null;
+        }
+        if (typeof tokens?.access_token !== "string" || !tokens.access_token.trim()) {
+          log?.warn?.("TOKEN_REFRESH", "grok-cli refresh failed: missing access token");
+          return null;
+        }
+        return {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token || refreshToken,
+          expiresIn: tokens.expires_in,
+          idToken: tokens.id_token,
+        };
+      } catch {
+        log?.warn?.("TOKEN_REFRESH", "grok-cli refresh failed: transport or response error");
         return null;
       }
     },

@@ -277,7 +277,12 @@ describe("getUsageForProvider(grok-cli)", () => {
     expect(billingCall[1].headers["x-xai-token-auth"]).toBe("xai-grok-cli");
     expect(billingCall[1].headers["x-grok-client-version"]).toBe(GROK_CLI_VERSION);
     expect(billingCall[1].headers["x-grok-client-identifier"]).toBe("grok-shell");
+    expect(billingCall[1].headers["x-grok-client-mode"]).toBe("headless");
     expect(billingCall[1].headers["x-userid"]).toBe("d84768dd-224d-4052-ba49-0d336fa9160c");
+    // Usage keeps its own identity headers — no Responses-profile spread here
+    expect(billingCall[1].headers["x-email"]).toBe("user@example.com");
+    expect(billingCall[1].headers["x-authenticateresponse"]).toBeUndefined();
+    expect(billingCall[1].headers["Content-Type"]).toBeUndefined();
     // REST already has numeric quotas — do not hit gRPC fallback
     expect(proxyAwareFetch.mock.calls).toHaveLength(2);
   });

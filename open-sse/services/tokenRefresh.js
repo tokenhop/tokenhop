@@ -3,6 +3,7 @@ import { OAUTH_ENDPOINTS, REFRESH_LEAD_MS } from "../config/appConstants.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import {
   refreshXaiToken,
+  refreshGrokCliToken,
   refreshAccessToken,
   refreshKimiToken,
   refreshClineToken,
@@ -25,6 +26,7 @@ import { refreshCursorToken, cursorRefreshSource } from "./tokenRefresh/cursor.j
 
 // Re-export all provider refresh functions (preserves public API for all consumers)
 export {
+  refreshGrokCliToken,
   refreshAccessToken,
   refreshKimiToken,
   refreshClineToken,
@@ -170,9 +172,9 @@ const REFRESH_HANDLERS = {
   kiro: (c, log, proxyOptions) =>
     refreshKiroToken(c.refreshToken, c.providerSpecificData, log, proxyOptions),
   xai: (c, log, proxyOptions) => refreshXaiToken(c.refreshToken, log, proxyOptions),
-  // Grok CLI shares xAI OAuth client + token endpoint (device-code tokens refresh the same way)
-  "grok-cli": (c, log, proxyOptions) => refreshXaiToken(c.refreshToken, log, proxyOptions),
-  gcli: (c, log, proxyOptions) => refreshXaiToken(c.refreshToken, log, proxyOptions),
+  // Grok CLI: dedicated refresh with the full onboarding fingerprint (distinct from xai)
+  "grok-cli": (c, log, proxyOptions) => refreshGrokCliToken(c.refreshToken, log, proxyOptions),
+  gcli: (c, log, proxyOptions) => refreshGrokCliToken(c.refreshToken, log, proxyOptions),
   // Meta Code: refreshToken holds the `dca:` device token; re-mint the subscription key
   "meta-code": (c, log, proxyOptions) => refreshMetaCodeToken(c.refreshToken, log, proxyOptions),
   "codebuddy-cn": (c, log, proxyOptions) =>

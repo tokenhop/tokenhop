@@ -11,12 +11,14 @@ import {
 } from "../translator/formats/responsesApi.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import {
+  GROK_CLI_BASE_URL,
   GROK_CLI_CLIENT_IDENTIFIER,
+  GROK_CLI_DEFAULT_MODEL,
   GROK_CLI_VERSION,
   supportsGrokCliReasoningEffort,
 } from "../config/grokCli.js";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
-import { resolveSessionId } from "../utils/sessionManager.js";
+import { resolveSessionId, resolveContinuationId } from "../utils/sessionManager.js";
 import { getConsistentMachineId } from "../shared/machineId.js";
 
 // Server-generated item id prefixes that /responses cannot resolve when store=false
@@ -63,6 +65,81 @@ const GROK_CLI_FREEFORM_TOOL_PARAMETERS = {
   properties: { input: { type: "string" } },
   required: ["input"],
 };
+
+// ponytail: compaction/recovery headers stay absent until tokenhop implements
+// official server-assisted compaction state and recovery semantics.
+function isTrustedGrokProxyUrl(url) {
+  try {
+    return new URL(String(url)).origin === new URL(GROK_CLI_BASE_URL).origin;
+  } catch {
+    return false;
+  }
+}
+
+function newTraceparent() {
+  let traceId = "";
+  let spanId = "";
+  while (/^0+$/.test(traceId) || traceId === "") {
+    traceId = crypto.randomBytes(16).toString("hex");
+  }
+  while (/^0+$/.test(spanId) || spanId === "") {
+    spanId = crypto.randomBytes(8).toString("hex");
+  }
+  return `00-${traceId}-${spanId}-00`;
+}
+
+function normalizeGrokCliIncludes(include) {
+  const out = [];
+  const seen = new Set();
+  for (const entry of Array.isArray(include) ? include : []) {
+    if (typeof entry !== "string") continue;
+    const value = entry.trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+const REQUEST_STATE = Symbol("grok-cli-request-state");
+
+const GROK_CLI_426_HINT =
+  "Upstream requires a newer Grok CLI protocol version. Set GROK_CLI_VERSION to a supported official version and restart tokenhop (including the compose pin when applicable).";
+
+function sanitizeGrokCliErrorDetail(value, maxLen = 300) {
+  if (typeof value !== "string") return "";
+  const scrubbed = value
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: strips C0/C1 control chars from untrusted upstream error text before logging
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(
+      /\b(bearer|token|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token)\b["\x27]?\s*(?:[:=]\s*|\s+)\S+/gi,
+      "$1: [redacted]",
+    )
+    .replace(/eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*/g, "[redacted]")
+    .replace(/xai-[A-Za-z0-9_-]{8,}/g, "[redacted]")
+    .replace(/sk-[A-Za-z0-9_-]{8,}/g, "[redacted]")
+    .trim();
+  if (!scrubbed || /^[{[<]/.test(scrubbed)) return "";
+  return scrubbed.slice(0, maxLen).trim();
+}
+
+function extractGrokCliErrorDetail(bodyText) {
+  if (!bodyText || typeof bodyText !== "string") return "";
+  const trimmed = bodyText.trim().slice(0, 2000);
+  if (!trimmed) return "";
+  try {
+    const json = JSON.parse(trimmed);
+    const candidates = [json?.message, json?.error, json?.error?.message, json?.error?.code];
+    for (const candidate of candidates) {
+      const detail = sanitizeGrokCliErrorDetail(candidate);
+      if (detail) return detail;
+    }
+    return "";
+  } catch {
+    return sanitizeGrokCliErrorDetail(trimmed);
+  }
+}
 
 // Per-session last turn index so multi-turn headers never go backwards within this process
 const sessionTurnStore = new Map();
@@ -374,8 +451,18 @@ export class GrokCliExecutor extends BaseExecutor {
     return shouldRefreshCredentials("grok-cli", credentials);
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, url = this.config.baseUrl, _model = null, body = null) {
     const headers = super.buildHeaders(credentials, stream);
+    const state = body?.[REQUEST_STATE];
+    const trusted = isTrustedGrokProxyUrl(url);
+    headers.traceparent = newTraceparent();
+    // Endpoint-specific Responses fingerprint: token auth, authenticate-response,
+    // and client mode only for the built-in trusted proxy origin.
+    if (trusted) {
+      headers["x-xai-token-auth"] = "xai-grok-cli";
+      headers["x-authenticateresponse"] = "authenticate-response";
+      headers["x-grok-client-mode"] = "headless";
+    }
 
     // Static fingerprint from registry
     const staticHeaders = this.config.headers || {};
@@ -390,26 +477,27 @@ export class GrokCliExecutor extends BaseExecutor {
     headers["x-grok-client-version"] =
       this.config.clientVersion || headers["x-grok-client-version"] || GROK_CLI_VERSION;
 
-    const sessionId = this._currentSessionId || credentials?.connectionId || crypto.randomUUID();
-    const reqId = this._currentReqId || crypto.randomUUID();
+    const sessionId = state?.sessionId || this._currentSessionId || crypto.randomUUID();
+    const reqId = state?.reqId || crypto.randomUUID();
+    const turnIdx = state?.turnIdx ?? this._currentTurnIdx ?? 1;
+    const agentId = state ? state.agentId : this._agentId;
+    const modelOverride = state?.modelOverride ?? this._currentModel;
     headers["x-grok-session-id"] = sessionId;
     // CLI uses the same id for conv + session on chat turns
     headers["x-grok-conv-id"] = sessionId;
+    if (state?.convGroupId && trusted) {
+      headers["x-grok-conv-group-id"] = state.convGroupId;
+    }
     headers["x-grok-req-id"] = reqId;
-    headers["x-grok-turn-idx"] = String(this._currentTurnIdx || 1);
+    headers["x-grok-turn-idx"] = String(turnIdx || 1);
 
-    if (this._agentId) headers["x-grok-agent-id"] = this._agentId;
+    if (agentId) headers["x-grok-agent-id"] = agentId;
 
     // Surface model override (CLI always sets this)
-    if (this._currentModel) headers["x-grok-model-override"] = this._currentModel;
+    if (modelOverride) headers["x-grok-model-override"] = modelOverride;
 
-    // Identity: mapTokens stores email top-level AND in providerSpecificData;
-    // fall back either way so OAuth connections always fingerprint like the CLI.
-    const psd = credentials?.providerSpecificData || {};
-    const email = psd.email || credentials?.email;
-    const userId = psd.userId || credentials?.userId || credentials?.providerUserId;
-    if (email) headers["x-email"] = email;
-    if (userId) headers["x-userid"] = userId;
+    // Models/usage retain identity headers; Responses construction omits email/user.
+    // `postExchange` still stores user identity for those discovery flows.
 
     return headers;
   }
@@ -430,12 +518,35 @@ export class GrokCliExecutor extends BaseExecutor {
         /* fall through */
       }
     }
+    // 426 version gate → actionable GROK_CLI_VERSION guidance, redacted detail
+    if (response.status === 426) {
+      const detail = extractGrokCliErrorDetail(bodyText);
+      return {
+        status: 426,
+        message: detail
+          ? `HTTP 426: ${detail} — ${GROK_CLI_426_HINT}`
+          : `HTTP 426 — ${GROK_CLI_426_HINT}`,
+      };
+    }
     return super.parseError(response, bodyText);
   }
 
   transformRequest(model, body, stream, credentials) {
-    // Session / request ids for headers — stable per client conversation when possible
+    // Session / request ids for headers — stable per client conversation when possible.
+    // Prompt_cache_key: falsy/malformed keys dropped BEFORE session resolve so a
+    // rejected value never influences the identity; valid keys resolve FIRST.
     const requestKey = body;
+    body = { ...body };
+    if (
+      body?.prompt_cache_key != null &&
+      (typeof body.prompt_cache_key !== "string" ||
+        !body.prompt_cache_key.trim() ||
+        body.prompt_cache_key.length > 256 ||
+        // biome-ignore lint/suspicious/noControlCharactersInRegex: deliberately rejects cache keys containing C0/C1 control characters
+        /[\u0000-\u001f\u007f-\u009f]/.test(body.prompt_cache_key))
+    ) {
+      delete body.prompt_cache_key;
+    }
     this._currentSessionId = resolveGrokCliSessionId(credentials, body);
     this._currentReqId = crypto.randomUUID();
     // Executor is a shared singleton: fall back to the machine id, never to the
@@ -444,6 +555,8 @@ export class GrokCliExecutor extends BaseExecutor {
       credentials?.providerSpecificData?.deviceId ||
       credentials?.providerSpecificData?.agentId ||
       this._machineAgentId;
+    // Insert resolved identity only when the caller gave no valid cache key.
+    if (body.prompt_cache_key == null) body.prompt_cache_key = this._currentSessionId;
 
     // Normalize Responses input
     const normalized = normalizeResponsesInput(body.input);
@@ -479,7 +592,7 @@ export class GrokCliExecutor extends BaseExecutor {
 
     // Resolve upstream model id (strip effort suffix virtual models)
     const modelEffort = resolveEffortFromModel(body.model || model);
-    let resolvedModel = body.model || model;
+    let resolvedModel = body.model || model || GROK_CLI_DEFAULT_MODEL;
     if (modelEffort) {
       resolvedModel = resolvedModel.replace(new RegExp(`-${modelEffort}$`), "");
     }
@@ -494,31 +607,26 @@ export class GrokCliExecutor extends BaseExecutor {
     // Reasoning effort priority: explicit > reasoning_effort > model suffix > default high.
     // grok-build and Composer reject reasoningEffort but still accept summary/encrypted continuity.
     const supportsReasoningEffort = supportsGrokCliReasoningEffort(resolvedModel);
-    if (!body.reasoning || typeof body.reasoning !== "object") {
-      body.reasoning = { summary: "concise" };
-      if (supportsReasoningEffort) {
-        body.reasoning.effort = normalizeGrokCliEffort(body.reasoning_effort || modelEffort);
-      }
+    body.reasoning =
+      body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning)
+        ? { ...body.reasoning }
+        : {};
+    if (supportsReasoningEffort) {
+      body.reasoning.effort = normalizeGrokCliEffort(
+        body.reasoning.effort || body.reasoning_effort || modelEffort,
+      );
     } else {
-      if (supportsReasoningEffort) {
-        body.reasoning.effort = normalizeGrokCliEffort(
-          body.reasoning.effort || body.reasoning_effort || modelEffort,
-        );
-      } else {
-        delete body.reasoning.effort;
-      }
-      if (!body.reasoning.summary) body.reasoning.summary = "concise";
+      delete body.reasoning.effort;
     }
+    if (body.reasoning.summary === "none") delete body.reasoning.summary;
+    else if (!body.reasoning.summary) body.reasoning.summary = "concise";
     delete body.reasoning_effort;
 
-    // Encrypted reasoning for multi-turn continuity (CLI always requests this)
-    if (body.reasoning && body.reasoning.effort !== "none") {
-      const include = Array.isArray(body.include) ? body.include : [];
-      if (!include.includes("reasoning.encrypted_content")) {
-        include.push("reasoning.encrypted_content");
-      }
-      body.include = include;
-    }
+    body.include = normalizeGrokCliIncludes([
+      ...(Array.isArray(body.include) ? body.include : []),
+      "reasoning.encrypted_content",
+      ...(isTrustedGrokProxyUrl(this.config.baseUrl) ? ["no_inline_citations"] : []),
+    ]);
 
     // Drop Chat Completions leftovers that Responses rejects
     delete body.messages;
@@ -541,6 +649,20 @@ export class GrokCliExecutor extends BaseExecutor {
       if (!RESPONSES_API_ALLOWLIST.has(k)) delete body[k];
     }
 
+    Object.defineProperty(body, REQUEST_STATE, {
+      value: {
+        sessionId: this._currentSessionId,
+        reqId: this._currentReqId,
+        turnIdx: this._currentTurnIdx,
+        agentId: this._agentId,
+        modelOverride: resolvedModel,
+        convGroupId: resolveContinuationId({
+          sessionId: this._currentSessionId,
+          connectionId: credentials?.connectionId || credentials?.id,
+          scope: "grok-cli",
+        }),
+      },
+    });
     return body;
   }
 

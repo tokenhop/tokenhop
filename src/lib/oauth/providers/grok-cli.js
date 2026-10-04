@@ -1,4 +1,5 @@
 import {
+  GROK_CLI_AUTH_HEADERS,
   GROK_CLI_BASE_URL,
   GROK_CLI_USER_AGENT,
   GROK_CLI_VERSION,
@@ -11,14 +12,7 @@ import {
 } from "../providerHelpers.js";
 
 // Grok CLI / Grok Build — device code flow to auth.x.ai, inference on cli-chat-proxy.grok.com
-
-// Official CLI sends its version on the auth.x.ai device-code and token calls too.
-const AUTH_HEADERS = {
-  "Content-Type": "application/x-www-form-urlencoded",
-  Accept: "application/json",
-  "User-Agent": GROK_CLI_USER_AGENT,
-  "x-grok-client-version": GROK_CLI_VERSION,
-};
+// Device-code, token poll, and dedicated Grok refresh share GROK_CLI_AUTH_HEADERS.
 
 const grokCli = {
   config: GROK_CLI_CONFIG,
@@ -33,7 +27,7 @@ const grokCli = {
 
     const response = await fetch(config.deviceCodeUrl, {
       method: "POST",
-      headers: AUTH_HEADERS,
+      headers: GROK_CLI_AUTH_HEADERS,
       body,
     });
 
@@ -47,7 +41,7 @@ const grokCli = {
   pollToken: async (config, deviceCode) => {
     const response = await fetch(config.tokenUrl, {
       method: "POST",
-      headers: AUTH_HEADERS,
+      headers: GROK_CLI_AUTH_HEADERS,
       body: new URLSearchParams({
         grant_type: "urn:ietf:params:oauth:grant-type:device_code",
         device_code: deviceCode,
@@ -110,8 +104,7 @@ const grokCli = {
       // Top-level for dashboard connection cards
       email: email || undefined,
       displayName: displayName || undefined,
-      // Mirror identity into providerSpecificData so GrokCliExecutor can set
-      // x-email / x-userid without depending on top-level credential shape.
+      // Preserve identity for model discovery and usage requests.
       providerSpecificData: {
         authMethod: "device_code",
         idToken: tokens.id_token || null,

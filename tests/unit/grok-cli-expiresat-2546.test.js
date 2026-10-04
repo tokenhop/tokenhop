@@ -8,10 +8,7 @@
  * refresh — causing intermittent "token expired" failures.
  *
  * This test exercises the proactive-refresh decision path for grok-cli with
- * an absolute expiresAt. (The mapTokens unit portion cannot run in this
- * checkout because src/lib/oauth/providers.js self-imports the bare
- * "open-sse/index.js" specifier which vitest here does not resolve — a
- * pre-existing harness gap unrelated to this fix.)
+ * an absolute expiresAt, including onboarding expiry and stored identity.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
@@ -53,5 +50,27 @@ describe("Grok CLI (xAI) token expiry propagation (#2546)", () => {
       expiresAt: farFuture,
     };
     expect(shouldRefreshCredentials("grok-cli", creds)).toBe(false);
+  });
+
+  it("preserves onboarding expiry and stored identity contract", async () => {
+    const { default: grokCli } = await import("../../src/lib/oauth/providers/grok-cli.js");
+    const before = Date.now();
+    const mapped = grokCli.mapTokens(
+      { access_token: "access-123", refresh_token: "refresh-123", expires_in: 2400, scope: "s" },
+      { user: { email: "user@example.com", userId: "uid-123", firstName: "Ada", lastName: "L" } },
+    );
+    expect(mapped).toMatchObject({
+      accessToken: "access-123",
+      refreshToken: "refresh-123",
+      expiresIn: 2400,
+      email: "user@example.com",
+      displayName: "Ada L",
+      providerSpecificData: {
+        authMethod: "device_code",
+        email: "user@example.com",
+        userId: "uid-123",
+      },
+    });
+    expect(Date.parse(mapped.expiresAt)).toBeGreaterThanOrEqual(before + 2400 * 1000);
   });
 });
