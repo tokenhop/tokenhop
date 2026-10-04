@@ -4,6 +4,21 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import {
   Button,
   CardSkeleton,
   ComboFormModal,
@@ -12,7 +27,7 @@ import {
 } from "@/shared/components";
 import { ConfirmDialog } from "@/shared/components/Modal";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
-import ComboListCard from "@/shared/components/combos/ComboListCard";
+import SortableComboCard from "@/shared/components/combos/SortableComboCard";
 import ComboEditor from "@/shared/components/combos/ComboEditor";
 import CapabilityAdapterCard from "@/shared/components/combos/CapabilityAdapterCard";
 import useUnsavedComboGuard from "@/shared/components/combos/useUnsavedComboGuard";
@@ -264,6 +279,37 @@ export default function CombosPageClient() {
   const closeCreate = () => {
     setShowCreateModal(false);
     navigateCombos(router, { create: false });
+  };
+
+  // Drag-and-drop: reorder locally, persist, roll back on failure.
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const handleComboDragEnd = (event) => {
+    const { active, over } = event;
+    if (!active?.id || !over?.id || active.id === over.id) return;
+    const from = combos.findIndex((c) => c.id === active.id);
+    const to = combos.findIndex((c) => c.id === over.id);
+    if (from === -1 || to === -1) return;
+    const previous = combos;
+    const reordered = arrayMove(combos, from, to);
+    const moved = combos[from];
+    const moveLabel = `Moved ${moved?.name || "combo"} to position ${to + 1} of ${combos.length}`;
+    setCombos(reordered);
+    setSaveAnnouncement(moveLabel);
+    fetch("/api/combos/reorder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: reordered.map((c) => c.id) }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(String(res.status));
+      })
+      .catch(() => {
+        setCombos(previous);
+        setSaveAnnouncement("Couldn't save combo order");
+      });
   };
 
   const fetchData = useCallback(async () => {
@@ -667,24 +713,37 @@ export default function CombosPageClient() {
             <Button variant="secondary" icon="add" fullWidth onClick={openCreate}>
               New combo
             </Button>
-            <ul aria-label="Combos" className="m-0 flex list-none flex-col gap-3 p-0">
-              {combos.map((combo) => {
-                const sid = strategyOf(comboStrategies, combo.name);
-                return (
-                  <li key={combo.id}>
-                    <ComboListCard
-                      combo={combo}
-                      strategy={sid}
-                      strategyLabel={strategyLabelOf(sid)}
-                      strategyVariant={STRATEGY_PILL[sid] || "brand"}
-                      usageToday={usageToday[combo.id] || 0}
-                      selected={combo.id === selectedComboId}
-                      onSelect={selectCombo}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
+            <DndContext
+              sensors={dndSensors}
+              collisionDetection={closestCenter}
+              modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+              onDragEnd={handleComboDragEnd}
+            >
+              <SortableContext
+                items={combos.map((c) => c.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <ul aria-label="Combos" className="m-0 flex list-none flex-col gap-3 p-0">
+                  {combos.map((combo, index) => {
+                    const sid = strategyOf(comboStrategies, combo.name);
+                    return (
+                      <SortableComboCard
+                        key={combo.id}
+                        combo={combo}
+                        index={index}
+                        total={combos.length}
+                        strategy={sid}
+                        strategyLabel={strategyLabelOf(sid)}
+                        strategyVariant={STRATEGY_PILL[sid] || "brand"}
+                        usageToday={usageToday[combo.id] || 0}
+                        selected={combo.id === selectedComboId}
+                        onSelect={selectCombo}
+                      />
+                    );
+                  })}
+                </ul>
+              </SortableContext>
+            </DndContext>
             {emptyAdapters.length > 0 && (
               <p role="status" className="text-xs text-warn">
                 Capability adapter on, empty pool:{" "}

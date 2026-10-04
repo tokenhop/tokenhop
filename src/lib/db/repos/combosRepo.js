@@ -2,6 +2,9 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
+// Manual order first (drag-and-drop), creation order as the tiebreaker.
+const ORDER_BY = `sortOrder IS NULL, sortOrder ASC, createdAt ASC, id ASC`;
+
 function rowToCombo(row) {
   if (!row) return null;
   return {
@@ -16,8 +19,32 @@ function rowToCombo(row) {
 
 export async function getCombos() {
   const db = await getAdapter();
-  const rows = db.all(`SELECT * FROM combos ORDER BY createdAt ASC`);
+  const rows = db.all(`SELECT * FROM combos ORDER BY ${ORDER_BY}`);
   return rows.map(rowToCombo);
+}
+
+// Persist a manual order. `ids` is the new relative order of a subset (the
+// dashboard lists LLM combos only): those ids take the slots they already
+// occupy in the full list, so combos of other kinds never move. Ranks are
+// rewritten densely, which also repairs ties. Unknown/duplicate ids are
+// ignored. Returns false when nothing was reordered.
+export async function reorderCombos(ids) {
+  const db = await getAdapter();
+  let changed = false;
+  db.transaction(() => {
+    const all = db.all(`SELECT id FROM combos ORDER BY ${ORDER_BY}`).map((r) => r.id);
+    const known = new Set(all);
+    const wanted = [...new Set(ids)].filter((id) => known.has(id));
+    if (wanted.length < 2) return;
+    const wantedSet = new Set(wanted);
+    let next = 0;
+    const reordered = all.map((id) => (wantedSet.has(id) ? wanted[next++] : id));
+    reordered.forEach((id, rank) => {
+      db.run(`UPDATE combos SET sortOrder = ? WHERE id = ?`, [rank, id]);
+    });
+    changed = reordered.some((id, i) => id !== all[i]);
+  });
+  return changed;
 }
 
 export async function getComboById(id) {
@@ -43,8 +70,10 @@ export async function createCombo(data) {
     createdAt: now,
     updatedAt: now,
   };
+  // New combos land at the end of the manual order.
   db.run(
-    `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt, sortOrder)
+     VALUES(?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sortOrder), -1) + 1 FROM combos))`,
     [
       combo.id,
       combo.name,

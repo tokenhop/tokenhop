@@ -162,6 +162,7 @@ export const ROUTE_POLICY = {
 
   // Combos, aliases, custom and disabled models.
   "/api/combos": read(META, COMBOS),
+  "/api/combos/reorder": { cap: META },
   "/api/combos/[id]": read(META, COMBOS),
   "/api/combos/[id]/headroom": { cap: META },
   "/api/combos/[id]/test": { cap: USE },
