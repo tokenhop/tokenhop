@@ -26,9 +26,11 @@ describe("migration 004 identity-tenancy", () => {
     db.exec(FIXTURE);
     const before = db.all(`SELECT * FROM combos ORDER BY id`);
 
-    expect(runVersionedMigrations(db).to).toBeGreaterThanOrEqual(4);
+    expect(runVersionedMigrations(db).to).toBeGreaterThanOrEqual(6);
     expect(tables(db)).toEqual(NEW_TABLES);
-    expect(db.all(`SELECT * FROM combos ORDER BY id`)).toEqual(before);
+    // 005 is inert on old data; 006 only stamps the new sortOrder column.
+    const stripSort = (rows) => rows.map(({ sortOrder: _ignored, ...rest }) => rest);
+    expect(stripSort(db.all(`SELECT * FROM combos ORDER BY id`))).toEqual(stripSort(before));
     expect(db.get(`SELECT key FROM apiKeys`).key).toBe("sk-th-legacy");
     expect(db.get(`SELECT COUNT(*) AS c FROM users`).c).toBe(0);
 

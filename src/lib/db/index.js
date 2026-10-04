@@ -98,6 +98,7 @@ export {
   createCombo,
   updateCombo,
   deleteCombo,
+  reorderCombos,
 } from "./repos/combosRepo.js";
 
 // Aliases (model + custom + mitm)
