@@ -173,9 +173,20 @@ export const ROUTE_POLICY = {
   "/api/models/test": { cap: USE },
   "/api/tags": { cap: META },
 
-  // Gateway API keys.
-  "/api/keys": { cap: { GET: "workspace.keys.manage", POST: "workspace.keys.create" } },
+  // Gateway API keys. PATCH is the manager-only durable migration ack (spec214);
+  // the gate uses the manage cap and the handler rechecks it live per workspace.
+  "/api/keys": {
+    cap: {
+      GET: "workspace.keys.manage",
+      POST: "workspace.keys.create",
+      PATCH: "workspace.keys.manage",
+    },
+  },
   "/api/keys/[id]": { cap: "workspace.keys.manage" },
+  // Exact static row: /api/keys/context must never borrow the [id] row.
+  // Any live member (create is the least key capability) may read their own
+  // metadata-only context; the handler rechecks everything against the DB.
+  "/api/keys/context": { cap: "workspace.keys.create", scoped: true },
 
   // Usage and dashboard summaries.
   "/api/usage/[connectionId]": scoped({ cap: USAGE }),

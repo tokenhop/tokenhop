@@ -1,4 +1,5 @@
 import { PROVIDER_MODELS } from "@/shared/constants/models";
+import { resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
 import { requireClientApiKey } from "@/lib/auth/requireClientApiKey";
 import { buildModelsList } from "../../v1/models/route.js";
 
@@ -33,6 +34,14 @@ function getGeminiTtsModelIds() {
 export async function GET(request) {
   const denied = await requireClientApiKey(request);
   if (denied) return denied;
+  // Best-effort principal (same rationale as /v1/models: gate already enforced).
+  let principal = null;
+  try {
+    const auth = await resolveGatewayAuth(request);
+    if (!(auth instanceof Response) && !auth?.legacy) principal = auth?.principal || null;
+  } catch {
+    principal = null;
+  }
   try {
     const models = [];
     const seen = new Set();
@@ -51,7 +60,10 @@ export async function GET(request) {
     }
 
     let hasGemini = false;
-    for (const entry of await buildModelsList(["llm"])) {
+    const llmEntries = principal
+      ? await buildModelsList(["llm"], { principal })
+      : await buildModelsList(["llm"]);
+    for (const entry of llmEntries) {
       const description = `${entry.owned_by} model: ${entry.id}`;
       addModel(`models/${entry.id}`, description, CHAT_METHODS, entry);
       // ponytail: keyed on the default "gemini/" alias; a Gemini connection with

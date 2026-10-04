@@ -214,6 +214,12 @@ export async function getCloudUrl() {
   return settings.cloudUrl || process.env.CLOUD_URL || process.env.NEXT_PUBLIC_CLOUD_URL || "";
 }
 
+// DB settings snapshot helper for exportDb(). The MITM internal verifier
+// hash stays host-local (lifecycle-only): it must not travel in a snapshot
+// readback, so install/compare-clear always reads the live row, never a
+// restore.
 export async function exportSettings() {
-  return await readRaw();
+  const raw = await readRaw();
+  delete raw.mitmInternalVerifier;
+  return raw;
 }

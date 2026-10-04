@@ -17,6 +17,13 @@ vi.mock("../../src/sse/services/auth.js", () => ({
   isValidApiKey: vi.fn(),
 }));
 vi.mock("@/lib/localDb", () => ({ getSettings: async () => ({ requireApiKey: false }) }));
+// Legacy-storage auth: pass through with no principal, so extractApiKey keeps
+// supplying the client key and usage rows keep their legacy shape.
+vi.mock("@/lib/auth/gatewayAuth.js", () => ({
+  resolveGatewayAuth: async () => ({ principal: null, legacy: true }),
+  authorizeGatewayTarget: () => null,
+  gatewayKeyContext: () => null,
+}));
 vi.mock("../../src/sse/services/model.js", () => ({
   getModelInfo: async () => ({ provider: "openai", model: "text-embedding-3-small" }),
 }));

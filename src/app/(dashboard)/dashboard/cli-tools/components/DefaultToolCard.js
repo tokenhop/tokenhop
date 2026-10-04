@@ -11,10 +11,9 @@ import CopyStatus from "@/shared/components/CopyStatus";
 import ApiKeySelect from "./ApiKeySelect";
 import EndpointSegmentedPicker from "./EndpointSegmentedPicker";
 import SetupScaffold, { SingleModelRow } from "./SetupScaffold";
+import { manualApiKey } from "./setupCard";
 import { useSetupSettings } from "../hooks/useSetupSettings";
 import { getToolBrand } from "../lib/toolStatus";
-import { ACTIVE } from "@/shared/brand";
-import { API_KEY_PLACEHOLDER } from "@/lib/cliToolConfigs/shared";
 
 const NOTE_VARIANT = { warning: "warn", cloudCheck: "err", error: "err", info: "info" };
 
@@ -38,9 +37,14 @@ export default function DefaultToolCard({
   tailscaleEnabled = false,
   tailscaleUrl = "",
   modelAliases = {},
+  hashedContext = false,
 }) {
   const [showModelModal, setShowModelModal] = useState(false);
   const { copied, error, copy } = useCopyToClipboard();
+  // YAN-363: guide cards have no per-route status, so the shared key context
+  // is the hashed signal. Hashed: only a pasted key is templated — never the
+  // brand default pretending to be one.
+  const hashed = hashedContext;
 
   const defaults = useMemo(
     () => ({ model: tool.defaultModels?.[0]?.defaultValue || "", endpoint: "", apiKeyId: "" }),
@@ -74,8 +78,7 @@ export default function DefaultToolCard({
     (tool.guideSteps || []).some((s) => s.value?.includes("{{baseUrl}}"));
 
   const replaceVars = (text) => {
-    const keyToUse =
-      setup.selectedApiKey?.trim() || (!cloudEnabled ? ACTIVE.defaultApiKey : API_KEY_PLACEHOLDER);
+    const keyToUse = manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed });
     const normalized = setup.endpoint || baseUrl || "http://localhost:20128";
     const withV1 = normalized.endsWith("/v1") ? normalized : `${normalized}/v1`;
     return String(text)
@@ -147,12 +150,20 @@ export default function DefaultToolCard({
                   <p className="text-sm font-semibold text-text">{item.title}</p>
                   {item.desc && <p className="text-[13px] text-muted">{item.desc}</p>}
                   {item.type === "apiKeySelector" && (
-                    <ApiKeySelect
-                      value={setup.selectedApiKey}
-                      onChange={setup.onApiKeyChange}
-                      apiKeys={apiKeys}
-                      cloudEnabled={cloudEnabled}
-                    />
+                    <div className="flex flex-col gap-1.5">
+                      <ApiKeySelect
+                        value={setup.selectedApiKey}
+                        onChange={setup.onApiKeyChange}
+                        apiKeys={apiKeys}
+                        cloudEnabled={cloudEnabled}
+                        hashed={hashed}
+                      />
+                      {hashed && !setup.selectedApiKey?.trim() && (
+                        <span className="text-[11px] text-subtle">
+                          Guide snippets need a pasted key — a stored one can't be shown.
+                        </span>
+                      )}
+                    </div>
                   )}
                   {item.type === "modelSelector" && (
                     <SingleModelRow

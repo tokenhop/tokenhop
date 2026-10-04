@@ -47,9 +47,14 @@ export default function OpenClawToolCard({
   tailscaleEnabled = false,
   tailscaleUrl = "",
   onStatusUpdate,
+  hashedContext = false,
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "openclaw" });
   const { status } = card;
+  // YAN-363: this route reports storage/credentialConfigured directly; the
+  // shared context only breaks ties. Hashed: pasted key or omission — the
+  // server preserves the disk credential for an unchanged destination.
+  const hashed = status?.storage === "hashed" || hashedContext;
   const [agentModalFor, setAgentModalFor] = useState(null);
   // Remotely there is no on-disk agent list; the user adds rows for the snippet.
   const localOnly = useCliAccessStore((s) => s.localOnly);
@@ -117,7 +122,7 @@ export default function OpenClawToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed }),
           model: selectedModel,
           agentModels,
         }),
@@ -181,7 +186,7 @@ export default function OpenClawToolCard({
     toManualConfigs(
       buildOpenClawConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed }),
         model: selectedModel,
         agents,
         agentModels,
@@ -235,7 +240,14 @@ export default function OpenClawToolCard({
             onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
+            hashed={hashed}
+            existingConfigured={Boolean(status?.credentialConfigured)}
           />
+          {hashed && !setup.selectedApiKey?.trim() && (
+            <span className="text-[11px] text-subtle">
+              Manual configuration needs a pasted key — a stored one can't be shown.
+            </span>
+          )}
         </SetupRow>
         <SetupRow label="Primary model">
           <SingleModelRow

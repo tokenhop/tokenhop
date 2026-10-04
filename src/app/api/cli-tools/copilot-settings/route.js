@@ -8,6 +8,12 @@ import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
 import { ACTIVE } from "@/shared/brand";
 import { CLIENT_NAME, isClientKey, LEGACY_CLIENT_KEYS } from "@/lib/cliToolBrand";
 import { buildCopilotConfig } from "@/lib/cliToolConfigs/copilot";
+import {
+  boundaryError,
+  configCopy,
+  hashedStorageMode,
+  resolveCredential,
+} from "@/lib/cliToolConfigs/credentialBoundary";
 
 // Resolve chatLanguageModels.json path per OS
 const getConfigPath = () => {
@@ -58,9 +64,34 @@ const getOurEntry = (config) => {
 
 // GET - Read current copilot config
 export async function GET() {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const config = await readConfig();
     const entry = getOurEntry(config);
+
+    if (hashed) {
+      // Targeted sanitization: only our entries' creds are withheld; unrelated
+      // vendors pass through untouched and the disk file is never modified.
+      const copy = configCopy(config);
+      for (const e of Array.isArray(copy) ? copy : []) {
+        if (isClientKey(e?.name)) delete e.apiKey;
+      }
+      return NextResponse.json({
+        installed: true,
+        config: copy,
+        hasTokenhop: hasTokenhopConfig(config),
+        configPath: getConfigPath(),
+        currentModel: entry?.models?.[0]?.id || null,
+        currentUrl: entry?.models?.[0]?.url || null,
+        credentialConfigured: Boolean(entry?.apiKey),
+        storage: "hashed",
+      });
+    }
 
     return NextResponse.json({
       installed: true,
@@ -71,13 +102,22 @@ export async function GET() {
       currentUrl: entry?.models?.[0]?.url || null,
     });
   } catch (error) {
-    console.log("Error checking copilot settings:", error);
-    return NextResponse.json({ error: "Failed to check copilot settings" }, { status: 500 });
+    if (!hashed) {
+      console.log("Error checking copilot settings:", error);
+      return NextResponse.json({ error: "Failed to check copilot settings" }, { status: 500 });
+    }
+    return boundaryError(error);
   }
 }
 
 // POST - Apply our config to chatLanguageModels.json
 export async function POST(request) {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const { baseUrl, apiKey, models } = await request.json();
 
@@ -91,9 +131,28 @@ export async function POST(request) {
     // Read existing config array
     let config = (await readJsonConfig(configPath, "array")) ?? [];
 
+    // Hashed storage: reuse the stored key only for the SAME destination
+    // (models[].url carries it); a changed or missing one is an actionable 400
+    // before the file is written — never the default-key fallback.
+    let effectiveApiKey = apiKey || ACTIVE.defaultApiKey;
+    if (hashed) {
+      const prior = getOurEntry(config);
+      effectiveApiKey = resolveCredential({
+        provided: apiKey,
+        baseUrl,
+        existing: prior?.apiKey ? [{ key: prior.apiKey, url: prior.models?.[0]?.url }] : [],
+        applyV1: false,
+        normalize: (url) =>
+          url
+            .replace(/#.*$/, "")
+            .replace(/\/+$/, "")
+            .replace(/\/chat\/completions$/, ""),
+      });
+    }
+
     const newEntry = buildCopilotConfig({
       baseUrl,
-      apiKey: apiKey || ACTIVE.defaultApiKey,
+      apiKey: effectiveApiKey,
       models,
       platform: os.platform(),
     })[0].value[0];
@@ -122,6 +181,7 @@ export async function POST(request) {
       configPath,
     });
   } catch (error) {
+    if (hashed) return boundaryError(error);
     const configRes = configErrorResponse(error);
     if (configRes) return configRes;
     console.log("Error updating copilot settings:", error);

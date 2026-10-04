@@ -6,8 +6,12 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import { stringifyTOML } from "confbox";
+import { parseTOML, stringifyTOML } from "confbox";
 import { getApiKeys } from "@/lib/localDb";
+import { getAdapter } from "@/lib/db/driver.js";
+import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
+import { getHashedApiKeyByHashUnscoped } from "@/lib/db/repos/apiKeysRepo.js";
+import { deriveApiKeyHashKey, hashApiKey, loadMasterKey } from "@/lib/security/masterKey.js";
 import { configErrorResponse, readTomlConfig } from "@/lib/cliToolConfig";
 import { BRAND, LEGACY } from "@/shared/brand";
 import {
@@ -28,14 +32,31 @@ const getCodexAuthPath = () => path.join(getCodexDir(), "auth.json");
 
 // True only when the key is one tokenhop itself wrote to auth.json (legacy flow).
 // A DB failure must mean "don't delete".
+// In hashed storage the raw key never sits in the DB: HMAC it and match by row
+// ownership (any isActive/revoked state) — never authentication eligibility.
 const isRouterApiKey = async (key) => {
   try {
     const apiKeys = await getApiKeys();
-    return apiKeys.some((apiKey) => apiKey.key === key);
+    if (apiKeys.some((apiKey) => apiKey.key === key)) return true;
+  } catch {
+    /* keyed legacy lookup unavailable — still try hashed ownership below */
+  }
+  try {
+    const db = await getAdapter();
+    const state = readApiKeyStorageState(db);
+    if (state.storage !== "hashed") return false;
+    const { key: master } = await loadMasterKey({ expectedKid: state.hashKid });
+    const row = getHashedApiKeyByHashUnscoped(db, hashApiKey(key, deriveApiKeyHashKey(master)));
+    return row != null;
   } catch {
     return false;
   }
 };
+
+// Hashed storage never discloses the gateway provider's static header.
+const hashedState = async () => readApiKeyStorageState(await getAdapter());
+const clientEntry = (parsed) =>
+  ALL_CLIENT_KEYS.map((key) => parsed?.model_providers?.[key]).find(Boolean);
 
 // Set a nested key from a flat dotted path, creating intermediate objects as needed
 const setNestedSection = (obj, dottedKey, value) => {
@@ -122,15 +143,44 @@ export async function GET() {
     }
 
     const config = await readConfig();
+    const state = await hashedState();
+    if (state?.storage !== "hashed") {
+      return NextResponse.json({
+        installed: true,
+        config,
+        hasTokenhop: hasTokenhopConfig(config),
+        configPath: getCodexConfigPath(),
+      });
+    }
 
+    // Hashed mode: the raw Authorization header never leaves disk. Return a
+    // sanitized copy of the same TOML shape; never modify disk or other providers.
+    let sanitized = null;
+    let credentialConfigured = false;
+    try {
+      const parsed = config == null ? null : parseTOML(config);
+      if (parsed) {
+        credentialConfigured = ALL_CLIENT_KEYS.some((key) =>
+          Boolean(parsed.model_providers?.[key]?.http_headers?.Authorization),
+        );
+        for (const key of ALL_CLIENT_KEYS) {
+          const headers = parsed.model_providers?.[key]?.http_headers;
+          if (headers) delete headers.Authorization;
+        }
+        sanitized = stringifyTOML(parsed);
+      }
+    } catch {
+      sanitized = null; // unparseable: no readback rather than a raw leak
+    }
     return NextResponse.json({
       installed: true,
-      config,
+      config: sanitized,
       hasTokenhop: hasTokenhopConfig(config),
       configPath: getCodexConfigPath(),
+      storage: "hashed",
+      credentialConfigured,
     });
   } catch (error) {
-    console.log("Error checking codex settings:", error);
     return NextResponse.json({ error: "Failed to check codex settings" }, { status: 500 });
   }
 }
@@ -140,9 +190,16 @@ export async function POST(request) {
   try {
     const { baseUrl, apiKey, model, subagentModel } = await request.json();
 
-    if (!baseUrl || !apiKey || !model) {
+    const state = await hashedState();
+    const hashed = state?.storage === "hashed";
+
+    if (hashed ? !baseUrl || !model : !baseUrl || !apiKey || !model) {
       return NextResponse.json(
-        { error: "baseUrl, apiKey and model are required" },
+        {
+          error: hashed
+            ? "baseUrl and model are required"
+            : "baseUrl, apiKey and model are required",
+        },
         { status: 400 },
       );
     }
@@ -150,13 +207,30 @@ export async function POST(request) {
     const codexDir = getCodexDir();
     const configPath = getCodexConfigPath();
 
-    // Ensure directory exists
-    await fs.mkdir(codexDir, { recursive: true });
-
     // Read and parse existing config (unparseable file → 422, left untouched)
     const parsed = (await readTomlConfig(configPath)) ?? {};
 
+    if (
+      hashed &&
+      (typeof baseUrl !== "string" ||
+        typeof model !== "string" ||
+        (apiKey !== undefined && (typeof apiKey !== "string" || !apiKey)) ||
+        (subagentModel !== undefined && typeof subagentModel !== "string"))
+    ) {
+      return NextResponse.json({ error: "Invalid Codex settings" }, { status: 400 });
+    }
     const [fragment] = buildCodexConfig({ baseUrl, apiKey, model, subagentModel });
+    if (hashed && apiKey === undefined) {
+      const existing = clientEntry(parsed);
+      const secret = existing?.http_headers?.Authorization;
+      if (!secret || existing.base_url !== fragment.value.model_providers[CLIENT_KEY].base_url) {
+        return NextResponse.json(
+          { error: "apiKey is required for a new or changed destination" },
+          { status: 400 },
+        );
+      }
+      fragment.value.model_providers[CLIENT_KEY].http_headers.Authorization = secret;
+    }
 
     // Update only our fields (api_key goes to auth.json, not config.toml)
     parsed.model = fragment.value.model;
@@ -186,6 +260,7 @@ export async function POST(request) {
 
     // Write merged config
     const configContent = stringifyTOML(parsed);
+    await fs.mkdir(codexDir, { recursive: true });
     await fs.writeFile(configPath, configContent);
 
     return NextResponse.json({
@@ -194,7 +269,13 @@ export async function POST(request) {
       configPath,
     });
   } catch (error) {
-    console.log("Error updating codex settings:", error);
+    const state = await hashedState().catch(() => null);
+    if (state?.storage !== "legacy") {
+      return NextResponse.json(
+        { error: "Failed to parse or update Codex settings; values withheld" },
+        { status: error.name === "ConfigParseError" ? 422 : 500 },
+      );
+    }
     const parseError = configErrorResponse(error);
     if (parseError) return parseError;
     return NextResponse.json({ error: "Failed to update codex settings" }, { status: 500 });
@@ -259,7 +340,13 @@ export async function DELETE() {
       message: `${CLIENT_NAME} settings removed successfully`,
     });
   } catch (error) {
-    console.log("Error resetting codex settings:", error);
+    const state = await hashedState().catch(() => null);
+    if (state?.storage !== "legacy") {
+      return NextResponse.json(
+        { error: "Failed to parse or update Codex settings; values withheld" },
+        { status: error.name === "ConfigParseError" ? 422 : 500 },
+      );
+    }
     const parseError = configErrorResponse(error);
     if (parseError) return parseError;
     return NextResponse.json({ error: "Failed to reset codex settings" }, { status: 500 });

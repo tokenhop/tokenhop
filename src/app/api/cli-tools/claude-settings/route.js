@@ -9,8 +9,37 @@ import os from "os";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
 import { buildClaudeConfig } from "@/lib/cliToolConfigs/claude";
+import { withV1 } from "@/lib/cliToolConfigs/shared";
+import { readApiKeyStorageState } from "@/lib/db/apiKeyState";
+import { getAdapter } from "@/lib/db/driver";
 
 const execAsync = promisify(exec);
+
+// YAN-363: hashed durable mode gates credential handling on these routes.
+// Legacy storage keeps today's exact behavior; an invalid durable marker
+// fails closed as 503, never silently legacy.
+async function hashedStorageMode() {
+  const state = readApiKeyStorageState(await getAdapter());
+  return state.storage === "hashed";
+}
+
+// Compare the URL the builder will persist; URL resolves dot segments and
+// normalizes host casing/default ports without equating distinct hostnames.
+function destinationIdentity(raw, applyV1 = false) {
+  const url = new URL(raw);
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error("Invalid credential destination");
+  }
+  const pathname = url.pathname.replace(/\/$/, "");
+  url.pathname = applyV1 ? withV1(pathname) : pathname;
+  return `${url.origin}${url.pathname.replace(/\/$/, "")}`;
+}
 
 // Get claude settings path based on OS
 const getClaudeSettingsPath = () => {
@@ -73,13 +102,19 @@ const readSettings = async () => {
     // rather than throwing a 500 that the UI misreads as "tool not installed".
     const stripped = content.replace(/,(\s*[}\]])/g, "$1");
     return JSON.parse(stripped);
-  } catch (error) {
+  } catch {
     return null;
   }
 };
 
 // GET - Check claude CLI and read current settings
 export async function GET() {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const isInstalled = await checkClaudeInstalled();
 
@@ -95,6 +130,25 @@ export async function GET() {
     const hasTokenhop = !!settings?.env?.ANTHROPIC_BASE_URL;
     const claudeJson = await readClaudeJson();
 
+    if (hashed) {
+      // Targeted sanitization: the gateway credential copy never leaves the
+      // disk file. Everything else in the settings is returned as-is.
+      const sanitized = settings ? JSON.parse(JSON.stringify(settings)) : null;
+      const credentialConfigured =
+        typeof sanitized?.env?.ANTHROPIC_AUTH_TOKEN === "string" &&
+        sanitized.env.ANTHROPIC_AUTH_TOKEN.length > 0;
+      if (sanitized?.env) delete sanitized.env.ANTHROPIC_AUTH_TOKEN;
+      return NextResponse.json({
+        installed: true,
+        settings: sanitized,
+        hasTokenhop,
+        credentialConfigured,
+        storage: "hashed",
+        exaMcpEnabled: !!claudeJson?.mcpServers?.exa,
+        settingsPath: getClaudeSettingsPath(),
+      });
+    }
+
     return NextResponse.json({
       installed: true,
       settings: settings,
@@ -103,13 +157,19 @@ export async function GET() {
       settingsPath: getClaudeSettingsPath(),
     });
   } catch (error) {
-    console.log("Error checking claude settings:", error);
+    console.log("Error checking claude settings:", hashed ? "Config operation failed" : error);
     return NextResponse.json({ error: "Failed to check claude settings" }, { status: 500 });
   }
 }
 
 // POST - Backup old fields and write new settings
 export async function POST(request) {
+  let hashed = false;
+  try {
+    hashed = await hashedStorageMode();
+  } catch {
+    return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+  }
   try {
     const body = await request.json();
     const { env, exaMcpEnabled, autoCompactWindow } = body;
@@ -126,6 +186,51 @@ export async function POST(request) {
 
     // Read current settings (unparseable file → 422, left untouched)
     const currentSettings = (await readJsonConfig(settingsPath)) ?? {};
+
+    if (hashed) {
+      const posted = typeof env.ANTHROPIC_AUTH_TOKEN === "string" ? env.ANTHROPIC_AUTH_TOKEN : null;
+      const existing =
+        typeof currentSettings?.env?.ANTHROPIC_AUTH_TOKEN === "string"
+          ? currentSettings.env.ANTHROPIC_AUTH_TOKEN
+          : null;
+      let existingBase = null;
+      let intendedBase = null;
+      try {
+        existingBase =
+          typeof currentSettings?.env?.ANTHROPIC_BASE_URL === "string" &&
+          currentSettings.env.ANTHROPIC_BASE_URL
+            ? destinationIdentity(currentSettings.env.ANTHROPIC_BASE_URL)
+            : null;
+        intendedBase =
+          typeof env.ANTHROPIC_BASE_URL === "string" && env.ANTHROPIC_BASE_URL
+            ? destinationIdentity(env.ANTHROPIC_BASE_URL, true)
+            : null;
+      } catch {
+        return NextResponse.json({ error: "Invalid ANTHROPIC_BASE_URL" }, { status: 400 });
+      }
+      if (intendedBase) env.ANTHROPIC_BASE_URL = intendedBase;
+      if (!posted) {
+        if (!existing) {
+          // No stored credential and none provided: never write an
+          // incomplete credential-free entry.
+          return NextResponse.json(
+            { error: "Provide ANTHROPIC_AUTH_TOKEN for this destination" },
+            { status: 400 },
+          );
+        }
+        if (!existingBase || (intendedBase && intendedBase !== existingBase)) {
+          // The disk credential copy is bound to its destination: a different
+          // origin or path never inherits it without an explicit replacement.
+          return NextResponse.json(
+            { error: "Provide ANTHROPIC_AUTH_TOKEN for this destination" },
+            { status: 400 },
+          );
+        }
+        // Same destination (or none posted): the disk credential is reused,
+        // never echoed back.
+        env.ANTHROPIC_AUTH_TOKEN = existing;
+      }
+    }
 
     // Builder normalises ANTHROPIC_BASE_URL (/v1) and sets/drops the auto-compact
     // key in env. An omitted autoCompactWindow (e.g. terminal UI posts only env)
@@ -167,6 +272,10 @@ export async function POST(request) {
       message: "Settings updated successfully",
     });
   } catch (error) {
+    if (hashed) {
+      console.log("Error updating claude settings");
+      return NextResponse.json({ error: "Failed to update claude settings" }, { status: 500 });
+    }
     console.log("Error updating claude settings:", error);
     const parseError = configErrorResponse(error);
     if (parseError) return parseError;

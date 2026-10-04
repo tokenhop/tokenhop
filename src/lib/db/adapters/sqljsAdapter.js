@@ -23,7 +23,7 @@ export async function createSqlJsAdapter(filePath) {
   let saveTimer = null;
   const SAVE_DEBOUNCE_MS = 100;
 
-  function persist() {
+  function persist(strict = false) {
     const data = Buffer.from(db.export());
     db.exec(PRAGMA_SQL); // export() reopens the DB, which resets the PRAGMAs
     // Write a sibling temp file, fsync, then rename over the target so a crash mid-write
@@ -46,7 +46,9 @@ export async function createSqlJsAdapter(filePath) {
         } finally {
           fs.closeSync(dirFd);
         }
-      } catch {}
+      } catch (e) {
+        if (strict && process.platform !== "win32") throw e;
+      }
     } catch (e) {
       if (fd !== null) {
         try {
@@ -150,13 +152,20 @@ export async function createSqlJsAdapter(filePath) {
     }
   }
 
-  // Flush on shutdown (sync: repos flush before sql.js persists to disk)
+  // Explicit durability gate: no swallowed persistence errors, no best-effort
+  // shutdown flushers. Caller must drain repo buffers before activation.
+  function flushSync() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = null;
+    if (dirty) persist(true);
+  }
+
+  // Preserve existing best-effort shutdown behavior.
   const flush = () => {
     runShutdownFlushers();
-    if (dirty)
-      try {
-        persist();
-      } catch {}
+    try {
+      if (dirty) persist();
+    } catch {}
   };
   process.on("beforeExit", flush);
   process.on("SIGINT", flush);
@@ -176,5 +185,16 @@ export async function createSqlJsAdapter(filePath) {
     }
   }
 
-  return { driver: "sql.js", run, get, all, exec, transaction, close, snapshot, raw: db };
+  return {
+    driver: "sql.js",
+    run,
+    get,
+    all,
+    exec,
+    transaction,
+    close,
+    snapshot,
+    flushSync,
+    raw: db,
+  };
 }

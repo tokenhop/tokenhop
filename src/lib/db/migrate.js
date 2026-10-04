@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { LEGACY_FILES, DB_DIR } from "./paths.js";
-import { TABLES, buildCreateTableSql } from "./schema.js";
+import { TABLES, HASHED_API_KEYS_TABLE, buildCreateTableSql } from "./schema.js";
+import { readApiKeyStorageState } from "./apiKeyState.js";
 import { MIGRATIONS, latestVersion } from "./migrations/index.js";
 import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
@@ -152,8 +153,21 @@ export function runVersionedMigrations(adapter, migrations = MIGRATIONS) {
 }
 
 // ─── Auto-sync (additive only): add missing tables/columns/indexes ───────
+// YAN-363: once the switch-on activation stamps _meta.apiKeysHashedVersion,
+// the live apiKeys table is the hashed shape (HASHED_API_KEYS_TABLE); the
+// declarative TABLES.apiKeys stays the legacy raw-key definition for
+// not-yet-activated DBs. Sync must follow the marker so reopening an
+// activated DB never re-adds the raw `key` column or its index. The marker
+// is authoritative, never the table shape; a malformed marker pair fails
+// closed (readApiKeyStorageState throws) rather than guessing a definition.
+function apiKeysDefinitionForSync(adapter) {
+  const state = readApiKeyStorageState(adapter);
+  return state.storage === "hashed" ? HASHED_API_KEYS_TABLE : TABLES.apiKeys;
+}
+
 function syncSchemaFromTables(adapter) {
-  for (const [tableName, def] of Object.entries(TABLES)) {
+  for (const [tableName, declaredDef] of Object.entries(TABLES)) {
+    const def = tableName === "apiKeys" ? apiKeysDefinitionForSync(adapter) : declaredDef;
     // Create table if absent
     adapter.exec(buildCreateTableSql(tableName, def));
 
@@ -408,8 +422,11 @@ function importLegacyDetails(adapter, data) {
 // ─── Main entry ──────────────────────────────────────────────────────────
 export async function runMigrationOnce(adapter) {
   if (_migratedAdapters.has(adapter)) return;
+  await migrateAdapterOnce(adapter);
   _migratedAdapters.add(adapter);
+}
 
+async function migrateAdapterOnce(adapter) {
   // Capture freshness BEFORE migrations stamp _meta (otherwise we'd misclassify
   // a brand-new DB as non-fresh once schemaVersion is written).
   const fresh = isFreshDb(adapter);
@@ -452,7 +469,8 @@ export async function runMigrationOnce(adapter) {
   const legacyDetails = readJsonSafe(LEGACY_FILES.details);
   const hasLegacy = !!(legacyMain || legacyUsage || legacyDisabled || legacyDetails);
 
-  if (hasLegacy && !alreadyImported && legacyTablesEmpty(adapter)) {
+  const storageHashed = readApiKeyStorageState(adapter).storage === "hashed";
+  if (hasLegacy && !storageHashed && !alreadyImported && legacyTablesEmpty(adapter)) {
     const t0 = Date.now();
     const backupDir = makeBackupDir("migrate-from-json");
     for (const f of Object.values(LEGACY_FILES)) backupFile(f, backupDir);

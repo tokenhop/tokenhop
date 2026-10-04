@@ -7,7 +7,10 @@ const ROUTER_BASE =
     .replace(/\/+$/, "") || DEFAULT_LOCAL_ROUTER;
 const API_KEY = process.env.ROUTER_API_KEY;
 
-// Headers that must not be forwarded to tokenhop
+// Headers that must not be forwarded to tokenhop: hop-by-hop keys plus every
+// credential/cookie/proxy-auth/CLI/peer-proof header a client could smuggle in.
+// The configured child key below is the only Authorization the router may see.
+// Exact peer-proof names from custom-server.js + src/lib/auth/cliToken.js.
 const STRIP_HEADERS = new Set([
   "host",
   "content-length",
@@ -15,6 +18,26 @@ const STRIP_HEADERS = new Set([
   "transfer-encoding",
   "content-type",
   "authorization",
+  "proxy-authorization",
+  "proxy-authenticate",
+  "cookie",
+  "cookie2",
+  "x-api-key",
+  "api-key",
+  "x-goog-api-key",
+  "x-amz-security-token",
+  "x-client-token",
+  "x-skip-api-key-check",
+  "x-request-source",
+  "x-forwarded-for",
+  "x-forwarded-proto",
+  "x-forwarded-host",
+  "x-real-ip",
+  "forwarded",
+  "x-9r-cli-token",
+  "x-9r-peer-token",
+  "x-9r-real-ip",
+  "x-9r-via-proxy",
 ]);
 
 /**

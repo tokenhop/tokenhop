@@ -73,6 +73,7 @@ describe("settings API omits credentials (YAN-607)", () => {
   it("GET and PATCH responses contain no secret keys", async () => {
     await db.updateSettings({
       mitmSudoEncrypted: "enc:sudo",
+      mitmInternalVerifier: "d".repeat(64),
       samlPrivateKey: "-----BEGIN PRIVATE KEY-----",
       oidcIssuerUrl: "https://idp.example",
       oidcClientId: "client",
@@ -90,5 +91,28 @@ describe("settings API omits credentials (YAN-607)", () => {
       for (const key of SECRET_SETTING_KEYS) expect(body).not.toHaveProperty(key);
       expect(body.oidcConfigured).toBe(true);
     }
+    const snapshot = await db.exportDb();
+    expect(snapshot.settings).not.toHaveProperty("mitmInternalVerifier");
+    await db.updateSettings({ mitmInternalVerifier: null });
+  });
+
+  it("strips an untrusted mitmInternalVerifier PATCH and keeps the lifecycle's stored value", async () => {
+    const verifier = "f".repeat(64);
+    await db.updateSettings({ mitmInternalVerifier: verifier });
+    const { GET, PATCH } = await import("@/app/api/settings/route.js");
+    const patched = await (
+      await PATCH(
+        req("/api/settings", {
+          method: "PATCH",
+          body: JSON.stringify({ requireLogin: true, mitmInternalVerifier: "0".repeat(64) }),
+        }),
+      )
+    ).json();
+    expect(patched).not.toHaveProperty("mitmInternalVerifier");
+    const stored = await db.getSettings();
+    expect(stored.mitmInternalVerifier).toBe(verifier);
+    const got = await (await GET()).json();
+    expect(got).not.toHaveProperty("mitmInternalVerifier");
+    await db.updateSettings({ mitmInternalVerifier: null });
   });
 });

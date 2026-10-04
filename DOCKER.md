@@ -37,7 +37,7 @@ docker rm -f tokenhop         # remove
 
 Without `DATA_DIR`, the app falls back to `~/.tokenhop/` (macOS/Linux) or `%APPDATA%\tokenhop\` (Windows). In the container, `DATA_DIR=/app/data` makes the bind mount work.
 
-**Upgrading from 9router?** Keep mounting the host directory or volume you already use (for example `$HOME/.9router`); the container only sees `/app/data`, so nothing moves. See [UPGRADING.md](UPGRADING.md#9-docker). <!-- legacy(9router) -->
+**Upgrading from 9router?** Keep mounting the host directory or volume you already use (for example `$HOME/.9router`); the container only sees `/app/data`, so nothing moves. See [UPGRADING.md](UPGRADING.md#10-docker). <!-- legacy(9router) -->
 
 Data layout under `$DATA_DIR/`:
 

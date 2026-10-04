@@ -146,7 +146,140 @@ export function duplicateKeyLabel(key, keys) {
   const name = key?.name || "";
   const duplicated = (keys || []).filter((item) => item.name === name).length > 1;
   if (!duplicated) return name;
-  return `${name} \u2026${String(key.key || "").slice(-4)}`;
+  return `${name} \u2026${String(key.key || key.prefix || "").slice(-4)}`;
+}
+
+/**
+ * True when a row is hashed-storage metadata: prefix present, raw key absent.
+ * @param {{ prefix?: string, key?: string }} key
+ * @returns {boolean}
+ */
+export function isHashedRow(key) {
+  return Boolean(key) && typeof key.prefix === "string" && typeof key.key !== "string";
+}
+
+/**
+ * Render a stored hashed-key prefix (`th_xxxx...yyyy`). It is already redacted
+ * metadata, so display it as-is; never mask it again.
+ * @param {string|null|undefined} prefix
+ * @returns {string}
+ */
+export function formatPrefix(prefix) {
+  return typeof prefix === "string" && prefix ? prefix : "—";
+}
+
+/**
+ * Expiry reached at equality (server contract): null never expires.
+ * @param {string|null} expiresAt
+ * @param {number} [now]
+ * @returns {boolean}
+ */
+export function isKeyExpired(expiresAt, now = Date.now()) {
+  if (!expiresAt) return false;
+  const time = Date.parse(expiresAt);
+  return !Number.isNaN(time) && time <= now;
+}
+
+/**
+ * Human expiry for list rows: "Never" for unrestricted keys.
+ * @param {string|null} expiresAt
+ * @returns {string}
+ */
+export function formatExpiry(expiresAt) {
+  if (!expiresAt) return "Never";
+  const time = Date.parse(expiresAt);
+  if (Number.isNaN(time)) return "—";
+  return new Date(time).toLocaleDateString();
+}
+
+/**
+ * Scope summary for list rows: empty scope is unrestricted.
+ * @param {Array<string>|null} allowedModels
+ * @param {Array<string>|null} [allowedCombos]
+ * @returns {string}
+ */
+export function scopeSummary(allowedModels, allowedCombos) {
+  const parts = [];
+  const count = Array.isArray(allowedModels) ? allowedModels.length : 0;
+  parts.push(count === 0 ? "All models" : count === 1 ? "1 model" : `${count} models`);
+  const combos = Array.isArray(allowedCombos) ? allowedCombos.length : 0;
+  if (combos > 0) parts.push(combos === 1 ? "1 combo" : `${combos} combos`);
+  return parts.join(" · ");
+}
+
+/**
+ * Parse a free-text scope input (comma/space/newline separated) into the
+ * scope array the key API expects. Empty input means unrestricted (`null`).
+ * Mirrors the server bounds (128 entries, 1-256 chars).
+ * @param {string} text
+ * @param {"model"|"combo"} kind noun used in the error literal
+ * @returns {{ values: Array<string>|null, error: string|null }}
+ */
+export function parseScopeList(text, kind = "model") {
+  if (!text?.trim()) return { values: null, error: null };
+  const values = text.split(/[\s,]+/).filter(Boolean);
+  const plural = kind === "combo" ? "combos" : "models";
+  const singular = kind === "combo" ? "Combo" : "Model";
+  if (values.length > 128) return { values: null, error: `Limit to 128 ${plural} or fewer` };
+  for (const value of values) {
+    if (value.length > 256) {
+      return { values: null, error: `${singular} names must be 256 characters or fewer` };
+    }
+  }
+  return { values, error: null };
+}
+
+/**
+ * Parse the free-text "Limit models" input (comma/space/newline separated)
+ * into the scope array the API expects. Empty input means unrestricted
+ * (`models: null`). Mirrors the server bounds (128 entries, 1-256 chars).
+ * @param {string} text
+ * @returns {{ models: Array<string>|null, error: string|null }}
+ */
+export function parseModelScope(text) {
+  const { values, error } = parseScopeList(text, "model");
+  return { models: values, error };
+}
+
+/**
+ * Parse the free-text "Limit combos" input, same bounds and shape as models.
+ * @param {string} text
+ * @returns {{ combos: Array<string>|null, error: string|null }}
+ */
+export function parseComboScope(text) {
+  const { values, error } = parseScopeList(text, "combo");
+  return { combos: values, error };
+}
+
+/**
+ * Resolve the create-form expiry choice to an ISO-8601 UTC instant.
+ * "never" (and unknown) -> null. Custom uses UTC midnight of the picked date.
+ * @param {"never"|"7"|"30"|"90"|"custom"} preset
+ * @param {string} [customDate] YYYY-MM-DD
+ * @param {Date} [now]
+ * @returns {string|null}
+ */
+export function expiryToIso(preset, customDate, now = new Date()) {
+  const days = { 7: 7, 30: 30, 90: 90 }[preset];
+  if (days) return new Date(now.getTime() + days * 86400000).toISOString();
+  if (preset === "custom" && customDate) {
+    const time = Date.parse(`${customDate}T00:00:00.000Z`);
+    if (!Number.isNaN(time)) return new Date(time).toISOString();
+  }
+  return null;
+}
+
+/**
+ * Client check for the create-form expiry, mirroring the server rule
+ * (expiry must be in the future).
+ * @param {string|null} iso
+ * @returns {string|null} error literal or null
+ */
+export function validateExpiry(iso) {
+  if (iso == null) return null;
+  if (typeof iso !== "string" || Number.isNaN(Date.parse(iso))) return "Enter a valid date";
+  if (Date.parse(iso) <= Date.now()) return "Expiry must be in the future";
+  return null;
 }
 
 const KEY_NAME_MAX = 64;

@@ -10,6 +10,7 @@ import {
   Modal,
   ConfirmDialog,
   Input,
+  Select,
   CardSkeleton,
   Skeleton,
   Callout,
@@ -44,6 +45,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const createRequested = searchParams.get("create") === "key";
+  const createBlocked = !apiKeys.capabilities.canCreate;
   const lastRevealedId = useRef(apiKeys.revealed?.id);
   const setShowAddModalRef = useRef(apiKeys.setShowAddModal);
   setShowAddModalRef.current = apiKeys.setShowAddModal;
@@ -64,9 +66,12 @@ export default function EndpointPageClient({ machineId: _machineId }) {
   useEffect(() => {
     if (!apiKeys.loading && createRequested !== lastCreateRequested.current) {
       lastCreateRequested.current = createRequested;
-      setShowAddModalRef.current(createRequested);
+      // Modal opens only on a proven context with create capability; viewer
+      // deep links (?create=key) get the inline callout instead.
+      const allowed = apiKeys.contextReady && !createBlocked;
+      setShowAddModalRef.current(allowed ? createRequested : false);
     }
-  }, [createRequested, apiKeys.loading]);
+  }, [createRequested, apiKeys.loading, createBlocked, apiKeys.contextReady]);
 
   useEffect(() => {
     if (apiKeys.revealed?.id && apiKeys.revealed.id !== lastRevealedId.current) {
@@ -78,6 +83,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
   const closeCreate = () => {
     apiKeys.setShowAddModal(false);
     apiKeys.setNewKeyName("");
+    apiKeys.setCreateError?.(null);
     clearCreateParam();
   };
 
@@ -201,6 +207,9 @@ export default function EndpointPageClient({ machineId: _machineId }) {
         <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
           <ApiKeysCard
             keys={apiKeys.keys}
+            hashedMode={apiKeys.hashedMode}
+            canCreate={apiKeys.capabilities.canCreate}
+            migrationNotice={apiKeys.migrationNotice}
             requireApiKey={tunnel.requireApiKey}
             onToggleRequireApiKey={tunnel.handleRequireApiKey}
             onCreateKey={() => apiKeys.setShowAddModal(true)}
@@ -237,6 +246,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
           />
           <QuickConnectCard
             baseUrl={localUrl}
+            hashedMode={apiKeys.hashedMode}
             selectedKeyId={effectiveSelectedKeyId}
             keys={apiKeys.keys}
             revealed={apiKeys.revealed}
@@ -260,6 +270,12 @@ export default function EndpointPageClient({ machineId: _machineId }) {
 
       {/* Tunnel dashboard access row is in AccessCard; the dashboard-over-tunnel
           toggle there is the single control (was bottom-row only in v1). */}
+
+      {createRequested && apiKeys.contextReady && createBlocked && (
+        <Callout variant="warn">
+          You don&apos;t have permission to create keys in this workspace.
+        </Callout>
+      )}
 
       {/* Create key modal (Signal primitives). */}
       <Modal
@@ -296,6 +312,72 @@ export default function EndpointPageClient({ machineId: _machineId }) {
             error={apiKeys.createError}
             maxLength={64}
           />
+          {apiKeys.hashedMode && (
+            <>
+              {apiKeys.capabilities.canCreateService && (
+                <fieldset className="flex flex-col gap-2">
+                  <legend className="text-sm font-medium text-text">Key owner</legend>
+                  <label className="flex items-center gap-2 text-sm text-text">
+                    <input
+                      type="radio"
+                      name="key-owner"
+                      value="user"
+                      checked={apiKeys.createType === "user"}
+                      onChange={() => apiKeys.setCreateType("user")}
+                      className="size-4 accent-coral"
+                    />
+                    Me (user key)
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-text">
+                    <input
+                      type="radio"
+                      name="key-owner"
+                      value="service"
+                      checked={apiKeys.createType === "service"}
+                      onChange={() => apiKeys.setCreateType("service")}
+                      className="size-4 accent-coral"
+                    />
+                    Service key
+                  </label>
+                </fieldset>
+              )}
+              <Input
+                label="Limit models (optional)"
+                value={apiKeys.createModels}
+                onChange={(e) => apiKeys.setCreateModels(e.target.value)}
+                placeholder="openai/gpt-4o, anthropic/claude"
+                hint="Empty means all models in the workspace."
+              />
+              <Input
+                label="Limit combos (optional)"
+                value={apiKeys.createCombos}
+                onChange={(e) => apiKeys.setCreateCombos(e.target.value)}
+                placeholder="fast-cheap, balanced"
+                hint="Workspace combo ids. Empty means all combos."
+              />
+              <Select
+                label="Expires"
+                value={apiKeys.createExpiry}
+                onChange={(e) => apiKeys.setCreateExpiry(e.target.value)}
+                options={[
+                  { value: "never", label: "Never" },
+                  { value: "7", label: "7 days" },
+                  { value: "30", label: "30 days" },
+                  { value: "90", label: "90 days" },
+                  { value: "custom", label: "Custom date" },
+                ]}
+              />
+              {apiKeys.createExpiry === "custom" && (
+                <Input
+                  label="Custom expiry date"
+                  type="date"
+                  value={apiKeys.customExpiryDate}
+                  onChange={(e) => apiKeys.setCustomExpiryDate(e.target.value)}
+                  min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)}
+                />
+              )}
+            </>
+          )}
           {apiKeys.createError && (
             <p className="sr-only" role="alert">
               {apiKeys.createError}

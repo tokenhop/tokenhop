@@ -39,9 +39,14 @@ export default function HermesToolCard({
   tailscaleEnabled = false,
   tailscaleUrl = "",
   onStatusUpdate,
+  hashedContext = false,
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "hermes" });
   const { status } = card;
+  // YAN-363: this route reports storage/credentialConfigured directly; the
+  // shared context only breaks ties. Hashed: pasted key or omission — the
+  // server preserves the disk credential for an unchanged destination.
+  const hashed = status?.storage === "hashed" || hashedContext;
   const defaults = useMemo(() => ({ model: "", endpoint: "", apiKeyId: "" }), []);
   // On the host, the installed config fills a model the user hasn't saved yet.
   const disk = useMemo(
@@ -89,7 +94,7 @@ export default function HermesToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed }),
           model: setup.model,
         }),
       });
@@ -135,7 +140,7 @@ export default function HermesToolCard({
       buildHermesConfig({
         baseUrl: getEffectiveBaseUrl(),
         // No key: the .env gets the placeholder, so the dialog asks for one.
-        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed }),
         model: setup.model,
       }),
     );
@@ -187,7 +192,14 @@ export default function HermesToolCard({
             onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
+            hashed={hashed}
+            existingConfigured={Boolean(status?.credentialConfigured)}
           />
+          {hashed && !setup.selectedApiKey?.trim() && (
+            <span className="text-[11px] text-subtle">
+              Manual configuration needs a pasted key — a stored one can't be shown.
+            </span>
+          )}
         </SetupRow>
         <SetupRow label="Default model">
           <SingleModelRow

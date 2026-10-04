@@ -2,9 +2,9 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
-  extractApiKey,
-  isValidApiKey,
 } from "../services/auth.js";
+import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
+import { getComboByName } from "@/lib/db/repos/combosRepo.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleImageGenerationCore } from "open-sse/handlers/imageGenerationCore.js";
@@ -37,18 +37,22 @@ export async function handleImageGeneration(request) {
   const binaryOutput = url.searchParams.get("response_format") === "binary";
   const modelStr = body.model;
 
-  const apiKey = extractApiKey(request);
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-  }
+  const auth = await resolveGatewayAuth(request);
+  if (auth instanceof Response) return auth;
+  const gateway = auth.principal;
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.prompt) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: prompt");
 
-  // Combo expansion: model may be a combo name → run fallback/round-robin across models
+  // Authorize combo ID before reading its expansion; leaves are checked below.
+  if (gateway && typeof modelStr === "string" && !modelStr.includes("/")) {
+    const combo = await getComboByName(modelStr);
+    if (combo) {
+      const denied = authorizeGatewayTarget(gateway, { comboId: combo.id });
+      if (denied) return denied;
+    }
+  }
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
     const {
@@ -65,7 +69,7 @@ export async function handleImageGeneration(request) {
       body,
       models: comboModels,
       handleSingleModel: (b, m) =>
-        handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId }),
+        handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId, gateway }),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -79,18 +83,23 @@ export async function handleImageGeneration(request) {
     wantsStream,
     binaryOutput,
     preferredConnectionId,
+    gateway,
   });
 }
 
 async function handleSingleModelImage(
   body,
   modelStr,
-  { wantsStream, binaryOutput, preferredConnectionId } = {},
+  { wantsStream, binaryOutput, preferredConnectionId, gateway } = {},
 ) {
-  const modelInfo = await getModelInfo(modelStr);
+  const gatewayCreds = gateway ? { principal: gateway } : {};
+  const modelInfo = await getModelInfo(modelStr, gatewayCreds);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
+
+  const denied = authorizeGatewayTarget(gateway, { modelId: `${provider}/${model}` });
+  if (denied) return denied;
 
   // noAuth providers — no credential needed
   if (NO_AUTH_PROVIDERS.has(provider)) {
@@ -115,6 +124,7 @@ async function handleSingleModelImage(
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
       preferredConnectionId,
+      ...gatewayCreds,
     });
 
     if (!credentials || credentials.allRateLimited) {

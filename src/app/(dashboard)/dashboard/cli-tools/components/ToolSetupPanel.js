@@ -30,6 +30,10 @@ export default function ToolSetupPanel({ toolId, data, onStatusUpdate }) {
   if (!tool) return null;
   if (data.loading) return <CardSkeleton />;
   const CardComponent = TOOL_CARDS[toolId] || TOOL_CARDS.default;
+  // YAN-363 hashed mode: key rows are prefix metadata only (no raw). Cards
+  // whose routes lack a storage marker (cline/kilo/default) get the shared
+  // context's storage mode instead — never a secret.
+  const hashedContext = data.keyContext?.storage === "hashed";
   return (
     <CardComponent
       key={toolId}
@@ -37,6 +41,7 @@ export default function ToolSetupPanel({ toolId, data, onStatusUpdate }) {
       tool={tool}
       baseUrl={data.defaultBaseUrl}
       apiKeys={data.apiKeys}
+      hashedContext={hashedContext}
       activeProviders={data.activeProviders}
       hasActiveProviders={data.hasActiveProviders}
       cloudEnabled={data.cloudEnabled}

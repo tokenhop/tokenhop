@@ -26,6 +26,7 @@ const { isCertExpired } = require("./cert/rootCA");
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { log, err } = require("./logger");
 const { LSOF_BIN } = require("./config");
+const runtimeCredentials = require("./runtimeCredentials");
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
@@ -60,6 +61,85 @@ const MITM_RESTART_RESET_MS = 60000;
 let mitmRestartCount = 0;
 let mitmLastStartTime = 0;
 let mitmIsRestarting = false;
+
+// YAN-363 lifecycle credential seam. Manager owns timing + in-memory custody:
+// the raw bearer lives only in these locals or the child's env, never in argv,
+// settings, logs, status, or export. Mode classification + verifier DB logic
+// live in src/lib/auth/mitmCredential.js (injected via hooks to dodge CJS/ESM
+// DB cycles); gateway acceptance of the local credential lands with
+// gatewayAuth.js. Legacy callers passing a raw key keep today's behavior.
+let _credentialHooks = null; // { installLocalVerifier, clearLocalVerifierIfMatch, isLocalRouter }
+let _remoteCredential = null; // operator secret, parent memory only
+let _mitmLifecycleState = null; // { mode, verifierHash } for current/last child
+let _activeRawCredential = null; // raw bearer for log redaction only, never exported
+// Manual remote binding (YAN-363 spec202): browser-supplied credential held in
+// parent memory, bound to one normalized router URL. No file/DB/argv copy;
+// endpoint change discards it (must re-supply or use startup source).
+let _manualRemoteBinding = null; // { apiKey, routerBaseUrl } or null
+
+function isValidManualCredential(value) {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    Buffer.byteLength(value, "utf8") <= 4096 &&
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: Reject controls at credential boundary.
+    !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(value)
+  );
+}
+
+// Parent-process secrets the MITM child never needs: the operator remote
+// source vars and the root master key. Stripped from every spawn path
+// (legacy sudo too — argv contract preserved) so a local/other-destination
+// child can never read the remote credential or DB root key. Managed children
+// receive only the selected ROUTER_API_KEY slot.
+const CHILD_STRIPPED_ENV_KEYS = [
+  "TOKENHOP_MITM_REMOTE_API_KEY",
+  "TOKENHOP_MITM_REMOTE_API_KEY_FILE",
+  "TOKENHOP_MASTER_KEY",
+];
+
+function buildChildEnv(overrides) {
+  const env = { ...process.env };
+  for (const key of CHILD_STRIPPED_ENV_KEYS) delete env[key];
+  return Object.assign(env, overrides);
+}
+
+async function getMitmCredentialStatus(routerBaseUrl, storage) {
+  const base = runtimeCredentials.normalizeRouterBaseUrl(routerBaseUrl);
+  // Read-only view for GET status: never mutates bindings, exposes no secrets.
+  const startup = await _remoteCredential;
+  const local = Boolean(_credentialHooks) && _credentialHooks.isLocalRouter(base);
+  const credentialSource =
+    storage !== "hashed"
+      ? "legacy"
+      : local
+        ? "internal"
+        : _manualRemoteBinding && _manualRemoteBinding.routerBaseUrl === base
+          ? "manual"
+          : startup && startup.routerBaseUrl === base
+            ? startup.source
+            : "none";
+  const credentialConfigured = credentialSource !== "none";
+  return {
+    storage,
+    credentialSource,
+    credentialConfigured,
+    needsCredential: !credentialConfigured,
+  };
+}
+
+// Endpoint change discards the stale manual binding; startup source stays.
+function dropManualBindingUnless(routerBase) {
+  if (_manualRemoteBinding && _manualRemoteBinding.routerBaseUrl !== routerBase) {
+    _manualRemoteBinding = null;
+  }
+}
+
+/** Read-only manual-binding probe for tests/diagnostics; exposes no secret. */
+function hasManualRemoteBinding(routerBaseUrl) {
+  const base = runtimeCredentials.normalizeRouterBaseUrl(routerBaseUrl);
+  return Boolean(_manualRemoteBinding && _manualRemoteBinding.routerBaseUrl === base);
+}
 
 function resolveBundledServerPath() {
   if (process.env.MITM_SERVER_PATH) return process.env.MITM_SERVER_PATH;
@@ -218,6 +298,33 @@ let _updateSettings = null;
 function initDbHooks(getSettingsFn, updateSettingsFn) {
   _getSettings = getSettingsFn;
   _updateSettings = updateSettingsFn;
+}
+
+/**
+ * YAN-363 lifecycle hooks (parent wiring, optional).
+ * credentialHooks: subset of { installLocalVerifier, clearLocalVerifierIfMatch,
+ * isLocalRouter } from src/lib/auth/mitmCredential.js.
+ * remoteCredential: optional operator secret read at parent startup (memory only).
+ */
+function initMitmCredentialHooks(credentialHooks, remoteCredential = null) {
+  _credentialHooks = credentialHooks;
+  // Capture the destination at initialization, not at the later spawn. Existing
+  // startup callers pass raw bytes; descriptor callers may supply source + URL.
+  _remoteCredential = remoteCredential
+    ? Promise.resolve(_getSettings ? _getSettings() : {})
+        .then((settings) => ({
+          apiKey: typeof remoteCredential === "string" ? remoteCredential : remoteCredential.apiKey,
+          routerBaseUrl: runtimeCredentials.normalizeRouterBaseUrl(
+            remoteCredential.routerBaseUrl ||
+              settings.mitmRouterBaseUrl ||
+              DEFAULT_MITM_ROUTER_BASE,
+          ),
+          source:
+            remoteCredential.source ||
+            (process.env.TOKENHOP_MITM_REMOTE_API_KEY_FILE ? "file" : "env"),
+        }))
+        .catch(() => null)
+    : null;
 }
 
 async function saveMitmSettings(enabled, password) {
@@ -454,6 +561,99 @@ async function getMitmStatus() {
   return { running, pid, certExists, certTrusted, dnsStatus };
 }
 
+function redactLifecycleSecret(text) {
+  const str = String(text);
+  if (!_activeRawCredential) return str;
+  return str.split(_activeRawCredential).join("[REDACTED]");
+}
+
+async function assertMitmStartupSourceCompatible(routerBase, apiKey) {
+  if (
+    apiKey == null ||
+    apiKey === "" ||
+    !_credentialHooks ||
+    _credentialHooks.isLocalRouter(routerBase)
+  )
+    return;
+  const startup = await _remoteCredential;
+  if (startup && startup.routerBaseUrl === routerBase) {
+    const conflict = new Error(
+      "MITM remote credential uses the operator startup source. Omit apiKey to use that source, or clear the startup source and restart the parent to use a typed credential.",
+    );
+    conflict.code = "MITM_STARTUP_SOURCE_LOCKED";
+    throw conflict;
+  }
+}
+
+async function resolveMitmLifecycleCredential(routerBase, explicitApiKey = undefined) {
+  const hooks = _credentialHooks;
+  if (!hooks || typeof hooks.isLocalRouter !== "function") return { mode: "legacy" };
+  dropManualBindingUnless(routerBase);
+  if (!hooks.isLocalRouter(routerBase)) {
+    // Approved startup source (env/file) outranks any browser-supplied value —
+    // a configured operator secret can never be overridden from the dashboard.
+    // A nonempty typed credential against the same endpoint is an explicit
+    // conflict, surfaced before spawn instead of silently ignored.
+    const startup = await _remoteCredential;
+    if (startup && startup.routerBaseUrl === routerBase) {
+      await assertMitmStartupSourceCompatible(routerBase, explicitApiKey);
+      return { mode: "remote", apiKey: startup.apiKey };
+    }
+    if (explicitApiKey !== undefined) {
+      if (!isValidManualCredential(explicitApiKey)) throw new Error("Invalid MITM credential");
+      _manualRemoteBinding = { apiKey: explicitApiKey, routerBaseUrl: routerBase };
+    }
+    if (_manualRemoteBinding) return { mode: "remote", apiKey: _manualRemoteBinding.apiKey };
+    throw new Error("Remote MITM router needs an operator-supplied credential");
+  }
+  const local = runtimeCredentials.createLocalCredential();
+  if (typeof hooks.installLocalVerifier === "function") {
+    await hooks.installLocalVerifier(local.verifierHash);
+  }
+  return { mode: "local", apiKey: local.apiKey, verifierHash: local.verifierHash };
+}
+
+async function clearMitmLifecycleCredential(state) {
+  if (!state) return;
+  if (state.mode === "remote") {
+    // Operator secret stays in parent memory for explicit-configured restarts;
+    // never written anywhere. Drop nothing here (endpoint/source stop clears).
+    return;
+  }
+  if (state.mode === "local" && state.verifierHash && _credentialHooks) {
+    try {
+      if (typeof _credentialHooks.clearLocalVerifierIfMatch === "function") {
+        await _credentialHooks.clearLocalVerifierIfMatch(state.verifierHash);
+      }
+    } catch {
+      /* best effort: verifier cleanup must not mask spawn errors */
+    }
+  }
+}
+
+// Incremental stream redaction: a secret split across chunk boundaries must
+// never reach the parent console. Holds back key.length-1 chars un-redacted
+// in memory until the next chunk completes or drops them at exit.
+// ponytail: exit-time tail chars are dropped, not flushed — revisit only if
+// truncated trailing log lines ever matter.
+function createSecretRedactingWriter(writeFn, secret) {
+  let pending = "";
+  return (chunk) => {
+    pending += chunk;
+    if (!secret) {
+      writeFn(pending);
+      pending = "";
+      return;
+    }
+    const safe = pending.split(secret).join("[REDACTED]");
+    const keep = secret.length - 1;
+    if (safe.length > keep) {
+      writeFn(safe.slice(0, safe.length - keep));
+      pending = safe.slice(safe.length - keep);
+    }
+  };
+}
+
 async function scheduleMitmRestart(apiKey) {
   if (mitmIsRestarting) return;
   // Set guard synchronously before any await to prevent concurrent calls
@@ -489,6 +689,11 @@ async function scheduleMitmRestart(apiKey) {
       mitmIsRestarting = false;
       return;
     }
+    // Legacy callers keep their original raw key across restarts. Managed mode
+    // (hashed storage) resolves fresh inside startServer: local re-mints per
+    // spawn, remote reuses the parent-memory binding or startup source.
+    // Exit-driven restarts arrive with null so no stale typed value is
+    // ever re-applied.
     await startServer(apiKey, password);
     log("🔄 Restarted successfully");
     mitmRestartCount = 0;
@@ -531,7 +736,19 @@ async function killPort443Owner(owner, sudoPassword) {
 }
 
 async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
-  if (!serverProcess || serverProcess.killed) {
+  // Managed local: browser input never reaches the gateway. Managed remote:
+  // an explicit typed credential may bind on manual start only (endpoint-bound,
+  // parent memory); autonomous restarts reuse the binding or startup source.
+  const managed = Boolean(_credentialHooks && typeof _credentialHooks.isLocalRouter === "function");
+  const callerApiKey = apiKey === undefined || apiKey === null ? null : apiKey;
+  if (managed) {
+    const router = runtimeCredentials.normalizeRouterBaseUrl(
+      (_getSettings ? await _getSettings() : {}).mitmRouterBaseUrl || DEFAULT_MITM_ROUTER_BASE,
+    );
+    await assertMitmStartupSourceCompatible(router, apiKey);
+  }
+  let spawnCredential = null;
+  if (!managed && (!serverProcess || serverProcess.killed)) {
     try {
       if (fs.existsSync(PID_FILE)) {
         const savedPid = parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10);
@@ -550,7 +767,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     }
   }
 
-  if (serverProcess && !serverProcess.killed) {
+  if (!managed && serverProcess && !serverProcess.killed) {
     throw new Error("MITM server is already running");
   }
 
@@ -578,7 +795,25 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
   }
 
   try {
+    // Wait for managed child exit before replacing its verifier.
+    mitmIsRestarting = true;
+    if (managed && serverProcess && !serverProcess.killed) {
+      const old = serverProcess;
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("MITM child did not stop")), 5000);
+        old.once("exit", () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+        if (!old.kill("SIGKILL")) {
+          clearTimeout(timeout);
+          reject(new Error("MITM child did not stop"));
+        }
+      });
+    }
     await killLeftoverMitm(sudoPassword);
+    await clearMitmLifecycleCredential(_mitmLifecycleState);
+    _mitmLifecycleState = null;
 
     if (!IS_WIN) {
       const portStatus = await checkPort443Free();
@@ -659,7 +894,23 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
         );
       }
     }
-    const mitmRouterBase = await resolveMitmRouterBaseUrl();
+    const mitmRouterBase = managed
+      ? runtimeCredentials.normalizeRouterBaseUrl(
+          (_getSettings ? await _getSettings() : {}).mitmRouterBaseUrl || DEFAULT_MITM_ROUTER_BASE,
+        )
+      : await resolveMitmRouterBaseUrl();
+    spawnCredential = managed
+      ? await resolveMitmLifecycleCredential(
+          mitmRouterBase,
+          callerApiKey === null ? undefined : callerApiKey,
+        )
+      : { mode: "legacy", apiKey: callerApiKey };
+    if (managed && !spawnCredential.apiKey) throw new Error("Missing MITM credential");
+    _activeRawCredential = managed ? spawnCredential.apiKey : null;
+    _mitmLifecycleState = {
+      mode: spawnCredential.mode,
+      verifierHash: spawnCredential.verifierHash,
+    };
     log(`🚀 Starting server... (router: ${mitmRouterBase})`);
     if (IS_WIN) {
       // Check port 443 — ask user before killing
@@ -685,18 +936,16 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
         windowsHide: true,
         cwd: os.tmpdir(),
         stdio: ["ignore", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          ROUTER_API_KEY: apiKey,
+        env: buildChildEnv({
+          ROUTER_API_KEY: spawnCredential.apiKey,
           NODE_ENV: "production",
           MITM_ROUTER_BASE: mitmRouterBase,
-        },
+        }),
       });
 
       if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => {});
-    } else if (isSudoAvailable()) {
-      // Pass HOME explicitly so os.homedir() resolves to the unprivileged user's home
-      // instead of /root when sudo resets the environment.
+    } else if (isSudoAvailable() && !managed) {
+      // Legacy branch unchanged (pre-YAN-363 invocation).
       const inlineCmd = [
         `HOME=${shellQuoteSingle(os.homedir())}`,
         `ROUTER_API_KEY=${shellQuoteSingle(apiKey)}`,
@@ -709,6 +958,26 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
         detached: false,
         windowsHide: true,
         stdio: ["pipe", "pipe", "pipe"],
+        // Safe secret stripping only: argv contract preserved, but the child
+        // env drops operator source vars and the root master key.
+        env: buildChildEnv({}),
+      });
+      serverProcess.stdin.write(`${sudoPassword}\n`);
+      serverProcess.stdin.end();
+    } else if (isSudoAvailable()) {
+      // HOME + credential travel via env only: raw token never appears in
+      // argv, sudo command line, shell string, or logs. Sanitized: operator
+      // startup vars and root key never reach the child.
+      serverProcess = spawn("sudo", ["-S", "-E", process.execPath, effectiveServerPath], {
+        detached: false,
+        windowsHide: true,
+        stdio: ["pipe", "pipe", "pipe"],
+        env: buildChildEnv({
+          HOME: os.homedir(),
+          ROUTER_API_KEY: spawnCredential.apiKey,
+          NODE_ENV: "production",
+          MITM_ROUTER_BASE: mitmRouterBase,
+        }),
       });
       serverProcess.stdin.write(`${sudoPassword}\n`);
       serverProcess.stdin.end();
@@ -719,12 +988,11 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
         windowsHide: true,
         cwd: os.tmpdir(),
         stdio: ["ignore", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          ROUTER_API_KEY: apiKey,
+        env: buildChildEnv({
+          ROUTER_API_KEY: spawnCredential.apiKey,
           NODE_ENV: "production",
           MITM_ROUTER_BASE: mitmRouterBase,
-        },
+        }),
       });
     }
 
@@ -755,26 +1023,33 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
 
     let startError = null;
     if (serverProcess) {
+      const stdoutWriter = createSecretRedactingWriter(
+        (s) => process.stdout.write(s),
+        _activeRawCredential,
+      );
       serverProcess.stdout.on("data", (data) => {
         // server.js already formats its own logs — print as-is
-        process.stdout.write(data);
+        stdoutWriter(data.toString());
       });
-      serverProcess.stderr.on("data", (data) => {
-        const msg = data.toString().trim();
-        // Mac/Linux: filter sudo password prompt noise
+      const stderrWriter = createSecretRedactingWriter((chunk) => {
+        const msg = chunk.trim();
         if (msg && (IS_WIN || (!msg.includes("Password:") && !msg.includes("password for")))) {
           err(msg);
           startError = msg;
         }
-        // Detect wrong/missing password — clear cache and stop retry loop
         if (
           !IS_WIN &&
           (msg.includes("incorrect password") || msg.includes("no password was provided"))
         ) {
           setCachedPassword(null);
           clearEncryptedPassword();
-          mitmIsRestarting = true; // prevent scheduleMitmRestart from firing
+          mitmIsRestarting = true;
         }
+      }, _activeRawCredential);
+      serverProcess.stderr.on("data", (data) => stderrWriter(data.toString()));
+      serverProcess.on("error", () => {
+        // OS spawn errors can contain argv/env; expose fixed text only.
+        startError = "MITM child spawn failed";
       });
       serverProcess.on("exit", (code) => {
         log(`Server exited (code: ${code})`);
@@ -790,8 +1065,9 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
         } catch {
           /* ignore */
         }
-        // Auto-restart on unexpected exit
-        if (code !== 0 && !mitmIsRestarting) scheduleMitmRestart(apiKey);
+        // Auto-restart on unexpected exit. Managed mode reuses the parent-memory
+        // binding / startup source (pass null); legacy reuses the caller key.
+        if (code !== 0 && !mitmIsRestarting) scheduleMitmRestart(managed ? null : callerApiKey);
       });
     }
 
@@ -831,15 +1107,28 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
       /* ignore */
     }
 
+    // Healthy child owns the verifier; reopen the exit-driven restart path.
+    mitmIsRestarting = false;
     return { running: true, pid: serverPid };
-  } catch (e) {
-    // Clean up lock on any failure
+  } catch (spawnErr) {
+    if (serverProcess && !serverProcess.killed) {
+      serverProcess.kill();
+      serverProcess = null;
+      serverPid = null;
+    }
+    if (managed) spawnErr.message = redactLifecycleSecret(spawnErr.message);
+    // Failed spawn rolls back its verifier — never a newer replacement's.
+    if (spawnCredential && spawnCredential.mode === "local") {
+      const state = _mitmLifecycleState;
+      _mitmLifecycleState = null;
+      await clearMitmLifecycleCredential(state);
+    }
     try {
       fs.unlinkSync(LOCK_FILE);
     } catch {
       /* ignore */
     }
-    throw e;
+    throw spawnErr;
   }
 }
 
@@ -947,6 +1236,9 @@ async function stopServer(sudoPassword) {
   } catch {
     /* ignore */
   }
+  await clearMitmLifecycleCredential(_mitmLifecycleState);
+  _mitmLifecycleState = null;
+  _activeRawCredential = null;
   await saveMitmSettings(false, null);
   mitmIsRestarting = false;
 
@@ -1015,6 +1307,11 @@ module.exports = {
   clearEncryptedPassword,
   isSudoPasswordRequired,
   initDbHooks,
+  initMitmCredentialHooks,
+  isValidManualCredential,
+  assertMitmStartupSourceCompatible,
+  getMitmCredentialStatus,
+  hasManualRemoteBinding,
   restoreToolDNS,
   hasDnsPrivilege,
   removeAllDNSEntriesSync,

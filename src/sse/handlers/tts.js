@@ -1,9 +1,6 @@
-import {
-  extractApiKey,
-  isValidApiKey,
-  getProviderCredentials,
-  markAccountUnavailable,
-} from "../services/auth.js";
+import { getProviderCredentials, markAccountUnavailable } from "../services/auth.js";
+import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
+import { getComboByName } from "@/lib/db/repos/combosRepo.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleTtsCore } from "open-sse/handlers/ttsCore.js";
@@ -47,12 +44,9 @@ export async function handleTts(request) {
   );
 
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
-    if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-  }
+  const auth = await resolveGatewayAuth(request);
+  if (auth instanceof Response) return auth;
+  const gateway = auth.principal;
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.input) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
@@ -64,7 +58,14 @@ export async function handleTts(request) {
       `response_format must be one of: ${[...AUDIO_FORMATS].join(", ")}`,
     );
 
-  // Combo expansion: model may be a combo name → run fallback/round-robin across models
+  // Authorize combo ID before reading its expansion; leaves are checked below.
+  if (gateway && typeof modelStr === "string" && !modelStr.includes("/")) {
+    const combo = await getComboByName(modelStr);
+    if (combo) {
+      const denied = authorizeGatewayTarget(gateway, { comboId: combo.id });
+      if (denied) return denied;
+    }
+  }
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
     const {
@@ -80,7 +81,8 @@ export async function handleTts(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelTts(b, m, responseFormat, language, style),
+      handleSingleModel: (b, m) =>
+        handleSingleModelTts(b, m, responseFormat, language, style, gateway),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -90,15 +92,19 @@ export async function handleTts(request) {
     });
   }
 
-  return handleSingleModelTts(body, modelStr, responseFormat, language, style);
+  return handleSingleModelTts(body, modelStr, responseFormat, language, style, gateway);
 }
 
-async function handleSingleModelTts(body, modelStr, responseFormat, language, style) {
-  const modelInfo = await getModelInfo(modelStr);
+async function handleSingleModelTts(body, modelStr, responseFormat, language, style, gateway) {
+  const gatewayCreds = gateway ? { principal: gateway } : {};
+  const modelInfo = await getModelInfo(modelStr, gatewayCreds);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
   log.info("ROUTING", `Provider: ${provider}, Voice: ${model}`);
+
+  const denied = authorizeGatewayTarget(gateway, { modelId: `${provider}/${model}` });
+  if (denied) return denied;
 
   // noAuth providers — no credential needed
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
@@ -122,7 +128,12 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(
+      provider,
+      excludeConnectionIds,
+      model,
+      gatewayCreds,
+    );
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

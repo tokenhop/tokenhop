@@ -7,18 +7,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 let tempDir;
 const originalDataDir = process.env.DATA_DIR;
 
+function resetAdapter() {
+  if (!tempDir) return;
+  const adapters = globalThis[Symbol.for(`tokenhop.dbAdapters.${process.pid}`)];
+  const dataFile = path.join(tempDir, "db", "data.sqlite");
+  try {
+    adapters?.get(dataFile)?.instance?.close?.();
+  } finally {
+    adapters?.delete(dataFile);
+  }
+}
+
 beforeEach(() => {
+  resetAdapter();
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-cursor-mig-"));
   process.env.DATA_DIR = tempDir;
-  delete global._dbAdapter;
   vi.resetModules();
 });
 
 afterEach(() => {
-  try {
-    global._dbAdapter?.instance?.close?.();
-  } catch {}
-  delete global._dbAdapter;
+  resetAdapter();
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
@@ -59,10 +67,9 @@ describe("migration 002 cursor-refresh-backfill", () => {
     const other = { accessToken: LEGACY_ACCESS, refreshToken: null };
     insertConn(db, "other", "claude", "oauth", other);
     db.run(`UPDATE _meta SET value = '1' WHERE key = 'schemaVersion'`);
-    db.close?.();
 
     // Restart → runner applies migration #2
-    delete global._dbAdapter;
+    resetAdapter();
     vi.resetModules();
     const { getAdapter: getAdapter2 } = await import("@/lib/db/driver.js");
     const db2 = await getAdapter2();

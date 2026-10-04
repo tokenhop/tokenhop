@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { TenancyError, assertCtx, mapConstraintErrors } from "@/lib/users/errors.js";
 import { assertNotLastManager } from "./membershipsRepo.js";
+import { revokeUserApiKeysSync } from "./apiKeysRepo.js";
 import { getSettings } from "./settingsRepo.js";
 import { setMetaSync } from "../helpers/metaStore.js";
 import { adoptOwnerlessRowsUnscoped } from "./ownership.js";
@@ -195,11 +196,9 @@ export async function updateUserUnscoped(id, patch = {}) {
       const sets = Object.keys(next).map((k) => `${k} = ?`);
       sets.push("updatedAt = ?");
       if (bump) sets.push("sessionVersion = sessionVersion + 1");
-      db.run(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`, [
-        ...Object.values(next),
-        new Date().toISOString(),
-        id,
-      ]);
+      const now = new Date().toISOString();
+      db.run(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`, [...Object.values(next), now, id]);
+      if (next.status === "disabled") revokeUserApiKeysSync(db, id, { now });
       dropSession(id);
       return getRow(db, id);
     }),

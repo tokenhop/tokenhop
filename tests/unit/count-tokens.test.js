@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { POST } from "../../src/app/api/v1/messages/count_tokens/route.js";
 
 // Auth is covered by require-client-api-key.test.js.
-vi.mock("@/lib/auth/requireClientApiKey", () => ({ requireClientApiKey: async () => null }));
+// Legacy-storage auth: pass through with no principal, matching the
+// pre-shared-resolver behavior these estimator tests were built on.
+vi.mock("@/lib/auth/gatewayAuth.js", () => ({
+  resolveGatewayAuth: async () => ({ principal: null, legacy: true }),
+}));
 
 async function countTokens(body) {
   const response = await POST(

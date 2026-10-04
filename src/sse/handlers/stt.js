@@ -1,10 +1,5 @@
-import {
-  extractApiKey,
-  isValidApiKey,
-  getProviderCredentials,
-  markAccountUnavailable,
-} from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import { getProviderCredentials, markAccountUnavailable } from "../services/auth.js";
+import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
 import { getModelInfo } from "../services/model.js";
 import { handleSttCore } from "open-sse/handlers/sttCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -32,23 +27,23 @@ export async function handleStt(request) {
   const modelStr = formData.get("model");
   log.request("POST", `/v1/audio/transcriptions | ${modelStr}`);
 
-  const settings = await getSettings();
-  if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
-    if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-  }
+  const auth = await resolveGatewayAuth(request);
+  if (auth instanceof Response) return auth;
+  const gateway = auth.principal;
+  const gatewayCreds = gateway ? { principal: gateway } : {};
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!formData.get("file"))
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: file");
 
-  const modelInfo = await getModelInfo(modelStr);
+  const modelInfo = await getModelInfo(modelStr, gatewayCreds);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
   log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
+
+  const denied = authorizeGatewayTarget(gateway, { modelId: `${provider}/${model}` });
+  if (denied) return denied;
 
   // noAuth providers
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
@@ -68,7 +63,12 @@ export async function handleStt(request) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(
+      provider,
+      excludeConnectionIds,
+      model,
+      gatewayCreds,
+    );
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

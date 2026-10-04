@@ -63,10 +63,15 @@ export default function CoworkToolCard({
   tailscaleEnabled = false,
   tailscaleUrl = "",
   onStatusUpdate,
+  hashedContext = false,
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "cowork" });
   const platform = useManualPlatform();
   const { status } = card;
+  // YAN-363: this route reports storage/credentialConfigured directly; the
+  // shared context only breaks ties. Hashed: pasted key or omission — the
+  // server preserves the disk credential for an unchanged destination.
+  const hashed = status?.storage === "hashed" || hashedContext;
   const [comboModalOpen, setComboModalOpen] = useState(false);
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const [addMcpOpen, setAddMcpOpen] = useState(false);
@@ -152,7 +157,7 @@ export default function CoworkToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed }),
           models: selectedModels,
           plugins,
           localPlugins,
@@ -230,7 +235,7 @@ export default function CoworkToolCard({
     toManualConfigs(
       buildCoworkConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed }),
         models: selectedModels,
         managedMcpServers: buildCoworkMcpServers({ plugins, customPlugins }),
         appliedId: status?.cowork?.appliedId || draftAppliedId,
@@ -285,7 +290,14 @@ export default function CoworkToolCard({
             onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
+            hashed={hashed}
+            existingConfigured={Boolean(status?.credentialConfigured)}
           />
+          {hashed && !setup.selectedApiKey?.trim() && (
+            <span className="text-[11px] text-subtle">
+              Manual configuration needs a pasted key — a stored one can't be shown.
+            </span>
+          )}
         </SetupRow>
         <SetupRow label="Models">
           <div className="flex flex-col gap-1.5">

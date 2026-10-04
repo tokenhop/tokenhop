@@ -1,9 +1,22 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { isStartupExcludedBuildPhase } = await import("@/lib/db/processLock.js");
+    if (isStartupExcludedBuildPhase()) return;
+
+    // YAN-363 final wiring: exclusive DATA_DIR writer lock -> adapter
+    // open/migrate -> multi-user resolved once -> strict owner bootstrap when
+    // enabled -> activateGatewayKeys (legacy+off: skipped, no master/backup;
+    // already hashed: validates root + schema). Runs BEFORE timers, model
+    // sync, initializeApp and any request handling. A rejection is sticky:
+    // register() throws and this process must serve nothing. The permissive
+    // ensureOwnerBootstrap() call that used to live here is superseded by the
+    // strict path inside the coordinator; permissive request-path callers in
+    // users/session.js are unchanged.
+    const { ensureGatewayKeyStartup } = await import("@/lib/db/startupReadiness.js");
+    await ensureGatewayKeyStartup();
+
     // YAN-351: a bad users & teams switch env value fails startup, not the first request.
     await import("@/lib/users/featureSwitch.js");
-    // YAN-356: owner + Default workspace once the switch is on (no-op while off).
-    await import("@/lib/users/bootstrap.js").then((m) => m.ensureOwnerBootstrap());
 
     const { initConsoleLogCapture } = await import("@/lib/consoleLogBuffer");
     initConsoleLogCapture();

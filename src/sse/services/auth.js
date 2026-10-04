@@ -17,6 +17,7 @@ import { getActiveReliabilityPolicy } from "open-sse/config/reliabilityPolicy.js
 import { getExhaustedUntil, getSnapshot } from "open-sse/services/quotaSnapshot.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { extractClientApiKey } from "@/lib/auth/clientApiKey.js";
+import { getGatewayConnections, requireGatewayWorkspace } from "@/lib/auth/gatewayResources.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import { resolveWeightedStickyLimit, selectWeightedConnection } from "./accountSelection.js";
 import * as log from "../utils/logger.js";
@@ -30,6 +31,10 @@ const weightedStates = new Map();
 export function resetAccountSelection(providerId) {
   if (providerId) {
     weightedStates.delete(resolveProviderId(providerId) ?? providerId);
+    // Partitioned keys carry the principal workspace prefix (YAN-363).
+    for (const key of weightedStates.keys()) {
+      if (key.endsWith(`:${providerId}`)) weightedStates.delete(key);
+    }
   } else {
     weightedStates.clear();
   }
@@ -80,6 +85,8 @@ export async function getProviderCredentials(
   try {
     await currentMutex;
 
+    await requireGatewayWorkspace(options?.principal);
+
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
 
@@ -111,10 +118,9 @@ export async function getProviderCredentials(
       };
     }
 
-    const connections = await getProviderConnectionsUnscoped({
-      provider: providerId,
-      isActive: true,
-    });
+    const connections = await (options?.principal
+      ? getGatewayConnections(options.principal, { provider: providerId, isActive: true })
+      : getProviderConnectionsUnscoped({ provider: providerId, isActive: true }));
     log.debug(
       "AUTH",
       `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`,
@@ -240,7 +246,16 @@ export async function getProviderCredentials(
     const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
 
     let connection;
-    // Pin to preferred connection if specified and available
+    if (
+      options?.principal &&
+      preferredConnectionId &&
+      !availableConnections.some((c) => c.id === preferredConnectionId)
+    )
+      return null;
+
+    // Pin to preferred connection if specified and available. With a gateway
+    // principal the pin must be a connection in that workspace: a foreign id
+    // simply doesn't resolve, so no cross-workspace credential is ever used.
     if (preferredConnectionId) {
       connection = availableConnections.find((c) => c.id === preferredConnectionId);
       if (connection) {
@@ -253,16 +268,21 @@ export async function getProviderCredentials(
     if (connection) {
       // skip strategy
     } else if (strategy === "weighted") {
+      // Partition sticky state by workspace under gateway principals so two
+      // workspaces never share rotation cursors on the same provider.
+      const weightedKey = options?.principal
+        ? `${options.principal.workspaceId}:${providerId}`
+        : providerId;
       const stickyLimit = resolveWeightedStickyLimit(providerId, providerOverride, settings);
       const result = selectWeightedConnection({
         connections: availableConnections,
         provider: providerId,
         model,
         stickyLimit,
-        state: weightedStates.get(providerId),
+        state: weightedStates.get(weightedKey),
       });
       connection = result.connection ?? availableConnections[0];
-      weightedStates.set(providerId, result.nextState);
+      weightedStates.set(weightedKey, result.nextState);
       // Persist sticky window exactly as round-robin does.
       await updateProviderConnectionUnscoped(connection.id, {
         lastUsedAt: new Date().toISOString(),

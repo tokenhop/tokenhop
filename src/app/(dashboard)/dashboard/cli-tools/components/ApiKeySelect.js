@@ -2,15 +2,96 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ACTIVE } from "@/shared/brand";
+import SegmentedControl from "@/shared/components/SegmentedControl";
 import {
   readKeyPresets,
   upsertKeyPreset,
   deleteKeyPreset,
   subscribeKeyPresets,
+  readKeyImportError,
 } from "./cliEndpointPresets";
 
 const CUSTOM_VALUE = "__custom__";
 const SAVE_VALUE = "__save_key__";
+
+const SOURCE_OPTIONS = [
+  { value: "existing", label: "Use existing configured key" },
+  { value: "new", label: "Paste new key" },
+];
+
+/**
+ * YAN-363 hashed-storage mode: no raw key is recoverable in the browser, so
+ * the control offers exactly two grounded choices — reuse the credential the
+ * server already keeps on disk (Apply omits the key; the server preserves it
+ * for the same destination), or paste one that lives in this page only.
+ * Saved presets render as names (refs / external markers), never secrets.
+ */
+function HashedKeyPicker({
+  value,
+  onChange,
+  existingConfigured = false,
+  savedKeys,
+  importError,
+  className = "",
+}) {
+  const [pasteMode, setPasteMode] = useState(Boolean(value));
+  const [pasted, setPasted] = useState(typeof value === "string" ? value : "");
+
+  const refPresets = savedKeys.filter((p) => p && typeof p.apiKeyId === "string");
+  const externalPresets = savedKeys.filter((p) => p && p.external === true);
+
+  const choose = (mode) => {
+    setPasteMode(mode === "new");
+    if (mode !== "new") {
+      setPasted("");
+      onChange("");
+    }
+  };
+
+  return (
+    <div className={`flex flex-col gap-1.5 ${className}`}>
+      <SegmentedControl
+        options={SOURCE_OPTIONS}
+        value={pasteMode ? "new" : "existing"}
+        onChange={choose}
+        aria-label="API key source"
+        size="sm"
+      />
+      {pasteMode ? (
+        <input
+          type="text"
+          value={pasted}
+          onChange={(e) => {
+            setPasted(e.target.value);
+            onChange(e.target.value);
+          }}
+          placeholder="sk-… (kept in this page only)"
+          aria-label="Paste new key"
+          autoComplete="off"
+          spellCheck={false}
+          className="w-full min-w-0 px-2 py-2 bg-panel rounded border border-line text-xs focus:outline-none focus:ring-1 focus:ring-coral/50 sm:py-1.5"
+        />
+      ) : (
+        <p className="text-xs leading-relaxed text-muted" role="status">
+          {existingConfigured
+            ? "A key is already stored on this device for this tool — it's reused and never displayed."
+            : "No stored key on this device yet. Paste one to connect."}
+        </p>
+      )}
+      {(refPresets.length > 0 || externalPresets.length > 0) && (
+        <p className="text-[11px] leading-relaxed text-subtle">
+          Saved key presets: {[...refPresets, ...externalPresets].map((p) => p.name).join(", ")}.
+          Referenced by name only — the secret stays on the server and can't be pasted for you.
+        </p>
+      )}
+      {importError && (
+        <p className="text-xs text-warn" role="alert">
+          {importError}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export default function ApiKeySelect({
   value,
@@ -18,14 +99,20 @@ export default function ApiKeySelect({
   apiKeys = [],
   cloudEnabled = false,
   className = "",
+  hashed = false,
+  existingConfigured = false,
 }) {
   const [savedKeys, setSavedKeys] = useState([]);
+  const [importError, setImportError] = useState("");
   // Custom mode is sticky once the user types, so an emptied input doesn't jump back to a dropdown option
   const [customMode, setCustomMode] = useState(false);
   const [customInput, setCustomInput] = useState("");
 
   useEffect(() => {
-    const sync = () => setSavedKeys(readKeyPresets());
+    const sync = () => {
+      setSavedKeys(readKeyPresets());
+      setImportError(readKeyImportError());
+    };
     sync();
     return subscribeKeyPresets(sync);
   }, []);
@@ -43,6 +130,19 @@ export default function ApiKeySelect({
     ],
     [apiKeys, savedKeys],
   );
+
+  if (hashed) {
+    return (
+      <HashedKeyPicker
+        value={value}
+        onChange={onChange}
+        existingConfigured={existingConfigured}
+        savedKeys={savedKeys}
+        importError={importError}
+        className={className}
+      />
+    );
+  }
 
   // Derive the active option from value — no sync effects needed when the parent updates it
   const matched = value ? options.find((o) => o.value === value || o.url === value) : null;

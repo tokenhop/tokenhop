@@ -2,6 +2,21 @@ import crypto from "crypto";
 
 const API_KEY_SECRET = process.env.API_KEY_SECRET || "endpoint-proxy-api-key-secret";
 
+export function generateGatewayApiKey() {
+  const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  let token = "";
+  while (token.length < 32) {
+    for (const byte of crypto.randomBytes(32 - token.length)) {
+      if (byte < 248) token += alphabet[byte % 62];
+    }
+  }
+  return `th_${token}`;
+}
+
+export function apiKeyPrefix(raw) {
+  return `${raw.slice(0, 7)}…${raw.slice(-4)}`;
+}
+
 /**
  * Generate 6-char random keyId
  */

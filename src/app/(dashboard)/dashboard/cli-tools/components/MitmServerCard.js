@@ -6,6 +6,7 @@ import { useNotificationStore } from "@/store/notificationStore";
 import { markLocalOnly } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 import { readMitmResponse } from "./mitmToolActions";
+import { buildMitmStartBody, bindRemoteKey } from "./mitmStartRequest";
 import { ACTIVE } from "@/shared/brand";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
@@ -13,13 +14,27 @@ const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 /**
  * Shared MITM infrastructure card — manages SSL cert + server start/stop.
  * DNS per-tool is handled separately in MitmToolCard.
+ *
+ * YAN-363 hashed mode: the raw bearer is custody of the server only (local
+ * internal credential, env/file startup sources, or a transient manual remote
+ * binding held in server memory). The browser never sends stored raws,
+ * presets, defaults, or prefixes — local starts omit apiKey entirely; a
+ * remote destination accepts one explicitly pasted transient key only when
+ * the status says it needs one (`needsCredential` / no configured source).
  */
 export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }) {
   const [status, setStatus] = useState(null);
+  const [statusFailed, setStatusFailed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [sudoPassword, setSudoPassword] = useState("");
+  // Legacy storage: selected key exactly as before (hashed uses remoteKey).
   const [selectedApiKey, setSelectedApiKey] = useState(() => apiKeys?.[0]?.key || "");
+  // Transient remote-destination key only, bound at paste time to the exact
+  // destination showing in the URL input. Any destination change invalidates
+  // it: the server's manual binding is per-destination, so a paste retained
+  // across a URL change would start the wrong host. Never persisted.
+  const [remoteKey, setRemoteKey] = useState("");
   const [pendingAction, setPendingAction] = useState(null);
   const [modalError, setModalError] = useState(null);
   const [actionError, setActionError] = useState(null);
@@ -43,16 +58,37 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
       if (await isLocalOnlyResponse(res)) return markLocalOnly();
       const data = await readMitmResponse(res, "Failed to load MITM status");
       setStatus(data);
+      setStatusFailed(false);
       if (data.mitmRouterBaseUrl) {
         setMitmRouterBaseUrl(data.mitmRouterBaseUrl);
       }
       onStatusChange?.(data);
     } catch (error) {
       // Keep the card visible: stale controls are better than a blank page,
-      // but the failed refresh must say so.
+      // but the failed refresh must say so. A failed status says nothing
+      // about storage mode, so never fall back to legacy key behavior.
+      setStatusFailed(true);
       notifyError(`Couldn't load MITM server status: ${error.message || "Network error"}.`);
     }
   }, [notifyError, onStatusChange]);
+
+  // Authoritative hashed signal from the actual GET contract, never a guess:
+  // `storage: "hashed"` plus a non-legacy credential source. Any other shape
+  // (absent fields, "legacy", or an unloaded/failed status) renders the
+  // legacy key row — but the Start button stays disabled until the server has
+  // explicitly reported, so no default fallback is ever sent unproven.
+  const hashed = status?.storage === "hashed" && status?.credentialSource !== "legacy";
+  // Remote destinations need an explicit key only when the server has nothing
+  // configured for them: `needsCredential`, or no configured source at all.
+  const remoteNeedsKey =
+    hashed && (status.needsCredential === true || !status.credentialConfigured);
+  // Any hashed destination edit invalidates the pending paste (whatever the
+  // previous source): the server's manual binding lives for one destination
+  // only, so the operator re-pastes for the new target.
+  const onMitmRouterBaseUrlChange = (next) => {
+    setMitmRouterBaseUrl(next);
+    if (hashed && remoteKey) setRemoteKey("");
+  };
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -76,6 +112,9 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
   const doAction = async (action, password, forceKillPort443 = false) => {
     setLoading(true);
     setActionError(null);
+    // The transient key survives only the explicit port-443 "Kill & start"
+    // retry; every other outcome (409, other errors, network) clears it.
+    let retainKeyForRetry = false;
     try {
       let res;
       if (action === "trust-cert") {
@@ -85,19 +124,37 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           body: JSON.stringify({ action: "trust-cert", sudoPassword: password }),
         });
       } else if (action === "start") {
-        const keyToUse =
-          selectedApiKey?.trim() ||
-          (apiKeys?.length > 0 ? apiKeys[0].key : null) ||
-          (!cloudEnabled ? ACTIVE.defaultApiKey : null);
+        // Hashed: local destinations never carry a browser key (the server's
+        // internal credential owns custody). A pasted remote key travels only
+        // when the status needs one AND it was pasted for this exact target
+        // (buildMitmStartBody validates the binding) — never a retained,
+        // default, prefix, or ref substitute. Legacy keeps the
+        // selected-or-default key exactly as before.
+        const targetUrl = mitmRouterBaseUrl.trim() || DEFAULT_MITM_ROUTER_BASE;
+        const body = buildMitmStartBody({
+          hashed,
+          status: hashed
+            ? {
+                needsCredential: status?.needsCredential,
+                credentialConfigured: status?.credentialConfigured,
+              }
+            : null,
+          sudoPassword: password,
+          mitmRouterBaseUrl: targetUrl,
+          forceKillPort443,
+          remoteKeyBinding: hashed ? bindRemoteKey(remoteKey, targetUrl) : null,
+          legacyKey: !hashed ? selectedApiKey : null,
+          legacyFallback: !hashed
+            ? {
+                firstKey: apiKeys?.length > 0 ? apiKeys[0].key : null,
+                defaultKey: !cloudEnabled ? ACTIVE.defaultApiKey : null,
+              }
+            : null,
+        });
         res = await fetch("/api/cli-tools/antigravity-mitm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            apiKey: keyToUse,
-            sudoPassword: password,
-            mitmRouterBaseUrl: mitmRouterBaseUrl.trim() || DEFAULT_MITM_ROUTER_BASE,
-            forceKillPort443,
-          }),
+          body: JSON.stringify(body),
         });
       } else {
         res = await fetch("/api/cli-tools/antigravity-mitm", {
@@ -110,7 +167,21 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
         const data = await res.json().catch(() => ({}));
         if (data.code === "PORT_443_BUSY" && data.portOwner) {
           setShowPasswordModal(false);
+          // Keep the operator's sudo password AND the pasted key for the
+          // explicit "Kill & start" retry; every other terminal outcome below
+          // clears the key in finally (409/4xx/5xx/network included).
+          retainKeyForRetry = true;
           setPort443Conflict({ owner: data.portOwner, password });
+          return;
+        }
+        if (action === "start" && data.code === "MITM_STARTUP_SOURCE_LOCKED") {
+          // Typed key against a matching startup source: the server keeps the
+          // configured source and rejects (static guidance only) — no source
+          // change, no typed-key win.
+          setActionError(
+            data.error ||
+              "MITM remote credential uses the operator startup source. Omit apiKey to use that source, or clear the startup source and restart the parent to use a typed credential.",
+          );
           return;
         }
         setActionError(data.error || `Failed to ${action} MITM server`);
@@ -123,6 +194,10 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
     } catch (e) {
       setActionError(e.message || "Network error");
     } finally {
+      // The pasted key clears on every outcome: 409/guidance retries must
+      // re-paste (intended retry copy, not the secret), and the port-443
+      // modal's retry already captured its own password ref without keys.
+      if (!retainKeyForRetry) setRemoteKey("");
       setLoading(false);
       setPendingAction(null);
     }
@@ -133,6 +208,12 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
     doAction("start", pwd, true);
   };
 
+  // Start is impossible to reason about without a fresh status: unknown or
+  // failed storage means the card must not guess legacy defaults. The Start
+  // button stays disabled whenever the status is unknown or its refresh
+  // failed (see disabled/title and the explicit notice below) — only a
+  // confirmed snapshot may drive a start.
+
   const handleConfirmPassword = () => {
     if (!sudoPassword.trim()) {
       setModalError("Sudo password is required");
@@ -142,6 +223,21 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
   };
 
   const isRunning = status?.running;
+
+  // Human label for the actual server-reported credential source. Values from
+  // the GET contract only; no invented sources, no paths, no raws. A typed
+  // key against a matching startup source is rejected with
+  // MITM_STARTUP_SOURCE_LOCKED (static guidance) — the input is absent there,
+  // so nothing changes, but a paste attempt still lands here.
+  const SOURCE_LABEL = {
+    internal: "Managed internally — the key never leaves this machine",
+    manual: "Pasted for this destination — held in memory only",
+    env: "Set by the operator via environment",
+    file: "Set by the operator via file",
+    legacy: "Legacy key storage",
+    none: "None",
+  };
+  const sourceLabel = hashed ? (SOURCE_LABEL[status?.credentialSource] ?? "None") : null;
 
   return (
     <>
@@ -216,44 +312,81 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               <input
                 type="text"
                 value={mitmRouterBaseUrl}
-                onChange={(e) => setMitmRouterBaseUrl(e.target.value)}
+                onChange={(e) => onMitmRouterBaseUrlChange(e.target.value)}
                 placeholder={DEFAULT_MITM_ROUTER_BASE}
                 disabled={isRunning}
                 className="flex-1 min-w-0 px-2 py-1.5 bg-panel rounded border border-line text-xs text-text focus:outline-none focus:ring-1 focus:ring-coral/50 disabled:opacity-50"
               />
             </div>
-            {!isRunning && (
-              <div className="grid gap-1 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
-                <span className="text-xs font-semibold text-text sm:text-right sm:text-sm">
-                  API key
-                </span>
-                <span
-                  className="material-symbols-outlined hidden text-muted text-[14px] sm:inline"
-                  aria-hidden="true"
-                >
-                  arrow_forward
-                </span>
-                <input
-                  type="text"
-                  list="mitm-api-keys"
-                  value={selectedApiKey}
-                  onChange={(e) => setSelectedApiKey(e.target.value)}
-                  placeholder={
-                    cloudEnabled ? "Enter or pick API key" : `${ACTIVE.defaultApiKey} (default)`
-                  }
-                  className="flex-1 min-w-0 px-2 py-1.5 bg-panel rounded border border-line text-xs text-text focus:outline-none focus:ring-1 focus:ring-coral/50"
-                />
-                {apiKeys?.length > 0 && (
-                  <datalist id="mitm-api-keys">
-                    {apiKeys.map((key) => (
-                      <option key={key.id} value={key.key}>
-                        {key.name || key.key}
-                      </option>
-                    ))}
-                  </datalist>
-                )}
-              </div>
-            )}
+            {!isRunning &&
+              (hashed ? (
+                <div className="grid gap-1 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text sm:text-right sm:text-sm">
+                    API key
+                  </span>
+                  <span
+                    className="material-symbols-outlined hidden text-muted text-[14px] sm:inline"
+                    aria-hidden="true"
+                  >
+                    arrow_forward
+                  </span>
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="text-xs text-muted" role="status">
+                      Credential: {sourceLabel}
+                      {status?.needsCredential === true &&
+                        (remoteNeedsKey ? " — paste one to start" : " — will be checked on start")}
+                      .
+                      {status?.credentialSource === "env" || status?.credentialSource === "file"
+                        ? " A typed key here can't override it."
+                        : ""}
+                      {status?.credentialSource === "internal" ? " Local starts need no key." : ""}
+                    </span>
+                    {remoteNeedsKey && (
+                      <input
+                        type="password"
+                        value={remoteKey}
+                        onChange={(e) => setRemoteKey(e.target.value)}
+                        placeholder="Paste destination key (kept for this start only)"
+                        autoComplete="off"
+                        spellCheck={false}
+                        aria-label="Paste destination key"
+                        className="flex-1 min-w-0 px-2 py-1.5 bg-panel rounded border border-line text-xs text-text focus:outline-none focus:ring-1 focus:ring-coral/50"
+                      />
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-1 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text sm:text-right sm:text-sm">
+                    API key
+                  </span>
+                  <span
+                    className="material-symbols-outlined hidden text-muted text-[14px] sm:inline"
+                    aria-hidden="true"
+                  >
+                    arrow_forward
+                  </span>
+                  <input
+                    type="text"
+                    list="mitm-api-keys"
+                    value={selectedApiKey}
+                    onChange={(e) => setSelectedApiKey(e.target.value)}
+                    placeholder={
+                      cloudEnabled ? "Enter or pick API key" : `${ACTIVE.defaultApiKey} (default)`
+                    }
+                    className="flex-1 min-w-0 px-2 py-1.5 bg-panel rounded border border-line text-xs text-text focus:outline-none focus:ring-1 focus:ring-coral/50"
+                  />
+                  {apiKeys?.length > 0 && (
+                    <datalist id="mitm-api-keys">
+                      {apiKeys.map((key) => (
+                        <option key={key.id} value={key.key}>
+                          {key.name || key.key}
+                        </option>
+                      ))}
+                    </datalist>
+                  )}
+                </div>
+              ))}
           </div>
 
           {/* Action buttons */}
@@ -290,8 +423,14 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
                 size="sm"
                 icon="play_circle"
                 onClick={() => handleAction("start")}
-                disabled={loading || !status || (serverIsWindows && !isAdmin)}
-                title={serverIsWindows && !isAdmin ? "Administrator required" : undefined}
+                disabled={loading || !status || statusFailed || (serverIsWindows && !isAdmin)}
+                title={
+                  statusFailed
+                    ? "Status unavailable — reload the page before starting"
+                    : serverIsWindows && !isAdmin
+                      ? "Administrator required"
+                      : undefined
+                }
                 className="w-full sm:w-auto"
               >
                 Start Server
@@ -305,6 +444,34 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           </div>
 
           {/* Action error */}
+          {statusFailed && !status && (
+            <div className="flex items-start gap-2 px-2 py-1.5 rounded text-xs bg-warn-bg text-warn border border-warn/20">
+              <span
+                className="material-symbols-outlined text-[14px] mt-0.5 shrink-0"
+                aria-hidden="true"
+              >
+                warning
+              </span>
+              <span role="status">
+                Status unavailable — start is disabled until the server reports the storage mode. No
+                key fallback is assumed.
+              </span>
+            </div>
+          )}
+          {statusFailed && status && (
+            <div className="flex items-start gap-2 px-2 py-1.5 rounded text-xs bg-warn-bg text-warn border border-warn/20">
+              <span
+                className="material-symbols-outlined text-[14px] mt-0.5 shrink-0"
+                aria-hidden="true"
+              >
+                warning
+              </span>
+              <span role="status">
+                Status refresh failed — showing the last known state. Start stays available only
+                from that confirmed snapshot.
+              </span>
+            </div>
+          )}
           {actionError && (
             <div className="flex items-start gap-2 px-2 py-1.5 rounded text-xs bg-err-bg text-err dark:text-red-400 border border-red-500/20">
               <span

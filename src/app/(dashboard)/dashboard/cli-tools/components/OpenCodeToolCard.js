@@ -90,6 +90,9 @@ export default function OpenCodeToolCard({
     ],
   );
   const setup = useSetupSettings({ toolId: "opencode", apiKeys, defaults, disk, endpointContext });
+  // YAN-363 hashed storage: the GET is sanitized (no provider apiKey), so
+  // reuse means omitting apiKey; only a pasted key is ever written.
+  const hashed = card.status?.storage === "hashed";
 
   const models = asList(setup.values.models);
   const activeModel = typeof setup.values.activeModel === "string" ? setup.values.activeModel : "";
@@ -110,12 +113,13 @@ export default function OpenCodeToolCard({
   const postModels = async (nextModels, explicitActive) => {
     const validActive =
       explicitActive ?? (nextModels.includes(activeModel) ? activeModel : nextModels[0] || "");
+    const keyToUse = resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed });
     await fetch(ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        ...(hashed && keyToUse === undefined ? {} : { apiKey: keyToUse }),
         models: nextModels,
         activeModel: validActive,
         subagentModel,
@@ -174,12 +178,13 @@ export default function OpenCodeToolCard({
     card.setApplying(true);
     card.setMessage(null);
     try {
+      const keyToUse = resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed });
       const res = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+          ...(hashed && keyToUse === undefined ? {} : { apiKey: keyToUse }),
           models,
           activeModel: activeModel === "" ? "" : activeModel || models[0],
           subagentModel,
@@ -226,7 +231,7 @@ export default function OpenCodeToolCard({
     toManualConfigs(
       buildOpenCodeConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed }),
         models,
         activeModel: activeModel === "" ? "" : activeModel || models[0],
         subagentModel,
@@ -281,7 +286,14 @@ export default function OpenCodeToolCard({
             onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
+            hashed={hashed}
+            existingConfigured={Boolean(card.status?.credentialConfigured)}
           />
+          {hashed && !setup.selectedApiKey?.trim() && (
+            <span className="text-[11px] text-subtle">
+              Manual configuration needs a pasted key — a stored one can't be shown.
+            </span>
+          )}
         </SetupRow>
         <SetupRow
           label="Models"

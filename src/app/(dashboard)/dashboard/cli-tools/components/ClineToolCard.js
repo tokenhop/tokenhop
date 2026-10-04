@@ -37,6 +37,7 @@ export default function ClineToolCard({
   tailscaleEnabled = false,
   tailscaleUrl = "",
   onStatusUpdate,
+  hashedContext = false,
 }) {
   const card = useSetupCard({
     statusUrl: "/api/cli-tools/cline-settings",
@@ -44,6 +45,10 @@ export default function ClineToolCard({
     toolId: "cline",
   });
   const { status } = card;
+  // YAN-363: cline's route returns no storage/credentialConfigured flags, so
+  // the shared key context is the only hashed signal. Hashed behavior: only
+  // an explicitly pasted key is ever sent; nothing else stands in for one.
+  const hashed = hashedContext;
   const defaults = useMemo(() => ({ model: "", endpoint: "", apiKeyId: "" }), []);
   // On the host, the installed config fills a model the user hasn't saved yet.
   const disk = useMemo(
@@ -88,7 +93,7 @@ export default function ClineToolCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+          apiKey: resolveApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed }),
           model: setup.model,
         }),
       });
@@ -133,7 +138,7 @@ export default function ClineToolCard({
     toManualConfigs(
       buildClineConfig({
         baseUrl: getEffectiveBaseUrl(),
-        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled),
+        apiKey: manualApiKey(setup.selectedApiKey, apiKeys, cloudEnabled, { hashed }),
         model: setup.model,
       }),
     );
@@ -173,7 +178,9 @@ export default function ClineToolCard({
         message={card.message}
         onApply={handleApply}
         applyDisabled={
-          (!setup.selectedApiKey && cloudEnabled && apiKeys.length > 0) || !setup.model
+          // Hashed storage: "use existing" applies without a browser-held key
+          // (the route accepts it for unchanged destinations), so no gating.
+          (!hashed && !setup.selectedApiKey && cloudEnabled && apiKeys.length > 0) || !setup.model
         }
         applying={card.applying}
         onReset={handleReset}
@@ -200,7 +207,14 @@ export default function ClineToolCard({
             onChange={setup.onApiKeyChange}
             apiKeys={apiKeys}
             cloudEnabled={cloudEnabled}
+            hashed={hashed}
+            existingConfigured={status?.hasTokenhop === true}
           />
+          {hashed && !setup.selectedApiKey?.trim() && (
+            <span className="text-[11px] text-subtle">
+              Manual configuration needs a pasted key — a stored one can't be shown.
+            </span>
+          )}
         </SetupRow>
         <SetupRow label="Model">
           <SingleModelRow

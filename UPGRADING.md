@@ -26,7 +26,7 @@ What changes automatically on the first v1.0.0 start:
   files import unchanged.
 
 Everything legacy that still works in v1.x is listed in
-[§12 Removed in v2.0.0](#12-removed-in-v200).
+[§13 Removed in v2.0.0](#13-removed-in-v200).
 
 ## 2. Data directory
 
@@ -148,7 +148,56 @@ up configs 9router wrote. Configs you never re-apply keep working unchanged.
 | Cline                 | `~/.cline/data/globalState.json`, `secrets.json`               | No brand key stored; a base URL naming either brand still counts as ours; the third-party "9Router for GitHub Copilot" extension is untouched        |
 | Claude, Cowork, Devin | Brand-neutral configs                                          | Nothing to migrate                                                                                                                                   |
 
-## 6. Default key and headers
+## 6. API-key hashed storage (YAN-363)
+
+Turn the users & teams switch on (env `TOKENHOP_MULTI_USER=on` or the stored
+instance setting), then restart the server. **Activation is restart-only by
+approved operator decision**: the hash migration runs during startup, before
+the process accepts requests. There is no runtime drain or in-process switch.
+
+Startup order: exclusive `DATA_DIR` writer lock → DB open/migrate → switch
+resolution → strict owner/Default bootstrap → activation. Startup fails closed:
+any rejection is sticky and the process serves nothing until a successful
+restart.
+
+- **Root key**: `TOKENHOP_MASTER_KEY` (canonical base64 of exactly 32 bytes) or
+  `DATA_DIR/keys/master` (32 raw bytes, created `0600` in a `0700` directory).
+  Set at most one source. The root travels separately from any export — a
+  database export contains hashes, never the root or raw keys. Deploy a trusted
+  root by provisioning the env var or private file on the host yourself; there
+  is no web upload. Never auto-regenerated: after activation, a corrupt or
+  missing root fails startup until you restore the matching root; a wrong root
+  is rejected before any mutation (kid check), leaving DB and root untouched.
+  Legacy installs with the switch off create no root and write nothing.
+- **Switch-off after activation** keeps hashed storage durable
+  (`hashed-compat`): hash validation, key management, routing and transfer
+  continue; switch-off controls rollout, not established security.
+- **Backups**: the mandatory pre-migration backup lives under
+  `DATA_DIR/backups/gateway-key-activation-*` (`0600`/`0700`) and is exempt
+  from auto-prune. Backup dirs and raw historical backups are preserved, not
+  forensically erased. The v2 instance backup file contains identity/password
+  hashes and provider credentials — protect it like the root itself.
+- **Single writer**: one process owns `DATA_DIR` (`db-writer.lock`). Before
+  recovery or any manual lock handling, **stop the old process first**. Startup
+  removes a stale lock only when its owner PID is verifiably dead; an
+  unverifiable lock fails with `DATA_DIR_UNVERIFIABLE_LOCK` /
+  `DB_WRITER_LOCK_HELD`. Remove a lock or `*.guard` directory only after you
+  have positively verified no tokenhop process is running — never `rm` blindly.
+- **Remote MITM credential**: set exactly one of
+  `TOKENHOP_MITM_REMOTE_API_KEY` or `TOKENHOP_MITM_REMOTE_API_KEY_FILE`
+  (mutually exclusive) at parent startup; it stays in parent memory for child
+  restarts and is never persisted, exported, or returned by status endpoints.
+  A manual start may instead hand the credential in the start request; that
+  binding is memory-only and tied to the router URL. The local MITM credential
+  is separate, fresh every spawn; only its hash is stored.
+- **Rollback**: restoring the pre-activation backup plus the previous raw-key
+  schema is a manual recovery operation using the protected backup; hashes
+  cannot be reversed. Stopping use of hashed mode does not restore raw display.
+
+Rollout remains opt-in through the users & teams switch and restart-only.
+Already-activated installs retain hashed storage when the switch is off.
+
+## 7. Default key and headers
 
 - **Default local key placeholder.** Configs Apply writes now use `sk_tokenhop`
   where they used `sk_9router`. Both are placeholders: gateway auth is a
@@ -162,7 +211,7 @@ up configs 9router wrote. Configs you never re-apply keep working unchanged.
   emitted alongside it until v2.0.0. Clients poll with the brand-neutral
   `x-connection-id` header, which is accepted as before.
 
-## 7. SAML
+## 8. SAML
 
 Existing SSO setups keep their issuer. An upgrade migration pins
 `urn:9router:sp` on every existing settings row that never stored an issuer, and
@@ -173,7 +222,7 @@ To switch an existing install on purpose, update the SP issuer in
 **Settings → Single sign-on** **and** update the entity ID at your IdP in the
 same step. Changing only one side breaks login.
 
-## 8. MITM CA
+## 9. MITM CA
 
 Your existing root CA is kept: same key, same certificate, same
 `9Router MITM Root CA` name, and it stays trusted in every store — install,
@@ -186,7 +235,7 @@ To re-issue it under the new name on purpose:
 3. Turn MITM on again — a fresh `tokenhop MITM Root CA` is generated, and
    installing its trust needs admin rights once, exactly as on first install.
 
-## 9. Docker
+## 10. Docker
 
 The image moved:
 
@@ -218,7 +267,7 @@ docker run --rm -v 9router-data:/from -v tokenhop-data:/to alpine cp -a /from/. 
 Developers using `compose.dev.yml` get fresh `tokenhop-dev-*` volumes; old
 `9router-dev-*` volumes can be removed with `docker volume rm`.
 
-## 10. Skills
+## 11. Skills
 
 Agent skills are renamed to `skills/tokenhop*`:
 
@@ -231,7 +280,7 @@ Old links keep working: a gateway serves the tokenhop skill under the old
 `/skills/9router*/SKILL.md` URLs, and the old raw repo paths are pointer stubs
 that send agents to the tokenhop skills.
 
-## 11. Upstream-facing identifiers
+## 12. Upstream-facing identifiers
 
 A handful of identifiers this gateway sends to **third-party** APIs keep their
 `9router` values on purpose — this is about what providers receive from us, not
@@ -248,7 +297,7 @@ requires evidence the upstream ignores the value plus a live provider smoke
 test. Some also label existing server-side state (Deno relays, Xiaomi keys)
 that must not split by brand. There is nothing for you to do.
 
-## 12. Removed in v2.0.0
+## 13. Removed in v2.0.0
 
 Legacy support below is guaranteed through v1.x only. Every such branch is
 marked `// legacy(9router): remove in v2` in the source. Plan to be off these
@@ -268,7 +317,7 @@ before v2.0.0:
   `9router.vbs`) and the `9router.pid` launcher record.
 - The `/skills/9router*` gateway URLs and the `skills/9router*` pointer stubs.
 - Legacy SAML issuer pinning (existing installs already carry their issuer).
-- Recognition of `9Router MITM Root CA` in OS trust stores (re-issue the CA, §8).
+- Recognition of `9Router MITM Root CA` in OS trust stores (re-issue the CA, §9).
 - The `9router.` browser storage keys (dashboard endpoint/API-key presets are
   copied forward automatically).
-- The `9router-data` volume-name pin in `compose.yml` (move the volume, §9).
+- The `9router-data` volume-name pin in `compose.yml` (move the volume, §10).

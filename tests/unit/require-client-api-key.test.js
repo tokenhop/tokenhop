@@ -1,17 +1,12 @@
 // /v1 routes without a handler-level check must still enforce requireApiKey
 // (local callers bypass the middleware), and /v1/audio/voices must not
 // self-fetch the login-gated /api/media-providers routes.
+// Uses the real isolated test DB in legacy storage shape: requireClientApiKey
+// delegates to shared resolveGatewayAuth, which reads actual repositories —
+// so settings + legacy apiKeys rows are seeded, not mocked.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getAdapter } from "@/lib/db/driver.js";
 
-const mocks = vi.hoisted(() => ({
-  getSettings: vi.fn(),
-  validateApiKey: vi.fn(),
-}));
-
-vi.mock("@/lib/localDb", () => ({
-  getSettings: mocks.getSettings,
-  validateApiKey: mocks.validateApiKey,
-}));
 vi.mock("@/shared/utils/machineId", () => ({
   getConsistentMachineId: vi.fn(async () => "cli-token"),
 }));
@@ -26,16 +21,31 @@ vi.mock("open-sse/handlers/ttsCore.js", () => ({
 const { requireClientApiKey } = await import("@/lib/auth/requireClientApiKey");
 const { GET: getVoices } = await import("@/app/api/v1/audio/voices/route.js");
 
+const NOW = "2026-10-04T00:00:00.000Z";
 const req = (headers = {}, url = "http://localhost/v1/models") => new Request(url, { headers });
 
-describe("requireClientApiKey", () => {
-  beforeEach(() => {
-    mocks.getSettings.mockResolvedValue({ requireApiKey: true });
-    mocks.validateApiKey.mockImplementation(async (k) => k === "sk-good");
-  });
+let db;
 
+beforeEach(async () => {
+  db = await getAdapter();
+  db.run("INSERT OR REPLACE INTO settings(id,data) VALUES (1, ?)", [
+    JSON.stringify({ requireApiKey: true }),
+  ]);
+  // Force legacy storage: no hashed markers, legacy-shape apiKeys table.
+  db.run("DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion','apiKeysHashKid')");
+  db.exec("DROP TABLE IF EXISTS apiKeys");
+  db.exec(`CREATE TABLE apiKeys (
+    id TEXT PRIMARY KEY, key TEXT UNIQUE, name TEXT, machineId TEXT,
+    isActive INTEGER NOT NULL DEFAULT 1, createdAt TEXT NOT NULL)`);
+  db.run(
+    `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES (?, ?, ?, ?, ?, ?)`,
+    ["legacy1", "sk-good", "test", null, 1, NOW],
+  );
+});
+
+describe("requireClientApiKey", () => {
   it("allows everything when requireApiKey is off", async () => {
-    mocks.getSettings.mockResolvedValue({ requireApiKey: false });
+    db.run("UPDATE settings SET data = json_set(data, '$.requireApiKey', false) WHERE id = 1");
     expect(await requireClientApiKey(req())).toBeNull();
   });
 
@@ -51,11 +61,6 @@ describe("requireClientApiKey", () => {
 });
 
 describe("GET /v1/audio/voices", () => {
-  beforeEach(() => {
-    mocks.getSettings.mockResolvedValue({ requireApiKey: true });
-    mocks.validateApiKey.mockImplementation(async (k) => k === "sk-good");
-  });
-
   it("returns 401 without a key", async () => {
     const res = await getVoices(req({}, "http://localhost/v1/audio/voices?provider=edge-tts"));
     expect(res.status).toBe(401);

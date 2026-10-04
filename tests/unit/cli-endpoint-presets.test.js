@@ -33,7 +33,11 @@ beforeEach(() => {
     const body = init.body ? JSON.parse(init.body) : null;
     if (init.method === "PUT") {
       puts.push(body);
-      return { ok: true, json: async () => ({ presets: {} }) };
+      // Canonical server contract: the acknowledged list echoes the accepted
+      // items for that kind ({ name, baseUrl } / { name, key } legacy).
+      const echoed =
+        body.kind === "endpoints" ? ENDPOINTS : body.kind === "apiKeys" ? KEYS : body.items;
+      return { ok: true, json: async () => ({ presets: { endpoints: [], [body.kind]: echoed } }) };
     }
     return { ok: true, json: async () => respond };
   };
@@ -67,6 +71,7 @@ describe("cli-tool preset import", () => {
     store.set(keysKey, JSON.stringify(KEYS));
 
     const presets = await load();
+    presets.setKeyPresetStorageMode("legacy"); // key import exists only under confirmed legacy
     presets.readPresets(); // kicks the shared load
     await vi.waitFor(() => expect(puts.length).toBe(2));
 
@@ -104,6 +109,7 @@ describe("cli-tool preset import", () => {
     };
 
     const presets = await load();
+    presets.setKeyPresetStorageMode("legacy"); // raw saves exist only under confirmed legacy
     expect(presets.readPresets()).toEqual([]);
     presets.upsertKeyPreset("sk-a", "mine"); // cache-only while loading
     expect(puts).toEqual([]);

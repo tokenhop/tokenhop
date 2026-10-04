@@ -3,6 +3,22 @@ import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
 import { latestVersion } from "./migrations/index.js";
 import { adoptOwnerlessRowsUnscoped } from "./repos/ownership.js";
+import { getMetaSync } from "./helpers/metaStore.js";
+import {
+  TransferError,
+  applyGatewayKeySnapshot,
+  exportGatewayKeySnapshot,
+  gatewayKeyStorageSnapshot,
+  insertLegacyKeysHashedSync,
+  preflightGatewayKeyImport,
+  preserveLocalVerifierSettings,
+} from "./helpers/gatewayKeyTransfer.js";
+import {
+  PRE_IMPORT_BACKUP_PREFIX,
+  backupDbLite,
+  makeProtectedBackupDir,
+  prepareProtectedBackupVerifier,
+} from "./backup.js";
 
 // Settings
 export {
@@ -267,10 +283,13 @@ export async function exportDb() {
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'`))
     out.pricing[r.key] = parseJson(r.value);
 
-  return out;
+  // YAN-363: hashed instances additionally carry the format v2 sections
+  // (key metadata only, identity graph, security marker). Legacy instances
+  // export the exact legacy snapshot shape — byte-compatible roundtrip.
+  return exportGatewayKeySnapshot(db, out, gatewayKeyStorageSnapshot(db));
 }
 
-export async function importDb(payload) {
+export async function importDb(payload, { masterKey = null } = {}) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("Invalid database payload");
   }
@@ -288,7 +307,86 @@ export async function importDb(payload) {
   }
   const db = await getAdapter();
 
+  // YAN-363: trusted root loader. Callers (HTTP route) never supply raw key
+  // material; the master comes only from env/file via the crypto module when
+  // the instance actually needs root proof. An explicit masterKey argument
+  // overrides (tests/backup flows); never from the request body.
+  let resolvedMaster = masterKey;
+  if (resolvedMaster === null || resolvedMaster === undefined) {
+    const instanceHint = gatewayKeyStorageSnapshot(db);
+    if (instanceHint.storage === "hashed") {
+      try {
+        const { loadMasterKey } = await import("@/lib/security/masterKey.js");
+        const { key, kid } = await loadMasterKey();
+        if (kid !== instanceHint.hashKid) {
+          throw new TransferError(
+            "TRANSFER_ROOT_MISMATCH",
+            "Trusted master key does not match this instance's root",
+          );
+        }
+        resolvedMaster = key;
+      } catch (error) {
+        if (error instanceof TransferError) throw error;
+        throw Object.assign(new Error(`Cannot prove instance root: ${error?.message ?? error}`), {
+          code: "TRANSFER_MASTER_REQUIRED",
+        });
+      }
+    }
+  }
+
+  // YAN-363: pure preflight BEFORE any destructive work. Validates snapshot
+  // format, master/root/kid consistency (wrong root fails here, with zero
+  // mutation), and full ownership/reference integrity of every row. Importing
+  // into hashed storage additionally requires the separately supplied master
+  // (approved Q4) and converts legacy plaintext keys to hashed rows — no raw
+  // key is ever written to a hashed instance.
+  const instance = gatewayKeyStorageSnapshot(db);
+  const plan = preflightGatewayKeyImport(payload, {
+    instance,
+    db,
+    masterKey: resolvedMaster,
+    defaultWorkspaceId: getMetaSync(db, "defaultWorkspaceId"),
+  });
+
+  const invalidateCaches = await prepareTransferCacheInvalidation();
+
+  // sql.js init completes here, BEFORE the snapshot: the returned verifier is
+  // sync, so snapshot -> verify -> destructive transaction never yields. No
+  // await may separate the backup below from either destructive transaction.
+  const verifyBackup = await prepareProtectedBackupVerifier();
+
+  // Pre-import backup AFTER all validation above (shape, root, preflight):
+  // a recoverable private pre-import-* snapshot before either destructive
+  // transaction. Backup failure aborts with zero mutation.
+  let preImportDir;
+  try {
+    preImportDir = makeProtectedBackupDir(PRE_IMPORT_BACKUP_PREFIX);
+    const preImportFile = backupDbLite(db, preImportDir, "data.sqlite", true);
+    verifyBackup(preImportDir, preImportFile);
+  } catch (error) {
+    throw Object.assign(
+      new Error(`[db-import] pre-import backup failed: ${error?.message ?? error}`),
+      { code: "IMPORT_BACKUP_FAILED" },
+    );
+  }
+
+  if (plan.format === "hashed") {
+    db.transaction(() => applyGatewayKeySnapshot(db, payload, plan));
+    // Persistence contract (activation lane): adapters with deferred
+    // persistence (sql.js debounced save) must expose sync flushSync() that
+    // throws on I/O failure, so a reported success is a durable import.
+    // No-op where absent — better-sqlite3/node:sqlite write synchronously.
+    invalidateCaches();
+    db.flushSync?.();
+    return await exportDb();
+  }
+
   db.transaction(() => {
+    // Host-local MITM verifier: read the live row BEFORE the wipe below.
+    const restoredSettings = preserveLocalVerifierSettings(
+      db,
+      payload.settings ? { ...payload.settings } : undefined,
+    );
     // Wipe all tables (keep _meta)
     db.run(`DELETE FROM settings`);
     db.run(`DELETE FROM providerConnections`);
@@ -300,11 +398,14 @@ export async function importDb(payload) {
       `DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'cliToolSettings', 'cliToolPresets', 'pricing')`,
     );
 
-    // Settings
-    if (payload.settings) {
+    // Settings: full destructive replace except the host-local MITM verifier
+    // hash — a live local verifier (running child custody) survives and any
+    // imported one is dropped, so no imported value can ever become the
+    // runtime verifier.
+    if (restoredSettings !== undefined) {
       db.run(
         `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
-        [stringifyJson(payload.settings)],
+        [stringifyJson(restoredSettings)],
       );
     }
 
@@ -376,18 +477,24 @@ export async function importDb(payload) {
         ],
       );
     }
-    for (const k of payload.apiKeys || []) {
-      db.run(
-        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-        [
-          k.id,
-          k.key,
-          k.name || null,
-          k.machineId || null,
-          k.isActive === false ? 0 : 1,
-          k.createdAt || new Date().toISOString(),
-        ],
-      );
+    // Legacy storage keeps the byte-identical raw-key import. A hashed
+    // instance never receives a plaintext row: keys are HMAC'd into hashed
+    // rows (Default workspace, legacy=1) and cliToolPresets are converted to
+    // apiKeyId references after the generic loops wrote them.
+    if (instance.storage === "legacy") {
+      for (const k of payload.apiKeys || []) {
+        db.run(
+          `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
+          [
+            k.id,
+            k.key,
+            k.name || null,
+            k.machineId || null,
+            k.isActive === false ? 0 : 1,
+            k.createdAt || new Date().toISOString(),
+          ],
+        );
+      }
     }
     for (const c of payload.combos || []) {
       db.run(
@@ -430,6 +537,10 @@ export async function importDb(payload) {
     }
     for (const [kind, items] of Object.entries(payload.cliToolPresets || {})) {
       if (!["endpoints", "apiKeys"].includes(kind) || !Array.isArray(items)) continue;
+      // Hashed instances never accept the raw apiKeys preset kind — converted
+      // apiKeyId rows are written by insertLegacyKeysHashedSync instead, so
+      // no plaintext ever reaches a table page or WAL frame.
+      if (kind === "apiKeys" && instance.storage === "hashed") continue;
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('cliToolPresets', ?, ?)`, [
         kind,
         stringifyJson(items),
@@ -443,10 +554,33 @@ export async function importDb(payload) {
     }
     // YAN-361: imported connections and nodes belong to Default (no-op before bootstrap).
     adoptOwnerlessRowsUnscoped(db);
+
+    if (instance.storage === "hashed") insertLegacyKeysHashedSync(db, payload, plan);
   });
 
+  // Persistence contract (see hashed branch above): durable before success.
+  invalidateCaches();
+  db.flushSync?.();
   return await exportDb();
 }
+
+/** Load caches before mutation; clear synchronously after commit, before flush.
+ * Resolver cache holds ids only and always live-checks eligibility; clearing
+ * still prevents old state surviving replacement. Import/clear errors propagate.
+ */
+async function prepareTransferCacheInvalidation() {
+  const { clearApiKeyPrincipalCache } = await import("@/lib/auth/apiKeyPrincipal.js");
+  const { invalidatePricingCache } = await import("./repos/pricingRepo.js");
+  return () => {
+    try {
+      clearApiKeyPrincipalCache();
+    } finally {
+      invalidatePricingCache();
+    }
+  };
+}
+
+export { TransferError };
 
 // Eager init helper (optional)
 export async function initDb() {

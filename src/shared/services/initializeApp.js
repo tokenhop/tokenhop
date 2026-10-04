@@ -38,11 +38,58 @@ import {
   startMitm,
   loadEncryptedPassword,
   initDbHooks,
+  initMitmCredentialHooks,
   restoreToolDNS,
   removeAllDNSEntriesSync,
 } from "@/mitm/manager";
+import {
+  readStorageState,
+  resolveRemoteSource,
+  isLocalRouterBaseUrl,
+  installLocalVerifier,
+  clearLocalVerifierIfMatch,
+} from "@/lib/auth/mitmCredential.js";
+import runtimeCredentials from "@/mitm/runtimeCredentials";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
+
+const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
+let mitmCredentialConfiguration;
+
+// YAN-363: once API keys are hashed, MITM must run on its own internal
+// credential — never a client key or ACTIVE.defaultApiKey. Local router mints
+// a fresh token per spawn (only its verifier hash is persisted); a remote
+// router uses the operator-managed env/file secret held in parent memory.
+export function configureMitmCredentials() {
+  mitmCredentialConfiguration ??= (async () => {
+    const state = await readStorageState();
+    if (state.storage !== "hashed") return state;
+    const hooks = {
+      isLocalRouter: isLocalRouterBaseUrl,
+      installLocalVerifier: (hash) => installLocalVerifier({ updateSettings }, hash),
+      clearLocalVerifierIfMatch: (hash) =>
+        clearLocalVerifierIfMatch({ getSettings, updateSettings }, hash),
+    };
+    // Wire before reading operator input: a bad/ambiguous source must never
+    // restore legacy mode — worst case a remote router start refuses to spawn.
+    initMitmCredentialHooks(hooks);
+    try {
+      const source = resolveRemoteSource();
+      if (source) {
+        const settings = await getSettings();
+        const { apiKey } = await runtimeCredentials.readRemoteCredential({
+          routerBaseUrl: settings.mitmRouterBaseUrl || DEFAULT_MITM_ROUTER_BASE,
+          source,
+        });
+        initMitmCredentialHooks(hooks, apiKey);
+      }
+    } catch (e) {
+      console.log("[InitApp] MITM remote credential unavailable:", e.message);
+    }
+    return state;
+  })();
+  return mitmCredentialConfiguration;
+}
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -61,6 +108,11 @@ import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
   } catch {
     /* ignore */
   }
+  // Wire managed credentials eagerly so a manual MITM start (not just
+  // auto-start) is also credential-managed in hashed mode.
+  configureMitmCredentials().catch(() => {
+    /* surfaced by the start attempt itself */
+  });
 })();
 
 process.setMaxListeners(20);
@@ -209,11 +261,18 @@ async function autoStartMitm(settings) {
       return;
     }
 
-    const keys = await getApiKeys();
-    const activeKey = keys.find((k) => k.isActive !== false);
+    const storage = await readStorageState();
+    if (storage.storage === "hashed") await configureMitmCredentials();
 
     console.log("[InitApp] MITM was enabled, auto-starting...");
-    await startMitm(activeKey?.key || ACTIVE.defaultApiKey, password);
+    if (storage.storage === "hashed") {
+      // Managed credentials own spawn timing; never a client key or default.
+      await startMitm(undefined, password);
+    } else {
+      const keys = await getApiKeys();
+      const activeKey = keys.find((k) => k.isActive !== false);
+      await startMitm(activeKey?.key || ACTIVE.defaultApiKey, password);
+    }
     console.log("[InitApp] MITM auto-started");
     try {
       await restoreToolDNS(password);

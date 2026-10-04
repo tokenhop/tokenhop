@@ -103,6 +103,9 @@ export async function handleChatCore({
   connectionId,
   userAgent,
   apiKey,
+  apiKeyId,
+  workspaceId,
+  userId,
   ccFilterNaming,
   rtkEnabled,
   headroomEnabled,
@@ -122,6 +125,13 @@ export async function handleChatCore({
   providerThinking,
   comboName = null,
 }) {
+  // Trusted caller options only; never derive identity from the public body.
+  // Keyless owner principals carry { apiKeyId: null, workspaceId, userId }:
+  // include each ID field present, even when apiKeyId is null/absent.
+  const keyContext = {};
+  if (apiKeyId != null) keyContext.apiKeyId = apiKeyId;
+  if (workspaceId != null) keyContext.workspaceId = workspaceId;
+  if (userId != null) keyContext.userId = userId;
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -466,7 +476,9 @@ export async function handleChatCore({
 
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);
-  appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => {});
+  appendRequestLog({ ...keyContext, model, provider, connectionId, status: "PENDING" }).catch(
+    () => {},
+  );
 
   const msgCount =
     translatedBody.messages?.length ||
@@ -558,6 +570,7 @@ export async function handleChatCore({
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false, true);
     appendRequestLog({
+      ...keyContext,
       model,
       provider,
       connectionId,
@@ -569,6 +582,7 @@ export async function handleChatCore({
           provider,
           model,
           connectionId,
+          keyContext,
           latency: { ttft: 0, total: Date.now() - requestStartTime },
           tokens: { prompt_tokens: 0, completion_tokens: 0 },
           request: extractRequestConfig(body, stream),
@@ -685,15 +699,20 @@ export async function handleChatCore({
       providerResponse,
       executor,
     );
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(
-      () => {},
-    );
+    appendRequestLog({
+      ...keyContext,
+      model,
+      provider,
+      connectionId,
+      status: `FAILED ${statusCode}`,
+    }).catch(() => {});
     saveRequestDetail(
       buildRequestDetail(
         {
           provider,
           model,
           connectionId,
+          keyContext,
           latency: { ttft: 0, total: Date.now() - requestStartTime },
           tokens: { prompt_tokens: 0, completion_tokens: 0 },
           request: extractRequestConfig(body, stream),
@@ -729,6 +748,7 @@ export async function handleChatCore({
     requestStartTime,
     connectionId,
     apiKey,
+    keyContext,
     clientRawRequest,
     onRequestSuccess,
     pxpipe: pxpipeSummary,
@@ -739,7 +759,7 @@ export async function handleChatCore({
     log,
   };
   const appendLog = (extra) =>
-    appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => {});
+    appendRequestLog({ ...keyContext, model, provider, connectionId, ...extra }).catch(() => {});
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
   // Provider forced streaming but client wants JSON

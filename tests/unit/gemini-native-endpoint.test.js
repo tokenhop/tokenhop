@@ -3,6 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Auth is covered by require-client-api-key.test.js.
 vi.mock("@/lib/auth/requireClientApiKey", () => ({ requireClientApiKey: async () => null }));
 
+// Legacy-storage auth: pass through with no principal so the native passthrough
+// and chat paths run unauthenticated, as before the shared resolver.
+vi.mock("@/lib/auth/gatewayAuth.js", () => ({
+  resolveGatewayAuth: mocks.resolveGatewayAuth,
+  authorizeGatewayTarget: () => null,
+}));
+
 const mocks = vi.hoisted(() => ({
   handleChat: vi.fn(),
   getSettings: vi.fn(),
@@ -10,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   getProviderCredentials: vi.fn(),
   markAccountUnavailable: vi.fn(),
   clearAccountError: vi.fn(),
+  resolveGatewayAuth: vi.fn(async () => ({ principal: null, legacy: true })),
 }));
 
 vi.mock("@/sse/handlers/chat.js", () => ({
@@ -23,8 +31,10 @@ vi.mock("@/sse/services/auth.js", () => ({
   clearAccountError: mocks.clearAccountError,
 }));
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/localDb", async (importOriginal) => ({
+  ...(await importOriginal()),
   getSettings: mocks.getSettings,
+  getComboByName: vi.fn(async () => null),
 }));
 
 const { GET } = await import("../../src/app/api/v1beta/models/route.js");
@@ -128,7 +138,7 @@ describe("Gemini native v1beta endpoint", () => {
       params: Promise.resolve({ path: ["gemini-2.5-flash-preview-tts:generateContent"] }),
     });
 
-    expect(mocks.isValidApiKey).toHaveBeenCalledWith("client-router-key");
+    expect(mocks.resolveGatewayAuth).toHaveBeenCalled();
     expect(global.fetch.mock.calls[0][1].headers["x-goog-api-key"]).toBe("real-gemini-key");
     expect(global.fetch.mock.calls[0][1].headers["x-goog-api-key"]).not.toBe("client-router-key");
   });

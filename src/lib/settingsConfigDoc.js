@@ -55,7 +55,11 @@ export function hasScrubTombstone(value) {
 /**
  * Credentials: never exported, and an import file containing one is rejected.
  * Covers the password hash, raw password fields, OIDC client secret, SAML
- * private material, API keys/tokens and machine ids.
+ * private material, API keys/tokens and machine ids. The MITM internal
+ * verifier hash is stored via the internal settings lifecycle only
+ * (installLocalVerifier/clearLocalVerifierIfMatch) — it must never surface
+ * in the settings GET response, config export, or a DB settings snapshot
+ * readback, and user settings PATCH / config import cannot set it.
  */
 export const SECRET_SETTING_KEYS = new Set([
   "password",
@@ -66,6 +70,7 @@ export const SECRET_SETTING_KEYS = new Set([
   "samlDecryptionKey",
   "samlSigningKey",
   "mitmSudoEncrypted",
+  "mitmInternalVerifier",
   "apiKey",
   "apiKeys",
   "cliToken",

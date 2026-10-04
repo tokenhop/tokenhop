@@ -92,7 +92,21 @@ let isFlushing = false;
 
 function sanitizeHeaders(headers) {
   if (!headers || typeof headers !== "object") return {};
-  const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token", "api-key"];
+  // HEAD semantics preserved: substring matching removes ANY credential
+  // carrier — custom token-bearing headers included — never an exact-name
+  // allowlist a renamed header could slip past. Gateway carriers
+  // (x-9r-peer-token, x-9r-cli-token, x-goog-api-key, cookie) are matched by
+  // the same substrings and removed, never kept or renamed.
+  const sensitiveKeys = [
+    "authorization",
+    "x-api-key",
+    "x-goog-api-key",
+    "x-9r-cli-token",
+    "x-9r-peer-token",
+    "cookie",
+    "token",
+    "api-key",
+  ];
   const sanitized = { ...headers };
   for (const key of Object.keys(sanitized)) {
     if (sensitiveKeys.some((s) => key.toLowerCase().includes(s))) delete sanitized[key];
@@ -100,7 +114,18 @@ function sanitizeHeaders(headers) {
   return sanitized;
 }
 
-export const __test__ = { sanitizeHeaders };
+function sanitizeUrl(value) {
+  if (typeof value !== "string" || !value) return value;
+  try {
+    const parsed = new URL(value);
+    if (parsed.searchParams.has("key")) parsed.searchParams.set("key", "[REDACTED]");
+    return parsed.toString();
+  } catch {
+    return value;
+  }
+}
+
+export const __test__ = { sanitizeHeaders, sanitizeUrl };
 
 function generateDetailId(model) {
   const timestamp = new Date().toISOString();
@@ -145,12 +170,18 @@ function writeBatch(db, items, config) {
       if (!item.id) item.id = generateDetailId(item.model);
       if (!item.timestamp) item.timestamp = new Date().toISOString();
       if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
+      if (item.request?.url) item.request.url = sanitizeUrl(item.request.url);
 
       const record = {
         id: item.id,
         provider: item.provider || null,
         model: item.model || null,
         connectionId: item.connectionId || null,
+        // Trusted ID-only attribution (keyContext spread): validated
+        // string-or-null, never raw credentials or arbitrary objects.
+        apiKeyId: typeof item.apiKeyId === "string" ? item.apiKeyId : null,
+        workspaceId: typeof item.workspaceId === "string" ? item.workspaceId : null,
+        userId: typeof item.userId === "string" ? item.userId : null,
         timestamp: item.timestamp,
         status: item.status || null,
         latency: item.latency || {},

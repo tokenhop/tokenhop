@@ -1,3 +1,4 @@
+import { getComboByName } from "@/lib/db/repos/combosRepo.js";
 import "open-sse/index.js";
 
 import {
@@ -5,7 +6,6 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
-  isValidApiKey,
 } from "../services/auth.js";
 import {
   handleAntigravityQuotaError,
@@ -43,6 +43,13 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { notifyRequestLogsEnabled } from "open-sse/utils/requestLogger.js";
 import { ensureReliabilityPolicy } from "@/lib/reliability/initReliabilityPolicy.js";
+import {
+  authorizeGatewayTarget,
+  resolveGatewayAuth,
+  sanitizeGatewayCapture,
+  gatewayKeyContext,
+} from "@/lib/auth/gatewayAuth.js";
+import { requireGatewayWorkspace } from "@/lib/auth/gatewayResources.js";
 
 /**
  * Handle chat completion request
@@ -52,10 +59,8 @@ import { ensureReliabilityPolicy } from "@/lib/reliability/initReliabilityPolicy
  * @param {object|null} clientRawRequest - Raw client request for logging
  * @param {object} [options] - Extra options. `options.onAttempt` is a fail-open
  *   attempt observer passed through to the combo fallback loop (probe path only).
- *   `options.skipApiKeyCheck` bypasses the requireApiKey gate for the in-process
- *   combo probe call only — it is a function argument, never read from request
- *   content (headers/body/URL), so /v1 routes (which pass no options) always
- *   enforce the gate.
+ *   Hashed probes require options.principal from an authorized in-process
+ *   caller. skipApiKeyCheck alone never bypasses hashed authentication.
  */
 export async function handleChat(request, clientRawRequest = null, options = null) {
   // YAN-311 cold-boot guard: API-only /v1 traffic never renders layout.js, so
@@ -97,36 +102,54 @@ export async function handleChat(request, clientRawRequest = null, options = nul
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
-  // Log API key (masked)
-  const authHeader = request.headers.get("Authorization");
-  const apiKey = extractApiKey(request);
-  if (authHeader && apiKey) {
-    const masked = log.maskKey(apiKey);
-    log.debug("AUTH", `API Key: ${masked}`);
+  let auth;
+  const storageUnavailable = () =>
+    errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, "Gateway storage unavailable");
+  if (options?.principal) {
+    try {
+      await requireGatewayWorkspace(options.principal);
+    } catch {
+      return storageUnavailable();
+    }
+    auth = { principal: options.principal, legacy: false };
+  } else if (options?.skipApiKeyCheck === true) {
+    // Bare skipApiKeyCheck is the probe/legacy shape. It becomes authority only
+    // at the requireGatewayWorkspace gate below (throws for hashed storage,
+    // fail-closed — no principal, no traffic), never at this branch.
+    auth = null;
   } else {
-    log.debug("AUTH", "No API key provided (local mode)");
+    auth = await resolveGatewayAuth(request);
+    if (auth instanceof Response) return auth;
   }
-
-  // Enforce API key if enabled in settings. The combo probe calls handleChat
-  // in-process (dashboard-authenticated at the API route) with an explicit
-  // skipApiKeyCheck option — never from request content — so probes run under
-  // default requireApiKey=true. /v1 routes pass no options and always enforce.
+  if (auth === null) {
+    try {
+      await requireGatewayWorkspace(null);
+    } catch {
+      return storageUnavailable();
+    }
+    auth = { principal: null, legacy: true };
+  }
+  const gateway = auth.principal;
+  options = { ...options, principal: gateway };
+  const apiKey = auth.legacy ? extractApiKey(request) : null;
+  if (!auth.legacy) {
+    // Sanitized capture for hashed requests: no secret header (incl. the
+    // dashboard cookie) survives, and no `?key=` in a captured url.
+    const capture = sanitizeGatewayCapture({
+      headers: new Headers(clientRawRequest.headers),
+      url: clientRawRequest.endpoint || request?.url || null,
+    });
+    clientRawRequest = {
+      ...clientRawRequest,
+      headers: Object.fromEntries(capture.headers),
+      ...(capture.url ? { endpoint: capture.url } : {}),
+      ...(clientRawRequest.url
+        ? { url: sanitizeGatewayCapture({ url: clientRawRequest.url }).url }
+        : {}),
+    };
+  }
   const settings = await getSettings();
-  // The request logger caches the stored flag in memory and only the settings
-  // PATCH updates it, so a restart would forget the toggle. Sync it here from
-  // the settings we already read (ENABLE_REQUEST_LOGS still wins).
   notifyRequestLogsEnabled(settings.requestLogsEnabled === true);
-  if (settings.requireApiKey && options?.skipApiKeyCheck !== true) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-    }
-  }
 
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
@@ -134,14 +157,21 @@ export async function handleChat(request, clientRawRequest = null, options = nul
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
+  // (keyed clients included: bypass is a local cost saver, not auth; the gate above already ran).
   const userAgent = request?.headers?.get("user-agent") || "";
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
-  if (bypassResponse) return bypassResponse.response || bypassResponse;
+  if (bypassResponse && !gateway) return bypassResponse.response || bypassResponse;
 
   const requiredCapabilities = detectRequiredCapabilities(body);
 
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
+  if (comboModels && gateway) {
+    const denied = authorizeGatewayTarget(gateway, {
+      comboId: (await getComboByName(modelStr))?.id,
+    });
+    if (denied) return denied;
+  }
   if (comboModels) {
     const {
       strategy: comboStrategy,
@@ -150,11 +180,17 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       judgeModel,
       fusionTuning,
     } = resolveComboStrategy(settings, modelStr);
-    const augmentedModels = augmentModelsWithCapacityAdapter(
+    let augmentedModels = augmentModelsWithCapacityAdapter(
       comboModels,
       requiredCapabilities,
       settings,
     );
+    if (gateway) {
+      augmentedModels = await allowedGatewayModels(gateway, augmentedModels, body, settings, [
+        modelStr,
+      ]);
+      if (!augmentedModels.length) return errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
+    }
     const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
 
     // Probe runs (dry-run tests) reuse this exact path. options.onAttempt is a
@@ -165,10 +201,23 @@ export async function handleChat(request, clientRawRequest = null, options = nul
     const comboObserver = probeObserverFor(options);
 
     if (comboStrategy === "fusion") {
-      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
+      let fusionModels = comboModels;
+      if (gateway) {
+        const filtered = await fusionPanelForGateway(
+          gateway,
+          comboModels,
+          judgeModel,
+          body,
+          settings,
+          [modelStr],
+        );
+        if (filtered instanceof Response) return filtered;
+        fusionModels = filtered.models;
+      }
+      log.info("CHAT", `Combo "${modelStr}" with ${fusionModels.length} models (strategy: fusion)`);
       return handleFusionChat({
         body,
-        models: comboModels,
+        models: fusionModels,
         handleSingleModel: (b, m, isPanel) => {
           let cleanRawReq = clientRawRequest;
           if (isPanel && clientRawRequest) {
@@ -233,12 +282,25 @@ export async function handleChat(request, clientRawRequest = null, options = nul
   // target lacks a capability the request needs (e.g. no vision, request has an image).
   // Probes take the same adapter loop with the observer attached and the
   // fallback recorder omitted, so they never write the live-routes ring.
-  const soloAugmented = augmentModelsWithCapacityAdapter(
-    [modelStr],
-    requiredCapabilities,
-    settings,
-  );
+  let soloAugmented = augmentModelsWithCapacityAdapter([modelStr], requiredCapabilities, settings);
   if (soloAugmented.length > 1) {
+    // The adapter loop can serve a model other than the requested one, so the
+    // REQUESTED target must be authorized before any upstream work: a 403 on
+    // the request's own model is terminal, never a fallback reason to serve an
+    // adapter member instead (authorizeGatewayTarget denied = 403 Response).
+    if (gateway) {
+      const requested = await getModelInfo(modelStr, { principal: gateway });
+      if (requested.provider) {
+        const denied = authorizeGatewayTarget(gateway, {
+          modelId: `${requested.provider}/${requested.model}`,
+        });
+        if (denied) return denied;
+      }
+    }
+    if (gateway) {
+      soloAugmented = await allowedGatewayModels(gateway, soloAugmented, body, settings);
+      if (!soloAugmented.length) return errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
+    }
     const adapterAdded = soloAugmented.filter((m) => m !== modelStr);
     const adapterObserver = probeObserverFor(options);
     log.info(
@@ -289,6 +351,56 @@ function fallbackRecorder(comboName) {
       status,
     });
   };
+}
+
+// Filter authorization denials BEFORE engine fallback classification. Engine 403s
+// are upstream credential errors; gateway denials must never enter that path.
+async function allowedGatewayModels(gateway, models, body, settings, path = []) {
+  const allowed = [];
+  for (const model of models) {
+    if (await gatewayAllowsTarget(gateway, model, body, settings, path)) allowed.push(model);
+  }
+  return allowed;
+}
+
+async function gatewayAllowsTarget(gateway, candidate, body, settings, path = []) {
+  const models = await getComboModels(candidate);
+  if (models) {
+    if (path.includes(candidate)) return false;
+    const combo = await getComboByName(candidate);
+    if (!combo?.id || authorizeGatewayTarget(gateway, { comboId: combo.id })) return false;
+    const nextPath = [...path, candidate];
+    const { strategy, judgeModel } = resolveComboStrategy(settings, candidate);
+    const pool =
+      strategy === "fusion"
+        ? models
+        : augmentModelsWithCapacityAdapter(models, detectRequiredCapabilities(body), settings);
+    const allowed = await allowedGatewayModels(gateway, pool, body, settings, nextPath);
+    if (!allowed.length) return false;
+    // Preserve the configured/default judge, not a scope-dependent replacement.
+    if (strategy === "fusion" && models.length > 1) {
+      const judge = judgeModel?.trim() || models[0];
+      return gatewayAllowsTarget(gateway, judge, body, settings, nextPath);
+    }
+    return true;
+  }
+  const info = await getModelInfo(candidate, { principal: gateway });
+  return (
+    !!info.provider &&
+    !authorizeGatewayTarget(gateway, { modelId: `${info.provider}/${info.model}` })
+  );
+}
+
+async function fusionPanelForGateway(gateway, models, judgeModel, body, settings, path) {
+  const panel = await allowedGatewayModels(gateway, models, body, settings, path);
+  if (!panel.length) return errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
+  if (models.length > 1) {
+    const judge = judgeModel?.trim() || models[0];
+    if (!(await gatewayAllowsTarget(gateway, judge, body, settings, path))) {
+      return errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
+    }
+  }
+  return { models: panel };
 }
 
 /**
@@ -354,12 +466,18 @@ async function handleSingleModelChat(
   comboName = null,
   options = null,
 ) {
-  const modelInfo = await getModelInfo(modelStr);
+  const gateway = options?.principal || null;
+  const gatewayCreds = { principal: gateway };
+  const modelInfo = await getModelInfo(modelStr, gateway ? { principal: gateway } : {});
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
     const comboModels = await getComboModels(modelStr);
     if (comboModels) {
+      const denied = authorizeGatewayTarget(gateway, {
+        comboId: (await getComboByName(modelStr))?.id,
+      });
+      if (denied) return denied;
       if (comboPath.includes(modelStr)) {
         const cycleMsg = `Combo cycle detected: ${[...comboPath, modelStr].join(" → ")}`;
         log.warn("CHAT", cycleMsg);
@@ -375,22 +493,49 @@ async function handleSingleModelChat(
         fusionTuning,
       } = resolveComboStrategy(chatSettings, modelStr);
       const requiredCapabilities = detectRequiredCapabilities(body);
-      const augmentedModels = augmentModelsWithCapacityAdapter(
+      let augmentedModels = augmentModelsWithCapacityAdapter(
         comboModels,
         requiredCapabilities,
         chatSettings,
       );
-      const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
+      if (gateway) {
+        augmentedModels = await allowedGatewayModels(
+          gateway,
+          augmentedModels,
+          body,
+          chatSettings,
+          nextPath,
+        );
+        if (!augmentedModels.length) return errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
+      }
+      const filteredAdapter = gateway
+        ? await allowedGatewayModels(gateway, augmentedModels, body, chatSettings, nextPath)
+        : augmentedModels;
+      if (!filteredAdapter.length) return errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
+      const adapterAdded = filteredAdapter.filter((m) => !comboModels.includes(m));
       const nestedObserver = probeObserverFor(options, modelStr);
 
       if (comboStrategy === "fusion") {
+        let fusionModels = comboModels;
+        if (gateway) {
+          const filtered = await fusionPanelForGateway(
+            gateway,
+            comboModels,
+            judgeModel,
+            body,
+            chatSettings,
+            nextPath,
+          );
+          if (filtered instanceof Response) return filtered;
+          fusionModels = filtered.models;
+        }
         log.info(
           "CHAT",
-          `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`,
+          `Combo "${modelStr}" with ${fusionModels.length} models (strategy: fusion)`,
         );
         return handleFusionChat({
           body,
-          models: comboModels,
+          models: fusionModels,
           handleSingleModel: (b, m, isPanel) => {
             let cleanRawReq = clientRawRequest;
             if (isPanel && clientRawRequest) {
@@ -423,7 +568,7 @@ async function handleSingleModelChat(
       );
       return handleComboChat({
         body,
-        models: augmentedModels,
+        models: filteredAdapter,
         handleSingleModel: withCapacityAdapterStripping(
           (b, m) =>
             handleSingleModelChat(
@@ -454,6 +599,8 @@ async function handleSingleModelChat(
   }
 
   const { provider, model } = modelInfo;
+  const denied = authorizeGatewayTarget(gateway, { modelId: `${provider}/${model}` });
+  if (denied) return denied;
 
   // A model disabled on the provider page is hidden from /v1/models; refuse
   // to route it too, under either alias the dashboard may have stored (YAN-661).
@@ -478,7 +625,12 @@ async function handleSingleModelChat(
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(
+      provider,
+      excludeConnectionIds,
+      model,
+      gatewayCreds,
+    );
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -539,6 +691,7 @@ async function handleSingleModelChat(
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,
+      ...gatewayKeyContext(gateway),
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
       headroomEnabled: !!chatSettings.headroomEnabled,

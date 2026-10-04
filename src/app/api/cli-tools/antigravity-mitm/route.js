@@ -11,8 +11,12 @@ import {
   loadEncryptedPassword,
   isSudoPasswordRequired,
   initDbHooks,
+  isValidManualCredential,
+  assertMitmStartupSourceCompatible,
+  getMitmCredentialStatus,
 } from "@/mitm/manager";
 import { getSettings, updateSettings } from "@/lib/localDb";
+import runtimeCredentials from "@/mitm/runtimeCredentials";
 import { ACTIVE } from "@/shared/brand";
 
 initDbHooks(getSettings, updateSettings);
@@ -23,20 +27,9 @@ const ADMIN_RESTART_MESSAGE = `Administrator required — restart ${ACTIVE.name}
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
 function normalizeMitmRouterBaseUrlInput(input) {
-  if (input == null || String(input).trim() === "") {
-    return DEFAULT_MITM_ROUTER_BASE;
-  }
-  const t = String(input).trim().replace(/\/+$/, "");
-  let u;
-  try {
-    u = new URL(t);
-  } catch {
-    throw new Error("Invalid MITM router URL");
-  }
-  if (u.protocol !== "http:" && u.protocol !== "https:") {
-    throw new Error("MITM router URL must use http or https");
-  }
-  return t;
+  return runtimeCredentials.normalizeRouterBaseUrl(
+    input == null || input === "" ? DEFAULT_MITM_ROUTER_BASE : input,
+  );
 }
 
 const isWin = process.platform === "win32";
@@ -73,8 +66,12 @@ export async function GET() {
   try {
     const status = await getMitmStatus();
     const settings = await getSettings();
+    const { readStorageState } = await import("@/lib/auth/mitmCredential");
+    const router = normalizeMitmRouterBaseUrlInput(settings.mitmRouterBaseUrl);
+    const credentials = await getMitmCredentialStatus(router, (await readStorageState()).storage);
     const hasCachedPassword = !!getCachedPassword() || !!(await loadEncryptedPassword());
     return NextResponse.json({
+      ...credentials,
       running: status.running,
       pid: status.pid || null,
       certExists: status.certExists || false,
@@ -84,66 +81,87 @@ export async function GET() {
       isWin,
       needsSudoPassword: !isWin && !hasCachedPassword && isSudoPasswordRequired(),
       isAdmin: checkIsAdmin(),
-      mitmRouterBaseUrl:
-        (settings.mitmRouterBaseUrl && String(settings.mitmRouterBaseUrl).trim()) ||
-        DEFAULT_MITM_ROUTER_BASE,
+      mitmRouterBaseUrl: router,
     });
   } catch (error) {
-    console.log("Error getting MITM status:", error.message);
+    if (error?.message === "Invalid MITM router base URL")
+      return NextResponse.json({ error: "Invalid MITM router URL" }, { status: 400 });
     return NextResponse.json({ error: "Failed to get MITM status" }, { status: 500 });
   }
 }
 
-// POST - Start MITM server (cert + server, no DNS)
+// POST - Start MITM using the manager's reviewed credential custody contract.
 export async function POST(request) {
   try {
-    const { apiKey, sudoPassword, mitmRouterBaseUrl, forceKillPort443 } = await request.json();
-    const pwd = getPassword(sudoPassword) || (await loadEncryptedPassword()) || "";
-
-    if (!apiKey || requiresSudoPassword(pwd)) {
-      return NextResponse.json(
-        { error: !apiKey ? "Missing apiKey" : "Missing sudoPassword" },
-        { status: 400 },
-      );
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body))
+      return NextResponse.json({ error: "Invalid MITM request" }, { status: 400 });
+    const { apiKey, sudoPassword, mitmRouterBaseUrl, forceKillPort443 } = body;
+    const { readStorageState, isLocalRouterBaseUrl } = await import("@/lib/auth/mitmCredential");
+    const hashed = (await readStorageState()).storage === "hashed";
+    const settings = await getSettings();
+    let router;
+    try {
+      router = normalizeMitmRouterBaseUrlInput(mitmRouterBaseUrl ?? settings.mitmRouterBaseUrl);
+    } catch {
+      // Never echo the malformed destination back to the browser.
+      return NextResponse.json({ error: "Invalid MITM router URL" }, { status: 400 });
     }
-
+    if (!hashed && !apiKey) return NextResponse.json({ error: "Missing apiKey" }, { status: 400 });
+    const remote = hashed && !isLocalRouterBaseUrl(router);
+    // Bounded single-line validation before anything touches bindings or DB.
+    if (remote && apiKey !== undefined && apiKey !== null && !isValidManualCredential(apiKey)) {
+      return NextResponse.json({ error: "Invalid MITM credential" }, { status: 400 });
+    }
+    if (remote) await assertMitmStartupSourceCompatible(router, apiKey);
+    const pwd = getPassword(sudoPassword) || (await loadEncryptedPassword()) || "";
+    if (requiresSudoPassword(pwd))
+      return NextResponse.json({ error: "Missing sudoPassword" }, { status: 400 });
     if (!checkPrivilege(pwd)) {
       return NextResponse.json(
-        {
-          error: isWin ? ADMIN_RESTART_MESSAGE : "Root or sudo password required to start MITM",
-        },
+        { error: isWin ? ADMIN_RESTART_MESSAGE : "Root or sudo password required to start MITM" },
         { status: 403 },
       );
     }
-
     if (mitmRouterBaseUrl !== undefined && mitmRouterBaseUrl !== null) {
-      try {
-        const normalized = normalizeMitmRouterBaseUrlInput(mitmRouterBaseUrl);
-        await updateSettings({ mitmRouterBaseUrl: normalized });
-      } catch (e) {
-        return NextResponse.json(
-          { error: e.message || "Invalid MITM router URL" },
-          { status: 400 },
-        );
-      }
+      await updateSettings({ mitmRouterBaseUrl: router });
     }
-
-    const result = await startServer(apiKey, pwd, !!forceKillPort443);
+    // Local managed starts ignore caller keys; only explicit remote starts bind.
+    const result = await startServer(
+      hashed && !remote ? undefined : apiKey,
+      pwd,
+      !!forceKillPort443,
+    );
     if (!isWin) setCachedPassword(pwd);
-
     return NextResponse.json({ success: true, running: result.running, pid: result.pid });
   } catch (error) {
-    console.log("Error starting MITM server:", error.message);
-    if (error.code === "PORT_443_BUSY") {
+    if (error?.code === "API_KEY_STATE_INVALID")
+      return NextResponse.json({ error: "Key storage unavailable" }, { status: 503 });
+    if (error?.code === "MITM_STARTUP_SOURCE_LOCKED")
+      // Explicit precedence conflict — static guidance only, never the typed
+      // value or any operator secret. Not 500-success masquerading as installed.
+      return NextResponse.json(
+        {
+          error:
+            "MITM remote credential uses the operator startup source. Omit apiKey to use that source, or clear the startup source and restart the parent to use a typed credential.",
+          code: "MITM_STARTUP_SOURCE_LOCKED",
+        },
+        { status: 409 },
+      );
+    if (error.code === "PORT_443_BUSY")
       return NextResponse.json(
         { error: error.message, code: "PORT_443_BUSY", portOwner: error.portOwner },
         { status: 409 },
       );
-    }
-    return NextResponse.json(
-      { error: error.message || "Failed to start MITM server" },
-      { status: 500 },
-    );
+    if (
+      [
+        "Invalid MITM credential",
+        "Invalid MITM router base URL",
+        "Remote MITM router needs an operator-supplied credential",
+      ].includes(error?.message)
+    )
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json({ error: "Failed to start MITM server" }, { status: 500 });
   }
 }
 

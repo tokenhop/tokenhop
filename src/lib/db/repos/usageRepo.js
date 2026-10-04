@@ -4,6 +4,10 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMetaSync, setMetaSync } from "../helpers/metaStore.js";
 import { isPeriod, PERIOD_DAYS, periodStart, previousPeriodRange } from "@/shared/utils/period";
+import { readApiKeyStorageState } from "../apiKeyState.js";
+import { normalizeUsageKeyEntry } from "../helpers/usageKeyIdentity.js";
+import { tableHasColumn } from "../migrations/helpers.js";
+import { deriveApiKeyHashKey, loadMasterKey } from "../../security/masterKey.js";
 
 /** _meta keys for the YAN-408 lifetime savings counter. */
 export const SAVINGS_LIFETIME_KEY = "savingsTokensLifetime";
@@ -74,11 +78,24 @@ function maskApiKey(key) {
  * Non-secret identity for a client API key in usage stats. Row ids use the
  * keys-table id (or a short hash for deleted keys), never the key or its masked
  * prefix: every key on a machine shares the same `sk-{machineId}` prefix.
+ * In hashed storage the stored slot is already an id/pseudonym: it joins
+ * against the hashed metadata map, and anything unrecognized fails closed to
+ * "Unknown key" without ever hashing or echoing input.
  */
-function apiKeyIdentity(rawKey, apiKeyMap) {
+function apiKeyIdentity(rawKey, apiKeyMap, { hashed = false } = {}) {
   if (!rawKey || typeof rawKey !== "string") {
     return { id: "local-no-key", keyName: "Local (no API key)", apiKeyMasked: null };
   }
+  if (hashed) {
+    // Metadata-only: the slot is an id/pseudonym joining against the hashed
+    // map; anything unrecognized fails closed to "Unknown key" without ever
+    // hashing or echoing the input.
+    const info = apiKeyMap[rawKey];
+    if (info?.id) return { id: info.id, keyName: info.name || info.id, apiKeyMasked: null };
+    return { id: "unknown-key", keyName: "Unknown key", apiKeyMasked: null };
+  }
+  // Legacy: HEAD projection exactly — masked value returned, name falls back
+  // to it, unknown keys get the masked+hash label.
   const apiKeyMasked = maskApiKey(rawKey);
   const info = apiKeyMap[rawKey];
   if (info?.id) return { id: info.id, keyName: info.name || apiKeyMasked, apiKeyMasked };
@@ -346,6 +363,59 @@ export function rowSavedFromSavings(savings) {
   return saved;
 }
 
+/**
+ * Carrier contract for the gateway writer (open-sse / handlers layer).
+ *
+ * Legacy storage: `{ apiKey: <raw> }` — today's behavior, byte-identical.
+ *
+ * Hashed storage: pass `{ apiKeyId, workspaceId, userId }` (from
+ * resolveGatewayAuth's principal) or nothing. A late raw from a request that
+ * started before migration is HMAC-resolved here into the key id / a
+ * `historical:` pseudonym and never persisted raw. Explicit identity is
+ * internal trust (resolved principal, never the request body); a raw/explicit
+ * mismatch fails closed.
+ */
+export async function resolveUsageKeyIdentity(
+  db,
+  { apiKey = null, apiKeyId = null, workspaceId = null, userId = null } = {},
+) {
+  const state = readApiKeyStorageState(db);
+  if (state.storage === "legacy") {
+    // Hashed mode is decided by the actual apiKeys schema, never by whether
+    // key rows exist. A table carrying keyHash is hashed no matter what the
+    // marker says: storing a raw into it would persist a raw key.
+    if (tableHasColumn(db, "apiKeys", "keyHash")) {
+      const err = new Error("[usage] hashed apiKeys schema without hashed marker");
+      err.code = "API_KEY_STATE_INVALID";
+      throw err;
+    }
+    if (apiKeyId != null && apiKeyId !== "" && apiKeyId !== apiKey) {
+      throw new Error("[usage] apiKey/apiKeyId mismatch");
+    }
+    return { storage: "legacy", credential: apiKey ?? null, workspaceId, userId };
+  }
+  const { key } = await loadMasterKey({ expectedKid: state.hashKid });
+  const hashKey = deriveApiKeyHashKey(key);
+  // Schema inspected directly (PRAGMA table_info), never inferred from
+  // returned rows: an empty but validly-migrated hashed table must still
+  // accept keyless and explicit-id writes; only a missing keyHash column
+  // (migration never ran) fails closed.
+  if (!tableHasColumn(db, "apiKeys", "keyHash")) {
+    const err = new Error("[usage] hashed storage without hashed apiKeys schema");
+    err.code = "API_KEY_STATE_INVALID";
+    throw err;
+  }
+  const keyIdByHash = new Map();
+  for (const row of db.all(`SELECT id, keyHash FROM apiKeys`)) {
+    if (row?.keyHash && row?.id) keyIdByHash.set(row.keyHash, row.id);
+  }
+  const normalized = normalizeUsageKeyEntry(
+    { apiKey, apiKeyId },
+    { storage: "hashed", keyIdByHash, hashKey },
+  );
+  return { storage: "hashed", credential: normalized.apiKeyId, workspaceId, userId };
+}
+
 export async function saveRequestUsage(entry) {
   try {
     const db = await getAdapter();
@@ -359,7 +429,14 @@ export async function saveRequestUsage(entry) {
 
     // All 3 writes (history insert, daily upsert, lifetime counter) in ONE transaction.
     // better-sqlite3 is sync → no JS yield mid-transaction → no race in same process.
+    const hashed = (
+      await resolveUsageKeyIdentity(db, { apiKey: entry.apiKey, apiKeyId: entry.apiKeyId })
+    ).credential;
+    entry.apiKey = hashed ?? null; // history/daily/ring all carry the identity, never a raw
     const metaObj = entry.meta && typeof entry.meta === "object" ? { ...entry.meta } : {};
+    if (typeof entry.workspaceId === "string" && entry.workspaceId)
+      metaObj.workspaceId = entry.workspaceId;
+    if (typeof entry.userId === "string" && entry.userId) metaObj.userId = entry.userId;
     if (entry.savings) metaObj.savings = entry.savings;
     if (entry.comboName && typeof entry.comboName === "string")
       metaObj.comboName = entry.comboName.slice(0, 128);
@@ -377,7 +454,7 @@ export async function saveRequestUsage(entry) {
           entry.provider || null,
           entry.model || null,
           entry.connectionId || null,
-          entry.apiKey || null,
+          hashed || null,
           entry.endpoint || null,
           promptTokens,
           completionTokens,
@@ -433,6 +510,11 @@ export async function saveRequestUsage(entry) {
     pushToRing(entry);
     scheduleStatsEvent("update", 250);
   } catch (e) {
+    // Hashed-storage identity failures (marker/schema/master/mismatch) fail
+    // closed: the caller sees them and nothing is persisted. Historical
+    // non-identity errors keep today's log-only posture.
+    if (e?.code === "API_KEY_STATE_INVALID" || /^\[usage|^\[master-key\]/.test(String(e?.message)))
+      throw e;
     console.error("Failed to save usage stats:", e);
   }
 }
@@ -514,11 +596,40 @@ export async function getUsageStatsUnscoped(period = "all") {
   } catch {}
 
   let allApiKeys = [];
+  let hashedStorage = false;
   try {
     allApiKeys = await getApiKeys();
   } catch {}
+  try {
+    hashedStorage = readApiKeyStorageState(db).storage === "hashed";
+  } catch {
+    // Invalid marker: fail closed below (raw slots are hashed/pseudonym).
+  }
+  // The schema is the second source of truth: a keyHash-carrying table stores
+  // ids/pseudonyms in the usage slots even when the marker row was lost, so
+  // the id-join projection applies and no slot is ever treated as a raw key.
+  if (!hashedStorage) {
+    try {
+      hashedStorage = tableHasColumn(db, "apiKeys", "keyHash");
+    } catch {}
+  }
+  // Legacy maps hold raw→identity; hashed maps hold id→identity because the
+  // request sink stores the id, never the raw.
   const apiKeyMap = {};
-  for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
+  if (hashedStorage) {
+    // TABLEINFO guard: hashed marker but legacy-shaped table means the
+    // migration never ran; fall back to id-only joins, never raw inference.
+    try {
+      for (const r of db.all(`SELECT id, name FROM apiKeys`)) {
+        apiKeyMap[r.id] = { name: r.name, id: r.id };
+      }
+    } catch {
+      // No raw inference: summary still works, key names stay generic.
+    }
+  } else {
+    for (const k of allApiKeys)
+      apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
+  }
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
   const recentRows = db.all(
@@ -697,8 +808,15 @@ export async function getUsageStatsUnscoped(period = "all") {
         const rawModel = ak.rawModel || "";
         const provider = ak.provider || "";
         const providerDisplayName = providerNodeNameMap[provider] || provider;
-        // Persisted day rows are keyed by the raw key: re-key by identity so it never leaves.
-        const { id: apiKeyKey, keyName, apiKeyMasked } = apiKeyIdentity(ak.apiKey, apiKeyMap);
+        // Persisted day rows are keyed by identity (raw in legacy, id in hashed):
+        // re-key by identity so it never leaves.
+        const {
+          id: apiKeyKey,
+          keyName,
+          apiKeyMasked,
+        } = apiKeyIdentity(ak.apiKey, apiKeyMap, {
+          hashed: hashedStorage,
+        });
         const akKey = `${apiKeyKey}|${rawModel}|${provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
           stats.byApiKey[akKey] = {
@@ -775,7 +893,7 @@ export async function getUsageStatsUnscoped(period = "all") {
           stats.byAccount[accountKey].lastUsed = ts;
       }
 
-      const apiKeyKey = `${apiKeyIdentity(e.apiKey, apiKeyMap).id}|${e.model}|${e.provider || "unknown"}`;
+      const apiKeyKey = `${apiKeyIdentity(e.apiKey, apiKeyMap, { hashed: hashedStorage }).id}|${e.model}|${e.provider || "unknown"}`;
       if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed))
         stats.byApiKey[apiKeyKey].lastUsed = ts;
 
@@ -870,7 +988,13 @@ export async function getUsageStatsUnscoped(period = "all") {
           stats.byAccount[accountKey].lastUsed = r.timestamp;
       }
 
-      const { id: apiKeyKey, keyName, apiKeyMasked } = apiKeyIdentity(r.apiKey, apiKeyMap);
+      const {
+        id: apiKeyKey,
+        keyName,
+        apiKeyMasked,
+      } = apiKeyIdentity(r.apiKey, apiKeyMap, {
+        hashed: hashedStorage,
+      });
       const akKey = `${apiKeyKey}|${r.model}|${r.provider || "unknown"}`;
       if (!stats.byApiKey[akKey]) {
         stats.byApiKey[akKey] = {
@@ -1291,7 +1415,12 @@ export async function getLiveRoutesFeed({ windowMs = 5 * 60 * 1000, limit = 500 
   const keyNames = {};
   try {
     const keys = await getApiKeys();
-    for (const key of keys || []) keyNames[key.key] = key.name || "Unnamed key";
+    for (const key of keys || []) {
+      // Hashed metadata rows have no raw; legacy rows do. Index both by id
+      // and by raw so live-row and retained (pseudonym) history both name up.
+      if (key?.id) keyNames[key.id] = key.name || "Unnamed key";
+      if (key?.key) keyNames[key.key] = key.name || "Unnamed key";
+    }
   } catch {}
 
   const capped = Math.max(1, Math.min(Number(limit) || 500, 2000));

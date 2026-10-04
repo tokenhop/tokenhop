@@ -1,6 +1,7 @@
 // Request principal and revocable dashboard sessions (YAN-355, ADR-0003/0004).
-// Switch off: tokens are checked by signature only and no principal resolves,
-// exactly today's single-admin behaviour. Switch on: `sub` tokens are checked
+// Pristine off: tokens are checked by signature only and no principal resolves,
+// exactly today's single-admin behaviour. Rollout on, or durable hashed marker
+// written (YAN-363, switch may later read off again): `sub` tokens are checked
 // against users.sessionVersion/status, and every request maps to a Principal.
 // YAN-356: lazy owner bootstrap on the multi-user paths, sessionClaims(method,
 // identity) for SSO owner linking, singleUserMode + owner password hash sync.
@@ -10,8 +11,7 @@ import {
   setDashboardAuthCookie,
   verifyDashboardAuthToken,
 } from "@/lib/auth/dashboardSession";
-import { hasValidCliToken } from "@/lib/auth/cliToken";
-import { isLoopbackPeer } from "@/lib/auth/trustedPeer";
+import { cliTokenAcceptedWith } from "@/lib/auth/cliTokenPolicy.js";
 import {
   bumpSessionVersion,
   countActiveUsersUnscoped,
@@ -24,7 +24,7 @@ import {
   updateUserUnscoped,
 } from "@/lib/db/index.js";
 import { NextResponse } from "next/server";
-import { isMultiUserEnabled } from "./featureSwitch.js";
+import { isUserSecurityEnforced } from "./securityState.js";
 import { ensureOwnerBootstrap, resolveSsoUser } from "./bootstrap.js";
 import { can } from "./principal.js";
 
@@ -32,46 +32,36 @@ const AUTH_COOKIE = "auth_token";
 
 /** @typedef {import("./principal.js").Principal} Principal */
 
-// The switch read hits the DB unless its env override is set, and the guard asks
-// on every request carrying a cookie or CLI token. Cache it briefly; if the read
-// fails, stay on today's signature-only path rather than 500 every request.
-// ponytail: 5 s staleness after a DB import flips the stored switch; restart-free
-// flips would need featureSwitch to own an invalidated cache.
-const SWITCH_TTL_MS = 5000;
-let switchCache = { on: false, at: 0 };
-async function multiUserOn() {
-  if (Date.now() - switchCache.at < SWITCH_TTL_MS) return switchCache.on;
-  try {
-    switchCache = { on: await isMultiUserEnabled(), at: Date.now() };
-    // YAN-356: bootstrap lazily too, so a runtime flip of the stored switch is
-    // covered. A memoised no-op once done; never throws.
-    if (switchCache.on) await ensureOwnerBootstrap();
-  } catch {
-    return false;
-  }
-  return switchCache.on;
+// Never cache or fail open: a restore/marker write must affect the next request.
+async function securityOn() {
+  const on = await isUserSecurityEnforced();
+  // YAN-356: lazy owner bootstrap also covers marker-latched installs whose
+  // switch reads off. Memoised no-op once done; never throws.
+  if (on) await ensureOwnerBootstrap();
+  return on;
 }
 
 /**
- * YAN-356 single-user mode: login not required, and either the switch is off
- * or at most one active user exists. A restored DB with two users and
- * `requireLogin=false` no longer opens the instance.
+ * YAN-356 single-user mode: login not required, and security not enforced, or
+ * at most one active user exists. A restored DB with two users and
+ * `requireLogin=false` no longer opens the instance — including a
+ * marker-latched install whose rollout switch reads off.
  * @param {object|null|undefined} settings settings object, or null when unreadable
  * @returns {Promise<boolean>}
  */
 export async function singleUserMode(settings) {
   if (settings?.requireLogin !== false) return false;
-  if (!(await multiUserOn())) return true;
   try {
+    if (!(await securityOn())) return true;
     return (await countActiveUsersUnscoped()) <= 1;
   } catch {
     return false;
   }
 }
 
-/** Whether login may be turned off: switch off, or at most one active user. */
+/** Whether login may be turned off: security not enforced, or at most one active user. */
 export async function singleUserModeAllowed() {
-  if (!(await isMultiUserEnabled())) return true;
+  if (!(await securityOn())) return true;
   return (await countActiveUsersUnscoped()) <= 1;
 }
 
@@ -81,7 +71,7 @@ export async function singleUserModeAllowed() {
  */
 async function validateSessionToken(token) {
   if (!token) return null;
-  if (!(await multiUserOn())) {
+  if (!(await securityOn())) {
     return (await verifyDashboardAuthToken(token)) ? { legacy: true } : null;
   }
   const payload = await getDashboardAuthSession(token);
@@ -121,16 +111,13 @@ export async function isLiveSession(token) {
 /**
  * The CLI token acts as the owner. Once a second active user exists it is only
  * accepted from a direct loopback peer (ADR-0003), never through a proxy hop.
+ * Single authority: @/lib/auth/cliTokenPolicy (this is its only behavior delta).
  */
 export async function cliTokenAccepted(request) {
-  if (!(await hasValidCliToken(request))) return false;
-  if (!(await multiUserOn())) return true;
-  try {
-    if ((await countActiveUsersUnscoped()) <= 1) return true;
-  } catch {
-    return false;
-  }
-  return !request.headers.get("x-9r-via-proxy") && isLoopbackPeer(request);
+  return cliTokenAcceptedWith(request, {
+    multiUserOn: securityOn,
+    activeUserCount: () => countActiveUsersUnscoped(),
+  });
 }
 
 /** @returns {Promise<Principal|null>} */
@@ -159,13 +146,16 @@ async function principalFor(user, via, wid) {
 export async function resolvePrincipal(request) {
   try {
     return await resolvePrincipalOrThrow(request);
-  } catch {
+  } catch (err) {
+    // Never flatten invalid durable security into a logged-out principal.
+    // Management callers map this error to 503.
+    if (err?.code === "API_KEY_STATE_INVALID") throw err;
     return null; // same fail-closed posture as the guard
   }
 }
 
 async function resolvePrincipalOrThrow(request) {
-  if (!(await multiUserOn())) return null;
+  if (!(await securityOn())) return null;
   const token = request.cookies.get(AUTH_COOKIE)?.value;
   if (token) {
     const session = await validateSessionToken(token);
@@ -202,8 +192,8 @@ async function routeWorkspaceId() {
  * @returns {Promise<boolean>}
  */
 export async function principalCan(request, capability, { anyWorkspace = false } = {}) {
-  if (!capability || !(await multiUserOn())) return true;
   try {
+    if (!capability || !(await securityOn())) return true;
     const principal = await resolvePrincipalOrThrow(request);
     if (!principal) return (await countActiveUsersUnscoped()) === 0;
     if (
@@ -218,6 +208,8 @@ export async function principalCan(request, capability, { anyWorkspace = false }
       !workspaceId && capability.startsWith("workspace.") && principal.instanceRole === "owner"
     );
   } catch {
+    // Invalid durable-security state or a broken users table denies (never
+    // allows, never 500s a guard call).
     return false;
   }
 }
@@ -231,7 +223,7 @@ export async function principalCan(request, capability, { anyWorkspace = false }
  * @returns {Promise<Response|null>}
  */
 export async function authorize(capability, resource = {}) {
-  if (!(await multiUserOn())) return null;
+  if (!(await securityOn())) return null;
   const principal = await getPrincipal();
   if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (can(principal, capability, resource)) return null;
@@ -256,7 +248,7 @@ export async function getPrincipal() {
  * @returns {Promise<object|null>}
  */
 export async function sessionClaims(method, identity = null, opts = {}) {
-  if (!(await isMultiUserEnabled())) return {};
+  if (!(await securityOn())) return {};
   await ensureOwnerBootstrap();
   let user = null;
   if (method !== "pwd") {
@@ -292,7 +284,7 @@ export async function sessionClaims(method, identity = null, opts = {}) {
  * @param {{ passwordHash?: string|null }} [opts] new owner hash (YAN-356)
  */
 export async function revokeOwnerSessions(request, { passwordHash } = {}) {
-  if (!(await isMultiUserEnabled())) return;
+  if (!(await securityOn())) return;
   await ensureOwnerBootstrap();
   const owner = await getOwnerUnscoped();
   if (!owner) return;

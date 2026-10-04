@@ -123,27 +123,90 @@ async function runBootstrap() {
   await maybePrintSetupToken(owner, settings);
 }
 
+async function verifyOwnerInvariants() {
+  const owner = await getOwnerUnscoped();
+  if (!owner || owner.status !== "active") {
+    throw Object.assign(new Error("[users] Owner bootstrap incomplete: active owner missing"), {
+      code: "OWNER_BOOTSTRAP_INCOMPLETE",
+    });
+  }
+  const defaultId = await getMeta("defaultWorkspaceId");
+  const db = await getAdapter();
+  const ws =
+    (defaultId && db.get(`SELECT id, kind FROM workspaces WHERE id = ?`, [defaultId])) || null;
+  if (!ws || ws.kind !== "shared") {
+    throw Object.assign(
+      new Error("[users] Owner bootstrap incomplete: Default workspace missing"),
+      {
+        code: "OWNER_BOOTSTRAP_INCOMPLETE",
+      },
+    );
+  }
+  const member = db.get(`SELECT role FROM memberships WHERE workspaceId = ? AND userId = ?`, [
+    defaultId,
+    owner.id,
+  ]);
+  if (!member || member.role !== "owner") {
+    throw Object.assign(
+      new Error("[users] Owner bootstrap incomplete: Default owner membership missing"),
+      { code: "OWNER_BOOTSTRAP_INCOMPLETE" },
+    );
+  }
+  return { enabled: true, ownerId: owner.id, defaultWorkspaceId: defaultId };
+}
+
 /**
  * Turn a single-user install into owner + "Default" workspace, once, while
- * the switch is on. Idempotent: an existing owner means done. Memoised per
- * process; a failure is logged and retried after a minute (each retry takes
- * a fresh backup, so never in a tight loop).
+ * the switch is on. Idempotent: an existing owner means done (its invariants
+ * are re-verified). Memoised per process.
+ *
+ * Request paths stay permissive (the default): a failure is logged, retried
+ * after a minute, and never throws while serving. Startup passes
+ * `{ throwOnError: true }`: a failure rejects — including when a permissive
+ * caller started the in-flight run — and a completed success resolves the
+ * verified `{ enabled, ownerId, defaultWorkspaceId }` (strict also bypasses
+ * the permissive retry throttle). Switch off resolves `{ enabled: false }`
+ * without creating anything. A failed run is never cached as done.
+ *
+ * @param {{ throwOnError?: boolean }} [opts]
+ * @returns {Promise<{ enabled: boolean, ownerId?: string, defaultWorkspaceId?: string }|void>}
  */
-export async function ensureOwnerBootstrap() {
-  if (state.done || Date.now() - state.failedAt < RETRY_MS) return;
-  state.running ??= isMultiUserEnabled()
-    .then((on) => on && runBootstrap().then(() => true))
-    .then((ran) => {
-      if (ran) state.done = true;
-    })
-    .catch((err) => {
-      state.failedAt = Date.now();
-      console.warn("[users] Owner bootstrap failed, retrying later:", err?.message || err);
-    })
-    .finally(() => {
+export async function ensureOwnerBootstrap({ throwOnError = false } = {}) {
+  const strict = throwOnError === true;
+  const settle = (run) =>
+    run.then(
+      (result) => result,
+      (err) => {
+        state.failedAt = Date.now();
+        throw err;
+      },
+    );
+  if (!state.running) {
+    if (state.done) {
+      if (!strict) return;
+      return verifyOwnerInvariants();
+    }
+    if (!strict && Date.now() - state.failedAt < RETRY_MS) return;
+    const run = (async () => {
+      if (!(await isMultiUserEnabled())) return { enabled: false };
+      await runBootstrap();
+      const result = await verifyOwnerInvariants();
+      state.done = true; // never set on a failed or incomplete run
+      return result;
+    })();
+    state.running = settle(run).finally(() => {
       state.running = null;
     });
-  await state.running;
+  }
+  if (!strict) {
+    await state.running.catch((err) => {
+      console.warn("[users] Owner bootstrap failed, retrying later:", err?.message || err);
+    });
+    return;
+  }
+  // Strict joins the in-flight run (even one a permissive caller started) and
+  // bypasses the permissive retry throttle; failures propagate.
+  return state.running;
 }
 
 /**
