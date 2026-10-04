@@ -44,7 +44,23 @@ function sameOwner(a, b) {
   return Boolean(a && b && a.pid === b.pid && a.token === b.token);
 }
 
-function dead(pid) {
+// Process start time (clock ticks since boot, /proc stat field 22): pins a pid to
+// one incarnation. ponytail: Linux-only; null elsewhere falls back to kill -0.
+function startTime(pid) {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19] ?? null; // comm may hold spaces
+  } catch {
+    return null;
+  }
+}
+
+// A new container reuses small pids, so a lock left by a killed predecessor can
+// name a live stranger (or this very process). Pid alone proves nothing there.
+function dead(owner) {
+  const { pid } = owner;
+  const now = owner.start && startTime(pid);
+  if (now && now !== owner.start) return true; // pid recycled by a different process
   try {
     process.kill(pid, 0); // Existence probe only. Never terminate another process.
     return false;
@@ -102,13 +118,18 @@ export function acquireExclusiveWriterLock(dataDir) {
   const owner = guarded(file, () => {
     const current = readOwner(file);
     if (current) {
-      if (!dead(current.pid))
+      if (!dead(current))
         fail("DB_WRITER_LOCK_HELD", `DATA_DIR already owned by pid ${current.pid}`);
       // Unlink is safe only with a verifiably dead owner and under the guard,
       // so two contenders cannot both replace each other's fresh claim.
       fs.unlinkSync(file);
     }
-    const claim = { pid: process.pid, token: randomUUID(), path: file };
+    const claim = {
+      pid: process.pid,
+      start: startTime(process.pid),
+      token: randomUUID(),
+      path: file,
+    };
     fs.writeFileSync(file, JSON.stringify(claim), { flag: "wx", mode: 0o600 });
     state.owners.set(file, claim);
     return claim;
