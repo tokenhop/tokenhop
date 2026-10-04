@@ -29,22 +29,6 @@ const createOpenAIModelsConfig = (url) => ({
 
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
-  alicode: {
-    url: "https://coding.dashscope.aliyuncs.com/v1/models",
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    authHeader: "Authorization",
-    authPrefix: "Bearer ",
-    parseResponse: (data) => data.data || [],
-  },
-  "alicode-intl": {
-    url: "https://coding-intl.dashscope.aliyuncs.com/v1/models",
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    authHeader: "Authorization",
-    authPrefix: "Bearer ",
-    parseResponse: (data) => data.data || [],
-  },
   "alims-intl": {
     url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
     method: "GET",

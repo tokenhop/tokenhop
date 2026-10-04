@@ -27,4 +27,5 @@ export default {
     { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus" },
     { id: "glm-4.7", name: "GLM 4.7" },
   ],
+  features: { liveModels: true },
 };

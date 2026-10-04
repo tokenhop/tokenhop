@@ -120,6 +120,8 @@ describe("resolver registry", () => {
       "bazaarlink",
       "llm7",
       "sambanova",
+      "alicode",
+      "alicode-intl",
     ]) {
       expect(hasLiveModelResolver(id)).toBe(true);
     }
