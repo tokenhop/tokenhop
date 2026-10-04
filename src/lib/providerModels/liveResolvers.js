@@ -19,6 +19,8 @@ import { resolveKimi } from "@/lib/providerModels/kimiModels.js";
 import { resolveOpenAI } from "@/lib/providerModels/openaiModels.js";
 import { resolveOpenRouter } from "@/lib/providerModels/openrouterModels.js";
 import {
+  resolveAlicode,
+  resolveAlicodeIntl,
   resolveBazaarlink,
   resolveCerebras,
   resolveChutes,
@@ -301,6 +303,8 @@ export const LIVE_MODEL_RESOLVERS = {
   bazaarlink: resolveBazaarlink,
   llm7: resolveLlm7,
   sambanova: resolveSambanova,
+  alicode: resolveAlicode,
+  "alicode-intl": resolveAlicodeIntl,
   ollama: resolveOllama,
   "ollama-local": resolveOllamaLocal,
   codex: resolveCodex,

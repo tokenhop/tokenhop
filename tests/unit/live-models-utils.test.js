@@ -9,6 +9,8 @@ import { LIVE_MODEL_PROVIDERS } from "@/shared/constants/providers.js";
 describe("LIVE_MODEL_PROVIDERS", () => {
   it("is derived from the registry features.liveModels flag", () => {
     expect([...LIVE_MODEL_PROVIDERS].sort()).toEqual([
+      "alicode",
+      "alicode-intl",
       "anthropic",
       "antigravity",
       "bazaarlink",

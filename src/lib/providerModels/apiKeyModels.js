@@ -1,7 +1,8 @@
 // Live catalogs for OpenAI-style API-key providers (GET …/models, Bearer key):
 // DeepSeek, Mistral, Groq, Together AI, Fireworks AI, Cerebras, Perplexity
 // Agent, Vercel AI Gateway, Chutes, NVIDIA NIM, Nebius, SiliconFlow,
-// Hyperbolic, OpenCode Go, Venice, Bazaarlink, LLM7 and SambaNova. Each list
+// Hyperbolic, OpenCode Go, Venice, Bazaarlink, LLM7, SambaNova, Alibaba Coding
+// (CN) and Alibaba Coding Intl. Each list
 // carries every kind the provider serves, so it is authoritative: no static
 // extras are added back (except NIM's speech models).
 // OpenCode Free is the keyless exception: its Zen catalog is public.
@@ -362,6 +363,16 @@ export function parseSambanovaModels(body, statics = getModelsByProviderId("samb
   return models;
 }
 
+// ── Alibaba Coding ────────────────────────────────────────────────────────
+// Both regional catalogs are ids only, all chat; registry names kept (shared
+// parser: it looks up names in both providers' statics).
+export function parseAlicodeModels(body) {
+  const statics = [...getModelsByProviderId("alicode"), ...getModelsByProviderId("alicode-intl")];
+  const names = new Map(statics.map((m) => [m.id, m.name]));
+  const ids = [...new Set(entries(body).map(idOf).filter(Boolean))];
+  return ids.map((id) => ({ id, name: names.get(id) || id }));
+}
+
 // ── OpenCode Free ─────────────────────────────────────────────────────────
 // The Zen catalog lists every model, paid and free; the shared "opencode-free"
 // filter keeps the free ones. Ids the registry lacks default to chat/completions.
@@ -490,4 +501,14 @@ export const resolveSambanova = resolver(
   "SambaNova",
   "https://api.sambanova.ai/v1/models",
   parseSambanovaModels,
+);
+export const resolveAlicode = resolver(
+  "Alibaba Coding",
+  "https://coding.dashscope.aliyuncs.com/v1/models",
+  parseAlicodeModels,
+);
+export const resolveAlicodeIntl = resolver(
+  "Alibaba Coding Intl",
+  "https://coding-intl.dashscope.aliyuncs.com/v1/models",
+  parseAlicodeModels,
 );
