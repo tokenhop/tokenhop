@@ -2208,6 +2208,7 @@
   "not installed": "未インストール",
   "on GitHub": "GitHub で",
   "openai → target + URL + headers": "openai → ターゲット + URL + ヘッダー",
+  "openai/gpt-4o, anthropic/claude": "openai/gpt-4o、anthropic/claude",
   "optional context to improve accuracy": "精度を向上させるためのオプションのコンテキスト",
   "optional, e.g. 512, 1024 (leave empty for default)": "オプション、例: 512, 1024（空欄でデフォルト）",
   "or just": "または単に",
