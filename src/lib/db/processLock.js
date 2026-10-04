@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { isMainThread } from "node:worker_threads";
 
 export const WRITER_LOCK_NAME = "db-writer.lock";
 // Symbol-keyed so separately bundled modules and dev HMR share one registry.
@@ -59,6 +60,11 @@ function startTime(pid) {
 // name a live stranger (or this very process). Pid alone proves nothing there.
 function dead(owner) {
   const { pid } = owner;
+  // Legacy lock (no start time) naming this pid: the caller's registry fastpath
+  // already proved this realm holds no claim, so on the main thread nothing in
+  // this process can own it; it is a predecessor's leftover. Workers have their
+  // own registry yet share the pid, so a sibling's claim is possible: refuse there.
+  if (!owner.start && pid === process.pid && isMainThread) return true;
   const now = owner.start && startTime(pid);
   if (now && now !== owner.start) return true; // pid recycled by a different process
   try {

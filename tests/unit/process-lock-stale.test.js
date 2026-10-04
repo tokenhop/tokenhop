@@ -36,4 +36,22 @@ describe("writer lock staleness", () => {
     const dir = dataDirWithLock({ pid: process.ppid, start });
     expect(() => acquireExclusiveWriterLock(dir)).toThrow(/DATA_DIR already owned/);
   });
+
+  it("still refuses a self-pid lock whose start time matches this incarnation", () => {
+    if (!fs.existsSync("/proc/self/stat")) return; // Linux-only guard
+    const stat = fs.readFileSync("/proc/self/stat", "utf8");
+    const start = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19];
+    const dir = dataDirWithLock({ pid: process.pid, start }); // start matches → not legacy
+    expect(() => acquireExclusiveWriterLock(dir)).toThrow(/DATA_DIR already owned/);
+    expect(fs.readFileSync(path.join(dir, WRITER_LOCK_NAME), "utf8")).toBe(
+      JSON.stringify({ token: "old", pid: process.pid, start }),
+    ); // bytes untouched
+  });
+
+  it("reentrant acquire of the held dir returns the same claim untouched", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "writer-lock-"));
+    dirs.push(dir);
+    const first = acquireExclusiveWriterLock(dir);
+    expect(acquireExclusiveWriterLock(dir)).toBe(first);
+  });
 });

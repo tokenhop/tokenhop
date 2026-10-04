@@ -18,6 +18,7 @@ services:
       DATA_DIR: /app/data
       HEADROOM_URL: http://headroom:8787
       NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_EXIT_TIMEOUT_MS: "5000"
       # Bind mounts on some hosts (macOS/Windows) don't propagate fs events.
       WATCHPACK_POLLING: ${WATCHPACK_POLLING:-false}
       CLAUDE_CLI_VERSION: 2.1.280
@@ -39,10 +40,13 @@ services:
       - tokenhop-dev-next:/app/.next
       - tokenhop-dev-data:/app/data
     # init reaps zombies and forwards SIGTERM; exec drops the sh wrapper so the
-    # dev server gets the signal and can release the DATA_DIR writer lock.
+    # next binary gets the signal directly (bypasses npm shell chain) and can
+    # release the DATA_DIR writer lock. stop_grace_period + NEXT_EXIT_TIMEOUT_MS
+    # give the dev worker time to finish flush on stop.
     init: true
+    stop_grace_period: 15s
     # npm ci keeps the mounted checkout reproducible.
-    command: sh -c "npm ci && exec npm run dev -- --hostname 0.0.0.0"
+    command: sh -c "npm ci && exec node node_modules/next/dist/bin/next dev --port 20127 --hostname 0.0.0.0"
     depends_on:
       - headroom
 

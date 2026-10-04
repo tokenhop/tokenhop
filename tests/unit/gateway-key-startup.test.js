@@ -193,19 +193,58 @@ describe("YAN-363 startup ownership (processLock)", () => {
     expect(() => acquireExclusiveWriterLock(corrupt)).toThrow();
     expect(readLock(corrupt)).toBe("{not-json"); // byte-identical, never deleted
 
+    // Live stranger (parent) with a legacy lock (no start time): fail closed.
     const live = dir("live");
-    const forged = { pid: process.pid, token: "forged-not-ours", path: lockFileIn(live) };
-    writeLock(live, forged); // forged env/content is not authority: PID alive → held
-    expect(() => acquireExclusiveWriterLock(live)).toThrow();
+    const forged = { pid: process.ppid, token: "forged-not-ours", path: lockFileIn(live) };
+    writeLock(live, forged); // forged content is not authority: PID alive → held
+    expect(() => acquireExclusiveWriterLock(live)).toThrow(/DATA_DIR already owned/);
     expect(JSON.parse(readLock(live))).toEqual(forged);
 
     const foreign = dir("foreign");
-    const other = { pid: process.pid, token: "someone-else", path: lockFileIn(foreign) };
+    const other = { pid: process.ppid, token: "someone-else", path: lockFileIn(foreign) };
     writeLock(foreign, other);
     expect(() => acquireExclusiveWriterLock(foreign)).toThrow();
     const bogus = { ...other, token: "wrong-token" }; // release needs exact match
     expect(() => releaseExclusiveWriterLock(bogus)).toThrow();
     expect(JSON.parse(readLock(foreign))).toEqual(other);
+  });
+
+  it("a legacy lock (no start time) naming this pid is a predecessor's leftover and is reclaimed", () => {
+    const d = dir("legacy-self");
+    writeLock(d, { pid: process.pid, token: "forged-not-ours", path: lockFileIn(d) });
+    const handle = acquire(d);
+    expect(handle.token).not.toBe("forged-not-ours");
+    expect(JSON.parse(readLock(d))).toMatchObject({ pid: process.pid, token: handle.token });
+    expect(JSON.parse(readLock(d)).start).toBe(handle.start); // new claim carries a start time
+  });
+
+  it("a legacy self-pid lock is NOT reclaimed from a worker thread (shared pid, separate registry)", async () => {
+    const root = childRoot();
+    const d = dir("legacy-worker");
+    const before = { pid: process.pid, token: "sibling-claim", path: lockFileIn(d) };
+    writeLock(d, before);
+    const worker = path.join(root, "worker.mjs");
+    fs.writeFileSync(
+      worker,
+      `import fs from "node:fs";
+import { parentPort, workerData } from "node:worker_threads";
+import { acquireExclusiveWriterLock } from "./processLock.mjs";
+try {
+  acquireExclusiveWriterLock(workerData);
+  parentPort.postMessage("acquired");
+} catch (err) {
+  parentPort.postMessage(err.code || String(err));
+}
+`,
+    );
+    const { Worker } = await import("node:worker_threads");
+    const result = await new Promise((resolve, reject) => {
+      const w = new Worker(worker, { workerData: d });
+      w.once("message", resolve);
+      w.once("error", reject);
+    });
+    expect(result).toBe("DB_WRITER_LOCK_HELD");
+    expect(readLock(d)).toBe(JSON.stringify(before)); // byte-identical
   });
 
   it("build/prerender phases skip the lock and serve no activation", async () => {
