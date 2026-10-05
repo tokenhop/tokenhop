@@ -118,7 +118,7 @@ export async function deleteProviderNodeUnscoped(id) {
 
 // ─── Scoped API (YAN-361) ────────────────────────────────────────────────
 // Rows resolve through the principal's memberships (no IDOR). Prefixes are
-// unique per workspace; gateway prefix resolution stays global until YAN-368.
+// unique per workspace; gateway prefix resolution is workspace-scoped (getGatewayNodes).
 const MEMBER_ROW = `SELECT n.* FROM providerNodes n JOIN memberships m ON m.workspaceId = n.workspaceId WHERE n.id = ? AND m.userId = ?`;
 
 function assertPrefixFree(db, workspaceId, prefix, exceptId = null) {

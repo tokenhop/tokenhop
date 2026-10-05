@@ -10,6 +10,10 @@ import { RESPONSES_ITEM } from "../translator/schema/index.js";
 import { coerceResponsesOutput } from "../translator/formats/responsesApi.js";
 import { pickSmoothWeighted } from "./weightedRoundRobin.js";
 import { effectiveComboWeight } from "./comboWeights.js";
+import { boundedMap } from "../utils/boundedMap.js";
+
+// LRU cap on per-combo rotation cursors (keys may be per-workspace).
+const MAX_COMBOS_TRACKED = 1000;
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -113,13 +117,13 @@ export function reorderByCapabilities(models, required) {
  * Track rotation state per combo (for round-robin strategy)
  * @type {Map<string, { index: number, consecutiveUseCount: number }>}
  */
-const comboRotationState = new Map();
+const comboRotationState = boundedMap(MAX_COMBOS_TRACKED);
 
 /**
  * Track smooth-WRR state per combo (for weighted strategy)
  * @type {Map<string, { currentWeights: Map<string, number>, stickyId: string|null, count: number }>}
  */
-const comboWeightedState = new Map();
+const comboWeightedState = boundedMap(MAX_COMBOS_TRACKED);
 
 // Trailing run of items after the last assistant/model turn = the current user
 // turn. It may span several messages (e.g. text + image split across blocks),

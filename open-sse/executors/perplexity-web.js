@@ -37,20 +37,25 @@ const SESSION_MAX_ENTRIES = 200;
 
 const sessionCache = new Map();
 
-// FNV-1a hash for session key lookup
-function sessionKey(history) {
+// ponytail: "anon" keeps single-user/no-id reuse; upgrade to per-workspace id when credentials carry one.
+function sessionOwnerId(credentials) {
+  return String(credentials?.connectionId || credentials?.id || "anon");
+}
+
+// FNV-1a hash for session key lookup, prefixed by owner so connections never share backendUuid
+function sessionKey(history, owner = "anon") {
   const parts = history.map((h) => `${h.role}:${h.content}`).join("\n");
   let hash = 0x811c9dc5;
   for (let i = 0; i < parts.length; i++) {
     hash ^= parts.charCodeAt(i);
     hash = (hash * 0x01000193) >>> 0;
   }
-  return hash.toString(16).padStart(8, "0");
+  return `${owner}:${hash.toString(16).padStart(8, "0")}`;
 }
 
-function sessionLookup(history) {
+function sessionLookup(history, owner = "anon") {
   if (history.length === 0) return null;
-  const key = sessionKey(history);
+  const key = sessionKey(history, owner);
   const entry = sessionCache.get(key);
   if (!entry) return null;
   if (Date.now() - entry.ts > SESSION_MAX_AGE_MS) {
@@ -60,14 +65,14 @@ function sessionLookup(history) {
   return entry.backendUuid;
 }
 
-function sessionStore(history, currentMsg, responseText, backendUuid) {
+function sessionStore(history, currentMsg, responseText, backendUuid, owner = "anon") {
   if (!backendUuid) return;
   const full = [
     ...history,
     { role: "user", content: currentMsg },
     { role: "assistant", content: responseText },
   ];
-  const key = sessionKey(full);
+  const key = sessionKey(full, owner);
   sessionCache.set(key, { backendUuid, ts: Date.now() });
   if (sessionCache.size > SESSION_MAX_ENTRIES) {
     let oldestKey = null;
@@ -306,7 +311,16 @@ async function* extractContent(eventStream, signal) {
   yield { delta: "", answer: fullAnswer, backendUuid: backendUuid ?? undefined, done: true };
 }
 
-function buildStreamingResponse(eventStream, model, cid, created, history, currentMsg, signal) {
+function buildStreamingResponse(
+  eventStream,
+  model,
+  cid,
+  created,
+  history,
+  currentMsg,
+  signal,
+  owner,
+) {
   const encoder = new TextEncoder();
   return new ReadableStream({
     async start(controller) {
@@ -416,7 +430,7 @@ function buildStreamingResponse(eventStream, model, cid, created, history, curre
         );
         controller.enqueue(encoder.encode(SSE_DONE));
 
-        sessionStore(history, currentMsg, cleanResponse(fullAnswer), respBackendUuid);
+        sessionStore(history, currentMsg, cleanResponse(fullAnswer), respBackendUuid, owner);
       } catch (err) {
         controller.enqueue(
           encoder.encode(
@@ -453,6 +467,7 @@ async function buildNonStreamingResponse(
   history,
   currentMsg,
   signal,
+  owner,
 ) {
   let fullAnswer = "";
   let respBackendUuid = null;
@@ -480,7 +495,7 @@ async function buildNonStreamingResponse(
   }
 
   fullAnswer = cleanResponse(fullAnswer);
-  sessionStore(history, currentMsg, fullAnswer, respBackendUuid);
+  sessionStore(history, currentMsg, fullAnswer, respBackendUuid, owner);
 
   const reasoningContent = thinkingParts.length > 0 ? thinkingParts.join("\n") : undefined;
   const msg = { role: "assistant", content: fullAnswer };
@@ -543,7 +558,8 @@ export class PerplexityWebExecutor extends BaseExecutor {
     }
 
     const parsed = parseOpenAIMessages(messages);
-    const followUpUuid = sessionLookup(parsed.history);
+    const owner = sessionOwnerId(credentials);
+    const followUpUuid = sessionLookup(parsed.history, owner);
     if (followUpUuid) log?.info?.("PPLX-WEB", `Session continue: ${followUpUuid.slice(0, 12)}...`);
 
     const query = buildQuery(parsed, followUpUuid, body?.tools);
@@ -640,6 +656,7 @@ export class PerplexityWebExecutor extends BaseExecutor {
         parsed.history,
         parsed.currentMsg,
         signal,
+        owner,
       );
       finalResponse = new Response(sseStream, {
         status: 200,
@@ -654,12 +671,22 @@ export class PerplexityWebExecutor extends BaseExecutor {
         parsed.history,
         parsed.currentMsg,
         signal,
+        owner,
       );
     }
     return { response: finalResponse, url: PPLX_SSE_ENDPOINT, headers, transformedBody: pplxBody };
   }
 }
 
-export { parseOpenAIMessages, buildQuery, buildPplxRequestBody, formatToolsHint, sessionKey };
+export {
+  parseOpenAIMessages,
+  buildQuery,
+  buildPplxRequestBody,
+  formatToolsHint,
+  sessionKey,
+  sessionLookup,
+  sessionStore,
+  sessionOwnerId,
+};
 
 export default PerplexityWebExecutor;
