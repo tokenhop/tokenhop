@@ -321,6 +321,12 @@ describe("kv adoption (bootstrap)", () => {
       deep_seek: "anthropic/claude-3",
     });
   });
+  it("ws: keys stay valid on the legacy unscoped path (no repo 400) and land in Default", async () => {
+    await db.setModelAliasUnscoped("ws:foo", "openai/legacy");
+    expect(await db.getModelAliasesUnscoped()).toMatchObject({ "ws:foo": "openai/legacy" });
+    await db.disableModelsUnscoped("ws:foo", ["m1"]);
+    expect(await db.getDisabledByProviderUnscoped("ws:foo")).toEqual(["m1"]);
+  });
 });
 
 describe("hashed-path config import (applyGatewayKeySnapshot)", () => {
@@ -387,6 +393,194 @@ describe("hashed-path config import (applyGatewayKeySnapshot)", () => {
       { id: "snap-c2", workspaceId: "snap-ws" },
     ]);
     expect(a.get(`SELECT 1 AS x FROM combos WHERE workspaceId IS NULL`)).toBeUndefined();
+  });
+});
+
+describe("portable config + unscoped rename/delete never cross workspaces", () => {
+  const NOW0 = "2026-10-05T00:00:00Z";
+  const UUID_SHAPED_NAME = "11111111-2222-4333-8444-555555555555";
+
+  async function seedThree() {
+    const a = await adapter();
+    a.run(`DELETE FROM combos`);
+    a.run(`DELETE FROM workspaceSettings`);
+    await setDefaultWorkspace(t.shared.id);
+    // Workspaces row first: combos reference it.
+    a.run(
+      `INSERT INTO workspaces(id, name, kind, createdAt, updatedAt) VALUES('f-ws', 'F', 'shared', ?, ?)
+       ON CONFLICT(id) DO NOTHING`,
+      [NOW0, NOW0],
+    );
+    // models differ per row: the portable doc strips ids, so the member list
+    // is what identifies which workspace's combo a doc entry came from.
+    const ins = (id, name, ws, models = "[]") =>
+      a.run(
+        `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt, workspaceId) VALUES(?, ?, NULL, ?, ?, ?, ?)`,
+        [id, name, models, NOW0, NOW0, ws],
+      );
+    ins("d-panel", "panel", t.shared.id, '["default/model"]'); // Default
+    ins("f-panel", "panel", "f-ws", '["foreign/model"]'); // foreign, same name
+    ins("orphan", "orphan", null); // pre-bootstrap ownerless
+  }
+
+  const setStrategies = async (ws, comboStrategies) => {
+    const a = await adapter();
+    a.run(
+      `INSERT INTO workspaceSettings(workspaceId, data, updatedAt) VALUES(?, ?, ?)
+       ON CONFLICT(workspaceId) DO UPDATE SET data = excluded.data`,
+      [ws, JSON.stringify({ comboStrategies }), NOW0],
+    );
+  };
+  const strategiesOf = async (ws) => {
+    const a = await adapter();
+    return JSON.parse(
+      a.get(`SELECT data FROM workspaceSettings WHERE workspaceId = ?`, [ws])?.data ?? "{}",
+    ).comboStrategies;
+  };
+
+  beforeEach(async () => {
+    await load("on");
+    const a = await adapter();
+    a.run(`DELETE FROM memberships`);
+    t = await seedTenancy();
+    seedThree();
+  });
+
+  it("exportConfig/getConfigState carry Default + ownerless only; foreign same-name excluded, dup names collapse", async () => {
+    const { exportConfig, getConfigState } = await import("@/lib/db/configExport.js");
+    for (const doc of [await exportConfig(), await getConfigState()]) {
+      const panels = doc.combos.filter((c) => c.name === "panel");
+      expect(panels).toHaveLength(1);
+      expect(panels[0].models).toEqual(["default/model"]);
+      expect(JSON.stringify(doc.combos)).not.toContain("foreign/model");
+      expect(doc.combos.map((c) => c.name)).toContain("orphan");
+    }
+    // A stale ownerless duplicate that sorts BEFORE the Default row (older
+    // createdAt, lower sortOrder) must still lose: Default wins regardless of
+    // order. The raw ORDER BY puts it first, which is what proves preference.
+    const a = await adapter();
+    a.run(
+      `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt, sortOrder) VALUES('orphan-panel', 'panel', NULL, '["stale/model"]', '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z', -5)`,
+    );
+    const firstRaw = a.get(
+      `SELECT id FROM combos WHERE name = 'panel' AND (workspaceId IS NULL OR workspaceId = ?) ORDER BY sortOrder IS NULL, sortOrder ASC, createdAt ASC, id ASC`,
+      [t.shared.id],
+    );
+    expect(firstRaw.id).toBe("orphan-panel");
+    for (const doc of [await exportConfig(), await getConfigState()]) {
+      const dup = doc.combos.filter((c) => c.name === "panel");
+      expect(dup).toHaveLength(1);
+      expect(dup[0].models).toEqual(["default/model"]);
+    }
+  });
+
+  it("updateComboUnscoped rename moves the blob entry only; workspace id-keyed rows stay untouched", async () => {
+    await setStrategies(t.shared.id, { "d-panel": { fallbackStrategy: "fusion" } });
+    await setStrategies("f-ws", { "f-panel": { fallbackStrategy: "round-robin" } });
+    const a = await adapter();
+    a.run(
+      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+      [JSON.stringify({ comboStrategies: { panel: { fallbackStrategy: "weighted" } } })],
+    );
+
+    await db.updateComboUnscoped("d-panel", { name: "panel-renamed" });
+
+    // Own workspace row keeps its id key (renames are strategy-preserving);
+    // the foreign row is untouched.
+    expect(await strategiesOf(t.shared.id)).toEqual({
+      "d-panel": { fallbackStrategy: "fusion" },
+    });
+    expect(await strategiesOf("f-ws")).toEqual({
+      "f-panel": { fallbackStrategy: "round-robin" },
+    });
+    // Blob (name-keyed) migrated.
+    const blob = JSON.parse(a.get(`SELECT data FROM settings WHERE id = 1`).data);
+    expect(blob.comboStrategies).toEqual({
+      "panel-renamed": { fallbackStrategy: "weighted" },
+    });
+  });
+
+  it("a UUID-shaped blob key renames like any name; workspace id entries stay untouched", async () => {
+    // Blobs are name-keyed: a UUID-looking strategy key is a legal combo name
+    // and must migrate on rename. Workspace rows key ids-only and are never
+    // rewritten by the cascade — even when the names look identical.
+    await setStrategies(t.shared.id, {
+      [UUID_SHAPED_NAME]: { fallbackStrategy: "fusion" },
+    });
+    await setStrategies("f-ws", { [UUID_SHAPED_NAME]: { fallbackStrategy: "weighted" } });
+    const a = await adapter();
+    a.run(
+      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+      [JSON.stringify({ comboStrategies: { [UUID_SHAPED_NAME]: { fallbackStrategy: "fusion" } } })],
+    );
+    a.run(
+      `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt, workspaceId) VALUES('combo-x', ?, NULL, '[]', ?, ?, ?)`,
+      [UUID_SHAPED_NAME, NOW0, NOW0, t.shared.id],
+    );
+
+    // Renaming X renames the blob's UUID-looking entry (legal name key);
+    // id-keyed workspace rows are never touched by the cascade.
+    await db.updateComboUnscoped("combo-x", { name: "renamed-away" });
+    const blob = JSON.parse(a.get(`SELECT data FROM settings WHERE id = 1`).data);
+    expect(blob.comboStrategies).toEqual({
+      "renamed-away": { fallbackStrategy: "fusion" },
+    });
+    expect(await strategiesOf(t.shared.id)).toEqual({
+      [UUID_SHAPED_NAME]: { fallbackStrategy: "fusion" },
+    });
+
+    // Deleting X drops its own id entry and nothing else.
+    await db.updateWorkspaceComboStrategies(t.a.ctx, t.shared.id, (m) => ({
+      ...m,
+      "combo-x": { fallbackStrategy: "weighted" },
+    }));
+    await db.deleteComboUnscoped("combo-x");
+    expect(await strategiesOf(t.shared.id)).toEqual({
+      [UUID_SHAPED_NAME]: { fallbackStrategy: "fusion" },
+    });
+    expect(await strategiesOf("f-ws")).toEqual({
+      [UUID_SHAPED_NAME]: { fallbackStrategy: "weighted" },
+    });
+  });
+});
+
+describe("applyConfig stamps imported combos into Default", () => {
+  it("a new imported combo lands in Default (visible to export), a foreign same-name combo is never matched", async () => {
+    await load("on");
+    t = await seedTenancy();
+    const a = await adapter();
+    a.run(`DELETE FROM combos`);
+    await setDefaultWorkspace(t.shared.id);
+    const NOWX = "2026-10-05T00:00:00Z";
+    a.run(
+      `INSERT INTO workspaces(id, name, kind, createdAt, updatedAt) VALUES('f-ws2', 'F2', 'shared', ?, ?)
+       ON CONFLICT(id) DO NOTHING`,
+      [NOWX, NOWX],
+    );
+    a.run(
+      `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt, workspaceId) VALUES('fx', 'shared-name', NULL, '["foreign/m"]', ?, ?, 'f-ws2')`,
+      [NOWX, NOWX],
+    );
+    const { applyConfig, exportConfig } = await import("@/lib/db/configExport.js");
+    await applyConfig({
+      settings: {},
+      combos: [
+        { name: "shared-name", kind: null, models: ["imported/m"] },
+        { name: "brand-new", kind: null, models: ["imported/n"] },
+      ],
+      pricingOverrides: {},
+    });
+    // Foreign row untouched; imports became Default rows (not ownerless).
+    expect(JSON.parse(a.get(`SELECT models FROM combos WHERE id = 'fx'`).models)).toEqual([
+      "foreign/m",
+    ]);
+    const imported = a.all(`SELECT name, workspaceId FROM combos WHERE id <> 'fx' ORDER BY name`);
+    expect(imported).toEqual([
+      { name: "brand-new", workspaceId: t.shared.id },
+      { name: "shared-name", workspaceId: t.shared.id },
+    ]);
+    const names = (await exportConfig()).combos.map((c) => c.name).sort();
+    expect(names).toEqual(["brand-new", "shared-name"]);
   });
 });
 

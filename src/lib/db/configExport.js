@@ -4,7 +4,7 @@ import { getSettings, DEFAULT_SETTINGS } from "./repos/settingsRepo.js";
 import { mirrorToDefaultWorkspace } from "./repos/workspaceSettingsRepo.js";
 import { defaultWorkspaceIdUnscoped } from "./repos/ownership.js";
 import { WORKSPACE_KEYS, pickKeys } from "@/lib/settings/settingsScope.js";
-import { getCombosUnscoped } from "./repos/combosRepo.js";
+import { getPortableCombosUnscoped } from "./repos/combosRepo.js";
 import { getUserPricing, invalidatePricingCache } from "./repos/pricingRepo.js";
 import {
   buildConfigDocument,
@@ -40,9 +40,11 @@ export async function getKnownConfigSettingKeys() {
 /** Portable config document. Credential-bearing tables never touched. */
 export async function exportConfig() {
   const db = await getAdapter();
+  // YAN-364: the flat doc has no workspace identity — Default + NULL rows
+  // only, never other workspaces' same-name combos.
   return buildConfigDocument({
     settings: { ...(await getSettings()), ...defaultWorkspaceOverlay(db) },
-    combos: await getCombosUnscoped(),
+    combos: await getPortableCombosUnscoped(),
     pricingOverrides: await getUserPricing(),
     version: getAppVersion(),
   });
@@ -53,7 +55,7 @@ export async function getConfigState() {
   const db = await getAdapter();
   return {
     settings: { ...(await getSettings()), ...defaultWorkspaceOverlay(db) },
-    combos: await getCombosUnscoped(),
+    combos: await getPortableCombosUnscoped(),
     pricingOverrides: await getUserPricing(),
   };
 }
@@ -71,12 +73,22 @@ export async function applyConfig(doc) {
   db.transaction(() => {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
     const stored = row ? parseJson(row.data, {}) : {};
-    const currentCombos = db.all(`SELECT * FROM combos`).map((r) => ({
-      id: r.id,
-      name: r.name,
-      kind: r.kind,
-      models: parseJson(r.models, []),
-    }));
+    // YAN-364: the flat doc has no workspace identity — match and create
+    // against Default + ownerless rows only (same scope as exportConfig), so an
+    // import never rewrites another workspace's same-name combo. Default rows
+    // sort first, so they win a name match over a stale ownerless duplicate.
+    const defaultWs = defaultWorkspaceIdUnscoped(db);
+    const currentCombos = db
+      .all(
+        `SELECT * FROM combos WHERE workspaceId IS NULL OR workspaceId = ? ORDER BY workspaceId IS NULL`,
+        [defaultWs],
+      )
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        kind: r.kind,
+        models: parseJson(r.models, []),
+      }));
     const pricingRows = db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'`);
     const pricingOverrides = {};
     for (const r of pricingRows) pricingOverrides[r.key] = parseJson(r.value, {});
@@ -107,8 +119,8 @@ export async function applyConfig(doc) {
       } else {
         const now = new Date().toISOString();
         db.run(
-          `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-          [uuidv4(), combo.name, combo.kind, stringifyJson(combo.models), now, now],
+          `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt, workspaceId) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+          [uuidv4(), combo.name, combo.kind, stringifyJson(combo.models), now, now, defaultWs],
         );
       }
     }

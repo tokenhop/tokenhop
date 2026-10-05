@@ -32,6 +32,30 @@ export async function getCombosUnscoped() {
   return rows.map(rowToCombo);
 }
 
+// Portable config readers (YAN-362 doc): the flat doc has no workspace
+// identity, so it carries the Default workspace's combos plus NULL-workspace
+// rows from before bootstrap — never other workspaces (names collide there).
+// A name can exist both as a Default row and a stale ownerless row; the
+// Default row wins and the duplicate is dropped, so the doc never carries
+// two combos with one name.
+export async function getPortableCombosUnscoped() {
+  const db = await getAdapter();
+  const ws = defaultWorkspaceIdUnscoped(db);
+  // Dedupe on the RAW rows: rowToCombo drops workspaceId, and ORDER_BY is
+  // creation order, so an ownerless duplicate can sort before Default. The
+  // Default row wins regardless of sort order.
+  const rows = db.all(
+    `SELECT * FROM combos WHERE workspaceId IS NULL OR workspaceId = ? ORDER BY ${ORDER_BY}`,
+    [ws],
+  );
+  const byName = new Map();
+  for (const row of rows) {
+    const prev = byName.get(row.name);
+    if (!prev || (prev.workspaceId == null && row.workspaceId != null)) byName.set(row.name, row);
+  }
+  return [...byName.values()].map(rowToCombo);
+}
+
 // Persist a manual order. `ids` is the new relative order of a subset (the
 // dashboard lists LLM combos only): those ids take the slots they already
 // occupy in the full list, so combos of other kinds never move. Ranks are
@@ -101,8 +125,10 @@ export async function createComboUnscoped(data) {
   return combo;
 }
 
-// Rewrite one comboStrategies map: fromName -> toName, or drop it (toName null).
-// Invalid maps are left untouched. Returns null when nothing changed.
+// Rewrite one comboStrategies map: fromName -> toName, or drop it (toName
+// null). Invalid maps are left untouched. The blob is name-keyed and a combo
+// name may legitimately be UUID-shaped — no key-shape heuristics here;
+// id-keyed workspace entries live outside the blob and never reach it.
 function migrateStrategies(strategies, fromName, toName) {
   if (
     !strategies ||
@@ -118,31 +144,19 @@ function migrateStrategies(strategies, fromName, toName) {
   return next;
 }
 
-// Pre-split name-keyed cascade: instance blob AND workspaceSettings rows that
-// still carry name keys. Id-keyed workspace entries (YAN-364) never match a
-// combo name, so this can never rewrite them. Combos are workspace-scoped now,
-// so only the Unscoped update/delete paths run this (the scoped pair below
-// needs no rewrite — ids survive renames). Caller must hold the transaction
-// that writes the combo row, so both commit or roll back together.
+// Pre-split name-keyed cascade: the instance blob only. Workspace rows are
+// id-keyed (YAN-364) and never carry combo-name keys, so they must never be
+// rewritten here — renames keep their id entries, deletes drop them via
+// removeIdStrategyEntry. Caller must hold the transaction that writes the
+// combo row, so both commit or roll back together.
 function moveComboStrategy(db, fromName, toName) {
   const row = db.get(`SELECT data FROM settings WHERE id = 1`);
   const current = row ? parseJson(row.data, {}) : {};
   const nextStrategies = migrateStrategies(current.comboStrategies, fromName, toName);
-  if (nextStrategies) {
-    db.run(`UPDATE settings SET data = ? WHERE id = 1`, [
-      stringifyJson({ ...current, comboStrategies: nextStrategies }),
-    ]);
-  }
-  for (const ws of db.all(`SELECT workspaceId, data FROM workspaceSettings`)) {
-    const wsData = parseJson(ws.data, {});
-    const migrated = migrateStrategies(wsData.comboStrategies, fromName, toName);
-    if (!migrated) continue;
-    db.run(`UPDATE workspaceSettings SET data = ?, updatedAt = ? WHERE workspaceId = ?`, [
-      stringifyJson({ ...wsData, comboStrategies: migrated }),
-      new Date().toISOString(),
-      ws.workspaceId,
-    ]);
-  }
+  if (!nextStrategies) return;
+  db.run(`UPDATE settings SET data = ? WHERE id = 1`, [
+    stringifyJson({ ...current, comboStrategies: nextStrategies }),
+  ]);
 }
 
 export async function updateComboUnscoped(id, data) {

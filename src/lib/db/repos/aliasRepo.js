@@ -114,7 +114,6 @@ export async function getModelAliasesUnscoped() {
 }
 
 export async function setModelAliasUnscoped(alias, model) {
-  assertBareKey(alias);
   await (await defaultKv("modelAliases")).set(alias, model);
 }
 
@@ -128,9 +127,14 @@ export async function getCustomModelsUnscoped() {
 
 export async function addCustomModelUnscoped(data) {
   const db = await getAdapter();
-  const bare = customKey(data.providerAlias, data.id, data.type || "llm");
-  assertBareKey(bare);
-  return addCustomModelInTx(db, wsKey(defaultWorkspaceIdUnscoped(db), bare), data);
+  return addCustomModelInTx(
+    db,
+    wsKey(
+      defaultWorkspaceIdUnscoped(db),
+      customKey(data.providerAlias, data.id, data.type || "llm"),
+    ),
+    data,
+  );
 }
 
 export async function deleteCustomModelUnscoped(data) {

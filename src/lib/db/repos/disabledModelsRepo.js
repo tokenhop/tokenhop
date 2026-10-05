@@ -105,7 +105,6 @@ export async function getDisabledByProviderUnscoped(providerAlias) {
 // Atomic read-merge-write inside a transaction (no JS yield mid-transaction).
 export async function disableModelsUnscoped(providerAlias, ids) {
   if (!providerAlias || !Array.isArray(ids)) return;
-  assertBareKey(providerAlias);
   const db = await getAdapter();
   const key = wsKey(defaultWorkspaceIdUnscoped(db), providerAlias);
   db.transaction(() => {
@@ -121,7 +120,6 @@ export async function disableModelsUnscoped(providerAlias, ids) {
 
 export async function enableModelsUnscoped(providerAlias, ids) {
   if (!providerAlias) return;
-  assertBareKey(providerAlias);
   const db = await getAdapter();
   const key = wsKey(defaultWorkspaceIdUnscoped(db), providerAlias);
   db.transaction(() => {
