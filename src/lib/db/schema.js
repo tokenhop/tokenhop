@@ -214,6 +214,22 @@ export const TABLES = {
     primaryKey: "PRIMARY KEY (workspaceId, userId)",
     indexes: ["CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(userId)"],
   },
+  // Settings split (migration 008, YAN-362): explicit overrides only; the
+  // `settings` blob remains the instance row and default.
+  workspaceSettings: {
+    columns: {
+      workspaceId: "TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE",
+      data: "TEXT NOT NULL DEFAULT '{}'",
+      updatedAt: "TEXT",
+    },
+  },
+  userPreferences: {
+    columns: {
+      userId: "TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE",
+      data: "TEXT NOT NULL DEFAULT '{}'",
+      updatedAt: "TEXT",
+    },
+  },
 };
 
 // YAN-363: the final hashed apiKeys shape, INERT here. Nothing reads it at

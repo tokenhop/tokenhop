@@ -6,6 +6,7 @@ import {
   getProviderConnectionsUnscoped,
   updateProviderConnectionUnscoped,
 } from "@/lib/localDb";
+import { listEffectivePreferencesUnscoped } from "@/lib/db/index.js";
 import { getClaudeUsage } from "open-sse/services/usage/claude.js";
 import { getCodexUsage } from "open-sse/services/usage/codex.js";
 import { getExecutor } from "open-sse/executors/index.js";
@@ -313,6 +314,7 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
 function createDefaultDeps() {
   return {
     getSettings,
+    listPreferencesUnscoped: listEffectivePreferencesUnscoped,
     getProviderConnectionsUnscoped,
     updateProviderConnectionUnscoped,
     resolveConnectionProxyConfig,
@@ -327,12 +329,25 @@ export async function runQuotaAutoPingTick(deps = createDefaultDeps(), state = g
   state.running = true;
   try {
     const settings = await deps.getSettings();
+    // Unscoped scheduler: union the per-connection maps of EVERY effective
+    // preference entry. Opt-in is monotone — presence in ANY entry is enough —
+    // so no workspace's `false`/missing can veto another workspace's `true`.
+    const settingsList = deps.listPreferencesUnscoped
+      ? await deps.listPreferencesUnscoped().catch(() => null)
+      : null;
+    const prefs =
+      Array.isArray(settingsList) && settingsList.length > 0 ? settingsList : [settings];
 
     for (const [provider, providerConfig] of Object.entries(C.providers)) {
       const handler = providerHandlers[provider];
       if (!handler) continue;
 
-      const enabledMap = settings?.[providerConfig.settingsKey]?.connections || {};
+      const enabledMap = {};
+      for (const p of prefs) {
+        for (const [id, v] of Object.entries(p?.[providerConfig.settingsKey]?.connections || {})) {
+          enabledMap[id] = enabledMap[id] === true || v === true;
+        }
+      }
       if (Object.keys(enabledMap).length === 0) continue;
 
       const conns = await deps.getProviderConnectionsUnscoped({ provider, isActive: true });

@@ -1,0 +1,216 @@
+import { resolveDensity, resolveStartPage } from "@/lib/settingsFlags";
+import { validateComboStrategySettings } from "open-sse/services/comboStrategy.js";
+import { isOidcConfigured } from "@/lib/auth/oidc";
+import { isSamlConfigured } from "@/lib/auth/saml.js";
+import { resolveAuthModes } from "@/lib/auth/authModes";
+import { DEFAULT_SETTINGS } from "@/lib/db/repos/settingsRepo.js";
+import { validateSectionSettings } from "./validateSectionSettings.js";
+
+const ACCOUNT_STRATEGIES = new Set(["fill-first", "round-robin", "weighted"]);
+const AUTH_MODES = new Set(["password", "sso", "both", "saml", "oidc"]);
+const SSO_TYPES = new Set(["oidc", "saml"]);
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const MAX_TEXT_LEN = 256;
+const MAX_URL_LEN = 2048;
+const MAX_PASSWORD_LEN = 256;
+const MAX_CERT_LEN = 16384;
+
+function validStickyLimit(value) {
+  return Number.isInteger(value) && value >= 1 && value <= 100;
+}
+
+function validText(value, max = MAX_TEXT_LEN) {
+  return typeof value === "string" && value.length <= max;
+}
+
+// Empty clears the value; otherwise require an http(s) URL.
+function validUrl(value) {
+  if (typeof value !== "string" || value.length > MAX_URL_LEN) return false;
+  if (!value.trim()) return true;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Boundary validation for keys touched by the YAN-309 Settings page:
+ * security toggles, auth mode/protocol, OIDC + SAML fields, passwords.
+ * Returns an error message string, or "" when valid.
+ */
+function validSecuritySettings(body) {
+  for (const key of ["requireLogin", "requireApiKey", "tunnelDashboardAccess"]) {
+    if (Object.hasOwn(body, key) && typeof body[key] !== "boolean") {
+      return `Invalid ${key}: must be a boolean`;
+    }
+  }
+  // YAN-312 runtime flags: stored preference only; the env var wins at read time.
+  for (const key of ["requestLogsEnabled", "translatorEnabled"]) {
+    if (Object.hasOwn(body, key) && typeof body[key] !== "boolean") {
+      return `Invalid ${key}: must be a boolean`;
+    }
+  }
+  if (Object.hasOwn(body, "startPage")) {
+    if (typeof body.startPage !== "string" || resolveStartPage(body.startPage) !== body.startPage) {
+      return "Invalid startPage: must be a dashboard route";
+    }
+  }
+  if (
+    Object.hasOwn(body, "uiDensity") &&
+    (typeof body.uiDensity !== "string" || resolveDensity(body.uiDensity) !== body.uiDensity)
+  ) {
+    return "Invalid uiDensity: must be comfortable or compact";
+  }
+  if (Object.hasOwn(body, "authMode") && !AUTH_MODES.has(body.authMode)) {
+    return "Invalid authMode";
+  }
+  if (Object.hasOwn(body, "ssoType") && !SSO_TYPES.has(body.ssoType)) {
+    return "Invalid ssoType";
+  }
+  for (const key of ["oidcClientId", "oidcScopes", "oidcLoginLabel"]) {
+    if (Object.hasOwn(body, key) && !validText(body[key])) {
+      return `Invalid ${key}`;
+    }
+  }
+  if (Object.hasOwn(body, "oidcIssuerUrl") && !validUrl(body.oidcIssuerUrl)) {
+    return "Invalid oidcIssuerUrl: must be an http(s) URL";
+  }
+  if (Object.hasOwn(body, "oidcClientSecret") && !validText(body.oidcClientSecret, MAX_URL_LEN)) {
+    return "Invalid oidcClientSecret";
+  }
+  if (Object.hasOwn(body, "samlEntryPoint") && !validUrl(body.samlEntryPoint)) {
+    return "Invalid samlEntryPoint: must be an http(s) URL";
+  }
+  for (const key of ["samlIssuer", "samlLoginLabel", "samlAttributeEmail", "samlAttributeName"]) {
+    if (Object.hasOwn(body, key) && !validText(body[key])) {
+      return `Invalid ${key}`;
+    }
+  }
+  if (Object.hasOwn(body, "samlCert") && !validText(body.samlCert, MAX_CERT_LEN)) {
+    return "Invalid samlCert";
+  }
+  for (const key of ["currentPassword", "newPassword"]) {
+    if (
+      Object.hasOwn(body, key) &&
+      (typeof body[key] !== "string" || body[key].length > MAX_PASSWORD_LEN)
+    ) {
+      return `Invalid ${key}`;
+    }
+  }
+  return "";
+}
+
+/** Keys whose PATCH could turn on SSO-only; triggers the lockout guard. */
+const AUTH_PATCH_KEYS = [
+  "authMode",
+  "ssoType",
+  "oidcIssuerUrl",
+  "oidcClientId",
+  "oidcClientSecret",
+  "samlEntryPoint",
+  "samlCert",
+];
+
+/**
+ * Lockout guard, shared with config import: reject a settings patch that
+ * leaves an SSO-only mode whose protocol is not fully configured, which would
+ * close both sign-in paths at once. A blank `oidcClientSecret` keeps the
+ * stored one (PATCH drops it before saving; import never carries secrets).
+ * @param {object} current Stored settings.
+ * @param {object} patch Incoming settings keys.
+ * @returns {string} Error message, or "" when the result stays reachable.
+ */
+export function ssoLockoutError(current, patch) {
+  if (!AUTH_PATCH_KEYS.some((key) => Object.hasOwn(patch, key))) return "";
+  const next = { ...current, ...patch };
+  if (!String(patch.oidcClientSecret ?? "").trim())
+    next.oidcClientSecret = current.oidcClientSecret;
+  const modes = resolveAuthModes(next);
+  if (!modes.ssoOnly) return "";
+  if (modes.saml && !isSamlConfigured(next)) {
+    return 'Cannot enable SSO-only sign-in: SAML is not fully configured (entry point and certificate are required). Configure and test it with "Password + SSO" first.';
+  }
+  if (modes.oidc && !isOidcConfigured(next)) {
+    return 'Cannot enable SSO-only sign-in: OIDC is not fully configured (issuer URL, client ID and client secret are required). Configure and test it with "Password + SSO" first.';
+  }
+  return "";
+}
+
+export function isPlainObject(value) {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
+function validAccountSettings(body) {
+  if (Object.hasOwn(body, "fallbackStrategy") && !ACCOUNT_STRATEGIES.has(body.fallbackStrategy)) {
+    return false;
+  }
+  if (
+    Object.hasOwn(body, "stickyRoundRobinLimit") &&
+    !validStickyLimit(body.stickyRoundRobinLimit)
+  ) {
+    return false;
+  }
+  if (Object.hasOwn(body, "providerStrategies")) {
+    if (!isPlainObject(body.providerStrategies)) return false;
+    for (const [provider, strategy] of Object.entries(body.providerStrategies)) {
+      if (
+        provider !== provider.trim() ||
+        !provider ||
+        UNSAFE_KEYS.has(provider) ||
+        !isPlainObject(strategy) ||
+        Object.keys(strategy).some((key) => UNSAFE_KEYS.has(key))
+      ) {
+        return false;
+      }
+      if (
+        Object.hasOwn(strategy, "fallbackStrategy") &&
+        !ACCOUNT_STRATEGIES.has(strategy.fallbackStrategy)
+      ) {
+        return false;
+      }
+      if (
+        Object.hasOwn(strategy, "stickyRoundRobinLimit") &&
+        !validStickyLimit(strategy.stickyRoundRobinLimit)
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Every boundary check PATCH applies to a settings body, in PATCH order.
+ * Shared with config import so it can never store what PATCH would reject.
+ * @param {object} body Plain settings object.
+ * @returns {string} Error message, or "" when valid.
+ */
+export function validateSettingsBody(body) {
+  const comboStrategyError = validateComboStrategySettings(body);
+  if (comboStrategyError) return comboStrategyError;
+  if (!validAccountSettings(body)) return "Invalid account strategy settings";
+  return validSecuritySettings(body) || validateSectionSettings(body) || "";
+}
+
+// Keys the dashboard PATCHes that DEFAULT_SETTINGS does not list (YAN-362):
+// every other dashboard key is a DEFAULT_SETTINGS key or a section-validated one.
+const EXTRA_KNOWN_KEYS = [
+  "providerThinking",
+  "ccFilterNaming",
+  "claudeAutoPing",
+  "codexAutoPing",
+  "headroomCodeAware",
+  "headroomKompress",
+  "currentPassword",
+  "newPassword",
+];
+
+/** Every settings key PATCH /api/settings may receive in split mode. */
+export const KNOWN_SETTING_KEYS = new Set([...Object.keys(DEFAULT_SETTINGS), ...EXTRA_KNOWN_KEYS]);

@@ -89,6 +89,8 @@ describe("requireMultiUser", () => {
     const GUARDED_ROUTES = [
       "src/app/api/auth/logout-all/route.js",
       "src/app/api/auth/setup-token/route.js",
+      "src/app/api/me/preferences/route.js",
+      "src/app/api/workspaces/[id]/settings/route.js",
     ];
     const found = gitGrep(["requireMultiUser", "--", "src/app/**/route.js"]);
     expect(found).toEqual([...GUARDED_ROUTES].sort());

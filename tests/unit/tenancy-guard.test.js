@@ -14,10 +14,16 @@ const REPOS = path.join(ROOT, "src/lib/db/repos");
 
 // Sync in-transaction helpers that take `db`. Their only callers
 // (addMembership, updateMembershipRole, removeMembership, deleteUserUnscoped)
-// check workspace membership first.
+// check workspace membership first. The YAN-362 settings-split pair below is
+// the single-user flat-write path (principalScope() null, owner-only):
+// updateSettings mirrors workspace keys into the Default row in the same tx,
+// and split mode never sends workspace keys to updateSettings (the route 400s
+// them), so no cross-workspace write is reachable.
 const HELPER_ALLOWLIST = new Set([
   "membershipsRepo.js:membershipRole",
   "membershipsRepo.js:assertNotLastManager",
+  "settingsRepo.js:updateSettings",
+  "workspaceSettingsRepo.js:mirrorToDefaultWorkspace",
 ]);
 
 const liveTables = (db) =>

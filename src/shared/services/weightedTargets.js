@@ -1,6 +1,7 @@
 // Weighted-target resolution (YAN-259). Neutral module so the usage route and the
 // snapshot poller can share it without a route <-> poller import cycle.
 import { getSettings, getCombos, getModelAliases } from "@/lib/localDb";
+import { listEffectivePreferencesUnscoped } from "@/lib/db/index.js";
 import { parseModel, resolveModelAliasFromMap } from "open-sse/services/model.js";
 
 import { resolveComboStrategy } from "open-sse/services/comboStrategy.js";
@@ -61,16 +62,32 @@ export function weightedProviders(settings, combos, providerIds = [], aliases = 
 }
 
 // Never throws: any lookup failure means "not weighted".
+// Unscoped schedulers can't be scoped to one caller, so the provider counts as
+// weighted when ANY effective preference entry (instance/workspace) says so.
 export async function isWeightedProvider(
   provider,
-  deps = { getSettings, getCombos, getModelAliases },
+  deps = {
+    getSettings,
+    getCombos,
+    getModelAliases,
+    listPreferencesUnscoped: listEffectivePreferencesUnscoped,
+  },
 ) {
   try {
-    const settings = await deps.getSettings();
+    const settingsList = deps.listPreferencesUnscoped
+      ? await deps.listPreferencesUnscoped().catch(() => null)
+      : null;
+    const prefs =
+      Array.isArray(settingsList) && settingsList.length > 0
+        ? settingsList
+        : [await deps.getSettings()];
     const combos = deps.getCombos ? await deps.getCombos().catch(() => []) : [];
     const aliases = deps.getModelAliases ? await deps.getModelAliases().catch(() => ({})) : {};
     // Global weighted applies to any provider without its own override.
-    return weightedProviders(settings, combos, [provider], aliases).has(provider);
+    for (const settings of prefs) {
+      if (weightedProviders(settings, combos, [provider], aliases).has(provider)) return true;
+    }
+    return false;
   } catch {
     return false;
   }

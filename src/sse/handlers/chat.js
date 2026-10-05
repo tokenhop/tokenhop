@@ -12,6 +12,7 @@ import {
   clearAntigravityStrikes,
 } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
+import { getEffectivePreferences } from "@/lib/db/index.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { getProviderAlias } from "@/shared/constants/providers";
@@ -148,7 +149,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
         : {}),
     };
   }
-  const settings = await getSettings();
+  const settings = await getEffectivePreferences(gateway);
   notifyRequestLogsEnabled(settings.requestLogsEnabled === true);
 
   if (!modelStr) {
@@ -484,7 +485,7 @@ async function handleSingleModelChat(
         return errorResponse(HTTP_STATUS.BAD_REQUEST, cycleMsg);
       }
       const nextPath = [...comboPath, modelStr];
-      const chatSettings = await getSettings();
+      const chatSettings = await getEffectivePreferences(gateway);
       const {
         strategy: comboStrategy,
         stickyLimit: comboStickyLimit,
@@ -680,7 +681,7 @@ async function handleSingleModelChat(
     }
 
     // Use shared chatCore
-    const chatSettings = await getSettings();
+    const chatSettings = await getEffectivePreferences(gateway);
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },

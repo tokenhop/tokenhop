@@ -4,7 +4,7 @@ import { getSettings } from "@/lib/localDb";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import { hasValidCliToken } from "@/lib/auth/cliToken";
 import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";
-import { ssoLockoutError, validateSettingsBody } from "../../route.js";
+import { ssoLockoutError, validateSettingsBody } from "../../validateSettings.js";
 import {
   applyConfig,
   exportConfig,

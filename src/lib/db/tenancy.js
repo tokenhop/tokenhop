@@ -14,7 +14,12 @@
 
 export const TABLE_CLASSES = {
   _meta: { class: "system" },
-  settings: { class: "pending-scope", issue: "YAN-362", note: "split into instance + workspace" },
+  settings: {
+    class: "instance",
+    note: "instance row; split by YAN-362 into instance + workspace + user",
+  },
+  workspaceSettings: { class: "scoped", scopeColumn: "workspaceId" },
+  userPreferences: { class: "scoped", scopeColumn: "userId" },
   providerConnections: {
     class: "scoped",
     scopeColumn: "workspaceId",

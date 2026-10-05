@@ -15,6 +15,8 @@ import {
   getSettings,
   linkIdentityUnscoped,
   listIdentitiesUnscoped,
+  removeLegacyPasswordUnscoped,
+  seedDefaultWorkspaceSettingsUnscoped,
   setMeta,
 } from "@/lib/db/index.js";
 import { getAdapter } from "@/lib/db/driver.js";
@@ -101,15 +103,21 @@ async function maybePrintSetupToken(owner, settings) {
 }
 
 async function runBootstrap() {
-  if (await getOwnerUnscoped()) {
+  const db = await getAdapter();
+  const existing = await getOwnerUnscoped();
+  if (existing) {
     // Installs bootstrapped before YAN-361, or rows written while the switch
     // was back off: adopt ownerless connections and nodes into Default.
     const n = await adoptOwnerlessUnscoped();
     if (n) console.log(`[users] Moved ${n} ownerless connection(s)/node(s) into Default`);
+    // YAN-362: keep Default's settings row seeded and retire the legacy blob
+    // password once the owner row carries the hash. Both idempotent.
+    seedDefaultWorkspaceSettingsUnscoped(db);
+    if (existing.passwordHash != null) removeLegacyPasswordUnscoped(db);
     return;
   }
   // Irreversible step (ADR-0009): back up first, abort if that fails.
-  backupDbLite(await getAdapter(), makeBackupDir("users-bootstrap"));
+  backupDbLite(db, makeBackupDir("users-bootstrap"));
   pruneOldBackups();
   const settings = await getSettings();
   let owner;
@@ -119,6 +127,11 @@ async function runBootstrap() {
     if (err?.code !== "OWNER_EXISTS") throw err;
     return; // another process won the race
   }
+  // YAN-362: seed Default's settings row; drop the blob password now that the
+  // owner row carries it (only when it does — a null-hash owner keeps the blob
+  // key as the sole store until a password is set). Both idempotent.
+  seedDefaultWorkspaceSettingsUnscoped(db);
+  if (owner.passwordHash != null) removeLegacyPasswordUnscoped(db);
   console.log("[users] Bootstrapped the owner and the Default workspace");
   await maybePrintSetupToken(owner, settings);
 }

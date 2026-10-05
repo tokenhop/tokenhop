@@ -1,6 +1,9 @@
 import { getAdapter } from "./driver.js";
 import { parseJson, stringifyJson } from "./helpers/jsonCol.js";
 import { getSettings, DEFAULT_SETTINGS } from "./repos/settingsRepo.js";
+import { mirrorToDefaultWorkspace } from "./repos/workspaceSettingsRepo.js";
+import { defaultWorkspaceIdUnscoped } from "./repos/ownership.js";
+import { WORKSPACE_KEYS, pickKeys } from "@/lib/settings/settingsScope.js";
 import { getCombos } from "./repos/combosRepo.js";
 import { getUserPricing, invalidatePricingCache } from "./repos/pricingRepo.js";
 import {
@@ -11,6 +14,16 @@ import {
 import { SETTINGS_SECTIONS } from "@/app/(dashboard)/dashboard/settings/registry.js";
 import { getAppVersion } from "./version.js";
 import { v4 as uuidv4 } from "uuid";
+
+// YAN-362: the config document stays flat. Reads carry the Default workspace's
+// overrides on top of the instance blob; writes store the blob as before and
+// mirror the workspace keys into the Default row.
+function defaultWorkspaceOverlay(db) {
+  const ws = defaultWorkspaceIdUnscoped(db);
+  if (!ws) return {};
+  const row = db.get(`SELECT data FROM workspaceSettings WHERE workspaceId = ?`, [ws]);
+  return pickKeys(parseJson(row?.data, {}), WORKSPACE_KEYS);
+}
 
 /** Settings keys known to this install: schema, stored extras, registry rows. */
 export async function getKnownConfigSettingKeys() {
@@ -26,8 +39,9 @@ export async function getKnownConfigSettingKeys() {
 
 /** Portable config document. Credential-bearing tables never touched. */
 export async function exportConfig() {
+  const db = await getAdapter();
   return buildConfigDocument({
-    settings: await getSettings(),
+    settings: { ...(await getSettings()), ...defaultWorkspaceOverlay(db) },
     combos: await getCombos(),
     pricingOverrides: await getUserPricing(),
     version: getAppVersion(),
@@ -36,8 +50,9 @@ export async function exportConfig() {
 
 /** Current config for diff, including defaults. */
 export async function getConfigState() {
+  const db = await getAdapter();
   return {
-    settings: await getSettings(),
+    settings: { ...(await getSettings()), ...defaultWorkspaceOverlay(db) },
     combos: await getCombos(),
     pricingOverrides: await getUserPricing(),
   };
@@ -77,6 +92,8 @@ export async function applyConfig(doc) {
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
       [stringifyJson({ ...stored, ...doc.settings })],
     );
+    // YAN-362: the doc is flat; mirror its workspace keys into Default's row.
+    mirrorToDefaultWorkspace(db, doc.settings);
 
     for (const combo of doc.combos) {
       const match = currentCombos.find((c) => c.name === combo.name);

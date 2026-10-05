@@ -19,8 +19,9 @@ import m004 from "./004-identity-tenancy.js";
 import m005 from "./005-connection-ownership.js";
 import m006 from "./006-combo-sort-order.js";
 import m007 from "./007-user-password-change.js";
+import m008 from "./008-settings-split.js";
 
-export const MIGRATIONS = [m001, m002, m003, m004, m005, m006, m007].sort(
+export const MIGRATIONS = [m001, m002, m003, m004, m005, m006, m007, m008].sort(
   (a, b) => a.version - b.version,
 );
 

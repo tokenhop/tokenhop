@@ -64,6 +64,10 @@ export const ROUTE_POLICY = {
     alwaysProtected: true,
     cliAllowed: false,
   },
+  // YAN-362: workspace overrides (handler re-checks the row's workspace) and
+  // personal UI preferences (browser session only).
+  "/api/workspaces/[id]/settings": scoped(read(USE, "workspace.preferences.manage")),
+  "/api/me/preferences": { cap: SELF },
   "/api/health": PUBLIC,
   "/api/init": PUBLIC,
   "/api/locale": PUBLIC,

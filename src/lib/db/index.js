@@ -28,7 +28,22 @@ export {
   isCloudEnabled,
   getCloudUrl,
   exportSettings,
+  getEffectivePreferences,
+  listEffectivePreferencesUnscoped,
 } from "./repos/settingsRepo.js";
+
+// Workspace settings overrides + user preferences (YAN-362)
+export {
+  getWorkspaceSettings,
+  updateWorkspaceSettings,
+  updateWorkspaceComboStrategies,
+  getUserPreferences,
+  updateUserPreferences,
+  mirrorToDefaultWorkspace,
+  seedDefaultWorkspaceSettingsUnscoped,
+  removeLegacyPasswordUnscoped,
+  getLegacyPasswordHash,
+} from "./repos/workspaceSettingsRepo.js";
 
 // Provider connections
 export {

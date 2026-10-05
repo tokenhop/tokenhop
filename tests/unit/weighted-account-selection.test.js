@@ -15,6 +15,9 @@ vi.mock("@/lib/localDb", () => ({
   validateApiKey: vi.fn(),
   updateProviderConnectionUnscoped: mocks.updateProviderConnectionUnscoped,
 }));
+vi.mock("@/lib/db/index.js", () => ({
+  getEffectivePreferences: mocks.getSettings,
+}));
 vi.mock("@/lib/network/connectionProxy", () => ({
   resolveConnectionProxyConfig: vi.fn(async () => ({})),
   pickProxyPoolId: vi.fn(),
