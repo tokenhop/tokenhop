@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getComboById } from "@/lib/localDb";
+import { getCombo } from "@/lib/db/index.js";
+import { loadScoped } from "@/lib/users/workspaceScope.js";
 import { loadComboHeadroomDetailFn } from "@/sse/services/comboHeadroom.js";
 
 // GET /api/combos/[id]/headroom - Headroom per combo member (YAN-261).
@@ -9,11 +11,16 @@ import { loadComboHeadroomDetailFn } from "@/sse/services/comboHeadroom.js";
 export async function GET(_request, { params }) {
   try {
     const { id } = await params;
-    const combo = await getComboById(id);
-
-    if (!combo) {
-      return NextResponse.json({ error: "Combo not found" }, { status: 404 });
-    }
+    // YAN-364 IDOR: scoped load first — another workspace's id is a 404.
+    const loaded = await loadScoped(
+      "workspace.connections.metadata.read",
+      id,
+      getCombo,
+      getComboById,
+      "Combo not found",
+    );
+    if (loaded instanceof Response) return loaded;
+    const combo = loaded.row;
 
     const fn = await loadComboHeadroomDetailFn();
     const models = Array.isArray(combo.models) ? combo.models : [];

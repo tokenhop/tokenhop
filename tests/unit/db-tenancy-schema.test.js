@@ -28,8 +28,10 @@ describe("migration 004 identity-tenancy", () => {
 
     expect(runVersionedMigrations(db).to).toBeGreaterThanOrEqual(6);
     expect(tables(db)).toEqual(NEW_TABLES);
-    // 005 is inert on old data; 006 only stamps the new sortOrder column.
-    const stripSort = (rows) => rows.map(({ sortOrder: _ignored, ...rest }) => rest);
+    // 005 is inert on old data; 006 only stamps the new sortOrder column; 009
+    // rebuilds combos adding NULL workspaceId/createdByUserId.
+    const stripSort = (rows) =>
+      rows.map(({ sortOrder: _s, workspaceId: _w, createdByUserId: _c, ...rest }) => rest);
     expect(stripSort(db.all(`SELECT * FROM combos ORDER BY id`))).toEqual(stripSort(before));
     expect(db.get(`SELECT key FROM apiKeys`).key).toBe("sk-th-legacy");
     expect(db.get(`SELECT COUNT(*) AS c FROM users`).c).toBe(0);

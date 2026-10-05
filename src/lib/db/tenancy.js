@@ -28,7 +28,11 @@ export const TABLE_CLASSES = {
   providerNodes: { class: "scoped", scopeColumn: "workspaceId" },
   proxyPools: { class: "instance" },
   apiKeys: { class: "pending-scope", issue: "YAN-363" },
-  combos: { class: "pending-scope", issue: "YAN-364" },
+  combos: {
+    class: "scoped",
+    scopeColumn: "workspaceId",
+    note: "NULL until owner bootstrap (YAN-364)",
+  },
   kv: { class: "pending-scope", note: "classified per scope in KV_SCOPE_CLASSES" },
   usageHistory: { class: "usage-attribution", issue: "YAN-370" },
   usageDaily: { class: "usage-attribution", issue: "YAN-370" },
@@ -41,10 +45,10 @@ export const TABLE_CLASSES = {
 
 // Workspace kv scopes take the `ws:<workspaceId>/` key prefix when scoped.
 export const KV_SCOPE_CLASSES = {
-  modelAliases: { class: "pending-scope", issue: "YAN-364" },
-  customModels: { class: "pending-scope", issue: "YAN-364" },
-  mitmAlias: { class: "pending-scope", issue: "YAN-364" },
-  disabledModels: { class: "pending-scope", issue: "YAN-364" },
+  modelAliases: { class: "scoped", scopeColumn: "key", note: "ws:<workspaceId>/ key prefix" },
+  customModels: { class: "scoped", scopeColumn: "key", note: "ws:<workspaceId>/ key prefix" },
+  mitmAlias: { class: "instance", note: "host MITM tooling (cli-tools routes)" },
+  disabledModels: { class: "scoped", scopeColumn: "key", note: "ws:<workspaceId>/ key prefix" },
   cliToolSettings: { class: "pending-scope", issue: "YAN-374" },
   cliToolPresets: { class: "pending-scope", issue: "YAN-374" },
   pricing: { class: "instance" },

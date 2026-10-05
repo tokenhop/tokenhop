@@ -80,8 +80,9 @@ function insertConnection(id, provider, workspaceId, patch = {}) {
 }
 
 function insertCombo(id, name, models, kind = null) {
+  // YAN-364: a principal reads only combos stamped to its workspace.
   db.run(
-    `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt, workspaceId) VALUES(?, ?, ?, ?, ?, ?, 'w1')`,
     [id, name, kind, JSON.stringify(models), NOW, NOW],
   );
 }

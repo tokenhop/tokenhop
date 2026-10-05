@@ -92,14 +92,21 @@ export const TABLES = {
   combos: {
     columns: {
       id: "TEXT PRIMARY KEY",
-      name: "TEXT UNIQUE NOT NULL",
+      name: "TEXT NOT NULL",
       kind: "TEXT",
       models: "TEXT NOT NULL",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
       sortOrder: "INTEGER",
+      // YAN-364 (migration 009): UNIQUE(workspaceId,name); NULL workspaceId until bootstrap adopts into Default
+      workspaceId: "TEXT REFERENCES workspaces(id) ON DELETE CASCADE",
+      createdByUserId: "TEXT REFERENCES users(id) ON DELETE SET NULL",
     },
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_combo_name ON combos(name)"],
+    constraints: ["UNIQUE (workspaceId, name)"],
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_combo_ws ON combos(workspaceId)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_combo_name_legacy ON combos(name) WHERE workspaceId IS NULL",
+    ],
   },
   kv: {
     columns: {

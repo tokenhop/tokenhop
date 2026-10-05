@@ -140,13 +140,14 @@ describe("switch on", () => {
       return proxy(new NextRequest(`http://localhost${path}`, { method, headers: h }));
     };
     expect(await s.hasValidSession(req({ token: await tokenFor(t.b) }))).toBe(true);
-    for (const path of ["/api/combos", "/api/settings", "/api/tunnel/status"]) {
+    for (const path of ["/api/settings", "/api/tunnel/status"]) {
       expect((await call(t.b, path)).status, path).toBe(403);
       expect((await call(t.a, path)).status, path).not.toBe(403);
     }
-    // YAN-361: scoped routes pass the guard on any workspace B manages (his
-    // personal one); the handler then scopes to it.
+    // YAN-361/YAN-364: scoped routes pass the guard on any workspace B manages
+    // (his personal one); the handler then scopes to it.
     expect((await call(t.b, "/api/providers")).status).not.toBe(403);
+    expect((await call(t.b, "/api/combos")).status).not.toBe(403);
     expect((await call(t.b, "/api/keys", "POST")).status).toBe(403);
     expect((await call(t.b, "/api/gateway/status")).status).not.toBe(403);
     expect((await call(t.b, "/api/health")).status).not.toBe(403);

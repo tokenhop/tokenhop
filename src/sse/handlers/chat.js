@@ -1,4 +1,3 @@
-import { getComboByName } from "@/lib/db/repos/combosRepo.js";
 import "open-sse/index.js";
 
 import {
@@ -13,10 +12,10 @@ import {
 } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
 import { getEffectivePreferences } from "@/lib/db/index.js";
-import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { getProviderAlias } from "@/shared/constants/providers";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getModelInfo, getComboModels, getComboByName } from "../services/model.js";
+import { comboRotationKey, comboStrategyFor } from "@/lib/comboKeys.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -27,7 +26,6 @@ import {
   handleFusionChat,
   detectRequiredCapabilities,
 } from "open-sse/services/combo.js";
-import { resolveComboStrategy } from "open-sse/services/comboStrategy.js";
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
 import {
   augmentModelsWithCapacityAdapter,
@@ -50,7 +48,8 @@ import {
   sanitizeGatewayCapture,
   gatewayKeyContext,
 } from "@/lib/auth/gatewayAuth.js";
-import { requireGatewayWorkspace } from "@/lib/auth/gatewayResources.js";
+import { getGatewayDisabled, requireGatewayWorkspace } from "@/lib/auth/gatewayResources.js";
+import { getDisabledModelsUnscoped } from "@/lib/db/index.js";
 
 /**
  * Handle chat completion request
@@ -166,11 +165,10 @@ export async function handleChat(request, clientRawRequest = null, options = nul
   const requiredCapabilities = detectRequiredCapabilities(body);
 
   // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await getComboModels(modelStr);
+  const comboModels = await getComboModels(modelStr, { principal: gateway });
+  const outerCombo = comboModels ? await getComboByName(modelStr, { principal: gateway }) : null;
   if (comboModels && gateway) {
-    const denied = authorizeGatewayTarget(gateway, {
-      comboId: (await getComboByName(modelStr))?.id,
-    });
+    const denied = authorizeGatewayTarget(gateway, { comboId: outerCombo?.id });
     if (denied) return denied;
   }
   if (comboModels) {
@@ -180,7 +178,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       weights: comboWeights,
       judgeModel,
       fusionTuning,
-    } = resolveComboStrategy(settings, modelStr);
+    } = comboStrategyFor(settings, gateway, outerCombo);
     let augmentedModels = augmentModelsWithCapacityAdapter(
       comboModels,
       requiredCapabilities,
@@ -237,7 +235,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
           );
         },
         log,
-        comboName: modelStr,
+        comboName: comboRotationKey(gateway?.workspaceId, modelStr),
         judgeModel,
         tuning: fusionTuning,
         onAttempt: options?.onAttempt,
@@ -267,7 +265,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
         adapterAdded,
       ),
       log,
-      comboName: modelStr,
+      comboName: comboRotationKey(gateway?.workspaceId, modelStr),
       comboStrategy,
       comboStickyLimit,
       comboWeights,
@@ -316,7 +314,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
         adapterAdded,
       ),
       log,
-      comboName: modelStr,
+      comboName: comboRotationKey(gateway?.workspaceId, modelStr),
       comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings),
       onAttempt: adapterObserver,
       ...(adapterObserver ? {} : { onFallback: fallbackRecorder(modelStr) }),
@@ -365,13 +363,13 @@ async function allowedGatewayModels(gateway, models, body, settings, path = []) 
 }
 
 async function gatewayAllowsTarget(gateway, candidate, body, settings, path = []) {
-  const models = await getComboModels(candidate);
+  const models = await getComboModels(candidate, { principal: gateway });
   if (models) {
     if (path.includes(candidate)) return false;
-    const combo = await getComboByName(candidate);
+    const combo = await getComboByName(candidate, { principal: gateway });
     if (!combo?.id || authorizeGatewayTarget(gateway, { comboId: combo.id })) return false;
     const nextPath = [...path, candidate];
-    const { strategy, judgeModel } = resolveComboStrategy(settings, candidate);
+    const { strategy, judgeModel } = comboStrategyFor(settings, gateway, combo);
     const pool =
       strategy === "fusion"
         ? models
@@ -443,10 +441,12 @@ function probeObserverFor(options, via) {
  *   nested combos observe their own steps and skip the live-routes fallback ring.
  */
 // Same keys /v1/models checks: the provider's alias and its static alias.
-async function isModelDisabled(provider, model) {
+// YAN-364: with a principal only that workspace's disabled map is read (never
+// the global one); a read error is still fail-open, exactly as before.
+async function isModelDisabled(provider, model, principal = null) {
   let disabled;
   try {
-    disabled = await getDisabledModels();
+    disabled = principal ? await getGatewayDisabled(principal) : await getDisabledModelsUnscoped();
   } catch {
     return false; // fail open: a DB read error must not block traffic
   }
@@ -473,11 +473,10 @@ async function handleSingleModelChat(
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
-    const comboModels = await getComboModels(modelStr);
+    const comboModels = await getComboModels(modelStr, { principal: gateway });
     if (comboModels) {
-      const denied = authorizeGatewayTarget(gateway, {
-        comboId: (await getComboByName(modelStr))?.id,
-      });
+      const nestedCombo = await getComboByName(modelStr, { principal: gateway });
+      const denied = authorizeGatewayTarget(gateway, { comboId: nestedCombo?.id });
       if (denied) return denied;
       if (comboPath.includes(modelStr)) {
         const cycleMsg = `Combo cycle detected: ${[...comboPath, modelStr].join(" → ")}`;
@@ -492,7 +491,7 @@ async function handleSingleModelChat(
         weights: comboWeights,
         judgeModel,
         fusionTuning,
-      } = resolveComboStrategy(chatSettings, modelStr);
+      } = comboStrategyFor(chatSettings, gateway, nestedCombo);
       const requiredCapabilities = detectRequiredCapabilities(body);
       let augmentedModels = augmentModelsWithCapacityAdapter(
         comboModels,
@@ -555,7 +554,7 @@ async function handleSingleModelChat(
             );
           },
           log,
-          comboName: modelStr,
+          comboName: comboRotationKey(gateway?.workspaceId, modelStr),
           judgeModel,
           tuning: fusionTuning,
           onAttempt: nestedObserver,
@@ -585,7 +584,7 @@ async function handleSingleModelChat(
           adapterAdded,
         ),
         log,
-        comboName: modelStr,
+        comboName: comboRotationKey(gateway?.workspaceId, modelStr),
         comboStrategy,
         comboStickyLimit,
         comboWeights,
@@ -606,7 +605,7 @@ async function handleSingleModelChat(
   // A model disabled on the provider page is hidden from /v1/models; refuse
   // to route it too, under either alias the dashboard may have stored (YAN-661).
   // 404 lets a combo advance to its next member.
-  if (await isModelDisabled(provider, model)) {
+  if (await isModelDisabled(provider, model, gateway)) {
     log.warn("CHAT", `Model disabled: ${provider}/${model}`);
     // The combo loop must treat this as model-scoped (advance past it), not as an
     // account failure that flips connection state (YAN-661 review follow-up).

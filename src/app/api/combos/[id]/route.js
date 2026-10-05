@@ -1,5 +1,14 @@
 import { NextResponse } from "next/server";
 import { getCombos, getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
+import {
+  getCombo,
+  updateCombo as updateComboScoped,
+  deleteCombo as deleteComboScoped,
+  listCombos,
+  getComboByNameScoped,
+} from "@/lib/db/index.js";
+import { loadScoped } from "@/lib/users/workspaceScope.js";
+import { comboRotationKey } from "@/lib/comboKeys.js";
 import { findComboCycle, isModelList, resetComboRotation } from "open-sse/services/combo.js";
 import { isValidComboKind } from "@/shared/constants/mediaProviderKinds";
 
@@ -11,13 +20,15 @@ const VALID_NAME_REGEX = /^[a-zA-Z0-9_.-]+$/;
 export async function GET(_request, { params }) {
   try {
     const { id } = await params;
-    const combo = await getComboById(id);
-
-    if (!combo) {
-      return NextResponse.json({ error: "Combo not found" }, { status: 404 });
-    }
-
-    return NextResponse.json(combo);
+    const loaded = await loadScoped(
+      "workspace.connections.metadata.read",
+      id,
+      getCombo,
+      getComboById,
+      "Combo not found",
+    );
+    if (loaded instanceof Response) return loaded;
+    return NextResponse.json(loaded.row);
   } catch (error) {
     console.log("Error fetching combo:", error);
     return NextResponse.json({ error: "Failed to fetch combo" }, { status: 500 });
@@ -28,12 +39,17 @@ export async function GET(_request, { params }) {
 export async function PUT(request, { params }) {
   try {
     const { id } = await params;
+    const loaded = await loadScoped(
+      "workspace.combos.manage",
+      id,
+      getCombo,
+      getComboById,
+      "Combo not found",
+    );
+    if (loaded instanceof Response) return loaded;
+    const { scope, row: prev } = loaded;
+
     const body = await request.json();
-    // Capture previous name to invalidate rotation state on rename
-    const prev = await getComboById(id);
-    if (!prev) {
-      return NextResponse.json({ error: "Combo not found" }, { status: 404 });
-    }
 
     // Validate name format if provided
     if (body.name !== undefined) {
@@ -48,8 +64,10 @@ export async function PUT(request, { params }) {
         return NextResponse.json({ error: `Invalid combo name "${body.name}"` }, { status: 400 });
       }
 
-      // Check if name already exists (exclude current combo)
-      const existing = await getComboByName(body.name);
+      // Check if name already exists (inside the combo's workspace when scoped)
+      const existing = scope
+        ? await getComboByNameScoped(scope.ctx, prev.workspaceId, body.name)
+        : await getComboByName(body.name);
       if (existing && existing.id !== id) {
         return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
       }
@@ -64,7 +82,9 @@ export async function PUT(request, { params }) {
     }
 
     if (body.name !== undefined || body.models !== undefined) {
-      const others = (await getCombos()).filter((c) => c.id !== id);
+      const others = (
+        scope ? await listCombos(scope.ctx, prev.workspaceId) : await getCombos()
+      ).filter((c) => c.id !== id);
       const cycle = findComboCycle(
         body.name ?? prev.name,
         body.models ?? prev.models ?? [],
@@ -78,16 +98,21 @@ export async function PUT(request, { params }) {
       }
     }
 
-    const combo = await updateCombo(id, body);
+    const combo = scope
+      ? await updateComboScoped(scope.ctx, id, body)
+      : await updateCombo(id, body);
 
     if (!combo) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });
     }
 
     // Strategy migration now rides updateCombo's transaction; rotation
-    // state still resets after successful write.
-    if (prev?.name) resetComboRotation(prev.name);
-    if (combo.name && combo.name !== prev?.name) resetComboRotation(combo.name);
+    // state still resets after successful write. Scoped combos key rotation
+    // by workspace (YAN-364): same name in two workspaces rotates apart.
+    const wsId = scope ? prev.workspaceId : null;
+    if (prev?.name) resetComboRotation(comboRotationKey(wsId, prev.name));
+    if (combo.name && combo.name !== prev?.name)
+      resetComboRotation(comboRotationKey(wsId, combo.name));
 
     import("@/shared/services/quotaSnapshotPoller")
       .then(({ syncQuotaSnapshotPoller }) => syncQuotaSnapshotPoller())
@@ -104,15 +129,25 @@ export async function PUT(request, { params }) {
 export async function DELETE(_request, { params }) {
   try {
     const { id } = await params;
-    const prev = await getComboById(id);
-    const success = await deleteCombo(id);
+    const loaded = await loadScoped(
+      "workspace.combos.manage",
+      id,
+      getCombo,
+      getComboById,
+      "Combo not found",
+    );
+    if (loaded instanceof Response) return loaded;
+    const { scope, row: prev } = loaded;
+
+    const success = scope ? await deleteComboScoped(scope.ctx, id) : await deleteCombo(id);
 
     if (!success) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });
     }
 
     // deleteCombo drops combo row + own strategy key in one transaction.
-    if (prev?.name) resetComboRotation(prev.name);
+    if (prev?.name)
+      resetComboRotation(comboRotationKey(scope ? prev.workspaceId : null, prev.name));
 
     import("@/shared/services/quotaSnapshotPoller")
       .then(({ syncQuotaSnapshotPoller }) => syncQuotaSnapshotPoller())

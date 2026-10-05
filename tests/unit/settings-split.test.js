@@ -71,9 +71,12 @@ describe("switch on", () => {
     expect(row.data.comboStrategy).toBe("round-robin");
     expect(row.data).not.toHaveProperty("requireApiKey"); // instance key stays in the blob
 
+    // YAN-364: the blob→Default mirror converts names to Default combo ids, so
+    // the combo must exist before the blob write (unknown names are dropped).
+    const demo = await db.createComboUnscoped({ name: "demo", models: [] });
     await db.updateComboStrategies(() => ({ demo: { fallbackStrategy: "weighted" } }));
     expect((await repo.getWorkspaceSettings(t.a.ctx, t.shared.id)).data.comboStrategies).toEqual({
-      demo: { fallbackStrategy: "weighted" },
+      [demo.id]: { fallbackStrategy: "weighted" },
     });
 
     // An override made after the seed survives a re-seed (INSERT OR IGNORE).
@@ -195,55 +198,56 @@ describe("switch off", () => {
   });
 });
 
-// moveComboStrategy must also update the seeded Default row, whose
-// comboStrategies override shadows the blob map in getEffectivePreferences.
+// The Default row's comboStrategies is id-keyed (YAN-364): a rename keeps the
+// combo.id entry (the blob's name-keyed rename never touches it), a delete
+// drops it from the workspace row in the same transaction.
 describe("combo rename/delete propagation to Default", () => {
-  it("renames and deletes the strategy in Default's effective prefs", async () => {
+  it("keeps the id entry through rename and drops it on delete", async () => {
     await load("on");
     const t = await seedTenancy();
     adapter.run(`INSERT INTO _meta(key, value) VALUES('defaultWorkspaceId', ?)`, [t.shared.id]);
-    const combo = await db.createCombo({ name: "demo", models: [] });
+    const combo = await db.createComboUnscoped({ name: "demo", models: [] });
     await db.updateComboStrategies(() => ({ demo: { fallbackStrategy: "weighted" } }));
     const sharedCtx = { ...t.a.ctx, activeWorkspaceId: t.shared.id };
 
-    await db.updateCombo(combo.id, { name: "renamed" });
+    await db.updateComboUnscoped(combo.id, { name: "renamed" });
     const eff = await db.getEffectivePreferences(sharedCtx);
-    expect(eff.comboStrategies).toEqual({ renamed: { fallbackStrategy: "weighted" } });
+    expect(eff.comboStrategies).toEqual({ [combo.id]: { fallbackStrategy: "weighted" } });
 
-    await db.deleteCombo(combo.id);
+    await db.deleteComboUnscoped(combo.id);
     const eff2 = await db.getEffectivePreferences(sharedCtx);
     expect(eff2.comboStrategies).toEqual({});
   });
 
-  it("split mode: renames workspace-only strategies and keeps other entries", async () => {
+  it("split mode: id-keyed entries survive rename; delete drops only that workspace's entry", async () => {
     await load("on");
     const t = await seedTenancy();
     adapter.run(`DELETE FROM workspaceSettings`);
     await db.updateSettings({ comboStrategies: {} });
-    const combo = await db.createCombo({ name: "solo", models: [] });
-    await db.createCombo({ name: "other", models: [] });
+    const solo = await db.createCombo(t.a.ctx, t.a.personal, { name: "solo", models: [] });
+    const other = await db.createCombo(t.b.ctx, t.b.personal, { name: "other", models: [] });
     const weighted = { fallbackStrategy: "weighted" };
     await repo.updateWorkspaceComboStrategies(
       t.a.ctx,
       t.a.personal,
-      (s) => ({ ...s, solo: weighted }),
-      "solo",
+      (s) => ({ ...s, [solo.id]: weighted }),
+      solo.id,
     );
     await repo.updateWorkspaceComboStrategies(
       t.b.ctx,
       t.b.personal,
-      (s) => ({ ...s, other: weighted }),
-      "other",
+      (s) => ({ ...s, [other.id]: weighted }),
+      other.id,
     );
     const map = async (seeded, ws) =>
       (await repo.getWorkspaceSettings(seeded.ctx, ws)).data.comboStrategies;
 
-    await db.updateCombo(combo.id, { name: "solo2" });
-    expect(await map(t.a, t.a.personal)).toEqual({ solo2: weighted });
-    expect(await map(t.b, t.b.personal)).toEqual({ other: weighted });
+    await db.updateCombo(t.a.ctx, solo.id, { name: "solo2" });
+    expect(await map(t.a, t.a.personal)).toEqual({ [solo.id]: weighted });
+    expect(await map(t.b, t.b.personal)).toEqual({ [other.id]: weighted });
 
-    await db.deleteCombo(combo.id);
+    await db.deleteCombo(t.a.ctx, solo.id);
     expect(await map(t.a, t.a.personal)).toEqual({});
-    expect(await map(t.b, t.b.personal)).toEqual({ other: weighted });
+    expect(await map(t.b, t.b.personal)).toEqual({ [other.id]: weighted });
   });
 });

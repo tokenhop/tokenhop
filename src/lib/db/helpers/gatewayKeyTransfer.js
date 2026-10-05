@@ -10,6 +10,7 @@ import { apiKeyPrefix } from "../../../shared/utils/apiKey.js";
 import { GATEWAY_VIDEO_JOBS_TABLE_SQL } from "../repos/gatewayVideoJobsRepo.js";
 import { readApiKeyStorageState } from "../apiKeyState.js";
 import { insertHashedApiKeySync } from "../repos/apiKeysRepo.js";
+import { adoptOwnerlessRowsUnscoped } from "../repos/ownership.js";
 import { getMetaSync, setMetaSync } from "./metaStore.js";
 import { parseJson, stringifyJson } from "./jsonCol.js";
 
@@ -32,6 +33,8 @@ const KV_SCOPES = [
   "cliToolPresets",
   "pricing",
 ];
+// No disabledModels in KV_SCOPES: the snapshot has no section for it, so local
+// disabled-model preferences survive a config import.
 // Column set of HASHED_API_KEYS_TABLE in ../schema.js (kept local so schema
 // definition stays the single runtime source; preflight mirrors it strictly).
 const HASHED_KEY_COLUMNS = new Set([
@@ -57,6 +60,14 @@ const SECRET_KEY_FIELDS = ["key", "plain", "secret", "raw"];
 // Master material never travels in a snapshot; body-supplied roots are
 // refused even before format detection so no path can ever trust them.
 const PAYLOAD_MASTER_FIELDS = ["masterKey", "master", "masterSecret", "apiKeyMaster"];
+
+// Imported alias/custom keys from newer workspace-aware snapshots lose their
+// `ws:<id>/` prefix so the in-tx adoption below lands them in local Default.
+const WS_KEY_PREFIX_RE = /^ws:[^/]+\//;
+
+function stripWsKey(key) {
+  return key.replace(WS_KEY_PREFIX_RE, "");
+}
 
 export class TransferError extends Error {
   constructor(code, message) {
@@ -1019,12 +1030,12 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
   }
   for (const [a, m] of Object.entries(payload.modelAliases || {})) {
     db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [
-      a,
+      stripWsKey(a),
       stringifyJson(m),
     ]);
   }
   for (const m of payload.customModels || []) {
-    const k = `${m.providerAlias}|${m.id}|${m.type || "llm"}`;
+    const k = stripWsKey(`${m.providerAlias}|${m.id}|${m.type || "llm"}`);
     db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [
       k,
       stringifyJson(m),
@@ -1072,6 +1083,9 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
       [job.workspaceId, job.jobId, job.provider, job.connectionId, job.modelId, job.createdAt],
     );
   }
+  // YAN-364 (decision 13): adopt NULL-workspaceId combos + bare kv keys into
+  // Default in-tx, before foreign_key_check — same semantics as importDb.
+  adoptOwnerlessRowsUnscoped(db);
   if (db.all(`PRAGMA foreign_key_check`).length) {
     fail("TRANSFER_APPLY_INVALID", "Foreign key violations after snapshot apply");
   }

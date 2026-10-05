@@ -8,13 +8,19 @@ import {
 } from "@/shared/constants/providers";
 import {
   getProviderConnectionsUnscoped,
-  getCombos,
-  getCustomModels,
-  getModelAliases,
+  getCombosUnscoped,
+  getCustomModelsUnscoped,
+  getModelAliasesUnscoped,
 } from "@/lib/localDb";
-import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { getDisabledModelsUnscoped } from "@/lib/disabledModelsDb";
 import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
-import { getGatewayConnections } from "@/lib/auth/gatewayResources.js";
+import {
+  getGatewayConnections,
+  getGatewayCombos,
+  getGatewayCustomModels,
+  getGatewayAliases,
+  getGatewayDisabled,
+} from "@/lib/auth/gatewayResources.js";
 import { getModelInfo } from "@/sse/services/model.js";
 import {
   hasLiveModelResolver,
@@ -192,37 +198,40 @@ export async function buildModelsList(kindFilter, options = {}) {
     try {
       connections = await getProviderConnectionsUnscoped();
       connections = connections.filter((c) => c.isActive !== false);
-    } catch (e) {
+    } catch {
       console.log("Could not fetch providers, returning all models");
     }
   }
 
+  // YAN-364: a principal reads its workspace's combos/aliases/custom/disabled
+  // rows (no global fallback); legacy storage keeps the global catalog. A
+  // storage error surfaces (it never widens the catalog), same as connections.
+  const readCatalog = principal
+    ? {
+        combos: getGatewayCombos(principal),
+        customModels: getGatewayCustomModels(principal),
+        aliases: getGatewayAliases(principal),
+        disabled: getGatewayDisabled(principal),
+      }
+    : {
+        combos: getCombosUnscoped(),
+        customModels: getCustomModelsUnscoped(),
+        aliases: getModelAliasesUnscoped(),
+        disabled: getDisabledModelsUnscoped(),
+      };
   let combos = [];
-  try {
-    combos = await getCombos();
-  } catch (e) {
-    console.log("Could not fetch combos");
-  }
-
   let customModels = [];
-  try {
-    customModels = await getCustomModels();
-  } catch (e) {
-    console.log("Could not fetch custom models");
-  }
-
   let modelAliases = {};
-  try {
-    modelAliases = await getModelAliases();
-  } catch (e) {
-    console.log("Could not fetch model aliases");
-  }
-
   let disabledByAlias = {};
   try {
-    disabledByAlias = await getDisabledModels();
-  } catch (e) {
-    console.log("Could not fetch disabled models");
+    [combos, customModels, modelAliases, disabledByAlias] = await Promise.all([
+      readCatalog.combos.catch(() => []),
+      readCatalog.customModels.catch(() => []),
+      readCatalog.aliases.catch(() => ({})),
+      readCatalog.disabled.catch(() => ({})),
+    ]);
+  } catch {
+    console.log("Could not fetch model catalog");
   }
   const isDisabled = (alias, modelId) =>
     Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);

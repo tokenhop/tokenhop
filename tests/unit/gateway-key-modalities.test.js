@@ -23,6 +23,9 @@ vi.mock("../../src/sse/services/auth.js", () => ({
 vi.mock("../../src/sse/services/model.js", () => ({
   getModelInfo: mocks.getModelInfo,
   getComboModels: mocks.getComboModels,
+  // YAN-364: tts.js / imageGeneration.js import this alongside getModelInfo +
+  // getComboModels; the mocks drive its return per test.
+  getComboByName: mocks.getComboByName,
 }));
 vi.mock("@/lib/db/repos/combosRepo.js", () => ({ getComboByName: mocks.getComboByName }));
 vi.mock("@/lib/localDb", () => ({ getSettings: async () => ({}) }));

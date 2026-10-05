@@ -20,8 +20,9 @@ import m005 from "./005-connection-ownership.js";
 import m006 from "./006-combo-sort-order.js";
 import m007 from "./007-user-password-change.js";
 import m008 from "./008-settings-split.js";
+import m009 from "./009-workspace-scoped-combos.js";
 
-export const MIGRATIONS = [m001, m002, m003, m004, m005, m006, m007, m008].sort(
+export const MIGRATIONS = [m001, m002, m003, m004, m005, m006, m007, m008, m009].sort(
   (a, b) => a.version - b.version,
 );
 

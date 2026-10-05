@@ -8,11 +8,15 @@ import { can } from "@/lib/users/principal.js";
 import { WORKSPACE_KEYS, classifyKey, pickKeys } from "@/lib/settings/settingsScope.js";
 import {
   getWorkspaceSettings,
+  resolveWorkspaceComboId,
   updateWorkspaceComboStrategies,
   updateWorkspaceSettings,
 } from "@/lib/db/repos/workspaceSettingsRepo.js";
 import { isPlainObject, validateSettingsBody } from "@/app/api/settings/validateSettings.js";
-import { applyComboStrategyPatch } from "@/app/api/settings/comboStrategyPatch.js";
+import {
+  applyComboStrategyPatch,
+  isValidComboName,
+} from "@/app/api/settings/comboStrategyPatch.js";
 import { runSettingsSideEffects } from "@/app/api/settings/settingsSideEffects.js";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +44,7 @@ function splitKeyError(body) {
 // validateSettingsBody already runs the combo-strategy validator.
 const validatePatch = (body) => validateSettingsBody(pickKeys(body, WORKSPACE_KEYS));
 
-export async function GET(request, { params }) {
+export async function GET(_request, { params }) {
   try {
     const hidden = await requireMultiUser();
     if (hidden) return hidden;
@@ -86,8 +90,22 @@ export async function PATCH(request, { params }) {
     }
 
     if (Object.hasOwn(body, "comboStrategyPatch")) {
-      const result = await applyComboStrategyPatch(body, (transform, name) =>
-        updateWorkspaceComboStrategies(ctx, wsId, transform, name),
+      // YAN-364: workspace strategies are keyed by combo id. A name selector
+      // is resolved inside THIS workspace only (never across workspaces); a
+      // well-formed name that matches no combo here is the same 409 as a
+      // stale id. Malformed selectors fall through to the validator's 400.
+      let patchBody = body;
+      const sel = body.comboStrategyPatch;
+      if (sel && typeof sel === "object" && sel.id === undefined && isValidComboName(sel.name)) {
+        const comboId = await resolveWorkspaceComboId(ctx, wsId, { name: sel.name });
+        if (!comboId) return json({ error: "Combo not found" }, 409);
+        const { name: _name, ...rest } = sel;
+        patchBody = { ...body, comboStrategyPatch: { ...rest, id: comboId } };
+      }
+      const result = await applyComboStrategyPatch(
+        patchBody,
+        (transform, comboId) => updateWorkspaceComboStrategies(ctx, wsId, transform, comboId),
+        { allowId: true },
       );
       if (result.response) return result.response;
       runSettingsSideEffects({ comboStrategyPatch: true }, result);

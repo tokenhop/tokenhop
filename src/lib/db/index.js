@@ -2,7 +2,7 @@
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
 import { latestVersion } from "./migrations/index.js";
-import { adoptOwnerlessRowsUnscoped } from "./repos/ownership.js";
+import { adoptOwnerlessRowsUnscoped, defaultWorkspaceIdUnscoped } from "./repos/ownership.js";
 import { getMetaSync } from "./helpers/metaStore.js";
 import {
   TransferError,
@@ -105,18 +105,25 @@ export {
   SAVINGS_LIFETIME_KEY,
 } from "./repos/usageRepo.js";
 
-// Combos
+// Combos (YAN-364: scoped + Unscoped APIs)
 export {
-  getCombos,
-  getComboById,
-  getComboByName,
+  getCombosUnscoped,
+  getComboByIdUnscoped,
+  getComboByNameUnscoped,
+  createComboUnscoped,
+  updateComboUnscoped,
+  deleteComboUnscoped,
+  reorderCombosUnscoped,
+  listCombos,
+  getCombo,
+  getComboByNameScoped,
   createCombo,
   updateCombo,
   deleteCombo,
   reorderCombos,
 } from "./repos/combosRepo.js";
 
-// Aliases (model + custom + mitm)
+// Aliases (model + custom scoped/unscoped + instance-scope mitm)
 export {
   getModelAliases,
   setModelAlias,
@@ -124,6 +131,12 @@ export {
   getCustomModels,
   addCustomModel,
   deleteCustomModel,
+  getModelAliasesUnscoped,
+  setModelAliasUnscoped,
+  deleteModelAliasUnscoped,
+  getCustomModelsUnscoped,
+  addCustomModelUnscoped,
+  deleteCustomModelUnscoped,
   getMitmAlias,
   setMitmAliasAll,
 } from "./repos/aliasRepo.js";
@@ -148,12 +161,16 @@ export {
   invalidatePricingCache,
 } from "./repos/pricingRepo.js";
 
-// Disabled models
+// Disabled models (YAN-364: scoped + Unscoped APIs)
 export {
   getDisabledModels,
   getDisabledByProvider,
   disableModels,
   enableModels,
+  getDisabledModelsUnscoped,
+  getDisabledByProviderUnscoped,
+  disableModelsUnscoped,
+  enableModelsUnscoped,
 } from "./repos/disabledModelsRepo.js";
 
 // Usage
@@ -228,10 +245,24 @@ export {
   removeMembership,
 } from "./repos/membershipsRepo.js";
 
+// YAN-364: the export/import snapshot stays the legacy single-user shape.
+// Default-workspace alias/custom keys travel unprefixed; other workspaces are
+// never silently flattened into it (user-aware export is YAN-375).
+const WS_KEY_PREFIX_RE = /^ws:[^/]+\//;
+
+function stripWsKey(key) {
+  return key.replace(WS_KEY_PREFIX_RE, "");
+}
+
+function isLegacyDefaultKey(key, defaultWs) {
+  return !WS_KEY_PREFIX_RE.test(key) || (defaultWs != null && key.startsWith(`ws:${defaultWs}/`));
+}
+
 // Export/import full DB
 export async function exportDb() {
   const db = await getAdapter();
   const { exportSettings } = await import("./repos/settingsRepo.js");
+  const defaultWs = defaultWorkspaceIdUnscoped(db);
 
   const out = {
     schemaVersion: latestVersion(),
@@ -288,10 +319,14 @@ export async function exportDb() {
     pricing: {},
   };
 
-  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`))
-    out.modelAliases[r.key] = parseJson(r.value);
-  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`))
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)) {
+    if (!isLegacyDefaultKey(r.key, defaultWs)) continue;
+    out.modelAliases[stripWsKey(r.key)] = parseJson(r.value);
+  }
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`)) {
+    if (!isLegacyDefaultKey(r.key, defaultWs)) continue;
     out.customModels.push(parseJson(r.value));
+  }
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'mitmAlias'`))
     out.mitmAlias[r.key] = parseJson(r.value);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'cliToolSettings'`))
@@ -412,6 +447,8 @@ export async function importDb(payload, { masterKey = null } = {}) {
     db.run(`DELETE FROM proxyPools`);
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
+    // No disabledModels here: the legacy snapshot has no section for it, so
+    // local disabled-model preferences survive a config import.
     db.run(
       `DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'cliToolSettings', 'cliToolPresets', 'pricing')`,
     );
@@ -527,14 +564,16 @@ export async function importDb(payload, { masterKey = null } = {}) {
         ],
       );
     }
+    // Keys from newer workspace-aware snapshots lose their `ws:<id>/` prefix
+    // so they land bare and are adopted into the local Default workspace.
     for (const [a, m] of Object.entries(payload.modelAliases || {})) {
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [
-        a,
+        stripWsKey(a),
         stringifyJson(m),
       ]);
     }
     for (const m of payload.customModels || []) {
-      const k = `${m.providerAlias}|${m.id}|${m.type || "llm"}`;
+      const k = stripWsKey(`${m.providerAlias}|${m.id}|${m.type || "llm"}`);
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [
         k,
         stringifyJson(m),

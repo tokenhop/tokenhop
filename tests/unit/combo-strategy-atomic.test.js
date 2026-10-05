@@ -70,7 +70,7 @@ describe("comboStrategies atomic transforms", () => {
 
   it("stale requireComboName throws COMBO_NOT_FOUND with no write", async () => {
     await sqliteDb.updateSettings({ comboStrategies: {} });
-    await sqliteDb.createCombo({ name: "staleCombo", models: [] });
+    await sqliteDb.createComboUnscoped({ name: "staleCombo", models: [] });
     await expect(
       sqliteDb.updateComboStrategies(
         (strategies) => ({ ...strategies, staleCombo: { fallbackStrategy: "weighted" } }),
@@ -78,7 +78,7 @@ describe("comboStrategies atomic transforms", () => {
       ),
     ).rejects.toMatchObject({ code: "COMBO_NOT_FOUND" });
     expect((await sqliteDb.getSettings()).comboStrategies).toEqual({});
-    await sqliteDb.deleteCombo((await sqliteDb.getComboByName("staleCombo")).id);
+    await sqliteDb.deleteComboUnscoped((await sqliteDb.getComboByNameUnscoped("staleCombo")).id);
   });
 });
 
@@ -201,7 +201,7 @@ describe("PATCH /api/settings comboStrategyPatch after rename", () => {
     } finally {
       spy.mockRestore();
     }
-    expect((await sqliteDb.getComboById(created.id)).name).toBe("rollbackCombo");
+    expect((await sqliteDb.getComboByIdUnscoped(created.id)).name).toBe("rollbackCombo");
     const after = (await sqliteDb.getSettings()).comboStrategies;
     expect(after.rollbackCombo.weights).toEqual({ m: 3 });
     expect(Object.hasOwn(after, "rollbackRenamedCombo")).toBe(false);
@@ -223,7 +223,7 @@ describe("PATCH /api/settings comboStrategyPatch after rename", () => {
     } finally {
       spy.mockRestore();
     }
-    expect((await sqliteDb.getComboById(created.id)).name).toBe("deleteRollbackCombo");
+    expect((await sqliteDb.getComboByIdUnscoped(created.id)).name).toBe("deleteRollbackCombo");
     expect((await sqliteDb.getSettings()).comboStrategies.deleteRollbackCombo.weights).toEqual({
       m: 9,
     });

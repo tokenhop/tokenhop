@@ -6,8 +6,8 @@ import "open-sse/index.js";
 import {
   getSettings,
   getProviderConnectionsUnscoped,
-  getCombos,
-  getModelAliases,
+  getCombosUnscoped,
+  getModelAliasesUnscoped,
   updateProviderConnectionUnscoped,
 } from "@/lib/localDb";
 import { listEffectivePreferencesUnscoped } from "@/lib/db/index.js";
@@ -58,8 +58,8 @@ export function createDefaultDeps() {
     getSettings,
     listPreferencesUnscoped: listEffectivePreferencesUnscoped,
     getProviderConnectionsUnscoped,
-    getCombos,
-    getModelAliases,
+    getCombos: getCombosUnscoped,
+    getModelAliases: getModelAliasesUnscoped,
     updateProviderConnectionUnscoped,
     resolveConnectionProxyConfig,
     refreshAndUpdateCredentials,
@@ -235,8 +235,8 @@ export function configureQuotaSnapshotPoller(settings, combos = [], aliases = {}
 // weighted settings.
 export async function syncQuotaSnapshotPoller({
   getSettings: readSettings = getSettings,
-  getCombos: readCombos = getCombos,
-  getModelAliases: readAliases = getModelAliases,
+  getCombos: readCombos = getCombosUnscoped,
+  getModelAliases: readAliases = getModelAliasesUnscoped,
   // Default reads the instance + every workspace view. An injected readSettings
   // without an injected list stays single-view (test seam).
   listPreferencesUnscoped: readPrefs = readSettings === getSettings

@@ -45,7 +45,6 @@ vi.mock("@/lib/usageDb.js", async (importOriginal) => {
 
 import { getAdapter } from "@/lib/db/driver.js";
 import { insertHashedApiKeySync } from "@/lib/db/repos/apiKeysRepo.js";
-import { setModelAlias } from "@/lib/db/repos/aliasRepo.js";
 import { deriveApiKeyHashKey, hashApiKey, masterKeyId } from "@/lib/security/masterKey.js";
 import { clearApiKeyPrincipalCache } from "@/lib/auth/apiKeyPrincipal.js";
 import {
@@ -143,7 +142,7 @@ beforeEach(async () => {
     revokedAt TEXT, allowedModels TEXT NOT NULL DEFAULT '[]', allowedCombos TEXT NOT NULL DEFAULT '[]',
     expiresAt TEXT, lastUsedAt TEXT, createdAt TEXT NOT NULL)`);
   db.exec(
-    "DELETE FROM memberships; DELETE FROM workspaces; DELETE FROM users; DELETE FROM providerConnections; DELETE FROM providerNodes; DELETE FROM combos; DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion','apiKeysHashKid','defaultWorkspaceId')",
+    "DELETE FROM memberships; DELETE FROM workspaces; DELETE FROM users; DELETE FROM providerConnections; DELETE FROM providerNodes; DELETE FROM combos; DELETE FROM workspaceSettings; DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion','apiKeysHashKid','defaultWorkspaceId')",
   );
   db.run(
     "INSERT INTO users(id, instanceRole, status, createdAt, updatedAt) VALUES ('u1', 'user', 'active', ?, ?)",
@@ -321,9 +320,28 @@ function setSettings(patch) {
   ]);
 }
 
+// YAN-364: aliases live under the workspace's ws:<id>/ kv prefix.
+async function setModelAlias(alias, model) {
+  db.run(
+    `INSERT INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)
+     ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
+    [`ws:w1/${alias}`, JSON.stringify(model)],
+  );
+}
+
+// YAN-364: a workspace principal reads its own id-keyed strategy row, never the
+// name-keyed instance blob (no cross-workspace inheritance).
+function setWorkspaceStrategies(workspaceId, comboStrategies) {
+  db.run(
+    `INSERT INTO workspaceSettings(workspaceId, data, updatedAt) VALUES(?, ?, ?)
+     ON CONFLICT(workspaceId) DO UPDATE SET data = excluded.data`,
+    [workspaceId, JSON.stringify({ comboStrategies }), NOW],
+  );
+}
+
 function insertCombo(id, name, models) {
   db.run(
-    `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, NULL, ?, ?, ?)`,
+    `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt, workspaceId) VALUES(?, ?, NULL, ?, ?, ?, 'w1')`,
     [id, name, JSON.stringify(models), NOW, NOW],
   );
 }
@@ -485,6 +503,9 @@ describe("hashed chat handler authorization", () => {
         fusionc: { fallbackStrategy: "fusion", judgeModel: "anthropic/claude-j" },
       },
     });
+    setWorkspaceStrategies("w1", {
+      f1: { fallbackStrategy: "fusion", judgeModel: "anthropic/claude-j" },
+    });
     const res = await handleChat(chatRequest({ ...msg("hi"), model: "fusionc" }));
     expect(res.status).toBe(403);
     expect(executeMock).not.toHaveBeenCalled();
@@ -498,6 +519,7 @@ describe("hashed chat handler authorization", () => {
     insertConnection("conn-w1", "openai", "w1");
     insertCombo("f1", "fusionc", ["openai/gpt-4o", "anthropic/claude-x"]);
     setSettings({ comboStrategies: { fusionc: { fallbackStrategy: "fusion" } } });
+    setWorkspaceStrategies("w1", { f1: { fallbackStrategy: "fusion" } });
     const res = await handleChat(chatRequest({ ...msg("hi"), model: "fusionc" }));
     expect(res.status).toBe(200);
     expect(executeMock).toHaveBeenCalledTimes(1);
@@ -507,6 +529,7 @@ describe("hashed chat handler authorization", () => {
     insertHashedApiKeySync(db, hashedKeyRow({ allowedModels: ["z/z"], allowedCombos: ["f1"] }));
     insertCombo("f1", "fusionc", ["anthropic/claude-x", "openai/gpt-4o"]);
     setSettings({ comboStrategies: { fusionc: { fallbackStrategy: "fusion" } } });
+    setWorkspaceStrategies("w1", { f1: { fallbackStrategy: "fusion" } });
     const res = await handleChat(chatRequest({ ...msg("hi"), model: "fusionc" }));
     expect(res.status).toBe(403);
     expect(executeMock).not.toHaveBeenCalled();

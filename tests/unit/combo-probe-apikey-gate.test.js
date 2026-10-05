@@ -76,14 +76,16 @@ describe("probe API-key gate (merge gate)", () => {
     });
     // beforeEach re-runs per test; the temp DATA_DIR is per-file, so reuse the
     // same combo name only if it does not exist yet.
-    if (!(await db.getComboByName("probe-gate"))) {
-      await db.createCombo({ name: "probe-gate", models: ["openai/gpt-4o-mini"] });
+    if (!(await db.getComboByNameUnscoped("probe-gate"))) {
+      await db.createComboUnscoped({ name: "probe-gate", models: ["openai/gpt-4o-mini"] });
     }
     executeMock.mockResolvedValue(okUpstream());
   });
 
   it("probe succeeds under default requireApiKey=true", async () => {
-    const result = await runComboProbe({ comboId: (await db.getComboByName("probe-gate")).id });
+    const result = await runComboProbe({
+      comboId: (await db.getComboByNameUnscoped("probe-gate")).id,
+    });
     expect(result.served?.outcome).toBe("served");
     expect(result.attempts).toHaveLength(1);
   });

@@ -113,15 +113,15 @@ describe("DB Concurrency — atomic safety", () => {
           status: "ok",
         }),
       );
-      ops.push(db.setModelAlias(`a-${i}`, `target-${i}`));
-      ops.push(db.disableModels("openai", [`d-${i}`]));
+      ops.push(db.setModelAliasUnscoped(`a-${i}`, `target-${i}`));
+      ops.push(db.disableModelsUnscoped("openai", [`d-${i}`]));
     }
     await Promise.all(ops);
 
-    const aliases = await db.getModelAliases();
+    const aliases = await db.getModelAliasesUnscoped();
     expect(Object.keys(aliases).filter((k) => k.startsWith("a-")).length).toBe(50);
 
-    const disabled = await db.getDisabledByProvider("openai");
+    const disabled = await db.getDisabledByProviderUnscoped("openai");
     expect(disabled.length).toBeGreaterThanOrEqual(50);
 
     const stats = await db.getUsageStatsUnscoped("24h");
@@ -166,18 +166,23 @@ describe("DB Concurrency — atomic safety", () => {
     expect(after.refreshToken).toBe("rt-initial"); // base preserved
   });
 
-  it("addCustomModel race: parallel duplicate adds → only 1 inserted", async () => {
+  it("addCustomModelUnscoped race: parallel duplicate adds → only 1 inserted", async () => {
     const N = 30;
     const promises = [];
     for (let i = 0; i < N; i++) {
       promises.push(
-        db.addCustomModel({ providerAlias: "racep", id: "racemodel", type: "llm", name: "r" }),
+        db.addCustomModelUnscoped({
+          providerAlias: "racep",
+          id: "racemodel",
+          type: "llm",
+          name: "r",
+        }),
       );
     }
     const results = await Promise.all(promises);
     const trueCount = results.filter((r) => r === true).length;
     expect(trueCount).toBe(1); // exactly one wins
-    const all = await db.getCustomModels();
+    const all = await db.getCustomModelsUnscoped();
     expect(all.filter((m) => m.providerAlias === "racep" && m.id === "racemodel").length).toBe(1);
   });
 

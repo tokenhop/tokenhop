@@ -7,7 +7,9 @@ vi.mock("@/lib/localDb", () => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
   getCombos: vi.fn(),
+  getCombosUnscoped: vi.fn(),
   getModelAliases: vi.fn(async () => ({})),
+  getModelAliasesUnscoped: vi.fn(async () => ({})),
   getProviderConnectionsUnscoped: vi.fn(),
   updateProviderConnectionUnscoped: vi.fn(),
 }));

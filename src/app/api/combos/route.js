@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { getCombos, createCombo, getComboByName } from "@/lib/localDb";
+import {
+  listCombos,
+  createCombo as createComboScoped,
+  getComboByNameScoped,
+} from "@/lib/db/index.js";
+import { workspaceScope } from "@/lib/users/workspaceScope.js";
 import { findComboCycle, isModelList } from "open-sse/services/combo.js";
 import { isValidComboKind } from "@/shared/constants/mediaProviderKinds";
 
@@ -9,10 +15,12 @@ export const dynamic = "force-dynamic";
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.-]+$/;
 const BLOCKED_COMBO_NAMES = new Set(["__proto__", "constructor", "prototype"]);
 
-// GET /api/combos - Get all combos
-export async function GET() {
+// GET /api/combos - Get all combos (workspace-scoped when the switch is on)
+export async function GET(request) {
   try {
-    const combos = await getCombos();
+    const scope = await workspaceScope(request, "workspace.connections.metadata.read");
+    if (scope instanceof Response) return scope;
+    const combos = scope ? await listCombos(scope.ctx, scope.workspaceId) : await getCombos();
     return NextResponse.json({ combos });
   } catch (error) {
     console.log("Error fetching combos:", error);
@@ -23,6 +31,9 @@ export async function GET() {
 // POST /api/combos - Create new combo
 export async function POST(request) {
   try {
+    const scope = await workspaceScope(request, "workspace.combos.manage");
+    if (scope instanceof Response) return scope;
+
     const body = await request.json();
     const { name, models, kind } = body;
 
@@ -42,8 +53,10 @@ export async function POST(request) {
       return NextResponse.json({ error: `Invalid combo name "${name}"` }, { status: 400 });
     }
 
-    // Check if name already exists
-    const existing = await getComboByName(name);
+    // Check if name already exists (inside the selected workspace when scoped)
+    const existing = scope
+      ? await getComboByNameScoped(scope.ctx, scope.workspaceId, name)
+      : await getComboByName(name);
     if (existing) {
       return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
     }
@@ -56,7 +69,8 @@ export async function POST(request) {
       return NextResponse.json({ error: `Invalid combo kind "${kind}"` }, { status: 400 });
     }
 
-    const cycle = findComboCycle(name, models || [], await getCombos());
+    const combos = scope ? await listCombos(scope.ctx, scope.workspaceId) : await getCombos();
+    const cycle = findComboCycle(name, models || [], combos);
     if (cycle) {
       return NextResponse.json(
         { error: `Combo cycle detected: ${cycle.join(" → ")}` },
@@ -64,7 +78,13 @@ export async function POST(request) {
       );
     }
 
-    const combo = await createCombo({ name, models: models || [], kind: kind || null });
+    const combo = scope
+      ? await createComboScoped(scope.ctx, scope.workspaceId, {
+          name,
+          models: models || [],
+          kind: kind || null,
+        })
+      : await createCombo({ name, models: models || [], kind: kind || null });
 
     import("@/shared/services/quotaSnapshotPoller")
       .then(({ syncQuotaSnapshotPoller }) => syncQuotaSnapshotPoller())
