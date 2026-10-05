@@ -172,9 +172,8 @@ async function resolvePrincipalOrThrow(request) {
     const session = await validateSessionToken(token);
     if (session?.user) return principalFor(session.user, "session", session.payload.wid);
     if (session?.legacy) return principalFor(await getOwnerUnscoped(), "session");
-    // YAN-358: a presented but invalid/restricted token never degrades to the
-    // implicit local principal (or any other ambient authority).
-    return null;
+    // A stale/invalid token falls through: CLI needs its own token, and
+    // singleUserMode refuses while the owner owes a rotation (YAN-358).
   }
   if (await cliTokenAccepted(request)) return principalFor(await getOwnerUnscoped(), "cli");
   // Gateway API keys resolve here once YAN-363 lands (via: "apiKey").

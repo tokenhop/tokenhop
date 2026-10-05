@@ -1,7 +1,7 @@
 // YAN-358 password helpers: new-password policy, async bcrypt, login lookup.
 // All bcrypt work is async; never use *Sync on the request path.
 import bcrypt from "bcryptjs";
-import { findUsersByLoginUnscoped } from "../db/repos/usersRepo.js";
+import { findUsersByLoginUnscoped } from "../db/index.js";
 
 // ponytail: min 8 code points; raise to 15 when NIST/OWASP single-factor guidance is adopted.
 export const MIN_PASSWORD_LENGTH = 8;

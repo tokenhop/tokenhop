@@ -239,7 +239,11 @@ export default function LoginPage() {
               onExpired={handleExpired}
             />
           ) : view === "self" ? (
-            <PasswordChangeForm mode="self" minLength={8} onExpired={handleExpired} />
+            <PasswordChangeForm
+              mode="self"
+              minLength={passwordMinLength}
+              onExpired={handleExpired}
+            />
           ) : (
             <div className="flex flex-col gap-4">
               {ssoError && (

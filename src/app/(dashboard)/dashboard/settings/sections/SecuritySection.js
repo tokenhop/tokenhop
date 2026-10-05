@@ -67,11 +67,14 @@ export default function SecuritySection({ settings, onSettingsChange }) {
   // Established multi-user security: rotate through the self endpoint (any
   // user, current password required). Pristine installs keep PATCH /api/settings.
   const authStatus = useAuthStatus();
-  const established = authStatus?.userSecurityEnforced === true;
+  // useAuthStatus starts as {}; a loaded status always carries `authenticated`.
+  const authLoaded = Object.hasOwn(authStatus, "authenticated");
+  const established = authStatus.userSecurityEnforced === true;
   const needsCurrent = established || settings.hasPassword;
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
+    if (!authLoaded) return;
     if (passwords.next !== passwords.confirm) {
       setPassStatus({ type: "err", message: "Passwords do not match" });
       return;
@@ -206,7 +209,7 @@ export default function SecuritySection({ settings, onSettingsChange }) {
             <Button
               type="submit"
               loading={passLoading}
-              disabled={passLoading || settings.hasPassword === undefined}
+              disabled={passLoading || !authLoaded || settings.hasPassword === undefined}
             >
               {needsCurrent ? "Update password" : "Set password"}
             </Button>

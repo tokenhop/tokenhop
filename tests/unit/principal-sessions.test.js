@@ -73,6 +73,27 @@ describe("switch on", () => {
     expect(await s.sessionClaims("oidc")).toBeNull();
   });
 
+  it("refuses password and unlinked SSO sessions while owner rotation is pending", async () => {
+    await db.deleteUserUnscoped(t.b.user.id);
+    await db.setUserPasswordUnscoped(t.a.user.id, {
+      passwordHash: null,
+      mustChangePassword: true,
+    });
+    for (const method of ["pwd", "oidc", "saml"]) {
+      expect(await s.sessionClaims(method)).toBeNull();
+    }
+  });
+
+  it("a stale token falls back like no token: single-user only, never while rotation is owed", async () => {
+    await db.deleteUserUnscoped(t.b.user.id);
+    await db.updateSettings({ requireLogin: false });
+    const stale = await tokenFor(t.a);
+    await db.bumpSessionVersion(t.a.user.id);
+    expect(await s.resolvePrincipal(req({ token: stale }))).toMatchObject({ via: "local" });
+    await db.setUserPasswordUnscoped(t.a.user.id, { passwordHash: null, mustChangePassword: true });
+    expect(await s.resolvePrincipal(req({ token: stale }))).toBeNull();
+  });
+
   it("resolves the session principal and honours wid only for own workspaces", async () => {
     const p = await s.resolvePrincipal(req({ token: await tokenFor(t.a, { wid: t.shared.id }) }));
     expect(p).toMatchObject({ userId: t.a.user.id, instanceRole: "owner", via: "session" });
