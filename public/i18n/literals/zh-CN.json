@@ -2370,6 +2370,7 @@
   "not installed": "未安装",
   "on GitHub": "在 GitHub 上",
   "openai → target + URL + headers": "openai → 目标 + URL + 请求头",
+  "openai/gpt-4o, anthropic/claude": "openai/gpt-4o，anthropic/claude",
   "openid profile email": "openid profile email",
   "optional context to improve accuracy": "可选的上下文，用于提高准确性",
   "optional, e.g. 512, 1024 (leave empty for default)": "可选，例如 512、1024（留空则使用默认值）",
