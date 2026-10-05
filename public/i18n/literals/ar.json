@@ -2211,6 +2211,7 @@
   "not installed": "غير مثبت",
   "on GitHub": "على GitHub",
   "openai → target + URL + headers": "openai → الهدف + URL + العناوين",
+  "openai/gpt-4o, anthropic/claude": "openai/gpt-4o، anthropic/claude",
   "optional context to improve accuracy": "سياق اختياري لتحسين الدقة",
   "optional, e.g. 512, 1024 (leave empty for default)": "اختياري، على سبيل المثال 512، 1024 (اتركه فارغًا للوضع الافتراضي)",
   "or just": "أو فقط",
