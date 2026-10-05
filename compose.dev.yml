@@ -33,6 +33,7 @@ services:
       ANTIGRAVITY_OAUTH_CLIENT_ID:
       ANTIGRAVITY_OAUTH_CLIENT_SECRET:
       META_CODE_OAUTH_CLIENT_ID:
+      TOKENHOP_MULTI_USER: on
     volumes:
       - .:/app
       - tokenhop-dev-node-modules:/app/node_modules
