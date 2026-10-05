@@ -3,6 +3,8 @@ import { exportDb, getSettings, importDb } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";
 import { hasValidCliToken } from "@/lib/auth/cliToken";
+import { audit } from "@/lib/users/audit.js";
+import { getClientIp } from "@/lib/auth/loginLimiter.js";
 
 const PASSWORD_HEADER = "x-9r-password";
 
@@ -15,9 +17,17 @@ export async function GET(request) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
     const payload = await exportDb();
+    // YAN-367: password/CLI-token auth pre-dates principals — actor stays null.
+    await audit({ ip: getClientIp(request) }, "db.export", { type: "database" }, {});
     return NextResponse.json(payload);
   } catch (error) {
     console.log("Error exporting database:", error);
+    await audit(
+      { ip: getClientIp(request) },
+      "db.export",
+      { type: "database" },
+      { result: "failure" },
+    );
     return NextResponse.json({ error: "Failed to export database" }, { status: 500 });
   }
 }
@@ -50,9 +60,18 @@ export async function POST(request) {
         console.warn("[Settings][DatabaseImport] quota poller sync failed:", error?.message),
       );
 
+    // YAN-367: audit the restore (actor null — password/CLI auth, no principal).
+    await audit({ ip: getClientIp(request) }, "db.import", { type: "database" }, {});
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.log("Error importing database:", error);
+    await audit(
+      { ip: getClientIp(request) },
+      "db.import",
+      { type: "database" },
+      { result: "failure" },
+    );
     return NextResponse.json(
       { error: error?.message || "Failed to import database" },
       { status: 400 },

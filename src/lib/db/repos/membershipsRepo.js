@@ -3,6 +3,9 @@
 import { getAdapter } from "../driver.js";
 import { revokeUserApiKeysSync } from "./apiKeysRepo.js";
 import { TenancyError, assertCtx, mapConstraintErrors } from "@/lib/users/errors.js";
+import { audit } from "@/lib/users/audit.js";
+
+const mTarget = (workspaceId, userId) => ({ type: "membership", id: `${workspaceId}:${userId}` });
 
 const MANAGER_ROLES = ["owner", "manager"];
 
@@ -78,15 +81,20 @@ export async function addMembership(
       );
     }),
   );
+  audit({ principal: ctx, workspaceId }, "membership.add", mTarget(workspaceId, userId), {
+    after: { userId, role, workspaceId },
+  });
   return membership;
 }
 
 export async function updateMembershipRole(ctx, workspaceId, userId, role) {
   const db = await getAdapter();
-  return mapConstraintErrors(() =>
+  let prevRole = null;
+  const row = mapConstraintErrors(() =>
     db.transaction(() => {
       sharedWorkspace(db, ctx, workspaceId);
-      if (!membershipRole(db, workspaceId, userId)) {
+      prevRole = membershipRole(db, workspaceId, userId);
+      if (!prevRole) {
         throw new TenancyError("NOT_FOUND", "Membership not found");
       }
       if (!MANAGER_ROLES.includes(role)) assertNotLastManager(db, workspaceId, userId);
@@ -103,14 +111,21 @@ export async function updateMembershipRole(ctx, workspaceId, userId, role) {
       );
     }),
   );
+  audit({ principal: ctx, workspaceId }, "membership.roleChange", mTarget(workspaceId, userId), {
+    before: { role: prevRole },
+    after: { role },
+  });
+  return row;
 }
 
 export async function removeMembership(ctx, workspaceId, userId) {
   const db = await getAdapter();
   const now = new Date().toISOString();
-  return db.transaction(() => {
+  let prevRole = null;
+  const removed = db.transaction(() => {
     sharedWorkspace(db, ctx, workspaceId);
     assertNotLastManager(db, workspaceId, userId);
+    prevRole = membershipRole(db, workspaceId, userId);
     const { changes } = db.run(`DELETE FROM memberships WHERE workspaceId = ? AND userId = ?`, [
       workspaceId,
       userId,
@@ -118,4 +133,10 @@ export async function removeMembership(ctx, workspaceId, userId) {
     if (changes > 0) revokeUserApiKeysSync(db, userId, { workspaceId, now });
     return changes > 0;
   });
+  if (removed) {
+    audit({ principal: ctx, workspaceId }, "membership.remove", mTarget(workspaceId, userId), {
+      before: { userId, role: prevRole, workspaceId },
+    });
+  }
+  return removed;
 }

@@ -240,6 +240,40 @@ async function runHeavyStartup() {
   import("@/sse/services/backgroundTokenRefresh.js")
     .then(({ startBackgroundTokenRefresh }) => startBackgroundTokenRefresh())
     .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
+
+  startAuditRetention(settings);
+}
+
+// YAN-367: audit retention sweep: once now, then daily. Never breaks startup.
+const AUDIT_SWEEP_MS = 24 * 60 * 60 * 1000;
+
+async function pruneAudit() {
+  try {
+    const days = Number((await getSettings()).auditRetentionDays);
+    if (!Number.isFinite(days) || days <= 0) return;
+    const { auditRepo } = await import("@/lib/db/index.js");
+    await auditRepo.pruneOlderThan(days);
+  } catch (e) {
+    console.log("[Audit] retention sweep failed:", e.message);
+  }
+}
+
+function startAuditRetention() {
+  if (g.auditSweepInterval) return;
+  pruneAudit();
+  g.auditSweepInterval = setInterval(pruneAudit, AUDIT_SWEEP_MS);
+  if (g.auditSweepInterval.unref) g.auditSweepInterval.unref();
+}
+
+// Boot-time host ops have no principal: via "system", actor null. The audit
+// helper never throws; a missing/failed import must not break startup either.
+async function auditSystem(action, id, after) {
+  try {
+    const { audit } = await import("@/lib/users/audit.js");
+    await audit({ principal: null, via: "system" }, action, { type: "hostOp", id }, { after });
+  } catch (e) {
+    console.log("[Audit] boot event skipped:", e.message);
+  }
 }
 
 function autoPingEntryEnabled(settings) {

@@ -18,6 +18,8 @@ import {
 import { getSettings, updateSettings } from "@/lib/localDb";
 import runtimeCredentials from "@/mitm/runtimeCredentials";
 import { ACTIVE } from "@/shared/brand";
+import { audit } from "@/lib/users/audit.js";
+import { getClientIp } from "@/lib/auth/loginLimiter.js";
 
 initDbHooks(getSettings, updateSettings);
 
@@ -133,6 +135,15 @@ export async function POST(request) {
       !!forceKillPort443,
     );
     if (!isWin) setCachedPassword(pwd);
+    // YAN-367: audit the host op — never the apiKey/sudoPassword body fields.
+    await audit(
+      { ip: getClientIp(request) },
+      "hostOps.mitm",
+      { type: "hostOp", id: "mitm/start" },
+      {
+        after: { op: "start", running: result.running },
+      },
+    );
     return NextResponse.json({ success: true, running: result.running, pid: result.pid });
   } catch (error) {
     if (error?.code === "API_KEY_STATE_INVALID")
@@ -179,6 +190,15 @@ export async function DELETE(request) {
     await stopServer(pwd);
     if (!isWin && sudoPassword) setCachedPassword(sudoPassword);
 
+    // YAN-367: audit the host op.
+    await audit(
+      { ip: getClientIp(request) },
+      "hostOps.mitm",
+      { type: "hostOp", id: "mitm/stop" },
+      {
+        after: { op: "stop" },
+      },
+    );
     return NextResponse.json({ success: true, running: false });
   } catch (error) {
     console.log("Error stopping MITM server:", error.message);
@@ -229,6 +249,13 @@ export async function PATCH(request) {
     if (!isWin && sudoPassword) setCachedPassword(sudoPassword);
 
     const status = await getMitmStatus();
+    // YAN-367: audit the host op (tool DNS toggle / trust-cert).
+    await audit(
+      { ip: getClientIp(request) },
+      "hostOps.mitm",
+      { type: "hostOp", id: `mitm/${action}` },
+      { after: { op: action, tool: typeof tool === "string" ? tool : null } },
+    );
     return NextResponse.json({ success: true, dnsStatus: status.dnsStatus });
   } catch (error) {
     console.log("Error toggling DNS:", error.message);

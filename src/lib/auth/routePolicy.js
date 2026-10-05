@@ -229,6 +229,9 @@ export const ROUTE_POLICY = {
   "/api/shell/summary": { cap: USAGE },
   "/api/shell/savings-milestone": { cap: USAGE },
   "/api/gateway/status": { cap: SELF },
+
+  // YAN-367: audit log. Owner/admin only (ADR-0002); handler 404s with the switch off.
+  "/api/audit": { cap: "instance.audit.read", alwaysProtected: true },
 };
 
 // LLM API prefixes (boundary match). Middleware runs before next.config

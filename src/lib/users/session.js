@@ -27,6 +27,7 @@ import { NextResponse } from "next/server";
 import { isUserSecurityEnforced } from "./securityState.js";
 import { ensureOwnerBootstrap, resolveSsoUser } from "./bootstrap.js";
 import { can } from "./principal.js";
+import { audit } from "./audit.js";
 
 const AUTH_COOKIE = "auth_token";
 
@@ -238,8 +239,22 @@ export async function principalCan(request, capability, { anyWorkspace = false }
 export async function authorize(capability, resource = {}) {
   if (!(await securityOn())) return null;
   const principal = await getPrincipal();
-  if (!principal) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!principal) {
+    audit(
+      {},
+      "auth.denied",
+      { type: "capability", id: capability },
+      { after: { capability }, result: "denied" },
+    );
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   if (can(principal, capability, resource)) return null;
+  audit(
+    { principal, workspaceId: resource?.workspaceId ?? null },
+    "auth.denied",
+    { type: "capability", id: capability },
+    { after: { capability }, result: "denied" },
+  );
   return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 }
 

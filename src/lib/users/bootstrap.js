@@ -22,6 +22,7 @@ import {
 import { getAdapter } from "@/lib/db/driver.js";
 import { makeBackupDir, backupDbLite, pruneOldBackups } from "@/lib/db/backup.js";
 import { isMultiUserEnabled } from "./featureSwitch.js";
+import { audit } from "./audit.js";
 
 export const OWNER_EMAIL_ENV = "TOKENHOP_OWNER_EMAIL";
 export const SETUP_TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -260,6 +261,12 @@ export async function resolveSsoUser(identity, { setupToken } = {}) {
     return (await findIdentityUnscoped(key))?.userId ?? null;
   }
   console.log(`[users] Linked ${key.provider} identity to the owner`);
+  audit(
+    null,
+    "auth.ssoLink",
+    { type: "user", id: owner.id },
+    { after: { provider: key.provider } },
+  );
   return owner.id;
 }
 

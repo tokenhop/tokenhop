@@ -12,6 +12,7 @@ import { getSettings } from "./settingsRepo.js";
 import { setMetaSync } from "../helpers/metaStore.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { adoptOwnerlessRowsUnscoped } from "./ownership.js";
+import { audit } from "@/lib/users/audit.js";
 
 const COLS =
   "id, email, username, displayName, instanceRole, status, sessionVersion, mustChangePassword, createdAt, updatedAt, lastLoginAt";
@@ -297,7 +298,7 @@ export async function deleteUserUnscoped(id) {
  */
 export async function bootstrapOwnerUnscoped({ passwordHash } = {}) {
   const db = await getAdapter();
-  return mapConstraintErrors(() =>
+  const owner = await mapConstraintErrors(() =>
     db.transaction(() => {
       const now = new Date().toISOString();
       const id = uuidv4();
@@ -332,13 +333,21 @@ export async function bootstrapOwnerUnscoped({ passwordHash } = {}) {
       };
     }),
   );
+  audit(
+    { principal: null },
+    "instance.bootstrap",
+    { type: "user", id: owner.id },
+    { after: { userId: owner.id, workspaceId: owner.defaultWorkspaceId } },
+  );
+  return owner;
 }
 
 // Owner → admin, target → owner, both sessions revoked. Only the owner may.
 export async function transferOwnership(ctx, toUserId) {
   assertCtx(ctx);
   const db = await getAdapter();
-  return db.transaction(() => {
+  let oldOwnerId = null;
+  const result = db.transaction(() => {
     const from = requireRow(db, ctx.userId);
     if (from.instanceRole !== "owner") {
       throw new TenancyError("OWNER_IMMUTABLE", "Only the owner can transfer ownership");
@@ -354,6 +363,16 @@ export async function transferOwnership(ctx, toUserId) {
     db.run(sql, ["admin", now, from.id]);
     db.run(sql, ["owner", now, to.id]);
     dropSession(from.id, to.id);
+    oldOwnerId = from.id;
     return getRow(db, to.id);
   });
+  if (oldOwnerId) {
+    audit(
+      { principal: ctx },
+      "instance.ownership.transfer",
+      { type: "user", id: result.id },
+      { before: { userId: oldOwnerId }, after: { userId: result.id } },
+    );
+  }
+  return result;
 }

@@ -238,6 +238,7 @@ export {
   deleteWorkspace,
 } from "./repos/workspacesRepo.js";
 export { getMeta, setMeta } from "./helpers/metaStore.js";
+export * as auditRepo from "./repos/auditRepo.js"; // YAN-367
 export {
   listMemberships,
   addMembership,

@@ -17,6 +17,8 @@ import {
   diffConfig,
   validateConfigDocument,
 } from "@/lib/settingsConfigDoc.js";
+import { audit } from "@/lib/users/audit.js";
+import { getClientIp } from "@/lib/auth/loginLimiter.js";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -136,6 +138,13 @@ export async function POST(request) {
     }
 
     const { restartRequired } = await applyConfig(checked.doc);
+    // YAN-367: audit the applied import (preview mode never writes → no event).
+    await audit(
+      { ip: getClientIp(request) },
+      "config.import",
+      { type: "config" },
+      { after: { keyNames: Object.keys(checked.doc.settings ?? {}) } },
+    );
 
     // Re-apply side effects the same way PATCH /api/settings does.
     const appliedSettings = await getSettings();
@@ -179,6 +188,14 @@ export async function POST(request) {
     });
   } catch (error) {
     console.log("Error importing config:", error);
+    if (mode === "apply") {
+      await audit(
+        { ip: getClientIp(request) },
+        "config.import",
+        { type: "config" },
+        { result: "failure" },
+      );
+    }
     // Validation and transaction failures are 400s; anything else (a bug, a
     // down DB) is a 500 without leaking internals. The transaction wrapper is
     // the only in-function throw, so its message reaching here means the

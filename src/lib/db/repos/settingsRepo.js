@@ -30,6 +30,8 @@ export const DEFAULT_SETTINGS = {
   requireApiKey: true,
   // Users & teams switch (YAN-351). Read only via isMultiUserEnabled(); not API-writable.
   multiUserEnabled: false,
+  // YAN-367: audit events older than this are pruned daily (initializeApp).
+  auditRetentionDays: 365,
   tunnelDashboardAccess: true,
   requestLogsEnabled: false,
   translatorEnabled: false,

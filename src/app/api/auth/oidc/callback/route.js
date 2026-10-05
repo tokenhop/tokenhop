@@ -10,6 +10,7 @@ import {
   verifyOidcIdToken,
 } from "@/lib/auth/oidc";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { audit } from "@/lib/users/audit";
 import { sessionClaims } from "@/lib/users/session";
 import { takeSetupToken } from "@/lib/users/bootstrap";
 
@@ -95,6 +96,12 @@ export async function GET(request) {
     const setupToken = takeSetupToken(cookieStore);
     const claims = await sessionClaims("oidc", identity, { setupToken });
     if (!claims) {
+      audit(
+        { request },
+        "auth.loginFailed",
+        { type: "user" },
+        { after: { provider: "oidc", reason: "notLinked" }, result: "failure" },
+      );
       return NextResponse.redirect(
         new URL("/login?error=sso_not_linked", getPublicOrigin(request)),
       );
@@ -106,10 +113,22 @@ export async function GET(request) {
       oidcEmail: pickOidcEmail(payload) || null,
       oidcName: pickOidcDisplayName(payload),
     });
+    audit(
+      { principal: claims.sub ? { userId: claims.sub, via: "session" } : null, request },
+      "auth.login",
+      { type: "user", id: claims.sub ?? null },
+      { after: { provider: "oidc" } },
+    );
 
     return NextResponse.redirect(new URL("/dashboard", getPublicOrigin(request)));
   } catch (error) {
     console.warn("[OIDC] callback failed:", error?.message || error);
+    audit(
+      { request },
+      "auth.loginFailed",
+      { type: "user" },
+      { after: { provider: "oidc", reason: "error" }, result: "failure" },
+    );
     clearOidcCookies(cookieStore);
     return NextResponse.redirect(
       new URL("/login?error=oidc_callback_failed", getPublicOrigin(request)),
