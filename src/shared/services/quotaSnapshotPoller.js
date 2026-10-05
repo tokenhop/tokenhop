@@ -10,6 +10,7 @@ import {
   getModelAliases,
   updateProviderConnectionUnscoped,
 } from "@/lib/localDb";
+import { listEffectivePreferencesUnscoped } from "@/lib/db/index.js";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getSnapshot } from "open-sse/services/quotaSnapshot.js";
 import { QUOTA_SNAPSHOT } from "open-sse/config/quotaSnapshot.js";
@@ -55,6 +56,7 @@ function isEligible(connection) {
 export function createDefaultDeps() {
   return {
     getSettings,
+    listPreferencesUnscoped: listEffectivePreferencesUnscoped,
     getProviderConnectionsUnscoped,
     getCombos,
     getModelAliases,
@@ -134,22 +136,30 @@ export async function runQuotaSnapshotTick(deps = createDefaultDeps(), state = g
     const settings = await deps.getSettings();
     const combos = deps.getCombos ? await deps.getCombos().catch(() => []) : [];
     const aliases = deps.getModelAliases ? await deps.getModelAliases().catch(() => ({})) : {};
-    let providers = new Set([
-      ...weightedProviders(settings, combos, [], aliases),
-      ...comboMemberProviders(combos, aliases),
-    ]);
-    if (settings?.fallbackStrategy === "weighted" && deps.getProviderConnectionsUnscoped) {
+    // Unscoped scheduler: union the weighted providers of EVERY effective
+    // preference entry (instance + workspace overrides) — a provider weighted
+    // for any workspace must have snapshot data.
+    const settingsList = deps.listPreferencesUnscoped
+      ? await deps.listPreferencesUnscoped().catch(() => null)
+      : null;
+    const prefs =
+      Array.isArray(settingsList) && settingsList.length > 0 ? settingsList : [settings];
+    const providers = new Set(comboMemberProviders(combos, aliases));
+    for (const p of prefs) {
+      for (const id of weightedProviders(p, combos, [], aliases)) providers.add(id);
+    }
+    if (
+      prefs.some((p) => p?.fallbackStrategy === "weighted") &&
+      deps.getProviderConnectionsUnscoped
+    ) {
       try {
         const all = await deps.getProviderConnectionsUnscoped({ isActive: true });
-        providers = new Set([
-          ...weightedProviders(
-            settings,
-            combos,
-            all.map((connection) => connection.provider),
-            aliases,
-          ),
-          ...comboMemberProviders(combos, aliases),
-        ]);
+        const allProviderIds = all.map((connection) => connection.provider);
+        for (const p of prefs) {
+          for (const id of weightedProviders(p, combos, allProviderIds, aliases)) {
+            providers.add(id);
+          }
+        }
       } catch {
         // Keep the original provider set when the connection read fails.
       }
@@ -196,8 +206,8 @@ export function stopQuotaSnapshotPoller() {
 // strategy, combo strategy, the global comboStrategy, or the global
 // fallbackStrategy is weighted, or when any combo names a provider member so
 // routing has quota data to skip 0%-quota providers.
-export function configureQuotaSnapshotPoller(settings, combos = [], aliases = {}) {
-  const hasWeighted =
+function hasWeightedSettings(settings) {
+  return (
     settings?.fallbackStrategy === "weighted" ||
     Object.values(settings?.providerStrategies || {}).some(
       (strategy) => strategy?.fallbackStrategy === "weighted",
@@ -205,9 +215,18 @@ export function configureQuotaSnapshotPoller(settings, combos = [], aliases = {}
     (settings?.comboStrategy || "fallback") === "weighted" ||
     Object.values(settings?.comboStrategies || {}).some(
       (strategy) => strategy?.fallbackStrategy === "weighted",
-    );
-  if (hasWeighted || comboMemberProviders(combos, aliases).size > 0) startQuotaSnapshotPoller();
-  else stopQuotaSnapshotPoller();
+    )
+  );
+}
+
+// `settings` may be one effective view or an array of them (instance +
+// workspaces). The shared poller keeps running while ANY entry needs it, so
+// one workspace going non-weighted never stops another's polling.
+export function configureQuotaSnapshotPoller(settings, combos = [], aliases = {}) {
+  const views = Array.isArray(settings) ? settings : [settings];
+  if (views.some(hasWeightedSettings) || comboMemberProviders(combos, aliases).size > 0) {
+    startQuotaSnapshotPoller();
+  } else stopQuotaSnapshotPoller();
 }
 
 // Read settings + combos + model aliases from the DB and (re)configure the
@@ -218,9 +237,19 @@ export async function syncQuotaSnapshotPoller({
   getSettings: readSettings = getSettings,
   getCombos: readCombos = getCombos,
   getModelAliases: readAliases = getModelAliases,
+  // Default reads the instance + every workspace view. An injected readSettings
+  // without an injected list stays single-view (test seam).
+  listPreferencesUnscoped: readPrefs = readSettings === getSettings
+    ? listEffectivePreferencesUnscoped
+    : null,
 } = {}) {
   try {
-    const settings = await readSettings();
+    const instance = await readSettings();
+    let settings = instance;
+    if (readPrefs) {
+      const list = await readPrefs().catch(() => null);
+      if (Array.isArray(list) && list.length > 0) settings = [instance, ...list];
+    }
     let combos;
     let aliases;
     try {

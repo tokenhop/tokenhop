@@ -86,27 +86,48 @@ export async function createCombo(data) {
   return combo;
 }
 
-// Move settings.comboStrategies[fromName] to toName (drop when toName is null).
-// Caller must hold the transaction that writes the combo row, so rename/delete and
-// strategy migration commit or roll back together. No own entry: no settings write.
-function moveComboStrategy(db, fromName, toName) {
-  const row = db.get(`SELECT data FROM settings WHERE id = 1`);
-  const current = row ? parseJson(row.data, {}) : {};
-  const strategies = current.comboStrategies;
+// Rewrite one comboStrategies map: fromName -> toName, or drop it (toName null).
+// Invalid maps are left untouched. Returns null when nothing changed.
+function migrateStrategies(strategies, fromName, toName) {
   if (
     !strategies ||
     typeof strategies !== "object" ||
     Array.isArray(strategies) ||
     !Object.hasOwn(strategies, fromName)
   ) {
-    return;
+    return null;
   }
   const next = { ...strategies };
   if (toName) next[toName] = next[fromName];
   delete next[fromName];
-  db.run(`UPDATE settings SET data = ? WHERE id = 1`, [
-    stringifyJson({ ...current, comboStrategies: next }),
-  ]);
+  return next;
+}
+
+// Combos are globally named until YAN-364, so a rename/delete must migrate
+// fromName in the instance blob AND every workspaceSettings row (each row's
+// comboStrategies override shadows the blob for that workspace), preserving
+// unrelated entries and the row's other prefs. Caller must hold the
+// transaction that writes the combo row, so rename/delete and strategy
+// migration commit or roll back together. No own entry: no settings write.
+function moveComboStrategy(db, fromName, toName) {
+  const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+  const current = row ? parseJson(row.data, {}) : {};
+  const nextStrategies = migrateStrategies(current.comboStrategies, fromName, toName);
+  if (nextStrategies) {
+    db.run(`UPDATE settings SET data = ? WHERE id = 1`, [
+      stringifyJson({ ...current, comboStrategies: nextStrategies }),
+    ]);
+  }
+  for (const ws of db.all(`SELECT workspaceId, data FROM workspaceSettings`)) {
+    const wsData = parseJson(ws.data, {});
+    const migrated = migrateStrategies(wsData.comboStrategies, fromName, toName);
+    if (!migrated) continue;
+    db.run(`UPDATE workspaceSettings SET data = ?, updatedAt = ? WHERE workspaceId = ?`, [
+      stringifyJson({ ...wsData, comboStrategies: migrated }),
+      new Date().toISOString(),
+      ws.workspaceId,
+    ]);
+  }
 }
 
 export async function updateCombo(id, data) {

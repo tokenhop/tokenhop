@@ -9,6 +9,7 @@ import {
   updateSettings,
   getApiKeys,
 } from "@/lib/localDb";
+import { listEffectivePreferencesUnscoped } from "@/lib/db/index.js";
 import { runShutdownFlushers } from "@/lib/db/shutdownFlushers.js";
 import {
   enableTunnel,
@@ -224,7 +225,7 @@ async function runHeavyStartup() {
 
   configureTunnelMonitoring(settings);
 
-  if (hasQuotaAutoPingEnabled(settings)) {
+  if (await hasQuotaAutoPingEnabled(settings)) {
     import("@/shared/services/quotaAutoPing")
       .then(({ startQuotaAutoPing }) => startQuotaAutoPing())
       .catch((e) => console.log("[AutoPing] scheduler start failed:", e.message));
@@ -241,10 +242,26 @@ async function runHeavyStartup() {
     .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
 }
 
-function hasQuotaAutoPingEnabled(settings) {
+function autoPingEntryEnabled(settings) {
   return [settings?.claudeAutoPing, settings?.codexAutoPing].some((config) =>
     Object.values(config?.connections || {}).some(Boolean),
   );
+}
+
+// Startup gate must see workspace-only opt-ins too: a workspace that enabled
+// autoPing on its own merged view must not lose warming after a restart just
+// because the instance blob has no opt-in. Union over every effective
+// preference entry; the instance blob (passed in) always participates.
+async function hasQuotaAutoPingEnabled(settings) {
+  try {
+    const prefs = await listEffectivePreferencesUnscoped();
+    if (Array.isArray(prefs) && prefs.length > 0) {
+      return prefs.some(autoPingEntryEnabled) || autoPingEntryEnabled(settings);
+    }
+  } catch {
+    // DB read failed: fall back to the instance blob alone (fail-closed start).
+  }
+  return autoPingEntryEnabled(settings);
 }
 
 async function autoStartMitm(settings) {

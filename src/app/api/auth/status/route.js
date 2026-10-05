@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getSettings } from "@/lib/localDb";
+import { getLegacyPasswordHash } from "@/lib/db/index.js";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
@@ -18,6 +19,8 @@ import { multiUserActive } from "@/lib/users/bootstrap";
 export async function GET() {
   try {
     const settings = await getSettings();
+    // YAN-362: after owner bootstrap the hash lives on users, not the blob.
+    const hasPassword = !!(await getLegacyPasswordHash(settings));
     const cookieStore = await cookies();
     const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
     // Login off only sticks in true single-user installs; a restored DB with
@@ -57,7 +60,7 @@ export async function GET() {
           samlConfigured: isSamlConfigured(settings),
           samlLoginLabel:
             (settings.samlLoginLabel || "Sign in with SAML SSO").trim() || "Sign in with SAML SSO",
-          hasPassword: !!settings.password,
+          hasPassword,
           displayName,
           loginMethod,
           principal: null,
@@ -99,7 +102,7 @@ export async function GET() {
       samlConfigured: isSamlConfigured(settings),
       samlLoginLabel:
         (settings.samlLoginLabel || "Sign in with SAML SSO").trim() || "Sign in with SAML SSO",
-      hasPassword: !!settings.password,
+      hasPassword,
       displayName,
       loginMethod,
       ...securityField,

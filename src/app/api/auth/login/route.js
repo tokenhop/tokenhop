@@ -30,9 +30,14 @@ import {
 } from "@/lib/auth/passwordChangeSession";
 import { isLocalRequest } from "@/dashboardGuard";
 import { sessionClaims, passwordSessionClaims } from "@/lib/users/session";
+import { getEffectivePreferences } from "@/lib/db/index.js";
 import { isUserSecurityEnforced } from "@/lib/users/securityState";
 import { ensureOwnerBootstrap, multiUserActive } from "@/lib/users/bootstrap";
-import { getOwnerUnscoped, getUserPasswordHashUnscoped } from "@/lib/db/index.js";
+import {
+  getLegacyPasswordHash,
+  getOwnerUnscoped,
+  getUserPasswordHashUnscoped,
+} from "@/lib/db/index.js";
 import { ACTIVE } from "@/shared/brand";
 
 const RESET_HINT = `Forgot password? Reset to default via ${ACTIVE.name} CLI → Settings → Reset password to default.`;
@@ -203,11 +208,18 @@ async function handleEstablishedLogin(request, settings, ip, login, password) {
   await setDashboardAuthCookie(cookieStore, request, claims);
   clearPasswordChangeCookie(cookieStore);
 
+  // YAN-362: the fresh login's user row wins over the instance startPage.
+  // getEffectivePreferences(null)/switch-off returns the instance blob, so
+  // single-admin behavior is unchanged (the ctx only carries the logged-in user).
+  const effective = await getEffectivePreferences({
+    userId: user.id,
+    activeWorkspaceId: claims?.wid ?? null,
+  });
   return NextResponse.json(
     {
       success: true,
       mustChangePassword: false,
-      startPage: resolveStartPage(settings.startPage),
+      startPage: resolveStartPage(effective?.startPage ?? settings.startPage),
     },
     { headers: NO_STORE_HEADERS },
   );
@@ -267,7 +279,7 @@ export async function POST(request) {
     }
 
     // Default password is '123456' if not set
-    const storedHash = settings.password;
+    const storedHash = await getLegacyPasswordHash(settings);
 
     const modes = resolveAuthModes(settings);
     if (modes.ssoOnly) {

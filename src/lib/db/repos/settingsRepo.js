@@ -1,5 +1,7 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { WORKSPACE_KEYS, USER_KEYS, pickKeys } from "@/lib/settings/settingsScope.js";
+import { mirrorToDefaultWorkspace } from "./workspaceSettingsRepo.js";
 import { ACTIVE } from "@/shared/brand";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
@@ -105,7 +107,7 @@ const RELIABILITY_LEAF_KEYS = {
 export function mergeWithDefaults(raw) {
   const merged = { ...DEFAULT_SETTINGS, ...(raw || {}) };
   for (const [key, leaves] of Object.entries(RELIABILITY_LEAF_KEYS)) {
-    const stored = (raw || {})[key];
+    const stored = raw?.[key];
     if (stored && typeof stored === "object" && !Array.isArray(stored)) {
       const next = { ...DEFAULT_SETTINGS[key] };
       for (const leaf of leaves) {
@@ -157,6 +159,10 @@ export async function updateSettings(updates) {
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
       [stringifyJson(next)],
     );
+    // YAN-362 single-user path: a flat PATCH keeps the Default workspace row
+    // in step (see mirrorToDefaultWorkspace's ponytail note). Split mode never
+    // reaches this with workspace keys: the route 400s them.
+    mirrorToDefaultWorkspace(db, updates);
   });
   return mergeWithDefaults(next);
 }
@@ -200,8 +206,70 @@ export async function updateComboStrategies(transform, requireComboName) {
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
       [stringifyJson(next)],
     );
+    mirrorToDefaultWorkspace(db, { comboStrategies: nextStrategies });
   });
   return mergeWithDefaults(next);
+}
+
+/**
+ * Effective settings for one request (YAN-362). Switch off, or a legacy
+ * caller with no principal, means today's blob: getSettings().
+ * Otherwise `{ ...instance, ...workspace-overrides, ...user-preferences }`,
+ * merged shallowly per workspace/user key.
+ * Trust contract: a gateway principal (`workspaceId`) is resolved server-side
+ * from the key row, so its workspace is trusted. A session ctx
+ * (`activeWorkspaceId`, from the cookie claim) is not: membership is
+ * re-verified in SQL and a non-member gets the instance layer only. A switch
+ * lookup failure propagates (fail closed); it never enables overrides.
+ * @param {object|null} ctx gateway/session principal, or null for the legacy blob view.
+ */
+export async function getEffectivePreferences(ctx) {
+  const trustedWs = typeof ctx?.workspaceId === "string" ? ctx.workspaceId : null;
+  const sessionWs = typeof ctx?.activeWorkspaceId === "string" ? ctx.activeWorkspaceId : null;
+  const userId = typeof ctx?.userId === "string" ? ctx.userId : null;
+  if (!trustedWs && !sessionWs && !userId) return getSettings();
+  const { isMultiUserEnabled } = await import("@/lib/users/featureSwitch.js");
+  if (!(await isMultiUserEnabled())) return getSettings();
+  const merged = await getSettings();
+  const db = await getAdapter();
+  const wsId =
+    trustedWs ??
+    (sessionWs &&
+    userId &&
+    db.get(`SELECT 1 AS x FROM memberships WHERE workspaceId = ? AND userId = ?`, [
+      sessionWs,
+      userId,
+    ])
+      ? sessionWs
+      : null);
+  if (wsId) {
+    const row = db.get(`SELECT data FROM workspaceSettings WHERE workspaceId = ?`, [wsId]);
+    Object.assign(merged, pickKeys(parseJson(row?.data, {}), WORKSPACE_KEYS));
+  }
+  if (typeof userId === "string" && userId) {
+    const row = db.get(`SELECT data FROM userPreferences WHERE userId = ?`, [userId]);
+    Object.assign(merged, pickKeys(parseJson(row?.data, {}), USER_KEYS));
+  }
+  return merged;
+}
+
+/**
+ * One merged object per (instance, workspace) context, for schedulers that
+ * can't be scoped (quotaSnapshotPoller, weightedTargets, quotaAutoPing).
+ * Background jobs AND over the union. [instance] when no rows or switch off.
+ * @returns {Promise<object[]>}
+ */
+export async function listEffectivePreferencesUnscoped() {
+  const instance = await getSettings();
+  const { isMultiUserEnabled } = await import("@/lib/users/featureSwitch.js");
+  if (!(await isMultiUserEnabled())) return [instance];
+  const db = await getAdapter();
+  // Every workspace participates; one with no override row inherits instance.
+  const rows = db.all(
+    `SELECT ws.data FROM workspaces w LEFT JOIN workspaceSettings ws ON ws.workspaceId = w.id`,
+  );
+  if (!rows.length) return [instance];
+  return rows.map((r) => ({ ...instance, ...pickKeys(parseJson(r.data, {}), WORKSPACE_KEYS) }));
 }
 
 export async function isCloudEnabled() {

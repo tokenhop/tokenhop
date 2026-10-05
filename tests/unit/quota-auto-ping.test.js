@@ -131,6 +131,18 @@ describe("quota auto-ping", () => {
     expect(vi.getTimerCount()).toBe(1);
   });
 
+  it("keeps workspace-only opt-ins running until every view opts out", () => {
+    vi.useFakeTimers();
+    const off = { claudeAutoPing: { connections: { "claude-1": false } } };
+    const on = { claudeAutoPing: { connections: { "claude-2": true } } };
+    configureQuotaAutoPing([off, on]);
+    expect(vi.getTimerCount()).toBe(1);
+    configureQuotaAutoPing([off, on]);
+    expect(vi.getTimerCount()).toBe(1);
+    configureQuotaAutoPing([off, off]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("stops the scheduler when the last account opts out", () => {
     vi.useFakeTimers();
     configureQuotaAutoPing({ claudeAutoPing: { connections: { "claude-1": true } } });

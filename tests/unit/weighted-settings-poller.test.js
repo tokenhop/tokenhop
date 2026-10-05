@@ -11,6 +11,12 @@ vi.mock("@/lib/localDb", () => ({
   getProviderConnectionsUnscoped: vi.fn(),
   updateProviderConnectionUnscoped: vi.fn(),
 }));
+// YAN-362: the poller's default deps read preferences from the DB barrel; keep
+// the real DB (and its checkpoint timer) out of these fake-timer tests.
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  listEffectivePreferencesUnscoped: vi.fn(async () => null),
+}));
 vi.mock("@/lib/network/outboundProxy", () => ({ applyOutboundProxyEnv: vi.fn() }));
 vi.mock("open-sse/services/combo.js", () => ({ resetComboRotation: vi.fn() }));
 vi.mock("@/sse/services/auth", () => ({ resetAccountSelection: vi.fn() }));
@@ -143,6 +149,21 @@ describe("global weighted poller", () => {
       { isActive: true },
       { provider: "claude", isActive: true },
     ]);
+  });
+
+  it("starts for workspace-only weighted settings and stops only after all views disable", async () => {
+    const off = { fallbackStrategy: "fill-first" };
+    await syncQuotaSnapshotPoller({
+      getSettings: async () => off,
+      getCombos: async () => [],
+      getModelAliases: async () => ({}),
+      listPreferencesUnscoped: async () => [off, { fallbackStrategy: "weighted" }],
+    });
+    expect(vi.getTimerCount()).toBe(1);
+    configureQuotaSnapshotPoller([off, { fallbackStrategy: "weighted" }]);
+    expect(vi.getTimerCount()).toBe(1);
+    configureQuotaSnapshotPoller([off, off]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("starts for global weighted and stops when disabled", () => {

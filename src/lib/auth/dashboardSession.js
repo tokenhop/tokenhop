@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { DATA_DIR } from "@/lib/dataDir";
-import { getSettings } from "@/lib/localDb";
+import { getLegacyPasswordHash, getSettings } from "@/lib/db/index.js";
 
 const DEFAULT_PASSWORD = "123456";
 const SESSION_MAX_AGE_SEC = 24 * 60 * 60;
@@ -83,7 +83,9 @@ export function clearDashboardAuthCookie(cookieStore) {
 export async function verifyDashboardPassword(password) {
   if (typeof password !== "string" || !password) return false;
   const settings = await getSettings();
-  const storedHash = settings?.password;
+  // YAN-362: the hash lives in users.passwordHash once bootstrapped; the blob
+  // key is the legacy store getLegacyPasswordHash falls back to.
+  const storedHash = await getLegacyPasswordHash(settings);
   if (storedHash) return bcrypt.compare(password, storedHash);
   const initialPassword = process.env.INITIAL_PASSWORD || DEFAULT_PASSWORD;
   return password === initialPassword;

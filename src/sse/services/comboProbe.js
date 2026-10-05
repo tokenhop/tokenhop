@@ -13,7 +13,8 @@
  *   console request log lines remain visible for debugging.
  */
 
-import { getComboById, getSettings } from "@/lib/localDb";
+import { getComboById } from "@/lib/localDb";
+import { getEffectivePreferences } from "@/lib/db/index.js";
 import { getAdapter } from "@/lib/db/driver.js";
 import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
 import { handleChat } from "@/sse/handlers/chat.js";
@@ -218,14 +219,13 @@ export async function runComboProbe({ comboId, principal = null, request = null 
     throw error;
   }
 
-  const settings = await getSettings();
-  const { strategy } = resolveComboStrategy(settings, combo.name);
-
   // Dashboard callers pass their own session/CLI principal; anything reaching
   // here without one is trusted only on the legacy store. On the hashed store
   // a principal-less probe answers as nobody — it must refuse in-process
   // rather than route against all connections/install default.
   const management = principal || (await resolveProbeCaller(request));
+  const settings = await getEffectivePreferences(management);
+  const { strategy } = resolveComboStrategy(settings, combo.name);
   if (!management) {
     let storage = "legacy";
     try {

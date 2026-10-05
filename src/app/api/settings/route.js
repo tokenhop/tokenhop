@@ -2,9 +2,8 @@ import { NextResponse } from "next/server";
 import { getSettings, updateComboStrategies, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resolveDensity, resolveFlagSetting, resolveStartPage } from "@/lib/settingsFlags";
-import { resetComboRotation } from "open-sse/services/combo.js";
-import { validateComboStrategySettings } from "open-sse/services/comboStrategy.js";
-import { validateSectionSettings } from "./validateSectionSettings.js";
+import { getLegacyPasswordHash } from "@/lib/db/repos/workspaceSettingsRepo.js";
+import { classifyKey } from "@/lib/settings/settingsScope.js";
 import {
   RELIABILITY_KEYS,
   mergeReliabilityPatch,
@@ -13,11 +12,18 @@ import {
 import { syncReliabilityAfterPatch } from "@/lib/reliability/initReliabilityPolicy";
 import { SECRET_SETTING_KEYS } from "@/lib/settingsConfigDoc";
 import bcrypt from "bcryptjs";
-import { isOidcConfigured } from "@/lib/auth/oidc";
-import { isSamlConfigured } from "@/lib/auth/saml.js";
-import { resolveAuthModes } from "@/lib/auth/authModes";
 import { revokeOwnerSessions, singleUserModeAllowed } from "@/lib/users/session";
+import { can } from "@/lib/users/principal.js";
+import { principalScope } from "@/lib/users/workspaceScope.js";
 import { handleEstablishedOwnerPassword } from "@/lib/auth/ownerPassword.js";
+import { applyComboStrategyPatch } from "./comboStrategyPatch.js";
+import { runSettingsSideEffects } from "./settingsSideEffects.js";
+import {
+  KNOWN_SETTING_KEYS,
+  isPlainObject,
+  ssoLockoutError,
+  validateSettingsBody,
+} from "./validateSettings.js";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -31,8 +37,6 @@ const SETTINGS_RESPONSE_HEADERS = {
 // user PATCH can't smuggle it in alongside the password/mitmSudoEncrypted
 // strip above.
 const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted", "mitmInternalVerifier"];
-const VALID_COMBO_NAME = /^[a-zA-Z0-9_.-]+$/;
-const BLOCKED_COMBO_NAMES = new Set(["__proto__", "constructor", "prototype"]);
 
 // Credentials (hashes, encrypted sudo password, private keys, …) never leave the server.
 function omitSecrets(settings) {
@@ -57,261 +61,43 @@ function safeSettingsResponse(settings) {
 }
 
 async function handleComboStrategyPatch(body) {
-  const { name, patch } = body.comboStrategyPatch || {};
-  if (typeof name !== "string" || !VALID_COMBO_NAME.test(name) || BLOCKED_COMBO_NAMES.has(name)) {
-    return NextResponse.json({ error: "Invalid combo name" }, { status: 400 });
-  }
-  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
-    return NextResponse.json({ error: "Invalid combo strategy patch" }, { status: 400 });
-  }
-  // Preserve fusion settings edits; reject unknown keys instead of silently storing them.
-  const allowed = new Set(["fallbackStrategy", "weights", "judgeModel", "fusionTuning"]);
-  if (Object.keys(patch).some((key) => !allowed.has(key))) {
-    return NextResponse.json({ error: "Invalid combo strategy patch" }, { status: 400 });
-  }
-  const error = validateComboStrategySettings({ comboStrategies: { [name]: patch } });
-  if (error) return NextResponse.json({ error }, { status: 400 });
-
-  // Validation against the merged entry happens inside the transaction too (weight-count cap).
-  let mergedError;
-  let missingWeightedEntry = false;
-  let settings;
-  try {
-    settings = await updateComboStrategies((strategies) => {
-      const base = Object.hasOwn(strategies, name) ? strategies[name] : {};
-      if (
-        Object.hasOwn(patch, "weights") &&
-        !Object.hasOwn(patch, "fallbackStrategy") &&
-        base?.fallbackStrategy !== "weighted"
-      ) {
-        missingWeightedEntry = true;
-        return strategies;
-      }
-      const next = { ...base, ...patch };
-      if (patch.weights) next.weights = { ...base?.weights, ...patch.weights };
-      mergedError = validateComboStrategySettings({ comboStrategies: { [name]: next } });
-      if (mergedError) return strategies;
-      const updated = { ...strategies };
-      // An explicit "fallback" is stored: deleting the entry would make the combo
-      // silently inherit the global comboStrategy instead (YAN-679).
-      if (!next.fallbackStrategy) {
-        delete updated[name];
-      } else {
-        updated[name] = next;
-      }
-      return updated;
-    }, name);
-  } catch (error) {
-    if (error.code === "COMBO_NOT_FOUND") {
-      return NextResponse.json({ error: "Combo not found" }, { status: 409 });
-    }
-    throw error;
-  }
-  if (missingWeightedEntry) return NextResponse.json({ error: "Combo not found" }, { status: 409 });
-  if (mergedError) return NextResponse.json({ error: mergedError }, { status: 400 });
-
-  resetComboRotation();
-  import("@/shared/services/quotaSnapshotPoller")
-    .then(({ syncQuotaSnapshotPoller }) => syncQuotaSnapshotPoller())
-    .catch((error) => console.warn("[QuotaSnapshotPoller] settings update failed:", error.message));
-  return safeSettingsResponse(settings);
+  const result = await applyComboStrategyPatch(body, updateComboStrategies);
+  if (result.response) return result.response;
+  runSettingsSideEffects({ comboStrategyPatch: true }, result.settings);
+  return safeSettingsResponse(result.settings);
 }
 
-const ACCOUNT_STRATEGIES = new Set(["fill-first", "round-robin", "weighted"]);
-const AUTH_MODES = new Set(["password", "sso", "both", "saml", "oidc"]);
-const SSO_TYPES = new Set(["oidc", "saml"]);
-const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-const MAX_TEXT_LEN = 256;
-const MAX_URL_LEN = 2048;
-const MAX_PASSWORD_LEN = 256;
-const MAX_CERT_LEN = 16384;
-
-function validStickyLimit(value) {
-  return Number.isInteger(value) && value >= 1 && value <= 100;
-}
-
-function validText(value, max = MAX_TEXT_LEN) {
-  return typeof value === "string" && value.length <= max;
-}
-
-// Empty clears the value; otherwise require an http(s) URL.
-function validUrl(value) {
-  if (typeof value !== "string" || value.length > MAX_URL_LEN) return false;
-  if (!value.trim()) return true;
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Boundary validation for keys touched by the YAN-309 Settings page:
- * security toggles, auth mode/protocol, OIDC + SAML fields, passwords.
- * Returns an error message string, or "" when valid.
- */
-function validSecuritySettings(body) {
-  for (const key of ["requireLogin", "requireApiKey", "tunnelDashboardAccess"]) {
-    if (Object.hasOwn(body, key) && typeof body[key] !== "boolean") {
-      return `Invalid ${key}: must be a boolean`;
+// Split mode (YAN-362): this route carries instance keys only. Workspace and
+// user keys moved to their own routes; password keys moved to the owner
+// password lifecycle. Unknown keys are rejected here and nowhere else.
+function splitKeyError(body) {
+  for (const key of Object.keys(body)) {
+    const scope = classifyKey(key);
+    if (scope === "workspace" || key === "comboStrategyPatch") {
+      return "moved: use /api/workspaces/:id/settings";
     }
-  }
-  // YAN-312 runtime flags: stored preference only; the env var wins at read time.
-  for (const key of ["requestLogsEnabled", "translatorEnabled"]) {
-    if (Object.hasOwn(body, key) && typeof body[key] !== "boolean") {
-      return `Invalid ${key}: must be a boolean`;
-    }
-  }
-  if (Object.hasOwn(body, "startPage")) {
-    if (typeof body.startPage !== "string" || resolveStartPage(body.startPage) !== body.startPage) {
-      return "Invalid startPage: must be a dashboard route";
-    }
-  }
-  if (
-    Object.hasOwn(body, "uiDensity") &&
-    (typeof body.uiDensity !== "string" || resolveDensity(body.uiDensity) !== body.uiDensity)
-  ) {
-    return "Invalid uiDensity: must be comfortable or compact";
-  }
-  if (Object.hasOwn(body, "authMode") && !AUTH_MODES.has(body.authMode)) {
-    return "Invalid authMode";
-  }
-  if (Object.hasOwn(body, "ssoType") && !SSO_TYPES.has(body.ssoType)) {
-    return "Invalid ssoType";
-  }
-  for (const key of ["oidcClientId", "oidcScopes", "oidcLoginLabel"]) {
-    if (Object.hasOwn(body, key) && !validText(body[key])) {
-      return `Invalid ${key}`;
-    }
-  }
-  if (Object.hasOwn(body, "oidcIssuerUrl") && !validUrl(body.oidcIssuerUrl)) {
-    return "Invalid oidcIssuerUrl: must be an http(s) URL";
-  }
-  if (Object.hasOwn(body, "oidcClientSecret") && !validText(body.oidcClientSecret, MAX_URL_LEN)) {
-    return "Invalid oidcClientSecret";
-  }
-  if (Object.hasOwn(body, "samlEntryPoint") && !validUrl(body.samlEntryPoint)) {
-    return "Invalid samlEntryPoint: must be an http(s) URL";
-  }
-  for (const key of ["samlIssuer", "samlLoginLabel", "samlAttributeEmail", "samlAttributeName"]) {
-    if (Object.hasOwn(body, key) && !validText(body[key])) {
-      return `Invalid ${key}`;
-    }
-  }
-  if (Object.hasOwn(body, "samlCert") && !validText(body.samlCert, MAX_CERT_LEN)) {
-    return "Invalid samlCert";
-  }
-  for (const key of ["currentPassword", "newPassword"]) {
-    if (
-      Object.hasOwn(body, key) &&
-      (typeof body[key] !== "string" || body[key].length > MAX_PASSWORD_LEN)
-    ) {
-      return `Invalid ${key}`;
-    }
+    if (scope === "user") return "moved: use /api/me/preferences";
+    if (scope === "removed") return "moved: use /api/auth/change-password";
+    if (scope === "instance" && !KNOWN_SETTING_KEYS.has(key)) return `Unknown setting: ${key}`;
   }
   return "";
 }
 
-/** Keys whose PATCH could turn on SSO-only; triggers the lockout guard. */
-const AUTH_PATCH_KEYS = [
-  "authMode",
-  "ssoType",
-  "oidcIssuerUrl",
-  "oidcClientId",
-  "oidcClientSecret",
-  "samlEntryPoint",
-  "samlCert",
-];
-
-/**
- * Lockout guard, shared with config import: reject a settings patch that
- * leaves an SSO-only mode whose protocol is not fully configured, which would
- * close both sign-in paths at once. A blank `oidcClientSecret` keeps the
- * stored one (PATCH drops it before saving; import never carries secrets).
- * @param {object} current Stored settings.
- * @param {object} patch Incoming settings keys.
- * @returns {string} Error message, or "" when the result stays reachable.
- */
-export function ssoLockoutError(current, patch) {
-  if (!AUTH_PATCH_KEYS.some((key) => Object.hasOwn(patch, key))) return "";
-  const next = { ...current, ...patch };
-  if (!String(patch.oidcClientSecret ?? "").trim())
-    next.oidcClientSecret = current.oidcClientSecret;
-  const modes = resolveAuthModes(next);
-  if (!modes.ssoOnly) return "";
-  if (modes.saml && !isSamlConfigured(next)) {
-    return 'Cannot enable SSO-only sign-in: SAML is not fully configured (entry point and certificate are required). Configure and test it with "Password + SSO" first.';
-  }
-  if (modes.oidc && !isOidcConfigured(next)) {
-    return 'Cannot enable SSO-only sign-in: OIDC is not fully configured (issuer URL, client ID and client secret are required). Configure and test it with "Password + SSO" first.';
-  }
-  return "";
-}
-
-function isPlainObject(value) {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    Object.getPrototypeOf(value) === Object.prototype
+// Split mode: workspace/user keys never ride the instance view.
+function instanceOnly(settings) {
+  return Object.fromEntries(
+    Object.entries(settings).filter(([key]) => {
+      const scope = classifyKey(key);
+      return scope !== "workspace" && scope !== "user";
+    }),
   );
-}
-
-function validAccountSettings(body) {
-  if (Object.hasOwn(body, "fallbackStrategy") && !ACCOUNT_STRATEGIES.has(body.fallbackStrategy)) {
-    return false;
-  }
-  if (
-    Object.hasOwn(body, "stickyRoundRobinLimit") &&
-    !validStickyLimit(body.stickyRoundRobinLimit)
-  ) {
-    return false;
-  }
-  if (Object.hasOwn(body, "providerStrategies")) {
-    if (!isPlainObject(body.providerStrategies)) return false;
-    for (const [provider, strategy] of Object.entries(body.providerStrategies)) {
-      if (
-        provider !== provider.trim() ||
-        !provider ||
-        UNSAFE_KEYS.has(provider) ||
-        !isPlainObject(strategy) ||
-        Object.keys(strategy).some((key) => UNSAFE_KEYS.has(key))
-      ) {
-        return false;
-      }
-      if (
-        Object.hasOwn(strategy, "fallbackStrategy") &&
-        !ACCOUNT_STRATEGIES.has(strategy.fallbackStrategy)
-      ) {
-        return false;
-      }
-      if (
-        Object.hasOwn(strategy, "stickyRoundRobinLimit") &&
-        !validStickyLimit(strategy.stickyRoundRobinLimit)
-      ) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-/**
- * Every boundary check PATCH applies to a settings body, in PATCH order.
- * Shared with config import so it can never store what PATCH would reject.
- * @param {object} body Plain settings object.
- * @returns {string} Error message, or "" when valid.
- */
-export function validateSettingsBody(body) {
-  const comboStrategyError = validateComboStrategySettings(body);
-  if (comboStrategyError) return comboStrategyError;
-  if (!validAccountSettings(body)) return "Invalid account strategy settings";
-  return validSecuritySettings(body) || validateSectionSettings(body) || "";
 }
 
 export async function GET() {
   try {
+    const split = await principalScope();
+    if (split instanceof Response) return split;
+
     const settings = await getSettings();
     const safeSettings = omitSecrets(settings);
 
@@ -343,28 +129,28 @@ export async function GET() {
     const { GROK_CLI_VERSION } = await import("open-sse/config/grokCli.js");
     const { ZED_CLIENT_VERSION } = await import("open-sse/config/zedClientFingerprint.js");
 
-    return NextResponse.json(
-      {
-        ...safeSettings,
-        enableRequestLogs: requestLogs.value,
-        enableTranslator: translator.value,
-        requestLogsOverridden: requestLogs.overridden,
-        translatorOverridden: translator.overridden,
-        startPage: resolveStartPage(settings.startPage),
-        uiDensity: resolveDensity(settings.uiDensity),
-        hasPassword: !!settings.password,
-        searxngUrl: process.env.SEARXNG_URL?.trim() || "",
-        headroomUrlFromEnv: !!process.env.HEADROOM_URL?.trim(),
-        requestLogEnvOverride: requestLogs.overridden,
-        streamEnvOverrides,
+    const payload = {
+      ...safeSettings,
+      enableRequestLogs: requestLogs.value,
+      enableTranslator: translator.value,
+      requestLogsOverridden: requestLogs.overridden,
+      translatorOverridden: translator.overridden,
+      startPage: resolveStartPage(settings.startPage),
+      uiDensity: resolveDensity(settings.uiDensity),
+      hasPassword: !!(await getLegacyPasswordHash(settings)),
+      searxngUrl: process.env.SEARXNG_URL?.trim() || "",
+      headroomUrlFromEnv: !!process.env.HEADROOM_URL?.trim(),
+      requestLogEnvOverride: requestLogs.overridden,
+      streamEnvOverrides,
 
-        CLAUDE_CLI_VERSION,
-        CODEX_CLI_VERSION,
-        GROK_CLI_VERSION,
-        ZED_CLIENT_VERSION,
-      },
-      { headers: SETTINGS_RESPONSE_HEADERS },
-    );
+      CLAUDE_CLI_VERSION,
+      CODEX_CLI_VERSION,
+      GROK_CLI_VERSION,
+      ZED_CLIENT_VERSION,
+    };
+    return NextResponse.json(split ? instanceOnly(payload) : payload, {
+      headers: SETTINGS_RESPONSE_HEADERS,
+    });
   } catch (error) {
     console.log("Error getting settings:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -376,6 +162,25 @@ export async function PATCH(request) {
     const body = await request.json();
     if (!isPlainObject(body)) {
       return NextResponse.json({ error: "Settings body must be an object" }, { status: 400 });
+    }
+
+    if (body.requireLogin === false && !(await singleUserModeAllowed())) {
+      return NextResponse.json(
+        { error: "Login can't be turned off while more than one active user exists." },
+        { status: 409 },
+      );
+    }
+
+    // Split mode (2+ users): instance keys only (YAN-362). Switch off or
+    // single user: today's flat path, byte-identical.
+    const split = await principalScope();
+    if (split instanceof Response) return split;
+    if (split) {
+      if (!can(split.ctx, "instance.settings.manage")) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      const movedError = splitKeyError(body);
+      if (movedError) return NextResponse.json({ error: movedError }, { status: 400 });
     }
 
     // Established install: password change goes only through the owner session
@@ -412,10 +217,6 @@ export async function PATCH(request) {
     }
     const lockoutError = ssoLockoutError(currentReliability, body);
     if (lockoutError) return NextResponse.json({ error: lockoutError }, { status: 400 });
-    if (body.requireLogin === false && !(await singleUserModeAllowed())) {
-      const error = "Login can't be turned off while more than one active user exists.";
-      return NextResponse.json({ error }, { status: 409 });
-    }
     if (RELIABILITY_KEYS.some((key) => Object.hasOwn(body, key))) {
       for (const key of RELIABILITY_KEYS) {
         if (Object.hasOwn(body, key))
@@ -431,7 +232,7 @@ export async function PATCH(request) {
     delete body.currentPassword;
     if (rawNewPassword) {
       const settings = await getSettings();
-      const currentHash = settings.password;
+      const currentHash = await getLegacyPasswordHash(settings);
 
       // Verify current password if it exists
       if (currentHash) {
@@ -484,51 +285,7 @@ export async function PATCH(request) {
         .catch((error) => console.warn("[RequestLogger] settings update failed:", error.message));
     }
 
-    // Invalidate combo rotation state when strategy settings change
-    if (
-      Object.hasOwn(body, "comboStrategy") ||
-      Object.hasOwn(body, "comboStickyRoundRobinLimit") ||
-      Object.hasOwn(body, "comboStrategies")
-    ) {
-      resetComboRotation();
-    }
-
-    if (
-      Object.hasOwn(body, "fallbackStrategy") ||
-      Object.hasOwn(body, "stickyRoundRobinLimit") ||
-      Object.hasOwn(body, "providerStrategies")
-    ) {
-      // Reset in-memory SWRR state when account strategy changes. Lazy import keeps
-      // auth.js's DB imports out of the route's static graph.
-      import("@/sse/services/auth")
-        .then(({ resetAccountSelection }) => resetAccountSelection?.())
-        .catch((error) => console.warn("[AccountSelection] reset failed:", error.message));
-    }
-
-    if (Object.hasOwn(body, "claudeAutoPing") || Object.hasOwn(body, "codexAutoPing")) {
-      // Keep the scheduler absent when no account opted in; load its provider graph only on demand.
-      import("@/shared/services/quotaAutoPing")
-        .then(({ configureQuotaAutoPing }) => {
-          configureQuotaAutoPing(settings);
-        })
-        .catch((error) => console.warn("[AutoPing] settings update failed:", error.message));
-    }
-
-    if (
-      Object.hasOwn(body, "fallbackStrategy") ||
-      Object.hasOwn(body, "providerStrategies") ||
-      Object.hasOwn(body, "comboStrategies") ||
-      Object.hasOwn(body, "comboStrategy")
-    ) {
-      // Weighted gating changed: start/stop the snapshot backfill poller (YAN-259).
-      import("@/shared/services/quotaSnapshotPoller")
-        .then(({ syncQuotaSnapshotPoller }) => {
-          syncQuotaSnapshotPoller();
-        })
-        .catch((error) =>
-          console.warn("[QuotaSnapshotPoller] settings update failed:", error.message),
-        );
-    }
+    runSettingsSideEffects(body, settings);
 
     return safeSettingsResponse(settings);
   } catch (error) {
