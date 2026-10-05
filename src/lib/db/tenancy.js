@@ -41,6 +41,10 @@ export const TABLE_CLASSES = {
   identities: { class: "scoped", scopeColumn: "userId" },
   workspaces: { class: "scoped", scopeColumn: "id", note: "visible through memberships" },
   memberships: { class: "scoped", scopeColumn: "workspaceId" },
+  auditEvents: {
+    class: "instance",
+    note: "append-only; owner/admin read only (ADR-0002); workspaceId is a filter, NULL for login/host events",
+  },
 };
 
 // Workspace kv scopes take the `ws:<workspaceId>/` key prefix when scoped.

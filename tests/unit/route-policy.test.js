@@ -111,6 +111,10 @@ const MOVED_TO_GUARD = new Set(["/api/auth/oidc/test", "/api/auth/saml/test"]);
 // alwaysProtected with no CLI token. Every historical row stays unchanged.
 const YAN358_PASSWORD_ROUTES = new Set(["/api/auth/change-password", "/api/users/[id]/password"]);
 
+// YAN-367 audit log did not exist pre-YAN-357; the table pins it stricter than
+// the legacy default: alwaysProtected (owner/admin only, 404 with switch off).
+const YAN367_AUDIT_ROUTES = new Set(["/api/audit"]);
+
 describe("route coverage", () => {
   it("finds the API route files", () => {
     expect(ROUTES.length).toBeGreaterThan(150);
@@ -192,6 +196,7 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
         const want = legacyFlags(sample, m);
         if (MOVED_TO_GUARD.has(route)) want.public = false;
         if (YAN358_PASSWORD_ROUTES.has(route)) want.alwaysProtected = true;
+        if (YAN367_AUDIT_ROUTES.has(route)) want.alwaysProtected = true;
         const got = { localOnly, alwaysProtected, gateway, public: pub };
         if (JSON.stringify(got) !== JSON.stringify(want)) diffs.push({ m, route, got, want });
       }

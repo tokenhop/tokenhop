@@ -14,6 +14,8 @@ import { SECRET_SETTING_KEYS } from "@/lib/settingsConfigDoc";
 import bcrypt from "bcryptjs";
 import { revokeOwnerSessions, singleUserModeAllowed } from "@/lib/users/session";
 import { can } from "@/lib/users/principal.js";
+import { audit } from "@/lib/users/audit.js";
+import { getClientIp } from "@/lib/auth/loginLimiter.js";
 import { principalScope } from "@/lib/users/workspaceScope.js";
 import { handleEstablishedOwnerPassword } from "@/lib/auth/ownerPassword.js";
 import { applyComboStrategyPatch } from "./comboStrategyPatch.js";
@@ -286,6 +288,23 @@ export async function PATCH(request) {
     }
 
     runSettingsSideEffects(body, settings);
+
+    // YAN-367: audit the change — key names only; secret VALUES never enter the
+    // audit path (the helper's allow-list would drop them; names are the signal).
+    await audit(
+      { principal: split?.ctx ?? null, ip: getClientIp(request) },
+      "settings.update",
+      { type: "settings" },
+      { after: { keyNames: Object.keys(body).filter((k) => k !== "password") } },
+    );
+    if (rawNewPassword) {
+      await audit(
+        { principal: split?.ctx ?? null, ip: getClientIp(request) },
+        "user.passwordChange",
+        { type: "user" },
+        {},
+      );
+    }
 
     return safeSettingsResponse(settings);
   } catch (error) {

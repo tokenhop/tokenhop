@@ -12,6 +12,7 @@ import { apiKeyMetadata, insertHashedApiKeySync } from "../db/repos/apiKeysRepo.
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { membershipRole } from "../db/repos/membershipsRepo.js";
 import { can } from "./principal.js";
+import { audit } from "./audit.js";
 import { getAdapter } from "../db/driver.js";
 import { TenancyError, assertCtx, mapConstraintErrors } from "./errors.js";
 import { apiKeyPrefix, generateGatewayApiKey } from "../../shared/utils/apiKey.js";
@@ -214,6 +215,14 @@ export async function createApiKey(ctx, workspaceId, options = {}) {
       );
     }),
   );
+  await audit(
+    { principal: ctx, workspaceId },
+    "key.create",
+    { type: "apiKey", id: metadata.id },
+    {
+      after: { id: metadata.id, name: metadata.name, keyPrefix: metadata.prefix, workspaceId },
+    },
+  );
   return { key: raw, metadata };
 }
 
@@ -246,7 +255,11 @@ export async function updateApiKey(ctx, workspaceId, id, patch = {}) {
   requireHashedState(db);
   requireManage(liveAccess(db, ctx, workspaceId), "update");
 
-  return db.transaction(() => {
+  const existing = db.get(
+    `SELECT name, prefix, isActive FROM apiKeys WHERE id = ? AND workspaceId = ?`,
+    [id, workspaceId],
+  );
+  const updated = await db.transaction(() => {
     requireManage(liveAccess(db, ctx, workspaceId), "update");
     const current = scopedRow(db, id, workspaceId);
     if (current.revokedAt != null) {
@@ -275,6 +288,18 @@ export async function updateApiKey(ctx, workspaceId, id, patch = {}) {
       db.get(`SELECT * FROM apiKeys WHERE id = ? AND workspaceId = ?`, [id, workspaceId]),
     );
   });
+  await audit(
+    { principal: ctx, workspaceId },
+    "key.update",
+    { type: "apiKey", id },
+    {
+      before: existing
+        ? { id, name: existing.name, keyPrefix: existing.prefix, workspaceId }
+        : null,
+      after: { id, name: updated.name, keyPrefix: updated.prefix, workspaceId },
+    },
+  );
+  return updated;
 }
 
 /**
@@ -288,7 +313,11 @@ export async function revokeApiKey(ctx, workspaceId, id, { now = new Date().toIS
   requireManage(liveAccess(db, ctx, workspaceId), "revoke");
   const canonicalNow = validExpiry(now);
   if (canonicalNow === null) throw new TenancyError("INVALID", "Revocation time is required");
-  return db.transaction(() => {
+  const existing = db.get(
+    `SELECT name, prefix, revokedAt FROM apiKeys WHERE id = ? AND workspaceId = ?`,
+    [id, workspaceId],
+  );
+  const revoked = await db.transaction(() => {
     requireManage(liveAccess(db, ctx, workspaceId), "revoke");
     const current = scopedRow(db, id, workspaceId);
     if (current.revokedAt == null) {
@@ -302,4 +331,16 @@ export async function revokeApiKey(ctx, workspaceId, id, { now = new Date().toIS
       db.get(`SELECT * FROM apiKeys WHERE id = ? AND workspaceId = ?`, [id, workspaceId]),
     );
   });
+  if (existing?.revokedAt == null) {
+    await audit(
+      { principal: ctx, workspaceId },
+      "key.revoke",
+      { type: "apiKey", id },
+      {
+        before: { id, name: existing.name, keyPrefix: existing.prefix, workspaceId },
+        after: { id, revokedAt: canonicalNow },
+      },
+    );
+  }
+  return revoked;
 }

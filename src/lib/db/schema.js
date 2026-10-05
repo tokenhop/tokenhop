@@ -237,6 +237,28 @@ export const TABLES = {
       updatedAt: "TEXT",
     },
   },
+  // Audit log (migration 010, YAN-367). No FKs: events outlive users/workspaces.
+  auditEvents: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      ts: "TEXT NOT NULL",
+      actorUserId: "TEXT",
+      actorApiKeyId: "TEXT",
+      via: "TEXT",
+      ip: "TEXT",
+      workspaceId: "TEXT",
+      action: "TEXT NOT NULL",
+      targetType: "TEXT",
+      targetId: "TEXT",
+      before: "TEXT",
+      after: "TEXT",
+      result: "TEXT",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_audit_ws_ts ON auditEvents(workspaceId, ts)",
+      "CREATE INDEX IF NOT EXISTS idx_audit_actor_ts ON auditEvents(actorUserId, ts)",
+    ],
+  },
 };
 
 // YAN-363: the final hashed apiKeys shape, INERT here. Nothing reads it at

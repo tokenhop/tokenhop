@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { assertCtx } from "@/lib/users/errors.js";
+import { audit } from "@/lib/users/audit.js";
 import { defaultWorkspaceIdUnscoped, memberWorkspaceId } from "./ownership.js";
 
 const OPTIONAL_FIELDS = [
@@ -468,10 +469,26 @@ export async function getConnection(ctx, id) {
 /** Create (or re-login upsert) inside `workspaceId`; the creator is the principal. */
 export async function createConnection(ctx, workspaceId, data, opts = {}) {
   const db = await getAdapter();
-  return db.transaction(() => {
+  const conn = await db.transaction(() => {
     memberWorkspaceId(ctx, db, workspaceId);
     return createInTx(db, data, opts, { workspaceId, createdByUserId: ctx.userId });
   });
+  // YAN-367: never audit credential fields — only the allow-listed identity fields.
+  await audit(
+    { principal: ctx, workspaceId },
+    "connection.create",
+    { type: "connection", id: conn.id },
+    {
+      after: {
+        id: conn.id,
+        provider: conn.provider,
+        name: conn.name,
+        email: conn.email,
+        workspaceId,
+      },
+    },
+  );
+  return conn;
 }
 
 export async function updateConnection(ctx, id, data) {
@@ -483,5 +500,24 @@ export async function updateConnection(ctx, id, data) {
 export async function deleteConnection(ctx, id) {
   assertCtx(ctx);
   const db = await getAdapter();
-  return db.transaction(() => deleteInTx(db, db.get(MEMBER_ROW, [id, ctx.userId])));
+  const before = db.get(MEMBER_ROW, [id, ctx.userId]);
+  const deleted = await db.transaction(() => deleteInTx(db, db.get(MEMBER_ROW, [id, ctx.userId])));
+  if (deleted && before) {
+    const c = rowToConn(before);
+    await audit(
+      { principal: ctx, workspaceId: c.workspaceId ?? null },
+      "connection.delete",
+      { type: "connection", id },
+      {
+        before: {
+          id,
+          provider: c.provider,
+          name: c.name,
+          email: c.email,
+          workspaceId: c.workspaceId ?? null,
+        },
+      },
+    );
+  }
+  return deleted;
 }

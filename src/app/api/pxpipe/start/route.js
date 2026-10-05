@@ -3,6 +3,7 @@ import { getSettings } from "@/lib/localDb";
 import { getInstallInfo, installPxpipe } from "@/lib/pxpipe/install.js";
 import { loadPxpipe } from "@/lib/pxpipe/loader.js";
 import { getPxpipeStatus } from "@/lib/pxpipe/service.js";
+import { audit } from "@/lib/users/audit.js";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -22,6 +23,13 @@ export async function POST() {
       await installPxpipe();
     }
     await loadPxpipe();
+    // YAN-367: host op audit.
+    await audit(
+      {},
+      "hostOps.pxpipe",
+      { type: "hostOp", id: "pxpipe/start" },
+      { after: { op: "start" } },
+    );
     return NextResponse.json(getPxpipeStatus());
   } catch (error) {
     return NextResponse.json({ error: error.message, code: error.code || null }, { status: 500 });

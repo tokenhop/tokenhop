@@ -87,6 +87,7 @@ describe("requireMultiUser", () => {
   it("hides every guarded route while off", async () => {
     // Add each multi-user route here as it lands: a route missing the guard fails.
     const GUARDED_ROUTES = [
+      "src/app/api/audit/route.js",
       "src/app/api/auth/logout-all/route.js",
       "src/app/api/auth/setup-token/route.js",
       "src/app/api/me/preferences/route.js",

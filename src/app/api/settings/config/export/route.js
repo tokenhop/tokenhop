@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { exportConfig } from "@/lib/db/configExport.js";
 import { hasValidCliToken } from "@/lib/auth/cliToken";
 import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";
+import { audit } from "@/lib/users/audit.js";
+import { getClientIp } from "@/lib/auth/loginLimiter.js";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -23,6 +25,8 @@ export async function GET(request) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
     const doc = await exportConfig();
+    // YAN-367: password/CLI auth pre-dates principals — actor stays null.
+    await audit({ ip: getClientIp(request) }, "config.export", { type: "config" }, {});
     return NextResponse.json(doc, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.log("Error exporting config:", error);

@@ -9,6 +9,7 @@ import {
   validateSamlResponse,
 } from "@/lib/auth/saml.js";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { audit } from "@/lib/users/audit";
 import { sessionClaims } from "@/lib/users/session";
 import { takeSetupToken } from "@/lib/users/bootstrap";
 import { resolveAuthModes } from "@/lib/auth/authModes";
@@ -66,7 +67,15 @@ export async function POST(request) {
     };
     const setupToken = takeSetupToken(cookieStore);
     const claims = await sessionClaims("saml", identity, { setupToken });
-    if (!claims) return NextResponse.redirect(new URL("/login?error=sso_not_linked", origin));
+    if (!claims) {
+      audit(
+        { ip },
+        "auth.loginFailed",
+        { type: "user" },
+        { after: { provider: "saml", reason: "notLinked" }, result: "failure" },
+      );
+      return NextResponse.redirect(new URL("/login?error=sso_not_linked", origin));
+    }
     recordSuccess(ip);
 
     await setDashboardAuthCookie(cookieStore, request, {
@@ -75,11 +84,23 @@ export async function POST(request) {
       samlEmail,
       samlName,
     });
+    audit(
+      { principal: claims.sub ? { userId: claims.sub, via: "session" } : null, ip },
+      "auth.login",
+      { type: "user", id: claims.sub ?? null },
+      { after: { provider: "saml" } },
+    );
 
     return NextResponse.redirect(new URL("/dashboard", origin));
   } catch (error) {
     console.warn("[SAML] ACS failed:", error?.message || error);
     recordFail(ip);
+    audit(
+      { ip },
+      "auth.loginFailed",
+      { type: "user" },
+      { after: { provider: "saml", reason: "error" }, result: "failure" },
+    );
     return NextResponse.redirect(new URL("/login?error=saml_acs_failed", origin));
   }
 }

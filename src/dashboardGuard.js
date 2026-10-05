@@ -14,6 +14,7 @@ import {
   singleUserMode,
 } from "@/lib/users/session";
 import { LOCAL_ONLY_CODE } from "@/shared/utils/localOnly";
+import { audit } from "@/lib/users/audit";
 
 // Skill markdown reads: static content any network peer may fetch (the URL is
 // pasted to AI agents), so /skills never requires auth or an API key. Still
@@ -118,6 +119,21 @@ async function hasPasswordChangeAccess(request, policy) {
   return (await getPasswordChangeUser(token)) !== null;
 }
 
+// YAN-367: record a denied API call. Fire-and-forget; actor resolved best-effort.
+async function auditDenied(request, policy, principal) {
+  try {
+    const pathname = request.nextUrl?.pathname ?? new URL(request.url).pathname;
+    await audit(
+      { principal, request },
+      "auth.denied",
+      { type: "route", id: `${request.method} ${pathname}` },
+      { after: { capability: policy.capability ?? null }, result: "denied" },
+    );
+  } catch {
+    // audit never blocks a denial
+  }
+}
+
 /**
  * Apply a routePolicy row: local-only gate, then public / gateway / session
  * auth, then the capability. Null when allowed, else the error response.
@@ -144,9 +160,11 @@ async function checkApiPolicy(request, policy) {
     // YAN-358: the restricted password-change cookie admits exactly
     // POST /api/auth/change-password and nothing else.
     if (await hasPasswordChangeAccess(request, policy)) return null;
+    auditDenied(request, policy, null);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!(await principalCan(request, policy.capability, { anyWorkspace: policy.scoped }))) {
+    auditDenied(request, policy, await resolvePrincipal(request).catch(() => null));
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   return null;

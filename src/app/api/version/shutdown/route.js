@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { killAppProcesses, stopLauncher } from "@/lib/appUpdater";
+import { audit } from "@/lib/users/audit.js";
 
 // Shutdown app to release file locks for manual update
 export async function POST() {
+  await audit({}, "hostOps.shutdown", { type: "hostOp", id: "version/shutdown" }, {});
   try {
     await killAppProcesses();
   } catch {

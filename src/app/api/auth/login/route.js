@@ -29,6 +29,7 @@ import {
   clearPasswordChangeCookie,
 } from "@/lib/auth/passwordChangeSession";
 import { isLocalRequest } from "@/dashboardGuard";
+import { audit } from "@/lib/users/audit";
 import { sessionClaims, passwordSessionClaims } from "@/lib/users/session";
 import { getEffectivePreferences } from "@/lib/db/index.js";
 import { isUserSecurityEnforced } from "@/lib/users/securityState";
@@ -85,7 +86,15 @@ function invalidCredentials() {
 async function handleEstablishedLogin(request, settings, ip, login, password) {
   // Cheapest check first: no DB reads or bcrypt for a locked-out source.
   const ipLock = checkLock(ip);
-  if (ipLock.locked) return lockedResponse(ipLock);
+  if (ipLock.locked) {
+    audit(
+      { ip },
+      "auth.loginFailed",
+      { type: "user" },
+      { after: { reason: "locked" }, result: "failure" },
+    );
+    return lockedResponse(ipLock);
+  }
 
   // Preserve tunnel and configured-SSO-only refusal before any credential work.
   if (isTunnelRequest(request, settings) && settings.tunnelDashboardAccess !== true) {
@@ -128,7 +137,15 @@ async function handleEstablishedLogin(request, settings, ip, login, password) {
     login: user ? null : login,
   });
   const accountLock = checkLoginLocks({ ip, account });
-  if (accountLock.locked) return lockedResponse(accountLock);
+  if (accountLock.locked) {
+    audit(
+      { ip },
+      "auth.loginFailed",
+      { type: "user" },
+      { after: { reason: "locked" }, result: "failure" },
+    );
+    return lockedResponse(accountLock);
+  }
 
   let hash = null;
   if (user) hash = await getUserPasswordHashUnscoped(user.id);
@@ -143,6 +160,12 @@ async function handleEstablishedLogin(request, settings, ip, login, password) {
     if (account) recordLoginFail({ ip, account });
     else recordFail(ip);
     const postLock = checkLoginLocks({ ip, account });
+    audit(
+      user ? { principal: { userId: user.id, via: "session" }, ip } : { ip },
+      "auth.loginFailed",
+      { type: "user", id: user?.id },
+      { after: { reason: "invalid" }, result: "failure" },
+    );
     if (postLock.locked) return lockedResponse(postLock);
     return invalidCredentials();
   }
@@ -164,12 +187,24 @@ async function handleEstablishedLogin(request, settings, ip, login, password) {
   }
 
   if (user.status === "disabled") {
+    audit(
+      { principal: { userId: user.id, via: "session" }, ip },
+      "auth.loginFailed",
+      { type: "user", id: user.id },
+      { after: { reason: "disabled" }, result: "failure" },
+    );
     return NextResponse.json(
       { error: "This account has been disabled by an admin.", code: "account_disabled" },
       { status: 403, headers: NO_STORE_HEADERS },
     );
   }
   if (user.instanceRole === "pending") {
+    audit(
+      { principal: { userId: user.id, via: "session" }, ip },
+      "auth.loginFailed",
+      { type: "user", id: user.id },
+      { after: { reason: "pending" }, result: "failure" },
+    );
     return NextResponse.json(
       {
         error: "This account is waiting for an admin to approve it.",
@@ -180,6 +215,12 @@ async function handleEstablishedLogin(request, settings, ip, login, password) {
   }
 
   if (user.mustChangePassword === 1 || ownerFallback) {
+    audit(
+      { principal: { userId: user.id, via: "session" }, ip },
+      "auth.loginFailed",
+      { type: "user", id: user.id },
+      { after: { reason: "mustChangePassword" }, result: "failure" },
+    );
     const cookieStore = await cookies();
     await setPasswordChangeCookie(cookieStore, request, user);
     return NextResponse.json(
@@ -207,7 +248,12 @@ async function handleEstablishedLogin(request, settings, ip, login, password) {
   const cookieStore = await cookies();
   await setDashboardAuthCookie(cookieStore, request, claims);
   clearPasswordChangeCookie(cookieStore);
-
+  audit(
+    { principal: { userId: user.id, via: "session" }, ip },
+    "auth.login",
+    { type: "user", id: user.id },
+    { after: { provider: "password" } },
+  );
   // YAN-362: the fresh login's user row wins over the instance startPage.
   // getEffectivePreferences(null)/switch-off returns the instance blob, so
   // single-admin behavior is unchanged (the ctx only carries the logged-in user).
@@ -341,6 +387,7 @@ export async function POST(request) {
 
       const cookieStore = await cookies();
       await setDashboardAuthCookie(cookieStore, request, await sessionClaims("pwd"));
+      audit({ ip }, "auth.login", { type: "user" }, { after: { provider: "password" } });
 
       return NextResponse.json(
         {
@@ -353,6 +400,12 @@ export async function POST(request) {
     }
 
     const { remainingBeforeLock } = recordFail(ip);
+    audit(
+      { ip },
+      "auth.loginFailed",
+      { type: "user" },
+      { after: { reason: "invalid" }, result: "failure" },
+    );
     const postLock = checkLock(ip);
     if (postLock.locked) {
       return NextResponse.json(
