@@ -18,13 +18,18 @@ const REPOS = path.join(ROOT, "src/lib/db/repos");
 // the single-user flat-write path (principalScope() null, owner-only):
 // updateSettings mirrors workspace keys into the Default row in the same tx,
 // and split mode never sends workspace keys to updateSettings (the route 400s
-// them), so no cross-workspace write is reachable.
+// them), so no cross-workspace write is reachable. The combosRepo pair below
+// is different: combos are instance-global until YAN-364, so a rename/delete
+// rewrites that one combo name in every workspace's comboStrategies map,
+// leaving other entries and settings untouched. Remove at YAN-364.
 const HELPER_ALLOWLIST = new Set([
   "membershipsRepo.js:membershipRole",
   "membershipsRepo.js:assertNotLastManager",
   "settingsRepo.js:updateSettings",
   "settingsRepo.js:updateComboStrategies",
   "workspaceSettingsRepo.js:mirrorToDefaultWorkspace",
+  "combosRepo.js:updateCombo",
+  "combosRepo.js:deleteCombo",
 ]);
 
 const liveTables = (db) =>

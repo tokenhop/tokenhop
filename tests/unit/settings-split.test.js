@@ -194,3 +194,56 @@ describe("switch off", () => {
     expect(await db.getEffectivePreferences(null)).toEqual(settings);
   });
 });
+
+// moveComboStrategy must also update the seeded Default row, whose
+// comboStrategies override shadows the blob map in getEffectivePreferences.
+describe("combo rename/delete propagation to Default", () => {
+  it("renames and deletes the strategy in Default's effective prefs", async () => {
+    await load("on");
+    const t = await seedTenancy();
+    adapter.run(`INSERT INTO _meta(key, value) VALUES('defaultWorkspaceId', ?)`, [t.shared.id]);
+    const combo = await db.createCombo({ name: "demo", models: [] });
+    await db.updateComboStrategies(() => ({ demo: { fallbackStrategy: "weighted" } }));
+    const sharedCtx = { ...t.a.ctx, activeWorkspaceId: t.shared.id };
+
+    await db.updateCombo(combo.id, { name: "renamed" });
+    const eff = await db.getEffectivePreferences(sharedCtx);
+    expect(eff.comboStrategies).toEqual({ renamed: { fallbackStrategy: "weighted" } });
+
+    await db.deleteCombo(combo.id);
+    const eff2 = await db.getEffectivePreferences(sharedCtx);
+    expect(eff2.comboStrategies).toEqual({});
+  });
+
+  it("split mode: renames workspace-only strategies and keeps other entries", async () => {
+    await load("on");
+    const t = await seedTenancy();
+    adapter.run(`DELETE FROM workspaceSettings`);
+    await db.updateSettings({ comboStrategies: {} });
+    const combo = await db.createCombo({ name: "solo", models: [] });
+    await db.createCombo({ name: "other", models: [] });
+    const weighted = { fallbackStrategy: "weighted" };
+    await repo.updateWorkspaceComboStrategies(
+      t.a.ctx,
+      t.a.personal,
+      (s) => ({ ...s, solo: weighted }),
+      "solo",
+    );
+    await repo.updateWorkspaceComboStrategies(
+      t.b.ctx,
+      t.b.personal,
+      (s) => ({ ...s, other: weighted }),
+      "other",
+    );
+    const map = async (seeded, ws) =>
+      (await repo.getWorkspaceSettings(seeded.ctx, ws)).data.comboStrategies;
+
+    await db.updateCombo(combo.id, { name: "solo2" });
+    expect(await map(t.a, t.a.personal)).toEqual({ solo2: weighted });
+    expect(await map(t.b, t.b.personal)).toEqual({ other: weighted });
+
+    await db.deleteCombo(combo.id);
+    expect(await map(t.a, t.a.personal)).toEqual({});
+    expect(await map(t.b, t.b.personal)).toEqual({ other: weighted });
+  });
+});
