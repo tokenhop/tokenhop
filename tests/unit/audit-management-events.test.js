@@ -71,7 +71,8 @@ describe("key lifecycle events", () => {
     await revokeApiKey(manager, "w", metadata.id);
 
     const rows = actions().filter((r) => r.action.startsWith("key."));
-    expect(rows.map((r) => r.action)).toEqual(["key.create", "key.update", "key.revoke"]);
+    // ts has ms precision: same-ms inserts tie and uuid tiebreak is random, so compare sorted.
+    expect(rows.map((r) => r.action).sort()).toEqual(["key.create", "key.revoke", "key.update"]);
     expect(rows.every((r) => r.actorUserId === "manager")).toBe(true);
     expect(rows.every((r) => r.targetType === "apiKey" && r.targetId === metadata.id)).toBe(true);
     // The raw secret and its hash never reach the audit path.
@@ -92,7 +93,7 @@ describe("connection lifecycle events", () => {
     await deleteConnection(manager, conn.id);
 
     const rows = actions().filter((r) => r.action.startsWith("connection."));
-    expect(rows.map((r) => r.action)).toEqual(["connection.create", "connection.delete"]);
+    expect(rows.map((r) => r.action).sort()).toEqual(["connection.create", "connection.delete"]);
     expect(rows.every((r) => r.targetId === conn.id)).toBe(true);
     const blob = JSON.stringify(rows);
     expect(blob).not.toContain("sk-super-secret-value");
@@ -142,9 +143,10 @@ describe("database export/import events", () => {
     expect(badImport.status).toBe(400);
 
     const rows = actions().filter((r) => r.action.startsWith("db."));
-    expect(rows.map((r) => r.action)).toEqual(["db.export", "db.import"]);
-    expect(rows[0].result).toBe("success");
-    expect(rows[1].result).toBe("failure");
+    expect(rows.map((r) => r.action).sort()).toEqual(["db.export", "db.import"]);
+    const byAction = Object.fromEntries(rows.map((r) => [r.action, r]));
+    expect(byAction["db.export"].result).toBe("success");
+    expect(byAction["db.import"].result).toBe("failure");
     expect(rows.every((r) => r.actorUserId === null)).toBe(true);
   });
 });
