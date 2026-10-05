@@ -91,20 +91,20 @@ describe("nested combo fallback and probe isolation", () => {
       isActive: true,
     });
     // inner combo: tries inner-fail then inner-ok
-    if (!(await db.getComboByName("inner-combo"))) {
-      await db.createCombo({
+    if (!(await db.getComboByNameUnscoped("inner-combo"))) {
+      await db.createComboUnscoped({
         name: "inner-combo",
         models: ["openai/inner-fail", "openai/inner-ok"],
       });
     }
     // outer combo: tries inner-combo (nested) then outer-backup
-    if (!(await db.getComboByName("outer-combo"))) {
-      outerCombo = await db.createCombo({
+    if (!(await db.getComboByNameUnscoped("outer-combo"))) {
+      outerCombo = await db.createComboUnscoped({
         name: "outer-combo",
         models: ["inner-combo", "openai/outer-backup"],
       });
     } else {
-      outerCombo = await db.getComboByName("outer-combo");
+      outerCombo = await db.getComboByNameUnscoped("outer-combo");
     }
   });
 

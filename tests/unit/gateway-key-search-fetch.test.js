@@ -22,6 +22,11 @@ vi.mock("@/sse/services/auth.js", () => ({
   extractApiKey: mocks.raw,
 }));
 vi.mock("@/lib/localDb", () => ({ getSettings: async () => ({}), getCombos: mocks.combos }));
+// YAN-364: search.js / fetch.js read combos via getGatewayCombos(principal).
+vi.mock("@/lib/auth/gatewayResources.js", async (original) => ({
+  ...(await original()),
+  getGatewayCombos: mocks.combos,
+}));
 vi.mock("open-sse/handlers/search/index.js", () => ({ handleSearchCore: mocks.search }));
 vi.mock("open-sse/handlers/fetch/index.js", () => ({ handleFetchCore: mocks.fetch }));
 vi.mock("@/sse/services/tokenRefresh.js", () => ({

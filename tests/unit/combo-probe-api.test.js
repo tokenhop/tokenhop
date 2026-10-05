@@ -77,8 +77,12 @@ describe("POST /api/combos/[id]/test validation + rate limit", () => {
   async function loadRoute(mocks = {}) {
     vi.resetModules();
     vi.doMock("@/lib/localDb", () => ({
-      getComboById: mocks.getComboById || (async () => null),
       getSettings: async () => ({}),
+    }));
+    // YAN-364: the route loads the combo via the scoped DB barrel.
+    vi.doMock("@/lib/db/index.js", async (importOriginal) => ({
+      ...(await importOriginal()),
+      getComboByIdUnscoped: mocks.getComboById || (async () => null),
     }));
     vi.doMock("@/sse/services/comboProbe.js", async (importOriginal) => {
       const actual = await importOriginal();

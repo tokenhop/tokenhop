@@ -244,7 +244,18 @@ export async function getEffectivePreferences(ctx) {
       : null);
   if (wsId) {
     const row = db.get(`SELECT data FROM workspaceSettings WHERE workspaceId = ?`, [wsId]);
-    Object.assign(merged, pickKeys(parseJson(row?.data, {}), WORKSPACE_KEYS));
+    const wsData = pickKeys(parseJson(row?.data, {}), WORKSPACE_KEYS);
+    Object.assign(merged, wsData);
+    // YAN-364: workspace rows key comboStrategies by combo id, the instance blob
+    // by name. A workspace with no map of its own must not inherit the blob's
+    // (Default's) name-keyed entries: the scoped result is the workspace map or
+    // {}, flagged (non-enumerable, shared via Symbol.for with comboKeys.js) so
+    // lookups use ids only.
+    if (!Object.hasOwn(wsData, "comboStrategies")) merged.comboStrategies = {};
+    Object.defineProperty(merged, Symbol.for("tokenhop.comboStrategiesById"), {
+      value: true,
+      enumerable: false,
+    });
   }
   if (typeof userId === "string" && userId) {
     const row = db.get(`SELECT data FROM userPreferences WHERE userId = ?`, [userId]);

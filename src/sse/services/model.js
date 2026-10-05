@@ -1,6 +1,15 @@
 // Re-export from open-sse with localDb integration
-import { getModelAliases, getComboByName, getProviderNodesUnscoped } from "@/lib/localDb";
-import { getGatewayNodes, requireGatewayWorkspace } from "@/lib/auth/gatewayResources.js";
+import {
+  getModelAliases,
+  getComboByName as getComboByNameUnscoped,
+  getProviderNodesUnscoped,
+} from "@/lib/localDb";
+import {
+  getGatewayNodes,
+  getGatewayCombos,
+  getGatewayAliases,
+  requireGatewayWorkspace,
+} from "@/lib/auth/gatewayResources.js";
 import {
   parseModel as parseModelCore,
   resolveModelAliasFromMap,
@@ -30,18 +39,33 @@ export function parseModel(modelStr) {
 }
 
 /**
- * Resolve model alias from localDb
+ * Resolve model alias. With options.principal, only that workspace's aliases
+ * are read (no global fallback); otherwise the legacy global map.
  */
-export async function resolveModelAlias(alias) {
-  const aliases = await getModelAliases();
+export async function resolveModelAlias(alias, options = {}) {
+  const aliases = options.principal
+    ? await getGatewayAliases(options.principal)
+    : await getModelAliases();
   return resolveModelAliasFromMap(alias, aliases);
 }
 
 /**
+ * Combo lookup by name. With options.principal, only that workspace's combos
+ * are searched (no global fallback); otherwise the legacy global lookup.
+ */
+export async function getComboByName(modelStr, options = {}) {
+  if (options.principal) {
+    const combos = await getGatewayCombos(options.principal);
+    return combos.find((c) => c.name === modelStr) || null;
+  }
+  return getComboByNameUnscoped(modelStr);
+}
+
+/**
  * Get full model info (parse or resolve).
- * With options.principal (hashed gateway auth), provider-node prefix matches
- * come from the principal's workspace only; combos/aliases stay instance
- * config (they carry no credentials).
+ * With options.principal (hashed gateway auth), provider-node prefix matches,
+ * combos and aliases come from the principal's workspace only; a scoped miss
+ * falls through to built-ins, never to global config.
  */
 export async function getModelInfo(modelStr, options = {}) {
   const principal = options.principal || null;
@@ -76,7 +100,7 @@ export async function getModelInfo(modelStr, options = {}) {
 
   // Check if this is a combo name before resolving as alias
   // This prevents combo names from being incorrectly routed to providers
-  const combo = await getComboByName(parsed.model);
+  const combo = await getComboByName(parsed.model, { principal });
   if (combo) {
     // Return null provider to signal this should be handled as combo
     // The caller (handleChat) will detect this and handle it as combo
@@ -84,8 +108,10 @@ export async function getModelInfo(modelStr, options = {}) {
   }
 
   if (principal) {
-    const resolved = await resolveModelAlias(modelStr);
+    const resolved = await resolveModelAlias(modelStr, { principal });
     if (resolved) return getModelInfo(`${resolved.provider}/${resolved.model}`, options);
+    // Scoped miss: built-ins only (never the global alias map).
+    return getModelInfoCore(modelStr, {});
   }
   return getModelInfoCore(modelStr, getModelAliases);
 }
@@ -94,11 +120,11 @@ export async function getModelInfo(modelStr, options = {}) {
  * Check if model is a combo and get models list
  * @returns {Promise<string[]|null>} Array of models or null if not a combo
  */
-export async function getComboModels(modelStr) {
+export async function getComboModels(modelStr, options = {}) {
   // Only check if it's not in provider/model format
   if (typeof modelStr !== "string" || modelStr.includes("/")) return null;
 
-  const combo = await getComboByName(modelStr);
+  const combo = await getComboByName(modelStr, options);
   if (combo && combo.models && combo.models.length > 0) {
     return combo.models;
   }

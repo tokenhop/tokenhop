@@ -263,45 +263,49 @@ describe("DB SQLite layer — public API parity", () => {
   });
 
   it("combos: CRUD", async () => {
-    const c = await sqliteDb.createCombo({
+    const c = await sqliteDb.createComboUnscoped({
       name: "combo1",
       models: ["m1", "m2"],
       kind: "fallback",
     });
     expect(c.id).toBeDefined();
     expect(c.models).toEqual(["m1", "m2"]);
-    const byName = await sqliteDb.getComboByName("combo1");
+    const byName = await sqliteDb.getComboByNameUnscoped("combo1");
     expect(byName.id).toBe(c.id);
-    await sqliteDb.updateCombo(c.id, { models: ["m3"] });
-    const updated = await sqliteDb.getComboById(c.id);
+    await sqliteDb.updateComboUnscoped(c.id, { models: ["m3"] });
+    const updated = await sqliteDb.getComboByIdUnscoped(c.id);
     expect(updated.models).toEqual(["m3"]);
-    expect(await sqliteDb.deleteCombo(c.id)).toBe(true);
+    expect(await sqliteDb.deleteComboUnscoped(c.id)).toBe(true);
   });
 
   it("modelAliases: KV ops", async () => {
-    await sqliteDb.setModelAlias("alias1", "real-model-1");
-    await sqliteDb.setModelAlias("alias2", "real-model-2");
-    const all = await sqliteDb.getModelAliases();
+    await sqliteDb.setModelAliasUnscoped("alias1", "real-model-1");
+    await sqliteDb.setModelAliasUnscoped("alias2", "real-model-2");
+    const all = await sqliteDb.getModelAliasesUnscoped();
     expect(all.alias1).toBe("real-model-1");
     expect(all.alias2).toBe("real-model-2");
-    await sqliteDb.deleteModelAlias("alias1");
-    expect((await sqliteDb.getModelAliases()).alias1).toBeUndefined();
+    await sqliteDb.deleteModelAliasUnscoped("alias1");
+    expect((await sqliteDb.getModelAliasesUnscoped()).alias1).toBeUndefined();
   });
 
   it("customModels: add/list/delete with dedupe", async () => {
-    const ok1 = await sqliteDb.addCustomModel({
+    const ok1 = await sqliteDb.addCustomModelUnscoped({
       providerAlias: "p1",
       id: "m1",
       type: "llm",
       name: "Model 1",
     });
-    const dup = await sqliteDb.addCustomModel({ providerAlias: "p1", id: "m1", type: "llm" });
+    const dup = await sqliteDb.addCustomModelUnscoped({
+      providerAlias: "p1",
+      id: "m1",
+      type: "llm",
+    });
     expect(ok1).toBe(true);
     expect(dup).toBe(false);
-    const list = await sqliteDb.getCustomModels();
+    const list = await sqliteDb.getCustomModelsUnscoped();
     expect(list.find((m) => m.id === "m1")).toBeDefined();
-    await sqliteDb.deleteCustomModel({ providerAlias: "p1", id: "m1" });
-    const after = await sqliteDb.getCustomModels();
+    await sqliteDb.deleteCustomModelUnscoped({ providerAlias: "p1", id: "m1" });
+    const after = await sqliteDb.getCustomModelsUnscoped();
     expect(after.find((m) => m.id === "m1")).toBeUndefined();
   });
 
@@ -314,14 +318,14 @@ describe("DB SQLite layer — public API parity", () => {
   });
 
   it("disabledModels: add/remove per provider", async () => {
-    await sqliteDb.disableModels("openai", ["gpt-3", "gpt-4"]);
-    expect(await sqliteDb.getDisabledByProvider("openai")).toEqual(
+    await sqliteDb.disableModelsUnscoped("openai", ["gpt-3", "gpt-4"]);
+    expect(await sqliteDb.getDisabledByProviderUnscoped("openai")).toEqual(
       expect.arrayContaining(["gpt-3", "gpt-4"]),
     );
-    await sqliteDb.enableModels("openai", ["gpt-3"]);
-    expect(await sqliteDb.getDisabledByProvider("openai")).toEqual(["gpt-4"]);
-    await sqliteDb.enableModels("openai", []);
-    expect(await sqliteDb.getDisabledByProvider("openai")).toEqual([]);
+    await sqliteDb.enableModelsUnscoped("openai", ["gpt-3"]);
+    expect(await sqliteDb.getDisabledByProviderUnscoped("openai")).toEqual(["gpt-4"]);
+    await sqliteDb.enableModelsUnscoped("openai", []);
+    expect(await sqliteDb.getDisabledByProviderUnscoped("openai")).toEqual([]);
   });
 
   it("usage: saveRequestUsage + getUsageHistory + getUsageStatsUnscoped", async () => {
@@ -394,14 +398,14 @@ describe("DB SQLite layer — public API parity", () => {
     expect(typeof exported.modelAliases).toBe("object");
 
     // Add marker, export, import a different payload, verify reset
-    await sqliteDb.setModelAlias("marker", "before");
+    await sqliteDb.setModelAliasUnscoped("marker", "before");
     const snap = await sqliteDb.exportDb();
 
-    await sqliteDb.setModelAlias("marker", "after");
-    expect((await sqliteDb.getModelAliases()).marker).toBe("after");
+    await sqliteDb.setModelAliasUnscoped("marker", "after");
+    expect((await sqliteDb.getModelAliasesUnscoped()).marker).toBe("after");
 
     await sqliteDb.importDb(snap);
-    expect((await sqliteDb.getModelAliases()).marker).toBe("before");
+    expect((await sqliteDb.getModelAliasesUnscoped()).marker).toBe("before");
   });
 
   it("pricing: user pricing merged with constants", async () => {

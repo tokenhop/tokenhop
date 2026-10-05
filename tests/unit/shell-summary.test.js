@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getProviderConnectionsUnscoped: vi.fn(),
-  getCombos: vi.fn(),
+  getCombosUnscoped: vi.fn(),
   getSettings: vi.fn(),
   snapshots: {},
 }));
@@ -12,7 +12,7 @@ vi.mock("next/server", () => ({
 }));
 vi.mock("@/lib/localDb", () => ({
   getProviderConnectionsUnscoped: mocks.getProviderConnectionsUnscoped,
-  getCombos: mocks.getCombos,
+  getCombosUnscoped: mocks.getCombosUnscoped,
   getSettings: mocks.getSettings,
 }));
 vi.mock("@/sse/services/quotaSnapshotSync.js", () => ({
@@ -109,7 +109,7 @@ describe("GET /api/shell/summary", () => {
     mocks.getProviderConnectionsUnscoped.mockResolvedValue([
       { id: "a", provider: "openai", testStatus: "active", apiKey: "sk-secret" },
     ]);
-    mocks.getCombos.mockResolvedValue([{ name: "c1" }]);
+    mocks.getCombosUnscoped.mockResolvedValue([{ name: "c1" }]);
     mocks.getSettings.mockResolvedValue({ translatorEnabled: false });
     const res = await GET();
     expect(res.status).toBe(200);
@@ -123,7 +123,7 @@ describe("GET /api/shell/summary", () => {
 
   it("returns a typed 500 when the store fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    mocks.getCombos.mockRejectedValue(new Error("db down"));
+    mocks.getCombosUnscoped.mockRejectedValue(new Error("db down"));
     const res = await GET();
     expect(res).toMatchObject({ status: 500, body: { error: "Failed to load shell summary" } });
   });

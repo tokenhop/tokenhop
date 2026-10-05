@@ -4,7 +4,7 @@ import { getSettings, DEFAULT_SETTINGS } from "./repos/settingsRepo.js";
 import { mirrorToDefaultWorkspace } from "./repos/workspaceSettingsRepo.js";
 import { defaultWorkspaceIdUnscoped } from "./repos/ownership.js";
 import { WORKSPACE_KEYS, pickKeys } from "@/lib/settings/settingsScope.js";
-import { getCombos } from "./repos/combosRepo.js";
+import { getCombosUnscoped } from "./repos/combosRepo.js";
 import { getUserPricing, invalidatePricingCache } from "./repos/pricingRepo.js";
 import {
   buildConfigDocument,
@@ -42,7 +42,7 @@ export async function exportConfig() {
   const db = await getAdapter();
   return buildConfigDocument({
     settings: { ...(await getSettings()), ...defaultWorkspaceOverlay(db) },
-    combos: await getCombos(),
+    combos: await getCombosUnscoped(),
     pricingOverrides: await getUserPricing(),
     version: getAppVersion(),
   });
@@ -53,7 +53,7 @@ export async function getConfigState() {
   const db = await getAdapter();
   return {
     settings: { ...(await getSettings()), ...defaultWorkspaceOverlay(db) },
-    combos: await getCombos(),
+    combos: await getCombosUnscoped(),
     pricingOverrides: await getUserPricing(),
   };
 }

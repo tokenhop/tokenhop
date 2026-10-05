@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getComboById } from "@/lib/localDb";
+import { loadScoped } from "@/lib/users/workspaceScope.js";
+import { getCombo, getComboByIdUnscoped } from "@/lib/db/index.js";
 import {
   runComboProbe,
   checkProbeRateLimit,
@@ -19,12 +20,24 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "Invalid combo id" }, { status: 400 });
     }
 
-    const combo = await getComboById(id);
-    if (!combo) {
-      return NextResponse.json({ error: "Combo not found" }, { status: 404 });
-    }
+    // YAN-364 IDOR: load through the scoped getter — another workspace's id
+    // is a 404, a member without the role a 403. The probe consumes the
+    // authorized combo object; the caller-supplied id never re-enters a
+    // lookup (no raw-id swap window).
+    const loaded = await loadScoped(
+      "workspace.connections.use",
+      id,
+      getCombo,
+      getComboByIdUnscoped,
+      "Combo not found",
+    );
+    if (loaded instanceof Response) return loaded;
+    const { scope, row: combo } = loaded;
 
-    const { allowed, retryAfterMs } = checkProbeRateLimit(id);
+    // Rate-limit key is per (workspaceId, comboId) so a future id reuse can
+    // never cross workspaces. Legacy path keeps the bare combo id.
+    const rateKey = scope ? `${scope.workspaceId}:${id}` : id;
+    const { allowed, retryAfterMs } = checkProbeRateLimit(rateKey);
     if (!allowed) {
       const retryAfterSec = Math.ceil(retryAfterMs / 1000);
       return NextResponse.json(
@@ -51,8 +64,8 @@ export async function POST(request, { params }) {
         reject(error);
       }, PROBE_TIMEOUT_MS);
     });
-    const result = await Promise.race([runComboProbe({ comboId: id, request }), timeout]).finally(
-      () => clearTimeout(timer),
+    const result = await Promise.race([runComboProbe({ combo, request }), timeout]).finally(() =>
+      clearTimeout(timer),
     );
 
     return NextResponse.json({

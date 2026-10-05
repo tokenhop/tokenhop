@@ -1,6 +1,6 @@
 // Weighted-target resolution (YAN-259). Neutral module so the usage route and the
 // snapshot poller can share it without a route <-> poller import cycle.
-import { getSettings, getCombos, getModelAliases } from "@/lib/localDb";
+import { getSettings, getCombosUnscoped, getModelAliasesUnscoped } from "@/lib/localDb";
 import { listEffectivePreferencesUnscoped } from "@/lib/db/index.js";
 import { parseModel, resolveModelAliasFromMap } from "open-sse/services/model.js";
 
@@ -8,8 +8,12 @@ import { resolveComboStrategy } from "open-sse/services/comboStrategy.js";
 
 // Weighted combos name their providers by combo model prefix; combos without a
 // per-combo entry inherit settings.comboStrategy. Prefix before "/" is enough.
+// YAN-364: workspace views key comboStrategies by combo id, the legacy blob by
+// name — the map's own-id presence picks the key (id first, then name).
 function comboIsWeighted(combo, settings) {
-  return resolveComboStrategy(settings, combo?.name).strategy === "weighted";
+  const map = settings?.comboStrategies;
+  const key = map && Object.hasOwn(map, combo?.id) ? combo.id : combo?.name;
+  return resolveComboStrategy(settings, key).strategy === "weighted";
 }
 
 // All combo member providers, regardless of strategy. Never throws on malformed
@@ -68,8 +72,8 @@ export async function isWeightedProvider(
   provider,
   deps = {
     getSettings,
-    getCombos,
-    getModelAliases,
+    getCombos: getCombosUnscoped,
+    getModelAliases: getModelAliasesUnscoped,
     listPreferencesUnscoped: listEffectivePreferencesUnscoped,
   },
 ) {

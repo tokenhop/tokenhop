@@ -19,8 +19,8 @@ import { getAdapter } from "@/lib/db/driver.js";
 import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
 import { handleChat } from "@/sse/handlers/chat.js";
 import { ACTIVE } from "@/shared/brand";
+import { comboStrategyFor } from "@/lib/comboKeys.js";
 
-import { resolveComboStrategy } from "open-sse/services/comboStrategy.js";
 import { COMBO_PROBE_ENDPOINT } from "open-sse/config/runtimeConfig.js";
 
 /** Minimal probe body: tiny prompt, capped tokens, forced non-streaming. */
@@ -198,7 +198,11 @@ async function liveProbeAccess(db, session, workspaceId, can) {
  * Run a dry-run probe through the real combo pipeline.
  *
  * @param {object} options
- * @param {string} options.comboId - Combo id (validated by the API route).
+ * @param {object|null} [options.combo] - Authorized combo, already loaded and
+ *   IDOR-checked by the route (YAN-364) — the probe never re-looks-up a
+ *   caller-supplied id when this is present.
+ * @param {string} [options.comboId] - Legacy lookup (tests / in-process
+ *   callers without authorization context): unscoped fetch by id.
  * @param {object|null} [options.principal] - Authorized caller principal; when
  *   absent the resolver derives the management principal above.
  * @param {object|null} [options.request] - Dashboard request for caller context
@@ -206,12 +210,24 @@ async function liveProbeAccess(db, session, workspaceId, can) {
  *   behaves legacy-only unless the store permits.
  * @returns {Promise<{ attempts: Array, served: object|null, totalMs: number, summary: string, strategy: string, comboName: string }>}
  */
-export async function runComboProbe({ comboId, principal = null, request = null }) {
-  const combo = await getComboById(comboId);
+export async function runComboProbe({
+  combo = null,
+  comboId = null,
+  principal = null,
+  request = null,
+}) {
   if (!combo) {
-    const error = new Error("Combo not found");
-    error.status = 404;
-    throw error;
+    if (!comboId) {
+      const error = new Error("Combo not found");
+      error.status = 404;
+      throw error;
+    }
+    combo = await getComboById(comboId);
+    if (!combo) {
+      const error = new Error("Combo not found");
+      error.status = 404;
+      throw error;
+    }
   }
   if (!Array.isArray(combo.models) || combo.models.length === 0) {
     const error = new Error("Combo has no models");
@@ -225,7 +241,11 @@ export async function runComboProbe({ comboId, principal = null, request = null 
   // rather than route against all connections/install default.
   const management = principal || (await resolveProbeCaller(request));
   const settings = await getEffectivePreferences(management);
-  const { strategy } = resolveComboStrategy(settings, combo.name);
+  // YAN-364: workspace prefs key strategies by combo id (renames preserve
+  // them); the legacy blob keys by name. comboStrategyFor follows the marker
+  // getEffectivePreferences sets, so an OFF probe principal resolves by name,
+  // exactly like the real routing path in the handlers.
+  const { strategy } = comboStrategyFor(settings, management, combo);
   if (!management) {
     let storage = "legacy";
     try {

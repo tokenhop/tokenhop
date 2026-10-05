@@ -52,24 +52,21 @@ export async function updateWorkspaceSettings(ctx, workspaceId, patch) {
 
 /**
  * Transform the workspace's comboStrategies map under one transaction.
- * `requireComboName`: the combo must exist there (guards stale names after
- * rename/delete); otherwise throws with code COMBO_NOT_FOUND and writes
- * nothing. Same semantics as settingsRepo.updateComboStrategies.
+ * `requireComboId`: the combo id must exist in this workspace (guards stale
+ * ids after delete); otherwise throws with code COMBO_NOT_FOUND and writes
+ * nothing. YAN-364: workspace rows are keyed by combo **id** — renames keep
+ * the entry, only delete drops it. The instance blob stays name-keyed;
+ * never rewrite one namespace with the other's keys.
  */
-export async function updateWorkspaceComboStrategies(
-  ctx,
-  workspaceId,
-  transform,
-  requireComboName,
-) {
+export async function updateWorkspaceComboStrategies(ctx, workspaceId, transform, requireComboId) {
   assertCtx(ctx);
   const db = await getAdapter();
   const ws = memberWorkspaceId(ctx, db, workspaceId);
   let next;
   db.transaction(() => {
     if (
-      requireComboName !== undefined &&
-      !db.get(`SELECT id FROM combos WHERE name = ?`, [requireComboName])
+      requireComboId !== undefined &&
+      !db.get(`SELECT id FROM combos WHERE id = ? AND workspaceId = ?`, [requireComboId, ws])
     ) {
       throw Object.assign(new Error("Combo not found"), { code: COMBO_NOT_FOUND });
     }
@@ -95,6 +92,26 @@ export async function updateWorkspaceComboStrategies(
     db.run(WS_UPSERT, [ws, stringifyJson(next), now()]);
   });
   return next;
+}
+
+/**
+ * Resolve a combo selector to its id inside one workspace (YAN-364). `id` is
+ * checked for membership in that workspace; `name` is looked up there only
+ * (never across workspaces). Membership is re-verified like every scoped call.
+ * @param {{ id?: string, name?: string }} selector
+ * @returns {Promise<string|null>} the combo id, or null when absent
+ */
+export async function resolveWorkspaceComboId(ctx, workspaceId, { id, name } = {}) {
+  assertCtx(ctx);
+  const db = await getAdapter();
+  const ws = memberWorkspaceId(ctx, db, workspaceId);
+  const row =
+    typeof id === "string"
+      ? db.get(`SELECT id FROM combos WHERE id = ? AND workspaceId = ?`, [id, ws])
+      : typeof name === "string"
+        ? db.get(`SELECT id FROM combos WHERE name = ? AND workspaceId = ?`, [name, ws])
+        : null;
+  return row?.id ?? null;
 }
 
 /** The user's explicit preferences (user keys only). */
@@ -133,9 +150,31 @@ export function mirrorToDefaultWorkspace(db, updates) {
   if (!Object.keys(patch).length) return false;
   const ws = defaultWorkspaceIdUnscoped(db);
   if (!ws) return false;
+  // YAN-364: the blob's comboStrategies is name-keyed, workspace rows are
+  // id-keyed. Re-key the whole map by Default's combo ids (replace, not merge:
+  // per-key merging can't express a rename). Lossy by design: a name that no
+  // longer resolves to a combo in Default is dropped from the row; the blob
+  // keeps it.
+  if (Object.hasOwn(patch, "comboStrategies")) {
+    patch.comboStrategies = comboStrategiesByIdUnscoped(db, ws, patch.comboStrategies);
+  }
   const next = { ...readWsData(db, ws), ...patch };
   db.run(WS_UPSERT, [ws, stringifyJson(next), now()]);
   return true;
+}
+
+// Name-keyed map -> id-keyed map for one workspace. Non-object input maps to {}.
+function comboStrategiesByIdUnscoped(db, workspaceId, byName) {
+  const out = {};
+  if (!byName || typeof byName !== "object" || Array.isArray(byName)) return out;
+  for (const [name, entry] of Object.entries(byName)) {
+    const row = db.get(`SELECT id FROM combos WHERE name = ? AND workspaceId = ?`, [
+      name,
+      workspaceId,
+    ]);
+    if (row) out[row.id] = entry;
+  }
+  return out;
 }
 
 /**

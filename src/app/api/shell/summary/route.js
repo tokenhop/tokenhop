@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCombos, getProviderConnectionsUnscoped, getSettings } from "@/lib/localDb";
+import { getCombosUnscoped, getProviderConnectionsUnscoped, getSettings } from "@/lib/localDb";
 import { getRequestRateSeries, getSavingsLifetime } from "@/lib/db/index.js";
 import { resolveFlagSetting } from "@/lib/settingsFlags";
 import { resolveListenPort, shapeGatewayStatus } from "@/lib/gatewayStatus";
@@ -22,7 +22,7 @@ export async function GET() {
   try {
     const [connections, combos, settings, traffic, savingsLifetime, multiUser] = await Promise.all([
       getProviderConnectionsUnscoped(),
-      getCombos(),
+      getCombosUnscoped(),
       getSettings(),
       getRequestRateSeries().catch(() => null),
       getSavingsLifetime().catch(() => null),

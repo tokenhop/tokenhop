@@ -5,8 +5,9 @@ import {
   extractApiKey,
 } from "../services/auth.js";
 import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
-import { getCombos } from "@/lib/localDb";
 import { getEffectivePreferences } from "@/lib/db/index.js";
+import { getGatewayCombos } from "@/lib/auth/gatewayResources.js";
+import { comboRotationKey, comboStrategyFor } from "@/lib/comboKeys.js";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleFetchCore } from "open-sse/handlers/fetch/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -14,7 +15,6 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
-import { resolveComboStrategy } from "open-sse/services/comboStrategy.js";
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
 import { assertPublicUrlResolved } from "@/shared/utils/ssrfGuard.js";
 
@@ -84,7 +84,8 @@ export async function handleFetch(request) {
   }
 
   // Combo expansion: providerInput may be a combo name → run fallback/round-robin across providers
-  const combos = await getCombos();
+  // YAN-364: a principal reads only its workspace's combos (no global fallback).
+  const combos = await getGatewayCombos(gateway);
   // Authorize the requested combo ID first: a key scoped to other models
   // must 403 before expansion runs zero upstream for forbidden members.
   if (gateway && !providerInput.includes("/")) {
@@ -108,7 +109,14 @@ export async function handleFetch(request) {
       strategy: comboStrategy,
       stickyLimit: comboStickyLimit,
       weights: comboWeights,
-    } = resolveComboStrategy(settings, providerInput);
+    } = comboStrategyFor(
+      settings,
+      gateway,
+      combos.find((c) => c.name === providerInput) ?? {
+        id: providerInput,
+        name: providerInput,
+      },
+    );
     const headroomFn = comboStrategy === "weighted" ? await loadComboHeadroomFn() : undefined;
     log.info(
       "FETCH",
@@ -119,7 +127,7 @@ export async function handleFetch(request) {
       models: comboModels,
       handleSingleModel: (b, m) => handleSingleProviderFetch(b, m, request, gateway),
       log,
-      comboName: providerInput,
+      comboName: comboRotationKey(gateway?.workspaceId, providerInput),
       comboStrategy,
       comboStickyLimit,
       comboWeights,

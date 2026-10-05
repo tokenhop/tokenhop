@@ -1,39 +1,63 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { makeKv } from "../helpers/kvStore.js";
+import { TenancyError } from "@/lib/users/errors.js";
+import { memberWorkspaceId, defaultWorkspaceIdUnscoped } from "./ownership.js";
 
-const aliasKv = makeKv("modelAliases");
-const customKv = makeKv("customModels");
+// mitmAlias is instance-scope host tooling (YAN-364 decision 1): bare keys.
 const mitmKv = makeKv("mitmAlias");
 
-// modelAliases: key=alias, value=modelString
-export async function getModelAliases() {
-  return await aliasKv.getAll();
+// Reserved workspace kv prefix (ADR-0001). Mirrors makeKv's scoping (Task 2.1)
+// for the one raw-SQL write below that cannot go through makeKv.
+function wsKey(workspaceId, key) {
+  return workspaceId ? `ws:${workspaceId}/${key}` : key;
 }
 
-export async function setModelAlias(alias, model) {
-  await aliasKv.set(alias, model);
+// Scoped writes reject user keys inside the reserved `ws:` namespace; routes
+// also 400 them, this is the defensive backstop (plan decision 3).
+function assertBareKey(key) {
+  if (typeof key === "string" && key.startsWith("ws:")) {
+    throw new TenancyError("INVALID", "Reserved key prefix");
+  }
 }
 
-export async function deleteModelAlias(alias) {
-  await aliasKv.remove(alias);
+// ─── modelAliases: key=alias, value=modelString ────────────────────────────
+
+export async function getModelAliases(ctx, workspaceId) {
+  const db = await getAdapter();
+  memberWorkspaceId(ctx, db, workspaceId);
+  return await makeKv("modelAliases", { workspaceId }).getAll();
 }
 
-// customModels: key=`${providerAlias}|${id}|${type}`, value=full model object
+export async function setModelAlias(ctx, workspaceId, alias, model) {
+  const db = await getAdapter();
+  memberWorkspaceId(ctx, db, workspaceId);
+  assertBareKey(alias);
+  await makeKv("modelAliases", { workspaceId }).set(alias, model);
+}
+
+export async function deleteModelAlias(ctx, workspaceId, alias) {
+  const db = await getAdapter();
+  memberWorkspaceId(ctx, db, workspaceId);
+  assertBareKey(alias);
+  await makeKv("modelAliases", { workspaceId }).remove(alias);
+}
+
+// ─── customModels: key=`${providerAlias}|${id}|${type}`, value=model object ─
+
 function customKey(providerAlias, id, type) {
   return `${providerAlias}|${id}|${type}`;
 }
 
-export async function getCustomModels() {
-  const all = await customKv.getAll();
-  return Object.values(all);
+export async function getCustomModels(ctx, workspaceId) {
+  const db = await getAdapter();
+  memberWorkspaceId(ctx, db, workspaceId);
+  return Object.values(await makeKv("customModels", { workspaceId }).getAll());
 }
 
 // Atomic upsert inside transaction to prevent duplicate races.
 // Re-adding an existing model updates caps/name without resetting omitted fields.
-export async function addCustomModel({ providerAlias, id, type = "llm", name, caps }) {
-  const k = customKey(providerAlias, id, type);
-  const db = await getAdapter();
+function addCustomModelInTx(db, k, { providerAlias, id, type = "llm", name, caps }) {
   let added = false;
   db.transaction(() => {
     const row = db.get(`SELECT value FROM kv WHERE scope = 'customModels' AND key = ?`, [k]);
@@ -59,11 +83,64 @@ export async function addCustomModel({ providerAlias, id, type = "llm", name, ca
   return added;
 }
 
-export async function deleteCustomModel({ providerAlias, id, type = "llm" }) {
-  await customKv.remove(customKey(providerAlias, id, type));
+export async function addCustomModel(ctx, workspaceId, data) {
+  const db = await getAdapter();
+  memberWorkspaceId(ctx, db, workspaceId);
+  const k = wsKey(workspaceId, customKey(data.providerAlias, data.id, data.type || "llm"));
+  assertBareKey(customKey(data.providerAlias, data.id, data.type || "llm"));
+  return addCustomModelInTx(db, k, data);
 }
 
-// mitmAlias: key=toolName, value=mappings object
+export async function deleteCustomModel(ctx, workspaceId, data) {
+  const db = await getAdapter();
+  memberWorkspaceId(ctx, db, workspaceId);
+  await makeKv("customModels", { workspaceId }).remove(
+    customKey(data.providerAlias, data.id, data.type || "llm"),
+  );
+}
+
+// ─── Unscoped twins (switch-off / legacy path) ─────────────────────────────
+// Before the owner bootstrap: bare keys, unchanged. After it: the Default
+// workspace's rows only, exposed with unprefixed logical keys (never other
+// workspaces' rows).
+
+async function defaultKv(scope) {
+  const db = await getAdapter();
+  return makeKv(scope, { workspaceId: defaultWorkspaceIdUnscoped(db) });
+}
+
+export async function getModelAliasesUnscoped() {
+  return await (await defaultKv("modelAliases")).getAll();
+}
+
+export async function setModelAliasUnscoped(alias, model) {
+  assertBareKey(alias);
+  await (await defaultKv("modelAliases")).set(alias, model);
+}
+
+export async function deleteModelAliasUnscoped(alias) {
+  await (await defaultKv("modelAliases")).remove(alias);
+}
+
+export async function getCustomModelsUnscoped() {
+  return Object.values(await (await defaultKv("customModels")).getAll());
+}
+
+export async function addCustomModelUnscoped(data) {
+  const db = await getAdapter();
+  const bare = customKey(data.providerAlias, data.id, data.type || "llm");
+  assertBareKey(bare);
+  return addCustomModelInTx(db, wsKey(defaultWorkspaceIdUnscoped(db), bare), data);
+}
+
+export async function deleteCustomModelUnscoped(data) {
+  await (await defaultKv("customModels")).remove(
+    customKey(data.providerAlias, data.id, data.type || "llm"),
+  );
+}
+
+// ─── mitmAlias: instance scope, untouched (key=toolName, value=mappings) ───
+
 export async function getMitmAlias(toolName) {
   if (toolName) {
     const v = await mitmKv.get(toolName);

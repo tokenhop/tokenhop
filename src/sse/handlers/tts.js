@@ -1,14 +1,13 @@
 import { getProviderCredentials, markAccountUnavailable } from "../services/auth.js";
 import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
-import { getComboByName } from "@/lib/db/repos/combosRepo.js";
 import { getEffectivePreferences } from "@/lib/db/index.js";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getModelInfo, getComboModels, getComboByName } from "../services/model.js";
+import { comboRotationKey, comboStrategyFor } from "@/lib/comboKeys.js";
 import { handleTtsCore } from "open-sse/handlers/ttsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { handleComboChat } from "open-sse/services/combo.js";
-import { resolveComboStrategy } from "open-sse/services/comboStrategy.js";
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
 import * as log from "../utils/logger.js";
 
@@ -62,19 +61,26 @@ export async function handleTts(request) {
 
   // Authorize combo ID before reading its expansion; leaves are checked below.
   if (gateway && typeof modelStr === "string" && !modelStr.includes("/")) {
-    const combo = await getComboByName(modelStr);
+    const combo = await getComboByName(modelStr, { principal: gateway });
     if (combo) {
       const denied = authorizeGatewayTarget(gateway, { comboId: combo.id });
       if (denied) return denied;
     }
   }
-  const comboModels = await getComboModels(modelStr);
+  const comboModels = await getComboModels(modelStr, { principal: gateway });
+  // YAN-364: strategy entries are id-keyed for a principal (workspace row),
+  // name-keyed on the legacy no-principal path.
+  const combo = gateway
+    ? comboModels
+      ? await getComboByName(modelStr, { principal: gateway })
+      : null
+    : { id: modelStr, name: modelStr };
   if (comboModels) {
     const {
       strategy: comboStrategy,
       stickyLimit: comboStickyLimit,
       weights: comboWeights,
-    } = resolveComboStrategy(settings, modelStr);
+    } = comboStrategyFor(settings, gateway, combo);
     const headroomFn = comboStrategy === "weighted" ? await loadComboHeadroomFn() : undefined;
     log.info(
       "TTS",
@@ -86,7 +92,7 @@ export async function handleTts(request) {
       handleSingleModel: (b, m) =>
         handleSingleModelTts(b, m, responseFormat, language, style, gateway),
       log,
-      comboName: modelStr,
+      comboName: comboRotationKey(gateway?.workspaceId, modelStr),
       comboStrategy,
       comboStickyLimit,
       comboWeights,
