@@ -179,6 +179,12 @@ describe("auditRepo.pruneOlderThan", () => {
     expect(db.all(`SELECT action FROM auditEvents`).map((r) => r.action)).toEqual(["key.create"]);
     expect(await repo.auditRepo.pruneOlderThan(365)).toBe(0);
   });
+
+  it("no-ops (never throws) on a garbage days value", async () => {
+    await repo.auditRepo.insert(evt({ action: "key.create" }));
+    await expect(repo.auditRepo.pruneOlderThan("not-a-number")).resolves.toBe(0);
+    expect(db.get(`SELECT COUNT(*) AS c FROM auditEvents`).c).toBe(1);
+  });
 });
 
 describe("migration 010 audit-events", () => {

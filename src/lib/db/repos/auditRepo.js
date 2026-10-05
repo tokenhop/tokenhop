@@ -102,7 +102,10 @@ export async function list(filter = {}) {
 
 export async function pruneOlderThan(days) {
   const db = await getAdapter();
-  const cutoff = new Date(Date.now() - Number(days) * 86400000).toISOString();
+  const ms = Date.now() - Number(days) * 86400000;
+  // Garbage `days` (user-reachable setting) must no-op, never throw before pruning.
+  if (!Number.isFinite(ms)) return 0;
+  const cutoff = new Date(ms).toISOString();
   const { changes } = db.run(`DELETE FROM auditEvents WHERE ts < ?`, [cutoff]);
   return changes;
 }

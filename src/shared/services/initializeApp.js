@@ -325,6 +325,8 @@ async function autoStartMitm(settings) {
       await startMitm(activeKey?.key || ACTIVE.defaultApiKey, password);
     }
     console.log("[InitApp] MITM auto-started");
+    // YAN-367: boot-time host op — via "system", only on successful start.
+    await auditSystem("hostOps.mitm", "mitm/autoStart", { op: "autoStart" });
     try {
       await restoreToolDNS(password);
       console.log("[InitApp] DNS restored from saved state");
@@ -368,6 +370,10 @@ async function safeRestartTunnel(reason) {
     await enableTunnel();
     svc.lastRestartAt = Date.now();
     console.log("[Tunnel] restart success");
+    // YAN-367: boot-time host op — via "system", only on successful startup restart.
+    if (reason === "startup") {
+      await auditSystem("hostOps.tunnel", "tunnel/autoStart", { op: "autoStart" });
+    }
   } catch (err) {
     if (!/cloudflared killed|tunnel cancelled/.test(err.message)) {
       console.log("[Tunnel] restart failed:", err.message);
