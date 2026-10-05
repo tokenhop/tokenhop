@@ -20,20 +20,24 @@ import { extractClientApiKey } from "@/lib/auth/clientApiKey.js";
 import { getGatewayConnections, requireGatewayWorkspace } from "@/lib/auth/gatewayResources.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import { resolveWeightedStickyLimit, selectWeightedConnection } from "./accountSelection.js";
+import { boundedMap } from "open-sse/utils/boundedMap.js";
 import * as log from "../utils/logger.js";
 
-// Mutex to prevent race conditions during account selection
-let selectionMutex = Promise.resolve();
+// Per-key mutex chain tails to prevent race conditions during account selection.
+// Key: `${workspaceId}:${providerId}` under a gateway principal, null (one global
+// slot, the legacy behavior) otherwise. Entries drain when their chain ends.
+const selectionMutexes = new Map();
 
 // SWRR cursor, keyed by provider. Threshold/sticky counts live in the DB.
-const weightedStates = new Map();
+const weightedStates = boundedMap(1000);
 
 export function resetAccountSelection(providerId) {
   if (providerId) {
-    weightedStates.delete(resolveProviderId(providerId) ?? providerId);
+    const id = resolveProviderId(providerId) ?? providerId;
+    weightedStates.delete(id);
     // Partitioned keys carry the principal workspace prefix (YAN-363).
     for (const key of weightedStates.keys()) {
-      if (key.endsWith(`:${providerId}`)) weightedStates.delete(key);
+      if (key.endsWith(`:${id}`)) weightedStates.delete(key);
     }
   } else {
     weightedStates.clear();
@@ -76,11 +80,15 @@ export async function getProviderCredentials(
         : new Set();
   const preferredConnectionId = options?.preferredConnectionId || null;
   // Acquire mutex to prevent race conditions
-  const currentMutex = selectionMutex;
+  const mutexKey = options?.principal
+    ? `${options.principal.workspaceId}:${resolveProviderId(provider) ?? provider}`
+    : null;
+  const currentMutex = selectionMutexes.get(mutexKey) ?? Promise.resolve();
   let resolveMutex;
-  selectionMutex = new Promise((resolve) => {
+  const tail = new Promise((resolve) => {
     resolveMutex = resolve;
   });
+  selectionMutexes.set(mutexKey, tail);
 
   try {
     await currentMutex;
@@ -99,7 +107,10 @@ export async function getProviderCredentials(
       if (strategy !== "none") {
         const allPools = await getProxyPools({ isActive: true });
         const poolIds = allPools.filter((p) => p.proxyUrl).map((p) => p.id);
-        pickedId = pickProxyPoolId(poolIds, strategy, providerId);
+        const poolKey = options?.principal
+          ? `${options.principal.workspaceId}:${providerId}`
+          : providerId;
+        pickedId = pickProxyPoolId(poolIds, strategy, poolKey);
       }
       const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pickedId || "" });
       return {
@@ -365,7 +376,8 @@ export async function getProviderCredentials(
       _connection: connection,
     };
   } finally {
-    if (resolveMutex) resolveMutex();
+    resolveMutex();
+    if (selectionMutexes.get(mutexKey) === tail) selectionMutexes.delete(mutexKey);
   }
 }
 

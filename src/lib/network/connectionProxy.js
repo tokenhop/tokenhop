@@ -1,4 +1,5 @@
 import { getProxyPoolById } from "@/models";
+import { boundedMap } from "open-sse/utils/boundedMap.js";
 
 // Safely normalize any value into a trimmed string.
 function normalizeString(value) {
@@ -7,7 +8,7 @@ function normalizeString(value) {
 }
 
 // ─── Proxy pool rotation state (in-memory) ─────────────────────────
-const rotateState = new Map(); // providerId → { index }
+const rotateState = boundedMap(256); // providerId (or workspaceId:providerId) → { index }
 
 /**
  * Pick one proxy pool ID from a list based on strategy.
