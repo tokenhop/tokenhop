@@ -55,14 +55,11 @@ describe("same combo name rotates independently per workspace", () => {
 
   it("weighted cursors stay independent per scoped key", () => {
     const members = ["openai/a", "openai/b"];
-    const seq = (key) =>
-      Array.from({ length: 4 }, () => getWeightedModels(members, key, undefined, undefined, 1)[0]);
-    // Round-robin cross-check via scoped state: drain A twice, B still fresh.
     const keyA = comboRotationKey("gwA", "panel");
     const keyB = comboRotationKey("gwB", "panel");
-    seq(keyA);
-    expect(getRotatedModels(members, keyB, "round-robin")[0]).toBe("openai/a");
-    expect(seq(keyA)[0]).not.toBe(seq(keyB)[0] && "impossible");
+    expect(getWeightedModels(members, keyA, undefined, undefined, 1)[0]).toBe(members[0]);
+    expect(getWeightedModels(members, keyB, undefined, undefined, 1)[0]).toBe(members[0]);
+    expect(getWeightedModels(members, keyA, undefined, undefined, 1)[0]).toBe(members[1]);
   });
 
   it("selectWeightedConnection cursors diverge only via persisted state", () => {
