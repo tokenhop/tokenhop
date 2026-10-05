@@ -456,6 +456,13 @@ function validateIdentityGraph(payload, refs) {
     if (user.status !== undefined && !USER_STATUS.has(user.status)) {
       fail("TRANSFER_STATE_INVALID", "users entry has an invalid status");
     }
+    if (
+      user.mustChangePassword !== undefined &&
+      user.mustChangePassword !== 0 &&
+      user.mustChangePassword !== 1
+    ) {
+      fail("TRANSFER_STATE_INVALID", "users entry mustChangePassword must be 0/1");
+    }
     if (user.instanceRole === "owner" && ++owners > 1) {
       fail("TRANSFER_STATE_INVALID", "snapshot has more than one owner");
     }
@@ -874,8 +881,8 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
   }
   for (const user of payload.users || []) {
     db.run(
-      `INSERT INTO users(id, email, username, displayName, instanceRole, status, passwordHash, sessionVersion, createdAt, updatedAt, lastLoginAt)
-       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO users(id, email, username, displayName, instanceRole, status, passwordHash, mustChangePassword, sessionVersion, createdAt, updatedAt, lastLoginAt)
+       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         user.id,
         user.email ?? null,
@@ -884,6 +891,10 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
         user.instanceRole,
         user.status ?? "active",
         user.passwordHash ?? null,
+        // Legacy snapshots lack the flag: only a null-hash owner (recovery
+        // fallback) is forced to rotate; custom hashes stay usable.
+        user.mustChangePassword ??
+          (user.instanceRole === "owner" && user.passwordHash == null ? 1 : 0),
         Number.isInteger(user.sessionVersion) ? user.sessionVersion : 1,
         user.createdAt,
         user.updatedAt,

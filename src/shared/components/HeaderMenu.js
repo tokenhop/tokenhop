@@ -6,6 +6,7 @@ import PropTypes from "prop-types";
 import { APP_CONFIG } from "@/shared/constants/appConfig";
 import { ACTIVE } from "@/shared/brand";
 import { useTheme } from "@/shared/hooks/useTheme";
+import useAuthStatus from "@/shared/hooks/useAuthStatus";
 import { resolveVersionChip } from "@/shared/utils/shell";
 import { ConfirmDialog } from "./Modal";
 import Menu, { MenuItem } from "./Menu";
@@ -38,6 +39,21 @@ export default function HeaderMenu({ onLogout, onDonate }) {
   const [shutdownOpen, setShutdownOpen] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const { toggleTheme, isDark } = useTheme();
+  const authStatus = useAuthStatus();
+  // Established multi-user security (not pristine switch-off) with a live
+  // full session: ordinary users reach self-service rotation at /login.
+  const showChangePassword =
+    authStatus?.userSecurityEnforced === true && authStatus?.authenticated === true;
+  const changePasswordItem = (keyPrefix) => (
+    <MenuItem
+      key={`${keyPrefix}-change-password`}
+      icon="key"
+      label="Change password"
+      onSelect={() => {
+        window.location.assign("/login?changePassword=1");
+      }}
+    />
+  );
   const { full } = resolveVersionChip(APP_CONFIG.version, APP_CONFIG.build);
 
   const handleShutdown = async () => {
@@ -110,6 +126,7 @@ export default function HeaderMenu({ onLogout, onDonate }) {
         >
           {changelogItem("desktop")}
           {themeItem("desktop")}
+          {showChangePassword && changePasswordItem("desktop")}
           {shutdownItem("desktop")}
           {logoutItem("desktop")}
         </Menu>
@@ -139,6 +156,7 @@ export default function HeaderMenu({ onLogout, onDonate }) {
           />
           {themeItem("mobile")}
           {changelogItem("mobile")}
+          {showChangePassword && changePasswordItem("mobile")}
           {shutdownItem("mobile")}
           {logoutItem("mobile")}
         </Menu>

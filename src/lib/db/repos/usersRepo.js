@@ -10,10 +10,11 @@ import { assertNotLastManager } from "./membershipsRepo.js";
 import { revokeUserApiKeysSync } from "./apiKeysRepo.js";
 import { getSettings } from "./settingsRepo.js";
 import { setMetaSync } from "../helpers/metaStore.js";
+import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { adoptOwnerlessRowsUnscoped } from "./ownership.js";
 
 const COLS =
-  "id, email, username, displayName, instanceRole, status, sessionVersion, createdAt, updatedAt, lastLoginAt";
+  "id, email, username, displayName, instanceRole, status, sessionVersion, mustChangePassword, createdAt, updatedAt, lastLoginAt";
 // Changing any of these revokes the user's sessions (ADR-0004).
 const SESSION_FIELDS = ["instanceRole", "status", "passwordHash"];
 
@@ -62,7 +63,7 @@ export async function getOwnerUnscoped() {
 // ponytail: single process. Another process sharing DATA_DIR sees a bump only
 // when its entry expires (<= 5 s); a sessions table or shared invalidation lifts that.
 const SESSION_TTL_MS = 5000;
-const SESSION_COLS = "id, instanceRole, status, sessionVersion";
+const SESSION_COLS = "id, instanceRole, status, sessionVersion, mustChangePassword";
 const ACTIVE_COUNT = Symbol.for("tokenhop.activeUserCount");
 // On globalThis: Next bundles the proxy and route handlers separately, each with
 // its own copy of this module, and a bump in a route must reach the guard's cache.
@@ -90,7 +91,7 @@ export async function countActiveUsersUnscoped() {
   );
 }
 
-/** `{ id, instanceRole, status, sessionVersion }` or null. */
+/** `{ id, instanceRole, status, sessionVersion, mustChangePassword }` or null. */
 export async function getSessionUserUnscoped(id) {
   const db = await getAdapter();
   return cached(id, () => db.get(`SELECT ${SESSION_COLS} FROM users WHERE id = ?`, [id]) ?? null);
@@ -109,6 +110,68 @@ export async function bumpSessionVersion(id) {
 export async function getUserPasswordHashUnscoped(id) {
   const db = await getAdapter();
   return db.get(`SELECT passwordHash FROM users WHERE id = ?`, [id])?.passwordHash ?? null;
+}
+
+/**
+ * YAN-358 login lookup: users whose email OR username equals `login`
+ * (trimmed, case-insensitive). At most 2 rows so the caller can refuse an
+ * ambiguous identifier. No `passwordHash` — read it with getUserPasswordHashUnscoped.
+ */
+export async function findUsersByLoginUnscoped(login) {
+  const id = typeof login === "string" ? login.trim() : "";
+  if (!id) return [];
+  const db = await getAdapter();
+  return db.all(
+    `SELECT ${COLS} FROM users WHERE email = ? COLLATE NOCASE OR username = ? COLLATE NOCASE ORDER BY createdAt ASC LIMIT 2`,
+    [id, id],
+  );
+}
+
+/**
+ * YAN-358 credential write, one transaction: recheck `expectedSessionVersion`
+ * (STALE on mismatch, nothing written), set hash + mustChangePassword, bump
+ * sessionVersion once, and mirror the owner's `settings.password` so the two
+ * stores never split. Caller hashes first (async) — this part is sync.
+ * @param {string} id
+ * @param {{ passwordHash: string, mustChangePassword?: boolean, expectedSessionVersion?: number }} p
+ */
+export async function setUserPasswordUnscoped(
+  id,
+  { passwordHash, mustChangePassword = false, expectedSessionVersion } = {},
+) {
+  // null only for the owner reset (CLI): clears the hash, login falls back to
+  // INITIAL_PASSWORD/default and the flag forces a new password.
+  if (passwordHash !== null && (typeof passwordHash !== "string" || !passwordHash)) {
+    throw new TenancyError("INVALID", "passwordHash is required");
+  }
+  const db = await getAdapter();
+  try {
+    return mapConstraintErrors(() =>
+      db.transaction(() => {
+        const row = requireRow(db, id);
+        if (expectedSessionVersion !== undefined && row.sessionVersion !== expectedSessionVersion) {
+          throw new TenancyError("STALE", "Session is out of date");
+        }
+        const now = new Date().toISOString();
+        db.run(
+          `UPDATE users SET passwordHash = ?, mustChangePassword = ?, sessionVersion = sessionVersion + 1, updatedAt = ? WHERE id = ?`,
+          [passwordHash, mustChangePassword ? 1 : 0, now, id],
+        );
+        if (row.instanceRole === "owner") {
+          // Same read-merge-write as settingsRepo.updateSettings, inside this tx.
+          const s = db.get(`SELECT data FROM settings WHERE id = 1`);
+          const next = { ...(s ? parseJson(s.data, {}) : {}), password: passwordHash };
+          db.run(
+            `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+            [stringifyJson(next)],
+          );
+        }
+        return getRow(db, id);
+      }),
+    );
+  } finally {
+    dropSession(id);
+  }
 }
 
 // YAN-356: while login is off every request acts as the owner, so a second
@@ -239,8 +302,8 @@ export async function bootstrapOwnerUnscoped({ passwordHash } = {}) {
       const now = new Date().toISOString();
       const id = uuidv4();
       db.run(
-        `INSERT INTO users(id, username, instanceRole, status, passwordHash, createdAt, updatedAt) VALUES(?, 'owner', 'owner', 'active', ?, ?, ?)`,
-        [id, passwordHash ?? null, now, now],
+        `INSERT INTO users(id, username, instanceRole, status, passwordHash, mustChangePassword, createdAt, updatedAt) VALUES(?, 'owner', 'owner', 'active', ?, ?, ?, ?)`,
+        [id, passwordHash ?? null, passwordHash == null ? 1 : 0, now, now],
       );
       const workspaces = { Personal: "personal", Default: "shared" };
       const ids = {};

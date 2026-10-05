@@ -4,6 +4,7 @@ import { resolveFlagSetting, resolveStartPage } from "@/lib/settingsFlags";
 import { extractClientApiKey } from "@/lib/auth/clientApiKey";
 import { isLoopbackHostname, isLoopbackPeer } from "@/lib/auth/trustedPeer";
 import { resolveRoutePolicy } from "@/lib/auth/routePolicy";
+import { getPasswordChangeUser, PASSWORD_CHANGE_COOKIE } from "@/lib/auth/passwordChangeSession";
 import {
   cliTokenAccepted,
   hasValidSession,
@@ -99,6 +100,23 @@ function isTranslatorPath(pathname) {
 }
 
 /**
+ * YAN-358: true only for exactly POST /api/auth/change-password (row
+ * passwordChange, exact path — no encoded separators) with a valid
+ * restricted password-change token. All other paths: restricted cookie
+ * grants nothing.
+ */
+async function hasPasswordChangeAccess(request, policy) {
+  if (!policy?.passwordChange) return false;
+  if (policy.key !== "/api/auth/change-password") return false;
+  if (String(request.method || "GET").toUpperCase() !== "POST") return false;
+  // Exact raw path: any percent-encoding of the path is refused.
+  if (request.nextUrl.pathname !== "/api/auth/change-password") return false;
+  const token = request.cookies.get(PASSWORD_CHANGE_COOKIE)?.value;
+  if (!token) return false;
+  return (await getPasswordChangeUser(token)) !== null;
+}
+
+/**
  * Apply a routePolicy row: local-only gate, then public / gateway / session
  * auth, then the capability. Null when allowed, else the error response.
  */
@@ -120,7 +138,12 @@ async function checkApiPolicy(request, policy) {
   const authed =
     cli ||
     (policy.alwaysProtected ? await hasValidSession(request) : await isAuthenticated(request));
-  if (!authed) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!authed) {
+    // YAN-358: the restricted password-change cookie admits exactly
+    // POST /api/auth/change-password and nothing else.
+    if (await hasPasswordChangeAccess(request, policy)) return null;
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   if (!(await principalCan(request, policy.capability, { anyWorkspace: policy.scoped }))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -192,9 +215,14 @@ export async function proxy(request) {
           return NextResponse.redirect(new URL("/dashboard", request.url));
         }
         return NextResponse.next();
-      } else {
-        return NextResponse.redirect(new URL("/login", request.url));
       }
+    }
+
+    // YAN-358: no full session, but a valid restricted cookie: send the user
+    // to the forced password-change step instead of the plain login page.
+    const restricted = request.cookies.get(PASSWORD_CHANGE_COOKIE)?.value;
+    if (restricted && (await getPasswordChangeUser(restricted)) !== null) {
+      return NextResponse.redirect(new URL("/login?error=password_change_required", request.url));
     }
 
     return NextResponse.redirect(new URL("/login", request.url));

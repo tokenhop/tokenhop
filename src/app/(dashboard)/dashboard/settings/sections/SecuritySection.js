@@ -10,7 +10,11 @@ import Button from "@/shared/components/Button";
 import Callout from "@/shared/components/Callout";
 import CopyField from "@/shared/components/CopyField";
 import { Skeleton } from "@/shared/components/Loading";
+import useAuthStatus from "@/shared/hooks/useAuthStatus";
 import { useSettingsField } from "../useSettingsField";
+
+// Mirrors server MIN_PASSWORD_LENGTH (src/lib/auth/userPassword.js); server stays authoritative.
+const MIN_PASSWORD_LENGTH = 8;
 
 /**
  * Security & access section:
@@ -60,6 +64,11 @@ export default function SecuritySection({ settings, onSettingsChange }) {
   const [passwords, setPasswords] = useState({ current: "", next: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
+  // Established multi-user security: rotate through the self endpoint (any
+  // user, current password required). Pristine installs keep PATCH /api/settings.
+  const authStatus = useAuthStatus();
+  const established = authStatus?.userSecurityEnforced === true;
+  const needsCurrent = established || settings.hasPassword;
 
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
@@ -71,11 +80,18 @@ export default function SecuritySection({ settings, onSettingsChange }) {
       setPassStatus({ type: "err", message: "New password cannot be empty" });
       return;
     }
+    if (established && passwords.next.length < MIN_PASSWORD_LENGTH) {
+      setPassStatus({
+        type: "err",
+        message: `New password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+      });
+      return;
+    }
     setPassLoading(true);
     setPassStatus({ type: "", message: "" });
     try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
+      const res = await fetch(established ? "/api/auth/change-password" : "/api/settings", {
+        method: established ? "POST" : "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           currentPassword: passwords.current,
@@ -84,7 +100,12 @@ export default function SecuritySection({ settings, onSettingsChange }) {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setPassStatus({ type: "ok", message: "Password updated successfully" });
+        setPassStatus({
+          type: "ok",
+          message: established
+            ? "Password updated. Other signed-in sessions were signed out."
+            : "Password updated successfully",
+        });
         setPasswords({ current: "", next: "", confirm: "" });
         onSettingsChange?.({ hasPassword: true });
       } else {
@@ -131,11 +152,13 @@ export default function SecuritySection({ settings, onSettingsChange }) {
           <div>
             <p className="text-[15px] font-semibold text-text">Password</p>
             <p className="mt-0.5 text-[13px] text-muted">
-              Change the dashboard password. Replace the default before exposing anything.
+              {established
+                ? "Change your password. Your other signed-in sessions will be signed out."
+                : "Change the dashboard password. Replace the default before exposing anything."}
             </p>
           </div>
           <form onSubmit={handlePasswordSubmit} className="space-y-3 max-w-xl">
-            {settings.hasPassword && (
+            {needsCurrent && (
               <Input
                 label="Current password"
                 type="password"
@@ -157,6 +180,11 @@ export default function SecuritySection({ settings, onSettingsChange }) {
                 required
                 disabled={passLoading}
                 placeholder="New password"
+                hint={
+                  established
+                    ? `At least ${MIN_PASSWORD_LENGTH} characters; 15 or more is better.`
+                    : undefined
+                }
               />
               <Input
                 label="Confirm new password"
@@ -180,7 +208,7 @@ export default function SecuritySection({ settings, onSettingsChange }) {
               loading={passLoading}
               disabled={passLoading || settings.hasPassword === undefined}
             >
-              {settings.hasPassword ? "Update password" : "Set password"}
+              {needsCurrent ? "Update password" : "Set password"}
             </Button>
           </form>
         </div>

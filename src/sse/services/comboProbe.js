@@ -127,7 +127,9 @@ async function resolveProbeCaller(nextRequest) {
         .map((part) => part.trim())
         .find((part) => part.startsWith("auth_token="))
         ?.slice(11);
-    const payload = cookie ? await getDashboardAuthSession(cookie) : null;
+    const { isLiveSession } = await import("@/lib/users/session.js");
+    const payload =
+      cookie && (await isLiveSession(cookie)) ? await getDashboardAuthSession(cookie) : null;
     if (!payload) return null;
     const db = await getAdapter();
     if (payload.sub) {

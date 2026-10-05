@@ -16,6 +16,11 @@ const MESSAGES = {
   access_denied: "The identity provider refused the sign-in request. Try again.",
   sso_not_linked:
     "This single sign-on account isn't linked to a user here. Sign in with a password or ask an admin.",
+  invalid_credentials: "Invalid email/username or password.",
+  account_pending: "This account is waiting for an admin to approve it.",
+  account_disabled: "This account has been disabled by an admin.",
+  password_change_required: "Your password must be changed before you can sign in.",
+  password_change_expired: "Your password change session expired. Sign in again.",
 };
 
 /**

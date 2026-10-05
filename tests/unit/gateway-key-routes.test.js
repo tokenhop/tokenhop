@@ -48,6 +48,12 @@ async function seed() {
   globalThis.__tokenhopOwnerBootstrap = { done: false, failedAt: 0, running: null };
   const { ensureOwnerBootstrap } = await import("@/lib/users/bootstrap.js");
   await ensureOwnerBootstrap();
+  // YAN-358: a hashless bootstrap owner must rotate first; give the fixture
+  // owner a real password so its management session is a full one.
+  db.run("UPDATE users SET passwordHash = ?, mustChangePassword = 0 WHERE instanceRole = 'owner'", [
+    "$2b$10$maUNk5tLUAmdidX5dRsQKueBpGd3eSvGPVmLbLoQVUk2tx5GEHqNK",
+  ]);
+  globalThis.__tokenhopSessionCache?.clear();
   const owner = await users.getOwnerUnscoped();
   const member = await users.createUserUnscoped({ email: "b@keys.test", instanceRole: "user" });
   // Direct hashed fixture (same as gateway-key-management): migrations do not

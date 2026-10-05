@@ -21,6 +21,9 @@ vi.mock("next/headers", () => ({
   }),
 }));
 vi.mock("@/lib/localDb", () => ({ getSettings: mocks.getSettings }));
+// This suite isolates id_token verification/callback wiring. Durable session
+// admission (including forced password rotation) has integration coverage.
+vi.mock("@/lib/users/session", () => ({ sessionClaims: async () => ({}) }));
 vi.mock("@/lib/auth/dashboardSession", () => ({
   setDashboardAuthCookie: mocks.setDashboardAuthCookie,
 }));

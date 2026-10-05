@@ -17,6 +17,7 @@ import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { resolveAuthModes } from "@/lib/auth/authModes";
 import { revokeOwnerSessions, singleUserModeAllowed } from "@/lib/users/session";
+import { handleEstablishedOwnerPassword } from "@/lib/auth/ownerPassword.js";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -376,6 +377,11 @@ export async function PATCH(request) {
     if (!isPlainObject(body)) {
       return NextResponse.json({ error: "Settings body must be an object" }, { status: 400 });
     }
+
+    // Established install: password change goes only through the owner session
+    // + change-password route. Pristine falls through to the legacy path below.
+    const ownerPasswordResponse = await handleEstablishedOwnerPassword(request, body);
+    if (ownerPasswordResponse) return ownerPasswordResponse;
 
     if (Object.hasOwn(body, "comboStrategyPatch") && Object.keys(body).length !== 1) {
       return NextResponse.json(

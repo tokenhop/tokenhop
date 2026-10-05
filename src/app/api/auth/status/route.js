@@ -4,9 +4,15 @@ import { getSettings } from "@/lib/localDb";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
+import { PASSWORD_CHANGE_COOKIE, getPasswordChangeUser } from "@/lib/auth/passwordChangeSession";
 import { resolveAuthModes } from "@/lib/auth/authModes";
-import { isMultiUserEnabled } from "@/lib/users/featureSwitch";
-import { describePrincipal, getPrincipal, isLiveSession } from "@/lib/users/session";
+import { isUserSecurityEnforced } from "@/lib/users/securityState";
+import {
+  describePrincipal,
+  getPrincipal,
+  isLiveSession,
+  singleUserMode,
+} from "@/lib/users/session";
 import { multiUserActive } from "@/lib/users/bootstrap";
 
 export async function GET() {
@@ -14,7 +20,9 @@ export async function GET() {
     const settings = await getSettings();
     const cookieStore = await cookies();
     const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
-    const requireLogin = settings.requireLogin !== false;
+    // Login off only sticks in true single-user installs; a restored DB with
+    // two users and requireLogin=false stays closed.
+    const requireLogin = !(await singleUserMode(settings));
     const authMode = settings.authMode || "password";
     const ssoType = resolveAuthModes(settings).protocol;
     const oidcName = String(session?.oidcName || "").trim();
@@ -30,16 +38,54 @@ export async function GET() {
       (session?.saml ? "SAML user" : session?.oidc ? "OIDC user" : "Password user");
 
     const loginMethod = session?.saml ? "SAML" : session?.oidc ? "OIDC" : "Password";
-    // Users & teams (YAN-355): who the request acts as. Absent while the switch is off.
+    // Durable gate (YAN-363): a hashed-security install stays enforced even
+    // with the rollout switch back off, so never trust a raw JWT there.
+    const enforced = await isUserSecurityEnforced();
+    if (enforced) {
+      // Forced rotation: short-lived password-change token, never a session.
+      const challengeUser = await getPasswordChangeUser(
+        cookieStore.get(PASSWORD_CHANGE_COOKIE)?.value,
+      );
+      if (challengeUser) {
+        return NextResponse.json({
+          requireLogin,
+          authMode,
+          ssoType,
+          oidcConfigured: isOidcConfigured(settings),
+          oidcLoginLabel:
+            (settings.oidcLoginLabel || "Sign in with OIDC").trim() || "Sign in with OIDC",
+          samlConfigured: isSamlConfigured(settings),
+          samlLoginLabel:
+            (settings.samlLoginLabel || "Sign in with SAML SSO").trim() || "Sign in with SAML SSO",
+          hasPassword: !!settings.password,
+          displayName,
+          loginMethod,
+          principal: null,
+          multiUserActive: await multiUserActive(),
+          userSecurityEnforced: true,
+          mustChangePassword: true,
+          authenticated: false,
+          oidcName: oidcName || null,
+          oidcEmail: oidcEmail || null,
+          oidcLogin: !!session?.oidc,
+          samlName: samlName || null,
+          samlEmail: samlEmail || null,
+          samlLogin: !!session?.saml,
+        });
+      }
+    }
+    // Users & teams (YAN-355): who the request acts as. Absent while
+    // unenforced, so the pristine payload stays byte-identical there.
     // A revoked session (sessionVersion bumped) no longer counts as signed in.
-    const multiUser = await isMultiUserEnabled();
-    const principalField = multiUser
+    const securityField = enforced
       ? {
           principal: await describePrincipal(await getPrincipal()),
           multiUserActive: await multiUserActive(),
+          userSecurityEnforced: true,
+          mustChangePassword: false,
         }
       : {};
-    const authenticated = multiUser
+    const authenticated = enforced
       ? await isLiveSession(cookieStore.get("auth_token")?.value)
       : !!session;
 
@@ -56,7 +102,7 @@ export async function GET() {
       hasPassword: !!settings.password,
       displayName,
       loginMethod,
-      ...principalField,
+      ...securityField,
       authenticated,
       oidcName: oidcName || null,
       oidcEmail: oidcEmail || null,

@@ -121,7 +121,8 @@ describe("switch on", () => {
     await b.ensureOwnerBootstrap();
     const owner = await db.getOwnerUnscoped();
     expect(await db.getUserPasswordHashUnscoped(owner.id)).toBeNull();
-    expect(await s.sessionClaims("pwd")).toMatchObject({ sub: owner.id, amr: ["pwd"] });
+    expect(owner.mustChangePassword).toBe(1);
+    expect(await s.sessionClaims("pwd")).toBeNull();
   });
 
   it.each([

@@ -53,6 +53,10 @@ export async function singleUserMode(settings) {
   if (settings?.requireLogin !== false) return false;
   try {
     if (!(await securityOn())) return true;
+    // YAN-358: never resolve the implicit local principal while the owner owes
+    // a mandatory rotation — that would bypass it. CLI recovery stays allowed.
+    const owner = await getOwnerUnscoped();
+    if (owner?.mustChangePassword) return false;
     return (await countActiveUsersUnscoped()) <= 1;
   } catch {
     return false;
@@ -80,10 +84,17 @@ async function validateSessionToken(token) {
     // legacy: pre-users session. Only the single admin could have minted it, so it
     // stands for the owner until a second user exists, then it must log in again.
     // Zero users (switch on before the YAN-356 bootstrap) is still that sole admin.
-    return (await countActiveUsersUnscoped()) <= 1 ? { legacy: true, payload } : null;
+    // YAN-358: never while the owner is pending/disabled or owes a rotation.
+    if ((await countActiveUsersUnscoped()) > 1) return null;
+    const owner = await getOwnerUnscoped();
+    if (!owner) return { legacy: true, payload };
+    if (owner.status !== "active" || owner.mustChangePassword) return null;
+    return { legacy: true, payload };
   }
   const user = await getSessionUserUnscoped(payload.sub);
   if (user?.status !== "active" || user.sessionVersion !== payload.sv) return null;
+  // YAN-358: no full session for an unapproved user or a pending rotation.
+  if (user.instanceRole === "pending" || user.mustChangePassword) return null;
   return { user, payload };
 }
 
@@ -161,6 +172,9 @@ async function resolvePrincipalOrThrow(request) {
     const session = await validateSessionToken(token);
     if (session?.user) return principalFor(session.user, "session", session.payload.wid);
     if (session?.legacy) return principalFor(await getOwnerUnscoped(), "session");
+    // YAN-358: a presented but invalid/restricted token never degrades to the
+    // implicit local principal (or any other ambient authority).
+    return null;
   }
   if (await cliTokenAccepted(request)) return principalFor(await getOwnerUnscoped(), "cli");
   // Gateway API keys resolve here once YAN-363 lands (via: "apiKey").
@@ -262,6 +276,8 @@ export async function sessionClaims(method, identity = null, opts = {}) {
     if (method !== "pwd" && (await countActiveUsersUnscoped()) > 1) return null;
     const owner = await getOwnerUnscoped();
     if (owner?.status !== "active") return {};
+    // YAN-358: a flagged owner never gets full claims (rotation first), any method.
+    if (owner.mustChangePassword) return null;
     user = owner;
   }
   const principal = await principalFor(user, "session");
@@ -270,6 +286,29 @@ export async function sessionClaims(method, identity = null, opts = {}) {
     sv: user.sessionVersion,
     wid: principal.activeWorkspaceId,
     amr: [method],
+  };
+}
+
+/**
+ * Claims for a password login of a specific user (multi-user password login).
+ * Switch off: today's claim set. Null for an unknown, inactive, pending or
+ * rotation-owing user. `wid` is kept only if it is one of the user's workspaces.
+ * @param {string} userId
+ * @param {string} [wid]
+ * @returns {Promise<object|null>}
+ */
+export async function passwordSessionClaims(userId, wid) {
+  if (!(await securityOn())) return {};
+  const user = await getUserUnscoped(userId);
+  if (!user) return null;
+  if (user.status !== "active" || user.instanceRole === "pending" || user.mustChangePassword)
+    return null;
+  const principal = await principalFor(user, "session", wid);
+  return {
+    sub: user.id,
+    sv: user.sessionVersion,
+    wid: principal.activeWorkspaceId,
+    amr: ["pwd"],
   };
 }
 
@@ -299,6 +338,7 @@ export async function revokeOwnerSessions(request, { passwordHash } = {}) {
   const ownSession = session?.sub ? session.sub === owner.id : await isLiveSession(token);
   if (!ownSession) return;
   const claims = await sessionClaims("pwd");
+  if (!claims) return; // refused (e.g. owner owes a rotation): never re-mint
   claims.amr = Array.isArray(session.amr) ? session.amr : ["pwd"];
   // Keep the caller's active workspace if it is still one of the owner's.
   const ownWorkspaces = (await listWorkspaces({ userId: owner.id })).map((w) => w.id);
