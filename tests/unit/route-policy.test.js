@@ -106,6 +106,11 @@ function legacyFlags(p, method) {
 // minus the CLI token: they moved into the table with cliAllowed: false.
 const MOVED_TO_GUARD = new Set(["/api/auth/oidc/test", "/api/auth/saml/test"]);
 
+// YAN-358 password routes did not exist pre-YAN-357, so the legacy oracle has
+// no row for them; the table pins them stricter than the legacy default:
+// alwaysProtected with no CLI token. Every historical row stays unchanged.
+const YAN358_PASSWORD_ROUTES = new Set(["/api/auth/change-password", "/api/users/[id]/password"]);
+
 describe("route coverage", () => {
   it("finds the API route files", () => {
     expect(ROUTES.length).toBeGreaterThan(150);
@@ -186,6 +191,7 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
         const { localOnly, alwaysProtected, gateway, public: pub } = resolveRoutePolicy(sample, m);
         const want = legacyFlags(sample, m);
         if (MOVED_TO_GUARD.has(route)) want.public = false;
+        if (YAN358_PASSWORD_ROUTES.has(route)) want.alwaysProtected = true;
         const got = { localOnly, alwaysProtected, gateway, public: pub };
         if (JSON.stringify(got) !== JSON.stringify(want)) diffs.push({ m, route, got, want });
       }
@@ -206,7 +212,9 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
   it("keeps the CLI token for every authenticated route except the SSO probes", () => {
     for (const { route, sample } of ROUTES) {
       const { cliAllowed } = resolveRoutePolicy(sample, "GET");
-      expect(cliAllowed, route).toBe(!MOVED_TO_GUARD.has(route));
+      expect(cliAllowed, route).toBe(
+        !MOVED_TO_GUARD.has(route) && !YAN358_PASSWORD_ROUTES.has(route),
+      );
     }
   });
 });

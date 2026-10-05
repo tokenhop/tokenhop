@@ -73,6 +73,27 @@ describe("switch on", () => {
     expect(await s.sessionClaims("oidc")).toBeNull();
   });
 
+  it("refuses password and unlinked SSO sessions while owner rotation is pending", async () => {
+    await db.deleteUserUnscoped(t.b.user.id);
+    await db.setUserPasswordUnscoped(t.a.user.id, {
+      passwordHash: null,
+      mustChangePassword: true,
+    });
+    for (const method of ["pwd", "oidc", "saml"]) {
+      expect(await s.sessionClaims(method)).toBeNull();
+    }
+  });
+
+  it("a stale token falls back like no token: single-user only, never while rotation is owed", async () => {
+    await db.deleteUserUnscoped(t.b.user.id);
+    await db.updateSettings({ requireLogin: false });
+    const stale = await tokenFor(t.a);
+    await db.bumpSessionVersion(t.a.user.id);
+    expect(await s.resolvePrincipal(req({ token: stale }))).toMatchObject({ via: "local" });
+    await db.setUserPasswordUnscoped(t.a.user.id, { passwordHash: null, mustChangePassword: true });
+    expect(await s.resolvePrincipal(req({ token: stale }))).toBeNull();
+  });
+
   it("resolves the session principal and honours wid only for own workspaces", async () => {
     const p = await s.resolvePrincipal(req({ token: await tokenFor(t.a, { wid: t.shared.id }) }));
     expect(p).toMatchObject({ userId: t.a.user.id, instanceRole: "owner", via: "session" });
@@ -218,8 +239,18 @@ describe("switch on: route handlers", () => {
   it("a password reset signs the owner out everywhere", async () => {
     const token = await tokenFor(t.a);
     const { POST } = await import("@/app/api/auth/reset-password/route.js");
-    expect((await POST()).status).toBe(200);
+    const { getCliToken, CLI_TOKEN_HEADER } = await import("@/lib/auth/cliToken");
+    // Two users: the CLI token counts only from a direct loopback peer.
+    const request = req({
+      headers: {
+        [CLI_TOKEN_HEADER]: await getCliToken(),
+        "x-9r-peer-token": PEER,
+        "x-9r-real-ip": "127.0.0.1",
+      },
+    });
+    expect((await POST(request)).status).toBe(200);
     expect(await s.hasValidSession(req({ token }))).toBe(false);
+    expect((await db.getOwnerUnscoped()).mustChangePassword).toBe(1);
   });
 
   it("status reports the principal without secrets and drops revoked sessions", async () => {

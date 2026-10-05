@@ -181,6 +181,8 @@ export {
   getSessionUserUnscoped,
   bumpSessionVersion,
   getUserPasswordHashUnscoped,
+  findUsersByLoginUnscoped,
+  setUserPasswordUnscoped,
   createUserUnscoped,
   bootstrapOwnerUnscoped,
   updateUserUnscoped,

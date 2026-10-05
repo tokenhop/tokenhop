@@ -18,8 +18,9 @@ import m003 from "./003-pin-saml-issuer.js";
 import m004 from "./004-identity-tenancy.js";
 import m005 from "./005-connection-ownership.js";
 import m006 from "./006-combo-sort-order.js";
+import m007 from "./007-user-password-change.js";
 
-export const MIGRATIONS = [m001, m002, m003, m004, m005, m006].sort(
+export const MIGRATIONS = [m001, m002, m003, m004, m005, m006, m007].sort(
   (a, b) => a.version - b.version,
 );
 

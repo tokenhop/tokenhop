@@ -13,6 +13,8 @@
 //   scoped           workspace-scoped handler (YAN-361): the guard asks for the
 //                    capability in any of the principal's workspaces and the
 //                    handler checks the row's workspace
+//   passwordChange   YAN-358: exactly POST on this row also admits a valid
+//                    restricted password-change token (no full session)
 // With the users & teams switch off every authenticated principal is the
 // owner, so `cap` changes nothing; the flags reproduce the old path lists.
 
@@ -48,6 +50,20 @@ export const ROUTE_POLICY = {
   "/api/auth/saml/test": { cap: SETTINGS, cliAllowed: false },
   "/api/auth/reset-password": LOCAL_HOST,
   "/api/auth/setup-token": { cap: "instance.ownership.transfer", localOnly: true },
+  // YAN-358: POST-only (other methods fail closed to hostOps via the
+  // per-method cap). A valid restricted password-change token also admits
+  // POST; the guard checks row.passwordChange on the exact path.
+  "/api/auth/change-password": {
+    cap: { POST: SELF },
+    alwaysProtected: true,
+    cliAllowed: false,
+    passwordChange: true,
+  },
+  "/api/users/[id]/password": {
+    cap: "instance.users.manage",
+    alwaysProtected: true,
+    cliAllowed: false,
+  },
   "/api/health": PUBLIC,
   "/api/init": PUBLIC,
   "/api/locale": PUBLIC,
@@ -287,7 +303,7 @@ function routeKey(pathname) {
  * /skills, /login…), which dashboardGuard handles itself.
  * @param {string} pathname
  * @param {string} [method]
- * @returns {{ key: string, capability: string|null, public: boolean, gateway: boolean, localOnly: boolean, alwaysProtected: boolean, cliAllowed: boolean, scoped: boolean }|null}
+ * @returns {{ key: string, capability: string|null, public: boolean, gateway: boolean, localOnly: boolean, alwaysProtected: boolean, cliAllowed: boolean, scoped: boolean, passwordChange: boolean }|null}
  */
 export function resolveRoutePolicy(pathname, method = "GET") {
   const key = routeKey(pathname);
@@ -313,5 +329,6 @@ function flags(row) {
     alwaysProtected: row.alwaysProtected === true,
     cliAllowed: row.cliAllowed !== false,
     scoped: row.scoped === true,
+    passwordChange: row.passwordChange === true,
   };
 }

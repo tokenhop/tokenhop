@@ -4,7 +4,15 @@ import path from "node:path";
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 
 const originalDataDir = process.env.DATA_DIR;
+const originalMultiUser = process.env.TOKENHOP_MULTI_USER;
 let tempDir;
+
+// Pin the users & teams switch off before featureSwitch loads (it captures the
+// env override at module load). This file asserts the legacy PATCH validator;
+// in established mode password edits route through ownerPassword.js, which
+// requires an owner session (401 unauthenticated) and never reaches the
+// 256-char boundary validator asserted below.
+process.env.TOKENHOP_MULTI_USER = "off";
 
 beforeAll(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-settings-validation-"));
@@ -18,6 +26,8 @@ afterAll(() => {
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
+  if (originalMultiUser === undefined) delete process.env.TOKENHOP_MULTI_USER;
+  else process.env.TOKENHOP_MULTI_USER = originalMultiUser;
 });
 
 const settingsPatch = (body) =>

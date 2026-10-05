@@ -273,6 +273,7 @@ export function takeSetupToken(cookieStore) {
  * @returns {Promise<boolean>}
  */
 export async function multiUserActive() {
-  if (!(await isMultiUserEnabled())) return false;
+  const { isUserSecurityEnforced } = await import("./securityState.js");
+  if (!(await isUserSecurityEnforced())) return false;
   return (await countActiveUsersUnscoped()) >= 2 || (await countSharedWorkspacesUnscoped()) >= 2;
 }

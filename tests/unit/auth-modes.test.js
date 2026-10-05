@@ -28,6 +28,11 @@ vi.mock("@/lib/auth/saml.js", async (importOriginal) => ({
   buildSamlAuthorizeUrl: async () => ({ authorizeUrl: "https://idp.test/saml", requestId: "r1" }),
 }));
 
+// Pin the users & teams switch off: featureSwitch captures the env override at
+// module load, and this file asserts the legacy authMode × ssoType refusal
+// matrix. Established (multi-user) login semantics live in password-login.test.js.
+process.env.TOKENHOP_MULTI_USER = "off";
+
 const { resolveAuthModes } = await import("@/lib/auth/authModes");
 const { describeLoginError } = await import("@/app/login/loginErrors");
 const oidcStart = (await import("@/app/api/auth/oidc/start/route.js")).GET;

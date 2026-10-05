@@ -12,13 +12,16 @@ import { ACTIVE } from "@/shared/brand";
 import { resolveLoginVisibility } from "./loginVisibility";
 import { resolveAuthModes } from "@/lib/auth/authModes";
 import { describeLoginError } from "./loginErrors";
+import PasswordChangeForm from "./PasswordChangeForm";
 
 /**
- * Login page: password form, SSO buttons per auth mode, must-change flow,
+ * Login page: password form, SSO buttons per auth mode, forced-change flow,
  * first-run default-password warning, and rate-limit states.
- * Auth/session logic is unchanged; only presentation uses Signal primitives.
+ * With multi-user security established, an identifier field appears above the
+ * password and the login POST carries { login, password }.
  */
 export default function LoginPage() {
+  const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [resetHint, setResetHint] = useState("");
@@ -31,8 +34,11 @@ export default function LoginPage() {
   const [oidcLoginLabel, setOidcLoginLabel] = useState("Sign in with OIDC");
   const [samlConfigured, setSamlConfigured] = useState(false);
   const [samlLoginLabel, setSamlLoginLabel] = useState("Sign in with SAML SSO");
-  const [mustChange, setMustChange] = useState(false);
-  const [newPassword, setNewPassword] = useState("");
+  // null = loading, "login" = password form, "restricted" = forced change,
+  // "self" = signed-in self-service change at /login?changePassword=1.
+  const [view, setView] = useState("login");
+  const [passwordMinLength, setPasswordMinLength] = useState(8);
+  const [multiUserActive, setMultiUserActive] = useState(false);
   const [ssoError, setSsoError] = useState("");
 
   // Show the SSO redirect's ?error= once, then strip it from the URL.
@@ -59,6 +65,9 @@ export default function LoginPage() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
       const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+      const params =
+        typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+      const selfChange = params?.get("changePassword") === "1";
 
       try {
         const res = await fetch(`${baseUrl}/api/auth/status`, {
@@ -69,10 +78,25 @@ export default function LoginPage() {
 
         if (res.ok) {
           const data = await res.json();
+          if (data.mustChangePassword === true) {
+            // Live password-change challenge (no full session). Reload-safe.
+            setMultiUserActive(data.multiUserActive === true);
+            setHasPassword(!!data.hasPassword);
+            setView("restricted");
+            return;
+          }
           if (data.authenticated === true || data.requireLogin === false) {
+            if (selfChange && data.userSecurityEnforced === true) {
+              // Signed-in self-service change; query alone never authorizes it.
+              setMultiUserActive(data.multiUserActive === true);
+              setHasPassword(!!data.hasPassword);
+              setView("self");
+              return;
+            }
             window.location.assign("/dashboard");
             return;
           }
+          setMultiUserActive(data.multiUserActive === true);
           setHasPassword(!!data.hasPassword);
           setAuthMode(data.authMode || "password");
           setSsoType(data.ssoType || "oidc");
@@ -105,22 +129,34 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify(multiUserActive ? { login, password } : { password }),
       });
 
+      const data = await res.json().catch(() => ({}));
+
       if (res.ok) {
-        const data = await res.json();
-        if (data.mustChangePassword) {
-          setMustChange(true);
-          return;
-        }
         window.location.assign(data.startPage || "/dashboard");
-      } else {
-        const data = await res.json();
-        setError(data.error || "Invalid password");
-        if (data.resetHint) setResetHint(data.resetHint);
-        if (data.retryAfter) setRetryAfter(Number(data.retryAfter));
+        return;
       }
+
+      if (data.code === "password_change_required") {
+        // No full session was issued; change it now with the typed temp password.
+        setPasswordMinLength(Number(data.passwordMinLength) || 8);
+        setView("restricted");
+        return;
+      }
+
+      if (data.code === "default_password_remote") {
+        // Remote public-default: no challenge cookie exists, so never open
+        // the change form; show the server's local-recovery guidance as-is.
+        setError(data.error || "Sign in from the machine running this server to continue.");
+      } else if (data.code) {
+        setError(describeLoginError(data.code));
+      } else {
+        setError(data.error || "Invalid password");
+      }
+      if (data.resetHint) setResetHint(data.resetHint);
+      if (data.retryAfter) setRetryAfter(Number(data.retryAfter));
     } catch {
       setError("An error occurred. Please try again.");
     } finally {
@@ -128,30 +164,11 @@ export default function LoginPage() {
     }
   };
 
-  // Force a new password before entering the dashboard (default + remote).
-  const handleSetNewPassword = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentPassword: password, newPassword }),
-      });
-      if (res.ok) {
-        // YAN-312: honor the configured start page after the forced reset too.
-        const data = await res.json().catch(() => ({}));
-        window.location.assign(data.startPage || "/dashboard");
-      } else {
-        const data = await res.json();
-        setError(data.error || "Failed to set password");
-      }
-    } catch {
-      setError("An error occurred. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+  // password_change_expired: back to the plain login form with a message.
+  const handleExpired = (message) => {
+    setView("login");
+    setPassword("");
+    setError(message);
   };
 
   const handleOidcLogin = () => {
@@ -186,6 +203,17 @@ export default function LoginPage() {
     );
   }
 
+  const subtitle =
+    view === "self"
+      ? "Change your password"
+      : multiUserActive
+        ? "Sign in with your account"
+        : samlAvailable
+          ? "Sign in with SAML 2.0 Single Sign-On"
+          : oidcAvailable
+            ? "Sign in with your OIDC provider to access the dashboard"
+            : "Enter your password to access the dashboard";
+
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-bg p-4">
       <div className="relative z-10 w-full max-w-md">
@@ -198,42 +226,24 @@ export default function LoginPage() {
           >
             <BrandLockup size={44} />
           </Link>
-          <p className="mt-4 text-sm text-muted">
-            {samlAvailable
-              ? "Sign in with SAML 2.0 Single Sign-On"
-              : oidcAvailable
-                ? "Sign in with your OIDC provider to access the dashboard"
-                : "Enter your password to access the dashboard"}
-          </p>
+          <p className="mt-4 text-sm text-muted">{subtitle}</p>
         </div>
 
         <Card>
-          {mustChange ? (
-            <form onSubmit={handleSetNewPassword} className="flex flex-col gap-4">
-              <Callout variant="warn" title="Password change required">
-                Set a new password before accessing the dashboard remotely.
-              </Callout>
-              <Input
-                label="New password"
-                required
-                type="password"
-                autoComplete="new-password"
-                placeholder="Enter new password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                error={error || undefined}
-                autoFocus
-              />
-              <Button
-                type="submit"
-                variant="primary"
-                fullWidth
-                loading={loading}
-                disabled={!newPassword}
-              >
-                Set password
-              </Button>
-            </form>
+          {view === "restricted" ? (
+            <PasswordChangeForm
+              mode="restricted"
+              login={multiUserActive ? login : ""}
+              currentPassword={password}
+              minLength={passwordMinLength}
+              onExpired={handleExpired}
+            />
+          ) : view === "self" ? (
+            <PasswordChangeForm
+              mode="self"
+              minLength={passwordMinLength}
+              onExpired={handleExpired}
+            />
           ) : (
             <div className="flex flex-col gap-4">
               {ssoError && (
@@ -272,26 +282,50 @@ export default function LoginPage() {
                     </p>
                   )}
 
+                  <div aria-live="assertive">
+                    {error && <span className="sr-only">{error}</span>}
+                  </div>
+
+                  {multiUserActive && (
+                    <Input
+                      label="Email or username"
+                      required
+                      type="text"
+                      name="username"
+                      autoComplete="username"
+                      placeholder="you@example.com or username"
+                      value={login}
+                      onChange={(e) => setLogin(e.target.value)}
+                      autoFocus
+                    />
+                  )}
+
                   <Input
                     label="Password"
                     required
                     type="password"
+                    name="password"
                     autoComplete="current-password"
                     placeholder="Enter password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     error={error || undefined}
-                    autoFocus={!oidcAvailable}
+                    autoFocus={!multiUserActive && !oidcAvailable}
                   />
                   {retryAfter > 0 && (
                     <p className="text-xs text-warn" role="status">
                       Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
                     </p>
                   )}
-                  {resetHint && (
+                  {resetHint && !multiUserActive && (
                     <p className="text-xs text-muted">
                       Forgot password? Open <code className="font-mono">{ACTIVE.npmPackage}</code>{" "}
                       CLI on the host → <b>Settings</b> → <b>Reset password to default</b>.
+                    </p>
+                  )}
+                  {multiUserActive && (
+                    <p className="text-xs text-muted">
+                      Forgot your password? Ask an admin to reset it for you.
                     </p>
                   )}
 
@@ -300,14 +334,16 @@ export default function LoginPage() {
                     variant="primary"
                     fullWidth
                     loading={loading}
-                    disabled={retryAfter > 0}
+                    disabled={retryAfter > 0 || (multiUserActive && !login)}
                   >
                     {retryAfter > 0 ? `Wait ${retryAfter}s` : "Login"}
                   </Button>
 
-                  <p className="mt-2 text-center text-xs text-muted">
-                    Default password is <code className="font-mono">123456</code>
-                  </p>
+                  {!multiUserActive && (
+                    <p className="mt-2 text-center text-xs text-muted">
+                      Default password is <code className="font-mono">123456</code>
+                    </p>
+                  )}
                   {hasPassword === false && (
                     <Callout variant="warn" title="Security risk">
                       No password set. You will be asked to set one when logging in remotely.
