@@ -206,8 +206,8 @@ export function stopQuotaSnapshotPoller() {
 // strategy, combo strategy, the global comboStrategy, or the global
 // fallbackStrategy is weighted, or when any combo names a provider member so
 // routing has quota data to skip 0%-quota providers.
-export function configureQuotaSnapshotPoller(settings, combos = [], aliases = {}) {
-  const hasWeighted =
+function hasWeightedSettings(settings) {
+  return (
     settings?.fallbackStrategy === "weighted" ||
     Object.values(settings?.providerStrategies || {}).some(
       (strategy) => strategy?.fallbackStrategy === "weighted",
@@ -215,9 +215,18 @@ export function configureQuotaSnapshotPoller(settings, combos = [], aliases = {}
     (settings?.comboStrategy || "fallback") === "weighted" ||
     Object.values(settings?.comboStrategies || {}).some(
       (strategy) => strategy?.fallbackStrategy === "weighted",
-    );
-  if (hasWeighted || comboMemberProviders(combos, aliases).size > 0) startQuotaSnapshotPoller();
-  else stopQuotaSnapshotPoller();
+    )
+  );
+}
+
+// `settings` may be one effective view or an array of them (instance +
+// workspaces). The shared poller keeps running while ANY entry needs it, so
+// one workspace going non-weighted never stops another's polling.
+export function configureQuotaSnapshotPoller(settings, combos = [], aliases = {}) {
+  const views = Array.isArray(settings) ? settings : [settings];
+  if (views.some(hasWeightedSettings) || comboMemberProviders(combos, aliases).size > 0) {
+    startQuotaSnapshotPoller();
+  } else stopQuotaSnapshotPoller();
 }
 
 // Read settings + combos + model aliases from the DB and (re)configure the
@@ -228,9 +237,19 @@ export async function syncQuotaSnapshotPoller({
   getSettings: readSettings = getSettings,
   getCombos: readCombos = getCombos,
   getModelAliases: readAliases = getModelAliases,
+  // Default reads the instance + every workspace view. An injected readSettings
+  // without an injected list stays single-view (test seam).
+  listPreferencesUnscoped: readPrefs = readSettings === getSettings
+    ? listEffectivePreferencesUnscoped
+    : null,
 } = {}) {
   try {
-    const settings = await readSettings();
+    const instance = await readSettings();
+    let settings = instance;
+    if (readPrefs) {
+      const list = await readPrefs().catch(() => null);
+      if (Array.isArray(list) && list.length > 0) settings = [instance, ...list];
+    }
     let combos;
     let aliases;
     try {

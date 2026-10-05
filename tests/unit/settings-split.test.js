@@ -71,6 +71,11 @@ describe("switch on", () => {
     expect(row.data.comboStrategy).toBe("round-robin");
     expect(row.data).not.toHaveProperty("requireApiKey"); // instance key stays in the blob
 
+    await db.updateComboStrategies(() => ({ demo: { fallbackStrategy: "weighted" } }));
+    expect((await repo.getWorkspaceSettings(t.a.ctx, t.shared.id)).data.comboStrategies).toEqual({
+      demo: { fallbackStrategy: "weighted" },
+    });
+
     // An override made after the seed survives a re-seed (INSERT OR IGNORE).
     await repo.updateWorkspaceSettings(t.a.ctx, t.shared.id, { comboStrategy: "fusion" });
     repo.seedDefaultWorkspaceSettingsUnscoped(adapter);
@@ -82,6 +87,12 @@ describe("switch on", () => {
   it("workspace B's override does not reach A; A cannot read B's row", async () => {
     await repo.updateWorkspaceSettings(t.a.ctx, t.a.personal, { comboStrategy: "round-robin" });
     await repo.updateWorkspaceSettings(t.b.ctx, t.b.personal, { comboStrategy: "fusion" });
+
+    await db.updateSettings({ fallbackStrategy: "weighted" });
+    await repo.updateWorkspaceSettings(t.a.ctx, t.a.personal, { fallbackStrategy: "fill-first" });
+    const views = await db.listEffectivePreferencesUnscoped();
+    expect(views.some((view) => view.fallbackStrategy === "weighted")).toBe(true);
+    expect(views.some((view) => view.fallbackStrategy === "fill-first")).toBe(true);
 
     const effA = await db.getEffectivePreferences(t.a.ctx);
     const effB = await db.getEffectivePreferences(t.b.ctx);
@@ -125,6 +136,20 @@ describe("API boundaries", () => {
         })
       ).status,
     ).toBe(400);
+  });
+
+  it("accepts an ordinary workspace PATCH without comboStrategies", async () => {
+    await load("on");
+    await db.updateSettings({ requireLogin: true });
+    const t = await seedTenancy();
+    const workspace = await import("@/app/api/workspaces/[id]/settings/route.js");
+    const res = await as(t.a, workspace.PATCH, `/api/workspaces/${t.a.personal}/settings`, {
+      method: "PATCH",
+      params: { id: t.a.personal },
+      body: { fallbackStrategy: "round-robin" },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.fallbackStrategy).toBe("round-robin");
   });
 
   it("hides new routes with switch off", async () => {

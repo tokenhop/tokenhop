@@ -206,6 +206,7 @@ export async function updateComboStrategies(transform, requireComboName) {
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
       [stringifyJson(next)],
     );
+    mirrorToDefaultWorkspace(db, { comboStrategies: nextStrategies });
   });
   return mergeWithDefaults(next);
 }
@@ -263,7 +264,10 @@ export async function listEffectivePreferencesUnscoped() {
   const { isMultiUserEnabled } = await import("@/lib/users/featureSwitch.js");
   if (!(await isMultiUserEnabled())) return [instance];
   const db = await getAdapter();
-  const rows = db.all(`SELECT data FROM workspaceSettings`);
+  // Every workspace participates; one with no override row inherits instance.
+  const rows = db.all(
+    `SELECT ws.data FROM workspaces w LEFT JOIN workspaceSettings ws ON ws.workspaceId = w.id`,
+  );
   if (!rows.length) return [instance];
   return rows.map((r) => ({ ...instance, ...pickKeys(parseJson(r.data, {}), WORKSPACE_KEYS) }));
 }

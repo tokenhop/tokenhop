@@ -23,6 +23,7 @@ const HELPER_ALLOWLIST = new Set([
   "membershipsRepo.js:membershipRole",
   "membershipsRepo.js:assertNotLastManager",
   "settingsRepo.js:updateSettings",
+  "settingsRepo.js:updateComboStrategies",
   "workspaceSettingsRepo.js:mirrorToDefaultWorkspace",
 ]);
 

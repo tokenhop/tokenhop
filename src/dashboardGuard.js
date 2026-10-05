@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
+import { getEffectivePreferences } from "@/lib/db/index.js";
 import { resolveFlagSetting, resolveStartPage } from "@/lib/settingsFlags";
 import { extractClientApiKey } from "@/lib/auth/clientApiKey";
 import { isLoopbackHostname, isLoopbackPeer } from "@/lib/auth/trustedPeer";
@@ -9,6 +10,7 @@ import {
   cliTokenAccepted,
   hasValidSession,
   principalCan,
+  resolvePrincipal,
   singleUserMode,
 } from "@/lib/users/session";
 import { LOCAL_ONLY_CODE } from "@/shared/utils/localOnly";
@@ -233,7 +235,11 @@ export async function proxy(request) {
   // invalid stored value falls back to /dashboard (resolveStartPage).
   if (pathname === "/") {
     try {
-      const settings = await loadSettings();
+      // YAN-362: a signed-in user's effective startPage (instance ⊕ user
+      // preferences) wins. resolvePrincipal is null with the switch off, so
+      // the unauthenticated fallback below stays byte-identical to before.
+      const principal = await resolvePrincipal(request);
+      const settings = principal ? await getEffectivePreferences(principal) : await loadSettings();
       const startPage = resolveStartPage(settings?.startPage);
       return NextResponse.redirect(new URL(startPage, request.url));
     } catch {

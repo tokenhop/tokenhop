@@ -12,7 +12,6 @@ import {
   updateWorkspaceSettings,
 } from "@/lib/db/repos/workspaceSettingsRepo.js";
 import { isPlainObject, validateSettingsBody } from "@/app/api/settings/validateSettings.js";
-import { validateComboStrategySettings } from "open-sse/services/comboStrategy.js";
 import { applyComboStrategyPatch } from "@/app/api/settings/comboStrategyPatch.js";
 import { runSettingsSideEffects } from "@/app/api/settings/settingsSideEffects.js";
 
@@ -38,14 +37,8 @@ function splitKeyError(body) {
   return "";
 }
 
-function validatePatch(body) {
-  const comboError = validateComboStrategySettings({
-    ...pickKeys(body, WORKSPACE_KEYS),
-    comboStrategies: body.comboStrategies,
-  });
-  if (comboError) return comboError;
-  return validateSettingsBody(pickKeys(body, WORKSPACE_KEYS));
-}
+// validateSettingsBody already runs the combo-strategy validator.
+const validatePatch = (body) => validateSettingsBody(pickKeys(body, WORKSPACE_KEYS));
 
 export async function GET(request, { params }) {
   try {

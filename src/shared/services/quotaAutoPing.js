@@ -387,10 +387,21 @@ export function stopQuotaAutoPing() {
   console.log("[AutoPing] scheduler stopped");
 }
 
-export function configureQuotaAutoPing(settings) {
-  const enabled = Object.values(C.providers).some((providerConfig) =>
+function autoPingEntryEnabled(settings, providers = Object.values(C.providers)) {
+  return providers.some((providerConfig) =>
     Object.values(settings?.[providerConfig.settingsKey]?.connections || {}).some(Boolean),
   );
-  if (enabled) startQuotaAutoPing();
+}
+
+// Union over every effective preference entry (instance + workspaces): the
+// shared scheduler stays on while ANY view opts in, so one workspace
+// disabling autoPing never stops another workspace's opt-in.
+export function anyAutoPingEnabled(views) {
+  const list = Array.isArray(views) ? views : [views];
+  return list.some((view) => autoPingEntryEnabled(view));
+}
+
+export function configureQuotaAutoPing(settings) {
+  if (anyAutoPingEnabled(settings)) startQuotaAutoPing();
   else stopQuotaAutoPing();
 }

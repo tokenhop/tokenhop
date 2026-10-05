@@ -151,6 +151,21 @@ describe("global weighted poller", () => {
     ]);
   });
 
+  it("starts for workspace-only weighted settings and stops only after all views disable", async () => {
+    const off = { fallbackStrategy: "fill-first" };
+    await syncQuotaSnapshotPoller({
+      getSettings: async () => off,
+      getCombos: async () => [],
+      getModelAliases: async () => ({}),
+      listPreferencesUnscoped: async () => [off, { fallbackStrategy: "weighted" }],
+    });
+    expect(vi.getTimerCount()).toBe(1);
+    configureQuotaSnapshotPoller([off, { fallbackStrategy: "weighted" }]);
+    expect(vi.getTimerCount()).toBe(1);
+    configureQuotaSnapshotPoller([off, off]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("starts for global weighted and stops when disabled", () => {
     configureQuotaSnapshotPoller(settings);
     expect(vi.getTimerCount()).toBe(1);

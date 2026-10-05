@@ -30,6 +30,7 @@ import {
 } from "@/lib/auth/loginLimiter";
 import { isCrossSite, isJson } from "@/lib/auth/sameOrigin.js";
 import {
+  getEffectivePreferences,
   getSettings,
   getUserPasswordHashUnscoped,
   getUserUnscoped,
@@ -142,8 +143,16 @@ export async function POST(request) {
     if (!claims?.sub) return expired(cookieStore);
     await setDashboardAuthCookie(cookieStore, request, claims);
     clearPasswordChangeCookie(cookieStore);
-    const settings = await getSettings();
-    return json({ success: true, startPage: resolveStartPage(settings?.startPage) });
+    // YAN-362: the user's effective startPage (instance ⊕ user preference);
+    // switch off returns the instance blob, unchanged.
+    const effective = await getEffectivePreferences({
+      userId: user.id,
+      activeWorkspaceId: subject.wid ?? claims?.wid ?? null,
+    });
+    return json({
+      success: true,
+      startPage: resolveStartPage(effective?.startPage ?? (await getSettings())?.startPage),
+    });
   } catch (err) {
     if (err?.code === "API_KEY_STATE_INVALID") return json({ error: "Service unavailable" }, 503);
     console.error("[auth/change-password] unexpected error:", err);

@@ -1,7 +1,7 @@
 import { getProviderCredentials, markAccountUnavailable } from "../services/auth.js";
 import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
 import { getComboByName } from "@/lib/db/repos/combosRepo.js";
-import { getSettings } from "@/lib/localDb";
+import { getEffectivePreferences } from "@/lib/db/index.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleTtsCore } from "open-sse/handlers/ttsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -43,10 +43,12 @@ export async function handleTts(request) {
     `${url.pathname} | ${modelStr} | format=${responseFormat}${language ? ` | lang=${language}` : ""}`,
   );
 
-  const settings = await getSettings();
+  // Authenticate before reading caller-scoped preferences: the gateway
+  // principal selects the effective combo-strategy view.
   const auth = await resolveGatewayAuth(request);
   if (auth instanceof Response) return auth;
   const gateway = auth.principal;
+  const settings = await getEffectivePreferences(gateway);
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.input) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");

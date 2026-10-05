@@ -5,7 +5,8 @@ import {
   extractApiKey,
 } from "../services/auth.js";
 import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
-import { getSettings, getCombos } from "@/lib/localDb";
+import { getCombos } from "@/lib/localDb";
+import { getEffectivePreferences } from "@/lib/db/index.js";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleSearchCore } from "open-sse/handlers/search/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -82,7 +83,7 @@ export async function handleSearch(request) {
       const denied = authorizeGatewayTarget(gateway, { modelId: `${providerId}/search` });
       if (denied) return denied;
     }
-    const settings = await getSettings();
+    const settings = await getEffectivePreferences(gateway);
     const {
       strategy: comboStrategy,
       stickyLimit: comboStickyLimit,
