@@ -3,6 +3,14 @@ import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { WORKSPACE_KEYS, USER_KEYS, pickKeys } from "@/lib/settings/settingsScope.js";
 import { mirrorToDefaultWorkspace } from "./workspaceSettingsRepo.js";
 import { ACTIVE } from "@/shared/brand";
+import { readCredentialEncryptionState } from "../credentialEncryptionState.js";
+import { CREDENTIAL_FIELD_ALLOWLIST, buildAad, encryptBytes } from "../../security/envelope.js";
+import {
+  decodeCredentialRowSync,
+  ensureWorkspaceDekSync,
+  prepareCredentialContext,
+} from "../helpers/credentialStorage.js";
+import { loadMasterKey } from "../../security/masterKey.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
@@ -110,10 +118,108 @@ export const SSO_POLICY_KEYS = Object.freeze([
   "ssoDefaultRole",
 ]);
 
+// Raw read: stored JSON exactly as persisted. NEVER decrypts: envelope values
+// pass through byte-exact (export, raw writers, featureSwitch all rely on it).
 async function readRaw() {
   const db = await getAdapter();
   const row = db.get(`SELECT data FROM settings WHERE id = 1`);
   return row ? parseJson(row.data, {}) : {};
+}
+
+/**
+ * Narrow raw multi-user boolean for featureSwitch. Goes straight to the
+ * stored row (never through decrypting getSettings), so the switch can be
+ * resolved at startup with no root and no cycle.
+ * @returns {Promise<boolean>}
+ */
+export async function getMultiUserEnabledSettingRaw() {
+  return (await readRaw()).multiUserEnabled === true;
+}
+
+/**
+ * Explicit established-encryption mode for the MITM optional third hook.
+ * Reads the strict marker (partial/corrupt state throws, never "legacy").
+ * @returns {Promise<boolean>}
+ */
+export async function isCredentialEncryptionEstablished() {
+  return readCredentialEncryptionState(await getAdapter()).storage === "encrypted";
+}
+
+const SECRET_KEYS = CREDENTIAL_FIELD_ALLOWLIST.settings;
+const SETTINGS_ROW_ID = "1";
+
+// Default workspace coordinates come from stored metadata, never the client.
+function defaultWorkspaceIdRaw(db) {
+  return db.get(`SELECT value FROM _meta WHERE key = 'defaultWorkspaceId'`)?.value ?? null;
+}
+
+// Trusted runtime: five Default-coordinate secrets decrypted. Established
+// storage needs the root (async load happens here, before any sync work).
+async function decryptSecrets(db, raw) {
+  const state = readCredentialEncryptionState(db);
+  if (state.storage !== "encrypted") return raw;
+  const root = await loadMasterKey({ expectedKid: state.kekKid });
+  const ctx = prepareCredentialContext(db, root);
+  const workspaceId = defaultWorkspaceIdRaw(db);
+  return decodeCredentialRowSync(db, { id: SETTINGS_ROW_ID, data: JSON.stringify(raw) }, ctx, {
+    table: "settings",
+    workspaceId,
+  });
+}
+
+// Metadata mode: never decrypts. Secret leaves are removed from the view and
+// replaced by one safe `secretsConfigured` boolean map (stored value present,
+// any shape). Consumers needing only presence (bootstrap, lockout, status)
+// read it; the settings route strips it and keeps only `oidcConfigured`.
+function metadataView(raw) {
+  const out = { ...raw };
+  const configured = {};
+  for (const key of SECRET_KEYS) {
+    configured[key] = out[key] !== undefined && out[key] !== null && out[key] !== "";
+    delete out[key];
+  }
+  out.secretsConfigured = configured;
+  return out;
+}
+
+// Encrypt secret updates on established storage so plaintext never lands.
+// Secret updates arrive plaintext (or null/"" to clear); an envelope-shaped
+// caller value is refused (same rule as the row codec).
+function encodeSecretUpdates(db, updates, root) {
+  const state = readCredentialEncryptionState(db);
+  const touched = Object.keys(updates).filter((k) => SECRET_KEYS.includes(k));
+  for (const k of touched) {
+    const value = updates[k];
+    // Covered secrets accept only plaintext strings (or null/"" to clear):
+    // envelope objects and lookalikes are rejected, never stored.
+    if (typeof value !== "string" && value !== null) {
+      throw Object.assign(new Error("[settings] caller-supplied envelope rejected"), {
+        code: "ENVELOPE_REJECTED",
+      });
+    }
+  }
+  if (state.storage !== "encrypted" || touched.length === 0) return updates;
+  const ctx = prepareCredentialContext(db, root);
+  const workspaceId = defaultWorkspaceIdRaw(db);
+  const next = { ...updates };
+  let dek = null;
+  for (const key of touched) {
+    const value = next[key];
+    if (typeof value !== "string" || value.length === 0) continue; // clear semantics kept
+    if (!workspaceId) {
+      throw Object.assign(new Error("[settings] Default workspace required for secrets"), {
+        code: "DATA_CORRUPT",
+      });
+    }
+    dek ??= ensureWorkspaceDekSync(db, workspaceId, ctx);
+    next[key] = encryptBytes(
+      dek.dek,
+      dek.kid,
+      Buffer.from(value, "utf8"),
+      buildAad({ table: "settings", rowId: SETTINGS_ROW_ID, workspaceId, field: key }),
+    );
+  }
+  return next;
 }
 
 // Merge raw settings with defaults; backward-compat for missing keys.
@@ -158,19 +264,35 @@ export function mergeWithDefaults(raw) {
   return merged;
 }
 
-export async function getSettings() {
+/**
+ * Current effective settings.
+ * @param {{secretMode?: "runtime"|"metadata"}} [opts] `metadata` exposes
+ * non-secrets + safe presence booleans without the root (no decryption, no
+ * secret exposure). Default `runtime` decrypts the five Default secrets on
+ * established storage (needs the KEK; propagates integrity failures).
+ */
+export async function getSettings({ secretMode = "runtime" } = {}) {
   const raw = await readRaw();
-  return mergeWithDefaults(raw);
+  // Redact after the merge: defaults would otherwise re-add secret keys as "".
+  if (secretMode === "metadata") return metadataView(mergeWithDefaults(raw));
+  return mergeWithDefaults(await decryptSecrets(await getAdapter(), raw));
 }
 
 // Atomic read-merge-write inside transaction (prevents losing concurrent updates)
 export async function updateSettings(updates) {
   const db = await getAdapter();
+  const state = readCredentialEncryptionState(db);
+  const root =
+    state.storage === "encrypted" ? await loadMasterKey({ expectedKid: state.kekKid }) : null;
   let next;
   db.transaction(() => {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+    // Raw merge: envelope values for untouched keys pass through byte-exact
+    // (never decrypted here); touched secrets are encrypted above in encode.
     const current = row ? parseJson(row.data, {}) : {};
-    next = { ...current, ...updates };
+    const encoded =
+      state.storage === "encrypted" ? encodeSecretUpdates(db, updates, root) : updates;
+    next = { ...current, ...encoded };
     // Pin the issuer the first time SAML settings are saved, so a later brand
     // flip can't change the SP entity ID the IdP already trusts.
     if (Object.keys(updates).some((k) => k.startsWith("saml")) && !next.samlIssuer) {
@@ -185,7 +307,8 @@ export async function updateSettings(updates) {
     // reaches this with workspace keys: the route 400s them.
     mirrorToDefaultWorkspace(db, updates);
   });
-  return mergeWithDefaults(next);
+  // Trusted callers get plaintext secrets; stored blob stays ciphertext.
+  return mergeWithDefaults(await decryptSecrets(db, next));
 }
 
 export const COMBO_NOT_FOUND = "COMBO_NOT_FOUND";

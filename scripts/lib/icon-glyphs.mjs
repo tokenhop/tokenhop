@@ -26,7 +26,11 @@ export function collectLiteralTokens(root) {
   const tokens = new Set();
   for (const dir of ICON_SOURCE_DIRS) {
     for (const file of sourceFiles(join(root, dir))) {
-      const text = readFileSync(file, "utf8");
+      // Storage-mode enums are server data, not icon names (e.g. "encrypted").
+      const text = readFileSync(file, "utf8").replace(
+        /(?:\.storage\s*[!=]==?\s*|\bstorage\s*:\s*)["'`]encrypted["'`]/g,
+        "",
+      );
       for (const m of text.matchAll(/["'`]([a-z0-9_]+)["'`]|>\s*([a-z0-9_]+)\s*</g)) {
         tokens.add(m[1] || m[2]);
       }

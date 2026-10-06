@@ -1,7 +1,12 @@
 import { getAdapter } from "../db/driver.js";
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { parseJson } from "../db/helpers/jsonCol.js";
-import { getProviderConnectionsUnscoped } from "../db/repos/connectionsRepo.js";
+import { decodeCredentialRowSync } from "../db/helpers/credentialStorage.js";
+import { TABLE_NAMES } from "../security/envelope.js";
+import {
+  getProviderConnectionsUnscoped,
+  prepareCredentialCtx,
+} from "../db/repos/connectionsRepo.js";
 import { getProviderNodesUnscoped } from "../db/repos/nodesRepo.js";
 import * as combosRepo from "../db/repos/combosRepo.js";
 import * as aliasRepo from "../db/repos/aliasRepo.js";
@@ -36,8 +41,13 @@ export async function requireGatewayWorkspace(principal) {
   return { db, workspaceId: null };
 }
 
-function decodeRow({ data, ...row }) {
-  return { ...parseJson(data, {}), ...row };
+// YAN-365: raw gateway reads bypass the repos, so decrypt here — after SQL has
+// already selected the principal's workspace. Coordinates come from the stored
+// SQL row (never the principal or caller), and a typed integrity/key failure
+// propagates instead of yielding an empty credential.
+function decodeRow(db, ctx, table, row) {
+  const { data: _data, ...columns } = row;
+  return { ...decodeCredentialRowSync(db, row, ctx, { table }), ...columns };
 }
 
 export async function getGatewayConnections(principal, filter = {}) {
@@ -53,9 +63,13 @@ export async function getGatewayConnections(principal, filter = {}) {
     where.push("isActive = ?");
     params.push(filter.isActive ? 1 : 0);
   }
+  const ctx = await prepareCredentialCtx(db);
   return db
     .all(`SELECT * FROM providerConnections WHERE ${where.join(" AND ")}`, params)
-    .map((row) => ({ ...decodeRow(row), isActive: row.isActive === 1 || row.isActive === true }))
+    .map((row) => ({
+      ...decodeRow(db, ctx, TABLE_NAMES.providerConnections, row),
+      isActive: row.isActive === 1 || row.isActive === true,
+    }))
     .sort((a, b) => (a.priority || 999) - (b.priority || 999));
 }
 
@@ -68,7 +82,8 @@ export async function getGatewayNodes(principal, filter = {}) {
     sql += " AND type = ?";
     params.push(filter.type);
   }
-  return db.all(sql, params).map(decodeRow);
+  const ctx = await prepareCredentialCtx(db);
+  return db.all(sql, params).map((row) => decodeRow(db, ctx, TABLE_NAMES.providerNodes, row));
 }
 
 // YAN-364: principal-scoped combo/model reads. Scoped miss (or empty) never

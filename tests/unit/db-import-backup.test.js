@@ -282,6 +282,16 @@ describe("pre-import backup (legacy instance)", () => {
     expect(tableDump()).toBe(before);
   });
 
+  it("successful import clears the real MITM sudo cache (CJS default/named shape)", async () => {
+    const mitm = await import("@/mitm/manager.js");
+    const setter = mitm?.default?.setCachedPassword ?? mitm?.setCachedPassword;
+    expect(typeof setter).toBe("function");
+    setter("cached-sudo-sentinel");
+    expect((mitm.default ?? mitm).getCachedPassword()).toBe("cached-sudo-sentinel");
+    await dbApi.importDb(legacyPayload());
+    expect((mitm.default ?? mitm).getCachedPassword()).toBeNull();
+  });
+
   it("pruneOldBackups keeps pre-import copies past 3 ordinary backups", async () => {
     await dbApi.importDb(legacyPayload());
     const backupDir = preImportDirs()[0];
@@ -335,5 +345,74 @@ describe("pre-import backup (hashed instance)", () => {
     );
     expect(preImportDirs()).toEqual([]);
     expect(tableDump()).toBe(before);
+  });
+});
+
+// ─── YAN-365 (task 2.4, T lane): encrypted instance backup/import (C4) ───────
+// Authored red in B2; O turns green in B5. An import rejected by preflight
+// (wrong root, plaintext legacy payload, malformed v3 graph) must create NO
+// pre-import backup dir and mutate nothing; a successful v3 restore backs up
+// the encrypted pre-import state (ciphertext, never decrypted).
+describe("pre-import backup (encrypted instance, YAN-365)", () => {
+  const loadActivate = () => import("../../src/lib/db/activateCredentialEncryption.js");
+  const SENT = "sk-sent-import-3701";
+
+  async function encryptedInstance() {
+    // Instance isolation: any leftover credential marker/DEK rows from an
+    // earlier encrypted test would turn the plaintext seed into an
+    // established-storage violation before activation runs.
+    db.exec(`DELETE FROM workspaceKeys; DELETE FROM _meta WHERE key IN
+      ('credentialsEncryptedVersion','credentialsKekKid','apiKeyHashKeyWrapped','credentialsCleanupPending','credentialsPendingRotation')`);
+    seedHashedInstance();
+    db.run(`DELETE FROM providerConnections`);
+    db.run(
+      `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt, workspaceId, createdByUserId)
+       VALUES('conn-1', 'openai', 'api_key', 'Main', NULL, 1, 1, ?, ?, ?, ?, 'owner')`,
+      [JSON.stringify({ accessToken: SENT }), NOW, NOW, WS],
+    );
+    const { activateCredentialEncryption } = await loadActivate();
+    await activateCredentialEncryption(db, {
+      enabled: true,
+      beforeServing: true,
+      root: { kid: KID, key: MASTER },
+    });
+  }
+
+  it("wrong-root v3 import creates no pre-import backup and mutates nothing", async () => {
+    await encryptedInstance();
+    const snapshot = await dbApi.exportDb();
+    const before = tableDump();
+    await expect(
+      dbApi.importDb(structuredClone(snapshot), { masterKey: OTHER_MASTER }),
+    ).rejects.toThrow(expect.objectContaining({ code: "TRANSFER_ROOT_MISMATCH" }));
+    expect(preImportDirs()).toEqual([]);
+    expect(tableDump()).toBe(before);
+  });
+
+  it("legacy JSON import onto an encrypted instance rejects before backup/wipe", async () => {
+    await encryptedInstance();
+    const before = tableDump();
+    await expect(dbApi.importDb(legacyPayload(), { masterKey: MASTER })).rejects.toThrow(
+      expect.objectContaining({ code: expect.stringMatching(/^TRANSFER_/) }),
+    );
+    expect(preImportDirs()).toEqual([]);
+    expect(tableDump()).toBe(before);
+  });
+
+  it("successful v3 restore backs up the live encrypted state as ciphertext (no plaintext in backup)", async () => {
+    await encryptedInstance();
+    const snapshot = await dbApi.exportDb();
+    const { backupDir } = await importAndCapture(structuredClone(snapshot), { masterKey: MASTER });
+    const file = path.join(backupDir, "data.sqlite");
+    expect(fs.statSync(backupDir).mode & 0o777).toBe(0o700);
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    const ro = await openRo(file);
+    try {
+      const row = ro.prepare("SELECT data FROM providerConnections WHERE id = 'conn-1'").get();
+      expect(row.data).not.toContain(SENT);
+      expect(ro.prepare("SELECT COUNT(*) AS c FROM workspaceKeys").get().c).toBeGreaterThan(0);
+    } finally {
+      ro.close();
+    }
   });
 });

@@ -84,7 +84,7 @@ function configure(options = {}) {
  * @param {Object} body - Request body (optional)
  * @returns {Promise<Object>} Response with { success, data/error }
  */
-function makeRequest(method, path, body = null) {
+function makeRequest(method, path, body = null, { timeoutMs = 30000 } = {}) {
   return new Promise((resolve) => {
     const httpModule = config.protocol === "https:" ? https : http;
 
@@ -121,6 +121,7 @@ function makeRequest(method, path, body = null) {
             resolve({
               success: false,
               error: parsed.error || `HTTP ${res.statusCode}`,
+              code: parsed.code,
               statusCode: res.statusCode,
             });
           } else {
@@ -154,8 +155,8 @@ function makeRequest(method, path, body = null) {
       });
     });
 
-    // Set timeout (30 seconds)
-    req.setTimeout(30000);
+    // Set timeout (default 30 seconds; callers can override per request)
+    req.setTimeout(timeoutMs);
 
     // Write body if present
     if (body && (method === "POST" || method === "PUT" || method === "PATCH")) {
@@ -497,6 +498,31 @@ async function mintSetupToken() {
   return makeRequest("POST", "/api/auth/setup-token");
 }
 
+/**
+ * Rotate the instance master key (KEK) on the running server (YAN-365, owner
+ * only, empty body). Server responds 404 while users & teams is off, 409 when
+ * the root is env-managed, 503 when the rotation state is unavailable.
+ * @returns {Promise<Object>} { success, data: { oldKid, newKid, dekCount, reminder }, statusCode }
+ */
+async function rotateInstanceKey() {
+  return makeRequest("POST", "/api/settings/keys/rotate", {}, { timeoutMs: 600000 });
+}
+
+/**
+ * Rotate one workspace's DEK (YAN-365, owner only). Works under env-managed
+ * roots; the response carries DEK kids and the rotated row count only.
+ * @param {string} workspaceId
+ * @returns {Promise<Object>} { success, data: { workspaceId, dekKid, oldDekKid, rotated }, statusCode }
+ */
+async function rotateWorkspaceKey(workspaceId) {
+  return makeRequest(
+    "POST",
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/keys/rotate`,
+    {},
+    { timeoutMs: 600000 },
+  );
+}
+
 // ============================================================================
 // MODELS API
 // ============================================================================
@@ -619,6 +645,8 @@ module.exports = {
   updateSettings,
   resetPassword,
   mintSetupToken,
+  rotateInstanceKey,
+  rotateWorkspaceKey,
 
   // Tunnel
   getTunnelStatus,

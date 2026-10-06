@@ -53,10 +53,13 @@ function omitSecrets(settings) {
   );
   // YAN-351: the users & teams switch stays off the API until the v1.1.0 release.
   delete safeSettings.multiUserEnabled;
+  // Presence, never the value: metadata mode carries secretsConfigured; a raw
+  // runtime/envelope object stays truthy for legacy plaintext too.
+  delete safeSettings.secretsConfigured;
   safeSettings.oidcConfigured = !!(
     settings.oidcIssuerUrl &&
     settings.oidcClientId &&
-    settings.oidcClientSecret
+    (settings.oidcClientSecret || settings.secretsConfigured?.oidcClientSecret)
   );
   return safeSettings;
 }
@@ -125,7 +128,8 @@ export async function GET() {
     const split = await principalScope();
     if (split instanceof Response) return split;
 
-    const settings = await getSettings();
+    // Non-secret response: metadata mode never decrypts, secrets never returned.
+    const settings = await getSettings({ secretMode: "metadata" });
     const safeSettings = omitSecrets(settings);
 
     const requestLogs = resolveFlagSetting(
@@ -257,7 +261,7 @@ export async function PATCH(request) {
     // fold partial patches over the current value to keep every leaf.
     // (Concurrent leaf PATCHes can still race; the store has no transaction —
     // same as every other key on this route.)
-    const currentReliability = await getSettings();
+    const currentReliability = await getSettings({ secretMode: "metadata" });
     const reliabilityError = validateReliabilitySettings(body, currentReliability);
     if (reliabilityError) {
       return NextResponse.json({ error: reliabilityError }, { status: 400 });
@@ -278,7 +282,7 @@ export async function PATCH(request) {
     delete body.newPassword;
     delete body.currentPassword;
     if (rawNewPassword) {
-      const settings = await getSettings();
+      const settings = await getSettings({ secretMode: "metadata" });
       const currentHash = await getLegacyPasswordHash(settings);
 
       // Verify current password if it exists

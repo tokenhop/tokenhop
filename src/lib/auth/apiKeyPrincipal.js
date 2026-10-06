@@ -6,7 +6,8 @@
 import { getAdapter } from "../db/driver.js";
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { getHashedApiKeyByHashUnscoped, getEligibleApiKeySync } from "../db/repos/apiKeysRepo.js";
-import { deriveApiKeyHashKey, hashApiKey, loadMasterKey } from "../security/masterKey.js";
+import { getApiKeyHashKey } from "../security/apiKeyHashKey.js";
+import { hashApiKey } from "../security/masterKey.js";
 
 // Spec bounds (feature-spec "API Design"): bearer tokens cap at 4096 bytes,
 // scope arrays at 128 x 256 chars. The resolver rejects larger input without
@@ -59,13 +60,11 @@ export async function resolveApiKey(presented) {
   const db = await getAdapter();
   const state = readApiKeyStorageState(db);
   if (state.storage === "legacy") return null;
-  const { kid, key: master } = await loadMasterKey({ expectedKid: state.hashKid });
-  if (kid !== state.hashKid) {
-    const err = new Error("Master key id mismatch for API key storage state");
-    err.code = "API_KEY_STATE_INVALID";
-    throw err;
-  }
-  const digest = hashApiKey(presented, deriveApiKeyHashKey(master));
+  // Stable hash-key getter (YAN-365 D6): pre-encryption HKDF of the frozen
+  // kid's master; after credential encryption an authenticated unwrap under
+  // the current KEK. Root/unwrap errors propagate; no fallback.
+  const { hashKey } = await getApiKeyHashKey(db);
+  const digest = hashApiKey(presented, hashKey);
   const now = new Date().toISOString();
   let row = null;
   const cachedId = cacheGet(digest);

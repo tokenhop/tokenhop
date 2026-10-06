@@ -4,7 +4,6 @@ const fs = require("fs");
 const os = require("os");
 const net = require("net");
 const https = require("https");
-const crypto = require("crypto");
 const {
   addDNSEntry,
   removeDNSEntry,
@@ -27,6 +26,7 @@ const { DATA_DIR, MITM_DIR } = require("./paths");
 const { log, err } = require("./logger");
 const { LSOF_BIN } = require("./config");
 const runtimeCredentials = require("./runtimeCredentials");
+const legacyCrypto = require("./legacyPasswordCrypto.cjs");
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
@@ -190,8 +190,6 @@ function ensureRuntimeServer(bundledPath) {
 }
 
 const SERVER_PATH = ensureRuntimeServer(resolveBundledServerPath());
-const ENCRYPT_ALGO = "aes-256-gcm";
-const ENCRYPT_SALT = "9router-mitm-pwd"; // legacy(9router): stored-data salt, keep
 
 function getProcessUsingPort443() {
   try {
@@ -257,47 +255,21 @@ function killProcess(pid, force = false, sudoPassword = null) {
   }
 }
 
-function deriveKey() {
-  try {
-    const { machineIdSync } = require("node-machine-id");
-    const raw = machineIdSync();
-    return crypto
-      .createHash("sha256")
-      .update(raw + ENCRYPT_SALT)
-      .digest();
-  } catch {
-    return crypto.createHash("sha256").update(ENCRYPT_SALT).digest();
-  }
-}
-
-function encryptPassword(plaintext) {
-  const key = deriveKey();
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv(ENCRYPT_ALGO, key, iv);
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
-}
-
-function decryptPassword(stored) {
-  try {
-    const [ivHex, tagHex, dataHex] = stored.split(":");
-    if (!ivHex || !tagHex || !dataHex) return null;
-    const key = deriveKey();
-    const decipher = crypto.createDecipheriv(ENCRYPT_ALGO, key, Buffer.from(ivHex, "hex"));
-    decipher.setAuthTag(Buffer.from(tagHex, "hex"));
-    return decipher.update(Buffer.from(dataHex, "hex")) + decipher.final("utf8");
-  } catch {
-    return null;
-  }
-}
-
 let _getSettings = null;
 let _updateSettings = null;
+// Optional third hook (YAN-365): explicit established-encryption mode. Never
+// inferred from the stored string shape (no colon counting).
+let _isEncryptionEstablished = null;
 
-function initDbHooks(getSettingsFn, updateSettingsFn) {
+function initDbHooks(getSettingsFn, updateSettingsFn, isEncryptionEstablishedFn = null) {
   _getSettings = getSettingsFn;
   _updateSettings = updateSettingsFn;
+  _isEncryptionEstablished =
+    typeof isEncryptionEstablishedFn === "function" ? isEncryptionEstablishedFn : null;
+}
+
+async function encryptionEstablished() {
+  return _isEncryptionEstablished ? Boolean(await _isEncryptionEstablished()) : false;
 }
 
 /**
@@ -329,9 +301,18 @@ function initMitmCredentialHooks(credentialHooks, remoteCredential = null) {
 
 async function saveMitmSettings(enabled, password) {
   if (!_updateSettings) return;
+  // Established: the repo encrypts the plaintext under the Default DEK and
+  // integrity/persistence failures propagate (no swallow, no machine-id
+  // encryption). Legacy: machine-derived cipher, failures stay logged only.
+  if (await encryptionEstablished()) {
+    const updates = { mitmEnabled: enabled };
+    if (password) updates.mitmSudoEncrypted = password;
+    await _updateSettings(updates);
+    return;
+  }
   try {
     const updates = { mitmEnabled: enabled };
-    if (password) updates.mitmSudoEncrypted = encryptPassword(password);
+    if (password) updates.mitmSudoEncrypted = legacyCrypto.encryptPassword(password);
     await _updateSettings(updates);
   } catch (e) {
     err(`Failed to save settings: ${e.message}`);
@@ -349,10 +330,17 @@ async function clearEncryptedPassword() {
 
 async function loadEncryptedPassword() {
   if (!_getSettings) return null;
+  if (await encryptionEstablished()) {
+    // Trusted runtime settings already hold the decrypted sudo password. A
+    // read/integrity failure propagates; absent stays null (never "").
+    const settings = await _getSettings();
+    return settings.mitmSudoEncrypted || null;
+  }
   try {
     const settings = await _getSettings();
     if (!settings.mitmSudoEncrypted) return null;
-    return decryptPassword(settings.mitmSudoEncrypted);
+    // Legacy null/corrupt stays null: never an empty password.
+    return legacyCrypto.decryptPassword(settings.mitmSudoEncrypted);
   } catch {
     return null;
   }

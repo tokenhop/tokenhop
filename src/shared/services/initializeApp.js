@@ -50,6 +50,7 @@ import {
   installLocalVerifier,
   clearLocalVerifierIfMatch,
 } from "@/lib/auth/mitmCredential.js";
+import { isCredentialEncryptionEstablished } from "@/lib/db/repos/settingsRepo.js";
 import runtimeCredentials from "@/mitm/runtimeCredentials";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
@@ -105,7 +106,7 @@ export function configureMitmCredentials() {
     }
   }
   try {
-    initDbHooks(getSettings, updateSettings);
+    initDbHooks(getSettings, updateSettings, isCredentialEncryptionEstablished);
   } catch {
     /* ignore */
   }

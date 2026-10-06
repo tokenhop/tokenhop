@@ -8,6 +8,13 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("open-sse/index.js", () => ({}), { virtual: true });
+vi.mock("@/lib/db/repos/connectionsRepo.js", () => ({
+  getProviderConnectionsMetadataUnscoped: mocks.getProviderConnectionsUnscoped,
+}));
+vi.mock("@/lib/db/repos/nodesRepo.js", () => ({
+  getProviderNodesMetadataUnscoped: vi.fn(async () => []),
+  listNodesMetadata: vi.fn(async () => []),
+}));
 vi.mock("@/lib/localDb", () => ({
   getProviderConnectionByIdUnscoped: mocks.getProviderConnectionByIdUnscoped,
   updateProviderConnectionUnscoped: vi.fn(),

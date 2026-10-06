@@ -7,6 +7,8 @@ import {
 } from "@/models";
 import { deleteConnection, getConnection, updateConnection } from "@/lib/db/index.js";
 import { loadScoped, redactConnection } from "@/lib/users/workspaceScope.js";
+import { getAdapter } from "@/lib/db/driver.js";
+import { readCredentialEncryptionState } from "@/lib/db/credentialEncryptionState.js";
 import { PLAN_CAPACITY } from "open-sse/config/quotaSnapshot.js";
 import { sanitizePlanTier, clearSnapshotPlanTier } from "open-sse/services/quotaSnapshot.js";
 
@@ -52,7 +54,8 @@ function applyWeightedOverrides(target, psd) {
   for (const key of ["weight", "planTier", "planTierManual"]) {
     if (!Object.hasOwn(psd, key)) continue;
     const value = psd[key];
-    if (value === null) delete target[key];
+    // YAN-365: null stays in the delta patch; the repo deletes the live key.
+    if (value === null) target[key] = null;
     else target[key] = key === "planTier" ? sanitizePlanTier(value) : value;
   }
 }
@@ -119,6 +122,15 @@ function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, has
   return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField;
 }
 
+// YAN-365: once credential encryption is established, responses always strip
+// the full D10 allow-list (even with a null scope). Never-encrypted installs
+// keep today's switch-off response shape.
+async function redactionScope(scope) {
+  if (scope) return scope;
+  const state = readCredentialEncryptionState(await getAdapter());
+  return state.storage === "encrypted" ? {} : null;
+}
+
 // YAN-361: switch on, the row must be in one of the principal's workspaces.
 const load = (capability, id) =>
   loadScoped(
@@ -138,7 +150,9 @@ export async function GET(request, { params }) {
     const connection = loaded.row;
 
     // Hide sensitive fields
-    const result = { ...redactConnection(loaded.scope, connection) };
+    const result = {
+      ...redactConnection(await redactionScope(loaded.scope), connection),
+    };
     delete result.apiKey;
     delete result.accessToken;
     delete result.refreshToken;
@@ -224,8 +238,10 @@ export async function PUT(request, { params }) {
         proxyPoolResult.hasProxyPoolField,
       )
     ) {
+      // YAN-365: delta write — send only the keys the client changed. The repo
+      // merges them onto the live decrypted row's siblings in one transaction,
+      // so a token refresh landing between this load and the write survives.
       updateData.providerSpecificData = {
-        ...(existing.providerSpecificData || {}),
         ...(providerSpecificData || {}),
       };
       applyWeightedOverrides(updateData.providerSpecificData, providerSpecificData || {});
@@ -238,7 +254,9 @@ export async function PUT(request, { params }) {
 
       if (proxyPoolResult.hasProxyPoolField) {
         if (proxyPoolResult.proxyPoolId === null) {
-          delete updateData.providerSpecificData.proxyPoolId;
+          // YAN-365: explicit null clears the live sibling (a deleted key in a
+          // delta patch would leave the stored value in place).
+          updateData.providerSpecificData.proxyPoolId = null;
         } else {
           updateData.providerSpecificData.proxyPoolId = proxyPoolResult.proxyPoolId;
         }
@@ -252,7 +270,15 @@ export async function PUT(request, { params }) {
       existing.providerSpecificData?.planTierManual === true
         ? sanitizePlanTier(existing.providerSpecificData.planTier)
         : null;
-    const nextPsd = updateData.providerSpecificData;
+    // Delta patch: derive the next tier view locally (existing + delta, null
+    // clears) for the snapshot decision only; nothing here is persisted.
+    let nextPsd;
+    if (updateData.providerSpecificData) {
+      nextPsd = { ...(existing.providerSpecificData || {}), ...updateData.providerSpecificData };
+      for (const [key, value] of Object.entries(updateData.providerSpecificData)) {
+        if (value === null) delete nextPsd[key];
+      }
+    }
     const nextManualTier =
       nextPsd?.planTierManual === true ? sanitizePlanTier(nextPsd.planTier) : null;
     if (oldManualTier && nextPsd && oldManualTier !== nextManualTier) {
@@ -260,7 +286,7 @@ export async function PUT(request, { params }) {
     }
 
     // Hide sensitive fields
-    const result = { ...redactConnection(loaded.scope, updated) };
+    const result = { ...redactConnection(await redactionScope(loaded.scope), updated) };
     delete result.apiKey;
     delete result.accessToken;
     delete result.refreshToken;

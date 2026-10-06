@@ -67,4 +67,44 @@ describe("POST /api/auth/oidc/test signing report", () => {
     expect(body.jwksKeyCount).toBe(1);
     expect(body.warnings).toEqual([]);
   });
+
+  it("discovery failure returns redacted JSON 500 without leaking the body secret", async () => {
+    const secret = "oidc-body-super-secret-123";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error(`discovery boom echoing ${secret}`);
+      }),
+    );
+    const res = await POST({
+      url: "http://localhost/api/auth/oidc/test",
+      headers: new Headers(),
+      json: async () => ({ issuerUrl: ISSUER, clientId: "cid", clientSecret: secret }),
+    });
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(res.body)).not.toContain(secret);
+    expect(res.body.error).toContain("[REDACTED]");
+  });
+
+  it("settings/decrypt failure still returns JSON 500 instead of throwing", async () => {
+    mocks.getSettings.mockRejectedValueOnce(
+      Object.assign(new Error("decrypt boom"), { code: "DECRYPT_FAILED" }),
+    );
+    mocks.getSettings.mockRejectedValue(
+      Object.assign(new Error("decrypt boom"), { code: "DECRYPT_FAILED" }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("unreachable");
+      }),
+    );
+    const res = await POST({
+      url: "http://localhost/api/auth/oidc/test",
+      headers: new Headers(),
+      json: async () => ({ issuerUrl: ISSUER, clientId: "cid" }),
+    });
+    expect(res.status).toBe(500);
+    expect(typeof res.body.error).toBe("string");
+  });
 });

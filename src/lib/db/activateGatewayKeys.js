@@ -10,6 +10,8 @@ import path from "node:path";
 import { BACKUPS_DIR } from "./paths.js";
 import { backupDbLite } from "./backup.js";
 import { readApiKeyStorageState } from "./apiKeyState.js";
+import { readCredentialEncryptionState } from "./credentialEncryptionState.js";
+import { getApiKeyHashKey } from "../security/apiKeyHashKey.js";
 import { HASHED_API_KEYS_TABLE } from "./schema.js";
 import { hashGatewayKeysSync } from "./migrations/hashGatewayKeys.js";
 import {
@@ -259,15 +261,23 @@ async function activate(
   const columns = db.all("PRAGMA table_info(apiKeys)").map((c) => c.name);
   if (pre.storage === "legacy" && (!columns.includes("key") || columns.includes("keyHash")))
     fail("API_KEY_STATE_INVALID", "Legacy marker/schema mismatch");
+  // YAN-365 D6: on established credential encryption the root identity to
+  // load is the CURRENT KEK kid, not the frozen hash kid. The proof below
+  // then verifies the KEK kid and unwraps the frozen derived hash key.
+  const cred = readCredentialEncryptionState(db, { strict: true });
+  const expectedKid = cred.storage === "encrypted" ? cred.kekKid : pre.hashKid;
   const root =
     masterKey === null
-      ? await loadMasterKey({ create: pre.storage === "legacy", expectedKid: pre.hashKid })
+      ? await loadMasterKey({ create: pre.storage === "legacy", expectedKid })
       : { key: masterKey, kid: masterKeyId(masterKey) };
-  if (pre.storage === "hashed" && root.kid !== pre.hashKid)
-    fail("API_KEY_STATE_INVALID", "Master does not match durable kid");
   if (pre.storage === "hashed") {
+    // Root proof by current KEK + authenticated unwrap (legacy: HKDF master
+    // whose kid is the frozen hash kid). Wrong/rotated roots throw here.
+    const proof = await getApiKeyHashKey(db, { root });
+    if (proof.hashKid !== pre.hashKid)
+      fail("API_KEY_STATE_INVALID", "Master does not match durable kid");
     flush(db); // Also retry a prior in-memory commit whose flush failed.
-    return { status: "already-hashed", isReady: true, ...verifyHashed(db, root.kid) };
+    return { status: "already-hashed", isReady: true, ...verifyHashed(db, pre.hashKid) };
   }
   if (db.driver === "sql.js" && typeof db.flushSync !== "function")
     fail("ACTIVATION_FLUSH_REQUIRED", "Throwing sql.js flush required");

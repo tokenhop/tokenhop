@@ -79,13 +79,14 @@ describe("weighted account overrides", () => {
     );
 
     expect(response.body).not.toHaveProperty("error");
+    // YAN-365: the route sends a PSD delta (only changed keys); the repo merges
+    // onto live siblings, so unrelated `region` is preserved without being sent.
     expect(mocks.updateProviderConnectionUnscoped).toHaveBeenCalledWith("c1", {
-      providerSpecificData: expect.objectContaining({
-        region: "us",
+      providerSpecificData: {
         planTier: "default_claude_max_20x",
         planTierManual: true,
         weight: 5,
-      }),
+      },
     });
   });
 
@@ -103,8 +104,10 @@ describe("weighted account overrides", () => {
       params: Promise.resolve({ id: "c1" }),
     });
 
+    // YAN-365: delta with explicit nulls (repo deletes those live keys); `region`
+    // is untouched because it is absent from the patch.
     expect(mocks.updateProviderConnectionUnscoped).toHaveBeenCalledWith("c1", {
-      providerSpecificData: { region: "us" },
+      providerSpecificData: { weight: null, planTier: null, planTierManual: null },
     });
     expect(store.getSnapshot("c1").planTier).toBeNull();
     expect(store.getSnapshot("c1").windows).toHaveLength(1);

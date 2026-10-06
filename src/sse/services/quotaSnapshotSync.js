@@ -195,9 +195,10 @@ async function persistPlanTier(connectionId, rawTier, { markChecked = false } = 
   const changed =
     psd.planTierManual !== true && tier !== null && tier !== sanitizePlanTier(psd.planTier);
   if (changed || markChecked) {
+    // YAN-365: delta write — the repo merges onto the live stored siblings,
+    // so this never repersists a stale snapshot between read and write.
     await updateProviderConnectionUnscoped(connectionId, {
       providerSpecificData: {
-        ...psd,
         ...(changed ? { planTier: tier } : {}),
         ...(markChecked ? { planTierCheckedAt: new Date().toISOString() } : {}),
       },

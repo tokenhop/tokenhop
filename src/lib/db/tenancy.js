@@ -46,6 +46,9 @@ export const TABLE_CLASSES = {
     note: "append-only; owner/admin read only (ADR-0002); workspaceId is a filter, NULL for login/host events",
   },
   invitations: { class: "scoped", scopeColumn: "workspaceId" },
+  // YAN-365: one wrapped DEK per owning workspace. Deleting the workspace
+  // destroys its key (crypto-shredding); rows are scoped, never shared.
+  workspaceKeys: { class: "scoped", scopeColumn: "workspaceId" },
 };
 
 // Workspace kv scopes take the `ws:<workspaceId>/` key prefix when scoped.

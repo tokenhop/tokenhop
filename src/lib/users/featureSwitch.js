@@ -2,7 +2,7 @@
 // and of the `multiUserEnabled` setting: everything else asks this module.
 // Off means exactly today's single-user install.
 import { NextResponse } from "next/server";
-import { getSettings } from "@/lib/db/index.js";
+import { getMultiUserEnabledSettingRaw } from "@/lib/db/repos/settingsRepo.js";
 
 export const MULTI_USER_ENV = "TOKENHOP_MULTI_USER";
 
@@ -29,8 +29,8 @@ const ENV_OVERRIDE = parseMultiUserEnv(process.env[MULTI_USER_ENV]);
  */
 export async function isMultiUserEnabled() {
   if (ENV_OVERRIDE !== undefined) return ENV_OVERRIDE;
-  const settings = await getSettings();
-  return settings?.multiUserEnabled === true;
+  // Raw boolean read: never the decrypting getSettings (no root, no cycle).
+  return getMultiUserEnabledSettingRaw();
 }
 
 /**

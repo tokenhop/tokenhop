@@ -715,9 +715,10 @@ async function handleSingleModelChat(
         ? detectFormatByEndpoint(new URL(request.url).pathname, body)
         : null,
       onCredentialsRefreshed: async (newCreds) => {
+        // YAN-365: delta refresh — the repo merges onto the live stored
+        // siblings inside the transaction (never a stale snapshot).
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
-          existingProviderSpecificData: credentials.providerSpecificData,
           testStatus: "active",
         });
       },

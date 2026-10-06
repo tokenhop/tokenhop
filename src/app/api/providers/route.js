@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import {
-  getProviderConnectionsUnscoped,
   createProviderConnectionUnscoped,
   getProviderNodeByIdUnscoped,
-  getProviderNodesUnscoped,
   getProxyPoolById,
 } from "@/models";
-import { createConnection, getNode, listConnections, listNodes } from "@/lib/db/index.js";
+import { createConnection, getNode } from "@/lib/db/index.js";
+import {
+  getProviderConnectionsMetadataUnscoped,
+  listConnectionsMetadata,
+} from "@/lib/db/repos/connectionsRepo.js";
+import { getProviderNodesMetadataUnscoped, listNodesMetadata } from "@/lib/db/repos/nodesRepo.js";
 import { redactConnection, workspaceScope } from "@/lib/users/workspaceScope.js";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import {
@@ -78,16 +81,19 @@ export async function GET(request) {
     // YAN-361: switch on → one workspace's connections; off → all (today).
     const scope = await workspaceScope(request, "workspace.connections.metadata.read");
     if (scope instanceof Response) return scope;
+    // YAN-365: metadata list — covered secrets are never decrypted; each row
+    // reports its `configured` dotted paths and one corrupt envelope cannot
+    // break the response.
     const connections = scope
-      ? await listConnections(scope.ctx, scope.workspaceId)
-      : await getProviderConnectionsUnscoped();
+      ? await listConnectionsMetadata(scope.ctx, scope.workspaceId)
+      : await getProviderConnectionsMetadataUnscoped();
 
     // Build nodeNameMap for compatible providers (id → name)
     const nodeNameMap = {};
     try {
       const nodes = scope
-        ? await listNodes(scope.ctx, scope.workspaceId)
-        : await getProviderNodesUnscoped();
+        ? await listNodesMetadata(scope.ctx, scope.workspaceId)
+        : await getProviderNodesMetadataUnscoped();
       for (const node of nodes) {
         if (node.id && node.name) nodeNameMap[node.id] = node.name;
       }

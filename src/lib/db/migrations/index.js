@@ -24,6 +24,7 @@ import m009 from "./009-workspace-scoped-combos.js";
 import m010 from "./010-audit-events.js";
 import m011 from "./011-sso-role-source.js";
 import m012 from "./012-invitations.js";
+import m013 from "./013-workspace-keys.js";
 
 export const MIGRATIONS = [
   m001,
@@ -38,6 +39,7 @@ export const MIGRATIONS = [
   m010,
   m011,
   m012,
+  m013,
 ].sort((a, b) => a.version - b.version);
 
 for (let i = 1; i < MIGRATIONS.length; i++) {

@@ -39,7 +39,12 @@ const sha256 = (value) => crypto.createHash("sha256").update(value, "utf8").dige
 
 // Light check (no oidc/saml imports: this module sits in the proxy bundle).
 function ssoConfigured(s) {
-  const oidc = s?.oidcIssuerUrl && s?.oidcClientId && s?.oidcClientSecret;
+  // Metadata-mode settings: the secret never needs decrypting here, presence
+  // (secretsConfigured) is enough to know OIDC is set up.
+  const oidc =
+    s?.oidcIssuerUrl &&
+    s?.oidcClientId &&
+    (s?.oidcClientSecret || s?.secretsConfigured?.oidcClientSecret);
   return Boolean(oidc || (s?.samlEntryPoint && s?.samlCert));
 }
 
@@ -120,7 +125,9 @@ async function runBootstrap() {
   // Irreversible step (ADR-0009): back up first, abort if that fails.
   backupDbLite(db, makeBackupDir("users-bootstrap"));
   pruneOldBackups();
-  const settings = await getSettings();
+  // Non-secret consumer: metadata mode keeps the password hash (not a covered
+  // secret) and reads SSO presence without the KEK.
+  const settings = await getSettings({ secretMode: "metadata" });
   let owner;
   try {
     owner = await bootstrapOwnerUnscoped({ passwordHash: settings?.password || null });

@@ -117,7 +117,7 @@ export async function resolveGatewayAuth(request) {
 
   if (state.storage === "legacy") {
     // Byte-for-byte requireClientApiKey semantics (helper itself untouched).
-    const settings = await getSettings();
+    const settings = await getSettings({ secretMode: "metadata" });
     if (!settings.requireApiKey) return { principal: null, legacy: true };
     const { hasValidCliToken } = await import("./cliToken.js");
     if (await hasValidCliToken(request)) return { principal: null, legacy: true };
@@ -168,7 +168,7 @@ export async function resolveGatewayAuth(request) {
 
   // Keyless requires proven direct-local peer, keys disabled, and single-user
   // cardinality unless explicitly opted in by instance admin. Default false.
-  const settings = await getSettings();
+  const settings = await getSettings({ secretMode: "metadata" });
   const allowedByKeylessSetting = settings[ALLOW_KEYLESS_SETTING] === true;
   const directLocal =
     hasTrustedPeerHeaders(request) &&

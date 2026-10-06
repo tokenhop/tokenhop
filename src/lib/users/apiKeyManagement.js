@@ -7,7 +7,8 @@
 // The personal-workspace secret boundary holds against instance admins
 // unless they are actual members with a manager role there: admin oversight
 // capabilities never include key secrets or management of keys.
-import { deriveApiKeyHashKey, hashApiKey, loadMasterKey } from "../security/masterKey.js";
+import { hashApiKey } from "../security/masterKey.js";
+import { getApiKeyHashKey } from "../security/apiKeyHashKey.js";
 import { apiKeyMetadata, insertHashedApiKeySync } from "../db/repos/apiKeysRepo.js";
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { membershipRole } from "../db/repos/membershipsRepo.js";
@@ -174,7 +175,7 @@ export async function createApiKey(ctx, workspaceId, options = {}) {
   if (input.allowedCombos !== undefined) scopeJson(input.allowedCombos, "allowedCombos");
 
   const db = await getAdapter();
-  const state = requireHashedState(db);
+  requireHashedState(db);
   const access = liveAccess(db, ctx, workspaceId);
   if (!access.create) throw new TenancyError("FORBIDDEN", "Not allowed to create keys");
   if (type === "service") requireManage(access, "create service");
@@ -182,8 +183,7 @@ export async function createApiKey(ctx, workspaceId, options = {}) {
   if (keyUser && !db.get(`SELECT id FROM users WHERE id = ? AND status = 'active'`, [keyUser])) {
     throw new TenancyError("NOT_FOUND", "User not found");
   }
-  const { kid, key: master } = await loadMasterKey({ expectedKid: state.hashKid });
-  const hashKey = deriveApiKeyHashKey(master);
+  const { hashKid: kid, hashKey } = await getApiKeyHashKey(db);
   const raw = generateGatewayApiKey();
   const now = new Date().toISOString();
   const metadata = mapConstraintErrors(() =>

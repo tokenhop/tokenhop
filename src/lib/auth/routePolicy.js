@@ -279,6 +279,20 @@ export const ROUTE_POLICY = {
 
   // YAN-367: audit log. Owner/admin only (ADR-0002); handler 404s with the switch off.
   "/api/audit": { cap: "instance.audit.read", alwaysProtected: true },
+
+  // YAN-365: owner-only key rotation. Session or CLI token; the handler
+  // rechecks instance.keys.rotate itself. Hidden (404) while off by
+  // multiUserOnly, even on established encryption.
+  "/api/settings/keys/rotate": multiUser({
+    cap: { POST: "instance.keys.rotate" },
+    alwaysProtected: true,
+  }),
+  // Not scoped: instance.keys.rotate is an owner-only instance capability; a
+  // workspace-manager role must never reach this handler (no role bypass).
+  "/api/workspaces/[id]/keys/rotate": multiUser({
+    cap: { POST: "instance.keys.rotate" },
+    alwaysProtected: true,
+  }),
 };
 
 // LLM API prefixes (boundary match). Middleware runs before next.config

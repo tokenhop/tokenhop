@@ -3,6 +3,7 @@ import path from "node:path";
 import { LEGACY_FILES, DB_DIR } from "./paths.js";
 import { TABLES, HASHED_API_KEYS_TABLE, buildCreateTableSql } from "./schema.js";
 import { readApiKeyStorageState } from "./apiKeyState.js";
+import { readCredentialEncryptionState } from "./credentialEncryptionState.js";
 import { MIGRATIONS, latestVersion } from "./migrations/index.js";
 import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
@@ -419,6 +420,27 @@ function importLegacyDetails(adapter, data) {
   }
 }
 
+// YAN-365: B3 blocker — on established credential encryption the legacy
+// JSON importer would write plaintext into ciphertext storage and drop
+// `workspaceId`. Reject ANY legacy payload once the marker latches (or the
+// state is ambiguous), before any backup or wipe.
+function assertLegacyImportCredentialGuard(adapter) {
+  let encrypted = false;
+  try {
+    encrypted = readCredentialEncryptionState(adapter, { strict: true }).storage === "encrypted";
+  } catch {
+    encrypted = true; // half/corrupt marker: fail closed, no legacy import
+  }
+  if (encrypted) {
+    throw Object.assign(
+      new Error(
+        "[DB][migrate] legacy JSON import is refused on encrypted storage; restore a v3 snapshot with the matching root",
+      ),
+      { code: "ENCRYPTION_LEGACY_IMPORT_REJECTED" },
+    );
+  }
+}
+
 // ─── Main entry ──────────────────────────────────────────────────────────
 export async function runMigrationOnce(adapter) {
   if (_migratedAdapters.has(adapter)) return;
@@ -471,6 +493,7 @@ async function migrateAdapterOnce(adapter) {
 
   const storageHashed = readApiKeyStorageState(adapter).storage === "hashed";
   if (hasLegacy && !storageHashed && !alreadyImported && legacyTablesEmpty(adapter)) {
+    assertLegacyImportCredentialGuard(adapter);
     const t0 = Date.now();
     const backupDir = makeBackupDir("migrate-from-json");
     for (const f of Object.values(LEGACY_FILES)) backupFile(f, backupDir);

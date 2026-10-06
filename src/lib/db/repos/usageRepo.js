@@ -7,7 +7,7 @@ import { isPeriod, PERIOD_DAYS, periodStart, previousPeriodRange } from "@/share
 import { readApiKeyStorageState } from "../apiKeyState.js";
 import { normalizeUsageKeyEntry } from "../helpers/usageKeyIdentity.js";
 import { tableHasColumn } from "../migrations/helpers.js";
-import { deriveApiKeyHashKey, loadMasterKey } from "../../security/masterKey.js";
+import { getApiKeyHashKey } from "../../security/apiKeyHashKey.js";
 
 /** _meta keys for the YAN-408 lifetime savings counter. */
 export const SAVINGS_LIFETIME_KEY = "savingsTokensLifetime";
@@ -394,8 +394,7 @@ export async function resolveUsageKeyIdentity(
     }
     return { storage: "legacy", credential: apiKey ?? null, workspaceId, userId };
   }
-  const { key } = await loadMasterKey({ expectedKid: state.hashKid });
-  const hashKey = deriveApiKeyHashKey(key);
+  const { hashKey } = await getApiKeyHashKey(db);
   // Schema inspected directly (PRAGMA table_info), never inferred from
   // returned rows: an empty but validly-migrated hashed table must still
   // accept keyless and explicit-id writes; only a missing keyHash column

@@ -1291,8 +1291,9 @@ export async function testSingleConnection(id) {
       updateData.expiresAt = result.newTokens.expiresAt;
     }
     if (result.newTokens.providerSpecificData) {
+      // YAN-365: delta write — the repo merges the refreshed keys onto the
+      // live stored PSD siblings (never this read-time snapshot).
       updateData.providerSpecificData = {
-        ...(connection.providerSpecificData || {}),
         ...result.newTokens.providerSpecificData,
       };
     }
