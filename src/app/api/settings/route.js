@@ -14,6 +14,9 @@ import { SECRET_SETTING_KEYS } from "@/lib/settingsConfigDoc";
 import bcrypt from "bcryptjs";
 import { revokeOwnerSessions, singleUserModeAllowed } from "@/lib/users/session";
 import { can } from "@/lib/users/principal.js";
+import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
+import { getPrincipal } from "@/lib/users/session";
+import { SSO_POLICY_KEYS } from "@/lib/db/repos/settingsRepo.js";
 import { audit } from "@/lib/users/audit.js";
 import { getClientIp } from "@/lib/auth/loginLimiter.js";
 import { principalScope } from "@/lib/users/workspaceScope.js";
@@ -22,9 +25,12 @@ import { applyComboStrategyPatch } from "./comboStrategyPatch.js";
 import { runSettingsSideEffects } from "./settingsSideEffects.js";
 import {
   KNOWN_SETTING_KEYS,
+  hasSsoPolicyKeys,
   isPlainObject,
   ssoLockoutError,
   validateSettingsBody,
+  validateSsoPolicy,
+  validateSsoWorkspaceTargets,
 } from "./validateSettings.js";
 
 export const dynamic = "force-dynamic";
@@ -55,8 +61,27 @@ function omitSecrets(settings) {
   return safeSettings;
 }
 
-function safeSettingsResponse(settings) {
-  const safeSettings = omitSecrets(settings);
+// YAN-359: SSO policy keys are visible only with the rollout on AND an
+// authenticated principal holding instance.settings.manage. Null principal
+// scope (single user) is never treated as admin.
+async function ssoPolicyVisible() {
+  if (!(await isMultiUserEnabled())) return false;
+  try {
+    return can(await getPrincipal(), "instance.settings.manage");
+  } catch {
+    return false;
+  }
+}
+
+function withoutSsoPolicy(obj) {
+  const out = { ...obj };
+  for (const key of SSO_POLICY_KEYS) delete out[key];
+  return out;
+}
+
+async function safeSettingsResponse(settings) {
+  let safeSettings = omitSecrets(settings);
+  if (!(await ssoPolicyVisible())) safeSettings = withoutSsoPolicy(safeSettings);
   safeSettings.startPage = resolveStartPage(safeSettings.startPage);
   safeSettings.uiDensity = resolveDensity(safeSettings.uiDensity);
   return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
@@ -66,7 +91,7 @@ async function handleComboStrategyPatch(body) {
   const result = await applyComboStrategyPatch(body, updateComboStrategies);
   if (result.response) return result.response;
   runSettingsSideEffects({ comboStrategyPatch: true }, result.settings);
-  return safeSettingsResponse(result.settings);
+  return await safeSettingsResponse(result.settings);
 }
 
 // Split mode (YAN-362): this route carries instance keys only. Workspace and
@@ -150,7 +175,8 @@ export async function GET() {
       GROK_CLI_VERSION,
       ZED_CLIENT_VERSION,
     };
-    return NextResponse.json(split ? instanceOnly(payload) : payload, {
+    const visible = split ? instanceOnly(payload) : payload;
+    return NextResponse.json((await ssoPolicyVisible()) ? visible : withoutSsoPolicy(visible), {
       headers: SETTINGS_RESPONSE_HEADERS,
     });
   } catch (error) {
@@ -164,6 +190,25 @@ export async function PATCH(request) {
     const body = await request.json();
     if (!isPlainObject(body)) {
       return NextResponse.json({ error: "Settings body must be an object" }, { status: 400 });
+    }
+
+    // YAN-359: policy keys 404 while the rollout is off, before any write; on,
+    // they need the instance capability even when principalScope() is null.
+    if (hasSsoPolicyKeys(body)) {
+      if (!(await isMultiUserEnabled())) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      // Check the capability directly: authorize() allows everything when
+      // security is off, and this block must not depend on gate ordering.
+      if (!(await ssoPolicyVisible())) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      const policyError =
+        validateSsoPolicy(body) ||
+        (Object.hasOwn(body, "ssoGroupWorkspaceMap")
+          ? await validateSsoWorkspaceTargets(body.ssoGroupWorkspaceMap)
+          : "");
+      if (policyError) return NextResponse.json({ error: policyError }, { status: 400 });
     }
 
     if (body.requireLogin === false && !(await singleUserModeAllowed())) {
@@ -306,7 +351,7 @@ export async function PATCH(request) {
       );
     }
 
-    return safeSettingsResponse(settings);
+    return await safeSettingsResponse(settings);
   } catch (error) {
     console.log("Error updating settings:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

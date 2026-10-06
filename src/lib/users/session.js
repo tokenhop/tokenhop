@@ -15,6 +15,7 @@ import { cliTokenAcceptedWith } from "@/lib/auth/cliTokenPolicy.js";
 import {
   bumpSessionVersion,
   countActiveUsersUnscoped,
+  findIdentityUnscoped,
   getMeta,
   getOwnerUnscoped,
   getSessionUserUnscoped,
@@ -25,7 +26,7 @@ import {
 } from "@/lib/db/index.js";
 import { NextResponse } from "next/server";
 import { isUserSecurityEnforced } from "./securityState.js";
-import { ensureOwnerBootstrap, resolveSsoUser } from "./bootstrap.js";
+import { ensureOwnerBootstrap } from "./bootstrap.js";
 import { can } from "./principal.js";
 import { audit } from "./audit.js";
 
@@ -266,13 +267,16 @@ export async function getPrincipal() {
 
 /**
  * Claims a fresh login mints (ADR-0004). Switch off, or before an owner exists
- * (YAN-356 bootstraps it), logins keep today's claim set. An SSO login with an
- * identity linked to the owner stands for the owner even with more users; a
- * non-owner link is refused (YAN-359). An unlinked, unmatched SSO login keeps
- * the YAN-355 rule: owner claims while at most one active user, else null.
+ * (YAN-356 bootstraps it), logins keep today's claim set. Password logins mint
+ * the owner's claims as before. An SSO login (YAN-359) is admitted only by the
+ * provisioning service: it must carry a verified identity (non-empty provider/
+ * issuer/subject) plus `opts.admittedUserId`, and that identity triple must be
+ * linked to exactly that user, who must be active, approved and rotation-free.
+ * No owner fallback, no linking here — `resolveSsoUser` is the owner-proof
+ * resolver used inside admission only.
  * @param {"pwd"|"oidc"|"saml"} method
  * @param {{ provider: "oidc"|"saml", issuer?: string, subject: string, email?: string, emailVerified?: boolean }} [identity] SSO identity (YAN-356)
- * @param {{ setupToken?: string }} [opts] presented owner setup token (YAN-356)
+ * @param {{ admittedUserId?: string }} [opts] server-only admitted user id (YAN-359)
  * @returns {Promise<object|null>}
  */
 export async function sessionClaims(method, identity = null, opts = {}) {
@@ -280,20 +284,29 @@ export async function sessionClaims(method, identity = null, opts = {}) {
   await ensureOwnerBootstrap();
   let user = null;
   if (method !== "pwd") {
-    const linked = await resolveSsoUser(identity, opts);
-    if (linked) {
-      user = await getUserUnscoped(linked);
-      if (user?.status !== "active" || user.instanceRole !== "owner") return null;
-    }
+    const nonEmpty = (v) => typeof v === "string" && v !== "";
+    const { provider, issuer, subject } = identity ?? {};
+    const admitted = opts.admittedUserId;
+    if (!(nonEmpty(provider) && nonEmpty(issuer) && nonEmpty(subject) && nonEmpty(admitted)))
+      return null;
+    const linked = await findIdentityUnscoped({ provider, issuer, subject });
+    if (!linked || linked.userId !== admitted) return null;
+    user = await getUserUnscoped(admitted);
+    // Fresh committed row: admission just dropped the session cache.
+    if (user?.status !== "active") return null;
+    if (user.instanceRole === "pending" || user.mustChangePassword) return null;
+    return {
+      sub: user.id,
+      sv: user.sessionVersion,
+      wid: (await principalFor(user, "session")).activeWorkspaceId,
+      amr: [method],
+    };
   }
-  if (!user) {
-    if (method !== "pwd" && (await countActiveUsersUnscoped()) > 1) return null;
-    const owner = await getOwnerUnscoped();
-    if (owner?.status !== "active") return {};
-    // YAN-358: a flagged owner never gets full claims (rotation first), any method.
-    if (owner.mustChangePassword) return null;
-    user = owner;
-  }
+  const owner = await getOwnerUnscoped();
+  if (owner?.status !== "active") return {};
+  // YAN-358: a flagged owner never gets full claims (rotation first).
+  if (owner.mustChangePassword) return null;
+  user = owner;
   const principal = await principalFor(user, "session");
   return {
     sub: user.id,

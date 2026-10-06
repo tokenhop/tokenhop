@@ -155,6 +155,41 @@ describe("Schema migrations", () => {
     expect(db2.all(`SELECT id FROM combos`)).toEqual([{ id: "mine" }]);
   });
 
+  it("migration 011 adds nullable instanceRoleSource idempotently with an idp-only CHECK (YAN-359)", async () => {
+    const { createSqlJsAdapter } = await import("@/lib/db/adapters/sqljsAdapter.js");
+    const m011 = (await import("@/lib/db/migrations/011-sso-role-source.js")).default;
+    const db = await createSqlJsAdapter(path.join(tempDir, "pre011.sqlite"));
+    db.exec(`CREATE TABLE users (id TEXT PRIMARY KEY, instanceRole TEXT NOT NULL)`);
+    db.run(`INSERT INTO users(id, instanceRole) VALUES('u0', 'admin')`);
+    const cols = () =>
+      db.all(`PRAGMA table_info(users)`).filter((c) => c.name === "instanceRoleSource");
+    expect(cols()).toHaveLength(0);
+
+    m011.up(db);
+    m011.up(db); // idempotent: no duplicate-column error
+    expect(cols()).toHaveLength(1);
+    expect(cols()[0].notnull).toBe(0);
+    expect(db.get(`SELECT instanceRoleSource AS s FROM users WHERE id = 'u0'`).s).toBeNull();
+
+    db.run(`INSERT INTO users(id, instanceRole, instanceRoleSource) VALUES('u1', 'admin', NULL)`);
+    db.run(`INSERT INTO users(id, instanceRole, instanceRoleSource) VALUES('u2', 'admin', 'idp')`);
+    for (const bad of ["manual", "x"]) {
+      expect(() =>
+        db.run(`INSERT INTO users(id, instanceRole, instanceRoleSource) VALUES(?, 'admin', ?)`, [
+          `bad-${bad}`,
+          bad,
+        ]),
+      ).toThrow(/CHECK/i);
+    }
+    db.close();
+  });
+
+  it("fresh DB schema has users.instanceRoleSource (YAN-359)", async () => {
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+    expect(db.all(`PRAGMA table_info(users)`).map((c) => c.name)).toContain("instanceRoleSource");
+  });
+
   it("auto-sync re-creates missing index when DB lacks it", async () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();

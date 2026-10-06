@@ -4,7 +4,13 @@ import { getSettings } from "@/lib/localDb";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import { hasValidCliToken } from "@/lib/auth/cliToken";
 import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";
-import { ssoLockoutError, validateSettingsBody } from "../../validateSettings.js";
+import {
+  hasSsoPolicyKeys,
+  ssoLockoutError,
+  validateSettingsBody,
+  validateSsoWorkspaceTargets,
+} from "../../validateSettings.js";
+import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
 import {
   applyConfig,
   exportConfig,
@@ -79,6 +85,16 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
 
+    // YAN-359: SSO policy keys ride the import only with the users & teams
+    // rollout on; otherwise the document is refused before any write, the
+    // same 404 a PATCH carrying them gets.
+    if (
+      hasSsoPolicyKeys(isPlainObject(body.doc?.settings) ? body.doc.settings : {}) &&
+      !(await isMultiUserEnabled())
+    ) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     // Copy through JSON so "__proto__" arrives as an own key, which the
     // validators check for explicitly.
     const parsed = JSON.parse(JSON.stringify(body.doc));
@@ -101,6 +117,19 @@ export async function POST(request) {
         { error: settingsError, errors: [settingsError], warnings: checked.warnings },
         { status: 400 },
       );
+    }
+    // YAN-359: mapped workspaces must be existing shared ones, checked before
+    // preview or apply (applyConfig rechecks inside its transaction).
+    if (Object.hasOwn(checked.doc.settings, "ssoGroupWorkspaceMap")) {
+      const targetsError = await validateSsoWorkspaceTargets(
+        checked.doc.settings.ssoGroupWorkspaceMap,
+      );
+      if (targetsError) {
+        return NextResponse.json(
+          { error: targetsError, errors: [targetsError], warnings: checked.warnings },
+          { status: 400 },
+        );
+      }
     }
 
     // Belt and suspenders: secrets are validated out above, and stripped again

@@ -89,7 +89,26 @@ export const DEFAULT_SETTINGS = {
   },
   backoff: { startMs: 2000, maxMs: 300000, levels: 15 },
   streamTimeouts: { firstChunkMs: 200000, stallMs: 360000, connectMs: 60000 },
+  // YAN-359 SSO group policy: six flat instance keys, rollout-gated. The
+  // settings route hides and 404-rejects them while the users & teams rollout
+  // is off; shapes are validated in app/api/settings/validateSettings.js.
+  ssoGroupsClaim: "groups",
+  samlAttributeGroups: "groups",
+  ssoAllowedGroups: [],
+  ssoAdminGroups: [],
+  ssoGroupWorkspaceMap: [],
+  ssoDefaultRole: "pending",
 };
+
+/** The six rollout-gated SSO group-policy keys (YAN-359). */
+export const SSO_POLICY_KEYS = Object.freeze([
+  "ssoGroupsClaim",
+  "samlAttributeGroups",
+  "ssoAllowedGroups",
+  "ssoAdminGroups",
+  "ssoGroupWorkspaceMap",
+  "ssoDefaultRole",
+]);
 
 async function readRaw() {
   const db = await getAdapter();

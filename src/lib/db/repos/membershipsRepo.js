@@ -31,6 +31,89 @@ export function assertNotLastManager(db, workspaceId, userId) {
   }
 }
 
+const IDP_ROLES = ["manager", "member", "viewer"];
+
+/**
+ * Reconcile a user's `source='idp'` memberships to `wanted` ([{ workspaceId, role }]).
+ * Sync, no own tx: the caller owns the transaction (and one sessionVersion bump +
+ * cache drop after commit when `changed`). manual/invite rows are never touched.
+ * Throws TenancyError INVALID/LAST_MANAGER; everything is validated and guarded
+ * before the first write. Returns safe deltas (ids and roles only).
+ * ponytail: duplicate workspaceIds are rejected, caller resolves the highest role.
+ */
+export function syncIdpMembershipsSync(db, userId, wanted) {
+  const bad = (msg) => new TenancyError("INVALID", msg);
+  if (typeof userId !== "string" || !userId) throw bad("userId is required");
+  if (!db.get(`SELECT 1 AS x FROM users WHERE id = ?`, [userId])) throw bad("Unknown user");
+  if (!Array.isArray(wanted)) throw bad("wanted must be an array");
+
+  const want = new Map();
+  for (const w of wanted) {
+    if (!w || typeof w !== "object") throw bad("Invalid membership entry");
+    const { workspaceId, role } = w;
+    if (typeof workspaceId !== "string" || !workspaceId) throw bad("Invalid workspaceId");
+    if (!IDP_ROLES.includes(role)) throw bad("Invalid role");
+    if (want.has(workspaceId)) throw bad("Duplicate workspaceId");
+    const ws = db.get(`SELECT kind FROM workspaces WHERE id = ?`, [workspaceId]);
+    if (!ws || ws.kind === "personal") throw bad("Invalid workspace");
+    want.set(workspaceId, role);
+  }
+
+  const have = new Map(
+    db
+      .all(`SELECT workspaceId, role, source FROM memberships WHERE userId = ?`, [userId])
+      .map((r) => [r.workspaceId, r]),
+  );
+  const added = [];
+  const updated = [];
+  const removed = [];
+  for (const [workspaceId, role] of want) {
+    const cur = have.get(workspaceId);
+    if (!cur) added.push({ workspaceId, role });
+    else if (cur.source === "idp" && cur.role !== role) {
+      updated.push({ workspaceId, before: cur.role, after: role });
+    }
+  }
+  for (const [workspaceId, cur] of have) {
+    if (cur.source === "idp" && !want.has(workspaceId)) {
+      removed.push({ workspaceId, role: cur.role });
+    }
+  }
+
+  // Guards first: a throw here leaves nothing written.
+  for (const u of updated) {
+    if (!MANAGER_ROLES.includes(u.after)) assertNotLastManager(db, u.workspaceId, userId);
+  }
+  for (const r of removed) assertNotLastManager(db, r.workspaceId, userId);
+
+  const now = new Date().toISOString();
+  for (const a of added) {
+    db.run(
+      `INSERT INTO memberships(workspaceId, userId, role, source, createdAt) VALUES(?, ?, ?, 'idp', ?)`,
+      [a.workspaceId, userId, a.role, now],
+    );
+  }
+  for (const u of updated) {
+    db.run(
+      `UPDATE memberships SET role = ? WHERE workspaceId = ? AND userId = ? AND source = 'idp'`,
+      [u.after, u.workspaceId, userId],
+    );
+  }
+  for (const r of removed) {
+    const { changes } = db.run(
+      `DELETE FROM memberships WHERE workspaceId = ? AND userId = ? AND source = 'idp'`,
+      [r.workspaceId, userId],
+    );
+    if (changes > 0) revokeUserApiKeysSync(db, userId, { workspaceId: r.workspaceId, now });
+  }
+  return {
+    changed: added.length + updated.length + removed.length > 0,
+    added,
+    updated,
+    removed,
+  };
+}
+
 // The workspace row, once the principal is known to be a member of it.
 function memberWorkspace(db, ctx, workspaceId) {
   assertCtx(ctx);

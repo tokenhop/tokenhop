@@ -5,6 +5,12 @@ import { buildSamlAuthorizeUrl, getSamlBaseUrl, isSamlConfigured } from "@/lib/a
 import { resolveAuthModes } from "@/lib/auth/authModes";
 import { shouldUseSecureCookie } from "@/lib/auth/dashboardSession";
 import { stashSetupToken } from "@/lib/users/bootstrap";
+import { isUserSecurityEnforced } from "@/lib/users/securityState.js";
+
+async function withStartHeaders(response) {
+  if (await isUserSecurityEnforced()) response.headers.set("Referrer-Policy", "no-referrer");
+  return response;
+}
 
 export async function GET(request) {
   const settings = await getSettings();
@@ -12,7 +18,9 @@ export async function GET(request) {
   try {
     if (!resolveAuthModes(settings).saml || !isSamlConfigured(settings)) {
       console.warn("[SAML] start failed: saml_not_configured");
-      return NextResponse.redirect(new URL("/login?error=saml_not_configured", origin));
+      return withStartHeaders(
+        NextResponse.redirect(new URL("/login?error=saml_not_configured", origin)),
+      );
     }
 
     const { authorizeUrl, requestId } = await buildSamlAuthorizeUrl(request, settings);
@@ -28,9 +36,11 @@ export async function GET(request) {
     cookieStore.set("saml_state", requestId, cookieOptions);
     await stashSetupToken(request, cookieStore, cookieOptions);
 
-    return NextResponse.redirect(authorizeUrl);
+    return withStartHeaders(NextResponse.redirect(authorizeUrl));
   } catch (error) {
     console.warn("[SAML] start failed:", error?.message || error);
-    return NextResponse.redirect(new URL("/login?error=saml_start_failed", origin));
+    return withStartHeaders(
+      NextResponse.redirect(new URL("/login?error=saml_start_failed", origin)),
+    );
   }
 }

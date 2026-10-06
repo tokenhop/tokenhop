@@ -178,6 +178,7 @@ export const TABLES = {
       updatedAt: "TEXT NOT NULL",
       lastLoginAt: "TEXT",
       mustChangePassword: "INTEGER NOT NULL DEFAULT 0 CHECK (mustChangePassword IN (0, 1))",
+      instanceRoleSource: "TEXT CHECK (instanceRoleSource IN ('idp'))",
     },
     indexes: [
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_owner ON users(instanceRole) WHERE instanceRole = 'owner'",

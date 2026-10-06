@@ -257,7 +257,9 @@ export function sanitizeGatewayCapture({ headers, url = null } = {}) {
     try {
       const relative = !/^[a-z][a-z\d+.-]*:/i.test(url);
       const parsed = new URL(url, "http://gateway.invalid");
-      if (parsed.searchParams.has("key")) parsed.searchParams.set("key", "[REDACTED]");
+      for (const param of ["key", "setupToken"]) {
+        if (parsed.searchParams.has(param)) parsed.searchParams.set(param, "[REDACTED]");
+      }
       out.url = relative ? `${parsed.pathname}${parsed.search}${parsed.hash}` : parsed.toString();
     } catch {
       out.url = url;

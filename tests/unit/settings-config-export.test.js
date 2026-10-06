@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
 const originalDataDir = process.env.DATA_DIR;
 let tempDir;
@@ -208,5 +208,107 @@ describe("YAN-313 config export/import routes", () => {
     expect(after.stickyRoundRobinLimit).toBe(target);
     expect((await getCombos()).some((c) => c.name === "yan313-rollback")).toBe(false);
     expect((await getUserPricing())["yan313-test"]).toEqual({ m1: { input: 1 } });
+  });
+});
+
+// YAN-359: the SSO group policy keys ride the config document only while the
+// users & teams switch is on. featureSwitch reads the env at import, so each
+// state reloads modules.
+describe("YAN-359 SSO policy keys in config export/import", () => {
+  const SSO_KEYS = [
+    "ssoGroupsClaim",
+    "samlAttributeGroups",
+    "ssoAllowedGroups",
+    "ssoAdminGroups",
+    "ssoGroupWorkspaceMap",
+    "ssoDefaultRole",
+  ];
+  const originalSwitch = process.env.TOKENHOP_MULTI_USER;
+  const setSwitch = (state) => {
+    vi.resetModules();
+    process.env.TOKENHOP_MULTI_USER = state;
+  };
+  const seedWorkspace = async (id, kind) => {
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT OR IGNORE INTO workspaces(id, name, kind, createdBy, createdAt, updatedAt) VALUES(?, ?, ?, NULL, ?, ?)`,
+      [id, id, kind, now, now],
+    );
+    return db;
+  };
+
+  afterAll(() => {
+    vi.resetModules();
+    if (originalSwitch === undefined) delete process.env.TOKENHOP_MULTI_USER;
+    else process.env.TOKENHOP_MULTI_USER = originalSwitch;
+  });
+
+  it("off: export and state omit the keys; an import carrying them is 404 and writes nothing", async () => {
+    setSwitch("off");
+    const doc = await (await exportConfig()).json();
+    for (const key of SSO_KEYS) expect(doc.settings).not.toHaveProperty(key);
+    const { getConfigState } = await import("@/lib/db/configExport.js");
+    const state = await getConfigState();
+    for (const key of SSO_KEYS) expect(state.settings).not.toHaveProperty(key);
+
+    const before = await readStored();
+    const res = await importConfig(
+      { ...doc, settings: { ...doc.settings, ssoAllowedGroups: ["eng"] } },
+      { mode: "apply" },
+    );
+    expect(res.status).toBe(404);
+    expect((await readStored()).ssoAllowedGroups).toEqual(before.ssoAllowedGroups);
+  });
+
+  it("on: valid shared target applies; personal/unknown target and owner role are 400", async () => {
+    setSwitch("on");
+    await seedWorkspace("ws-cfg-shared", "shared");
+    await seedWorkspace("ws-cfg-personal", "personal");
+    const doc = await (await exportConfig()).json();
+    expect(doc.settings).toHaveProperty("ssoDefaultRole", "pending");
+
+    const withMap = (map) => ({ ...doc, settings: { ...doc.settings, ssoGroupWorkspaceMap: map } });
+    const ok = await importConfig(
+      withMap([{ group: "eng", workspaceId: "ws-cfg-shared", role: "member" }]),
+      { mode: "apply" },
+    );
+    expect(ok.status).toBe(200);
+    expect((await readStored()).ssoGroupWorkspaceMap).toEqual([
+      { group: "eng", workspaceId: "ws-cfg-shared", role: "member" },
+    ]);
+
+    for (const map of [
+      [{ group: "eng", workspaceId: "ws-cfg-personal", role: "member" }],
+      [{ group: "eng", workspaceId: "ws-cfg-missing", role: "member" }],
+      [{ group: "eng", workspaceId: "ws-cfg-shared", role: "owner" }],
+    ]) {
+      const bad = await importConfig(withMap(map), { mode: "apply" });
+      expect(bad.status).toBe(400);
+    }
+    expect((await readStored()).ssoGroupWorkspaceMap).toEqual([
+      { group: "eng", workspaceId: "ws-cfg-shared", role: "member" },
+    ]);
+  });
+
+  it("on: applyConfig rechecks targets inside its transaction", async () => {
+    setSwitch("on");
+    const db = await seedWorkspace("ws-cfg-doomed", "shared");
+    const { getConfigState, applyConfig } = await import("@/lib/db/configExport.js");
+    const state = await getConfigState();
+    const before = await readStored();
+    // Validated earlier, deleted before apply.
+    db.run(`DELETE FROM workspaces WHERE id = ?`, ["ws-cfg-doomed"]);
+    await expect(
+      applyConfig({
+        ...state,
+        settings: {
+          ...state.settings,
+          ssoGroupWorkspaceMap: [{ group: "ops", workspaceId: "ws-cfg-doomed", role: "viewer" }],
+        },
+      }),
+    ).rejects.toThrow(/ssoGroupWorkspaceMap/);
+    expect((await readStored()).ssoGroupWorkspaceMap).toEqual(before.ssoGroupWorkspaceMap);
   });
 });

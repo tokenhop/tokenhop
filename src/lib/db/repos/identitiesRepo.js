@@ -38,15 +38,15 @@ export async function listIdentitiesUnscoped(userId) {
   return db.all(`SELECT ${COLS} FROM identities WHERE userId = ? ORDER BY createdAt ASC`, [userId]);
 }
 
-// Login/bootstrap/admin path. Callers decide who the identity belongs to.
-export async function linkIdentityUnscoped(
-  userId,
-  { provider, issuer = "", subject, emailAtLink },
-) {
+/**
+ * Synchronous identity insert for caller-owned transactions (no await). Throws
+ * TenancyError on bad subject and maps UNIQUE failures (IDENTITY_TAKEN).
+ * Shared by linkIdentityUnscoped.
+ */
+export function insertIdentitySync(db, userId, { provider, issuer = "", subject, emailAtLink }) {
   if (typeof subject !== "string" || !subject) {
     throw new TenancyError("INVALID", "Identity subject is required");
   }
-  const db = await getAdapter();
   const identity = {
     id: uuidv4(),
     userId,
@@ -72,4 +72,9 @@ export async function linkIdentityUnscoped(
     ),
   );
   return identity;
+}
+
+// Login/bootstrap/admin path. Callers decide who the identity belongs to.
+export async function linkIdentityUnscoped(userId, key) {
+  return insertIdentitySync(await getAdapter(), userId, key);
 }

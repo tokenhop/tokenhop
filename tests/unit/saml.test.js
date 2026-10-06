@@ -5,6 +5,7 @@ import {
   generateSamlMetadata,
   pickSamlEmail,
   pickSamlDisplayName,
+  pickSamlGroups,
   validateSamlResponse,
 } from "../../src/lib/auth/saml.js";
 import { mergeWithDefaults } from "../../src/lib/db/repos/settingsRepo.js";
@@ -141,6 +142,99 @@ describe("SAML 2.0 Auth Engine Utilities", () => {
       );
       expect(pickSamlDisplayName({ email: "user@example.com" }, {})).toBe("user@example.com");
       expect(pickSamlDisplayName({ givenName: "Alice", surname: "Smith" }, {})).toBe("Alice Smith");
+    });
+  });
+
+  describe("pickSamlGroups", () => {
+    const URI = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/role";
+
+    it("defaults to the own `groups` key and reports absence", () => {
+      expect(pickSamlGroups({ groups: ["a", "b"] }, {})).toEqual({
+        present: true,
+        groups: ["a", "b"],
+        invalid: false,
+      });
+      expect(pickSamlGroups({ email: "x@y.z" }, {})).toEqual({
+        present: false,
+        groups: null,
+        invalid: false,
+      });
+    });
+
+    it("configured own profile key takes precedence over attributes", () => {
+      const profile = {
+        memberOf: ["profile-key"],
+        attributes: { memberOf: ["attr-key"], groups: ["default-key"] },
+      };
+      expect(pickSamlGroups(profile, { samlAttributeGroups: "memberOf" })).toEqual({
+        present: true,
+        groups: ["profile-key"],
+        invalid: false,
+      });
+    });
+
+    it("falls back to the same configured key under profile.attributes", () => {
+      const profile = { attributes: { memberOf: ["attr-key"] } };
+      expect(pickSamlGroups(profile, { samlAttributeGroups: "memberOf" })).toEqual({
+        present: true,
+        groups: ["attr-key"],
+        invalid: false,
+      });
+    });
+
+    it("keeps URI attribute keys literal (never dot-split)", () => {
+      const profile = { [URI]: ["uri-groups"] };
+      expect(pickSamlGroups(profile, { samlAttributeGroups: URI })).toEqual({
+        present: true,
+        groups: ["uri-groups"],
+        invalid: false,
+      });
+      expect(
+        pickSamlGroups({ attributes: { [URI]: "admins" } }, { samlAttributeGroups: URI }),
+      ).toEqual({ present: true, groups: ["admins"], invalid: false });
+    });
+
+    it("explicit empty array is present and suppresses the attributes fallback", () => {
+      const profile = { groups: [], attributes: { groups: ["attr"] } };
+      expect(pickSamlGroups(profile, {})).toEqual({ present: true, groups: [], invalid: false });
+    });
+
+    it("normalizes scalars, never CSV-splits, drops unsafe/oversize entries", () => {
+      expect(pickSamlGroups({ groups: "a,b" }, {}).groups).toEqual(["a,b"]);
+      expect(pickSamlGroups({ groups: ["ok", "__proto__", 5, "", "x".repeat(257)] }, {})).toEqual({
+        present: true,
+        groups: ["ok"],
+        invalid: false,
+      });
+    });
+
+    it("marks invalid claim shapes present-and-invalid", () => {
+      expect(pickSamlGroups({ groups: { nested: true } }, {})).toEqual({
+        present: true,
+        groups: null,
+        invalid: true,
+      });
+      expect(pickSamlGroups({ groups: 42 }, {})).toEqual({
+        present: true,
+        groups: null,
+        invalid: true,
+      });
+    });
+
+    it("ignores inherited keys and tolerates a missing profile", () => {
+      expect(pickSamlGroups(Object.create({ groups: ["leak"] }), {}).present).toBe(false);
+      expect(pickSamlGroups(null, {})).toEqual({ present: false, groups: null, invalid: false });
+      expect(pickSamlGroups(undefined, { samlAttributeGroups: "groups" }).present).toBe(false);
+    });
+
+    it("does not mutate the profile or settings", () => {
+      const profile = { attributes: { groups: ["a", "a", ""] } };
+      const settings = { samlAttributeGroups: "groups" };
+      const profileSnapshot = structuredClone(profile);
+      const settingsSnapshot = structuredClone(settings);
+      pickSamlGroups(profile, settings);
+      expect(profile).toEqual(profileSnapshot);
+      expect(settings).toEqual(settingsSnapshot);
     });
   });
 

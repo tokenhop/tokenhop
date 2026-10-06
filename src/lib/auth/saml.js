@@ -2,6 +2,7 @@ import { SAML, ValidateInResponseTo } from "@node-saml/node-saml";
 import { InMemoryCacheProvider } from "@node-saml/node-saml/lib/in-memory-cache-provider.js";
 import { getSettings } from "../db/repos/settingsRepo.js";
 import { ACTIVE } from "@/shared/brand";
+import { normalizeGroups } from "../users/ssoProvisioning.js";
 
 const SAML_REQUEST_TTL_MS = 10 * 60 * 1000; // matches saml_state cookie maxAge (10 min)
 
@@ -302,4 +303,25 @@ export function pickSamlDisplayName(profile = {}, settings = {}) {
 
   // 4. Fallback to email
   return pickSamlEmail(profile, settings);
+}
+
+/**
+ * Reads the group attribute from a validated SAML profile.
+ * Exact own configured key (settings.samlAttributeGroups, default "groups") on the profile
+ * first, then the same own key in profile.attributes. URI keys stay literal; values go through
+ * the shared normalizer (no CSV splitting).
+ * @param {object} profile
+ * @param {object} settings
+ * @returns {{ present: boolean, groups: string[]|null, invalid: boolean }}
+ */
+export function pickSamlGroups(profile, settings) {
+  const key = settings?.samlAttributeGroups || "groups";
+  const sources = [profile, profile?.attributes];
+  for (const source of sources) {
+    if (source && typeof source === "object" && Object.hasOwn(source, key)) {
+      const { groups, invalid } = normalizeGroups(source[key]);
+      return { present: true, groups, invalid };
+    }
+  }
+  return { present: false, groups: null, invalid: false };
 }

@@ -1,6 +1,7 @@
 import { getAdapter } from "./driver.js";
 import { parseJson, stringifyJson } from "./helpers/jsonCol.js";
-import { getSettings, DEFAULT_SETTINGS } from "./repos/settingsRepo.js";
+import { getSettings, DEFAULT_SETTINGS, SSO_POLICY_KEYS } from "./repos/settingsRepo.js";
+import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
 import { mirrorToDefaultWorkspace } from "./repos/workspaceSettingsRepo.js";
 import { defaultWorkspaceIdUnscoped } from "./repos/ownership.js";
 import { WORKSPACE_KEYS, pickKeys } from "@/lib/settings/settingsScope.js";
@@ -37,13 +38,25 @@ export async function getKnownConfigSettingKeys() {
   });
 }
 
+// YAN-359: the six SSO policy keys ride the config document only while the
+// users & teams rollout is on; export/diff state omits them while off.
+async function visibleConfigSettings(settings) {
+  if (await isMultiUserEnabled()) return settings;
+  const out = { ...settings };
+  for (const key of SSO_POLICY_KEYS) delete out[key];
+  return out;
+}
+
 /** Portable config document. Credential-bearing tables never touched. */
 export async function exportConfig() {
   const db = await getAdapter();
   // YAN-364: the flat doc has no workspace identity — Default + NULL rows
   // only, never other workspaces' same-name combos.
   return buildConfigDocument({
-    settings: { ...(await getSettings()), ...defaultWorkspaceOverlay(db) },
+    settings: await visibleConfigSettings({
+      ...(await getSettings()),
+      ...defaultWorkspaceOverlay(db),
+    }),
     combos: await getPortableCombosUnscoped(),
     pricingOverrides: await getUserPricing(),
     version: getAppVersion(),
@@ -54,7 +67,10 @@ export async function exportConfig() {
 export async function getConfigState() {
   const db = await getAdapter();
   return {
-    settings: { ...(await getSettings()), ...defaultWorkspaceOverlay(db) },
+    settings: await visibleConfigSettings({
+      ...(await getSettings()),
+      ...defaultWorkspaceOverlay(db),
+    }),
     combos: await getPortableCombosUnscoped(),
     pricingOverrides: await getUserPricing(),
   };
@@ -92,6 +108,24 @@ export async function applyConfig(doc) {
     const pricingRows = db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'`);
     const pricingOverrides = {};
     for (const r of pricingRows) pricingOverrides[r.key] = parseJson(r.value, {});
+
+    // YAN-359: recheck mapped targets inside the transaction — a workspace
+    // deleted after route validation must fail the apply, not slip through.
+    const map = doc.settings?.ssoGroupWorkspaceMap;
+    if (Array.isArray(map) && map.length > 0) {
+      if (map.some((entry) => typeof entry?.workspaceId !== "string" || !entry.workspaceId)) {
+        throw new Error("Invalid ssoGroupWorkspaceMap: unknown or personal workspace");
+      }
+      const ids = [...new Set(map.map((entry) => entry.workspaceId))];
+      const rows = db.all(
+        `SELECT id FROM workspaces WHERE kind = 'shared' AND id IN (${ids.map(() => "?").join(",")})`,
+        ids,
+      );
+      const found = new Set(rows.map((r) => r.id));
+      if (ids.some((id) => !found.has(id))) {
+        throw new Error("Invalid ssoGroupWorkspaceMap: unknown or personal workspace");
+      }
+    }
 
     const before = {
       settings: { ...DEFAULT_SETTINGS, ...stored },

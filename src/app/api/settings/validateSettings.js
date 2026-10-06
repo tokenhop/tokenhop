@@ -3,7 +3,8 @@ import { validateComboStrategySettings } from "open-sse/services/comboStrategy.j
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { resolveAuthModes } from "@/lib/auth/authModes";
-import { DEFAULT_SETTINGS } from "@/lib/db/repos/settingsRepo.js";
+import { DEFAULT_SETTINGS, SSO_POLICY_KEYS } from "@/lib/db/repos/settingsRepo.js";
+import { getAdapter } from "@/lib/db/driver.js";
 import { validateSectionSettings } from "./validateSectionSettings.js";
 
 const ACCOUNT_STRATEGIES = new Set(["fill-first", "round-robin", "weighted"]);
@@ -186,6 +187,87 @@ function validAccountSettings(body) {
   return true;
 }
 
+const SSO_MAX_LIST = 100;
+const SSO_MAX_CLAIM_DEPTH = 5;
+const SSO_MAP_ROLES = new Set(["manager", "member", "viewer"]);
+
+/** Whether `body` carries any of the six YAN-359 SSO policy keys. */
+export function hasSsoPolicyKeys(body) {
+  return !!body && typeof body === "object" && SSO_POLICY_KEYS.some((k) => Object.hasOwn(body, k));
+}
+
+const nonEmptyText = (v) => typeof v === "string" && v.length > 0 && v.length <= MAX_TEXT_LEN;
+
+/**
+ * Shape check for the six SSO group-policy keys (YAN-359). Not pure: it
+ * deduplicates the two group lists on `body` in place. Returns an error or "".
+ * @param {object} body Plain settings object.
+ */
+export function validateSsoPolicy(body) {
+  if (Object.hasOwn(body, "ssoGroupsClaim")) {
+    const v = body.ssoGroupsClaim;
+    const parts = typeof v === "string" ? v.split(".") : [];
+    if (
+      !nonEmptyText(v) ||
+      parts.length > SSO_MAX_CLAIM_DEPTH ||
+      parts.some((p) => !p || UNSAFE_KEYS.has(p))
+    ) {
+      return "Invalid ssoGroupsClaim";
+    }
+  }
+  if (Object.hasOwn(body, "samlAttributeGroups")) {
+    const v = body.samlAttributeGroups;
+    if (!nonEmptyText(v) || UNSAFE_KEYS.has(v)) return "Invalid samlAttributeGroups";
+  }
+  for (const key of ["ssoAllowedGroups", "ssoAdminGroups"]) {
+    if (!Object.hasOwn(body, key)) continue;
+    const v = body[key];
+    if (!Array.isArray(v) || v.length > SSO_MAX_LIST || !v.every(nonEmptyText)) {
+      return `Invalid ${key}`;
+    }
+    body[key] = [...new Set(v)];
+  }
+  if (Object.hasOwn(body, "ssoDefaultRole") && !["pending", "user"].includes(body.ssoDefaultRole)) {
+    return "Invalid ssoDefaultRole";
+  }
+  if (Object.hasOwn(body, "ssoGroupWorkspaceMap")) {
+    const v = body.ssoGroupWorkspaceMap;
+    const ok =
+      Array.isArray(v) &&
+      v.length <= SSO_MAX_LIST &&
+      v.every(
+        (e) =>
+          isPlainObject(e) &&
+          Object.keys(e).length === 3 &&
+          nonEmptyText(e.group) &&
+          nonEmptyText(e.workspaceId) &&
+          SSO_MAP_ROLES.has(e.role),
+      );
+    if (!ok) return "Invalid ssoGroupWorkspaceMap";
+  }
+  return "";
+}
+
+/**
+ * Async DB check: every mapped workspace must be an existing shared one.
+ * Call after `validateSsoPolicy`, before any write.
+ * @param {Array<{ workspaceId: string }>} map
+ * @returns {Promise<string>} Error message, or "".
+ */
+export async function validateSsoWorkspaceTargets(map) {
+  const ids = [...new Set((map ?? []).map((e) => e.workspaceId))];
+  if (!ids.length) return "";
+  const db = await getAdapter();
+  const rows = db.all(
+    `SELECT id FROM workspaces WHERE kind = 'shared' AND id IN (${ids.map(() => "?").join(",")})`,
+    ids,
+  );
+  const found = new Set(rows.map((r) => r.id));
+  return ids.every((id) => found.has(id))
+    ? ""
+    : "Invalid ssoGroupWorkspaceMap: unknown or personal workspace";
+}
+
 /**
  * Every boundary check PATCH applies to a settings body, in PATCH order.
  * Shared with config import so it can never store what PATCH would reject.
@@ -193,6 +275,8 @@ function validAccountSettings(body) {
  * @returns {string} Error message, or "" when valid.
  */
 export function validateSettingsBody(body) {
+  const ssoPolicyError = validateSsoPolicy(body);
+  if (ssoPolicyError) return ssoPolicyError;
   const comboStrategyError = validateComboStrategySettings(body);
   if (comboStrategyError) return comboStrategyError;
   if (!validAccountSettings(body)) return "Invalid account strategy settings";
