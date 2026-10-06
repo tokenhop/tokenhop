@@ -287,7 +287,8 @@ export async function ssoAdmit(identity, groups, { setupToken, invitationToken }
   if (invitationToken && !(await isMultiUserEnabled())) throw new SsoAdmissionError("denied");
 
   const { getSettings, findIdentityUnscoped } = await import("@/lib/db/index.js");
-  const settings = await getSettings();
+  // Non-secret consumer: group policy keys only; metadata mode needs no KEK.
+  const settings = await getSettings({ secretMode: "metadata" });
   const assigned = resolveAssignments(groups, settings);
   if (!assigned.admit) throw new SsoAdmissionError("denied");
 

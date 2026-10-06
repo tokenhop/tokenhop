@@ -4,9 +4,10 @@ import os from "os";
 import { execSync } from "child_process";
 import { installTailscale, loadState, generateShortId } from "@/lib/tunnel";
 import { getCachedPassword, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
+import { isCredentialEncryptionEstablished } from "@/lib/db/repos/settingsRepo.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
 
-initDbHooks(getSettings, updateSettings);
+initDbHooks(getSettings, updateSettings, isCredentialEncryptionEstablished);
 
 const EXTENDED_PATH = `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${process.env.PATH || ""}`;
 

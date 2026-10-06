@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import { constants } from "node:fs";
 import path from "node:path";
 import { getDataDir } from "../dataDir.js";
@@ -8,8 +9,13 @@ const HASH_INFO = "tokenhop/api-key-hash";
 const MASTER_ENV = "TOKENHOP_MASTER_KEY";
 const IS_WINDOWS = process.platform === "win32";
 
-function fail(message) {
-  throw new Error(`[master-key] ${message}`);
+// MASTER_KEY_INVALID keeps message text identical; callers may branch on code.
+// The two "missing" failures keep their established KEY_MISSING code (the
+// activation/startup contract treats that exact code as root-unavailable).
+function fail(message, code = "MASTER_KEY_INVALID") {
+  const err = new Error(`[master-key] ${message}`);
+  err.code = code;
+  throw err;
 }
 
 function assertMaster(value) {
@@ -193,6 +199,11 @@ export function masterKeyId(master) {
   return crypto.createHash("sha256").update(master).digest("hex").slice(0, 16);
 }
 
+/** Fresh random 32-byte master (rotation generates its own next root). */
+export function randomMasterKey() {
+  return crypto.randomBytes(32);
+}
+
 export async function loadMasterKey({ create = false, expectedKid = null } = {}) {
   const env = process.env[MASTER_ENV];
   if (env !== undefined) {
@@ -211,8 +222,176 @@ export async function loadMasterKey({ create = false, expectedKid = null } = {})
   if (seen.status === "error") throw seen.error;
   // Corrupt/partial roots throw inside readValidatedKey and are never
   // unlinked or regenerated, even with create:true.
-  if (expectedKid != null) fail("master key missing for expected id");
-  if (!create) fail("master key missing; pass { create: true } to initialize");
+  if (expectedKid != null) fail("master key missing for expected id", "KEY_MISSING");
+  if (!create) fail("master key missing; pass { create: true } to initialize", "KEY_MISSING");
   const key = await createExclusive(file, path.dirname(file));
   return { kid: masterKeyId(key), key };
+}
+
+// ─── Sync root primitives (YAN-365 B4 key rotation) ────────────────────────
+// The rotation service must not yield between its durable DB commit and file
+// publication, so these mirror the async loader's safety rules synchronously:
+// exclusive-create staging (0600), no symlink follows, checked size/modes and
+// POSIX directory fsync. The async loader semantics above stay unchanged, and
+// every runtime caller of loadMasterKey re-reads the root per call, so a
+// published new root is picked up without any cache invalidation.
+
+function assertPrivateModeSync(stat, label) {
+  if (IS_WINDOWS) return;
+  if ((stat.mode & 0o077) !== 0) fail(`${label} must not be group/other accessible`);
+}
+
+function lstatNoFollowSync(target, label) {
+  let stat;
+  try {
+    stat = fsSync.lstatSync(target);
+  } catch (error) {
+    if (error?.code === "ENOENT") return { status: "missing" };
+    return { status: "error", error };
+  }
+  if (stat.isSymbolicLink()) fail(`${label} must not be a symlink`);
+  return { status: "ok", stat };
+}
+
+// Mirrors async readValidatedKey: the keys/ component itself must be a real
+// private directory before the file inside it is judged.
+function assertKeysDirSync(file) {
+  const dirSeen = lstatNoFollowSync(path.dirname(file), "keys directory");
+  if (dirSeen.status === "missing") return dirSeen;
+  if (dirSeen.status === "error") return dirSeen;
+  if (!dirSeen.stat.isDirectory()) fail("keys path must be a directory");
+  assertPrivateModeSync(dirSeen.stat, "keys directory");
+  return dirSeen;
+}
+
+function readValidatedKeyFileSync(file, label) {
+  const dirSeen = assertKeysDirSync(file);
+  if (dirSeen.status === "missing") return { status: "missing" };
+  if (dirSeen.status === "error") return { status: "error", error: dirSeen.error };
+  const seen = lstatNoFollowSync(file, label);
+  if (seen.status !== "ok") return seen;
+  let fd;
+  try {
+    fd = fsSync.openSync(file, IS_WINDOWS ? "r" : constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (error) {
+    if (error?.code === "ELOOP") fail(`${label} must not be a symlink`);
+    return { status: "error", error };
+  }
+  try {
+    const stat = fsSync.fstatSync(fd);
+    if (!stat.isFile()) fail(`${label} must be a regular file`);
+    if (stat.size !== 32) fail(`${label} corrupt: expected 32 bytes`);
+    assertPrivateModeSync(stat, label);
+    const buffer = Buffer.alloc(32);
+    if (fsSync.readSync(fd, buffer, 0, 32, 0) !== 32) {
+      fail(`${label} corrupt: expected 32 bytes`);
+    }
+    return { status: "ok", key: buffer };
+  } finally {
+    fsSync.closeSync(fd);
+  }
+}
+
+function ensureKeysDirSync(dir) {
+  const before = lstatNoFollowSync(dir, "keys directory");
+  if (before.status === "ok") {
+    if (!before.stat.isDirectory()) fail("keys path must be a directory");
+    assertPrivateModeSync(before.stat, "keys directory");
+    return;
+  }
+  if (before.status === "error") throw before.error;
+  fsSync.mkdirSync(path.dirname(dir), { recursive: true });
+  let created = false;
+  try {
+    fsSync.mkdirSync(dir, { mode: 0o700 });
+    created = true;
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw error;
+  }
+  if (created && !IS_WINDOWS) fsSync.chmodSync(dir, 0o700);
+  const after = lstatNoFollowSync(dir, "keys directory");
+  if (after.status === "missing") fail("keys directory missing after create");
+  if (after.status === "error") throw after.error;
+  if (!after.stat.isDirectory()) fail("keys path must be a directory");
+  assertPrivateModeSync(after.stat, "keys directory");
+}
+
+function syncDirSync(dir) {
+  if (IS_WINDOWS) return;
+  const fd = fsSync.openSync(dir, "r");
+  try {
+    fsSync.fsyncSync(fd);
+  } finally {
+    fsSync.closeSync(fd);
+  }
+}
+
+/** `keys/` dir, the master file and the fixed rotation stage path. */
+export function masterKeyPaths() {
+  const dir = path.join(getDataDir(), "keys");
+  return { dir, file: path.join(dir, "master"), stage: path.join(dir, "master.next") };
+}
+
+/**
+ * Sync validated read of the master root (default) or the staged root
+ * (`which = "stage"`). Same safety rules as the async loader; never throws on
+ * a missing file — returns `{ status: "missing" }`.
+ * @returns {{status:"ok",kid:string,key:Buffer}|{status:"missing"|"error",error?:Error}}
+ */
+export function readMasterKeyFileSync(which = "master") {
+  const paths = masterKeyPaths();
+  const file = which === "stage" ? paths.stage : paths.file;
+  const label = which === "stage" ? "staged master key file" : "master key file";
+  const seen = readValidatedKeyFileSync(file, label);
+  if (seen.status !== "ok") return seen;
+  return { status: "ok", kid: masterKeyId(seen.key), key: seen.key };
+}
+
+/**
+ * Exclusive-create the staged next master: 0600 (umask-proof), fsynced file
+ * plus keys/ and DATA_DIR directory entries. Never overwrites an existing
+ * stage (EEXIST propagates) and never touches the live master.
+ * @returns {string} the stage path.
+ */
+export function stageMasterKeySync(key) {
+  assertMaster(key);
+  const paths = masterKeyPaths();
+  ensureKeysDirSync(paths.dir);
+  const fd = fsSync.openSync(paths.stage, "wx", 0o600);
+  try {
+    if (!IS_WINDOWS) fsSync.fchmodSync(fd, 0o600);
+    fsSync.writeFileSync(fd, key);
+    fsSync.fsyncSync(fd);
+  } finally {
+    fsSync.closeSync(fd);
+  }
+  syncDirSync(paths.dir);
+  syncDirSync(path.dirname(paths.dir));
+  return paths.stage;
+}
+
+/** Remove the staged next master (pre-commit abort, or post-proof leftover). */
+export function removeStagedMasterSync() {
+  const paths = masterKeyPaths();
+  // Same parent-dir validation as the read: a symlinked/loose keys dir is a
+  // config attack, never something we mutate into.
+  const dirSeen = assertKeysDirSync(paths.stage);
+  if (dirSeen.status === "error") throw dirSeen.error;
+  try {
+    fsSync.unlinkSync(paths.stage);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    return;
+  }
+  syncDirSync(paths.dir);
+}
+
+/** Publish the staged root over master: atomic rename + durable dir sync. */
+export function promoteStagedMasterSync() {
+  const paths = masterKeyPaths();
+  const dirSeen = assertKeysDirSync(paths.stage);
+  if (dirSeen.status === "error") throw dirSeen.error;
+  fsSync.renameSync(paths.stage, paths.file);
+  syncDirSync(paths.dir);
+  syncDirSync(path.dirname(paths.dir));
 }

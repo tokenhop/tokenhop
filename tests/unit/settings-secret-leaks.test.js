@@ -116,3 +116,161 @@ describe("settings API omits credentials (YAN-607)", () => {
     await db.updateSettings({ mitmInternalVerifier: null });
   });
 });
+
+// YAN-365: encrypted five-secret settings. Fixture stands in for B3 activation
+// (marker + Default DEK) so the settings seams are validated independently.
+describe("encrypted settings secrets (YAN-365)", () => {
+  const SECRETS = {
+    oidcClientSecret: "oidc-sentinel",
+    samlPrivateKey: "saml-priv-sentinel",
+    samlDecryptionKey: "saml-dec-sentinel",
+    samlSigningKey: "saml-sign-sentinel",
+    mitmSudoEncrypted: "sudo-sentinel",
+  };
+  let adapter;
+  let defaultWs;
+
+  const rawBlob = () => JSON.parse(adapter.get(`SELECT data FROM settings WHERE id = 1`).data);
+  const rawText = () => adapter.get(`SELECT data FROM settings WHERE id = 1`).data;
+
+  beforeAll(async () => {
+    const masterKey = await import("@/lib/security/masterKey.js");
+    const env = await import("@/lib/security/envelope.js");
+    const storage = await import("@/lib/db/helpers/credentialStorage.js");
+    adapter = await (await import("@/lib/db/driver.js")).getAdapter();
+    // Default workspace may not exist on a fresh isolated install; the YAN-365
+    // fixture needs a real row, so create a shared Default on demand.
+    defaultWs =
+      adapter.get(
+        `SELECT w.id FROM _meta m JOIN workspaces w ON w.id = m.value WHERE m.key = 'defaultWorkspaceId'`,
+      )?.id ?? null;
+    if (!defaultWs) {
+      defaultWs = `ws-yan365-${Date.now()}`;
+      adapter.run(
+        `INSERT INTO workspaces(id, name, kind, createdAt, updatedAt) VALUES(?, 'Default', 'shared', ?, ?)`,
+        [defaultWs, new Date().toISOString(), new Date().toISOString()],
+      );
+      adapter.run(`INSERT OR REPLACE INTO _meta(key, value) VALUES('defaultWorkspaceId', ?)`, [
+        defaultWs,
+      ]);
+    }
+    const root = await masterKey.loadMasterKey({ create: true });
+    const set = (k, v) =>
+      adapter.run(
+        `INSERT INTO _meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        [k, v],
+      );
+    set("credentialsEncryptedVersion", "1");
+    set("credentialsKekKid", root.kid);
+    set(
+      "apiKeyHashKeyWrapped",
+      JSON.stringify(
+        env.encryptBytes(
+          root.key,
+          root.kid,
+          masterKey.deriveApiKeyHashKey(root.key),
+          env.buildHashKeyWrapAad(defaultWs, "0123456789abcdef"),
+        ),
+      ),
+    );
+    const mctx = storage.createMigrationContext(adapter, root);
+    storage.ensureWorkspaceDekSync(adapter, defaultWs, mctx);
+    storage.clearCredentialCache(adapter);
+    await db.updateSettings({ ...SECRETS, requireLogin: true });
+  });
+
+  afterAll(async () => {
+    adapter.run(`DELETE FROM workspaceKeys`);
+    adapter.run(
+      `DELETE FROM _meta WHERE key IN ('credentialsEncryptedVersion','credentialsKekKid','apiKeyHashKeyWrapped')`,
+    );
+    const storage = await import("@/lib/db/helpers/credentialStorage.js");
+    storage.clearCredentialCache(adapter);
+    adapter.run(`UPDATE settings SET data = '{}' WHERE id = 1`);
+  });
+
+  it("stores only envelopes, never plaintext", () => {
+    const text = rawText();
+    for (const [key, plain] of Object.entries(SECRETS)) {
+      expect(text).not.toContain(plain);
+      expect(rawBlob()[key]).toMatchObject({ v: 1 });
+    }
+  });
+
+  it("metadata mode has no secrets and needs no root; runtime decrypts all five", async () => {
+    const meta = await db.getSettings({ secretMode: "metadata" });
+    for (const key of Object.keys(SECRETS)) {
+      expect(meta).not.toHaveProperty(key);
+      expect(meta.secretsConfigured[key]).toBe(true);
+    }
+    expect(JSON.stringify(meta)).not.toContain("sentinel");
+    const runtime = await db.getSettings();
+    for (const [key, plain] of Object.entries(SECRETS)) expect(runtime[key]).toBe(plain);
+  });
+
+  it("settings routes stay redacted while OIDC reads configured", async () => {
+    await db.updateSettings({ oidcIssuerUrl: "https://idp.example", oidcClientId: "client" });
+    const { GET } = await import("@/app/api/settings/route.js");
+    const body = await (await GET()).json();
+    expect(JSON.stringify(body)).not.toContain("sentinel");
+    expect(body).not.toHaveProperty("secretsConfigured");
+    expect(body.oidcConfigured).toBe(true);
+  });
+
+  it("raw writers keep envelope bytes (settings merge, combo transform, combo rename, savings, config apply, ws settings)", async () => {
+    const snapshot = () =>
+      Object.fromEntries(Object.keys(SECRETS).map((k) => [k, JSON.stringify(rawBlob()[k])]));
+    const before = snapshot();
+
+    await db.updateSettings({ requireLogin: true }); // settings merge
+    expect(snapshot()).toEqual(before);
+
+    await db.updateComboStrategies((s) => ({ ...s, x: "fallback" })); // combo transform
+    expect(snapshot()).toEqual(before);
+
+    const combo = await db.createComboUnscoped({ name: "enc-a", kind: "fallback", models: [] });
+    await db.updateComboUnscoped(combo.id, { name: "enc-b" }); // rename cascade
+    expect(snapshot()).toEqual(before);
+    await db.deleteComboUnscoped(combo.id);
+    expect(snapshot()).toEqual(before);
+
+    const { claimSavingsMilestone } = await import("@/lib/savingsMilestones.js");
+    const { SAVINGS_MILESTONES } = await import("@/shared/constants/savingsMilestones.js");
+    adapter.run(`INSERT OR REPLACE INTO _meta(key, value) VALUES(?, ?)`, [
+      (await import("@/lib/db/repos/usageRepo.js")).SAVINGS_LIFETIME_KEY,
+      String(SAVINGS_MILESTONES.at(-1) * 2),
+    ]);
+    await claimSavingsMilestone(SAVINGS_MILESTONES[0]); // savings acknowledgement
+    expect(snapshot()).toEqual(before);
+
+    const { applyConfig } = await import("@/lib/db/configExport.js");
+    await applyConfig({ settings: { requireLogin: true }, combos: [], pricingOverrides: {} });
+    expect(snapshot()).toEqual(before);
+
+    const { removeLegacyPasswordUnscoped } = await import(
+      "@/lib/db/repos/workspaceSettingsRepo.js"
+    );
+    adapter.run(`UPDATE settings SET data = json_set(data, '$.password', 'hash') WHERE id = 1`);
+    expect(removeLegacyPasswordUnscoped(adapter)).toBe(true); // blob removal path
+    expect(snapshot()).toEqual(before);
+  });
+
+  it("rejects a caller-supplied envelope instead of storing it", async () => {
+    await expect(
+      db.updateSettings({ oidcClientSecret: { v: 1, kid: "k", iv: "i", ct: "c", tag: "t" } }),
+    ).rejects.toMatchObject({ code: "ENVELOPE_REJECTED" });
+  });
+
+  it("update returns plaintext while the stored blob stays ciphertext", async () => {
+    await db.updateSettings({ requireLogin: true });
+    const before = JSON.stringify(rawBlob().oidcClientSecret);
+    const returned = await db.updateSettings({ oidcClientSecret: "update-return-sentinel" });
+    expect(returned.oidcClientSecret).toBe("update-return-sentinel");
+    const stored = JSON.stringify(rawBlob().oidcClientSecret);
+    expect(stored).not.toContain("update-return-sentinel");
+    expect(JSON.parse(stored)).toMatchObject({ v: 1 });
+    expect(stored).not.toBe(before);
+    const reread = await db.getSettings();
+    expect(reread.oidcClientSecret).toBe("update-return-sentinel");
+  });
+});

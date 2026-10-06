@@ -80,14 +80,29 @@ export async function scopedConnections(request, capability, filter = {}) {
 }
 
 // providerSpecificData keys that carry credentials (ADR-0002: metadata.read
-// never returns secrets). Switch on only; off keeps today's response shape.
-const PSD_SECRETS = ["apiKey", "copilotToken", "mimoPassToken", "clientSecret", "secretAccessKey"];
+// never returns secrets). YAN-365: redaction shares the D10 encryption
+// allow-list (dotted PSD paths included), so an encrypted leaf can never leak
+// through a scoped response. Switch off keeps today's response shape.
+import { CREDENTIAL_FIELD_ALLOWLIST } from "../security/envelope.js";
 
-/** A connection for a scoped response: provider-specific secrets removed. */
+const PSD_PREFIX = "providerSpecificData.";
+
+/** A connection for a scoped response: every covered (D10) leaf removed. */
 export function redactConnection(scope, connection) {
-  const psd = connection?.providerSpecificData;
-  if (!scope || !psd || !PSD_SECRETS.some((k) => k in psd)) return connection;
-  const clean = { ...psd };
-  for (const k of PSD_SECRETS) delete clean[k];
-  return { ...connection, providerSpecificData: clean };
+  if (!scope || !connection) return connection;
+  const clean = { ...connection };
+  let psd = connection.providerSpecificData;
+  for (const field of CREDENTIAL_FIELD_ALLOWLIST.providerConnections) {
+    if (field.startsWith(PSD_PREFIX)) {
+      const key = field.slice(PSD_PREFIX.length);
+      if (psd && key in psd) {
+        if (psd === connection.providerSpecificData) psd = { ...psd };
+        delete psd[key];
+      }
+    } else if (field in clean) {
+      delete clean[field];
+    }
+  }
+  if (psd !== connection.providerSpecificData) clean.providerSpecificData = psd;
+  return clean;
 }

@@ -12,6 +12,7 @@ import { getSettings } from "./settingsRepo.js";
 import { setMetaSync } from "../helpers/metaStore.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { adoptOwnerlessRowsUnscoped } from "./ownership.js";
+import { clearCredentialCache } from "../helpers/credentialStorage.js";
 import { audit } from "@/lib/users/audit.js";
 
 const COLS =
@@ -401,7 +402,8 @@ export async function updateUserUnscoped(id, patch = {}, options = {}) {
 
 export async function deleteUserUnscoped(id, options = {}) {
   const db = await getAdapter();
-  return db.transaction(() => {
+  let deletedPersonal = [];
+  const result = db.transaction(() => {
     const row = requireRow(db, id);
     if (options.actorUserId != null) assertActorAuthority(db, options.actorUserId, row);
     if (row.instanceRole === "owner") {
@@ -419,8 +421,13 @@ export async function deleteUserUnscoped(id, options = {}) {
     db.run(`DELETE FROM workspaces WHERE createdBy = ? AND kind = 'personal'`, [id]);
     // identities and memberships cascade.
     dropSession(id);
-    return db.run(`DELETE FROM users WHERE id = ?`, [id]).changes > 0;
+    const removed = db.run(`DELETE FROM users WHERE id = ?`, [id]).changes > 0;
+    deletedPersonal = personal.map((p) => p.id);
+    return removed;
   });
+  // Post-commit: purge each deleted personal workspace's DEK from the cache.
+  for (const wsId of deletedPersonal) clearCredentialCache(db, wsId);
+  return result;
 }
 
 /**

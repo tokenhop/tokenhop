@@ -1,6 +1,7 @@
 import { ensureDirs, DATA_FILE } from "./paths.js";
 import { DATA_DIR } from "../dataDir.js";
 import { acquireExclusiveWriterLock } from "./processLock.js";
+import { installCredentialMaintenanceAdmission } from "./credentialMaintenance.js";
 
 // Module state keyed by DATA_FILE on globalThis: distinct DATA_DIRs never
 // share an adapter, and Next dev HMR keeps the established adapter.
@@ -86,6 +87,8 @@ async function initAdapter() {
   }
 
   const { runMigrationOnce } = await import("./migrate.js");
+  // Admission gate before first use: once poisoned, raw mutations throw.
+  installCredentialMaintenanceAdmission(adapter);
   await runMigrationOnce(adapter);
   return adapter;
 }

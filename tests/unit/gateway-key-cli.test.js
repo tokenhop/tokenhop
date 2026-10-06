@@ -369,3 +369,213 @@ describe("menu: hashed key creation", () => {
     expect(clientStub.createApiKey).not.toHaveBeenCalled();
   });
 });
+
+// ─── YAN-365 (task 6.1): `keys rotate` ──────────────────────────────────────
+describe("keys rotate command", () => {
+  const COMMAND_PATH = require.resolve("../../cli/src/cli/commands/keysRotate.js");
+  const { parseArgs } = require(COMMAND_PATH);
+
+  const loadCommand = ({ answer = "", status } = {}) => {
+    delete require.cache[COMMAND_PATH];
+    const { run } = require(COMMAND_PATH);
+    const res = status ?? {
+      success: true,
+      data: { oldKid: "a".repeat(16), newKid: "b".repeat(16), dekCount: 2 },
+    };
+    const api = {
+      configure: vi.fn(),
+      rotateInstanceKey: vi.fn(async () => res),
+      rotateWorkspaceKey: vi.fn(async () => res),
+    };
+    const input = { prompt: vi.fn(async () => answer) };
+    return { run: (argv) => run(argv, { api, input }), api, input };
+  };
+  const quiet = () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  };
+
+  it("parses the supported flags strictly", () => {
+    expect(parseArgs([])).toMatchObject({ yes: false, port: 20128, workspace: undefined });
+    expect(parseArgs(["--workspace", "w1", "--port", "3000", "--yes"])).toMatchObject({
+      workspace: "w1",
+      port: 3000,
+      yes: true,
+    });
+    for (const bad of [
+      ["--dry-run"],
+      ["--json"],
+      ["--root", "x"],
+      ["--path", "/x"],
+      ["--env", "x"],
+      ["--workspace"],
+      ["--workspace", "a", "--workspace", "b"],
+      ["--port", "abc"],
+      ["--port", "70000"],
+      ["--port", "0"],
+      ["extra"],
+    ]) {
+      expect(() => parseArgs(bad), bad.join(" ")).toThrow();
+    }
+  });
+
+  it("default answer (empty/n/garbage) sends no request", async () => {
+    quiet();
+    for (const answer of ["", "n", "no", "maybe", "  "]) {
+      const { run, api } = loadCommand({ answer });
+      expect(await run([])).toBe(1);
+      expect(api.rotateInstanceKey).not.toHaveBeenCalled();
+      expect(api.rotateWorkspaceKey).not.toHaveBeenCalled();
+      expect(api.configure).not.toHaveBeenCalled();
+    }
+  });
+
+  it("y confirms and sends exactly one instance request on loopback", async () => {
+    quiet();
+    const { run, api } = loadCommand({ answer: "y" });
+    expect(await run(["--port", "4321"])).toBe(0);
+    expect(api.configure).toHaveBeenCalledWith({ host: "127.0.0.1", port: 4321 });
+    expect(api.rotateInstanceKey).toHaveBeenCalledTimes(1);
+    expect(api.rotateWorkspaceKey).not.toHaveBeenCalled();
+  });
+
+  it("--yes skips the prompt and sends once; --workspace targets the DEK route", async () => {
+    quiet();
+    const a = loadCommand();
+    expect(await a.run(["--yes"])).toBe(0);
+    expect(a.input.prompt).not.toHaveBeenCalled();
+    expect(a.api.rotateInstanceKey).toHaveBeenCalledTimes(1);
+    const b = loadCommand({
+      status: {
+        success: true,
+        data: { workspaceId: "w1", dekKid: "dk_n", oldDekKid: "dk_o", rotated: 2 },
+      },
+    });
+    expect(await b.run(["--workspace", "w1", "--yes"])).toBe(0);
+    expect(b.api.rotateWorkspaceKey).toHaveBeenCalledWith("w1");
+    expect(b.api.rotateInstanceKey).not.toHaveBeenCalled();
+  });
+
+  it("prints kids/counts and the old-backup reminder only", async () => {
+    const lines = [];
+    vi.spyOn(console, "log").mockImplementation((...a) => lines.push(a.join(" ")));
+    const { run } = loadCommand({
+      status: {
+        success: true,
+        data: {
+          oldKid: "a".repeat(16),
+          newKid: "b".repeat(16),
+          dekCount: 3,
+          extra: "SECRET-BYTES",
+        },
+      },
+    });
+    expect(await run(["--yes"])).toBe(0);
+    const out = lines.join("\n");
+    expect(out).toContain("a".repeat(16));
+    expect(out).toContain("b".repeat(16));
+    expect(out).toMatch(/Data keys re-wrapped: 3/);
+    expect(out).toMatch(/previous key/);
+    expect(out).toMatch(/offline/);
+    expect(out).not.toContain("SECRET-BYTES");
+  });
+
+  it("surfaces typed refusals with actionable text", async () => {
+    const errors = [];
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation((...a) => errors.push(a.join(" ")));
+    const cases = [
+      [{ statusCode: 404, error: "Not found" }, /users & teams/],
+      [{ statusCode: 404, code: "not_found", error: "Not found" }, /Workspace not found/],
+      [{ statusCode: 403, error: "Forbidden" }, /owner/],
+      [{ statusCode: 401, error: "Unauthorized" }, /owner/],
+      [
+        { statusCode: 409, error: "env x same current key", data: { code: "KEK_ENV_MANAGED" } },
+        /same current key/,
+      ],
+      [
+        {
+          statusCode: 409,
+          code: "KEK_ENV_MANAGED",
+          error: "Refused: set TOKENHOP_MASTER_KEY to the same key or convert",
+        },
+        /Key rotation refused.*convert/,
+      ],
+      [{ statusCode: 409, error: "locked" }, /locked/],
+      [{ statusCode: 503, error: "Encryption state unavailable" }, /unavailable/],
+    ];
+    for (const [res, pattern] of cases) {
+      errors.length = 0;
+      const { run } = loadCommand({ status: { success: false, ...res } });
+      expect(await run(["--yes"])).toBe(1);
+      expect(errors.join("\n")).toMatch(pattern);
+    }
+  });
+
+  it("real client posts an empty object body to both routes over the CLI token", async () => {
+    routes["POST/api/settings/keys/rotate"] = {
+      status: 200,
+      body: { oldKid: "a", newKid: "b", dekCount: 1 },
+    };
+    routes["POST/api/workspaces/w%2F1/keys/rotate"] = { status: 200, body: { workspaceId: "w/1" } };
+    const api = freshClient();
+    expect((await api.rotateInstanceKey()).success).toBe(true);
+    expect((await api.rotateWorkspaceKey("w/1")).success).toBe(true);
+    expect(captured.map((c) => [c.method, c.url, c.body])).toEqual([
+      ["POST", "/api/settings/keys/rotate", {}],
+      ["POST", "/api/workspaces/w%2F1/keys/rotate", {}],
+    ]);
+    expect(captured.every((c) => typeof c.token === "string" && c.token.length > 0)).toBe(true);
+  });
+
+  it("real client carries the server error code through on failure", async () => {
+    routes["POST/api/settings/keys/rotate"] = {
+      status: 409,
+      body: { error: "Refused: env-managed root", code: "KEK_ENV_MANAGED" },
+    };
+    routes["POST/api/workspaces/w1/keys/rotate"] = {
+      status: 404,
+      body: { error: "Workspace not found", code: "not_found" },
+    };
+    const api = freshClient();
+    const instance = await api.rotateInstanceKey();
+    expect(instance).toMatchObject({
+      success: false,
+      error: "Refused: env-managed root",
+      code: "KEK_ENV_MANAGED",
+      statusCode: 409,
+    });
+    const workspace = await api.rotateWorkspaceKey("w1");
+    expect(workspace).toMatchObject({
+      success: false,
+      error: "Workspace not found",
+      code: "not_found",
+      statusCode: 404,
+    });
+  });
+
+  it("rotate requests use a 10-minute timeout; other commands keep the 30s default", async () => {
+    const timeouts = [];
+    const realRequest = http.request.bind(http);
+    vi.spyOn(http, "request").mockImplementation((options, callback) => {
+      const req = realRequest(options, callback);
+      const realSetTimeout = req.setTimeout.bind(req);
+      req.setTimeout = (ms) => {
+        timeouts.push(ms);
+        return realSetTimeout(ms);
+      };
+      return req;
+    });
+    routes["POST/api/settings/keys/rotate"] = {
+      status: 200,
+      body: { oldKid: "a", newKid: "b", dekCount: 0 },
+    };
+    routes["POST/api/workspaces/w1/keys/rotate"] = { status: 200, body: { workspaceId: "w1" } };
+    routes["GET/api/keys"] = { status: 200, body: { keys: [] } };
+    const api = freshClient();
+    await api.rotateInstanceKey();
+    await api.rotateWorkspaceKey("w1");
+    await api.getApiKeys();
+    expect(timeouts).toEqual([600000, 600000, 30000]);
+  });
+});

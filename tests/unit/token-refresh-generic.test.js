@@ -148,3 +148,64 @@ describe("Cline refresh", () => {
     expect(out.expiresIn).toBeGreaterThan(0);
   });
 });
+
+// YAN-365 C8: durable refresh persistence through the encrypted repo seam.
+describe("updateProviderCredentials — delta refresh persistence", () => {
+  const mockRepo = (impl) => {
+    vi.resetModules();
+    const update = vi.fn(impl);
+    vi.doMock("../../src/lib/localDb.js", () => ({ updateProviderConnectionUnscoped: update }));
+    return update;
+  };
+
+  afterEach(() => {
+    vi.doUnmock("../../src/lib/localDb.js");
+  });
+
+  it("persists a minted apiKey and only the PSD delta (no stale snapshot)", async () => {
+    const update = mockRepo(async () => ({ id: "c1" }));
+    const { updateProviderCredentials } = await import("@/sse/services/tokenRefresh.js");
+    const ok = await updateProviderCredentials("c1", {
+      apiKey: "minted-key",
+      accessToken: "at",
+      providerSpecificData: { copilotToken: "cp" },
+      existingProviderSpecificData: { stale: "snapshot", clientSecret: "old" },
+    });
+    expect(ok).toBe(true);
+    const [, patch] = update.mock.calls[0];
+    expect(patch.apiKey).toBe("minted-key");
+    expect(patch.providerSpecificData).toEqual({ copilotToken: "cp" });
+  });
+
+  it("copilot/kiro nested refresh stays a delta", async () => {
+    const update = mockRepo(async () => ({ id: "c2" }));
+    const { updateProviderCredentials } = await import("@/sse/services/tokenRefresh.js");
+    await updateProviderCredentials("c2", {
+      copilotToken: "cp2",
+      copilotTokenExpiresAt: 123,
+      existingProviderSpecificData: { stale: true },
+    });
+    expect(update.mock.calls[0][1].providerSpecificData).toEqual({
+      copilotToken: "cp2",
+      copilotTokenExpiresAt: 123,
+    });
+  });
+
+  it("typed integrity/storage failures propagate instead of reporting success", async () => {
+    mockRepo(async () => {
+      throw Object.assign(new Error("boom"), { code: "DECRYPT_FAILED" });
+    });
+    const { updateProviderCredentials } = await import("@/sse/services/tokenRefresh.js");
+    await expect(updateProviderCredentials("c3", { accessToken: "x" })).rejects.toMatchObject({
+      code: "DECRYPT_FAILED",
+    });
+  });
+
+  it("untyped failures keep the legacy false result", async () => {
+    mockRepo(async () => {
+      throw new Error("plain");
+    });
+    const { updateProviderCredentials } = await import("@/sse/services/tokenRefresh.js");
+    expect(await updateProviderCredentials("c4", { accessToken: "x" })).toBe(false);
+  });
+});

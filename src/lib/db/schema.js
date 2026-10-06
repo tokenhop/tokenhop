@@ -279,6 +279,16 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_invitations_ws ON invitations(workspaceId, createdAt, id)",
     ],
   },
+  // Workspace DEKs (migration 013, YAN-365). One wrapped data key per owning
+  // workspace; the table stays empty until credential encryption activates.
+  workspaceKeys: {
+    columns: {
+      workspaceId: "TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE",
+      kid: "TEXT NOT NULL",
+      wrappedDek: "TEXT NOT NULL",
+      createdAt: "TEXT NOT NULL",
+    },
+  },
 };
 
 // YAN-363: the final hashed apiKeys shape, INERT here. Nothing reads it at

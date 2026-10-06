@@ -143,7 +143,7 @@ export async function acceptPasswordInvitation({
   const db = await getAdapter();
   // Cheap pre-checks so junk tokens never cost a bcrypt hash; re-run inside the tx.
   assertAcceptable(db, token, mail);
-  if ((await getSettings())?.requireLogin === false) assertSingleUser(db);
+  if ((await getSettings({ secretMode: "metadata" }))?.requireLogin === false) assertSingleUser(db);
   const passwordHash = await hashPassword(password);
 
   let userId = null;

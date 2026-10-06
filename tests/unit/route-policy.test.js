@@ -133,6 +133,14 @@ const YAN360_PUBLIC_ROUTES = new Set(["/api/invitations/accept"]);
 // the legacy default: alwaysProtected (owner/admin only, 404 with switch off).
 const YAN367_AUDIT_ROUTES = new Set(["/api/audit"]);
 
+// YAN-365 key rotation routes did not exist pre-YAN-357 either: owner only
+// (instance.keys.rotate), alwaysProtected with the CLI token allowed (the
+// local CLI uses it), 404 while the switch is off via multiUserOnly.
+const YAN365_KEY_ROUTES = new Set([
+  "/api/settings/keys/rotate",
+  "/api/workspaces/[id]/keys/rotate",
+]);
+
 describe("route coverage", () => {
   it("finds the API route files", () => {
     expect(ROUTES.length).toBeGreaterThan(150);
@@ -217,6 +225,11 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
         if (YAN360_USER_ROUTES.has(route)) want.alwaysProtected = true;
         if (YAN360_PUBLIC_ROUTES.has(route)) want.public = true;
         if (YAN367_AUDIT_ROUTES.has(route)) want.alwaysProtected = true;
+        if (YAN365_KEY_ROUTES.has(route)) {
+          want.alwaysProtected = true;
+          want.public = false;
+          want.localOnly = false;
+        }
         const got = { localOnly, alwaysProtected, gateway, public: pub };
         if (JSON.stringify(got) !== JSON.stringify(want)) diffs.push({ m, route, got, want });
       }
@@ -371,5 +384,38 @@ describe("inventory cleanups", () => {
     expect(fs.readFileSync(path.join(ROOT, ".env.example"), "utf8")).not.toContain(
       "REQUIRE_API_KEY",
     );
+  });
+});
+
+describe("YAN-365 key rotation routes", () => {
+  it.each([["/api/settings/keys/rotate"], ["/api/workspaces/ws-1/keys/rotate"]])(
+    "%s is owner-only, alwaysProtected and hidden while the switch is off",
+    (p) => {
+      const policy = resolveRoutePolicy(p, "POST");
+      expect(policy).toMatchObject({
+        capability: "instance.keys.rotate",
+        multiUserOnly: true,
+        alwaysProtected: true,
+        public: false,
+        gateway: false,
+        scoped: false,
+      });
+      // Unlisted methods fail closed to hostOps rather than borrowing the owner cap.
+      expect(resolveRoutePolicy(p, "GET").capability).toBe("instance.hostOps");
+    },
+  );
+
+  it("only the owner holds instance.keys.rotate; admins and workspace managers do not", () => {
+    expect(can({ instanceRole: "owner", workspaceIds: [] }, "instance.keys.rotate")).toBe(true);
+    for (const role of ["admin", "user", "pending"]) {
+      expect(can({ instanceRole: role, workspaceIds: [] }, "instance.keys.rotate")).toBe(false);
+    }
+    expect(
+      can(
+        { instanceRole: "user", workspaceIds: ["w"], workspaceRoles: { w: "manager" } },
+        "instance.keys.rotate",
+        { workspaceId: "w" },
+      ),
+    ).toBe(false);
   });
 });

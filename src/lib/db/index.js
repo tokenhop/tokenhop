@@ -3,8 +3,14 @@ import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
 import { latestVersion } from "./migrations/index.js";
 import { adoptOwnerlessRowsUnscoped, defaultWorkspaceIdUnscoped } from "./repos/ownership.js";
+import { readCredentialEncryptionState } from "./credentialEncryptionState.js";
+import {
+  isCredentialMaintenancePoisoned,
+  poisonCredentialMaintenance,
+} from "./credentialMaintenance.js";
 import { getMetaSync } from "./helpers/metaStore.js";
 import {
+  CREDENTIAL_TRANSFER_FORMAT_VERSION,
   TransferError,
   applyGatewayKeySnapshot,
   exportGatewayKeySnapshot,
@@ -258,6 +264,25 @@ export {
 // YAN-364: the export/import snapshot stays the legacy single-user shape.
 // Default-workspace alias/custom keys travel unprefixed; other workspaces are
 // never silently flattened into it (user-aware export is YAN-375).
+// YAN-365: on established credential encryption — or an ambiguous/corrupt
+// marker (fail closed) — only formatVersion 3 enters. "Legacy" classification
+// (formatVersion 1) happens before any credential-shape check, so an exact
+// version pin here closes the `{}`/`null` credentialEncryption smuggle that
+// would otherwise route to the wipe-and-write-plaintext apply.
+function assertEncryptedImportAllowed(db, payload) {
+  let encrypted = false;
+  try {
+    encrypted = readCredentialEncryptionState(db).storage === "encrypted";
+  } catch {
+    encrypted = true;
+  }
+  if (encrypted && payload?.formatVersion !== CREDENTIAL_TRANSFER_FORMAT_VERSION) {
+    throw new TransferError(
+      "TRANSFER_FORMAT_INVALID",
+      "Encrypted instance: restore a v3 snapshot with the matching root",
+    );
+  }
+}
 const WS_KEY_PREFIX_RE = /^ws:[^/]+\//;
 
 function stripWsKey(key) {
@@ -370,6 +395,13 @@ export async function importDb(payload, { masterKey = null } = {}) {
   }
   const db = await getAdapter();
 
+  // YAN-365: on established credential encryption a payload without a v3
+  // credential section is a plaintext/legacy restore — it would write
+  // covered secrets unencrypted and drop workspaceId. Reject before the root
+  // proof, backup or wipe (B5 adds the v3 path). A malformed marker fails
+  // closed the same way.
+  assertEncryptedImportAllowed(db, payload);
+
   // YAN-363: trusted root loader. Callers (HTTP route) never supply raw key
   // material; the master comes only from env/file via the crypto module when
   // the instance actually needs root proof. An explicit masterKey argument
@@ -380,8 +412,14 @@ export async function importDb(payload, { masterKey = null } = {}) {
     if (instanceHint.storage === "hashed") {
       try {
         const { loadMasterKey } = await import("@/lib/security/masterKey.js");
+        // Path 7: the trusted root must be the one the current state demands —
+        // the frozen hash kid before encryption, the CURRENT KEK kid after
+        // (a rotated KEK never equals the frozen hash kid). Hash proof itself
+        // is the authenticated unwrap in preflight, never kid rederivation.
+        const cred = readCredentialEncryptionState(db);
+        const expectedKid = cred.storage === "encrypted" ? cred.kekKid : instanceHint.hashKid;
         const { key, kid } = await loadMasterKey();
-        if (kid !== instanceHint.hashKid) {
+        if (kid !== expectedKid) {
           throw new TransferError(
             "TRANSFER_ROOT_MISMATCH",
             "Trusted master key does not match this instance's root",
@@ -410,8 +448,27 @@ export async function importDb(payload, { masterKey = null } = {}) {
     masterKey: resolvedMaster,
     defaultWorkspaceId: getMetaSync(db, "defaultWorkspaceId"),
   });
+  // Capture the live state preflight proved, BEFORE any async preparation.
+  // A rotation can commit while imports below yield; re-prove generation as
+  // the FIRST statement of either destructive transaction, or apply nothing.
+  const provedState = readCredentialEncryptionState(db);
+  const assertStateCurrent = () => {
+    const live = readCredentialEncryptionState(db);
+    if (
+      isCredentialMaintenancePoisoned(db) ||
+      live.storage !== provedState.storage ||
+      live.kekKid !== provedState.kekKid ||
+      live.cleanupPending !== provedState.cleanupPending ||
+      JSON.stringify(live.pendingRotation) !== JSON.stringify(provedState.pendingRotation)
+    ) {
+      throw new TransferError(
+        "TRANSFER_STATE_CHANGED",
+        "Credential state changed during import; retry",
+      );
+    }
+  };
 
-  const invalidateCaches = await prepareTransferCacheInvalidation();
+  const invalidateCaches = await prepareTransferCacheInvalidation(db);
 
   // sql.js init completes here, BEFORE the snapshot: the returned verifier is
   // sync, so snapshot -> verify -> destructive transaction never yields. No
@@ -434,17 +491,16 @@ export async function importDb(payload, { masterKey = null } = {}) {
   }
 
   if (plan.format === "hashed") {
-    db.transaction(() => applyGatewayKeySnapshot(db, payload, plan));
-    // Persistence contract (activation lane): adapters with deferred
-    // persistence (sql.js debounced save) must expose sync flushSync() that
-    // throws on I/O failure, so a reported success is a durable import.
-    // No-op where absent — better-sqlite3/node:sqlite write synchronously.
-    invalidateCaches();
-    db.flushSync?.();
+    db.transaction(() => {
+      assertStateCurrent();
+      applyGatewayKeySnapshot(db, payload, plan);
+    });
+    commitDurably(db, invalidateCaches);
     return await exportDb();
   }
 
   db.transaction(() => {
+    assertStateCurrent();
     // Host-local MITM verifier: read the live row BEFORE the wipe below.
     const restoredSettings = preserveLocalVerifierSettings(
       db,
@@ -625,22 +681,63 @@ export async function importDb(payload, { masterKey = null } = {}) {
     if (instance.storage === "hashed") insertLegacyKeysHashedSync(db, payload, plan);
   });
 
-  // Persistence contract (see hashed branch above): durable before success.
-  invalidateCaches();
-  db.flushSync?.();
+  commitDurably(db, invalidateCaches);
   return await exportDb();
 }
 
-/** Load caches before mutation; clear synchronously after commit, before flush.
+const NATIVE_DRIVERS = ["better-sqlite3", "node:sqlite", "bun:sqlite"];
+
+// Same strict durability contract as activation/rotation (not imported: those
+// modules sit above this barrel). sql.js must expose a throwing flushSync;
+// native drivers commit synchronously and need a checked FULL checkpoint.
+function flushStrict(db) {
+  const fail = (code, message) => {
+    throw Object.assign(new Error(`[db-import] ${message}`), { code });
+  };
+  if (db.driver === "sql.js") {
+    if (typeof db.flushSync !== "function")
+      fail("IMPORT_FLUSH_REQUIRED", "Throwing sql.js flush required");
+    db.flushSync();
+  } else if (NATIVE_DRIVERS.includes(db.driver)) {
+    const row = db.get("PRAGMA wal_checkpoint(FULL)");
+    if (row?.busy) fail("IMPORT_FLUSH_FAILED", "WAL checkpoint busy");
+  } else fail("IMPORT_DRIVER_UNSUPPORTED", "Unsupported durability contract");
+}
+
+// The destructive transaction already committed in memory/WAL. Prove it is
+// durable BEFORE invalidating caches or reporting success. Failure is an
+// uncertain commit: never claim rollback; poison the adapter so no credential
+// use or raw write proceeds until restart, then surface the original error.
+function commitDurably(db, invalidateCaches) {
+  try {
+    flushStrict(db);
+  } catch (error) {
+    poisonCredentialMaintenance(db, error);
+    throw error;
+  }
+  invalidateCaches();
+}
+
+/** Load caches before mutation; clear synchronously AFTER verified persistence.
  * Resolver cache holds ids only and always live-checks eligibility; clearing
  * still prevents old state surviving replacement. Import/clear errors propagate.
+ * YAN-365: credential DEK cache, the hash-key state memo and the MITM sudo
+ * cache join the API/pricing purge after an encrypted restore.
  */
-async function prepareTransferCacheInvalidation() {
+async function prepareTransferCacheInvalidation(db) {
   const { clearApiKeyPrincipalCache } = await import("@/lib/auth/apiKeyPrincipal.js");
   const { invalidatePricingCache } = await import("./repos/pricingRepo.js");
+  const { clearCredentialCache } = await import("./helpers/credentialStorage.js");
+  const { clearApiKeyHashKeyStateCache } = await import("@/lib/security/apiKeyHashKey.js");
+  const mitm = await import("@/mitm/manager.js").catch(() => null);
+  // CJS module: named export or default.* depending on interop.
+  const setter = mitm?.default?.setCachedPassword ?? mitm?.setCachedPassword;
   return () => {
     try {
       clearApiKeyPrincipalCache();
+      clearCredentialCache(db);
+      clearApiKeyHashKeyStateCache(db);
+      setter?.(null);
     } finally {
       invalidatePricingCache();
     }

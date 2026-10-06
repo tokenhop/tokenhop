@@ -20,6 +20,9 @@ const KEEP_BACKUPS = 3;
 // Never auto-pruned (raw-credential copies; manual retention, see header).
 export const PROTECTED_BACKUP_PREFIX = "gateway-key-activation-";
 export const PRE_IMPORT_BACKUP_PREFIX = "pre-import-";
+// YAN-365: verified private pre-credential-encryption backup (deliberately a
+// plaintext pre-existing copy with manual retention; exempt from prune).
+export const CREDENTIAL_ENCRYPTION_BACKUP_PREFIX = "credential-encryption-activation-";
 
 // Tables excluded from safety backups (large, non-critical, reproducible).
 const BACKUP_EXCLUDE_TABLES = ["requestDetails"];
@@ -168,12 +171,14 @@ export function pruneOldBackups() {
       mtime: fs.statSync(path.join(BACKUPS_DIR, e.name)).mtimeMs,
     }))
     .sort((a, b) => b.mtime - a.mtime)
-    // Activation + pre-import copies are protected: KEEP_BACKUPS applies to
+    // Activation + pre-import + credential-encryption copies are protected: KEEP_BACKUPS applies to
     // ordinary backups only, so a busy migration cadence can never delete the
-    // last pre-activation or pre-import snapshot.
+    // last pre-activation, pre-import or pre-encryption snapshot.
     .filter(
       (e) =>
-        !e.name.startsWith(PROTECTED_BACKUP_PREFIX) && !e.name.startsWith(PRE_IMPORT_BACKUP_PREFIX),
+        !e.name.startsWith(PROTECTED_BACKUP_PREFIX) &&
+        !e.name.startsWith(PRE_IMPORT_BACKUP_PREFIX) &&
+        !e.name.startsWith(CREDENTIAL_ENCRYPTION_BACKUP_PREFIX),
     );
 
   for (const old of entries.slice(KEEP_BACKUPS)) {

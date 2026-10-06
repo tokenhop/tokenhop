@@ -363,28 +363,6 @@ describe("hashed instance transfer (format v2)", () => {
     expect(before).toBeTruthy();
   });
 
-  it("flush failure rejects with new state applied and caches invalidated", async () => {
-    const snapshot = await dbApi.exportDb();
-    const { getPricing } = await import("@/lib/db/repos/pricingRepo.js");
-    await dbApi.updatePricing({ "transfer-test": { model: { input: 1 } } });
-    expect((await getPricing())["transfer-test"].model.input).toBe(1);
-    snapshot.pricing = { "transfer-test": { model: { input: 9 } } };
-    snapshot.apiKeys[0].name = "New in-memory state";
-    db.flushSync = () => {
-      throw new Error("disk full");
-    };
-    try {
-      await expect(
-        dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER }),
-      ).rejects.toThrow("disk full");
-      expect(one(`SELECT name FROM apiKeys WHERE id = 'hk-1'`).name).toBe("New in-memory state");
-      expect((await getPricing())["transfer-test"].model.input).toBe(9);
-      expect(clearApiKeyPrincipalCache).toHaveBeenCalled();
-    } finally {
-      delete db.flushSync;
-    }
-  });
-
   it("rolls back the whole apply when a mid-transaction write fails", async () => {
     const snapshot = await dbApi.exportDb();
     const before = tableDump();
@@ -772,5 +750,336 @@ describe("legacy snapshot into hashed instance (compatibility import)", () => {
       transferError("TRANSFER_STATE_INVALID"),
     );
     expect(tableDump()).toBe(before);
+  });
+});
+
+// ─── YAN-365 (task 2.4, T lane): format v3 encrypted transfer (C9) ───────────
+// Authored red in B2; O turns green in B5. v3 exports raw ciphertext + wraps
+// (never decrypting repos); same-root restore is exact; wrong root / plaintext
+// / malformed graphs reject with zero mutation and NO backup dir (D8).
+describe("encrypted instance transfer (format v3, YAN-365)", () => {
+  const FIXED_WS = "ws-default";
+  const SENT = "sk-sent-transfer-3601";
+  const loadActivate = () => import("../../src/lib/db/activateCredentialEncryption.js");
+
+  async function encryptedInstance() {
+    // Instance isolation: this file shares one adapter across describes, so
+    // any leftover credential marker/DEK rows from an earlier v3 test would
+    // make seedHashedInstance's plaintext rows live under established
+    // encryption (PLAINTEXT_REJECTED on the activation pass).
+    db.exec(`DELETE FROM workspaceKeys; DELETE FROM _meta WHERE key IN
+      ('credentialsEncryptedVersion','credentialsKekKid','apiKeyHashKeyWrapped','credentialsCleanupPending','credentialsPendingRotation')`);
+    seedHashedInstance();
+    db.run(`UPDATE providerConnections SET data = ? WHERE id = 'conn-1'`, [
+      JSON.stringify({ accessToken: SENT }),
+    ]);
+    const { activateCredentialEncryption } = await loadActivate();
+    await activateCredentialEncryption(db, {
+      enabled: true,
+      beforeServing: true,
+      root: { kid: KID, key: MASTER },
+    });
+  }
+
+  const backupDirsExist = async () => {
+    const fsmod = await import("node:fs");
+    const { BACKUPS_DIR } = await import("../../src/lib/db/paths.js");
+    return fsmod.existsSync(BACKUPS_DIR)
+      ? fsmod.readdirSync(BACKUPS_DIR).filter((n) => n.startsWith("pre-import-"))
+      : [];
+  };
+
+  it("exports v3 raw ciphertext + wraps + marker; no plaintext sentinel, no master material", async () => {
+    await encryptedInstance();
+    const snapshot = await dbApi.exportDb();
+    expect(snapshot.formatVersion).toBe(3);
+    expect(snapshot.credentialEncryption).toMatchObject({ version: 1, kekKid: KID });
+    expect(typeof snapshot.credentialEncryption.apiKeyHashKeyWrapped).toBe("string");
+    expect(Array.isArray(snapshot.workspaceKeys)).toBe(true);
+    expect(snapshot.workspaceKeys.map((r) => r.workspaceId)).toContain(FIXED_WS);
+    const text = JSON.stringify(snapshot);
+    expect(text).not.toContain(SENT);
+    expect(text).not.toContain(MASTER.toString("base64"));
+    expect(text).not.toContain(MASTER.toString("hex"));
+  });
+
+  it("same-root roundtrip restores exact IDs, envelope bytes, DEK wraps and key hashes", async () => {
+    await encryptedInstance();
+    const snapshot = await dbApi.exportDb();
+    const beforeConn = one(`SELECT data FROM providerConnections WHERE id = 'conn-1'`).data;
+    const beforeKeys = all(`SELECT * FROM workspaceKeys ORDER BY workspaceId`);
+    const beforeHash = one(`SELECT keyHash, hashKid FROM apiKeys WHERE id = 'hk-1'`);
+    db.run(`UPDATE providerConnections SET data = '{}' WHERE id = 'conn-1'`);
+    await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    expect(one(`SELECT data FROM providerConnections WHERE id = 'conn-1'`).data).toBe(beforeConn);
+    expect(all(`SELECT * FROM workspaceKeys ORDER BY workspaceId`)).toEqual(beforeKeys);
+    expect(one(`SELECT keyHash, hashKid FROM apiKeys WHERE id = 'hk-1'`)).toEqual(beforeHash);
+  });
+
+  it("post-KEK-rotation v3 export restores under the rotated root (hash proof via unwrap)", async () => {
+    await encryptedInstance();
+    const NEW_MASTER = Buffer.from(Array.from({ length: 32 }, (_, i) => (i * 23 + 9) % 256));
+    const { rotateKek } = await import("../../src/lib/security/keyRotation.js");
+    // Explicit-root path (no key file in the isolated fixture): same rotation
+    // transaction, publication left to the caller.
+    await rotateKek(db, {
+      newRoot: { kid: masterKeyId(NEW_MASTER), key: NEW_MASTER },
+      root: { kid: KID, key: MASTER },
+      fileManaged: false,
+    });
+    const snapshot = await dbApi.exportDb();
+    expect(snapshot.credentialEncryption.kekKid).toBe(masterKeyId(NEW_MASTER));
+    // Hash identity stays frozen at the original kid (D6), root identity moved.
+    expect(one(`SELECT hashKid FROM apiKeys WHERE id = 'hk-1'`).hashKid).toBe(KID);
+    await dbApi.importDb(structuredClone(snapshot), { masterKey: NEW_MASTER });
+    expect(one(`SELECT hashKid FROM apiKeys WHERE id = 'hk-1'`).hashKid).toBe(KID);
+  });
+
+  it("wrong root rejects before backup/wipe: zero mutation and no pre-import dir", async () => {
+    await encryptedInstance();
+    const snapshot = await dbApi.exportDb();
+    const before = tableDump();
+    const dirsBefore = await backupDirsExist();
+    await expect(
+      dbApi.importDb(structuredClone(snapshot), { masterKey: OTHER_MASTER }),
+    ).rejects.toThrow(transferError("TRANSFER_ROOT_MISMATCH"));
+    expect(tableDump()).toBe(before);
+    expect(await backupDirsExist()).toEqual(dirsBefore);
+  });
+
+  it("legacy v1/v2 plaintext payload on an encrypted instance rejects with zero mutation and no backup", async () => {
+    await encryptedInstance();
+    const before = tableDump();
+    const dirsBefore = await backupDirsExist();
+    await expect(
+      dbApi.importDb(
+        { apiKeys: [{ id: "l1", key: RAW_L, isActive: true, createdAt: NOW }] },
+        { masterKey: MASTER },
+      ),
+    ).rejects.toThrow(expect.objectContaining({ code: expect.stringMatching(/^TRANSFER_/) }));
+    expect(tableDump()).toBe(before);
+    expect(await backupDirsExist()).toEqual(dirsBefore);
+  });
+
+  it("malformed v3 graph (orphan DEK, tampered envelope, duplicate key row) rejects before mutation/backup", async () => {
+    await encryptedInstance();
+    const good = await dbApi.exportDb();
+    const before = tableDump();
+    const dirsBefore = await backupDirsExist();
+
+    const orphan = structuredClone(good);
+    orphan.workspaceKeys.push({
+      workspaceId: "ws-ghost",
+      kid: "dk_0123456789abcdef",
+      wrappedDek: "{}",
+      createdAt: NOW,
+    });
+    await expect(dbApi.importDb(orphan, { masterKey: MASTER })).rejects.toThrow(
+      expect.objectContaining({ code: expect.stringMatching(/^TRANSFER_/) }),
+    );
+
+    const dup = structuredClone(good);
+    dup.workspaceKeys.push({ ...dup.workspaceKeys[0] });
+    await expect(dbApi.importDb(dup, { masterKey: MASTER })).rejects.toThrow(
+      expect.objectContaining({ code: expect.stringMatching(/^TRANSFER_/) }),
+    );
+
+    const tampered = structuredClone(good);
+    tampered.providerConnections[0].data = JSON.stringify({
+      accessToken: {
+        v: 1,
+        kid: "dk_0123456789abcdef",
+        iv: "AAAAAAAAAAAAAAAA",
+        ct: "AAAA",
+        tag: "AAAAAAAAAAAAAAAAAAAAAA==",
+      },
+    });
+    await expect(dbApi.importDb(tampered, { masterKey: MASTER })).rejects.toThrow(
+      expect.objectContaining({ code: expect.stringMatching(/^TRANSFER_/) }),
+    );
+
+    expect(tableDump()).toBe(before);
+    expect(await backupDirsExist()).toEqual(dirsBefore);
+  });
+
+  it("v3 restore cannot activate encryption on a never-enabled instance", async () => {
+    await encryptedInstance();
+    const snapshot = await dbApi.exportDb();
+    // Reset to a never-enabled hashed instance: strip marker, wraps, envelopes.
+    db.exec(`DELETE FROM workspaceKeys; DELETE FROM _meta WHERE key IN
+      ('credentialsEncryptedVersion','credentialsKekKid','apiKeyHashKeyWrapped','credentialsCleanupPending')`);
+    db.run(`UPDATE providerConnections SET data = '{}'`);
+    const before = tableDump();
+    await expect(dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER })).rejects.toThrow(
+      expect.objectContaining({ code: expect.stringMatching(/^TRANSFER_/) }),
+    );
+    expect(tableDump()).toBe(before);
+  });
+
+  it("v2 unencrypted semantics stay unchanged for never-enabled instances", async () => {
+    seedHashedInstance();
+    const snapshot = await dbApi.exportDb();
+    expect(snapshot.formatVersion).toBe(2);
+    expect(snapshot.credentialEncryption).toBeUndefined();
+    expect(snapshot.workspaceKeys).toBeUndefined();
+  });
+
+  it("plaintext restore bypass: v1/v2 payloads smuggling a credentialEncryption section reject with zero mutation and no backup", async () => {
+    await encryptedInstance();
+    const before = tableDump();
+    const dirsBefore = await backupDirsExist();
+    const plain = { apiKeys: [{ id: "l1", key: RAW_L, isActive: true, createdAt: NOW }] };
+    const smuggles = [
+      { ...plain, formatVersion: 1, credentialEncryption: {} },
+      { ...plain, formatVersion: 1, credentialEncryption: null },
+      { ...plain, credentialEncryption: {} }, // formatVersion omitted ⇒ 1
+      { ...plain, formatVersion: 2, credentialEncryption: {} },
+    ];
+    for (const payload of smuggles) {
+      await expect(dbApi.importDb(structuredClone(payload), { masterKey: MASTER })).rejects.toThrow(
+        expect.objectContaining({ code: expect.stringMatching(/^TRANSFER_/) }),
+      );
+      expect(tableDump()).toBe(before);
+      expect(await backupDirsExist()).toEqual(dirsBefore);
+    }
+    // The stored credential marker is untouched (encryption not stripped).
+    expect(one(`SELECT value FROM _meta WHERE key = 'credentialsEncryptedVersion'`).value).toBe(
+      "1",
+    );
+  });
+
+  it("preflight itself rejects a v1 payload that carries credentialEncryption/workspaceKeys", async () => {
+    const { preflightGatewayKeyImport } = await import("@/lib/db/helpers/gatewayKeyTransfer.js");
+    seedHashedInstance();
+    const { gatewayKeyStorageSnapshot } = await import("@/lib/db/helpers/gatewayKeyTransfer.js");
+    const instance = gatewayKeyStorageSnapshot(db);
+    for (const extra of [
+      { credentialEncryption: {} },
+      { credentialEncryption: null },
+      { workspaceKeys: [] },
+    ]) {
+      expect(() =>
+        preflightGatewayKeyImport(
+          { formatVersion: 1, apiKeys: [], ...extra },
+          { instance, db, masterKey: MASTER },
+        ),
+      ).toThrow(expect.objectContaining({ code: "TRANSFER_STATE_INVALID" }));
+    }
+  });
+
+  it("credential state changing between preflight and apply aborts TRANSFER_STATE_CHANGED with zero mutation", async () => {
+    await encryptedInstance();
+    const snapshot = await dbApi.exportDb();
+    snapshot.apiKeys[0].name = "Must not land";
+    const before = tableDump();
+    const realKid = one(`SELECT value FROM _meta WHERE key = 'credentialsKekKid'`).value;
+    // A rotation commits in the async window between preflight and the
+    // destructive transaction. The import's outer transaction call is the
+    // first statement after the backup+verify step, so flip the live KEK kid
+    // exactly there — after everything was proven, before anything is written.
+    const realTx = db.transaction.bind(db);
+    let flipped = false;
+    db.transaction = (fn) => {
+      if (!flipped) {
+        flipped = true;
+        realTx(() => {
+          db.run(`UPDATE _meta SET value = ? WHERE key = 'credentialsKekKid'`, ["f".repeat(16)]);
+        });
+      }
+      return realTx(fn);
+    };
+    try {
+      await expect(
+        dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER }),
+      ).rejects.toThrow(expect.objectContaining({ code: "TRANSFER_STATE_CHANGED" }));
+    } finally {
+      db.transaction = realTx;
+      db.run(`UPDATE _meta SET value = ? WHERE key = 'credentialsKekKid'`, [realKid]);
+    }
+    expect(flipped).toBe(true);
+    expect(one(`SELECT name FROM apiKeys WHERE id = 'hk-1'`).name).not.toBe("Must not land");
+    expect(tableDump()).toBe(before);
+  });
+});
+
+// ─── B5: durability proof before success; poison on uncertain persistence ──
+// These two MUST run LAST in this file: the injected flush failure poisons
+// the shared adapter terminally (no un-poison until restart) by design.
+describe("import durability gate (YAN-365 B5)", () => {
+  // Earlier v3 describes leave established encryption on the shared adapter;
+  // these durability cases exercise plain hashed storage.
+  beforeEach(() => {
+    db.exec(`DELETE FROM workspaceKeys; DELETE FROM _meta WHERE key IN
+      ('credentialsEncryptedVersion','credentialsKekKid','apiKeyHashKeyWrapped','credentialsCleanupPending','credentialsPendingRotation')`);
+  });
+
+  it("native adapters prove durability via checked FULL checkpoint, not flushSync", async () => {
+    seedHashedInstance();
+    const snapshot = await dbApi.exportDb();
+    snapshot.apiKeys[0].name = "Durable import";
+    expect(db.driver === "sql.js" ? typeof db.flushSync === "function" : !("flushSync" in db)).toBe(
+      true,
+    );
+    const result = await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    expect(result.apiKeys[0].name).toBe("Durable import");
+    expect(one(`SELECT name FROM apiKeys WHERE id = 'hk-1'`).name).toBe("Durable import");
+  });
+
+  it("injected persistence failure rejects, poisons terminally, never reports success", async () => {
+    seedHashedInstance();
+    const snapshot = await dbApi.exportDb();
+    snapshot.apiKeys[0].name = "Uncertain commit";
+    if (db.driver === "sql.js") {
+      const real = db.flushSync;
+      db.flushSync = () => {
+        throw new Error("disk full");
+      };
+      try {
+        await expect(
+          dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER }),
+        ).rejects.toThrow("disk full");
+      } finally {
+        db.flushSync = real;
+      }
+    } else {
+      // Native commit path: checked FULL checkpoint reports busy → the commit
+      // is unproven. (Blanket fs sabotage would also break the pre-import
+      // backup, which is NOT the step under test.)
+      const real = db.get;
+      let seenFlushProbe = false;
+      db.get = (sql, ...rest) => {
+        if (typeof sql === "string" && sql.includes("wal_checkpoint")) {
+          seenFlushProbe = true;
+          return { busy: 1, log: 0, checkpointed: 0 }; // unproven durability
+        }
+        return real.call(db, sql, ...rest);
+      };
+      try {
+        await expect(
+          dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER }),
+        ).rejects.toMatchObject({ code: "IMPORT_FLUSH_FAILED" });
+      } finally {
+        db.get = real;
+      }
+      expect(seenFlushProbe).toBe(true);
+    }
+    // The commit DID happen in memory/WAL (never claimed rolled back)...
+    expect(one(`SELECT name FROM apiKeys WHERE id = 'hk-1'`).name).toBe("Uncertain commit");
+    // ...but the adapter is terminally poisoned: no credential use, no raw writes,
+    // and no success was returned for the import.
+    const maint = await import("../../src/lib/db/credentialMaintenance.js");
+    expect(maint.isCredentialMaintenancePoisoned(db)).toBe(true);
+    expect(() =>
+      db.run(
+        `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES('poison-x','x',NULL,'[]',?,?)`,
+        [NOW, NOW],
+      ),
+    ).toThrow(expect.objectContaining({ code: "CREDENTIAL_MAINTENANCE_POISONED" }));
+    expect(() => maint.assertCredentialOperationAllowed(db)).toThrow(
+      expect.objectContaining({ code: "CREDENTIAL_MAINTENANCE_POISONED" }),
+    );
+    // No success was returned: exportDb (the success payload) never ran for
+    // the failed import — the only observable exit was the rejection above.
+    expect(maint.isCredentialMaintenancePoisoned(db)).toBe(true);
   });
 });

@@ -188,6 +188,10 @@ describe("tenancy classification", () => {
     log.mockRestore();
   });
 
+  it("classifies workspaceKeys as workspace-scoped (YAN-365)", () => {
+    expect(TABLE_CLASSES.workspaceKeys).toEqual({ class: "scoped", scopeColumn: "workspaceId" });
+  });
+
   it("every class is known and every scoped entry names its scope column", () => {
     const classes = ["scoped", "instance", "system", "usage-attribution", "pending-scope"];
     for (const c of [...Object.values(TABLE_CLASSES), ...Object.values(KV_SCOPE_CLASSES)]) {

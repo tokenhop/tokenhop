@@ -1,7 +1,8 @@
 import { makeKv } from "../helpers/kvStore.js";
 import { getAdapter } from "../driver.js";
 import { readApiKeyStorageState } from "../apiKeyState.js";
-import { deriveApiKeyHashKey, hashApiKey, loadMasterKey } from "../../security/masterKey.js";
+import { hashApiKey } from "../../security/masterKey.js";
+import { getApiKeyHashKey } from "../../security/apiKeyHashKey.js";
 import { can } from "../../users/principal.js";
 import { containToolSettings } from "../../cliToolConfigs/toolSettings.js";
 
@@ -39,8 +40,7 @@ export async function cliCredentialContext(ctx) {
   const user = db.get("SELECT instanceRole, status FROM users WHERE id = ?", [ctx.userId]);
   if (user?.status !== "active") withheld(403);
   if (!can({ instanceRole: user.instanceRole }, "instance.hostOps")) withheld(403);
-  const { key: master } = await loadMasterKey({ expectedKid: state.hashKid });
-  const hashKey = deriveApiKeyHashKey(master);
+  const { hashKey } = await getApiKeyHashKey(db);
   const rows = db.all("SELECT * FROM apiKeys");
   const hash = (raw) => hashApiKey(raw, hashKey);
   const byHash = new Map(rows.map((row) => [row.keyHash, row]));

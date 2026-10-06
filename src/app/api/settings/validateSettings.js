@@ -126,8 +126,16 @@ const AUTH_PATCH_KEYS = [
 export function ssoLockoutError(current, patch) {
   if (!AUTH_PATCH_KEYS.some((key) => Object.hasOwn(patch, key))) return "";
   const next = { ...current, ...patch };
-  if (!String(patch.oidcClientSecret ?? "").trim())
-    next.oidcClientSecret = current.oidcClientSecret;
+  if (!String(patch.oidcClientSecret ?? "").trim()) {
+    // Presence without exposure: metadata-mode current has no secret value,
+    // only secretsConfigured — that still proves OIDC reachable.
+    next.oidcClientSecret =
+      typeof current.oidcClientSecret === "string" && current.oidcClientSecret.trim()
+        ? current.oidcClientSecret
+        : current.secretsConfigured?.oidcClientSecret
+          ? "__configured__"
+          : "";
+  }
   const modes = resolveAuthModes(next);
   if (!modes.ssoOnly) return "";
   if (modes.saml && !isSamlConfigured(next)) {

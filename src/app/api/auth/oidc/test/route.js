@@ -22,9 +22,19 @@ async function countJwksKeys(jwksUri) {
   }
 }
 
+// The client secret is the one credential this route handles: it must never
+// appear in a response body or error message, even if the IdP echoes it back.
+const redactSecret = (text, secret) =>
+  secret
+    ? String(text ?? "")
+        .split(secret)
+        .join("[REDACTED]")
+    : String(text ?? "");
+
 export async function POST(request) {
+  const body = (await request.json().catch(() => null)) ?? {};
   try {
-    const body = await request.json().catch(() => ({}));
+    // Trusted runtime read: decrypts oidcClientSecret on established storage.
     const settings = await getSettings();
 
     const issuerUrl = String(body.issuerUrl || settings.oidcIssuerUrl || "").trim();
@@ -71,7 +81,7 @@ export async function POST(request) {
         signingAlgs: signing.signingAlgs,
         jwksKeyCount,
         warnings: signing.warnings,
-        error: `Discovery loaded, but the client secret is not valid: ${secretProbe.message}`,
+        error: `Discovery loaded, but the client secret is not valid: ${redactSecret(secretProbe.message, clientSecret)}`,
       });
     }
 
@@ -90,9 +100,19 @@ export async function POST(request) {
       signingAlgs: signing.signingAlgs,
       jwksKeyCount,
       warnings: signing.warnings,
-      message: secretProbe.message,
+      message: redactSecret(secretProbe.message, clientSecret),
     });
   } catch (error) {
-    return NextResponse.json({ error: error.message || "OIDC test failed" }, { status: 500 });
+    let secret = "";
+    try {
+      secret =
+        String(body?.clientSecret || "") || String((await getSettings()).oidcClientSecret || "");
+    } catch {
+      // settings/decrypt failure: no stored secret to redact; error text stays generic below.
+    }
+    return NextResponse.json(
+      { error: redactSecret(error?.message, secret) || "OIDC test failed" },
+      { status: 500 },
+    );
   }
 }

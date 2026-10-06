@@ -5,17 +5,36 @@
 // only ever used to verify root identity or HMAC incoming legacy keys; it is
 // never written anywhere. Raw gateway keys never survive an import into a
 // hashed instance.
-import { deriveApiKeyHashKey, hashApiKey, masterKeyId } from "../../security/masterKey.js";
+import { timingSafeEqual } from "node:crypto";
+import { hashApiKey, masterKeyId } from "../../security/masterKey.js";
+import { resolveApiKeyHashKeySync } from "../../security/apiKeyHashKey.js";
 import { apiKeyPrefix } from "../../../shared/utils/apiKey.js";
 import { GATEWAY_VIDEO_JOBS_TABLE_SQL } from "../repos/gatewayVideoJobsRepo.js";
 import { readApiKeyStorageState } from "../apiKeyState.js";
+import { readCredentialEncryptionState } from "../credentialEncryptionState.js";
+import { isCredentialMaintenancePoisoned } from "../credentialMaintenance.js";
 import { insertHashedApiKeySync } from "../repos/apiKeysRepo.js";
 import { adoptOwnerlessRowsUnscoped } from "../repos/ownership.js";
 import { getMetaSync, setMetaSync } from "./metaStore.js";
 import { parseJson, stringifyJson } from "./jsonCol.js";
+import { parseCredentialBlob } from "./credentialStorage.js";
+import {
+  CREDENTIAL_FIELD_ALLOWLIST,
+  buildAad,
+  buildDekWrapAad,
+  buildHashKeyWrapAad,
+  decryptBytes,
+  isEnvelopeShape,
+  zeroBuffer,
+} from "../../security/envelope.js";
 
 export const TRANSFER_FORMAT_VERSION = 2;
+export const CREDENTIAL_TRANSFER_FORMAT_VERSION = 3;
 const KID_RE = /^[0-9a-f]{16}$/;
+const DEK_KID_RE = /^dk_[0-9a-f]{16}$/;
+const WORKSPACE_KEY_COLUMNS = new Set(["workspaceId", "kid", "wrappedDek", "createdAt"]);
+const PSD_PREFIX = "providerSpecificData.";
+const ENVELOPE_KEYS = ["ct", "iv", "kid", "tag", "v"];
 const HASH_RE = /^[0-9a-f]{64}$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 const RAW_MAX_BYTES = 4096; // same bound as the gateway principal resolver
@@ -202,6 +221,12 @@ function hashedRowOut(row) {
  * metadata (keyHash/hashKid/prefix, never a raw key), users/identities/
  * workspaces/memberships, the security marker, and Default-workspace tenancy.
  * Fails closed instead of exporting rows that contradict the durable marker.
+ *
+ * YAN-365: an encrypted instance exports format v3 instead — the same hashed
+ * identity graph plus `credentialEncryption` (current KEK kid + wrapped hash
+ * key) and the exact `workspaceKeys` rows. Connection/node `data` travels as
+ * the stored JSON string verbatim: ciphertext envelopes are copied byte-exact
+ * and nothing here ever decrypts (no root is loaded for an export).
  */
 export function exportGatewayKeySnapshot(db, out, state) {
   if (state.storage !== "hashed") return out;
@@ -210,7 +235,23 @@ export function exportGatewayKeySnapshot(db, out, state) {
       fail("TRANSFER_STATE_INVALID", "apiKeys row contradicts the durable hash marker");
     }
   }
-  out.formatVersion = TRANSFER_FORMAT_VERSION;
+  const cred = readCredentialEncryptionState(db);
+  if (cred.storage === "encrypted") {
+    // A wrap graph mid-flight (pending rotation, pending activation cleanup)
+    // or a poisoned adapter never feeds an export: the snapshot would carry
+    // a key graph the source itself cannot currently prove.
+    if (cred.pendingRotation) {
+      fail("TRANSFER_ROTATION_IN_FLIGHT", "Export refused: a key rotation is pending recovery");
+    }
+    if (cred.cleanupPending) {
+      fail("TRANSFER_CLEANUP_PENDING", "Export refused: activation cleanup is still pending");
+    }
+    if (isCredentialMaintenancePoisoned(db)) {
+      fail("TRANSFER_STATE_INVALID", "Export refused: credential maintenance is unavailable");
+    }
+  }
+  out.formatVersion =
+    cred.storage === "encrypted" ? CREDENTIAL_TRANSFER_FORMAT_VERSION : TRANSFER_FORMAT_VERSION;
   out.apiKeyStorage = { storage: "hashed", version: state.version, hashKid: state.hashKid };
   out.apiKeys = db.all("SELECT * FROM apiKeys").map(hashedRowOut);
   out.users = db.all("SELECT * FROM users");
@@ -218,32 +259,67 @@ export function exportGatewayKeySnapshot(db, out, state) {
   out.workspaces = db.all("SELECT * FROM workspaces");
   out.memberships = db.all("SELECT * FROM memberships");
   out.tenancy = { defaultWorkspaceId: getMetaSync(db, "defaultWorkspaceId") };
-  // Connections/nodes: re-map with the ownership columns — the legacy export
-  // mapping drops them, and a hashed snapshot must preserve workspace binding.
-  out.providerConnections = db.all(`SELECT * FROM providerConnections`).map((r) => ({
-    ...parseJson(r.data, {}),
-    id: r.id,
-    provider: r.provider,
-    authType: r.authType,
-    name: r.name,
-    email: r.email,
-    priority: r.priority,
-    isActive: r.isActive === 1 || r.isActive === true,
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
-    workspaceId: r.workspaceId ?? null,
-    createdByUserId: r.createdByUserId ?? null,
-  }));
-  out.providerNodes = db.all(`SELECT * FROM providerNodes`).map((r) => ({
-    ...parseJson(r.data, {}),
-    id: r.id,
-    type: r.type,
-    name: r.name,
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
-    workspaceId: r.workspaceId ?? null,
-    createdByUserId: r.createdByUserId ?? null,
-  }));
+  if (cred.storage === "encrypted") {
+    out.credentialEncryption = {
+      version: 1,
+      kekKid: cred.kekKid,
+      apiKeyHashKeyWrapped: getMetaSync(db, "apiKeyHashKeyWrapped"),
+    };
+    out.workspaceKeys = db.all(`SELECT workspaceId, kid, wrappedDek, createdAt FROM workspaceKeys`);
+    // Raw ciphertext rows: `data` stays the exact stored string so a restore
+    // rewrites identical bytes (IDs, wraps and envelopes unchanged).
+    out.providerConnections = db.all(`SELECT * FROM providerConnections`).map((r) => ({
+      id: r.id,
+      provider: r.provider,
+      authType: r.authType,
+      name: r.name,
+      email: r.email,
+      priority: r.priority,
+      isActive: r.isActive === 1 || r.isActive === true,
+      data: r.data,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      workspaceId: r.workspaceId ?? null,
+      createdByUserId: r.createdByUserId ?? null,
+    }));
+    out.providerNodes = db.all(`SELECT * FROM providerNodes`).map((r) => ({
+      id: r.id,
+      type: r.type,
+      name: r.name,
+      data: r.data,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      workspaceId: r.workspaceId ?? null,
+      createdByUserId: r.createdByUserId ?? null,
+    }));
+  } else {
+    // Connections/nodes: re-map with the ownership columns — the legacy export
+    // mapping drops them, and a hashed snapshot must preserve workspace binding.
+    out.providerConnections = db.all(`SELECT * FROM providerConnections`).map((r) => ({
+      ...parseJson(r.data, {}),
+      id: r.id,
+      provider: r.provider,
+      authType: r.authType,
+      name: r.name,
+      email: r.email,
+      priority: r.priority,
+      isActive: r.isActive === 1 || r.isActive === true,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      workspaceId: r.workspaceId ?? null,
+      createdByUserId: r.createdByUserId ?? null,
+    }));
+    out.providerNodes = db.all(`SELECT * FROM providerNodes`).map((r) => ({
+      ...parseJson(r.data, {}),
+      id: r.id,
+      type: r.type,
+      name: r.name,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      workspaceId: r.workspaceId ?? null,
+      createdByUserId: r.createdByUserId ?? null,
+    }));
+  }
   // Full parity: durable video-job bindings travel with the instance snapshot
   // (triple PK + connection/model provenance, matching the repo's contract).
   out.gatewayVideoJobs = liveGatewayVideoJobs(db);
@@ -262,10 +338,33 @@ function payloadFormat(payload) {
     if (payload.apiKeyStorage !== undefined) {
       fail("TRANSFER_STATE_INVALID", "apiKeyStorage requires formatVersion 2");
     }
+    // v1 sibling of the v2 smuggle guard: a legacy payload never carries a
+    // credential section (own property, even null/{}), only v3 does.
+    if (Object.hasOwn(payload, "credentialEncryption") || Object.hasOwn(payload, "workspaceKeys")) {
+      fail("TRANSFER_STATE_INVALID", "credentialEncryption requires formatVersion 3");
+    }
     return "legacy";
   }
-  if (version !== 2)
+  if (version !== 2 && version !== CREDENTIAL_TRANSFER_FORMAT_VERSION)
     fail("TRANSFER_STATE_INVALID", `Unsupported snapshot formatVersion ${version}`);
+  // v2 must never smuggle a credential section: only v3 carries wraps/keys.
+  if (
+    version === 2 &&
+    (Object.hasOwn(payload, "credentialEncryption") || Object.hasOwn(payload, "workspaceKeys"))
+  ) {
+    fail("TRANSFER_STATE_INVALID", "credentialEncryption requires formatVersion 3");
+  }
+  // And v3 is nothing without them: a v2 snapshot relabelled as v3 must not
+  // sail through as an (empty) encrypted restore.
+  if (
+    version === CREDENTIAL_TRANSFER_FORMAT_VERSION &&
+    (!isPlainObject(payload.credentialEncryption) || !Array.isArray(payload.workspaceKeys))
+  ) {
+    fail(
+      "TRANSFER_STATE_INVALID",
+      "formatVersion 3 requires credentialEncryption and workspaceKeys",
+    );
+  }
   const storage = payload.apiKeyStorage;
   if (
     !isPlainObject(storage) ||
@@ -677,6 +776,216 @@ function legacyPresetPlan(payload, keyIdByHash, hashKey) {
   return { next, converted };
 }
 
+function credentialLeaf(blob, field) {
+  if (field.startsWith(PSD_PREFIX)) {
+    const psd = blob.providerSpecificData;
+    if (!psd || typeof psd !== "object" || Array.isArray(psd)) return undefined;
+    return psd[field.slice(PSD_PREFIX.length)];
+  }
+  return blob[field];
+}
+
+function isEnvelopeLookalike(value) {
+  if (!isPlainObject(value)) return false;
+  const keys = Object.keys(value).sort();
+  return keys.length === ENVELOPE_KEYS.length && keys.every((k, i) => k === ENVELOPE_KEYS[i]);
+}
+
+function parseTransferBlob(raw, context) {
+  try {
+    return parseCredentialBlob(raw);
+  } catch {
+    return fail("TRANSFER_STATE_INVALID", `${context} data must be a JSON object string`);
+  }
+}
+
+/**
+ * YAN-365 v3 same-root credential graph proof. Pure, sync, no writes; runs
+ * before any backup or wipe. Plaintext only ever lives in zeroed scratch
+ * buffers during authentication. Returns the plan section apply needs.
+ */
+function validateCredentialSnapshotGraph(payload, { db, masterKey, suppliedKid, hashKid, refs }) {
+  let live;
+  try {
+    live = readCredentialEncryptionState(db);
+  } catch {
+    return fail("TRANSFER_STATE_INVALID", "Destination credential state is unreadable");
+  }
+  if (live.storage !== "encrypted") {
+    fail(
+      "TRANSFER_INSTANCE_MODE_UNSUPPORTED",
+      "Encrypted snapshots import only into an encrypted instance with the same root",
+    );
+  }
+  if (live.pendingRotation || live.cleanupPending) {
+    fail("TRANSFER_ROTATION_IN_FLIGHT", "Restore refused while key maintenance is pending");
+  }
+  if (isCredentialMaintenancePoisoned(db)) {
+    fail("TRANSFER_STATE_INVALID", "Restore refused: credential maintenance is unavailable");
+  }
+  const section = payload.credentialEncryption;
+  const sectionKeys = isPlainObject(section) ? Object.keys(section).sort() : [];
+  if (
+    sectionKeys.join(",") !== "apiKeyHashKeyWrapped,kekKid,version" ||
+    section.version !== 1 ||
+    !KID_RE.test(section.kekKid ?? "") ||
+    typeof section.apiKeyHashKeyWrapped !== "string"
+  ) {
+    fail("TRANSFER_STATE_INVALID", "Malformed credentialEncryption section");
+  }
+  // Root identity: the CURRENT KEK (rotation moves it; the hash kid stays frozen).
+  if (suppliedKid !== section.kekKid || suppliedKid !== live.kekKid) {
+    fail("TRANSFER_ROOT_MISMATCH", "Supplied master key does not match the credential root");
+  }
+  // Path 8: live hash-key proof via the stable getter (kid + authenticated
+  // unwrap), never kid equality or rederivation from a rotated KEK.
+  let liveHash;
+  try {
+    liveHash = resolveApiKeyHashKeySync(db, { kid: suppliedKid, key: masterKey });
+  } catch {
+    return fail("TRANSFER_ROOT_MISMATCH", "Supplied master key cannot unwrap the live hash key");
+  }
+  const defaultWs = payload.tenancy?.defaultWorkspaceId;
+  if (typeof defaultWs !== "string" || !refs.workspaces.has(defaultWs)) {
+    fail("TRANSFER_STATE_INVALID", "Encrypted snapshot requires tenancy.defaultWorkspaceId");
+  }
+  const deks = new Map();
+  try {
+    let wrappedHash;
+    try {
+      wrappedHash = JSON.parse(section.apiKeyHashKeyWrapped);
+    } catch {
+      fail("TRANSFER_STATE_INVALID", "apiKeyHashKeyWrapped is not valid JSON");
+    }
+    if (!isEnvelopeShape(wrappedHash) || wrappedHash.kid !== section.kekKid) {
+      fail("TRANSFER_STATE_INVALID", "apiKeyHashKeyWrapped is not a valid envelope");
+    }
+    let snapshotHash;
+    try {
+      snapshotHash = decryptBytes(masterKey, wrappedHash, buildHashKeyWrapAad(defaultWs, hashKid));
+    } catch {
+      fail("TRANSFER_ROOT_MISMATCH", "Wrapped hash key does not authenticate under this root");
+    }
+    const same =
+      snapshotHash.length === liveHash.hashKey.length &&
+      timingSafeEqual(snapshotHash, liveHash.hashKey);
+    zeroBuffer(snapshotHash);
+    zeroBuffer(liveHash.hashKey);
+    if (!same) fail("TRANSFER_ROOT_MISMATCH", "Snapshot hash key differs from this instance's");
+
+    const seenWs = new Set();
+    const seenKid = new Set();
+    for (const row of requireArray(payload, "workspaceKeys")) {
+      const cols = isPlainObject(row) ? Object.keys(row) : [];
+      if (
+        cols.length !== WORKSPACE_KEY_COLUMNS.size ||
+        cols.some((c) => !WORKSPACE_KEY_COLUMNS.has(c)) ||
+        typeof row.workspaceId !== "string" ||
+        !row.workspaceId ||
+        !DEK_KID_RE.test(row.kid ?? "") ||
+        typeof row.wrappedDek !== "string" ||
+        typeof row.createdAt !== "string" ||
+        !row.createdAt
+      ) {
+        fail("TRANSFER_STATE_INVALID", "Malformed workspaceKeys row");
+      }
+      if (seenWs.has(row.workspaceId) || seenKid.has(row.kid)) {
+        fail("TRANSFER_STATE_INVALID", "Duplicate workspaceKeys row");
+      }
+      seenWs.add(row.workspaceId);
+      seenKid.add(row.kid);
+      if (!refs.workspaces.has(row.workspaceId)) {
+        fail("TRANSFER_REF_INVALID", "workspaceKeys row has no workspace (orphan DEK)");
+      }
+      let wrapped;
+      try {
+        wrapped = JSON.parse(row.wrappedDek);
+      } catch {
+        fail("TRANSFER_STATE_INVALID", "workspaceKeys.wrappedDek is not valid JSON");
+      }
+      if (!isEnvelopeShape(wrapped) || wrapped.kid !== suppliedKid) {
+        fail("TRANSFER_STATE_INVALID", "workspaceKeys.wrappedDek is not a valid envelope");
+      }
+      let dek;
+      try {
+        dek = decryptBytes(masterKey, wrapped, buildDekWrapAad(row.workspaceId, row.kid));
+      } catch {
+        fail("TRANSFER_STATE_INVALID", "Workspace DEK wrap failed authentication");
+      }
+      if (dek.length !== 32) {
+        zeroBuffer(dek);
+        fail("TRANSFER_STATE_INVALID", "Workspace DEK must be 32 bytes");
+      }
+      deks.set(row.workspaceId, { kid: row.kid, dek });
+    }
+
+    // Every covered leaf must be a strict envelope authenticating at its own
+    // SQL row coordinates (table/id/workspace/field), never plaintext.
+    const authenticate = (table, rowId, workspaceId, blob, fields) => {
+      for (const field of fields) {
+        const leaf = credentialLeaf(blob, field);
+        if (leaf === undefined || leaf === null || leaf === "") continue;
+        if (!isEnvelopeShape(leaf)) {
+          fail(
+            "TRANSFER_STATE_INVALID",
+            isEnvelopeLookalike(leaf)
+              ? "Credential envelope is malformed"
+              : "Plaintext credential in an encrypted snapshot",
+          );
+        }
+        const entry = typeof workspaceId === "string" ? deks.get(workspaceId) : undefined;
+        if (!entry || leaf.kid !== entry.kid) {
+          fail("TRANSFER_REF_INVALID", "Credential envelope has no matching workspace key");
+        }
+        let plain;
+        try {
+          plain = decryptBytes(entry.dek, leaf, buildAad({ table, rowId, workspaceId, field }));
+        } catch {
+          fail("TRANSFER_STATE_INVALID", "Credential envelope failed authentication");
+        }
+        zeroBuffer(plain);
+      }
+    };
+    for (const table of ["providerConnections", "providerNodes"]) {
+      for (const row of requireArray(payload, table)) {
+        const blob = parseTransferBlob(row.data, table);
+        authenticate(
+          table,
+          row.id,
+          row.workspaceId ?? null,
+          blob,
+          CREDENTIAL_FIELD_ALLOWLIST[table],
+        );
+      }
+    }
+    if (payload.settings !== undefined && payload.settings !== null) {
+      authenticate(
+        "settings",
+        "1",
+        defaultWs,
+        payload.settings,
+        CREDENTIAL_FIELD_ALLOWLIST.settings,
+      );
+    }
+  } finally {
+    for (const entry of deks.values()) zeroBuffer(entry.dek);
+  }
+  return {
+    kekKid: section.kekKid,
+    apiKeyHashKeyWrapped: section.apiKeyHashKeyWrapped,
+    workspaceKeys: Object.freeze(
+      payload.workspaceKeys.map((r) =>
+        Object.freeze({
+          workspaceId: r.workspaceId,
+          kid: r.kid,
+          wrappedDek: r.wrappedDek,
+          createdAt: r.createdAt,
+        }),
+      ),
+    ),
+  };
+}
+
 /**
  * Pure preflight — no DB writes. Validates payload shape, root/master/kid
  * consistency, and full ownership/reference integrity across every row BEFORE
@@ -709,7 +1018,17 @@ export function preflightGatewayKeyImport(
     }
     assertMaster(masterKey);
     const suppliedKid = masterKeyId(masterKey);
-    if (suppliedKid !== kid) {
+    if (payload.formatVersion === CREDENTIAL_TRANSFER_FORMAT_VERSION) {
+      // Post-rotation snapshots (D6): the supplied root must match the
+      // CURRENT KEK kid, not the frozen hash-key kid.
+      const kekKid = payload.credentialEncryption?.kekKid;
+      if (suppliedKid !== kekKid) {
+        fail(
+          "TRANSFER_ROOT_MISMATCH",
+          "Supplied master key does not match the snapshot's credential root",
+        );
+      }
+    } else if (suppliedKid !== kid) {
       fail("TRANSFER_ROOT_MISMATCH", "Supplied master key does not match the snapshot's root");
     }
     if (kid !== instance.hashKid) {
@@ -744,6 +1063,22 @@ export function preflightGatewayKeyImport(
     if (defaultWs != null && !refs.workspaces.has(defaultWs)) {
       fail("TRANSFER_REF_INVALID", "tenancy.defaultWorkspaceId references an unknown workspace");
     }
+    // YAN-365 v3 credential graph: same-root preflight BEFORE any backup or
+    // wipe (D8). The destination must already be an encrypted instance — a
+    // restore never activates encryption. The current KEK kid, every DEK wrap
+    // and the frozen wrapped hash key are proven by authenticated unwrap
+    // (never kid equality or rederivation), then every covered field envelope
+    // is authenticated at its exact row coordinates. Nothing decrypts to keep.
+    let credential = null;
+    if (format === "hashed" && payload.formatVersion === CREDENTIAL_TRANSFER_FORMAT_VERSION) {
+      credential = validateCredentialSnapshotGraph(payload, {
+        db,
+        masterKey,
+        suppliedKid,
+        hashKid: kid,
+        refs,
+      });
+    }
     // Older v2 snapshots predate gatewayVideoJobs: an absent own property
     // retains current live bindings (validated against the incoming
     // workspace/connection refs first — incompatible rows reject before any
@@ -761,6 +1096,7 @@ export function preflightGatewayKeyImport(
     return {
       format,
       kid,
+      credential,
       keyIdByHash: new Map(snapshotKeys.map((r) => [r.keyHash, r.id])),
       videoJobs,
     };
@@ -796,18 +1132,21 @@ export function preflightGatewayKeyImport(
       ]),
     ),
   });
-  const hashKey = deriveApiKeyHashKey(masterKey);
-  const keyIdByHash = new Map(keys.map((k) => [hashApiKey(k.key, hashKey), k.id]));
+  const { hashKey: legacyHashKey } = resolveApiKeyHashKeySync(db, {
+    kid,
+    key: masterKey,
+  });
+  const keyIdByHash = new Map(keys.map((k) => [hashApiKey(k.key, legacyHashKey), k.id]));
   if (keyIdByHash.size !== keys.length) {
     fail("TRANSFER_STATE_INVALID", "duplicate raw key in legacy snapshot");
   }
   return {
     format,
     kid,
-    hashKey,
+    hashKey: legacyHashKey,
     defaultWorkspaceId,
     keyIdByHash,
-    presets: legacyPresetPlan(payload, keyIdByHash, hashKey),
+    presets: legacyPresetPlan(payload, keyIdByHash, legacyHashKey),
   };
 }
 
@@ -883,6 +1222,10 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
   db.run(`DELETE FROM kv WHERE scope IN (${KV_SCOPES.map((s) => `'${s}'`).join(", ")})`);
   db.run(`DELETE FROM workspaces`);
   db.run(`DELETE FROM users`);
+  const credential = plan.credential ?? null;
+  // v3: the key rows replace the live graph byte-exact below; the cascade from
+  // workspaces already emptied workspaceKeys, this keeps it explicit.
+  if (credential) db.run(`DELETE FROM workspaceKeys`);
 
   if (restoredSettings !== undefined) {
     db.run(
@@ -950,6 +1293,15 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
   const defaultWorkspaceId = payload.tenancy?.defaultWorkspaceId;
   if (defaultWorkspaceId) setMetaSync(db, "defaultWorkspaceId", defaultWorkspaceId);
 
+  // v3: workspace key rows first (FK to workspaces), exact bytes and IDs.
+  for (const key of credential?.workspaceKeys ?? []) {
+    db.run(
+      `INSERT INTO workspaceKeys(workspaceId, kid, wrappedDek, createdAt) VALUES(?, ?, ?, ?)`,
+      [key.workspaceId, key.kid, key.wrappedDek, key.createdAt],
+    );
+  }
+  // v3 rows carry the stored `data` JSON string; envelopes are never re-encoded.
+  const dataOf = (row, rest) => (credential ? row.data : stringifyJson(rest));
   for (const c of payload.providerConnections || []) {
     const {
       id,
@@ -976,7 +1328,7 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
         email || null,
         priority || null,
         isActive === false ? 0 : 1,
-        stringifyJson(rest),
+        dataOf(c, rest),
         createdAt || new Date().toISOString(),
         updatedAt || new Date().toISOString(),
         workspaceId ?? null,
@@ -993,7 +1345,7 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
         id,
         type || null,
         name || null,
-        stringifyJson(rest),
+        dataOf(n, rest),
         createdAt || new Date().toISOString(),
         updatedAt || new Date().toISOString(),
         workspaceId ?? null,
@@ -1086,6 +1438,14 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
   // YAN-364 (decision 13): adopt NULL-workspaceId combos + bare kv keys into
   // Default in-tx, before foreign_key_check — same semantics as importDb.
   adoptOwnerlessRowsUnscoped(db);
+  if (credential) {
+    // Marker pair + wrapped derived hash key, exactly as proven in preflight.
+    // The destination was already encrypted under this root; cleanup/rotation
+    // flags are cleared (preflight refused them) and never come from the body.
+    setMetaSync(db, "credentialsEncryptedVersion", "1");
+    setMetaSync(db, "credentialsKekKid", credential.kekKid);
+    setMetaSync(db, "apiKeyHashKeyWrapped", credential.apiKeyHashKeyWrapped);
+  }
   if (db.all(`PRAGMA foreign_key_check`).length) {
     fail("TRANSFER_APPLY_INVALID", "Foreign key violations after snapshot apply");
   }

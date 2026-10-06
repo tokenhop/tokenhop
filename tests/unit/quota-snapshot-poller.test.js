@@ -167,7 +167,9 @@ describe("quota snapshot sync", () => {
     });
 
     expect(db.updateProviderConnectionUnscoped).toHaveBeenCalledWith("codex-tier", {
-      providerSpecificData: { workspaceId: "ws-1", planTier: "pro" },
+      // Repo merges this delta onto live siblings; sending the read snapshot
+      // would overwrite concurrent credential refreshes (YAN-365).
+      providerSpecificData: { planTier: "pro" },
     });
   });
 

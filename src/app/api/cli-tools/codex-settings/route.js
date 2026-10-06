@@ -11,7 +11,8 @@ import { getApiKeys } from "@/lib/localDb";
 import { getAdapter } from "@/lib/db/driver.js";
 import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
 import { getHashedApiKeyByHashUnscoped } from "@/lib/db/repos/apiKeysRepo.js";
-import { deriveApiKeyHashKey, hashApiKey, loadMasterKey } from "@/lib/security/masterKey.js";
+import { hashApiKey } from "@/lib/security/masterKey.js";
+import { getApiKeyHashKey } from "@/lib/security/apiKeyHashKey.js";
 import { configErrorResponse, readTomlConfig } from "@/lib/cliToolConfig";
 import { BRAND, LEGACY } from "@/shared/brand";
 import {
@@ -45,8 +46,8 @@ const isRouterApiKey = async (key) => {
     const db = await getAdapter();
     const state = readApiKeyStorageState(db);
     if (state.storage !== "hashed") return false;
-    const { key: master } = await loadMasterKey({ expectedKid: state.hashKid });
-    const row = getHashedApiKeyByHashUnscoped(db, hashApiKey(key, deriveApiKeyHashKey(master)));
+    const { hashKey } = await getApiKeyHashKey(db);
+    const row = getHashedApiKeyByHashUnscoped(db, hashApiKey(key, hashKey));
     return row != null;
   } catch {
     return false;

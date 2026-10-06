@@ -97,8 +97,10 @@ export async function PUT(request, { params }) {
     await Promise.all(
       connections.map((connection) =>
         update(connection.id, {
+          // YAN-365: delta write — the repo merges onto the live stored PSD
+          // siblings, so a refresh landing between the list and these writes
+          // survives. apiType: undefined drops the key (today's shape).
           providerSpecificData: {
-            ...(connection.providerSpecificData || {}),
             prefix: prefix.trim(),
             apiType: node.type === "openai-compatible" ? apiType : undefined,
             baseUrl: sanitizedBaseUrl,

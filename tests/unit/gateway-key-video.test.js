@@ -32,10 +32,14 @@ function createVideoJobStore({ schema = true } = {}) {
     connections,
     get(sql, params = []) {
       if (sql.startsWith("SELECT value FROM _meta")) {
-        return { value: params[0] === "apiKeysHashedVersion" ? "1" : "0123456789abcdef" };
+        if (params[0] === "apiKeysHashedVersion") return { value: "1" };
+        if (params[0] === "apiKeysHashKid") return { value: "0123456789abcdef" };
+        return undefined; // No credential-encryption markers in this hashed-only fixture.
       }
       if (sql.includes("sqlite_master")) {
-        return schema ? { name: "gatewayVideoJobs" } : undefined;
+        return schema && sql.includes("'gatewayVideoJobs'")
+          ? { name: "gatewayVideoJobs" }
+          : undefined;
       }
       if (
         sql.startsWith(

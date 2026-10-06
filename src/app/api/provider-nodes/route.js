@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { createProviderNodeUnscoped, getProviderNodesUnscoped } from "@/models";
-import { createNode, listNodes } from "@/lib/db/index.js";
+import { createProviderNodeUnscoped } from "@/models";
+import { createNode } from "@/lib/db/index.js";
+import { getProviderNodesMetadataUnscoped, listNodesMetadata } from "@/lib/db/repos/nodesRepo.js";
 import { workspaceScope } from "@/lib/users/workspaceScope.js";
 import {
   OPENAI_COMPATIBLE_PREFIX,
@@ -29,9 +30,10 @@ export async function GET(request) {
     // YAN-361: switch on, one workspace's nodes.
     const scope = await workspaceScope(request, "workspace.connections.metadata.read");
     if (scope instanceof Response) return scope;
+    // YAN-365: metadata list — secrets are never decrypted for responses.
     const nodes = scope
-      ? await listNodes(scope.ctx, scope.workspaceId)
-      : await getProviderNodesUnscoped();
+      ? await listNodesMetadata(scope.ctx, scope.workspaceId)
+      : await getProviderNodesMetadataUnscoped();
     return NextResponse.json({ nodes });
   } catch (error) {
     console.log("Error fetching provider nodes:", error);

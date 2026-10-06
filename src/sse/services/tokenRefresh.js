@@ -163,6 +163,9 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
     if (newCredentials.accessToken) updates.accessToken = newCredentials.accessToken;
     if (newCredentials.refreshToken) updates.refreshToken = newCredentials.refreshToken;
     if (newCredentials.idToken) updates.idToken = newCredentials.idToken;
+    // YAN-365: runtime refreshers can mint a replacement key (e.g. meta-code);
+    // a minted apiKey must persist or the next request reuses a dead one.
+    if (newCredentials.apiKey) updates.apiKey = newCredentials.apiKey;
     if (newCredentials.lastRefreshAt) updates.lastRefreshAt = newCredentials.lastRefreshAt;
     if (newCredentials.expiresAt) updates.expiresAt = newCredentials.expiresAt;
     if (newCredentials.expiresIn) {
@@ -178,15 +181,15 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
         );
       }
     }
+    // YAN-365 delta contract: only the refreshed keys go in the patch. The
+    // repo merges them onto the live decrypted row's siblings inside the
+    // transaction — never a stale request-time snapshot.
     if (newCredentials.providerSpecificData) {
-      updates.providerSpecificData = {
-        ...(newCredentials.existingProviderSpecificData || {}),
-        ...newCredentials.providerSpecificData,
-      };
+      updates.providerSpecificData = { ...newCredentials.providerSpecificData };
     }
     if (newCredentials.copilotToken || newCredentials.copilotTokenExpiresAt) {
       updates.providerSpecificData = {
-        ...(updates.providerSpecificData || newCredentials.existingProviderSpecificData || {}),
+        ...(updates.providerSpecificData || {}),
         ...(newCredentials.copilotToken ? { copilotToken: newCredentials.copilotToken } : {}),
         ...(newCredentials.copilotTokenExpiresAt
           ? { copilotTokenExpiresAt: newCredentials.copilotTokenExpiresAt }
@@ -202,6 +205,10 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
     });
     return !!result;
   } catch (error) {
+    // YAN-365: typed integrity/storage failures (decrypt, key, corrupt state)
+    // must propagate — swallowing them would let a refresh report durable
+    // success with nothing persisted.
+    if (error?.code) throw error;
     log.error("TOKEN_REFRESH", "Error updating credentials in localDb", {
       connectionId,
       error: error.message,
@@ -264,13 +271,9 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
 
     const newCreds = await _refreshProviderCredentials(provider, creds, log, proxyOptions);
     if (newCreds?.accessToken || newCreds?.apiKey || newCreds?.copilotToken) {
-      const mergedCreds = {
-        ...newCreds,
-        existingProviderSpecificData: creds.providerSpecificData,
-      };
-
-      // Persist to DB (non-blocking path continues below)
-      await updateProviderCredentials(creds.connectionId, mergedCreds);
+      // No stale snapshot: the repo merges the refresh delta onto the live
+      // stored siblings inside the same transaction (YAN-365).
+      await updateProviderCredentials(creds.connectionId, newCreds);
 
       creds = {
         ...creds,

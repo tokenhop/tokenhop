@@ -70,6 +70,19 @@ if (args[0] === "auth" && args[1] === "setup-token") {
   return;
 }
 
+// `keys rotate` rotates the instance master key / a workspace key on the
+// running server (owner only, YAN-365). Early dispatch: no self-heal, no spawn.
+if (args[0] === "keys" && args[1] === "rotate") {
+  const { run } = require("./src/cli/commands/keysRotate");
+  run(args.slice(2))
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(`❌ ${err?.message || err}`);
+      process.exit(1);
+    });
+  return;
+}
+
 // `data migrate` moves the legacy data dir; it must run before the self-heal
 // below writes into it. Offered only under the tokenhop brand.
 const dataMigrate = require("./src/cli/commands/dataMigrate");
@@ -150,7 +163,10 @@ Commands:
                       (see: ${APP_NAME} xai video --help)
   auth setup-token [--port <port>]
                       Mint a one-time owner setup token for SSO owner linking
-                      (see: ${APP_NAME} auth setup-token --help)${
+                      (see: ${APP_NAME} auth setup-token --help)
+  keys rotate [--workspace <id>] [--port <port>] [--yes]
+                      Rotate the instance master key or one workspace key (owner only)
+                      (see: ${APP_NAME} keys rotate --help)${
   dataMigrate.AVAILABLE
     ? `
   data migrate [--dry-run]

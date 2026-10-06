@@ -15,13 +15,14 @@ import {
   assertMitmStartupSourceCompatible,
   getMitmCredentialStatus,
 } from "@/mitm/manager";
+import { isCredentialEncryptionEstablished } from "@/lib/db/repos/settingsRepo.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import runtimeCredentials from "@/mitm/runtimeCredentials";
 import { ACTIVE } from "@/shared/brand";
 import { audit } from "@/lib/users/audit.js";
 import { getClientIp } from "@/lib/auth/loginLimiter.js";
 
-initDbHooks(getSettings, updateSettings);
+initDbHooks(getSettings, updateSettings, isCredentialEncryptionEstablished);
 
 // User-facing restart hint on Windows; names the product under the active brand.
 const ADMIN_RESTART_MESSAGE = `Administrator required — restart ${ACTIVE.name} as Administrator`;

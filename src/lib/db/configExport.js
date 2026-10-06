@@ -54,7 +54,7 @@ export async function exportConfig() {
   // only, never other workspaces' same-name combos.
   return buildConfigDocument({
     settings: await visibleConfigSettings({
-      ...(await getSettings()),
+      ...(await getSettings({ secretMode: "metadata" })),
       ...defaultWorkspaceOverlay(db),
     }),
     combos: await getPortableCombosUnscoped(),
@@ -68,7 +68,7 @@ export async function getConfigState() {
   const db = await getAdapter();
   return {
     settings: await visibleConfigSettings({
-      ...(await getSettings()),
+      ...(await getSettings({ secretMode: "metadata" })),
       ...defaultWorkspaceOverlay(db),
     }),
     combos: await getPortableCombosUnscoped(),

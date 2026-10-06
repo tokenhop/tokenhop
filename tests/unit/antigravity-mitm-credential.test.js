@@ -45,6 +45,8 @@ const { assertMitmStartupSourceCompatible, getMitmStatus, getMitmCredentialStatu
 const { getSettings, updateSettings } = await import("@/lib/localDb");
 const { readStorageState } = await import("@/lib/auth/mitmCredential");
 const { GET, POST } = await import("@/app/api/cli-tools/antigravity-mitm/route.js");
+const legacyMod = await import("@/mitm/legacyPasswordCrypto.cjs");
+const legacy = legacyMod.default ?? legacyMod;
 
 const post = (body) => POST({ json: async () => (typeof body === "function" ? body() : body) });
 
@@ -149,5 +151,73 @@ describe("antigravity-mitm remote credential boundary", () => {
     ]) {
       expect(text).not.toContain(banned);
     }
+  });
+});
+
+// YAN-365: MITM sudo password storage. Real manager + legacy helper; DB hooks
+// are in-memory fakes so only the established/legacy mode switch is under test.
+describe("MITM sudo password storage (YAN-365)", () => {
+  const actualPromise = vi.importActual("@/mitm/manager");
+
+  const hooks = (established, store = {}) => ({
+    store,
+    get: vi.fn(async () => ({ ...store })),
+    update: vi.fn(async (u) => {
+      Object.assign(store, u);
+      return { ...store };
+    }),
+    established: vi.fn(async () => established),
+  });
+
+  it("established load returns the repo's runtime plaintext as-is (no second decrypt)", async () => {
+    const m = await actualPromise;
+    const h = hooks(true);
+    m.initDbHooks(h.get, h.update, h.established);
+    h.store.mitmSudoEncrypted = "plain-from-runtime-repo";
+    expect(await m.loadEncryptedPassword()).toBe("plain-from-runtime-repo");
+    expect(h.established).toHaveBeenCalled();
+  });
+
+  it("established load propagates repo integrity failures; absent stays null, never empty", async () => {
+    const m = await actualPromise;
+    const failing = hooks(true);
+    failing.get.mockRejectedValueOnce(
+      Object.assign(new Error("integrity"), { code: "DECRYPT_FAILED" }),
+    );
+    m.initDbHooks(failing.get, failing.update, failing.established);
+    await expect(m.loadEncryptedPassword()).rejects.toMatchObject({ code: "DECRYPT_FAILED" });
+    const empty = hooks(true, {});
+    m.initDbHooks(empty.get, empty.update, empty.established);
+    expect(await m.loadEncryptedPassword()).toBeNull();
+  });
+
+  it("legacy (no hook) round-trips, and corrupt/non-string never becomes an empty password", async () => {
+    const m = await actualPromise;
+    const h = hooks(false);
+    m.initDbHooks(h.get, h.update); // optional third hook omitted
+    h.store.mitmSudoEncrypted = legacy.encryptPassword("legacy-pw");
+    expect(await m.loadEncryptedPassword()).toBe("legacy-pw");
+    for (const bad of ["", "a:b", "zz:zz:zz", `${"0".repeat(24)}:${"0".repeat(32)}:00`, 42, {}]) {
+      h.store.mitmSudoEncrypted = bad;
+      expect(await m.loadEncryptedPassword()).toBeNull();
+    }
+  });
+
+  it("strict legacy helper: typed pure decrypt returns null on tamper and wrong machine id", () => {
+    const stored = legacy.encryptLegacySudoPassword("sudo-pw", "machine-a");
+    expect(legacy.decryptLegacySudoPassword(stored, "machine-a")).toBe("sudo-pw");
+    expect(legacy.decryptLegacySudoPassword(stored, "machine-b")).toBeNull();
+    const [iv, tag, ct] = stored.split(":");
+    const flipped = `${iv}:${tag}:${(ct[0] === "0" ? "1" : "0") + ct.slice(1)}`;
+    expect(legacy.decryptLegacySudoPassword(flipped, "machine-a")).toBeNull();
+    expect(legacy.decryptLegacySudoPassword(null, "machine-a")).toBeNull();
+  });
+
+  it("explicit established hook is the only mode signal (a colon-shaped value stays legacy)", async () => {
+    const m = await actualPromise;
+    const h = hooks(false);
+    m.initDbHooks(h.get, h.update, h.established);
+    h.store.mitmSudoEncrypted = "a:b:c";
+    expect(await m.loadEncryptedPassword()).toBeNull(); // legacy decrypt of junk, not plaintext
   });
 });

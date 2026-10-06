@@ -144,9 +144,9 @@ export async function handleEmbeddings(request) {
       credentials: refreshedCredentials,
       log,
       onCredentialsRefreshed: async (newCreds) => {
+        // YAN-365: delta write — the repo merges onto the live stored row.
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
-          existingProviderSpecificData: credentials.providerSpecificData,
           testStatus: "active",
         });
       },
