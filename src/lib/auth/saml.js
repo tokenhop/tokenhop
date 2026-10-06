@@ -265,6 +265,7 @@ export function pickSamlEmail(profile = {}, settings = {}) {
 }
 
 const EMAIL_SHAPE_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const NAMEID_EMAIL_FORMAT = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress";
 const VERIFIED_EMAIL_KEYS = [
   "email",
   "emailAddress",
@@ -299,6 +300,9 @@ export function pickVerifiedSamlEmail(profile = {}, settings = {}) {
       if (email) return email;
     }
   }
+  // A NameID the signed assertion declares as emailAddress format is an email
+  // claim too (common IdP default). Other NameID formats and UPN never are.
+  if (profile.nameIDFormat === NAMEID_EMAIL_FORMAT) return firstShapedEmail(profile, "nameID");
   return null;
 }
 
