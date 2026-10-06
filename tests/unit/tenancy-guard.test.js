@@ -25,6 +25,17 @@ const HELPER_ALLOWLIST = new Set([
   "settingsRepo.js:updateSettings",
   "settingsRepo.js:updateComboStrategies",
   "workspaceSettingsRepo.js:mirrorToDefaultWorkspace",
+  // YAN-359 sync in-transaction seams (first param `db`, caller owns the tx).
+  // ssoAdmit validates identity, groups and the allow-list, then rechecks the
+  // user, role provenance and every mapped workspace inside the tx before
+  // these run. insertIdentitySync also backs linkIdentityUnscoped and
+  // validates its subject; createUserWithPersonalWorkspaceSync backs
+  // createUserUnscoped and only writes a fresh user's own personal workspace;
+  // syncIdpMembershipsSync validates user, targets and roles and checks the
+  // last-manager invariant before any write.
+  "identitiesRepo.js:insertIdentitySync",
+  "membershipsRepo.js:syncIdpMembershipsSync",
+  "usersRepo.js:createUserWithPersonalWorkspaceSync",
 ]);
 
 const liveTables = (db) =>

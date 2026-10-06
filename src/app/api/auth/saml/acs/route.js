@@ -6,21 +6,59 @@ import {
   isSamlConfigured,
   pickSamlDisplayName,
   pickSamlEmail,
+  pickSamlGroups,
   validateSamlResponse,
 } from "@/lib/auth/saml.js";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { audit } from "@/lib/users/audit";
 import { sessionClaims } from "@/lib/users/session";
-import { takeSetupToken } from "@/lib/users/bootstrap";
+import { SETUP_TOKEN_COOKIE, takeSetupToken } from "@/lib/users/bootstrap";
+import { isUserSecurityEnforced } from "@/lib/users/securityState";
+import { ssoAdmit, SsoAdmissionError } from "@/lib/users/ssoProvisioning";
+
 import { resolveAuthModes } from "@/lib/auth/authModes";
-import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
+import {
+  checkLock,
+  recordFail,
+  recordSuccess,
+  getClientIp,
+  checkLoginLocks,
+  recordLoginFail,
+  clearAccount,
+} from "@/lib/auth/loginLimiter";
+
+const ADMISSION_ERRORS = {
+  denied: "sso_group_denied",
+  groups_unavailable: "sso_groups_unavailable",
+  disabled: "account_disabled",
+  sync_failed: "sso_sync_failed",
+};
 
 export async function POST(request) {
   const settings = await getSettings();
   const origin = getSamlBaseUrl(request, settings);
   const ip = getClientIp(request);
 
-  const lock = checkLock(ip);
+  let enforced;
+  try {
+    enforced = await isUserSecurityEnforced();
+  } catch {
+    console.warn("[SAML] ACS failed: security_state_unavailable");
+    return NextResponse.redirect(new URL("/login?error=saml_acs_failed", origin));
+  }
+  let account;
+  const fail = (code) => {
+    recordLoginFail({ ip, account });
+    console.warn("[SAML] ACS denied:", code);
+    audit(
+      { ip },
+      "auth.loginFailed",
+      { type: "user" },
+      { after: { provider: "saml", reason: code }, result: "failure" },
+    );
+    return NextResponse.redirect(new URL(`/login?error=${code}`, origin));
+  };
+  const lock = enforced ? checkLoginLocks({ ip }) : checkLock(ip);
   if (lock.locked) {
     return NextResponse.redirect(new URL("/login?error=too_many_attempts", origin));
   }
@@ -36,11 +74,13 @@ export async function POST(request) {
     const SAMLResponse = formData.get("SAMLResponse");
 
     if (!SAMLResponse) {
+      if (enforced) return fail("saml_missing_response");
       recordFail(ip);
       return NextResponse.redirect(new URL("/login?error=saml_missing_response", origin));
     }
 
     if (!resolveAuthModes(settings).saml || !isSamlConfigured(settings)) {
+      if (enforced) return fail("saml_not_configured");
       console.warn("[SAML] ACS failed: saml_not_configured");
       recordFail(ip);
       return NextResponse.redirect(new URL("/login?error=saml_not_configured", origin));
@@ -65,9 +105,47 @@ export async function POST(request) {
       email: samlEmail,
       emailVerified: true,
     };
-    const setupToken = takeSetupToken(cookieStore);
-    const claims = await sessionClaims("saml", identity, { setupToken });
+    let opts;
+    if (enforced) {
+      if (
+        typeof identity.issuer !== "string" ||
+        !identity.issuer ||
+        typeof identity.subject !== "string" ||
+        !identity.subject ||
+        profile.nameIDFormat === "urn:oasis:names:tc:SAML:2.0:nameid-format:transient"
+      ) {
+        console.warn("[SAML] ACS denied: stable issuer and persistent NameID required");
+        throw new SsoAdmissionError("denied");
+      }
+      account = `sso:${JSON.stringify([identity.provider, identity.issuer, identity.subject])}`;
+      if (checkLoginLocks({ ip, account }).locked) {
+        return NextResponse.redirect(new URL("/login?error=too_many_attempts", origin));
+      }
+      const source = pickSamlGroups(profile, settings);
+      if (!source.present || source.invalid || !Array.isArray(source.groups)) {
+        throw new SsoAdmissionError("groups_unavailable");
+      }
+      const admitted = await ssoAdmit({ ...identity, displayName: samlName }, source.groups, {
+        setupToken: cookieStore.get(SETUP_TOKEN_COOKIE)?.value,
+      });
+      takeSetupToken(cookieStore);
+      if (admitted.kind === "pending") {
+        clearAccount(account);
+        audit(
+          { ip },
+          "auth.loginPending",
+          { type: "user", id: admitted.userId },
+          { after: { provider: "saml", reason: "pending" }, result: "pending" },
+        );
+        return NextResponse.redirect(new URL("/login/pending", origin));
+      }
+      opts = { admittedUserId: admitted.userId };
+    } else {
+      opts = { setupToken: takeSetupToken(cookieStore) };
+    }
+    const claims = await sessionClaims("saml", identity, opts);
     if (!claims) {
+      if (enforced) return fail("sso_sync_failed");
       audit(
         { ip },
         "auth.loginFailed",
@@ -76,7 +154,7 @@ export async function POST(request) {
       );
       return NextResponse.redirect(new URL("/login?error=sso_not_linked", origin));
     }
-    recordSuccess(ip);
+    if (!enforced) recordSuccess(ip);
 
     await setDashboardAuthCookie(cookieStore, request, {
       ...claims,
@@ -84,6 +162,7 @@ export async function POST(request) {
       samlEmail,
       samlName,
     });
+    if (enforced) clearAccount(account);
     audit(
       { principal: claims.sub ? { userId: claims.sub, via: "session" } : null, ip },
       "auth.login",
@@ -93,6 +172,13 @@ export async function POST(request) {
 
     return NextResponse.redirect(new URL("/dashboard", origin));
   } catch (error) {
+    if (enforced) {
+      return fail(
+        error instanceof SsoAdmissionError
+          ? ADMISSION_ERRORS[error.code] || "sso_sync_failed"
+          : "saml_acs_failed",
+      );
+    }
     console.warn("[SAML] ACS failed:", error?.message || error);
     recordFail(ip);
     audit(

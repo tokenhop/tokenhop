@@ -307,3 +307,51 @@ export function pickOidcDisplayName(payload = {}) {
 export function pickOidcEmail(payload = {}) {
   return payload.email || "";
 }
+
+/**
+ * Fetches the OIDC UserInfo response for an already-verified identity.
+ * The id_token stays authoritative: callers fetch only when a configured claim
+ * is absent. Exact nonempty `sub` must equal `expectedSub`; when the response
+ * carries `iss`, it must exactly equal `expectedIssuer`. Never logs tokens.
+ */
+export async function fetchOidcUserInfo({
+  userinfoEndpoint,
+  accessToken,
+  expectedSub,
+  expectedIssuer,
+}) {
+  if (!userinfoEndpoint || !accessToken) {
+    throw new Error("OIDC UserInfo fetch requires a userinfo endpoint and access token");
+  }
+  if (typeof expectedSub !== "string" || expectedSub === "") {
+    throw new Error("OIDC UserInfo fetch requires the verified subject");
+  }
+  const res = await fetch(userinfoEndpoint, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+    redirect: "error",
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!res.ok) {
+    throw new Error(`OIDC UserInfo fetch failed (${res.status})`);
+  }
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error("OIDC UserInfo response is not valid JSON");
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("OIDC UserInfo response has an unexpected shape");
+  }
+  if (typeof data.sub !== "string" || data.sub === "" || data.sub !== expectedSub) {
+    throw new Error("OIDC UserInfo subject mismatch");
+  }
+  if (
+    Object.hasOwn(data, "iss") &&
+    (typeof data.iss !== "string" || data.iss === "" || data.iss !== expectedIssuer)
+  ) {
+    throw new Error("OIDC UserInfo issuer mismatch");
+  }
+  return data;
+}

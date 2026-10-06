@@ -16,6 +16,12 @@ const MESSAGES = {
   access_denied: "The identity provider refused the sign-in request. Try again.",
   sso_not_linked:
     "This single sign-on account isn't linked to a user here. Sign in with a password or ask an admin.",
+  sso_group_denied:
+    "Your account is not in a group that may sign in here. Ask an admin to add you.",
+  sso_groups_unavailable:
+    "Your sign-in provider did not send group information. Ask an admin to check the group settings.",
+  sso_sync_failed:
+    "Could not finish setting up your account. Try again, and ask an admin if it keeps happening.",
   invalid_credentials: "Invalid email/username or password.",
   account_pending: "This account is waiting for an admin to approve it.",
   account_disabled: "This account has been disabled by an admin.",

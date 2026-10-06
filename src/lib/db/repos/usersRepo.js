@@ -16,6 +16,12 @@ import { audit } from "@/lib/users/audit.js";
 
 const COLS =
   "id, email, username, displayName, instanceRole, status, sessionVersion, mustChangePassword, createdAt, updatedAt, lastLoginAt";
+// instanceRoleSource (YAN-359) is internal: read it explicitly, never via COLS.
+function roleSource(db, id) {
+  return (
+    db.get(`SELECT instanceRoleSource FROM users WHERE id = ?`, [id])?.instanceRoleSource ?? null
+  );
+}
 // Changing any of these revokes the user's sessions (ADR-0004).
 const SESSION_FIELDS = ["instanceRole", "status", "passwordHash"];
 
@@ -82,6 +88,13 @@ function cached(key, read) {
 function dropSession(...ids) {
   for (const id of ids) sessionCache.delete(id);
   sessionCache.delete(ACTIVE_COUNT);
+}
+
+// YAN-359 IdP sync seam: exported cache invalidation for post-sync use, after
+// the transaction commits (and conservatively on rollback). Sync helpers never
+// call async wrappers inside a transaction.
+export function invalidateUserSessionCacheSync(...ids) {
+  dropSession(...ids);
 }
 
 export async function countActiveUsersUnscoped() {
@@ -187,6 +200,55 @@ async function assertNotSingleUserMode(db, status, exceptId = null) {
   }
 }
 
+/**
+ * Synchronous user + personal workspace + owner membership insert. Must run
+ * inside a caller-owned `db.transaction`; no await, no cache drop (caller drops
+ * after commit via invalidateUserSessionCacheSync). `instanceRoleSource` is
+ * internal-only (IdP sync); the public wrapper never forwards it.
+ * Returns the committed-shape row plus `personalWorkspaceId`.
+ */
+export function createUserWithPersonalWorkspaceSync(
+  db,
+  {
+    email,
+    username,
+    displayName,
+    instanceRole = "pending",
+    instanceRoleSource = null,
+    status = "active",
+    passwordHash,
+  } = {},
+) {
+  const now = new Date().toISOString();
+  const id = uuidv4();
+  const wsId = uuidv4();
+  const name = optText(displayName) ?? optText(username) ?? optText(email) ?? "Personal";
+  db.run(
+    `INSERT INTO users(id, email, username, displayName, instanceRole, instanceRoleSource, status, passwordHash, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      optText(email),
+      optText(username),
+      optText(displayName),
+      instanceRole,
+      instanceRoleSource,
+      status,
+      passwordHash ?? null,
+      now,
+      now,
+    ],
+  );
+  db.run(
+    `INSERT INTO workspaces(id, name, kind, createdBy, createdAt, updatedAt) VALUES(?, ?, 'personal', ?, ?, ?)`,
+    [wsId, name, id, now, now],
+  );
+  db.run(
+    `INSERT INTO memberships(workspaceId, userId, role, source, createdAt) VALUES(?, ?, 'owner', 'manual', ?)`,
+    [wsId, id, now],
+  );
+  return { ...getRow(db, id), personalWorkspaceId: wsId };
+}
+
 // Creates the user, their personal workspace and its owner membership together.
 export async function createUserUnscoped({
   email,
@@ -198,36 +260,19 @@ export async function createUserUnscoped({
 } = {}) {
   const db = await getAdapter();
   await assertNotSingleUserMode(db, status);
-  const now = new Date().toISOString();
-  const id = uuidv4();
-  const wsId = uuidv4();
-  const name = optText(displayName) ?? optText(username) ?? optText(email) ?? "Personal";
+  // Explicit field list: callers can't mass-assign instanceRoleSource.
   return mapConstraintErrors(() =>
     db.transaction(() => {
-      db.run(
-        `INSERT INTO users(id, email, username, displayName, instanceRole, status, passwordHash, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          optText(email),
-          optText(username),
-          optText(displayName),
-          instanceRole,
-          status,
-          passwordHash ?? null,
-          now,
-          now,
-        ],
-      );
-      db.run(
-        `INSERT INTO workspaces(id, name, kind, createdBy, createdAt, updatedAt) VALUES(?, ?, 'personal', ?, ?, ?)`,
-        [wsId, name, id, now, now],
-      );
-      db.run(
-        `INSERT INTO memberships(workspaceId, userId, role, source, createdAt) VALUES(?, ?, 'owner', 'manual', ?)`,
-        [wsId, id, now],
-      );
-      dropSession(id);
-      return { ...getRow(db, id), personalWorkspaceId: wsId };
+      const created = createUserWithPersonalWorkspaceSync(db, {
+        email,
+        username,
+        displayName,
+        instanceRole,
+        status,
+        passwordHash,
+      });
+      dropSession(created.id);
+      return created;
     }),
   );
 }
@@ -253,15 +298,22 @@ export async function updateUserUnscoped(id, patch = {}) {
         throw new TenancyError("OWNER_IMMUTABLE", "The owner can't be disabled");
       }
 
+      // YAN-359: an explicit manual instanceRole (even same-role) makes the role
+      // manual. Clearing non-null provenance is a security change: one sv bump,
+      // combined with any role/status/password change below.
+      const clearsSource = Object.hasOwn(next, "instanceRole") && roleSource(db, id) !== null;
       const bump =
         (Object.hasOwn(next, "instanceRole") && next.instanceRole !== row.instanceRole) ||
         (Object.hasOwn(next, "status") && next.status !== row.status) ||
-        Object.hasOwn(next, "passwordHash");
+        Object.hasOwn(next, "passwordHash") ||
+        clearsSource;
       const sets = Object.keys(next).map((k) => `${k} = ?`);
+      const values = Object.values(next);
+      if (clearsSource) sets.push("instanceRoleSource = NULL");
       sets.push("updatedAt = ?");
       if (bump) sets.push("sessionVersion = sessionVersion + 1");
       const now = new Date().toISOString();
-      db.run(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`, [...Object.values(next), now, id]);
+      db.run(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`, [...values, now, id]);
       if (next.status === "disabled") revokeUserApiKeysSync(db, id, { now });
       dropSession(id);
       return getRow(db, id);
@@ -358,7 +410,8 @@ export async function transferOwnership(ctx, toUserId) {
       throw new TenancyError("INVALID", "The new owner must be an active, approved user");
     }
     const now = new Date().toISOString();
-    const sql = `UPDATE users SET instanceRole = ?, updatedAt = ?, sessionVersion = sessionVersion + 1 WHERE id = ?`;
+    // Both rows leave IdP provenance: owner and demoted admin are manual.
+    const sql = `UPDATE users SET instanceRole = ?, instanceRoleSource = NULL, updatedAt = ?, sessionVersion = sessionVersion + 1 WHERE id = ?`;
     // Demote first: idx_users_owner allows one owner at a time.
     db.run(sql, ["admin", now, from.id]);
     db.run(sql, ["owner", now, to.id]);

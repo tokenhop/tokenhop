@@ -22,8 +22,9 @@ import m007 from "./007-user-password-change.js";
 import m008 from "./008-settings-split.js";
 import m009 from "./009-workspace-scoped-combos.js";
 import m010 from "./010-audit-events.js";
+import m011 from "./011-sso-role-source.js";
 
-export const MIGRATIONS = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010].sort(
+export const MIGRATIONS = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010, m011].sort(
   (a, b) => a.version - b.version,
 );
 

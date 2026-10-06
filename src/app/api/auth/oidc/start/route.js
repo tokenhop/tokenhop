@@ -11,13 +11,21 @@ import {
 } from "@/lib/auth/oidc";
 import { shouldUseSecureCookie } from "@/lib/auth/dashboardSession";
 import { stashSetupToken } from "@/lib/users/bootstrap";
+import { isUserSecurityEnforced } from "@/lib/users/securityState.js";
+
+async function withStartHeaders(response) {
+  if (await isUserSecurityEnforced()) response.headers.set("Referrer-Policy", "no-referrer");
+  return response;
+}
 
 export async function GET(request) {
   try {
     const config = await getOidcRuntimeConfig();
     if (!config) {
-      return NextResponse.redirect(
-        new URL("/login?error=oidc_not_configured", getPublicOrigin(request)),
+      return withStartHeaders(
+        NextResponse.redirect(
+          new URL("/login?error=oidc_not_configured", getPublicOrigin(request)),
+        ),
       );
     }
 
@@ -49,12 +57,12 @@ export async function GET(request) {
     cookieStore.set("oidc_code_verifier", verifier, baseOptions);
     await stashSetupToken(request, cookieStore, baseOptions);
 
-    return NextResponse.redirect(authUrl);
+    return withStartHeaders(NextResponse.redirect(authUrl));
   } catch (error) {
     // Details stay in the server log; /login only gets a fixed code.
     console.warn("[OIDC] start failed:", error?.message || error);
-    return NextResponse.redirect(
-      new URL("/login?error=oidc_start_failed", getPublicOrigin(request)),
+    return withStartHeaders(
+      NextResponse.redirect(new URL("/login?error=oidc_start_failed", getPublicOrigin(request))),
     );
   }
 }

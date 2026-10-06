@@ -182,17 +182,27 @@ describe("switch on", () => {
     expect(await b.resolveSsoUser(oidc("other"))).toBeNull(); // consumed
   });
 
+  // YAN-359: sessionClaims no longer links or falls back to the owner for SSO.
+  // The setup-token proof links through resolveSsoUser (inside admission); the
+  // session then needs the admitted user id and an identity linked to it.
   it("a linked owner identity signs in as the owner with two users; unlinked is refused", async () => {
-    await legacy({});
+    // A real password hash, so the owner isn't flagged for rotation: a flagged
+    // owner never gets SSO claims either (YAN-358).
+    await legacy({ password: bcrypt.hashSync("owner-pass", 4) });
     await b.ensureOwnerBootstrap();
     const owner = await db.getOwnerUnscoped();
     const { token } = await b.mintSetupToken();
     await db.createUserUnscoped({ email: "b@corp.test", instanceRole: "user" });
     expect(await s.sessionClaims("oidc", oidc("stranger"))).toBeNull();
-    expect(await s.sessionClaims("oidc", oidc("a"), { setupToken: token })).toMatchObject({
+    expect(await b.resolveSsoUser(oidc("a"), { setupToken: token })).toBe(owner.id);
+    expect(await s.sessionClaims("oidc", oidc("a"), { admittedUserId: owner.id })).toMatchObject({
       sub: owner.id,
       amr: ["oidc"],
     });
+    // An admitted id the identity isn't linked to never mints claims.
+    expect(
+      await s.sessionClaims("oidc", oidc("stranger"), { admittedUserId: owner.id }),
+    ).toBeNull();
   });
 
   it("refuses login-off with two users, and a second user while login is off", async () => {
