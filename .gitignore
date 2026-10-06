@@ -36,7 +36,7 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
-# .env.local holds 1Password op:// references for `op run`; never commit it
+# .env.local holds local secrets (plain values or 1Password op:// refs) for scripts/with-env.sh; never commit it
 # built-in OAuth defaults, generated at build time by scripts/write-oauth-clients.cjs
 /oauth-clients.json
 
