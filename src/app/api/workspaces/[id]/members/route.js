@@ -25,6 +25,7 @@ const ERRORS = {
   NOT_FOUND: [404, "Workspace not found"],
   FORBIDDEN: [403, "Forbidden"],
   IDP_MANAGED: [409, "Membership is managed by SSO sync"],
+  MEMBERSHIP_EXISTS: [409, "User is already a member"],
   LAST_MANAGER: [409, "Workspace needs at least one manager"],
   PERSONAL_WORKSPACE: [400, "Personal workspaces can't have members"],
   INVALID: [400, "Invalid request"],

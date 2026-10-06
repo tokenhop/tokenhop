@@ -8,7 +8,7 @@ Server-side user lifecycle, workspace membership, invitation, acceptance, and ow
 
 - Blocked live inviter and pending-user unauthorized operations.
 - Enforced streamed request byte cap.
-- Made ownership transfer require `currentPassword`; SSO-only owner transfer fails closed.
+- Made ownership transfer require `currentPassword`; SSO-only owners transfer through a forced fresh OIDC/SAML re-auth (`/api/users/ownership-transfer/sso`) that never mints a session.
 - Encrypted SSO invitation state cookie, cleaned it early, and required verified SAML email where email binding applies.
 - Counted pending managers in lifecycle checks.
 - Bound SSO-only invitation acceptance to verified callback identity.

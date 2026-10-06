@@ -131,8 +131,14 @@ export async function acceptPasswordInvitation({
   if (!/^[^\s@]+@[^\s@]+$/.test(mail)) throw bad();
   const name = text(username, 128);
   const display = text(displayName, 128);
+  // Checked before any token lookup, so a policy error reveals nothing about
+  // the invitation; the route maps it to a 400 without spending limiter budget.
   const pwError = validateNewPassword(password);
-  if (pwError) throw new TenancyError("INVALID", pwError.error);
+  if (pwError) {
+    const err = new TenancyError("PASSWORD_POLICY", pwError.error);
+    err.policy = pwError.code;
+    throw err;
+  }
 
   const db = await getAdapter();
   // Cheap pre-checks so junk tokens never cost a bcrypt hash; re-run inside the tx.

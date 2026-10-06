@@ -32,7 +32,7 @@ const ERRORS = {
   REAUTH_REQUIRED: [401, "Current password is required to transfer ownership", "reauth_required"],
   REAUTH_UNSUPPORTED: [
     403,
-    "This owner signs in with single sign-on; password transfer is unavailable",
+    "This owner signs in with single sign-on; use POST /api/users/ownership-transfer/sso",
     "reauth_unsupported",
   ],
   INVALID: [409, "Invalid transfer target", "invalid_target"],

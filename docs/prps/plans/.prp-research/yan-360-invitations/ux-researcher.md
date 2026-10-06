@@ -10,11 +10,11 @@ Today no invite/user APIs exist: one shared admin credential, no `users` table r
 
 Minimum complete API surface:
 
-- `POST /api/invites` (capability `workspace.members.manage` in target workspace; admin/owner any workspace) — body: `workspaceId`, `role` (owner|manager|member|viewer), optional `email` binding. Returns **token once** (raw) + public metadata (id, workspace, role, expiresAt). List/detail never return token.
-- `GET /api/invites` — rows the caller may manage only; token field absent, only `tokenLast4`/`tokenHint` for identification (same prefix-identification pattern as YAN-363 API keys).
-- `DELETE /api/invites/:id` — revoke. Idempotent: second revoke returns 200 (not 404) so double-click/retry is safe.
-- `POST /api/invites/accept` — public route, rate-limited (IP + token-hash key), accepts `{ token, password? }` for password accounts, or `{ token }` inside an SSO session to link identity with `source='invite'`. Same response shape for invalid/expired/revoked (no existence oracle).
-- Admin lifecycle (`instance.users.manage`): `GET /api/users` (paginated list), `POST /api/users/:id/approve`, `PATCH /api/users/:id` (role), `POST /api/users/:id/disable|enable`, `DELETE /api/users/:id`, `POST /api/users/ownership-transfer` (owner only + re-auth).
+- `POST /api/workspaces/{workspaceId}/invitations` (capability `workspace.members.manage` on the exact URL workspace; instance admin/owner via `instance.users.manage` on any shared workspace) — body: `role` (`manager`|`member`|`viewer`; `manager` needs workspace owner or instance admin), optional `email` binding. Returns **token once** (raw) + public metadata (id, workspace, role, expiresAt). List/detail never return token or hash.
+- `GET /api/workspaces/{workspaceId}/invitations` — rows for that workspace, for callers who may manage it; token/hash absent, derived `state` (`live`, `expired`, `consumed`, `revoked`) for identification.
+- `DELETE /api/workspaces/{workspaceId}/invitations/{inviteId}` — revoke. Idempotent: second revoke returns success (not 404) so double-click/retry is safe.
+- `POST /api/invitations/accept` — public route, rate-limited (IP + token-hash key), accepts `{ token, email, username, displayName, password }` for password accounts, or `{ token }` inside an authenticated session to add membership. Same response shape for invalid/expired/revoked (no existence oracle).
+- Admin lifecycle (`instance.users.manage`): `GET /api/users` (paginated list), `PATCH /api/users/{userId}` (`instanceRole` or `status` — approve/role/disable/enable), `DELETE /api/users/{userId}`, `POST /api/users/ownership-transfer` (owner only + current-password re-auth).
 - Membership (`workspace.members.manage`): `POST/DELETE /api/workspaces/:id/members`, `PATCH role`, enforcing last-manager/owner invariants via existing `assertNotLastManager`.
 
 Judgment calls:
@@ -30,13 +30,13 @@ Judgment calls:
 ### Primary flows (API contract level; YAN-373 renders these)
 
 1. **Admin invites by email.**
-   - `POST /api/invites { workspaceId, role: "member", email: "sam@x.com" }` → `201 { id, workspaceId, role, email, expiresAt, token }` (`token` present only here).
+   - `POST /api/workspaces/{workspaceId}/invitations { role: "member", email: "sam@x.com" }` → `201 { invitation: { id, workspaceId, role, email, expiresAt }, token }` (`token` present only here).
    - Admin copies token into out-of-band channel (email delivery is YAN-373/out-of-scope; API returns token for admin to relay). Future UI shows same `CreatedBanner` show-once pattern as YAN-363.
-   - Invitee `POST /api/invites/accept { token, password }` → account created (`instanceRole: user` or `pending` per JIT default — recommend `user` when arriving via valid invite since admin pre-authorized), membership `{ source: 'invite' }` applied, session cookie set. Response: `{ user, workspaceId }` only.
+   - Invitee `POST /api/invitations/accept { token, email, username, displayName, password }` → account created (approved `instanceRole: user`; token never grants admin/owner), personal workspace, membership `{ source: 'invite' }` applied. Response is a safe receipt `{ user, workspaceId }` only — no session cookie; invitee logs in normally.
 2. **Open invite (no email binding, household hand-out).**
    - Same create without `email`. Anyone with token accepts. Revoke any time. Future UI must warn "anyone with link can join" (same affordance as share-link warnings).
-3. **SSO link via invite.**
-   - Invitee SSO-logs-in first (JIT → `pending`), then `POST /api/invites/accept { token }` with session cookie → links membership `source='invite'`, upgrades from `pending` if invite grants access. Email-bound invite + SSO: match on verified IdP email only as authorization check, never as identity link key (ADR-0003: link by `(issuer, sub)`).
+3. **SSO acceptance via invite.**
+   - Invitee POSTs `{ invitationToken }` to `/api/auth/oidc/start` or `/api/auth/saml/start`; server binds sealed proof to provider flow. Callback/ACS verifies the SSO identity and invite, applies membership, and returns the provider's normal login result. Email-bound invites require verified IdP email; identity linking uses `(provider, issuer, subject)`, never email. Pending users cannot use the existing-user acceptance path.
 4. **Approve pending.**
    - `POST /api/users/:id/approve { instanceRole: "user" }` → user active. Pending users hold no session beyond awaiting-approval (ADR-0002).
 5. **Disable / enable.**
@@ -51,7 +51,7 @@ Judgment calls:
 
 ### Alternative / edge flows
 
-- **Expired invite (7d):** accept → generic 400 "invalid or expired". List shows `Expired` pill (future UI); no resend endpoint in minimum — admin creates new invite, revokes old. (Recommend `POST /api/invites/:id/resend|rotate` as follow-up.)
+- **Expired invite (7d):** accept → generic 400 "invalid or expired". List shows `Expired` pill (future UI); no resend endpoint in minimum — admin creates new invite, revokes old. (Recommend resend/rotate as follow-up.)
 - **Revoke then accept:** same generic 400. Revoke is idempotent 200.
 - **Double accept race:** first wins 200+session; second gets generic 400 (token consumed). No partial account.
 - **Manager invites into another workspace:** 403 (capability check is per-workspace `workspace.members.manage`). Cross-workspace invite IDs are 404 to non-members (invisible, not forbidden-looking).
@@ -120,7 +120,7 @@ Privacy rules (binding): token/hash/password never in list/detail/audit/log; aud
 
 ## Performance UX
 
-- Invite accept is one transactional POST (hash-compare + consume + create membership + optional user create). No extra round-trips; session cookie set on same response.
+- Invite accept is one transactional POST (hash-compare + consume + create membership + optional user create). No extra round-trips; response is a safe receipt and the invitee logs in normally — no session cookie set on accept.
 - Lists paginated (cursor, `limit` default 50, max 200) — user tables grow; offset pagination drifts under concurrent approve/delete.
 - `sv` cache TTL ≤5s means disable/revoke lands on next request without a sessions table (ADR-0004); future UI needs no "force logout" spinner — one status refetch suffices.
 - Rate limiter bounded (`MAX_ENTRIES` pattern from `loginLimiter.js`) keyed IP + token-hash so random-token probing can't grow memory.
@@ -170,7 +170,7 @@ Consensus followed: **hash the token, show once, fail generically, revoke visibl
 
 ## Open Questions
 
-1. Invite default `instanceRole` on accept: `user` (pre-authorized by inviter) vs `pending` (JIT default)? Recommendation: `user` when invite valid — inviter already approved — but needs maintainer confirm (touches YAN-359 JIT default).
+1. Invite default instance role on password/SSO acceptance: approved `user`; invitations never grant `admin`/`owner`. SSO invitation admission happens only through verified callback intent; pending users cannot use generic existing-user acceptance.
 2. Should creating a duplicate active invite revoke the old one, or allow multiples? Recommendation: revoke prior (prevents token pile-up); confirm.
 3. Token hash algorithm: plain SHA-256 vs HMAC-with-master-key (ADR-0005 uses HMAC for low-entropy legacy keys; invite tokens are ≥128-bit so plain SHA-256 suffices — confirm security lane agrees).
 4. `tokenHint` format: last-4 vs `INV-…ab12`? Recommendation: last-4 of hex, prefixed `invite_`, mirroring `th_` prefix display rule.

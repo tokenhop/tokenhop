@@ -491,8 +491,8 @@ EXPECT: Full suite + known-fails gate green.
 Switch-state legs mirror CI: `.github/workflows/ci.yml` sets `TOKENHOP_MULTI_USER: ${{ matrix.multi_user }}` (`off`/`on` matrix legs). Reproduce locally:
 
 ```bash
-TOKENHOP_MULTI_USER= npx vitest run -c tests/vitest.config.js tests/unit/invitations.test.js
-TOKENHOP_MULTI_USER=1 npx vitest run -c tests/vitest.config.js tests/unit/invitations.test.js
+TOKENHOP_MULTI_USER=off npx vitest run -c tests/vitest.config.js tests/unit/invitations.test.js
+TOKENHOP_MULTI_USER=on npx vitest run -c tests/vitest.config.js tests/unit/invitations.test.js
 ```
 
 ### Full Test Suite

@@ -94,6 +94,7 @@ describe("requireMultiUser", () => {
       "src/app/api/invitations/accept/route.js",
       "src/app/api/users/[id]/route.js",
       "src/app/api/users/ownership-transfer/route.js",
+      "src/app/api/users/ownership-transfer/sso/route.js",
       "src/app/api/users/route.js",
       "src/app/api/workspaces/[id]/invitations/[inviteId]/route.js",
       "src/app/api/workspaces/[id]/invitations/route.js",

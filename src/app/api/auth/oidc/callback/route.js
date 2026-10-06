@@ -13,6 +13,12 @@ import {
   verifyOidcIdToken,
 } from "@/lib/auth/oidc";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import {
+  OWNER_TRANSFER_COOKIE,
+  openOwnerTransferState,
+} from "@/lib/auth/ownershipTransferState.js";
+import { completeSsoOwnershipTransfer } from "@/lib/users/ssoOwnershipTransfer.js";
+import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
 import { audit } from "@/lib/users/audit";
 import { sessionClaims } from "@/lib/users/session";
 import { SETUP_TOKEN_COOKIE, takeSetupToken } from "@/lib/users/bootstrap";
@@ -20,6 +26,7 @@ import { getSettings } from "@/lib/db/index.js";
 import { isUserSecurityEnforced } from "@/lib/users/securityState";
 import { readGroupsClaim, ssoAdmit, SsoAdmissionError } from "@/lib/users/ssoProvisioning";
 import {
+  accountKey,
   checkLoginLocks,
   recordLoginFail,
   clearAccount,
@@ -37,7 +44,79 @@ function clearOidcCookies(cookieStore) {
   for (const name of Object.values(OIDC_COOKIE_NAMES)) cookieStore.delete(name);
 }
 
+// YAN-360: owner re-auth for ownership transfer. Runs before any login logic
+// and never mints a session or admits a user; any defect fails closed.
+// Only a cookie that opens, is OIDC, and matches this callback's `state` claims
+// the request; anything else (stale, tampered, abandoned) is dropped so an
+// unrelated normal login proceeds untouched.
+async function claimOwnerTransfer(request, cookieStore) {
+  const sealed = cookieStore.get(OWNER_TRANSFER_COOKIE)?.value;
+  if (sealed === undefined) return null;
+  cookieStore.delete(OWNER_TRANSFER_COOKIE);
+  const st = await openOwnerTransferState(sealed);
+  const state = new URL(request.url).searchParams.get("state");
+  if (!st || st.provider !== "oidc" || !st.state || !state || state !== st.state) return null;
+  return st;
+}
+
+async function completeOwnerTransfer(request, cookieStore, st) {
+  const origin = getPublicOrigin(request);
+  const ip = getClientIp(request);
+  const account = accountKey({ userId: st.ownerId });
+  try {
+    if (!(await isMultiUserEnabled())) throw new Error("multi_user_disabled");
+    if (checkLoginLocks({ ip, account }).locked) throw new Error("locked");
+    const url = new URL(request.url);
+    const code = url.searchParams.get("code");
+    if (!st.nonce || !st.verifier || !code || url.searchParams.get("error")) {
+      throw new Error("invalid_transfer_callback");
+    }
+    const config = await getOidcRuntimeConfig();
+    if (!config) throw new Error("oidc_not_configured");
+    const discovery = await fetchOidcDiscovery(config.issuerUrl);
+    const tokenData = await exchangeOidcCode({
+      tokenEndpoint: discovery.token_endpoint,
+      clientId: config.clientId,
+      clientSecret: config.clientSecret,
+      code,
+      redirectUri: `${origin}/api/auth/oidc/callback`,
+      codeVerifier: st.verifier,
+    });
+    if (!tokenData.id_token) throw new Error("missing_id_token");
+    const payload = await verifyOidcIdToken({
+      idToken: tokenData.id_token,
+      issuer: discovery.issuer || config.issuerUrl,
+      audience: config.clientId,
+      jwksUri: discovery.jwks_uri,
+      nonce: st.nonce,
+      clientSecret: config.clientSecret,
+      allowedAlgs: discovery.id_token_signing_alg_values_supported,
+    });
+    // auth_time is mandatory: without it the IdP may have reused an old session.
+    if (!Number.isInteger(payload.auth_time)) throw new Error("missing_auth_time");
+    // The repo audits the successful swap.
+    await completeSsoOwnershipTransfer({
+      state: st,
+      provider: "oidc",
+      issuer: payload.iss,
+      subject: payload.sub,
+      authenticatedAtMs: payload.auth_time * 1000,
+    });
+  } catch (err) {
+    recordLoginFail({ ip, account });
+    console.warn("[OIDC] ownership re-auth failed:", err?.code || "error");
+    return NextResponse.redirect(new URL("/login?error=ownership_reauth_failed", origin));
+  }
+  clearAccount(account);
+  // Both owners' sessions were revoked by the sessionVersion bump.
+  cookieStore.delete("auth_token");
+  return NextResponse.redirect(new URL("/login?transferred=1", origin));
+}
+
 export async function GET(request) {
+  const transferStore = await cookies();
+  const transfer = await claimOwnerTransfer(request, transferStore);
+  if (transfer) return completeOwnerTransfer(request, transferStore, transfer);
   let enforced;
   try {
     enforced = await isUserSecurityEnforced();

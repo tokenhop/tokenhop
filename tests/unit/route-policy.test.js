@@ -117,6 +117,13 @@ const YAN360_USER_ROUTES = new Set([
   "/api/users",
   "/api/users/[id]",
   "/api/users/ownership-transfer",
+  "/api/users/ownership-transfer/sso",
+]);
+// YAN-360 invitation management: scoped (not alwaysProtected), but the
+// handlers accept only a browser session, so the CLI token is refused.
+const YAN360_SESSION_ONLY_ROUTES = new Set([
+  "/api/workspaces/[id]/invitations",
+  "/api/workspaces/[id]/invitations/[inviteId]",
 ]);
 // YAN-360 invite accept is new and public by design: the token is the
 // authorization (still hidden with the switch off via multiUserOnly).
@@ -233,7 +240,8 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
       expect(cliAllowed, route).toBe(
         !MOVED_TO_GUARD.has(route) &&
           !YAN358_PASSWORD_ROUTES.has(route) &&
-          !YAN360_USER_ROUTES.has(route),
+          !YAN360_USER_ROUTES.has(route) &&
+          !YAN360_SESSION_ONLY_ROUTES.has(route),
       );
     }
   });

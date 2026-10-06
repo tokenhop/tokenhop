@@ -89,6 +89,11 @@ export const ROUTE_POLICY = {
     alwaysProtected: true,
     cliAllowed: false,
   }),
+  "/api/users/ownership-transfer/sso": multiUser({
+    cap: { POST: "instance.ownership.transfer" },
+    alwaysProtected: true,
+    cliAllowed: false,
+  }),
   "/api/users/[id]": multiUser({
     cap: { PATCH: "instance.users.manage", DELETE: "instance.users.manage" },
     alwaysProtected: true,
@@ -101,10 +106,13 @@ export const ROUTE_POLICY = {
     scoped({ cap: { PATCH: "workspace.members.manage", DELETE: "workspace.members.manage" } }),
   ),
   "/api/workspaces/[id]/invitations": multiUser(
-    scoped({ cap: { GET: "workspace.members.manage", POST: "workspace.members.manage" } }),
+    scoped({
+      cap: { GET: "workspace.members.manage", POST: "workspace.members.manage" },
+      cliAllowed: false,
+    }),
   ),
   "/api/workspaces/[id]/invitations/[inviteId]": multiUser(
-    scoped({ cap: { DELETE: "workspace.members.manage" } }),
+    scoped({ cap: { DELETE: "workspace.members.manage" }, cliAllowed: false }),
   ),
   "/api/invitations/accept": multiUser(PUBLIC),
   "/api/health": PUBLIC,

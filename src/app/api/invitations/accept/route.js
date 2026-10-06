@@ -85,6 +85,7 @@ export async function POST(request) {
   } catch (err) {
     if (err instanceof PayloadTooLarge)
       return json({ error: "Payload too large", code: "payload_too_large" }, 413);
+    if (err?.code === "PASSWORD_POLICY") return json({ error: err.message, code: err.policy }, 400);
     if (err?.code === "SINGLE_USER_MODE")
       return json({ error: "Turn on login before adding users", code: "single_user_mode" }, 409);
     if (

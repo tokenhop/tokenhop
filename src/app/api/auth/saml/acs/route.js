@@ -11,8 +11,15 @@ import {
   pickSamlGroups,
   SAML_INVITE_COOKIE,
   validateSamlResponse,
+  verifyFreshSamlAuthnInstant,
 } from "@/lib/auth/saml.js";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import {
+  OWNER_TRANSFER_COOKIE,
+  openOwnerTransferState,
+} from "@/lib/auth/ownershipTransferState.js";
+import { completeSsoOwnershipTransfer } from "@/lib/users/ssoOwnershipTransfer.js";
+import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
 import { audit } from "@/lib/users/audit";
 import { sessionClaims } from "@/lib/users/session";
 import { SETUP_TOKEN_COOKIE, takeSetupToken } from "@/lib/users/bootstrap";
@@ -28,6 +35,7 @@ import {
   checkLoginLocks,
   recordLoginFail,
   clearAccount,
+  accountKey,
 } from "@/lib/auth/loginLimiter";
 
 const ADMISSION_ERRORS = {
@@ -48,8 +56,52 @@ export async function POST(request) {
   const storedRequestId = cookieStore.get("saml_state")?.value || "";
   // YAN-360: captured for later; opened only after the assertion verifies.
   const sealedInvite = cookieStore.get(SAML_INVITE_COOKIE)?.value;
+  // YAN-360: a transfer claims this ACS only when its cookie opens as a SAML
+  // flow and no normal login is in flight (SAML start drops the transfer
+  // cookie; transfer start drops saml_state). A stale/tampered one is dropped
+  // and the normal login proceeds untouched.
+  const sealedTransfer = cookieStore.get(OWNER_TRANSFER_COOKIE)?.value;
+  const opened = sealedTransfer ? await openOwnerTransferState(sealedTransfer) : null;
+  const transfer =
+    opened?.provider === "saml" && opened.requestId && !storedRequestId ? opened : null;
+  cookieStore.delete(OWNER_TRANSFER_COOKIE);
   cookieStore.delete("saml_state");
   cookieStore.delete(SAML_INVITE_COOKIE);
+
+  // Runs before any login logic, never mints a session; once claimed, any
+  // defect fails closed (no login fallback).
+  if (transfer) {
+    const st = transfer;
+    const account = accountKey({ userId: st.ownerId });
+    const failed = () => {
+      recordLoginFail({ ip, account });
+      return NextResponse.redirect(new URL("/login?error=ownership_reauth_failed", origin));
+    };
+    try {
+      if (!(await isMultiUserEnabled())) return failed();
+      if (checkLoginLocks({ ip, account }).locked) return failed();
+      if (!resolveAuthModes(settings).saml || !isSamlConfigured(settings)) return failed();
+      const SAMLResponse = (await request.formData()).get("SAMLResponse");
+      if (!SAMLResponse) return failed();
+      // Signature and InResponseTo are checked against this flow's request ID.
+      const profile = await validateSamlResponse(request, { SAMLResponse }, st.requestId, settings);
+      const { authnInstant } = verifyFreshSamlAuthnInstant(profile, { startedAt: st.startedAt });
+      await completeSsoOwnershipTransfer({
+        state: st,
+        provider: "saml",
+        issuer: profile.issuer || "",
+        subject: profile.nameID,
+        authenticatedAtMs: authnInstant,
+      });
+    } catch (err) {
+      console.warn("[SAML] ownership re-auth failed:", err?.code || "error");
+      return failed();
+    }
+    clearAccount(account);
+    // Both owners' sessions were revoked by the sessionVersion bump.
+    cookieStore.delete("auth_token");
+    return NextResponse.redirect(new URL("/login?transferred=1", origin));
+  }
 
   let enforced;
   try {

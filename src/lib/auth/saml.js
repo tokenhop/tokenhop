@@ -108,7 +108,7 @@ export function getSamlBaseUrl(request, settings) {
   return "http://localhost:20128";
 }
 
-export function createSamlInstance(settings, origin) {
+export function createSamlInstance(settings, origin, { forceAuthn = false } = {}) {
   const cert = formatX509Certificate(settings?.samlCert || "") || DUMMY_FALLBACK_CERT;
   const callbackUrl = `${origin}/api/auth/saml/acs`;
   return new SAML({
@@ -125,6 +125,7 @@ export function createSamlInstance(settings, origin) {
     validateInResponseTo: ValidateInResponseTo.always,
     requestIdExpirationPeriodMs: SAML_REQUEST_TTL_MS,
     cacheProvider: requestIdCache,
+    forceAuthn,
   });
 }
 
@@ -132,11 +133,12 @@ export function createSamlInstance(settings, origin) {
  * Builds SAML AuthnRequest redirect URL and returns { authorizeUrl, requestId }.
  * @param {Request} request
  * @param {object} settings
+ * @param {object} [options] - { forceAuthn } (default false: regular login)
  * @returns {Promise<{ authorizeUrl: string, requestId: string }>}
  */
-export async function buildSamlAuthorizeUrl(request, settings) {
+export async function buildSamlAuthorizeUrl(request, settings, { forceAuthn = false } = {}) {
   const origin = getSamlBaseUrl(request, settings);
-  const samlInstance = createSamlInstance(settings, origin);
+  const samlInstance = createSamlInstance(settings, origin, { forceAuthn });
 
   const xml = await samlInstance.generateAuthorizeRequestAsync(false, false);
   const match = xml.match(/ID="([^"]+)"/);
@@ -145,6 +147,68 @@ export async function buildSamlAuthorizeUrl(request, settings) {
   const authorizeUrl = await samlInstance._requestToUrlAsync(xml, null, "authorize", {});
 
   return { authorizeUrl, requestId };
+}
+
+/**
+ * Builds a ForceAuthn=true SAML AuthnRequest for fresh ownership reauth.
+ * The returned requestId must be bound to the transfer session by the caller;
+ * the ACS handler later proves freshness against the validated assertion.
+ * @param {Request} request
+ * @param {object} settings
+ * @returns {Promise<{ authorizeUrl: string, requestId: string }>}
+ */
+export async function buildSamlReauthAuthorizeUrl(request, settings) {
+  return buildSamlAuthorizeUrl(request, settings, { forceAuthn: true });
+}
+
+const XS_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * Proves a validated SAML assertion carries a fresh AuthnInstant. Reads
+ * profile.getAssertion() (node-saml's xml2js parse of the signature-verified
+ * assertion: { Assertion: { AuthnStatement: [{ $: { AuthnInstant } }] } }), never the raw
+ * POST body. Exactly one AuthnStatement with a well-formed xs:dateTime is required; missing,
+ * duplicate or malformed fails closed. Window: startedAt-60s <= AuthnInstant <= now+60s.
+ * Issuer/NameID identity checks are the caller's responsibility.
+ * @param {object} profile - validated SAML profile (must expose getAssertion)
+ * @param {object} timing - { startedAt: number, now?: number } epoch ms
+ * @returns {{ authnInstant: number }} throws on missing/ambiguous/stale/out-of-window
+ */
+export function verifyFreshSamlAuthnInstant(
+  profile,
+  { startedAt, now = Date.now(), maxAgeMs = 300_000 },
+) {
+  if (typeof profile?.getAssertion !== "function") {
+    throw new Error("Fresh reauth proof unavailable: validated assertion missing");
+  }
+  const assertion = profile.getAssertion()?.Assertion;
+  const statements = assertion?.AuthnStatement;
+  if (!Array.isArray(statements) || statements.length === 0) {
+    throw new Error("Fresh reauth proof missing: AuthnStatement absent");
+  }
+  if (statements.length !== 1) {
+    throw new Error("Fresh reauth proof ambiguous: multiple AuthnStatements");
+  }
+  const raw = statements[0]?.$?.AuthnInstant;
+  if (typeof raw !== "string" || !XS_DATETIME_RE.test(raw)) {
+    throw new Error("Fresh reauth proof invalid: AuthnInstant missing or malformed");
+  }
+  const authnInstant = Date.parse(raw);
+  if (Number.isNaN(authnInstant)) {
+    throw new Error("Fresh reauth proof invalid: AuthnInstant missing or malformed");
+  }
+
+  const skewMs = 60_000;
+  if (
+    !Number.isFinite(startedAt) ||
+    !Number.isFinite(now) ||
+    authnInstant < startedAt - skewMs ||
+    authnInstant > now + skewMs ||
+    now - authnInstant > maxAgeMs
+  ) {
+    throw new Error("Fresh reauth proof rejected: AuthnInstant outside freshness window");
+  }
+  return { authnInstant };
 }
 
 /**

@@ -169,10 +169,13 @@ describe("OIDC invitation start (POST)", () => {
     const res = await oidcStart.POST(
       post("http://localhost/api/auth/oidc/start", { invitationToken: TOKEN }),
     );
-    expect(res.status).toBe(307);
-    expect(res.location).toContain(`${ISSUER}/authorize`);
-    expect(res.location).not.toContain(TOKEN);
+    expect(res.status).toBe(200);
+    expect(res.location).toBeUndefined();
+    expect(res.body.redirectUrl).toContain(`${ISSUER}/authorize`);
+    expect(res.body.redirectUrl).not.toContain(TOKEN);
+    expect(JSON.stringify(res.body)).not.toContain(TOKEN);
     expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
     const sealed = mocks.cookies.get("oidc_invite");
     expect(sealed).toBeTruthy();
     expect(sealed).not.toContain(TOKEN); // JWT payload is base64: raw token not visible as-is
@@ -315,9 +318,12 @@ describe("SAML invitation start + ACS", () => {
     const res = await samlStart.POST(
       post("http://localhost/api/auth/saml/start", { invitationToken: TOKEN }),
     );
-    expect(res.status).toBe(307);
-    expect(res.location).not.toContain(TOKEN);
+    expect(res.status).toBe(200);
+    expect(res.location).toBeUndefined();
+    expect(res.body.redirectUrl).not.toContain(TOKEN);
+    expect(JSON.stringify(res.body)).not.toContain(TOKEN);
     expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(mocks.cookies.get("saml_state")).toBe("req-1");
     expect(mocks.cookies.get("saml_invite")).toBeTruthy();
 

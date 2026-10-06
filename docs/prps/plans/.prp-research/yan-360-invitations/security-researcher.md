@@ -42,7 +42,8 @@ cookie session vs gateway key vs CLI token; personal workspace (admins see
 metadata only, never secrets/use) vs shared workspace; manual/invite vs
 `source='idp'` rows (IdP sync owns only its rows).
 
-Invite lifecycle: create (admin or ws owner/manager, own workspace only,
+Invite lifecycle: create (ws owner/manager in that workspace, or instance
+admin/owner with `instance.users.manage` in any shared workspace;
 pre-assigned role ≤ caller's grantable set) → store hash only, return raw
 once → accept within 7 days: (a) new password account, or (b) authenticated
 SSO identity links `(provider, issuer, subject)` after SSO login, never by
@@ -76,10 +77,11 @@ per-device revoke (deferred per ADR-0004), SSO JIT proper (YAN-359).
 3. **Privilege escalation via role fields.** Caller passes
    `instanceRole`, `role: 'owner'` on another workspace, or invites into a
    workspace they don't manage. Control: invite body carries only
-   `{ workspaceId, role }` with role ∈ {member, viewer} (+manager only if
-   caller is ws owner/admin and target is shared); no instance-role field;
-   handler verifies caller membership + `workspace.members.manage` live;
-   personal workspaces reject invites. Test: manager→other-workspace 403;
+   `{ workspaceId, role }` with role ∈ {manager, member, viewer}; no
+   instance-role field; handler verifies live workspace management authority
+   (`workspace.members.manage` on the exact workspace), with an exception for
+   instance admins/owners holding `instance.users.manage` on any shared
+   workspace; personal workspaces reject invites. Test: manager→other-workspace 403;
    member/viewer/pending create 403; `instanceRole` in body ignored/rejected.
 4. **SSO accept links by email.** Email-takeover hands over invited slot.
    Control: link only by `(provider, issuer, subject)` UNIQUE; email binding

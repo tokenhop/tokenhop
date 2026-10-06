@@ -84,6 +84,21 @@ describe("invitationsRepo", () => {
     ).toBe("PERSONAL_WORKSPACE");
   });
 
+  it("manager of workspace A cannot mint into workspace B; no invitation inserted", async () => {
+    const { shared } = await tenancy();
+    const ownerB = await repo.createUserUnscoped({ email: "ob@i.test", instanceRole: "user" });
+    const sharedB = await repo.createSharedWorkspace(ctxOf(ownerB), { name: "B" });
+    const mgr = await repo.createUserUnscoped({ email: "m2@i.test", instanceRole: "user" });
+    const { addMembershipUnscoped } = await import("@/lib/db/repos/membershipsRepo.js");
+    db.transaction(() =>
+      addMembershipUnscoped(db, { workspaceId: shared.id, userId: mgr.id, role: "manager" }),
+    );
+    expect(
+      await acode(repo.createInvitation(ctxOf(mgr), { workspaceId: sharedB.id, role: "member" })),
+    ).toBe("NOT_FOUND");
+    expect(db.get(`SELECT COUNT(*) AS n FROM invitations`).n).toBe(0);
+  });
+
   it("pending and plain-member actors are forbidden; authority is live", async () => {
     const { owner, other, shared } = await tenancy();
     const pending = await repo.createUserUnscoped({ email: "p@i.test", instanceRole: "pending" });

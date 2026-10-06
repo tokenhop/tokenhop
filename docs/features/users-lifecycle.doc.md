@@ -1,10 +1,10 @@
 # User lifecycle and workspace invitations
 
-Server-side APIs for inviting users, managing instance accounts and workspace membership. Requires `TOKENHOP_MULTI_USER=true`; every feature route is hidden with 404 while disabled. No invitation email delivery or UI exists. Operators relay invitation tokens out of band.
+Server-side APIs for inviting users, managing instance accounts and workspace membership. Requires `TOKENHOP_MULTI_USER=on`; every feature route is hidden with 404 while disabled. No invitation email delivery or UI exists. Operators relay invitation tokens out of band.
 
 ## Requirements
 
-- Enable multi-user mode with `TOKENHOP_MULTI_USER=true` and require login before onboarding additional users. Password invitation acceptance refuses creation of a second account while login is disabled.
+- Enable multi-user mode with `TOKENHOP_MULTI_USER=on` and require login before onboarding additional users. Password invitation acceptance refuses creation of a second account while login is disabled.
 - Use authenticated browser sessions for management. Mutations require same-origin JSON where applicable. Responses use `Cache-Control: no-store`; invitation token responses also set `Referrer-Policy: no-referrer`.
 - Workspaces must be shared workspaces. Personal workspaces cannot have invitations or managed members.
 
@@ -49,7 +49,7 @@ Creates approved `user`, personal workspace, password identity, and invited work
 
 Existing authenticated user sends only `{ "token": "<invitation-token>" }`; session identity determines account, and endpoint adds membership only. Disabled/pending users and existing workspace members cannot accept. Email-bound invitation for existing account requires matching password-account email; SSO accounts use verified SSO acceptance instead.
 
-OIDC/SAML: POST JSON `{ "invitationToken": "<invitation-token>" }` to `/api/auth/oidc/start` or `/api/auth/saml/start`. Start validates and rate-limits request, then carries encrypted, flow-bound invite proof in an HttpOnly cookie; token is not placed in redirect URL. Callback/ACS verifies identity and consumes invite. Email binding requires verified IdP email. Linking uses provider, issuer, and subject—not email. SSO allowed-group checks remain active. Existing membership conflicts rather than overwrites.
+OIDC/SAML: POST JSON `{ "invitationToken": "<invitation-token>" }` to `/api/auth/oidc/start` or `/api/auth/saml/start`. Success answers `200` JSON `{ "redirectUrl": "…" }`; the client navigates to `redirectUrl` itself (fetch cannot follow a cross-site 307). Start validates and rate-limits request, parks encrypted, flow-bound invite proof in an HttpOnly cookie, and never places the token in a redirect URL. Callback/ACS verifies identity and consumes invite. Email binding requires verified IdP email. Linking uses provider, issuer, and subject—not email. SSO allowed-group checks remain active. Existing membership conflicts rather than overwrites.
 
 Invalid, expired, revoked, consumed, or mismatched invitations return generic `400 invite_invalid`; retry requires a new invitation. Requests are rate-limited.
 
@@ -78,7 +78,9 @@ Instance role hierarchy: owner can manage admins and users; admins can manage `u
 { "toUserId": "<uuid>", "currentPassword": "<current-password>" }
 ```
 
-Current password is re-verified in request with login-style rate limiting. Session alone is not proof. Transfer demotes old owner and promotes active approved target atomically; both sessions become invalid. SSO-only owners fail closed with `403 reauth_unsupported`; no SSO re-auth transfer path exists.
+Current password is re-verified in request with login-style rate limiting. Session alone is not proof. Transfer demotes old owner and promotes active approved target atomically; both sessions become invalid. SSO-only owners get `403 reauth_unsupported` here and use the SSO flow instead:
+
+`POST /api/users/ownership-transfer/sso` with `{ "toUserId": "<uuid>", "provider": "oidc" | "saml" }` returns `{ authorizeUrl }`. The browser follows it to a forced fresh IdP login (OIDC `prompt=login` + `max_age=0`, SAML `ForceAuthn`). The callback completes the transfer only when the IdP proves a fresh sign-in (OIDC `auth_time`, SAML `AuthnInstant`, both within 5 minutes and after the start) as the owner's own linked identity, and the owner's session version is unchanged. It never creates a login session; both owners are sent to `/login`. The flow state lives in an encrypted, HttpOnly, 10-minute `owner_transfer_state` cookie. SAML needs HTTPS (the cookie must be `SameSite=None; Secure` to survive the IdP's cross-site POST); over plain HTTP the start answers `409 reauth_unavailable`. A stale or abandoned transfer cookie never blocks a normal SSO login.
 
 ## Data and safety invariants
 

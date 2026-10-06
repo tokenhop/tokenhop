@@ -71,7 +71,7 @@ async function beginLogin(request, inviteProof) {
   await stashSetupToken(request, cookieStore, baseOptions);
   if (sealedInvite) cookieStore.set(OIDC_COOKIE_NAMES.invite, sealedInvite, baseOptions);
 
-  return { response: NextResponse.redirect(authUrl) };
+  return { response: NextResponse.redirect(authUrl), authorizeUrl: authUrl };
 }
 
 export async function GET(request) {
@@ -87,20 +87,30 @@ export async function GET(request) {
   }
 }
 
-// YAN-360: invitation acceptance start. Same-origin POST keeps the invitation
-// token off every URL, the IdP redirect and the Referer; it is parked in the
-// sealed, state-bound oidc_invite cookie for the callback.
+// YAN-360: invitation acceptance start. Same-origin JSON POST keeps the
+// invitation token off every URL, the IdP redirect and the Referer; it is parked
+// in the sealed, state-bound oidc_invite cookie for the callback. fetch cannot
+// follow a cross-site 307 (it would also replay the token body to the IdP), so
+// success answers 200 JSON and the client navigates to `redirectUrl` itself.
+function noStoreJson(body, status = 200) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Referrer-Policy", "no-referrer");
+  return response;
+}
+
 export async function POST(request) {
   try {
     const guard = await readInviteStartBody(request);
     if (guard.response) return guard.response;
-    const { response } = await beginLogin(request, guard.invitationToken);
-    response.headers.set("Referrer-Policy", "no-referrer");
-    return response;
+    const { authorizeUrl } = await beginLogin(request, guard.invitationToken);
+    if (!authorizeUrl) {
+      // Not configured: fixed safe failure, never a cross-site POST redirect.
+      return noStoreJson({ error: "SSO is not configured", code: "oidc_not_configured" }, 400);
+    }
+    return noStoreJson({ redirectUrl: String(authorizeUrl) });
   } catch (error) {
     console.warn("[OIDC] invitation start failed:", error?.message || error);
-    return withStartHeaders(
-      NextResponse.redirect(new URL("/login?error=oidc_start_failed", getPublicOrigin(request))),
-    );
+    return noStoreJson({ error: "SSO start failed", code: "oidc_start_failed" }, 500);
   }
 }

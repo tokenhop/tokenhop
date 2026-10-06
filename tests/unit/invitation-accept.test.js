@@ -60,6 +60,21 @@ describe("acceptPasswordInvitation", () => {
     ).not.toBeNull();
   });
 
+  it("weak password fails with PASSWORD_POLICY before the invite is touched", async () => {
+    const { owner, shared } = await tenancy();
+    const { invitation, token } = await invite(owner, shared, { email: "weak@x.io" });
+    const accept = await import("@/lib/users/invitationAccept.js");
+    const err = await accept
+      .acceptPasswordInvitation({ token, email: "weak@x.io", password: "short" })
+      .catch((e) => e);
+    expect(err.code).toBe("PASSWORD_POLICY");
+    expect(err.policy).toBe("password_too_short");
+    expect(
+      db.get(`SELECT consumedAt FROM invitations WHERE id = ?`, [invitation.id]).consumedAt,
+    ).toBeNull();
+    expect(db.get(`SELECT 1 AS x FROM users WHERE email = ?`, ["weak@x.io"])).toBeUndefined();
+  });
+
   it("reuse of a consumed token fails generically and creates no extra users", async () => {
     const { owner, shared } = await tenancy();
     const { token } = await invite(owner, shared, { email: "a@x.io" });
