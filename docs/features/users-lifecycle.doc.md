@@ -8,6 +8,25 @@ Server-side APIs for inviting users, managing instance accounts and workspace me
 - Use authenticated browser sessions for management. Mutations require same-origin JSON where applicable. Responses use `Cache-Control: no-store`; invitation token responses also set `Referrer-Policy: no-referrer`.
 - Workspaces must be shared workspaces. Personal workspaces cannot have invitations or managed members.
 
+## Owner SSO linking
+
+Enabling multi-user mode bootstraps the owner from the existing password account, never from the first SSO login. An SSO identity becomes the owner only through one of:
+
+- **`TOKENHOP_OWNER_EMAIL`**: the first OIDC/SAML login whose id_token carries a matching `email` with `email_verified: true` (OIDC) is linked to the owner. One shot: once claimed, it never links again.
+- **Setup token**: printed to stdout at bootstrap when SSO is configured and `TOKENHOP_OWNER_EMAIL` is unset. Mint a new one with `tokenhop auth setup-token`, then sign in once via `/api/auth/oidc/start?setupToken=<token>` (or `/api/auth/saml/start?setupToken=<token>`). Single use, 60 minutes.
+
+Any other unlinked SSO login is provisioned with `ssoDefaultRole` (default `pending`, shown "an administrator needs to approve your request"), or `admin` when it matches `ssoAdminGroups`. **Linking is permanent:** once an identity is linked to a pending user, later logins return that user, and setting `TOKENHOP_OWNER_EMAIL` or a setup token afterwards has no effect. Approve it with `PATCH /api/users/{userId}`, or delete that user (`DELETE /api/users/{userId}`) and sign in again.
+
+### authentik
+
+authentik's default `email` scope mapping sends `email_verified: false`, so `TOKENHOP_OWNER_EMAIL` never matches. Create a Scope Mapping (Customization → Property Mappings) with scope name `email`:
+
+```python
+return {"email": request.user.email, "email_verified": True}
+```
+
+The `return` is required: a bare expression evaluates to `null` and the claims are silently dropped. Select it under the provider's Scopes in place of the default `email` mapping, and confirm with the provider's **Preview** tab that the payload contains `email` and `email_verified: true`. Only do this when authentik's user emails are trustworthy (admin-managed or verified at enrollment).
+
 ## Invitation API
 
 Management requires a workspace owner/manager on that exact workspace. Active instance admins/owners with `instance.users.manage` can manage invitations and memberships in any shared workspace. Pending users cannot manage invitations. Instance-level authority does not expose personal workspace resources.
