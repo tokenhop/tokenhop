@@ -20,10 +20,8 @@ import {
 } from "../../security/envelope.js";
 import {
   createMigrationContext,
-  decodeCredentialRowSync,
   ensureWorkspaceDekSync,
   parseCredentialBlob,
-  prepareCredentialContext,
 } from "../helpers/credentialStorage.js";
 import { deriveApiKeyHashKey } from "../../security/masterKey.js";
 
@@ -195,29 +193,4 @@ export function encryptCredentialsInTransaction(db, root, { legacyDecrypt } = {}
   setMeta(db, "credentialsKekKid", root.kid);
   setMeta(db, "credentialsCleanupPending", "1");
   return counts;
-}
-
-/**
- * Established-storage startup proof: every stored envelope must authenticate
- * unchanged under the current root (runtime mode also rejects plaintext
- * covered secrets). Read-only; used by activation recovery before readiness.
- * @param {object} db adapter.
- * @param {{kid:string,key:Buffer}} root must match the marker kid.
- */
-export function verifyEncryptedRowsSync(db, root) {
-  const ctx = prepareCredentialContext(db, root);
-  const defaultId = defaultWorkspaceId(db);
-  for (const table of OWNED_TABLES) {
-    for (const row of db.all(`SELECT id, data, workspaceId FROM ${table}`)) {
-      decodeCredentialRowSync(db, row, ctx, { table, mode: "runtime" });
-    }
-  }
-  const settingsRow = db.get(`SELECT id, data FROM settings WHERE id = 1`);
-  if (settingsRow) {
-    decodeCredentialRowSync(db, settingsRow, ctx, {
-      table: "settings",
-      mode: "runtime",
-      workspaceId: defaultId,
-    });
-  }
 }

@@ -473,6 +473,74 @@ describe("established encryption stays established (C10/D3/D4)", () => {
     expect(next).not.toContain("sk-new-plaintext-3520");
   });
 
+  it.each([
+    ["providerConnections", "conn-shared", "accessToken"],
+    ["providerNodes", "node-shared", "apiKey"],
+    ["settings", 1, "oidcClientSecret"],
+  ])(
+    "bad %s credential rejects only runtime use, not startup or maintenance",
+    async (table, id, field) => {
+      await activate();
+      const { activateCredentialEncryption } = await loadActivate();
+      const { isCredentialMaintenancePoisoned } = await loadMaintenance();
+      for (const error of ["DECRYPT_FAILED", "PLAINTEXT_REJECTED"]) {
+        const row = db.get(`SELECT * FROM ${table} WHERE id = ?`, [id]);
+        const raw = JSON.parse(row.data);
+        raw[field] =
+          error === "DECRYPT_FAILED"
+            ? { ...raw[field], tag: Buffer.alloc(16).toString("base64") }
+            : "injected-plaintext";
+        db.run(`UPDATE ${table} SET data = ? WHERE id = ?`, [JSON.stringify(raw), id]);
+        clearCredentialCache(db);
+        await expect(
+          activateCredentialEncryption(db, {
+            enabled: false,
+            beforeServing: true,
+            root: { kid: KID, key: MASTER },
+          }),
+        ).resolves.toMatchObject({ status: "ready", alreadyEncrypted: true });
+        const ctx = prepareCredentialContext(db, { kid: KID, key: MASTER });
+        const bad = db.get(`SELECT * FROM ${table} WHERE id = ?`, [id]);
+        expect(() =>
+          decodeCredentialRowSync(db, bad, ctx, {
+            table,
+            workspaceId: table === "settings" ? DEFAULT_WS : undefined,
+          }),
+        ).toThrow(code(error));
+        expect(
+          decodeCredentialRowSync(db, bad, ctx, { table, mode: "metadata" }).configured,
+        ).toContain(field);
+        expect(
+          decodeCredentialRowSync(
+            db,
+            db.get("SELECT * FROM providerConnections WHERE id = 'conn-personal'"),
+            ctx,
+            { table: "providerConnections" },
+          ).accessToken,
+        ).toBe(sentinels().accessToken);
+        expect(isCredentialMaintenancePoisoned(db)).toBe(false);
+      }
+    },
+  );
+
+  it("activation still rejects marker-less envelopes with the switch off", async () => {
+    const { activateCredentialEncryption } = await loadActivate();
+    db.run("UPDATE providerConnections SET data = ? WHERE id = 'conn-shared'", [
+      JSON.stringify({
+        accessToken: {
+          v: 1,
+          kid: "dk_x",
+          iv: "AAAAAAAAAAAAAAAA",
+          ct: "AAAA",
+          tag: "AAAAAAAAAAAAAAAAAAAAAA==",
+        },
+      }),
+    ]);
+    await expect(
+      activateCredentialEncryption(db, { enabled: false, beforeServing: true }),
+    ).rejects.toMatchObject({ code: "CREDENTIAL_STATE_INVALID" });
+  });
+
   it("missing root key fails closed: no regeneration, no plaintext fallback, raw writes denied", async () => {
     await activate();
     const { activateCredentialEncryption } = await loadActivate();

@@ -394,6 +394,52 @@ describe("workspace deletion, Default protection and cache purge (C7/D5/D7)", ()
   });
 });
 
+describe("per-row integrity after disk reopen (D3)", () => {
+  it("corrupt credential allows recovery; only its runtime read fails without poison", async () => {
+    await activated();
+    const row = db.get("SELECT * FROM providerConnections WHERE id = 'conn-other'");
+    const raw = JSON.parse(row.data);
+    raw.accessToken.tag = Buffer.alloc(16).toString("base64");
+    db.run("UPDATE providerConnections SET data = ? WHERE id = 'conn-other'", [
+      JSON.stringify(raw),
+    ]);
+    db.flushSync();
+    const reopened = await createSqlJsAdapter(path.join(tempDir, "act.sqlite"));
+    try {
+      const { activateCredentialEncryption } = await loadActivate();
+      const { isCredentialMaintenancePoisoned } = await import("@/lib/db/credentialMaintenance.js");
+      await expect(
+        activateCredentialEncryption(reopened, {
+          enabled: false,
+          beforeServing: true,
+          root: { kid: KID, key: MASTER },
+        }),
+      ).resolves.toMatchObject({ status: "ready" });
+      const ctx = prepareCredentialContext(reopened, { kid: KID, key: MASTER });
+      expect(() =>
+        decodeCredentialRowSync(
+          reopened,
+          reopened.get("SELECT * FROM providerConnections WHERE id = 'conn-other'"),
+          ctx,
+          { table: "providerConnections" },
+        ),
+      ).toThrow(code("DECRYPT_FAILED"));
+      expect(
+        decodeCredentialRowSync(
+          reopened,
+          reopened.get("SELECT * FROM providerConnections WHERE id = 'conn-default'"),
+          ctx,
+          { table: "providerConnections" },
+        ).accessToken,
+      ).toBe("sk-sent-default-token-3527");
+      expect(isCredentialMaintenancePoisoned(reopened)).toBe(false);
+    } finally {
+      clearCredentialCache(reopened);
+      reopened.close();
+    }
+  });
+});
+
 describe("legacy MITM (D11/C3 corner)", () => {
   it("activation strictly decrypts the legacy machine cipher once; corrupt sudo aborts activation typed", async () => {
     // Seed a legacy MITM value in the legacy machine format ivHex:tagHex:ctHex.

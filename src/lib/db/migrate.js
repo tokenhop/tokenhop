@@ -427,7 +427,7 @@ function importLegacyDetails(adapter, data) {
 function assertLegacyImportCredentialGuard(adapter) {
   let encrypted = false;
   try {
-    encrypted = readCredentialEncryptionState(adapter).storage === "encrypted";
+    encrypted = readCredentialEncryptionState(adapter, { strict: true }).storage === "encrypted";
   } catch {
     encrypted = true; // half/corrupt marker: fail closed, no legacy import
   }

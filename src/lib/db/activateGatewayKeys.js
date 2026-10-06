@@ -264,7 +264,7 @@ async function activate(
   // YAN-365 D6: on established credential encryption the root identity to
   // load is the CURRENT KEK kid, not the frozen hash kid. The proof below
   // then verifies the KEK kid and unwraps the frozen derived hash key.
-  const cred = readCredentialEncryptionState(db);
+  const cred = readCredentialEncryptionState(db, { strict: true });
   const expectedKid = cred.storage === "encrypted" ? cred.kekKid : pre.hashKid;
   const root =
     masterKey === null

@@ -119,6 +119,30 @@ describe("YAN-313 config export/import routes", () => {
     expect(oversized.status).toBe(413);
   });
 
+  it("never exports the metadata-only secretsConfigured presence map (YAN-365)", async () => {
+    const { updateSettings } = await import("@/lib/localDb");
+    await updateSettings({
+      oidcIssuerUrl: "https://idp.example",
+      oidcClientId: "client",
+      oidcClientSecret: "shh",
+    });
+
+    const doc = await (await exportConfig()).json();
+    expect(doc.settings).not.toHaveProperty("secretsConfigured");
+
+    // A smuggled presence map is unknown to the config schema: warned and
+    // dropped at validation, never persisted.
+    const preview = await (
+      await importConfig(
+        { ...doc, settings: { ...doc.settings, secretsConfigured: { oidcClientSecret: false } } },
+        { mode: "preview" },
+      )
+    ).json();
+    expect(preview.valid).toBe(true);
+    expect(preview.warnings.some((w) => w.includes("secretsConfigured"))).toBe(true);
+    expect(JSON.stringify(preview.diff)).not.toContain("secretsConfigured");
+  });
+
   it("never exports the MITM internal verifier and rejects it on import (YAN-363)", async () => {
     const { updateSettings } = await import("@/lib/localDb");
     await updateSettings({ mitmInternalVerifier: "a".repeat(64) });

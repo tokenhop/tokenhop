@@ -807,7 +807,7 @@ function parseTransferBlob(raw, context) {
 function validateCredentialSnapshotGraph(payload, { db, masterKey, suppliedKid, hashKid, refs }) {
   let live;
   try {
-    live = readCredentialEncryptionState(db);
+    live = readCredentialEncryptionState(db, { strict: true });
   } catch {
     return fail("TRANSFER_STATE_INVALID", "Destination credential state is unreadable");
   }

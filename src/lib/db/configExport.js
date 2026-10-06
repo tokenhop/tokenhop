@@ -41,8 +41,10 @@ export async function getKnownConfigSettingKeys() {
 // YAN-359: the six SSO policy keys ride the config document only while the
 // users & teams rollout is on; export/diff state omits them while off.
 async function visibleConfigSettings(settings) {
-  if (await isMultiUserEnabled()) return settings;
+  // Metadata-mode presence map is runtime/internal state, never portable config.
   const out = { ...settings };
+  delete out.secretsConfigured;
+  if (await isMultiUserEnabled()) return out;
   for (const key of SSO_POLICY_KEYS) delete out[key];
   return out;
 }

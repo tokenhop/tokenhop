@@ -20,7 +20,7 @@
 import { readCredentialEncryptionState } from "./credentialEncryptionState.js";
 import { readApiKeyStorageState } from "./apiKeyState.js";
 import { loadMasterKey } from "../security/masterKey.js";
-import { prepareCredentialContext } from "./helpers/credentialStorage.js";
+import { ensureWorkspaceDekSync, prepareCredentialContext } from "./helpers/credentialStorage.js";
 import { resolveApiKeyHashKeySync } from "../security/apiKeyHashKey.js";
 import { poisonCredentialMaintenance } from "./credentialMaintenance.js";
 import {
@@ -29,10 +29,7 @@ import {
   makeProtectedBackupDir,
   prepareProtectedBackupVerifier,
 } from "./backup.js";
-import {
-  encryptCredentialsInTransaction,
-  verifyEncryptedRowsSync,
-} from "./migrations/encryptCredentials.js";
+import { encryptCredentialsInTransaction } from "./migrations/encryptCredentials.js";
 import legacyMitm from "../../mitm/legacyPasswordCrypto.cjs";
 
 const NATIVE_DRIVERS = ["better-sqlite3", "node:sqlite", "bun:sqlite"];
@@ -73,7 +70,7 @@ function finishCleanup(db) {
 }
 
 // Established storage (marker latched): root prep + KEK/hash-key proof +
-// full envelope authentication; finish pending cleanup when set. Missing or
+// every workspace DEK unwrap; finish pending cleanup when set. Missing or
 // wrong root poisons raw-write/credential admission until restart (D3) —
 // never regenerate, never plaintext-fallback.
 async function recover(db, state, root) {
@@ -82,9 +79,13 @@ async function recover(db, state, root) {
     resolvedRoot = root ?? (await loadMasterKey({ create: false, expectedKid: state.kekKid }));
     if (resolvedRoot.kid !== state.kekKid)
       fail("KEY_MISMATCH", "root does not match the credential KEK id");
-    prepareCredentialContext(db, resolvedRoot);
+    const ctx = prepareCredentialContext(db, resolvedRoot);
     resolveApiKeyHashKeySync(db, resolvedRoot);
-    verifyEncryptedRowsSync(db, resolvedRoot);
+    for (const { workspaceId } of db.all("SELECT workspaceId FROM workspaceKeys")) {
+      ensureWorkspaceDekSync(db, workspaceId, ctx);
+    }
+    // Row integrity is checked on runtime use, not startup: one bad credential
+    // must not poison maintenance or prevent metadata listing.
   } catch (err) {
     const wrapped =
       err?.code instanceof String || typeof err?.code === "string"
@@ -138,7 +139,7 @@ async function activate(
   )
     fail("ACTIVATION_OPTIONS_INVALID", "root {kid,key} invalid");
 
-  const state = readCredentialEncryptionState(db);
+  const state = readCredentialEncryptionState(db, { strict: true });
   const apiState = readApiKeyStorageState(db);
   // D4: a never-enabled install with the switch off performs zero mutation —
   // no root file, no backup, no DEKs, no marker.

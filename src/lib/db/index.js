@@ -272,7 +272,7 @@ export {
 function assertEncryptedImportAllowed(db, payload) {
   let encrypted = false;
   try {
-    encrypted = readCredentialEncryptionState(db).storage === "encrypted";
+    encrypted = readCredentialEncryptionState(db, { strict: true }).storage === "encrypted";
   } catch {
     encrypted = true;
   }

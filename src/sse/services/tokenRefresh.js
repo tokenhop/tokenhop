@@ -308,17 +308,16 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
 
       const copilotTokenResult = await refreshCopilotToken(creds.accessToken, proxyOptions);
       if (copilotTokenResult) {
-        const updatedSpecific = {
-          ...creds.providerSpecificData,
+        // Delta only: the repo merges onto live stored siblings in-transaction,
+        // so the request-time snapshot is never re-persisted (YAN-365).
+        const delta = {
           copilotToken: copilotTokenResult.token,
           copilotTokenExpiresAt: copilotTokenResult.expiresAt,
         };
 
-        await updateProviderCredentials(creds.connectionId, {
-          providerSpecificData: updatedSpecific,
-        });
+        await updateProviderCredentials(creds.connectionId, { providerSpecificData: delta });
 
-        creds.providerSpecificData = updatedSpecific;
+        creds.providerSpecificData = { ...creds.providerSpecificData, ...delta };
         creds.copilotToken = copilotTokenResult.token;
       }
     }

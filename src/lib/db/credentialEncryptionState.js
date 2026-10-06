@@ -94,10 +94,18 @@ function workspaceKeyCount(db) {
 
 /**
  * Strict sync read of the `_meta` marker pair plus cleanup/rotation state.
+ * Half/corrupt markers always throw. The full three-table envelope sniff
+ * (O(rows)) only runs with `{ strict: true }`: startup readiness, activation
+ * and import preflight. Runtime callers use the marker-only default; that is
+ * safe because activation writes envelopes and the marker in ONE transaction
+ * and imports are preflighted, so envelopes cannot appear at runtime without
+ * the marker.
+ * @param {object} db adapter.
+ * @param {{ strict?: boolean }} [options]
  * @returns {{storage:"legacy",version:null,kekKid:null,cleanupPending:false,pendingRotation:null}
  *           |{storage:"encrypted",version:1,kekKid:string,cleanupPending:boolean,pendingRotation:{oldKid:string,newKid:string}|null}}
  */
-export function readCredentialEncryptionState(db) {
+export function readCredentialEncryptionState(db, { strict = false } = {}) {
   const version = metaValue(db, "credentialsEncryptedVersion");
   const kekKid = metaValue(db, "credentialsKekKid");
   const cleanupRaw = metaValue(db, "credentialsCleanupPending");
@@ -119,7 +127,7 @@ export function readCredentialEncryptionState(db) {
     if (workspaceKeyCount(db) > 0) {
       failState("workspace key rows exist without an encryption marker");
     }
-    if (sniffStoredEnvelopes(db)) {
+    if (strict && sniffStoredEnvelopes(db)) {
       failState("credential envelopes exist without an encryption marker");
     }
     return {

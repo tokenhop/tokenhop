@@ -191,6 +191,43 @@ describe("updateProviderCredentials — delta refresh persistence", () => {
     });
   });
 
+  it("proactive Copilot refresh sends only the two Copilot keys, merging siblings in memory", async () => {
+    const update = mockRepo(async () => ({ id: "github-1" }));
+    vi.doMock("open-sse/services/oauthCredentialManager.js", () => ({
+      shouldRefreshCredentials: () => false,
+      refreshProviderCredentials: vi.fn(),
+    }));
+    vi.doMock("open-sse/services/tokenRefresh.js", async (importOriginal) => ({
+      ...(await importOriginal()),
+      refreshCopilotToken: vi.fn(async () => ({ token: "cp-new", expiresAt: 12345 })),
+    }));
+    try {
+      const { checkAndRefreshToken } = await import("@/sse/services/tokenRefresh.js");
+      const creds = await checkAndRefreshToken("github", {
+        connectionId: "github-1",
+        accessToken: "gh-at",
+        providerSpecificData: {
+          stale: "snapshot",
+          copilotToken: "cp-old",
+          copilotTokenExpiresAt: 1,
+        },
+      });
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(update.mock.calls[0][1].providerSpecificData).toEqual({
+        copilotToken: "cp-new",
+        copilotTokenExpiresAt: 12345,
+      });
+      expect(creds.providerSpecificData).toEqual({
+        stale: "snapshot",
+        copilotToken: "cp-new",
+        copilotTokenExpiresAt: 12345,
+      });
+    } finally {
+      vi.doUnmock("open-sse/services/oauthCredentialManager.js");
+      vi.doUnmock("open-sse/services/tokenRefresh.js");
+    }
+  });
+
   it("typed integrity/storage failures propagate instead of reporting success", async () => {
     mockRepo(async () => {
       throw Object.assign(new Error("boom"), { code: "DECRYPT_FAILED" });

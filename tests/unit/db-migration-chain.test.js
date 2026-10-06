@@ -370,6 +370,29 @@ describe("Schema migrations", () => {
     }
   });
 
+  it("runtime credential state reads do not scan credential tables (YAN-365)", async () => {
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const { readCredentialEncryptionState } = await import("@/lib/db/credentialEncryptionState.js");
+    const db = await getAdapter();
+    const get = vi.spyOn(db, "get");
+    const all = vi.spyOn(db, "all");
+    try {
+      expect(readCredentialEncryptionState(db).storage).toBe("legacy");
+      expect(all).not.toHaveBeenCalled();
+      expect(
+        get.mock.calls.every(
+          ([sql]) => !/FROM (providerConnections|providerNodes|settings)\b/i.test(sql),
+        ),
+      ).toBe(true);
+      get.mockClear();
+      readCredentialEncryptionState(db, { strict: true });
+      expect(all).toHaveBeenCalledTimes(3);
+    } finally {
+      get.mockRestore();
+      all.mockRestore();
+    }
+  });
+
   it("legacy sniff covers every row, not just the first 200 (YAN-365)", async () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const { readCredentialEncryptionState } = await import("@/lib/db/credentialEncryptionState.js");
@@ -392,22 +415,28 @@ describe("Schema migrations", () => {
         for (let i = 0; i < 300; i++)
           insert(`plain-${i}`, JSON.stringify({ apiKey: `plain-${i}` }));
       });
-      expect(readCredentialEncryptionState(db).storage).toBe("legacy");
+      expect(readCredentialEncryptionState(db, { strict: true }).storage).toBe("legacy");
       // An envelope-shaped leaf past row 200 still fails closed.
       insert("zz-late", JSON.stringify({ apiKey: env }));
-      expect(() => readCredentialEncryptionState(db)).toThrowError(/without an encryption marker/);
+      expect(() => readCredentialEncryptionState(db, { strict: true })).toThrowError(
+        /without an encryption marker/,
+      );
       db.run(`DELETE FROM providerConnections WHERE id = 'zz-late'`);
-      expect(readCredentialEncryptionState(db).storage).toBe("legacy");
+      expect(readCredentialEncryptionState(db, { strict: true }).storage).toBe("legacy");
       // Nested provider-data leaf.
       insert("zz-nested", JSON.stringify({ providerSpecificData: { clientSecret: env } }));
-      expect(() => readCredentialEncryptionState(db)).toThrowError(/without an encryption marker/);
+      expect(() => readCredentialEncryptionState(db, { strict: true })).toThrowError(
+        /without an encryption marker/,
+      );
       db.run(`DELETE FROM providerConnections WHERE id = 'zz-nested'`);
       // A key spelled with JSON unicode escapes still reaches the parser.
       insert(
         "zz-escaped",
         '{"apiKey":{"v":1,"kid":"dk_x","\\u0069v":"AAAAAAAAAAAAAAAA","ct":"AAAA","tag":"AAAAAAAAAAAAAAAAAAAAAA=="}}',
       );
-      expect(() => readCredentialEncryptionState(db)).toThrowError(/without an encryption marker/);
+      expect(() => readCredentialEncryptionState(db, { strict: true })).toThrowError(
+        /without an encryption marker/,
+      );
     } finally {
       db.run(`DELETE FROM providerConnections`);
     }
@@ -569,7 +598,10 @@ describe("Schema migrations", () => {
       `INSERT INTO providerConnections(id, provider, authType, data, createdAt, updatedAt, workspaceId) VALUES('c-env','p','apikey',?,?,?,?)`,
       [JSON.stringify({ apiKey: stored.accessToken }), now, now, WS],
     );
-    expect(() => storage.prepareCredentialContext(db, null)).toThrowError(
+    // Runtime context is marker-only (no scan); the strict reader catches it.
+    expect(() => storage.prepareCredentialContext(db, null)).not.toThrow();
+    const { readCredentialEncryptionState } = await import("@/lib/db/credentialEncryptionState.js");
+    expect(() => readCredentialEncryptionState(db, { strict: true })).toThrowError(
       /without an encryption marker/,
     );
     db.run(`DELETE FROM providerConnections WHERE id = 'c-env'`);

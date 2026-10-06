@@ -37,11 +37,11 @@ async function defaultActivation(db) {
   // from the DB marker, or removes an unreferenced pre-commit stage. Failure
   // poisons admission and rejects this boot stickily. Never-enabled installs
   // skip it entirely (no key duty).
-  if (readCredentialEncryptionState(db).storage === "encrypted") {
+  if (readCredentialEncryptionState(db, { strict: true }).storage === "encrypted") {
     const { recoverKeyRotation } = await import("../security/keyRotation.js");
     await recoverKeyRotation(db);
   }
-  const preState = readCredentialEncryptionState(db);
+  const preState = readCredentialEncryptionState(db, { strict: true });
 
   // 2. Strict state + root prep for established storage, before the switch
   //    read: a missing/wrong root rejects stickily here (no regeneration, no
