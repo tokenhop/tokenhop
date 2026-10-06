@@ -3,6 +3,7 @@ import { InMemoryCacheProvider } from "@node-saml/node-saml/lib/in-memory-cache-
 import { getSettings } from "../db/repos/settingsRepo.js";
 import { ACTIVE } from "@/shared/brand";
 import { normalizeGroups } from "../users/ssoProvisioning.js";
+import { openInviteState, sealInviteState } from "./oidc.js";
 
 const SAML_REQUEST_TTL_MS = 10 * 60 * 1000; // matches saml_state cookie maxAge (10 min)
 
@@ -107,7 +108,7 @@ export function getSamlBaseUrl(request, settings) {
   return "http://localhost:20128";
 }
 
-export function createSamlInstance(settings, origin) {
+export function createSamlInstance(settings, origin, { forceAuthn = false } = {}) {
   const cert = formatX509Certificate(settings?.samlCert || "") || DUMMY_FALLBACK_CERT;
   const callbackUrl = `${origin}/api/auth/saml/acs`;
   return new SAML({
@@ -117,10 +118,14 @@ export function createSamlInstance(settings, origin) {
     cert: cert,
     callbackUrl: callbackUrl,
     acceptedClockSkewMs: 60000,
+    // Signed response AND signed assertion are both required; never silently
+    // downgrade on a library default change.
+    wantAuthnResponseSigned: true,
     wantAssertionsSigned: true,
     validateInResponseTo: ValidateInResponseTo.always,
     requestIdExpirationPeriodMs: SAML_REQUEST_TTL_MS,
     cacheProvider: requestIdCache,
+    forceAuthn,
   });
 }
 
@@ -128,11 +133,12 @@ export function createSamlInstance(settings, origin) {
  * Builds SAML AuthnRequest redirect URL and returns { authorizeUrl, requestId }.
  * @param {Request} request
  * @param {object} settings
+ * @param {object} [options] - { forceAuthn } (default false: regular login)
  * @returns {Promise<{ authorizeUrl: string, requestId: string }>}
  */
-export async function buildSamlAuthorizeUrl(request, settings) {
+export async function buildSamlAuthorizeUrl(request, settings, { forceAuthn = false } = {}) {
   const origin = getSamlBaseUrl(request, settings);
-  const samlInstance = createSamlInstance(settings, origin);
+  const samlInstance = createSamlInstance(settings, origin, { forceAuthn });
 
   const xml = await samlInstance.generateAuthorizeRequestAsync(false, false);
   const match = xml.match(/ID="([^"]+)"/);
@@ -141,6 +147,68 @@ export async function buildSamlAuthorizeUrl(request, settings) {
   const authorizeUrl = await samlInstance._requestToUrlAsync(xml, null, "authorize", {});
 
   return { authorizeUrl, requestId };
+}
+
+/**
+ * Builds a ForceAuthn=true SAML AuthnRequest for fresh ownership reauth.
+ * The returned requestId must be bound to the transfer session by the caller;
+ * the ACS handler later proves freshness against the validated assertion.
+ * @param {Request} request
+ * @param {object} settings
+ * @returns {Promise<{ authorizeUrl: string, requestId: string }>}
+ */
+export async function buildSamlReauthAuthorizeUrl(request, settings) {
+  return buildSamlAuthorizeUrl(request, settings, { forceAuthn: true });
+}
+
+const XS_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * Proves a validated SAML assertion carries a fresh AuthnInstant. Reads
+ * profile.getAssertion() (node-saml's xml2js parse of the signature-verified
+ * assertion: { Assertion: { AuthnStatement: [{ $: { AuthnInstant } }] } }), never the raw
+ * POST body. Exactly one AuthnStatement with a well-formed xs:dateTime is required; missing,
+ * duplicate or malformed fails closed. Window: startedAt-60s <= AuthnInstant <= now+60s.
+ * Issuer/NameID identity checks are the caller's responsibility.
+ * @param {object} profile - validated SAML profile (must expose getAssertion)
+ * @param {object} timing - { startedAt: number, now?: number } epoch ms
+ * @returns {{ authnInstant: number }} throws on missing/ambiguous/stale/out-of-window
+ */
+export function verifyFreshSamlAuthnInstant(
+  profile,
+  { startedAt, now = Date.now(), maxAgeMs = 300_000 },
+) {
+  if (typeof profile?.getAssertion !== "function") {
+    throw new Error("Fresh reauth proof unavailable: validated assertion missing");
+  }
+  const assertion = profile.getAssertion()?.Assertion;
+  const statements = assertion?.AuthnStatement;
+  if (!Array.isArray(statements) || statements.length === 0) {
+    throw new Error("Fresh reauth proof missing: AuthnStatement absent");
+  }
+  if (statements.length !== 1) {
+    throw new Error("Fresh reauth proof ambiguous: multiple AuthnStatements");
+  }
+  const raw = statements[0]?.$?.AuthnInstant;
+  if (typeof raw !== "string" || !XS_DATETIME_RE.test(raw)) {
+    throw new Error("Fresh reauth proof invalid: AuthnInstant missing or malformed");
+  }
+  const authnInstant = Date.parse(raw);
+  if (Number.isNaN(authnInstant)) {
+    throw new Error("Fresh reauth proof invalid: AuthnInstant missing or malformed");
+  }
+
+  const skewMs = 60_000;
+  if (
+    !Number.isFinite(startedAt) ||
+    !Number.isFinite(now) ||
+    authnInstant < startedAt - skewMs ||
+    authnInstant > now + skewMs ||
+    now - authnInstant > maxAgeMs
+  ) {
+    throw new Error("Fresh reauth proof rejected: AuthnInstant outside freshness window");
+  }
+  return { authnInstant };
 }
 
 /**
@@ -260,6 +328,48 @@ export function pickSamlEmail(profile = {}, settings = {}) {
   return "";
 }
 
+const EMAIL_SHAPE_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const NAMEID_EMAIL_FORMAT = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress";
+const VERIFIED_EMAIL_KEYS = [
+  "email",
+  "emailAddress",
+  "mail",
+  "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
+];
+
+function firstShapedEmail(source, key) {
+  if (!source || typeof source !== "object" || !Object.hasOwn(source, key)) return null;
+  const val = Array.isArray(source[key]) ? source[key][0] : source[key];
+  return typeof val === "string" && EMAIL_SHAPE_RE.test(val.trim()) ? val.trim() : null;
+}
+
+// Email trusted for owner/invitation matching: only the configured email
+// attribute or an explicit email/mail claim, and only if email-shaped. Never
+// the nameID/upn/nameidentifier fallbacks pickSamlEmail uses for display.
+// A configured attribute that is present but not email-shaped fails closed.
+/**
+ * @param {object} profile
+ * @param {object} settings
+ * @returns {string|null}
+ */
+export function pickVerifiedSamlEmail(profile = {}, settings = {}) {
+  if (!profile) return null;
+  const custom = settings.samlAttributeEmail;
+  for (const src of [profile, profile.attributes]) {
+    if (custom && src && Object.hasOwn(src, custom)) return firstShapedEmail(src, custom);
+  }
+  for (const src of [profile, profile.attributes]) {
+    for (const key of VERIFIED_EMAIL_KEYS) {
+      const email = firstShapedEmail(src, key);
+      if (email) return email;
+    }
+  }
+  // A NameID the signed assertion declares as emailAddress format is an email
+  // claim too (common IdP default). Other NameID formats and UPN never are.
+  if (profile.nameIDFormat === NAMEID_EMAIL_FORMAT) return firstShapedEmail(profile, "nameID");
+  return null;
+}
+
 /**
  * Extracts display name claim from SAML profile assertion.
  * @param {object} profile
@@ -324,4 +434,17 @@ export function pickSamlGroups(profile, settings) {
     }
   }
   return { present: false, groups: null, invalid: false };
+}
+
+// --- YAN-360: SAML invite proof (see oidc.js for the full contract) --------
+export const SAML_INVITE_COOKIE = "saml_invite";
+
+/** Seal the invite proof for cookie storage, bound to this request's ID. */
+export function sealSamlInvite(invitationToken, requestId) {
+  return sealInviteState(invitationToken, requestId);
+}
+
+/** Invite token from a sealed cookie for exactly this request ID, else null. */
+export function openSamlInvite(sealed, requestId) {
+  return openInviteState(sealed, requestId);
 }

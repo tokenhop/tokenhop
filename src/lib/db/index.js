@@ -245,6 +245,15 @@ export {
   updateMembershipRole,
   removeMembership,
 } from "./repos/membershipsRepo.js";
+export {
+  INVITATION_TTL_MS,
+  hashInvitationToken,
+  createInvitation,
+  listInvitations,
+  revokeInvitation,
+  getInvitationForConsumeSync,
+  consumeInvitationSync,
+} from "./repos/invitationsRepo.js";
 
 // YAN-364: the export/import snapshot stays the legacy single-user shape.
 // Default-workspace alias/custom keys travel unprefixed; other workspaces are

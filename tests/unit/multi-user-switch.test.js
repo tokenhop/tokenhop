@@ -91,6 +91,13 @@ describe("requireMultiUser", () => {
       "src/app/api/auth/logout-all/route.js",
       "src/app/api/auth/setup-token/route.js",
       "src/app/api/me/preferences/route.js",
+      "src/app/api/invitations/accept/route.js",
+      "src/app/api/users/[id]/route.js",
+      "src/app/api/users/ownership-transfer/route.js",
+      "src/app/api/users/ownership-transfer/sso/route.js",
+      "src/app/api/users/route.js",
+      "src/app/api/workspaces/[id]/invitations/[inviteId]/route.js",
+      "src/app/api/workspaces/[id]/invitations/route.js",
       "src/app/api/workspaces/[id]/settings/route.js",
     ];
     const found = gitGrep(["requireMultiUser", "--", "src/app/**/route.js"]);

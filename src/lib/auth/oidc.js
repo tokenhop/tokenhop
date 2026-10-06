@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { createRemoteJWKSet, decodeProtectedHeader, jwtVerify } from "jose";
+import { EncryptJWT, createRemoteJWKSet, decodeProtectedHeader, jwtDecrypt, jwtVerify } from "jose";
 import { getSettings } from "@/lib/localDb";
 import { resolveAuthModes } from "@/lib/auth/authModes";
 
@@ -7,6 +7,7 @@ export const OIDC_COOKIE_NAMES = {
   state: "oidc_state",
   nonce: "oidc_nonce",
   verifier: "oidc_code_verifier",
+  invite: "oidc_invite",
 };
 
 const DEFAULT_SCOPES = "openid profile email";
@@ -354,4 +355,112 @@ export async function fetchOidcUserInfo({
     throw new Error("OIDC UserInfo issuer mismatch");
   }
   return data;
+}
+
+// --- YAN-360: invite proof carried through an SSO round trip ---------------
+// The invitation token never rides a URL, the IdP redirect or a Referer: the
+// start step POSTs it in a bounded JSON body and the server parks it in a
+// short-lived encrypted HttpOnly cookie, bound to this flow's state (OIDC state /
+// SAML request ID). The callback opens it only after the IdP identity verified.
+// Authenticated encryption (JWE dir/A256GCM) under a key derived for this
+// purpose only: the cookie value never reveals the token and is never a JWS
+// the session reader could accept.
+export const INVITE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const INVITE_STATE_PURPOSE = "sso_invite";
+const INVITE_STATE_TTL = "10m";
+const INVITE_BODY_MAX = 256;
+
+async function inviteKey() {
+  const { deriveSecretKey } = await import("@/lib/auth/dashboardSession");
+  return deriveSecretKey(INVITE_STATE_PURPOSE);
+}
+
+/** Encrypt the invite proof for cookie storage, bound to `flowId`. */
+export async function sealInviteState(invitationToken, flowId) {
+  if (!INVITE_TOKEN_PATTERN.test(invitationToken || "") || !flowId) {
+    throw new Error("Invalid invite state");
+  }
+  return new EncryptJWT({ purpose: INVITE_STATE_PURPOSE, flow: flowId, inv: invitationToken })
+    .setProtectedHeader({ alg: "dir", enc: "A256GCM" })
+    .setIssuedAt()
+    .setExpirationTime(INVITE_STATE_TTL)
+    .encrypt(await inviteKey());
+}
+
+/** Invite token from a sealed cookie for exactly this flow, else null. */
+export async function openInviteState(sealed, flowId) {
+  if (!sealed || !flowId) return null;
+  let payload = null;
+  try {
+    ({ payload } = await jwtDecrypt(sealed, await inviteKey(), {
+      keyManagementAlgorithms: ["dir"],
+      contentEncryptionAlgorithms: ["A256GCM"],
+    }));
+  } catch {
+    return null;
+  }
+  if (
+    !payload ||
+    payload.purpose !== INVITE_STATE_PURPOSE ||
+    payload.flow !== flowId ||
+    !INVITE_TOKEN_PATTERN.test(payload.inv || "")
+  ) {
+    return null;
+  }
+  return payload.inv;
+}
+
+/**
+ * Guard + parse for the invitation SSO start POST. Switch off -> same 404 as
+ * every YAN-360 route; same-origin JSON only; IP-limited; strict body shape
+ * `{ invitationToken }` (43-char base64url). Returns `{ response }` to send, or
+ * `{ invitationToken }`. The token is never logged.
+ */
+export async function readInviteStartBody(request) {
+  const [{ requireMultiUser }, { isCrossSite, isJson }, users, limiter] = await Promise.all([
+    import("@/lib/users/featureSwitch.js"),
+    import("@/lib/auth/sameOrigin.js"),
+    import("@/lib/users/userManagement.js"),
+    import("@/lib/auth/loginLimiter"),
+  ]);
+  const { json, readJsonBody, PayloadTooLarge } = users;
+  const hidden = await requireMultiUser();
+  if (hidden) return { response: hidden };
+  if (isCrossSite(request)) {
+    return { response: json({ error: "Forbidden", code: "forbidden_origin" }, 403) };
+  }
+  if (!isJson(request)) {
+    return { response: json({ error: "Unsupported media type", code: "invalid_request" }, 415) };
+  }
+  const bucket = { ip: limiter.getClientIp(request) };
+  const lock = limiter.checkLoginLocks(bucket);
+  if (lock.locked) {
+    const response = json(
+      { error: "Too many attempts", code: "rate_limited", retryAfter: lock.retryAfter },
+      429,
+    );
+    response.headers.set("Retry-After", String(lock.retryAfter));
+    return { response };
+  }
+  let body;
+  try {
+    body = await readJsonBody(request, { max: INVITE_BODY_MAX });
+  } catch (err) {
+    if (err instanceof PayloadTooLarge) {
+      return { response: json({ error: "Payload too large", code: "payload_too_large" }, 413) };
+    }
+    throw err;
+  }
+  if (
+    !body ||
+    typeof body !== "object" ||
+    Array.isArray(body) ||
+    Object.keys(body).some((k) => k !== "invitationToken") ||
+    typeof body.invitationToken !== "string" ||
+    !INVITE_TOKEN_PATTERN.test(body.invitationToken)
+  ) {
+    limiter.recordLoginFail(bucket);
+    return { response: json({ error: "Invalid invitation", code: "invite_invalid" }, 400) };
+  }
+  return { invitationToken: body.invitationToken };
 }

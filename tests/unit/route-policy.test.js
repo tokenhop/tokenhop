@@ -111,6 +111,24 @@ const MOVED_TO_GUARD = new Set(["/api/auth/oidc/test", "/api/auth/saml/test"]);
 // alwaysProtected with no CLI token. Every historical row stays unchanged.
 const YAN358_PASSWORD_ROUTES = new Set(["/api/auth/change-password", "/api/users/[id]/password"]);
 
+// YAN-360 user routes intentionally session-only like the password endpoint:
+// alwaysProtected with no CLI token.
+const YAN360_USER_ROUTES = new Set([
+  "/api/users",
+  "/api/users/[id]",
+  "/api/users/ownership-transfer",
+  "/api/users/ownership-transfer/sso",
+]);
+// YAN-360 invitation management: scoped (not alwaysProtected), but the
+// handlers accept only a browser session, so the CLI token is refused.
+const YAN360_SESSION_ONLY_ROUTES = new Set([
+  "/api/workspaces/[id]/invitations",
+  "/api/workspaces/[id]/invitations/[inviteId]",
+]);
+// YAN-360 invite accept is new and public by design: the token is the
+// authorization (still hidden with the switch off via multiUserOnly).
+const YAN360_PUBLIC_ROUTES = new Set(["/api/invitations/accept"]);
+
 // YAN-367 audit log did not exist pre-YAN-357; the table pins it stricter than
 // the legacy default: alwaysProtected (owner/admin only, 404 with switch off).
 const YAN367_AUDIT_ROUTES = new Set(["/api/audit"]);
@@ -196,6 +214,8 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
         const want = legacyFlags(sample, m);
         if (MOVED_TO_GUARD.has(route)) want.public = false;
         if (YAN358_PASSWORD_ROUTES.has(route)) want.alwaysProtected = true;
+        if (YAN360_USER_ROUTES.has(route)) want.alwaysProtected = true;
+        if (YAN360_PUBLIC_ROUTES.has(route)) want.public = true;
         if (YAN367_AUDIT_ROUTES.has(route)) want.alwaysProtected = true;
         const got = { localOnly, alwaysProtected, gateway, public: pub };
         if (JSON.stringify(got) !== JSON.stringify(want)) diffs.push({ m, route, got, want });
@@ -218,7 +238,10 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
     for (const { route, sample } of ROUTES) {
       const { cliAllowed } = resolveRoutePolicy(sample, "GET");
       expect(cliAllowed, route).toBe(
-        !MOVED_TO_GUARD.has(route) && !YAN358_PASSWORD_ROUTES.has(route),
+        !MOVED_TO_GUARD.has(route) &&
+          !YAN358_PASSWORD_ROUTES.has(route) &&
+          !YAN360_USER_ROUTES.has(route) &&
+          !YAN360_SESSION_ONLY_ROUTES.has(route),
       );
     }
   });

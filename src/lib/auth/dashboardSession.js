@@ -23,6 +23,16 @@ function loadJwtSecret() {
 
 const SECRET = new TextEncoder().encode(loadJwtSecret());
 
+/**
+ * 32-byte key derived from the session secret for one named purpose, so
+ * other sealed values (e.g. the SSO invite cookie) never share the session
+ * signing key. The secret itself never leaves this module.
+ * @param {string} purpose
+ */
+export function deriveSecretKey(purpose) {
+  return crypto.createHmac("sha256", SECRET).update(`tokenhop:${purpose}`).digest();
+}
+
 export function shouldUseSecureCookie(request) {
   const forceSecureCookie = process.env.AUTH_COOKIE_SECURE === "true";
   const forwardedProto = request?.headers?.get?.("x-forwarded-proto");

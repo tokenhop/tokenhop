@@ -115,8 +115,27 @@ const nonEmptyString = (v) => typeof v === "string" && v !== "";
 const DEFAULT_ROLES = new Set(["pending", "user"]);
 const USER_ROW = `SELECT id, instanceRole, status, instanceRoleSource FROM users WHERE id = ?`;
 
+// YAN-360: a live invite to a shared workspace. A bound invite needs the IdP
+// to have verified that email; email never links accounts. Generic denial.
+function liveInvite(db, deps, invite) {
+  let inv;
+  try {
+    inv = deps.getInvitationForConsumeSync(db, invite.token);
+  } catch {
+    throw new SsoAdmissionError("denied");
+  }
+  const now = new Date().toISOString();
+  const ws = db.get(`SELECT kind FROM workspaces WHERE id = ?`, [inv.workspaceId]);
+  if (inv.consumedAt || inv.revokedAt || !(inv.expiresAt > now) || ws?.kind !== "shared") {
+    throw new SsoAdmissionError("denied");
+  }
+  if (inv.email !== null && invite.verifiedEmail !== inv.email)
+    throw new SsoAdmissionError("denied");
+  return inv;
+}
+
 // One sync transaction for a non-owner. Throws SsoAdmissionError / TenancyError.
-function admitInTransaction(db, deps, { userId, key, email, displayName, groups }) {
+function admitInTransaction(db, deps, { userId, key, email, displayName, groups, invite }) {
   const { createUserWithPersonalWorkspaceSync, insertIdentitySync, syncIdpMembershipsSync } = deps;
   // Policy re-read inside the transaction: a change made while bootstrap/proof
   // awaited must not grant admin or memberships from a stale snapshot.
@@ -124,6 +143,8 @@ function admitInTransaction(db, deps, { userId, key, email, displayName, groups 
   const settings = { ...deps.defaults, ...(stored ? deps.parseJson(stored, {}) : {}) };
   const assigned = resolveAssignments(groups, settings);
   if (!assigned.admit) throw new SsoAdmissionError("denied");
+  // Validated before any write; consumed last, in this same transaction.
+  const inv = invite ? liveInvite(db, deps, invite) : null;
   let created = false;
   let row = userId ? db.get(USER_ROW, [userId]) : null;
   if (userId && !row) throw new SsoAdmissionError("sync_failed");
@@ -136,9 +157,12 @@ function admitInTransaction(db, deps, { userId, key, email, displayName, groups 
     const user = createUserWithPersonalWorkspaceSync(db, {
       email,
       displayName,
-      instanceRole: DEFAULT_ROLES.has(settings?.ssoDefaultRole)
-        ? settings.ssoDefaultRole
-        : "pending",
+      // An invite approves the account as an ordinary user, never more.
+      instanceRole: inv
+        ? "user"
+        : DEFAULT_ROLES.has(settings?.ssoDefaultRole)
+          ? settings.ssoDefaultRole
+          : "pending",
       status: "active",
     });
     insertIdentitySync(db, user.id, { ...key, emailAtLink: deps.emailAtLink });
@@ -162,7 +186,15 @@ function admitInTransaction(db, deps, { userId, key, email, displayName, groups 
   let role = row.instanceRole;
   let source = row.instanceRoleSource ?? null;
   let changed = false;
-  if (assigned.adminMatch && DEFAULT_ROLES.has(role)) {
+  if (inv && role === "pending") {
+    // A valid invite approves a pending account (manual role, not IdP).
+    role = "user";
+    source = null;
+    changed = true;
+  }
+  // Invite logins never escalate to admin in the same transaction; the next
+  // ordinary login applies the admin group mapping as usual.
+  if (assigned.adminMatch && DEFAULT_ROLES.has(role) && !inv) {
     role = "admin";
     source = "idp";
     changed = true;
@@ -178,8 +210,36 @@ function admitInTransaction(db, deps, { userId, key, email, displayName, groups 
       [role, source, now, row.id],
     );
   }
+  if (inv) {
+    // Existing membership (any source) is a conflict: never overwritten.
+    if (
+      db.get(`SELECT 1 AS x FROM memberships WHERE workspaceId = ? AND userId = ?`, [
+        inv.workspaceId,
+        row.id,
+      ])
+    ) {
+      throw new SsoAdmissionError("denied");
+    }
+    deps.addMembershipUnscoped(db, {
+      workspaceId: inv.workspaceId,
+      userId: row.id,
+      role: inv.role,
+      source: "invite",
+    });
+    changed = true;
+  }
   const delta = syncIdpMembershipsSync(db, row.id, assigned.memberships);
   if (delta.changed) changed = true;
+  if (inv) {
+    try {
+      deps.consumeInvitationSync(db, invite.token, {
+        email: invite.verifiedEmail,
+        consumedByUserId: row.id,
+      });
+    } catch {
+      throw new SsoAdmissionError("denied");
+    }
+  }
   if (changed) {
     db.run(`UPDATE users SET sessionVersion = sessionVersion + 1, updatedAt = ? WHERE id = ?`, [
       now,
@@ -194,6 +254,7 @@ function admitInTransaction(db, deps, { userId, key, email, displayName, groups 
     added: delta.added.length,
     updated: delta.updated.length,
     removed: delta.removed.length,
+    invitationId: inv?.id ?? null,
   };
 }
 
@@ -204,19 +265,26 @@ function admitInTransaction(db, deps, { userId, key, email, displayName, groups 
  * role, IdP memberships, one sessionVersion bump if role/memberships changed).
  * @param {{ provider: string, issuer: string, subject: string, email?: string, emailVerified?: boolean, displayName?: string }} identity
  * @param {string[]|null} groups - normalized groups, null when unavailable
- * @param {{ setupToken?: string }} [opts]
+ * `invitationToken` (YAN-360, server-held from the SSO start step): accepted
+ * in the same transaction, only with the multi-user switch on.
+ * @param {{ setupToken?: string, invitationToken?: string }} [opts]
  * @returns {Promise<{ kind: "active"|"pending", userId: string }>}
  * @throws {SsoAdmissionError}
  */
-export async function ssoAdmit(identity, groups, { setupToken } = {}) {
+export async function ssoAdmit(identity, groups, { setupToken, invitationToken } = {}) {
   const { provider, issuer, subject } = identity ?? {};
   if (!nonEmptyString(provider) || !nonEmptyString(issuer) || !nonEmptyString(subject)) {
     throw new SsoAdmissionError("denied");
   }
   if (!Array.isArray(groups)) throw new SsoAdmissionError("groups_unavailable");
+  if (invitationToken !== undefined && !nonEmptyString(invitationToken)) {
+    throw new SsoAdmissionError("denied");
+  }
 
   const { isUserSecurityEnforced } = await import("./securityState.js");
   if (!(await isUserSecurityEnforced())) throw new SsoAdmissionError("denied");
+  const { isMultiUserEnabled } = await import("./featureSwitch.js");
+  if (invitationToken && !(await isMultiUserEnabled())) throw new SsoAdmissionError("denied");
 
   const { getSettings, findIdentityUnscoped } = await import("@/lib/db/index.js");
   const settings = await getSettings();
@@ -235,40 +303,63 @@ export async function ssoAdmit(identity, groups, { setupToken } = {}) {
         // Unlinked: JIT and owner linking are rollout features. With the switch
         // off (even security-latched) only already-linked users get in; read
         // the switch directly, since the bootstrap result is memoised per process.
-        const { isMultiUserEnabled } = await import("./featureSwitch.js");
         if (!(await isMultiUserEnabled())) throw new SsoAdmissionError("denied");
         const { ensureOwnerBootstrap, resolveSsoUser } = await import("./bootstrap.js");
         if (!(await ensureOwnerBootstrap({ throwOnError: true }))?.enabled) {
           throw new SsoAdmissionError("denied");
         }
-        userId = await resolveSsoUser(identity, { setupToken });
+        // An invite onboards a new ordinary user: never the owner-linking path.
+        if (!invitationToken) userId = await resolveSsoUser(identity, { setupToken });
       }
       if (userId) {
         const row = db.get(USER_ROW, [userId]);
         if (!row) throw new SsoAdmissionError("sync_failed");
         if (row.status !== "active") throw new SsoAdmissionError("disabled");
-        if (row.instanceRole === "owner") return { kind: "active", userId };
+        if (row.instanceRole === "owner") {
+          // The owner can't burn an invite through SSO (no owner tx); fail closed.
+          if (invitationToken) throw new SsoAdmissionError("denied");
+          return { kind: "active", userId };
+        }
       }
 
-      const [users, identities, memberships, errors, settingsRepo, { audit }, { parseJson }] =
-        await Promise.all([
-          import("@/lib/db/repos/usersRepo.js"),
-          import("@/lib/db/repos/identitiesRepo.js"),
-          import("@/lib/db/repos/membershipsRepo.js"),
-          import("./errors.js"),
-          import("@/lib/db/repos/settingsRepo.js"),
-          import("./audit.js"),
-          import("@/lib/db/helpers/jsonCol.js"),
-        ]);
+      const [
+        users,
+        identities,
+        memberships,
+        invitations,
+        errors,
+        settingsRepo,
+        { audit },
+        { parseJson },
+      ] = await Promise.all([
+        import("@/lib/db/repos/usersRepo.js"),
+        import("@/lib/db/repos/identitiesRepo.js"),
+        import("@/lib/db/repos/membershipsRepo.js"),
+        import("@/lib/db/repos/invitationsRepo.js"),
+        import("./errors.js"),
+        import("@/lib/db/repos/settingsRepo.js"),
+        import("./audit.js"),
+        import("@/lib/db/helpers/jsonCol.js"),
+      ]);
       const email = typeof identity.email === "string" ? identity.email.trim().toLowerCase() : "";
       const deps = {
         createUserWithPersonalWorkspaceSync: users.createUserWithPersonalWorkspaceSync,
         insertIdentitySync: identities.insertIdentitySync,
         syncIdpMembershipsSync: memberships.syncIdpMembershipsSync,
+        addMembershipUnscoped: memberships.addMembershipUnscoped,
+        getInvitationForConsumeSync: invitations.getInvitationForConsumeSync,
+        consumeInvitationSync: invitations.consumeInvitationSync,
         emailAtLink: email || null,
         defaults: settingsRepo.DEFAULT_SETTINGS,
         parseJson,
       };
+      // Only an IdP-verified email can satisfy a bound invite.
+      const invite = invitationToken
+        ? {
+            token: invitationToken,
+            verifiedEmail: identity.emailVerified === true && email ? email : null,
+          }
+        : null;
       const displayName = nonEmptyString(identity.displayName) ? identity.displayName : null;
       let useEmail = Boolean(email);
       let retriedIdentity = false;
@@ -283,11 +374,20 @@ export async function ssoAdmit(identity, groups, { setupToken } = {}) {
                 email: useEmail ? email : null,
                 displayName,
                 groups,
+                invite,
               }),
             ),
           );
           ids.add(out.userId);
           // Ids, roles and counts only: never group names, claims or email.
+          if (out.invitationId) {
+            audit(
+              {},
+              "invitation.accept",
+              { type: "invitation", id: out.invitationId },
+              { after: { inviteId: out.invitationId, userId: out.userId, provider } },
+            );
+          }
           if (out.created || out.fromRole !== out.role || out.added || out.updated || out.removed) {
             audit(
               {},

@@ -15,6 +15,7 @@ import {
 } from "@/lib/users/session";
 import { LOCAL_ONLY_CODE } from "@/shared/utils/localOnly";
 import { audit } from "@/lib/users/audit";
+import { isMultiUserEnabled } from "@/lib/users/featureSwitch";
 
 // Skill markdown reads: static content any network peer may fetch (the URL is
 // pasted to AI agents), so /skills never requires auth or an API key. Still
@@ -135,10 +136,16 @@ async function auditDenied(request, policy, principal) {
 }
 
 /**
- * Apply a routePolicy row: local-only gate, then public / gateway / session
- * auth, then the capability. Null when allowed, else the error response.
+ * Apply a routePolicy row: multi-user hide, local-only gate, then public /
+ * gateway / session auth, then the capability. Null when allowed, else the
+ * error response.
  */
 async function checkApiPolicy(request, policy) {
+  // YAN-360: switch off hides the route (same 404 body as requireMultiUser)
+  // before any local/auth check, so no 401/403 leaks. Fails closed (hidden).
+  if (policy.multiUserOnly && !(await isMultiUserEnabled().catch(() => false))) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   // Local-only gate for spawn-capable / host-secret routes.
   if (policy.localOnly && !(await canAccessLocalOnlyRoute(request, policy.cliAllowed))) {
     return NextResponse.json(
@@ -163,7 +170,19 @@ async function checkApiPolicy(request, policy) {
     auditDenied(request, policy, null);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!(await principalCan(request, policy.capability, { anyWorkspace: policy.scoped }))) {
+  // YAN-360: instance admins/owners manage members/invites in ANY shared
+  // workspace (the handler + repo re-verify authority on the row). Scoped
+  // `anyWorkspace` alone would 403 an admin with no membership rows, so this
+  // one capability also admits `instance.users.manage`. No other scoped row.
+  const membersManageOverride =
+    policy.multiUserOnly &&
+    policy.scoped &&
+    policy.capability === "workspace.members.manage" &&
+    (await principalCan(request, "instance.users.manage"));
+  if (
+    !membersManageOverride &&
+    !(await principalCan(request, policy.capability, { anyWorkspace: policy.scoped }))
+  ) {
     auditDenied(request, policy, await resolvePrincipal(request).catch(() => null));
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
