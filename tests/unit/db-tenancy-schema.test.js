@@ -300,7 +300,9 @@ describe("tenancy repos", () => {
   });
 
   it("syncIdpMembershipsSync reconciles idp rows only, validating before any write (YAN-359)", async () => {
-    const { syncIdpMembershipsSync } = await import("@/lib/db/repos/membershipsRepo.js");
+    const { syncIdpMembershipsSync, addMembershipUnscoped } = await import(
+      "@/lib/db/repos/membershipsRepo.js"
+    );
     const syncCode = (fn) => {
       try {
         return fn() && null;
@@ -338,7 +340,14 @@ describe("tenancy repos", () => {
 
     // update + remove; a wanted idp grant onto an existing invite row never
     // overwrites or re-sources it.
-    await repo.addMembership(ctxOf(a), t3.id, { userId: u.id, role: "viewer", source: "invite" });
+    db.transaction(() =>
+      addMembershipUnscoped(db, {
+        workspaceId: t3.id,
+        userId: u.id,
+        role: "viewer",
+        source: "invite",
+      }),
+    );
     expect(
       syncIdpMembershipsSync(db, u.id, [
         { workspaceId: t1.id, role: "viewer" },

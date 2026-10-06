@@ -3,6 +3,7 @@ import { InMemoryCacheProvider } from "@node-saml/node-saml/lib/in-memory-cache-
 import { getSettings } from "../db/repos/settingsRepo.js";
 import { ACTIVE } from "@/shared/brand";
 import { normalizeGroups } from "../users/ssoProvisioning.js";
+import { openInviteState, sealInviteState } from "./oidc.js";
 
 const SAML_REQUEST_TTL_MS = 10 * 60 * 1000; // matches saml_state cookie maxAge (10 min)
 
@@ -117,6 +118,9 @@ export function createSamlInstance(settings, origin) {
     cert: cert,
     callbackUrl: callbackUrl,
     acceptedClockSkewMs: 60000,
+    // Signed response AND signed assertion are both required; never silently
+    // downgrade on a library default change.
+    wantAuthnResponseSigned: true,
     wantAssertionsSigned: true,
     validateInResponseTo: ValidateInResponseTo.always,
     requestIdExpirationPeriodMs: SAML_REQUEST_TTL_MS,
@@ -260,6 +264,44 @@ export function pickSamlEmail(profile = {}, settings = {}) {
   return "";
 }
 
+const EMAIL_SHAPE_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const VERIFIED_EMAIL_KEYS = [
+  "email",
+  "emailAddress",
+  "mail",
+  "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
+];
+
+function firstShapedEmail(source, key) {
+  if (!source || typeof source !== "object" || !Object.hasOwn(source, key)) return null;
+  const val = Array.isArray(source[key]) ? source[key][0] : source[key];
+  return typeof val === "string" && EMAIL_SHAPE_RE.test(val.trim()) ? val.trim() : null;
+}
+
+// Email trusted for owner/invitation matching: only the configured email
+// attribute or an explicit email/mail claim, and only if email-shaped. Never
+// the nameID/upn/nameidentifier fallbacks pickSamlEmail uses for display.
+// A configured attribute that is present but not email-shaped fails closed.
+/**
+ * @param {object} profile
+ * @param {object} settings
+ * @returns {string|null}
+ */
+export function pickVerifiedSamlEmail(profile = {}, settings = {}) {
+  if (!profile) return null;
+  const custom = settings.samlAttributeEmail;
+  for (const src of [profile, profile.attributes]) {
+    if (custom && src && Object.hasOwn(src, custom)) return firstShapedEmail(src, custom);
+  }
+  for (const src of [profile, profile.attributes]) {
+    for (const key of VERIFIED_EMAIL_KEYS) {
+      const email = firstShapedEmail(src, key);
+      if (email) return email;
+    }
+  }
+  return null;
+}
+
 /**
  * Extracts display name claim from SAML profile assertion.
  * @param {object} profile
@@ -324,4 +366,17 @@ export function pickSamlGroups(profile, settings) {
     }
   }
   return { present: false, groups: null, invalid: false };
+}
+
+// --- YAN-360: SAML invite proof (see oidc.js for the full contract) --------
+export const SAML_INVITE_COOKIE = "saml_invite";
+
+/** Seal the invite proof for cookie storage, bound to this request's ID. */
+export function sealSamlInvite(invitationToken, requestId) {
+  return sealInviteState(invitationToken, requestId);
+}
+
+/** Invite token from a sealed cookie for exactly this request ID, else null. */
+export function openSamlInvite(sealed, requestId) {
+  return openInviteState(sealed, requestId);
 }

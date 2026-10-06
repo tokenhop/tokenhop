@@ -28,6 +28,7 @@ const ALLOWED = new Set([
   "path",
   "capability",
   "keyNames",
+  "inviteId",
 ]);
 
 const TRUNCATE = 4096;

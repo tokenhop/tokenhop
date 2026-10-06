@@ -260,6 +260,25 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_audit_actor_ts ON auditEvents(actorUserId, ts)",
     ],
   },
+  // Invitations (migration 012, YAN-360). Token stored as SHA-256 hex only.
+  invitations: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      workspaceId: "TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE",
+      role: "TEXT NOT NULL CHECK (role IN ('manager', 'member', 'viewer'))",
+      email: "TEXT",
+      tokenHash: "TEXT NOT NULL UNIQUE",
+      createdByUserId: "TEXT REFERENCES users(id) ON DELETE SET NULL",
+      createdAt: "TEXT NOT NULL",
+      expiresAt: "TEXT NOT NULL",
+      consumedAt: "TEXT",
+      consumedByUserId: "TEXT REFERENCES users(id) ON DELETE SET NULL",
+      revokedAt: "TEXT",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_invitations_ws ON invitations(workspaceId, createdAt, id)",
+    ],
+  },
 };
 
 // YAN-363: the final hashed apiKeys shape, INERT here. Nothing reads it at

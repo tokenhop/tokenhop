@@ -4,9 +4,12 @@ import { getSettings } from "@/lib/localDb";
 import {
   getSamlBaseUrl,
   isSamlConfigured,
+  openSamlInvite,
   pickSamlDisplayName,
   pickSamlEmail,
+  pickVerifiedSamlEmail,
   pickSamlGroups,
+  SAML_INVITE_COOKIE,
   validateSamlResponse,
 } from "@/lib/auth/saml.js";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
@@ -39,6 +42,15 @@ export async function POST(request) {
   const origin = getSamlBaseUrl(request, settings);
   const ip = getClientIp(request);
 
+  // Snapshot then clear transient state first, so every exit (including the
+  // security-state and lock returns below) leaves no state or invite cookie.
+  const cookieStore = await cookies();
+  const storedRequestId = cookieStore.get("saml_state")?.value || "";
+  // YAN-360: captured for later; opened only after the assertion verifies.
+  const sealedInvite = cookieStore.get(SAML_INVITE_COOKIE)?.value;
+  cookieStore.delete("saml_state");
+  cookieStore.delete(SAML_INVITE_COOKIE);
+
   let enforced;
   try {
     enforced = await isUserSecurityEnforced();
@@ -62,12 +74,6 @@ export async function POST(request) {
   if (lock.locked) {
     return NextResponse.redirect(new URL("/login?error=too_many_attempts", origin));
   }
-
-  const cookieStore = await cookies();
-  const storedRequestId = cookieStore.get("saml_state")?.value || "";
-
-  // Always clear saml_state cookie after attempt
-  cookieStore.delete("saml_state");
 
   try {
     const formData = await request.formData();
@@ -93,17 +99,27 @@ export async function POST(request) {
       settings,
     );
 
+    // YAN-360: a present invite proof must open for exactly this flow's request
+    // ID, else fail closed (never a silent ordinary login). Not logged.
+    let invitationToken;
+    if (sealedInvite) {
+      invitationToken = (await openSamlInvite(sealedInvite, storedRequestId)) || undefined;
+      // Invites need admission (enforced security); never degrade to a plain login.
+      if (!invitationToken || !enforced) throw new SsoAdmissionError("denied");
+    }
+
     const samlEmail = pickSamlEmail(profile, settings) || null;
     const samlName = pickSamlDisplayName(profile, settings) || "SAML user";
+    // Signed assertion (validateSamlResponse): an explicit, email-shaped email
+    // claim counts as verified (ADR-0003). nameID/upn fallbacks never do.
+    const verifiedEmail = pickVerifiedSamlEmail(profile, settings);
 
-    // The assertion is signed by the configured IdP (validateSamlResponse), so
-    // its email counts as verified for TOKENHOP_OWNER_EMAIL (ADR-0003).
     const identity = {
       provider: "saml",
       issuer: profile.issuer || "",
       subject: profile.nameID,
-      email: samlEmail,
-      emailVerified: true,
+      email: verifiedEmail ?? samlEmail,
+      emailVerified: Boolean(verifiedEmail),
     };
     let opts;
     if (enforced) {
@@ -127,6 +143,7 @@ export async function POST(request) {
       }
       const admitted = await ssoAdmit({ ...identity, displayName: samlName }, source.groups, {
         setupToken: cookieStore.get(SETUP_TOKEN_COOKIE)?.value,
+        ...(invitationToken ? { invitationToken } : {}),
       });
       takeSetupToken(cookieStore);
       if (admitted.kind === "pending") {

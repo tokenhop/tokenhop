@@ -15,6 +15,9 @@
 //                    handler checks the row's workspace
 //   passwordChange   YAN-358: exactly POST on this row also admits a valid
 //                    restricted password-change token (no full session)
+//   multiUserOnly    YAN-360: answers the same 404 as requireMultiUser() while
+//                    the users & teams switch is off. dashboardGuard checks it
+//                    before any local/auth check, so 401/403 never leak.
 // With the users & teams switch off every authenticated principal is the
 // owner, so `cap` changes nothing; the flags reproduce the old path lists.
 
@@ -33,6 +36,7 @@ const read = (getCap, writeCap) => ({
   cap: { GET: getCap, POST: writeCap, PUT: writeCap, PATCH: writeCap, DELETE: writeCap },
 });
 const scoped = (row) => ({ ...row, scoped: true });
+const multiUser = (row) => ({ ...row, multiUserOnly: true });
 
 /** @type {Record<string, object>} */
 export const ROUTE_POLICY = {
@@ -68,6 +72,41 @@ export const ROUTE_POLICY = {
   // personal UI preferences (browser session only).
   "/api/workspaces/[id]/settings": scoped(read(USE, "workspace.preferences.manage")),
   "/api/me/preferences": { cap: SELF },
+  // YAN-360: admin user lifecycle, ownership transfer, memberships, invitations.
+  // Per-method caps: any unlisted method fails closed to hostOps. The static
+  // ownership-transfer row is exact-matched before the dynamic [id] pattern.
+  // Workspace rows are scoped: the guard only asks for the capability in any of
+  // the principal's workspaces, the handler rechecks the exact URL workspace
+  // (workspace manager, or instance admin/owner). Accept is public: the invite
+  // token is the authorization; it is still hidden while the switch is off.
+  "/api/users": multiUser({
+    cap: { GET: "instance.users.manage" },
+    alwaysProtected: true,
+    cliAllowed: false,
+  }),
+  "/api/users/ownership-transfer": multiUser({
+    cap: { POST: "instance.ownership.transfer" },
+    alwaysProtected: true,
+    cliAllowed: false,
+  }),
+  "/api/users/[id]": multiUser({
+    cap: { PATCH: "instance.users.manage", DELETE: "instance.users.manage" },
+    alwaysProtected: true,
+    cliAllowed: false,
+  }),
+  "/api/workspaces/[id]/members": multiUser(
+    scoped({ cap: { GET: "workspace.members.manage", POST: "workspace.members.manage" } }),
+  ),
+  "/api/workspaces/[id]/members/[userId]": multiUser(
+    scoped({ cap: { PATCH: "workspace.members.manage", DELETE: "workspace.members.manage" } }),
+  ),
+  "/api/workspaces/[id]/invitations": multiUser(
+    scoped({ cap: { GET: "workspace.members.manage", POST: "workspace.members.manage" } }),
+  ),
+  "/api/workspaces/[id]/invitations/[inviteId]": multiUser(
+    scoped({ cap: { DELETE: "workspace.members.manage" } }),
+  ),
+  "/api/invitations/accept": multiUser(PUBLIC),
   "/api/health": PUBLIC,
   "/api/init": PUBLIC,
   "/api/locale": PUBLIC,
@@ -311,7 +350,7 @@ function routeKey(pathname) {
  * /skills, /login…), which dashboardGuard handles itself.
  * @param {string} pathname
  * @param {string} [method]
- * @returns {{ key: string, capability: string|null, public: boolean, gateway: boolean, localOnly: boolean, alwaysProtected: boolean, cliAllowed: boolean, scoped: boolean, passwordChange: boolean }|null}
+ * @returns {{ key: string, capability: string|null, public: boolean, gateway: boolean, localOnly: boolean, alwaysProtected: boolean, cliAllowed: boolean, scoped: boolean, passwordChange: boolean, multiUserOnly: boolean }|null}
  */
 export function resolveRoutePolicy(pathname, method = "GET") {
   const key = routeKey(pathname);
@@ -338,5 +377,6 @@ function flags(row) {
     cliAllowed: row.cliAllowed !== false,
     scoped: row.scoped === true,
     passwordChange: row.passwordChange === true,
+    multiUserOnly: row.multiUserOnly === true,
   };
 }

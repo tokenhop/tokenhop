@@ -45,6 +45,7 @@ export const TABLE_CLASSES = {
     class: "instance",
     note: "append-only; owner/admin read only (ADR-0002); workspaceId is a filter, NULL for login/host events",
   },
+  invitations: { class: "scoped", scopeColumn: "workspaceId" },
 };
 
 // Workspace kv scopes take the `ws:<workspaceId>/` key prefix when scoped.

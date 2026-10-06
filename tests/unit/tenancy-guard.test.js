@@ -36,6 +36,14 @@ const HELPER_ALLOWLIST = new Set([
   "identitiesRepo.js:insertIdentitySync",
   "membershipsRepo.js:syncIdpMembershipsSync",
   "usersRepo.js:createUserWithPersonalWorkspaceSync",
+  // YAN-360 trusted token-authorized seams (first param `db`, the accept
+  // service owns the transaction). The token's unique hash IS the authority:
+  // consumeInvitationSync validates single-use/revoked/expiry/email and wins
+  // only on `changes === 1` (lost races roll back unconsumed);
+  // getInvitationForConsumeSync returns the internal row — including
+  // tokenHash — for in-transaction validation only, never client data.
+  "invitationsRepo.js:getInvitationForConsumeSync",
+  "invitationsRepo.js:consumeInvitationSync",
 ]);
 
 const liveTables = (db) =>

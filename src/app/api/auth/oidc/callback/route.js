@@ -6,6 +6,8 @@ import {
   fetchOidcUserInfo,
   getOidcRuntimeConfig,
   getPublicOrigin,
+  OIDC_COOKIE_NAMES,
+  openInviteState,
   pickOidcDisplayName,
   pickOidcEmail,
   verifyOidcIdToken,
@@ -32,9 +34,7 @@ const ADMISSION_ERRORS = {
 };
 
 function clearOidcCookies(cookieStore) {
-  cookieStore.delete("oidc_state");
-  cookieStore.delete("oidc_nonce");
-  cookieStore.delete("oidc_code_verifier");
+  for (const name of Object.values(OIDC_COOKIE_NAMES)) cookieStore.delete(name);
 }
 
 export async function GET(request) {
@@ -43,6 +43,7 @@ export async function GET(request) {
     enforced = await isUserSecurityEnforced();
   } catch {
     console.warn("[OIDC] callback failed: security_state_unavailable");
+    clearOidcCookies(await cookies());
     return NextResponse.redirect(
       new URL("/login?error=oidc_callback_failed", getPublicOrigin(request)),
     );
@@ -61,13 +62,16 @@ export async function GET(request) {
     return NextResponse.redirect(new URL(`/login?error=${code}`, getPublicOrigin(request)));
   };
   if (enforced && checkLoginLocks({ ip }).locked) {
+    clearOidcCookies(await cookies());
     return NextResponse.redirect(
       new URL("/login?error=too_many_attempts", getPublicOrigin(request)),
     );
   }
   const url = new URL(request.url);
   const error = url.searchParams.get("error");
+  const earlyExit = async () => clearOidcCookies(await cookies());
   if (error) {
+    await earlyExit();
     if (enforced) return fail("oidc_callback_failed");
     console.warn("[OIDC] provider returned error:", error);
     return NextResponse.redirect(
@@ -78,6 +82,7 @@ export async function GET(request) {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   if (!code || !state) {
+    await earlyExit();
     if (enforced) return fail("oidc_missing_code");
     return NextResponse.redirect(
       new URL("/login?error=oidc_missing_code", getPublicOrigin(request)),
@@ -88,6 +93,8 @@ export async function GET(request) {
   const storedState = cookieStore.get("oidc_state")?.value;
   const storedNonce = cookieStore.get("oidc_nonce")?.value;
   const codeVerifier = cookieStore.get("oidc_code_verifier")?.value;
+  // Captured before the cookies are cleared; opened only after id_token verification.
+  const sealedInvite = cookieStore.get(OIDC_COOKIE_NAMES.invite)?.value;
 
   if (!storedState || !storedNonce || !codeVerifier || storedState !== state) {
     clearOidcCookies(cookieStore);
@@ -134,6 +141,14 @@ export async function GET(request) {
     });
 
     clearOidcCookies(cookieStore);
+    // YAN-360: a present invite proof must open for exactly this flow's state,
+    // else fail closed (never a silent ordinary login). Not logged.
+    let invitationToken;
+    if (sealedInvite) {
+      invitationToken = (await openInviteState(sealedInvite, storedState)) || undefined;
+      // Invites need admission (enforced security); never degrade to a plain login.
+      if (!invitationToken || !enforced) throw new SsoAdmissionError("denied");
+    }
     const identity = {
       provider: "oidc",
       issuer: payload.iss || discoveredIssuer,
@@ -178,7 +193,10 @@ export async function GET(request) {
       const admitted = await ssoAdmit(
         { ...identity, displayName: pickOidcDisplayName(payload) },
         source.groups,
-        { setupToken: cookieStore.get(SETUP_TOKEN_COOKIE)?.value },
+        {
+          setupToken: cookieStore.get(SETUP_TOKEN_COOKIE)?.value,
+          ...(invitationToken ? { invitationToken } : {}),
+        },
       );
       takeSetupToken(cookieStore);
       if (admitted.kind === "pending") {

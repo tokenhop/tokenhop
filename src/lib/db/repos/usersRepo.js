@@ -59,6 +59,33 @@ export async function listUsersUnscoped() {
   return db.all(`SELECT ${COLS} FROM users ORDER BY createdAt ASC`);
 }
 
+// Public admin-list projection: no passwordHash, sessionVersion or instanceRoleSource.
+const PAGE_COLS =
+  "id, email, username, displayName, instanceRole, status, mustChangePassword, createdAt, updatedAt, lastLoginAt";
+
+/**
+ * SQL-paginated admin user list, stable `createdAt, id` order. Same shape and
+ * clamping as auditRepo.list: page >= 1, pageSize 1..100 (default 50); garbage
+ * input falls back to the defaults.
+ * @param {{ page?: number, pageSize?: number }} [opts]
+ */
+export async function listUsersPageUnscoped({ page, pageSize } = {}) {
+  const db = await getAdapter();
+  const p = Number.isFinite(Number(page)) ? Math.max(1, Math.floor(page) || 1) : 1;
+  const size = Number.isFinite(Number(pageSize))
+    ? Math.min(100, Math.max(1, Math.floor(pageSize) || 50))
+    : 50;
+  const totalItems = db.get(`SELECT COUNT(*) AS c FROM users`)?.c ?? 0;
+  const users = db.all(
+    `SELECT ${PAGE_COLS} FROM users ORDER BY createdAt ASC, id ASC LIMIT ? OFFSET ?`,
+    [size, (p - 1) * size],
+  );
+  return {
+    users,
+    pagination: { page: p, pageSize: size, totalItems, totalPages: Math.ceil(totalItems / size) },
+  };
+}
+
 export async function getOwnerUnscoped() {
   const db = await getAdapter();
   return db.get(`SELECT ${COLS} FROM users WHERE instanceRole = 'owner'`) ?? null;
@@ -277,12 +304,57 @@ export async function createUserUnscoped({
   );
 }
 
-export async function updateUserUnscoped(id, patch = {}) {
+// Throws LAST_MANAGER if removing user `id` from service (disable or delete)
+// would leave any shared workspace without an active owner/manager.
+function assertNotLastSharedManager(db, id) {
+  const shared = db.all(
+    `SELECT m.workspaceId FROM memberships m JOIN workspaces w ON w.id = m.workspaceId WHERE m.userId = ? AND w.kind = 'shared'`,
+    [id],
+  );
+  for (const { workspaceId } of shared) assertNotLastManager(db, workspaceId, id);
+}
+
+// Allow-lists mirror the schema CHECKs; 'owner' stays so the OWNER_IMMUTABLE
+// guard (transfer-only) answers instead of a generic INVALID.
+const ROLES = ["owner", "admin", "user", "pending"];
+const STATUSES = ["active", "disabled"];
+
+// Delegated-admin check, run inside the caller's sync transaction; re-reads the
+// persisted actor so a stale/disabled actor fails at write time.
+function assertActorAuthority(db, actorUserId, target, patch) {
+  const actor = requireRow(db, actorUserId);
+  if (actor.status !== "active" || !["owner", "admin"].includes(actor.instanceRole)) {
+    throw new TenancyError("FORBIDDEN", "Actor must be an active owner or admin");
+  }
+  if (target.id === actor.id) {
+    throw new TenancyError("FORBIDDEN", "Actors can't modify themselves");
+  }
+  if (target.instanceRole === "owner") {
+    throw new TenancyError("FORBIDDEN", "The owner is managed by ownership transfer");
+  }
+  if (actor.instanceRole === "admin") {
+    if (target.instanceRole === "admin") {
+      throw new TenancyError("FORBIDDEN", "Admins can only manage users and pending users");
+    }
+    if (patch?.instanceRole === "admin") {
+      throw new TenancyError("FORBIDDEN", "Only the owner can grant the admin role");
+    }
+  }
+}
+
+export async function updateUserUnscoped(id, patch = {}, options = {}) {
+  if (Object.hasOwn(patch, "instanceRole") && !ROLES.includes(patch.instanceRole)) {
+    throw new TenancyError("INVALID", "Invalid instanceRole");
+  }
+  if (Object.hasOwn(patch, "status") && !STATUSES.includes(patch.status)) {
+    throw new TenancyError("INVALID", "Invalid status");
+  }
   const db = await getAdapter();
   if (patch.status === "active") await assertNotSingleUserMode(db, "active", id);
   return mapConstraintErrors(() =>
     db.transaction(() => {
       const row = requireRow(db, id);
+      if (options.actorUserId != null) assertActorAuthority(db, options.actorUserId, row, patch);
       const next = {};
       for (const k of ["email", "username", "displayName"]) {
         if (Object.hasOwn(patch, k)) next[k] = optText(patch[k]);
@@ -297,6 +369,12 @@ export async function updateUserUnscoped(id, patch = {}) {
       if (row.instanceRole === "owner" && next.status && next.status !== "active") {
         throw new TenancyError("OWNER_IMMUTABLE", "The owner can't be disabled");
       }
+      // YAN-360: disabling or demoting to pending removes effective management,
+      // so neither may leave a shared workspace without an effective manager.
+      const losesManagement =
+        (next.status === "disabled" && row.status !== "disabled") ||
+        (next.instanceRole === "pending" && row.instanceRole !== "pending");
+      if (losesManagement) assertNotLastSharedManager(db, id);
 
       // YAN-359: an explicit manual instanceRole (even same-role) makes the role
       // manual. Clearing non-null provenance is a security change: one sv bump,
@@ -321,18 +399,23 @@ export async function updateUserUnscoped(id, patch = {}) {
   );
 }
 
-export async function deleteUserUnscoped(id) {
+export async function deleteUserUnscoped(id, options = {}) {
   const db = await getAdapter();
   return db.transaction(() => {
     const row = requireRow(db, id);
+    if (options.actorUserId != null) assertActorAuthority(db, options.actorUserId, row);
     if (row.instanceRole === "owner") {
       throw new TenancyError("OWNER_IMMUTABLE", "Transfer ownership before deleting the owner");
     }
-    const shared = db.all(
-      `SELECT m.workspaceId FROM memberships m JOIN workspaces w ON w.id = m.workspaceId WHERE m.userId = ? AND w.kind = 'shared'`,
-      [id],
-    );
-    for (const { workspaceId } of shared) assertNotLastManager(db, workspaceId, id);
+    assertNotLastSharedManager(db, id);
+    // kv has no FK to workspaces: drop scoped `ws:<id>/` rows (exact prefix) first.
+    const personal = db.all(`SELECT id FROM workspaces WHERE createdBy = ? AND kind = 'personal'`, [
+      id,
+    ]);
+    for (const { id: wsId } of personal) {
+      const prefix = `ws:${wsId}/`;
+      db.run(`DELETE FROM kv WHERE substr(key, 1, ?) = ?`, [prefix.length, prefix]);
+    }
     db.run(`DELETE FROM workspaces WHERE createdBy = ? AND kind = 'personal'`, [id]);
     // identities and memberships cascade.
     dropSession(id);
@@ -395,14 +478,22 @@ export async function bootstrapOwnerUnscoped({ passwordHash } = {}) {
 }
 
 // Owner → admin, target → owner, both sessions revoked. Only the owner may.
-export async function transferOwnership(ctx, toUserId) {
+// `options.expectedSessionVersion` binds a fresh credential proof to the live
+// actor row read inside this transaction (STALE on mismatch, nothing written).
+export async function transferOwnership(ctx, toUserId, options = {}) {
   assertCtx(ctx);
   const db = await getAdapter();
   let oldOwnerId = null;
   const result = db.transaction(() => {
     const from = requireRow(db, ctx.userId);
-    if (from.instanceRole !== "owner") {
+    if (from.instanceRole !== "owner" || from.status !== "active") {
       throw new TenancyError("OWNER_IMMUTABLE", "Only the owner can transfer ownership");
+    }
+    if (
+      options.expectedSessionVersion !== undefined &&
+      from.sessionVersion !== options.expectedSessionVersion
+    ) {
+      throw new TenancyError("STALE", "Session is out of date");
     }
     const to = requireRow(db, toUserId);
     if (to.id === from.id) return getRow(db, to.id);
