@@ -1,7 +1,7 @@
 import { saveRequestUsageUnscoped } from "@/lib/usageDb.js";
 import { COLORS } from "../../utils/stream.js";
 import { canonicalizeUsage } from "../../utils/usageTracking.js";
-import { COMBO_PROBE_ENDPOINT } from "../../config/runtimeConfig.js";
+import { COMBO_PROBE_ENDPOINT, FIM_USAGE_ENDPOINT } from "../../config/runtimeConfig.js";
 import {
   geminiUsageCounts,
   reasoningInclusiveCompletion,
@@ -137,6 +137,7 @@ export function saveUsageStats({
   apiKey,
   keyContext,
   endpoint,
+  latencyMs,
   userAgent = null,
   savings = null,
   comboName = null,
@@ -187,5 +188,9 @@ export function saveUsageStats({
     userAgent: userAgent || undefined,
     savings: savings || undefined,
     comboName: comboName || undefined,
+    meta: {
+      ...(Number.isFinite(latencyMs) ? { latencyMs } : {}),
+      ...(endpoint === FIM_USAGE_ENDPOINT && outTokens === 0 ? { empty: true } : {}),
+    },
   }).catch(() => {});
 }

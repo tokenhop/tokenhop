@@ -156,7 +156,8 @@ describe("edit predictions via combo on /v1/completions (YAN-729)", () => {
       expect(rows.length).toBe(before + 1);
     });
     const rows = await getUsageHistory(null, { provider: "openai" });
-    const row = rows.find((r) => r.model === "good" && r.endpoint === "/v1/completions");
+    // YAN-736: every edit-prediction route is tagged "completions" in usage.
+    const row = rows.find((r) => r.model === "good" && r.endpoint === "completions");
     expect(row).toBeDefined();
     expect(row.comboName).toBe(COMBO);
   });

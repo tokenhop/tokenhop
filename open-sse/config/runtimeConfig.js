@@ -74,6 +74,20 @@ export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs(
 export const DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_MIN_TOKENS = 32000;
 
+// Edit predictions (/v1/completions, /v1/fim/completions, /infill), YAN-736.
+// Prompt caps keep the text nearest the cursor: prefix tail, suffix head, context head.
+export const FIM_MAX_PREFIX_CHARS = 24_000;
+export const FIM_MAX_SUFFIX_CHARS = 8_000;
+export const FIM_MAX_CONTEXT_CHARS = 32_000;
+export const FIM_MAX_EXTRA_TOTAL_CHARS = 32_000;
+// Used when the client sends no max_tokens / max_completion_tokens.
+export const FIM_DEFAULT_MAX_TOKENS = 128;
+// Per-attempt budget (headers + non-stream body) so combo fallback stays within
+// the typing budget. Env: FIM_ATTEMPT_TIMEOUT_MS.
+export const FIM_ATTEMPT_TIMEOUT_MS = envMs("FIM_ATTEMPT_TIMEOUT_MS", 8000);
+// Usage-row endpoint tag for all edit-prediction routes (dashboard Endpoint breakdown).
+export const FIM_USAGE_ENDPOINT = "completions";
+
 // Budget reservation estimates (YAN-372, ADR-0007). Used only when a request
 // carries no max_tokens / the model has no pricing entry.
 // Env: BUDGET_DEFAULT_MAX_TOKENS, BUDGET_FALLBACK_RESERVE_USD (float).

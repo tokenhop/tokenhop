@@ -177,7 +177,9 @@ describe("chatCore provider session forwarding", () => {
       (match) => match[1],
     );
 
-    expect(calls).toHaveLength(2);
+    // YAN-736: initial and refresh-retry share one execute() closure.
+    expect(calls).toHaveLength(1);
+    expect(source.match(/await execute\(\)/g)).toHaveLength(2);
     for (const call of calls) {
       expect(call).toMatch(/providerSessionId:\s*sessionSeed/);
       expect(call).toMatch(/\bclientTool\b/);
