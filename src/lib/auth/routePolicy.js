@@ -205,6 +205,20 @@ export const ROUTE_POLICY = {
   "/api/providers/client": scoped({ cap: META }),
   "/api/providers/kilo/free-models": { cap: META },
   "/api/providers/suggested-models": { cap: META },
+  // YAN-369: connection grants — the handler re-checks the row's owning
+  // workspace live (source workspace manager, or instance owner/admin via
+  // ADMIN_ANY_WORKSPACE); the incoming route is any-session (self.session):
+  // seeing what was shared with you needs no manage right.
+  "/api/providers/[id]/grants": multiUser(
+    scoped({
+      cap: { GET: "workspace.grants.manage", POST: "workspace.grants.manage" },
+      cliAllowed: false,
+    }),
+  ),
+  "/api/providers/[id]/grants/[grantId]": multiUser(
+    scoped({ cap: { DELETE: "workspace.grants.manage" }, cliAllowed: false }),
+  ),
+  "/api/grants": multiUser({ cap: SELF, cliAllowed: false }),
   "/api/provider-nodes": scoped(read(META, CONN)),
   "/api/provider-nodes/[id]": scoped({ cap: CONN }),
   "/api/provider-nodes/validate": { cap: CONN },
