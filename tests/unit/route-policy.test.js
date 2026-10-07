@@ -264,9 +264,11 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
     for (const p of ["/v1", "/v1/chat/completions", "/v1/v1/models", "/v1beta/models/x"]) {
       expect(resolveRoutePolicy(p, "POST")).toMatchObject({ gateway: true, public: false });
     }
-    for (const p of ["/codex/responses", "/responses", "/api/v1/unknown"]) {
+    for (const p of ["/codex/responses", "/responses", "/api/v1/unknown", "/infill"]) {
       expect(resolveRoutePolicy(p, "POST").gateway).toBe(true);
     }
+    // Boundary match: a near-miss path must not borrow the gateway row.
+    expect(resolveRoutePolicy("/infillx", "POST")).toBeNull();
     expect(GATEWAY_PREFIXES).toEqual(expect.arrayContaining(LEGACY.publicLlm));
   });
 

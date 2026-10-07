@@ -345,6 +345,7 @@ export const GATEWAY_PREFIXES = Object.freeze([
   "/v1beta",
   "/codex",
   "/responses",
+  "/infill",
   "/api/v1",
   "/api/v1beta",
 ]);

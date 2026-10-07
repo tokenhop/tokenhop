@@ -1,5 +1,5 @@
 import { translateResponse, initState } from "../translator/index.js";
-import { FORMATS } from "../translator/formats.js";
+import { FORMATS, isFimFormat } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import {
   extractUsage,
@@ -87,7 +87,7 @@ export function createSSEStream(options = {}) {
           model,
           sessionId: credentials?._clientSessionId || null,
           // Legacy completions: prefix/suffix for output cleanup, re-parsed from the client body.
-          fimContext: sourceFormat === FORMATS.OPENAI_COMPLETIONS ? fimContextFor(body) : null,
+          fimContext: isFimFormat(sourceFormat) ? fimContextFor(body, sourceFormat) : null,
         }
       : null;
 
@@ -617,10 +617,7 @@ export function createSSEStream(options = {}) {
         // DeepSeek ACP abort without it). Translated upstreams either never send
         // one (Claude, Gemini) or had it swallowed above, so emit it once, last
         // (YAN-652).
-        if (
-          (sourceFormat === FORMATS.OPENAI || sourceFormat === FORMATS.OPENAI_COMPLETIONS) &&
-          !streamDoneSent
-        ) {
+        if ((sourceFormat === FORMATS.OPENAI || isFimFormat(sourceFormat)) && !streamDoneSent) {
           const doneOutput = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(doneOutput);
           controller.enqueue(sharedEncoder.encode(doneOutput));

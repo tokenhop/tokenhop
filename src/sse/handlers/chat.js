@@ -35,7 +35,7 @@ import {
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { recordFallbackHop } from "@/lib/usageDb.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
-import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { FORMATS, detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import {
@@ -160,6 +160,35 @@ export async function handleChat(request, clientRawRequest = null, options = nul
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  // llama.vim / llama.vscode warm the server cache with n_predict:0 on every
+  // cursor move. There is no cache to warm here: answer empty once auth and the
+  // key's model/combo scope pass, without an upstream call. Skipping rate
+  // limits and usage rows is deliberate (no tokens are spent).
+  if (
+    body.n_predict === 0 &&
+    request?.url &&
+    detectFormatByEndpoint(new URL(request.url).pathname, body) === FORMATS.LLAMACPP_INFILL
+  ) {
+    if (gateway) {
+      const combo = await getComboByName(modelStr, { principal: gateway });
+      const info = combo ? null : await getModelInfo(modelStr, { principal: gateway });
+      const denied = combo
+        ? authorizeGatewayTarget(gateway, { comboId: combo.id })
+        : info?.provider
+          ? authorizeGatewayTarget(gateway, { modelId: `${info.provider}/${info.model}` })
+          : null;
+      if (denied) return denied;
+    }
+    const warm = { content: "", stop: true, tokens_predicted: 0, truncated: false };
+    const cors = { "Access-Control-Allow-Origin": "*" };
+    if (body.stream === true) {
+      return new Response(`data: ${JSON.stringify(warm)}\n\ndata: [DONE]\n\n`, {
+        headers: { ...cors, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+      });
+    }
+    return Response.json(warm, { headers: cors });
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots

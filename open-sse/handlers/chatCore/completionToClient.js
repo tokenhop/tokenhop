@@ -170,6 +170,47 @@ function toTextCompletionUsage(usage) {
   };
 }
 
+// Codestral /v1/fim/completions JSON body (chat.completion shape).
+function openaiToCodestralNonStreaming(body, state) {
+  const prompt = body?.usage?.prompt_tokens ?? 0;
+  const completion = body?.usage?.completion_tokens ?? 0;
+  return {
+    id: toCompletionId(body?.id).replace(/^cmpl-/, "chatcmpl-"),
+    object: "chat.completion",
+    created: body?.created || Math.floor(Date.now() / 1000),
+    model: body?.model || state?.model,
+    choices: (body?.choices || []).map((c, i) => ({
+      index: c.index ?? i,
+      message: {
+        role: "assistant",
+        content: cleanFimOutput(c.message?.content ?? "", state?.fimContext ?? {}),
+      },
+      finish_reason: c.finish_reason ?? "stop",
+    })),
+    usage: {
+      prompt_tokens: prompt,
+      completion_tokens: completion,
+      total_tokens: body?.usage?.total_tokens ?? prompt + completion,
+    },
+  };
+}
+
+// llama.cpp /infill JSON body.
+function openaiToLlamacppNonStreaming(body, state) {
+  const choice = body?.choices?.[0];
+  const content = cleanFimOutput(choice?.message?.content ?? "", state?.fimContext ?? {});
+  const finishReason = choice?.finish_reason ?? "stop";
+  return {
+    content,
+    stop: true,
+    ...(body?.model ? { model: body.model } : {}),
+    tokens_predicted: body?.usage?.completion_tokens ?? 0,
+    tokens_evaluated: body?.usage?.prompt_tokens ?? 0,
+    truncated: finishReason === "length",
+    stop_type: finishReason === "length" ? "limit" : "eos",
+  };
+}
+
 /**
  * Convert an OpenAI `chat.completion` body into the client's format.
  * Claude, Responses and legacy Completions clients get their native body; any
@@ -187,5 +228,9 @@ export function openAICompletionToClientFormat(
     return openAICompletionToResponses(responseBody, customToolNames);
   if (clientFormat === FORMATS.OPENAI_COMPLETIONS)
     return openAICompletionToTextCompletion(responseBody, fimContext);
+  if (clientFormat === FORMATS.CODESTRAL_FIM)
+    return openaiToCodestralNonStreaming(responseBody, { fimContext, model: responseBody?.model });
+  if (clientFormat === FORMATS.LLAMACPP_INFILL)
+    return openaiToLlamacppNonStreaming(responseBody, { fimContext });
   return responseBody;
 }

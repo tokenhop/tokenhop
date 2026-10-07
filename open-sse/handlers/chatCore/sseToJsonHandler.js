@@ -1,7 +1,7 @@
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
-import { FORMATS } from "../../translator/formats.js";
+import { FORMATS, isFimFormat } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import {
   buildRequestDetail,
@@ -150,7 +150,7 @@ export async function handleForcedSSEToJson({
   reqTag,
   log,
 }) {
-  const fimContext = sourceFormat === FORMATS.OPENAI_COMPLETIONS ? fimContextFor(body) : null;
+  const fimContext = isFimFormat(sourceFormat) ? fimContextFor(body, sourceFormat) : null;
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE =
     contentType.includes("text/event-stream") ||

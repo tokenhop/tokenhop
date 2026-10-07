@@ -5,7 +5,7 @@ import {
   extractThinking,
   stripThinkingSuffix,
 } from "../translator/concerns/thinkingUnified.js";
-import { FORMATS } from "../translator/formats.js";
+import { FORMATS, isFimFormat } from "../translator/formats.js";
 import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
@@ -446,7 +446,7 @@ export async function handleChatCore({
 
   // Style prompts are chat-only: on edit predictions (/v1/completions) they add
   // ~780 prompt tokens per keystroke and nothing to a FIM reply (YAN-741).
-  const styleInject = tokenSaverEnabled && sourceFormat !== FORMATS.OPENAI_COMPLETIONS;
+  const styleInject = tokenSaverEnabled && !isFimFormat(sourceFormat);
 
   // Caveman: inject terse-style system prompt
   if (styleInject && cavemanEnabled && cavemanLevel) {
