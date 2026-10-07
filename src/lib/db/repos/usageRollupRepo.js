@@ -5,8 +5,24 @@
 // Sync helpers taking `db`: callers own the transaction (the fail-closed usage
 // sink, legacy JSON import) or pass a usage scope (`ctx`).
 
+import { createHash } from "node:crypto";
+
 export const NO_KEY = "local-no-key";
 const DIMS = ["workspaceId", "userId", "apiKeyId", "provider", "model", "connectionId", "endpoint"];
+
+/**
+ * Legacy storage: raw → keys-table id; a raw that matches no key becomes a
+ * `historical:` pseudonym (truncated sha256: gateway keys are high-entropy
+ * secrets, and this must not depend on master-key availability). Same scheme
+ * as migration 014. The raw is never persisted (YAN-370, ADR-0005).
+ */
+export function legacyKeyId(db, raw) {
+  if (typeof raw !== "string" || raw === "") return NO_KEY;
+  if (raw === NO_KEY) return NO_KEY;
+  const row = db.get(`SELECT id FROM apiKeys WHERE key = ?`, [raw]);
+  if (row?.id) return row.id;
+  return `historical:${createHash("sha256").update(raw).digest("hex").slice(0, 24)}`;
+}
 
 /** Server-local YYYY-MM-DD: the day key charts and stats have always used. */
 export function localDateKey(timestamp) {

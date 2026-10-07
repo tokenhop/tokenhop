@@ -174,6 +174,40 @@ describe("switch on: usage readers follow the caller's scope", () => {
     for (const d of details.details) expect(d.request.secret).toMatch(/-body$/);
   });
 
+  it("instance admin outside Shared: whole workspace usage, no bodies; viewer: own rows only", async () => {
+    const { a, shared } = t;
+    const ws = `?workspaceId=${shared.id}`;
+    const seed = async (email, instanceRole) => {
+      const user = await db.createUserUnscoped({ email, instanceRole });
+      return {
+        user,
+        ctx: { userId: user.id, instanceRole, workspaceIds: [user.personalWorkspaceId] },
+        personal: user.personalWorkspaceId,
+      };
+    };
+
+    const admin = await seed("admin@tenancy.test", "admin");
+    const stats = await (
+      await as(admin, statsRoute.GET, `/api/usage/stats${ws}&period=24h`)
+    ).json();
+    expect(stats.totalRequests).toBe(2);
+    const details = await (
+      await as(admin, detailsRoute.GET, `/api/usage/request-details${ws}&pageSize=10`)
+    ).json();
+    expect(details.details.map((d) => d.id).sort()).toEqual(["det-a", "det-b"]);
+    for (const d of details.details) expect(d.request).toEqual({ redacted: true });
+
+    const viewer = await seed("viewer@tenancy.test", "user");
+    const owner = { userId: a.user.id, instanceRole: "owner", workspaceIds: [shared.id] };
+    await db.addMembership(owner, shared.id, { userId: viewer.user.id, role: "viewer" });
+    viewer.ctx.workspaceIds.push(shared.id);
+    await writeUsage({ workspaceId: shared.id, userId: viewer.user.id, model: "model-v" });
+    const vStats = await (
+      await as(viewer, statsRoute.GET, `/api/usage/stats${ws}&period=24h`)
+    ).json();
+    expect(Object.keys(vStats.byModel)).toEqual(["model-v (openai)"]);
+  });
+
   it("canSeeBodies: B is denied A's row, granted own; getRequestDetailById hides A's personal row", async () => {
     const { a, b } = t;
     const { canSeeBodies } = await import("@/lib/usage/scope.js");

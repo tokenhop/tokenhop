@@ -9,7 +9,7 @@ import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
-import { rebuildRollupFromHistoryUnscoped } from "./repos/usageRollupRepo.js";
+import { legacyKeyId, rebuildRollupFromHistoryUnscoped } from "./repos/usageRollupRepo.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -365,13 +365,15 @@ function importLegacyUsage(adapter, data) {
   for (const e of data.history || []) {
     const t = e.tokens || {};
     adapter.run(
-      `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      // YAN-370: the raw key is resolved to its id (apiKeys were imported
+      // first by importLegacyMain) and never stored.
+      `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKeyId, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         e.timestamp || new Date().toISOString(),
         e.provider || null,
         e.model || null,
         e.connectionId || null,
-        e.apiKey || null,
+        legacyKeyId(adapter, e.apiKey),
         e.endpoint || null,
         t.prompt_tokens || t.input_tokens || 0,
         t.completion_tokens || t.output_tokens || 0,

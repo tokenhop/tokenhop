@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMetaSync, setMetaSync } from "../helpers/metaStore.js";
@@ -11,6 +10,7 @@ import { pushToRing, scheduleStatsEvent } from "./usageLiveFeed.js";
 import { apiKeyNames } from "./usageStatsRepo.js";
 import {
   NO_KEY,
+  legacyKeyId,
   localDateKey,
   scopeSql,
   upsertRollupRowUnscoped,
@@ -181,18 +181,6 @@ export async function resolveUsageKeyIdentity(
     { storage: "hashed", keyIdByHash, hashKey },
   );
   return { storage: "hashed", credential: normalized.apiKeyId, workspaceId, userId };
-}
-
-// Legacy storage: raw → keys-table id; a raw that matches no key becomes a
-// `historical:` pseudonym (truncated sha256: gateway keys are high-entropy
-// secrets, and this must not depend on master-key availability). The raw is
-// never persisted (YAN-370, ADR-0005).
-function legacyKeyId(db, raw) {
-  if (typeof raw !== "string" || raw === "") return NO_KEY;
-  if (raw === NO_KEY) return NO_KEY;
-  const row = db.get(`SELECT id FROM apiKeys WHERE key = ?`, [raw]);
-  if (row?.id) return row.id;
-  return `historical:${createHash("sha256").update(raw).digest("hex").slice(0, 24)}`;
 }
 
 const idOrNull = (v) => (typeof v === "string" && v !== "" ? v : null);
