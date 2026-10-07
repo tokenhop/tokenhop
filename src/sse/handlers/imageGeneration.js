@@ -20,6 +20,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { handleComboChat } from "open-sse/services/combo.js";
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
 import * as log from "../utils/logger.js";
+import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
 
 // Providers that don't require credentials (noAuth)
 const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui"]);
@@ -161,6 +162,7 @@ async function handleSingleModelImage(
     });
 
     if (!credentials || credentials.allRateLimited) {
+      if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status =
@@ -217,12 +219,16 @@ async function handleSingleModelImage(
       return result.response;
     }
 
+    releaseGrantReservation(credentials.grantReservation);
+
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,
       result.status,
       result.error,
       provider,
       model,
+      null,
+      { grantId: credentials.grantId },
     );
 
     if (shouldFallback) {

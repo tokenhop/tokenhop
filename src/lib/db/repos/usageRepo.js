@@ -231,7 +231,7 @@ export async function saveRequestUsageUnscoped(entry) {
     // History insert, rollup upsert and lifetime counters in ONE transaction.
     db.transaction(() => {
       db.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta, workspaceId, userId, apiKeyId, grantId) VALUES(?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM workspaces WHERE id = ?), (SELECT id FROM users WHERE id = ?), ?, NULL)`,
+        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta, workspaceId, userId, apiKeyId, grantId) VALUES(?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM workspaces WHERE id = ?), (SELECT id FROM users WHERE id = ?), ?, ?)`,
         [
           entry.timestamp,
           entry.provider || null,
@@ -247,6 +247,7 @@ export async function saveRequestUsageUnscoped(entry) {
           workspaceId,
           userId,
           apiKeyId,
+          typeof entry.grantId === "string" ? entry.grantId : null,
         ],
       );
       // Rollup dims follow the stored row (FK-checked ids, never dangling).

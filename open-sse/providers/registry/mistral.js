@@ -13,6 +13,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   transport: {
     baseUrl: "https://api.mistral.ai/v1/chat/completions",
     validateUrl: "https://api.mistral.ai/v1/models",

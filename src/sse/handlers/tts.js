@@ -15,6 +15,7 @@ import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { handleComboChat } from "open-sse/services/combo.js";
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
 import * as log from "../utils/logger.js";
+import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
 
 // Derived from providers.js: any TTS provider not noAuth requires stored credentials
 const CREDENTIALED_PROVIDERS = new Set(
@@ -170,6 +171,7 @@ async function handleSingleModelTts(
     );
 
     if (!credentials || credentials.allRateLimited) {
+      if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
       if (credentials?.allRateLimited) {
         const msg = lastError || credentials.lastError || "Unavailable";
         const status =
@@ -217,12 +219,16 @@ async function handleSingleModelTts(
       return result.response;
     }
 
+    releaseGrantReservation(credentials.grantReservation);
+
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,
       result.status,
       result.error,
       provider,
       model,
+      null,
+      { grantId: credentials.grantId },
     );
     if (shouldFallback) {
       excludeConnectionIds.add(credentials.connectionId);

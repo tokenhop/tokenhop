@@ -14,6 +14,7 @@ export default {
     },
   },
   category: "freeTier",
+  sharing: "shareable",
   authType: "apikey",
   authModes: ["apikey"],
   passthroughModels: true,

@@ -12,6 +12,7 @@ export default {
     website: "https://www.perplexity.ai",
   },
   category: "webCookie",
+  sharing: "personal",
   authType: "cookie",
   authHint: "Paste your __Secure-next-auth.session-token cookie value from perplexity.ai",
   transport: {

@@ -14,6 +14,7 @@ export default {
     },
   },
   category: "oauth",
+  sharing: "personal",
   authType: "oauth",
   hasOAuth: true,
 

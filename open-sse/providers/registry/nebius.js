@@ -13,6 +13,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   authType: "apikey",
   transport: {
     baseUrl: "https://api.studio.nebius.ai/v1/chat/completions",

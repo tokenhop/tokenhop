@@ -106,6 +106,7 @@ export async function handleChatCore({
   apiKeyId,
   workspaceId,
   userId,
+  grantId,
   ccFilterNaming,
   rtkEnabled,
   headroomEnabled,
@@ -132,6 +133,7 @@ export async function handleChatCore({
   if (apiKeyId != null) keyContext.apiKeyId = apiKeyId;
   if (workspaceId != null) keyContext.workspaceId = workspaceId;
   if (userId != null) keyContext.userId = userId;
+  if (grantId != null) keyContext.grantId = grantId; // YAN-369: set from selected credential
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag

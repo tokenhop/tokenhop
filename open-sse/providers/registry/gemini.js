@@ -16,6 +16,7 @@ export default {
     },
   },
   category: "freeTier",
+  sharing: "shareable",
   authType: "apikey",
   authModes: ["apikey"],
   mediaPriority: 1,

@@ -9,6 +9,7 @@ export default {
     website: "https://github.com/neonbjb/tortoise-tts",
   },
   category: "freeTier",
+  sharing: "shareable",
   authType: "none",
   serviceKinds: ["tts"],
   noAuth: true,

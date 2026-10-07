@@ -11,6 +11,7 @@ export default {
     textIcon: "OC",
   },
   category: "free",
+  sharing: "personal",
   noAuth: true,
   transport: {
     baseUrl: "https://opencode.ai",

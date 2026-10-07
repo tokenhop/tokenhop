@@ -15,6 +15,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   authType: "apikey",
   transport: {
     baseUrl: "https://api.perplexity.ai/chat/completions",

@@ -15,6 +15,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   transport: {
     baseUrl: "https://llm.chutes.ai/v1/chat/completions",
     validateUrl: "https://llm.chutes.ai/v1/models",

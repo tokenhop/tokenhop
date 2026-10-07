@@ -13,6 +13,7 @@ export default {
     notice: { apiKeyUrl: "https://bluesminds.com" },
   },
   category: "apikey",
+  sharing: "shareable",
   authType: "apikey",
   authModes: ["apikey"],
   transport: {

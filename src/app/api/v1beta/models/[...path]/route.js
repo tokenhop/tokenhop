@@ -9,6 +9,10 @@ import { getModelInfo } from "@/sse/services/model.js";
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import {
+  grantRateLimitResponse,
+  releaseGrantReservation,
+} from "@/sse/services/grantRateLimiter.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -284,6 +288,7 @@ async function forwardGeminiNativeRequest(request, body, model, action, gateway)
       modelId,
       gatewayCreds,
     );
+    if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
     if (!credentials || credentials.allRateLimited) {
       console.log(
         `[GEMINI_NATIVE] exhausted model=${modelId} status=${lastStatus || Number(credentials?.lastErrorCode) || 503} error=${lastError || credentials?.lastError || "No active credentials for provider: gemini"}`,
@@ -351,12 +356,16 @@ async function forwardGeminiNativeRequest(request, body, model, action, gateway)
         `[GEMINI_NATIVE] fetch failed model=${modelId} status=${status} ms=${durationMs} conn=${safeConnection} error=${errorText}`,
       );
 
+      releaseGrantReservation(credentials.grantReservation);
+
       const { shouldFallback } = await markAccountUnavailable(
         credentials.connectionId,
         status,
         errorText,
         "gemini",
         modelId,
+        null,
+        { grantId: credentials.grantId },
       );
 
       if (shouldFallback) {
@@ -389,12 +398,15 @@ async function forwardGeminiNativeRequest(request, body, model, action, gateway)
     }
 
     const errorText = await upstreamResponse.text();
+    releaseGrantReservation(credentials.grantReservation);
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,
       upstreamResponse.status,
       errorText,
       "gemini",
       modelId,
+      null,
+      { grantId: credentials.grantId },
     );
 
     if (shouldFallback) {

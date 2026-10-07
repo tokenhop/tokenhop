@@ -161,6 +161,8 @@ describe("handleVideoCreate", () => {
       expect.any(String),
       "xai",
       null,
+      null,
+      expect.any(Object), // YAN-369 { grantId }
     );
   });
 

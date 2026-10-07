@@ -15,6 +15,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   transport: {
     baseUrl: "https://api.minimaxi.com/anthropic/v1/messages",
     format: "claude",

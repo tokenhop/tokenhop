@@ -16,6 +16,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "personal",
   transport: {
     baseUrl: "https://api.commandcode.ai/alpha/generate",
     format: "commandcode",

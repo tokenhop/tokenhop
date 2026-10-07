@@ -11,6 +11,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import * as log from "../utils/logger.js";
+import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
 
 // Providers requiring credentials for STT
 const CREDENTIALED_PROVIDERS = new Set(
@@ -103,6 +104,7 @@ export async function handleStt(request) {
     );
 
     if (!credentials || credentials.allRateLimited) {
+      if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
       if (credentials?.allRateLimited) {
         const msg = lastError || credentials.lastError || "Unavailable";
         const status =
@@ -144,12 +146,16 @@ export async function handleStt(request) {
       return result.response;
     }
 
+    releaseGrantReservation(credentials.grantReservation);
+
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,
       result.status,
       result.error,
       provider,
       model,
+      null,
+      { grantId: credentials.grantId },
     );
     if (shouldFallback) {
       excludeConnectionIds.add(credentials.connectionId);

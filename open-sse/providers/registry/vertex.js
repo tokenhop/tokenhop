@@ -16,6 +16,7 @@ export default {
     },
   },
   category: "freeTier",
+  sharing: "shareable",
   transport: {
     baseUrl: "https://aiplatform.googleapis.com",
     format: "vertex",

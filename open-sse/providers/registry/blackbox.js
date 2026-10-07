@@ -15,6 +15,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   serviceKinds: ["llm"],
   thinkingConfig: {
     options: ["auto", "none", "low", "medium", "high", "xhigh"],

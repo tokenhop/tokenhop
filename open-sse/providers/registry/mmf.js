@@ -9,6 +9,7 @@ export default {
     textIcon: "MF",
   },
   category: "apikey",
+  sharing: "shareable",
   transport: {
     baseUrl: "https://api.xiaomimimo.com/api/free-ai/openai/chat",
     noAuth: true,

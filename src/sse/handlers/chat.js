@@ -38,6 +38,11 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import {
+  estimateBodyTokens,
+  grantRateLimitResponse,
+  releaseGrantReservation,
+} from "../services/grantRateLimiter.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { notifyRequestLogsEnabled } from "open-sse/utils/requestLogger.js";
@@ -627,15 +632,14 @@ async function handleSingleModelChat(
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(
-      provider,
-      excludeConnectionIds,
-      model,
-      gatewayCreds,
-    );
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      ...gatewayCreds,
+      estimateTokens: () => estimateBodyTokens(body),
+    });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
+      if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
@@ -694,6 +698,7 @@ async function handleSingleModelChat(
       userAgent,
       apiKey,
       ...gatewayKeyContext(gateway),
+      grantId: credentials.grantId ?? null,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
       headroomEnabled: !!chatSettings.headroomEnabled,
@@ -732,6 +737,8 @@ async function handleSingleModelChat(
     });
 
     if (result.success) return result.response;
+    // Failed attempts don't count against the grant's rpm/tpm.
+    releaseGrantReservation(credentials.grantReservation);
     // Local request-prep failure says nothing about the account: no cooldown, no rotation.
     if (result.localError) return result.response;
 
@@ -762,6 +769,7 @@ async function handleSingleModelChat(
               provider,
               model,
               resetsAtMs,
+              { grantId: credentials.grantId },
             )
           ).shouldFallback;
 

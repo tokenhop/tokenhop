@@ -14,6 +14,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   authType: "apikey",
   authModes: ["apikey"],
   transport: {

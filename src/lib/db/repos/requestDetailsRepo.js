@@ -183,6 +183,7 @@ function writeBatch(db, items, config) {
         apiKeyId: typeof item.apiKeyId === "string" ? item.apiKeyId : null,
         workspaceId: typeof item.workspaceId === "string" ? item.workspaceId : null,
         userId: typeof item.userId === "string" ? item.userId : null,
+        grantId: typeof item.grantId === "string" ? item.grantId : null,
         timestamp: item.timestamp,
         status: item.status || null,
         latency: item.latency || {},
@@ -195,9 +196,9 @@ function writeBatch(db, items, config) {
       };
 
       db.run(
-        `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data, workspaceId, userId, apiKeyId)
-         VALUES(?, ?, ?, ?, ?, ?, ?, (SELECT id FROM workspaces WHERE id = ?), (SELECT id FROM users WHERE id = ?), ?)
-         ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data, workspaceId = excluded.workspaceId, userId = excluded.userId, apiKeyId = excluded.apiKeyId`,
+        `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data, workspaceId, userId, apiKeyId, grantId)
+         VALUES(?, ?, ?, ?, ?, ?, ?, (SELECT id FROM workspaces WHERE id = ?), (SELECT id FROM users WHERE id = ?), ?, ?)
+         ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data, workspaceId = excluded.workspaceId, userId = excluded.userId, apiKeyId = excluded.apiKeyId, grantId = excluded.grantId`,
         [
           record.id,
           record.timestamp,
@@ -209,6 +210,7 @@ function writeBatch(db, items, config) {
           record.workspaceId,
           record.userId,
           record.apiKeyId ?? "local-no-key",
+          record.grantId,
         ],
       );
     }

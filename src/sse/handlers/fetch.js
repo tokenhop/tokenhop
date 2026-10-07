@@ -22,6 +22,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
 import { assertPublicUrlResolved } from "@/shared/utils/ssrfGuard.js";
+import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
 
 function recordFetch(request, gateway, apiKey, providerId, connectionId, data) {
   saveRequestUsageUnscoped({
@@ -231,6 +232,7 @@ async function handleSingleProviderFetch(body, providerInput, request, gateway, 
     );
 
     if (!credentials || credentials.allRateLimited) {
+      if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status =
@@ -284,12 +286,16 @@ async function handleSingleProviderFetch(body, providerInput, request, gateway, 
       });
     }
 
+    releaseGrantReservation(credentials.grantReservation);
+
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,
       result.status,
       result.error,
       providerId,
       fetchLockKey,
+      null,
+      { grantId: credentials.grantId },
     );
 
     if (shouldFallback) {

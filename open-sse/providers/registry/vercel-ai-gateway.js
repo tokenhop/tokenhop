@@ -16,6 +16,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   transport: {
     baseUrl: "https://ai-gateway.vercel.sh/v1/chat/completions",
     thinkingFormat: "openai",

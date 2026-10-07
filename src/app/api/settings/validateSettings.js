@@ -3,7 +3,11 @@ import { validateComboStrategySettings } from "open-sse/services/comboStrategy.j
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { resolveAuthModes } from "@/lib/auth/authModes";
-import { DEFAULT_SETTINGS, SSO_POLICY_KEYS } from "@/lib/db/repos/settingsRepo.js";
+import {
+  DEFAULT_SETTINGS,
+  SSO_POLICY_KEYS,
+  GRANT_POLICY_KEYS,
+} from "@/lib/db/repos/settingsRepo.js";
 import { getAdapter } from "@/lib/db/driver.js";
 import { validateSectionSettings } from "./validateSectionSettings.js";
 
@@ -42,7 +46,13 @@ function validUrl(value) {
  * Returns an error message string, or "" when valid.
  */
 function validSecuritySettings(body) {
-  for (const key of ["requireLogin", "requireApiKey", "tunnelDashboardAccess"]) {
+  for (const key of [
+    "requireLogin",
+    "requireApiKey",
+    "tunnelDashboardAccess",
+    // YAN-369: instance ToS override for personal connection grants.
+    "allowPersonalConnectionGrants",
+  ]) {
     if (Object.hasOwn(body, key) && typeof body[key] !== "boolean") {
       return `Invalid ${key}: must be a boolean`;
     }
@@ -199,9 +209,13 @@ const SSO_MAX_LIST = 100;
 const SSO_MAX_CLAIM_DEPTH = 5;
 const SSO_MAP_ROLES = new Set(["manager", "member", "viewer"]);
 
-/** Whether `body` carries any of the six YAN-359 SSO policy keys. */
+/** Whether `body` carries any rollout-gated policy key (YAN-359 six + YAN-369 grants toggle). */
 export function hasSsoPolicyKeys(body) {
-  return !!body && typeof body === "object" && SSO_POLICY_KEYS.some((k) => Object.hasOwn(body, k));
+  return (
+    !!body &&
+    typeof body === "object" &&
+    [...SSO_POLICY_KEYS, ...GRANT_POLICY_KEYS].some((k) => Object.hasOwn(body, k))
+  );
 }
 
 const nonEmptyText = (v) => typeof v === "string" && v.length > 0 && v.length <= MAX_TEXT_LEN;

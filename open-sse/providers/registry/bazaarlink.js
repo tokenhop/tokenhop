@@ -4,6 +4,7 @@ export default {
   aliases: ["bazaar-link"],
   uiAlias: "bzl",
   category: "freeTier",
+  sharing: "shareable",
   authType: "apikey",
   authModes: ["apikey"],
   display: {

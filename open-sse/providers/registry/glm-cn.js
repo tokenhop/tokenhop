@@ -13,6 +13,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   transport: {
     baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
     headers: {},

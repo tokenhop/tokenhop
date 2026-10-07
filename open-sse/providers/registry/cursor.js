@@ -13,6 +13,7 @@ export default {
     },
   },
   category: "oauth",
+  sharing: "personal",
   transport: {
     baseUrl: "https://api2.cursor.sh",
     chatPath: "/aiserver.v1.ChatService/StreamUnifiedChatWithTools",

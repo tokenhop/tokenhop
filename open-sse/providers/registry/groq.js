@@ -14,6 +14,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   transport: {
     baseUrl: "https://api.groq.com/openai/v1/chat/completions",
     validateUrl: "https://api.groq.com/openai/v1/models",

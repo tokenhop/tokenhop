@@ -3,7 +3,7 @@ import { DEFAULT_RETRY_CONFIG, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtim
 
 /**
  * RegistryEntry shape — full contract for registry/{id}.js. See REGISTRY_TEMPLATE.js for a worked example.
- * Only `id` + `category` are strictly required; everything else is optional/derived.
+ * Only `id` + `category` + `sharing` are strictly required; everything else is optional/derived.
  *
  * @typedef {Object} RegistryEntry
  * @property {string}   id            Unique provider id (kebab-case). REQUIRED.
@@ -11,6 +11,8 @@ import { DEFAULT_RETRY_CONFIG, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtim
  * @property {string[]}[aliases]      Extra lookup tokens resolving to this provider.
  * @property {string}  [uiAlias]      Token shown in UI badges.
  * @property {string}   category      "apikey"|"oauth"|"freeTier"|... drives UI grouping. REQUIRED.
+ * @property {"personal"|"shareable"} sharing Sharing class (ADR-0006). "personal" = subscription-bound,
+ *   not grantable without an admin ToS override; authType "oauth" connections are personal regardless. REQUIRED.
  * @property {string}  [authType]     "apikey"|"oauth" auth hint.
  * @property {string[]}[authModes]    Allowed auth modes when provider supports both.
  * @property {boolean} [hasOAuth]     Provider exposes an OAuth flow.

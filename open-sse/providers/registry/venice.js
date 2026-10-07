@@ -16,6 +16,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   transport: {
     baseUrl: "https://api.venice.ai/api/v1/chat/completions",
     validateUrl: "https://api.venice.ai/api/v1/models",

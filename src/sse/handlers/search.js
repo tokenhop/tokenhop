@@ -21,6 +21,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
+import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
 
 function recordSearch(request, gateway, apiKey, providerId, connectionId, data) {
   const usage = data?.usage;
@@ -247,6 +248,7 @@ async function handleSingleProviderSearch(body, providerInput, request, gateway,
     }
 
     if (!credentials || credentials.allRateLimited) {
+      if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status =
@@ -298,12 +300,16 @@ async function handleSingleProviderSearch(body, providerInput, request, gateway,
       return result.response;
     }
 
+    releaseGrantReservation(credentials.grantReservation);
+
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,
       result.status,
       result.error,
       credentialProviderId,
       searchLockKey,
+      null,
+      { grantId: credentials.grantId },
     );
 
     if (shouldFallback) {

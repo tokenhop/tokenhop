@@ -20,6 +20,7 @@ export default {
   aliases: ["example-ai"], // optional extra lookup tokens.
   uiAlias: "ex", // optional UI badge token.
   category: "apikey", // REQUIRED. "apikey" | "oauth" | "freeTier" | ...
+  sharing: "shareable", // REQUIRED. "personal" (per-person plan/OAuth/cookie; not grantable w/o admin ToS override) | "shareable".
 
   // ── auth hints (only when relevant) ──────────────────────────────────────
   authType: "apikey", // "apikey" | "oauth".

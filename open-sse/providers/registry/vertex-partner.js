@@ -16,6 +16,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   transport: {
     baseUrl: "https://aiplatform.googleapis.com",
   },

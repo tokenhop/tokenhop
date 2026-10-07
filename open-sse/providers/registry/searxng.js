@@ -11,6 +11,7 @@ export default {
     website: "https://docs.searxng.org",
   },
   category: "freeTier",
+  sharing: "shareable",
   authType: "none",
   serviceKinds: ["webSearch"],
   noAuth: true,

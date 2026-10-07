@@ -1,6 +1,11 @@
 import { getAdapter } from "./driver.js";
 import { parseJson, stringifyJson } from "./helpers/jsonCol.js";
-import { getSettings, DEFAULT_SETTINGS, SSO_POLICY_KEYS } from "./repos/settingsRepo.js";
+import {
+  getSettings,
+  DEFAULT_SETTINGS,
+  SSO_POLICY_KEYS,
+  GRANT_POLICY_KEYS,
+} from "./repos/settingsRepo.js";
 import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
 import { mirrorToDefaultWorkspace } from "./repos/workspaceSettingsRepo.js";
 import { defaultWorkspaceIdUnscoped } from "./repos/ownership.js";
@@ -45,7 +50,7 @@ async function visibleConfigSettings(settings) {
   const out = { ...settings };
   delete out.secretsConfigured;
   if (await isMultiUserEnabled()) return out;
-  for (const key of SSO_POLICY_KEYS) delete out[key];
+  for (const key of [...SSO_POLICY_KEYS, ...GRANT_POLICY_KEYS]) delete out[key];
   return out;
 }
 

@@ -40,6 +40,10 @@ export const DEFAULT_SETTINGS = {
   multiUserEnabled: false,
   // YAN-367: audit events older than this are pruned daily (initializeApp).
   auditRetentionDays: 365,
+  // YAN-369 (ADR-0006): instance-only ToS override for granting personal
+  // connections. Follows the SSO_POLICY_KEYS rollout-gating pattern (see
+  // GRANT_POLICY_KEYS); shape validated in app/api/settings/validateSettings.js.
+  allowPersonalConnectionGrants: false,
   tunnelDashboardAccess: true,
   requestLogsEnabled: false,
   translatorEnabled: false,
@@ -117,6 +121,9 @@ export const SSO_POLICY_KEYS = Object.freeze([
   "ssoGroupWorkspaceMap",
   "ssoDefaultRole",
 ]);
+
+/** The rollout-gated instance keys hiding with the multi-user switch (YAN-369). */
+export const GRANT_POLICY_KEYS = Object.freeze(["allowPersonalConnectionGrants"]);
 
 // Raw read: stored JSON exactly as persisted. NEVER decrypts: envelope values
 // pass through byte-exact (export, raw writers, featureSwitch all rely on it).

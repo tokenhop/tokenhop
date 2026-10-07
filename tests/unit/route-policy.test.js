@@ -124,6 +124,10 @@ const YAN360_USER_ROUTES = new Set([
 const YAN360_SESSION_ONLY_ROUTES = new Set([
   "/api/workspaces/[id]/invitations",
   "/api/workspaces/[id]/invitations/[inviteId]",
+  // YAN-369 connection grants: browser session only.
+  "/api/providers/[id]/grants",
+  "/api/providers/[id]/grants/[grantId]",
+  "/api/grants",
 ]);
 // YAN-360 invite accept is new and public by design: the token is the
 // authorization (still hidden with the switch off via multiUserOnly).

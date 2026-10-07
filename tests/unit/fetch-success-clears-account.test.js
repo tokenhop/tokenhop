@@ -131,6 +131,8 @@ describe("web fetch account state", () => {
       "quota exceeded",
       "jina-reader",
       "webfetch:jina-reader",
+      null,
+      expect.any(Object), // YAN-369 { grantId }
     );
   });
 });

@@ -13,6 +13,7 @@ export default {
     },
   },
   category: "oauth",
+  sharing: "personal",
   transport: {
     baseUrl: "https://apis.iflow.cn/v1/chat/completions",
     thinkingFormat: "openai",

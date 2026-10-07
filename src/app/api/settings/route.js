@@ -16,7 +16,7 @@ import { revokeOwnerSessions, singleUserModeAllowed } from "@/lib/users/session"
 import { can } from "@/lib/users/principal.js";
 import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
 import { getPrincipal } from "@/lib/users/session";
-import { SSO_POLICY_KEYS } from "@/lib/db/repos/settingsRepo.js";
+import { SSO_POLICY_KEYS, GRANT_POLICY_KEYS } from "@/lib/db/repos/settingsRepo.js";
 import { audit } from "@/lib/users/audit.js";
 import { getClientIp } from "@/lib/auth/loginLimiter.js";
 import { principalScope } from "@/lib/users/workspaceScope.js";
@@ -78,7 +78,7 @@ async function ssoPolicyVisible() {
 
 function withoutSsoPolicy(obj) {
   const out = { ...obj };
-  for (const key of SSO_POLICY_KEYS) delete out[key];
+  for (const key of [...SSO_POLICY_KEYS, ...GRANT_POLICY_KEYS]) delete out[key];
   return out;
 }
 

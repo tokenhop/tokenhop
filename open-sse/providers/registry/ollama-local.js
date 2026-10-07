@@ -11,6 +11,7 @@ export default {
     website: "https://ollama.com",
   },
   category: "apikey",
+  sharing: "shareable",
   transport: {
     baseUrl: "http://localhost:11434/api/chat",
     format: "ollama",

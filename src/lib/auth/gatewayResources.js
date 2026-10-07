@@ -8,6 +8,8 @@ import {
   prepareCredentialCtx,
 } from "../db/repos/connectionsRepo.js";
 import { getProviderNodesUnscoped } from "../db/repos/nodesRepo.js";
+import { listActiveGrantsForPrincipal } from "../db/repos/connectionGrantsRepo.js";
+import { resolveSharing } from "../users/grants.js";
 import * as combosRepo from "../db/repos/combosRepo.js";
 import * as aliasRepo from "../db/repos/aliasRepo.js";
 import * as disabledModelsRepo from "../db/repos/disabledModelsRepo.js";
@@ -64,13 +66,49 @@ export async function getGatewayConnections(principal, filter = {}) {
     params.push(filter.isActive ? 1 : 0);
   }
   const ctx = await prepareCredentialCtx(db);
-  return db
+  const decode = (row) => ({
+    ...decodeRow(db, ctx, TABLE_NAMES.providerConnections, row),
+    isActive: row.isActive === 1 || row.isActive === true,
+  });
+  const own = db
     .all(`SELECT * FROM providerConnections WHERE ${where.join(" AND ")}`, params)
-    .map((row) => ({
-      ...decodeRow(db, ctx, TABLE_NAMES.providerConnections, row),
-      isActive: row.isActive === 1 || row.isActive === true,
-    }))
+    .map(decode)
     .sort((a, b) => (a.priority || 999) - (b.priority || 999));
+  return [...own, ...grantedConnections(db, principal, filter, own, decode)];
+}
+
+// YAN-369 (ADR-0006): connections granted to the principal's workspace or user,
+// appended AFTER the own rows (own wins on duplicate id; never re-sorted across
+// the union). Re-read on every call — no cache, so revocation is immediate.
+// Defense in depth: a "personal" connection without a recorded ToS
+// acknowledgement never resolves, whatever the grant row says.
+function grantedConnections(db, principal, filter, own, decode) {
+  const seen = new Set(own.map((c) => c.id));
+  const out = [];
+  const grants = listActiveGrantsForPrincipal(db, {
+    workspaceId: principal.workspaceId,
+    userId: principal.userId ?? null,
+  });
+  for (const g of grants) {
+    const row = g.connection;
+    if (!row || seen.has(row.id)) continue;
+    if (filter.provider && row.provider !== filter.provider) continue;
+    if (
+      filter.isActive !== undefined &&
+      (row.isActive === 1 || row.isActive === true) !== !!filter.isActive
+    )
+      continue;
+    if (resolveSharing(row.provider, row.authType) === "personal" && !g.tosAcknowledgedAt) continue;
+    seen.add(row.id);
+    out.push({
+      ...decode(row),
+      grantId: g.grantId,
+      grantAllowedModels: g.allowedModels ?? null,
+      grantRpm: g.rpm ?? null,
+      grantTpm: g.tpm ?? null,
+    });
+  }
+  return out.sort((a, b) => (a.priority || 999) - (b.priority || 999));
 }
 
 export async function getGatewayNodes(principal, filter = {}) {

@@ -321,6 +321,33 @@ export const TABLES = {
       createdAt: "TEXT NOT NULL",
     },
   },
+  // Connection grants (migration 015, YAN-369, ADR-0006). Exactly one of
+  // workspaceId/userId names the grantee. budgetId is unwired (no FK; YAN-372).
+  connectionGrants: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      connectionId: "TEXT NOT NULL REFERENCES providerConnections(id) ON DELETE CASCADE",
+      workspaceId: "TEXT REFERENCES workspaces(id) ON DELETE CASCADE",
+      userId: "TEXT REFERENCES users(id) ON DELETE CASCADE",
+      allowedModels: "TEXT",
+      rpm: "INTEGER",
+      tpm: "INTEGER",
+      budgetId: "TEXT",
+      createdByUserId: "TEXT REFERENCES users(id) ON DELETE SET NULL",
+      tosAcknowledgedAt: "INTEGER",
+      createdAt: "INTEGER NOT NULL",
+      revokedAt: "INTEGER",
+    },
+    constraints: ["CHECK ((workspaceId IS NULL) <> (userId IS NULL))"],
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_cg_conn ON connectionGrants(connectionId)",
+      "CREATE INDEX IF NOT EXISTS idx_cg_ws ON connectionGrants(workspaceId)",
+      "CREATE INDEX IF NOT EXISTS idx_cg_user ON connectionGrants(userId)",
+      // One active grant per (connection, grantee): no ambiguous limits.
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_cg_active_ws ON connectionGrants(connectionId, workspaceId) WHERE revokedAt IS NULL AND workspaceId IS NOT NULL",
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_cg_active_user ON connectionGrants(connectionId, userId) WHERE revokedAt IS NULL AND userId IS NOT NULL",
+    ],
+  },
 };
 
 // YAN-363: the final hashed apiKeys shape, INERT here. Nothing reads it at

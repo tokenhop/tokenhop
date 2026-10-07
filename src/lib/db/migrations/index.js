@@ -26,6 +26,7 @@ import m011 from "./011-sso-role-source.js";
 import m012 from "./012-invitations.js";
 import m013 from "./013-workspace-keys.js";
 import m014 from "./014-usage-attribution.js";
+import m015 from "./015-connection-grants.js";
 
 export const MIGRATIONS = [
   m001,
@@ -42,6 +43,7 @@ export const MIGRATIONS = [
   m012,
   m013,
   m014,
+  m015,
 ].sort((a, b) => a.version - b.version);
 
 for (let i = 1; i < MIGRATIONS.length; i++) {
