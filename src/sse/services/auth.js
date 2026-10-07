@@ -21,6 +21,13 @@ import { getGatewayConnections, requireGatewayWorkspace } from "@/lib/auth/gatew
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import { resolveWeightedStickyLimit, selectWeightedConnection } from "./accountSelection.js";
 import { boundedMap } from "open-sse/utils/boundedMap.js";
+import {
+  checkAndReserveGrant,
+  grantAllowsModel,
+  grantEstimator,
+  grantLimitedResult,
+  grantLimitHit,
+} from "./grantRateLimiter.js";
 import * as log from "../utils/logger.js";
 
 // Per-key mutex chain tails to prevent race conditions during account selection.
@@ -57,6 +64,11 @@ function githubMonthlyResetMs(status, errorText, provider) {
   const now = new Date();
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
 }
+
+// Granted connections are shared state: never persist per-use rotation counters
+// on them (in-memory SWRR cursor stays per workspace).
+const persistUse = (connection, patch) =>
+  connection.grantId ? undefined : updateProviderConnectionUnscoped(connection.id, patch);
 
 /**
  * Get provider credentials from localDb
@@ -149,9 +161,19 @@ export async function getProviderCredentials(
     // Filter out model-locked, excluded, quota-snapshot-exhausted (YAN-384), and
     // Antigravity quota-exhausted connections. Unknown quota stays eligible.
     const quotaExpiries = [];
+    const grantLimits = [];
+    const estimateTokens = grantEstimator(options?.estimateTokens);
     const availableConnections = connections.filter((c) => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      if (c.grantId) {
+        if (!grantAllowsModel(c, providerId, model, c.id === preferredConnectionId)) return false;
+        const hit = grantLimitHit(c, c.grantTpm != null ? estimateTokens() : 0);
+        if (hit) {
+          grantLimits.push(hit);
+          return false;
+        }
+      }
       // Antigravity: skip if live quota exhausted for this model
       if (isAntigravity && model && antigravityQuotaCache) {
         const quota = antigravityQuotaCache.get(c.id)?.[model];
@@ -247,6 +269,10 @@ export async function getProviderCredentials(
           lastErrorCode: earliestBlocker.conn?.errorCode || null,
         };
       }
+      if (grantLimits.length) {
+        log.warn("AUTH", `${provider} | all candidates skipped by grant ${grantLimits[0]} limit`);
+        return grantLimitedResult(grantLimits[0]);
+      }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
       return null;
     }
@@ -295,7 +321,7 @@ export async function getProviderCredentials(
       connection = result.connection ?? availableConnections[0];
       weightedStates.set(weightedKey, result.nextState);
       // Persist sticky window exactly as round-robin does.
-      await updateProviderConnectionUnscoped(connection.id, {
+      await persistUse(connection, {
         lastUsedAt: new Date().toISOString(),
         consecutiveUseCount: result.continued ? (connection.consecutiveUseCount || 0) + 1 : 1,
       });
@@ -318,7 +344,7 @@ export async function getProviderCredentials(
         // Stay with current account
         connection = current;
         // Update lastUsedAt and increment count (await to ensure persistence)
-        await updateProviderConnectionUnscoped(connection.id, {
+        await persistUse(connection, {
           lastUsedAt: new Date().toISOString(),
           consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1,
         });
@@ -334,7 +360,7 @@ export async function getProviderCredentials(
         connection = sortedByOldest[0];
 
         // Update lastUsedAt and reset count to 1 (await to ensure persistence)
-        await updateProviderConnectionUnscoped(connection.id, {
+        await persistUse(connection, {
           lastUsedAt: new Date().toISOString(),
           consecutiveUseCount: 1,
         });
@@ -344,9 +370,22 @@ export async function getProviderCredentials(
       connection = availableConnections[0];
     }
 
+    // Reserve rpm/tpm on the chosen grant (sync check+reserve, atomic). A lost
+    // race against another workspace using the same grant reads as rate-limited.
+    let grantReservation = null;
+    if (connection.grantId) {
+      grantReservation = checkAndReserveGrant(
+        connection,
+        connection.grantTpm != null ? estimateTokens() : 0,
+      );
+      if (grantReservation === false) return grantLimitedResult("rpm");
+    }
+
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
     return {
+      grantId: connection.grantId ?? null,
+      grantReservation,
       authType: connection.authType,
       apiKey: connection.apiKey,
       accessToken: connection.accessToken,

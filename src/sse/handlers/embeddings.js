@@ -16,6 +16,11 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { saveRequestUsageUnscoped } from "@/lib/usageDb.js";
+import {
+  estimateBodyTokens,
+  grantRateLimitResponse,
+  releaseGrantReservation,
+} from "../services/grantRateLimiter.js";
 
 function exactEmbeddingUsage(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || raw.estimated === true) return null;
@@ -103,11 +108,12 @@ export async function handleEmbeddings(request) {
       provider,
       excludeConnectionIds,
       model,
-      gateway ? { principal: gateway } : {},
+      gateway ? { principal: gateway, estimateTokens: () => estimateBodyTokens(body) } : {},
     );
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
+      if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status =
@@ -164,6 +170,7 @@ export async function handleEmbeddings(request) {
           connectionId: credentials.connectionId,
           apiKey,
           ...gatewayKeyContext(gateway),
+          grantId: credentials.grantId ?? undefined,
           endpoint: url.pathname,
           tokens: usage,
           status: "success",
@@ -172,6 +179,8 @@ export async function handleEmbeddings(request) {
       return result.response;
     }
 
+    // Failed attempts don't count against the grant's rpm/tpm.
+    releaseGrantReservation(credentials.grantReservation);
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,
       result.status,
