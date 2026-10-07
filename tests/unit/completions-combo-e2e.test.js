@@ -248,3 +248,183 @@ describe("edit predictions via combo on /v1/completions (YAN-729)", () => {
     expect((await invalid.json()).error.message).toEqual(expect.any(String));
   });
 });
+
+// Editor FIM endpoints share the same pipeline; only the client wire format differs.
+const postTo = (path, body) =>
+  handleChat(
+    new Request(`http://localhost${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+
+const sseData = async (res) =>
+  (await res.text())
+    .split("\n")
+    .filter((l) => l.startsWith("data:"))
+    .map((l) => l.replace(/^data:\s?/, ""));
+
+describe("editor FIM endpoints via combo", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    global._fallbackHops = [];
+    await db.updateSettings({ requireApiKey: false });
+    seq += 1;
+    COMBO = `fim-${seq}`;
+    await db.createProviderConnectionUnscoped({
+      provider: "openai",
+      name: `conn-${seq}`,
+      apiKey: `sk-test-${seq}`,
+      isActive: true,
+    });
+    await db.createComboUnscoped({ name: COMBO, models: ["openai/chat-only", "openai/good"] });
+    executeMock.mockImplementation(async (args) =>
+      args.body?.model === "good"
+        ? served({ stream: args.stream })
+        : modelMissing(args.body?.model),
+    );
+  });
+
+  it("/v1/fim/completions non-stream: chat.completion with message.content and usage", async () => {
+    const res = await postTo("/v1/fim/completions", {
+      model: COMBO,
+      prompt: "def add(a, b):\n    ",
+      suffix: "\n\nprint(add(1, 2))",
+      max_tokens: 32,
+      random_seed: 7,
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.object).toBe("chat.completion");
+    expect(json.id).toMatch(/^chatcmpl-/);
+    expect(json.choices[0].message).toEqual({ role: "assistant", content: ANSWER });
+    expect(json.choices[0].finish_reason).toBe("stop");
+    expect(json.usage).toEqual({ prompt_tokens: 40, completion_tokens: 6, total_tokens: 46 });
+    const goodCall = executeMock.mock.calls.find(([a]) => a.body?.model === "good")[0];
+    expect(goodCall.body.seed).toBe(7);
+    expect(goodCall.body.random_seed).toBeUndefined();
+  });
+
+  it("/v1/fim/completions stream: chat.completion.chunk deltas, ends with [DONE]", async () => {
+    const res = await postTo("/v1/fim/completions", {
+      model: COMBO,
+      prompt: "def add(a, b):\n    ",
+      suffix: "\n\nprint(add(1, 2))",
+      stream: true,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    const lines = await sseData(res);
+    expect(lines.at(-1)).toBe("[DONE]");
+    const chunks = lines.slice(0, -1).map((l) => JSON.parse(l));
+    expect(chunks.length).toBeGreaterThan(0);
+    for (const c of chunks) expect(c.object).toBe("chat.completion.chunk");
+    expect(chunks.map((c) => c.choices[0].delta.content ?? "").join("")).toBe(ANSWER);
+  });
+
+  it("/infill non-stream: prefix/suffix/extra reach upstream; returns llama.cpp JSON", async () => {
+    const res = await postTo("/infill", {
+      model: COMBO,
+      input_prefix: "def add(a, b):\n",
+      prompt: "    ",
+      input_suffix: "\n\nprint(add(1, 2))",
+      input_extra: [{ filename: "util.py", text: "X = 1" }],
+      n_predict: 5,
+      stream: false,
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toMatchObject({
+      content: ANSWER,
+      stop: true,
+      tokens_predicted: 6,
+      tokens_evaluated: 40,
+      truncated: false,
+    });
+    expect(json.stop_type).toEqual(expect.any(String));
+    const goodCall = executeMock.mock.calls.find(([a]) => a.body?.model === "good")[0];
+    const sent = JSON.stringify(goodCall.body.messages);
+    expect(sent).toContain("// File: util.py\\nX = 1");
+    expect(sent).toContain("<|cursor|>");
+    expect(goodCall.body.max_tokens).toBe(5);
+    expect(goodCall.body.n_predict).toBeUndefined();
+  });
+
+  it("/infill stream: {content, stop:true} frame then [DONE]", async () => {
+    const res = await postTo("/infill", {
+      model: COMBO,
+      input_prefix: "def add(a, b):\n    ",
+      input_suffix: "\n\nprint(add(1, 2))",
+      stream: true,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    const lines = await sseData(res);
+    expect(lines.at(-1)).toBe("[DONE]");
+    const frames = lines.slice(0, -1).map((l) => JSON.parse(l));
+    expect(frames.at(-1)).toMatchObject({ content: ANSWER, stop: true });
+  });
+
+  it("/infill n_predict:0 warm-up answers empty without calling upstream", async () => {
+    const res = await postTo("/infill", {
+      model: COMBO,
+      input_prefix: "def add(a, b):\n    ",
+      input_suffix: "",
+      n_predict: 0,
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ content: "", stop: true });
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it("n_predict:0 on /v1/completions is NOT a warm-up (still calls upstream)", async () => {
+    const res = await postTo("/v1/completions", {
+      model: COMBO,
+      prompt: "def add(a, b):\n    ",
+      n_predict: 0,
+    });
+    expect(res.status).toBe(200);
+    expect(executeMock).toHaveBeenCalled();
+  });
+
+  it("/infill trims a reply that repeats the suffix", async () => {
+    const suffix = "\n\nprint(add(1, 2))";
+    // openai is forceStream: upstream always answers SSE, whatever the client asked.
+    const sse = (content) =>
+      [
+        { choices: [{ index: 0, delta: { role: "assistant", content } }] },
+        { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+      ]
+        .map(
+          (c) =>
+            `data: ${JSON.stringify({ id: "chatcmpl-2", object: "chat.completion.chunk", model: "good", ...c })}\n\n`,
+        )
+        .join("") + "data: [DONE]\n\n";
+    executeMock.mockImplementation(async (args) =>
+      args.body?.model === "good"
+        ? upstream(
+            new Response(sse(`return a + b${suffix}`), {
+              status: 200,
+              headers: { "content-type": "text/event-stream" },
+            }),
+          )
+        : modelMissing(args.body?.model),
+    );
+    const res = await postTo("/infill", {
+      model: COMBO,
+      input_prefix: "def add(a, b):\n    ",
+      input_suffix: suffix,
+      stream: false,
+    });
+    expect((await res.json()).content).toBe("return a + b");
+  });
+
+  it("/infill invalid body is a JSON 4xx, not a fallback", async () => {
+    const res = await postTo("/infill", { model: COMBO, input_prefix: 5 });
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect((await res.json()).error.message).toEqual(expect.any(String));
+  });
+});

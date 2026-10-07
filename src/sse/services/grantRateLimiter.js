@@ -82,13 +82,19 @@ export function estimateBodyTokens(body) {
   const payload =
     body?.messages ?? body?.input ?? body?.contents ?? fallbackPromptChars(body) ?? "";
   const chars = typeof payload === "string" ? payload.length : JSON.stringify(payload).length;
-  return Math.ceil(chars / 4) + (Number(body?.max_tokens ?? body?.max_completion_tokens) || 0);
+  const maxOut = body?.max_tokens ?? body?.max_completion_tokens ?? body?.n_predict;
+  return Math.ceil(chars / 4) + Math.max(0, Number(maxOut) || 0);
 }
 
-// Chars from legacy completions fields: prompt (string | string[]) + suffix.
+// Chars from FIM fields: legacy/Codestral prompt (string | string[]) + suffix,
+// and llama.cpp /infill input_prefix, input_suffix and input_extra[].text.
 function fallbackPromptChars(body) {
   const parts = [];
-  const { prompt, suffix } = body || {};
+  const { prompt, suffix, input_prefix, input_suffix, input_extra } = body || {};
+  for (const s of [input_prefix, input_suffix]) if (typeof s === "string") parts.push(s);
+  if (Array.isArray(input_extra)) {
+    for (const e of input_extra) if (typeof e?.text === "string") parts.push(e.text);
+  }
   if (typeof prompt === "string") parts.push(prompt);
   else if (Array.isArray(prompt)) {
     for (const p of prompt) if (typeof p === "string") parts.push(p);

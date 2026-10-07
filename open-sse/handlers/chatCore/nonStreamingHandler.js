@@ -1,4 +1,4 @@
-import { FORMATS } from "../../translator/formats.js";
+import { FORMATS, isFimFormat } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
@@ -371,7 +371,7 @@ export async function handleNonStreamingResponse({
         targetFormat,
         sourceFormat,
         customToolNames,
-        sourceFormat === FORMATS.OPENAI_COMPLETIONS ? fimContextFor(body) : null,
+        isFimFormat(sourceFormat) ? fimContextFor(body) : null,
       )
     : responseBody;
   const isClaudeMessageResponse =

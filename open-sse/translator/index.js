@@ -341,6 +341,7 @@ import "./response/gemini-to-openai.js";
 import "./response/openai-to-antigravity.js";
 import "./response/openai-responses.js";
 import "./response/openai-completions.js";
+import "./response/fim.js";
 import "./response/kiro-to-openai.js";
 import "./response/cursor-to-openai.js";
 import "./response/ollama-to-openai.js";
