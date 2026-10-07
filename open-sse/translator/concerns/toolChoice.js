@@ -12,7 +12,9 @@ export function normalizeForcedToolChoice(body, format, caps) {
   const forced = claude && body.thinking?.type === "enabled" ? false : caps.forcedToolChoice;
   if (forced === true || choice == null) return null;
 
-  const named = claude ? choice.type === "tool" : choice.type === OPENAI_BLOCK.FUNCTION;
+  const named = claude
+    ? choice.type === "tool"
+    : choice.type === OPENAI_BLOCK.FUNCTION || choice.type === "custom";
   const name = named ? (choice.function?.name ?? choice.name) : undefined;
   if (forced === false) {
     if (named || (claude ? choice.type === "any" : choice === "required")) {
@@ -35,7 +37,10 @@ export function normalizeForcedToolChoice(body, format, caps) {
       // Keep tools already called in history: strict gateways reject calls to undeclared tools.
       const keep = historyToolNames(body).add(name);
       const toolName = (tool) => (openai ? tool.function?.name : tool.name);
-      const matching = body.tools.filter((tool) => keep.has(toolName(tool)));
+      // Built-ins (web_search, file_search, …) have no callable name: never drop them.
+      const builtin = (tool) =>
+        !claude && tool.type && tool.type !== OPENAI_BLOCK.FUNCTION && tool.type !== "custom";
+      const matching = body.tools.filter((tool) => builtin(tool) || keep.has(toolName(tool)));
       if (matching.some((tool) => toolName(tool) === name)) body.tools = matching;
     }
     return "named tool_choice → required";
@@ -50,7 +55,9 @@ function historyToolNames(body) {
     for (const call of item?.tool_calls ?? []) {
       if (call?.function?.name) names.add(call.function.name);
     }
-    if (item?.type === "function_call" && item.name) names.add(item.name);
+    if ((item?.type === "function_call" || item?.type === "custom_tool_call") && item.name) {
+      names.add(item.name);
+    }
     if (Array.isArray(item?.content)) {
       for (const block of item.content) {
         if (block?.type === "tool_use" && block.name) names.add(block.name);

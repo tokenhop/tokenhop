@@ -87,6 +87,22 @@ describe("normalizeForcedToolChoice — forcedToolChoice:'any'", () => {
     expect(body.tools.map((t) => t.function.name)).toEqual(["a", "c"]);
   });
 
+  it("responses custom named → required; keeps built-ins and history tools", () => {
+    const body = {
+      tool_choice: { type: "custom", name: "a" },
+      tools: [
+        { type: "custom", name: "a" },
+        { type: "function", name: "b" },
+        { type: "function", name: "c" },
+        { type: "web_search" },
+      ],
+      input: [{ type: "function_call", name: "c" }],
+    };
+    normalizeForcedToolChoice(body, FORMATS.OPENAI_RESPONSES, ANY);
+    expect(body.tool_choice).toBe("required");
+    expect(body.tools.map((t) => t.name ?? t.type)).toEqual(["a", "c", "web_search"]);
+  });
+
   it("no matching tool → required, tools untouched", () => {
     const body = { tool_choice: fn("zzz"), tools: openaiTools() };
     normalizeForcedToolChoice(body, FORMATS.OPENAI, ANY);
