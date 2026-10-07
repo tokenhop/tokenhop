@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createProviderConnectionUnscoped } from "@/models";
+import { createIn, oauthScope } from "@/lib/oauth/scope";
 
 const GITLAB_DEFAULT_BASE = "https://gitlab.com";
 
@@ -9,6 +9,10 @@ const GITLAB_DEFAULT_BASE = "https://gitlab.com";
  */
 export async function POST(request) {
   try {
+    // YAN-366: scoped create (personal default); switch off keeps unscoped.
+    const scope = await oauthScope(request);
+    if (scope instanceof Response) return scope;
+
     let body;
     try {
       body = await request.json();
@@ -39,7 +43,7 @@ export async function POST(request) {
     const user = await userRes.json();
     const email = user.email || user.public_email || "";
 
-    await createProviderConnectionUnscoped({
+    await createIn(scope, {
       provider: "gitlab",
       authType: "oauth",
       accessToken: token.trim(),

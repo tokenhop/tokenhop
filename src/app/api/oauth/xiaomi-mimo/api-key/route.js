@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createProviderConnectionUnscoped } from "@/models";
+import { createIn, oauthScope } from "@/lib/oauth/scope";
+import { listConnections, updateConnection } from "@/lib/db/index.js";
 
 /**
  * POST /api/oauth/xiaomi-mimo/api-key
@@ -10,6 +11,11 @@ import { createProviderConnectionUnscoped } from "@/models";
  */
 export async function POST(request) {
   try {
+    // YAN-366: switch on (2+ users) dedup/create stay inside the target
+    // workspace; switch off keeps today's unscoped path byte-identically.
+    const scope = await oauthScope(request);
+    if (scope instanceof Response) return scope;
+
     const { apiKey, uid, baseUrl, mimoPassToken, mimoUserId, mimoCUserId } = await request.json();
 
     if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) {
@@ -52,17 +58,23 @@ export async function POST(request) {
       console.log("[xiaomi-mimo] key validation failed, storing as untested");
     }
 
-    // Dedup: if a connection with the same uid or same key already exists, update it
+    // Dedup stays inside the target workspace when scoped.
     const { getProviderConnectionsUnscoped, updateProviderConnectionUnscoped } = await import(
       "@/models"
     );
-    const existing = (await getProviderConnectionsUnscoped()).find(
+    const candidates = scope
+      ? await listConnections(scope.ctx, scope.workspaceId, { provider: "xiaomi-mimo" })
+      : await getProviderConnectionsUnscoped();
+    const existing = candidates.find(
       (c) =>
         c.provider === "xiaomi-mimo" &&
         ((uid && c.email === `${uid}@xiaomi`) || c.accessToken === key),
     );
     if (existing) {
-      const updated = await updateProviderConnectionUnscoped(existing.id, {
+      const update = scope
+        ? (id, data) => updateConnection(scope.ctx, id, data)
+        : updateProviderConnectionUnscoped;
+      await update(existing.id, {
         accessToken: key,
         providerSpecificData: {
           ...existing.providerSpecificData,
@@ -90,7 +102,7 @@ export async function POST(request) {
       });
     }
 
-    const connection = await createProviderConnectionUnscoped({
+    const connection = await createIn(scope, {
       provider: "xiaomi-mimo",
       authType: "api_key",
       accessToken: key,

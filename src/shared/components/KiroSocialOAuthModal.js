@@ -62,7 +62,12 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
       const res = await fetch("/api/oauth/kiro/social-exchange", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: parsed.code, codeVerifier: authData.codeVerifier, provider }),
+        body: JSON.stringify({
+          code: parsed.code,
+          codeVerifier: authData.codeVerifier,
+          provider,
+          state: authData.state,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);

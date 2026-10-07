@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { createProviderConnectionUnscoped } from "@/models";
 import { extractCodexAccountInfo } from "@/lib/oauth/providers";
+import { createIn, oauthScope } from "@/lib/oauth/scope";
 
 /**
  * POST /api/oauth/codex/import-token
@@ -11,6 +11,10 @@ import { extractCodexAccountInfo } from "@/lib/oauth/providers";
  */
 export async function POST(request) {
   try {
+    // YAN-366: scoped create (personal default); switch off keeps unscoped.
+    const scope = await oauthScope(request);
+    if (scope instanceof Response) return scope;
+
     const { accessToken, name } = await request.json();
 
     if (!accessToken || typeof accessToken !== "string") {
@@ -65,7 +69,7 @@ export async function POST(request) {
     const connectionName = name || email || "ChatGPT Access token";
 
     // Save to database as access_token authType (no refresh token)
-    const connection = await createProviderConnectionUnscoped({
+    const connection = await createIn(scope, {
       provider: "codex",
       authType: "access_token",
       accessToken: token,

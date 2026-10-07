@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { CursorService } from "@/lib/oauth/services/cursor";
-import { createProviderConnectionUnscoped } from "@/models";
+import { createIn, oauthScope } from "@/lib/oauth/scope";
 
 // Cursor session JWTs are ~1 KB; anything this large is not a real token.
 const MAX_TOKEN_LENGTH = 16384;
@@ -17,6 +17,10 @@ const MAX_TOKEN_LENGTH = 16384;
  */
 export async function POST(request) {
   try {
+    // YAN-366: switch on (2+ users) the connection lands in the caller's
+    // workspace (personal default); switch off the legacy unscoped create runs.
+    const scope = await oauthScope(request);
+    if (scope instanceof Response) return scope;
     const { accessToken, machineId, refreshToken } = await request.json();
 
     if (!accessToken || typeof accessToken !== "string") {
@@ -52,7 +56,7 @@ export async function POST(request) {
     const userInfo = cursorService.extractUserInfo(tokenData.accessToken);
 
     // Save to database
-    const connection = await createProviderConnectionUnscoped({
+    const connection = await createIn(scope, {
       provider: "cursor",
       authType: "oauth",
       accessToken: tokenData.accessToken,

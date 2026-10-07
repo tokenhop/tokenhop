@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createProviderConnectionUnscoped } from "@/models";
+import { createIn, oauthScope } from "@/lib/oauth/scope";
 
 /**
  * iFlow Cookie-Based Authentication
@@ -7,6 +7,10 @@ import { createProviderConnectionUnscoped } from "@/models";
  * Body: { cookie: "BXAuth=xxx; ..." }
  */
 export async function POST(request) {
+  // YAN-366: scoped create (personal default); switch off keeps unscoped.
+  const scope = await oauthScope(request);
+  if (scope instanceof Response) return scope;
+
   try {
     const { cookie } = await request.json();
 
@@ -108,7 +112,7 @@ export async function POST(request) {
     const cookieToSave = bxAuth ? `BXAuth=${bxAuth};` : "";
 
     // Save to database
-    const connection = await createProviderConnectionUnscoped({
+    const connection = await createIn(scope, {
       provider: "iflow",
       authType: "cookie",
       name: refreshedKey.name || keyData.name,

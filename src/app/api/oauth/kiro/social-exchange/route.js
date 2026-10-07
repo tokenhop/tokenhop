@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
-import { createProviderConnectionUnscoped } from "@/models";
+import { createIn, requireFlowOwner } from "@/lib/oauth/scope";
+import { forgetBinding } from "@/lib/oauth/pendingBinding";
 
 /**
  * POST /api/oauth/kiro/social-exchange
@@ -9,7 +10,7 @@ import { createProviderConnectionUnscoped } from "@/models";
  */
 export async function POST(request) {
   try {
-    const { code, codeVerifier, provider } = await request.json();
+    const { code, codeVerifier, provider, state } = await request.json();
 
     if (!code || !codeVerifier) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -18,6 +19,11 @@ export async function POST(request) {
     if (!provider || !["google", "github"].includes(provider)) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
     }
+
+    // YAN-366: a binding for the presented state pins owner+workspace (403
+    // for anyone else); no binding falls back to the caller's own scope.
+    const scope = await requireFlowOwner(request, state);
+    if (scope instanceof Response) return scope;
 
     const kiroService = new KiroService();
 
@@ -28,7 +34,7 @@ export async function POST(request) {
     const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
 
     // Save to database
-    const connection = await createProviderConnectionUnscoped({
+    const connection = await createIn(scope, {
       provider: "kiro",
       authType: "oauth",
       accessToken: tokenData.accessToken,
@@ -42,6 +48,8 @@ export async function POST(request) {
       },
       testStatus: "active",
     });
+
+    if (state) forgetBinding(state);
 
     return NextResponse.json({
       success: true,

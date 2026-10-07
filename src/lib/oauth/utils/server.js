@@ -17,6 +17,49 @@ function isLoopbackOrigin(origin) {
   return /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin);
 }
 
+// YAN-366: callback creates run on the raw loopback server, outside any
+// request context, so the session carries the principal/workspace captured at
+// register time (`binding = { userId, workspaceId, ctx }`). No binding keeps
+// today's unscoped create. Reload authority before saving so a downgrade or
+// removal mid-flow fails through the callback's existing error path.
+export async function createSessionConnection(binding, data) {
+  if (binding) {
+    const { createConnection } = await import("@/lib/db/index.js");
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const { membershipRole } = await import("@/lib/db/repos/membershipsRepo.js");
+    const { can } = await import("@/lib/users/principal.js");
+    const db = await getAdapter();
+    const role = membershipRole(db, binding.workspaceId, binding.userId);
+    const user = db.get("SELECT instanceRole, status FROM users WHERE id = ?", [binding.userId]);
+    const ctx = {
+      ...binding.ctx,
+      instanceRole: user?.instanceRole,
+      workspaceRoles: { [binding.workspaceId]: role },
+    };
+    if (
+      user?.status !== "active" ||
+      !can(ctx, "workspace.connections.manage", { workspaceId: binding.workspaceId })
+    ) {
+      throw new Error("Forbidden");
+    }
+    return createConnection(ctx, binding.workspaceId, data);
+  }
+  const { createProviderConnectionUnscoped } = await import("@/models");
+  return createProviderConnectionUnscoped(data);
+}
+
+/** Refuse proxy lifecycle changes if any live flow belongs to another user. */
+export function otherOwnerActive(provider, userId) {
+  let entries = [];
+  if (provider === "codex") entries = [...pendingExchanges.values()];
+  else if (provider === "xai") entries = [...xaiPendingExchanges.values()];
+  else if (provider === "trae") entries = [traeSession];
+  else if (provider === "windsurf") entries = [windsurfSession];
+  else if (provider === "zed") entries = [zedSession];
+  else if (provider === "xiaomi-mimo") entries = [...xiaomiMimoSessions.values()];
+  return entries.some((s) => s?.binding && s.binding.userId !== userId);
+}
+
 /**
  * Start a local HTTP server to receive OAuth callback
  * @param {Function} onCallback - Called with query params when callback received
@@ -148,11 +191,12 @@ const pendingExchanges = new Map();
  * Register a pending exchange session for server-side mode.
  * Modal client calls this before opening popup.
  */
-export function registerCodexSession({ state, codeVerifier, redirectUri }) {
+export function registerCodexSession({ state, codeVerifier, redirectUri, binding }) {
   if (!state || !codeVerifier || !redirectUri) return false;
   pendingExchanges.set(state, {
     codeVerifier,
     redirectUri,
+    binding,
     status: "pending",
     createdAt: Date.now(),
   });
@@ -231,7 +275,6 @@ export function startCodexProxy(appPort) {
 
           // Lazy import to avoid circular deps
           const { exchangeTokens } = await import("../providers.js");
-          const { createProviderConnectionUnscoped } = await import("@/models");
 
           const tokenData = await exchangeTokens(
             "codex",
@@ -240,7 +283,7 @@ export function startCodexProxy(appPort) {
             session.codeVerifier,
             state,
           );
-          const connection = await createProviderConnectionUnscoped({
+          const connection = await createSessionConnection(session.binding, {
             provider: "codex",
             authType: "oauth",
             ...tokenData,
@@ -316,11 +359,12 @@ const XAI_PROXY_TIMEOUT_MS = 300000; // 5 minutes
 const XAI_PROXY_PORT = 56121;
 const xaiPendingExchanges = new Map();
 
-export function registerXaiSession({ state, codeVerifier, redirectUri }) {
+export function registerXaiSession({ state, codeVerifier, redirectUri, binding }) {
   if (!state || !codeVerifier || !redirectUri) return false;
   xaiPendingExchanges.set(state, {
     codeVerifier,
     redirectUri,
+    binding,
     status: "pending",
     createdAt: Date.now(),
   });
@@ -373,7 +417,6 @@ export function startXaiProxy(appPort) {
           if (!code) throw new Error("No authorization code received");
 
           const { exchangeTokens } = await import("../providers.js");
-          const { createProviderConnectionUnscoped } = await import("@/models");
 
           const tokenData = await exchangeTokens(
             "xai",
@@ -382,7 +425,7 @@ export function startXaiProxy(appPort) {
             session.codeVerifier,
             state,
           );
-          const connection = await createProviderConnectionUnscoped({
+          const connection = await createSessionConnection(session.binding, {
             provider: "xai",
             authType: "oauth",
             ...tokenData,
@@ -453,9 +496,9 @@ let traeProxyTimeout = null;
 let traeProxyPort = null;
 let traeSession = null;
 
-export function registerTraeSession({ state }) {
+export function registerTraeSession({ state, binding }) {
   if (!state) return false;
-  traeSession = { state, status: "pending", createdAt: Date.now() };
+  traeSession = { state, binding, status: "pending", createdAt: Date.now() };
   return true;
 }
 export function getTraeSessionStatus(state) {
@@ -510,9 +553,8 @@ export function startTraeProxy() {
       const rawCallback = `${url.pathname}?${url.searchParams.toString()}`;
       try {
         const { exchangeTokens } = await import("../providers.js");
-        const { createProviderConnectionUnscoped } = await import("@/models");
         const tokenData = await exchangeTokens("trae", rawCallback);
-        const connection = await createProviderConnectionUnscoped({
+        const connection = await createSessionConnection(session.binding, {
           provider: "trae",
           authType: "oauth",
           ...tokenData,
@@ -571,9 +613,9 @@ let windsurfProxyTimeout = null;
 let windsurfProxyPort = null;
 let windsurfSession = null;
 
-export function registerWindsurfSession({ state }) {
+export function registerWindsurfSession({ state, binding }) {
   if (!state) return false;
-  windsurfSession = { state, status: "pending", createdAt: Date.now() };
+  windsurfSession = { state, binding, status: "pending", createdAt: Date.now() };
   return true;
 }
 export function getWindsurfSessionStatus(state) {
@@ -626,9 +668,8 @@ export function startWindsurfProxy() {
       const rawCallback = `${url.pathname}?${url.searchParams.toString()}`;
       try {
         const { exchangeTokens } = await import("../providers.js");
-        const { createProviderConnectionUnscoped } = await import("@/models");
         const tokenData = await exchangeTokens("windsurf", rawCallback, null, null, session.state);
-        const connection = await createProviderConnectionUnscoped({
+        const connection = await createSessionConnection(session.binding, {
           provider: "windsurf",
           authType: "api_key",
           ...tokenData,
@@ -685,12 +726,13 @@ let zedProxyTimeout = null;
 let zedProxyPort = null;
 let zedSession = null;
 
-export function registerZedSession({ state, codeVerifier, systemId }) {
+export function registerZedSession({ state, codeVerifier, systemId, binding }) {
   if (!state || !codeVerifier) return false;
   zedSession = {
     state,
     codeVerifier,
     systemId: systemId || null,
+    binding,
     status: "pending",
     createdAt: Date.now(),
   };
@@ -781,7 +823,6 @@ export function startZedProxy(preferredPort = 0) {
         : url.pathname;
       try {
         const { exchangeTokens } = await import("../providers.js");
-        const { createProviderConnectionUnscoped } = await import("@/models");
         const tokenData = await exchangeTokens(
           "zed",
           rawCallback,
@@ -790,7 +831,7 @@ export function startZedProxy(preferredPort = 0) {
           session.state,
           session.systemId ? { systemId: session.systemId } : undefined,
         );
-        const connection = await createProviderConnectionUnscoped({
+        const connection = await createSessionConnection(session.binding, {
           provider: "zed",
           authType: "oauth",
           ...tokenData,
@@ -876,10 +917,11 @@ const XIAOMI_MIMO_PROXY_TIMEOUT_MS = 5 * 60 * 1000;
 
 const xiaomiMimoSessions = new Map();
 
-export function registerXiaomiMimoSession({ state, privateKeyDer }) {
+export function registerXiaomiMimoSession({ state, privateKeyDer, binding }) {
   if (!state || !privateKeyDer) return false;
   xiaomiMimoSessions.set(state, {
     privateKeyDer,
+    binding,
     status: "pending",
     createdAt: Date.now(),
   });
@@ -890,7 +932,12 @@ export function getXiaomiMimoSessionStatus(state) {
   const s = xiaomiMimoSessions.get(state);
   if (!s) return null;
   // Don't leak the private key to the client
-  return { status: s.status, result: s.result || null, error: s.error || null };
+  return {
+    status: s.status,
+    result: s.result || null,
+    error: s.error || null,
+    binding: s.binding,
+  };
 }
 
 export function clearXiaomiMimoSession(state) {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createProviderConnectionUnscoped } from "@/models";
+import { createIn, oauthScope } from "@/lib/oauth/scope";
 import { normalizeKiroExternalIdpAuth } from "@/lib/oauth/kiroExternalIdp.js";
 
 /**
@@ -7,12 +7,16 @@ import { normalizeKiroExternalIdpAuth } from "@/lib/oauth/kiroExternalIdp.js";
  * Import Kiro CLIProxyAPI auth JSON for Microsoft external_idp accounts.
  */
 export async function POST(request) {
+  // YAN-366: scoped create (personal default); switch off keeps unscoped.
+  const scope = await oauthScope(request);
+  if (scope instanceof Response) return scope;
+
   try {
     const body = await request.json();
     const rawAuth = body?.cliProxyAuth ?? body?.auth ?? body?.json ?? body;
     const tokenData = normalizeKiroExternalIdpAuth(rawAuth);
 
-    const connection = await createProviderConnectionUnscoped({
+    const connection = await createIn(scope, {
       provider: "kiro",
       authType: "oauth",
       accessToken: tokenData.accessToken,

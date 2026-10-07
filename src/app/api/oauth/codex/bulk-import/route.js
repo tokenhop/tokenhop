@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { createProviderConnectionUnscoped } from "@/models";
 import { extractCodexAccountInfo } from "@/lib/oauth/providers";
+import { createIn, oauthScope } from "@/lib/oauth/scope";
 
 /**
  * POST /api/oauth/codex/bulk-import
@@ -17,6 +17,11 @@ import { extractCodexAccountInfo } from "@/lib/oauth/providers";
  * Tokens are NEVER echoed back in the response.
  */
 export async function POST(request) {
+  // YAN-366: resolve once; each item lands in the caller's workspace
+  // (personal default). Switch off keeps the unscoped Default landing.
+  const scope = await oauthScope(request);
+  if (scope instanceof Response) return scope;
+
   let body;
   try {
     body = await request.json();
@@ -97,7 +102,7 @@ export async function POST(request) {
       if (item.isActive === undefined) item.isActive = true;
       if (!item.lastRefreshAt) item.lastRefreshAt = new Date().toISOString();
 
-      const created = await createProviderConnectionUnscoped({
+      const created = await createIn(scope, {
         provider: "codex",
         authType: "oauth",
         ...item,
