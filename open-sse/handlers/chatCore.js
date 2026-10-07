@@ -49,6 +49,7 @@ import { compressWithPxpipe } from "../rtk/pxpipe.js";
 import { buildSavingsEntry } from "../rtk/savingsEstimate.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
+import { normalizeForcedToolChoice } from "../translator/concerns/toolChoice.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import {
   defaultClaudeToolType,
@@ -355,6 +356,12 @@ export async function handleChatCore({
   // Token savers: applied at the final body just before dispatch
   // Covers both passthrough (source shape) and translated (target shape) flows
   const finalFormat = passthrough ? sourceFormat : targetFormat;
+  const toolChoiceChange = normalizeForcedToolChoice(
+    translatedBody,
+    finalFormat,
+    getCapabilitiesForModel(provider, stripThinkingSuffix(upstreamModel)),
+  );
+  if (toolChoiceChange) log?.debug?.("TOOLCHOICE", toolChoiceChange);
 
   // Request line: one correlated summary (fmt + thinking + counts + account)
   if (log?.line) {
