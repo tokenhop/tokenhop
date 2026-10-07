@@ -51,6 +51,12 @@ export const TABLE_CLASSES = {
   // YAN-365: one wrapped DEK per owning workspace. Deleting the workspace
   // destroys its key (crypto-shredding); rows are scoped, never shared.
   workspaceKeys: { class: "scoped", scopeColumn: "workspaceId" },
+  // YAN-369: grantee workspace OR userId; owner side resolves via connectionId.
+  connectionGrants: {
+    class: "scoped",
+    scopeColumn: "workspaceId",
+    note: "grantee workspace OR userId; owner side via connectionId",
+  },
 };
 
 // Workspace kv scopes take the `ws:<workspaceId>/` key prefix when scoped.

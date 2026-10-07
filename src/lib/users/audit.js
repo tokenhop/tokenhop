@@ -29,6 +29,16 @@ const ALLOWED = new Set([
   "capability",
   "keyNames",
   "inviteId",
+  // YAN-369 (ADR-0006): connection grant identity/limits — never secrets.
+  "connectionId",
+  "grantId",
+  "rpm",
+  "tpm",
+  "budgetId",
+  "tosAcknowledgedAt",
+  "sharing",
+  "granteeWorkspaceId",
+  "granteeUserId",
 ]);
 
 const TRUNCATE = 4096;

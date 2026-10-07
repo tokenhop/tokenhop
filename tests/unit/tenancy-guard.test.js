@@ -44,6 +44,11 @@ const HELPER_ALLOWLIST = new Set([
   // tokenHash — for in-transaction validation only, never client data.
   "invitationsRepo.js:getInvitationForConsumeSync",
   "invitationsRepo.js:consumeInvitationSync",
+  // YAN-369 trusted gateway reader (first param `db`): the caller is the
+  // resolved key context, never a session ctx. It only re-reads active
+  // grants (revokedAt IS NULL) for the already-authenticated principal's
+  // own workspace/user — no cross-principal access, no grant cache.
+  "connectionGrantsRepo.js:listActiveGrantsForPrincipal",
 ]);
 
 const liveTables = (db) =>

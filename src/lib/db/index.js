@@ -261,6 +261,14 @@ export {
   getInvitationForConsumeSync,
   consumeInvitationSync,
 } from "./repos/invitationsRepo.js";
+export {
+  tosEcho,
+  listGrantsForConnection,
+  getGrantById,
+  createGrant,
+  revokeGrant,
+  listActiveGrantsForPrincipal,
+} from "./repos/connectionGrantsRepo.js"; // YAN-369
 
 // YAN-364: the export/import snapshot stays the legacy single-user shape.
 // Default-workspace alias/custom keys travel unprefixed; other workspaces are

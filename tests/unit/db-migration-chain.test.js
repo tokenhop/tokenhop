@@ -714,6 +714,32 @@ describe("Schema migrations", () => {
     db.run(`DELETE FROM providerConnections WHERE id = 'c-env'`);
   });
 
+  it("migration 015 adds an empty connectionGrants table idempotently (YAN-369)", async () => {
+    const { MIGRATIONS } = await import("@/lib/db/migrations/index.js");
+    expect(MIGRATIONS.find((m) => m.version === 15).name).toBe("connection-grants");
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const m015 = (await import("@/lib/db/migrations/015-connection-grants.js")).default;
+    const db = await getAdapter();
+    expect(db.get(`SELECT COUNT(*) AS c FROM connectionGrants`).c).toBe(0);
+    expect(db.all(`PRAGMA table_info(connectionGrants)`).map((c) => c.name)).toEqual([
+      "id",
+      "connectionId",
+      "workspaceId",
+      "userId",
+      "allowedModels",
+      "rpm",
+      "tpm",
+      "budgetId",
+      "createdByUserId",
+      "tosAcknowledgedAt",
+      "createdAt",
+      "revokedAt",
+    ]);
+    m015.up(db);
+    m015.up(db); // idempotent
+    expect(db.get(`SELECT COUNT(*) AS c FROM connectionGrants`).c).toBe(0);
+  });
+
   it("auto-sync re-creates missing index when DB lacks it", async () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
