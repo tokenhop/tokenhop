@@ -379,6 +379,20 @@ describe("editor FIM endpoints via combo", () => {
     expect(executeMock).not.toHaveBeenCalled();
   });
 
+  it("/infill streamed n_predict:0 warm-up answers SSE without calling upstream", async () => {
+    const res = await postTo("/infill", {
+      model: COMBO,
+      input_prefix: "x",
+      n_predict: 0,
+      stream: true,
+    });
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    const lines = await sseData(res);
+    expect(lines.at(-1)).toBe("[DONE]");
+    expect(JSON.parse(lines[0])).toMatchObject({ content: "", stop: true });
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
   it("n_predict:0 on /v1/completions is NOT a warm-up (still calls upstream)", async () => {
     const res = await postTo("/v1/completions", {
       model: COMBO,

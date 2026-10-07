@@ -180,10 +180,14 @@ export async function handleChat(request, clientRawRequest = null, options = nul
           : null;
       if (denied) return denied;
     }
-    return Response.json(
-      { content: "", stop: true, tokens_predicted: 0, truncated: false },
-      { headers: { "Access-Control-Allow-Origin": "*" } },
-    );
+    const warm = { content: "", stop: true, tokens_predicted: 0, truncated: false };
+    const cors = { "Access-Control-Allow-Origin": "*" };
+    if (body.stream === true) {
+      return new Response(`data: ${JSON.stringify(warm)}\n\ndata: [DONE]\n\n`, {
+        headers: { ...cors, "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+      });
+    }
+    return Response.json(warm, { headers: cors });
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
