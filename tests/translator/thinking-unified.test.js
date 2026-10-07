@@ -245,6 +245,19 @@ describe("applyThinking per provider format", () => {
     const zai = apply("openai", "glm-5.3-flash", { reasoning_effort: "high" }, "zai");
     expect(zai.thinking).toEqual({ type: "enabled" });
   });
+  it("GLM-5.3 always thinks: none clamps to low instead of enable_thinking:false (YAN-742)", () => {
+    for (const model of ["glm-5.3-flash", "glm-5.3"]) {
+      for (const target of ["openai", "claude"]) {
+        const out = apply(target, model, { reasoning_effort: "none" }, "glm");
+        expect(out.enable_thinking).toBeUndefined();
+        expect(out.thinking).toEqual({ type: "enabled" });
+        expect(out.reasoning_effort).toBe("low");
+      }
+    }
+    // Scoped to z.ai: other gateways keep the disable switch.
+    const nim = apply("openai", "z-ai/glm-5.3", { reasoning_effort: "none" }, "nvidia");
+    expect(nim.enable_thinking).toBe(false);
+  });
   it("Kimi K3 clamps medium to high (K3 accepts low/high/max only); other Kimi models keep medium", () => {
     const k3 = apply("openai", "moonshotai/kimi-k3", { reasoning_effort: "medium" }, "nvidia");
     expect(k3.reasoning_effort).toBe("high");
