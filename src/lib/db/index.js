@@ -190,6 +190,7 @@ export async function exportDb() {
       updatedAt: r.updatedAt,
     })),
     modelAliases: {},
+    disabledModels: {},
     customModels: [],
     mitmAlias: {},
     cliToolSettings: {},
@@ -198,6 +199,10 @@ export async function exportDb() {
 
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`))
     out.modelAliases[r.key] = parseJson(r.value);
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'disabledModels'`)) {
+    const ids = parseJson(r.value, []);
+    out.disabledModels[r.key] = Array.isArray(ids) ? ids : [];
+  }
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`))
     out.customModels.push(parseJson(r.value));
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'mitmAlias'`))
@@ -214,6 +219,21 @@ export async function importDb(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("Invalid database payload");
   }
+  if (Object.hasOwn(payload, "disabledModels")) {
+    const section = payload.disabledModels;
+    if (
+      !section ||
+      typeof section !== "object" ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(section))
+    ) {
+      throw new Error("disabledModels must be an object");
+    }
+    for (const ids of Object.values(section)) {
+      if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) {
+        throw new Error("disabledModels entries must be arrays of strings");
+      }
+    }
+  }
   const db = await getAdapter();
 
   db.transaction(() => {
@@ -225,7 +245,7 @@ export async function importDb(payload) {
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
     db.run(
-      `DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'cliToolSettings', 'pricing')`,
+      `DELETE FROM kv WHERE scope IN ('modelAliases', 'disabledModels', 'customModels', 'mitmAlias', 'cliToolSettings', 'pricing')`,
     );
 
     // Settings
@@ -323,6 +343,12 @@ export async function importDb(payload) {
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [
         a,
         stringifyJson(m),
+      ]);
+    }
+    for (const [provider, ids] of Object.entries(payload.disabledModels || {})) {
+      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('disabledModels', ?, ?)`, [
+        provider,
+        stringifyJson(ids),
       ]);
     }
     for (const m of payload.customModels || []) {
