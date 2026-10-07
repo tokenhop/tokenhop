@@ -378,7 +378,9 @@ export async function getProviderCredentials(
         connection,
         connection.grantTpm != null ? estimateTokens() : 0,
       );
-      if (grantReservation === false) return grantLimitedResult("rpm");
+      if (grantReservation === false) {
+        return grantLimitedResult(grantLimitHit(connection, estimateTokens()) ?? "rpm");
+      }
     }
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
@@ -437,8 +439,15 @@ export async function markAccountUnavailable(
   provider = null,
   model = null,
   resetsAtMs = null,
+  { grantId = null } = {},
 ) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
+  // YAN-369 (ADR-0006): a grantee's failure falls back for this request only;
+  // it never locks or cools down the owner's connection row.
+  if (grantId) {
+    const { shouldFallback } = checkFallbackError(status, errorText, 0);
+    return { shouldFallback: !!shouldFallback, cooldownMs: 0 };
+  }
   const connections = await getProviderConnectionsUnscoped({ provider });
   const conn = connections.find((c) => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;

@@ -162,19 +162,36 @@ describe("connectionGrantsRepo", () => {
     expect(await bad({ tpm: 1.5 })).toBe("INVALID");
     expect(await bad({ budgetId: "" })).toBe("INVALID");
 
+    expect(await bad({ allowedModels: ["gpt-5"] })).toBe("INVALID"); // not provider/model
+
     const echo = { providerId: "claude", sharing: "personal" };
+    // The ToS gate runs inside the repo: no toggle → refused for any caller.
+    expect(await bad({ tosAcknowledged: echo })).toBe("FORBIDDEN");
+    db.run("INSERT OR REPLACE INTO settings(id, data) VALUES (1, ?)", [
+      JSON.stringify({ allowPersonalConnectionGrants: true }),
+    ]);
+    expect(await bad({ tosAcknowledged: { providerId: "openai", sharing: "personal" } })).toBe(
+      "FORBIDDEN",
+    );
     const g1 = await repo.createGrant(a.ctx, {
       connectionId: connId,
       workspaceId: b.personal,
       tosAcknowledged: echo,
     });
     expect(g1.tosAcknowledgedAt).toBeGreaterThan(0);
-    const g2 = await repo.createGrant(a.ctx, {
-      connectionId: connId,
-      workspaceId: b.personal,
-      tosAcknowledged: { providerId: "openai", sharing: "personal" },
-    });
-    expect(g2.tosAcknowledgedAt).toBeNull();
+    // One active grant per (connection, grantee); a revoked one frees the slot.
+    expect(await bad({ tosAcknowledged: echo })).toBe("GRANT_EXISTS");
+    await repo.revokeGrant(a.ctx, g1.id);
+    expect(
+      (
+        await repo.createGrant(a.ctx, {
+          connectionId: connId,
+          workspaceId: b.personal,
+          tosAcknowledged: echo,
+        })
+      ).id,
+    ).not.toBe(g1.id);
+    db.run("DELETE FROM settings");
   });
 
   it("audits create and revoke without secrets (allow-listed keys only)", async () => {

@@ -15,5 +15,11 @@ export default {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_cg_conn ON connectionGrants(connectionId)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_cg_ws ON connectionGrants(workspaceId)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_cg_user ON connectionGrants(userId)`);
+    db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_cg_active_ws ON connectionGrants(connectionId, workspaceId) WHERE revokedAt IS NULL AND workspaceId IS NOT NULL`,
+    );
+    db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_cg_active_user ON connectionGrants(connectionId, userId) WHERE revokedAt IS NULL AND userId IS NOT NULL`,
+    );
   },
 };

@@ -187,6 +187,8 @@ export async function handleEmbeddings(request) {
       result.error,
       provider,
       model,
+      null,
+      { grantId: credentials.grantId },
     );
 
     if (shouldFallback) {

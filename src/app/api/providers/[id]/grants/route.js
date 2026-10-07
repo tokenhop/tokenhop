@@ -34,6 +34,7 @@ const ERRORS = {
   NOT_FOUND: [404, "Connection not found"],
   FORBIDDEN: [403, "Forbidden"],
   INVALID: [400, "Invalid request"],
+  GRANT_EXISTS: [409, "An active grant already exists for this grantee"],
 };
 
 function fail(err) {

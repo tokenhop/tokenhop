@@ -31,6 +31,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import * as log from "../utils/logger.js";
+import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
 
 // Video generation is xAI-only today; requests without a provider prefix
 // (bare model id, or multipart bodies we deliberately don't parse) land here.
@@ -337,6 +338,7 @@ export async function handleVideoCreate(request, action) {
     });
 
     if (!credentials || credentials.allRateLimited) {
+      if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status =
@@ -406,12 +408,15 @@ export async function handleVideoCreate(request, action) {
     }
 
     // Record the failure (dashboard shows lastError/errorCode → user sees re-auth is needed)
+    releaseGrantReservation(credentials.grantReservation);
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,
       result.status,
       sanitizeSecrets(result.error, refreshedCredentials),
       provider,
       model,
+      null,
+      { grantId: credentials.grantId },
     );
 
     if (shouldFallback && CREATE_ROTATION_STATUSES.has(result.status)) {
@@ -445,6 +450,7 @@ export async function handleVideoGet(request, requestId) {
 
   const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
   if (!credentials || credentials.allRateLimited) {
+    if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
   }
 
@@ -477,12 +483,15 @@ export async function handleVideoGet(request, requestId) {
   // since a locked account drops the x-connection-id pin, spread to the other
   // accounts on the next poll) (YAN-678).
   if (POLL_LOCK_STATUSES.has(result.status) || result.status >= 500) {
+    releaseGrantReservation(credentials.grantReservation);
     await markAccountUnavailable(
       credentials.connectionId,
       result.status,
       sanitizeSecrets(result.error, refreshedCredentials),
       provider,
       VIDEO_POLL_LOCK_MODEL,
+      null,
+      { grantId: credentials.grantId },
     );
   }
   return result.response;
@@ -552,6 +561,7 @@ async function proxyVideoPoll(request, requestId, provider, preferredConnectionI
     principal: gateway,
   });
   if (!credentials || credentials.allRateLimited) {
+    if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
   }
 
@@ -579,12 +589,15 @@ async function proxyVideoPoll(request, requestId, provider, preferredConnectionI
   }
 
   if (POLL_LOCK_STATUSES.has(result.status) || result.status >= 500) {
+    releaseGrantReservation(credentials.grantReservation);
     await markAccountUnavailable(
       credentials.connectionId,
       result.status,
       sanitizeSecrets(result.error, refreshedCredentials),
       provider,
       VIDEO_POLL_LOCK_MODEL,
+      null,
+      { grantId: credentials.grantId },
     );
   }
   return result.response;

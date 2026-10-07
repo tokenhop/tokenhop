@@ -20,6 +20,11 @@ const UNIQUE_CODES = [
   ["identities.provider", "IDENTITY_TAKEN", "Identity is already linked to a user"],
   ["memberships.workspaceId", "MEMBERSHIP_EXISTS", "User is already a member"],
   ["workspaces.createdBy", "PERSONAL_WORKSPACE", "User already has a personal workspace"],
+  [
+    "connectionGrants.connectionId",
+    "GRANT_EXISTS",
+    "An active grant already exists for this grantee",
+  ],
 ];
 
 /** Run `fn`, turning SQLite UNIQUE/CHECK failures into TenancyError. */

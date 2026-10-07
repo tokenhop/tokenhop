@@ -343,6 +343,9 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_cg_conn ON connectionGrants(connectionId)",
       "CREATE INDEX IF NOT EXISTS idx_cg_ws ON connectionGrants(workspaceId)",
       "CREATE INDEX IF NOT EXISTS idx_cg_user ON connectionGrants(userId)",
+      // One active grant per (connection, grantee): no ambiguous limits.
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_cg_active_ws ON connectionGrants(connectionId, workspaceId) WHERE revokedAt IS NULL AND workspaceId IS NOT NULL",
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_cg_active_user ON connectionGrants(connectionId, userId) WHERE revokedAt IS NULL AND userId IS NOT NULL",
     ],
   },
 };

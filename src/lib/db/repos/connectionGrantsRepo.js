@@ -3,15 +3,17 @@
 // shape as invitationsRepo.requireManager: the ctx principal must manage the
 // connection's owning workspace (owner/manager, or an active instance
 // admin/owner); foreign ids read as NOT_FOUND so they stay invisible. The
-// provider-terms matrix lives in @/lib/users/grants.js (assertGrantable) —
-// routes run it before createGrant; the repo only echo-verifies the
-// acknowledgement it is asked to timestamp. Grant rows carry no secrets; the
+// provider-terms matrix (@/lib/users/grants.js assertGrantable) runs inside
+// createGrant, so no caller can skip it. One active grant per
+// (connection, grantee): partial UNIQUE indexes → GRANT_EXISTS. Grant rows carry no secrets; the
 // credential data of the joined connection never leaves the gateway reader.
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { TenancyError, assertCtx, mapConstraintErrors } from "@/lib/users/errors.js";
 import { mayGrantManager, mayManage, membershipRole } from "./membershipsRepo.js";
 import { audit } from "@/lib/users/audit.js";
+import { assertGrantable } from "@/lib/users/grants.js";
+import { getSettings } from "./settingsRepo.js";
 
 const COLS =
   "id, connectionId, workspaceId, userId, allowedModels, rpm, tpm, budgetId, createdByUserId, tosAcknowledgedAt, createdAt, revokedAt";
@@ -31,12 +33,16 @@ function toGrant(row) {
 
 function normalizeModels(models) {
   if (models == null) return null;
+  // Canonical "provider/model" ids only: the gateway compares exactly that form.
   if (
     !Array.isArray(models) ||
     models.length === 0 ||
-    !models.every((m) => typeof m === "string" && m && m.length <= 512)
+    !models.every((m) => typeof m === "string" && /^[^/\s]+\/\S+$/.test(m) && m.length <= 512)
   ) {
-    throw new TenancyError("INVALID", "allowedModels must be a non-empty array of model ids");
+    throw new TenancyError(
+      "INVALID",
+      "allowedModels must be a non-empty array of provider/model ids",
+    );
   }
   return JSON.stringify(models);
 }
@@ -153,14 +159,17 @@ export async function createGrant(
   }
   const db = await getAdapter();
   const conn = requireConnectionManager(db, ctx, connectionId);
+  // ToS gate lives here, not only in the route: no caller can create a grant
+  // without it. Judged on the live instance role, not the session snapshot.
+  const live = db.get(`SELECT instanceRole FROM users WHERE id = ?`, [ctx.userId]);
+  const { sharing, tosAcknowledgedAt } = assertGrantable({
+    principal: { instanceRole: live?.instanceRole ?? null },
+    connection: conn,
+    body: { tosAcknowledged },
+    settings: await getSettings(),
+  });
   const at = Date.now();
-  const acked =
-    tosAcknowledged != null &&
-    typeof tosAcknowledged === "object" &&
-    tosAcknowledged.providerId === conn.provider &&
-    tosAcknowledged.sharing === "personal"
-      ? at
-      : null;
+  const acked = tosAcknowledgedAt ? at : null;
   const row = {
     id: uuidv4(),
     connectionId: conn.id,
@@ -206,6 +215,7 @@ export async function createGrant(
         id: row.id,
         connectionId: row.connectionId,
         provider: conn.provider,
+        sharing,
         granteeWorkspaceId: row.workspaceId,
         granteeUserId: row.userId,
         allowedModels: row.allowedModels,

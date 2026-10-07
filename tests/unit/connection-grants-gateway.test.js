@@ -124,6 +124,24 @@ describe("gateway grant resolution", () => {
     expect(row.data).not.toMatch(/lastUsedAt|consecutiveUseCount/);
   });
 
+  it("a grantee's upstream failure falls back without locking the owner's row", async () => {
+    conn("src", t.a.personal);
+    const out = await auth.markAccountUnavailable(
+      "src",
+      429,
+      "rate limited",
+      "openai",
+      "gpt-5",
+      null,
+      {
+        grantId: "g1",
+      },
+    );
+    expect(out.shouldFallback).toBe(true);
+    const row = db.get("SELECT data FROM providerConnections WHERE id = 'src'");
+    expect(row.data).not.toMatch(/modelLock_|testStatus|backoffLevel/);
+  });
+
   it("stores grantId on usage rows", async () => {
     const { saveRequestUsageUnscoped } = await import("@/lib/usageDb.js");
     await saveRequestUsageUnscoped({

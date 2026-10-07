@@ -523,6 +523,40 @@ export async function buildModelsList(kindFilter, options = {}) {
     }
   }
 
+  // YAN-369: a provider reachable only through grants lists only what those
+  // grants allow (null allowedModels = all). Own connections are unrestricted.
+  if (principal) {
+    const grantScope = new Map(); // providerId -> Set | null (all)
+    const own = new Set();
+    for (const c of connections) {
+      if (!c.grantId) own.add(c.provider);
+      else if (grantScope.get(c.provider) !== null) {
+        if (!Array.isArray(c.grantAllowedModels)) grantScope.set(c.provider, null);
+        else {
+          const set = grantScope.get(c.provider) ?? new Set();
+          for (const m of c.grantAllowedModels) set.add(m);
+          grantScope.set(c.provider, set);
+        }
+      }
+    }
+    for (const p of own) grantScope.delete(p);
+    if ([...grantScope.values()].some((v) => v !== null)) {
+      for (let i = models.length - 1; i >= 0; i--) {
+        if (models[i].owned_by === "combo") continue;
+        let canonical = null;
+        try {
+          canonical = await getModelInfo(models[i].id, { principal });
+        } catch {
+          canonical = null;
+        }
+        const allowed = canonical?.provider ? grantScope.get(canonical.provider) : undefined;
+        if (allowed && !allowed.has(`${canonical.provider}/${canonical.model}`)) {
+          models.splice(i, 1);
+        }
+      }
+    }
+  }
+
   const dedupedModels = [];
   const seenModelIds = new Set();
   for (const model of models) {

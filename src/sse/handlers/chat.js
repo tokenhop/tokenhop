@@ -769,6 +769,7 @@ async function handleSingleModelChat(
               provider,
               model,
               resetsAtMs,
+              { grantId: credentials.grantId },
             )
           ).shouldFallback;
 
