@@ -79,10 +79,15 @@ export function grantAllowsModel(grant, providerId, model, pinned = false) {
 // Rough prompt+completion estimate, only evaluated when a granted candidate has tpm.
 // Legacy completions carry prompt/suffix instead of messages/input/contents.
 export function estimateBodyTokens(body) {
-  const payload =
-    body?.messages ?? body?.input ?? body?.contents ?? fallbackPromptChars(body) ?? "";
-  const chars = typeof payload === "string" ? payload.length : JSON.stringify(payload).length;
-  const maxOut = body?.max_tokens ?? body?.max_completion_tokens ?? body?.n_predict;
+  const payload = body?.messages ?? body?.input ?? body?.contents ?? "";
+  // FIM fields always count: a decoy `messages: []` must not hide a huge prefix.
+  const chars =
+    (typeof payload === "string" ? payload.length : JSON.stringify(payload).length) +
+    (fallbackPromptChars(body)?.length ?? 0);
+  const maxOut =
+    body?.max_tokens ??
+    body?.max_completion_tokens ??
+    (Number(body?.n_predict) > 0 ? Math.min(Number(body.n_predict), 4096) : undefined);
   return Math.ceil(chars / 4) + Math.max(0, Number(maxOut) || 0);
 }
 

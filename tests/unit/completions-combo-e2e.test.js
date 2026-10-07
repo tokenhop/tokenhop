@@ -343,6 +343,7 @@ describe("editor FIM endpoints via combo", () => {
       truncated: false,
     });
     expect(json.stop_type).toEqual(expect.any(String));
+    expect(json.object).toBeUndefined();
     const goodCall = executeMock.mock.calls.find(([a]) => a.body?.model === "good")[0];
     const sent = JSON.stringify(goodCall.body.messages);
     expect(sent).toContain("// File: util.py\\nX = 1");

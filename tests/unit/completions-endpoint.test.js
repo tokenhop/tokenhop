@@ -58,6 +58,7 @@ describe("FIM editor endpoints", () => {
   it("detects llamacpp-infill on /infill and the rewritten path", () => {
     expect(detectFormatByEndpoint("/infill", {})).toBe(FORMATS.LLAMACPP_INFILL);
     expect(detectFormatByEndpoint("/api/v1/infill", {})).toBe(FORMATS.LLAMACPP_INFILL);
+    expect(detectFormatByEndpoint("/v1/foo/infill", {})).not.toBe(FORMATS.LLAMACPP_INFILL);
     expect(detectFormatByEndpoint("/v1/chat/completions", {})).not.toBe(FORMATS.LLAMACPP_INFILL);
   });
 });

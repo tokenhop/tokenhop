@@ -371,7 +371,7 @@ export async function handleNonStreamingResponse({
         targetFormat,
         sourceFormat,
         customToolNames,
-        isFimFormat(sourceFormat) ? fimContextFor(body) : null,
+        isFimFormat(sourceFormat) ? fimContextFor(body, sourceFormat) : null,
       )
     : responseBody;
   const isClaudeMessageResponse =
@@ -392,7 +392,11 @@ export async function handleNonStreamingResponse({
   }
 
   // Ensure OpenAI-required fields
-  if (!isClaudeMessageResponse && !isResponsesResponse) {
+  if (
+    !isClaudeMessageResponse &&
+    !isResponsesResponse &&
+    sourceFormat !== FORMATS.LLAMACPP_INFILL
+  ) {
     if (!translatedResponse.object) translatedResponse.object = "chat.completion";
     if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
   }

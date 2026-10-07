@@ -35,7 +35,7 @@ export function detectFormatByEndpoint(pathname, body) {
   // the route handler /api/v1/completions, which the endsWith check also covers.
   if (pathname.replace(/\/+$/, "").endsWith("/v1/completions")) return FORMATS.OPENAI_COMPLETIONS;
   if (pathname.replace(/\/+$/, "").endsWith("/v1/fim/completions")) return FORMATS.CODESTRAL_FIM;
-  if (pathname.replace(/\/+$/, "").endsWith("/infill")) return FORMATS.LLAMACPP_INFILL;
+  if (/^(?:\/api)?(?:\/v1)?\/infill\/?$/.test(pathname)) return FORMATS.LLAMACPP_INFILL;
 
   // /v1/responses is always openai-responses
   if (pathname.includes("/v1/responses")) return FORMATS.OPENAI_RESPONSES;

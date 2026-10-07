@@ -103,10 +103,6 @@ const nextConfig = {
         destination: "/api/v1/infill",
       },
       {
-        source: "/infill/",
-        destination: "/api/v1/infill",
-      },
-      {
         source: "/v1beta/:path*",
         destination: "/api/v1beta/:path*",
       },

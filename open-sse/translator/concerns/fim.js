@@ -75,12 +75,8 @@ export function toCompletionId(id) {
 // Prefix/suffix of a legacy completions client body, for response cleanup.
 // llama.cpp /infill bodies carry split fields: input_prefix (+ prompt, the
 // current-line text before the cursor) on the left, input_suffix on the right.
-export function fimContextFor(body) {
-  if (
-    body &&
-    typeof body === "object" &&
-    (typeof body.input_prefix === "string" || typeof body.input_suffix === "string")
-  ) {
+export function fimContextFor(body, sourceFormat) {
+  if (sourceFormat === "llamacpp-infill" && body && typeof body === "object") {
     const prefix =
       (typeof body.input_prefix === "string" ? body.input_prefix : "") +
       (typeof body.prompt === "string" ? body.prompt : "");

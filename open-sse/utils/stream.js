@@ -87,7 +87,7 @@ export function createSSEStream(options = {}) {
           model,
           sessionId: credentials?._clientSessionId || null,
           // Legacy completions: prefix/suffix for output cleanup, re-parsed from the client body.
-          fimContext: isFimFormat(sourceFormat) ? fimContextFor(body) : null,
+          fimContext: isFimFormat(sourceFormat) ? fimContextFor(body, sourceFormat) : null,
         }
       : null;
 

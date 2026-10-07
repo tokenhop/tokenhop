@@ -30,6 +30,8 @@ const MAX_INPUT_EXTRA = 32;
 const MAX_EXTRA_CHUNK_CHARS = 16_000;
 const MAX_EXTRA_TOTAL_CHARS = 128_000;
 const MAX_N_PREDICT = 4096;
+// Window kept around the cursor: prefix tail and suffix head.
+const MAX_FIM_SIDE_CHARS = 200_000;
 
 const SYSTEM_PROMPT = [
   "You are a code completion engine.",
@@ -48,6 +50,9 @@ function cleanStop(stop) {
 }
 
 export function buildFimChatRequest(model, body, stream, { prefix, suffix, context }) {
+  prefix = prefix.slice(-MAX_FIM_SIDE_CHARS);
+  suffix = suffix.slice(0, MAX_FIM_SIDE_CHARS);
+  context = context ? context.slice(0, MAX_FIM_SIDE_CHARS) : context;
   const code = `<code>${prefix}${CURSOR_MARKER}${suffix}</code>`;
   const result = {
     messages: [
@@ -132,8 +137,12 @@ export function llamacppToOpenAIRequest(model, body, stream, credentials) {
   // Vendor knob: n_predict (llama.cpp); only a positive value sizes the reply.
   if (body.n_predict !== undefined && body.n_predict !== null) {
     if (!Number.isFinite(body.n_predict)) throw new Error("n_predict must be a finite number");
-    if (mapped.max_tokens === undefined && body.n_predict > 0) {
-      mapped.max_tokens = Math.min(Math.floor(body.n_predict), MAX_N_PREDICT) || 1;
+    // n_predict <= -1 is llama.cpp's "unlimited": cap it rather than leave generation open.
+    if (mapped.max_tokens === undefined && body.n_predict !== 0) {
+      mapped.max_tokens =
+        body.n_predict > 0
+          ? Math.min(Math.floor(body.n_predict), MAX_N_PREDICT) || 1
+          : MAX_N_PREDICT;
     }
     delete mapped.n_predict;
   }

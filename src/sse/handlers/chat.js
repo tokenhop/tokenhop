@@ -177,7 +177,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
         ? authorizeGatewayTarget(gateway, { comboId: combo.id })
         : info?.provider
           ? authorizeGatewayTarget(gateway, { modelId: `${info.provider}/${info.model}` })
-          : errorResponse(HTTP_STATUS.BAD_REQUEST, "Unknown model");
+          : null;
       if (denied) return denied;
     }
     return Response.json(

@@ -154,3 +154,12 @@ describe("gateway grant resolution", () => {
     expect(db.get("SELECT grantId FROM usageHistory").grantId).toBe("g-usage");
   });
 });
+
+describe("estimateBodyTokens FIM fields", () => {
+  it("counts llama.cpp fields even when a decoy messages array is present", async () => {
+    const { estimateBodyTokens } = await import("../../src/sse/services/grantRateLimiter.js");
+    const big = "x".repeat(40_000);
+    expect(estimateBodyTokens({ messages: [], input_prefix: big })).toBeGreaterThanOrEqual(10_000);
+    expect(estimateBodyTokens({ input_suffix: big, n_predict: 1e12 })).toBe(10_000 + 4096);
+  });
+});

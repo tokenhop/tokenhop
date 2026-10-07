@@ -150,7 +150,7 @@ export async function handleForcedSSEToJson({
   reqTag,
   log,
 }) {
-  const fimContext = isFimFormat(sourceFormat) ? fimContextFor(body) : null;
+  const fimContext = isFimFormat(sourceFormat) ? fimContextFor(body, sourceFormat) : null;
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE =
     contentType.includes("text/event-stream") ||
