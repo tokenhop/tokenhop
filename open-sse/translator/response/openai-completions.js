@@ -44,7 +44,11 @@ export function openaiToCompletionsResponse(chunk, state) {
   }
 
   // Upstream error frames pass through so the client sees the failure, not empty text.
-  if (chunk.error) return chunk;
+  if (chunk.error) {
+    // Drop partial text so flush can't follow the error with a fake success chunk.
+    fim.buffers.clear();
+    return chunk;
+  }
   if (chunk.model) fim.model = chunk.model;
   const out = [];
   for (const choice of chunk.choices || []) {

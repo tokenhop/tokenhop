@@ -202,5 +202,13 @@ describe("GOLDEN response stream: OpenAI → Completions", () => {
   it("passes upstream error frames through instead of empty text", () => {
     const error = { error: { message: "boom", type: "server_error" } };
     expect(runStream(FORMATS.OPENAI, FORMATS.OPENAI_COMPLETIONS, [error, null])).toEqual([error]);
+    // Partial text before the error must not resurface as a "stop" chunk on flush.
+    expect(
+      runStream(FORMATS.OPENAI, FORMATS.OPENAI_COMPLETIONS, [
+        chunk({ content: "partial" }),
+        error,
+        null,
+      ]),
+    ).toEqual([error]);
   });
 });
