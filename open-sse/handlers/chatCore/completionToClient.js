@@ -154,7 +154,19 @@ function openAICompletionToTextCompletion(body, fimContext) {
       logprobs: null,
       finish_reason: c.finish_reason ?? "stop",
     })),
-    ...(body.usage ? { usage: body.usage } : {}),
+    usage: toTextCompletionUsage(body.usage),
+  };
+}
+
+// Zed's edit-prediction client fails to deserialize a reply without all three counts.
+function toTextCompletionUsage(usage) {
+  const prompt = usage?.prompt_tokens ?? 0;
+  const completion = usage?.completion_tokens ?? 0;
+  return {
+    ...usage,
+    prompt_tokens: prompt,
+    completion_tokens: completion,
+    total_tokens: usage?.total_tokens ?? prompt + completion,
   };
 }
 
