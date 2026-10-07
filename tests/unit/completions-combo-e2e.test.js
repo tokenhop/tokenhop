@@ -196,6 +196,22 @@ describe("edit predictions via combo on /v1/completions (YAN-729)", () => {
     expect(modelsTried()).toEqual(["chat-only", "good"]);
   });
 
+  it("minuet-ai: prompt + suffix with stream off returns one JSON text_completion", async () => {
+    const res = await post({
+      model: COMBO,
+      prompt: "def add(a, b):\n    ",
+      suffix: "\n\nprint(add(1, 2))",
+      max_tokens: 32,
+      stream: false,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const json = await res.json();
+    expect(json.object).toBe("text_completion");
+    expect(json.choices[0].text).toBe(ANSWER);
+    expect(modelsTried()).toEqual(["chat-only", "good"]);
+  });
+
   it("errors are JSON when every member fails", async () => {
     executeMock.mockImplementation(async (args) => modelMissing(args.body?.model));
     const failed = await post(zedBody());
