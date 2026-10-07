@@ -6,6 +6,7 @@ import { resolveListenPort, shapeGatewayStatus } from "@/lib/gatewayStatus";
 import { buildQuotaSnapshotView } from "@/sse/services/quotaSnapshotSync.js";
 import { buildShellSummary } from "@/lib/shellSummary";
 import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
+import { usageScope } from "@/lib/usage/scope.js";
 import { normalizeAckedMilestone, pendingSavingsMilestone } from "@/lib/savingsMilestones.js";
 
 export const dynamic = "force-dynamic";
@@ -18,14 +19,17 @@ export const dynamic = "force-dynamic";
  * pending savings milestone, so neither needs an extra poll. A usage-DB hiccup
  * degrades only those two blocks; the gateway card still renders.
  */
-export async function GET() {
+export async function GET(request) {
   try {
+    const scope = await usageScope(request);
+    if (scope instanceof Response) return scope;
+
     const [connections, combos, settings, traffic, savingsLifetime, multiUser] = await Promise.all([
       getProviderConnectionsUnscoped(),
       getCombosUnscoped(),
       getSettings(),
-      getRequestRateSeries().catch(() => null),
-      getSavingsLifetime().catch(() => null),
+      getRequestRateSeries(scope).catch(() => null),
+      getSavingsLifetime(scope).catch(() => null),
       isMultiUserEnabled(),
     ]);
     const body = buildShellSummary({

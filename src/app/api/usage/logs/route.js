@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
-import { getRecentLogsUnscoped } from "@/lib/usageDb";
+import { getRecentLogs } from "@/lib/usageDb";
+import { usageScope } from "@/lib/usage/scope.js";
 
-export async function GET() {
+export async function GET(request) {
   try {
-    const logs = await getRecentLogsUnscoped(200);
+    const scope = await usageScope(request);
+    if (scope instanceof Response) return scope;
+    const logs = await getRecentLogs(scope, 200);
     return NextResponse.json(logs);
   } catch (error) {
     console.error("Error fetching logs:", error);

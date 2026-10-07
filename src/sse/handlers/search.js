@@ -4,7 +4,12 @@ import {
   clearAccountError,
   extractApiKey,
 } from "../services/auth.js";
-import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
+import {
+  authorizeGatewayTarget,
+  gatewayKeyContext,
+  resolveGatewayAuth,
+} from "@/lib/auth/gatewayAuth.js";
+import { saveRequestUsageUnscoped } from "@/lib/usageDb.js";
 import { getEffectivePreferences } from "@/lib/db/index.js";
 import { getGatewayCombos } from "@/lib/auth/gatewayResources.js";
 import { comboRotationKey, comboStrategyFor } from "@/lib/comboKeys.js";
@@ -16,6 +21,21 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
+
+function recordSearch(request, gateway, apiKey, providerId, connectionId, data) {
+  const usage = data?.usage;
+  saveRequestUsageUnscoped({
+    provider: providerId,
+    model: null,
+    endpoint: new URL(request.url).pathname,
+    connectionId,
+    apiKey,
+    ...gatewayKeyContext(gateway),
+    units: { queries: usage?.queries_used ?? 1 },
+    cost: usage?.search_cost_usd ?? undefined,
+    status: "success",
+  }).catch(() => {});
+}
 
 /**
  * Handle web search request for the SSE/Next.js server.
@@ -105,7 +125,7 @@ export async function handleSearch(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderSearch(b, m, request, gateway),
+      handleSingleModel: (b, m) => handleSingleProviderSearch(b, m, request, gateway, apiKey),
       log,
       comboName: comboRotationKey(gateway?.workspaceId, providerInput),
       comboStrategy,
@@ -115,10 +135,10 @@ export async function handleSearch(request) {
     });
   }
 
-  return handleSingleProviderSearch(body, providerInput, request, gateway);
+  return handleSingleProviderSearch(body, providerInput, request, gateway, apiKey);
 }
 
-async function handleSingleProviderSearch(body, providerInput, request, gateway) {
+async function handleSingleProviderSearch(body, providerInput, request, gateway, apiKey) {
   const query = body.query;
   // /v1/models/web advertises search providers as "{alias}/search".
   const providerId = resolveProviderId(providerInput.replace(/\/search$/, ""));
@@ -174,7 +194,10 @@ async function handleSingleProviderSearch(body, providerInput, request, gateway)
       credentials: null,
       log,
     });
-    if (result.success) return result.response;
+    if (result.success) {
+      recordSearch(request, gateway, apiKey, providerId, null, result.data);
+      return result.response;
+    }
     return result.response;
   }
 
@@ -270,7 +293,10 @@ async function handleSingleProviderSearch(body, providerInput, request, gateway)
       },
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      recordSearch(request, gateway, apiKey, providerId, credentials.connectionId, result.data);
+      return result.response;
+    }
 
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,

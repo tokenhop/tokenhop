@@ -1,5 +1,6 @@
 import { statsEmitter, getLiveSnapshot } from "@/lib/usageDb";
 import { buildLivePayload } from "@/lib/usage/livePayload";
+import { usageScope } from "@/lib/usage/scope.js";
 
 export const dynamic = "force-dynamic";
 
@@ -7,6 +8,10 @@ export const dynamic = "force-dynamic";
 // built from the in-memory snapshot — the full-history stats aggregate is never
 // computed here. Cleanup runs on send failure, cancel and request abort.
 export async function GET(request) {
+  // Resolve the subscriber's scope once; every frame is filtered by workspace.
+  const scope = await usageScope(request);
+  if (scope instanceof Response) return scope;
+  const liveScope = scope ? { workspaceId: scope.workspaceId } : null;
   const encoder = new TextEncoder();
   const state = {
     closed: false,
@@ -43,7 +48,7 @@ export async function GET(request) {
       state.send = async () => {
         if (state.closed) return;
         try {
-          const payload = buildLivePayload(await getLiveSnapshot());
+          const payload = buildLivePayload(await getLiveSnapshot(liveScope));
           if (controller.desiredSize !== null && controller.desiredSize <= 0) {
             if (++state.stalled >= 3) {
               cleanup();

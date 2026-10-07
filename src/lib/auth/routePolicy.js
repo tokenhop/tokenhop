@@ -257,24 +257,25 @@ export const ROUTE_POLICY = {
   // metadata-only context; the handler rechecks everything against the DB.
   "/api/keys/context": { cap: "workspace.keys.create", scoped: true },
 
-  // Usage and dashboard summaries.
+  // Usage and dashboard summaries. YAN-370: scoped — the handler narrows to
+  // the caller's workspace (and own rows for members) via usage/scope.js.
   "/api/usage/[connectionId]": scoped({ cap: USAGE }),
   "/api/usage/[connectionId]/codex-reset-credits": scoped(read(USAGE, CONN)),
-  "/api/usage/chart": { cap: USAGE },
-  "/api/usage/history": { cap: USAGE },
-  "/api/usage/last-activity": { cap: USAGE },
-  "/api/usage/logs": { cap: USAGE },
-  "/api/usage/providers": { cap: USAGE },
-  "/api/usage/request-details": { cap: USAGE },
-  "/api/usage/request-logs": { cap: USAGE },
-  "/api/usage/savings": { cap: USAGE },
-  "/api/usage/stats": { cap: USAGE },
-  "/api/usage/stream": { cap: USAGE },
-  "/api/home/live-routes": { cap: USAGE },
+  "/api/usage/chart": scoped({ cap: USAGE }),
+  "/api/usage/history": scoped({ cap: USAGE }),
+  "/api/usage/last-activity": scoped({ cap: USAGE }),
+  "/api/usage/logs": scoped({ cap: USAGE }),
+  "/api/usage/providers": scoped({ cap: USAGE }),
+  "/api/usage/request-details": scoped({ cap: USAGE }),
+  "/api/usage/request-logs": scoped({ cap: USAGE }),
+  "/api/usage/savings": scoped({ cap: USAGE }),
+  "/api/usage/stats": scoped({ cap: USAGE }),
+  "/api/usage/stream": scoped({ cap: USAGE }),
+  "/api/home/live-routes": scoped({ cap: USAGE }),
   "/api/home/quota": scoped({ cap: USAGE }),
-  "/api/home/summary": { cap: USAGE },
-  "/api/shell/summary": { cap: USAGE },
-  "/api/shell/savings-milestone": { cap: USAGE },
+  "/api/home/summary": scoped({ cap: USAGE }),
+  "/api/shell/summary": scoped({ cap: USAGE }),
+  "/api/shell/savings-milestone": scoped({ cap: USAGE }),
   "/api/gateway/status": { cap: SELF },
 
   // YAN-367: audit log. Owner/admin only (ADR-0002); handler 404s with the switch off.

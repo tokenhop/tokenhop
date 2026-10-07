@@ -21,8 +21,8 @@ vi.mock("@/shared/utils/machineId", () => ({
 // the handler and its usage/detail helpers.
 vi.mock("@/lib/usageDb.js", () => ({
   appendRequestLog: vi.fn(async () => {}),
-  saveRequestDetail: vi.fn(async () => {}),
-  saveRequestUsage: vi.fn(async () => {}),
+  saveRequestDetailUnscoped: vi.fn(async () => {}),
+  saveRequestUsageUnscoped: vi.fn(async () => {}),
 }));
 
 const { pingModelByKind } = await import("../../src/app/api/models/test/ping.js");
@@ -32,9 +32,9 @@ const { handleNonStreamingResponse } = await import(
 
 // The proxy adds a 2000-token headroom buffer to usage before returning it
 // to the client (addBufferToUsage), so response-body usage is input + 2000.
-// The usage recorded via saveRequestUsage is the unbuffered extraction —
+// The usage recorded via saveRequestUsageUnscoped is the unbuffered extraction —
 // asserting on it proves the unwrap ran before usage extraction.
-const { saveRequestUsage } = await import("@/lib/usageDb.js");
+const { saveRequestUsageUnscoped } = await import("@/lib/usageDb.js");
 
 describe("cline free-models {success,data} envelope", () => {
   let fetchMock;
@@ -166,8 +166,8 @@ describe("cline free-models envelope in nonStreamingHandler", () => {
     expect(body.choices).toBeDefined();
     expect(body.choices[0].message.content).toBe("Hi");
     expect(body.success).toBeUndefined();
-    expect(saveRequestUsage).toHaveBeenCalledTimes(1);
-    expect(saveRequestUsage.mock.calls[0][0].tokens).toMatchObject({
+    expect(saveRequestUsageUnscoped).toHaveBeenCalledTimes(1);
+    expect(saveRequestUsageUnscoped.mock.calls[0][0].tokens).toMatchObject({
       prompt_tokens: 5,
       completion_tokens: 2,
     });
@@ -186,8 +186,8 @@ describe("cline free-models envelope in nonStreamingHandler", () => {
     expect(result.success).toBe(true);
     const body = await result.response.json();
     expect(body.choices[0].message.content).toBe("Hi");
-    expect(saveRequestUsage).toHaveBeenCalledTimes(1);
-    expect(saveRequestUsage.mock.calls[0][0].tokens).toMatchObject({
+    expect(saveRequestUsageUnscoped).toHaveBeenCalledTimes(1);
+    expect(saveRequestUsageUnscoped.mock.calls[0][0].tokens).toMatchObject({
       prompt_tokens: 3,
       completion_tokens: 1,
     });

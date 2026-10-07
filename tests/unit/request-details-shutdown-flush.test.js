@@ -31,7 +31,7 @@ afterAll(() => {
 describe("request details — shutdown flush", () => {
   it("flushes buffered details synchronously on shutdown (no await)", async () => {
     for (let i = 0; i < 3; i++) {
-      await db.saveRequestDetail({
+      await db.saveRequestDetailUnscoped({
         id: `sf-${i}`,
         provider: "openai",
         model: "gpt-4",

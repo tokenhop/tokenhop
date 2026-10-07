@@ -68,6 +68,9 @@ function seedLegacy() {
     isActive INTEGER DEFAULT 1, createdAt TEXT NOT NULL)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)`);
   db.run(`DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion','apiKeysHashKid')`);
+  // YAN-370: migration 014 dropped usageDaily; hashGatewayKeysSync still
+  // converts a leftover blob table when one exists (restored pre-014 data).
+  db.exec(`CREATE TABLE IF NOT EXISTS usageDaily (dateKey TEXT PRIMARY KEY, data TEXT NOT NULL)`);
   db.exec(
     `DELETE FROM usageHistory; DELETE FROM usageDaily; DELETE FROM kv WHERE scope = 'cliToolPresets'`,
   );

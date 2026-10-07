@@ -328,8 +328,8 @@ describe("DB SQLite layer — public API parity", () => {
     expect(await sqliteDb.getDisabledByProviderUnscoped("openai")).toEqual([]);
   });
 
-  it("usage: saveRequestUsage + getUsageHistory + getUsageStatsUnscoped", async () => {
-    await sqliteDb.saveRequestUsage({
+  it("usage: saveRequestUsageUnscoped + getUsageHistory + getUsageStats", async () => {
+    await sqliteDb.saveRequestUsageUnscoped({
       provider: "openai",
       model: "gpt-4",
       connectionId: "c1",
@@ -337,7 +337,7 @@ describe("DB SQLite layer — public API parity", () => {
       endpoint: "/v1/chat/completions",
       status: "ok",
     });
-    await sqliteDb.saveRequestUsage({
+    await sqliteDb.saveRequestUsageUnscoped({
       provider: "openai",
       model: "gpt-4",
       connectionId: "c1",
@@ -346,11 +346,11 @@ describe("DB SQLite layer — public API parity", () => {
       status: "ok",
     });
 
-    const hist = await sqliteDb.getUsageHistory({ provider: "openai" });
+    const hist = await sqliteDb.getUsageHistory(null, { provider: "openai" });
     expect(hist.length).toBeGreaterThanOrEqual(2);
     expect(hist[0].tokens.prompt_tokens).toBeDefined();
 
-    const stats = await sqliteDb.getUsageStatsUnscoped("24h");
+    const stats = await sqliteDb.getUsageStats(null, "24h");
     expect(stats.totalRequests).toBeGreaterThanOrEqual(2);
     expect(stats.byProvider.openai).toBeDefined();
     expect(stats.byProvider.openai.requests).toBeGreaterThanOrEqual(2);
@@ -358,17 +358,18 @@ describe("DB SQLite layer — public API parity", () => {
   });
 
   it("usage: pending tracking in-memory", () => {
+    // YAN-370: pending counters are keyed by workspace ('' = unattributed).
     sqliteDb.trackPendingRequest("gpt-4", "openai", "c1", true);
-    expect(global._pendingRequests.byModel["gpt-4 (openai)"]).toBe(1);
+    expect(global._pendingByWorkspace[""].byModel["gpt-4 (openai)"]).toBe(1);
     sqliteDb.trackPendingRequest("gpt-4", "openai", "c1", false);
-    expect(global._pendingRequests.byModel["gpt-4 (openai)"]).toBeUndefined();
+    expect(global._pendingByWorkspace[""].byModel["gpt-4 (openai)"]).toBeUndefined();
   });
 
   it("requestDetails: save → query with paging", async () => {
     // Enable observability first
     await sqliteDb.updateSettings({ enableObservability: true, observabilityBatchSize: 1 });
 
-    await sqliteDb.saveRequestDetail({
+    await sqliteDb.saveRequestDetailUnscoped({
       id: "d1",
       provider: "openai",
       model: "gpt-4",
@@ -382,11 +383,11 @@ describe("DB SQLite layer — public API parity", () => {
     // Wait for buffer flush
     await new Promise((r) => setTimeout(r, 200));
 
-    const got = await sqliteDb.getRequestDetailById("d1");
+    const got = await sqliteDb.getRequestDetailById(null, "d1");
     expect(got).toBeDefined();
     expect(got.id).toBe("d1");
 
-    const list = await sqliteDb.getRequestDetails({ provider: "openai" });
+    const list = await sqliteDb.getRequestDetails(null, { provider: "openai" });
     expect(list.details.length).toBeGreaterThanOrEqual(1);
     expect(list.pagination.totalItems).toBeGreaterThanOrEqual(1);
   });
@@ -421,7 +422,7 @@ describe("DB SQLite layer — public API parity", () => {
   });
 
   it("getChartData: 24h buckets", async () => {
-    const data = await sqliteDb.getChartData("24h");
+    const data = await sqliteDb.getChartData(null, "24h");
     expect(data).toHaveLength(24);
     expect(data[0]).toHaveProperty("label");
     expect(data[0]).toHaveProperty("tokens");
@@ -429,7 +430,7 @@ describe("DB SQLite layer — public API parity", () => {
   });
 
   it("getChartData: 7d buckets", async () => {
-    const data = await sqliteDb.getChartData("7d");
+    const data = await sqliteDb.getChartData(null, "7d");
     expect(data).toHaveLength(7);
   });
 });

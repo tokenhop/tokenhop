@@ -132,19 +132,44 @@ export const TABLES = {
       status: "TEXT",
       tokens: "TEXT",
       meta: "TEXT",
+      // YAN-370 (migration 014): attribution columns. `apiKey` is NULL from 014
+      // on; the identity lives in apiKeyId. NULL workspace/user until bootstrap.
+      workspaceId: "TEXT REFERENCES workspaces(id) ON DELETE SET NULL",
+      userId: "TEXT REFERENCES users(id) ON DELETE SET NULL",
+      apiKeyId: "TEXT",
+      grantId: "TEXT",
     },
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_uh_ts ON usageHistory(timestamp DESC)",
       "CREATE INDEX IF NOT EXISTS idx_uh_provider ON usageHistory(provider)",
       "CREATE INDEX IF NOT EXISTS idx_uh_model ON usageHistory(model)",
       "CREATE INDEX IF NOT EXISTS idx_uh_conn ON usageHistory(connectionId)",
+      "CREATE INDEX IF NOT EXISTS idx_uh_ws_ts ON usageHistory(workspaceId, timestamp DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_uh_user_ts ON usageHistory(userId, timestamp DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_uh_key_ts ON usageHistory(apiKeyId, timestamp DESC)",
     ],
   },
-  usageDaily: {
+  // YAN-370 (migration 014): daily rollup replacing the usageDaily blob. Null
+  // dims are '' (SQLite NULLs are distinct in a composite primary key).
+  usageRollup: {
     columns: {
-      dateKey: "TEXT PRIMARY KEY",
-      data: "TEXT NOT NULL",
+      dateKey: "TEXT NOT NULL",
+      workspaceId: "TEXT NOT NULL DEFAULT ''",
+      userId: "TEXT NOT NULL DEFAULT ''",
+      apiKeyId: "TEXT NOT NULL DEFAULT 'local-no-key'",
+      provider: "TEXT NOT NULL DEFAULT ''",
+      model: "TEXT NOT NULL DEFAULT ''",
+      connectionId: "TEXT NOT NULL DEFAULT ''",
+      endpoint: "TEXT NOT NULL DEFAULT ''",
+      requests: "INTEGER NOT NULL DEFAULT 0",
+      tokensIn: "INTEGER NOT NULL DEFAULT 0",
+      tokensOut: "INTEGER NOT NULL DEFAULT 0",
+      tokensCached: "INTEGER NOT NULL DEFAULT 0",
+      cost: "REAL NOT NULL DEFAULT 0",
     },
+    primaryKey:
+      "PRIMARY KEY (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint)",
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_ur_ws_date ON usageRollup(workspaceId, dateKey)"],
   },
   requestDetails: {
     columns: {
@@ -155,12 +180,19 @@ export const TABLES = {
       connectionId: "TEXT",
       status: "TEXT",
       data: "TEXT NOT NULL",
+      workspaceId: "TEXT REFERENCES workspaces(id) ON DELETE SET NULL",
+      userId: "TEXT REFERENCES users(id) ON DELETE SET NULL",
+      apiKeyId: "TEXT",
+      grantId: "TEXT",
     },
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_rd_ts ON requestDetails(timestamp DESC)",
       "CREATE INDEX IF NOT EXISTS idx_rd_provider ON requestDetails(provider)",
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
+      "CREATE INDEX IF NOT EXISTS idx_rd_ws_ts ON requestDetails(workspaceId, timestamp DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_rd_user_ts ON requestDetails(userId, timestamp DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_rd_key_ts ON requestDetails(apiKeyId, timestamp DESC)",
     ],
   },
   // Users & teams identity and tenancy (migration 004, YAN-353).

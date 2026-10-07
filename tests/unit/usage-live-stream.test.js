@@ -266,7 +266,7 @@ describe("/api/usage/stream", () => {
       db.trackPendingRequest("gpt-5", "openai", "conn-live-1", false);
     }
 
-    await db.saveRequestUsage({
+    await db.saveRequestUsageUnscoped({
       timestamp: new Date().toISOString(),
       provider: "ringlive",
       model: "ring-live-model",
@@ -276,7 +276,7 @@ describe("/api/usage/stream", () => {
     expect((await db.getLiveSnapshot()).lastProvider).toBe("ringlive");
 
     // Zero-token entries are not last usage, only inflight ring padding.
-    await db.saveRequestUsage({
+    await db.saveRequestUsageUnscoped({
       timestamp: new Date().toISOString(),
       provider: "zeroring",
       model: "zero-ring-model",

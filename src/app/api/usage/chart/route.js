@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getChartData } from "@/lib/usageDb";
 import { isPeriod } from "@/shared/utils/period";
+import { usageScope } from "@/lib/usage/scope.js";
 
 export async function GET(request) {
   try {
@@ -11,7 +12,9 @@ export async function GET(request) {
       return NextResponse.json({ error: "Invalid period" }, { status: 400 });
     }
 
-    const data = await getChartData(period);
+    const scope = await usageScope(request);
+    if (scope instanceof Response) return scope;
+    const data = await getChartData(scope, period);
     return NextResponse.json(data);
   } catch (error) {
     console.error("[API] Failed to get chart data:", error);

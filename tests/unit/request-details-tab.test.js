@@ -12,7 +12,7 @@ let db;
 let adapter;
 
 async function saveDetail(detail) {
-  await db.saveRequestDetail(detail);
+  await db.saveRequestDetailUnscoped(detail);
   await new Promise((r) => setTimeout(r, 120));
 }
 
@@ -42,14 +42,14 @@ describe("request details — tab crash-risk cases", () => {
       ["corrupt-1", new Date().toISOString(), "openai", "gpt-4", null, "ok", "{not-valid-json"],
     );
 
-    const res = await db.getRequestDetails({ provider: "openai" });
+    const res = await db.getRequestDetails(null, { provider: "openai" });
     expect(Array.isArray(res.details)).toBe(true);
     const corrupt = res.details.find((d) => Object.keys(d).length === 0);
     expect(corrupt).toEqual({});
   });
 
   it("pagination beyond last page → empty details, valid meta", async () => {
-    const res = await db.getRequestDetails({ page: 9999, pageSize: 20 });
+    const res = await db.getRequestDetails(null, { page: 9999, pageSize: 20 });
     expect(res.details).toEqual([]);
     expect(res.pagination.page).toBe(9999);
     expect(res.pagination.hasNext).toBe(false);
@@ -59,11 +59,11 @@ describe("request details — tab crash-risk cases", () => {
   it("invalid startDate → Invalid Date ISO throws inside getRequestDetails is caught upstream", async () => {
     // new Date("bad").toISOString() throws RangeError; verify it surfaces
     // so the API route's try/catch returns 500 rather than silent corruption.
-    await expect(db.getRequestDetails({ startDate: "not-a-date" })).rejects.toThrow();
+    await expect(db.getRequestDetails(null, { startDate: "not-a-date" })).rejects.toThrow();
   });
 
   it("valid date filter range → no throw", async () => {
-    const res = await db.getRequestDetails({
+    const res = await db.getRequestDetails(null, {
       startDate: "2020-01-01T00:00:00",
       endDate: "2999-01-01T00:00:00",
     });
@@ -81,7 +81,7 @@ describe("request details — tab crash-risk cases", () => {
       response: { content: "hi" },
     });
 
-    const res = await db.getRequestDetails({ pageSize: 9999 });
+    const res = await db.getRequestDetails(null, { pageSize: 9999 });
     expect(res.details.length).toBeGreaterThanOrEqual(1);
     expect(res.pagination.pageSize).toBe(9999);
   });
@@ -98,7 +98,7 @@ describe("request details — tab crash-risk cases", () => {
       response: { content: "ok" },
     });
 
-    const got = await db.getRequestDetailById("trunc-1");
+    const got = await db.getRequestDetailById(null, "trunc-1");
     expect(got).toBeDefined();
     // Truncated field is a plain object safe for JSON.stringify in the drawer
     expect(() => JSON.stringify(got)).not.toThrow();
@@ -118,7 +118,7 @@ describe("request details — tab crash-risk cases", () => {
         JSON.stringify({ id: "sparse-1" }),
       ],
     );
-    const got = await db.getRequestDetailById("sparse-1");
+    const got = await db.getRequestDetailById(null, "sparse-1");
     expect(got.tokens).toBeUndefined();
     // Drawer reads tokens?.prompt_tokens — optional chaining tolerates undefined
     expect(got.tokens?.prompt_tokens || 0).toBe(0);
@@ -205,7 +205,7 @@ describe("getDistinctProviders — providers route (no full-row parse)", () => {
       response: {},
     });
 
-    const list = await db.getDistinctProviders();
+    const list = await db.getDistinctProviders(null);
     expect(Array.isArray(list)).toBe(true);
     expect(list).toContain("openai");
     expect(list).toContain("anthropic");
@@ -214,7 +214,7 @@ describe("getDistinctProviders — providers route (no full-row parse)", () => {
   });
 
   it("skips null providers, returns sorted", async () => {
-    const list = await db.getDistinctProviders();
+    const list = await db.getDistinctProviders(null);
     expect(list.every((p) => p !== null)).toBe(true);
     const sorted = [...list].sort();
     expect(list).toEqual(sorted);

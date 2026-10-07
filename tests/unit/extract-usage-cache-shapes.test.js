@@ -2,9 +2,9 @@ import { describe, it, expect, vi } from "vitest";
 
 // sever the DB import chain (usageDb -> @/lib/db/*) — not under test
 vi.mock("@/lib/usageDb.js", () => ({
-  saveRequestUsage: vi.fn(),
+  saveRequestUsageUnscoped: vi.fn(),
   appendRequestLog: vi.fn(),
-  saveRequestDetail: vi.fn(),
+  saveRequestDetailUnscoped: vi.fn(),
 }));
 // and the stream/console-coloring utils that drag in the translator graph
 vi.mock("../../open-sse/utils/stream.js", () => ({

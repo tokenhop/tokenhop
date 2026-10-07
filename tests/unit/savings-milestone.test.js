@@ -95,7 +95,7 @@ describe("milestone state with the real DB", () => {
   });
 
   async function seedSavings(savedTokens, timestamp = new Date().toISOString()) {
-    await db.saveRequestUsage({
+    await db.saveRequestUsageUnscoped({
       provider: "openai",
       model: "gpt-4",
       tokens: { prompt_tokens: 10, completion_tokens: 5 },
@@ -112,7 +112,7 @@ describe("milestone state with the real DB", () => {
 
   it("backfills the lifetime counter from pre-counter rows exactly once", async () => {
     // Direct inserts simulate an install upgraded with existing history and
-    // no counter yet. Must run before any saveRequestUsage/getSavingsLifetime.
+    // no counter yet. Must run before any saveRequestUsageUnscoped/getSavingsLifetime.
     const { getAdapter } = await import("@/lib/db/driver.js");
     const { stringifyJson } = await import("@/lib/db/helpers/jsonCol.js");
     const adapter = await getAdapter();
@@ -140,18 +140,18 @@ describe("milestone state with the real DB", () => {
         ],
       );
     }
-    expect(await db.getSavingsLifetime()).toBe(105_000);
+    expect(await db.getSavingsLifetime(null)).toBe(105_000);
     // Idempotent: a second read does not double-count.
-    expect(await db.getSavingsLifetime()).toBe(105_000);
+    expect(await db.getSavingsLifetime(null)).toBe(105_000);
     // New rows increment the initialized counter (not another backfill).
     await seedSavings(5);
-    expect(await db.getSavingsLifetime()).toBe(105_005);
+    expect(await db.getSavingsLifetime(null)).toBe(105_005);
   });
 
   it("counts lifetime savings from newly recorded rows", async () => {
     await seedSavings(40_000);
     await seedSavings(80_000);
-    expect(await db.getSavingsLifetime()).toBe(225_005);
+    expect(await db.getSavingsLifetime(null)).toBe(225_005);
   });
 
   it("claims a pending milestone atomically and only once", async () => {

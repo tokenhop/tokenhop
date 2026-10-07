@@ -27,7 +27,7 @@ import {
 } from "../config/runtimeConfig.js";
 import { warnLegacyOnce } from "../../src/shared/brand/index.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
-import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { trackPendingRequest, appendRequestLog, saveRequestDetailUnscoped } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
 import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDetail.js";
@@ -315,14 +315,14 @@ export async function handleChatCore({
       translatedBody = { error };
     }
     if (!translatedBody) {
-      trackPendingRequest(model, provider, connectionId, false, true);
+      trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
       return createErrorResult(
         HTTP_STATUS.BAD_REQUEST,
         `Failed to translate request for ${sourceFormat} → ${targetFormat}`,
       );
     }
     if (translatedBody.error) {
-      trackPendingRequest(model, provider, connectionId, false, true);
+      trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
       const errResult = createErrorResult(
         HTTP_STATUS.BAD_REQUEST,
         String(translatedBody.error?.message || translatedBody.error),
@@ -475,7 +475,7 @@ export async function handleChatCore({
   if (passthrough && clientTool === "claude") anchorClaudeCache(translatedBody);
 
   const executor = getExecutor(provider);
-  trackPendingRequest(model, provider, connectionId, true);
+  trackPendingRequest(model, provider, connectionId, true, false, keyContext.workspaceId);
   appendRequestLog({ ...keyContext, model, provider, connectionId, status: "PENDING" }).catch(
     () => {},
   );
@@ -490,10 +490,11 @@ export async function handleChatCore({
 
   const streamController = createStreamController({
     onDisconnect: (reason) => {
-      trackPendingRequest(model, provider, connectionId, false);
+      trackPendingRequest(model, provider, connectionId, false, false, keyContext.workspaceId);
       if (onDisconnect) onDisconnect(reason);
     },
-    onError: () => trackPendingRequest(model, provider, connectionId, false),
+    onError: () =>
+      trackPendingRequest(model, provider, connectionId, false, false, keyContext.workspaceId),
     log,
     provider,
     model,
@@ -568,7 +569,7 @@ export async function handleChatCore({
     providerResponseFormat = result.responseFormat || targetFormat;
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
   } catch (error) {
-    trackPendingRequest(model, provider, connectionId, false, true);
+    trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
     appendRequestLog({
       ...keyContext,
       model,
@@ -576,7 +577,7 @@ export async function handleChatCore({
       connectionId,
       status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}`,
     }).catch(() => {});
-    saveRequestDetail(
+    saveRequestDetailUnscoped(
       buildRequestDetail(
         {
           provider,
@@ -694,7 +695,7 @@ export async function handleChatCore({
 
   // Provider returned error
   if (!providerResponse.ok) {
-    trackPendingRequest(model, provider, connectionId, false, true);
+    trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
     const { statusCode, message, resetsAtMs } = await parseUpstreamError(
       providerResponse,
       executor,
@@ -706,7 +707,7 @@ export async function handleChatCore({
       connectionId,
       status: `FAILED ${statusCode}`,
     }).catch(() => {});
-    saveRequestDetail(
+    saveRequestDetailUnscoped(
       buildRequestDetail(
         {
           provider,
@@ -760,7 +761,8 @@ export async function handleChatCore({
   };
   const appendLog = (extra) =>
     appendRequestLog({ ...keyContext, model, provider, connectionId, ...extra }).catch(() => {});
-  const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
+  const trackDone = () =>
+    trackPendingRequest(model, provider, connectionId, false, false, keyContext.workspaceId);
 
   // Provider forced streaming but client wants JSON
   if (!clientRequestedStreaming && providerRequiresStreaming) {

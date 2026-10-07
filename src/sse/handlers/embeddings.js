@@ -15,7 +15,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
-import { saveRequestUsage } from "@/lib/usageDb.js";
+import { saveRequestUsageUnscoped } from "@/lib/usageDb.js";
 
 function exactEmbeddingUsage(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || raw.estimated === true) return null;
@@ -158,7 +158,7 @@ export async function handleEmbeddings(request) {
     if (result.success) {
       const usage = exactEmbeddingUsage(result.usage);
       if (usage) {
-        saveRequestUsage({
+        saveRequestUsageUnscoped({
           provider,
           model,
           connectionId: credentials.connectionId,

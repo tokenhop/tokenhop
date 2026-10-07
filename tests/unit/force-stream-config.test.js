@@ -100,7 +100,7 @@ vi.mock("../../open-sse/utils/error.js", () => ({
 vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(() => Promise.resolve()),
-  saveRequestDetail: vi.fn(() => Promise.resolve()),
+  saveRequestDetailUnscoped: vi.fn(() => Promise.resolve()),
 }));
 
 const FORCED = ["openai", "codex", "commandcode"];

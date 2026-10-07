@@ -71,7 +71,7 @@ describe("getRequestRateSeries", () => {
   });
 
   it("returns all zeros on an empty window without extra requests", async () => {
-    const series = await db.getRequestRateSeries();
+    const series = await db.getRequestRateSeries(null);
     expect(series).toEqual(Array(HEARTBEAT_BUCKETS).fill(0));
   });
 
@@ -85,7 +85,7 @@ describe("getRequestRateSeries", () => {
       now - 20 * MIN, // outside the window
     ];
     for (const ts of stamps) {
-      await db.saveRequestUsage({
+      await db.saveRequestUsageUnscoped({
         provider: "openai",
         model: "gpt-4",
         tokens: { prompt_tokens: 10, completion_tokens: 5 },
@@ -94,7 +94,7 @@ describe("getRequestRateSeries", () => {
         timestamp: new Date(ts).toISOString(),
       });
     }
-    const series = await db.getRequestRateSeries();
+    const series = await db.getRequestRateSeries(null);
     expect(series).toHaveLength(HEARTBEAT_BUCKETS);
     expect(series[14]).toBe(2);
     expect(series[13]).toBe(1);

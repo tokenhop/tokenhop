@@ -68,7 +68,7 @@ async function seedLegacyInstall() {
   const db = await createSqlJsAdapter(DATA_FILE);
   await runMigrationOnce(db);
   db.exec(`DROP TABLE IF EXISTS gatewayVideoJobs`);
-  db.exec(`DELETE FROM usageHistory; DELETE FROM usageDaily; DELETE FROM apiKeys; DELETE FROM users;
+  db.exec(`DELETE FROM usageHistory; DELETE FROM usageRollup; DELETE FROM apiKeys; DELETE FROM users;
     DELETE FROM workspaces`);
   db.run(
     `DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion','apiKeysHashKid','defaultWorkspaceId')`,
@@ -98,19 +98,12 @@ async function seedLegacyInstall() {
     1,
     NOW,
   ]);
-  db.run(`INSERT INTO usageHistory(timestamp, provider, model, apiKey, meta) VALUES(?,?,?,?,?)`, [
+  // YAN-370: post-014 usage rows carry the key id, never the raw.
+  db.run(`INSERT INTO usageHistory(timestamp, provider, model, apiKeyId) VALUES(?,?,?,?)`, [
     NOW,
     "openai",
     "gpt-4o",
-    RAW_A,
-    JSON.stringify({ rawModel: "gpt-4o", provider: "openai", apiKey: RAW_A }),
-  ]);
-  db.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?)`, [
-    "2026-10-02",
-    JSON.stringify({
-      byProvider: { openai: { requests: 1, cost: 0.5 } },
-      byApiKey: { [`${RAW_A}|gpt-4o|openai`]: { requests: 1, cost: 0.5, meta: { apiKey: RAW_A } } },
-    }),
+    "key-1",
   ]);
   db.flushSync();
   db.close();
@@ -217,10 +210,10 @@ describe("YAN-363 final startup integration (real pipeline)", () => {
     const row = db.get(`SELECT * FROM apiKeys WHERE id = 'key-1'`);
     expect(row.keyHash).toBe(digestOf(master)); // existing key still verifiable
     expect(row).toMatchObject({ hashKid: result.hashKid, workspaceId: WS, legacy: 1 });
-    expect(db.get(`SELECT apiKey FROM usageHistory`).apiKey).toBe("key-1");
-    expect(Object.keys(JSON.parse(db.get(`SELECT data FROM usageDaily`).data).byApiKey)).toEqual([
-      "key-1|gpt-4o|openai",
-    ]);
+    expect(db.get(`SELECT apiKey, apiKeyId FROM usageHistory`)).toEqual({
+      apiKey: null,
+      apiKeyId: "key-1",
+    });
     expect(db.get(`SELECT name FROM sqlite_master WHERE name = 'gatewayVideoJobs'`).name).toBe(
       "gatewayVideoJobs",
     );

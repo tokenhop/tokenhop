@@ -96,7 +96,7 @@ describe("getUsageTotals", () => {
     // The second fallback aliases count even when earlier fields hold 0:
     // prompt_tokens 0 falls through to input_tokens, cached_tokens 0 to
     // cache_read_input_tokens — the zero-prefixed row's aliases stay.
-    expect(await db.getUsageTotals({ start, end })).toEqual({
+    expect(await db.getUsageTotals(null, { start, end })).toEqual({
       requests: 4,
       promptTokens: 532,
       completionTokens: 8,
@@ -106,10 +106,10 @@ describe("getUsageTotals", () => {
   });
 
   it("rejects invalid and reversed boundaries", async () => {
-    await expect(db.getUsageTotals({ start: NaN, end: NOW })).rejects.toThrow();
-    await expect(db.getUsageTotals({ start: NOW + 1, end: NOW })).rejects.toThrow();
-    await expect(db.getUsageTotals({ start: NOW, end: Infinity })).rejects.toThrow();
-    expect(await db.getUsageTotals({ start: NOW, end: NOW })).toEqual({
+    await expect(db.getUsageTotals(null, { start: NaN, end: NOW })).rejects.toThrow();
+    await expect(db.getUsageTotals(null, { start: NOW + 1, end: NOW })).rejects.toThrow();
+    await expect(db.getUsageTotals(null, { start: NOW, end: Infinity })).rejects.toThrow();
+    expect(await db.getUsageTotals(null, { start: NOW, end: NOW })).toEqual({
       requests: 0,
       promptTokens: 0,
       completionTokens: 0,

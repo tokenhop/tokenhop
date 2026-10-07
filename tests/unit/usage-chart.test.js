@@ -18,14 +18,14 @@ beforeAll(async () => {
   vi.resetModules();
   db = await import("@/lib/db/index.js");
   await db.initDb();
-  await db.saveRequestUsage({
+  await db.saveRequestUsageUnscoped({
     provider: "openai",
     model: "gpt-4",
     tokens: { prompt_tokens: 100, completion_tokens: 50, cached_tokens: 30 },
     endpoint: "/v1/chat/completions",
     status: "ok",
   });
-  await db.saveRequestUsage({
+  await db.saveRequestUsageUnscoped({
     provider: "anthropic",
     model: "cl-x",
     tokens: { input_tokens: 200, output_tokens: 60, cache_read_input_tokens: 40 },
@@ -70,7 +70,7 @@ function expectBucketShape(buckets) {
 
 describe("getChartData bucket split", () => {
   it("today: input/cached/output split, tokens = prompt + completion", async () => {
-    const buckets = await db.getChartData("today");
+    const buckets = await db.getChartData(null, "today");
     expect(buckets).toHaveLength(24);
     expectBucketShape(buckets);
     expect(sumBuckets(buckets)).toEqual({
@@ -83,7 +83,7 @@ describe("getChartData bucket split", () => {
   });
 
   it("24h: same split via tokens JSON aliases", async () => {
-    const buckets = await db.getChartData("24h");
+    const buckets = await db.getChartData(null, "24h");
     expect(buckets).toHaveLength(24);
     expectBucketShape(buckets);
     expect(sumBuckets(buckets)).toEqual({
@@ -96,7 +96,7 @@ describe("getChartData bucket split", () => {
   });
 
   it("7d: day-JSON path carries the split", async () => {
-    const buckets = await db.getChartData("7d");
+    const buckets = await db.getChartData(null, "7d");
     expect(buckets).toHaveLength(7);
     expectBucketShape(buckets);
     expect(buckets[buckets.length - 1]).toMatchObject({

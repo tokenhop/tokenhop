@@ -4,7 +4,12 @@ import {
   clearAccountError,
   extractApiKey,
 } from "../services/auth.js";
-import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
+import {
+  authorizeGatewayTarget,
+  gatewayKeyContext,
+  resolveGatewayAuth,
+} from "@/lib/auth/gatewayAuth.js";
+import { saveRequestUsageUnscoped } from "@/lib/usageDb.js";
 import { getEffectivePreferences } from "@/lib/db/index.js";
 import { getGatewayCombos } from "@/lib/auth/gatewayResources.js";
 import { comboRotationKey, comboStrategyFor } from "@/lib/comboKeys.js";
@@ -17,6 +22,20 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
 import { assertPublicUrlResolved } from "@/shared/utils/ssrfGuard.js";
+
+function recordFetch(request, gateway, apiKey, providerId, connectionId, data) {
+  saveRequestUsageUnscoped({
+    provider: providerId,
+    model: null,
+    endpoint: new URL(request.url).pathname,
+    connectionId,
+    apiKey,
+    ...gatewayKeyContext(gateway),
+    units: { fetches: 1, characters: data?.content?.length ?? 0 },
+    cost: data?.usage?.fetch_cost_usd ?? undefined,
+    status: "success",
+  }).catch(() => {});
+}
 
 /**
  * Handle web fetch (URL extraction) request for the SSE/Next.js server.
@@ -125,7 +144,7 @@ export async function handleFetch(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderFetch(b, m, request, gateway),
+      handleSingleModel: (b, m) => handleSingleProviderFetch(b, m, request, gateway, apiKey),
       log,
       comboName: comboRotationKey(gateway?.workspaceId, providerInput),
       comboStrategy,
@@ -135,10 +154,10 @@ export async function handleFetch(request) {
     });
   }
 
-  return handleSingleProviderFetch(body, providerInput, request, gateway);
+  return handleSingleProviderFetch(body, providerInput, request, gateway, apiKey);
 }
 
-async function handleSingleProviderFetch(body, providerInput, request, gateway) {
+async function handleSingleProviderFetch(body, providerInput, request, gateway, apiKey) {
   const targetUrl = body.url;
   const format = body.format;
   const maxCharacters = body.max_characters;
@@ -182,6 +201,7 @@ async function handleSingleProviderFetch(body, providerInput, request, gateway) 
       log,
     });
     if (result.success) {
+      recordFetch(request, gateway, apiKey, providerId, null, result.data);
       return new Response(JSON.stringify(result.data), {
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
       });
@@ -258,6 +278,7 @@ async function handleSingleProviderFetch(body, providerInput, request, gateway) 
 
     if (result.success) {
       await clearAccountError(credentials.connectionId, credentials, fetchLockKey);
+      recordFetch(request, gateway, apiKey, providerId, credentials.connectionId, result.data);
       return new Response(JSON.stringify(result.data), {
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
       });

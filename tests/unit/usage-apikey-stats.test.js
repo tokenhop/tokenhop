@@ -14,7 +14,7 @@ beforeAll(async () => {
   keyB = await db.createApiKey("Key B", "machine01");
   const base = Date.now() - 60_000;
   const save = (apiKey, model, i) =>
-    db.saveRequestUsage({
+    db.saveRequestUsageUnscoped({
       provider: "openai",
       model,
       apiKey,
@@ -29,9 +29,9 @@ beforeAll(async () => {
   await save(null, "gpt-4o-mini", 3);
 });
 
-describe.each(["24h", "7d"])("getUsageStatsUnscoped(%s) byApiKey", (period) => {
+describe.each(["24h", "7d"])("getUsageStats(%s) byApiKey", (period) => {
   it("separates keys and no-key models without leaking raw keys", async () => {
-    const stats = await db.getUsageStatsUnscoped(period);
+    const stats = await db.getUsageStats(null, period);
     const rows = Object.values(stats.byApiKey);
     const json = JSON.stringify(stats);
     expect(json).not.toContain(keyA.key);

@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/usageDb.js", () => ({
   appendRequestLog: vi.fn(async () => {}),
-  saveRequestDetail: vi.fn(async () => {}),
-  saveRequestUsage: vi.fn(async () => {}),
+  saveRequestDetailUnscoped: vi.fn(async () => {}),
+  saveRequestUsageUnscoped: vi.fn(async () => {}),
 }));
 
 const { FORMATS } = await import("../../open-sse/translator/formats.js");

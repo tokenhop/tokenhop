@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   getComboModels: vi.fn(),
   getComboByName: vi.fn(),
   core: vi.fn(),
-  saveRequestUsage: vi.fn(),
+  saveRequestUsageUnscoped: vi.fn(),
   markAccountUnavailable: vi.fn(),
 }));
 vi.mock("@/lib/auth/gatewayAuth.js", async (importOriginal) => ({
@@ -29,7 +29,7 @@ vi.mock("../../src/sse/services/model.js", () => ({
 }));
 vi.mock("@/lib/db/repos/combosRepo.js", () => ({ getComboByName: mocks.getComboByName }));
 vi.mock("@/lib/localDb", () => ({ getSettings: async () => ({}) }));
-vi.mock("@/lib/usageDb.js", () => ({ saveRequestUsage: mocks.saveRequestUsage }));
+vi.mock("@/lib/usageDb.js", () => ({ saveRequestUsageUnscoped: mocks.saveRequestUsageUnscoped }));
 vi.mock("../../src/sse/services/tokenRefresh.js", () => ({
   checkAndRefreshToken: async (_provider, credentials) => credentials,
   updateProviderCredentials: vi.fn(),
@@ -106,7 +106,7 @@ describe("gateway modality handlers", () => {
       response: Response.json({ ok: true }),
       usage: { prompt_tokens: 12, total_tokens: 12 },
     }));
-    mocks.saveRequestUsage.mockResolvedValue(undefined);
+    mocks.saveRequestUsageUnscoped.mockResolvedValue(undefined);
     mocks.markAccountUnavailable.mockResolvedValue({ shouldFallback: true });
   });
 
@@ -163,7 +163,7 @@ describe("gateway modality handlers", () => {
 
   it("embeddings usage carries IDs, never raw hashed key", async () => {
     await handleEmbeddings(request({ input: "hello" }));
-    expect(mocks.saveRequestUsage).toHaveBeenCalledWith(
+    expect(mocks.saveRequestUsageUnscoped).toHaveBeenCalledWith(
       expect.objectContaining({
         apiKey: null,
         apiKeyId: "key-a",

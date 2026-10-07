@@ -17,6 +17,8 @@ if [ -f "$f" ] && grep -q 'op://' "$f"; then
 fi
 if [ -f "$f" ]; then
   set -a
+  # The env file is chosen at runtime; nothing for ShellCheck to follow.
+  # shellcheck source=/dev/null
   case "$f" in /*) . "$f" ;; *) . "./$f" ;; esac
   set +a
 fi

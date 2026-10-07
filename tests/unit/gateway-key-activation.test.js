@@ -36,6 +36,8 @@ const activationBackups = () =>
 
 function seedLegacy({ owner = true, presets = null } = {}) {
   db.exec(`DROP TABLE IF EXISTS gatewayVideoJobs`);
+  // YAN-370: 014 dropped usageDaily; activation still converts a leftover one.
+  db.exec(`CREATE TABLE IF NOT EXISTS usageDaily (dateKey TEXT PRIMARY KEY, data TEXT NOT NULL)`);
   db.exec(`DELETE FROM usageHistory; DELETE FROM usageDaily; DELETE FROM apiKeys;
     DELETE FROM kv WHERE scope = 'cliToolPresets'; DELETE FROM users; DELETE FROM workspaces`);
   db.run(

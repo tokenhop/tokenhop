@@ -1,5 +1,5 @@
 // End-to-end: a cache-bearing request flows through canonicalizeUsage →
-// saveRequestUsage → getUsageStatsUnscoped, proving cached tokens are persisted,
+// saveRequestUsageUnscoped → getUsageStats, proving cached tokens are persisted,
 // aggregated, and cost is computed correctly (the bug this branch fixes).
 import fs from "node:fs";
 import os from "node:os";
@@ -36,7 +36,7 @@ describe("cached-token end-to-end (persist + aggregate + cost)", () => {
     });
     expect(canonical.prompt_tokens).toBe(330); // inclusive
 
-    await db.saveRequestUsage({
+    await db.saveRequestUsageUnscoped({
       provider: "anthropic",
       model: "claude-sonnet-4-6",
       connectionId: "c-cache",
@@ -45,14 +45,14 @@ describe("cached-token end-to-end (persist + aggregate + cost)", () => {
       status: "ok",
     });
 
-    const stats = await db.getUsageStatsUnscoped("24h");
+    const stats = await db.getUsageStats(null, "24h");
     expect(stats.totalCachedTokens).toBe(200);
     expect(stats.totalPromptTokens).toBe(330);
     expect(stats.byProvider.anthropic.cachedTokens).toBe(200);
 
     // Cost: nonCached=330-200-30=100 @3 + cached 200 @0.30 + creation 30 @3.75 + output 50 @15
     const expected = (100 * 3 + 200 * 0.3 + 30 * 3.75 + 50 * 15) / 1_000_000;
-    const hist = await db.getUsageHistory({ provider: "anthropic" });
+    const hist = await db.getUsageHistory(null, { provider: "anthropic" });
     expect(hist.length).toBe(1);
     expect(hist[0].cost).toBeCloseTo(expected, 12);
     expect(hist[0].tokens.cached_tokens).toBe(200);
@@ -68,7 +68,7 @@ describe("cached-token end-to-end (persist + aggregate + cost)", () => {
     expect(canonical.prompt_tokens).toBe(1000);
     expect(canonical.cached_tokens).toBe(600);
 
-    await db.saveRequestUsage({
+    await db.saveRequestUsageUnscoped({
       provider: "openai",
       model: "gpt-4o",
       connectionId: "c-oai",
@@ -77,7 +77,7 @@ describe("cached-token end-to-end (persist + aggregate + cost)", () => {
       status: "ok",
     });
 
-    const hist = await db.getUsageHistory({ provider: "openai" });
+    const hist = await db.getUsageHistory(null, { provider: "openai" });
     expect(hist[0].tokens.prompt_tokens).toBe(1000);
     expect(hist[0].tokens.cached_tokens).toBe(600);
   });

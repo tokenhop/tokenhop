@@ -273,7 +273,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       onAttempt: comboObserver,
       // Probes must not pollute the live-routes fallback ring: pass the
       // recorder only for real traffic (no probe observer attached).
-      ...(comboObserver ? {} : { onFallback: fallbackRecorder(modelStr) }),
+      ...(comboObserver ? {} : { onFallback: fallbackRecorder(modelStr, gateway?.workspaceId) }),
     });
   }
 
@@ -317,7 +317,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       comboName: comboRotationKey(gateway?.workspaceId, modelStr),
       comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings),
       onAttempt: adapterObserver,
-      ...(adapterObserver ? {} : { onFallback: fallbackRecorder(modelStr) }),
+      ...(adapterObserver ? {} : { onFallback: fallbackRecorder(modelStr, gateway?.workspaceId) }),
     });
   }
 
@@ -336,9 +336,10 @@ export async function handleChat(request, clientRawRequest = null, options = nul
 /**
  * Build a combo onFallback hook that records the failed step for live routes.
  * @param {string} comboName
+ * @param {string|null} [workspaceId] gateway principal's workspace (YAN-370 scoped feed)
  * @returns {(hop: { model: string, status: number }) => Promise<void>}
  */
-function fallbackRecorder(comboName) {
+function fallbackRecorder(comboName, workspaceId = null) {
   // Synchronous provider split keeps this off the failover hot path; a full
   // model-info lookup would add DB reads between the failure and the retry.
   return async ({ model: modelStr, status }) => {
@@ -348,6 +349,7 @@ function fallbackRecorder(comboName) {
       provider: slash > 0 ? modelStr.slice(0, slash) : modelStr,
       model: slash > 0 ? modelStr.slice(slash + 1) : modelStr,
       status,
+      workspaceId,
     });
   };
 }
@@ -591,7 +593,7 @@ async function handleSingleModelChat(
         headroomFn,
         onAttempt: nestedObserver,
         // Real nested traffic records hops (YAN-293); probes never write the ring.
-        ...(nestedObserver ? {} : { onFallback: fallbackRecorder(modelStr) }),
+        ...(nestedObserver ? {} : { onFallback: fallbackRecorder(modelStr, gateway?.workspaceId) }),
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });

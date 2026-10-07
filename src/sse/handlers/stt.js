@@ -1,5 +1,10 @@
-import { getProviderCredentials, markAccountUnavailable } from "../services/auth.js";
-import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
+import { getProviderCredentials, markAccountUnavailable, extractApiKey } from "../services/auth.js";
+import {
+  authorizeGatewayTarget,
+  gatewayKeyContext,
+  resolveGatewayAuth,
+} from "@/lib/auth/gatewayAuth.js";
+import { saveRequestUsageUnscoped } from "@/lib/usageDb.js";
 import { getModelInfo } from "../services/model.js";
 import { handleSttCore } from "open-sse/handlers/sttCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -16,6 +21,21 @@ const CREDENTIALED_PROVIDERS = new Set(
     .map(([id]) => id),
 );
 
+// OpenAI verbose_json carries `duration` (seconds); else fall back to upload bytes.
+async function sttUnits(response, file) {
+  try {
+    const d = (await response.clone().json())?.duration;
+    if (Number.isFinite(d) && d > 0) return { seconds: d };
+  } catch {}
+  return { bytes: file?.size ?? 0 };
+}
+
+function recordStt(response, file, entry) {
+  sttUnits(response, file)
+    .then((units) => saveRequestUsageUnscoped({ ...entry, units, status: "success" }))
+    .catch(() => {});
+}
+
 export async function handleStt(request) {
   let formData;
   try {
@@ -31,6 +51,8 @@ export async function handleStt(request) {
   if (auth instanceof Response) return auth;
   const gateway = auth.principal;
   const gatewayCreds = gateway ? { principal: gateway } : {};
+  const apiKey = auth.legacy ? extractApiKey(request) : null;
+  const endpoint = new URL(request.url).pathname;
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!formData.get("file"))
@@ -53,7 +75,17 @@ export async function handleStt(request) {
       formData,
       sttConfig: AI_PROVIDERS[provider]?.sttConfig,
     });
-    if (result.success) return result.response;
+    if (result.success) {
+      recordStt(result.response, formData.get("file"), {
+        provider,
+        model,
+        endpoint,
+        connectionId: null,
+        apiKey,
+        ...gatewayKeyContext(gateway),
+      });
+      return result.response;
+    }
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "STT failed");
   }
 
@@ -100,7 +132,17 @@ export async function handleStt(request) {
       sttConfig: AI_PROVIDERS[provider]?.sttConfig,
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      recordStt(result.response, formData.get("file"), {
+        provider,
+        model,
+        endpoint,
+        connectionId: credentials.connectionId,
+        apiKey,
+        ...gatewayKeyContext(gateway),
+      });
+      return result.response;
+    }
 
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,

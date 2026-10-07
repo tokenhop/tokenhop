@@ -6,7 +6,12 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { getSettings, getProviderConnectionByIdUnscoped } from "@/lib/localDb";
-import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
+import {
+  authorizeGatewayTarget,
+  gatewayKeyContext,
+  resolveGatewayAuth,
+} from "@/lib/auth/gatewayAuth.js";
+import { saveRequestUsageUnscoped } from "@/lib/usageDb.js";
 import { getGatewayConnections } from "@/lib/auth/gatewayResources.js";
 import { getAdapter } from "@/lib/db/driver.js";
 import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
@@ -382,6 +387,17 @@ export async function handleVideoCreate(request, action) {
           modelId: canonicalModel,
         });
       }
+      // Job creation only; polls (handleVideoGet) are not counted.
+      saveRequestUsageUnscoped({
+        provider,
+        model,
+        endpoint: new URL(request.url).pathname,
+        connectionId: credentials.connectionId,
+        apiKey: auth.legacy ? extractApiKey(request) : null,
+        ...gatewayKeyContext(gateway),
+        units: { jobs: 1 },
+        status: "success",
+      }).catch(() => {});
       log.info(
         "VIDEO",
         `${provider.toUpperCase()} | ${action} accepted (connection ${credentials.connectionId})`,

@@ -10,8 +10,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
   appendRequestLog: mocks.appendLog,
-  saveRequestUsage: mocks.usage,
-  saveRequestDetail: mocks.detail,
+  saveRequestUsageUnscoped: mocks.usage,
+  saveRequestDetailUnscoped: mocks.detail,
 }));
 vi.mock("../../open-sse/executors/index.js", () => ({
   getExecutor: () => ({ execute: mocks.execute, supportsRefresh: false }),

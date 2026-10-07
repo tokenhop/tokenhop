@@ -1,17 +1,21 @@
 import { NextResponse } from "next/server";
 import { getDistinctProviders } from "@/lib/requestDetailsDb";
 import { getProviderNodesUnscoped } from "@/lib/localDb";
+import { usageScope } from "@/lib/usage/scope.js";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
 
 /**
  * GET /api/usage/providers
  * Returns list of unique providers from request details
  */
-export async function GET() {
+export async function GET(request) {
   try {
+    const scope = await usageScope(request);
+    if (scope instanceof Response) return scope;
+
     // Query DISTINCT provider column directly — avoids parsing every row's
     // full JSON blob (can be hundreds of MB), which previously caused OOM.
-    const providerIds = await getDistinctProviders();
+    const providerIds = await getDistinctProviders(scope);
 
     const providerNodes = await getProviderNodesUnscoped();
     const nodeMap = {};
