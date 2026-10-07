@@ -1,4 +1,10 @@
-import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
+import {
+  authorizeGatewayTarget,
+  gatewayKeyContext,
+  resolveGatewayAuth,
+} from "@/lib/auth/gatewayAuth.js";
+import { extractClientApiKey } from "@/lib/auth/clientApiKey.js";
+import { saveRequestUsageUnscoped } from "@/lib/usageDb.js";
 import { handleChat } from "@/sse/handlers/chat.js";
 import {
   clearAccountError,
@@ -397,6 +403,18 @@ async function forwardGeminiNativeRequest(request, body, model, action, gateway)
 
     if (upstreamResponse.ok) {
       await clearAccountError(credentials.connectionId, credentials, modelId);
+      // YAN-372: record native TTS like /v1/audio/speech so budgets settle.
+      saveRequestUsageUnscoped({
+        provider: "gemini",
+        model: modelId,
+        endpoint: new URL(request.url).pathname,
+        connectionId: credentials.connectionId,
+        apiKey: gateway ? null : extractClientApiKey(request),
+        ...gatewayKeyContext(gateway),
+        grantId: credentials.grantId ?? undefined,
+        units: { requests: 1 },
+        status: "success",
+      }).catch(() => {});
       return new Response(upstreamResponse.body, {
         status: upstreamResponse.status,
         statusText: upstreamResponse.statusText,

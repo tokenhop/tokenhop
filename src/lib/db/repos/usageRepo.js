@@ -242,6 +242,7 @@ export async function saveRequestUsageUnscoped(entry) {
     const savedTokens = rowSavedFromSavings(metaObj.savings);
 
     // History insert, rollup upsert and lifetime counters in ONE transaction.
+    let stored = null;
     db.transaction(() => {
       db.run(
         `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta, workspaceId, userId, apiKeyId, grantId) VALUES(?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM workspaces WHERE id = ?), (SELECT id FROM users WHERE id = ?), ?, ?)`,
@@ -264,7 +265,7 @@ export async function saveRequestUsageUnscoped(entry) {
         ],
       );
       // Rollup dims follow the stored row (FK-checked ids, never dangling).
-      const stored = db.get(
+      stored = db.get(
         `SELECT workspaceId, userId FROM usageHistory WHERE id = last_insert_rowid()`,
       );
       upsertRollupRowUnscoped(
@@ -308,14 +309,15 @@ export async function saveRequestUsageUnscoped(entry) {
     });
 
     // YAN-372: budget counters settle on the committed row (sync listeners).
+    // Attribution follows the stored row, so live counters match a rebuild.
     emitUsageCommitted({
       timestamp: entry.timestamp,
       status: entry.status || "ok",
       cost: entry.cost || 0,
       promptTokens,
       completionTokens,
-      workspaceId,
-      userId,
+      workspaceId: stored?.workspaceId ?? null,
+      userId: stored?.userId ?? null,
       apiKeyId,
       grantId: typeof entry.grantId === "string" ? entry.grantId : null,
     });

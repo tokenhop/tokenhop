@@ -27,6 +27,7 @@ import {
   BUDGET_RESERVATION_MAX_MS,
   BUDGET_SETTLE_GRACE_MS,
 } from "open-sse/config/runtimeConfig.js";
+import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { calculateCostFromTokens } from "open-sse/providers/pricing.js";
 import { estimateBodyTokens } from "./grantRateLimiter.js";
 
@@ -143,6 +144,8 @@ function stateFor(budget, now = Date.now()) {
     };
     for (const [k, old] of counters) if (old.budget.id === budget.id) counters.delete(k);
     counters.set(key, state);
+    state.budget = budget;
+    notifySoftLimit(state); // history may already be past the threshold
   }
   state.budget = budget; // limits may have changed (new generation)
   return state;
@@ -200,9 +203,14 @@ export function budgetLimitedResult(limit) {
 // unknown pricing and non-token modalities reserve the fallback constant.
 async function estimateUsage({ provider, model, body, nonToken, noOutput }) {
   if (nonToken) return { usd: BUDGET_FALLBACK_RESERVE_USD, tokens: 0, requests: 1 };
-  // Non-positive or junk max_tokens never shrinks the reservation below the default.
-  const asked = Number(body?.max_tokens ?? body?.max_completion_tokens);
-  const output = noOutput ? 0 : asked > 0 ? asked : BUDGET_DEFAULT_MAX_TOKENS;
+  // Non-positive or junk max_tokens never shrinks the reservation below the
+  // default; a huge one is capped at the model's output limit (ADR-0007), so
+  // one client can't hold a whole workspace budget with max_tokens: 1e6.
+  const asked = Number(
+    body?.max_tokens ?? body?.max_completion_tokens ?? body?.generationConfig?.maxOutputTokens,
+  );
+  const cap = Number(getCapabilitiesForModel(provider, model)?.maxOutput) || Infinity;
+  const output = noOutput ? 0 : Math.min(asked > 0 ? asked : BUDGET_DEFAULT_MAX_TOKENS, cap);
   const input = estimateBodyTokens({ ...body, max_tokens: 0, max_completion_tokens: 0 });
   let pricing = null;
   if (provider && model) pricing = await getPricingForModel(provider, model).catch(() => null);
@@ -280,8 +288,8 @@ export function reserveGrantBudget(grantId, ctx) {
 // Release once the body is fully read, errors or is cancelled, plus a hard cap
 // so a never-consumed body can't hold budget forever. The settle grace lets the
 // async usage commit land before the hold drops (bounded overshoot).
-function releaseWhenDone(res, release) {
-  if (!(res instanceof Response) || !res.body || !res.ok) {
+function releaseWhenDone(res, release, held) {
+  if (!held || !(res instanceof Response) || !res.body || !res.ok || res.bodyUsed) {
     release();
     return res;
   }
@@ -292,7 +300,13 @@ function releaseWhenDone(res, release) {
     const t = setTimeout(release, BUDGET_SETTLE_GRACE_MS);
     t.unref?.();
   };
-  const reader = res.body.getReader();
+  let reader;
+  try {
+    reader = res.body.getReader();
+  } catch {
+    release(); // locked/disturbed body: can't observe its end
+    return res;
+  }
   const body = new ReadableStream({
     async pull(controller) {
       try {
@@ -363,7 +377,7 @@ async function withBudget(principal, opts, run) {
     releaseAll();
     throw err;
   }
-  return releaseWhenDone(res, releaseAll);
+  return releaseWhenDone(res, releaseAll, store.releases.length > 0);
 }
 
 function notifySoftLimit(state) {
@@ -398,7 +412,10 @@ function notifySoftLimit(state) {
 
 // Settle: a committed usage row adds its actuals to every live window it
 // belongs to. Windows built later read the row from usageHistory instead.
-onUsageCommitted((entry) => {
+// One live listener across module reloads (Next HMR, vi.resetModules): drop
+// the previous instance's subscription before adding this one.
+globalThis.__budgetGuardUnsubscribe?.();
+globalThis.__budgetGuardUnsubscribe = onUsageCommitted((entry) => {
   if (!successful(entry.status) || counters.size === 0) return;
   const ts = Date.parse(entry.timestamp) || Date.now();
   for (const state of counters.values()) {

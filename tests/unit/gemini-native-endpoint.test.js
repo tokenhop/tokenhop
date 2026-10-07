@@ -8,6 +8,12 @@ vi.mock("@/lib/auth/requireClientApiKey", () => ({ requireClientApiKey: async ()
 vi.mock("@/lib/auth/gatewayAuth.js", () => ({
   resolveGatewayAuth: mocks.resolveGatewayAuth,
   authorizeGatewayTarget: () => null,
+  gatewayKeyContext: () => ({}),
+}));
+
+// YAN-372: native TTS records usage so budgets settle.
+vi.mock("@/lib/usageDb.js", () => ({
+  saveRequestUsageUnscoped: mocks.saveRequestUsageUnscoped,
 }));
 
 const mocks = vi.hoisted(() => ({
@@ -18,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   markAccountUnavailable: vi.fn(),
   clearAccountError: vi.fn(),
   resolveGatewayAuth: vi.fn(async () => ({ principal: null, legacy: true })),
+  saveRequestUsageUnscoped: vi.fn(async () => {}),
 }));
 
 vi.mock("@/sse/handlers/chat.js", () => ({
@@ -123,6 +130,13 @@ describe("Gemini native v1beta endpoint", () => {
     expect(JSON.parse(options.body)).toEqual(body);
     expect(options.headers["x-goog-api-key"]).toBe("real-gemini-key");
     expect(options.headers.Authorization).toBeUndefined();
+    expect(mocks.saveRequestUsageUnscoped).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "gemini",
+        model: "gemini-3.1-flash-tts-preview",
+        status: "success",
+      }),
+    );
   });
 
   it("accepts Google-style client keys without forwarding them upstream", async () => {

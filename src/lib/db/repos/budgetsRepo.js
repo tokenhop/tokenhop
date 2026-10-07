@@ -134,9 +134,9 @@ function requireWrite(db, ctx, access, before, after, scope, target) {
   if (!access.allowed("workspace.budgets.lower") && !ownKey && !ownGrant) {
     throw new TenancyError("FORBIDDEN", "Budget management forbidden");
   }
-  // All non-raising own-key writes obey the workspace ceiling, including
-  // managers editing their own key. NULL is unlimited, so exceeds a finite cap.
-  if (ownKey) {
+  // Every non-raising key-budget write obeys the workspace ceiling, whoever
+  // makes it (ADR-0007). NULL is unlimited, so it exceeds a finite cap.
+  if (row.scopeType === "key" && target.workspaceId) {
     const ceiling = db.get(
       "SELECT * FROM budgets WHERE scopeType = 'workspace' AND scopeId = ? AND window = ?",
       [target.workspaceId, row.window],

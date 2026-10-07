@@ -174,6 +174,27 @@ describe("settlement", () => {
   });
 });
 
+describe("soft limit", () => {
+  it("audits once per window when settled or rebuilt spend crosses softLimitPct", async () => {
+    db.run("DELETE FROM auditEvents");
+    budget("workspace", t.shared.id, { tokens: 100, soft: 20 });
+    await call(who()); // window state built (spent 0)
+    await usage(who()); // 15 tokens: below 20%
+    await usage(who()); // 30 tokens: crosses
+    await usage(who()); // still over: no second event
+    await new Promise((r) => setTimeout(r, 20)); // audit() is fire-and-forget
+    const rows = () => db.all(`SELECT after FROM auditEvents WHERE action = 'budget.softLimit'`);
+    expect(rows()).toHaveLength(1);
+    expect(JSON.parse(rows()[0].after)).toMatchObject({ level: "workspace", spentTokens: 30 });
+    // Restart: spend rebuilt from history is already past the threshold.
+    db.run("DELETE FROM auditEvents");
+    await load("on", { wipe: false });
+    await call(who());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(rows()).toHaveLength(1);
+  });
+});
+
 describe("windows and recovery", () => {
   it("a UTC day window resets at midnight UTC", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
