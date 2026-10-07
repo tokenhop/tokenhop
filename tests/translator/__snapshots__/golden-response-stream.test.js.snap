@@ -416,6 +416,25 @@ exports[`GOLDEN response stream: Ollama → OpenAI > content + thinking + tool_c
 ]
 `;
 
+exports[`GOLDEN response stream: OpenAI → Completions > buffers fenced output, emits one cleaned text_completion on finish 1`] = `
+[
+  {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "logprobs": null,
+        "text": "x = 1;",
+      },
+    ],
+    "created": 0,
+    "id": "cmpl-abc",
+    "model": "gpt-4o",
+    "object": "text_completion",
+  },
+]
+`;
+
 exports[`GOLDEN response stream: OpenAI-Responses (codex) → OpenAI > error event → error chunk (fallback id/created) 1`] = `
 [
   {

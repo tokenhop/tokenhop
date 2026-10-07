@@ -1,6 +1,7 @@
 // Format identifiers
 export const FORMATS = {
   OPENAI: "openai",
+  OPENAI_COMPLETIONS: "openai-completions",
   OPENAI_RESPONSES: "openai-responses",
   OPENAI_RESPONSE: "openai-response",
   CLAUDE: "claude",
@@ -20,6 +21,11 @@ export const FORMATS = {
  * Returns null to fall back to body-based detection.
  */
 export function detectFormatByEndpoint(pathname, body) {
+  // /v1/completions (legacy completions) is always openai-completions.
+  // Exact path match: must NOT catch /v1/chat/completions. Next rewrites hand
+  // the route handler /api/v1/completions, which the endsWith check also covers.
+  if (pathname.replace(/\/+$/, "").endsWith("/v1/completions")) return FORMATS.OPENAI_COMPLETIONS;
+
   // /v1/responses is always openai-responses
   if (pathname.includes("/v1/responses")) return FORMATS.OPENAI_RESPONSES;
 

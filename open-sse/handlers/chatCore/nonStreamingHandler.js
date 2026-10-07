@@ -16,6 +16,7 @@ import {
 import { saveRequestDetailUnscoped } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { openAICompletionToClientFormat } from "./completionToClient.js";
+import { fimContextFor } from "../../translator/concerns/fim.js";
 import { toOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { geminiUsageCounts } from "../../translator/concerns/usage.js";
 import { CLAUDE_BLOCK, RESPONSES_ITEM } from "../../translator/schema/index.js";
@@ -30,12 +31,13 @@ export function translateNonStreamingResponse(
   targetFormat,
   sourceFormat,
   customToolNames = null,
+  fimContext = null,
 ) {
   if (targetFormat === sourceFormat) return responseBody;
   // Provider responded in OpenAI Chat Completions shape — convert to the
   // client's format so tool_calls/text surface natively.
   if (targetFormat === FORMATS.OPENAI)
-    return openAICompletionToClientFormat(responseBody, sourceFormat, customToolNames);
+    return openAICompletionToClientFormat(responseBody, sourceFormat, customToolNames, fimContext);
 
   // Gemini / Antigravity
   if (
@@ -111,7 +113,7 @@ export function translateNonStreamingResponse(
         result.usage.completion_tokens_details = { reasoning_tokens: counts.reasoning };
       }
     }
-    return openAICompletionToClientFormat(result, sourceFormat, customToolNames);
+    return openAICompletionToClientFormat(result, sourceFormat, customToolNames, fimContext);
   }
 
   // Claude
@@ -125,7 +127,12 @@ export function translateNonStreamingResponse(
     // into the client's format. A non-array content value likely belongs to a different
     // non-Claude format and stays unchanged.
     if (responseBody.choices)
-      return openAICompletionToClientFormat(responseBody, sourceFormat, customToolNames);
+      return openAICompletionToClientFormat(
+        responseBody,
+        sourceFormat,
+        customToolNames,
+        fimContext,
+      );
     if (responseBody.content && !Array.isArray(responseBody.content)) return responseBody;
 
     let textContent = "",
@@ -183,7 +190,7 @@ export function translateNonStreamingResponse(
         };
       }
     }
-    return openAICompletionToClientFormat(result, sourceFormat, customToolNames);
+    return openAICompletionToClientFormat(result, sourceFormat, customToolNames, fimContext);
   }
 
   // Ollama
@@ -192,6 +199,7 @@ export function translateNonStreamingResponse(
       ollamaBodyToOpenAI(responseBody),
       sourceFormat,
       customToolNames,
+      fimContext,
     );
   }
 
@@ -206,8 +214,11 @@ export function translateNonStreamingResponse(
 function summarizeClientResponse(body) {
   if (body?.choices?.[0]) {
     const message = body.choices[0].message || {};
+    // Legacy completions choices carry `text`, not `message`.
+    const text =
+      message.content ?? (typeof body.choices[0].text === "string" ? body.choices[0].text : null);
     return {
-      content: message.content || null,
+      content: text || null,
       thinking: message.reasoning_content || null,
       finish_reason: body.choices[0].finish_reason || "unknown",
     };
@@ -355,7 +366,13 @@ export async function handleNonStreamingResponse({
     );
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
+    ? translateNonStreamingResponse(
+        responseBody,
+        targetFormat,
+        sourceFormat,
+        customToolNames,
+        sourceFormat === FORMATS.OPENAI_COMPLETIONS ? fimContextFor(body) : null,
+      )
     : responseBody;
   const isClaudeMessageResponse =
     sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";

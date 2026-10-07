@@ -161,3 +161,66 @@ describe("GOLDEN request: OpenAI → Kiro", () => {
     expect(clean(out)).toMatchSnapshot();
   });
 });
+
+describe("GOLDEN request: Completions → OpenAI / Claude / Gemini", () => {
+  const completionsBody = () => ({
+    model: "m",
+    prompt: "<|fim_prefix|>function add(a, b) {\n  return <|fim_suffix|>;\n}<|fim_middle|>",
+    max_tokens: 32,
+    stop: ["\n\n"],
+  });
+  const targets = [
+    ["openai", FORMATS.OPENAI, "gpt-4o", "openai"],
+    ["claude", FORMATS.CLAUDE, "claude-sonnet-4-5", "claude"],
+    ["gemini", FORMATS.GEMINI, "gemini-3-pro", "gemini"],
+  ];
+  for (const [name, format, model, provider] of targets) {
+    it(`→ ${name}`, () => {
+      const out = translateRequest(
+        FORMATS.OPENAI_COMPLETIONS,
+        format,
+        model,
+        completionsBody(),
+        false,
+        { apiKey: "k" },
+        provider,
+      );
+      expect(clean(out)).toMatchSnapshot();
+    });
+  }
+
+  it("invalid prompt throws", () => {
+    for (const prompt of [undefined, 5, ["a", "b"], [["a"]]]) {
+      expect(() =>
+        translateRequest(FORMATS.OPENAI_COMPLETIONS, FORMATS.OPENAI, "gpt-4o", { prompt }, false),
+      ).toThrow(/prompt/);
+    }
+  });
+
+  it("stop: FIM tokens dropped, then capped to 4", () => {
+    const fimStops = [
+      "<|fim_prefix|>",
+      "<|fim_suffix|>",
+      "<|fim_middle|>",
+      "<|file_separator|>",
+      "<|endoftext|>",
+      "<|fim_pad|>",
+      "<fim_prefix>",
+      "<fim_suffix>",
+      "<fim_middle>",
+      "<PRE>",
+      "<SUF>",
+      "<MID>",
+      "<EOT>",
+      "</s>",
+    ];
+    const out = translateRequest(
+      FORMATS.OPENAI_COMPLETIONS,
+      FORMATS.OPENAI,
+      "gpt-4o",
+      { prompt: "x", stop: [...fimStops, "\n\n"] },
+      false,
+    );
+    expect(out.stop).toEqual(["\n\n"]);
+  });
+});

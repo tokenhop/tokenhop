@@ -77,10 +77,24 @@ export function grantAllowsModel(grant, providerId, model, pinned = false) {
 }
 
 // Rough prompt+completion estimate, only evaluated when a granted candidate has tpm.
+// Legacy completions carry prompt/suffix instead of messages/input/contents.
 export function estimateBodyTokens(body) {
-  const payload = body?.messages ?? body?.input ?? body?.contents ?? "";
+  const payload =
+    body?.messages ?? body?.input ?? body?.contents ?? fallbackPromptChars(body) ?? "";
   const chars = typeof payload === "string" ? payload.length : JSON.stringify(payload).length;
   return Math.ceil(chars / 4) + (Number(body?.max_tokens ?? body?.max_completion_tokens) || 0);
+}
+
+// Chars from legacy completions fields: prompt (string | string[]) + suffix.
+function fallbackPromptChars(body) {
+  const parts = [];
+  const { prompt, suffix } = body || {};
+  if (typeof prompt === "string") parts.push(prompt);
+  else if (Array.isArray(prompt)) {
+    for (const p of prompt) if (typeof p === "string") parts.push(p);
+  }
+  if (typeof suffix === "string") parts.push(suffix);
+  return parts.length > 0 ? parts.join("") : null;
 }
 
 /** Memoized estimator from the caller's `options.estimateTokens` (number | fn). */

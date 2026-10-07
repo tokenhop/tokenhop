@@ -2,6 +2,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { toResponsesUsage } from "../../translator/concerns/usage.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { cleanFimOutput, toCompletionId } from "../../translator/concerns/fim.js";
 
 // Non-streaming bodies pivot through OpenAI `chat.completion`. This module turns that
 // pivot back into the client's format. It must not import any chatCore handler:
@@ -140,14 +141,39 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
   };
 }
 
+// chat.completion → legacy text_completion; reasoning and tool calls are dropped.
+function openAICompletionToTextCompletion(body, fimContext) {
+  return {
+    id: toCompletionId(body.id),
+    object: "text_completion",
+    created: body.created || Math.floor(Date.now() / 1000),
+    model: body.model,
+    choices: (body.choices || []).map((c, i) => ({
+      index: c.index ?? i,
+      text: cleanFimOutput(c.message?.content ?? "", fimContext ?? {}),
+      logprobs: null,
+      finish_reason: c.finish_reason ?? "stop",
+    })),
+    ...(body.usage ? { usage: body.usage } : {}),
+  };
+}
+
 /**
  * Convert an OpenAI `chat.completion` body into the client's format.
- * Claude and Responses clients get their native body; any other client
- * (OpenAI and friends) gets the body unchanged.
+ * Claude, Responses and legacy Completions clients get their native body; any
+ * other client (OpenAI and friends) gets the body unchanged. `fimContext`
+ * ({prefix, suffix}) lets Completions output cleanup trim cursor overlap.
  */
-export function openAICompletionToClientFormat(responseBody, clientFormat, customToolNames = null) {
+export function openAICompletionToClientFormat(
+  responseBody,
+  clientFormat,
+  customToolNames = null,
+  fimContext = null,
+) {
   if (clientFormat === FORMATS.CLAUDE) return openAICompletionToClaudeMessage(responseBody);
   if (clientFormat === FORMATS.OPENAI_RESPONSES)
     return openAICompletionToResponses(responseBody, customToolNames);
+  if (clientFormat === FORMATS.OPENAI_COMPLETIONS)
+    return openAICompletionToTextCompletion(responseBody, fimContext);
   return responseBody;
 }

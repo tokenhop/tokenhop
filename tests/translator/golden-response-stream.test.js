@@ -170,3 +170,45 @@ describe("GOLDEN response stream: OpenAI-Responses (codex) → OpenAI", () => {
     expect(runStream(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, events)).toMatchSnapshot();
   });
 });
+
+describe("GOLDEN response stream: OpenAI → Completions", () => {
+  const chunk = (delta, finish = null) => ({
+    id: "chatcmpl-abc",
+    model: "gpt-4o",
+    choices: [{ index: 0, delta, finish_reason: finish }],
+  });
+
+  it("buffers fenced output, emits one cleaned text_completion on finish", () => {
+    const events = [
+      chunk({ role: "assistant", content: "```js\n" }),
+      chunk({ content: "x = 1;" }),
+      chunk({ content: "\n```" }),
+      chunk({}, "stop"),
+      { id: "chatcmpl-abc", choices: [], usage: { prompt_tokens: 5, completion_tokens: 3 } },
+      null,
+    ];
+    expect(runStream(FORMATS.OPENAI, FORMATS.OPENAI_COMPLETIONS, events)).toMatchSnapshot();
+  });
+
+  it("flush without finish_reason still emits the text once", () => {
+    const out = runStream(FORMATS.OPENAI, FORMATS.OPENAI_COMPLETIONS, [
+      chunk({ content: "abc" }),
+      null,
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].choices[0]).toMatchObject({ text: "abc", finish_reason: "stop" });
+  });
+
+  it("passes upstream error frames through instead of empty text", () => {
+    const error = { error: { message: "boom", type: "server_error" } };
+    expect(runStream(FORMATS.OPENAI, FORMATS.OPENAI_COMPLETIONS, [error, null])).toEqual([error]);
+    // Partial text before the error must not resurface as a "stop" chunk on flush.
+    expect(
+      runStream(FORMATS.OPENAI, FORMATS.OPENAI_COMPLETIONS, [
+        chunk({ content: "partial" }),
+        error,
+        null,
+      ]),
+    ).toEqual([error]);
+  });
+});
