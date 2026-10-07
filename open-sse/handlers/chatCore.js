@@ -444,14 +444,18 @@ export async function handleChatCore({
 
   if (rtkStats?.hits?.length) xf.push(`RTK:${rtkStats.hits.length}`);
 
+  // Style prompts are chat-only: on edit predictions (/v1/completions) they add
+  // ~780 prompt tokens per keystroke and nothing to a FIM reply (YAN-741).
+  const styleInject = tokenSaverEnabled && sourceFormat !== FORMATS.OPENAI_COMPLETIONS;
+
   // Caveman: inject terse-style system prompt
-  if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
+  if (styleInject && cavemanEnabled && cavemanLevel) {
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
     xf.push(`CAVEMAN:${cavemanLevel}`);
   }
 
   // Ponytail: inject lazy-senior-dev system prompt
-  if (tokenSaverEnabled && ponytailEnabled && ponytailLevel) {
+  if (styleInject && ponytailEnabled && ponytailLevel) {
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
     xf.push(`PONYTAIL:${ponytailLevel}`);
   }
