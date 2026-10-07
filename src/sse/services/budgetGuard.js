@@ -69,6 +69,10 @@ export async function hasBudgets(principal) {
         db = adapter;
         rows = listBudgetRowsUnscoped(adapter);
         generation = gen;
+        // Drop window state of deleted budgets (live budgets keep theirs: a
+        // purge would lose in-flight reservations). Ids are never reused.
+        const live = new Set(rows.map((b) => b.id));
+        for (const [k, s] of counters) if (!live.has(s.budget.id)) counters.delete(k);
       })
       .finally(() => {
         loading = null;
@@ -190,9 +194,9 @@ export function budgetLimitedResult(limit) {
 // unknown pricing and non-token modalities reserve the fallback constant.
 async function estimateUsage({ provider, model, body, nonToken, noOutput }) {
   if (nonToken) return { usd: BUDGET_FALLBACK_RESERVE_USD, tokens: 0, requests: 1 };
-  const output = noOutput
-    ? 0
-    : Number(body?.max_tokens ?? body?.max_completion_tokens) || BUDGET_DEFAULT_MAX_TOKENS;
+  // Non-positive or junk max_tokens never shrinks the reservation below the default.
+  const asked = Number(body?.max_tokens ?? body?.max_completion_tokens);
+  const output = noOutput ? 0 : asked > 0 ? asked : BUDGET_DEFAULT_MAX_TOKENS;
   const input = estimateBodyTokens({ ...body, max_tokens: 0, max_completion_tokens: 0 });
   let pricing = null;
   if (provider && model) pricing = await getPricingForModel(provider, model).catch(() => null);

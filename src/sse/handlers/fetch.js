@@ -242,7 +242,6 @@ async function handleSingleProviderFetch(body, providerInput, request, gateway, 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
       if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
-      if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status =
