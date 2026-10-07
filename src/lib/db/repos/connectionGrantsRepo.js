@@ -17,11 +17,6 @@ import { getSettings } from "./settingsRepo.js";
 const COLS =
   "id, connectionId, workspaceId, userId, allowedModels, rpm, tpm, budgetId, createdByUserId, tosAcknowledgedAt, createdAt, revokedAt";
 
-/** Exactly the acknowledgement echo a personal grant must carry (ADR-0006). */
-export function tosEcho(providerId) {
-  return { providerId, sharing: "personal" };
-}
-
 // allowedModels is a JSON array in storage, an array in every returned row.
 function toGrant(row) {
   return {

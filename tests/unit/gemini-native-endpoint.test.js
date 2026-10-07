@@ -212,6 +212,8 @@ describe("Gemini native v1beta endpoint", () => {
       expect.stringContaining("UND_ERR_HEADERS_TIMEOUT"),
       "gemini",
       "gemini-3.1-flash-tts-preview",
+      null,
+      expect.any(Object), // YAN-369 { grantId }
     );
     expect(mocks.clearAccountError).toHaveBeenCalledWith(
       "second-conn",
@@ -242,6 +244,8 @@ describe("Gemini native v1beta endpoint", () => {
       expect.stringContaining("ECONNRESET"),
       "gemini",
       "gemini-3.1-flash-tts-preview",
+      null,
+      expect.any(Object), // YAN-369 { grantId }
     );
   });
 

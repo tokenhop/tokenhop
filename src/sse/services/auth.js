@@ -516,6 +516,8 @@ export async function markAccountUnavailable(
  */
 export async function clearAccountError(connectionId, currentConnection, model = null) {
   if (!connectionId || connectionId === "noauth") return;
+  // YAN-369: a grantee's success never rewrites the owner's health state.
+  if (currentConnection?.grantId) return;
   const conn = currentConnection._connection || currentConnection;
   const now = Date.now();
   const allLockKeys = Object.keys(conn).filter((k) => k.startsWith("modelLock_"));

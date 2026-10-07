@@ -262,7 +262,6 @@ export {
   consumeInvitationSync,
 } from "./repos/invitationsRepo.js";
 export {
-  tosEcho,
   listGrantsForConnection,
   getGrantById,
   createGrant,
