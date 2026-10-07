@@ -246,6 +246,21 @@ describe("zero overhead", () => {
     expect(spy.mock.calls.filter(([sql]) => /FROM budgets/.test(sql))).toHaveLength(1); // cached
   });
 
+  it("fails open when budgets or spend can't be read (no 500s)", async () => {
+    budget("workspace", t.shared.id, { requests: 0 });
+    const all = vi.spyOn(db, "all").mockImplementationOnce(() => {
+      throw new Error("database is locked");
+    });
+    expect(await call(who())).toBeNull(); // row load failed: pass through
+    all.mockRestore();
+    const get = vi.spyOn(db, "get").mockImplementationOnce(() => {
+      throw new Error("database is locked");
+    });
+    expect((await call(who())).status).toBe(200); // spend read failed: unenforced
+    get.mockRestore();
+    expect((await call(who())).status).toBe(429); // recovers on the next request
+  });
+
   it("switch off or legacy principal: never enforced, even with rows", async () => {
     await load("off");
     budget("workspace", t.shared.id, { requests: 0 });

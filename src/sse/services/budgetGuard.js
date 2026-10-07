@@ -77,7 +77,13 @@ export async function hasBudgets(principal) {
       .finally(() => {
         loading = null;
       });
-    await loading;
+    try {
+      await loading;
+    } catch (e) {
+      // Fail open (ADR-0007 availability over enforcement); retried next request.
+      console.warn("[budgetGuard] budget read failed, not enforcing:", e?.message);
+      return false;
+    }
   }
   return rows.length > 0;
 }
@@ -209,7 +215,14 @@ async function estimateUsage({ provider, model, body, nonToken, noOutput }) {
 // Synchronous check of every budget, then reserve on every budget. Returns a
 // limit descriptor when one is exceeded, else an idempotent release function.
 function reserve(budgets, estimate) {
-  const states = budgets.map((b) => stateFor(b));
+  let states;
+  try {
+    states = budgets.map((b) => stateFor(b));
+  } catch (e) {
+    // Spent rebuild failed (DB error): fail open, nothing reserved.
+    console.warn("[budgetGuard] spend read failed, not enforcing:", e?.message);
+    return { release() {} };
+  }
   for (const s of states) {
     const hit = exceeded(s, estimate);
     if (hit) return { hit };
@@ -239,9 +252,13 @@ export function grantBudgetContext() {
 /** Non-reserving peek: is this grant over one of its budgets? */
 export function grantBudgetLimit(grantId, ctx) {
   if (!ctx || !grantId) return null;
-  for (const b of grantBudgets(grantId)) {
-    const hit = exceeded(stateFor(b), ctx.estimate);
-    if (hit) return hit;
+  try {
+    for (const b of grantBudgets(grantId)) {
+      const hit = exceeded(stateFor(b), ctx.estimate);
+      if (hit) return hit;
+    }
+  } catch {
+    return null; // fail open; reserveGrantBudget logs the read failure
   }
   return null;
 }
