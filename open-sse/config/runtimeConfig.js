@@ -74,6 +74,18 @@ export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs(
 export const DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_MIN_TOKENS = 32000;
 
+// Budget reservation estimates (YAN-372, ADR-0007). Used only when a request
+// carries no max_tokens / the model has no pricing entry.
+// Env: BUDGET_DEFAULT_MAX_TOKENS, BUDGET_FALLBACK_RESERVE_USD (float).
+export const BUDGET_DEFAULT_MAX_TOKENS = envMs("BUDGET_DEFAULT_MAX_TOKENS", 4096);
+const fallbackUsd = parseFloat(process.env.BUDGET_FALLBACK_RESERVE_USD);
+export const BUDGET_FALLBACK_RESERVE_USD =
+  Number.isFinite(fallbackUsd) && fallbackUsd >= 0 ? fallbackUsd : 0.01;
+// Hold a reservation after the body ends so the async usage commit settles
+// first, and cap a hold whose body is never consumed.
+export const BUDGET_SETTLE_GRACE_MS = envMs("BUDGET_SETTLE_GRACE_MS", 2000);
+export const BUDGET_RESERVATION_MAX_MS = envMs("BUDGET_RESERVATION_MAX_MS", 30 * 60 * 1000);
+
 // Request input: accepted under either brand, new name first.
 export const TOKEN_SAVER_HEADER = `${BRAND.headerPrefix}token-saver`;
 export const LEGACY_TOKEN_SAVER_HEADER = `${LEGACY.headerPrefix}token-saver`; // legacy(9router): remove in v2

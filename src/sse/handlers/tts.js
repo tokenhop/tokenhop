@@ -16,6 +16,7 @@ import { handleComboChat } from "open-sse/services/combo.js";
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
 import * as log from "../utils/logger.js";
 import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
+import { budgetResponse, budgeted } from "../services/budgetGuard.js";
 
 // Derived from providers.js: any TTS provider not noAuth requires stored credentials
 const CREDENTIALED_PROVIDERS = new Set(
@@ -129,6 +130,14 @@ async function handleSingleModelTts(
   const denied = authorizeGatewayTarget(gateway, { modelId: `${provider}/${model}` });
   if (denied) return denied;
 
+  // YAN-372: budgets on the principal's path (input chars priced as tokens).
+  const held = await budgeted(
+    gateway,
+    { provider, model, body: { input: body.input }, noOutput: true },
+    () => handleSingleModelTts(body, modelStr, responseFormat, language, style, gateway, usageCtx),
+  );
+  if (held) return held;
+
   // noAuth providers — no credential needed
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
     const result = await handleTtsCore({
@@ -172,6 +181,7 @@ async function handleSingleModelTts(
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
+      if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
       if (credentials?.allRateLimited) {
         const msg = lastError || credentials.lastError || "Unavailable";
         const status =
@@ -213,6 +223,7 @@ async function handleSingleModelTts(
         connectionId: credentials.connectionId,
         apiKey: usageCtx.apiKey,
         ...gatewayKeyContext(gateway),
+        grantId: credentials.grantId ?? undefined,
         units: { characters: typeof body.input === "string" ? body.input.length : 0 },
         status: "success",
       }).catch(() => {});

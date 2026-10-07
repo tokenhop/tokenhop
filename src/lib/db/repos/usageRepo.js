@@ -7,6 +7,8 @@ import { normalizeUsageKeyEntry } from "../helpers/usageKeyIdentity.js";
 import { tableHasColumn } from "../migrations/helpers.js";
 import { getApiKeyHashKey } from "../../security/apiKeyHashKey.js";
 import { pushToRing, scheduleStatsEvent } from "./usageLiveFeed.js";
+import { emitUsageCommitted } from "../../usage/usageCommitted.js";
+import { resolveSharing } from "../../users/grants.js";
 import { apiKeyNames } from "./usageStatsRepo.js";
 import {
   NO_KEY,
@@ -224,6 +226,15 @@ export async function saveRequestUsageUnscoped(entry) {
     if (entry.userAgent && typeof entry.userAgent === "string")
       metaObj.userAgent = entry.userAgent.slice(0, 256);
     if (entry.units && typeof entry.units === "object") metaObj.units = entry.units;
+    // YAN-372 (ADR-0007): subscription ("personal") connections have no
+    // per-token bill; their priced cost is notional. One PK read.
+    if (entry.connectionId && entry.provider) {
+      const conn = db.get(`SELECT authType FROM providerConnections WHERE id = ?`, [
+        entry.connectionId,
+      ]);
+      if (conn && resolveSharing(entry.provider, conn.authType) === "personal")
+        metaObj.notional = true;
+    }
 
     // YAN-408: lifetime saved-tokens counter feeds the savings milestone toast.
     const savedTokens = rowSavedFromSavings(metaObj.savings);
@@ -294,6 +305,18 @@ export async function saveRequestUsageUnscoped(entry) {
       }
     });
 
+    // YAN-372: budget counters settle on the committed row (sync listeners).
+    emitUsageCommitted({
+      timestamp: entry.timestamp,
+      status: entry.status || "ok",
+      cost: entry.cost || 0,
+      promptTokens,
+      completionTokens,
+      workspaceId,
+      userId,
+      apiKeyId,
+      grantId: typeof entry.grantId === "string" ? entry.grantId : null,
+    });
     pushToRing({
       timestamp: entry.timestamp,
       provider: entry.provider,

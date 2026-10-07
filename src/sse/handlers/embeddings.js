@@ -21,6 +21,7 @@ import {
   grantRateLimitResponse,
   releaseGrantReservation,
 } from "../services/grantRateLimiter.js";
+import { budgetResponse, withBudgetScope } from "../services/budgetGuard.js";
 
 function exactEmbeddingUsage(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || raw.estimated === true) return null;
@@ -98,6 +99,13 @@ export async function handleEmbeddings(request) {
     log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
   }
 
+  // YAN-372: budgets on the principal's path; the loop runs inside the scope.
+  return withBudgetScope(gateway, { provider, model, body, noOutput: true }, () =>
+    embeddingsLoop({ body, provider, model, gateway, apiKey, url }),
+  );
+}
+
+async function embeddingsLoop({ body, provider, model, gateway, apiKey, url }) {
   // Credential + fallback loop (mirrors handleChat)
   const excludeConnectionIds = new Set();
   let lastError = null;
@@ -114,6 +122,7 @@ export async function handleEmbeddings(request) {
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
+      if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status =

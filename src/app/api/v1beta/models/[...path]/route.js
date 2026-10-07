@@ -13,6 +13,7 @@ import {
   grantRateLimitResponse,
   releaseGrantReservation,
 } from "@/sse/services/grantRateLimiter.js";
+import { budgetResponse, budgeted } from "@/sse/services/budgetGuard.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -275,6 +276,11 @@ async function forwardGeminiNativeRequest(request, body, model, action, gateway)
   }
   const denied = authorizeGatewayTarget(gateway, { modelId: `gemini/${modelId}` });
   if (denied) return denied;
+  // YAN-372: budgets on the principal's path (Gemini-native body: contents).
+  const held = await budgeted(gateway, { provider: "gemini", model: modelId, body }, () =>
+    forwardGeminiNativeRequest(request, body, model, action, gateway),
+  );
+  if (held) return held;
   const gatewayCreds = gateway ? { principal: gateway } : {};
   const excludeConnectionIds = new Set();
   const bodyText = JSON.stringify(body);
@@ -289,6 +295,7 @@ async function forwardGeminiNativeRequest(request, body, model, action, gateway)
       gatewayCreds,
     );
     if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
+    if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
     if (!credentials || credentials.allRateLimited) {
       console.log(
         `[GEMINI_NATIVE] exhausted model=${modelId} status=${lastStatus || Number(credentials?.lastErrorCode) || 503} error=${lastError || credentials?.lastError || "No active credentials for provider: gemini"}`,

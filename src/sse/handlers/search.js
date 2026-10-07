@@ -22,8 +22,9 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
 import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
+import { budgetResponse, budgeted } from "../services/budgetGuard.js";
 
-function recordSearch(request, gateway, apiKey, providerId, connectionId, data) {
+function recordSearch(request, gateway, apiKey, providerId, connectionId, data, grantId) {
   const usage = data?.usage;
   saveRequestUsageUnscoped({
     provider: providerId,
@@ -32,6 +33,7 @@ function recordSearch(request, gateway, apiKey, providerId, connectionId, data) 
     connectionId,
     apiKey,
     ...gatewayKeyContext(gateway),
+    grantId: grantId ?? undefined,
     units: { queries: usage?.queries_used ?? 1 },
     cost: usage?.search_cost_usd ?? undefined,
     status: "success",
@@ -185,6 +187,12 @@ async function handleSingleProviderSearch(body, providerInput, request, gateway,
   const denied = authorizeGatewayTarget(gateway, { modelId: `${providerId}/search` });
   if (denied) return denied;
 
+  // YAN-372: budgets on the principal's path (non-token request).
+  const held = await budgeted(gateway, { provider: providerId, nonToken: true }, () =>
+    handleSingleProviderSearch(body, providerInput, request, gateway, apiKey),
+  );
+  if (held) return held;
+
   // No-auth providers (e.g. searxng) bypass credential lookup
   if (resolvedProvider.noAuth) {
     log.info("AUTH", `\x1b[32m${providerId} no-auth mode\x1b[0m`);
@@ -249,6 +257,7 @@ async function handleSingleProviderSearch(body, providerInput, request, gateway,
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
+      if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status =
@@ -296,7 +305,15 @@ async function handleSingleProviderSearch(body, providerInput, request, gateway,
     });
 
     if (result.success) {
-      recordSearch(request, gateway, apiKey, providerId, credentials.connectionId, result.data);
+      recordSearch(
+        request,
+        gateway,
+        apiKey,
+        providerId,
+        credentials.connectionId,
+        result.data,
+        credentials.grantId,
+      );
       return result.response;
     }
 
