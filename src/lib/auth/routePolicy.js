@@ -115,6 +115,31 @@ export const ROUTE_POLICY = {
     scoped({ cap: { DELETE: "workspace.members.manage" }, cliAllowed: false }),
   ),
   "/api/invitations/accept": multiUser(PUBLIC),
+  // YAN-372 budgets (ADR-0007): workspace rows are scoped (the repo rechecks
+  // live authority, incl. the key-owner/grant-creator exceptions and the
+  // raise/delete admin gate); user-level rows are instance-admin only.
+  "/api/workspaces/[id]/budgets": multiUser(
+    scoped({
+      cap: { GET: "workspace.budgets.read", POST: "workspace.budgets.lower" },
+      cliAllowed: false,
+    }),
+  ),
+  "/api/workspaces/[id]/budgets/[budgetId]": multiUser(
+    scoped({
+      cap: { PATCH: "workspace.budgets.lower", DELETE: "workspace.budgets.lower" },
+      cliAllowed: false,
+    }),
+  ),
+  "/api/users/[id]/budgets": multiUser({
+    cap: { GET: "instance.budgets.raise", POST: "instance.budgets.raise" },
+    alwaysProtected: true,
+    cliAllowed: false,
+  }),
+  "/api/users/[id]/budgets/[budgetId]": multiUser({
+    cap: { PATCH: "instance.budgets.raise", DELETE: "instance.budgets.raise" },
+    alwaysProtected: true,
+    cliAllowed: false,
+  }),
   "/api/health": PUBLIC,
   "/api/init": PUBLIC,
   "/api/locale": PUBLIC,
