@@ -46,14 +46,13 @@ const MEMBERSHIP_ROLES = new Set(["owner", "manager", "member", "viewer"]);
 const MEMBERSHIP_SOURCES = new Set(["manual", "invite", "idp"]);
 const KV_SCOPES = [
   "modelAliases",
+  "disabledModels",
   "customModels",
   "mitmAlias",
   "cliToolSettings",
   "cliToolPresets",
   "pricing",
 ];
-// No disabledModels in KV_SCOPES: the snapshot has no section for it, so local
-// disabled-model preferences survive a config import.
 // Column set of HASHED_API_KEYS_TABLE in ../schema.js (kept local so schema
 // definition stays the single runtime source; preflight mirrors it strictly).
 const HASHED_KEY_COLUMNS = new Set([
@@ -451,6 +450,16 @@ function validateConfigShape(payload) {
     }
     if (value !== undefined && value !== null && !Array.isArray(value)) {
       fail("TRANSFER_STATE_INVALID", `${field} must be an array`);
+    }
+  }
+  if (Object.hasOwn(payload, "disabledModels")) {
+    if (!isPlainObject(payload.disabledModels)) {
+      fail("TRANSFER_STATE_INVALID", "disabledModels must be an object");
+    }
+    for (const ids of Object.values(payload.disabledModels)) {
+      if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) {
+        fail("TRANSFER_STATE_INVALID", "disabledModels entries must be arrays of strings");
+      }
     }
   }
   for (const [kind, items] of Object.entries(payload.cliToolPresets ?? {})) {
@@ -1384,6 +1393,12 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
     db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [
       stripWsKey(a),
       stringifyJson(m),
+    ]);
+  }
+  for (const [provider, ids] of Object.entries(payload.disabledModels || {})) {
+    db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('disabledModels', ?, ?)`, [
+      stripWsKey(provider),
+      stringifyJson(ids),
     ]);
   }
   for (const m of payload.customModels || []) {

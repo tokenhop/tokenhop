@@ -356,6 +356,7 @@ export async function exportDb() {
       updatedAt: r.updatedAt,
     })),
     modelAliases: {},
+    disabledModels: {},
     customModels: [],
     mitmAlias: {},
     cliToolSettings: {},
@@ -366,6 +367,11 @@ export async function exportDb() {
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)) {
     if (!isLegacyDefaultKey(r.key, defaultWs)) continue;
     out.modelAliases[stripWsKey(r.key)] = parseJson(r.value);
+  }
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'disabledModels'`)) {
+    if (!isLegacyDefaultKey(r.key, defaultWs)) continue;
+    const ids = parseJson(r.value, []);
+    out.disabledModels[stripWsKey(r.key)] = Array.isArray(ids) ? ids : [];
   }
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`)) {
     if (!isLegacyDefaultKey(r.key, defaultWs)) continue;
@@ -522,10 +528,8 @@ export async function importDb(payload, { masterKey = null } = {}) {
     db.run(`DELETE FROM proxyPools`);
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
-    // No disabledModels here: the legacy snapshot has no section for it, so
-    // local disabled-model preferences survive a config import.
     db.run(
-      `DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'cliToolSettings', 'cliToolPresets', 'pricing')`,
+      `DELETE FROM kv WHERE scope IN ('modelAliases', 'disabledModels', 'customModels', 'mitmAlias', 'cliToolSettings', 'cliToolPresets', 'pricing')`,
     );
 
     // Settings: full destructive replace except the host-local MITM verifier
@@ -645,6 +649,12 @@ export async function importDb(payload, { masterKey = null } = {}) {
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [
         stripWsKey(a),
         stringifyJson(m),
+      ]);
+    }
+    for (const [provider, ids] of Object.entries(payload.disabledModels || {})) {
+      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('disabledModels', ?, ?)`, [
+        stripWsKey(provider),
+        stringifyJson(ids),
       ]);
     }
     for (const m of payload.customModels || []) {

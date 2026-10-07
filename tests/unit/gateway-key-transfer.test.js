@@ -658,6 +658,21 @@ describe("hashed instance transfer (format v2)", () => {
   });
 });
 
+// YAN-700: the hashed apply lane must replace the same scope as legacy imports.
+it("hashed snapshots round-trip disabled models and clear missing legacy sections", async () => {
+  seedHashedInstance();
+  db.run("DELETE FROM kv WHERE scope = 'disabledModels'");
+  await dbApi.disableModelsUnscoped("openai", ["gpt-4o"]);
+  const snapshot = await dbApi.exportDb();
+  expect(snapshot.disabledModels).toEqual({ openai: ["gpt-4o"] });
+  await dbApi.disableModelsUnscoped("stale", ["old"]);
+  await dbApi.importDb(snapshot, { masterKey: MASTER });
+  expect(await dbApi.getDisabledModelsUnscoped()).toEqual(snapshot.disabledModels);
+  delete snapshot.disabledModels;
+  await dbApi.importDb(snapshot, { masterKey: MASTER });
+  expect(await dbApi.getDisabledModelsUnscoped()).toEqual({});
+});
+
 describe("legacy snapshot into hashed instance (compatibility import)", () => {
   beforeEach(seedHashedInstance);
 
