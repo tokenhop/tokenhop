@@ -36,6 +36,8 @@ vi.mock("@/lib/usageDb.js", async (importOriginal) => {
 const db = await import("@/lib/localDb.js");
 const { getUsageHistory } = await import("@/lib/db/index.js");
 const { handleChat } = await import("../../src/sse/handlers/chat.js");
+const { CAVEMAN_PROMPTS } = await import("../../open-sse/rtk/cavemanPrompts.js");
+const { PONYTAIL_PROMPTS } = await import("../../open-sse/rtk/ponytailPrompt.js");
 
 let COMBO;
 let seq = 0;
@@ -65,7 +67,12 @@ function served({ stream, usage = { prompt_tokens: 40, completion_tokens: 6 } })
           object: "chat.completion",
           model: "good",
           choices: [
-            { index: 0, message: { role: "assistant", content: ANSWER }, finish_reason: "stop" },
+            // Chat models repeat the indentation the cursor already sits in (YAN-741).
+            {
+              index: 0,
+              message: { role: "assistant", content: `    ${ANSWER}` },
+              finish_reason: "stop",
+            },
           ],
           ...(usage ? { usage } : {}),
         }),
@@ -77,7 +84,7 @@ function served({ stream, usage = { prompt_tokens: 40, completion_tokens: 6 } })
     `data: ${JSON.stringify({ id: "chatcmpl-1", object: "chat.completion.chunk", model: "good", choices: [{ index: 0, delta, finish_reason }], ...extra })}\n\n`;
   const sse = [
     chunk({ role: "assistant", content: "" }),
-    chunk({ content: "return " }),
+    chunk({ content: "    return " }),
     chunk({ content: "a + b" }),
     chunk({}, "stop", { usage }),
     "data: [DONE]\n\n",
@@ -152,6 +159,20 @@ describe("edit predictions via combo on /v1/completions (YAN-729)", () => {
     const row = rows.find((r) => r.model === "good" && r.endpoint === "/v1/completions");
     expect(row).toBeDefined();
     expect(row.comboName).toBe(COMBO);
+  });
+
+  it("skips caveman/ponytail style prompts on predictions (YAN-741)", async () => {
+    await db.updateSettings({ cavemanEnabled: true, ponytailEnabled: true });
+    try {
+      await post(zedBody());
+      const goodCall = executeMock.mock.calls.find(([a]) => a.body?.model === "good")[0];
+      const sent = JSON.stringify(goodCall.body);
+      for (const prompt of [CAVEMAN_PROMPTS.full, PONYTAIL_PROMPTS.full]) {
+        expect(sent).not.toContain(JSON.stringify(prompt).slice(1, 60));
+      }
+    } finally {
+      await db.updateSettings({ cavemanEnabled: false, ponytailEnabled: false });
+    }
   });
 
   it("Zed: usage is always present, even when the upstream sends none", async () => {

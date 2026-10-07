@@ -117,6 +117,10 @@ export function cleanFimOutput(text, options = {}) {
   }
   text = text.replaceAll(CURSOR_MARKER, "");
   text = text.slice(overlapLength(prefix, text));
+  // Cursor sits in indentation: the client inserts at the cursor, so a reply
+  // that repeats that indentation would double it (YAN-741).
+  const indent = prefix.slice(prefix.lastIndexOf("\n") + 1);
+  if (/^[ \t]+$/.test(indent) && text.startsWith(indent)) text = text.slice(indent.length);
   const overlap = overlapLength(text, suffix);
   return overlap ? text.slice(0, -overlap) : text;
 }
