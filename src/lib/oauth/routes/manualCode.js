@@ -7,9 +7,9 @@ import {
   createSessionConnection,
 } from "@/lib/oauth/utils/server";
 import { bindingFor, forgetBinding, ownerMatches } from "@/lib/oauth/pendingBinding";
-import { oauthScope } from "@/lib/oauth/scope";
+import { createIn, oauthScope } from "@/lib/oauth/scope";
 
-async function completeXaiManualCode(code, state, session) {
+async function completeXaiManualCode(code, state, session, scope) {
   if (!session) {
     throw new Error("xAI OAuth session not found; restart the login flow and paste the code again");
   }
@@ -23,7 +23,7 @@ async function completeXaiManualCode(code, state, session) {
       session.codeVerifier,
       state,
     );
-    const connection = await createSessionConnection(session.binding, {
+    const data = {
       provider: "xai",
       authType: "oauth",
       ...tokenData,
@@ -31,7 +31,12 @@ async function completeXaiManualCode(code, state, session) {
         ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
         : null,
       testStatus: "active",
-    });
+    };
+    // Bound sessions land in the binding's workspace; an unbound one (started
+    // before a second user existed) lands in the caller's scope, like device poll.
+    const connection = session.binding
+      ? await createSessionConnection(session.binding, data)
+      : await createIn(scope, data);
     clearXaiSession(state);
     stopXaiProxy();
     return {
@@ -67,7 +72,12 @@ export default async function manualCode(provider, request, { body }) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const connection = await completeXaiManualCode(String(code || "").trim(), trimmedState, session);
+  const connection = await completeXaiManualCode(
+    String(code || "").trim(),
+    trimmedState,
+    session,
+    scope,
+  );
   if (trimmedState) forgetBinding(trimmedState);
   return NextResponse.json({ success: true, connection });
 }

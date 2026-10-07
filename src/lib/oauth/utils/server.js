@@ -24,13 +24,12 @@ function isLoopbackOrigin(origin) {
 // removal mid-flow fails through the callback's existing error path.
 export async function createSessionConnection(binding, data) {
   if (binding) {
-    const { createConnection } = await import("@/lib/db/index.js");
-    const { getAdapter } = await import("@/lib/db/driver.js");
-    const { membershipRole } = await import("@/lib/db/repos/membershipsRepo.js");
+    const { createConnection, getMembershipRoleUnscoped, getUserUnscoped } = await import(
+      "@/lib/db/index.js"
+    );
     const { can } = await import("@/lib/users/principal.js");
-    const db = await getAdapter();
-    const role = membershipRole(db, binding.workspaceId, binding.userId);
-    const user = db.get("SELECT instanceRole, status FROM users WHERE id = ?", [binding.userId]);
+    const role = await getMembershipRoleUnscoped(binding.workspaceId, binding.userId);
+    const user = await getUserUnscoped(binding.userId);
     const ctx = {
       ...binding.ctx,
       instanceRole: user?.instanceRole,
@@ -48,6 +47,8 @@ export async function createSessionConnection(binding, data) {
   return createProviderConnectionUnscoped(data);
 }
 
+const LIVE_FLOW_MAX_AGE_MS = 30 * 60_000;
+
 /** Refuse proxy lifecycle changes if any live flow belongs to another user. */
 export function otherOwnerActive(provider, userId) {
   let entries = [];
@@ -57,7 +58,18 @@ export function otherOwnerActive(provider, userId) {
   else if (provider === "windsurf") entries = [windsurfSession];
   else if (provider === "zed") entries = [zedSession];
   else if (provider === "xiaomi-mimo") entries = [...xiaomiMimoSessions.values()];
-  return entries.some((s) => s?.binding && s.binding.userId !== userId);
+  // Only pending flows younger than the binding TTL count: finished, failed or
+  // abandoned sessions are never cleared on stop (poll-status still reads
+  // them), so counting them would lock other users out indefinitely.
+  // ponytail: fixed 30 min ceiling (pendingBinding TTL), not each proxy's own timeout.
+  const cutoff = Date.now() - LIVE_FLOW_MAX_AGE_MS;
+  return entries.some(
+    (s) =>
+      s?.binding &&
+      s.binding.userId !== userId &&
+      s.status === "pending" &&
+      (s.createdAt ?? 0) > cutoff,
+  );
 }
 
 /**

@@ -263,11 +263,74 @@ describe("oauth user binding, switch on", () => {
     expect(res.status).toBe(403);
     expect(adapter.get("SELECT COUNT(*) AS c FROM providerConnections").c).toBe(0);
 
-    // Loopback path: the stale binding snapshot is not trusted either.
-    const stale = { userId: t.b.user.id, workspaceId: t.shared.id, ctx: t.b.ctx };
-    await expect(
-      server.createSessionConnection(stale, { provider: "claude", authType: "oauth" }),
-    ).rejects.toThrow("Forbidden");
+    // Loopback path: a binding captured while B was manager works, then fails
+    // after the demotion, so the role is reloaded, not read from the snapshot.
+    setRole("manager");
+    const managerCtx = {
+      ...t.b.ctx,
+      workspaceRoles: { ...t.b.ctx.workspaceRoles, [t.shared.id]: "manager" },
+    };
+    const binding = { userId: t.b.user.id, workspaceId: t.shared.id, ctx: managerCtx };
+    const data = (email) => ({ provider: "claude", authType: "oauth", email, accessToken: "at" });
+    const made = await server.createSessionConnection(binding, data("ok@cb.test"));
+    expect(row(made.id).workspaceId).toBe(t.shared.id);
+    setRole("member");
+    await expect(server.createSessionConnection(binding, data("late@cb.test"))).rejects.toThrow(
+      "Forbidden",
+    );
+  });
+
+  it("binding store: one user's flood can't evict another user's binding", async () => {
+    const store = await import("@/lib/oauth/pendingBinding");
+    store.rememberBinding("victim", { provider: "github", userId: "u-victim", workspaceId: "w" });
+    for (let i = 0; i < 1200; i++) {
+      store.rememberBinding(`flood-${i}`, {
+        provider: "github",
+        userId: "u-flood",
+        workspaceId: "w",
+      });
+    }
+    expect(store.bindingFor("victim")?.userId).toBe("u-victim");
+    expect(store.bindingFor("flood-0")).toBeNull();
+    expect(store.bindingFor("flood-1199")?.userId).toBe("u-flood");
+  });
+
+  it("finished or abandoned flows don't lock out other users", async () => {
+    await load("on");
+    // The mocked server module survives vi.resetModules(): drop earlier live flows.
+    for (const s of ["cx2", "cx3"]) server.clearCodexSession(s);
+    expect(server.otherOwnerActive("codex", t.b.user.id)).toBe(false);
+    const bindA = { userId: t.a.user.id, workspaceId: t.a.personal, ctx: t.a.ctx };
+    const reg = (state) =>
+      server.registerCodexSession({
+        state,
+        codeVerifier: "cv",
+        redirectUri: "http://localhost:1455/auth/callback",
+        binding: bindA,
+      });
+    reg("cx-done");
+    server.getCodexSessionStatus("cx-done").status = "done";
+    reg("cx-stale");
+    server.getCodexSessionStatus("cx-stale").createdAt = Date.now() - 31 * 60_000;
+    expect(server.otherOwnerActive("codex", t.b.user.id)).toBe(false);
+    expect((await call(t.b, "stop-proxy", "codex")).status).toBe(200);
+  });
+
+  it("xAI manual-code on an unbound session lands in the owner's personal workspace", async () => {
+    await load("on");
+    server.registerXaiSession({
+      state: "xai-legacy",
+      codeVerifier: "cv",
+      redirectUri: "http://127.0.0.1:56121/callback",
+    });
+    const body = { code: "c", state: "xai-legacy" };
+    expect((await call(t.b, "manual-code", "xai", { body })).status).toBe(403);
+    const ok = await call(t.a, "manual-code", "xai", { body });
+    expect(ok.status).toBe(200);
+    expect(row((await ok.json()).connection.id)).toMatchObject({
+      workspaceId: t.a.personal,
+      createdByUserId: t.a.user.id,
+    });
   });
 
   it("loopback callback create: binding decides workspace/owner; none = Default", async () => {

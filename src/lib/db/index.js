@@ -251,6 +251,7 @@ export {
   addMembership,
   updateMembershipRole,
   removeMembership,
+  getMembershipRoleUnscoped,
 } from "./repos/membershipsRepo.js";
 export {
   INVITATION_TTL_MS,

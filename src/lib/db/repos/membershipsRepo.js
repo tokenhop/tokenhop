@@ -29,6 +29,11 @@ export function mayGrantManager({ workspaceRole = null, instanceRole = null } = 
   return workspaceRole === "owner" || instanceRole === "owner" || instanceRole === "admin";
 }
 
+/** Current role of a user in a workspace, for callers with no request ctx (YAN-366 loopback callbacks). */
+export async function getMembershipRoleUnscoped(workspaceId, userId) {
+  return membershipRole(await getAdapter(), workspaceId, userId);
+}
+
 // ─── Internal helpers (sync, inside a transaction; not exported via the barrel) ───
 export function membershipRole(db, workspaceId, userId) {
   return (

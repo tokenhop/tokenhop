@@ -4,6 +4,7 @@
 // promote to a DB/kv table if tokenhop is ever multi-process.
 const DEFAULT_TTL_MS = 30 * 60_000;
 const MAX_ENTRIES = 1000;
+const MAX_PER_USER = 50;
 
 const bindings = new Map();
 
@@ -19,6 +20,12 @@ export function rememberBinding(key, { provider, userId, workspaceId, ctx }, { t
   const now = Date.now();
   sweep(now);
   bindings.delete(key); // re-insert so FIFO order follows the latest write
+  // Per-user cap first, so one member can't evict everyone else's flows; the
+  // global cap stays as a backstop.
+  if (userId) {
+    const mine = [...bindings.keys()].filter((k) => bindings.get(k).userId === userId);
+    while (mine.length >= MAX_PER_USER) bindings.delete(mine.shift());
+  }
   while (bindings.size >= MAX_ENTRIES) bindings.delete(bindings.keys().next().value);
   bindings.set(key, {
     provider,
