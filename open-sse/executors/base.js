@@ -235,6 +235,9 @@ export class BaseExecutor {
         );
         // Connect timeout is internal — convert to retryable network error, don't propagate AbortError
         if (error.name === "AbortError" && !isConnectTimeout) throw error;
+        // Caller aborted (client gone / attempt timeout) while the connect timer also
+        // fired or the error was not an AbortError: never retry an aborted caller.
+        if (signal?.aborted) throw error;
 
         // Map network/fetch exceptions to 502 retry config
         if (await tryRetry(urlIndex, HTTP_STATUS.BAD_GATEWAY, `network "${error.message}"`)) {

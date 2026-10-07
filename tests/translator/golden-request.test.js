@@ -223,4 +223,65 @@ describe("GOLDEN request: Completions → OpenAI / Claude / Gemini", () => {
     );
     expect(out.stop).toEqual(["\n\n"]);
   });
+
+  const toOpenAI = (src, body) =>
+    translateRequest(src, FORMATS.OPENAI, "gpt-4o", body, false, { apiKey: "k" }, "openai");
+
+  it("max_tokens: default 128 when absent, client value respected", () => {
+    expect(toOpenAI(FORMATS.OPENAI_COMPLETIONS, { prompt: "x" }).max_tokens).toBe(128);
+    expect(toOpenAI(FORMATS.OPENAI_COMPLETIONS, { prompt: "x", max_tokens: 7 }).max_tokens).toBe(7);
+  });
+
+  it("max_completion_tokens is folded into max_tokens for every target, no 128 default", () => {
+    const body = { prompt: "x", max_completion_tokens: 50 };
+    const oa = toOpenAI(FORMATS.OPENAI_COMPLETIONS, body);
+    expect(oa.max_tokens).toBe(50);
+    expect(oa.max_completion_tokens).toBeUndefined();
+    const claude = translateRequest(
+      FORMATS.OPENAI_COMPLETIONS,
+      FORMATS.CLAUDE,
+      "claude-sonnet-4-5",
+      body,
+      false,
+      { apiKey: "k" },
+      "claude",
+    );
+    expect(claude.max_tokens).toBe(50);
+    const gemini = translateRequest(
+      FORMATS.OPENAI_COMPLETIONS,
+      FORMATS.GEMINI,
+      "gemini-3-pro",
+      body,
+      false,
+      { apiKey: "k" },
+      "gemini",
+    );
+    expect(gemini.generationConfig.maxOutputTokens).toBe(50);
+  });
+
+  it("oversized prefix keeps tail, oversized suffix keeps head", () => {
+    const prefixOut = toOpenAI(FORMATS.OPENAI_COMPLETIONS, {
+      prompt: `HEAD${"x".repeat(30_000)}TAIL`,
+      suffix: "s",
+    }).messages[1].content;
+    expect(prefixOut).not.toContain("HEAD");
+    expect(prefixOut).toContain("TAIL<|cursor|>s</code>");
+    expect(prefixOut.match(/x/g)).toHaveLength(24_000 - 4);
+
+    const suffixOut = toOpenAI(FORMATS.OPENAI_COMPLETIONS, {
+      prompt: "p",
+      suffix: `HEAD${"y".repeat(10_000)}TAIL`,
+    }).messages[1].content;
+    expect(suffixOut).toContain("p<|cursor|>HEAD");
+    expect(suffixOut).not.toContain("TAIL");
+    expect(suffixOut.match(/y/g)).toHaveLength(8_000 - 4);
+  });
+
+  it("llamacpp n_predict wins over the 128 default", () => {
+    const body = { input_prefix: "a", input_suffix: "b", n_predict: 10 };
+    expect(toOpenAI(FORMATS.LLAMACPP_INFILL, body).max_tokens).toBe(10);
+    expect(toOpenAI(FORMATS.LLAMACPP_INFILL, { ...body, n_predict: undefined }).max_tokens).toBe(
+      128,
+    );
+  });
 });

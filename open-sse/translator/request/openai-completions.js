@@ -11,11 +11,17 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { ROLE } from "../schema/index.js";
 import { CURSOR_MARKER, FIM_TOKENS, parseFimPrompt } from "../concerns/fim.js";
+import {
+  FIM_MAX_PREFIX_CHARS,
+  FIM_MAX_SUFFIX_CHARS,
+  FIM_MAX_CONTEXT_CHARS,
+  FIM_MAX_EXTRA_TOTAL_CHARS,
+  FIM_DEFAULT_MAX_TOKENS,
+} from "../../config/runtimeConfig.js";
 
 const MAX_STOP = 4;
 const PASSTHROUGH = [
   "model",
-  "max_tokens",
   "top_p",
   "n",
   "stream_options",
@@ -28,10 +34,7 @@ const PASSTHROUGH = [
 // hostile body from becoming a multi-MB prompt. Raise if real clients hit them.
 const MAX_INPUT_EXTRA = 32;
 const MAX_EXTRA_CHUNK_CHARS = 16_000;
-const MAX_EXTRA_TOTAL_CHARS = 128_000;
 const MAX_N_PREDICT = 4096;
-// Window kept around the cursor: prefix tail and suffix head.
-const MAX_FIM_SIDE_CHARS = 200_000;
 
 const SYSTEM_PROMPT = [
   "You are a code completion engine.",
@@ -50,9 +53,11 @@ function cleanStop(stop) {
 }
 
 export function buildFimChatRequest(model, body, stream, { prefix, suffix, context }) {
-  prefix = prefix.slice(-MAX_FIM_SIDE_CHARS);
-  suffix = suffix.slice(0, MAX_FIM_SIDE_CHARS);
-  context = context ? context.slice(0, MAX_FIM_SIDE_CHARS) : context;
+  // ponytail: fixed char caps (not tokens), cut at the raw char boundary. Upgrade:
+  // token-aware budget or env overrides if clients hit the windows.
+  prefix = prefix.slice(-FIM_MAX_PREFIX_CHARS);
+  suffix = suffix.slice(0, FIM_MAX_SUFFIX_CHARS);
+  context = context ? context.slice(0, FIM_MAX_CONTEXT_CHARS) : context;
   const code = `<code>${prefix}${CURSOR_MARKER}${suffix}</code>`;
   const result = {
     messages: [
@@ -63,6 +68,9 @@ export function buildFimChatRequest(model, body, stream, { prefix, suffix, conte
     stream,
   };
   for (const key of PASSTHROUGH) if (body[key] !== undefined) result[key] = body[key];
+  // One spelling for every target: max_completion_tokens is folded into max_tokens
+  // (Ollama and strict OpenAI-compatible servers only read/accept max_tokens).
+  result.max_tokens = body.max_tokens ?? body.max_completion_tokens ?? FIM_DEFAULT_MAX_TOKENS;
   if (model) result.model = model;
 
   const stop = cleanStop(body.stop);
@@ -114,7 +122,7 @@ function joinInputExtra(inputExtra) {
     const name = typeof e.filename === "string" ? e.filename.slice(0, 256) : "";
     const text = e.text.slice(0, MAX_EXTRA_CHUNK_CHARS);
     const chunk = name ? `// File: ${name}\n${text}` : text;
-    if (total + chunk.length > MAX_EXTRA_TOTAL_CHARS) break;
+    if (total + chunk.length > FIM_MAX_EXTRA_TOTAL_CHARS) break;
     total += chunk.length + 1;
     out.push(chunk);
   }

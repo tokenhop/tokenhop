@@ -491,6 +491,7 @@ Environment variables actively used by code:
 - Security hashing: `API_KEY_SECRET`, `MACHINE_ID_SALT`
 - Logging: `ENABLE_REQUEST_LOGS`, `ENABLE_TRANSLATOR`
 - Stream timeouts: `STREAM_FIRST_CHUNK_TIMEOUT_MS`, `STREAM_STALL_TIMEOUT_MS`, `FETCH_CONNECT_TIMEOUT_MS`
+- Edit predictions (`/v1/completions`, `/v1/fim/completions`, `/infill`): `FIM_ATTEMPT_TIMEOUT_MS` (per-attempt budget, default 8000; a timeout returns 504 without an account cooldown so combos advance)
 - Cloud URL (CLI target selection): `CLOUD_URL`, `NEXT_PUBLIC_CLOUD_URL`
 - Public base URL: `NEXT_PUBLIC_BASE_URL`, `BASE_URL`
 - Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase variants

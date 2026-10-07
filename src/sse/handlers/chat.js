@@ -35,7 +35,7 @@ import {
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { recordFallbackHop } from "@/lib/usageDb.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
-import { FORMATS, detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { FORMATS, detectFormatByEndpoint, isFimFormat } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import {
@@ -671,12 +671,21 @@ async function handleSingleModelChat(
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
 
+  const sourceFormat = request?.url
+    ? detectFormatByEndpoint(new URL(request.url).pathname, body)
+    : null;
+  const fim = isFimFormat(sourceFormat);
+
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
+    // FIM only: a client that disconnected before/while typing predictions must
+    // not spend another account attempt. 499 is not fallback-eligible
+    // (4xx<500), so combos/accounts stop immediately — matching intent.
+    if (fim && request?.signal?.aborted) return errorResponse(499, "Client closed request");
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
       ...gatewayCreds,
       estimateTokens: () => estimateBodyTokens(body),
@@ -764,9 +773,8 @@ async function handleSingleModelChat(
       comboName,
       providerThinking,
       // Detect source format by endpoint + body
-      sourceFormatOverride: request?.url
-        ? detectFormatByEndpoint(new URL(request.url).pathname, body)
-        : null,
+      sourceFormatOverride: sourceFormat,
+      clientSignal: fim ? (request?.signal ?? null) : null,
       onCredentialsRefreshed: async (newCreds) => {
         // YAN-365: delta refresh — the repo merges onto the live stored
         // siblings inside the transaction (never a stale snapshot).

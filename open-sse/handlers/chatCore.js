@@ -21,6 +21,8 @@ import {
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import {
+  FIM_ATTEMPT_TIMEOUT_MS,
+  FIM_USAGE_ENDPOINT,
   HTTP_STATUS,
   LEGACY_TOKEN_SAVER_HEADER,
   TOKEN_SAVER_HEADER,
@@ -92,6 +94,14 @@ function readTokenSaverHeader(headers) {
   return legacy;
 }
 
+// Abort errors must keep their name: the 499 branch in handleChatCore (and
+// streamHandler logging) classify by error.name === "AbortError".
+function abortError() {
+  const err = new Error("Aborted");
+  err.name = "AbortError";
+  return err;
+}
+
 export async function handleChatCore({
   body,
   modelInfo,
@@ -126,6 +136,7 @@ export async function handleChatCore({
   sourceFormatOverride,
   providerThinking,
   comboName = null,
+  clientSignal = null, // FIM only: aborts the upstream call when the editor disconnects
 }) {
   // Trusted caller options only; never derive identity from the public body.
   // Keyless owner principals carry { apiKeyId: null, workspaceId, userId }:
@@ -157,6 +168,9 @@ export async function handleChatCore({
       : "";
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
+  // Edit predictions: tight attempt budget, cancel-on-disconnect, "completions" usage tag.
+  const fim = isFimFormat(sourceFormat);
+  const usageEndpoint = fim ? FIM_USAGE_ENDPOINT : clientRawRequest?.endpoint;
 
   // Check for bypass patterns (warmup, skip, cc naming)
   const bypassResponse = handleBypassRequest(body, model, userAgent, ccFilterNaming);
@@ -514,6 +528,75 @@ export async function handleChatCore({
     reqTag,
   });
 
+  // FIM (YAN-736): a client disconnect cancels the upstream. Never use
+  // handleDisconnect here: its 500ms delay and pending-counter decrement are
+  // for the streaming path, not the not-yet-dispatched attempt.
+  // Scoped to the attempt window: once a stream is handed off, the response
+  // stream's cancel() → handleDisconnect path owns disconnects (and the
+  // pending-counter decrement), so the listener is detached in clearAttemptTimer.
+  const onClientAbort = () => streamController.abort();
+  if (fim && clientSignal) {
+    if (clientSignal.aborted) streamController.abort();
+    else clientSignal.addEventListener("abort", onClientAbort, { once: true });
+  }
+
+  // FIM per-attempt budget: headers + non-stream body read. (Streams hand off
+  // to the stall watchdog once headers land — clear narrowly, see readBody.)
+  let timedOut = false;
+  let attemptTimer = null;
+  const clearAttemptTimer = () => {
+    clearTimeout(attemptTimer);
+    attemptTimer = null;
+    clientSignal?.removeEventListener?.("abort", onClientAbort);
+  };
+  let attemptSignal = streamController.signal;
+  if (fim) {
+    const attemptCtrl = new AbortController();
+    attemptTimer = setTimeout(() => {
+      if (streamController.signal.aborted) return; // client abort owns the outcome
+      timedOut = true;
+      attemptCtrl.abort();
+    }, FIM_ATTEMPT_TIMEOUT_MS);
+    attemptSignal = AbortSignal.any([streamController.signal, attemptCtrl.signal]);
+  }
+  // Backstop for executors/readers that ignore the signal.
+  // ponytail: leaked upstream socket may finish on its own; only client latency
+  // is bounded here. Upgrade: make every executor honour the signal, then drop this.
+  const waitForAttempt = async (run) => {
+    if (!fim) return run();
+    if (attemptSignal.aborted) throw abortError();
+    let onAbort;
+    try {
+      return await Promise.race([
+        new Promise((_, reject) => {
+          onAbort = () => reject(abortError());
+          attemptSignal.addEventListener("abort", onAbort, { once: true });
+        }),
+        run(),
+      ]);
+    } finally {
+      attemptSignal.removeEventListener("abort", onAbort);
+    }
+  };
+  const execute = () =>
+    waitForAttempt(() =>
+      executor.execute({
+        model,
+        body: translatedBody,
+        stream,
+        credentials,
+        providerSessionId: sessionSeed,
+        clientTool,
+        signal: attemptSignal,
+        log,
+        proxyOptions,
+      }),
+    );
+  const timedOutResult = () => {
+    const res = createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, "Completion attempt timed out");
+    res.localError = true; // no cooldown, no rotation (combo advances on 504)
+    return res;
+  };
   const proxyOptions = {
     connectionProxyEnabled: credentials?.providerSpecificData?.connectionProxyEnabled === true,
     connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
@@ -564,17 +647,13 @@ export async function handleChatCore({
   // exception: it is decoded by the executor into OpenAI-compatible output.
   let providerResponseFormat = targetFormat;
   try {
-    const result = await executor.execute({
-      model,
-      body: translatedBody,
-      stream,
-      credentials,
-      providerSessionId: sessionSeed,
-      clientTool,
-      signal: streamController.signal,
-      log,
-      proxyOptions,
-    });
+    const result = await execute();
+    if (fim && attemptSignal.aborted) {
+      clearAttemptTimer();
+      trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
+      streamController.handleError(abortError());
+      return timedOut ? timedOutResult() : createErrorResult(499, "Request aborted");
+    }
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
@@ -582,6 +661,20 @@ export async function handleChatCore({
     providerResponseFormat = result.responseFormat || targetFormat;
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
   } catch (error) {
+    clearAttemptTimer();
+    if (fim && attemptSignal.aborted && error.name !== "AbortError") error = abortError();
+    if (timedOut) {
+      trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
+      appendRequestLog({
+        ...keyContext,
+        model,
+        provider,
+        connectionId,
+        status: `FAILED ${HTTP_STATUS.GATEWAY_TIMEOUT}`,
+      }).catch(() => {});
+      streamController.handleError(error);
+      return timedOutResult();
+    }
     trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
     appendRequestLog({
       ...keyContext,
@@ -673,17 +766,7 @@ export async function handleChatCore({
           }
         }
         try {
-          const retryResult = await executor.execute({
-            model,
-            body: translatedBody,
-            stream,
-            credentials,
-            providerSessionId: sessionSeed,
-            clientTool,
-            signal: streamController.signal,
-            log,
-            proxyOptions,
-          });
+          const retryResult = await execute();
           if (retryResult.response.ok) {
             providerResponse = retryResult.response;
             providerUrl = retryResult.url;
@@ -700,11 +783,21 @@ export async function handleChatCore({
     }
   }
 
+  if (fim && attemptSignal.aborted) {
+    clearAttemptTimer();
+    trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
+    streamController.handleError(abortError());
+    return timedOut ? timedOutResult() : createErrorResult(499, "Request aborted");
+  }
+
   try {
     ingestResponseHeaders(provider, connectionId, providerResponse?.headers);
   } catch {
     // Quota telemetry must never break request handling.
   }
+  // Handlers that read the body keep the timer armed until the read ends.
+  const handlerReadsBody = !stream || (!clientRequestedStreaming && providerRequiresStreaming);
+  if (!handlerReadsBody || !providerResponse.ok) clearAttemptTimer();
 
   // Provider returned error
   if (!providerResponse.ok) {
@@ -771,6 +864,32 @@ export async function handleChatCore({
     comboName,
     reqTag,
     log,
+    usageEndpoint,
+    abortSignal: fim ? attemptSignal : null,
+    readResponse: fim
+      ? async (read) => {
+          try {
+            return await waitForAttempt(read);
+          } finally {
+            clearAttemptTimer();
+          }
+        }
+      : undefined,
+  };
+  // FIM only: an abort/timeout during the body read becomes 499/504, not a 502 parse error.
+  const readBody = async (handler) => {
+    try {
+      const result = await handler();
+      // null = forced-SSE fell through without reading; keep the budget armed
+      // for the branch that does read (or the stream handoff, which clears).
+      if (result) clearAttemptTimer();
+      return result;
+    } catch (error) {
+      clearAttemptTimer();
+      if (!fim || !attemptSignal.aborted) throw error;
+      streamController.handleError(abortError());
+      return timedOut ? timedOutResult() : createErrorResult(499, "Request aborted");
+    }
   };
   const appendLog = (extra) =>
     appendRequestLog({ ...keyContext, model, provider, connectionId, ...extra }).catch(() => {});
@@ -779,15 +898,17 @@ export async function handleChatCore({
 
   // Provider forced streaming but client wants JSON
   if (!clientRequestedStreaming && providerRequiresStreaming) {
-    const result = await handleForcedSSEToJson({
-      ...sharedCtx,
-      providerResponse,
-      sourceFormat,
-      targetFormat: providerResponseFormat,
-      customToolNames,
-      trackDone,
-      appendLog,
-    });
+    const result = await readBody(() =>
+      handleForcedSSEToJson({
+        ...sharedCtx,
+        providerResponse,
+        sourceFormat,
+        targetFormat: providerResponseFormat,
+        customToolNames,
+        trackDone,
+        appendLog,
+      }),
+    );
     if (result) {
       streamController.handleComplete();
       return result;
@@ -796,22 +917,25 @@ export async function handleChatCore({
 
   // True non-streaming response
   if (!stream) {
-    const result = await handleNonStreamingResponse({
-      ...sharedCtx,
-      providerResponse,
-      sourceFormat,
-      targetFormat: providerResponseFormat,
-      reqLogger,
-      toolNameMap,
-      customToolNames,
-      trackDone,
-      appendLog,
-    });
+    const result = await readBody(() =>
+      handleNonStreamingResponse({
+        ...sharedCtx,
+        providerResponse,
+        sourceFormat,
+        targetFormat: providerResponseFormat,
+        reqLogger,
+        toolNameMap,
+        customToolNames,
+        trackDone,
+        appendLog,
+      }),
+    );
     streamController.handleComplete();
     return result;
   }
 
-  // Streaming response
+  // Streaming response: the stall watchdog and response-stream cancel take over.
+  clearAttemptTimer();
   const { onStreamComplete, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
   return handleStreamingResponse({
     ...sharedCtx,

@@ -284,7 +284,10 @@ export async function handleNonStreamingResponse({
   apiKey,
   keyContext,
   clientRawRequest,
+  usageEndpoint = clientRawRequest?.endpoint,
   onRequestSuccess,
+  abortSignal = null,
+  readResponse = (read) => read(),
   reqLogger,
   toolNameMap,
   customToolNames,
@@ -301,7 +304,7 @@ export async function handleNonStreamingResponse({
   let responseBody;
 
   if (contentType.includes("text/event-stream")) {
-    const sseText = await providerResponse.text();
+    const sseText = await readResponse(() => providerResponse.text());
     const parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
@@ -313,8 +316,9 @@ export async function handleNonStreamingResponse({
     responseBody = parsed;
   } else {
     try {
-      responseBody = await providerResponse.json();
+      responseBody = await readResponse(() => providerResponse.json());
     } catch (err) {
+      if (abortSignal?.aborted) throw err;
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
@@ -352,7 +356,8 @@ export async function handleNonStreamingResponse({
     connectionId,
     apiKey,
     keyContext,
-    endpoint: clientRawRequest?.endpoint,
+    endpoint: usageEndpoint,
+    latencyMs: Date.now() - requestStartTime,
     userAgent: clientRawRequest?.headers?.["user-agent"],
     savings,
     comboName,

@@ -141,7 +141,10 @@ export async function handleForcedSSEToJson({
   apiKey,
   keyContext,
   clientRawRequest,
+  usageEndpoint = clientRawRequest?.endpoint,
   onRequestSuccess,
+  abortSignal = null,
+  readResponse = (read) => read(),
   customToolNames,
   trackDone,
   appendLog,
@@ -176,7 +179,9 @@ export async function handleForcedSSEToJson({
     isResponsesProvider(provider) || targetFormat === FORMATS.OPENAI_RESPONSES;
   if (isCodexResponsesApi) {
     try {
-      const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+      const jsonResponse = await readResponse(() =>
+        convertResponsesStreamToJson(providerResponse.body),
+      );
       if (onRequestSuccess) await onRequestSuccess();
 
       const usage = jsonResponse.usage || {};
@@ -195,7 +200,8 @@ export async function handleForcedSSEToJson({
         connectionId,
         apiKey,
         keyContext,
-        endpoint: clientRawRequest?.endpoint,
+        endpoint: usageEndpoint,
+        latencyMs: Date.now() - requestStartTime,
         userAgent: clientRawRequest?.headers?.["user-agent"],
         savings,
         comboName,
@@ -337,6 +343,7 @@ export async function handleForcedSSEToJson({
         }),
       };
     } catch (err) {
+      if (abortSignal?.aborted) throw err;
       console.error("[ChatCore] Responses API SSE→JSON failed:", err);
       return createErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
@@ -347,7 +354,7 @@ export async function handleForcedSSEToJson({
 
   // Standard Chat Completions SSE path
   try {
-    const sseText = await providerResponse.text();
+    const sseText = await readResponse(() => providerResponse.text());
     const parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed)
       return createErrorResult(
@@ -372,7 +379,8 @@ export async function handleForcedSSEToJson({
       connectionId,
       apiKey,
       keyContext,
-      endpoint: clientRawRequest?.endpoint,
+      endpoint: usageEndpoint,
+      latencyMs: Date.now() - requestStartTime,
       userAgent: clientRawRequest?.headers?.["user-agent"],
       savings,
       comboName,
@@ -445,6 +453,7 @@ export async function handleForcedSSEToJson({
       }),
     };
   } catch (err) {
+    if (abortSignal?.aborted) throw err;
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);
     return createErrorResult(
       HTTP_STATUS.BAD_GATEWAY,
