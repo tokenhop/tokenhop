@@ -1,5 +1,139 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`GOLDEN request: Completions → OpenAI / Claude / Gemini > → claude 1`] = `
+{
+  "max_tokens": 32,
+  "messages": [
+    {
+      "content": [
+        {
+          "text": "<code>function add(a, b) {
+  return <|cursor|>;
+}</code>",
+          "type": "text",
+        },
+      ],
+      "role": "user",
+    },
+  ],
+  "model": "claude-sonnet-4-5",
+  "stream": false,
+  "system": [
+    {
+      "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+      "type": "text",
+    },
+    {
+      "cache_control": {
+        "ttl": "1h",
+        "type": "ephemeral",
+      },
+      "text": "You are a code completion engine.
+Return ONLY the text to insert at <|cursor|>.
+Preserve indentation and whitespace exactly.
+No markdown fences, no explanations.
+Do not repeat text before or after the cursor.
+Return an empty response if nothing should be inserted.",
+      "type": "text",
+    },
+  ],
+  "temperature": 0,
+}
+`;
+
+exports[`GOLDEN request: Completions → OpenAI / Claude / Gemini > → gemini 1`] = `
+{
+  "contents": [
+    {
+      "parts": [
+        {
+          "text": "<code>function add(a, b) {
+  return <|cursor|>;
+}</code>",
+        },
+      ],
+      "role": "user",
+    },
+  ],
+  "generationConfig": {
+    "maxOutputTokens": 32,
+    "stopSequences": [
+      "
+
+",
+    ],
+    "temperature": 0,
+  },
+  "model": "gemini-3-pro",
+  "safetySettings": [
+    {
+      "category": "HARM_CATEGORY_HATE_SPEECH",
+      "threshold": "OFF",
+    },
+    {
+      "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+      "threshold": "OFF",
+    },
+    {
+      "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+      "threshold": "OFF",
+    },
+    {
+      "category": "HARM_CATEGORY_HARASSMENT",
+      "threshold": "OFF",
+    },
+    {
+      "category": "HARM_CATEGORY_CIVIC_INTEGRITY",
+      "threshold": "OFF",
+    },
+  ],
+  "systemInstruction": {
+    "parts": [
+      {
+        "text": "You are a code completion engine.
+Return ONLY the text to insert at <|cursor|>.
+Preserve indentation and whitespace exactly.
+No markdown fences, no explanations.
+Do not repeat text before or after the cursor.
+Return an empty response if nothing should be inserted.",
+      },
+    ],
+    "role": "user",
+  },
+}
+`;
+
+exports[`GOLDEN request: Completions → OpenAI / Claude / Gemini > → openai 1`] = `
+{
+  "max_tokens": 32,
+  "messages": [
+    {
+      "content": "You are a code completion engine.
+Return ONLY the text to insert at <|cursor|>.
+Preserve indentation and whitespace exactly.
+No markdown fences, no explanations.
+Do not repeat text before or after the cursor.
+Return an empty response if nothing should be inserted.",
+      "role": "system",
+    },
+    {
+      "content": "<code>function add(a, b) {
+  return <|cursor|>;
+}</code>",
+      "role": "user",
+    },
+  ],
+  "model": "gpt-4o",
+  "stop": [
+    "
+
+",
+  ],
+  "stream": false,
+  "temperature": 0,
+}
+`;
+
 exports[`GOLDEN request: OpenAI → Claude > full body (system/image/tool/tool_result) 1`] = `
 {
   "max_tokens": 64000,

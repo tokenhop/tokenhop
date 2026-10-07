@@ -10,6 +10,7 @@ import {
   formatDoneLine,
 } from "./requestDetail.js";
 import { openAICompletionToClientFormat } from "./completionToClient.js";
+import { fimContextFor } from "../../translator/concerns/fim.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -149,6 +150,7 @@ export async function handleForcedSSEToJson({
   reqTag,
   log,
 }) {
+  const fimContext = sourceFormat === FORMATS.OPENAI_COMPLETIONS ? fimContextFor(body) : null;
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE =
     contentType.includes("text/event-stream") ||
@@ -320,7 +322,12 @@ export async function handleForcedSSEToJson({
         // Convert the chat.completion pivot to the client's format (Claude /
         // Responses). Shared converter in completionToClient.js, imported
         // without a circular import.
-        finalResp = openAICompletionToClientFormat(finalResp, sourceFormat, customToolNames);
+        finalResp = openAICompletionToClientFormat(
+          finalResp,
+          sourceFormat,
+          customToolNames,
+          fimContext,
+        );
       }
 
       return {
@@ -411,7 +418,12 @@ export async function handleForcedSSEToJson({
     // client does not receive a raw chat.completion. The converters live in
     // completionToClient.js, shared with nonStreamingHandler.js without a
     // circular import.
-    const finalBody = openAICompletionToClientFormat(parsed, sourceFormat, customToolNames);
+    const finalBody = openAICompletionToClientFormat(
+      parsed,
+      sourceFormat,
+      customToolNames,
+      fimContext,
+    );
 
     // Strip reasoning_content only for Chat Completions clients when content is non-empty.
     // Claude and Responses clients carry reasoning as a thinking block / reasoning item.

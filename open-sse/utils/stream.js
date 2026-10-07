@@ -13,6 +13,7 @@ import {
 } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { extractReasoningText } from "../translator/concerns/reasoning.js";
+import { fimContextFor } from "../translator/concerns/fim.js";
 import {
   getOpenAIResponsesEventName,
   isOpenAIResponsesTerminalEvent,
@@ -85,6 +86,8 @@ export function createSSEStream(options = {}) {
           customToolNames: new Set(customToolNames || []),
           model,
           sessionId: credentials?._clientSessionId || null,
+          // Legacy completions: prefix/suffix for output cleanup, re-parsed from the client body.
+          fimContext: sourceFormat === FORMATS.OPENAI_COMPLETIONS ? fimContextFor(body) : null,
         }
       : null;
 
@@ -610,10 +613,14 @@ export function createSSEStream(options = {}) {
           streamDoneSent = true;
         }
 
-        // OpenAI Chat clients require the [DONE] sentinel (Cline, DeepSeek ACP
-        // abort without it). Translated upstreams either never send one (Claude,
-        // Gemini) or had it swallowed above, so emit it once, last (YAN-652).
-        if (sourceFormat === FORMATS.OPENAI && !streamDoneSent) {
+        // OpenAI Chat/Completions clients require the [DONE] sentinel (Cline,
+        // DeepSeek ACP abort without it). Translated upstreams either never send
+        // one (Claude, Gemini) or had it swallowed above, so emit it once, last
+        // (YAN-652).
+        if (
+          (sourceFormat === FORMATS.OPENAI || sourceFormat === FORMATS.OPENAI_COMPLETIONS) &&
+          !streamDoneSent
+        ) {
           const doneOutput = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(doneOutput);
           controller.enqueue(sharedEncoder.encode(doneOutput));
