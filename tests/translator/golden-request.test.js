@@ -232,11 +232,11 @@ describe("GOLDEN request: Completions → OpenAI / Claude / Gemini", () => {
     expect(toOpenAI(FORMATS.OPENAI_COMPLETIONS, { prompt: "x", max_tokens: 7 }).max_tokens).toBe(7);
   });
 
-  it("max_completion_tokens reaches every target, no 128 default", () => {
+  it("max_completion_tokens is folded into max_tokens for every target, no 128 default", () => {
     const body = { prompt: "x", max_completion_tokens: 50 };
     const oa = toOpenAI(FORMATS.OPENAI_COMPLETIONS, body);
-    expect(oa.max_completion_tokens).toBe(50);
-    expect(oa.max_tokens).toBeUndefined();
+    expect(oa.max_tokens).toBe(50);
+    expect(oa.max_completion_tokens).toBeUndefined();
     const claude = translateRequest(
       FORMATS.OPENAI_COMPLETIONS,
       FORMATS.CLAUDE,

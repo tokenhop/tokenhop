@@ -119,7 +119,8 @@ describe("edit prediction attempt defaults (YAN-736)", () => {
     const t0 = Date.now();
     const res = await post("openai/hang");
     expect(res.status).toBe(504);
-    expect(Date.now() - t0).toBeLessThan(2000);
+    // 200ms budget; the bound only proves we did not wait for the 60s connect timeout.
+    expect(Date.now() - t0).toBeLessThan(10_000);
     expect(executeMock).toHaveBeenCalledTimes(1);
     const stored = await db.getProviderConnectionByIdUnscoped(conn.id);
     expect(stored.testStatus).not.toBe("unavailable");

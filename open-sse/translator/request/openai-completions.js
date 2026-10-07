@@ -22,8 +22,6 @@ import {
 const MAX_STOP = 4;
 const PASSTHROUGH = [
   "model",
-  "max_tokens",
-  "max_completion_tokens",
   "top_p",
   "n",
   "stream_options",
@@ -70,9 +68,9 @@ export function buildFimChatRequest(model, body, stream, { prefix, suffix, conte
     stream,
   };
   for (const key of PASSTHROUGH) if (body[key] !== undefined) result[key] = body[key];
-  if (result.max_tokens === undefined && result.max_completion_tokens === undefined) {
-    result.max_tokens = FIM_DEFAULT_MAX_TOKENS;
-  }
+  // One spelling for every target: max_completion_tokens is folded into max_tokens
+  // (Ollama and strict OpenAI-compatible servers only read/accept max_tokens).
+  result.max_tokens = body.max_tokens ?? body.max_completion_tokens ?? FIM_DEFAULT_MAX_TOKENS;
   if (model) result.model = model;
 
   const stop = cleanStop(body.stop);
