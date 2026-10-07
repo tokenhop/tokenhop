@@ -10,6 +10,7 @@ import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./back
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
 import { legacyKeyId, rebuildRollupFromHistoryUnscoped } from "./repos/usageRollupRepo.js";
+import m014 from "./migrations/014-usage-attribution.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -384,9 +385,25 @@ function importLegacyUsage(adapter, data) {
       ],
     );
   }
-  // YAN-370: the daily rollup is rebuilt from the imported history rows (the
-  // legacy dailySummary blob's marginal buckets can't be decomposed).
-  rebuildRollupFromHistoryUnscoped(adapter);
+  // YAN-370: stage the dailySummary blobs as the pre-014 usageDaily table and
+  // re-run migration 014's rollup rebuild (idempotent): history rows become
+  // rollup rows, and each day's blob totals beyond the kept history (lowdb
+  // trimmed it to 2000 rows) survive as residual rows. 014 then drops the table.
+  const days = Object.entries(data.dailySummary || {});
+  if (days.length) {
+    adapter.exec(
+      `CREATE TABLE IF NOT EXISTS usageDaily (dateKey TEXT PRIMARY KEY, data TEXT NOT NULL)`,
+    );
+    for (const [dateKey, day] of days) {
+      adapter.run(`INSERT OR REPLACE INTO usageDaily(dateKey, data) VALUES(?, ?)`, [
+        dateKey,
+        stringifyJson(day),
+      ]);
+    }
+    m014.up(adapter);
+  } else {
+    rebuildRollupFromHistoryUnscoped(adapter);
+  }
   if (typeof data.totalRequestsLifetime === "number") {
     setMetaSync(adapter, "totalRequestsLifetime", data.totalRequestsLifetime);
   }
