@@ -12,7 +12,6 @@ import { getAdapter } from "../driver.js";
 import { TenancyError, assertCtx, mapConstraintErrors } from "@/lib/users/errors.js";
 import { mayGrantManager, mayManage, membershipRole } from "./membershipsRepo.js";
 import { audit } from "@/lib/users/audit.js";
-import { assertGrantable } from "@/lib/users/grants.js";
 import { getSettings } from "./settingsRepo.js";
 
 const COLS =
@@ -161,6 +160,8 @@ export async function createGrant(
   const conn = requireConnectionManager(db, ctx, connectionId);
   // ToS gate lives here, not only in the route: no caller can create a grant
   // without it. Judged on the live instance role, not the session snapshot.
+  // Lazy: grants.js loads the provider registry; keep it off the @/lib/db import graph.
+  const { assertGrantable } = await import("@/lib/users/grants.js");
   const live = db.get(`SELECT instanceRole FROM users WHERE id = ?`, [ctx.userId]);
   const { sharing, tosAcknowledgedAt } = assertGrantable({
     principal: { instanceRole: live?.instanceRole ?? null },
