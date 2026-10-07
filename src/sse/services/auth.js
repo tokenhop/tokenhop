@@ -27,7 +27,14 @@ import {
   grantEstimator,
   grantLimitedResult,
   grantLimitHit,
+  releaseGrantReservation,
 } from "./grantRateLimiter.js";
+import {
+  budgetLimitedResult,
+  grantBudgetContext,
+  grantBudgetLimit,
+  reserveGrantBudget,
+} from "./budgetGuard.js";
 import * as log from "../utils/logger.js";
 
 // Per-key mutex chain tails to prevent race conditions during account selection.
@@ -162,7 +169,11 @@ export async function getProviderCredentials(
     // Antigravity quota-exhausted connections. Unknown quota stays eligible.
     const quotaExpiries = [];
     const grantLimits = [];
+    const budgetLimits = [];
     const estimateTokens = grantEstimator(options?.estimateTokens);
+    // YAN-372: grant budgets apply only when routed through that grant; null
+    // (zero cost) outside a budgeted request or when no grant budget exists.
+    const budgetCtx = grantBudgetContext();
     const availableConnections = connections.filter((c) => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
@@ -171,6 +182,11 @@ export async function getProviderCredentials(
         const hit = grantLimitHit(c, c.grantTpm != null ? estimateTokens() : 0);
         if (hit) {
           grantLimits.push(hit);
+          return false;
+        }
+        const budgetHit = grantBudgetLimit(c.grantId, budgetCtx);
+        if (budgetHit) {
+          budgetLimits.push(budgetHit);
           return false;
         }
       }
@@ -272,6 +288,10 @@ export async function getProviderCredentials(
       if (grantLimits.length) {
         log.warn("AUTH", `${provider} | all candidates skipped by grant ${grantLimits[0]} limit`);
         return grantLimitedResult(grantLimits[0]);
+      }
+      if (budgetLimits.length) {
+        log.warn("AUTH", `${provider} | all candidates skipped by grant budget`);
+        return budgetLimitedResult(budgetLimits[0]);
       }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
       return null;
@@ -380,6 +400,14 @@ export async function getProviderCredentials(
       );
       if (grantReservation === false) {
         return grantLimitedResult(grantLimitHit(connection, estimateTokens()) ?? "rpm");
+      }
+      // YAN-372: reserve the chosen grant's budgets (sync, atomic). The
+      // request wrapper releases it when the response ends; fallback leaves it
+      // held until then (bounded over-reservation, never under-counting).
+      const budget = reserveGrantBudget(connection.grantId, budgetCtx);
+      if (budget?.hit) {
+        releaseGrantReservation(grantReservation);
+        return budgetLimitedResult(budget.hit);
       }
     }
 

@@ -25,6 +25,10 @@ const UNIQUE_CODES = [
     "GRANT_EXISTS",
     "An active grant already exists for this grantee",
   ],
+  // YAN-372: matched on the "idx_budgets_scope_window ON budgets(...)"
+  // UNIQUE text (the composite index has no single column to name), so the
+  // column is "budgets.scopeType".
+  ["budgets.scopeType", "BUDGET_EXISTS", "A budget already exists for this scope and window"],
 ];
 
 /** Run `fn`, turning SQLite UNIQUE/CHECK failures into TenancyError. */

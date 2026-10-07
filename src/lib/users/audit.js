@@ -39,6 +39,19 @@ const ALLOWED = new Set([
   "sharing",
   "granteeWorkspaceId",
   "granteeUserId",
+  // YAN-372 (ADR-0007): budget scopes and limits — never user emails.
+  "scopeType",
+  "scopeId",
+  "window",
+  "limitUsd",
+  "limitTokens",
+  "limitRequests",
+  "softLimitPct",
+  "resetAt",
+  "level",
+  "spentUsd",
+  "spentTokens",
+  "spentRequests",
 ]);
 
 const TRUNCATE = 4096;

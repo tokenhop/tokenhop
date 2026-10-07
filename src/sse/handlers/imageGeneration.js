@@ -21,6 +21,7 @@ import { handleComboChat } from "open-sse/services/combo.js";
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
 import * as log from "../utils/logger.js";
 import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
+import { budgetResponse, budgeted } from "../services/budgetGuard.js";
 
 // Providers that don't require credentials (noAuth)
 const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui"]);
@@ -122,6 +123,18 @@ async function handleSingleModelImage(
   const denied = authorizeGatewayTarget(gateway, { modelId: `${provider}/${model}` });
   if (denied) return denied;
 
+  // YAN-372: budgets on the principal's path (non-token: 1 request + fallback USD).
+  const held = await budgeted(gateway, { provider, model, nonToken: true }, () =>
+    handleSingleModelImage(body, modelStr, {
+      wantsStream,
+      binaryOutput,
+      preferredConnectionId,
+      gateway,
+      usageCtx,
+    }),
+  );
+  if (held) return held;
+
   // noAuth providers — no credential needed
   if (NO_AUTH_PROVIDERS.has(provider)) {
     const result = await handleImageGenerationCore({
@@ -163,6 +176,7 @@ async function handleSingleModelImage(
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
+      if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status =
@@ -213,6 +227,7 @@ async function handleSingleModelImage(
         connectionId: credentials.connectionId,
         apiKey: usageCtx.apiKey,
         ...gatewayKeyContext(gateway),
+        grantId: credentials.grantId ?? undefined,
         units: { images: body.n ?? 1 },
         status: "success",
       }).catch(() => {});

@@ -740,6 +740,34 @@ describe("Schema migrations", () => {
     expect(db.get(`SELECT COUNT(*) AS c FROM connectionGrants`).c).toBe(0);
   });
 
+  it("migration 016 adds an empty budgets table idempotently (YAN-372)", async () => {
+    const { MIGRATIONS } = await import("@/lib/db/migrations/index.js");
+    expect(MIGRATIONS.find((m) => m.version === 16).name).toBe("budgets");
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const m016 = (await import("@/lib/db/migrations/016-budgets.js")).default;
+    const db = await getAdapter();
+    expect(db.get(`SELECT COUNT(*) AS c FROM budgets`).c).toBe(0);
+    expect(db.all(`PRAGMA table_info(budgets)`).map((c) => c.name)).toEqual([
+      "id",
+      "workspaceId",
+      "scopeType",
+      "scopeId",
+      "window",
+      "limitUsd",
+      "limitTokens",
+      "limitRequests",
+      "softLimitPct",
+      "resetAt",
+      "createdByUserId",
+      "createdAt",
+    ]);
+    m016.up(db);
+    m016.up(db); // idempotent
+    expect(db.all(`PRAGMA index_list(usageHistory)`).map((i) => i.name)).toContain(
+      "idx_uh_grant_ts",
+    );
+  });
+
   it("auto-sync re-creates missing index when DB lacks it", async () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();

@@ -32,6 +32,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import * as log from "../utils/logger.js";
 import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
+import { budgetResponse, withBudgetScope } from "../services/budgetGuard.js";
 
 // Video generation is xAI-only today; requests without a provider prefix
 // (bare model id, or multipart bodies we deliberately don't parse) land here.
@@ -325,109 +326,114 @@ export async function handleVideoCreate(request, action) {
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const idempotencyKey = request.headers.get("idempotency-key") || null;
 
-  const excludeConnectionIds = new Set();
-  let lastError = null;
-  let lastStatus = null;
+  // YAN-372: budgets on the principal's path (job creation is non-token).
+  return withBudgetScope(gateway, { provider, model, nonToken: true }, async () => {
+    const excludeConnectionIds = new Set();
+    let lastError = null;
+    let lastStatus = null;
 
-  while (true) {
-    // Workspace principal (hashed mode) scopes every candidate connection to
-    // the key's workspace before any upstream call.
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
-      preferredConnectionId,
-      ...(gateway ? { principal: gateway } : {}),
-    });
+    while (true) {
+      // Workspace principal (hashed mode) scopes every candidate connection to
+      // the key's workspace before any upstream call.
+      const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+        preferredConnectionId,
+        ...(gateway ? { principal: gateway } : {}),
+      });
 
-    if (!credentials || credentials.allRateLimited) {
-      if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
-      if (credentials?.allRateLimited) {
-        const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status =
-          lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
-        return unavailableResponse(
-          status,
-          `[${provider}/${model || "video"}] ${errorMsg}`,
-          credentials.retryAfter,
-          credentials.retryAfterHuman,
+      if (!credentials || credentials.allRateLimited) {
+        if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
+        if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
+        if (credentials?.allRateLimited) {
+          const errorMsg = lastError || credentials.lastError || "Unavailable";
+          const status =
+            lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+          return unavailableResponse(
+            status,
+            `[${provider}/${model || "video"}] ${errorMsg}`,
+            credentials.retryAfter,
+            credentials.retryAfterHuman,
+          );
+        }
+        if (excludeConnectionIds.size === 0) {
+          return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+        }
+        return errorResponse(
+          lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE,
+          lastError || "All accounts unavailable",
         );
       }
-      if (excludeConnectionIds.size === 0) {
-        return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
-      }
-      return errorResponse(
-        lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE,
-        lastError || "All accounts unavailable",
-      );
-    }
 
-    const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+      const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    const result = await handleVideoProxyCore({
-      provider,
-      action,
-      rawBody: forwardBody,
-      contentType: bodyInfo.contentType || null,
-      idempotencyKey,
-      credentials: refreshedCredentials,
-      signal: request.signal,
-      log,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
-          accessToken: newCreds.accessToken,
-          refreshToken: newCreds.refreshToken,
-          providerSpecificData: newCreds.providerSpecificData,
-          testStatus: "active",
-        });
-      },
-    });
+      const result = await handleVideoProxyCore({
+        provider,
+        action,
+        rawBody: forwardBody,
+        contentType: bodyInfo.contentType || null,
+        idempotencyKey,
+        credentials: refreshedCredentials,
+        signal: request.signal,
+        log,
+        onCredentialsRefreshed: async (newCreds) => {
+          await updateProviderCredentials(credentials.connectionId, {
+            accessToken: newCreds.accessToken,
+            refreshToken: newCreds.refreshToken,
+            providerSpecificData: newCreds.providerSpecificData,
+            testStatus: "active",
+          });
+        },
+      });
 
-    if (result.success) {
-      await clearAccountError(credentials.connectionId, credentials, model);
-      if (gateway && canonicalModel) {
-        await recordVideoJobProvenance(gateway, result.response, {
+      if (result.success) {
+        await clearAccountError(credentials.connectionId, credentials, model);
+        if (gateway && canonicalModel) {
+          await recordVideoJobProvenance(gateway, result.response, {
+            provider,
+            connectionId: credentials.connectionId,
+            modelId: canonicalModel,
+          });
+        }
+        // Job creation only; polls (handleVideoGet) are not counted.
+        saveRequestUsageUnscoped({
           provider,
+          model,
+          endpoint: new URL(request.url).pathname,
           connectionId: credentials.connectionId,
-          modelId: canonicalModel,
-        });
+          apiKey: auth.legacy ? extractApiKey(request) : null,
+          ...gatewayKeyContext(gateway),
+          grantId: credentials.grantId ?? undefined,
+          units: { jobs: 1 },
+          status: "success",
+        }).catch(() => {});
+        log.info(
+          "VIDEO",
+          `${provider.toUpperCase()} | ${action} accepted (connection ${credentials.connectionId})`,
+        );
+        return withConnectionHeader(result.response, credentials.connectionId);
       }
-      // Job creation only; polls (handleVideoGet) are not counted.
-      saveRequestUsageUnscoped({
+
+      // Record the failure (dashboard shows lastError/errorCode → user sees re-auth is needed)
+      releaseGrantReservation(credentials.grantReservation);
+      const { shouldFallback } = await markAccountUnavailable(
+        credentials.connectionId,
+        result.status,
+        sanitizeSecrets(result.error, refreshedCredentials),
         provider,
         model,
-        endpoint: new URL(request.url).pathname,
-        connectionId: credentials.connectionId,
-        apiKey: auth.legacy ? extractApiKey(request) : null,
-        ...gatewayKeyContext(gateway),
-        units: { jobs: 1 },
-        status: "success",
-      }).catch(() => {});
-      log.info(
-        "VIDEO",
-        `${provider.toUpperCase()} | ${action} accepted (connection ${credentials.connectionId})`,
+        null,
+        { grantId: credentials.grantId },
       );
-      return withConnectionHeader(result.response, credentials.connectionId);
+
+      if (shouldFallback && CREATE_ROTATION_STATUSES.has(result.status)) {
+        excludeConnectionIds.add(credentials.connectionId);
+        lastError = result.error;
+        lastStatus = result.status;
+        continue;
+      }
+
+      return result.response;
     }
-
-    // Record the failure (dashboard shows lastError/errorCode → user sees re-auth is needed)
-    releaseGrantReservation(credentials.grantReservation);
-    const { shouldFallback } = await markAccountUnavailable(
-      credentials.connectionId,
-      result.status,
-      sanitizeSecrets(result.error, refreshedCredentials),
-      provider,
-      model,
-      null,
-      { grantId: credentials.grantId },
-    );
-
-    if (shouldFallback && CREATE_ROTATION_STATUSES.has(result.status)) {
-      excludeConnectionIds.add(credentials.connectionId);
-      lastError = result.error;
-      lastStatus = result.status;
-      continue;
-    }
-
-    return result.response;
-  }
+  });
 }
 
 /**

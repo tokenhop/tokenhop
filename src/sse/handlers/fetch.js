@@ -23,8 +23,9 @@ import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
 import { assertPublicUrlResolved } from "@/shared/utils/ssrfGuard.js";
 import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
+import { budgetResponse, budgeted } from "../services/budgetGuard.js";
 
-function recordFetch(request, gateway, apiKey, providerId, connectionId, data) {
+function recordFetch(request, gateway, apiKey, providerId, connectionId, data, grantId) {
   saveRequestUsageUnscoped({
     provider: providerId,
     model: null,
@@ -32,6 +33,7 @@ function recordFetch(request, gateway, apiKey, providerId, connectionId, data) {
     connectionId,
     apiKey,
     ...gatewayKeyContext(gateway),
+    grantId: grantId ?? undefined,
     units: { fetches: 1, characters: data?.content?.length ?? 0 },
     cost: data?.usage?.fetch_cost_usd ?? undefined,
     status: "success",
@@ -189,6 +191,12 @@ async function handleSingleProviderFetch(body, providerInput, request, gateway, 
   const denied = authorizeGatewayTarget(gateway, { modelId: `${providerId}/fetch` });
   if (denied) return denied;
 
+  // YAN-372: budgets on the principal's path (non-token request).
+  const held = await budgeted(gateway, { provider: providerId, nonToken: true }, () =>
+    handleSingleProviderFetch(body, providerInput, request, gateway, apiKey),
+  );
+  if (held) return held;
+
   // No-auth fetch path (kept for parity though no current fetch provider sets noAuth)
   if (resolvedProvider.noAuth) {
     log.info("AUTH", `\x1b[32m${providerId} no-auth mode\x1b[0m`);
@@ -233,6 +241,7 @@ async function handleSingleProviderFetch(body, providerInput, request, gateway, 
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
+      if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status =
@@ -280,7 +289,15 @@ async function handleSingleProviderFetch(body, providerInput, request, gateway, 
 
     if (result.success) {
       await clearAccountError(credentials.connectionId, credentials, fetchLockKey);
-      recordFetch(request, gateway, apiKey, providerId, credentials.connectionId, result.data);
+      recordFetch(
+        request,
+        gateway,
+        apiKey,
+        providerId,
+        credentials.connectionId,
+        result.data,
+        credentials.grantId,
+      );
       return new Response(JSON.stringify(result.data), {
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
       });

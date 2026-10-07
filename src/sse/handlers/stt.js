@@ -12,6 +12,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import * as log from "../utils/logger.js";
 import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
+import { budgetResponse, withBudgetScope } from "../services/budgetGuard.js";
 
 // Providers requiring credentials for STT
 const CREDENTIALED_PROVIDERS = new Set(
@@ -68,6 +69,13 @@ export async function handleStt(request) {
   const denied = authorizeGatewayTarget(gateway, { modelId: `${provider}/${model}` });
   if (denied) return denied;
 
+  // YAN-372: budgets on the principal's path (non-token: audio length unknown).
+  return withBudgetScope(gateway, { provider, model, nonToken: true }, () =>
+    sttRoute({ formData, provider, model, gateway, gatewayCreds, apiKey, endpoint }),
+  );
+}
+
+async function sttRoute({ formData, provider, model, gateway, gatewayCreds, apiKey, endpoint }) {
   // noAuth providers
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
     const result = await handleSttCore({
@@ -105,6 +113,7 @@ export async function handleStt(request) {
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
+      if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
       if (credentials?.allRateLimited) {
         const msg = lastError || credentials.lastError || "Unavailable";
         const status =
@@ -142,6 +151,7 @@ export async function handleStt(request) {
         connectionId: credentials.connectionId,
         apiKey,
         ...gatewayKeyContext(gateway),
+        grantId: credentials.grantId ?? undefined,
       });
       return result.response;
     }

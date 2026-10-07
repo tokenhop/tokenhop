@@ -7,6 +7,7 @@ import { normalizeUsageKeyEntry } from "../helpers/usageKeyIdentity.js";
 import { tableHasColumn } from "../migrations/helpers.js";
 import { getApiKeyHashKey } from "../../security/apiKeyHashKey.js";
 import { pushToRing, scheduleStatsEvent } from "./usageLiveFeed.js";
+import { emitUsageCommitted } from "../../usage/usageCommitted.js";
 import { apiKeyNames } from "./usageStatsRepo.js";
 import {
   NO_KEY,
@@ -224,11 +225,24 @@ export async function saveRequestUsageUnscoped(entry) {
     if (entry.userAgent && typeof entry.userAgent === "string")
       metaObj.userAgent = entry.userAgent.slice(0, 256);
     if (entry.units && typeof entry.units === "object") metaObj.units = entry.units;
+    // YAN-372 (ADR-0007): subscription ("personal") connections have no
+    // per-token bill; their priced cost is notional. One PK read.
+    if (entry.connectionId && entry.provider) {
+      const conn = db.get(`SELECT authType FROM providerConnections WHERE id = ?`, [
+        entry.connectionId,
+      ]);
+      if (conn) {
+        // Lazy: keeps the provider registry out of this module's import graph.
+        const { resolveSharing } = await import("../../users/grants.js");
+        if (resolveSharing(entry.provider, conn.authType) === "personal") metaObj.notional = true;
+      }
+    }
 
     // YAN-408: lifetime saved-tokens counter feeds the savings milestone toast.
     const savedTokens = rowSavedFromSavings(metaObj.savings);
 
     // History insert, rollup upsert and lifetime counters in ONE transaction.
+    let stored = null;
     db.transaction(() => {
       db.run(
         `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta, workspaceId, userId, apiKeyId, grantId) VALUES(?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM workspaces WHERE id = ?), (SELECT id FROM users WHERE id = ?), ?, ?)`,
@@ -251,7 +265,7 @@ export async function saveRequestUsageUnscoped(entry) {
         ],
       );
       // Rollup dims follow the stored row (FK-checked ids, never dangling).
-      const stored = db.get(
+      stored = db.get(
         `SELECT workspaceId, userId FROM usageHistory WHERE id = last_insert_rowid()`,
       );
       upsertRollupRowUnscoped(
@@ -294,6 +308,19 @@ export async function saveRequestUsageUnscoped(entry) {
       }
     });
 
+    // YAN-372: budget counters settle on the committed row (sync listeners).
+    // Attribution follows the stored row, so live counters match a rebuild.
+    emitUsageCommitted({
+      timestamp: entry.timestamp,
+      status: entry.status || "ok",
+      cost: entry.cost || 0,
+      promptTokens,
+      completionTokens,
+      workspaceId: stored?.workspaceId ?? null,
+      userId: stored?.userId ?? null,
+      apiKeyId,
+      grantId: typeof entry.grantId === "string" ? entry.grantId : null,
+    });
     pushToRing({
       timestamp: entry.timestamp,
       provider: entry.provider,

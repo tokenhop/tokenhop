@@ -128,6 +128,16 @@ const YAN360_SESSION_ONLY_ROUTES = new Set([
   "/api/providers/[id]/grants",
   "/api/providers/[id]/grants/[grantId]",
   "/api/grants",
+  // YAN-372 workspace and user budgets: browser session only.
+  "/api/workspaces/[id]/budgets",
+  "/api/workspaces/[id]/budgets/[budgetId]",
+  "/api/users/[id]/budgets",
+  "/api/users/[id]/budgets/[budgetId]",
+]);
+// YAN-372 user-level budgets: instance admin only, alwaysProtected.
+const YAN372_USER_BUDGET_ROUTES = new Set([
+  "/api/users/[id]/budgets",
+  "/api/users/[id]/budgets/[budgetId]",
 ]);
 // YAN-360 invite accept is new and public by design: the token is the
 // authorization (still hidden with the switch off via multiUserOnly).
@@ -233,6 +243,7 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
         if (YAN360_USER_ROUTES.has(route)) want.alwaysProtected = true;
         if (YAN360_PUBLIC_ROUTES.has(route)) want.public = true;
         if (YAN367_AUDIT_ROUTES.has(route)) want.alwaysProtected = true;
+        if (YAN372_USER_BUDGET_ROUTES.has(route)) want.alwaysProtected = true;
         if (YAN366_TIGHTENED.has(route)) {
           want.localOnly = true;
           want.alwaysProtected = true;

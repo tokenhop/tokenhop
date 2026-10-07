@@ -43,6 +43,7 @@ import {
   grantRateLimitResponse,
   releaseGrantReservation,
 } from "../services/grantRateLimiter.js";
+import { budgetResponse, budgeted } from "../services/budgetGuard.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { notifyRequestLogsEnabled } from "open-sse/utils/requestLogger.js";
@@ -621,6 +622,21 @@ async function handleSingleModelChat(
     return res;
   }
 
+  // YAN-372: key/user/membership/workspace budgets, reserved per leaf attempt.
+  const held = await budgeted(gateway, { provider, model, body }, () =>
+    handleSingleModelChat(
+      body,
+      modelStr,
+      clientRawRequest,
+      request,
+      apiKey,
+      comboPath,
+      comboName,
+      options,
+    ),
+  );
+  if (held) return held;
+
   // Routing shown in the unified "▶" line (client model → provider/model)
 
   // Extract userAgent from request
@@ -640,6 +656,7 @@ async function handleSingleModelChat(
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
+      if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
