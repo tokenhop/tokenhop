@@ -145,6 +145,10 @@ const YAN365_KEY_ROUTES = new Set([
   "/api/workspaces/[id]/keys/rotate",
 ]);
 
+// YAN-366 tightened xiaomi-mimo/auto-import to match its cursor/kiro siblings
+// (hostOps + loopback + alwaysProtected); the pre-YAN-357 guard did not list it.
+const YAN366_TIGHTENED = new Set(["/api/oauth/xiaomi-mimo/auto-import"]);
+
 describe("route coverage", () => {
   it("finds the API route files", () => {
     expect(ROUTES.length).toBeGreaterThan(150);
@@ -229,6 +233,10 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
         if (YAN360_USER_ROUTES.has(route)) want.alwaysProtected = true;
         if (YAN360_PUBLIC_ROUTES.has(route)) want.public = true;
         if (YAN367_AUDIT_ROUTES.has(route)) want.alwaysProtected = true;
+        if (YAN366_TIGHTENED.has(route)) {
+          want.localOnly = true;
+          want.alwaysProtected = true;
+        }
         if (YAN365_KEY_ROUTES.has(route)) {
           want.alwaysProtected = true;
           want.public = false;
@@ -388,6 +396,21 @@ describe("inventory cleanups", () => {
     expect(fs.readFileSync(path.join(ROOT, ".env.example"), "utf8")).not.toContain(
       "REQUIRE_API_KEY",
     );
+  });
+});
+
+describe("YAN-366 oauth routes", () => {
+  it("scopes every /api/oauth/* row except the host auto-imports", () => {
+    const oauth = Object.entries(ROUTE_POLICY).filter(([k]) => k.startsWith("/api/oauth/"));
+    expect(oauth.length).toBeGreaterThan(10);
+    for (const [key, row] of oauth) {
+      if (key.endsWith("/auto-import")) {
+        expect(row, key).toMatchObject({ cap: "instance.hostOps", localOnly: true });
+        expect(row.alwaysProtected, key).toBe(true);
+      } else {
+        expect(row.scoped, key).toBe(true);
+      }
+    }
   });
 });
 

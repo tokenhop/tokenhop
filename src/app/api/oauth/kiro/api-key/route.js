@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
-import { createProviderConnectionUnscoped } from "@/models";
+import { createIn, oauthScope } from "@/lib/oauth/scope";
 
 /**
  * POST /api/oauth/kiro/api-key
@@ -9,6 +9,10 @@ import { createProviderConnectionUnscoped } from "@/models";
  * Q model catalog, then stored with authMethod="api_key".
  */
 export async function POST(request) {
+  // YAN-366: scoped create (personal default); switch off keeps unscoped.
+  const scope = await oauthScope(request);
+  if (scope instanceof Response) return scope;
+
   try {
     const { apiKey, region } = await request.json();
 
@@ -26,7 +30,7 @@ export async function POST(request) {
 
     // API keys never expire on a fixed schedule; persist a long horizon so the
     // proactive refresh path (which requires a refreshToken anyway) is skipped.
-    const connection = await createProviderConnectionUnscoped({
+    const connection = await createIn(scope, {
       provider: "kiro",
       authType: "api_key",
       accessToken: credential.accessToken,

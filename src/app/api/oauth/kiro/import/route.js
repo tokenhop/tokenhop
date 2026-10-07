@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
-import { createProviderConnectionUnscoped } from "@/models";
+import { createIn, oauthScope } from "@/lib/oauth/scope";
 
 /**
  * POST /api/oauth/kiro/import
@@ -10,6 +10,10 @@ import { createProviderConnectionUnscoped } from "@/models";
  */
 export async function POST(request) {
   try {
+    // YAN-366: scoped create (personal default) when the switch is on with 2+
+    // users; the unscoped legacy path runs otherwise.
+    const scope = await oauthScope(request);
+    if (scope instanceof Response) return scope;
     const { refreshToken, clientId, clientSecret, region, authMethod, profileArn } =
       await request.json();
 
@@ -33,7 +37,7 @@ export async function POST(request) {
     const providerLabel = isIdc ? "Enterprise" : "Imported";
     const resolvedProfileArn = profileArn || tokenData.profileArn || null;
 
-    const connection = await createProviderConnectionUnscoped({
+    const connection = await createIn(scope, {
       provider: "kiro",
       authType: "oauth",
       accessToken: tokenData.accessToken,

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createProviderConnectionUnscoped } from "@/models";
+import { createIn, oauthScope } from "@/lib/oauth/scope";
 import { decodeXaiIdTokenEmail, extractEmailFromAccessToken } from "@/lib/oauth/providerHelpers";
 
 /**
@@ -19,6 +19,10 @@ import { decodeXaiIdTokenEmail, extractEmailFromAccessToken } from "@/lib/oauth/
  *   expires_in / expiresIn / expires_at / expiresAt
  */
 export async function POST(request) {
+  // YAN-366: scoped create (personal default); switch off keeps unscoped.
+  const scope = await oauthScope(request);
+  if (scope instanceof Response) return scope;
+
   let body;
   try {
     body = await request.json();
@@ -78,7 +82,7 @@ export async function POST(request) {
         ...(raw.providerSpecificData || {}),
       };
 
-      const created = await createProviderConnectionUnscoped({
+      const created = await createIn(scope, {
         provider: "grok-cli",
         authType: "oauth",
         accessToken,

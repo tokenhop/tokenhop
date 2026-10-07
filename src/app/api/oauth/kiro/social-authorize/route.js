@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { generatePKCE } from "@/lib/oauth/utils/pkce";
 import { KiroService } from "@/lib/oauth/services/kiro";
+import { rememberBinding } from "@/lib/oauth/pendingBinding";
+import { oauthScope } from "@/lib/oauth/scope";
 
 /**
  * GET /api/oauth/kiro/social-authorize
@@ -9,6 +11,12 @@ import { KiroService } from "@/lib/oauth/services/kiro";
  */
 export async function GET(request) {
   try {
+    // YAN-366: scoped flows bind the pending state to the initiating
+    // principal, so the exchange step can verify the owner; switch off
+    // (or ≤1 active user) keeps the stateless flow unchanged.
+    const scope = await oauthScope(request);
+    if (scope instanceof Response) return scope;
+
     const { searchParams } = new URL(request.url);
     const provider = searchParams.get("provider"); // "google" or "github"
 
@@ -21,6 +29,15 @@ export async function GET(request) {
 
     // Generate PKCE for social auth
     const { codeVerifier, codeChallenge, state } = generatePKCE();
+
+    if (scope) {
+      rememberBinding(state, {
+        provider: "kiro",
+        userId: scope.ctx.userId,
+        workspaceId: scope.workspaceId,
+        ctx: scope.ctx,
+      });
+    }
 
     const kiroService = new KiroService();
     const authUrl = kiroService.buildSocialLoginUrl(provider, codeChallenge, state);
