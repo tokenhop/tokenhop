@@ -119,6 +119,7 @@ describe("cleanFimOutput", () => {
   it("drops indentation the cursor already sits in, first line only (YAN-741)", () => {
     const prefix = "def add(a, b):\n    ";
     expect(cleanFimOutput("    return a + b", { prefix })).toBe("return a + b");
+    expect(cleanFimOutput("        return a + b", { prefix })).toBe("    return a + b");
     expect(cleanFimOutput("    x = 1\n    return x", { prefix })).toBe("x = 1\n    return x");
     expect(cleanFimOutput("\treturn a", { prefix })).toBe("\treturn a");
     expect(cleanFimOutput("    return a", { prefix: "x = 1  " })).toBe("    return a");
