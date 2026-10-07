@@ -4,6 +4,7 @@ export default {
   aliases: ["kilo-gateway", "kilogateway"],
   uiAlias: "kgw",
   category: "freeTier",
+  sharing: "shareable",
   display: {
     name: "Kilo Gateway",
     icon: "login",

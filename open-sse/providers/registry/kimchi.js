@@ -14,6 +14,7 @@ export default {
     },
   },
   category: "freeTier",
+  sharing: "shareable",
   authModes: ["oauth", "apikey"],
   hasOAuth: true,
   transport: {

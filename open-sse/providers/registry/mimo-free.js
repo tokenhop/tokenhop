@@ -14,6 +14,7 @@ export default {
     textIcon: "MF",
   },
   category: "free",
+  sharing: "personal",
   noAuth: true,
   transport: {
     baseUrl: "https://api.xiaomimimo.com/api/free-ai/openai/chat",

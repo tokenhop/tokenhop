@@ -12,6 +12,7 @@ export default {
     website: "https://grok.com",
   },
   category: "webCookie",
+  sharing: "personal",
   authType: "cookie",
   authHint: "Paste your sso= cookie value from grok.com",
   transport: {

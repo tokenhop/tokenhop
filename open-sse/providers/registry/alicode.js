@@ -13,6 +13,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "personal",
   transport: {
     baseUrl: "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
     headers: {},

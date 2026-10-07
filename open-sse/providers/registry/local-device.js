@@ -8,6 +8,7 @@ export default {
     textIcon: "LD",
   },
   category: "freeTier",
+  sharing: "shareable",
   authType: "none",
   serviceKinds: ["tts"],
   mediaPriority: 5,

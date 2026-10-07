@@ -40,6 +40,7 @@ export default {
     website: "https://github.com/ggml-org/llama.cpp",
   },
   category: "apikey",
+  sharing: "shareable",
   auth: {
     apiKey: {
       // Note the /v1: the adapter appends "/embeddings" to whatever it is given,

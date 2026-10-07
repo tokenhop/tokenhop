@@ -18,6 +18,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "personal",
   hasProviderSpecificData: true,
   regions: [
     { id: "sgp", label: "Singapore (新加坡)" },

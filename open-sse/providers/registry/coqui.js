@@ -9,6 +9,7 @@ export default {
     website: "https://github.com/coqui-ai/TTS",
   },
   category: "freeTier",
+  sharing: "shareable",
   authType: "none",
   serviceKinds: ["tts"],
   noAuth: true,

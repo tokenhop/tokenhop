@@ -16,6 +16,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   authType: "apikey",
   hiddenKinds: ["tts"],
   transport: null,

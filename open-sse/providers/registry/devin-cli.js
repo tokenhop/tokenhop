@@ -16,6 +16,7 @@ export default {
     },
   },
   category: "free",
+  sharing: "personal",
   authType: "none",
   noAuth: true,
   authModes: ["none"],

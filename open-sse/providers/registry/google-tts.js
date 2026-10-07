@@ -8,6 +8,7 @@ export default {
     textIcon: "GT",
   },
   category: "freeTier",
+  sharing: "shareable",
   authType: "none",
   serviceKinds: ["tts"],
   mediaPriority: 5,

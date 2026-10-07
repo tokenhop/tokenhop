@@ -22,6 +22,7 @@ export default {
     },
   },
   category: "oauth",
+  sharing: "personal",
   thinkingConfig: {
     options: ["auto", "none", "low", "medium", "high"],
     defaultMode: "auto",

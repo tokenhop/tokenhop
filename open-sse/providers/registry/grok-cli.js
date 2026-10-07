@@ -36,6 +36,7 @@ export default {
     },
   },
   category: "oauth",
+  sharing: "personal",
   authModes: ["oauth"],
   hasOAuth: true,
   thinkingConfig: {

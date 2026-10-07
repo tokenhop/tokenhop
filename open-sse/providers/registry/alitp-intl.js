@@ -19,6 +19,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "personal",
   transport: {
     baseUrl:
       "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions",

@@ -26,6 +26,7 @@ export default {
     },
   },
   category: "oauth",
+  sharing: "personal",
   authModes: ["oauth", "apikey"],
   hasOAuth: true,
   transport: {

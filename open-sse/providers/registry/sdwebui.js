@@ -10,6 +10,7 @@ export default {
     website: "https://github.com/AUTOMATIC1111/stable-diffusion-webui",
   },
   category: "apikey",
+  sharing: "shareable",
   transport: null,
   models: [
     {

@@ -22,6 +22,7 @@ export default {
     website: "https://github.com/remsky/Kokoro-FastAPI",
   },
   category: "apikey",
+  sharing: "shareable",
   auth: {
     apiKey: {
       text: "Set providerSpecificData.baseUrl to the server root, e.g. http://host:8080 — /v1/audio/speech is appended. The API key is not checked by local servers; any value works.",

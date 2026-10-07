@@ -16,6 +16,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "personal",
   transport: {
     baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
     headers: {},

@@ -17,6 +17,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   transport: {
     baseUrl: "https://api.deepseek.com/chat/completions",
     validateUrl: "https://api.deepseek.com/models",

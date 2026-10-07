@@ -16,6 +16,7 @@ export default {
     },
   },
   category: "freeTier",
+  sharing: "shareable",
   transport: {
     baseUrl: "https://ark.ap-southeast.bytepluses.com/api/coding/v3/chat/completions",
     headers: {},

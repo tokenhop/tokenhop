@@ -28,6 +28,7 @@ export default {
     website: "https://github.com/ggml-org/whisper.cpp",
   },
   category: "apikey",
+  sharing: "shareable",
   auth: {
     apiKey: {
       text: "Set providerSpecificData.baseUrl to the full transcriptions URL, e.g. http://host:8080/v1/audio/transcriptions. The API key is not checked by local servers; any value works.",

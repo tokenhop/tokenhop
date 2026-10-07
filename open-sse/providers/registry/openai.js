@@ -13,6 +13,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   thinkingConfig: {
     options: ["auto", "none", "low", "medium", "high"],
     defaultMode: "auto",

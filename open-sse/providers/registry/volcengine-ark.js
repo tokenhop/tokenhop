@@ -15,6 +15,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   transport: {
     baseUrl: "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
     headers: {},

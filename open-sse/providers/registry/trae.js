@@ -9,6 +9,7 @@ export default {
   uiAlias: "tr",
   aliases: ["marscode"],
   category: "oauth",
+  sharing: "personal",
   authType: "oauth",
   hasOAuth: true,
   authModes: ["oauth"],

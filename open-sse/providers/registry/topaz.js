@@ -12,6 +12,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   authType: "apikey",
   serviceKinds: ["image"],
 };

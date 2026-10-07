@@ -4,6 +4,7 @@ export default {
   aliases: ["qianfan", "ernie", "baidu-qianfan"],
   uiAlias: "qianfan",
   category: "apikey",
+  sharing: "shareable",
   authType: "apikey",
   authModes: ["apikey"],
   display: {

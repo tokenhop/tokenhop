@@ -17,6 +17,7 @@ export default {
     },
   },
   category: "apikey",
+  sharing: "shareable",
   transport: {
     baseUrl: "https://api.nanobananaapi.ai/v1/chat/completions",
     validateUrl: "https://api.nanobananaapi.ai/v1/models",
