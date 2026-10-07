@@ -57,6 +57,12 @@ export const TABLE_CLASSES = {
     scopeColumn: "workspaceId",
     note: "grantee workspace OR userId; owner side via connectionId",
   },
+  // YAN-372: managing workspace; NULL only for user-level (admin-managed) budgets.
+  budgets: {
+    class: "scoped",
+    scopeColumn: "workspaceId",
+    note: "NULL workspaceId = user-level budget, instance admin only",
+  },
 };
 
 // Workspace kv scopes take the `ws:<workspaceId>/` key prefix when scoped.
