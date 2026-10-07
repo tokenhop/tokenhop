@@ -32,7 +32,7 @@ vi.mock("@/lib/usageDb.js", async (importOriginal) => {
     ...actual,
     trackPendingRequest: vi.fn(),
     appendRequestLog: vi.fn(async () => {}),
-    saveRequestDetail: vi.fn(async () => {}),
+    saveRequestDetailUnscoped: vi.fn(async () => {}),
   };
 });
 

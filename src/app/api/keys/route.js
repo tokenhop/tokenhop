@@ -49,17 +49,18 @@ function fail(error, legacyMessage, hashed) {
  * Augment keys with lastUsed + requestsToday.
  * Usage failure must never break key listing → defaults to null / 0.
  */
-async function withUsage(keys, hashed = false) {
+async function withUsage(keys, scope = null) {
   let usage = { lastUsed: {}, today: {} };
   try {
-    usage = await getApiKeyUsage();
+    // YAN-370: usage rows hold the key id in both storage modes.
+    usage = await getApiKeyUsage(scope);
   } catch (err) {
     console.error("Failed to read apiKey usage:", err);
   }
   return keys.map((k) => ({
     ...k,
-    lastUsed: usage.lastUsed?.[hashed ? k.id : k.key] ?? null,
-    requestsToday: usage.today?.[hashed ? k.id : k.key] ?? 0,
+    lastUsed: usage.lastUsed?.[k.id] ?? null,
+    requestsToday: usage.today?.[k.id] ?? 0,
   }));
 }
 
@@ -78,7 +79,7 @@ export async function GET(request) {
       const { listApiKeys } = await import("@/lib/users/apiKeyManagement");
       const keys = await listApiKeys(scope.ctx, scope.workspaceId);
       return NextResponse.json(
-        { keys: await withUsage(keys, true), storage: "hashed" },
+        { keys: await withUsage(keys, { workspaceId: scope.workspaceId }), storage: "hashed" },
         { headers: NO_STORE },
       );
     }

@@ -4,7 +4,7 @@ import { periodDelta } from "@/shared/utils/commandCenter.js";
 /**
  * Aggregate stored usage rows into a Home summary.
  * History rows carry promptTokens/completionTokens/cost columns plus
- * meta.savings (see saveRequestUsage) and meta.comboName.
+ * meta.savings (see saveRequestUsageUnscoped) and meta.comboName.
  *
  * Pure function, no IO — unit testable without a DB.
  *

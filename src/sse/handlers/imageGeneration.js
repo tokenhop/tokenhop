@@ -2,8 +2,14 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
+  extractApiKey,
 } from "../services/auth.js";
-import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
+import {
+  authorizeGatewayTarget,
+  gatewayKeyContext,
+  resolveGatewayAuth,
+} from "@/lib/auth/gatewayAuth.js";
+import { saveRequestUsageUnscoped } from "@/lib/usageDb.js";
 import { getEffectivePreferences } from "@/lib/db/index.js";
 import { getModelInfo, getComboModels, getComboByName } from "../services/model.js";
 import { comboRotationKey, comboStrategyFor } from "@/lib/comboKeys.js";
@@ -41,6 +47,7 @@ export async function handleImageGeneration(request) {
   const auth = await resolveGatewayAuth(request);
   if (auth instanceof Response) return auth;
   const gateway = auth.principal;
+  const usageCtx = { endpoint: url.pathname, apiKey: auth.legacy ? extractApiKey(request) : null };
   const settings = await getEffectivePreferences(gateway);
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
@@ -75,7 +82,13 @@ export async function handleImageGeneration(request) {
       body,
       models: comboModels,
       handleSingleModel: (b, m) =>
-        handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId, gateway }),
+        handleSingleModelImage(b, m, {
+          wantsStream,
+          binaryOutput,
+          preferredConnectionId,
+          gateway,
+          usageCtx,
+        }),
       log,
       comboName: comboRotationKey(gateway?.workspaceId, modelStr),
       comboStrategy,
@@ -90,13 +103,14 @@ export async function handleImageGeneration(request) {
     binaryOutput,
     preferredConnectionId,
     gateway,
+    usageCtx,
   });
 }
 
 async function handleSingleModelImage(
   body,
   modelStr,
-  { wantsStream, binaryOutput, preferredConnectionId, gateway } = {},
+  { wantsStream, binaryOutput, preferredConnectionId, gateway, usageCtx } = {},
 ) {
   const gatewayCreds = gateway ? { principal: gateway } : {};
   const modelInfo = await getModelInfo(modelStr, gatewayCreds);
@@ -115,7 +129,20 @@ async function handleSingleModelImage(
       credentials: null,
       binaryOutput,
     });
-    if (result.success) return result.response;
+    if (result.success) {
+      // ponytail: requested count, not response count; upgrade when imageGenerationCore exposes usage.
+      saveRequestUsageUnscoped({
+        provider,
+        model,
+        endpoint: usageCtx.endpoint,
+        connectionId: null,
+        apiKey: usageCtx.apiKey,
+        ...gatewayKeyContext(gateway),
+        units: { images: body.n ?? 1 },
+        status: "success",
+      }).catch(() => {});
+      return result.response;
+    }
     return errorResponse(
       result.status || HTTP_STATUS.BAD_GATEWAY,
       result.error || "Image generation failed",
@@ -175,7 +202,20 @@ async function handleSingleModelImage(
       },
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      // ponytail: requested count, not response count; upgrade when imageGenerationCore exposes usage.
+      saveRequestUsageUnscoped({
+        provider,
+        model,
+        endpoint: usageCtx.endpoint,
+        connectionId: credentials.connectionId,
+        apiKey: usageCtx.apiKey,
+        ...gatewayKeyContext(gateway),
+        units: { images: body.n ?? 1 },
+        status: "success",
+      }).catch(() => {});
+      return result.response;
+    }
 
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,

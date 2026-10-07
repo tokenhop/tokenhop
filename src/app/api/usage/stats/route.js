@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getUsageStatsUnscoped, getUsageTotals } from "@/lib/usageDb";
+import { getUsageStats, getUsageTotals } from "@/lib/usageDb";
 import { isPeriod, periodStart, previousPeriodRange } from "@/shared/utils/period";
+import { usageScope } from "@/lib/usage/scope.js";
 
 export const dynamic = "force-dynamic";
 
@@ -20,14 +21,17 @@ export async function GET(request) {
       return NextResponse.json({ error: "Invalid compare" }, { status: 400 });
     }
 
-    const stats = await getUsageStatsUnscoped(period);
+    const scope = await usageScope(request);
+    if (scope instanceof Response) return scope;
+
+    const stats = await getUsageStats(scope, period);
     if (compare === "previous") {
       const now = Date.now();
       const currentRange = { start: periodStart(period, now), end: now };
       const previousRange = previousPeriodRange(period, now);
       const [currentTotals, previous] = await Promise.all([
-        getUsageTotals(currentRange),
-        getUsageTotals(previousRange),
+        getUsageTotals(scope, currentRange),
+        getUsageTotals(scope, previousRange),
       ]);
       return NextResponse.json({ ...stats, currentTotals, previous });
     }

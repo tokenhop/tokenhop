@@ -13,7 +13,7 @@ import {
   saveUsageStats,
   formatDoneLine,
 } from "./requestDetail.js";
-import { saveRequestDetail } from "@/lib/usageDb.js";
+import { saveRequestDetailUnscoped } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { openAICompletionToClientFormat } from "./completionToClient.js";
 import { toOpenAIFinish } from "../../translator/concerns/finishReason.js";
@@ -409,7 +409,7 @@ export async function handleNonStreamingResponse({
   reqLogger.logConvertedResponse(translatedResponse);
 
   const totalLatency = Date.now() - requestStartTime;
-  saveRequestDetail(
+  saveRequestDetailUnscoped(
     buildRequestDetail(
       {
         provider,

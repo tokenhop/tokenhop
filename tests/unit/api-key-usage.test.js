@@ -12,9 +12,9 @@ beforeAll(async () => {
 describe("getApiKeyUsage", () => {
   it("omits keys that never made a request", async () => {
     const key = await db.createApiKey("idle", "machine-idle");
-    const usage = await db.getApiKeyUsage();
-    expect(usage.lastUsed[key.key]).toBeUndefined();
-    expect(usage.today[key.key]).toBeUndefined();
+    const usage = await db.getApiKeyUsage(null);
+    expect(usage.lastUsed[key.id]).toBeUndefined();
+    expect(usage.today[key.id]).toBeUndefined();
   });
 
   it("counts today's requests and returns the latest timestamp per key", async () => {
@@ -22,15 +22,15 @@ describe("getApiKeyUsage", () => {
     const other = await db.createApiKey("other", "machine-busy");
     const entry = { provider: "openai", model: "gpt-4o", status: "ok", tokens: {} };
 
-    await db.saveRequestUsage({ ...entry, apiKey: key.key });
-    await db.saveRequestUsage({ ...entry, apiKey: key.key });
-    await db.saveRequestUsage({ ...entry, apiKey: other.key });
-    await db.saveRequestUsage({ ...entry }); // no key: excluded
+    await db.saveRequestUsageUnscoped({ ...entry, apiKey: key.key });
+    await db.saveRequestUsageUnscoped({ ...entry, apiKey: key.key });
+    await db.saveRequestUsageUnscoped({ ...entry, apiKey: other.key });
+    await db.saveRequestUsageUnscoped({ ...entry }); // no key: excluded
 
-    const usage = await db.getApiKeyUsage();
-    expect(usage.today[key.key]).toBe(2);
-    expect(usage.today[other.key]).toBe(1);
-    expect(typeof usage.lastUsed[key.key]).toBe("string");
-    expect(Number.isNaN(Date.parse(usage.lastUsed[key.key]))).toBe(false);
+    const usage = await db.getApiKeyUsage(null);
+    expect(usage.today[key.id]).toBe(2);
+    expect(usage.today[other.id]).toBe(1);
+    expect(typeof usage.lastUsed[key.id]).toBe("string");
+    expect(Number.isNaN(Date.parse(usage.lastUsed[key.id]))).toBe(false);
   });
 });

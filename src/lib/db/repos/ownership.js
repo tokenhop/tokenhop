@@ -84,6 +84,31 @@ export function adoptOwnerlessRowsUnscoped(db) {
   }
   n += adoptKvScopes(db, ws);
   n += seedComboStrategies(db, ws);
+  n += adoptUsage(db, ws, owner);
+  return n;
+}
+
+// YAN-370: usage written before bootstrap → Default workspace, the owner.
+// Rollup rows merge by summing into any existing (Default, owner) row.
+function adoptUsage(db, ws, owner) {
+  let n = 0;
+  for (const t of ["usageHistory", "requestDetails"]) {
+    n += db.run(
+      `UPDATE ${t} SET workspaceId = ?, userId = COALESCE(userId, ?) WHERE workspaceId IS NULL`,
+      [ws, owner],
+    ).changes;
+  }
+  n += db.run(
+    `INSERT INTO usageRollup (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost)
+     SELECT dateKey, ?, CASE WHEN userId = '' THEN ? ELSE userId END, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost
+     FROM usageRollup WHERE workspaceId = ''
+     ON CONFLICT (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint) DO UPDATE SET
+       requests = requests + excluded.requests, tokensIn = tokensIn + excluded.tokensIn,
+       tokensOut = tokensOut + excluded.tokensOut, tokensCached = tokensCached + excluded.tokensCached,
+       cost = cost + excluded.cost`,
+    [ws, owner ?? ""],
+  ).changes;
+  db.run(`DELETE FROM usageRollup WHERE workspaceId = ''`);
   return n;
 }
 

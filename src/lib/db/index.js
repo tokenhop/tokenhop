@@ -107,7 +107,7 @@ export { getApiKeyUsage } from "./repos/apiKeyUsageRepo.js";
 
 export {
   rowSavedFromSavings,
-  backfillSavingsLifetime,
+  backfillSavingsLifetimeUnscoped,
   SAVINGS_LIFETIME_KEY,
 } from "./repos/usageRepo.js";
 
@@ -184,10 +184,11 @@ export {
   statsEmitter,
   trackPendingRequest,
   getLiveSnapshot,
-  saveRequestUsage,
+} from "./repos/usageLiveFeed.js";
+export { getUsageStats, getChartData } from "./repos/usageStatsRepo.js";
+export {
+  saveRequestUsageUnscoped,
   getUsageHistory,
-  getUsageStatsUnscoped,
-  getChartData,
   getUsageSavings,
   getUsageTotals,
   getLastActivity,
@@ -197,12 +198,12 @@ export {
   getSavingsLifetime,
   recordFallbackHop,
   appendRequestLog,
-  getRecentLogsUnscoped,
+  getRecentLogs,
 } from "./repos/usageRepo.js";
 
 // Request details
 export {
-  saveRequestDetail,
+  saveRequestDetailUnscoped,
   getRequestDetails,
   getRequestDetailById,
   getDistinctProviders,

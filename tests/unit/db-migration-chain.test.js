@@ -53,7 +53,7 @@ describe("Schema migrations", () => {
         "combos",
         "kv",
         "usageHistory",
-        "usageDaily",
+        "usageRollup",
         "requestDetails",
       ]),
     );
@@ -243,10 +243,117 @@ describe("Schema migrations", () => {
     db.run(`INSERT INTO settings(id, data) VALUES(1, ?)`, ['{"foo":"bar"}']);
     expect(db.get(`SELECT 1 AS x FROM sqlite_master WHERE name = 'workspaceKeys'`)).toBeUndefined();
     runVersionedMigrations(db);
-    expect(db.get(`SELECT value FROM _meta WHERE key='schemaVersion'`).value).toBe("13");
+    expect(
+      Number(db.get(`SELECT value FROM _meta WHERE key='schemaVersion'`).value),
+    ).toBeGreaterThanOrEqual(13);
     expect(JSON.parse(db.get(`SELECT data FROM settings WHERE id = 1`).data).foo).toBe("bar");
     expect(db.get(`SELECT COUNT(*) AS c FROM workspaceKeys`).c).toBe(0);
     m013.up(db);
+    db.close();
+  });
+
+  it("migration 014 backfills attribution, drops raw keys and usageDaily, rebuilds the rollup (YAN-370)", async () => {
+    const { createSqlJsAdapter } = await import("@/lib/db/adapters/sqljsAdapter.js");
+    const { runVersionedMigrations } = await import("@/lib/db/migrate.js");
+    const { MIGRATIONS } = await import("@/lib/db/migrations/index.js");
+    const m014 = (await import("@/lib/db/migrations/014-usage-attribution.js")).default;
+    const { createHash } = await import("node:crypto");
+    expect(MIGRATIONS.find((m) => m.version === 14).name).toBe("usage-attribution");
+
+    const db = await createSqlJsAdapter(path.join(tempDir, "pre014.sqlite"));
+    runVersionedMigrations(
+      db,
+      MIGRATIONS.filter((m) => m.version < 14),
+    );
+    const now = "2026-01-01T00:00:00.000Z";
+    db.run(`INSERT INTO users(id, instanceRole, createdAt, updatedAt) VALUES('u1','owner',?,?)`, [
+      now,
+      now,
+    ]);
+    db.run(
+      `INSERT INTO workspaces(id, name, kind, createdBy, createdAt, updatedAt) VALUES('w1','W','shared',NULL,?,?)`,
+      [now, now],
+    );
+    const RAW_KNOWN = "sk-legacy-known-raw-secret";
+    const RAW_UNKNOWN = "sk-legacy-unknown-raw-secret";
+    db.run(`INSERT INTO apiKeys(id, key, name, createdAt) VALUES('k1', ?, 'Known', ?)`, [
+      RAW_KNOWN,
+      now,
+    ]);
+
+    const T = (d, h = 12) => new Date(2026, 0, d, h).toISOString(); // local-day stamps
+    const hist = (ts, apiKey, meta, model = "m") =>
+      db.run(
+        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta)
+         VALUES(?, 'p', ?, 'c1', ?, '/v1/x', 10, 5, 0.5, 'ok', '{"cached_tokens":2}', ?)`,
+        [ts, model, apiKey, meta == null ? null : JSON.stringify(meta)],
+      );
+    hist(T(10), RAW_KNOWN, { workspaceId: "w1", userId: "u1", apiKey: RAW_KNOWN });
+    hist(T(10), RAW_UNKNOWN, null);
+    hist(T(10), "local-no-key", null);
+    hist(T(11), null, { workspaceId: "ghost-ws" }); // dangling id → stays NULL (FK-safe)
+    db.run(
+      `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES('rd1', ?, 'p', 'm', 'c1', 'ok', ?)`,
+      [T(10), JSON.stringify({ apiKeyId: "k1", workspaceId: "w1", userId: "u1" })],
+    );
+    // Day 10: blob == history (3 rows). Day 12: pre-SQLite truncation, blob has
+    // 7 requests and history none. Day 11 has no blob.
+    const blob = (n) =>
+      JSON.stringify({ byModel: { "m|p": { requests: n, rawModel: "m", provider: "p" } } });
+    db.run(`INSERT INTO usageDaily(dateKey, data) VALUES('2026-01-10', ?), ('2026-01-12', ?)`, [
+      blob(3),
+      blob(7),
+    ]);
+    const counts = (t) => db.get(`SELECT COUNT(*) AS c FROM ${t}`).c;
+    const before = { h: counts("usageHistory"), r: counts("requestDetails") };
+
+    runVersionedMigrations(db);
+
+    expect(db.get(`SELECT 1 AS x FROM sqlite_master WHERE name = 'usageDaily'`)).toBeUndefined();
+    expect([counts("usageHistory"), counts("requestDetails")]).toEqual([before.h, before.r]);
+    const rows = db.all(`SELECT * FROM usageHistory ORDER BY id`);
+    expect(rows.every((r) => r.apiKey === null)).toBe(true);
+    const pseudo = `historical:${createHash("sha256").update(RAW_UNKNOWN).digest("hex").slice(0, 24)}`;
+    expect(rows.map((r) => r.apiKeyId)).toEqual(["k1", pseudo, "local-no-key", "local-no-key"]);
+    expect(rows[1].apiKeyId).toMatch(/^historical:[0-9a-f]{24}$/);
+    expect(rows.map((r) => [r.workspaceId, r.userId])).toEqual([
+      ["w1", "u1"],
+      [null, null],
+      [null, null],
+      [null, null],
+    ]);
+    expect(db.get(`SELECT apiKeyId, workspaceId, userId FROM requestDetails`)).toEqual({
+      apiKeyId: "k1",
+      workspaceId: "w1",
+      userId: "u1",
+    });
+
+    // Rollup: per-day request totals == history group-by; truncated day == blob.
+    const perDay = () =>
+      Object.fromEntries(
+        db
+          .all(`SELECT dateKey, SUM(requests) AS n FROM usageRollup GROUP BY dateKey`)
+          .map((r) => [r.dateKey, r.n]),
+      );
+    expect(perDay()).toEqual({ "2026-01-10": 3, "2026-01-11": 1, "2026-01-12": 7 });
+
+    // No raw key anywhere in the usage tables (every column of every row).
+    for (const t of ["usageHistory", "requestDetails", "usageRollup"]) {
+      const dump = JSON.stringify(db.all(`SELECT * FROM ${t}`));
+      expect(dump).not.toContain(RAW_KNOWN);
+      expect(dump).not.toContain(RAW_UNKNOWN);
+    }
+
+    // Idempotent: a re-run changes nothing.
+    const snap = () =>
+      JSON.stringify([
+        db.all(`SELECT * FROM usageHistory ORDER BY id`),
+        db.all(`SELECT * FROM requestDetails ORDER BY id`),
+        db.all(`SELECT * FROM usageRollup ORDER BY dateKey, apiKeyId, model`),
+      ]);
+    const s1 = snap();
+    m014.up(db);
+    expect(snap()).toBe(s1);
     db.close();
   });
 

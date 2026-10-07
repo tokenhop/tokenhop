@@ -10,6 +10,7 @@ import { insertHashedApiKeySync } from "../repos/apiKeysRepo.js";
 import { convertUsageDailyKeys, normalizeUsageKeyEntry } from "../helpers/usageKeyIdentity.js";
 import { deriveApiKeyHashKey, hashApiKey, masterKeyId } from "../../security/masterKey.js";
 import { apiKeyPrefix } from "../../../shared/utils/apiKey.js";
+import { tableExists } from "./helpers.js";
 
 function fail(code, message) {
   throw Object.assign(new Error(`[gateway-key-migration] ${message}`), { code });
@@ -153,10 +154,10 @@ export function hashGatewayKeysSync(
       return item;
     });
     const counts = Object.fromEntries(
-      ["apiKeys", "usageHistory", "usageDaily"].map((table) => [
-        table,
-        db.get(`SELECT COUNT(*) AS n FROM ${table}`).n,
-      ]),
+      // YAN-370: usageDaily is gone after migration 014 (usageRollup holds ids).
+      ["apiKeys", "usageHistory", "usageDaily"]
+        .filter((t) => tableExists(db, t))
+        .map((table) => [table, db.get(`SELECT COUNT(*) AS n FROM ${table}`).n]),
     );
     db.exec(buildCreateTableSql("apiKeys_hash_stage", HASHED_API_KEYS_TABLE));
     // Use reviewed strict row validator/inserter against staging table without
@@ -209,7 +210,9 @@ export function hashGatewayKeysSync(
         row.id,
       ]);
     }
-    const days = db.all("SELECT dateKey, data FROM usageDaily");
+    const days = tableExists(db, "usageDaily")
+      ? db.all("SELECT dateKey, data FROM usageDaily")
+      : [];
     for (const row of days) {
       const day = convertUsageDailyKeys(parse(row.data), { sourceStorage: "legacy", ...context });
       // Real aggregateEntryToDay stores credential in bucket.meta.apiKey.

@@ -13,7 +13,7 @@ import { openAICompletionToClientFormat } from "./completionToClient.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
-import { saveRequestDetail } from "@/lib/usageDb.js";
+import { saveRequestDetailUnscoped } from "@/lib/usageDb.js";
 
 function textFromResponsesMessageItem(item) {
   if (!item?.content || !Array.isArray(item.content)) return "";
@@ -209,7 +209,7 @@ export async function handleForcedSSEToJson({
       const { textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
       const totalLatency = Date.now() - requestStartTime;
 
-      saveRequestDetail(
+      saveRequestDetailUnscoped(
         buildRequestDetail(
           {
             ...ctx,
@@ -379,7 +379,7 @@ export async function handleForcedSSEToJson({
       );
 
     const totalLatency = Date.now() - requestStartTime;
-    saveRequestDetail(
+    saveRequestDetailUnscoped(
       buildRequestDetail(
         {
           ...ctx,

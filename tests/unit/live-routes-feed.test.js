@@ -30,7 +30,7 @@ afterAll(() => {
 describe("getLiveRoutesFeed", () => {
   it("returns windowed usage + error rows with key names, never raw keys", async () => {
     const key = await db.createApiKey("nightly-job", "machine-test");
-    await db.saveRequestUsage({
+    await db.saveRequestUsageUnscoped({
       provider: "openrouter",
       model: "m1",
       apiKey: key.key,
@@ -38,7 +38,7 @@ describe("getLiveRoutesFeed", () => {
       comboName: "coder",
       tokens: { prompt_tokens: 3, completion_tokens: 2 },
     });
-    await db.saveRequestUsage({
+    await db.saveRequestUsageUnscoped({
       provider: "old",
       model: "m1",
       timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
@@ -57,7 +57,7 @@ describe("getLiveRoutesFeed", () => {
       ],
     );
 
-    const feed = await db.getLiveRoutesFeed();
+    const feed = await db.getLiveRoutesFeed(null);
 
     expect(feed.usageRows).toHaveLength(1);
     expect(feed.usageRows[0]).toMatchObject({
@@ -71,7 +71,7 @@ describe("getLiveRoutesFeed", () => {
       expect.objectContaining({ provider: "gemini-cli", status: 429 }),
     ]);
     db.recordFallbackHop({ comboName: "coder", provider: "gemini-cli", model: "m1", status: 409 });
-    const again = await db.getLiveRoutesFeed();
+    const again = await db.getLiveRoutesFeed(null);
     expect(again.fallbackHops).toEqual([
       expect.objectContaining({ comboName: "coder", provider: "gemini-cli", status: 409 }),
     ]);

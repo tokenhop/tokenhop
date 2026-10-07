@@ -1,5 +1,10 @@
-import { getProviderCredentials, markAccountUnavailable } from "../services/auth.js";
-import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
+import { getProviderCredentials, markAccountUnavailable, extractApiKey } from "../services/auth.js";
+import {
+  authorizeGatewayTarget,
+  gatewayKeyContext,
+  resolveGatewayAuth,
+} from "@/lib/auth/gatewayAuth.js";
+import { saveRequestUsageUnscoped } from "@/lib/usageDb.js";
 import { getEffectivePreferences } from "@/lib/db/index.js";
 import { getModelInfo, getComboModels, getComboByName } from "../services/model.js";
 import { comboRotationKey, comboStrategyFor } from "@/lib/comboKeys.js";
@@ -47,6 +52,7 @@ export async function handleTts(request) {
   const auth = await resolveGatewayAuth(request);
   if (auth instanceof Response) return auth;
   const gateway = auth.principal;
+  const usageCtx = { endpoint: url.pathname, apiKey: auth.legacy ? extractApiKey(request) : null };
   const settings = await getEffectivePreferences(gateway);
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
@@ -90,7 +96,7 @@ export async function handleTts(request) {
       body,
       models: comboModels,
       handleSingleModel: (b, m) =>
-        handleSingleModelTts(b, m, responseFormat, language, style, gateway),
+        handleSingleModelTts(b, m, responseFormat, language, style, gateway, usageCtx),
       log,
       comboName: comboRotationKey(gateway?.workspaceId, modelStr),
       comboStrategy,
@@ -100,10 +106,18 @@ export async function handleTts(request) {
     });
   }
 
-  return handleSingleModelTts(body, modelStr, responseFormat, language, style, gateway);
+  return handleSingleModelTts(body, modelStr, responseFormat, language, style, gateway, usageCtx);
 }
 
-async function handleSingleModelTts(body, modelStr, responseFormat, language, style, gateway) {
+async function handleSingleModelTts(
+  body,
+  modelStr,
+  responseFormat,
+  language,
+  style,
+  gateway,
+  usageCtx,
+) {
   const gatewayCreds = gateway ? { principal: gateway } : {};
   const modelInfo = await getModelInfo(modelStr, gatewayCreds);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
@@ -126,7 +140,19 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
       voice: body.voice,
       format: body.response_format,
     });
-    if (result.success) return result.response;
+    if (result.success) {
+      saveRequestUsageUnscoped({
+        provider,
+        model,
+        endpoint: usageCtx.endpoint,
+        connectionId: null,
+        apiKey: usageCtx.apiKey,
+        ...gatewayKeyContext(gateway),
+        units: { characters: typeof body.input === "string" ? body.input.length : 0 },
+        status: "success",
+      }).catch(() => {});
+      return result.response;
+    }
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
   }
 
@@ -177,7 +203,19 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
       format: body.response_format,
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      saveRequestUsageUnscoped({
+        provider,
+        model,
+        endpoint: usageCtx.endpoint,
+        connectionId: credentials.connectionId,
+        apiKey: usageCtx.apiKey,
+        ...gatewayKeyContext(gateway),
+        units: { characters: typeof body.input === "string" ? body.input.length : 0 },
+        status: "success",
+      }).catch(() => {});
+      return result.response;
+    }
 
     const { shouldFallback } = await markAccountUnavailable(
       credentials.connectionId,

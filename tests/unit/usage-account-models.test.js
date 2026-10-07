@@ -12,7 +12,7 @@ beforeAll(async () => {
   const base = Date.now() - 60_000;
   const models = ["gpt-4o", "gpt-4o", "gpt-4o-mini"];
   for (const [i, model] of models.entries()) {
-    await db.saveRequestUsage({
+    await db.saveRequestUsageUnscoped({
       provider: "openai",
       model,
       connectionId: "conn-yan64-0001",
@@ -24,26 +24,11 @@ beforeAll(async () => {
   }
 });
 
-describe.each(["24h", "7d"])("getUsageStatsUnscoped(%s) byAccount", (period) => {
+describe.each(["24h", "7d"])("getUsageStats(%s) byAccount", (period) => {
   it("splits an account's usage per model", async () => {
-    const stats = await db.getUsageStatsUnscoped(period);
+    const stats = await db.getUsageStats(null, period);
     const rows = Object.values(stats.byAccount).filter((r) => r.connectionId === "conn-yan64-0001");
     const byModel = Object.fromEntries(rows.map((r) => [r.rawModel, r.requests]));
     expect(byModel).toEqual({ "gpt-4o": 2, "gpt-4o-mini": 1 });
   });
-});
-
-it("still reads day rows saved before YAN-64 (bare connectionId key)", async () => {
-  const { getAdapter } = await import("@/lib/db/driver.js");
-  const adapter = await getAdapter();
-  const day = {
-    byAccount: { "conn-legacy-0001": { requests: 4, rawModel: "gpt-4o", provider: "openai" } },
-  };
-  adapter.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?)`, [
-    "2000-01-01",
-    JSON.stringify(day),
-  ]);
-  const stats = await db.getUsageStatsUnscoped("all");
-  const row = Object.values(stats.byAccount).find((r) => r.connectionId === "conn-legacy-0001");
-  expect(row).toMatchObject({ rawModel: "gpt-4o", requests: 4 });
 });

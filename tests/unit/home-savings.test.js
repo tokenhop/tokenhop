@@ -153,7 +153,7 @@ describe("aggregateSavings", () => {
   });
 });
 
-describe("recorded savings (saveRequestUsage -> getUsageSavings)", () => {
+describe("recorded savings (saveRequestUsageUnscoped -> getUsageSavings)", () => {
   const originalDataDir = process.env.DATA_DIR;
   let tempDir;
   let db;
@@ -176,7 +176,7 @@ describe("recorded savings (saveRequestUsage -> getUsageSavings)", () => {
     const rtk = buildSavingsEntry({
       rtkStats: { bytesBefore: 8000, bytesAfter: 4000, hits: [{ shape: "x" }] },
     });
-    await db.saveRequestUsage({
+    await db.saveRequestUsageUnscoped({
       provider: "openai",
       model: "gpt-5",
       tokens: { prompt_tokens: 100, completion_tokens: 50 },
@@ -189,7 +189,7 @@ describe("recorded savings (saveRequestUsage -> getUsageSavings)", () => {
       headroomStats: { tokens_before: 10000, tokens_after: 6000, tokens_saved: 4000 },
       headroomDiagnostics: { before: { bodyBytes: 40000 }, after: { bodyBytes: 20000 } },
     });
-    await db.saveRequestUsage({
+    await db.saveRequestUsageUnscoped({
       provider: "anthropic",
       model: "claude-opus-4-6",
       tokens: { prompt_tokens: 200, completion_tokens: 80 },
@@ -200,7 +200,7 @@ describe("recorded savings (saveRequestUsage -> getUsageSavings)", () => {
     });
 
     // No savings row: counts as a request but not as savings
-    await db.saveRequestUsage({
+    await db.saveRequestUsageUnscoped({
       provider: "openai",
       model: "gpt-5-mini",
       tokens: { prompt_tokens: 10, completion_tokens: 5 },
@@ -208,7 +208,7 @@ describe("recorded savings (saveRequestUsage -> getUsageSavings)", () => {
       status: "ok",
     });
 
-    const out = await db.getUsageSavings("7d");
+    const out = await db.getUsageSavings(null, "7d");
     expect(out.estimated).toBe(true);
     expect(out.tokensSavedEst).toBe(1000 + 4000);
     expect(out.requestsWithSavings).toBe(2);
@@ -217,7 +217,7 @@ describe("recorded savings (saveRequestUsage -> getUsageSavings)", () => {
     expect(out.byMethod.headroom.tokensSavedEst).toBe(4000);
 
     // today also includes these rows (just written)
-    const today = await db.getUsageSavings("today");
+    const today = await db.getUsageSavings(null, "today");
     expect(today.requestsWithSavings).toBe(2);
 
     // Phantom headroom never persists measurable savings
@@ -231,11 +231,11 @@ describe("recorded savings (saveRequestUsage -> getUsageSavings)", () => {
   it("prices saved tokens per request model; unknown models price nothing", async () => {
     // Realistic shapes: gh/tokenrouter-style provider keys with per-model
     // input rates; gpt-5 + claude-opus-4-6 resolve from the real pricing tables.
-    const out = await db.getUsageSavings("7d");
+    const out = await db.getUsageSavings(null, "7d");
     expect(out.costSavedEst).toBeGreaterThan(0);
     expect(out.pricedRequests).toBe(2);
 
-    await db.saveRequestUsage({
+    await db.saveRequestUsageUnscoped({
       provider: "nope-provider",
       model: "nope-model-xyz",
       tokens: { prompt_tokens: 100, completion_tokens: 50 },
@@ -246,7 +246,7 @@ describe("recorded savings (saveRequestUsage -> getUsageSavings)", () => {
       }),
     });
 
-    const after = await db.getUsageSavings("7d");
+    const after = await db.getUsageSavings(null, "7d");
     expect(after.tokensSavedEst).toBe(out.tokensSavedEst + 1000);
     expect(after.requestsWithSavings).toBe(out.requestsWithSavings + 1);
     // Tokens count, dollars unchanged: unknown pricing is never invented.
@@ -254,7 +254,7 @@ describe("recorded savings (saveRequestUsage -> getUsageSavings)", () => {
     expect(after.pricedRequests).toBe(out.pricedRequests);
   });
   it("home summary: previous-period delta + top combos from recorded names", async () => {
-    const summary = await db.getHomeSummary("7d");
+    const summary = await db.getHomeSummary(null, "7d");
     expect(summary.requests).toBeGreaterThanOrEqual(3);
     expect(summary.previousRequests).toBe(0);
     const pack = summary.topCombos.find((c) => c.name === "research-pack");
@@ -263,7 +263,7 @@ describe("recorded savings (saveRequestUsage -> getUsageSavings)", () => {
   });
 
   it("getUsageSavings rejects invalid period", async () => {
-    await expect(db.getUsageSavings("90d")).rejects.toThrow(/Invalid period/);
+    await expect(db.getUsageSavings(null, "90d")).rejects.toThrow(/Invalid period/);
   });
 });
 
@@ -305,12 +305,12 @@ describe("savings and summary windows", () => {
         meta,
       ]);
     }
-    expect((await db.getUsageSavings("7d", now)).requestsWithSavings).toBe(2);
-    const summary = await db.getHomeSummary("7d", now);
+    expect((await db.getUsageSavings(null, "7d", now)).requestsWithSavings).toBe(2);
+    const summary = await db.getHomeSummary(null, "7d", now);
     expect(summary.requests).toBe(2);
     expect(summary.previousRequests).toBe(2);
-    expect((await db.getUsageSavings("24h", now)).requestsWithSavings).toBe(1);
-    expect((await db.getHomeSummary("60d", now)).requests).toBe(4);
+    expect((await db.getUsageSavings(null, "24h", now)).requestsWithSavings).toBe(1);
+    expect((await db.getHomeSummary(null, "60d", now)).requests).toBe(4);
   });
 });
 

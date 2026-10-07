@@ -1,6 +1,7 @@
 import { getAdapter, getAdapterSync } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { registerShutdownFlusher } from "../shutdownFlushers.js";
+import { scopeSql, whereAll } from "./usageRollupRepo.js";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
@@ -194,7 +195,9 @@ function writeBatch(db, items, config) {
       };
 
       db.run(
-        `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
+        `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data, workspaceId, userId, apiKeyId)
+         VALUES(?, ?, ?, ?, ?, ?, ?, (SELECT id FROM workspaces WHERE id = ?), (SELECT id FROM users WHERE id = ?), ?)
+         ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data, workspaceId = excluded.workspaceId, userId = excluded.userId, apiKeyId = excluded.apiKeyId`,
         [
           record.id,
           record.timestamp,
@@ -203,21 +206,31 @@ function writeBatch(db, items, config) {
           record.connectionId,
           record.status,
           stringifyJson(record),
+          record.workspaceId,
+          record.userId,
+          record.apiKeyId ?? "local-no-key",
         ],
       );
     }
 
-    const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
-    if (cnt && cnt.c > config.maxRecords) {
+    // Cap per workspace (YAN-370, plan D7): one busy workspace must not
+    // evict every other workspace's details. NULL workspace is its own group.
+    for (const g of db.all(
+      `SELECT workspaceId, COUNT(*) AS c FROM requestDetails GROUP BY workspaceId HAVING c > ?`,
+      [config.maxRecords],
+    )) {
+      const ws = g.workspaceId == null ? "workspaceId IS NULL" : "workspaceId = ?";
       db.run(
-        `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
-        [cnt.c - config.maxRecords],
+        `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails WHERE ${ws} ORDER BY timestamp ASC LIMIT ?)`,
+        g.workspaceId == null
+          ? [g.c - config.maxRecords]
+          : [g.workspaceId, g.c - config.maxRecords],
       );
     }
   });
 }
 
-export async function saveRequestDetail(detail) {
+export async function saveRequestDetailUnscoped(detail) {
   const config = await getObservabilityConfig();
   if (!config.enabled) {
     return;
@@ -241,10 +254,16 @@ export async function saveRequestDetail(detail) {
   }
 }
 
-export async function getRequestDetails(filter = {}) {
+/**
+ * Paged request details within the usage scope `ctx` (null: unscoped). Each
+ * row carries its `workspaceId`/`userId` columns so the route can decide body
+ * visibility per row (plan D10).
+ */
+export async function getRequestDetails(ctx, filter = {}) {
   const db = await getAdapter();
-  const conds = [];
-  const params = [];
+  const scope = scopeSql(ctx);
+  const conds = scope.sql ? [scope.sql] : [];
+  const params = [...scope.params];
 
   if (filter.provider) {
     conds.push("provider = ?");
@@ -281,10 +300,15 @@ export async function getRequestDetails(filter = {}) {
   const offset = (page - 1) * pageSize;
 
   const rows = db.all(
-    `SELECT data FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+    `SELECT data, workspaceId, userId FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
     [...params, pageSize, offset],
   );
-  const details = rows.map((r) => parseJson(r.data, {}));
+  // Columns win over the data JSON: owner bootstrap adopts NULL rows later.
+  const details = rows.map((r) => ({
+    ...parseJson(r.data, {}),
+    ...(r.workspaceId ? { workspaceId: r.workspaceId } : {}),
+    ...(r.userId ? { userId: r.userId } : {}),
+  }));
 
   return {
     details,
@@ -299,17 +323,23 @@ export async function getRequestDetails(filter = {}) {
   };
 }
 
-export async function getDistinctProviders() {
+export async function getDistinctProviders(ctx) {
   const db = await getAdapter();
+  const scope = scopeSql(ctx);
   const rows = db.all(
-    `SELECT DISTINCT provider FROM requestDetails WHERE provider IS NOT NULL ORDER BY provider ASC`,
+    `SELECT DISTINCT provider FROM requestDetails ${whereAll(scope.sql, "provider IS NOT NULL")} ORDER BY provider ASC`,
+    scope.params,
   );
   return rows.map((r) => r.provider);
 }
 
-export async function getRequestDetailById(id) {
+export async function getRequestDetailById(ctx, id) {
   const db = await getAdapter();
-  const row = db.get(`SELECT data FROM requestDetails WHERE id = ?`, [id]);
+  const scope = scopeSql(ctx);
+  const row = db.get(`SELECT data FROM requestDetails ${whereAll(scope.sql, "id = ?")}`, [
+    ...scope.params,
+    id,
+  ]);
   return row ? parseJson(row.data, null) : null;
 }
 

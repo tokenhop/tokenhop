@@ -3,13 +3,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 describe("probe usage exclusion (YAN-299)", () => {
-  it("skips saveRequestUsage for the probe endpoint only", async () => {
+  it("skips saveRequestUsageUnscoped for the probe endpoint only", async () => {
     vi.resetModules();
     const calls = [];
     vi.doMock("@/lib/usageDb.js", () => ({
-      saveRequestUsage: async (entry) => calls.push(entry),
+      saveRequestUsageUnscoped: async (entry) => calls.push(entry),
       appendRequestLog: async () => {},
-      saveRequestDetail: async () => {},
+      saveRequestDetailUnscoped: async () => {},
     }));
     const { saveUsageStats } = await import("../../open-sse/handlers/chatCore/requestDetail.js");
 

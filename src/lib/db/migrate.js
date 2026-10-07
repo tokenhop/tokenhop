@@ -9,6 +9,7 @@ import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
+import { rebuildRollupFromHistoryUnscoped } from "./repos/usageRollupRepo.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -381,12 +382,9 @@ function importLegacyUsage(adapter, data) {
       ],
     );
   }
-  for (const [dateKey, day] of Object.entries(data.dailySummary || {})) {
-    adapter.run(`INSERT OR REPLACE INTO usageDaily(dateKey, data) VALUES(?, ?)`, [
-      dateKey,
-      stringifyJson(day),
-    ]);
-  }
+  // YAN-370: the daily rollup is rebuilt from the imported history rows (the
+  // legacy dailySummary blob's marginal buckets can't be decomposed).
+  rebuildRollupFromHistoryUnscoped(adapter);
   if (typeof data.totalRequestsLifetime === "number") {
     setMetaSync(adapter, "totalRequestsLifetime", data.totalRequestsLifetime);
   }

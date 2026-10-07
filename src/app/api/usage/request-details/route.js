@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRequestDetails } from "@/lib/usageDb";
+import { canSeeBodies, usageScope } from "@/lib/usage/scope.js";
 
 /**
  * GET /api/usage/request-details
@@ -7,6 +8,8 @@ import { getRequestDetails } from "@/lib/usageDb";
  */
 export async function GET(request) {
   try {
+    const scope = await usageScope(request);
+    if (scope instanceof Response) return scope;
     const { searchParams } = new URL(request.url);
 
     const pageRaw = parseInt(searchParams.get("page"));
@@ -40,14 +43,18 @@ export async function GET(request) {
     if (startDate) filter.startDate = startDate;
     if (endDate) filter.endDate = endDate;
 
-    const result = await getRequestDetails(filter);
+    const result = await getRequestDetails(scope, filter);
 
+    // Switch off (scope null): redact every row, as today. Switch on: bodies
+    // only where canSeeBodies (row's user, workspace manager/owner, instance
+    // admin); the reader is asked for bodies only then (D10).
     // Redact conversation payloads: the stored details include full request
     // bodies (user prompts, tool calls) and provider responses. Returning them
     // wholesale lets any dashboard-authenticated user (or, if requireLogin is
     // disabled, anyone) read every user's conversation history. Keep the
     // metadata (model, tokens, latency, status) but drop message content.
     const redactedDetails = (result.details || []).map((d) => {
+      if (scope && canSeeBodies(scope.ctx, d)) return d;
       const redacted = { ...d };
       for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
         if (redacted[key] !== undefined) {

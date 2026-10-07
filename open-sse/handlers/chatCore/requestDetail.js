@@ -1,4 +1,4 @@
-import { saveRequestUsage } from "@/lib/usageDb.js";
+import { saveRequestUsageUnscoped } from "@/lib/usageDb.js";
 import { COLORS } from "../../utils/stream.js";
 import { canonicalizeUsage } from "../../utils/usageTracking.js";
 import { COMBO_PROBE_ENDPOINT } from "../../config/runtimeConfig.js";
@@ -175,7 +175,7 @@ export function saveUsageStats({
     completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0,
   };
 
-  saveRequestUsage({
+  saveRequestUsageUnscoped({
     provider: provider || "unknown",
     model: model || "unknown",
     tokens: normalized,

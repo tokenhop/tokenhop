@@ -1,27 +1,28 @@
 import { getAdapter } from "../driver.js";
+import { scopeSql, whereAll } from "./usageRollupRepo.js";
 
 /**
- * Per-client-API-key usage from the usageHistory table.
- * Two maps, keyed by the stored credential slot:
- * - legacy storage: raw api key value (today's behavior, byte-identical).
- * - hashed storage: key id / pseudonym — the sink (`usageRepo.saveRequestUsage`)
- *   stores the identity there, so the raw never reaches history to begin with.
+ * Per-client-API-key usage from usageHistory, keyed by key id (YAN-370: rows
+ * hold `apiKeyId`, never a raw key). `ctx` is the usage scope (null: all).
  * - lastUsed: most recent timestamp the key made a request (null when never used)
  * - today: requests today (local midnight)
  */
-export async function getApiKeyUsage() {
+export async function getApiKeyUsage(ctx) {
   const db = await getAdapter();
+  const scope = scopeSql(ctx);
+  const keyed = "apiKeyId IS NOT NULL AND apiKeyId != 'local-no-key'";
   const lastUsedRows = db.all(
-    `SELECT apiKey, MAX(timestamp) AS lastUsed FROM usageHistory WHERE apiKey IS NOT NULL AND apiKey != '' GROUP BY apiKey`,
+    `SELECT apiKeyId, MAX(timestamp) AS lastUsed FROM usageHistory ${whereAll(scope.sql, keyed)} GROUP BY apiKeyId`,
+    scope.params,
   );
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
   const todayRows = db.all(
-    `SELECT apiKey, COUNT(*) AS n FROM usageHistory WHERE apiKey IS NOT NULL AND apiKey != '' AND timestamp >= ? GROUP BY apiKey`,
-    [startOfDay.toISOString()],
+    `SELECT apiKeyId, COUNT(*) AS n FROM usageHistory ${whereAll(scope.sql, keyed, "timestamp >= ?")} GROUP BY apiKeyId`,
+    [...scope.params, startOfDay.toISOString()],
   );
   return {
-    lastUsed: Object.fromEntries(lastUsedRows.map((r) => [r.apiKey, r.lastUsed])),
-    today: Object.fromEntries(todayRows.map((r) => [r.apiKey, r.n])),
+    lastUsed: Object.fromEntries(lastUsedRows.map((r) => [r.apiKeyId, r.lastUsed])),
+    today: Object.fromEntries(todayRows.map((r) => [r.apiKeyId, r.n])),
   };
 }

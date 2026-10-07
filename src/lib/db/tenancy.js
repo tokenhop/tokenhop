@@ -34,9 +34,11 @@ export const TABLE_CLASSES = {
     note: "NULL until owner bootstrap (YAN-364)",
   },
   kv: { class: "pending-scope", note: "classified per scope in KV_SCOPE_CLASSES" },
-  usageHistory: { class: "usage-attribution", issue: "YAN-370" },
-  usageDaily: { class: "usage-attribution", issue: "YAN-370" },
-  requestDetails: { class: "usage-attribution", issue: "YAN-370" },
+  // YAN-370: NULL workspaceId until owner bootstrap adopts rows into Default.
+  // Writers are `*Unscoped`: their attribution is the resolved principal.
+  usageHistory: { class: "scoped", scopeColumn: "workspaceId" },
+  usageRollup: { class: "scoped", scopeColumn: "workspaceId", note: "'' until bootstrap" },
+  requestDetails: { class: "scoped", scopeColumn: "workspaceId" },
   users: { class: "instance", note: "admin-managed; self reads go through getUser(ctx)" },
   identities: { class: "scoped", scopeColumn: "userId" },
   workspaces: { class: "scoped", scopeColumn: "id", note: "visible through memberships" },

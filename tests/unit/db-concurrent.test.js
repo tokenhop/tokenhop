@@ -1,4 +1,4 @@
-// Concurrency stress test — simulate many parallel saveRequestUsage / saveRequestDetail
+// Concurrency stress test — simulate many parallel saveRequestUsageUnscoped / saveRequestDetailUnscoped
 // to verify atomic counter, no data loss, no race conditions.
 import fs from "node:fs";
 import os from "node:os";
@@ -24,12 +24,12 @@ afterAll(() => {
 });
 
 describe("DB Concurrency — atomic safety", () => {
-  it("100 parallel saveRequestUsage → no count loss", async () => {
+  it("100 parallel saveRequestUsageUnscoped → no count loss", async () => {
     const N = 100;
     const promises = [];
     for (let i = 0; i < N; i++) {
       promises.push(
-        db.saveRequestUsage({
+        db.saveRequestUsageUnscoped({
           provider: "openai",
           model: "gpt-4",
           connectionId: "c1",
@@ -41,12 +41,12 @@ describe("DB Concurrency — atomic safety", () => {
     }
     await Promise.all(promises);
 
-    const stats = await db.getUsageStatsUnscoped("24h");
+    const stats = await db.getUsageStats(null, "24h");
     expect(stats.totalRequests).toBe(N);
     expect(stats.byProvider.openai.requests).toBe(N);
     expect(stats.byProvider.openai.promptTokens).toBe(N * 10);
 
-    const hist = await db.getUsageHistory({ provider: "openai" });
+    const hist = await db.getUsageHistory(null, { provider: "openai" });
     expect(hist.length).toBe(N);
   });
 
@@ -55,7 +55,7 @@ describe("DB Concurrency — atomic safety", () => {
     const timestamp = new Date().toISOString();
     await Promise.all(
       Array.from({ length: N }, () =>
-        db.saveRequestUsage({
+        db.saveRequestUsageUnscoped({
           timestamp,
           provider: "same-ms",
           model: "m",
@@ -67,20 +67,20 @@ describe("DB Concurrency — atomic safety", () => {
       ),
     );
 
-    expect((await db.getUsageHistory({ provider: "same-ms" })).length).toBe(N);
-    const stats = await db.getUsageStatsUnscoped("7d");
+    expect((await db.getUsageHistory(null, { provider: "same-ms" })).length).toBe(N);
+    const stats = await db.getUsageStats(null, "7d");
     expect(stats.byProvider["same-ms"].requests).toBe(N);
     expect(stats.byProvider["same-ms"].promptTokens).toBe(N * 7);
   });
 
-  it("200 parallel saveRequestDetail → all flushed", async () => {
+  it("200 parallel saveRequestDetailUnscoped → all flushed", async () => {
     await db.updateSettings({ enableObservability: true, observabilityBatchSize: 10 });
 
     const N = 200;
     const promises = [];
     for (let i = 0; i < N; i++) {
       promises.push(
-        db.saveRequestDetail({
+        db.saveRequestDetailUnscoped({
           id: `det-${i}`,
           provider: "openai",
           model: "gpt-4",
@@ -97,7 +97,7 @@ describe("DB Concurrency — atomic safety", () => {
     // Wait for any timer-based flush
     await new Promise((r) => setTimeout(r, 6000));
 
-    const list = await db.getRequestDetails({ provider: "openai", pageSize: 500 });
+    const list = await db.getRequestDetails(null, { provider: "openai", pageSize: 500 });
     expect(list.pagination.totalItems).toBeGreaterThanOrEqual(N);
   }, 15000);
 
@@ -105,7 +105,7 @@ describe("DB Concurrency — atomic safety", () => {
     const ops = [];
     for (let i = 0; i < 50; i++) {
       ops.push(
-        db.saveRequestUsage({
+        db.saveRequestUsageUnscoped({
           provider: "anthropic",
           model: `m-${i % 3}`,
           connectionId: "c2",
@@ -124,7 +124,7 @@ describe("DB Concurrency — atomic safety", () => {
     const disabled = await db.getDisabledByProviderUnscoped("openai");
     expect(disabled.length).toBeGreaterThanOrEqual(50);
 
-    const stats = await db.getUsageStatsUnscoped("24h");
+    const stats = await db.getUsageStats(null, "24h");
     expect(stats.byProvider.anthropic.requests).toBe(50);
   }, 30000);
 
@@ -204,7 +204,7 @@ describe("DB Concurrency — atomic safety", () => {
     const promises = [];
     for (let i = 0; i < N; i++) {
       promises.push(
-        db.saveRequestUsage({
+        db.saveRequestUsageUnscoped({
           provider: "google",
           model: "gemini-pro",
           connectionId: "cG",
@@ -215,7 +215,7 @@ describe("DB Concurrency — atomic safety", () => {
     }
     await Promise.all(promises);
 
-    const stats = await db.getUsageStatsUnscoped("7d");
+    const stats = await db.getUsageStats(null, "7d");
     const g = stats.byProvider.google;
     expect(g).toBeDefined();
     expect(g.requests).toBe(N);

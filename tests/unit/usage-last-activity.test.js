@@ -28,7 +28,7 @@ const NEWER = "2026-09-20T12:00:00.000Z";
 
 async function seedOutOfOrder() {
   // Newer row inserted FIRST: latest must win by timestamp, not insert order.
-  await db.saveRequestUsage({
+  await db.saveRequestUsageUnscoped({
     provider: "openai",
     model: "gpt-4",
     tokens: { prompt_tokens: 10, completion_tokens: 5 },
@@ -36,7 +36,7 @@ async function seedOutOfOrder() {
     status: "ok",
     timestamp: NEWER,
   });
-  await db.saveRequestUsage({
+  await db.saveRequestUsageUnscoped({
     provider: "openai",
     model: "gpt-4",
     tokens: { prompt_tokens: 10, completion_tokens: 5 },
@@ -48,7 +48,7 @@ async function seedOutOfOrder() {
 
 describe("getLastActivity", () => {
   it("empty DB → null", async () => {
-    expect(await db.getLastActivity()).toBeNull();
+    expect(await db.getLastActivity(null)).toBeNull();
   });
 
   it("route returns 200 { lastRequestAt: null } on empty DB", async () => {
@@ -60,7 +60,7 @@ describe("getLastActivity", () => {
 
   it("latest timestamp wins even when inserted first", async () => {
     await seedOutOfOrder();
-    expect(await db.getLastActivity()).toBe(NEWER);
+    expect(await db.getLastActivity(null)).toBe(NEWER);
   });
 
   it("route returns the latest timestamp", async () => {
