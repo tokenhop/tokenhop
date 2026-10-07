@@ -51,6 +51,7 @@ export const DEFAULT_CAPABILITIES = {
   // features
   search: false, // built-in web search tool / grounding
   tools: true, // function / tool calling
+  forcedToolChoice: true, // false → forced choice downgraded to auto; "any" → named tool narrowed to required
   reasoning: false, // thinking / reasoning
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
   // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|mimo|hunyuan|step|tokenrouter|commandcode
@@ -92,6 +93,7 @@ export const MODEL_CAPABILITIES = {
     thinkingCanDisable: false,
     contextWindow: 1000000,
     maxOutput: 128000,
+    forcedToolChoice: false,
   },
   "claude-opus-5-5": {
     vision: true,
@@ -101,6 +103,7 @@ export const MODEL_CAPABILITIES = {
     thinkingCanDisable: false,
     contextWindow: 1000000,
     maxOutput: 128000,
+    forcedToolChoice: false,
   },
   "claude-opus-5": {
     vision: true,
@@ -322,6 +325,7 @@ export const MODEL_CAPABILITIES = {
     thinkingCanDisable: false,
     contextWindow: 1048576,
     maxOutput: 131072,
+    forcedToolChoice: "any",
   },
   k3: {
     vision: true,
@@ -331,6 +335,7 @@ export const MODEL_CAPABILITIES = {
     thinkingCanDisable: false,
     contextWindow: 1048576,
     maxOutput: 131072,
+    forcedToolChoice: "any",
   },
   "kimi-for-coding": {
     vision: true,
@@ -637,6 +642,7 @@ export const PROVIDER_CAPABILITIES = {
       thinkingCanDisable: false,
       contextWindow: 1000000,
       maxOutput: 32000,
+      forcedToolChoice: "any",
     },
     "deepseek-v4-pro": {
       vision: true,
@@ -742,6 +748,7 @@ export const PROVIDER_CAPABILITIES = {
       thinkingCanDisable: false,
       contextWindow: 1000000,
       maxOutput: 65536,
+      forcedToolChoice: "any",
     }, // Kimi-K3
     kmodel: {
       vision: true,
@@ -833,6 +840,18 @@ export const PROVIDER_CAPABILITIES = {
 export const PATTERN_CAPABILITIES = [
   // ── Claude (4.6+ = adaptive thinking; older/haiku = budget) ──────
   {
+    pattern: "*claude*opus-5-5*",
+    caps: {
+      vision: true,
+      reasoning: true,
+      search: true,
+      thinkingFormat: "claude-adaptive",
+      contextWindow: 1000000,
+      maxOutput: 128000,
+      forcedToolChoice: false,
+    },
+  },
+  {
     pattern: "*claude*opus-5*",
     caps: {
       vision: true,
@@ -872,8 +891,30 @@ export const PATTERN_CAPABILITIES = [
     caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" },
   },
   {
+    pattern: "*claude*sonnet-5-5*",
+    caps: {
+      vision: true,
+      reasoning: true,
+      search: true,
+      thinkingFormat: "claude-budget",
+      forcedToolChoice: false,
+    },
+  },
+  {
     pattern: "*claude*sonnet*",
     caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" },
+  },
+  {
+    pattern: "*claude*fable-5-1*",
+    caps: {
+      vision: true,
+      reasoning: true,
+      search: true,
+      contextWindow: 1000000,
+      maxOutput: 128000,
+      thinkingFormat: "claude-budget",
+      forcedToolChoice: false,
+    },
   },
   {
     pattern: "*claude*fable*",
@@ -884,6 +925,18 @@ export const PATTERN_CAPABILITIES = [
       thinkingFormat: "claude-budget",
       contextWindow: 1000000,
       maxOutput: 128000,
+    },
+  },
+  {
+    pattern: "*claude*mythos-5-1*",
+    caps: {
+      vision: true,
+      reasoning: true,
+      search: true,
+      contextWindow: 1000000,
+      maxOutput: 128000,
+      thinkingFormat: "claude-budget",
+      forcedToolChoice: false,
     },
   },
   {
@@ -1230,6 +1283,7 @@ export const PATTERN_CAPABILITIES = [
       thinkingCanDisable: false,
       contextWindow: 1048576,
       maxOutput: 131072,
+      forcedToolChoice: "any",
     },
   },
   {
