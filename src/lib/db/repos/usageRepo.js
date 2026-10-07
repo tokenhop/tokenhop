@@ -8,7 +8,6 @@ import { tableHasColumn } from "../migrations/helpers.js";
 import { getApiKeyHashKey } from "../../security/apiKeyHashKey.js";
 import { pushToRing, scheduleStatsEvent } from "./usageLiveFeed.js";
 import { emitUsageCommitted } from "../../usage/usageCommitted.js";
-import { resolveSharing } from "../../users/grants.js";
 import { apiKeyNames } from "./usageStatsRepo.js";
 import {
   NO_KEY,
@@ -232,8 +231,11 @@ export async function saveRequestUsageUnscoped(entry) {
       const conn = db.get(`SELECT authType FROM providerConnections WHERE id = ?`, [
         entry.connectionId,
       ]);
-      if (conn && resolveSharing(entry.provider, conn.authType) === "personal")
-        metaObj.notional = true;
+      if (conn) {
+        // Lazy: keeps the provider registry out of this module's import graph.
+        const { resolveSharing } = await import("../../users/grants.js");
+        if (resolveSharing(entry.provider, conn.authType) === "personal") metaObj.notional = true;
+      }
     }
 
     // YAN-408: lifetime saved-tokens counter feeds the savings milestone toast.
