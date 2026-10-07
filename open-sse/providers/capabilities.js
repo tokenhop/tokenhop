@@ -424,7 +424,28 @@ const CODEX_GPT_56_DEFAULT_CAPS = {
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
+// z.ai's own GLM-5.3 always thinks: enable_thinking:false is a 400 (code 1210,
+// "use low, high, or max") on the OpenAI endpoint and ignored on the Anthropic
+// one, so "none" clamps to reasoning_effort low (YAN-742). Scoped to the z.ai
+// providers: other gateways serving glm-5.3 were not probed.
+const ZAI_GLM_5_3 = {
+  reasoning: true,
+  thinkingFormat: "zai",
+  thinkingEffortSupported: true,
+  thinkingCanDisable: false,
+  contextWindow: 200000,
+  maxOutput: 128000,
+};
+const ZAI_GLM_5_3_FLASH = {
+  ...MODEL_CAPABILITIES["glm-5.3-flash"],
+  thinkingEffortSupported: true,
+  thinkingCanDisable: false,
+};
+const ZAI_GLM_CAPABILITIES = { "glm-5.3": ZAI_GLM_5_3, "glm-5.3-flash": ZAI_GLM_5_3_FLASH };
+
 export const PROVIDER_CAPABILITIES = {
+  glm: ZAI_GLM_CAPABILITIES,
+  "glm-cn": ZAI_GLM_CAPABILITIES,
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   nvidia: {
@@ -1323,6 +1344,7 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*kimi*", caps: { reasoning: true, thinkingFormat: "kimi", contextWindow: 262144 } },
 
   // ── GLM / Z.ai (thinking.enabled; disable via enable_thinking:false) ─
+  // Except z.ai's own GLM-5.3, which cannot disable (ZAI_GLM_5_3, YAN-742).
   // reasoning_effort is only read by z.ai from GLM-5.2 onward (docs.z.ai/guides/capabilities/thinking) —
   // older GLM (4.x, 5.0, 5.1, 5-turbo, 5v-turbo) ignore it, so gate it per exact version, not the "*glm-5*" catch-all.
   {
