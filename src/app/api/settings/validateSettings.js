@@ -74,6 +74,15 @@ function validSecuritySettings(body) {
   ) {
     return "Invalid uiDensity: must be comfortable or compact";
   }
+  // YAN-371: the workspace switcher's persisted last active workspace.
+  if (
+    Object.hasOwn(body, "lastWorkspaceId") &&
+    (typeof body.lastWorkspaceId !== "string" ||
+      body.lastWorkspaceId.length < 1 ||
+      body.lastWorkspaceId.length > 128)
+  ) {
+    return "Invalid lastWorkspaceId: must be a string of 1-128 characters";
+  }
   if (Object.hasOwn(body, "authMode") && !AUTH_MODES.has(body.authMode)) {
     return "Invalid authMode";
   }

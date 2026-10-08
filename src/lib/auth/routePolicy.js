@@ -72,6 +72,15 @@ export const ROUTE_POLICY = {
   // personal UI preferences (browser session only).
   "/api/workspaces/[id]/settings": scoped(read(USE, "workspace.preferences.manage")),
   "/api/me/preferences": { cap: SELF },
+  // YAN-371 account routes: browser session only, 404 while the switch is off
+  // (multiUserOnly). alwaysProtected: single-user mode must never satisfy them.
+  "/api/me/workspace": multiUser({ cap: { POST: SELF }, alwaysProtected: true, cliAllowed: false }),
+  "/api/me/identities": multiUser({ cap: { GET: SELF }, alwaysProtected: true, cliAllowed: false }),
+  "/api/me/identities/[id]": multiUser({
+    cap: { DELETE: SELF },
+    alwaysProtected: true,
+    cliAllowed: false,
+  }),
   // YAN-360: admin user lifecycle, ownership transfer, memberships, invitations.
   // Per-method caps: any unlisted method fails closed to hostOps. The static
   // ownership-transfer row is exact-matched before the dynamic [id] pattern.

@@ -24,21 +24,29 @@ function loadAuthStatus() {
 }
 
 /**
- * Shared auth status payload from GET /api/auth/status (`{}` until loaded or on failure).
- * @returns {object}
+ * Auth status plus whether the request has settled (loaded or failed).
+ * @returns {{ status: object, loaded: boolean }}
  */
-export default function useAuthStatus() {
-  const [status, setStatus] = useState({});
+export function useAuthStatusState() {
+  const [state, setState] = useState({ status: {}, loaded: false });
 
   useEffect(() => {
     let cancelled = false;
     loadAuthStatus().then((data) => {
-      if (!cancelled) setStatus(data);
+      if (!cancelled) setState({ status: data, loaded: true });
     });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  return status;
+  return state;
+}
+
+/**
+ * Shared auth status payload from GET /api/auth/status (`{}` until loaded or on failure).
+ * @returns {object}
+ */
+export default function useAuthStatus() {
+  return useAuthStatusState().status;
 }

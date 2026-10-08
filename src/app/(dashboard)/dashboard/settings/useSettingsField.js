@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useContext, useEffect, useReducer, useRef } from "react";
 import { debounce } from "@/shared/utils/debounce";
+import { SettingsScopeContext, patchSettings } from "./settingsApi";
 
 const TEXT_DEBOUNCE_MS = 500;
 
@@ -41,15 +42,8 @@ export { debounce };
  * @param {*} value
  * @returns {Promise<object>} Safe settings echoed by the server.
  */
-export async function patchSetting(key, value) {
-  const res = await fetch("/api/settings", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ [key]: value }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "Failed to save setting");
-  return data;
+export function patchSetting(key, value, scope = null) {
+  return patchSettings({ [key]: value }, scope);
 }
 
 /**
@@ -69,6 +63,7 @@ export async function patchSetting(key, value) {
 export function useSettingsField(settingKey, serverValue, options = {}) {
   const { debounced = false, onSaved, restartRequired = false } = options;
   const [state, dispatch] = useReducer(fieldReducer, serverValue, initialFieldState);
+  const scope = useContext(SettingsScopeContext);
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
 
@@ -79,7 +74,7 @@ export function useSettingsField(settingKey, serverValue, options = {}) {
   const save = useCallback(
     async (value) => {
       try {
-        const data = await patchSetting(settingKey, value);
+        const data = await patchSetting(settingKey, value, scope);
         const saved = Object.hasOwn(data, settingKey) ? data[settingKey] : value;
         dispatch({ type: "saved", value: saved });
         onSavedRef.current?.(saved, { restartRequired });
@@ -87,7 +82,7 @@ export function useSettingsField(settingKey, serverValue, options = {}) {
         dispatch({ type: "failed", error: err.message });
       }
     },
-    [settingKey, restartRequired],
+    [settingKey, restartRequired, scope],
   );
 
   const debouncedRef = useRef(null);

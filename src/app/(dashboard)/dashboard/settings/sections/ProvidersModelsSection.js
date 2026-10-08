@@ -1,6 +1,6 @@
 "use client";
 import PropTypes from "prop-types";
-import { useCallback, useState } from "react";
+import { useCallback, useContext, useState } from "react";
 import SectionCard from "@/shared/components/SectionCard";
 import SettingRow from "@/shared/components/SettingRow";
 import Toggle from "@/shared/components/Toggle";
@@ -12,6 +12,7 @@ import CopyField from "@/shared/components/CopyField";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useSettingsField } from "../useSettingsField";
+import { SettingsScopeContext, loadSettingsValue, patchSettings } from "../settingsApi";
 import AutoPingList from "./AutoPingList";
 
 import {
@@ -74,7 +75,12 @@ function thinkingModelIds(providerId) {
  * read-only client pins.
  */
 
-export default function ProvidersModelsSection({ settings, onSettingsChange }) {
+export default function ProvidersModelsSection({
+  settings,
+  onSettingsChange,
+  canManageInstance = true,
+}) {
+  const scope = useContext(SettingsScopeContext);
   const onSaved = (key) => (value) => onSettingsChange?.({ [key]: value });
   const providerThinking = settings.providerThinking || {};
   const thinkingProviders = providersWithThinking(
@@ -95,24 +101,27 @@ export default function ProvidersModelsSection({ settings, onSettingsChange }) {
   const [quotaKeyDrafts, setQuotaKeyDrafts] = useState({});
   const [quotaError, setQuotaError] = useState("");
   const [quotaSaving, setQuotaSaving] = useState(false);
-  const patchOneKey = useCallback(async (key, value) => {
-    const res = await fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [key]: value }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "Failed to save setting");
-    return Object.hasOwn(data, key) ? data[key] : value;
-  }, []);
+  const patchOneKey = useCallback(
+    async (key, value) => {
+      const data = await patchSettings({ [key]: value }, scope);
+      return Object.hasOwn(data, key) ? data[key] : value;
+    },
+    [scope],
+  );
+  const loadFresh = useCallback(
+    async (key) => (await loadSettingsValue(key, scope)) || {},
+    [scope],
+  );
   const saveThinkingMode = useCallback(
     async (providerId, mode) => {
       setThinkingUpdating((prev) => ({ ...prev, [providerId]: true }));
       setThinkingErrors((prev) => ({ ...prev, [providerId]: "" }));
       try {
-        const res = await fetch("/api/settings", { cache: "no-store" });
-        const data = res.ok ? await res.json() : {};
-        const updated = setProviderThinkingMode(data.providerThinking || {}, providerId, mode);
+        const updated = setProviderThinkingMode(
+          await loadFresh("providerThinking"),
+          providerId,
+          mode,
+        );
         const saved = await patchOneKey("providerThinking", updated);
         onSettingsChange?.({ providerThinking: saved });
       } catch (err) {
@@ -124,7 +133,7 @@ export default function ProvidersModelsSection({ settings, onSettingsChange }) {
         setThinkingUpdating((prev) => ({ ...prev, [providerId]: false }));
       }
     },
-    [onSettingsChange, patchOneKey],
+    [onSettingsChange, patchOneKey, loadFresh],
   );
   const saveQuotaVisibility = useCallback(
     async (next) => {
@@ -134,9 +143,7 @@ export default function ProvidersModelsSection({ settings, onSettingsChange }) {
         // Whole-map PATCH after local edit (same shape as the Usage page).
         // Caller edits are authoritative for touched providers: merge the
         // fresh server map under `next` so concurrent removals elsewhere win.
-        const res = await fetch("/api/settings", { cache: "no-store" });
-        const data = res.ok ? await res.json() : {};
-        const fresh = data.quotaVisibility || {};
+        const fresh = await loadFresh("quotaVisibility");
         const merged = { ...fresh, ...next };
         // Drop empty rows only when the entry carries nothing else: extra
         // keys are preserved by the API validator, so keep them.
@@ -163,7 +170,7 @@ export default function ProvidersModelsSection({ settings, onSettingsChange }) {
         setQuotaSaving(false);
       }
     },
-    [onSettingsChange, patchOneKey],
+    [onSettingsChange, patchOneKey, loadFresh],
   );
   const quotaVisibility = settings.quotaVisibility || {};
   const quotaProviderIds = quotaProviders(quotaVisibility);
@@ -350,24 +357,29 @@ export default function ProvidersModelsSection({ settings, onSettingsChange }) {
             </Button>
           </div>
         </div>
-        <SettingRow
-          label="Intercept (MITM) router URL"
-          description="Base URL the MITM server routes through. Same behavior as the MITM card."
-          settingKey="mitmRouterBaseUrl"
-          control={
-            <div className="w-full sm:min-w-72 sm:max-w-sm">
-              <Input
-                value={mitmUrl.value ?? ""}
-                onChange={(e) => mitmUrl.set(e.target.value)}
-                disabled={mitmUrl.saving}
-                placeholder={DEFAULT_MITM_ROUTER_BASE}
-                inputClassName="font-mono"
-                aria-label="Intercept router URL"
-              />
-            </div>
-          }
-        />
-        <FieldError error={mitmUrl.error} />
+        {/* YAN-371 (D13): mitmRouterBaseUrl is an instance key; admins only. */}
+        {canManageInstance && (
+          <>
+            <SettingRow
+              label="Intercept (MITM) router URL"
+              description="Base URL the MITM server routes through. Same behavior as the MITM card."
+              settingKey="mitmRouterBaseUrl"
+              control={
+                <div className="w-full sm:min-w-72 sm:max-w-sm">
+                  <Input
+                    value={mitmUrl.value ?? ""}
+                    onChange={(e) => mitmUrl.set(e.target.value)}
+                    disabled={mitmUrl.saving}
+                    placeholder={DEFAULT_MITM_ROUTER_BASE}
+                    inputClassName="font-mono"
+                    aria-label="Intercept router URL"
+                  />
+                </div>
+              }
+            />
+            <FieldError error={mitmUrl.error} />
+          </>
+        )}
         <div className="py-4">
           <p className="text-[15px] font-semibold text-text">Client version pins</p>
           <p className="mt-0.5 text-[13px] text-muted">
@@ -390,4 +402,5 @@ export default function ProvidersModelsSection({ settings, onSettingsChange }) {
 ProvidersModelsSection.propTypes = {
   settings: PropTypes.object.isRequired,
   onSettingsChange: PropTypes.func,
+  canManageInstance: PropTypes.bool,
 };

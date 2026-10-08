@@ -27,6 +27,8 @@ function providerIdForDetail(providerId) {
 }
 
 function pageCommands() {
+  // ponytail: palette pages remain ungated; APIs enforce caps. Add principal
+  // filtering when YAN-373 brings admin pages into the command palette.
   const items = visibleItems();
   const pages = items.map((item) => ({
     id: `page:${item.id}`,

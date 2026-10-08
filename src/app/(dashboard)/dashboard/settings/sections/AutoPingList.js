@@ -1,12 +1,13 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useCallback, useState } from "react";
+import { useCallback, useContext, useState } from "react";
 import Link from "next/link";
 import Button from "@/shared/components/Button";
 import Toggle from "@/shared/components/Toggle";
 import { autoPingConnections } from "./providersModelsHelpers";
 import ProviderTile from "@/shared/components/ProviderTile";
+import { SettingsScopeContext, loadSettingsValue, patchSettings } from "../settingsApi";
 
 /**
  * Per-connection auto-ping list for one provider family.
@@ -28,6 +29,7 @@ export default function AutoPingList({
   const [connections, setConnections] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState({});
+  const scope = useContext(SettingsScopeContext);
   const load = useCallback(async () => {
     setLoadError("");
     try {
@@ -45,20 +47,12 @@ export default function AutoPingList({
     async (connectionId, on) => {
       setSaving((prev) => ({ ...prev, [connectionId]: true }));
       try {
-        const res = await fetch("/api/settings", { cache: "no-store" });
-        const data = res.ok ? await res.json() : {};
-        const current = autoPingConnections(data[settingKey]);
+        const raw = await loadSettingsValue(settingKey, scope);
         const next = {
-          ...(data[settingKey] || {}),
-          connections: { ...current, [connectionId]: on },
+          ...(raw || {}),
+          connections: { ...autoPingConnections(raw), [connectionId]: on },
         };
-        const saveRes = await fetch("/api/settings", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ [settingKey]: next }),
-        });
-        const saved = await saveRes.json().catch(() => ({}));
-        if (!saveRes.ok) throw new Error(saved.error || "Failed to save");
+        const saved = await patchSettings({ [settingKey]: next }, scope);
         onSettingsChange?.({ [settingKey]: saved[settingKey] ?? next });
       } catch {
         setLoadError("Could not save auto-ping");
@@ -66,7 +60,7 @@ export default function AutoPingList({
         setSaving((prev) => ({ ...prev, [connectionId]: false }));
       }
     },
-    [onSettingsChange, settingKey],
+    [onSettingsChange, scope, settingKey],
   );
   return (
     <div className="mt-3 rounded-xl border border-line bg-raised p-3">

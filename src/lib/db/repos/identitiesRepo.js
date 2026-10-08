@@ -20,6 +20,41 @@ export async function unlinkIdentity(ctx, id) {
   return db.run(`DELETE FROM identities WHERE id = ? AND userId = ?`, [id, ctx.userId]).changes > 0;
 }
 
+/**
+ * YAN-371: unlink one of the caller's SSO identities, refusing to remove the
+ * last usable sign-in method. Check and delete run in one transaction so two
+ * parallel unlinks can't both pass the check.
+ * @param {object} ctx principal (userId)
+ * @param {string} id identity id
+ * @param {{ sso: Set<string>, password: boolean }} usable SSO providers that
+ *   may sign in now, and whether the user can sign in with a password.
+ * @returns {Promise<string>} the unlinked identity's provider
+ * @throws {TenancyError} NOT_FOUND (not the caller's), INVALID (password row),
+ *   LAST_METHOD (nothing usable would remain)
+ */
+export async function unlinkSsoIdentityGuarded(ctx, id, usable) {
+  assertCtx(ctx);
+  const db = await getAdapter();
+  return db.transaction(() => {
+    const row = db.get(`SELECT id, provider FROM identities WHERE id = ? AND userId = ?`, [
+      id,
+      ctx.userId,
+    ]);
+    if (!row) throw new TenancyError("NOT_FOUND", "Identity not found");
+    if (row.provider === "password") {
+      throw new TenancyError("INVALID", "The password sign-in can't be unlinked");
+    }
+    const others = db
+      .all(`SELECT provider FROM identities WHERE userId = ? AND id <> ?`, [ctx.userId, id])
+      .filter((r) => usable.sso.has(r.provider)).length;
+    if (!usable.password && others === 0) {
+      throw new TenancyError("LAST_METHOD", "This is your last way to sign in");
+    }
+    db.run(`DELETE FROM identities WHERE id = ? AND userId = ?`, [id, ctx.userId]);
+    return row.provider;
+  });
+}
+
 // Login/bootstrap path: resolve an identity before any principal exists.
 export async function findIdentityUnscoped({ provider, issuer = "", subject }) {
   const db = await getAdapter();

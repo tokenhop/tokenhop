@@ -27,6 +27,8 @@ const MESSAGES = {
   account_disabled: "This account has been disabled by an admin.",
   password_change_required: "Your password must be changed before you can sign in.",
   password_change_expired: "Your password change session expired. Sign in again.",
+  ownership_reauth_failed:
+    "Ownership transfer needs you to sign in again with the owner account. Try again.",
 };
 
 /**

@@ -26,7 +26,7 @@ export const WORKSPACE_KEYS = new Set([
   "codexAutoPing",
 ]);
 
-export const USER_KEYS = new Set(["startPage", "uiDensity"]);
+export const USER_KEYS = new Set(["startPage", "uiDensity", "lastWorkspaceId"]);
 
 const REMOVED_KEYS = new Set(["password"]);
 

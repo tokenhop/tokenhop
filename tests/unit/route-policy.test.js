@@ -133,6 +133,17 @@ const YAN360_SESSION_ONLY_ROUTES = new Set([
   "/api/workspaces/[id]/budgets/[budgetId]",
   "/api/users/[id]/budgets",
   "/api/users/[id]/budgets/[budgetId]",
+  // YAN-371 account routes (workspace switch, linked identities).
+  "/api/me/workspace",
+  "/api/me/identities",
+  "/api/me/identities/[id]",
+]);
+// YAN-371 account routes are alwaysProtected too (like the password routes):
+// single-user mode never satisfies them, only a full browser session.
+const YAN371_ACCOUNT_ROUTES = new Set([
+  "/api/me/workspace",
+  "/api/me/identities",
+  "/api/me/identities/[id]",
 ]);
 // YAN-372 user-level budgets: instance admin only, alwaysProtected.
 const YAN372_USER_BUDGET_ROUTES = new Set([
@@ -244,6 +255,7 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
         if (YAN360_PUBLIC_ROUTES.has(route)) want.public = true;
         if (YAN367_AUDIT_ROUTES.has(route)) want.alwaysProtected = true;
         if (YAN372_USER_BUDGET_ROUTES.has(route)) want.alwaysProtected = true;
+        if (YAN371_ACCOUNT_ROUTES.has(route)) want.alwaysProtected = true;
         if (YAN366_TIGHTENED.has(route)) {
           want.localOnly = true;
           want.alwaysProtected = true;

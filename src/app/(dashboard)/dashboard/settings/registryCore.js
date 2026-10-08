@@ -1,0 +1,356 @@
+/**
+ * Settings registry — core sections (account + traffic groups).
+ * Split out of registry.js; order matters: registry.js concatenates
+ * CORE_SECTIONS then OPS_SECTIONS into SETTINGS_SECTIONS.
+ */
+import { ACTIVE } from "@/shared/brand";
+
+export const CORE_SECTIONS = [
+  {
+    id: "general",
+    title: "General",
+    subtitle: "Look, language and where you land.",
+    icon: "tune",
+    rows: [
+      {
+        key: "theme",
+        label: "Theme",
+        description: "Dark, light, or follow your system.",
+        keywords: "dark light system appearance color mode",
+      },
+      {
+        key: "language",
+        label: "Language",
+        description: "Dashboard language.",
+        keywords: "locale i18n display language",
+      },
+      {
+        key: "startPage",
+        label: "Start page",
+        description: "Where you land after login and on `/`.",
+        keywords: "start page home landing default route",
+      },
+      {
+        key: "uiDensity",
+        label: "Density",
+        description: "Compact tightens spacing and row heights.",
+        keywords: "density compact comfortable spacing rows",
+      },
+    ],
+  },
+  {
+    id: "security",
+    title: "Security & access",
+    subtitle: "Who can reach the dashboard and the API.",
+    icon: "shield",
+    statusPill: "Protected",
+    rows: [
+      {
+        key: "requireLogin",
+        label: "Require login",
+        description: "Ask for the dashboard password first.",
+        keywords: "login auth password required",
+      },
+      {
+        key: "password",
+        label: "Password",
+        description: "Change the dashboard password. Replace the default before exposing anything.",
+        keywords: "change set update password",
+      },
+      {
+        key: "requireApiKey",
+        label: "Require API key",
+        description: "Requests without a valid key get a 401. Needed for the tunnel.",
+        keywords: "api key auth 401 endpoint",
+      },
+      {
+        key: "tunnelDashboardAccess",
+        label: "Dashboard over tunnel",
+        description: "Serve this dashboard on the public tunnel URL too.",
+        keywords: "tunnel tailscale remote access dashboard",
+      },
+      {
+        key: "AUTH_COOKIE_SECURE",
+        label: "Secure session cookie",
+        description: "HTTPS-only cookie for the login session. Read-only.",
+        keywords: "cookie secure https session auth env",
+        tags: ["env"],
+      },
+    ],
+  },
+  {
+    id: "sso",
+    title: "Single sign-on",
+    subtitle: "Sign in with your identity provider.",
+    icon: "lock_open",
+    rows: [
+      {
+        key: "authMode",
+        label: "Sign-in method",
+        keywords: "auth mode sso password both oidc saml",
+      },
+      { key: "ssoType", label: "Protocol", keywords: "protocol oidc saml" },
+      { key: "oidcIssuerUrl", label: "Issuer URL", keywords: "oidc issuer url openid" },
+      { key: "oidcClientId", label: "Client ID", keywords: "oidc client id" },
+      { key: "oidcClientSecret", label: "Client secret", keywords: "oidc secret write-only" },
+      { key: "oidcScopes", label: "Scopes", keywords: "oidc scopes openid profile email" },
+      { key: "oidcLoginLabel", label: "Button label", keywords: "oidc button label" },
+      {
+        key: "samlEntryPoint",
+        label: "Single sign-on service URL",
+        keywords: "saml sso url entry point idp",
+      },
+      {
+        key: "samlIssuer",
+        label: "SP entity ID / audience",
+        keywords: "saml issuer entity audience sp",
+      },
+      {
+        key: "samlCert",
+        label: "IdP X.509 certificate",
+        keywords: "saml cert certificate x509 pem",
+      },
+      { key: "samlLoginLabel", label: "Login button label", keywords: "saml login button label" },
+      {
+        key: "samlAttributeEmail",
+        label: "Email claim attribute",
+        keywords: "saml attribute email claim nameid",
+      },
+      {
+        key: "samlAttributeName",
+        label: "Display name claim",
+        keywords: "saml attribute name display claim",
+      },
+      {
+        key: "ssoRedirect",
+        label: "Redirect URI / ACS URL",
+        keywords: "redirect acs metadata callback url copy",
+      },
+      {
+        key: "ssoTest",
+        label: "Test sign-in",
+        keywords: "test sign-in verify connection guides okta entra keycloak aws",
+      },
+    ],
+  },
+  {
+    id: "routing",
+    title: "Routing",
+    subtitle: "How accounts and combos take turns.",
+    icon: "route",
+    rows: [
+      {
+        key: "fallbackStrategy",
+        label: "Account strategy",
+        description: "Picks between accounts of the same provider.",
+        keywords: "account strategy fallback round robin weighted fill first accounts",
+      },
+      {
+        key: "stickyRoundRobinLimit",
+        label: "Sticky limit",
+        description: "Calls per account before rotating. Round robin and weighted only.",
+        keywords: "sticky limit rotate accounts round robin weighted",
+      },
+      {
+        key: "comboStrategy",
+        label: "Combo round robin",
+        description: "Rotate inside combos by default instead of falling back in order.",
+        keywords: "combo round robin fallback rotate combos",
+      },
+      {
+        key: "comboStickyRoundRobinLimit",
+        label: "Combo sticky limit",
+        description: "Calls per combo model before rotating.",
+        keywords: "combo sticky limit rotate models",
+      },
+      {
+        key: "providerStrategies",
+        label: "Per-provider overrides",
+        description: "Beat the global strategy for one provider.",
+        keywords: "provider override per-provider strategy sticky",
+      },
+      {
+        key: "capacityAdapter",
+        label: "Capability adapter",
+        description: "Images or audio go to a capable model when the chosen one can't read them.",
+        keywords: "capability adapter vision audio images capacity combos",
+      },
+    ],
+  },
+  {
+    id: "reliability",
+    title: "Reliability",
+    subtitle: "Retries, cooldowns and timeouts.",
+    icon: "restart_alt",
+    rows: [
+      {
+        key: "retryPolicy",
+        label: "Retries on upstream errors",
+        description: "Tries and delay per status. 429s never retry.",
+        keywords: "retry retries 502 503 504 tries delay backoff upstream errors",
+        tags: ["new"],
+      },
+      {
+        key: "cooldowns",
+        label: "Cooldowns",
+        description: "How long an account sits out after it fails.",
+        keywords: "cooldown rate limit transient long short account lockout",
+        tags: ["new"],
+      },
+      {
+        key: "backoff",
+        label: "Backoff",
+        description: "Grows with each repeated failure.",
+        keywords: "backoff exponential start max levels rate limit",
+        tags: ["new"],
+      },
+      {
+        key: "streamTimeouts",
+        label: "Stream timeouts",
+        description: "When to give up on a slow or stalled upstream.",
+        keywords: "timeout stream stall first chunk connect .env overrides",
+        tags: ["new"],
+      },
+    ],
+  },
+  {
+    id: "network",
+    title: "Network",
+    subtitle: `How ${ACTIVE.slug} reaches providers, and how you reach it.`,
+    icon: "public",
+    rows: [
+      {
+        key: "outboundProxyEnabled",
+        label: "Outbound proxy",
+        description: "Send OAuth and provider calls through a proxy. Applies without restart.",
+        keywords: "outbound proxy oauth provider proxy test apply",
+      },
+      {
+        key: "outboundProxyUrl",
+        label: "Proxy URL",
+        description: "Proxy server URL.",
+        keywords: "proxy url http socks server address",
+      },
+      {
+        key: "outboundNoProxy",
+        label: "Skip for",
+        description: "Comma-separated hosts that bypass the proxy.",
+        keywords: "no proxy skip bypass hosts localhost",
+      },
+      {
+        key: "tunnelEnabled",
+        label: "Cloudflare tunnel",
+        description: "Public HTTPS URL. Needs Require API key.",
+        keywords: "cloudflare tunnel public https remote",
+      },
+      {
+        key: "tailscaleEnabled",
+        label: "Tailscale",
+        description: "Private mesh access.",
+        keywords: "tailscale mesh vpn private funnel",
+      },
+      {
+        key: "tunnelProvider",
+        label: "Tunnel provider",
+        description: "Active tunnel backend. Read-only.",
+        keywords: "tunnel provider backend cloudflare read-only",
+      },
+      {
+        key: "SEARXNG_URL",
+        label: "Web search backend",
+        description: "SearXNG instance used by web search. Read-only.",
+        keywords: "searxng web search backend env",
+      },
+    ],
+  },
+  {
+    id: "token-saver",
+    title: "Token saver",
+    subtitle: "Compress tool output, context and replies.",
+    icon: "bolt",
+    rows: [
+      {
+        key: "rtkEnabled",
+        label: "Compress tool output",
+        description: "git/grep/ls/tree/logs → fewer input tokens (RTK).",
+        keywords: "rtk compress tool output tokens",
+      },
+      {
+        key: "headroomEnabled",
+        label: "Compress context",
+        description: "Compress prompts via Headroom before routing to the model.",
+        keywords: "headroom compress context prompts",
+      },
+      {
+        key: "headroomUrl",
+        label: "Headroom URL",
+        description: "Local proxy or external sidecar.",
+        keywords: "headroom url proxy sidecar",
+      },
+      {
+        key: "headroomTimeoutMs",
+        label: "Headroom timeout",
+        description: "Request timeout, in milliseconds.",
+        keywords: "headroom timeout ms",
+      },
+      {
+        key: "headroomCompressUserMessages",
+        label: "Compress user messages",
+        description: "Also compress user turns, not just tool output.",
+        keywords: "headroom compress user messages",
+      },
+      {
+        key: "cavemanEnabled",
+        label: "Compress LLM output",
+        description: "Terse-style system prompt → fewer output tokens (Caveman).",
+        keywords: "caveman compress llm output terse",
+      },
+      {
+        key: "cavemanLevel",
+        label: "Caveman level",
+        description: "Lite, full or ultra.",
+        keywords: "caveman level lite full ultra",
+      },
+      {
+        key: "ponytailEnabled",
+        label: "Lazy senior dev",
+        description: "Bias the model toward minimal code (Ponytail).",
+        keywords: "ponytail lazy senior dev minimal",
+      },
+      {
+        key: "ponytailLevel",
+        label: "Ponytail level",
+        description: "Lite, full or ultra.",
+        keywords: "ponytail level lite full ultra",
+      },
+      {
+        key: "pxpipeEnabled",
+        label: "Prompts as images",
+        description: "Large context becomes optimized images before the LLM (PXPIPE).",
+        keywords: "pxpipe prompts images experimental",
+        tags: ["experimental"],
+      },
+      {
+        key: "pxpipeMinChars",
+        label: "Minimum prompt size",
+        description: "Requests smaller than this bypass PXPIPE as-is (chars).",
+        keywords: "pxpipe min chars size threshold",
+        tags: ["experimental"],
+      },
+      {
+        key: "pxpipeTimeoutMs",
+        label: "PXPIPE timeout",
+        description: "Request timeout, in milliseconds.",
+        keywords: "pxpipe timeout ms",
+        tags: ["experimental"],
+      },
+      {
+        key: "pxpipeAutoInstall",
+        label: "Auto-install PXPIPE",
+        description: "Install the proxy package on first use when missing.",
+        keywords: "pxpipe auto install",
+        tags: ["experimental"],
+      },
+    ],
+  },
+];

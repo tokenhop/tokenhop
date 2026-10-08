@@ -29,10 +29,30 @@ import { isUserSecurityEnforced } from "./securityState.js";
 import { ensureOwnerBootstrap } from "./bootstrap.js";
 import { can } from "./principal.js";
 import { audit } from "./audit.js";
+import { getUserPreferences } from "@/lib/db/index.js";
 
 const AUTH_COOKIE = "auth_token";
 
 /** @typedef {import("./principal.js").Principal} Principal */
+
+// Display claims a re-mint may copy from the old session (ADR-0004): login
+// method and SSO identity decoration only — never iat/exp/authenticated/sv.
+const DISPLAY_CLAIMS = [
+  "amr",
+  "oidc",
+  "oidcSub",
+  "oidcEmail",
+  "oidcName",
+  "saml",
+  "samlEmail",
+  "samlName",
+];
+
+/** The user's stored last active workspace, or undefined (bad values ignored). */
+async function lastWorkspaceId(userId) {
+  const id = (await getUserPreferences({ userId })).data?.lastWorkspaceId;
+  return typeof id === "string" && id ? id : undefined;
+}
 
 // Never cache or fail open: a restore/marker write must affect the next request.
 async function securityOn() {
@@ -298,7 +318,7 @@ export async function sessionClaims(method, identity = null, opts = {}) {
     return {
       sub: user.id,
       sv: user.sessionVersion,
-      wid: (await principalFor(user, "session")).activeWorkspaceId,
+      wid: (await principalFor(user, "session", await lastWorkspaceId(user.id))).activeWorkspaceId,
       amr: [method],
     };
   }
@@ -307,7 +327,7 @@ export async function sessionClaims(method, identity = null, opts = {}) {
   // YAN-358: a flagged owner never gets full claims (rotation first).
   if (owner.mustChangePassword) return null;
   user = owner;
-  const principal = await principalFor(user, "session");
+  const principal = await principalFor(user, "session", await lastWorkspaceId(user.id));
   return {
     sub: user.id,
     sv: user.sessionVersion,
@@ -330,13 +350,37 @@ export async function passwordSessionClaims(userId, wid) {
   if (!user) return null;
   if (user.status !== "active" || user.instanceRole === "pending" || user.mustChangePassword)
     return null;
-  const principal = await principalFor(user, "session", wid);
+  // YAN-371: no explicit wid -> the user's last active workspace (membership
+  // is re-checked by principalFor; a stale or forged id falls back to personal).
+  const principal = await principalFor(user, "session", wid ?? (await lastWorkspaceId(user.id)));
   return {
     sub: user.id,
     sv: user.sessionVersion,
     wid: principal.activeWorkspaceId,
     amr: ["pwd"],
   };
+}
+
+/**
+ * Fresh claims for re-minting a live session (workspace switch, identity
+ * unlink): rebuilt from the live user row (fresh sv, status, rotation checks),
+ * then the allow-listed display claims are copied over from `session`.
+ * iat/exp/authenticated are never copied; callers pass `{ exp }` to the cookie
+ * setter to keep the original expiry. Null when the user may not hold a session.
+ * @param {object} session decoded current session claims
+ * @param {string} [wid] target workspace (default: session.wid)
+ * @param {{ dropProvider?: "oidc"|"saml" }} [opts] skip that provider's
+ *   display claims (identity unlink: never advertise an unlinked identity)
+ * @returns {Promise<object|null>}
+ */
+export async function remintClaims(session, wid = session?.wid, { dropProvider } = {}) {
+  const claims = await passwordSessionClaims(session?.sub, wid);
+  if (!claims?.sub) return null;
+  for (const k of DISPLAY_CLAIMS) {
+    if (dropProvider && k.startsWith(dropProvider)) continue;
+    if (session[k] !== undefined) claims[k] = session[k];
+  }
+  return claims;
 }
 
 /**

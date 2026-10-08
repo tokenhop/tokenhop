@@ -8,6 +8,7 @@ import { ACTIVE } from "@/shared/brand";
 import { useTheme } from "@/shared/hooks/useTheme";
 import useAuthStatus from "@/shared/hooks/useAuthStatus";
 import { resolveVersionChip } from "@/shared/utils/shell";
+import { accountView } from "@/shared/utils/account";
 import { ConfirmDialog } from "./Modal";
 import Menu, { MenuItem } from "./Menu";
 import IconButton from "./IconButton";
@@ -54,6 +55,10 @@ export default function HeaderMenu({ onLogout, onDonate }) {
       }}
     />
   );
+  // YAN-371: hide Shutdown from non-admins while multi-user is active
+  // (cosmetic; /api/version/shutdown enforces instance.hostOps).
+  const view = accountView(authStatus);
+  const showShutdown = !view.active || view.can("instance.hostOps");
   const { full } = resolveVersionChip(APP_CONFIG.version, APP_CONFIG.build);
 
   const handleShutdown = async () => {
@@ -127,7 +132,7 @@ export default function HeaderMenu({ onLogout, onDonate }) {
           {changelogItem("desktop")}
           {themeItem("desktop")}
           {showChangePassword && changePasswordItem("desktop")}
-          {shutdownItem("desktop")}
+          {showShutdown && shutdownItem("desktop")}
           {logoutItem("desktop")}
         </Menu>
       </span>
@@ -157,7 +162,7 @@ export default function HeaderMenu({ onLogout, onDonate }) {
           {themeItem("mobile")}
           {changelogItem("mobile")}
           {showChangePassword && changePasswordItem("mobile")}
-          {shutdownItem("mobile")}
+          {showShutdown && shutdownItem("mobile")}
           {logoutItem("mobile")}
         </Menu>
       </span>
