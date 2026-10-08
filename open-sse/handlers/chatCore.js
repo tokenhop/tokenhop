@@ -192,7 +192,9 @@ export async function handleChatCore({
   // Edit predictions on a fim-capable model whose provider has a native prompt/suffix
   // endpoint skip the chat wrapper; every other model keeps the wrapper.
   const fimNativeTransport =
-    fim && getCapabilitiesForModel(provider, model).fim
+    fim &&
+    getCapabilitiesForModel(provider, model).fim &&
+    (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat))
       ? resolveTransport(provider, FORMATS.FIM_NATIVE)
       : null;
   const useTransport =

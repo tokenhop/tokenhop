@@ -46,8 +46,7 @@ export function fimNativeToOpenAI(chunk, state) {
 export function normalizeFimNativeBody(body) {
   const choices = Array.isArray(body?.choices) ? body.choices : [];
   if (body && choices.length && choices.some((c) => typeof c?.text === "string")) {
-    const prompt = body.usage?.prompt_tokens ?? 0;
-    const completion = body.usage?.completion_tokens ?? 0;
+    const usage = body.usage;
     return {
       id: body.id?.replace?.(/^cmpl-/, "chatcmpl-") || `chatcmpl-${Date.now()}`,
       object: "chat.completion",
@@ -58,11 +57,8 @@ export function normalizeFimNativeBody(body) {
         message: { role: "assistant", content: c.text ?? "" },
         finish_reason: c.finish_reason ?? "stop",
       })),
-      usage: {
-        prompt_tokens: prompt,
-        completion_tokens: completion,
-        total_tokens: body.usage?.total_tokens ?? prompt + completion,
-      },
+      // Unknown usage stays absent; the client-format step fills its own defaults.
+      ...(usage ? { usage } : {}),
     };
   }
   return body;

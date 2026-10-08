@@ -1388,7 +1388,8 @@ export const PATTERN_CAPABILITIES = [
   // read from a PNG). v4-pro / v4-flash-0731 accept image blocks but ignore
   // them (answered "Unknown"), so vision stays scoped to v4.* dotted releases.
   // Only v4-pro (and its -max/-none aliases) has the /beta/completions FIM endpoint;
-  // flash ids stay fim:false. Caps repeat *deepseek-v4* below (first match wins).
+  // flash ids stay fim:false. Caps repeat *deepseek-v4* below (first match wins):
+  // keep the two entries in sync.
   {
     pattern: "*deepseek-v4-pro*",
     caps: {
