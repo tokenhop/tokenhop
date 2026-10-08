@@ -57,12 +57,16 @@ export async function POST(request) {
     // claims copied from the allow-list; exp is never copied or extended.
     const claims = await remintClaims(session, workspaceId);
     if (!claims?.sub) return json({ error: "Unauthorized" }, 401);
-    await setDashboardAuthCookie(cookieStore, request, claims, { exp: session.exp });
+    // Membership can vanish between the check above and the re-mint
+    // (principalFor then falls back to personal): report what was minted.
+    if (claims.wid !== workspaceId) return json({ error: "Workspace not found" }, 404);
+    // Persist first: a failed write must not leave the cookie switched.
     await updateUserPreferences(principal, { lastWorkspaceId: workspaceId });
+    await setDashboardAuthCookie(cookieStore, request, claims, { exp: session.exp });
 
     const workspace = (await listWorkspaces(principal)).find((w) => w.id === workspaceId);
     return json({
-      activeWorkspaceId: workspaceId,
+      activeWorkspaceId: claims.wid,
       workspace: workspace
         ? { id: workspace.id, name: workspace.name, kind: workspace.kind, role: workspace.role }
         : null,

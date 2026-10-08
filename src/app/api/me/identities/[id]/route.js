@@ -35,8 +35,17 @@ export async function DELETE(request, { params }) {
     }
 
     const { id } = await params;
+    let provider;
     try {
-      await unlinkSsoIdentityGuarded(principal, id, await usableMethods(principal.userId));
+      // ponytail: auth mode and password hash are read before the guard's
+      // transaction, so an admin flipping authMode (or clearing a password) in
+      // that window could still admit a lockout unlink. Move these reads into
+      // the transaction if the admin paths ever race with self-service unlink.
+      provider = await unlinkSsoIdentityGuarded(
+        principal,
+        id,
+        await usableMethods(principal.userId),
+      );
     } catch (err) {
       const mapped = ERRORS[err?.code];
       if (mapped) return json(mapped[1], mapped[0]);
@@ -44,7 +53,7 @@ export async function DELETE(request, { params }) {
     }
 
     await bumpSessionVersion(principal.userId);
-    const claims = await remintClaims(session, session.wid);
+    const claims = await remintClaims(session, session.wid, { dropProvider: provider });
     if (claims?.sub) {
       await setDashboardAuthCookie(cookieStore, request, claims, { exp: session.exp });
     }

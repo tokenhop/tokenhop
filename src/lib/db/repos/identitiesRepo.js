@@ -28,6 +28,7 @@ export async function unlinkIdentity(ctx, id) {
  * @param {string} id identity id
  * @param {{ sso: Set<string>, password: boolean }} usable SSO providers that
  *   may sign in now, and whether the user can sign in with a password.
+ * @returns {Promise<string>} the unlinked identity's provider
  * @throws {TenancyError} NOT_FOUND (not the caller's), INVALID (password row),
  *   LAST_METHOD (nothing usable would remain)
  */
@@ -50,7 +51,7 @@ export async function unlinkSsoIdentityGuarded(ctx, id, usable) {
       throw new TenancyError("LAST_METHOD", "This is your last way to sign in");
     }
     db.run(`DELETE FROM identities WHERE id = ? AND userId = ?`, [id, ctx.userId]);
-    return true;
+    return row.provider;
   });
 }
 

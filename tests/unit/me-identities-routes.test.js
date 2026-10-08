@@ -43,6 +43,8 @@ async function signIn(seeded) {
     sv: user.sessionVersion,
     wid: seeded.personal,
     amr: ["oidc"],
+    oidc: true,
+    oidcName: "Ann",
   });
   jar.cookies.set("auth_token", token);
   return token;
@@ -140,5 +142,9 @@ describe("switch on", () => {
     const fresh = jar.cookies.get("auth_token");
     expect(fresh).not.toBe(old);
     expect(await s.isLiveSession(fresh)).toBe(true);
+    // The unlinked provider's display claims are not re-minted.
+    const claims = await jwt.getDashboardAuthSession(fresh);
+    expect(claims.oidcName).toBeUndefined();
+    expect(claims.oidc).toBeUndefined();
   });
 });

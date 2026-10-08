@@ -47,7 +47,13 @@ export async function patchSettings(patch, scope = null) {
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "Failed to save setting");
+    if (!res.ok) {
+      // Earlier endpoints may already have committed (no cross-endpoint
+      // transaction): expose what was accepted so callers can reconcile.
+      const err = new Error(data.error || "Failed to save setting");
+      err.accepted = accepted;
+      throw err;
+    }
     Object.assign(accepted, url === INSTANCE_ENDPOINT ? data : (data.data ?? {}));
   }
   return accepted;

@@ -369,12 +369,17 @@ export async function passwordSessionClaims(userId, wid) {
  * setter to keep the original expiry. Null when the user may not hold a session.
  * @param {object} session decoded current session claims
  * @param {string} [wid] target workspace (default: session.wid)
+ * @param {{ dropProvider?: "oidc"|"saml" }} [opts] skip that provider's
+ *   display claims (identity unlink: never advertise an unlinked identity)
  * @returns {Promise<object|null>}
  */
-export async function remintClaims(session, wid = session?.wid) {
+export async function remintClaims(session, wid = session?.wid, { dropProvider } = {}) {
   const claims = await passwordSessionClaims(session?.sub, wid);
   if (!claims?.sub) return null;
-  for (const k of DISPLAY_CLAIMS) if (session[k] !== undefined) claims[k] = session[k];
+  for (const k of DISPLAY_CLAIMS) {
+    if (dropProvider && k.startsWith(dropProvider)) continue;
+    if (session[k] !== undefined) claims[k] = session[k];
+  }
   return claims;
 }
 
