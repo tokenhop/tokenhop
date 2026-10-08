@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { loadSettings } from "@/shared/utils/settingsApi";
+import { loadSettings as fetchSettings } from "@/shared/utils/settingsApi";
 
 /**
  * Settings values for the page (YAN-371, D12). Inactive (`scope` null): the
@@ -23,7 +23,7 @@ export function useSettingsData({ ready, scope, canManageInstance }) {
     setError("");
     try {
       setSettings(
-        await loadSettings(scoped ? { workspaceId } : null, {
+        await fetchSettings(scoped ? { workspaceId } : null, {
           canManageInstance,
           withPreferences: true,
         }),
