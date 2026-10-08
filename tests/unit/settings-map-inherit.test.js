@@ -4,7 +4,12 @@
 // with opt-in seeding from `effective`. comboStrategies stays whole-replace.
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mergeWorkspaceLayer } from "@/lib/settings/settingsScope.js";
-import { loadOwnedMap } from "@/shared/utils/settingsApi.js";
+import {
+  clearOwnedEntry,
+  hidesNothing,
+  isAutoThinking,
+  loadOwnedMap,
+} from "@/shared/utils/settingsApi.js";
 
 const ENV = "TOKENHOP_MULTI_USER";
 const savedEnv = process.env[ENV];
@@ -166,5 +171,46 @@ describe("loadOwnedMap", () => {
   it("non-ok response throws the server's message", async () => {
     stubFetch({});
     await expect(loadOwnedMap("providerStrategies", null)).rejects.toThrow("boom");
+  });
+});
+
+// CodeRabbit on #824: clearing a workspace entry must not re-inherit a
+// non-neutral instance entry (Auto thinking, unhiding the last quota key).
+describe("clearOwnedEntry", () => {
+  it("masks a non-neutral inherited entry, else deletes", () => {
+    const owned = { claude: { mode: "high" }, codex: { mode: "low" } };
+    expect(
+      clearOwnedEntry(
+        owned,
+        "claude",
+        { claude: { mode: "max" } },
+        { mode: "auto" },
+        isAutoThinking,
+      ),
+    ).toEqual({ claude: { mode: "auto" }, codex: { mode: "low" } });
+    expect(
+      clearOwnedEntry(
+        owned,
+        "claude",
+        { claude: { mode: "auto" } },
+        { mode: "auto" },
+        isAutoThinking,
+      ),
+    ).toEqual({ codex: { mode: "low" } });
+    expect(clearOwnedEntry(owned, "claude", {}, { mode: "auto" }, isAutoThinking)).toEqual({
+      codex: { mode: "low" },
+    });
+    expect(
+      clearOwnedEntry(
+        { a: { hidden: ["x"] } },
+        "a",
+        { a: { hidden: ["y"] } },
+        { hidden: [] },
+        hidesNothing,
+      ),
+    ).toEqual({ a: { hidden: [] } });
+    expect(
+      clearOwnedEntry({ a: { hidden: ["x"] } }, "a", {}, { hidden: [] }, hidesNothing),
+    ).toEqual({});
   });
 });

@@ -13,7 +13,13 @@ import { getModelsByProviderId } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useSettingsField } from "../useSettingsField";
 import { SettingsScopeContext } from "@/shared/hooks/settingsScopeContext";
-import { loadOwnedMap, patchSettings } from "@/shared/utils/settingsApi";
+import {
+  clearOwnedEntry,
+  hidesNothing,
+  isAutoThinking,
+  loadOwnedState,
+  patchSettings,
+} from "@/shared/utils/settingsApi";
 import AutoPingList from "./AutoPingList";
 
 import {
@@ -109,20 +115,19 @@ export default function ProvidersModelsSection({
     },
     [scope],
   );
-  const loadFresh = useCallback(
-    async (key, seedIds) => (await loadOwnedMap(key, scope, seedIds)) || {},
-    [scope],
-  );
+  const loadFresh = useCallback((key, seedIds) => loadOwnedState(key, scope, seedIds), [scope]);
   const saveThinkingMode = useCallback(
     async (providerId, mode) => {
       setThinkingUpdating((prev) => ({ ...prev, [providerId]: true }));
       setThinkingErrors((prev) => ({ ...prev, [providerId]: "" }));
       try {
-        const updated = setProviderThinkingMode(
-          await loadFresh("providerThinking", [providerId]),
-          providerId,
-          mode,
-        );
+        const { owned, inherited } = await loadFresh("providerThinking", [providerId]);
+        // YAN-770: Auto stores an explicit entry when the instance sets
+        // another mode (deleting would re-inherit it).
+        const updated =
+          !mode || mode === "auto"
+            ? clearOwnedEntry(owned, providerId, inherited, { mode: "auto" }, isAutoThinking)
+            : setProviderThinkingMode(owned, providerId, mode);
         const saved = await patchOneKey("providerThinking", updated);
         onSettingsChange?.({ providerThinking: saved });
       } catch (err) {
@@ -146,10 +151,13 @@ export default function ProvidersModelsSection({
         // owned map so concurrent removals elsewhere win and, in a workspace,
         // untouched providers keep inheriting (YAN-770).
         const next = { [editedProvider]: full[editedProvider] };
-        const fresh = await loadFresh("quotaVisibility", [editedProvider]);
-        const merged = { ...fresh, ...next };
-        // setQuotaHiddenKey drops a provider whose last key was unhidden.
-        if (merged[editedProvider] === undefined) delete merged[editedProvider];
+        const { owned: fresh, inherited } = await loadFresh("quotaVisibility", [editedProvider]);
+        let merged = { ...fresh, ...next };
+        // setQuotaHiddenKey drops a provider whose last key was unhidden. In a
+        // workspace an empty entry is kept only to mask inherited hidden keys.
+        if (merged[editedProvider] === undefined) {
+          merged = clearOwnedEntry(merged, editedProvider, inherited, { hidden: [] }, hidesNothing);
+        }
         // Drop empty rows only when the entry carries nothing else: extra
         // keys are preserved by the API validator, so keep them.
         for (const provider of Object.keys(merged)) {

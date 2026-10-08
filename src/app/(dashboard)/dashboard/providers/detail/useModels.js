@@ -4,7 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 import { useNotificationStore } from "@/store/notificationStore";
 import { getModelKind } from "@/shared/constants/models";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
-import { loadOwnedMap, loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
+import {
+  clearOwnedEntry,
+  isAutoThinking,
+  loadOwnedState,
+  loadSettingsValue,
+  patchSettings,
+} from "@/shared/utils/settingsApi";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 import { getModelsFetcher } from "./providerDetailMeta";
@@ -149,15 +155,18 @@ export function useModels({
       const previous = thinkingMode;
       setThinkingMode(mode);
       try {
-        const providerThinking = await loadOwnedMap(
+        const { owned, inherited } = await loadOwnedState(
           "providerThinking",
           scope,
           [providerId],
           "Failed to load thinking config",
         );
-        const updated = { ...providerThinking };
-        if (!mode || mode === "auto") delete updated[providerId];
-        else updated[providerId] = { mode };
+        // YAN-770: Auto clears the entry, or stores Auto explicitly when the
+        // instance sets another mode (deleting would re-inherit it).
+        const updated =
+          !mode || mode === "auto"
+            ? clearOwnedEntry(owned, providerId, inherited, { mode: "auto" }, isAutoThinking)
+            : { ...owned, [providerId]: { mode } };
         await patchSettings({ providerThinking: updated }, scope);
         return true;
       } catch (error) {

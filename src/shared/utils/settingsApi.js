@@ -150,7 +150,17 @@ export async function loadSettingsValue(
  * @param {string} [fallback] Error text when the server sends none.
  * @returns {Promise<Record<string, object>>} Throws the server's message when the GET fails.
  */
-export async function loadOwnedMap(
+export async function loadOwnedMap(key, scope = null, seedIds = [], fallback) {
+  return (await loadOwnedState(key, scope, seedIds, fallback)).owned;
+}
+
+/**
+ * `loadOwnedMap` plus the instance layer (`inherited`) of the same key, for
+ * saves that clear an entry (see `clearOwnedEntry`). Instance endpoint:
+ * `inherited` is {} (nothing below the instance).
+ * @returns {Promise<{ owned: Record<string, object>, inherited: Record<string, object> }>}
+ */
+export async function loadOwnedState(
   key,
   scope = null,
   seedIds = [],
@@ -163,16 +173,39 @@ export async function loadOwnedMap(
     throw new Error(data.error || fallback);
   }
   const body = await res.json();
-  const value = url === INSTANCE_ENDPOINT ? body[key] : body.data?.[key];
-  const map =
-    value !== null && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
-  if (url !== INSTANCE_ENDPOINT) {
-    const inherited = body.effective?.[key];
-    for (const id of seedIds) {
-      if (inherited && typeof inherited === "object" && inherited[id] !== undefined) {
-        map[id] ??= inherited[id];
-      }
-    }
+  if (url === INSTANCE_ENDPOINT) return { owned: plainCopy(body[key]), inherited: {} };
+  const owned = plainCopy(body.data?.[key]);
+  const shown = body.effective?.[key];
+  for (const id of seedIds) {
+    if (isPlainMap(shown) && shown[id] !== undefined) owned[id] ??= shown[id];
   }
-  return map;
+  return { owned, inherited: plainCopy(body.inherited?.[key]) };
 }
+
+/**
+ * Clear one entry of an owned map (YAN-770). Deleting it re-inherits the
+ * instance entry, so when that entry isn't already neutral the workspace
+ * stores `neutral` explicitly to mask it.
+ * @param {Record<string, object>} owned
+ * @param {string} id
+ * @param {Record<string, object>} inherited Instance layer of the same key.
+ * @param {object} neutral Value meaning "nothing set" (e.g. `{ mode: "auto" }`).
+ * @param {(entry: object) => boolean} isNeutral
+ * @returns {Record<string, object>}
+ */
+export function clearOwnedEntry(owned, id, inherited, neutral, isNeutral) {
+  const next = { ...owned };
+  const base = inherited?.[id];
+  if (base === undefined || isNeutral(base)) delete next[id];
+  else next[id] = neutral;
+  return next;
+}
+
+/** Thinking entry that means Auto (no override). */
+export const isAutoThinking = (entry) => !entry?.mode || entry.mode === "auto";
+
+/** Quota visibility entry that hides nothing. */
+export const hidesNothing = (entry) => !entry?.hidden?.length;
+
+const isPlainMap = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+const plainCopy = (v) => (isPlainMap(v) ? { ...v } : {});

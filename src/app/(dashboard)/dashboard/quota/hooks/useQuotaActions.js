@@ -5,7 +5,10 @@ import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
 import {
   loadSettings as loadScopedSettings,
+  clearOwnedEntry,
+  hidesNothing,
   loadOwnedMap,
+  loadOwnedState,
   patchSettings,
 } from "@/shared/utils/settingsApi";
 import {
@@ -367,12 +370,16 @@ export function useQuotaActions({
       try {
         // YAN-770: scoped writes send the workspace's own entries plus the
         // edited provider, so untouched providers keep inheriting.
-        const payload = scope
-          ? {
-              ...(await loadOwnedMap("quotaVisibility", scope)),
-              [provider]: nextVisibility[provider],
-            }
-          : nextVisibility;
+        let payload = nextVisibility;
+        if (scope) {
+          const { owned, inherited } = await loadOwnedState("quotaVisibility", scope);
+          const entry = nextVisibility[provider];
+          // An entry that hides nothing is kept only to mask inherited keys.
+          payload =
+            entry && !hidesNothing(entry)
+              ? { ...owned, [provider]: entry }
+              : clearOwnedEntry(owned, provider, inherited, { ...entry, hidden: [] }, hidesNothing);
+        }
         await patchSettings({ quotaVisibility: payload }, scope);
       } catch (error) {
         console.error("Error updating quota visibility:", error);

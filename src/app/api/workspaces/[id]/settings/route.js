@@ -5,8 +5,8 @@ import { NextResponse } from "next/server";
 import { requireMultiUser } from "@/lib/users/featureSwitch.js";
 import { getPrincipal } from "@/lib/users/session.js";
 import { can } from "@/lib/users/principal.js";
-import { WORKSPACE_KEYS, classifyKey, pickKeys } from "@/lib/settings/settingsScope.js";
-import { getEffectivePreferences } from "@/lib/db/index.js";
+import { MAP_KEYS, WORKSPACE_KEYS, classifyKey, pickKeys } from "@/lib/settings/settingsScope.js";
+import { getEffectivePreferences, getSettings } from "@/lib/db/index.js";
 import {
   getWorkspaceSettings,
   resolveWorkspaceComboId,
@@ -70,6 +70,11 @@ export async function GET(_request, { params }) {
     return json({
       data: pickKeys(row.data, WORKSPACE_KEYS),
       effective: pickKeys(effective, WORKSPACE_KEYS),
+      // YAN-770: the instance layer of the per-entry map keys, so a client can
+      // tell whether clearing an entry must store an explicit neutral value
+      // (to mask an inherited one) or can simply delete it. `effective`
+      // already exposes these values for every entry the workspace doesn't own.
+      inherited: pickKeys(await getSettings(), MAP_KEYS),
       updatedAt: row.updatedAt,
     });
   } catch (error) {
