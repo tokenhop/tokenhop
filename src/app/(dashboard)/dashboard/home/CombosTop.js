@@ -55,7 +55,8 @@ export function comboUsageFromByEndpoint(byEndpoint) {
   if (!byEndpoint || typeof byEndpoint !== "object") return counts;
   for (const [key, entry] of Object.entries(byEndpoint)) {
     const endpoint = entry?.endpoint ?? String(key).split("|")[0];
-    if (!endpoint || endpoint === "Unknown") continue;
+    // "completions" is the edit-predictions bucket, not a combo (YAN-743).
+    if (!endpoint || endpoint === "Unknown" || endpoint === "completions") continue;
     counts.set(endpoint, (counts.get(endpoint) || 0) + (Number(entry?.requests) || 0));
   }
   return counts;
