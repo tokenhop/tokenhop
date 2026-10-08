@@ -8,6 +8,9 @@ import GatewayStatusCard from "./GatewayStatusCard";
 import SidebarUserRow from "./SidebarUserRow";
 import IconButton from "./IconButton";
 import BrandLockup from "./BrandLockup";
+import WorkspaceSwitcher from "./WorkspaceSwitcher";
+import useAuthStatus from "@/shared/hooks/useAuthStatus";
+import { accountView } from "@/shared/utils/account";
 
 /**
  * Signal sidebar per the board: 248px width, panel background, 1px line
@@ -33,6 +36,7 @@ export default function Sidebar({ onClose, inDrawer = false }) {
     multiUser,
     traffic,
   } = useShellStatus();
+  const view = accountView(useAuthStatus());
 
   return (
     <aside
@@ -56,6 +60,9 @@ export default function Sidebar({ onClose, inDrawer = false }) {
         ) : null}
       </div>
 
+      {/* Workspace switcher (multi-user active only) */}
+      {view.active ? <WorkspaceSwitcher view={view} /> : null}
+
       {/* Gateway status card */}
       <GatewayStatusCard
         loading={loading}
@@ -72,6 +79,7 @@ export default function Sidebar({ onClose, inDrawer = false }) {
         badges={badges}
         providerAttention={providerAttention}
         onNavigate={onClose}
+        can={view.active ? view.can : undefined}
       />
 
       {/* User row */}

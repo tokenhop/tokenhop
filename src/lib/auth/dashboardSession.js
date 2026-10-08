@@ -74,14 +74,19 @@ export async function getDashboardAuthSession(token) {
   return readFullSession(token);
 }
 
-export async function setDashboardAuthCookie(cookieStore, request, claims = {}) {
-  const token = await createDashboardAuthToken(claims);
+/**
+ * `exp` (epoch seconds) keeps an existing session's expiry (workspace switch,
+ * identity unlink re-mint): the new token never outlives the old one.
+ */
+export async function setDashboardAuthCookie(cookieStore, request, claims = {}, { exp } = {}) {
+  const keepExp = Number.isInteger(exp);
+  const token = await createDashboardAuthToken(claims, keepExp ? exp : "24h");
   cookieStore.set("auth_token", token, {
     httpOnly: true,
     secure: shouldUseSecureCookie(request),
     sameSite: "lax",
     path: "/",
-    maxAge: SESSION_MAX_AGE_SEC,
+    maxAge: keepExp ? Math.max(0, exp - Math.floor(Date.now() / 1000)) : SESSION_MAX_AGE_SEC,
   });
 }
 

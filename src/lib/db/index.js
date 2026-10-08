@@ -231,6 +231,7 @@ export {
 export {
   listIdentities,
   unlinkIdentity,
+  unlinkSsoIdentityGuarded,
   findIdentityUnscoped,
   listIdentitiesUnscoped,
   linkIdentityUnscoped,

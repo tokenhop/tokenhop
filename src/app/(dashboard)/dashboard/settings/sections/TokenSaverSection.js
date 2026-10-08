@@ -39,7 +39,11 @@ FieldError.propTypes = { error: PropTypes.string };
  * toggles save immediately; sub-fields go disabled when their toggle is off.
  * 文 (wenyan) caveman levels only appear where the locale supports them.
  */
-export default function TokenSaverSection({ settings, onSettingsChange }) {
+export default function TokenSaverSection({
+  settings,
+  onSettingsChange,
+  canManageInstance = true,
+}) {
   const onSaved = (key) => (value) => onSettingsChange?.({ [key]: value });
 
   const rtk = useSettingsField("rtkEnabled", settings.rtkEnabled ?? true, {
@@ -135,85 +139,90 @@ export default function TokenSaverSection({ settings, onSettingsChange }) {
         />
         <FieldError error={rtk.error} />
 
-        <SettingRow
-          label="Compress context"
-          description="Compress prompts via Headroom before routing to the model."
-          settingKey="headroomEnabled"
-          control={
-            <Toggle
-              checked={headroom.value === true}
-              onChange={(next) => headroom.set(next)}
-              disabled={headroom.saving}
-              aria-label="Compress context"
+        {/* YAN-371 (D13): headroom* are instance keys; admins only. */}
+        {canManageInstance && (
+          <>
+            <SettingRow
+              label="Compress context"
+              description="Compress prompts via Headroom before routing to the model."
+              settingKey="headroomEnabled"
+              control={
+                <Toggle
+                  checked={headroom.value === true}
+                  onChange={(next) => headroom.set(next)}
+                  disabled={headroom.saving}
+                  aria-label="Compress context"
+                />
+              }
             />
-          }
-        />
-        <FieldError error={headroom.error} />
-        <SettingRow
-          label="Headroom URL"
-          description={
-            urlFromEnv ? (
-              <>
-                Set by <code className="font-mono">HEADROOM_URL</code> in .env — the env wins, this
-                field is read-only.
-              </>
-            ) : (
-              "Local proxy for Start/Stop, or an external sidecar."
-            )
-          }
-          settingKey="headroomUrl"
-          control={
-            <div className="w-full sm:min-w-72 sm:max-w-sm">
-              <Input
-                value={headroomUrl.value ?? ""}
-                onChange={(e) => headroomUrl.set(e.target.value)}
-                disabled={headroomOff || headroomUrl.saving || urlFromEnv}
-                placeholder="http://localhost:8787"
-                inputClassName="font-mono"
-                aria-label="Headroom URL"
-              />
-              {urlFromEnv && (
-                <div className="mt-1.5">
-                  <Badge variant="info" size="sm" icon="lock">
-                    .env
-                  </Badge>
+            <FieldError error={headroom.error} />
+            <SettingRow
+              label="Headroom URL"
+              description={
+                urlFromEnv ? (
+                  <>
+                    Set by <code className="font-mono">HEADROOM_URL</code> in .env — the env wins,
+                    this field is read-only.
+                  </>
+                ) : (
+                  "Local proxy for Start/Stop, or an external sidecar."
+                )
+              }
+              settingKey="headroomUrl"
+              control={
+                <div className="w-full sm:min-w-72 sm:max-w-sm">
+                  <Input
+                    value={headroomUrl.value ?? ""}
+                    onChange={(e) => headroomUrl.set(e.target.value)}
+                    disabled={headroomOff || headroomUrl.saving || urlFromEnv}
+                    placeholder="http://localhost:8787"
+                    inputClassName="font-mono"
+                    aria-label="Headroom URL"
+                  />
+                  {urlFromEnv && (
+                    <div className="mt-1.5">
+                      <Badge variant="info" size="sm" icon="lock">
+                        .env
+                      </Badge>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          }
-        />
-        <FieldError error={headroomUrl.error} />
-        <SettingRow
-          label="Headroom timeout"
-          description="Request timeout, in milliseconds."
-          settingKey="headroomTimeoutMs"
-          control={
-            <div className="w-48">
-              <NumberStepper
-                label="Headroom timeout"
-                value={headroomTimeout.value}
-                onChange={(next) => headroomTimeout.set(next)}
-                min={1}
-                disabled={headroomOff || headroomTimeout.saving}
-              />
-            </div>
-          }
-        />
-        <FieldError error={headroomTimeout.error} />
-        <SettingRow
-          label="Compress user messages"
-          description="Also compress user turns, not just tool output."
-          settingKey="headroomCompressUserMessages"
-          control={
-            <Toggle
-              checked={headroomCompress.value === true}
-              onChange={(next) => headroomCompress.set(next)}
-              disabled={headroomOff || headroomCompress.saving}
-              aria-label="Compress user messages"
+              }
             />
-          }
-        />
-        <FieldError error={headroomCompress.error} />
+            <FieldError error={headroomUrl.error} />
+            <SettingRow
+              label="Headroom timeout"
+              description="Request timeout, in milliseconds."
+              settingKey="headroomTimeoutMs"
+              control={
+                <div className="w-48">
+                  <NumberStepper
+                    label="Headroom timeout"
+                    value={headroomTimeout.value}
+                    onChange={(next) => headroomTimeout.set(next)}
+                    min={1}
+                    disabled={headroomOff || headroomTimeout.saving}
+                  />
+                </div>
+              }
+            />
+            <FieldError error={headroomTimeout.error} />
+            <SettingRow
+              label="Compress user messages"
+              description="Also compress user turns, not just tool output."
+              settingKey="headroomCompressUserMessages"
+              control={
+                <Toggle
+                  checked={headroomCompress.value === true}
+                  onChange={(next) => headroomCompress.set(next)}
+                  disabled={headroomOff || headroomCompress.saving}
+                  aria-label="Compress user messages"
+                />
+              }
+            />
+            <FieldError error={headroomCompress.error} />
+          </>
+        )}
 
         <SettingRow
           label="Compress LLM output"
@@ -277,75 +286,80 @@ export default function TokenSaverSection({ settings, onSettingsChange }) {
         />
         <FieldError error={ponytailLevel.error} />
 
-        <SettingRow
-          label={
-            <span className="inline-flex items-center gap-2">
-              Prompts as images
-              <Badge variant="info" size="sm" icon="science">
-                Experimental
-              </Badge>
-            </span>
-          }
-          description="Large context becomes optimized images before the LLM (PXPIPE)."
-          settingKey="pxpipeEnabled"
-          control={
-            <Toggle
-              checked={pxpipe.value === true}
-              onChange={(next) => pxpipe.set(next)}
-              disabled={pxpipe.saving}
-              aria-label="Prompts as images"
+        {/* YAN-371 (D13): pxpipe* are instance keys; admins only. */}
+        {canManageInstance && (
+          <>
+            <SettingRow
+              label={
+                <span className="inline-flex items-center gap-2">
+                  Prompts as images
+                  <Badge variant="info" size="sm" icon="science">
+                    Experimental
+                  </Badge>
+                </span>
+              }
+              description="Large context becomes optimized images before the LLM (PXPIPE)."
+              settingKey="pxpipeEnabled"
+              control={
+                <Toggle
+                  checked={pxpipe.value === true}
+                  onChange={(next) => pxpipe.set(next)}
+                  disabled={pxpipe.saving}
+                  aria-label="Prompts as images"
+                />
+              }
             />
-          }
-        />
-        <FieldError error={pxpipe.error} />
-        <SettingRow
-          label="Minimum prompt size"
-          description="Requests smaller than this bypass PXPIPE as-is (chars)."
-          settingKey="pxpipeMinChars"
-          control={
-            <div className="w-48">
-              <NumberStepper
-                label="Minimum prompt size"
-                value={pxpipeMinChars.value}
-                onChange={(next) => pxpipeMinChars.set(next)}
-                min={0}
-                disabled={pxpipeOff || pxpipeMinChars.saving}
-              />
-            </div>
-          }
-        />
-        <FieldError error={pxpipeMinChars.error} />
-        <SettingRow
-          label="PXPIPE timeout"
-          description="Request timeout, in milliseconds."
-          settingKey="pxpipeTimeoutMs"
-          control={
-            <div className="w-48">
-              <NumberStepper
-                label="PXPIPE timeout"
-                value={pxpipeTimeout.value}
-                onChange={(next) => pxpipeTimeout.set(next)}
-                min={1}
-                disabled={pxpipeOff || pxpipeTimeout.saving}
-              />
-            </div>
-          }
-        />
-        <FieldError error={pxpipeTimeout.error} />
-        <SettingRow
-          label="Auto-install PXPIPE"
-          description="Install the proxy package on first use when missing."
-          settingKey="pxpipeAutoInstall"
-          control={
-            <Toggle
-              checked={pxpipeAutoInstall.value === true}
-              onChange={(next) => pxpipeAutoInstall.set(next)}
-              disabled={pxpipeOff || pxpipeAutoInstall.saving}
-              aria-label="Auto-install PXPIPE"
+            <FieldError error={pxpipe.error} />
+            <SettingRow
+              label="Minimum prompt size"
+              description="Requests smaller than this bypass PXPIPE as-is (chars)."
+              settingKey="pxpipeMinChars"
+              control={
+                <div className="w-48">
+                  <NumberStepper
+                    label="Minimum prompt size"
+                    value={pxpipeMinChars.value}
+                    onChange={(next) => pxpipeMinChars.set(next)}
+                    min={0}
+                    disabled={pxpipeOff || pxpipeMinChars.saving}
+                  />
+                </div>
+              }
             />
-          }
-        />
-        <FieldError error={pxpipeAutoInstall.error} />
+            <FieldError error={pxpipeMinChars.error} />
+            <SettingRow
+              label="PXPIPE timeout"
+              description="Request timeout, in milliseconds."
+              settingKey="pxpipeTimeoutMs"
+              control={
+                <div className="w-48">
+                  <NumberStepper
+                    label="PXPIPE timeout"
+                    value={pxpipeTimeout.value}
+                    onChange={(next) => pxpipeTimeout.set(next)}
+                    min={1}
+                    disabled={pxpipeOff || pxpipeTimeout.saving}
+                  />
+                </div>
+              }
+            />
+            <FieldError error={pxpipeTimeout.error} />
+            <SettingRow
+              label="Auto-install PXPIPE"
+              description="Install the proxy package on first use when missing."
+              settingKey="pxpipeAutoInstall"
+              control={
+                <Toggle
+                  checked={pxpipeAutoInstall.value === true}
+                  onChange={(next) => pxpipeAutoInstall.set(next)}
+                  disabled={pxpipeOff || pxpipeAutoInstall.saving}
+                  aria-label="Auto-install PXPIPE"
+                />
+              }
+            />
+            <FieldError error={pxpipeAutoInstall.error} />
+          </>
+        )}
       </div>
     </div>
   );
@@ -354,4 +368,5 @@ export default function TokenSaverSection({ settings, onSettingsChange }) {
 TokenSaverSection.propTypes = {
   settings: PropTypes.object.isRequired,
   onSettingsChange: PropTypes.func,
+  canManageInstance: PropTypes.bool,
 };

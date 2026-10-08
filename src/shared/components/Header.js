@@ -7,6 +7,8 @@ import PropTypes from "prop-types";
 import ProviderTile from "@/shared/components/ProviderTile";
 import HeaderMenu from "@/shared/components/HeaderMenu";
 import HeaderLanguage from "@/shared/components/HeaderLanguage";
+import AccountMenu from "@/shared/components/AccountMenu";
+import { accountView } from "@/shared/utils/account";
 import dynamic from "next/dynamic";
 import IconButton from "@/shared/components/IconButton";
 import CommandPaletteTrigger from "@/shared/components/CommandPaletteTrigger";
@@ -207,13 +209,15 @@ export default function Header({
 
   const pageInfo = useMemo(() => getPageInfo(pathname), [pathname]);
   const { title, description, breadcrumbs } = pageInfo;
-  const displayName =
-    authStatus.displayName ||
-    authStatus.samlName ||
-    authStatus.samlEmail ||
-    authStatus.oidcName ||
-    authStatus.oidcEmail ||
-    "";
+  const view = useMemo(() => accountView(authStatus), [authStatus]);
+  const displayName = view.active
+    ? ""
+    : authStatus.displayName ||
+      authStatus.samlName ||
+      authStatus.samlEmail ||
+      authStatus.oidcName ||
+      authStatus.oidcEmail ||
+      "";
   const loginMethod = authStatus.loginMethod || "";
 
   const handleLogout = async () => {
@@ -306,6 +310,8 @@ export default function Header({
             </span>
           </div>
         )}
+
+        {view.active ? <AccountMenu view={view} /> : null}
 
         <CommandPaletteTrigger />
 

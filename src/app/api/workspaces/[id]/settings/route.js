@@ -6,6 +6,7 @@ import { requireMultiUser } from "@/lib/users/featureSwitch.js";
 import { getPrincipal } from "@/lib/users/session.js";
 import { can } from "@/lib/users/principal.js";
 import { WORKSPACE_KEYS, classifyKey, pickKeys } from "@/lib/settings/settingsScope.js";
+import { getEffectivePreferences } from "@/lib/db/index.js";
 import {
   getWorkspaceSettings,
   resolveWorkspaceComboId,
@@ -60,7 +61,17 @@ export async function GET(_request, { params }) {
     if (!can(ctx, "workspace.connections.use", { workspaceId: row.workspaceId })) {
       return json({ error: "Workspace not found" }, 404);
     }
-    return json({ data: pickKeys(row.data, WORKSPACE_KEYS), updatedAt: row.updatedAt });
+    // YAN-371 (D12): effective instance ⊕ workspace values (workspace keys
+    // only), so members who can't read /api/settings (403) still get defaults.
+    const effective = await getEffectivePreferences({
+      userId: ctx.userId,
+      activeWorkspaceId: row.workspaceId,
+    });
+    return json({
+      data: pickKeys(row.data, WORKSPACE_KEYS),
+      effective: pickKeys(effective, WORKSPACE_KEYS),
+      updatedAt: row.updatedAt,
+    });
   } catch (error) {
     return json({ error: error.message }, 500);
   }

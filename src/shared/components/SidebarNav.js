@@ -32,9 +32,10 @@ export default function SidebarNav({
   badges = {},
   providerAttention = { count: 0, status: null },
   onNavigate,
+  can,
 }) {
   const pathname = usePathname() || "";
-  const groups = visibleGroups({ enableTranslator, multiUser }).filter(
+  const groups = visibleGroups({ enableTranslator, multiUser, can }).filter(
     (group) => group.items.length > 0,
   );
 
@@ -107,6 +108,7 @@ export default function SidebarNav({
 SidebarNav.propTypes = {
   enableTranslator: PropTypes.bool,
   multiUser: PropTypes.bool,
+  can: PropTypes.func,
   badges: PropTypes.shape({
     providers: PropTypes.number,
     combos: PropTypes.number,

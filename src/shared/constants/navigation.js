@@ -106,6 +106,7 @@ export const NAV_GROUPS = [
         label: "Console log",
         icon: "terminal",
         href: "/dashboard/console-log",
+        cap: "instance.hostOps",
       },
     ],
   },
@@ -118,12 +119,14 @@ export const NAV_GROUPS = [
         label: "Token saver",
         icon: "savings",
         href: "/dashboard/token-saver",
+        cap: "instance.settings.manage",
       },
       {
         id: "cli-tools",
         label: "CLI tools",
         icon: "terminal",
         href: "/dashboard/cli-tools",
+        cap: "instance.hostOps",
       },
       {
         id: "media",
@@ -136,6 +139,7 @@ export const NAV_GROUPS = [
         label: "Proxy pools",
         icon: "lan",
         href: "/dashboard/proxy-pools",
+        cap: "instance.settings.manage",
       },
       {
         id: "skills",
@@ -161,6 +165,7 @@ export const NAV_GROUPS = [
         label: "Translator",
         icon: "translate",
         href: "/dashboard/translator",
+        cap: "instance.hostOps",
         gate: "enableTranslator",
       },
     ],
@@ -207,15 +212,20 @@ export function isActive(pathname, item) {
  * @param {object} [settings]
  * @param {boolean} [settings.enableTranslator]
  * @param {boolean} [settings.multiUser] Users & teams switch (YAN-351).
+ * @param {(capability: string) => boolean} [settings.can] Capability check
+ *   (YAN-371). Items with a `cap` the principal lacks are hidden. Cosmetic:
+ *   the server enforces. Omitted (single-user) leaves every item visible.
  */
 export function visibleGroups(settings = {}) {
   const enableTranslator = Boolean(settings?.enableTranslator);
   const multiUser = Boolean(settings?.multiUser);
+  const can = typeof settings?.can === "function" ? settings.can : null;
   return NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) => {
-      if (item.gate === "enableTranslator") return enableTranslator;
-      if (item.gate === "multiUser") return multiUser;
+      if (item.gate === "enableTranslator" && !enableTranslator) return false;
+      if (item.gate === "multiUser" && !multiUser) return false;
+      if (can && item.cap && !can(item.cap)) return false;
       return true;
     }),
   }));

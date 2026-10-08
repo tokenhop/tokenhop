@@ -4,6 +4,7 @@
  */
 
 import { LOCALE_NAMES } from "@/i18n/config";
+import { accountView } from "./account";
 
 /**
  * Tint for a nav badge. Missing (not yet loaded) or zero counts return null so
@@ -58,6 +59,9 @@ const GENERIC_NAMES = new Set(["password user", "oidc user", "saml user"]);
  * @returns {{ name: string, sub: string }}
  */
 export function resolveUserRow(status = {}) {
+  // YAN-371: with multi-user active, show the real user and instance role.
+  const view = accountView(status);
+  if (view.active) return { name: view.name, sub: view.roleLabel };
   const candidates = [
     status.samlName,
     status.samlEmail,

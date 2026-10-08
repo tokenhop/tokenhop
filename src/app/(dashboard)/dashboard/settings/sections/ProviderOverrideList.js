@@ -1,7 +1,8 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
+import { SettingsScopeContext, loadSettingsValue, patchSettings } from "../settingsApi";
 import Button from "@/shared/components/Button";
 import Select from "@/shared/components/Select";
 import NumberStepper from "@/shared/components/NumberStepper";
@@ -49,6 +50,7 @@ export default function ProviderOverrideList({ overrides, onOverridesChange }) {
   const [newStrategy, setNewStrategy] = useState("round-robin");
   const [newSticky, setNewSticky] = useState(1);
   const [addError, setAddError] = useState("");
+  const scope = useContext(SettingsScopeContext);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,22 +109,25 @@ export default function ProviderOverrideList({ overrides, onOverridesChange }) {
     setMapError("");
     const previous = overrides;
     try {
-      const res = await fetch("/api/settings", { cache: "no-store" });
-      if (!res.ok) throw new Error("Could not load current overrides.");
-      const data = await res.json();
-      const current =
-        data.providerStrategies && typeof data.providerStrategies === "object"
-          ? data.providerStrategies
-          : {};
+      let loaded;
+      try {
+        loaded = await loadSettingsValue("providerStrategies", scope);
+      } catch {
+        throw new Error("Could not load current overrides.");
+      }
+      const current = loaded && typeof loaded === "object" ? loaded : {};
       const next = update(current);
       onOverridesChange?.(next);
-      const saveRes = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerStrategies: next }),
-      });
-      const saved = await saveRes.json().catch(() => ({}));
-      if (!saveRes.ok) throw new Error(saved.error || "Could not save overrides.");
+      let saved;
+      try {
+        saved = await patchSettings({ providerStrategies: next }, scope);
+      } catch (err) {
+        throw new Error(
+          err instanceof Error && err.message !== "Failed to save setting"
+            ? err.message
+            : "Could not save overrides.",
+        );
+      }
       onOverridesChange?.(saved.providerStrategies ?? next);
     } catch (err) {
       onOverridesChange?.(previous);
