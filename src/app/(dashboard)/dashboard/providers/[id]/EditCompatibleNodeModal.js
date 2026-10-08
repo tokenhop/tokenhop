@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import { API_TYPE_OPTIONS, FIM_TEMPLATE_OPTIONS } from "../compatibleApiTypes.js";
 
 export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic }) {
   const [formData, setFormData] = useState({
@@ -31,22 +32,6 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
       });
     }
   }, [node, isAnthropic]);
-
-  const apiTypeOptions = [
-    { value: "chat", label: "Chat Completions" },
-    { value: "responses", label: "Responses API" },
-    { value: "completions", label: "Completions (FIM)" },
-  ];
-
-  const fimTemplateOptions = [
-    { value: "qwen", label: "Qwen (<|fim_prefix|>)" },
-    { value: "star_coder", label: "StarCoder" },
-    { value: "code_llama", label: "Code Llama" },
-    { value: "deepseek_coder", label: "DeepSeek Coder" },
-    { value: "codestral", label: "Codestral" },
-    { value: "glm", label: "GLM" },
-    { value: "suffix", label: "Send suffix field (server applies template)" },
-  ];
 
   const handleSubmit = async () => {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
@@ -116,7 +101,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         {!isAnthropic && (
           <Select
             label="API type"
-            options={apiTypeOptions}
+            options={API_TYPE_OPTIONS}
             value={formData.apiType}
             onChange={(e) => setFormData({ ...formData, apiType: e.target.value })}
           />
@@ -124,7 +109,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         {!isAnthropic && formData.apiType === "completions" && (
           <Select
             label="FIM template"
-            options={fimTemplateOptions}
+            options={FIM_TEMPLATE_OPTIONS}
             value={formData.fimTemplate}
             onChange={(e) => setFormData({ ...formData, fimTemplate: e.target.value })}
             hint="How prefix and suffix are encoded. Completions nodes only serve edit-prediction endpoints (/v1/completions, /v1/fim/completions, /infill), not chat."

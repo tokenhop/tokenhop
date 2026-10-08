@@ -6,6 +6,11 @@ const OPENAI_COMPATIBLE_DEFAULTS = {
   baseUrl: OPENAI_COMPAT_BASE,
 };
 
+// Declared OpenAI-compatible node API types ("completions" serves raw FIM
+// prompt/suffix endpoints). Keep in sync with the dashboard options in
+// src/app/(dashboard)/dashboard/providers/compatibleApiTypes.js.
+export const OPENAI_COMPATIBLE_API_TYPES = ["chat", "responses", "completions"];
+
 const ANTHROPIC_COMPATIBLE_PREFIX = "anthropic-compatible-";
 const ANTHROPIC_COMPATIBLE_DEFAULTS = {
   baseUrl: ANTHROPIC_COMPAT_BASE,
@@ -26,7 +31,7 @@ function isAnthropicCompatible(provider) {
 // embed the type: openai-compatible-<chat|responses|completions>-<uuid>.
 export function resolveOpenAICompatibleApiType(provider, credentials = null) {
   const stored = credentials?.providerSpecificData?.apiType;
-  if (stored === "chat" || stored === "responses" || stored === "completions") return stored;
+  if (OPENAI_COMPATIBLE_API_TYPES.includes(stored)) return stored;
   if (typeof provider === "string") {
     if (provider.includes("-completions-")) return "completions";
     if (provider.includes("responses")) return "responses";
@@ -117,6 +122,14 @@ export function detectFormat(body) {
   // Default to OpenAI format
   return "openai";
 }
+
+// Upstream path suffix for an apiType: one source of truth for both executors.
+export const openaiCompatiblePath = (apiType) =>
+  apiType === "responses"
+    ? "/responses"
+    : apiType === "completions"
+      ? "/completions"
+      : "/chat/completions";
 
 // Target format for an apiType: completions nodes only serve raw prompt/suffix
 // endpoints (chatCore routes them onto a "fim-native" transport).

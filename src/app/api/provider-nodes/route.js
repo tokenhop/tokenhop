@@ -10,6 +10,7 @@ import {
 } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
 import { FIM_DEFAULT_TEMPLATE, FIM_TEMPLATE_NAMES } from "open-sse/translator/concerns/fim.js";
+import { OPENAI_COMPATIBLE_API_TYPES } from "open-sse/services/provider.js";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +67,7 @@ export async function POST(request) {
     const nodeType = type || "openai-compatible";
 
     if (nodeType === "openai-compatible") {
-      if (!apiType || !["chat", "responses", "completions"].includes(apiType)) {
+      if (!apiType || !OPENAI_COMPATIBLE_API_TYPES.includes(apiType)) {
         return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
       }
       // fimTemplate only applies to completions nodes; ignored otherwise.

@@ -50,8 +50,8 @@ export const FIM_TEMPLATE_NAMES = [...TEMPLATES.map(([name]) => name), FIM_SUFFI
 // Inverse of parseFimPrompt for a raw-token template; unknown names use the default.
 export function encodeFimPrompt({ prefix = "", suffix = "", template } = {}) {
   const row = TEMPLATES.find(([name]) => name === template) ?? TEMPLATES[0];
-  const [format, open, middle, close] = row;
-  const [first, second] = format === "codestral" ? [suffix, prefix] : [prefix, suffix];
+  const [name, open, middle, close] = row;
+  const [first, second] = name === "codestral" ? [suffix, prefix] : [prefix, suffix];
   return `${open}${first}${middle}${second}${close}`;
 }
 

@@ -2,16 +2,7 @@
 
 import PropTypes from "prop-types";
 import { Button, Card } from "@/shared/components";
-
-const FIM_TEMPLATE_LABELS = {
-  qwen: "Qwen (<|fim_prefix|>)",
-  star_coder: "StarCoder",
-  code_llama: "Code Llama",
-  deepseek_coder: "DeepSeek Coder",
-  codestral: "Codestral",
-  glm: "GLM",
-  suffix: "Server applies template",
-};
+import { apiTypeLabel, fimTemplateLabel } from "../compatibleApiTypes.js";
 
 /**
  * Signal compatible-provider details card: API type, base URL,
@@ -26,13 +17,7 @@ export default function CompatibleDetailsCard({
   onEdit,
   onDelete,
 }) {
-  const apiLabel = isAnthropic
-    ? "Messages API"
-    : apiType === "responses"
-      ? "Responses API"
-      : apiType === "completions"
-        ? "Completions API (FIM)"
-        : "Chat Completions";
+  const apiLabel = isAnthropic ? "Messages API" : apiTypeLabel(apiType);
   const path = isAnthropic
     ? "messages"
     : apiType === "responses"
@@ -40,7 +25,7 @@ export default function CompatibleDetailsCard({
       : apiType === "completions"
         ? "completions"
         : "chat/completions";
-  const templateLabel = FIM_TEMPLATE_LABELS[fimTemplate];
+  const templateLabel = fimTemplateLabel(fimTemplate);
 
   return (
     <Card

@@ -11,7 +11,7 @@ import {
 } from "../providers/shared.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { EXTRA_USAGE_EXHAUSTED_TEXT } from "../config/errorConfig.js";
-import { resolveOpenAICompatibleApiType } from "../services/provider.js";
+import { resolveOpenAICompatibleApiType, openaiCompatiblePath } from "../services/provider.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -200,13 +200,7 @@ export class DefaultExecutor extends BaseExecutor {
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || OPENAI_COMPAT_BASE;
       const normalized = baseUrl.replace(/\/$/, "");
-      const resolved = resolveOpenAICompatibleApiType(this.provider, credentials);
-      const path =
-        resolved === "responses"
-          ? "/responses"
-          : resolved === "completions"
-            ? "/completions"
-            : "/chat/completions";
+      const path = openaiCompatiblePath(resolveOpenAICompatibleApiType(this.provider, credentials));
       return `${normalized}${path}`;
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {

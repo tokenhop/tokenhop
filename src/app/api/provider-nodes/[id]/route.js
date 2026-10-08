@@ -16,6 +16,7 @@ import {
 } from "@/lib/db/index.js";
 import { loadScoped } from "@/lib/users/workspaceScope.js";
 import { FIM_DEFAULT_TEMPLATE, FIM_TEMPLATE_NAMES } from "open-sse/translator/concerns/fim.js";
+import { OPENAI_COMPATIBLE_API_TYPES } from "open-sse/services/provider.js";
 
 // YAN-361: switch on, the node must be in one of the principal's workspaces.
 const load = (id) =>
@@ -48,7 +49,7 @@ export async function PUT(request, { params }) {
     // Only validate apiType for OpenAI Compatible nodes
     if (
       node.type === "openai-compatible" &&
-      (!apiType || !["chat", "responses", "completions"].includes(apiType))
+      (!apiType || !OPENAI_COMPATIBLE_API_TYPES.includes(apiType))
     ) {
       return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
     }
