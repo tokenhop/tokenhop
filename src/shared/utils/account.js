@@ -5,16 +5,19 @@
  */
 
 import { can as principalCan } from "@/lib/users/principal";
-
-const ROLE_LABELS = { owner: "Owner", admin: "Admin", user: "User" };
+import { translate } from "@/i18n/runtime";
 
 /**
- * Display label for an instance role. Unknown roles fall back to "User".
+ * Display label for an instance role, translated at call time (literal
+ * translate() calls so scripts/i18n-literals.mjs catalogs them). Unknown
+ * roles fall back to "User".
  * @param {string} [role]
- * @returns {"Owner"|"Admin"|"User"}
+ * @returns {string}
  */
 export function roleLabel(role) {
-  return ROLE_LABELS[role] || "User";
+  if (role === "owner") return translate("Owner");
+  if (role === "admin") return translate("Admin");
+  return translate("User");
 }
 
 /**

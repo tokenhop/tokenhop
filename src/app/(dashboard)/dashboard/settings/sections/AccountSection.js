@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { translate } from "@/i18n/runtime";
 import SectionCard from "@/shared/components/SectionCard";
 import SettingRow from "@/shared/components/SettingRow";
 import Button from "@/shared/components/Button";
@@ -34,7 +35,7 @@ function IdentitiesList() {
     try {
       setIdentities((await fetchIdentities()).identities || []);
     } catch (err) {
-      setError(err.message || "Could not load linked sign-ins.");
+      setError(err.message || translate("Could not load linked sign-ins."));
     }
   }, []);
 
@@ -50,7 +51,7 @@ function IdentitiesList() {
       setTarget(null);
       await load();
     } catch (err) {
-      setUnlinkError(err.message || "Could not unlink this sign-in.");
+      setUnlinkError(err.message || translate("Could not unlink this sign-in."));
     } finally {
       setBusy(false);
     }
@@ -137,7 +138,7 @@ export default function AccountSection() {
       await signOutEverywhere();
       window.location.assign("/login");
     } catch (err) {
-      setError(err.message || "Could not sign out everywhere.");
+      setError(err.message || translate("Could not sign out everywhere."));
       setBusy(false);
     }
   };

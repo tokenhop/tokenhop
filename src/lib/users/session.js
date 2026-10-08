@@ -29,7 +29,7 @@ import { isUserSecurityEnforced } from "./securityState.js";
 import { ensureOwnerBootstrap } from "./bootstrap.js";
 import { can } from "./principal.js";
 import { audit } from "./audit.js";
-import { getUserPreferences } from "@/lib/db/repos/workspaceSettingsRepo.js";
+import { getUserPreferences } from "@/lib/db/index.js";
 
 const AUTH_COOKIE = "auth_token";
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
+import { translate } from "@/i18n/runtime";
 import Menu, { MenuItem } from "./Menu";
 import { switchWorkspace } from "@/shared/utils/accountApi";
 
@@ -25,7 +26,7 @@ export default function WorkspaceSwitcher({ view }) {
       await switchWorkspace(id);
       window.location.reload();
     } catch (err) {
-      setError(err.message || "Could not switch workspace.");
+      setError(err.message || translate("Could not switch workspace."));
       setPending(false);
     }
   };

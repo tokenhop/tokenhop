@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
+import { translate } from "@/i18n/runtime";
 import Popover from "./Popover";
 import Badge from "./Badge";
 import Button from "./Button";
@@ -29,7 +30,7 @@ export default function AccountMenu({ view }) {
       await fn();
       window.location.assign("/login");
     } catch (err) {
-      setError(err.message || "Could not sign out. Try again.");
+      setError(err.message || translate("Could not sign out. Try again."));
       setBusy(false);
     }
   };
