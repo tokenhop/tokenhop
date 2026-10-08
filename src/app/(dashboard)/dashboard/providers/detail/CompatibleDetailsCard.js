@@ -2,6 +2,7 @@
 
 import PropTypes from "prop-types";
 import { Button, Card } from "@/shared/components";
+import { apiTypeLabel, fimTemplateLabel } from "../compatibleApiTypes.js";
 
 /**
  * Signal compatible-provider details card: API type, base URL,
@@ -10,21 +11,21 @@ import { Button, Card } from "@/shared/components";
 export default function CompatibleDetailsCard({
   isAnthropic,
   apiType,
+  fimTemplate,
   baseUrl,
   onAddKey,
   onEdit,
   onDelete,
 }) {
-  const apiLabel = isAnthropic
-    ? "Messages API"
-    : apiType === "responses"
-      ? "Responses API"
-      : "Chat Completions";
+  const apiLabel = isAnthropic ? "Messages API" : apiTypeLabel(apiType);
   const path = isAnthropic
     ? "messages"
     : apiType === "responses"
       ? "responses"
-      : "chat/completions";
+      : apiType === "completions"
+        ? "completions"
+        : "chat/completions";
+  const templateLabel = fimTemplateLabel(fimTemplate);
 
   return (
     <Card
@@ -32,6 +33,7 @@ export default function CompatibleDetailsCard({
       subtitle={
         <span className="break-all font-mono text-[13px]">
           {apiLabel} · {(baseUrl || "").replace(/\/$/, "")}/{path}
+          {apiType === "completions" && templateLabel ? ` · FIM: ${templateLabel}` : ""}
         </span>
       }
       action={
@@ -54,6 +56,7 @@ export default function CompatibleDetailsCard({
 CompatibleDetailsCard.propTypes = {
   isAnthropic: PropTypes.bool.isRequired,
   apiType: PropTypes.string,
+  fimTemplate: PropTypes.string,
   baseUrl: PropTypes.string,
   onAddKey: PropTypes.func.isRequired,
   onEdit: PropTypes.func.isRequired,

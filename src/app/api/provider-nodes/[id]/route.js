@@ -15,6 +15,8 @@ import {
   updateNode,
 } from "@/lib/db/index.js";
 import { loadScoped } from "@/lib/users/workspaceScope.js";
+import { FIM_DEFAULT_TEMPLATE, FIM_TEMPLATE_NAMES } from "open-sse/translator/concerns/fim.js";
+import { OPENAI_COMPATIBLE_API_TYPES } from "open-sse/services/provider.js";
 
 // YAN-361: switch on, the node must be in one of the principal's workspaces.
 const load = (id) =>
@@ -31,7 +33,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl } = body;
+    const { name, prefix, apiType, fimTemplate, baseUrl } = body;
     const loaded = await load(id);
     if (loaded instanceof Response) return loaded;
     const { scope, row: node } = loaded;
@@ -47,9 +49,21 @@ export async function PUT(request, { params }) {
     // Only validate apiType for OpenAI Compatible nodes
     if (
       node.type === "openai-compatible" &&
-      (!apiType || !["chat", "responses"].includes(apiType))
+      (!apiType || !OPENAI_COMPATIBLE_API_TYPES.includes(apiType))
     ) {
       return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
+    }
+
+    // fimTemplate only applies to completions nodes; ignored otherwise.
+    if (
+      node.type === "openai-compatible" &&
+      apiType === "completions" &&
+      fimTemplate !== undefined &&
+      fimTemplate !== null &&
+      fimTemplate !== "" &&
+      !FIM_TEMPLATE_NAMES.includes(fimTemplate)
+    ) {
+      return NextResponse.json({ error: "Invalid FIM template" }, { status: 400 });
     }
 
     if (!baseUrl?.trim()) {
@@ -82,6 +96,13 @@ export async function PUT(request, { params }) {
 
     if (node.type === "openai-compatible") {
       updates.apiType = apiType;
+      // Only meaningful when apiType=completions, otherwise ignore/omit.
+      if (apiType === "completions") {
+        updates.fimTemplate = fimTemplate || node.fimTemplate || FIM_DEFAULT_TEMPLATE;
+      } else {
+        // undefined overrides the merged key and is dropped on JSON encode.
+        updates.fimTemplate = undefined;
+      }
     }
 
     const updated = scope
@@ -103,6 +124,15 @@ export async function PUT(request, { params }) {
           providerSpecificData: {
             prefix: prefix.trim(),
             apiType: node.type === "openai-compatible" ? apiType : undefined,
+            // A null leaf in the PSD delta clears the stored key.
+            ...(node.type === "openai-compatible"
+              ? {
+                  fimTemplate:
+                    apiType === "completions"
+                      ? fimTemplate || node.fimTemplate || FIM_DEFAULT_TEMPLATE
+                      : null,
+                }
+              : {}),
             baseUrl: sanitizedBaseUrl,
             nodeName: updated.name,
           },

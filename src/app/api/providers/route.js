@@ -195,6 +195,9 @@ export async function POST(request) {
       providerSpecificData = {
         prefix: node.prefix,
         apiType: node.apiType,
+        ...(node.apiType === "completions" && node.fimTemplate
+          ? { fimTemplate: node.fimTemplate }
+          : {}),
         baseUrl: node.baseUrl,
         nodeName: node.name,
       };

@@ -48,6 +48,7 @@ export function resolveProviderInfo(providerId, providerNode) {
       color: getProviderBrand(providerNode.type).color,
       textIcon: providerNode.type === "anthropic-compatible" ? "AC" : "OC",
       apiType: providerNode.apiType,
+      fimTemplate: providerNode.fimTemplate,
       baseUrl: providerNode.baseUrl,
       type: providerNode.type,
     };

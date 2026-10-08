@@ -3,12 +3,14 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import { API_TYPE_OPTIONS, FIM_TEMPLATE_OPTIONS } from "../compatibleApiTypes.js";
 
 export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic }) {
   const [formData, setFormData] = useState({
     name: "",
     prefix: "",
     apiType: "chat",
+    fimTemplate: "qwen",
     baseUrl: "https://api.openai.com/v1",
   });
   const [saving, setSaving] = useState(false);
@@ -23,17 +25,13 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         name: node.name || "",
         prefix: node.prefix || "",
         apiType: node.apiType || "chat",
+        fimTemplate: node.fimTemplate || "qwen",
         baseUrl:
           node.baseUrl ||
           (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
       });
     }
   }, [node, isAnthropic]);
-
-  const apiTypeOptions = [
-    { value: "chat", label: "Chat Completions" },
-    { value: "responses", label: "Responses API" },
-  ];
 
   const handleSubmit = async () => {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
@@ -46,6 +44,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
       };
       if (!isAnthropic) {
         payload.apiType = formData.apiType;
+        if (formData.apiType === "completions") payload.fimTemplate = formData.fimTemplate;
       }
       await onSave(payload);
     } finally {
@@ -64,6 +63,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           apiKey: checkKey,
           type: isAnthropic ? "anthropic-compatible" : "openai-compatible",
           modelId: checkModelId.trim() || undefined,
+          ...(!isAnthropic && { apiType: formData.apiType }),
         }),
       });
       const data = await res.json();
@@ -101,9 +101,18 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         {!isAnthropic && (
           <Select
             label="API type"
-            options={apiTypeOptions}
+            options={API_TYPE_OPTIONS}
             value={formData.apiType}
             onChange={(e) => setFormData({ ...formData, apiType: e.target.value })}
+          />
+        )}
+        {!isAnthropic && formData.apiType === "completions" && (
+          <Select
+            label="FIM template"
+            options={FIM_TEMPLATE_OPTIONS}
+            value={formData.fimTemplate}
+            onChange={(e) => setFormData({ ...formData, fimTemplate: e.target.value })}
+            hint="How prefix and suffix are encoded. Completions nodes only serve edit-prediction endpoints (/v1/completions, /v1/fim/completions, /infill), not chat."
           />
         )}
         <Input
@@ -169,6 +178,7 @@ EditCompatibleNodeModal.propTypes = {
     name: PropTypes.string,
     prefix: PropTypes.string,
     apiType: PropTypes.string,
+    fimTemplate: PropTypes.string,
     baseUrl: PropTypes.string,
   }),
   onSave: PropTypes.func.isRequired,

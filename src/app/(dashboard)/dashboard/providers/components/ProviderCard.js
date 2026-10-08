@@ -112,7 +112,9 @@ const ProviderCard = memo(function ProviderCard({
             ? "Messages"
             : info.apiType === "responses"
               ? "Responses"
-              : "Chat",
+              : info.apiType === "completions"
+                ? "Completions"
+                : "Chat",
       }
     : {
         variant: AUTH_PILL_VARIANT[entry.authGroup] || "neutral",

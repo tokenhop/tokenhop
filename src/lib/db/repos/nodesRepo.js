@@ -110,6 +110,10 @@ function newNode(data, owner) {
     name: data.name,
     prefix: data.prefix,
     apiType: data.apiType,
+    // Only meaningful for completions nodes (YAN-734); omitted otherwise.
+    ...(data.apiType === "completions" && data.fimTemplate
+      ? { fimTemplate: data.fimTemplate }
+      : {}),
     baseUrl: data.baseUrl,
     createdAt: now,
     updatedAt: now,

@@ -14,7 +14,7 @@ import {
   OPENAI_COMPAT_BASE,
   ANTHROPIC_COMPAT_BASE,
 } from "../providers/shared.js";
-import { resolveOpenAICompatibleApiType } from "../services/provider.js";
+import { resolveOpenAICompatibleApiType, openaiCompatiblePath } from "../services/provider.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -51,10 +51,8 @@ export class BaseExecutor {
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || OPENAI_COMPAT_BASE;
       const normalized = baseUrl.replace(/\/$/, "");
-      const path =
-        resolveOpenAICompatibleApiType(this.provider, credentials) === "responses"
-          ? "/responses"
-          : "/chat/completions";
+      const resolved = resolveOpenAICompatibleApiType(this.provider, credentials);
+      const path = openaiCompatiblePath(resolved);
       return `${normalized}${path}`;
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {

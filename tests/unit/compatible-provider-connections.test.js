@@ -144,6 +144,68 @@ describe("compatible provider connections API", () => {
     });
   });
 
+  it("propagates fimTemplate on the connection PSD for a completions node (YAN-734)", async () => {
+    const ctx = await setupTestContext({
+      id: "openai-compatible-completions-test",
+      type: "openai-compatible",
+      name: "Completions FIM Node",
+      prefix: "cfn",
+      apiType: "completions",
+      fimTemplate: "codestral",
+      baseUrl: "https://fim.example.test/v1",
+    });
+    cleanup = ctx.cleanup;
+
+    const response = await ctx.POST(makeRequest(ctx.node.id));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.connection.providerSpecificData).toMatchObject({
+      apiType: "completions",
+      fimTemplate: "codestral",
+    });
+    const stored = await ctx.getProviderConnectionsUnscoped({ provider: ctx.node.id });
+    expect(stored[0].providerSpecificData.fimTemplate).toBe("codestral");
+  });
+
+  it("clears fimTemplate on node and connections when switching completions to chat (YAN-734)", async () => {
+    const ctx = await setupTestContext({
+      id: "openai-compatible-completions-switch",
+      type: "openai-compatible",
+      name: "Switch Node",
+      prefix: "swn",
+      apiType: "completions",
+      fimTemplate: "codestral",
+      baseUrl: "https://fim.example.test/v1",
+    });
+    cleanup = ctx.cleanup;
+    expect((await ctx.POST(makeRequest(ctx.node.id))).status).toBe(201);
+
+    const { PUT } = await import("@/app/api/provider-nodes/[id]/route.js");
+    const { getProviderNodeByIdUnscoped } = await import("@/models/index.js");
+    const res = await PUT(
+      new Request(`https://tokenhop.local/api/provider-nodes/${ctx.node.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Switch Node",
+          prefix: "swn",
+          apiType: "chat",
+          baseUrl: "https://fim.example.test/v1",
+        }),
+      }),
+      { params: Promise.resolve({ id: ctx.node.id }) },
+    );
+
+    expect(res.status).toBe(200);
+    const node = await getProviderNodeByIdUnscoped(ctx.node.id);
+    expect(node.apiType).toBe("chat");
+    expect(node.fimTemplate).toBeUndefined();
+    const [conn] = await ctx.getProviderConnectionsUnscoped({ provider: ctx.node.id });
+    expect(conn.providerSpecificData.apiType).toBe("chat");
+    expect(conn.providerSpecificData.fimTemplate).toBeUndefined();
+  });
+
   it("allows multiple connections on the same compatible node", async () => {
     const ctx = await setupTestContext({
       id: "openai-compatible-multiple-test",

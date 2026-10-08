@@ -39,6 +39,27 @@ describe("resolveOpenAICompatibleApiType", () => {
   });
 });
 
+describe("completions apiType (YAN-734)", () => {
+  const COMPLETIONS_ID = "openai-compatible-completions-11111111-2222-3333-4444-555555555555";
+
+  it("resolves stored completions apiType over any ID", () => {
+    expect(resolveOpenAICompatibleApiType(CHAT_ID, creds("completions"))).toBe("completions");
+  });
+
+  it("infers completions from the node ID when apiType is absent", () => {
+    expect(resolveOpenAICompatibleApiType(COMPLETIONS_ID, creds(undefined))).toBe("completions");
+    expect(resolveOpenAICompatibleApiType(COMPLETIONS_ID, null)).toBe("completions");
+  });
+
+  it("targets fim-native and routes DefaultExecutor buildUrl to /completions", () => {
+    expect(getTargetFormat(COMPLETIONS_ID, creds("completions"))).toBe("fim-native");
+    expect(getTargetFormat(CHAT_ID, creds("completions"))).toBe("fim-native");
+    expect(new DefaultExecutor(COMPLETIONS_ID).buildUrl("m", false, 0, creds("completions"))).toBe(
+      `${BASE}/completions`,
+    );
+  });
+});
+
 describe("getTargetFormat", () => {
   it("selects openai-responses when the stored apiType is responses (even on a -chat- ID)", () => {
     expect(getTargetFormat(CHAT_ID, creds("responses"))).toBe("openai-responses");

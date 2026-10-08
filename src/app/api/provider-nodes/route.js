@@ -9,6 +9,8 @@ import {
   CUSTOM_EMBEDDING_PREFIX,
 } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
+import { FIM_DEFAULT_TEMPLATE, FIM_TEMPLATE_NAMES } from "open-sse/translator/concerns/fim.js";
+import { OPENAI_COMPATIBLE_API_TYPES } from "open-sse/services/provider.js";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +53,7 @@ export async function POST(request) {
       ? (data) => createNode(scope.ctx, scope.workspaceId, data)
       : createProviderNodeUnscoped;
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl, type } = body;
+    const { name, prefix, apiType, fimTemplate, baseUrl, type } = body;
 
     if (!name?.trim()) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -65,8 +67,18 @@ export async function POST(request) {
     const nodeType = type || "openai-compatible";
 
     if (nodeType === "openai-compatible") {
-      if (!apiType || !["chat", "responses"].includes(apiType)) {
+      if (!apiType || !OPENAI_COMPATIBLE_API_TYPES.includes(apiType)) {
         return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
+      }
+      // fimTemplate only applies to completions nodes; ignored otherwise.
+      if (
+        apiType === "completions" &&
+        fimTemplate !== undefined &&
+        fimTemplate !== null &&
+        fimTemplate !== "" &&
+        !FIM_TEMPLATE_NAMES.includes(fimTemplate)
+      ) {
+        return NextResponse.json({ error: "Invalid FIM template" }, { status: 400 });
       }
 
       const node = await createProviderNode({
@@ -74,6 +86,7 @@ export async function POST(request) {
         type: "openai-compatible",
         prefix: prefix.trim(),
         apiType,
+        ...(apiType === "completions" ? { fimTemplate: fimTemplate || FIM_DEFAULT_TEMPLATE } : {}),
         baseUrl: (baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl).trim(),
         name: name.trim(),
       });

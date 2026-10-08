@@ -422,6 +422,7 @@ export default function ProviderDetailPage() {
         <CompatibleDetailsCard
           isAnthropic={authFlags.isAnthropicCompatible}
           apiType={providerNode.apiType}
+          fimTemplate={providerNode.fimTemplate}
           baseUrl={providerNode.baseUrl}
           onAddKey={triggerApiKeyConnection}
           onEdit={() => open("editNode")}

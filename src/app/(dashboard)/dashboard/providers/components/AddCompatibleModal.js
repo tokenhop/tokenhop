@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Badge, Button, Input, Modal, Select } from "@/shared/components";
+import { API_TYPE_OPTIONS, FIM_TEMPLATE_OPTIONS } from "../compatibleApiTypes.js";
 
 const VARIANT_CONFIG = {
   openai: {
@@ -30,17 +31,12 @@ const VARIANT_CONFIG = {
   },
 };
 
-const API_TYPE_OPTIONS = [
-  { value: "chat", label: "Chat Completions" },
-  { value: "responses", label: "Responses API" },
-];
-
 function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
   const config = VARIANT_CONFIG[variant];
   const initialFormData = () => ({
     name: "",
     prefix: "",
-    ...(config.hasApiType ? { apiType: "chat" } : {}),
+    ...(config.hasApiType ? { apiType: "chat", fimTemplate: "qwen" } : {}),
     baseUrl: config.defaultBaseUrl,
   });
 
@@ -84,6 +80,9 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           name: formData.name,
           prefix: formData.prefix,
           ...(config.hasApiType ? { apiType: formData.apiType } : {}),
+          ...(config.hasApiType && formData.apiType === "completions"
+            ? { fimTemplate: formData.fimTemplate }
+            : {}),
           baseUrl: formData.baseUrl,
           type: config.type,
         }),
@@ -113,6 +112,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           apiKey: checkKey,
           type: config.type,
           modelId: checkModelId.trim() || undefined,
+          ...(config.hasApiType && { apiType: formData.apiType }),
         }),
       });
       const data = await res.json();
@@ -166,6 +166,15 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
             options={API_TYPE_OPTIONS}
             value={formData.apiType}
             onChange={(e) => setFormData({ ...formData, apiType: e.target.value })}
+          />
+        )}
+        {config.hasApiType && formData.apiType === "completions" && (
+          <Select
+            label="FIM template"
+            options={FIM_TEMPLATE_OPTIONS}
+            value={formData.fimTemplate}
+            onChange={(e) => setFormData({ ...formData, fimTemplate: e.target.value })}
+            hint="How prefix and suffix are encoded. Completions nodes only serve edit-prediction endpoints (/v1/completions, /v1/fim/completions, /infill), not chat."
           />
         )}
         <Input

@@ -44,6 +44,15 @@ const getModelsErrorMessage = (status) => {
   return `Unexpected response (${status})`;
 };
 
+// Get status-specific error message for /completions endpoint
+const getCompletionsErrorMessage = (status) => {
+  if (status === 401 || status === 403) return "API key unauthorized";
+  if (status === 400) return "Invalid model or bad request";
+  if (status === 404) return "Completions endpoint not found";
+  if (status >= 500) return "Server error - try again later";
+  return `Completions request failed (${status})`;
+};
+
 // Get status-specific error message for /chat/completions endpoint
 const getChatErrorMessage = (status) => {
   if (status === 401 || status === 403) return "API key unauthorized";
@@ -57,7 +66,7 @@ const getChatErrorMessage = (status) => {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { baseUrl, apiKey, type, modelId } = body;
+    const { baseUrl, apiKey, type, modelId, apiType } = body;
 
     if (!baseUrl || !apiKey) {
       return NextResponse.json({ error: "Base URL and API key required" }, { status: 400 });
@@ -166,7 +175,8 @@ export async function POST(request) {
     }
 
     // OpenAI Compatible Validation (Default)
-    const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
+    const normalizedBase = baseUrl.replace(/\/$/, "");
+    const modelsUrl = `${normalizedBase}/models`;
     const res = await fetchWithTimeout(modelsUrl, {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
@@ -178,27 +188,38 @@ export async function POST(request) {
       return NextResponse.json({ valid: false, error: "API key unauthorized" });
     }
 
-    // Fallback: try chat/completions if modelId provided
+    // Fallback: try a completion probe if modelId provided. Completions-native
+    // nodes (YAN-734) have no chat endpoint — probe POST /completions with a
+    // tiny prompt instead of /chat/completions.
     if (modelId) {
-      const chatRes = await fetchWithTimeout(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      const completionsNode = apiType === "completions";
+      const probeUrl = completionsNode
+        ? `${normalizedBase}/completions`
+        : `${normalizedBase}/chat/completions`;
+      const probeBody = completionsNode
+        ? { model: modelId, prompt: "ping", max_tokens: 1 }
+        : {
+            model: modelId,
+            messages: [{ role: "user", content: "ping" }],
+            max_tokens: 1,
+          };
+      const chatRes = await fetchWithTimeout(probeUrl, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          model: modelId,
-          messages: [{ role: "user", content: "ping" }],
-          max_tokens: 1,
-        }),
+        body: JSON.stringify(probeBody),
       });
       if (chatRes.ok) {
-        return NextResponse.json({ valid: true, method: "chat" });
+        return NextResponse.json({ valid: true, method: completionsNode ? "completions" : "chat" });
       }
       return NextResponse.json({
         valid: false,
-        error: getChatErrorMessage(chatRes.status),
-        method: "chat",
+        error: completionsNode
+          ? getCompletionsErrorMessage(chatRes.status)
+          : getChatErrorMessage(chatRes.status),
+        method: completionsNode ? "completions" : "chat",
       });
     }
 

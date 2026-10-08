@@ -650,7 +650,16 @@ async function handleAddDeviceCodeConnection(providerId) {
 // ============================================================================
 
 const CUSTOM_NODE_TYPES = ["openai-compatible", "anthropic-compatible"];
-const OPENAI_API_TYPES = ["chat", "responses"];
+const OPENAI_API_TYPES = ["chat", "responses", "completions"];
+const FIM_TEMPLATES = [
+  "qwen",
+  "star_coder",
+  "code_llama",
+  "deepseek_coder",
+  "codestral",
+  "glm",
+  "suffix",
+];
 
 /**
  * Show custom providers section in main providers menu
@@ -838,16 +847,28 @@ async function handleAddCustomNode() {
 
   // Step 3: API type (OpenAI only)
   let apiType;
+  let fimTemplate;
   if (type === "openai-compatible") {
     const apiTypeChoices = OPENAI_API_TYPES.map((t, i) => `  ${i + 1}. ${t}`).join("\n");
     console.log(`\nAPI Type:\n${apiTypeChoices}\n`);
-    const apiTypeInput = await prompt("API Type (1/2, default 1): ");
+    const apiTypeInput = await prompt(`API Type (1-${OPENAI_API_TYPES.length}, default 1): `);
     const apiTypeIdx = parseInt(apiTypeInput) - 1;
     apiType = OPENAI_API_TYPES[apiTypeIdx] || "chat";
+    if (apiType === "completions") {
+      const tplInput = await prompt(`FIM template (${FIM_TEMPLATES.join("/")}, default qwen): `);
+      fimTemplate = FIM_TEMPLATES.includes(tplInput?.trim()) ? tplInput.trim() : "qwen";
+    }
   }
 
   showStatus("Creating provider node...", "info");
-  const body = { name, prefix, baseUrl, type, ...(apiType && { apiType }) };
+  const body = {
+    name,
+    prefix,
+    baseUrl,
+    type,
+    ...(apiType && { apiType }),
+    ...(fimTemplate && { fimTemplate }),
+  };
   const res = await api.createProviderNode(body);
 
   showStatus(

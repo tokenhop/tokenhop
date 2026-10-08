@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   CURSOR_MARKER,
+  FIM_TEMPLATE_NAMES,
+  encodeFimPrompt,
   parseFimPrompt,
   cleanFimOutput,
 } from "../../open-sse/translator/concerns/fim.js";
@@ -96,6 +98,41 @@ describe("parseFimPrompt", () => {
 
   it("empty prompt → plain", () => {
     expect(parseFimPrompt("")).toEqual({ prefix: "", suffix: "", format: "plain", context: "" });
+  });
+});
+
+describe("encodeFimPrompt", () => {
+  const expected = {
+    qwen: "<|fim_prefix|>int a =<|fim_suffix|> = 1;<|fim_middle|>",
+    star_coder: "<fim_prefix>int a =<fim_suffix> = 1;<fim_middle>",
+    code_llama: "<PRE> int a = <SUF> = 1; <MID>",
+    deepseek_coder: "<｜fim▁begin｜>int a =<｜fim▁hole｜> = 1;<｜fim▁end｜>",
+    codestral: "[SUFFIX] = 1;[PREFIX]int a =",
+    glm: "<|code_prefix|>int a =<|code_suffix|> = 1;<|code_middle|>",
+  };
+  for (const [template, prompt] of Object.entries(expected)) {
+    it(`${template}: encodes and round-trips through parseFimPrompt`, () => {
+      const encoded = encodeFimPrompt({ prefix: "int a =", suffix: " = 1;", template });
+      expect(encoded).toBe(prompt);
+      expect(parseFimPrompt(encoded)).toMatchObject({
+        prefix: "int a =",
+        suffix: " = 1;",
+        format: template,
+      });
+    });
+  }
+
+  it("code_llama wraps with its exact template spaces", () => {
+    expect(encodeFimPrompt({ prefix: "a", suffix: "b", template: "code_llama" })).toBe(
+      "<PRE> a <SUF>b <MID>",
+    );
+  });
+
+  it("unknown template falls back to qwen; template list includes suffix", () => {
+    expect(encodeFimPrompt({ prefix: "a", suffix: "b", template: "nope" })).toBe(
+      "<|fim_prefix|>a<|fim_suffix|>b<|fim_middle|>",
+    );
+    expect(FIM_TEMPLATE_NAMES).toEqual([...Object.keys(expected), "suffix"]);
   });
 });
 
