@@ -163,7 +163,7 @@ export async function loadOwnedMap(
     throw new Error(data.error || fallback);
   }
   const body = await res.json();
-  const value = url === INSTANCE_ENDPOINT ? body[key] : (body.data ?? {})[key];
+  const value = url === INSTANCE_ENDPOINT ? body[key] : body.data?.[key];
   const map =
     value !== null && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
   if (url !== INSTANCE_ENDPOINT) {

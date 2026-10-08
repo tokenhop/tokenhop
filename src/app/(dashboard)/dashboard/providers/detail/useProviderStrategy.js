@@ -2,12 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
-import {
-  loadSettings,
-  loadSettingsValue,
-  loadOwnedMap,
-  patchSettings,
-} from "@/shared/utils/settingsApi";
+import { loadSettings, loadOwnedMap, patchSettings } from "@/shared/utils/settingsApi";
 import { stickyLimitError } from "../detailUtils";
 
 /**
