@@ -118,21 +118,124 @@ function pyEscape(val) {
   return String(val).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+/** Editor kind -> env var holding the key. The key is never written into editor config. */
+const EDITOR_ENV = {
+  zed: "ZED_OPEN_AI_COMPATIBLE_EDIT_PREDICTION_API_KEY",
+  neovim: "TOKENHOP_API_KEY",
+};
+
+/** `${baseUrl}/completions` with any trailing slash trimmed off the base. */
+function completionsUrl(baseUrl) {
+  return `${String(baseUrl || "http://localhost:20128/v1").replace(/\/+$/, "")}/completions`;
+}
+
+/**
+ * Lua double-quoted string literal. Escapes backslash, quote, newline, CR, tab;
+ * other C0/DEL bytes use Lua decimal escapes (\ddd). Non-ASCII stays literal.
+ * (JSON \uXXXX escapes are not valid Lua, so JSON.stringify is not used.)
+ */
+const LUA_ESCAPES = { "\\": "\\\\", '"': '\\"', "\n": "\\n", "\r": "\\r", "\t": "\\t" };
+function luaStr(value) {
+  let out = "";
+  for (const ch of String(value)) {
+    const code = ch.codePointAt(0);
+    out +=
+      LUA_ESCAPES[ch] ?? (code < 0x20 || code === 0x7f ? `\\${String(code).padStart(3, "0")}` : ch);
+  }
+  return `"${out}"`;
+}
+
+/**
+ * Secret-free Zed settings.json block.
+ * @param {string} baseUrl Endpoint root including /v1.
+ * @param {string} model Model or combo ID.
+ * @returns {string}
+ */
+export function buildZedEditPredictionConfig(baseUrl, model) {
+  return JSON.stringify(
+    {
+      edit_predictions: {
+        provider: "open_ai_compatible_api",
+        open_ai_compatible_api: {
+          api_url: completionsUrl(baseUrl),
+          model,
+          prompt_format: "qwen",
+          max_output_tokens: 128,
+          prediction_debounce: 150,
+        },
+      },
+    },
+    null,
+    2,
+  );
+}
+
+/**
+ * Secret-free minuet-ai.nvim setup block; the key is read from TOKENHOP_API_KEY.
+ * @param {string} baseUrl Endpoint root including /v1.
+ * @param {string} model Model or combo ID.
+ * @returns {string}
+ */
+export function buildNeovimMinuetConfig(baseUrl, model) {
+  return `require("minuet").setup({
+  provider = "openai_fim_compatible",
+  n_completions = 1,
+  context_window = 512,
+  provider_options = {
+    openai_fim_compatible = {
+      name = "tokenhop",
+      end_point = ${luaStr(completionsUrl(baseUrl))},
+      model = ${luaStr(model)},
+      api_key = "TOKENHOP_API_KEY",
+      stream = true,
+      optional = { max_tokens = 128 },
+      template = {
+        prompt = function(context_before_cursor, context_after_cursor, _)
+          return "<|fim_prefix|>"
+            .. context_before_cursor
+            .. "<|fim_suffix|>"
+            .. context_after_cursor
+            .. "<|fim_middle|>"
+        end,
+        suffix = false,
+      },
+    },
+  },
+})`;
+}
+
+/** Editor config for a model/combo ID; null while the ID is blank. */
+function buildEditorConfig(kind, baseUrl, model) {
+  const id = typeof model === "string" ? model.trim() : "";
+  if (!EDITOR_ENV[kind] || !id) return null;
+  return kind === "zed"
+    ? buildZedEditPredictionConfig(baseUrl, id)
+    : buildNeovimMinuetConfig(baseUrl, id);
+}
+
 /**
  * Display vs clipboard snippets for one key. The screen string always embeds
  * the mask; the copy string embeds the real key and is never rendered.
  *
- * @param {"shell"|"curl"|"python"} kind
+ * For "zed"/"neovim" the snippet is only the key export; `config` is the
+ * secret-free editor config (null until a model/combo ID is entered).
+ *
+ * @param {"shell"|"curl"|"python"|"zed"|"neovim"} kind
  * @param {string} baseUrl
  * @param {{ key?: string }|null} selected
- * @returns {{ display: string, copy: string|null }}
+ * @param {string} [model] Model/combo ID for the editor kinds.
+ * @returns {{ display: string, copy: string|null, config?: string|null }}
  */
-export function quickConnectSnippets(kind, baseUrl, selected) {
+export function quickConnectSnippets(kind, baseUrl, selected, model) {
   const real = selected?.key;
-  if (!real) return { display: buildQuickConnectSnippet(kind, baseUrl, ""), copy: null };
+  const extra = EDITOR_ENV[kind] ? { config: buildEditorConfig(kind, baseUrl, model) } : {};
+  if (!real) return { display: buildQuickConnectSnippet(kind, baseUrl, ""), copy: null, ...extra };
+  // maskKey returns short keys unchanged; never show those on screen.
+  const masked = maskKey(real);
   return {
-    display: buildQuickConnectSnippet(kind, baseUrl, maskKey(real)),
+    display: buildQuickConnectSnippet(kind, baseUrl, masked === real ? "••••••••" : masked),
     copy: buildQuickConnectSnippet(kind, baseUrl, real),
+    ...extra,
   };
 }
 
@@ -306,7 +409,7 @@ export function validateKeyName(name) {
 /**
  * Build Quick Connect code snippet.
  *
- * @param {"shell"|"curl"|"python"} kind
+ * @param {"shell"|"curl"|"python"|"zed"|"neovim"} kind
  * @param {string} baseUrl e.g. "http://localhost:20128/v1"
  * @param {string} apiKey
  * @returns {string}
@@ -316,6 +419,10 @@ export function buildQuickConnectSnippet(kind, baseUrl, apiKey) {
   const key = apiKey || "sk-9r-••••••••";
 
   switch (kind) {
+    case "zed":
+    case "neovim": {
+      return `export ${EDITOR_ENV[kind]}=${shellEscape(key)}`;
+    }
     case "shell": {
       return `export OPENAI_BASE_URL=${shellEscape(url)}\nexport OPENAI_API_KEY=${shellEscape(key)}`;
     }
