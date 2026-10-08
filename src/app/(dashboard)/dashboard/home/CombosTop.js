@@ -67,12 +67,21 @@ export function comboUsageFromByEndpoint(byEndpoint) {
  * @param {object} props
  * @param {Array<object>} props.combos combo records (each `{ name, models }`)
  * @param {object} props.strategies settings.comboStrategies map
+ * @param {string} [props.globalStrategy] settings.comboStrategy, used when a combo has no override
  * @param {Map<string, number>|null} props.usageByCombo combo name -> requests
  * @param {boolean} props.loading
  * @param {string|null} props.error
  * @param {() => void} props.onRetry
  */
-export default function CombosTop({ combos, strategies, usageByCombo, loading, error, onRetry }) {
+export default function CombosTop({
+  combos,
+  strategies,
+  globalStrategy = "fallback",
+  usageByCombo,
+  loading,
+  error,
+  onRetry,
+}) {
   if (loading) return <WidgetSkeleton lines={3} label="Loading combos" />;
   if (error) return <WidgetError message={error} onRetry={onRetry} />;
   if (combos.length === 0) {
@@ -102,7 +111,7 @@ export default function CombosTop({ combos, strategies, usageByCombo, loading, e
   return (
     <ul className="flex min-w-0 flex-col gap-3" aria-label="Most used combos">
       {top.map((combo) => {
-        const rawStrategy = strategies?.[combo.name]?.fallbackStrategy || "fallback";
+        const rawStrategy = strategies?.[combo.name]?.fallbackStrategy || globalStrategy;
         const strategy = KNOWN_FALLBACK_STRATEGIES.has(rawStrategy) ? rawStrategy : "fallback";
         const models = Array.isArray(combo.models) ? combo.models : [];
         return (
@@ -146,6 +155,7 @@ export default function CombosTop({ combos, strategies, usageByCombo, loading, e
 CombosTop.propTypes = {
   combos: PropTypes.arrayOf(PropTypes.object),
   strategies: PropTypes.object,
+  globalStrategy: PropTypes.string,
   usageByCombo: PropTypes.oneOfType([PropTypes.instanceOf(Map), PropTypes.object]),
   loading: PropTypes.bool,
   error: PropTypes.string,

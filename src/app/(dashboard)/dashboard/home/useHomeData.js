@@ -129,7 +129,7 @@ export function useHomeProviders(refreshKey = 0) {
 /**
  * Combos plus strategy metadata for the top-used cards.
  * @param {number} [refreshKey] bump to re-read
- * @returns {{ combos: Array<object>, strategies: object, loading: boolean, error: string|null }}
+ * @returns {{ combos: Array<object>, strategies: object, globalStrategy: string, loading: boolean, error: string|null }}
  */
 export function useHomeCombos(refreshKey = 0) {
   const {
@@ -150,6 +150,7 @@ export function useHomeCombos(refreshKey = 0) {
   return {
     combos,
     strategies,
+    globalStrategy: settings?.comboStrategy || "fallback",
     loading: combosLoading || settingsLoading,
     error: combosError || settingsError,
   };
