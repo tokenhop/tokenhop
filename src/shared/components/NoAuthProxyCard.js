@@ -6,7 +6,7 @@ import Card from "./Card";
 import Select from "./Select";
 import Badge from "./Badge";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
-import { loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
+import { loadOwnedMap, loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
 
 const NONE_PROXY_POOL_VALUE = "__none__";
 const STRATEGIES = [
@@ -34,7 +34,8 @@ export default function NoAuthProxyCard({ providerId }) {
       fetch("/api/proxy-pools?isActive=true", { cache: "no-store" }).then((r) =>
         r.ok ? r.json() : { proxyPools: [] },
       ),
-      // YAN-749: providerStrategies is a workspace key.
+      // YAN-749: providerStrategies is a workspace key. Display reads the
+      // merged effective view; saves start from the owned map instead.
       loadSettingsValue("providerStrategies", scope),
     ])
       .then(([poolData, strategies]) => {
@@ -60,7 +61,7 @@ export default function NoAuthProxyCard({ providerId }) {
       try {
         // Read-modify-write: a failed read throws instead of PATCHing over
         // every other provider's strategy with `{}`.
-        const current = (await loadSettingsValue("providerStrategies", scope)) || {};
+        const current = await loadOwnedMap("providerStrategies", scope, [providerId]);
         const override = { ...(current[providerId] || {}) };
         if (poolId === NONE_PROXY_POOL_VALUE) delete override.proxyPoolId;
         else override.proxyPoolId = poolId;

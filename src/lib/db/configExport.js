@@ -9,7 +9,7 @@ import {
 import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
 import { mirrorToDefaultWorkspace } from "./repos/workspaceSettingsRepo.js";
 import { defaultWorkspaceIdUnscoped } from "./repos/ownership.js";
-import { WORKSPACE_KEYS, pickKeys } from "@/lib/settings/settingsScope.js";
+import { WORKSPACE_KEYS, mergeWorkspaceLayer, pickKeys } from "@/lib/settings/settingsScope.js";
 import { getPortableCombosUnscoped } from "./repos/combosRepo.js";
 import { getUserPricing, invalidatePricingCache } from "./repos/pricingRepo.js";
 import {
@@ -22,7 +22,7 @@ import { getAppVersion } from "./version.js";
 import { v4 as uuidv4 } from "uuid";
 
 // YAN-362: the config document stays flat. Reads carry the Default workspace's
-// overrides on top of the instance blob; writes store the blob as before and
+// overrides on top of the instance blob (map keys per entry, YAN-770); writes store the blob as before and
 // mirror the workspace keys into the Default row.
 function defaultWorkspaceOverlay(db) {
   const ws = defaultWorkspaceIdUnscoped(db);
@@ -60,10 +60,12 @@ export async function exportConfig() {
   // YAN-364: the flat doc has no workspace identity — Default + NULL rows
   // only, never other workspaces' same-name combos.
   return buildConfigDocument({
-    settings: await visibleConfigSettings({
-      ...(await getSettings({ secretMode: "metadata" })),
-      ...defaultWorkspaceOverlay(db),
-    }),
+    settings: await visibleConfigSettings(
+      mergeWorkspaceLayer(
+        await getSettings({ secretMode: "metadata" }),
+        defaultWorkspaceOverlay(db),
+      ),
+    ),
     combos: await getPortableCombosUnscoped(),
     pricingOverrides: await getUserPricing(),
     version: getAppVersion(),
@@ -74,10 +76,12 @@ export async function exportConfig() {
 export async function getConfigState() {
   const db = await getAdapter();
   return {
-    settings: await visibleConfigSettings({
-      ...(await getSettings({ secretMode: "metadata" })),
-      ...defaultWorkspaceOverlay(db),
-    }),
+    settings: await visibleConfigSettings(
+      mergeWorkspaceLayer(
+        await getSettings({ secretMode: "metadata" }),
+        defaultWorkspaceOverlay(db),
+      ),
+    ),
     combos: await getPortableCombosUnscoped(),
     pricingOverrides: await getUserPricing(),
   };

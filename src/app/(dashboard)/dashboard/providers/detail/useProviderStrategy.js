@@ -2,7 +2,12 @@
 
 import { useCallback, useState } from "react";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
-import { loadSettings, loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
+import {
+  loadSettings,
+  loadSettingsValue,
+  loadOwnedMap,
+  patchSettings,
+} from "@/shared/utils/settingsApi";
 import { stickyLimitError } from "../detailUtils";
 
 /**
@@ -55,10 +60,9 @@ export function useProviderStrategy({ providerId, notifyError }) {
       setSaving(true);
       setError("");
       try {
-        const current =
-          (await loadSettingsValue("providerStrategies", scope).catch(() => {
-            throw new Error("Failed to load current provider strategy.");
-          })) || {};
+        const current = await loadOwnedMap("providerStrategies", scope, [providerId]).catch(() => {
+          throw new Error("Failed to load current provider strategy.");
+        });
         const override = { ...(current[providerId] || {}) };
         if (strategy) override.fallbackStrategy = strategy;
         else delete override.fallbackStrategy;
@@ -126,10 +130,9 @@ export function useProviderStrategy({ providerId, notifyError }) {
     setSaving(true);
     setError("");
     try {
-      const current =
-        (await loadSettingsValue("providerStrategies", scope).catch(() => {
-          throw new Error("Failed to load current provider strategy.");
-        })) || {};
+      const current = await loadOwnedMap("providerStrategies", scope, [providerId]).catch(() => {
+        throw new Error("Failed to load current provider strategy.");
+      });
       const override = { ...(current[providerId] || {}) };
       delete override.stickyRoundRobinLimit;
       const updated = { ...current };

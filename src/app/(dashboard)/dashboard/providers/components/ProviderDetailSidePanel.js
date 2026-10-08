@@ -25,12 +25,7 @@ import { getRelativeTime } from "@/shared/utils";
 import CooldownTimer from "@/shared/components/CooldownTimer";
 import { connectionHealth } from "@/shared/utils/providerHealth";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
-import {
-  loadSettings,
-  loadSettingsValue,
-  onHttpError,
-  patchSettings,
-} from "@/shared/utils/settingsApi";
+import { loadSettings, loadOwnedMap, onHttpError, patchSettings } from "@/shared/utils/settingsApi";
 
 const shortLabel = (label) => String(label).split(" — ")[0];
 
@@ -215,8 +210,7 @@ export default function ProviderDetailSidePanel({
   const saveStrategy = async (value) => {
     setStrategySaving(true);
     try {
-      const current = await loadSettingsValue("providerStrategies", scope);
-      const updated = { ...(current || {}) };
+      const updated = await loadOwnedMap("providerStrategies", scope, [entry.id]);
       const override = { ...(updated[entry.id] || {}) };
       if (value) override.fallbackStrategy = value;
       else delete override.fallbackStrategy;

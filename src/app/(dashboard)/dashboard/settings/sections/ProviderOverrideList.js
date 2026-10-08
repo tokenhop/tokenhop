@@ -3,7 +3,7 @@
 import PropTypes from "prop-types";
 import { useContext, useEffect, useMemo, useState } from "react";
 import { SettingsScopeContext } from "@/shared/hooks/settingsScopeContext";
-import { loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
+import { loadOwnedMap, patchSettings } from "@/shared/utils/settingsApi";
 import Button from "@/shared/components/Button";
 import Select from "@/shared/components/Select";
 import NumberStepper from "@/shared/components/NumberStepper";
@@ -104,19 +104,20 @@ export default function ProviderOverrideList({ overrides, onOverridesChange }) {
   /**
    * Apply an edit to the latest server map, then PATCH the whole map.
    * @param {(current: Record<string, object>) => Record<string, object>} update
+   * @param {string[]} seedIds Provider ids being edited (seeded from the inherited value).
    */
-  const saveMap = async (update) => {
+  const saveMap = async (update, seedIds) => {
     setSaving(true);
     setMapError("");
     const previous = overrides;
     try {
-      let loaded;
+      let current;
       try {
-        loaded = await loadSettingsValue("providerStrategies", scope);
+        current = await loadOwnedMap("providerStrategies", scope, seedIds);
       } catch {
         throw new Error("Could not load current overrides.");
       }
-      const current = loaded && typeof loaded === "object" ? loaded : {};
+      // A removed entry stays absent from the owned map, so it inherits the instance entry again.
       const next = update(current);
       onOverridesChange?.(next);
       let saved;
@@ -140,25 +141,27 @@ export default function ProviderOverrideList({ overrides, onOverridesChange }) {
 
   const handleRowChange = (providerId, key, raw) => {
     const base = overrides[providerId] || {};
-    saveMap((current) =>
-      applyProviderOverride(
-        current,
-        providerId,
-        key === "strategy"
-          ? {
-              fallbackStrategy: raw || "",
-              stickyRoundRobinLimit: base.stickyRoundRobinLimit ?? "",
-            }
-          : {
-              fallbackStrategy: base.fallbackStrategy || "",
-              stickyRoundRobinLimit: raw === "" ? "" : Number(raw),
-            },
-      ),
+    saveMap(
+      (current) =>
+        applyProviderOverride(
+          current,
+          providerId,
+          key === "strategy"
+            ? {
+                fallbackStrategy: raw || "",
+                stickyRoundRobinLimit: base.stickyRoundRobinLimit ?? "",
+              }
+            : {
+                fallbackStrategy: base.fallbackStrategy || "",
+                stickyRoundRobinLimit: raw === "" ? "" : Number(raw),
+              },
+        ),
+      [providerId],
     );
   };
 
   const handleRemove = (providerId) => {
-    saveMap((current) => removeProviderOverride(current, providerId));
+    saveMap((current) => removeProviderOverride(current, providerId), [providerId]);
   };
 
   const openAdd = () => {
@@ -179,11 +182,13 @@ export default function ProviderOverrideList({ overrides, onOverridesChange }) {
       return;
     }
     setAdding(false);
-    saveMap((current) =>
-      applyProviderOverride(current, newProvider, {
-        fallbackStrategy: newStrategy,
-        stickyRoundRobinLimit: newSticky,
-      }),
+    saveMap(
+      (current) =>
+        applyProviderOverride(current, newProvider, {
+          fallbackStrategy: newStrategy,
+          stickyRoundRobinLimit: newSticky,
+        }),
+      [newProvider],
     );
   };
 

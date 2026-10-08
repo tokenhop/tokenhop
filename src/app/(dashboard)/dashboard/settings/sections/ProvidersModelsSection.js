@@ -13,7 +13,7 @@ import { getModelsByProviderId } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useSettingsField } from "../useSettingsField";
 import { SettingsScopeContext } from "@/shared/hooks/settingsScopeContext";
-import { loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
+import { loadOwnedMap, patchSettings } from "@/shared/utils/settingsApi";
 import AutoPingList from "./AutoPingList";
 
 import {
@@ -110,7 +110,7 @@ export default function ProvidersModelsSection({
     [scope],
   );
   const loadFresh = useCallback(
-    async (key) => (await loadSettingsValue(key, scope)) || {},
+    async (key, seedIds) => (await loadOwnedMap(key, scope, seedIds)) || {},
     [scope],
   );
   const saveThinkingMode = useCallback(
@@ -119,7 +119,7 @@ export default function ProvidersModelsSection({
       setThinkingErrors((prev) => ({ ...prev, [providerId]: "" }));
       try {
         const updated = setProviderThinkingMode(
-          await loadFresh("providerThinking"),
+          await loadFresh("providerThinking", [providerId]),
           providerId,
           mode,
         );
@@ -137,15 +137,19 @@ export default function ProvidersModelsSection({
     [onSettingsChange, patchOneKey, loadFresh],
   );
   const saveQuotaVisibility = useCallback(
-    async (next) => {
+    async (full, editedProvider) => {
       setQuotaSaving(true);
       setQuotaError("");
       try {
         // Whole-map PATCH after local edit (same shape as the Usage page).
-        // Caller edits are authoritative for touched providers: merge the
-        // fresh server map under `next` so concurrent removals elsewhere win.
-        const fresh = await loadFresh("quotaVisibility");
+        // Only the edited provider is authoritative: merge it over the fresh
+        // owned map so concurrent removals elsewhere win and, in a workspace,
+        // untouched providers keep inheriting (YAN-770).
+        const next = { [editedProvider]: full[editedProvider] };
+        const fresh = await loadFresh("quotaVisibility", [editedProvider]);
         const merged = { ...fresh, ...next };
+        // setQuotaHiddenKey drops a provider whose last key was unhidden.
+        if (merged[editedProvider] === undefined) delete merged[editedProvider];
         // Drop empty rows only when the entry carries nothing else: extra
         // keys are preserved by the API validator, so keep them.
         for (const provider of Object.keys(merged)) {
@@ -303,6 +307,7 @@ export default function ProvidersModelsSection({
                           onClick={() =>
                             saveQuotaVisibility(
                               setQuotaHiddenKey(quotaVisibility, providerId, key, false),
+                              providerId,
                             )
                           }
                           className="text-coral-ink hover:text-coral disabled:opacity-50"
@@ -348,7 +353,7 @@ export default function ProvidersModelsSection({
                   const key = String(quotaKeyDrafts.key || "").trim();
                   const next = setQuotaHiddenKey(quotaVisibility, provider, key, true);
                   setQuotaKeyDrafts({});
-                  saveQuotaVisibility(next);
+                  saveQuotaVisibility(next, provider);
                 } catch (err) {
                   setQuotaError(err instanceof Error ? err.message : "Invalid quota key");
                 }

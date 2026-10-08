@@ -136,3 +136,43 @@ export async function loadSettingsValue(
   const values = body.effective ?? body.data ?? {};
   return values[key];
 }
+
+/**
+ * Owned map for read-modify-write saves (YAN-770): a workspace write must
+ * start from the workspace's own `data` entries, never the merged
+ * `effective` view, or the first edit pins every inherited entry.
+ * `seedIds` copies those entries' inherited value in first, so editing one
+ * starts from what the user sees (only that entry gets pinned; a removed
+ * entry stays absent and inherits again). Instance endpoint: the stored map.
+ * @param {string} key Map-valued settings key.
+ * @param {{ workspaceId?: string } | null} [scope=null]
+ * @param {string[]} [seedIds] Entry ids to seed from `effective` when not owned.
+ * @param {string} [fallback] Error text when the server sends none.
+ * @returns {Promise<Record<string, object>>} Throws the server's message when the GET fails.
+ */
+export async function loadOwnedMap(
+  key,
+  scope = null,
+  seedIds = [],
+  fallback = "Could not load current settings.",
+) {
+  const url = settingsEndpoint(key, scope);
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || fallback);
+  }
+  const body = await res.json();
+  const value = url === INSTANCE_ENDPOINT ? body[key] : (body.data ?? {})[key];
+  const map =
+    value !== null && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
+  if (url !== INSTANCE_ENDPOINT) {
+    const inherited = body.effective?.[key];
+    for (const id of seedIds) {
+      if (inherited && typeof inherited === "object" && inherited[id] !== undefined) {
+        map[id] ??= inherited[id];
+      }
+    }
+  }
+  return map;
+}

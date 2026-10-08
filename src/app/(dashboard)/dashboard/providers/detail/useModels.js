@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNotificationStore } from "@/store/notificationStore";
 import { getModelKind } from "@/shared/constants/models";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
-import { loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
+import { loadOwnedMap, loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 import { getModelsFetcher } from "./providerDetailMeta";
@@ -149,9 +149,10 @@ export function useModels({
       const previous = thinkingMode;
       setThinkingMode(mode);
       try {
-        const providerThinking = await loadSettingsValue(
+        const providerThinking = await loadOwnedMap(
           "providerThinking",
           scope,
+          [providerId],
           "Failed to load thinking config",
         );
         const updated = { ...providerThinking };
