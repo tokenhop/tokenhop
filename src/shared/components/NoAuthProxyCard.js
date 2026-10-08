@@ -21,6 +21,10 @@ export default function NoAuthProxyCard({ providerId }) {
   const [rotateStrategy, setRotateStrategy] = useState("none");
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  // Controls stay disabled until the current override is known: saving from
+  // a guessed default would drop the other field's stored value.
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const { ready, scope } = useSettingsScope();
 
   useEffect(() => {
@@ -31,16 +35,20 @@ export default function NoAuthProxyCard({ providerId }) {
         r.ok ? r.json() : { proxyPools: [] },
       ),
       // YAN-749: providerStrategies is a workspace key.
-      loadSettingsValue("providerStrategies", scope).catch(() => ({})),
+      loadSettingsValue("providerStrategies", scope),
     ])
       .then(([poolData, strategies]) => {
         if (cancelled) return;
         setProxyPools(poolData.proxyPools || []);
-        const override = (strategies || {})[providerId] || {};
+        const override = strategies?.[providerId] || {};
         setProxyPoolId(override.proxyPoolId || NONE_PROXY_POOL_VALUE);
         setRotateStrategy(override.rotateStrategy || "none");
+        setLoaded(true);
+        setLoadError("");
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setLoadError("Could not load the proxy settings. Reload to try again.");
+      });
     return () => {
       cancelled = true;
     };
@@ -110,7 +118,7 @@ export default function NoAuthProxyCard({ providerId }) {
         label="Proxy pool"
         value={proxyPoolId}
         onChange={(e) => handlePoolChange(e.target.value)}
-        disabled={saving || isRotation}
+        disabled={saving || !loaded || isRotation}
         options={[
           { value: NONE_PROXY_POOL_VALUE, label: "None (direct)" },
           ...proxyPools.map((pool) => ({ value: pool.id, label: pool.name })),
@@ -127,7 +135,7 @@ export default function NoAuthProxyCard({ providerId }) {
         <select
           value={rotateStrategy}
           onChange={(e) => handleStrategyChange(e.target.value)}
-          disabled={saving}
+          disabled={saving || !loaded}
           className="py-2 px-3 text-sm text-text bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md focus:ring-1 focus:ring-coral/30 focus:border-coral/50 focus:outline-none transition-all disabled:opacity-50"
         >
           {STRATEGIES.map((s) => (
@@ -136,6 +144,11 @@ export default function NoAuthProxyCard({ providerId }) {
             </option>
           ))}
         </select>
+        {loadError && (
+          <p role="alert" className="text-xs text-err">
+            {loadError}
+          </p>
+        )}
         <p className="text-xs text-muted">
           {!canRotate
             ? `Need at least 2 active proxy pools for rotation.`

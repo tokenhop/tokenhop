@@ -208,13 +208,13 @@ export function useMediaCombo(id) {
     let conflict = false;
     try {
       await enqueue(async () => {
-        // YAN-749: the workspace route resolves `name` inside the workspace.
+        // YAN-749: scoped, select by combo id (id-keyed workspace map).
         const res = await fetch(settingsEndpoint("comboStrategies", scope), {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             comboStrategyPatch: {
-              name: comboNameRef.current,
+              ...(scope?.workspaceId ? { id } : { name: comboNameRef.current }),
               patch: { fallbackStrategy: enabled ? "round-robin" : "fallback" },
             },
           }),

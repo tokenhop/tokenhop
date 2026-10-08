@@ -501,17 +501,19 @@ export default function CombosPageClient() {
   // Atomic per-combo strategy patch: server merges `patch` into
   // settings.comboStrategies[name] and drops the entry when the strategy
   // resolves to default "fallback". Serialized so rapid edits never race.
-  // YAN-749: scoped, the workspace route resolves `name` to the combo id and
-  // its map is id-keyed, so the local mirror uses comboStrategyKeyFor.
+  // YAN-749: scoped, select by combo id (the workspace map is id-keyed; a
+  // deleted id is a 409, never a same-named newer combo). Unscoped keeps the
+  // legacy name selector.
   const handleSetComboStrategy = (combo, patch) => {
     const comboName = combo.name;
     const entryKey = comboStrategyKeyFor(scope, combo);
     const run = saveQueueRef.current
       .then(async () => {
+        const selector = scope?.workspaceId ? { id: combo.id } : { name: comboName };
         const res = await fetch(settingsEndpoint("comboStrategies", scope), {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ comboStrategyPatch: { name: comboName, patch } }),
+          body: JSON.stringify({ comboStrategyPatch: { ...selector, patch } }),
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
