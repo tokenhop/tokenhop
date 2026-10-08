@@ -32,6 +32,14 @@ import ComboEditor from "@/shared/components/combos/ComboEditor";
 import CapabilityAdapterCard from "@/shared/components/combos/CapabilityAdapterCard";
 import useUnsavedComboGuard from "@/shared/components/combos/useUnsavedComboGuard";
 import { useCommandPalette } from "@/shared/components/CommandPaletteProvider";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import {
+  comboStrategyKeyFor,
+  loadSettings,
+  onHttpError,
+  patchSettings,
+  settingsEndpoint,
+} from "@/shared/utils/settingsApi";
 import {
   commitModelsIntoList,
   saveComboRoute,
@@ -133,8 +141,8 @@ export function normalizeCapEntry(entry) {
   return { ...EMPTY_CAP_ENTRY };
 }
 
-function strategyOf(comboStrategies, name) {
-  return comboStrategies?.[name]?.fallbackStrategy || "fallback";
+function strategyOf(comboStrategies, key) {
+  return comboStrategies?.[key]?.fallbackStrategy || "fallback";
 }
 
 function strategyLabelOf(id) {
@@ -312,20 +320,20 @@ export default function CombosPageClient() {
       });
   };
 
+  const { ready, scope, canManageInstance } = useSettingsScope();
   const fetchData = useCallback(async () => {
     setLoadError("");
     try {
-      const [combosRes, providersRes, settingsRes, usageRes, aliasRes] = await Promise.all([
+      const [combosRes, providersRes, settingsData, usageRes, aliasRes] = await Promise.all([
         fetch("/api/combos"),
         fetch("/api/providers"),
-        fetch("/api/settings"),
+        loadSettings(scope, { canManageInstance }).catch(onHttpError({})),
         fetch("/api/usage/stats?period=today"),
         fetch("/api/models/alias"),
       ]);
       if (!combosRes.ok) throw new Error(`combos ${combosRes.status}`);
       const combosData = await combosRes.json();
       const providersData = providersRes.ok ? await providersRes.json() : {};
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       const usageData = usageRes.ok ? await usageRes.json() : {};
       const aliasData = aliasRes.ok ? await aliasRes.json() : {};
 
@@ -352,14 +360,17 @@ export default function CombosPageClient() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [scope, canManageInstance]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (ready) fetchData();
+  }, [ready, fetchData]);
 
   const selected = combos.find((c) => c.id === selectedComboId) || null;
-  const selectedStrategy = selected ? strategyOf(comboStrategies, selected.name) : "fallback";
+  const strategyKey = (combo) => comboStrategyKeyFor(scope, combo);
+  const selectedStrategy = selected
+    ? strategyOf(comboStrategies, strategyKey(selected))
+    : "fallback";
   const selectedSnapshot =
     selected != null && draftModels != null
       ? comboSnapshot({
@@ -374,8 +385,8 @@ export default function CombosPageClient() {
       ? comboSnapshot({
           models: selected.models || [],
           strategy: selectedStrategy,
-          weights: comboStrategies[selected.name]?.weights || {},
-          judge: comboStrategies[selected.name]?.judgeModel || "",
+          weights: comboStrategies[strategyKey(selected)]?.weights || {},
+          judge: comboStrategies[strategyKey(selected)]?.judgeModel || "",
         })
       : null;
   const routeDirty =
@@ -409,9 +420,9 @@ export default function CombosPageClient() {
       return;
     }
     setDraftModels(combo.models || []);
-    setDraftStrategy(strategyOf(strategies, combo.name));
-    setDraftWeights(strategies[combo.name]?.weights || {});
-    setDraftJudge(strategies[combo.name]?.judgeModel || "");
+    setDraftStrategy(strategyOf(strategies, strategyKey(combo)));
+    setDraftWeights(strategies[strategyKey(combo)]?.weights || {});
+    setDraftJudge(strategies[strategyKey(combo)]?.judgeModel || "");
     setSaveError("");
   };
   useEffect(() => {
@@ -456,15 +467,7 @@ export default function CombosPageClient() {
     setCapacityAdapter(next);
     setAdapterError("");
     try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ capacityAdapter: next }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `adapter save failed (${res.status})`);
-      }
+      await patchSettings({ capacityAdapter: next }, scope);
     } catch (error) {
       setCapacityAdapter(prev);
       setAdapterError(error?.message || "Failed to save adapter");
@@ -498,10 +501,14 @@ export default function CombosPageClient() {
   // Atomic per-combo strategy patch: server merges `patch` into
   // settings.comboStrategies[name] and drops the entry when the strategy
   // resolves to default "fallback". Serialized so rapid edits never race.
-  const handleSetComboStrategy = (comboName, patch) => {
+  // YAN-749: scoped, the workspace route resolves `name` to the combo id and
+  // its map is id-keyed, so the local mirror uses comboStrategyKeyFor.
+  const handleSetComboStrategy = (combo, patch) => {
+    const comboName = combo.name;
+    const entryKey = comboStrategyKeyFor(scope, combo);
     const run = saveQueueRef.current
       .then(async () => {
-        const res = await fetch("/api/settings", {
+        const res = await fetch(settingsEndpoint("comboStrategies", scope), {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ comboStrategyPatch: { name: comboName, patch } }),
@@ -510,14 +517,14 @@ export default function CombosPageClient() {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.error || `Save failed (${res.status})`);
         }
-        const base = strategiesRef.current[comboName] || {};
+        const base = strategiesRef.current[entryKey] || {};
         const next = { ...base, ...patch };
         if (patch.weights) next.weights = { ...base.weights, ...patch.weights };
         const updated = { ...strategiesRef.current };
         if (!next.fallbackStrategy) {
-          delete updated[comboName];
+          delete updated[entryKey];
         } else {
-          updated[comboName] = next;
+          updated[entryKey] = next;
         }
         strategiesRef.current = updated;
         setComboStrategies(updated);
@@ -528,7 +535,7 @@ export default function CombosPageClient() {
     return run;
   };
 
-  const selectedEntry = selected ? comboStrategies[selected.name] || {} : {};
+  const selectedEntry = selected ? comboStrategies[strategyKey(selected)] || {} : {};
   const healthByProvider = healthByConnections(activeProviders);
   const providerLabelById = providerLabelsByConnections(activeProviders);
 
@@ -568,7 +575,7 @@ export default function CombosPageClient() {
         },
         patchStrategy: async () => {
           // Then the strategy (weights delta only; judge included for fusion).
-          const result = await handleSetComboStrategy(savedName, patch);
+          const result = await handleSetComboStrategy({ id: savedId, name: savedName }, patch);
           if (!result?.ok) throw new Error(result?.error || "Failed to save strategy");
         },
         // Models committed even when the strategy PATCH fails afterwards:
@@ -725,7 +732,7 @@ export default function CombosPageClient() {
               >
                 <ul aria-label="Combos" className="m-0 flex list-none flex-col gap-3 p-0">
                   {combos.map((combo, index) => {
-                    const sid = strategyOf(comboStrategies, combo.name);
+                    const sid = strategyOf(comboStrategies, strategyKey(combo));
                     return (
                       <SortableComboCard
                         key={combo.id}

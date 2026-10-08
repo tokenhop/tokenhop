@@ -32,6 +32,8 @@ import { useToolSettings } from "../hooks/useToolSettings";
 import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { patchSettings } from "@/shared/utils/settingsApi";
 
 // Auto-compact window presets (CLAUDE_CODE_AUTO_COMPACT_WINDOW, valid 100K–1M).
 // UI shows the round number; the value written is nudged down 2K to stay safely
@@ -73,6 +75,7 @@ export default function ClaudeToolCard({
   const [currentEditingAlias, setCurrentEditingAlias] = useState(null);
   const [showManualModal, setShowManualModal] = useState(false);
   const [ccFilterNaming, setCcFilterNaming] = useState(ccFilterNamingProp);
+  const { ready: settingsReady, scope: settingsScope } = useSettingsScope();
   // Endpoint the picker chose at mount; not a user edit, so it isn't saved.
   const [initUrl, setInitUrl] = useState("");
   // ponytail: only typed, unsaved keys stay in memory; saved picks persist by
@@ -235,15 +238,12 @@ export default function ClaudeToolCard({
   };
 
   const handleCcFilterNamingToggle = async (checked) => {
+    // Scope unknown until auth status loads: never guess the endpoint.
+    if (!settingsReady) return;
     const prev = ccFilterNaming;
     setCcFilterNaming(checked);
     try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ccFilterNaming: checked }),
-      });
-      if (!res.ok) throw new Error(`status ${res.status}`);
+      await patchSettings({ ccFilterNaming: checked }, settingsScope);
     } catch {
       setCcFilterNaming(prev);
     }

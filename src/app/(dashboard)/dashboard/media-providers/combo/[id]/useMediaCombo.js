@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import {
+  comboStrategyKeyFor,
+  loadSettings,
+  onHttpError,
+  settingsEndpoint,
+} from "@/shared/utils/settingsApi";
 import { getListingHref, validateMediaComboName } from "./mediaComboConfig";
 
 /**
@@ -12,6 +19,7 @@ export function useMediaCombo(id) {
   const router = useRouter();
   const [combo, setCombo] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { ready, scope, canManageInstance } = useSettingsScope();
   const [loadError, setLoadError] = useState("");
   const [missing, setMissing] = useState(false);
   const [name, setName] = useState("");
@@ -38,9 +46,9 @@ export function useMediaCombo(id) {
     setLoadError("");
     setMissing(false);
     try {
-      const [comboRes, settingsRes, logsRes, keysRes, connsRes, aliasesRes] = await Promise.all([
+      const [comboRes, s, logsRes, keysRes, connsRes, aliasesRes] = await Promise.all([
         fetch(`/api/combos/${id}`, { cache: "no-store" }),
-        fetch("/api/settings", { cache: "no-store" }),
+        loadSettings(scope, { canManageInstance }).catch(onHttpError({})),
         fetch("/api/usage/logs", { cache: "no-store" }),
         fetch("/api/keys", { cache: "no-store" }),
         fetch("/api/providers", { cache: "no-store" }),
@@ -67,19 +75,19 @@ export function useMediaCombo(id) {
       setCombo(c);
       setName(c.name);
       setProviders(c.models || []);
-      const s = settingsRes.ok ? await settingsRes.json() : {};
-      setRoundRobin(s.comboStrategies?.[c.name]?.fallbackStrategy === "round-robin");
+      const strategy = s.comboStrategies?.[comboStrategyKeyFor(scope, c)];
+      setRoundRobin(strategy?.fallbackStrategy === "round-robin");
       const allLogs = logsRes.ok ? await logsRes.json() : [];
       setLogs(allLogs.filter((l) => typeof l === "string" && l.includes(c.name)).slice(0, 50));
     } catch (e) {
       setLoadError(e?.message || "Could not load combo");
     }
     setLoading(false);
-  }, [id]);
+  }, [id, scope, canManageInstance]);
 
   useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+    if (ready) fetchAll();
+  }, [ready, fetchAll]);
 
   const validateName = (v) => {
     const result = validateMediaComboName(v);
@@ -200,7 +208,8 @@ export function useMediaCombo(id) {
     let conflict = false;
     try {
       await enqueue(async () => {
-        const res = await fetch("/api/settings", {
+        // YAN-749: the workspace route resolves `name` inside the workspace.
+        const res = await fetch(settingsEndpoint("comboStrategies", scope), {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

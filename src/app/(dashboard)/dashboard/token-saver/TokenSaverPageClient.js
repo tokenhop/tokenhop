@@ -23,7 +23,8 @@ import {
 } from "./HeadroomControls";
 import { useHeadroomExtras } from "./useHeadroomExtras";
 import { useSavingsWithFallback } from "./useSavingsWithFallback";
-import { fetchJson } from "./tokenSaverApi";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { loadSettings, patchSettings } from "@/shared/utils/settingsApi";
 
 const RTK_CHIPS = ["git log", "git diff", "grep / rg", "ls / tree", "test output", "logs"];
 
@@ -44,6 +45,7 @@ export default function TokenSaverPageClient() {
   const { period, setPeriod } = usePeriod();
   const [refreshKey, setRefreshKey] = useState(0);
   const bump = useCallback(() => setRefreshKey((value) => value + 1), []);
+  const { ready, scope, canManageInstance } = useSettingsScope();
 
   const {
     savings,
@@ -83,14 +85,15 @@ export default function TokenSaverPageClient() {
   const extras = useHeadroomExtras(bump);
 
   useEffect(() => {
+    if (!ready) return;
     let cancelled = false;
     (async () => {
       setSettingsLoading(true);
       try {
-        const data = await fetchJson("/api/settings");
+        const data = await loadSettings(scope, { canManageInstance });
         if (cancelled) return;
         setSettings(data);
-        extras.refresh();
+        if (canManageInstance) extras.refresh();
       } catch {
         if (!cancelled) setSettings(null);
       } finally {
@@ -101,26 +104,25 @@ export default function TokenSaverPageClient() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  }, [ready, refreshKey, scope, canManageInstance]);
 
-  const patchSetting = useCallback(async (patch) => {
-    setSaveError("");
-    try {
-      const data = await fetchJson("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      setSettings((prev) => ({ ...prev, ...data }));
-      setSavedTick(true);
-      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
-      savedTimerRef.current = setTimeout(() => setSavedTick(false), 1500);
-      return true;
-    } catch (error) {
-      setSaveError(error.message);
-      return false;
-    }
-  }, []);
+  const patchSetting = useCallback(
+    async (patch) => {
+      setSaveError("");
+      try {
+        const data = await patchSettings(patch, scope);
+        setSettings((prev) => ({ ...prev, ...data }));
+        setSavedTick(true);
+        if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+        savedTimerRef.current = setTimeout(() => setSavedTick(false), 1500);
+        return true;
+      } catch (error) {
+        setSaveError(error.message);
+        return false;
+      }
+    },
+    [scope],
+  );
 
   // Wenyan levels only exist in Chinese locales: fall back when locale changes away.
   const cavemanLevelId = settings?.cavemanLevel;
@@ -232,127 +234,130 @@ export default function TokenSaverPageClient() {
           />
         </Card>
 
-        <Card
-          title={
-            <span className="inline-flex flex-wrap items-center gap-2">
-              Compress context
-              <HeadroomPill variant={pill.variant} dot={pill.dot} label={pill.label} />
-            </span>
-          }
-          subtitle="Long prompts go through Headroom first, which trims what the model does not need."
-          icon="align_horizontal_left"
-          action={
-            <Toggle
-              checked={!!settings.headroomEnabled}
-              onChange={(value) => {
-                const nextUrl = (settings.headroomUrl || "").trim() || "http://localhost:8787";
-                patchSetting({ headroomEnabled: value, headroomUrl: nextUrl });
-              }}
-              aria-label="Compress context"
-            />
-          }
-        >
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.6fr_1fr]">
-            <Field
-              label="Headroom URL"
-              hint="Use a local proxy for Start/Stop, or an external sidecar."
-            >
-              {({ inputId, describedBy }) => (
-                <Input
-                  id={inputId}
-                  aria-describedby={describedBy}
-                  value={settings.headroomUrl || "http://localhost:8787"}
-                  onChange={(event) =>
-                    setSettings((prev) => ({ ...prev, headroomUrl: event.target.value }))
-                  }
-                  onBlur={async (event) => {
-                    const next = event.target.value.trim() || "http://localhost:8787";
-                    await patchSetting({ headroomUrl: next });
-                    extras.refresh();
-                  }}
-                  className="font-mono text-[13px]"
-                />
-              )}
-            </Field>
-            <Field label="Timeout" hint="Request timeout in milliseconds.">
-              {({ inputId, describedBy }) => (
-                <Input
-                  id={inputId}
-                  aria-describedby={describedBy}
-                  value={String(settings.headroomTimeoutMs ?? 3000)}
-                  onChange={(event) =>
-                    setSettings((prev) => ({ ...prev, headroomTimeoutMs: event.target.value }))
-                  }
-                  onBlur={(event) => {
-                    const raw = Math.round(Number(event.target.value));
-                    const next = Number.isFinite(raw) && raw > 0 ? raw : 3000;
-                    patchSetting({ headroomTimeoutMs: next });
-                  }}
-                  className="font-mono text-[13px]"
-                />
-              )}
-            </Field>
-          </div>
-          {extras.headroom.unreachable && (
-            <div
-              role="alert"
-              className="mt-3 flex flex-wrap items-center gap-2 text-[13px] text-err"
-            >
-              <span className="me-auto min-w-0">
-                Couldn't reach Headroom at{" "}
-                <code className="font-mono" dir="ltr">
-                  {settings.headroomUrl || "http://localhost:8787"}
-                </code>
-                .
+        {/* Headroom keys are instance settings: hidden from members (YAN-749). */}
+        {canManageInstance && (
+          <Card
+            title={
+              <span className="inline-flex flex-wrap items-center gap-2">
+                Compress context
+                <HeadroomPill variant={pill.variant} dot={pill.dot} label={pill.label} />
               </span>
-              <Button variant="secondary" size="sm" icon="refresh" onClick={extras.refresh}>
-                Retry
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setShowHeadroomModal(true)}>
-                Manage Headroom
-              </Button>
-            </div>
-          )}
-          <HeadroomControls
-            headroom={extras.headroom}
-            available={extras.available}
-            pendingExtras={extras.pendingExtras}
-            onTogglePending={extras.togglePending}
-            onInstall={extras.install}
-            onRemove={extras.remove}
-            onToggleActive={extras.toggleActive}
-            codeExtraOn={codeExtraOn}
-            mlExtraOn={mlExtraOn}
-            extrasLoading={extras.extrasLoading}
-            extrasError={extras.extrasError}
-            removingExtra={extras.removingExtra}
-            installLog={extras.installLog}
-            restartingProxy={extras.restartingProxy}
-          />
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="me-1 text-[13px] text-muted">Also user messages</span>
-            <Toggle
-              size="sm"
-              checked={!!settings.headroomCompressUserMessages}
-              onChange={(value) => patchSetting({ headroomCompressUserMessages: value })}
-              aria-label="Also compress user messages"
-            />
-            <span className="ms-auto text-xs text-muted">
-              {extras.headroom.version ? `Headroom v${extras.headroom.version}` : ""}
-            </span>
-          </div>
-          <MethodFooter
-            savings={savings}
-            method="headroom"
-            tag="Headroom"
-            offLabel="Headroom proxy"
-            action={
-              <Button variant="ghost" size="sm" onClick={() => setShowHeadroomModal(true)}>
-                Manage Headroom
-              </Button>
             }
-          />
-        </Card>
+            subtitle="Long prompts go through Headroom first, which trims what the model does not need."
+            icon="align_horizontal_left"
+            action={
+              <Toggle
+                checked={!!settings.headroomEnabled}
+                onChange={(value) => {
+                  const nextUrl = (settings.headroomUrl || "").trim() || "http://localhost:8787";
+                  patchSetting({ headroomEnabled: value, headroomUrl: nextUrl });
+                }}
+                aria-label="Compress context"
+              />
+            }
+          >
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.6fr_1fr]">
+              <Field
+                label="Headroom URL"
+                hint="Use a local proxy for Start/Stop, or an external sidecar."
+              >
+                {({ inputId, describedBy }) => (
+                  <Input
+                    id={inputId}
+                    aria-describedby={describedBy}
+                    value={settings.headroomUrl || "http://localhost:8787"}
+                    onChange={(event) =>
+                      setSettings((prev) => ({ ...prev, headroomUrl: event.target.value }))
+                    }
+                    onBlur={async (event) => {
+                      const next = event.target.value.trim() || "http://localhost:8787";
+                      await patchSetting({ headroomUrl: next });
+                      extras.refresh();
+                    }}
+                    className="font-mono text-[13px]"
+                  />
+                )}
+              </Field>
+              <Field label="Timeout" hint="Request timeout in milliseconds.">
+                {({ inputId, describedBy }) => (
+                  <Input
+                    id={inputId}
+                    aria-describedby={describedBy}
+                    value={String(settings.headroomTimeoutMs ?? 3000)}
+                    onChange={(event) =>
+                      setSettings((prev) => ({ ...prev, headroomTimeoutMs: event.target.value }))
+                    }
+                    onBlur={(event) => {
+                      const raw = Math.round(Number(event.target.value));
+                      const next = Number.isFinite(raw) && raw > 0 ? raw : 3000;
+                      patchSetting({ headroomTimeoutMs: next });
+                    }}
+                    className="font-mono text-[13px]"
+                  />
+                )}
+              </Field>
+            </div>
+            {extras.headroom.unreachable && (
+              <div
+                role="alert"
+                className="mt-3 flex flex-wrap items-center gap-2 text-[13px] text-err"
+              >
+                <span className="me-auto min-w-0">
+                  Couldn't reach Headroom at{" "}
+                  <code className="font-mono" dir="ltr">
+                    {settings.headroomUrl || "http://localhost:8787"}
+                  </code>
+                  .
+                </span>
+                <Button variant="secondary" size="sm" icon="refresh" onClick={extras.refresh}>
+                  Retry
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setShowHeadroomModal(true)}>
+                  Manage Headroom
+                </Button>
+              </div>
+            )}
+            <HeadroomControls
+              headroom={extras.headroom}
+              available={extras.available}
+              pendingExtras={extras.pendingExtras}
+              onTogglePending={extras.togglePending}
+              onInstall={extras.install}
+              onRemove={extras.remove}
+              onToggleActive={extras.toggleActive}
+              codeExtraOn={codeExtraOn}
+              mlExtraOn={mlExtraOn}
+              extrasLoading={extras.extrasLoading}
+              extrasError={extras.extrasError}
+              removingExtra={extras.removingExtra}
+              installLog={extras.installLog}
+              restartingProxy={extras.restartingProxy}
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="me-1 text-[13px] text-muted">Also user messages</span>
+              <Toggle
+                size="sm"
+                checked={!!settings.headroomCompressUserMessages}
+                onChange={(value) => patchSetting({ headroomCompressUserMessages: value })}
+                aria-label="Also compress user messages"
+              />
+              <span className="ms-auto text-xs text-muted">
+                {extras.headroom.version ? `Headroom v${extras.headroom.version}` : ""}
+              </span>
+            </div>
+            <MethodFooter
+              savings={savings}
+              method="headroom"
+              tag="Headroom"
+              offLabel="Headroom proxy"
+              action={
+                <Button variant="ghost" size="sm" onClick={() => setShowHeadroomModal(true)}>
+                  Manage Headroom
+                </Button>
+              }
+            />
+          </Card>
+        )}
 
         <Card
           title="Compress LLM output"

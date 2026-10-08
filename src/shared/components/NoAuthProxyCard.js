@@ -5,6 +5,8 @@ import PropTypes from "prop-types";
 import Card from "./Card";
 import Select from "./Select";
 import Badge from "./Badge";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
 
 const NONE_PROXY_POOL_VALUE = "__none__";
 const STRATEGIES = [
@@ -19,19 +21,22 @@ export default function NoAuthProxyCard({ providerId }) {
   const [rotateStrategy, setRotateStrategy] = useState("none");
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const { ready, scope } = useSettingsScope();
 
   useEffect(() => {
+    if (!ready) return undefined;
     let cancelled = false;
     Promise.all([
       fetch("/api/proxy-pools?isActive=true", { cache: "no-store" }).then((r) =>
         r.ok ? r.json() : { proxyPools: [] },
       ),
-      fetch("/api/settings", { cache: "no-store" }).then((r) => (r.ok ? r.json() : {})),
+      // YAN-749: providerStrategies is a workspace key.
+      loadSettingsValue("providerStrategies", scope).catch(() => ({})),
     ])
-      .then(([poolData, settingsData]) => {
+      .then(([poolData, strategies]) => {
         if (cancelled) return;
         setProxyPools(poolData.proxyPools || []);
-        const override = (settingsData.providerStrategies || {})[providerId] || {};
+        const override = (strategies || {})[providerId] || {};
         setProxyPoolId(override.proxyPoolId || NONE_PROXY_POOL_VALUE);
         setRotateStrategy(override.rotateStrategy || "none");
       })
@@ -39,15 +44,15 @@ export default function NoAuthProxyCard({ providerId }) {
     return () => {
       cancelled = true;
     };
-  }, [providerId]);
+  }, [providerId, ready, scope]);
 
   const save = useCallback(
     async (poolId, strategy) => {
       setSaving(true);
       try {
-        const res = await fetch("/api/settings", { cache: "no-store" });
-        const data = res.ok ? await res.json() : {};
-        const current = data.providerStrategies || {};
+        // Read-modify-write: a failed read throws instead of PATCHing over
+        // every other provider's strategy with `{}`.
+        const current = (await loadSettingsValue("providerStrategies", scope)) || {};
         const override = { ...(current[providerId] || {}) };
         if (poolId === NONE_PROXY_POOL_VALUE) delete override.proxyPoolId;
         else override.proxyPoolId = poolId;
@@ -56,11 +61,7 @@ export default function NoAuthProxyCard({ providerId }) {
         const updated = { ...current };
         if (Object.keys(override).length === 0) delete updated[providerId];
         else updated[providerId] = override;
-        await fetch("/api/settings", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ providerStrategies: updated }),
-        });
+        await patchSettings({ providerStrategies: updated }, scope);
         setSavedFlash(true);
         setTimeout(() => setSavedFlash(false), 1500);
       } catch (e) {
@@ -69,7 +70,7 @@ export default function NoAuthProxyCard({ providerId }) {
         setSaving(false);
       }
     },
-    [providerId],
+    [providerId, scope],
   );
 
   const handlePoolChange = (newPoolId) => {

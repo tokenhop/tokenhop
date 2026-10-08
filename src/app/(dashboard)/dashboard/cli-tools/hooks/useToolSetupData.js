@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { loadKeyContext, loadKeyList } from "../../endpoint/hooks/useApiKeys";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { loadSettings, onHttpError } from "@/shared/utils/settingsApi";
 
 import { setKeyPresetStorageMode } from "../components/cliEndpointPresets";
 
@@ -25,13 +27,15 @@ export function useToolSetupData() {
   const [modelAliases, setModelAliases] = useState({});
   const [keyContext, setKeyContext] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { ready, scope, canManageInstance } = useSettingsScope();
 
   const fetchData = useCallback(async () => {
     setKeyPresetStorageMode(null);
     try {
-      const [provRes, settingsRes, tunnelRes, aliasRes] = await Promise.all([
+      const [provRes, settings, tunnelRes, aliasRes] = await Promise.all([
         fetch("/api/providers"),
-        fetch("/api/settings"),
+        // YAN-749: ccFilterNaming is a workspace key; members never GET the instance route.
+        loadSettings(scope, { canManageInstance }).catch(onHttpError(null)),
         fetch("/api/tunnel/status"),
         fetch("/api/models/alias"),
       ]);
@@ -53,10 +57,9 @@ export function useToolSetupData() {
         const d = await provRes.json();
         setConnections(d.connections || []);
       }
-      if (settingsRes.ok) {
-        const d = await settingsRes.json();
-        setCloudEnabled(Boolean(d.cloudEnabled));
-        setCcFilterNaming(Boolean(d.ccFilterNaming));
+      if (settings) {
+        setCloudEnabled(Boolean(settings.cloudEnabled));
+        setCcFilterNaming(Boolean(settings.ccFilterNaming));
       }
       if (tunnelRes.ok) {
         const d = await tunnelRes.json();
@@ -74,11 +77,11 @@ export function useToolSetupData() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [scope, canManageInstance]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (ready) fetchData();
+  }, [ready, fetchData]);
 
   const activeProviders = useMemo(
     () => connections.filter((c) => c.isActive !== false),

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { settingsEndpoint } from "@/shared/utils/settingsApi";
 import { useHomeResource } from "./useHomeResource";
 
 /** Builds the period-scoped endpoint URL; null while the period is unresolved. */
@@ -98,11 +100,13 @@ export function useHomeWaysIn(refreshKey = 0) {
     loading: statusLoading,
     error: statusError,
   } = useHomeResource("/api/tunnel/status", refreshKey);
+  // YAN-749: requireApiKey is an instance key; members never GET /api/settings.
+  const { ready, canManageInstance } = useSettingsScope();
   const {
     data: settings,
     loading: settingsLoading,
     error: settingsError,
-  } = useHomeResource("/api/settings", refreshKey);
+  } = useHomeResource(ready && canManageInstance ? "/api/settings" : null, refreshKey);
   const tunnel = {
     tunnel: data?.tunnel ?? null,
     tailscale: data?.tailscale ?? null,
@@ -110,7 +114,7 @@ export function useHomeWaysIn(refreshKey = 0) {
   };
   return {
     tunnel,
-    loading: statusLoading || settingsLoading,
+    loading: statusLoading || settingsLoading || !ready,
     error: statusError || settingsError,
   };
 }
@@ -137,21 +141,27 @@ export function useHomeCombos(refreshKey = 0) {
     loading: combosLoading,
     error: combosError,
   } = useHomeResource("/api/combos", refreshKey);
+  // YAN-749: scoped, read the workspace's effective values (id-keyed
+  // comboStrategies, YAN-364) and re-key them by name for CombosTop.
+  const { ready, scope } = useSettingsScope();
   const {
     data: settings,
     loading: settingsLoading,
     error: settingsError,
-  } = useHomeResource("/api/settings", refreshKey);
+  } = useHomeResource(ready ? settingsEndpoint("comboStrategies", scope) : null, refreshKey);
   const combos = Array.isArray(data?.combos) ? data.combos : [];
-  const strategies =
-    settings?.comboStrategies && typeof settings.comboStrategies === "object"
-      ? settings.comboStrategies
-      : {};
+  // Workspace GET is `{ data, effective }`; the instance GET is the flat blob.
+  const values = scope?.workspaceId ? settings?.effective : settings;
+  const raw = values?.comboStrategies;
+  const map = raw && typeof raw === "object" ? raw : {};
+  const strategies = scope?.workspaceId
+    ? Object.fromEntries(combos.filter((c) => map[c.id]).map((c) => [c.name, map[c.id]]))
+    : map;
   return {
     combos,
     strategies,
-    globalStrategy: settings?.comboStrategy || "fallback",
-    loading: combosLoading || settingsLoading,
+    globalStrategy: values?.comboStrategy || "fallback",
+    loading: combosLoading || settingsLoading || !ready,
     error: combosError || settingsError,
   };
 }

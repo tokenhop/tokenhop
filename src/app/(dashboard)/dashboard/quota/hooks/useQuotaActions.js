@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import {
+  loadSettings as loadScopedSettings,
+  loadSettingsValue,
+  patchSettings,
+} from "@/shared/utils/settingsApi";
 import {
   QUOTA_CACHE_KEY,
   getQuotaCache,
@@ -85,6 +91,7 @@ export function useQuotaActions({
   const [quotaVisibility, setQuotaVisibility] = useState({});
   const [bulkToggling, setBulkToggling] = useState(false);
 
+  const { ready, scope, canManageInstance } = useSettingsScope();
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
 
@@ -131,8 +138,7 @@ export function useQuotaActions({
   // Auto-ping maps + quota visibility.
   const loadSettings = useCallback(async () => {
     try {
-      const res = await fetch("/api/settings", { cache: "no-store" });
-      const s = await (await assertOk(res, "Failed to load settings")).json();
+      const s = await loadScopedSettings(scope, { canManageInstance });
       setAutoPingMaps({
         claude: s?.claudeAutoPing?.connections || {},
         codex: s?.codexAutoPing?.connections || {},
@@ -141,12 +147,15 @@ export function useQuotaActions({
     } catch (error) {
       failToast(`Quota settings failed to load: ${error.message}`, loadSettings);
     }
-  }, [failToast]);
+  }, [failToast, scope, canManageInstance]);
 
   useEffect(() => {
     loadProxyPools();
-    loadSettings();
-  }, [loadProxyPools, loadSettings]);
+  }, [loadProxyPools]);
+
+  useEffect(() => {
+    if (ready) loadSettings();
+  }, [ready, loadSettings]);
 
   // Bulk active toggle; reconcile successful writes even if other targets fail.
   const bulkSetActive = useCallback(
@@ -280,15 +289,9 @@ export function useQuotaActions({
       setAutoPingMaps({ ...autoPingMaps, [provider]: nextProviderMap });
       try {
         // Read-modify-write: a failed read must not PATCH over unknown settings.
-        const read = await fetch("/api/settings", { cache: "no-store" });
-        const s = await (await assertOk(read, "Failed to read settings")).json();
-        const cfg = { ...(s?.[settingsKey] || {}), connections: nextProviderMap };
-        const patch = await fetch("/api/settings", {
-          method: "PATCH",
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ [settingsKey]: cfg }),
-        });
-        await assertOk(patch, "Failed to save auto-ping");
+        const current = await loadSettingsValue(settingsKey, scope);
+        const cfg = { ...(current || {}), connections: nextProviderMap };
+        await patchSettings({ [settingsKey]: cfg }, scope);
       } catch (error) {
         console.error("Error toggling auto-ping:", error);
         setAutoPingMaps(previous);
@@ -297,7 +300,7 @@ export function useQuotaActions({
         );
       }
     },
-    [autoPingMaps, failToast],
+    [autoPingMaps, failToast, scope],
   );
 
   // Codex reset credit; throws so the confirm dialog stays open on failure.
@@ -358,12 +361,7 @@ export function useQuotaActions({
     async (nextVisibility, previousVisibility) => {
       setQuotaVisibility(nextVisibility);
       try {
-        const response = await fetch("/api/settings", {
-          method: "PATCH",
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ quotaVisibility: nextVisibility }),
-        });
-        await assertOk(response, "Failed to update quota visibility");
+        await patchSettings({ quotaVisibility: nextVisibility }, scope);
       } catch (error) {
         console.error("Error updating quota visibility:", error);
         setQuotaVisibility(previousVisibility);
@@ -372,7 +370,7 @@ export function useQuotaActions({
         );
       }
     },
-    [failToast],
+    [failToast, scope],
   );
 
   const setQuotaHidden = useCallback(

@@ -6,7 +6,7 @@ import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
 import { accountView } from "@/shared/utils/account";
 import AccountSection from "./sections/AccountSection";
 import { layoutFor } from "./settingsTiers";
-import { SettingsScopeContext } from "./settingsApi";
+import { SettingsScopeContext } from "@/shared/hooks/settingsScopeContext";
 import { useSettingsData } from "./useSettingsData";
 import EmptyState from "@/shared/components/EmptyState";
 import ToolbarSearch from "@/shared/components/ToolbarSearch";

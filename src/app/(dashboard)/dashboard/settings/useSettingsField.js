@@ -2,7 +2,8 @@
 
 import { useCallback, useContext, useEffect, useReducer, useRef } from "react";
 import { debounce } from "@/shared/utils/debounce";
-import { SettingsScopeContext, patchSettings } from "./settingsApi";
+import { SettingsScopeContext } from "@/shared/hooks/settingsScopeContext";
+import { patchSettings } from "@/shared/utils/settingsApi";
 
 const TEXT_DEBOUNCE_MS = 500;
 

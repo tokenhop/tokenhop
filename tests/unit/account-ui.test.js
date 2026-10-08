@@ -7,7 +7,7 @@ import { resolveUserRow } from "@/shared/utils/shell";
 import { describeLoginError } from "@/app/login/loginErrors";
 import { SETTINGS_GROUPS, SETTINGS_SECTIONS } from "@/app/(dashboard)/dashboard/settings/registry";
 import { layoutFor } from "@/app/(dashboard)/dashboard/settings/settingsTiers";
-import { settingsEndpoint } from "@/app/(dashboard)/dashboard/settings/settingsApi";
+import { settingsEndpoint } from "@/shared/utils/settingsApi";
 
 const ADMIN_ONLY = ["console-log", "token-saver", "cli-tools", "proxy-pools", "translator"];
 

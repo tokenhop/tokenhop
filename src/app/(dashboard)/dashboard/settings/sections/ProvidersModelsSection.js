@@ -12,7 +12,8 @@ import CopyField from "@/shared/components/CopyField";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useSettingsField } from "../useSettingsField";
-import { SettingsScopeContext, loadSettingsValue, patchSettings } from "../settingsApi";
+import { SettingsScopeContext } from "@/shared/hooks/settingsScopeContext";
+import { loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
 import AutoPingList from "./AutoPingList";
 
 import {
