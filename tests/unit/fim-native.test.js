@@ -197,11 +197,16 @@ describe("native FIM passthrough (YAN-733)", () => {
       model: "deepseek/deepseek-v4-pro",
       prompt: "def add(a, b):\n    ",
       suffix: "\n",
+      max_tokens: 10000,
       stream: true,
     });
     const call = lastCall();
     expect(urlOf(call, "deepseek")).toBe("https://api.deepseek.com/beta/completions");
-    expect(call.body).toMatchObject({ suffix: "\n", stream_options: { include_usage: true } });
+    expect(call.body).toMatchObject({
+      suffix: "\n",
+      max_tokens: 4096,
+      stream_options: { include_usage: true },
+    });
     const { done, chunks } = await readSse(res);
     expect(done).toBe(true);
     expect(chunks[0].object).toBe("text_completion");
@@ -248,10 +253,11 @@ describe("native FIM passthrough (YAN-733)", () => {
       input_prefix: "def add(a, b):\n",
       prompt: "    return ",
       input_suffix: "\n",
+      input_extra: [{ filename: "util.py", text: "X = 1" }],
       n_predict: 16,
     });
     expect(lastCall().body).toMatchObject({
-      prompt: "def add(a, b):\n    return ",
+      prompt: "// File: util.py\nX = 1\ndef add(a, b):\n    return ",
       suffix: "\n",
       max_tokens: 16,
     });

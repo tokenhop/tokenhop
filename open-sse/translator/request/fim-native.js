@@ -4,26 +4,40 @@
  * /beta/completions). Only used when the model has capability fim:true and the
  * provider declares a "fim-native" transport — otherwise the chat-FIM wrapper
  * (openai-completions.js) handles the request. Template context (input_extra,
- * parseFimPrompt context) is dropped: native endpoints only take prompt/suffix.
+ * parseFimPrompt context) is prepended to the prompt as plain text.
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import {
   FIM_MAX_PREFIX_CHARS,
   FIM_MAX_SUFFIX_CHARS,
+  FIM_MAX_CONTEXT_CHARS,
   FIM_DEFAULT_MAX_TOKENS,
 } from "../../config/runtimeConfig.js";
-import { promptParts, cleanStop, mapNPredictToMaxTokens } from "./openai-completions.js";
+import {
+  promptParts,
+  cleanStop,
+  mapNPredictToMaxTokens,
+  joinInputExtra,
+} from "./openai-completions.js";
 
-export function buildFimNativeRequest(model, body, stream, { prefix, suffix }, vendor) {
+// DeepSeek /beta/completions historically rejects max_tokens above 4K.
+const DEEPSEEK_FIM_MAX_TOKENS = 4096;
+
+export function buildFimNativeRequest(model, body, stream, { prefix, suffix, context }, vendor) {
   prefix = prefix.slice(-FIM_MAX_PREFIX_CHARS);
   suffix = suffix.slice(0, FIM_MAX_SUFFIX_CHARS);
+  // Native endpoints take prompt/suffix only, so other-file context leads the
+  // prompt (the repo-level FIM layout). Cleanup only reads the prefix tail.
+  context = context ? context.slice(0, FIM_MAX_CONTEXT_CHARS) : "";
+  let maxTokens = body.max_tokens ?? body.max_completion_tokens ?? FIM_DEFAULT_MAX_TOKENS;
+  if (vendor === "deepseek") maxTokens = Math.min(maxTokens, DEEPSEEK_FIM_MAX_TOKENS);
   const out = {
     model,
-    prompt: prefix,
+    prompt: context ? `${context}\n${prefix}` : prefix,
     temperature: body.temperature ?? 0,
     stream: !!stream,
-    max_tokens: body.max_tokens ?? body.max_completion_tokens ?? FIM_DEFAULT_MAX_TOKENS,
+    max_tokens: maxTokens,
   };
   if (suffix) out.suffix = suffix;
   if (body.top_p !== undefined) out.top_p = body.top_p;
@@ -57,7 +71,6 @@ export function llamacppToFimNativeRequest(model, body, stream, credentials) {
       throw new Error(`${key} must be a string`);
     }
   }
-  // Context is unused natively, but reject the same malformed bodies as the wrapper.
   if (body.input_extra !== undefined && !Array.isArray(body.input_extra)) {
     throw new Error("input_extra must be an array");
   }
@@ -66,7 +79,11 @@ export function llamacppToFimNativeRequest(model, body, stream, credentials) {
     model,
     mapped,
     stream,
-    { prefix: `${body.input_prefix ?? ""}${body.prompt ?? ""}`, suffix: body.input_suffix ?? "" },
+    {
+      prefix: `${body.input_prefix ?? ""}${body.prompt ?? ""}`,
+      suffix: body.input_suffix ?? "",
+      context: joinInputExtra(body.input_extra),
+    },
     fimVendor(credentials),
   );
 }

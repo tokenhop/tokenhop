@@ -113,7 +113,7 @@ export function codestralToOpenAIRequest(model, body, stream, credentials) {
 // llama.cpp puts `prompt` AFTER the FIM_MID token: the current-line text
 // before the cursor. Context entries join as plain `// File: name` text —
 // never as <|file_sep|> FIM tokens, which parseFimPrompt would strip.
-function joinInputExtra(inputExtra) {
+export function joinInputExtra(inputExtra) {
   if (!Array.isArray(inputExtra)) return "";
   const out = [];
   let total = 0;
