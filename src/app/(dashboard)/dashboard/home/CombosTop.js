@@ -10,7 +10,13 @@ import { formatCompact } from "./format";
 import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
 
 /** Fallback strategies the routing layer understands: anything else falls back to Fallback. */
-export const KNOWN_FALLBACK_STRATEGIES = new Set(["fallback", "round-robin", "weighted", "fusion"]);
+export const KNOWN_FALLBACK_STRATEGIES = new Set([
+  "fallback",
+  "round-robin",
+  "weighted",
+  "fusion",
+  "fastest",
+]);
 
 /**
  * Strategy pill variant: fallback brand, round-robin info, weighted/others neutral.
@@ -21,6 +27,7 @@ export function strategyVariant(strategy) {
   if (!KNOWN_FALLBACK_STRATEGIES.has(strategy))
     throw new Error(`strategyVariant: unknown strategy "${strategy}"`);
   if (strategy === "round-robin") return "info";
+  if (strategy === "fastest") return "ok";
   return strategy === "fallback" ? "brand" : "neutral";
 }
 
@@ -60,12 +67,21 @@ export function comboUsageFromByEndpoint(byEndpoint) {
  * @param {object} props
  * @param {Array<object>} props.combos combo records (each `{ name, models }`)
  * @param {object} props.strategies settings.comboStrategies map
+ * @param {string} [props.globalStrategy] settings.comboStrategy, used when a combo has no override
  * @param {Map<string, number>|null} props.usageByCombo combo name -> requests
  * @param {boolean} props.loading
  * @param {string|null} props.error
  * @param {() => void} props.onRetry
  */
-export default function CombosTop({ combos, strategies, usageByCombo, loading, error, onRetry }) {
+export default function CombosTop({
+  combos,
+  strategies,
+  globalStrategy = "fallback",
+  usageByCombo,
+  loading,
+  error,
+  onRetry,
+}) {
   if (loading) return <WidgetSkeleton lines={3} label="Loading combos" />;
   if (error) return <WidgetError message={error} onRetry={onRetry} />;
   if (combos.length === 0) {
@@ -95,7 +111,7 @@ export default function CombosTop({ combos, strategies, usageByCombo, loading, e
   return (
     <ul className="flex min-w-0 flex-col gap-3" aria-label="Most used combos">
       {top.map((combo) => {
-        const rawStrategy = strategies?.[combo.name]?.fallbackStrategy || "fallback";
+        const rawStrategy = strategies?.[combo.name]?.fallbackStrategy || globalStrategy;
         const strategy = KNOWN_FALLBACK_STRATEGIES.has(rawStrategy) ? rawStrategy : "fallback";
         const models = Array.isArray(combo.models) ? combo.models : [];
         return (
@@ -139,6 +155,7 @@ export default function CombosTop({ combos, strategies, usageByCombo, loading, e
 CombosTop.propTypes = {
   combos: PropTypes.arrayOf(PropTypes.object),
   strategies: PropTypes.object,
+  globalStrategy: PropTypes.string,
   usageByCombo: PropTypes.oneOfType([PropTypes.instanceOf(Map), PropTypes.object]),
   loading: PropTypes.bool,
   error: PropTypes.string,

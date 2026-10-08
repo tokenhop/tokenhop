@@ -46,7 +46,7 @@ describe("roleLabel", () => {
 });
 
 describe("STRATEGY_EXPLAINERS", () => {
-  it("has board copy for all four strategies", () => {
+  it("has board copy for all five strategies", () => {
     expect(STRATEGY_EXPLAINERS.fallback).toBe(
       `Every request starts at #1. On a rate limit, auth error or outage, ${ACTIVE.slug} moves down the list without your client noticing.`,
     );
@@ -59,29 +59,41 @@ describe("STRATEGY_EXPLAINERS", () => {
     expect(STRATEGY_EXPLAINERS.fusion).toBe(
       "Every model in the panel answers in parallel. The judge reads them all and returns the best reply.",
     );
+    expect(STRATEGY_EXPLAINERS.fastest).toBe(
+      "The router tracks each model's recent response time and sends new requests to the quickest. Untried models go first until they have numbers. Failed attempts count as slow, so flaky models sink.",
+    );
   });
 });
 
 describe("STRATEGIES", () => {
-  it("has four cards with labels, descs, Material Symbols icons", () => {
-    expect(STRATEGIES.map((s) => s.id)).toEqual(["fallback", "round-robin", "weighted", "fusion"]);
+  it("has five cards with labels, descs, Material Symbols icons", () => {
+    expect(STRATEGIES.map((s) => s.id)).toEqual([
+      "fallback",
+      "round-robin",
+      "weighted",
+      "fusion",
+      "fastest",
+    ]);
     expect(STRATEGIES.map((s) => s.label)).toEqual([
       "Fallback",
       "Round robin",
       "Weighted",
       "Fusion",
+      "Fastest",
     ]);
     expect(STRATEGIES.map((s) => s.desc)).toEqual([
       "Try in order until one answers",
       "Rotate on every request",
       "Split by weight and remaining quota",
       "Ask a panel, let a judge pick",
+      "Prefer the model with the lowest recent latency",
     ]);
     expect(STRATEGIES.map((s) => s.icon)).toEqual([
       "low_priority",
       "autorenew",
       "bar_chart",
       "gavel",
+      "speed",
     ]);
   });
 });

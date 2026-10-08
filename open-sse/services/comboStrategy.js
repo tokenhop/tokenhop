@@ -6,7 +6,13 @@
  */
 
 /** Allowed combo strategies, in UI order. */
-export const COMBO_STRATEGIES = Object.freeze(["fallback", "round-robin", "fusion", "weighted"]);
+export const COMBO_STRATEGIES = Object.freeze([
+  "fallback",
+  "round-robin",
+  "fusion",
+  "weighted",
+  "fastest",
+]);
 
 /** Max per-model weight accepted by the validator (protects WRR float precision). */
 export const MAX_COMBO_WEIGHT = 1000;

@@ -176,6 +176,7 @@ export default function HomePageClient() {
         <CombosTopCard
           combos={combos.combos}
           strategies={combos.strategies}
+          globalStrategy={combos.globalStrategy}
           usageByCombo={usageByCombo}
           loading={combos.loading || usage.loading || summary.loading}
           error={combos.error || usage.error || summary.error}
