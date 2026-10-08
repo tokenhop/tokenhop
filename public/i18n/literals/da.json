@@ -141,6 +141,7 @@
   "Add the model id below to the model list.": "Føj model-id'et nedenfor til modellisten.",
   "Add this entry to the models list:": "Føj dette element til modellisten:",
   "Adjust the filters or make a request through the gateway.": "Juster filtre eller foretag en anmodning via gatewayen.",
+  "Admin": "Administrator",
   "Administrator required — restart 9Router as Administrator to use MITM": "Administrator kræves — genstart 9Router som administrator for at bruge MITM",
   "Administrator required — restart tokenhop as Administrator to use MITM": "Administrator kræves — genstart tokenhop som administrator for at bruge MITM",
   "Advanced": "Avanceret",

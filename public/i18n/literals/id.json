@@ -151,6 +151,7 @@
   "Add the model id below to the model list.": "Tambahkan id model di bawah ke daftar model.",
   "Add this entry to the models list:": "Tambahkan entri ini ke daftar model:",
   "Adjust the filters or make a request through the gateway.": "Sesuaikan filter atau buat permintaan melalui gateway.",
+  "Admin": "Administrator",
   "Administrator required": "Memerlukan administrator",
   "Administrator required — restart 9Router as Administrator to use MITM": "Memerlukan administrator — mulai ulang 9Router sebagai Administrator untuk menggunakan MITM",
   "Administrator required — restart tokenhop as Administrator to use MITM": "Memerlukan administrator — mulai ulang tokenhop sebagai Administrator untuk menggunakan MITM",
