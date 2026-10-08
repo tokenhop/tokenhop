@@ -32,7 +32,7 @@ export function buildFimNativeRequest(
   model,
   body,
   stream,
-  { prefix, suffix, context },
+  { prefix, suffix, context, format },
   vendor,
   fimTemplate,
 ) {
@@ -43,8 +43,11 @@ export function buildFimNativeRequest(
   context = context ? context.slice(0, FIM_MAX_CONTEXT_CHARS) : "";
   let maxTokens = body.max_tokens ?? body.max_completion_tokens ?? FIM_DEFAULT_MAX_TOKENS;
   if (vendor === "deepseek") maxTokens = Math.min(maxTokens, DEEPSEEK_FIM_MAX_TOKENS);
+  // A plain prompt (no suffix, no FIM tokens) is an ordinary completion: send it
+  // verbatim instead of wrapping it as an empty-suffix FIM request.
+  const plainCompletion = format === "plain" && !suffix;
   const encodedPrompt =
-    vendor === "template" && fimTemplate !== "suffix"
+    vendor === "template" && fimTemplate !== "suffix" && !plainCompletion
       ? encodeFimPrompt({ prefix, suffix, template: fimTemplate })
       : null;
   const out = {

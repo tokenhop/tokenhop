@@ -44,6 +44,13 @@ describe("buildFimNativeRequest vendor=template", () => {
     expect(out.stream).toBe(false);
   });
 
+  it("plain prompt with no suffix is sent verbatim, not FIM-wrapped", () => {
+    const plain = { prefix: "Once upon a time", suffix: "", context: "", format: "plain" };
+    const out = buildFimNativeRequest("m", {}, false, plain, "template", "qwen");
+    expect(out.prompt).toBe("Once upon a time");
+    expect(out).not.toHaveProperty("suffix");
+  });
+
   it("token mode: codestral is suffix-first; context leads the prompt with a newline", () => {
     const out = buildFimNativeRequest(
       "m",
