@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { loadSettings, loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
 import { stickyLimitError } from "../detailUtils";
 
 /**
@@ -19,12 +21,13 @@ export function useProviderStrategy({ providerId, notifyError }) {
   const [globalSticky, setGlobalSticky] = useState(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const { scope, canManageInstance } = useSettingsScope();
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/settings", { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to load provider strategy.");
-      const data = await res.json();
+      const data = await loadSettings(scope, { canManageInstance }).catch(() => {
+        throw new Error("Failed to load provider strategy.");
+      });
       const override = data.providerStrategies?.[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
       setGlobalStrategy(data.fallbackStrategy || null);
@@ -38,7 +41,7 @@ export function useProviderStrategy({ providerId, notifyError }) {
       setError(message);
       notifyError?.(message);
     }
-  }, [notifyError, providerId]);
+  }, [notifyError, providerId, scope, canManageInstance]);
 
   const save = useCallback(
     async (strategy, stickyLimit) => {
@@ -52,10 +55,10 @@ export function useProviderStrategy({ providerId, notifyError }) {
       setSaving(true);
       setError("");
       try {
-        const settingsRes = await fetch("/api/settings", { cache: "no-store" });
-        if (!settingsRes.ok) throw new Error("Failed to load current provider strategy.");
-        const settingsData = await settingsRes.json();
-        const current = settingsData.providerStrategies || {};
+        const current =
+          (await loadSettingsValue("providerStrategies", scope).catch(() => {
+            throw new Error("Failed to load current provider strategy.");
+          })) || {};
         const override = { ...(current[providerId] || {}) };
         if (strategy) override.fallbackStrategy = strategy;
         else delete override.fallbackStrategy;
@@ -71,12 +74,9 @@ export function useProviderStrategy({ providerId, notifyError }) {
         else updated[providerId] = override;
         // No-op saves keep the untouched override keys (rotateStrategy, proxyPoolId).
         if (JSON.stringify(updated) !== JSON.stringify(current)) {
-          const saveRes = await fetch("/api/settings", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ providerStrategies: updated }),
+          await patchSettings({ providerStrategies: updated }, scope).catch((e) => {
+            throw new Error(scope ? e.message : "Failed to save provider strategy.");
           });
-          if (!saveRes.ok) throw new Error("Failed to save provider strategy.");
         }
         setProviderStrategy(strategy);
         setSavedSticky(override.stickyRoundRobinLimit?.toString() ?? "");
@@ -90,7 +90,7 @@ export function useProviderStrategy({ providerId, notifyError }) {
         setSaving(false);
       }
     },
-    [notifyError, providerId],
+    [notifyError, providerId, scope],
   );
 
   const changeStrategy = useCallback(
@@ -126,21 +126,18 @@ export function useProviderStrategy({ providerId, notifyError }) {
     setSaving(true);
     setError("");
     try {
-      const res = await fetch("/api/settings", { cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to load current provider strategy.");
-      const data = await res.json();
-      const current = data.providerStrategies || {};
+      const current =
+        (await loadSettingsValue("providerStrategies", scope).catch(() => {
+          throw new Error("Failed to load current provider strategy.");
+        })) || {};
       const override = { ...(current[providerId] || {}) };
       delete override.stickyRoundRobinLimit;
       const updated = { ...current };
       if (Object.keys(override).length === 0) delete updated[providerId];
       else updated[providerId] = override;
-      const saveRes = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerStrategies: updated }),
+      await patchSettings({ providerStrategies: updated }, scope).catch((e) => {
+        throw new Error(scope ? e.message : "Failed to clear sticky override.");
       });
-      if (!saveRes.ok) throw new Error("Failed to clear sticky override.");
       setStickyDraft("");
       setSavedSticky("");
     } catch (err) {
@@ -150,7 +147,7 @@ export function useProviderStrategy({ providerId, notifyError }) {
     } finally {
       setSaving(false);
     }
-  }, [notifyError, providerId]);
+  }, [notifyError, providerId, scope]);
 
   return {
     providerStrategy,

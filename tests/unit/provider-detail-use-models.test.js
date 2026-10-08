@@ -19,6 +19,11 @@ vi.mock("react", () => ({
   useEffect() {},
 }));
 
+// YAN-749: single-user scope (switch off), so every settings call stays on /api/settings.
+vi.mock("@/shared/hooks/useSettingsScope", () => ({
+  useSettingsScope: () => ({ ready: true, scope: null, canManageInstance: true }),
+}));
+
 import { useModels } from "../../src/app/(dashboard)/dashboard/providers/detail/useModels.js";
 import { useNotificationStore } from "../../src/store/notificationStore.js";
 

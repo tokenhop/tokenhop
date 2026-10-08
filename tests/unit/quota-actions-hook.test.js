@@ -46,6 +46,11 @@ const rt = vi.hoisted(() => {
 });
 vi.mock("react", () => rt.hooks);
 
+// YAN-749: single-user scope (switch off), so every settings call stays on /api/settings.
+vi.mock("@/shared/hooks/useSettingsScope", () => ({
+  useSettingsScope: () => ({ ready: true, scope: null, canManageInstance: true }),
+}));
+
 import {
   AUTO_PING_SETTINGS_KEYS,
   useQuotaActions,

@@ -7,6 +7,8 @@ import Link from "next/link";
 import { Button, Callout, CardSkeleton, NoAuthProxyCard } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
 import { mergeLiveWithStatic } from "@/shared/utils/liveModels";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
 import { useLiveCatalog } from "../[id]/useLiveCatalog";
 import { useConnections } from "./useConnections";
 import { useProviderStrategy } from "./useProviderStrategy";
@@ -61,6 +63,7 @@ export default function ProviderDetailPage() {
   const [addConnectionError, setAddConnectionError] = useState("");
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
+  const { ready: settingsReady, scope: settingsScope } = useSettingsScope();
 
   const conn = useConnections({ providerId, notifyError });
   const strategy = useProviderStrategy({ providerId, notifyError });
@@ -119,10 +122,10 @@ export default function ProviderDetailPage() {
         }
         setProviderNode(node);
       }
-      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
-      const settingsData = settingsRes.ok ? await settingsRes.json().catch(() => ({})) : {};
       const autoPingKey = AUTO_PING_SETTINGS_KEYS[providerId];
-      const autoPingCfg = autoPingKey ? settingsData[autoPingKey] || {} : {};
+      const autoPingCfg = autoPingKey
+        ? (await loadSettingsValue(autoPingKey, settingsScope).catch(() => ({}))) || {}
+        : {};
       setAutoPing({
         enabled: autoPingCfg.enabled === true,
         connections: autoPingCfg.connections || {},
@@ -133,22 +136,28 @@ export default function ProviderDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [fetchConnections, isCompatible, loadModels, loadStrategy, loadThinking, providerId]);
+  }, [
+    fetchConnections,
+    isCompatible,
+    loadModels,
+    loadStrategy,
+    loadThinking,
+    providerId,
+    settingsScope,
+  ]);
 
   useEffect(() => {
-    fetchDetail();
-  }, [fetchDetail]);
+    if (settingsReady) fetchDetail();
+  }, [fetchDetail, settingsReady]);
 
   const toggleAutoPing = (connectionId, on) => {
     const key = AUTO_PING_SETTINGS_KEYS[providerId];
     if (!key) return;
     const next = { ...autoPing, connections: { ...autoPing.connections, [connectionId]: on } };
     setAutoPing(next);
-    fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [key]: next }),
-    }).catch((error) => console.log("Error saving auto-ping config:", error));
+    patchSettings({ [key]: next }, settingsScope).catch((error) =>
+      console.log("Error saving auto-ping config:", error),
+    );
   };
 
   const openOAuthConnection = () => open("oauth");

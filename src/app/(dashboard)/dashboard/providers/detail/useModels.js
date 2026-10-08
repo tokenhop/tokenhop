@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNotificationStore } from "@/store/notificationStore";
 import { getModelKind } from "@/shared/constants/models";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 import { getModelsFetcher } from "./providerDetailMeta";
@@ -37,6 +39,7 @@ export function useModels({
   const [testError, setTestError] = useState("");
   const [testingIds, setTestingIds] = useState(() => new Set());
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
+  const { scope } = useSettingsScope();
 
   // All requests, including follow-up reads, must report HTTP failures.
   const request = useCallback(async (url, options, fallback) => {
@@ -129,49 +132,39 @@ export function useModels({
 
   const loadThinking = useCallback(async () => {
     try {
-      const res = await request(
-        "/api/settings",
-        { cache: "no-store" },
+      const providerThinking = await loadSettingsValue(
+        "providerThinking",
+        scope,
         "Failed to load thinking config",
       );
-      const data = await res.json();
-      setThinkingMode(data.providerThinking?.[providerId]?.mode || "auto");
+      setThinkingMode(providerThinking?.[providerId]?.mode || "auto");
       return true;
     } catch (error) {
       return report(error, "Failed to load thinking config");
     }
-  }, [providerId, report, request]);
+  }, [providerId, report, scope]);
 
   const changeThinking = useCallback(
     async (mode) => {
       const previous = thinkingMode;
       setThinkingMode(mode);
       try {
-        const res = await request(
-          "/api/settings",
-          { cache: "no-store" },
+        const providerThinking = await loadSettingsValue(
+          "providerThinking",
+          scope,
           "Failed to load thinking config",
         );
-        const settingsData = await res.json();
-        const updated = { ...settingsData.providerThinking };
+        const updated = { ...providerThinking };
         if (!mode || mode === "auto") delete updated[providerId];
         else updated[providerId] = { mode };
-        await request(
-          "/api/settings",
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ providerThinking: updated }),
-          },
-          "Failed to save thinking config",
-        );
+        await patchSettings({ providerThinking: updated }, scope);
         return true;
       } catch (error) {
         setThinkingMode(previous);
         return report(error, "Failed to save thinking config");
       }
     },
-    [providerId, report, request, thinkingMode],
+    [providerId, report, scope, thinkingMode],
   );
 
   const testModel = useCallback(

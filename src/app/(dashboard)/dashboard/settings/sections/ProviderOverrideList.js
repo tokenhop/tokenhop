@@ -2,7 +2,8 @@
 
 import PropTypes from "prop-types";
 import { useContext, useEffect, useMemo, useState } from "react";
-import { SettingsScopeContext, loadSettingsValue, patchSettings } from "../settingsApi";
+import { SettingsScopeContext } from "@/shared/hooks/settingsScopeContext";
+import { loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
 import Button from "@/shared/components/Button";
 import Select from "@/shared/components/Select";
 import NumberStepper from "@/shared/components/NumberStepper";

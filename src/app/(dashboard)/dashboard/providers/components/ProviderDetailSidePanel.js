@@ -24,6 +24,13 @@ import { useNotificationStore } from "@/store/notificationStore";
 import { getRelativeTime } from "@/shared/utils";
 import CooldownTimer from "@/shared/components/CooldownTimer";
 import { connectionHealth } from "@/shared/utils/providerHealth";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import {
+  loadSettings,
+  loadSettingsValue,
+  onHttpError,
+  patchSettings,
+} from "@/shared/utils/settingsApi";
 
 const shortLabel = (label) => String(label).split(" — ")[0];
 
@@ -146,19 +153,19 @@ export default function ProviderDetailSidePanel({
   const [customModels, setCustomModels] = useState([]);
   const [modelAliases, setModelAliases] = useState({});
   const [loading, setLoading] = useState(true);
+  const { ready, scope, canManageInstance } = useSettingsScope();
 
   const isCompatible = entry.authGroup === "compatible";
   const alias = getProviderAlias(entry.id);
 
   const loadData = useCallback(async () => {
     try {
-      const [settingsRes, customModelsRes, aliasesRes] = await Promise.all([
-        fetch("/api/settings", { cache: "no-store" }),
+      const [data, customModelsRes, aliasesRes] = await Promise.all([
+        loadSettings(scope, { canManageInstance }).catch(onHttpError(null)),
         fetch("/api/models/custom", { cache: "no-store" }),
         fetch("/api/models/alias", { cache: "no-store" }),
       ]);
-      if (settingsRes.ok) {
-        const data = await settingsRes.json();
+      if (data) {
         const override = data.providerStrategies?.[entry.id] || {};
         setStrategy(override.fallbackStrategy || null);
         setGlobalStrategy(data.fallbackStrategy || "fill-first");
@@ -179,11 +186,11 @@ export default function ProviderDetailSidePanel({
     } finally {
       setLoading(false);
     }
-  }, [entry.id, entry.info.modelsFetcher, isCompatible]);
+  }, [entry.id, entry.info.modelsFetcher, isCompatible, scope, canManageInstance]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (ready) loadData();
+  }, [ready, loadData]);
 
   useEffect(() => {
     let cancelled = false;
@@ -208,28 +215,19 @@ export default function ProviderDetailSidePanel({
   const saveStrategy = async (value) => {
     setStrategySaving(true);
     try {
-      const current = await fetch("/api/settings").then((r) => r.json());
-      const updated = { ...(current.providerStrategies || {}) };
+      const current = await loadSettingsValue("providerStrategies", scope);
+      const updated = { ...(current || {}) };
       const override = { ...(updated[entry.id] || {}) };
       if (value) override.fallbackStrategy = value;
       else delete override.fallbackStrategy;
       if (Object.keys(override).length === 0) delete updated[entry.id];
       else updated[entry.id] = override;
 
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerStrategies: updated }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        notifyError(data.error || "Failed to save strategy");
-        return;
-      }
+      await patchSettings({ providerStrategies: updated }, scope);
       setStrategy(value);
       notifySuccess("Account strategy saved");
-    } catch {
-      notifyError("Failed to save strategy");
+    } catch (error) {
+      notifyError(error?.message || "Failed to save strategy");
     } finally {
       setStrategySaving(false);
     }

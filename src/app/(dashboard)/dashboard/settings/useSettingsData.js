@@ -1,12 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-
-async function getJson(url) {
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-}
+import { loadSettings as fetchSettings } from "@/shared/utils/settingsApi";
 
 /**
  * Settings values for the page (YAN-371, D12). Inactive (`scope` null): the
@@ -27,18 +22,12 @@ export function useSettingsData({ ready, scope, canManageInstance }) {
     setLoading(true);
     setError("");
     try {
-      if (!scoped) {
-        setSettings(await getJson("/api/settings"));
-        return;
-      }
-      const [instance, workspace, prefs] = await Promise.all([
-        canManageInstance ? getJson("/api/settings") : {},
-        workspaceId
-          ? getJson(`/api/workspaces/${encodeURIComponent(workspaceId)}/settings`)
-          : { effective: {} },
-        getJson("/api/me/preferences"),
-      ]);
-      setSettings({ ...instance, ...(workspace.effective ?? {}), ...(prefs.data ?? {}) });
+      setSettings(
+        await fetchSettings(scoped ? { workspaceId } : null, {
+          canManageInstance,
+          withPreferences: true,
+        }),
+      );
     } catch {
       setError("Failed to load settings");
     } finally {

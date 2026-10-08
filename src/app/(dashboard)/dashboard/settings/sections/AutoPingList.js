@@ -7,7 +7,8 @@ import Button from "@/shared/components/Button";
 import Toggle from "@/shared/components/Toggle";
 import { autoPingConnections } from "./providersModelsHelpers";
 import ProviderTile from "@/shared/components/ProviderTile";
-import { SettingsScopeContext, loadSettingsValue, patchSettings } from "../settingsApi";
+import { SettingsScopeContext } from "@/shared/hooks/settingsScopeContext";
+import { loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
 
 /**
  * Per-connection auto-ping list for one provider family.
