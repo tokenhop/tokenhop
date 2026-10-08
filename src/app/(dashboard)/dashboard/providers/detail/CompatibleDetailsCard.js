@@ -3,6 +3,16 @@
 import PropTypes from "prop-types";
 import { Button, Card } from "@/shared/components";
 
+const FIM_TEMPLATE_LABELS = {
+  qwen: "Qwen (<|fim_prefix|>)",
+  star_coder: "StarCoder",
+  code_llama: "Code Llama",
+  deepseek_coder: "DeepSeek Coder",
+  codestral: "Codestral",
+  glm: "GLM",
+  suffix: "Server applies template",
+};
+
 /**
  * Signal compatible-provider details card: API type, base URL,
  * Add key / Edit / Delete actions.
@@ -10,6 +20,7 @@ import { Button, Card } from "@/shared/components";
 export default function CompatibleDetailsCard({
   isAnthropic,
   apiType,
+  fimTemplate,
   baseUrl,
   onAddKey,
   onEdit,
@@ -19,12 +30,17 @@ export default function CompatibleDetailsCard({
     ? "Messages API"
     : apiType === "responses"
       ? "Responses API"
-      : "Chat Completions";
+      : apiType === "completions"
+        ? "Completions API (FIM)"
+        : "Chat Completions";
   const path = isAnthropic
     ? "messages"
     : apiType === "responses"
       ? "responses"
-      : "chat/completions";
+      : apiType === "completions"
+        ? "completions"
+        : "chat/completions";
+  const templateLabel = FIM_TEMPLATE_LABELS[fimTemplate];
 
   return (
     <Card
@@ -32,6 +48,7 @@ export default function CompatibleDetailsCard({
       subtitle={
         <span className="break-all font-mono text-[13px]">
           {apiLabel} · {(baseUrl || "").replace(/\/$/, "")}/{path}
+          {apiType === "completions" && templateLabel ? ` · FIM: ${templateLabel}` : ""}
         </span>
       }
       action={
@@ -54,6 +71,7 @@ export default function CompatibleDetailsCard({
 CompatibleDetailsCard.propTypes = {
   isAnthropic: PropTypes.bool.isRequired,
   apiType: PropTypes.string,
+  fimTemplate: PropTypes.string,
   baseUrl: PropTypes.string,
   onAddKey: PropTypes.func.isRequired,
   onEdit: PropTypes.func.isRequired,

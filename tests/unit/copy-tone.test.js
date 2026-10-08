@@ -29,6 +29,8 @@ const COPY_TONE_ALLOWLIST = new Map([
     "Browser opened. Complete the Xiaomi sign-in, then click Check again.",
     "cites the Check again button",
   ],
+  // Model family product name keeps its brand casing.
+  ["DeepSeek Coder", "DeepSeek Coder model family name"],
   ["Reset to Auto", "cites the Auto select option"],
   ["Reset judge to Auto", "cites the Auto select option"],
   ["Public HTTPS URL. Needs Require API key.", "cites the Require API key setting"],

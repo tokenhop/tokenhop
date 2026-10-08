@@ -19,15 +19,19 @@ function isAnthropicCompatible(provider) {
   return typeof provider === "string" && provider.startsWith(ANTHROPIC_COMPATIBLE_PREFIX);
 }
 
-// Resolve the API type (chat vs responses) for an openai-compatible node.
+// Resolve the API type (chat vs responses vs completions) for an openai-compatible node.
 // The stored apiType on the connection's providerSpecificData (kept in sync with
 // the node on create/update) is authoritative. Falls back to the node ID
 // substring for legacy nodes created before apiType was persisted — their IDs
-// embed the type: openai-compatible-<chat|responses>-<uuid>.
+// embed the type: openai-compatible-<chat|responses|completions>-<uuid>.
 export function resolveOpenAICompatibleApiType(provider, credentials = null) {
   const stored = credentials?.providerSpecificData?.apiType;
-  if (stored === "chat" || stored === "responses") return stored;
-  return typeof provider === "string" && provider.includes("responses") ? "responses" : "chat";
+  if (stored === "chat" || stored === "responses" || stored === "completions") return stored;
+  if (typeof provider === "string") {
+    if (provider.includes("-completions-")) return "completions";
+    if (provider.includes("responses")) return "responses";
+  }
+  return "chat";
 }
 
 // Detect request format from body structure
@@ -114,13 +118,21 @@ export function detectFormat(body) {
   return "openai";
 }
 
+// Target format for an apiType: completions nodes only serve raw prompt/suffix
+// endpoints (chatCore routes them onto a "fim-native" transport).
+const openaiCompatibleFormat = (apiType) =>
+  apiType === "responses"
+    ? "openai-responses"
+    : apiType === "completions"
+      ? "fim-native"
+      : "openai";
+
 // Get provider config (internal — no external runtime consumer)
 function getProviderConfig(provider, credentials = null) {
   if (isOpenAICompatible(provider)) {
-    const apiType = resolveOpenAICompatibleApiType(provider, credentials);
     return {
       ...PROVIDERS.openai,
-      format: apiType === "responses" ? "openai-responses" : "openai",
+      format: openaiCompatibleFormat(resolveOpenAICompatibleApiType(provider, credentials)),
       baseUrl: OPENAI_COMPATIBLE_DEFAULTS.baseUrl,
     };
   }
@@ -137,9 +149,7 @@ function getProviderConfig(provider, credentials = null) {
 // Get target format for provider
 export function getTargetFormat(provider, credentials = null) {
   if (isOpenAICompatible(provider)) {
-    return resolveOpenAICompatibleApiType(provider, credentials) === "responses"
-      ? "openai-responses"
-      : "openai";
+    return openaiCompatibleFormat(resolveOpenAICompatibleApiType(provider, credentials));
   }
   if (isAnthropicCompatible(provider)) {
     return "claude";

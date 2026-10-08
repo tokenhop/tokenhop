@@ -41,6 +41,20 @@ const TEMPLATES = [
   ["glm", "<|code_prefix|>", "<|code_suffix|>", "<|code_middle|>"],
 ];
 
+export const FIM_SUFFIX_TEMPLATE = "suffix";
+export const FIM_DEFAULT_TEMPLATE = "qwen";
+// Per-node `fimTemplate` values: every raw-token template, plus "suffix" (the
+// upstream takes a separate `suffix` field and applies its own template).
+export const FIM_TEMPLATE_NAMES = [...TEMPLATES.map(([name]) => name), FIM_SUFFIX_TEMPLATE];
+
+// Inverse of parseFimPrompt for a raw-token template; unknown names use the default.
+export function encodeFimPrompt({ prefix = "", suffix = "", template } = {}) {
+  const row = TEMPLATES.find(([name]) => name === template) ?? TEMPLATES[0];
+  const [format, open, middle, close] = row;
+  const [first, second] = format === "codestral" ? [suffix, prefix] : [prefix, suffix];
+  return `${open}${first}${middle}${second}${close}`;
+}
+
 export function parseFimPrompt(prompt, suffix) {
   prompt = typeof prompt === "string" ? prompt : "";
   suffix = typeof suffix === "string" ? suffix : "";

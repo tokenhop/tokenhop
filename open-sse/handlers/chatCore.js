@@ -1,4 +1,9 @@
-import { detectFormat, getTargetFormat, resolveTransport } from "../services/provider.js";
+import {
+  detectFormat,
+  getTargetFormat,
+  resolveOpenAICompatibleApiType,
+  resolveTransport,
+} from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
 import {
   applyThinking,
@@ -59,6 +64,8 @@ import {
 } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { ingestResponseHeaders } from "../services/quotaHeaders.js";
+import { OPENAI_COMPAT_BASE } from "../providers/shared.js";
+import { FIM_DEFAULT_TEMPLATE, FIM_TEMPLATE_NAMES } from "../translator/concerns/fim.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -191,11 +198,45 @@ export async function handleChatCore({
   // upstream default (use the transport), preserving behavior for glm/deepseek/...
   // Edit predictions on a fim-capable model whose provider has a native prompt/suffix
   // endpoint skip the chat wrapper; every other model keeps the wrapper.
+  // Completions-native openai-compatible nodes (YAN-734) always hit their
+  // /completions endpoint for FIM: they have no chat endpoint at all, so skip
+  // the model `fim` capability gate and any declared transports.
+  const psd = credentials?.providerSpecificData;
+  const isCompletionsNode =
+    typeof provider === "string" &&
+    provider.startsWith("openai-compatible-") &&
+    resolveOpenAICompatibleApiType(provider, credentials) === "completions";
+  if (isCompletionsNode && !fim) {
+    // Non-FIM sources (chat, responses, claude, …) have no lossless route to a
+    // raw prompt endpoint. Never send them upstream: the node is configured
+    // for the completions API only. 404 (like a disabled model, YAN-661) so a
+    // combo advances to its next member instead of failing the whole request.
+    trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
+    const errResult = createErrorResult(
+      HTTP_STATUS.NOT_FOUND,
+      "This provider node is configured for the completions API and only serves /v1/completions, /v1/fim/completions and /infill requests",
+    );
+    errResult.localError = true;
+    return errResult;
+  }
+  const completionsBase = isCompletionsNode
+    ? (typeof psd?.baseUrl === "string" && psd.baseUrl.replace(/\/$/, "")) || OPENAI_COMPAT_BASE
+    : null;
   const fimNativeTransport =
     fim &&
-    getCapabilitiesForModel(provider, model).fim &&
-    (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat))
-      ? resolveTransport(provider, FORMATS.FIM_NATIVE)
+    (isCompletionsNode ||
+      (getCapabilitiesForModel(provider, model).fim &&
+        (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat))))
+      ? isCompletionsNode
+        ? {
+            format: FORMATS.FIM_NATIVE,
+            baseUrl: `${completionsBase}/completions`,
+            fimVendor: "template",
+            fimTemplate: FIM_TEMPLATE_NAMES.includes(psd?.fimTemplate)
+              ? psd.fimTemplate
+              : FIM_DEFAULT_TEMPLATE,
+          }
+        : resolveTransport(provider, FORMATS.FIM_NATIVE)
       : null;
   const useTransport =
     fimNativeTransport ??

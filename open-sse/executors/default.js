@@ -200,10 +200,13 @@ export class DefaultExecutor extends BaseExecutor {
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || OPENAI_COMPAT_BASE;
       const normalized = baseUrl.replace(/\/$/, "");
+      const resolved = resolveOpenAICompatibleApiType(this.provider, credentials);
       const path =
-        resolveOpenAICompatibleApiType(this.provider, credentials) === "responses"
+        resolved === "responses"
           ? "/responses"
-          : "/chat/completions";
+          : resolved === "completions"
+            ? "/completions"
+            : "/chat/completions";
       return `${normalized}${path}`;
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {

@@ -144,6 +144,30 @@ describe("compatible provider connections API", () => {
     });
   });
 
+  it("propagates fimTemplate on the connection PSD for a completions node (YAN-734)", async () => {
+    const ctx = await setupTestContext({
+      id: "openai-compatible-completions-test",
+      type: "openai-compatible",
+      name: "Completions FIM Node",
+      prefix: "cfn",
+      apiType: "completions",
+      fimTemplate: "codestral",
+      baseUrl: "https://fim.example.test/v1",
+    });
+    cleanup = ctx.cleanup;
+
+    const response = await ctx.POST(makeRequest(ctx.node.id));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.connection.providerSpecificData).toMatchObject({
+      apiType: "completions",
+      fimTemplate: "codestral",
+    });
+    const stored = await ctx.getProviderConnectionsUnscoped({ provider: ctx.node.id });
+    expect(stored[0].providerSpecificData.fimTemplate).toBe("codestral");
+  });
+
   it("allows multiple connections on the same compatible node", async () => {
     const ctx = await setupTestContext({
       id: "openai-compatible-multiple-test",

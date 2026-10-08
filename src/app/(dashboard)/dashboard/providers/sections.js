@@ -39,13 +39,19 @@ export function PROVIDER_SECTIONS({ connections, providerNodes, statsFor }) {
         id: node.id,
         name: node.name || "OpenAI Compatible",
         apiType: node.apiType,
+        fimTemplate: node.fimTemplate,
       },
       stats: statsFor(node.id, CONNECTION_AUTH_TYPES),
       authGroup: "compatible",
       authTypes: CONNECTION_AUTH_TYPES,
       isNoAuth: false,
       compatibleType: "openai",
-      compatibleLabel: node.apiType === "responses" ? "Responses" : "Chat",
+      compatibleLabel:
+        node.apiType === "responses"
+          ? "Responses"
+          : node.apiType === "completions"
+            ? "Completions"
+            : "Chat",
     }));
 
   const anthropicEntries = (providerNodes || [])

@@ -33,6 +33,17 @@ const VARIANT_CONFIG = {
 const API_TYPE_OPTIONS = [
   { value: "chat", label: "Chat Completions" },
   { value: "responses", label: "Responses API" },
+  { value: "completions", label: "Completions (FIM)" },
+];
+
+const FIM_TEMPLATE_OPTIONS = [
+  { value: "qwen", label: "Qwen (<|fim_prefix|>)" },
+  { value: "star_coder", label: "StarCoder" },
+  { value: "code_llama", label: "Code Llama" },
+  { value: "deepseek_coder", label: "DeepSeek Coder" },
+  { value: "codestral", label: "Codestral" },
+  { value: "glm", label: "GLM" },
+  { value: "suffix", label: "Send suffix field (server applies template)" },
 ];
 
 function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
@@ -40,7 +51,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
   const initialFormData = () => ({
     name: "",
     prefix: "",
-    ...(config.hasApiType ? { apiType: "chat" } : {}),
+    ...(config.hasApiType ? { apiType: "chat", fimTemplate: "qwen" } : {}),
     baseUrl: config.defaultBaseUrl,
   });
 
@@ -84,6 +95,9 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           name: formData.name,
           prefix: formData.prefix,
           ...(config.hasApiType ? { apiType: formData.apiType } : {}),
+          ...(config.hasApiType && formData.apiType === "completions"
+            ? { fimTemplate: formData.fimTemplate }
+            : {}),
           baseUrl: formData.baseUrl,
           type: config.type,
         }),
@@ -113,6 +127,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           apiKey: checkKey,
           type: config.type,
           modelId: checkModelId.trim() || undefined,
+          ...(config.hasApiType && { apiType: formData.apiType }),
         }),
       });
       const data = await res.json();
@@ -166,6 +181,15 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
             options={API_TYPE_OPTIONS}
             value={formData.apiType}
             onChange={(e) => setFormData({ ...formData, apiType: e.target.value })}
+          />
+        )}
+        {config.hasApiType && formData.apiType === "completions" && (
+          <Select
+            label="FIM template"
+            options={FIM_TEMPLATE_OPTIONS}
+            value={formData.fimTemplate}
+            onChange={(e) => setFormData({ ...formData, fimTemplate: e.target.value })}
+            hint="How prefix and suffix are encoded. Completions nodes only serve edit-prediction endpoints (/v1/completions, /v1/fim/completions, /infill), not chat."
           />
         )}
         <Input

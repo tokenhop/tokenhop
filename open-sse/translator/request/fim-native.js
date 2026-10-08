@@ -20,11 +20,22 @@ import {
   mapNPredictToMaxTokens,
   joinInputExtra,
 } from "./openai-completions.js";
+import { encodeFimPrompt } from "../concerns/fim.js";
 
 // DeepSeek /beta/completions historically rejects max_tokens above 4K.
 const DEEPSEEK_FIM_MAX_TOKENS = 4096;
 
-export function buildFimNativeRequest(model, body, stream, { prefix, suffix, context }, vendor) {
+// A "template" vendor (YAN-734, completions-node FIM backends) applies no
+// vendor wrapping: the node's fimTemplate supplies the raw tokens, or "suffix"
+// delegates the templating to the upstream via the separate suffix field.
+export function buildFimNativeRequest(
+  model,
+  body,
+  stream,
+  { prefix, suffix, context },
+  vendor,
+  fimTemplate,
+) {
   prefix = prefix.slice(-FIM_MAX_PREFIX_CHARS);
   suffix = suffix.slice(0, FIM_MAX_SUFFIX_CHARS);
   // Native endpoints take prompt/suffix only, so other-file context leads the
@@ -32,14 +43,19 @@ export function buildFimNativeRequest(model, body, stream, { prefix, suffix, con
   context = context ? context.slice(0, FIM_MAX_CONTEXT_CHARS) : "";
   let maxTokens = body.max_tokens ?? body.max_completion_tokens ?? FIM_DEFAULT_MAX_TOKENS;
   if (vendor === "deepseek") maxTokens = Math.min(maxTokens, DEEPSEEK_FIM_MAX_TOKENS);
+  const encodedPrompt =
+    vendor === "template" && fimTemplate !== "suffix"
+      ? encodeFimPrompt({ prefix, suffix, template: fimTemplate })
+      : null;
   const out = {
     model,
-    prompt: context ? `${context}\n${prefix}` : prefix,
+    prompt: context ? `${context}\n${encodedPrompt ?? prefix}` : (encodedPrompt ?? prefix),
     temperature: body.temperature ?? 0,
     stream: !!stream,
     max_tokens: maxTokens,
   };
-  if (suffix) out.suffix = suffix;
+  // Template mode (non-suffix) already encodes the suffix into the prompt.
+  if (!encodedPrompt && suffix) out.suffix = suffix;
   if (body.top_p !== undefined) out.top_p = body.top_p;
   const stop = cleanStop(body.stop);
   if (stop.length) out.stop = stop;
@@ -54,11 +70,20 @@ export function buildFimNativeRequest(model, body, stream, { prefix, suffix, con
 }
 
 // chatCore sets credentials.runtimeTransport to the resolved "fim-native"
-// transport; its fimVendor selects the vendor knobs above.
+// transport; its fimVendor selects the vendor knobs above, and fimTemplate the
+// template branch.
 const fimVendor = (credentials) => credentials?.runtimeTransport?.fimVendor;
+const fimTemplateOf = (credentials) => credentials?.runtimeTransport?.fimTemplate;
 
 export function completionsToFimNativeRequest(model, body, stream, credentials) {
-  return buildFimNativeRequest(model, body, stream, promptParts(body), fimVendor(credentials));
+  return buildFimNativeRequest(
+    model,
+    body,
+    stream,
+    promptParts(body),
+    fimVendor(credentials),
+    fimTemplateOf(credentials),
+  );
 }
 
 export function codestralToFimNativeRequest(model, body, stream, credentials) {
@@ -85,6 +110,7 @@ export function llamacppToFimNativeRequest(model, body, stream, credentials) {
       context: joinInputExtra(body.input_extra),
     },
     fimVendor(credentials),
+    fimTemplateOf(credentials),
   );
 }
 
