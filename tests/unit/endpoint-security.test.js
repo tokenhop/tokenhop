@@ -5,6 +5,8 @@ import {
   canExposeRemote,
   buildQuickConnectSnippet,
   quickConnectSnippets,
+  buildZedEditPredictionConfig,
+  buildNeovimMinuetConfig,
   duplicateKeyLabel,
   maskKey,
   formatLastUsed,
@@ -287,5 +289,95 @@ describe("formatNumber", () => {
     expect(formatNumber(1204)).toBe("1,204");
     expect(formatNumber(null)).toBe("0");
     expect(formatNumber(undefined)).toBe("0");
+  });
+});
+
+describe("edit prediction snippets", () => {
+  const base = "http://localhost:20128/v1";
+
+  it("zed config parses with required fields and trims trailing slashes", () => {
+    const parsed = JSON.parse(buildZedEditPredictionConfig(`${base}///`, "prediction-fast"));
+    expect(parsed.edit_predictions.provider).toBe("open_ai_compatible_api");
+    const api = parsed.edit_predictions.open_ai_compatible_api;
+    expect(api.api_url).toBe(`${base}/completions`);
+    expect(api.model).toBe("prediction-fast");
+    expect(api.prompt_format).toBe("qwen");
+    expect(api.max_output_tokens).toBe(128);
+    expect(api.prediction_debounce).toBe(150);
+  });
+
+  it("zed config round-trips quote/backslash/newline/non-ASCII model ids", () => {
+    const model = 'combo "x"\\y\nzé日本語';
+    const api = JSON.parse(buildZedEditPredictionConfig(base, model)).edit_predictions
+      .open_ai_compatible_api;
+    expect(api.model).toBe(model);
+  });
+
+  it("zed config defaults the base URL", () => {
+    const api = JSON.parse(buildZedEditPredictionConfig(undefined, "m")).edit_predictions
+      .open_ai_compatible_api;
+    expect(api.api_url).toBe("http://localhost:20128/v1/completions");
+  });
+
+  it("neovim config uses decimal C0 escapes and no JSON unicode escapes", () => {
+    expect(buildNeovimMinuetConfig(base, "a\x012")).toContain('model = "a\\0012"');
+    expect(buildNeovimMinuetConfig(base, "a\nb\tc")).toContain('model = "a\\nb\\tc"');
+    expect(buildNeovimMinuetConfig(base, "\x1b\x7f")).toContain('model = "\\027\\127"');
+    expect(buildNeovimMinuetConfig(base, "日本語")).toContain('model = "日本語"');
+    expect(buildNeovimMinuetConfig(base, "a\x012")).not.toContain("\\u");
+  });
+
+  it("neovim config pins qwen template, suffix=false and env-name api key", () => {
+    const cfg = buildNeovimMinuetConfig(base, "prediction-fast");
+    expect(cfg).toContain('end_point = "http://localhost:20128/v1/completions"');
+    expect(cfg).toContain('model = "prediction-fast"');
+    expect(cfg).toContain('api_key = "TOKENHOP_API_KEY"');
+    expect(cfg).toContain("max_tokens = 128");
+    expect(cfg).toContain("<|fim_prefix|>");
+    expect(cfg).toContain("<|fim_suffix|>");
+    expect(cfg).toContain("<|fim_middle|>");
+    expect(cfg).toContain("suffix = false");
+  });
+
+  it.each(["zed", "neovim"])(
+    "masks display, copies real export, keeps config secret-free in %s",
+    (kind) => {
+      const env =
+        kind === "zed" ? "ZED_OPEN_AI_COMPATIBLE_EDIT_PREDICTION_API_KEY" : "TOKENHOP_API_KEY";
+      const real = "sk-9r-abcdef1234";
+      const { display, copy, config } = quickConnectSnippets(
+        kind,
+        base,
+        { key: real },
+        "prediction-fast",
+      );
+      expect(display).toContain(maskKey(real));
+      expect(display).not.toContain(real);
+      expect(copy).toBe(`export ${env}=${real}`);
+      expect(config).toContain("prediction-fast");
+      expect(config).not.toContain(real);
+    },
+  );
+
+  it("masks short real keys in display but copies them", () => {
+    const { display, copy } = quickConnectSnippets("zed", base, { key: "abc" }, "m");
+    expect(display).toContain("••••••••");
+    expect(display).not.toContain("abc");
+    expect(copy).toContain("abc");
+  });
+
+  it("shell-quotes special keys in editor export copy", () => {
+    expect(quickConnectSnippets("neovim", base, { key: "a'b" }, "m").copy).toBe(
+      "export TOKENHOP_API_KEY='a'\\''b'",
+    );
+  });
+
+  it("returns null copy for prefix-only keys even with config, null config for blank model", () => {
+    const hashed = quickConnectSnippets("neovim", base, { prefix: "th_abcd" }, "prediction-fast");
+    expect(hashed.copy).toBeNull();
+    expect(hashed.config).toContain("prediction-fast");
+    const sel = { key: "sk-9r-abcdef1234" };
+    expect(quickConnectSnippets("zed", base, sel, "").config).toBeNull();
+    expect(quickConnectSnippets("zed", base, sel, "   ").config).toBeNull();
   });
 });

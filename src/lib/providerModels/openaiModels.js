@@ -8,7 +8,9 @@ const OPENAI_MODELS_URL = "https://api.openai.com/v1/models";
 const FETCH_TIMEOUT_MS = 10_000;
 
 // First match wins. `null` = drop: moderation, realtime/WebSocket, Sora video,
-// legacy /v1/completions and computer-use have no route here.
+// legacy upstream completion models and computer-use are not supported. The
+// gateway serves /v1/completions through chat translation, not those legacy
+// upstream models, so their ids stay excluded from the servable catalog.
 const ID_KINDS = [
   [
     /moderation|(^|-)realtime(-|$)|^sora-|^(babbage|davinci)-|^text-(ada|babbage|curie|davinci)-|-instruct\b|^computer-use/,

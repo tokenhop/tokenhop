@@ -4,14 +4,51 @@ import Link from "next/link";
 import PropTypes from "prop-types";
 import { useState } from "react";
 import { Card, Button, Select, Tabs } from "@/shared/components";
-import { duplicateKeyLabel, quickConnectSnippets } from "../endpointLogic";
+import Input from "@/shared/components/Input";
+import {
+  buildNeovimMinuetConfig,
+  buildZedEditPredictionConfig,
+  duplicateKeyLabel,
+  quickConnectSnippets,
+} from "../endpointLogic";
 import CopyStatus from "@/shared/components/CopyStatus";
 
 const LANGUAGES = [
   { value: "shell", label: "Shell" },
   { value: "curl", label: "cURL" },
   { value: "python", label: "Python" },
+  { value: "zed", label: "Zed" },
+  { value: "neovim", label: "Neovim" },
 ];
+
+const EXAMPLE_MODEL = "prediction-fast";
+
+/** Snippet panel with its own copy button; `onCopy` is only set when copying is allowed. */
+function CodeBlock({ code, copyId, label, onCopy, copiedId, copyError }) {
+  const state = copiedId === copyId ? "copied" : copyError === copyId ? "error" : "idle";
+  return (
+    <div className="overflow-hidden rounded-xl border border-line bg-raised">
+      <pre
+        dir="ltr"
+        className="max-h-64 overflow-auto whitespace-pre p-4 text-start font-mono text-[13px] leading-relaxed text-text"
+      >
+        <code>{code}</code>
+      </pre>
+      <div className="flex justify-end border-t border-line px-3 py-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={state === "copied" ? "check" : state === "error" ? "error" : "content_copy"}
+          disabled={!onCopy}
+          onClick={() => onCopy?.()}
+        >
+          {state === "copied" ? "Copied" : state === "error" ? "Couldn't copy" : label}
+        </Button>
+        <CopyStatus copied={copiedId} error={copyError} id={copyId} />
+      </div>
+    </div>
+  );
+}
 
 /**
  * Quick connect card: key picker + Shell/cURL/Python snippet. The screen shows
@@ -45,16 +82,26 @@ export default function QuickConnectCard({
   hashedMode = false,
 }) {
   const [language, setLanguage] = useState("shell");
+  const [model, setModel] = useState("");
   const selected = keys.find((key) => key.id === selectedKeyId) ?? null;
   const effectiveKey =
     revealed && revealed.id === selectedKeyId ? { key: revealed.plain } : selected;
-  const { display: snippet, copy: copySnippet } = quickConnectSnippets(
-    language,
-    baseUrl,
-    effectiveKey,
-  );
+  const {
+    display: snippet,
+    copy: copySnippet,
+    config,
+  } = quickConnectSnippets(language, baseUrl, effectiveKey, model);
   const copyId = `quick-${language}`;
   const canCopy = Boolean(copySnippet);
+  const isEditor = language === "zed" || language === "neovim";
+  // Show the example ID until the user types one; copy stays off until they do.
+  const shownConfig = isEditor
+    ? (config ??
+      (language === "zed" ? buildZedEditPredictionConfig : buildNeovimMinuetConfig)(
+        baseUrl,
+        EXAMPLE_MODEL,
+      ))
+    : null;
 
   return (
     <Card title="Quick connect" icon="bolt">
@@ -75,30 +122,39 @@ export default function QuickConnectCard({
           aria-label="Quick connect language"
         />
 
-        <div className="overflow-hidden rounded-xl border border-line bg-raised">
-          <pre
-            dir="ltr"
-            className="max-h-64 overflow-auto whitespace-pre p-4 text-start font-mono text-[13px] leading-relaxed text-text"
-          >
-            <code>{snippet}</code>
-          </pre>
-          <div className="flex justify-end border-t border-line px-3 py-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={copiedId === copyId ? "check" : copyError === copyId ? "error" : "content_copy"}
-              disabled={!canCopy}
-              onClick={() => canCopy && onCopy(copySnippet, copyId)}
-            >
-              {copiedId === copyId
-                ? "Copied"
-                : copyError === copyId
-                  ? "Couldn't copy"
-                  : "Copy snippet"}
-            </Button>
-            <CopyStatus copied={copiedId} error={copyError} id={copyId} />
-          </div>
-        </div>
+        {isEditor && (
+          <>
+            <Input
+              label="Model or combo ID"
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              placeholder={EXAMPLE_MODEL}
+              hint={`Use a model or combo ID from your dashboard. "${EXAMPLE_MODEL}" is only an example.`}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <CodeBlock
+              code={shownConfig}
+              copyId={`${copyId}-config`}
+              label={language === "zed" ? "Copy settings" : "Copy config"}
+              onCopy={config ? () => onCopy(config, `${copyId}-config`) : undefined}
+              copiedId={copiedId}
+              copyError={copyError}
+            />
+            <p className="text-xs text-muted">
+              Then set the API key in the environment your editor starts from:
+            </p>
+          </>
+        )}
+
+        <CodeBlock
+          code={snippet}
+          copyId={copyId}
+          label={isEditor ? "Copy key export" : "Copy snippet"}
+          onCopy={canCopy ? () => onCopy(copySnippet, copyId) : undefined}
+          copiedId={copiedId}
+          copyError={copyError}
+        />
 
         {hashedMode && !canCopy && keys.length > 0 && (
           <p className="text-xs text-muted">
@@ -113,11 +169,30 @@ export default function QuickConnectCard({
           >
             Using a coding CLI? Set it up in one click &rarr;
           </Link>
+          {isEditor && (
+            <a
+              href="https://tokenhop.dev/en/integration/edit-predictions/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 block text-sm font-medium text-coral hover:underline"
+            >
+              Edit predictions help &rarr;
+            </a>
+          )}
         </div>
       </div>
     </Card>
   );
 }
+
+CodeBlock.propTypes = {
+  code: PropTypes.string.isRequired,
+  copyId: PropTypes.string.isRequired,
+  label: PropTypes.string.isRequired,
+  onCopy: PropTypes.func,
+  copiedId: PropTypes.string,
+  copyError: PropTypes.string,
+};
 
 QuickConnectCard.propTypes = {
   baseUrl: PropTypes.string.isRequired,

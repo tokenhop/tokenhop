@@ -103,6 +103,9 @@ curl http://localhost:20128/v1/chat/completions \
   -d '{"model": "cc/claude-sonnet-5", "messages": [{"role": "user", "content": "hi"}]}'
 ```
 
+Editor inline completions (Zed, minuet, lsp-ai, llama.vim): see
+[Edit Predictions](https://tokenhop.dev/en/integration/edit-predictions/).
+
 `GET /v1/models` lists every model and combo available to the key.
 
 ## Configuration
