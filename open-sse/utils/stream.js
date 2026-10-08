@@ -401,6 +401,16 @@ export function createSSEStream(options = {}) {
           totalContentLength += parsed.choices[0].delta.content.length;
           accumulatedContent += parsed.choices[0].delta.content;
         }
+        // Native FIM endpoints (DeepSeek /beta): legacy text chunks, pre-translation
+        else if (
+          parsed.choices?.[0] &&
+          typeof parsed.choices[0].text === "string" &&
+          !parsed.choices[0].delta &&
+          !parsed.choices[0].message
+        ) {
+          totalContentLength += parsed.choices[0].text.length;
+          accumulatedContent += parsed.choices[0].text;
+        }
         // OpenAI format - reasoning
         if (parsed.choices?.[0]?.delta?.reasoning_content) {
           totalContentLength += parsed.choices[0].delta.reasoning_content.length;

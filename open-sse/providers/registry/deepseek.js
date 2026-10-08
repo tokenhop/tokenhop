@@ -53,6 +53,12 @@ export default {
       headers: { ...CLAUDE_API_HEADERS },
       auth: { combined: true, header: "x-api-key", scheme: "raw" },
     },
+    {
+      format: "fim-native",
+      baseUrl: "https://api.deepseek.com/beta/completions",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+      fimVendor: "deepseek",
+    },
   ],
   models: [
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },

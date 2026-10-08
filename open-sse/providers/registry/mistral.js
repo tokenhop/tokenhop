@@ -21,6 +21,15 @@ export default {
       dropClientMetadata: true,
     },
   },
+  // Native FIM (prompt/suffix) for models with capability fim:true; never matches a client sourceFormat.
+  transports: [
+    {
+      format: "fim-native",
+      baseUrl: "https://api.mistral.ai/v1/fim/completions",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+      fimVendor: "mistral",
+    },
+  ],
   models: [
     { id: "mistral-large-latest", name: "Mistral Large 3" },
     { id: "codestral-latest", name: "Codestral" },

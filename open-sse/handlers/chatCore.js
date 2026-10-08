@@ -189,10 +189,17 @@ export async function handleChatCore({
   // sourceFormat-matched transport if that format is declared (opencode-go models
   // differ — kimi/glm only do /chat/completions). Undeclared models keep the
   // upstream default (use the transport), preserving behavior for glm/deepseek/...
-  const useTransport =
-    !modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)
-      ? runtimeTransport
+  // Edit predictions on a fim-capable model whose provider has a native prompt/suffix
+  // endpoint skip the chat wrapper; every other model keeps the wrapper.
+  const fimNativeTransport =
+    fim && getCapabilitiesForModel(provider, model).fim
+      ? resolveTransport(provider, FORMATS.FIM_NATIVE)
       : null;
+  const useTransport =
+    fimNativeTransport ??
+    (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)
+      ? runtimeTransport
+      : null);
   // A source-format-matched endpoint keeps the request lossless. Prefer it
   // over a model-level targetFormat, which is only the fallback for clients
   // whose wire format has no supported transport (for example MiniMax-M3:

@@ -17,6 +17,7 @@ import { saveRequestDetailUnscoped } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { openAICompletionToClientFormat } from "./completionToClient.js";
 import { fimContextFor } from "../../translator/concerns/fim.js";
+import { normalizeFimNativeBody } from "../../translator/response/fim-native.js";
 import { toOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { geminiUsageCounts } from "../../translator/concerns/usage.js";
 import { CLAUDE_BLOCK, RESPONSES_ITEM } from "../../translator/schema/index.js";
@@ -38,6 +39,15 @@ export function translateNonStreamingResponse(
   // client's format so tool_calls/text surface natively.
   if (targetFormat === FORMATS.OPENAI)
     return openAICompletionToClientFormat(responseBody, sourceFormat, customToolNames, fimContext);
+  // Native FIM (prompt/suffix endpoint) pivots back through openai chat first so
+  // the client gets the cleaned FIM shapes (text_completion, codestral, infill).
+  if (targetFormat === FORMATS.FIM_NATIVE)
+    return openAICompletionToClientFormat(
+      normalizeFimNativeBody(responseBody),
+      sourceFormat,
+      customToolNames,
+      fimContext,
+    );
 
   // Gemini / Antigravity
   if (
