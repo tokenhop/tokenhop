@@ -42,6 +42,9 @@ export function summarizeRouting(settings = {}) {
     combo = "Combos fuse answers from several models (managed per combo on the Combos page).";
   } else if (comboStrategy === "weighted") {
     combo = "Combos weight models by quota (managed per combo on the Combos page).";
+  } else if (comboStrategy === "fastest") {
+    combo =
+      "Combos prefer the model with the lowest recent latency (managed per combo on the Combos page).";
   } else {
     combo = "Combos try models in order.";
   }

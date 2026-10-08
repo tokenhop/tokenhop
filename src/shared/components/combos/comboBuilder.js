@@ -90,6 +90,12 @@ export const STRATEGIES = [
     icon: "bar_chart",
   },
   { id: "fusion", label: "Fusion", desc: "Ask a panel, let a judge pick", icon: "gavel" },
+  {
+    id: "fastest",
+    label: "Fastest",
+    desc: "Prefer the model with the lowest recent latency",
+    icon: "speed",
+  },
 ];
 
 /** Strategy id → StatusPill variant, matching the board. */
@@ -98,6 +104,7 @@ export const STRATEGY_PILL = {
   "round-robin": "info",
   weighted: "live",
   fusion: "warn",
+  fastest: "ok",
 };
 
 export const STRATEGY_EXPLAINERS = {
@@ -108,6 +115,8 @@ export const STRATEGY_EXPLAINERS = {
     "Traffic splits by weight, then shifts away from accounts that are running low on quota.",
   fusion:
     "Every model in the panel answers in parallel. The judge reads them all and returns the best reply.",
+  fastest:
+    "The router tracks each model's recent response time and sends new requests to the quickest. Untried models go first until they have numbers. Failed attempts count as slow, so flaky models sink.",
 };
 
 /**

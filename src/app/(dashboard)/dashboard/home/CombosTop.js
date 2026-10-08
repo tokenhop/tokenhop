@@ -10,7 +10,13 @@ import { formatCompact } from "./format";
 import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
 
 /** Fallback strategies the routing layer understands: anything else falls back to Fallback. */
-export const KNOWN_FALLBACK_STRATEGIES = new Set(["fallback", "round-robin", "weighted", "fusion"]);
+export const KNOWN_FALLBACK_STRATEGIES = new Set([
+  "fallback",
+  "round-robin",
+  "weighted",
+  "fusion",
+  "fastest",
+]);
 
 /**
  * Strategy pill variant: fallback brand, round-robin info, weighted/others neutral.
@@ -21,6 +27,7 @@ export function strategyVariant(strategy) {
   if (!KNOWN_FALLBACK_STRATEGIES.has(strategy))
     throw new Error(`strategyVariant: unknown strategy "${strategy}"`);
   if (strategy === "round-robin") return "info";
+  if (strategy === "fastest") return "ok";
   return strategy === "fallback" ? "brand" : "neutral";
 }
 

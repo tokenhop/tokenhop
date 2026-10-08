@@ -107,7 +107,7 @@ describe("combo headroom quota source (additive API)", () => {
 });
 
 describe("probe route-track replay", () => {
-  it.each(["fallback", "round-robin", "weighted", "fusion"])(
+  it.each(["fallback", "round-robin", "weighted", "fusion", "fastest"])(
     "maps %s attempts by model occurrence: attempted→sky, failed/skipped→warn, answered→lime",
     (strategy) => {
       const events = probeTrackEvents(

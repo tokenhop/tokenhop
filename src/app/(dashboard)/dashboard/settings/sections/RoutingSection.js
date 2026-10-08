@@ -19,7 +19,13 @@ const ACCOUNT_OPTIONS = [
   { value: "weighted", label: "Weighted" },
 ];
 
-const KNOWN_COMBO_STRATEGIES = new Set(["fallback", "round-robin", "fusion", "weighted"]);
+const KNOWN_COMBO_STRATEGIES = new Set([
+  "fallback",
+  "round-robin",
+  "fusion",
+  "weighted",
+  "fastest",
+]);
 
 /**
  * Routing section: account strategy + sticky limit, combo round-robin toggle +

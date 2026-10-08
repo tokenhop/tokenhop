@@ -125,6 +125,13 @@ const comboRotationState = boundedMap(MAX_COMBOS_TRACKED);
  */
 const comboWeightedState = boundedMap(MAX_COMBOS_TRACKED);
 
+// Fastest strategy: rolling latency samples per combo, per member model.
+const LATENCY_WINDOW = 20; // samples kept per member
+const EXPLORE_RATE = 0.1; // chance to promote a non-leader so its numbers stay fresh
+const FAILURE_PENALTY_MS = 10000; // a failed attempt counts as at least this slow
+/** @type {Map<string, Map<string, number[]>>} */
+const comboLatencyState = boundedMap(MAX_COMBOS_TRACKED);
+
 // Trailing run of items after the last assistant/model turn = the current user
 // turn. It may span several messages (e.g. text + image split across blocks),
 // so we return all of them. History media (older turns) must not pin the combo
@@ -354,6 +361,57 @@ export function getWeightedModels(models, comboName, weights, headroomFn, sticky
 }
 
 /**
+ * Record one latency sample for a combo member (fastest strategy).
+ * @param {string} comboName
+ * @param {string} model
+ * @param {number} ms
+ */
+export function recordComboLatency(comboName, model, ms) {
+  const key = comboName || "__default__";
+  const perModel = comboLatencyState.get(key) || new Map();
+  const samples = perModel.get(model) || [];
+  samples.push(ms);
+  if (samples.length > LATENCY_WINDOW) samples.splice(0, samples.length - LATENCY_WINDOW);
+  perModel.set(model, samples);
+  comboLatencyState.set(key, perModel);
+}
+
+function median(samples) {
+  const s = [...samples].sort((a, b) => a - b);
+  const mid = s.length >> 1;
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+/**
+ * Order models by lowest median latency (fastest strategy). Unmeasured members
+ * go first in original order (cold-start exploration); measured ones follow by
+ * ascending p50 (ties keep original order). When everyone is measured, with
+ * probability EXPLORE_RATE one random non-leader is promoted to the front.
+ * @param {string[]} models
+ * @param {string} comboName
+ * @param {() => number} [rng=Math.random] - injectable for tests
+ * @returns {string[]} New array; input is never mutated
+ */
+export function getFastestModels(models, comboName, rng = Math.random) {
+  if (!Array.isArray(models) || models.length <= 1) return models;
+  const perModel = comboLatencyState.get(comboName || "__default__");
+  const entries = models.map((m, i) => {
+    const samples = perModel?.get(m);
+    return { m, i, p: samples?.length ? median(samples) : null };
+  });
+  const cold = entries.filter((e) => e.p === null).map((e) => e.m);
+  const warm = entries
+    .filter((e) => e.p !== null)
+    .sort((a, b) => a.p - b.p || a.i - b.i)
+    .map((e) => e.m);
+  if (cold.length === 0 && warm.length >= 2 && rng() < EXPLORE_RATE) {
+    const pick = 1 + Math.min(Math.floor(rng() * (warm.length - 1)), warm.length - 2);
+    warm.unshift(...warm.splice(pick, 1));
+  }
+  return [...cold, ...warm];
+}
+
+/**
  * Reset in-memory rotation state when combo/settings change
  * @param {string} [comboName] - Combo name to reset; omit to clear all
  */
@@ -361,9 +419,11 @@ export function resetComboRotation(comboName) {
   if (comboName) {
     comboRotationState.delete(comboName);
     comboWeightedState.delete(comboName);
+    comboLatencyState.delete(comboName);
   } else {
     comboRotationState.clear();
     comboWeightedState.clear();
+    comboLatencyState.clear();
   }
 }
 
@@ -482,7 +542,16 @@ export async function handleComboChat({
   let rotatedModels =
     comboStrategy === "weighted"
       ? getWeightedModels(models, comboName, comboWeights, headroomFn, comboStickyLimit)
-      : getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+      : comboStrategy === "fastest"
+        ? getFastestModels(models, comboName)
+        : getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+
+  // Latency feedback for "fastest". Skipped for dry-run probes (onAttempt) so
+  // they never skew live routing. Time to response headers, not full stream.
+  const recordLatency = (model, ms, failed) => {
+    if (comboStrategy !== "fastest" || typeof onAttempt === "function") return;
+    recordComboLatency(comboName, model, failed ? Math.max(ms, FAILURE_PENALTY_MS) : ms);
+  };
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
   if (autoSwitch) {
@@ -521,6 +590,7 @@ export async function handleComboChat({
 
       // Success (2xx) - return response
       if (result.ok) {
+        recordLatency(modelStr, Date.now() - attemptStartedAt, false);
         notifyAttempt({
           model: modelStr,
           status: result.status,
@@ -567,6 +637,8 @@ export async function handleComboChat({
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
       if (!shouldFallback && !isModelScopedError(result.status, errorText)) {
+        // No latency sample: a request-scoped error (bad body, context too long)
+        // would fail the same on any member, so it says nothing about speed.
         notifyAttempt({
           model: modelStr,
           status: result.status,
@@ -598,6 +670,7 @@ export async function handleComboChat({
       // path: a throwing recorder must never corrupt lastError/lastStatus.
       lastError = errorText || String(result.status);
       lastStatus = result.status;
+      recordLatency(modelStr, Date.now() - attemptStartedAt, true);
       notifyAttempt({
         model: modelStr,
         status: result.status,
@@ -615,6 +688,9 @@ export async function handleComboChat({
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
       lastStatus = 500;
+      // A client cancel is not the member's fault: don't penalize it.
+      if (error?.name !== "AbortError")
+        recordLatency(modelStr, Date.now() - attemptStartedAt, true);
       notifyAttempt({
         model: modelStr,
         status: null,
