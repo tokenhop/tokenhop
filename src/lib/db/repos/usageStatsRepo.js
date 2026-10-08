@@ -190,7 +190,7 @@ function addCompletionsLatency(stats, db, scope, period) {
        CASE WHEN json_valid(meta) THEN json_extract(meta, '$.latencyMs') END AS ms,
        CASE WHEN json_valid(meta) THEN json_extract(meta, '$.empty') END AS empty
      FROM usageHistory ${whereAll(scope.sql, `endpoint IN (${LATENCY_ENDPOINTS.map(() => "?").join(",")})`, "timestamp >= ?")}
-     ORDER BY id DESC LIMIT ${LATENCY_SAMPLE_CAP}`,
+     ORDER BY timestamp DESC, id DESC LIMIT ${LATENCY_SAMPLE_CAP}`,
     [...scope.params, ...LATENCY_ENDPOINTS, new Date(cutoff).toISOString()],
   );
   const byKey = {};
@@ -201,8 +201,11 @@ function addCompletionsLatency(stats, db, scope, period) {
       ms: r.ms !== null && Number.isFinite(ms) ? ms : null,
       empty: Boolean(r.empty),
     };
-    (byKey[`${r.endpoint}|${r.model || ""}|${r.provider || "unknown"}`] ||= []).push(sample);
-    (byEndpoint[r.endpoint] ||= []).push(sample);
+    const key = `${r.endpoint}|${r.model || ""}|${r.provider || "unknown"}`;
+    byKey[key] ||= [];
+    byKey[key].push(sample);
+    byEndpoint[r.endpoint] ||= [];
+    byEndpoint[r.endpoint].push(sample);
   }
   for (const [key, samples] of Object.entries(byKey)) {
     const { samples: _n, ...summary } = latencySummary(samples);

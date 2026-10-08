@@ -1,10 +1,13 @@
 // YAN-743: edit-prediction latency and empty-result rate come from usageHistory
 // meta for every period (the day rollup has no latency).
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 let db;
 
 beforeAll(async () => {
+  // Pin the clock (Date only, timers stay real) so a local-midnight rollover
+  // between fixtures and assertions can't move the 7d calendar cutoff.
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date() });
   vi.resetModules();
   db = await import("@/lib/db/index.js");
   await db.initDb();
@@ -30,6 +33,10 @@ beforeAll(async () => {
   edge.setHours(0, 0, 0, 0);
   edge.setDate(edge.getDate() - 6);
   await save(5, "completions", { latencyMs: 9000 }, 5, new Date(edge.getTime() - 60_000));
+});
+
+afterAll(() => {
+  vi.useRealTimers();
 });
 
 describe.each(["24h", "7d"])("getUsageStats(%s) completions latency", (period) => {
