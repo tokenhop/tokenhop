@@ -45,7 +45,9 @@ function applyRule(body, rule) {
 
 function applyDeepSeekV4ProAlias({ provider, model, body }) {
   const alias = DEEPSEEK_V4_PRO_ALIASES[model];
-  if (provider !== "deepseek" || !alias || !body) return body;
+  // Native FIM bodies (prompt/suffix) have no messages: the thinking knobs are
+  // chat-only, and chatCore already mapped the upstream model id.
+  if (provider !== "deepseek" || !alias || !body?.messages) return body;
 
   const nextBody = {
     ...body,

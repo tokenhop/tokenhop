@@ -51,6 +51,7 @@ export const DEFAULT_CAPABILITIES = {
   // features
   search: false, // built-in web search tool / grounding
   tools: true, // function / tool calling
+  fim: false, // upstream serves native prompt/suffix FIM (needs a "fim-native" transport)
   forcedToolChoice: true, // false → forced choice downgraded to auto; "any" → named tool narrowed to required
   reasoning: false, // thinking / reasoning
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
@@ -1386,6 +1387,20 @@ export const PATTERN_CAPABILITIES = [
   // v4.1+ has real image input (probed live on Alibaba MaaS: correct color
   // read from a PNG). v4-pro / v4-flash-0731 accept image blocks but ignore
   // them (answered "Unknown"), so vision stays scoped to v4.* dotted releases.
+  // Only v4-pro (and its -max/-none aliases) has the /beta/completions FIM endpoint;
+  // flash ids stay fim:false. Caps repeat *deepseek-v4* below (first match wins):
+  // keep the two entries in sync.
+  {
+    pattern: "*deepseek-v4-pro*",
+    caps: {
+      reasoning: true,
+      thinkingFormat: "deepseek",
+      thinkingEffortSupported: true,
+      contextWindow: 1000000,
+      maxOutput: 384000,
+      fim: true,
+    },
+  },
   {
     pattern: "*deepseek-v4.*",
     caps: {
@@ -1498,7 +1513,7 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*llama*", caps: { contextWindow: 128000 } },
 
   // ── Mistral (Large 3 = vision/256K; codestral text) ──────────────
-  { pattern: "*codestral*", caps: { contextWindow: 256000 } },
+  { pattern: "*codestral*", caps: { contextWindow: 256000, fim: true } },
   { pattern: "*mistral-large*", caps: { vision: true, contextWindow: 256000 } },
   { pattern: "*mistral*", caps: { contextWindow: 128000 } },
 

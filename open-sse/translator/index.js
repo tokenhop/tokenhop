@@ -142,7 +142,7 @@ export function translateRequest(
   const kiroThinkingMappedByTranslator =
     targetFormat === FORMATS.KIRO &&
     (originalSourceFormat === FORMATS.OPENAI || originalSourceFormat === FORMATS.CLAUDE);
-  if (!kiroThinkingMappedByTranslator) {
+  if (!kiroThinkingMappedByTranslator && targetFormat !== FORMATS.FIM_NATIVE) {
     applyThinking(targetFormat, model, result, provider, thinkingIntent);
   }
 
@@ -330,6 +330,7 @@ import "./request/openai-to-vertex.js";
 import "./request/antigravity-to-openai.js";
 import "./request/openai-responses.js";
 import "./request/openai-completions.js";
+import "./request/fim-native.js";
 import "./request/openai-to-kiro.js";
 import "./request/openai-to-cursor.js";
 import "./request/openai-to-ollama.js";
@@ -342,6 +343,7 @@ import "./response/openai-to-antigravity.js";
 import "./response/openai-responses.js";
 import "./response/openai-completions.js";
 import "./response/fim.js";
+import "./response/fim-native.js";
 import "./response/kiro-to-openai.js";
 import "./response/cursor-to-openai.js";
 import "./response/ollama-to-openai.js";

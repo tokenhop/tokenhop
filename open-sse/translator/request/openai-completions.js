@@ -45,7 +45,7 @@ const SYSTEM_PROMPT = [
   "Return an empty response if nothing should be inserted.",
 ].join("\n");
 
-function cleanStop(stop) {
+export function cleanStop(stop) {
   const list = (Array.isArray(stop) ? stop : [stop]).filter(
     (s) => typeof s === "string" && s && !FIM_TOKENS.some((token) => s.includes(token)),
   );
@@ -84,7 +84,7 @@ export function buildFimChatRequest(model, body, stream, { prefix, suffix, conte
   return result;
 }
 
-function promptParts(body) {
+export function promptParts(body) {
   let prompt = body.prompt;
   if (Array.isArray(prompt) && prompt.length === 1) prompt = prompt[0];
   if (typeof prompt !== "string") {
@@ -113,7 +113,7 @@ export function codestralToOpenAIRequest(model, body, stream, credentials) {
 // llama.cpp puts `prompt` AFTER the FIM_MID token: the current-line text
 // before the cursor. Context entries join as plain `// File: name` text —
 // never as <|file_sep|> FIM tokens, which parseFimPrompt would strip.
-function joinInputExtra(inputExtra) {
+export function joinInputExtra(inputExtra) {
   if (!Array.isArray(inputExtra)) return "";
   const out = [];
   let total = 0;
@@ -129,6 +129,24 @@ function joinInputExtra(inputExtra) {
   return out.join("\n");
 }
 
+// Vendor knob: n_predict (llama.cpp) → max_tokens; only a positive value sizes
+// the reply. Mutates a copy of `body` and returns it.
+export function mapNPredictToMaxTokens(body) {
+  const mapped = { ...body };
+  if (body.n_predict !== undefined && body.n_predict !== null) {
+    if (!Number.isFinite(body.n_predict)) throw new Error("n_predict must be a finite number");
+    // n_predict <= -1 is llama.cpp's "unlimited": cap it rather than leave generation open.
+    if (mapped.max_tokens === undefined && body.n_predict !== 0) {
+      mapped.max_tokens =
+        body.n_predict > 0
+          ? Math.min(Math.floor(body.n_predict), MAX_N_PREDICT) || 1
+          : MAX_N_PREDICT;
+    }
+    delete mapped.n_predict;
+  }
+  return mapped;
+}
+
 export function llamacppToOpenAIRequest(model, body, stream, credentials) {
   for (const key of ["input_prefix", "input_suffix", "prompt"]) {
     if (body[key] !== undefined && typeof body[key] !== "string") {
@@ -141,19 +159,7 @@ export function llamacppToOpenAIRequest(model, body, stream, credentials) {
   const prefix = `${body.input_prefix ?? ""}${body.prompt ?? ""}`;
   const suffix = body.input_suffix ?? "";
   const context = joinInputExtra(body.input_extra);
-  const mapped = { ...body };
-  // Vendor knob: n_predict (llama.cpp); only a positive value sizes the reply.
-  if (body.n_predict !== undefined && body.n_predict !== null) {
-    if (!Number.isFinite(body.n_predict)) throw new Error("n_predict must be a finite number");
-    // n_predict <= -1 is llama.cpp's "unlimited": cap it rather than leave generation open.
-    if (mapped.max_tokens === undefined && body.n_predict !== 0) {
-      mapped.max_tokens =
-        body.n_predict > 0
-          ? Math.min(Math.floor(body.n_predict), MAX_N_PREDICT) || 1
-          : MAX_N_PREDICT;
-    }
-    delete mapped.n_predict;
-  }
+  const mapped = mapNPredictToMaxTokens(body);
   return buildFimChatRequest(model, mapped, stream, {
     prefix,
     suffix,

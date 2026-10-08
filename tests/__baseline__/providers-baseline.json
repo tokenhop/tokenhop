@@ -118,6 +118,7 @@
     },
     "usage": {
       "oauthUrl": "https://api.anthropic.com/api/oauth/usage",
+      "profileUrl": "https://api.anthropic.com/api/oauth/profile",
       "orgUrl": "https://api.anthropic.com/v1/organizations/{org_id}/usage",
       "settingsUrl": "https://api.anthropic.com/v1/settings"
     },
@@ -234,7 +235,11 @@
       "Content-Type": "application/connect+proto",
       "User-Agent": "connect-es/1.6.1"
     },
-    "clientVersion": "3.12.17"
+    "clientVersion": "3.12.17",
+    "usage": {
+      "url": "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage",
+      "planInfoUrl": "https://api2.cursor.sh/aiserver.v1.DashboardService/GetPlanInfo"
+    }
   },
   "deepgram": {
     "baseUrl": "https://api.deepgram.com/v1/listen",
@@ -275,6 +280,16 @@
           "header": "x-api-key",
           "scheme": "raw"
         }
+      },
+      {
+        "format": "fim-native",
+        "baseUrl": "https://api.deepseek.com/beta/completions",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        },
+        "fimVendor": "deepseek"
       }
     ]
   },
@@ -682,7 +697,19 @@
     "quirks": {
       "dropClientMetadata": true
     },
-    "format": "openai"
+    "format": "openai",
+    "transports": [
+      {
+        "format": "fim-native",
+        "baseUrl": "https://api.mistral.ai/v1/fim/completions",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        },
+        "fimVendor": "mistral"
+      }
+    ]
   },
   "mmf": {
     "baseUrl": "https://api.xiaomimimo.com/api/free-ai/openai/chat",
@@ -786,7 +813,7 @@
   },
   "perplexity": {
     "baseUrl": "https://api.perplexity.ai/chat/completions",
-    "validateUrl": "https://api.perplexity.ai/models",
+    "validateUrl": "https://api.perplexity.ai/v1/models",
     "format": "openai"
   },
   "perplexity-agent": {
@@ -1035,6 +1062,10 @@
   "meta-code": {
     "baseUrl": "https://api.meta.ai/v1/responses",
     "format": "openai-responses",
+    "forceStream": true,
+    "quirks": {
+      "foldReasoningEffort": true
+    },
     "validateUrl": "https://api.meta.ai/v1/models",
     "tokenUrl": "https://auth.meta.com/oidc/device/token/"
   }

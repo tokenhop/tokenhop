@@ -4,6 +4,7 @@ export const FORMATS = {
   OPENAI_COMPLETIONS: "openai-completions",
   CODESTRAL_FIM: "codestral-fim",
   LLAMACPP_INFILL: "llamacpp-infill",
+  FIM_NATIVE: "fim-native", // upstream prompt/suffix endpoint; not a client format
   OPENAI_RESPONSES: "openai-responses",
   OPENAI_RESPONSE: "openai-response",
   CLAUDE: "claude",
