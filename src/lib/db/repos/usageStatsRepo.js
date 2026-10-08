@@ -152,6 +152,67 @@ function aggregate(stats, rows, { connections, nodes }, keyNames) {
   for (const b of Object.values(stats.byProvider)) delete b.lastUsed;
 }
 
+// Endpoints whose rows carry meta.latencyMs / meta.empty (edit predictions, YAN-736).
+const LATENCY_ENDPOINTS = ["completions"];
+const LATENCY_SAMPLE_CAP = 20000;
+
+function latencySummary(samples) {
+  const ms = samples.filter((s) => s.ms !== null).map((s) => s.ms);
+  ms.sort((a, b) => a - b);
+  const mid = ms.length >> 1;
+  return {
+    latencyAvgMs: ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : null,
+    latencyP50Ms: ms.length
+      ? Math.round(ms.length % 2 ? ms[mid] : (ms[mid - 1] + ms[mid]) / 2)
+      : null,
+    emptyRate: samples.length ? samples.filter((s) => s.empty).length / samples.length : null,
+    samples: samples.length,
+  };
+}
+
+/**
+ * Avg/p50 latency and empty-result rate for LATENCY_ENDPOINTS (YAN-743).
+ * History-backed for every period: the rollup has no meta. Sets the values on
+ * each matching byEndpoint row and per endpoint in `stats.endpointLatency`
+ * (a group p50 can't be derived from per-row p50s).
+ * ponytail: loads up to LATENCY_SAMPLE_CAP most recent rows into JS (keystroke
+ * volume can be large; "all" would otherwise scan everything). Move to rollup
+ * columns if stats over the full window are needed.
+ */
+function addCompletionsLatency(stats, db, scope, period) {
+  // Same calendar window as the rollup/history rows above; "all" = no cutoff.
+  const cutoff =
+    period === "24h" || period === "today" || PERIOD_DAYS[period]
+      ? periodStart(period, Date.now())
+      : 0;
+  const rows = db.all(
+    `SELECT endpoint, model, provider,
+       CASE WHEN json_valid(meta) THEN json_extract(meta, '$.latencyMs') END AS ms,
+       CASE WHEN json_valid(meta) THEN json_extract(meta, '$.empty') END AS empty
+     FROM usageHistory ${whereAll(scope.sql, `endpoint IN (${LATENCY_ENDPOINTS.map(() => "?").join(",")})`, "timestamp >= ?")}
+     ORDER BY id DESC LIMIT ${LATENCY_SAMPLE_CAP}`,
+    [...scope.params, ...LATENCY_ENDPOINTS, new Date(cutoff).toISOString()],
+  );
+  const byKey = {};
+  const byEndpoint = {};
+  for (const r of rows) {
+    const ms = Number(r.ms);
+    const sample = {
+      ms: r.ms !== null && Number.isFinite(ms) ? ms : null,
+      empty: Boolean(r.empty),
+    };
+    (byKey[`${r.endpoint}|${r.model || ""}|${r.provider || "unknown"}`] ||= []).push(sample);
+    (byEndpoint[r.endpoint] ||= []).push(sample);
+  }
+  for (const [key, samples] of Object.entries(byKey)) {
+    const { samples: _n, ...summary } = latencySummary(samples);
+    if (stats.byEndpoint[key]) Object.assign(stats.byEndpoint[key], summary);
+  }
+  stats.endpointLatency = Object.fromEntries(
+    Object.entries(byEndpoint).map(([ep, samples]) => [ep, latencySummary(samples)]),
+  );
+}
+
 const historyRow = (r) => {
   const t = parseJson(r.tokens, {}) || {};
   return {
@@ -296,6 +357,7 @@ export async function getUsageStats(ctx, period = "all") {
     }
   }
 
+  addCompletionsLatency(stats, db, scope, period);
   stats.totalRequests = Object.values(stats.byProvider).reduce((s, p) => s + (p.requests || 0), 0);
   return stats;
 }

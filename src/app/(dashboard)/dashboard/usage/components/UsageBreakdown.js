@@ -14,6 +14,16 @@ const fmt = (n) => new Intl.NumberFormat().format(n || 0);
 const fmtShort = (n) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n || 0);
 const fmtCost = (n) => `$${(n || 0).toFixed(2)}`;
+const fmtMs = (n) => (n < 1000 ? `${Math.round(n)} ms` : `${(n / 1000).toFixed(1)} s`);
+const fmtRate = (n) => `${(n * 100).toFixed(1)}%`;
+// Em dash for absent latency/empty-rate data (endpoint rows without
+// edit-prediction metrics). Screen readers get words, not punctuation.
+const noData = (
+  <span className="text-muted">
+    <span aria-hidden="true">—</span>
+    <span className="sr-only">no data</span>
+  </span>
+);
 const fmtTime = (iso) => {
   if (!iso) return "Never";
   const diffMins = Math.floor((Date.now() - new Date(iso)) / 60000);
@@ -105,6 +115,7 @@ function UsageBreakdown({ stats }) {
     return t;
   }, [groups]);
   const nonCached = (s) => Math.max(0, (s.promptTokens || 0) - (s.cachedTokens || 0));
+  const isEndpoint = view === "endpoint";
 
   const headers = [
     { field: "__label", label: config.label, numeric: false },
@@ -112,6 +123,17 @@ function UsageBreakdown({ stats }) {
     { field: "__input", label: "Input", numeric: true },
     { field: "__output", label: "Output", numeric: true },
     { field: "totalCost", label: "Cost", numeric: true },
+    ...(isEndpoint
+      ? [
+          { field: "__latency", label: "Latency p50", numeric: true, note: "median" },
+          {
+            field: "__empty",
+            label: "Empty",
+            numeric: true,
+            note: "share of edit predictions that returned no text",
+          },
+        ]
+      : []),
     { field: "__share", label: "Share", numeric: false },
   ];
   // Header buttons map to real sortable row fields (headers need unique keys,
@@ -166,6 +188,32 @@ function UsageBreakdown({ stats }) {
         ? s.cost || s.totalCost || 0
         : (s.promptTokens || 0) + (s.completionTokens || 0);
     return sharePct(num, denom);
+  };
+
+  // Endpoint-only latency/empty-rate cells. Item rows read the per-item
+  // fields; the group summary row reads stats.endpointLatency (percentiles
+  // can't be summed from per-item p50s). Rows without data show an em dash.
+  const perfCells = (s, groupKey) => {
+    const fromGroup =
+      groupKey !== undefined && stats?.endpointLatency ? stats.endpointLatency[groupKey] : null;
+    const p50 = fromGroup?.latencyP50Ms ?? s.latencyP50Ms;
+    const avg = fromGroup?.latencyAvgMs ?? s.latencyAvgMs;
+    const empty = fromGroup?.emptyRate ?? s.emptyRate;
+    return (
+      <>
+        <td className="px-6 py-3 text-end font-mono">
+          {p50 == null ? (
+            noData
+          ) : (
+            <span title={avg != null ? `average ${fmtMs(avg)}` : undefined}>
+              {fmtMs(p50)}
+              {avg != null && <span className="sr-only"> (average {fmtMs(avg)})</span>}
+            </span>
+          )}
+        </td>
+        <td className="px-6 py-3 text-end font-mono">{empty == null ? noData : fmtRate(empty)}</td>
+      </>
+    );
   };
 
   return (
@@ -225,8 +273,14 @@ function UsageBreakdown({ stats }) {
                     }
                     className={`${TABLE_HEAD_CELL} px-6 py-3 ${h.numeric ? "text-end" : "text-start"}`}
                   >
-                    {h.field === "__label" || h.field === "__share" ? (
-                      h.label
+                    {h.field === "__label" ||
+                    h.field === "__share" ||
+                    h.field === "__latency" ||
+                    h.field === "__empty" ? (
+                      <>
+                        {h.label}
+                        {h.note && <span className="sr-only"> ({h.note})</span>}
+                      </>
                     ) : (
                       <button
                         type="button"
@@ -284,6 +338,7 @@ function UsageBreakdown({ stats }) {
                         </button>
                       </td>
                       {cells(group.summary)}
+                      {isEndpoint && perfCells(group.summary, group.groupKey)}
                       <td className="px-6 py-3">
                         <span className="flex items-center gap-2">
                           <span className="min-w-24 flex-1">
@@ -317,6 +372,7 @@ function UsageBreakdown({ stats }) {
                             </span>
                           </td>
                           {cells(item)}
+                          {isEndpoint && perfCells(item)}
                           <td className="px-6 py-3">
                             <span className="flex items-center gap-2">
                               <span className="min-w-24 flex-1">
