@@ -1,6 +1,11 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
-import { WORKSPACE_KEYS, USER_KEYS, pickKeys } from "@/lib/settings/settingsScope.js";
+import {
+  WORKSPACE_KEYS,
+  USER_KEYS,
+  pickKeys,
+  mergeWorkspaceLayer,
+} from "@/lib/settings/settingsScope.js";
 import { mirrorToDefaultWorkspace } from "./workspaceSettingsRepo.js";
 import { ACTIVE } from "@/shared/brand";
 import { readCredentialEncryptionState } from "../credentialEncryptionState.js";
@@ -396,7 +401,7 @@ export async function getEffectivePreferences(ctx) {
   if (wsId) {
     const row = db.get(`SELECT data FROM workspaceSettings WHERE workspaceId = ?`, [wsId]);
     const wsData = pickKeys(parseJson(row?.data, {}), WORKSPACE_KEYS);
-    Object.assign(merged, wsData);
+    mergeWorkspaceLayer(merged, wsData);
     // YAN-364: workspace rows key comboStrategies by combo id, the instance blob
     // by name. A workspace with no map of its own must not inherit the blob's
     // (Default's) name-keyed entries: the scoped result is the workspace map or
@@ -431,7 +436,9 @@ export async function listEffectivePreferencesUnscoped() {
     `SELECT ws.data FROM workspaces w LEFT JOIN workspaceSettings ws ON ws.workspaceId = w.id`,
   );
   if (!rows.length) return [instance];
-  return rows.map((r) => ({ ...instance, ...pickKeys(parseJson(r.data, {}), WORKSPACE_KEYS) }));
+  return rows.map((r) =>
+    mergeWorkspaceLayer({ ...instance }, pickKeys(parseJson(r.data, {}), WORKSPACE_KEYS)),
+  );
 }
 
 export async function isCloudEnabled() {

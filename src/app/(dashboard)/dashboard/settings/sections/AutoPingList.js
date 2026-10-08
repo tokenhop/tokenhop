@@ -8,7 +8,7 @@ import Toggle from "@/shared/components/Toggle";
 import { autoPingConnections } from "./providersModelsHelpers";
 import ProviderTile from "@/shared/components/ProviderTile";
 import { SettingsScopeContext } from "@/shared/hooks/settingsScopeContext";
-import { loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
+import { loadOwnedMap, patchSettings } from "@/shared/utils/settingsApi";
 
 /**
  * Per-connection auto-ping list for one provider family.
@@ -48,10 +48,11 @@ export default function AutoPingList({
     async (connectionId, on) => {
       setSaving((prev) => ({ ...prev, [connectionId]: true }));
       try {
-        const raw = await loadSettingsValue(settingKey, scope);
+        // Owned config only: `enabled` stays inherited unless the workspace owns it.
+        const owned = await loadOwnedMap(settingKey, scope);
         const next = {
-          ...(raw || {}),
-          connections: { ...autoPingConnections(raw), [connectionId]: on },
+          ...owned,
+          connections: { ...autoPingConnections(owned), [connectionId]: on },
         };
         const saved = await patchSettings({ [settingKey]: next }, scope);
         onSettingsChange?.({ [settingKey]: saved[settingKey] ?? next });

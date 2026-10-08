@@ -13,7 +13,13 @@ import { getModelsByProviderId } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useSettingsField } from "../useSettingsField";
 import { SettingsScopeContext } from "@/shared/hooks/settingsScopeContext";
-import { loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
+import {
+  clearOwnedEntry,
+  hidesNothing,
+  isAutoThinking,
+  loadOwnedState,
+  patchSettings,
+} from "@/shared/utils/settingsApi";
 import AutoPingList from "./AutoPingList";
 
 import {
@@ -109,20 +115,19 @@ export default function ProvidersModelsSection({
     },
     [scope],
   );
-  const loadFresh = useCallback(
-    async (key) => (await loadSettingsValue(key, scope)) || {},
-    [scope],
-  );
+  const loadFresh = useCallback((key, seedIds) => loadOwnedState(key, scope, seedIds), [scope]);
   const saveThinkingMode = useCallback(
     async (providerId, mode) => {
       setThinkingUpdating((prev) => ({ ...prev, [providerId]: true }));
       setThinkingErrors((prev) => ({ ...prev, [providerId]: "" }));
       try {
-        const updated = setProviderThinkingMode(
-          await loadFresh("providerThinking"),
-          providerId,
-          mode,
-        );
+        const { owned, inherited } = await loadFresh("providerThinking", [providerId]);
+        // YAN-770: Auto stores an explicit entry when the instance sets
+        // another mode (deleting would re-inherit it).
+        const updated =
+          !mode || mode === "auto"
+            ? clearOwnedEntry(owned, providerId, inherited, { mode: "auto" }, isAutoThinking)
+            : setProviderThinkingMode(owned, providerId, mode);
         const saved = await patchOneKey("providerThinking", updated);
         onSettingsChange?.({ providerThinking: saved });
       } catch (err) {
@@ -137,15 +142,22 @@ export default function ProvidersModelsSection({
     [onSettingsChange, patchOneKey, loadFresh],
   );
   const saveQuotaVisibility = useCallback(
-    async (next) => {
+    async (full, editedProvider) => {
       setQuotaSaving(true);
       setQuotaError("");
       try {
         // Whole-map PATCH after local edit (same shape as the Usage page).
-        // Caller edits are authoritative for touched providers: merge the
-        // fresh server map under `next` so concurrent removals elsewhere win.
-        const fresh = await loadFresh("quotaVisibility");
-        const merged = { ...fresh, ...next };
+        // Only the edited provider is authoritative: merge it over the fresh
+        // owned map so concurrent removals elsewhere win and, in a workspace,
+        // untouched providers keep inheriting (YAN-770).
+        const next = { [editedProvider]: full[editedProvider] };
+        const { owned: fresh, inherited } = await loadFresh("quotaVisibility", [editedProvider]);
+        let merged = { ...fresh, ...next };
+        // setQuotaHiddenKey drops a provider whose last key was unhidden. In a
+        // workspace an empty entry is kept only to mask inherited hidden keys.
+        if (merged[editedProvider] === undefined) {
+          merged = clearOwnedEntry(merged, editedProvider, inherited, { hidden: [] }, hidesNothing);
+        }
         // Drop empty rows only when the entry carries nothing else: extra
         // keys are preserved by the API validator, so keep them.
         for (const provider of Object.keys(merged)) {
@@ -303,6 +315,7 @@ export default function ProvidersModelsSection({
                           onClick={() =>
                             saveQuotaVisibility(
                               setQuotaHiddenKey(quotaVisibility, providerId, key, false),
+                              providerId,
                             )
                           }
                           className="text-coral-ink hover:text-coral disabled:opacity-50"
@@ -348,7 +361,7 @@ export default function ProvidersModelsSection({
                   const key = String(quotaKeyDrafts.key || "").trim();
                   const next = setQuotaHiddenKey(quotaVisibility, provider, key, true);
                   setQuotaKeyDrafts({});
-                  saveQuotaVisibility(next);
+                  saveQuotaVisibility(next, provider);
                 } catch (err) {
                   setQuotaError(err instanceof Error ? err.message : "Invalid quota key");
                 }

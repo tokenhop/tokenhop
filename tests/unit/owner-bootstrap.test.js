@@ -229,6 +229,18 @@ describe("switch on", () => {
     expect(res.status).toBe(409);
     expect((await db.getSettings()).requireLogin).toBe(true);
   });
+
+  // YAN-768: shared workspaces no longer count towards the gate.
+  it("one active user and two shared workspaces → multiUserActive false", async () => {
+    await legacy({});
+    await b.ensureOwnerBootstrap();
+    const owner = await db.getOwnerUnscoped();
+    await db.createSharedWorkspace({ userId: owner.id }, { name: "S1" });
+    await db.createSharedWorkspace({ userId: owner.id }, { name: "S2" });
+    expect(count(`SELECT COUNT(*) AS c FROM users`)).toBe(1);
+    expect(count(`SELECT COUNT(*) AS c FROM workspaces WHERE kind = 'shared'`)).toBe(3); // + Default
+    expect(await b.multiUserActive()).toBe(false);
+  });
 });
 
 describe("switch off", () => {

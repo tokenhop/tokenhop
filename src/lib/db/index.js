@@ -240,7 +240,6 @@ export {
   listWorkspaces,
   getWorkspace,
   listWorkspacesUnscoped,
-  countSharedWorkspacesUnscoped,
   createSharedWorkspace,
   renameWorkspace,
   deleteWorkspace,

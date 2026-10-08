@@ -8,7 +8,6 @@ import {
   adoptOwnerlessUnscoped,
   bootstrapOwnerUnscoped,
   countActiveUsersUnscoped,
-  countSharedWorkspacesUnscoped,
   findIdentityUnscoped,
   getMeta,
   getOwnerUnscoped,
@@ -295,12 +294,13 @@ export function takeSetupToken(cookieStore) {
 }
 
 /**
- * UI gate (ADR-0009): true once a second active user or a second shared
- * workspace exists, so single-user installs keep today's look.
+ * UI gate (ADR-0009): true once a second active user exists, so single-user
+ * installs keep today's look. YAN-768: same count `principalScope` splits on,
+ * so client scope and server scope can never drift.
  * @returns {Promise<boolean>}
  */
 export async function multiUserActive() {
   const { isUserSecurityEnforced } = await import("./securityState.js");
   if (!(await isUserSecurityEnforced())) return false;
-  return (await countActiveUsersUnscoped()) >= 2 || (await countSharedWorkspacesUnscoped()) >= 2;
+  return (await countActiveUsersUnscoped()) >= 2;
 }

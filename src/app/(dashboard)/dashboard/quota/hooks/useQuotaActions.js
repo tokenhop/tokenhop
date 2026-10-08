@@ -5,7 +5,10 @@ import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
 import {
   loadSettings as loadScopedSettings,
-  loadSettingsValue,
+  clearOwnedEntry,
+  hidesNothing,
+  loadOwnedMap,
+  loadOwnedState,
   patchSettings,
 } from "@/shared/utils/settingsApi";
 import {
@@ -289,8 +292,12 @@ export function useQuotaActions({
       setAutoPingMaps({ ...autoPingMaps, [provider]: nextProviderMap });
       try {
         // Read-modify-write: a failed read must not PATCH over unknown settings.
-        const current = await loadSettingsValue(settingsKey, scope);
-        const cfg = { ...(current || {}), connections: nextProviderMap };
+        // YAN-770: a workspace write carries its own entries plus this toggle;
+        // the server merges `connections` per id over the instance map.
+        const current = await loadOwnedMap(settingsKey, scope);
+        const cfg = scope
+          ? { ...current, connections: { ...(current.connections || {}), [connectionId]: on } }
+          : { ...current, connections: nextProviderMap };
         await patchSettings({ [settingsKey]: cfg }, scope);
       } catch (error) {
         console.error("Error toggling auto-ping:", error);
@@ -358,15 +365,27 @@ export function useQuotaActions({
 
   // Quota row visibility; optimistic, reverts + toasts on failure.
   const updateQuotaVisibility = useCallback(
-    async (nextVisibility, previousVisibility) => {
+    async (nextVisibility, previousVisibility, provider) => {
       setQuotaVisibility(nextVisibility);
       try {
-        await patchSettings({ quotaVisibility: nextVisibility }, scope);
+        // YAN-770: scoped writes send the workspace's own entries plus the
+        // edited provider, so untouched providers keep inheriting.
+        let payload = nextVisibility;
+        if (scope) {
+          const { owned, inherited } = await loadOwnedState("quotaVisibility", scope);
+          const entry = nextVisibility[provider];
+          // An entry that hides nothing is kept only to mask inherited keys.
+          payload =
+            entry && !hidesNothing(entry)
+              ? { ...owned, [provider]: entry }
+              : clearOwnedEntry(owned, provider, inherited, { ...entry, hidden: [] }, hidesNothing);
+        }
+        await patchSettings({ quotaVisibility: payload }, scope);
       } catch (error) {
         console.error("Error updating quota visibility:", error);
         setQuotaVisibility(previousVisibility);
         failToast(`Visibility update failed: ${error.message}`, () =>
-          updateQuotaVisibility(nextVisibility, previousVisibility),
+          updateQuotaVisibility(nextVisibility, previousVisibility, provider),
         );
       }
     },
@@ -383,7 +402,7 @@ export function useQuotaActions({
       if (hide) hidden.add(key);
       else hidden.delete(key);
       const next = { ...previous, [provider]: { ...providerVisibility, hidden: [...hidden] } };
-      updateQuotaVisibility(next, previous);
+      updateQuotaVisibility(next, previous, provider);
     },
     [quotaVisibility, updateQuotaVisibility],
   );

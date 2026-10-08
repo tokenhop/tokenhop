@@ -8,7 +8,7 @@ import { Button, Callout, CardSkeleton, NoAuthProxyCard } from "@/shared/compone
 import { useNotificationStore } from "@/store/notificationStore";
 import { mergeLiveWithStatic } from "@/shared/utils/liveModels";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
-import { loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
+import { loadOwnedMap, loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
 import { useLiveCatalog } from "../[id]/useLiveCatalog";
 import { useConnections } from "./useConnections";
 import { useProviderStrategy } from "./useProviderStrategy";
@@ -155,9 +155,22 @@ export default function ProviderDetailPage() {
     if (!key) return;
     const next = { ...autoPing, connections: { ...autoPing.connections, [connectionId]: on } };
     setAutoPing(next);
-    patchSettings({ [key]: next }, settingsScope).catch((error) =>
-      console.log("Error saving auto-ping config:", error),
-    );
+    // YAN-770: scoped saves re-read the workspace's own entries and add this
+    // toggle, so inherited connections and `enabled` stay inherited.
+    const save = settingsScope
+      ? loadOwnedMap(key, settingsScope).then((owned) =>
+          patchSettings(
+            {
+              [key]: {
+                ...owned,
+                connections: { ...(owned.connections || {}), [connectionId]: on },
+              },
+            },
+            settingsScope,
+          ),
+        )
+      : patchSettings({ [key]: next }, settingsScope);
+    save.catch((error) => console.log("Error saving auto-ping config:", error));
   };
 
   const openOAuthConnection = () => open("oauth");

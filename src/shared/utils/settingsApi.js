@@ -136,3 +136,76 @@ export async function loadSettingsValue(
   const values = body.effective ?? body.data ?? {};
   return values[key];
 }
+
+/**
+ * Owned map for read-modify-write saves (YAN-770): a workspace write must
+ * start from the workspace's own `data` entries, never the merged
+ * `effective` view, or the first edit pins every inherited entry.
+ * `seedIds` copies those entries' inherited value in first, so editing one
+ * starts from what the user sees (only that entry gets pinned; a removed
+ * entry stays absent and inherits again). Instance endpoint: the stored map.
+ * @param {string} key Map-valued settings key.
+ * @param {{ workspaceId?: string } | null} [scope=null]
+ * @param {string[]} [seedIds] Entry ids to seed from `effective` when not owned.
+ * @param {string} [fallback] Error text when the server sends none.
+ * @returns {Promise<Record<string, object>>} Throws the server's message when the GET fails.
+ */
+export async function loadOwnedMap(key, scope = null, seedIds = [], fallback) {
+  return (await loadOwnedState(key, scope, seedIds, fallback)).owned;
+}
+
+/**
+ * `loadOwnedMap` plus the instance layer (`inherited`) of the same key, for
+ * saves that clear an entry (see `clearOwnedEntry`). Instance endpoint:
+ * `inherited` is {} (nothing below the instance).
+ * @returns {Promise<{ owned: Record<string, object>, inherited: Record<string, object> }>}
+ */
+export async function loadOwnedState(
+  key,
+  scope = null,
+  seedIds = [],
+  fallback = "Could not load current settings.",
+) {
+  const url = settingsEndpoint(key, scope);
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || fallback);
+  }
+  const body = await res.json();
+  if (url === INSTANCE_ENDPOINT) return { owned: plainCopy(body[key]), inherited: {} };
+  const owned = plainCopy(body.data?.[key]);
+  const shown = body.effective?.[key];
+  for (const id of seedIds) {
+    if (isPlainMap(shown) && shown[id] !== undefined) owned[id] ??= shown[id];
+  }
+  return { owned, inherited: plainCopy(body.inherited?.[key]) };
+}
+
+/**
+ * Clear one entry of an owned map (YAN-770). Deleting it re-inherits the
+ * instance entry, so when that entry isn't already neutral the workspace
+ * stores `neutral` explicitly to mask it.
+ * @param {Record<string, object>} owned
+ * @param {string} id
+ * @param {Record<string, object>} inherited Instance layer of the same key.
+ * @param {object} neutral Value meaning "nothing set" (e.g. `{ mode: "auto" }`).
+ * @param {(entry: object) => boolean} isNeutral
+ * @returns {Record<string, object>}
+ */
+export function clearOwnedEntry(owned, id, inherited, neutral, isNeutral) {
+  const next = { ...owned };
+  const base = inherited?.[id];
+  if (base === undefined || isNeutral(base)) delete next[id];
+  else next[id] = neutral;
+  return next;
+}
+
+/** Thinking entry that means Auto (no override). */
+export const isAutoThinking = (entry) => !entry?.mode || entry.mode === "auto";
+
+/** Quota visibility entry that hides nothing. */
+export const hidesNothing = (entry) => !entry?.hidden?.length;
+
+const isPlainMap = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+const plainCopy = (v) => (isPlainMap(v) ? { ...v } : {});

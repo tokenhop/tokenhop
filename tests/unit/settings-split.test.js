@@ -155,6 +155,20 @@ describe("API boundaries", () => {
     expect((await res.json()).data.fallbackStrategy).toBe("round-robin");
   });
 
+  it("GET exposes the instance layer of map keys only (YAN-770)", async () => {
+    await load("on");
+    await db.updateSettings({ requireLogin: true, providerThinking: { claude: { mode: "high" } } });
+    const t = await seedTenancy();
+    const workspace = await import("@/app/api/workspaces/[id]/settings/route.js");
+    const res = await as(t.b, workspace.GET, `/api/workspaces/${t.b.personal}/settings`, {
+      params: { id: t.b.personal },
+    });
+    expect(res.status).toBe(200);
+    const { inherited } = await res.json();
+    expect(inherited.providerThinking).toEqual({ claude: { mode: "high" } });
+    expect(inherited).not.toHaveProperty("requireLogin");
+  });
+
   it("hides new routes with switch off", async () => {
     await load("off");
     const workspace = await import("@/app/api/workspaces/[id]/settings/route.js");
