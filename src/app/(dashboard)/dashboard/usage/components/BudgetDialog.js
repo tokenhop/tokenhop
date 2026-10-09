@@ -59,19 +59,29 @@ function validate(form, editing) {
   return { errors, payload: Object.keys(errors).length ? null : limits };
 }
 
-export default function BudgetDialog({ isOpen, onClose, workspaceId, budget, onSaved }) {
+export default function BudgetDialog({
+  isOpen,
+  onClose,
+  workspaceId,
+  userId = null,
+  budget,
+  onSaved,
+}) {
   const editing = Boolean(budget);
   const [form, setForm] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [serverError, setServerError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [options, setOptions] = useState([]);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [optionsError, setOptionsError] = useState("");
 
   useEffect(() => {
     if (!isOpen) return;
     setFieldErrors({});
     setServerError("");
     setForm({
-      scopeType: budget?.scopeType ?? "workspace",
+      scopeType: userId ? "user" : (budget?.scopeType ?? "workspace"),
       scopeId: budget?.scopeType === "workspace" ? "" : (budget?.scopeId ?? ""),
       window: budget?.window ?? "month",
       limitUsd: budget?.limitUsd ?? "",
@@ -79,10 +89,71 @@ export default function BudgetDialog({ isOpen, onClose, workspaceId, budget, onS
       limitRequests: budget?.limitRequests ?? "",
       softLimitPct: budget?.softLimitPct ?? "",
     });
-  }, [isOpen, budget]);
+  }, [isOpen, budget, userId]);
 
   const set = (name) => (event) =>
-    setForm((current) => ({ ...current, [name]: event?.target?.value ?? event }));
+    setForm((current) => ({
+      ...current,
+      [name]: event?.target?.value ?? event,
+      // A scope switch invalidates any previously picked scopeId.
+      ...(name === "scopeType" ? { scopeId: "" } : {}),
+    }));
+
+  // Create mode only: scopeId for key/membership is a picklist, never typed.
+  // Always workspace-scoped URLs; stale fetches abort on change/close.
+  useEffect(() => {
+    if (!isOpen || editing) return;
+    if (!["key", "membership", "grant"].includes(form?.scopeType)) return;
+    const controller = new AbortController();
+    setOptionsError("");
+    setOptions([]);
+    setLoadingOptions(true);
+    const get = async (url) => {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      return res.json();
+    };
+    const ws = encodeURIComponent(workspaceId);
+    const load = async () => {
+      if (form.scopeType === "key") {
+        const data = await get(`/api/keys?workspaceId=${ws}`);
+        return (data.keys ?? []).map((k) => ({ value: k.id, label: k.name || k.prefix || k.id }));
+      }
+      if (form.scopeType === "membership") {
+        const data = await get(`/api/workspaces/${ws}/members`);
+        return (data.members ?? []).map((m) => ({
+          value: `${workspaceId}:${m.userId}`,
+          label: m.displayName || m.userId,
+        }));
+      }
+      const data = await get(`/api/providers?workspaceId=${ws}`);
+      const lists = await Promise.all(
+        (data.connections ?? []).map(async (c) => {
+          const grants = await get(`/api/providers/${encodeURIComponent(c.id)}/grants`);
+          return (grants.grants ?? [])
+            .filter((g) => !g.revokedAt)
+            .map((g) => ({
+              value: g.id,
+              label: `${c.name || c.provider} — ${g.workspaceId || g.userId}`,
+            }));
+        }),
+      );
+      return lists.flat();
+    };
+    load()
+      .then((items) => {
+        if (!controller.signal.aborted) setOptions(items);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setOptions([]);
+        setOptionsError("Couldn't load the list — switch scope and back to retry");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingOptions(false);
+      });
+    return () => controller.abort();
+  }, [isOpen, editing, form?.scopeType, workspaceId]);
 
   const canSubmit = useMemo(() => form && validate(form, editing).payload, [form, editing]);
 
@@ -96,14 +167,19 @@ export default function BudgetDialog({ isOpen, onClose, workspaceId, budget, onS
     setServerError("");
     setSaving(true);
     try {
-      const url = editing
-        ? `/api/workspaces/${encodeURIComponent(workspaceId)}/budgets/${encodeURIComponent(budget.id)}`
+      const base = userId
+        ? `/api/users/${encodeURIComponent(userId)}/budgets`
         : `/api/workspaces/${encodeURIComponent(workspaceId)}/budgets`;
+      const url = editing ? `${base}/${encodeURIComponent(budget.id)}` : base;
       const body = editing
         ? payload
         : {
-            scopeType: form.scopeType,
-            scopeId: form.scopeType === "workspace" ? workspaceId : form.scopeId.trim(),
+            ...(userId
+              ? {}
+              : {
+                  scopeType: form.scopeType,
+                  scopeId: form.scopeType === "workspace" ? workspaceId : form.scopeId.trim(),
+                }),
             window: form.window,
             ...payload,
           };
@@ -154,18 +230,37 @@ export default function BudgetDialog({ isOpen, onClose, workspaceId, budget, onS
           label="Scope"
           value={form.scopeType}
           onChange={set("scopeType")}
-          disabled={editing}
+          disabled={editing || Boolean(userId)}
           hint={editing ? "Scope can't change after creation" : undefined}
-          options={SCOPE_TYPES.map((value) => ({ value, label: value }))}
+          options={(userId ? ["user"] : SCOPE_TYPES).map((value) => ({ value, label: value }))}
         />
         {!editing && form.scopeType !== "workspace" && (
-          <Input
-            label="Scope ID"
-            value={form.scopeId}
-            onChange={set("scopeId")}
-            error={fieldErrors.scopeId}
-            placeholder="Paste the key, member or grant id"
-          />
+          <>
+            <Select
+              label={
+                form.scopeType === "key"
+                  ? "Key"
+                  : form.scopeType === "grant"
+                    ? "Connection grant"
+                    : "Member"
+              }
+              value={form.scopeId}
+              onChange={set("scopeId")}
+              error={fieldErrors.scopeId}
+              disabled={loadingOptions}
+              hint={
+                loadingOptions
+                  ? "Loading…"
+                  : optionsError || (options.length === 0 ? "Nothing to select yet" : undefined)
+              }
+              options={options}
+            />
+            {optionsError && (
+              <Callout variant="err" title="Couldn't load the list">
+                {optionsError}
+              </Callout>
+            )}
+          </>
         )}
         <Select
           label="Window"
@@ -232,6 +327,7 @@ BudgetDialog.propTypes = {
   isOpen: PropTypes.bool,
   onClose: PropTypes.func,
   workspaceId: PropTypes.string.isRequired,
+  userId: PropTypes.string,
   budget: PropTypes.object,
   onSaved: PropTypes.func,
 };

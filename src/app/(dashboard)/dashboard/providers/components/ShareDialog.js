@@ -3,6 +3,7 @@
 import PropTypes from "prop-types";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Callout, Checkbox, Input, Modal, Select } from "@/shared/components";
+import { createBudget } from "@/shared/utils/createBudget.js";
 import { useNotificationStore } from "@/store/notificationStore";
 import {
   buildSharePayload,
@@ -59,6 +60,15 @@ export default function ShareDialog({
   const [modelsText, setModelsText] = useState("");
   const [rpm, setRpm] = useState("");
   const [tpm, setTpm] = useState("");
+  const [budgetUsd, setBudgetUsd] = useState("");
+  const [budgetWindow, setBudgetWindow] = useState("month");
+  // Created grant id, set once the grant POST succeeds. While set, Submit
+  // retries ONLY the budget POST — the grant is already active server-side
+  // and must never be re-created.
+  const [createdGrantId, setCreatedGrantId] = useState(null);
+  // Grant POST already sent but returned no id with a budget pending: the
+  // grant likely exists server-side, so fail closed — never re-POST.
+  const [grantDone, setGrantDone] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [policyAllowed, setPolicyAllowed] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -83,6 +93,10 @@ export default function ShareDialog({
     setModelsText("");
     setRpm("");
     setTpm("");
+    setBudgetUsd("");
+    setBudgetWindow("month");
+    setCreatedGrantId(null);
+    setGrantDone(false);
     setAcknowledged(false);
     setPolicyAllowed(null);
     setSubmitting(false);
@@ -127,8 +141,8 @@ export default function ShareDialog({
   }, [membersKey]);
 
   // Policy gate: read the instance toggle once per open, owner/admin only.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-check when the target connection changes while open
   // Non-admins never fetch it; they simply cannot share personal connections.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-check when the target connection changes while open
   useEffect(() => {
     if (!isOpen || !personal || !isInstanceAdmin) return;
     let cancelled = false;
@@ -160,11 +174,33 @@ export default function ShareDialog({
   // Personal connections: admin + toggle + acknowledgement, in that order.
   const personalBlock = personal && (!isInstanceAdmin || policyAllowed !== true || !acknowledged);
   const noWorkspace = directoryOptions.length === 0;
+  const shared = Boolean(createdGrantId) || grantDone;
+  const wantsBudgetNow = budgetUsd.trim() !== "";
   const submitDisabled =
     submitting ||
+    grantDone ||
+    (Boolean(createdGrantId) && !wantsBudgetNow) ||
     workspaceOptions.length === 0 ||
     personalBlock ||
     (granteeType === "user" && !granteeUserId);
+
+  // Non-empty budget field means "also create a budget after the grant".
+  const wantsBudget = budgetUsd.trim() !== "";
+  const budgetAmount = Number(budgetUsd);
+  const budgetError =
+    wantsBudget && !(Number.isFinite(budgetAmount) && budgetAmount > 0)
+      ? "Enter a dollar amount greater than 0."
+      : "";
+
+  const finish = () => {
+    notify.success(
+      granteeType === "workspace"
+        ? "Connection shared with the workspace"
+        : "Connection shared with the member",
+    );
+    onShared?.();
+    onClose?.();
+  };
 
   const submit = async () => {
     setErrors([]);
@@ -173,39 +209,67 @@ export default function ShareDialog({
       return;
     }
     if (submitDisabled) return;
-    const { payload, errors: buildErrors } = buildSharePayload({
-      granteeType,
-      workspaceId: granteeType === "workspace" ? workspaceId : null,
-      userId: granteeType === "user" ? granteeUserId : null,
-      modelsText,
-      rpm,
-      tpm,
-      connection,
-    });
-    if (!payload) {
-      setErrors(buildErrors);
+    if (budgetError) {
+      setErrors([budgetError]);
       return;
     }
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/providers/${encodeURIComponent(connection.id)}/grants`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await readJson(res);
-      if (!res.ok) {
-        const detail = data?.error || "Could not share this connection.";
-        setErrors([data?.warning ? `${detail} ${data.warning}` : detail]);
-        return;
+      // Grant already shared (partial success) → retry only the budget.
+      let grantId = createdGrantId;
+      if (!grantId) {
+        const { payload, errors: buildErrors } = buildSharePayload({
+          granteeType,
+          workspaceId: granteeType === "workspace" ? workspaceId : null,
+          userId: granteeType === "user" ? granteeUserId : null,
+          modelsText,
+          rpm,
+          tpm,
+          connection,
+        });
+        if (!payload) {
+          setErrors(buildErrors);
+          return;
+        }
+        const res = await fetch(`/api/providers/${encodeURIComponent(connection.id)}/grants`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await readJson(res);
+        if (!res.ok) {
+          const detail = data?.error || "Could not share this connection.";
+          setErrors([data?.warning ? `${detail} ${data.warning}` : detail]);
+          return;
+        }
+        // createGrant row id; budget scope needs it, not the connection id.
+        grantId = data?.grant?.id;
+        if (wantsBudget && !grantId) {
+          setGrantDone(true);
+          setErrors(["Connection shared, but budget was not saved. Add it from Usage → Budgets."]);
+          return;
+        }
       }
-      notify.success(
-        granteeType === "workspace"
-          ? "Connection shared with the workspace"
-          : "Connection shared with the member",
-      );
-      onShared?.();
-      onClose?.();
+      if (wantsBudget) {
+        try {
+          await createBudget({
+            workspaceId: connection.workspaceId,
+            scopeType: "grant",
+            scopeId: grantId,
+            window: budgetWindow,
+            limitUsd: budgetUsd,
+          });
+        } catch (err) {
+          // Grant is active; keep the dialog open and let the submit button
+          // retry only the budget POST against the stored grant id.
+          setCreatedGrantId(grantId);
+          setErrors([
+            `Connection shared, but budget was not saved: ${err?.message || "try again"}`,
+          ]);
+          return;
+        }
+      }
+      finish();
     } catch (err) {
       setErrors([err?.message || "Could not share this connection."]);
     } finally {
@@ -226,8 +290,13 @@ export default function ShareDialog({
           <Button variant="ghost" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
+          {shared && (
+            <Button variant="secondary" onClick={finish} disabled={submitting}>
+              Keep share without budget
+            </Button>
+          )}
           <Button variant="primary" onClick={submit} loading={submitting} disabled={submitDisabled}>
-            Share
+            {createdGrantId ? "Retry budget" : "Share"}
           </Button>
         </>
       }
@@ -245,7 +314,7 @@ export default function ShareDialog({
             connections into it.
           </Callout>
         ) : (
-          <>
+          <fieldset disabled={shared} className="flex min-w-0 flex-col gap-4">
             <Select
               label="Share with"
               value={granteeType}
@@ -302,8 +371,33 @@ export default function ShareDialog({
                 placeholder="100000"
               />
             </div>
-          </>
+          </fieldset>
         )}
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Input
+            label="Budget limit, USD (optional)"
+            value={budgetUsd}
+            onChange={(e) => setBudgetUsd(e.target.value)}
+            inputMode="decimal"
+            placeholder="50"
+            error={budgetError || undefined}
+            disabled={grantDone}
+          />
+          <Select
+            label="Budget window"
+            placeholder={null}
+            value={budgetWindow}
+            onChange={(e) => setBudgetWindow(e.target.value)}
+            disabled={grantDone}
+            options={[
+              { value: "day", label: "Daily (UTC)" },
+              { value: "week", label: "Weekly (UTC)" },
+              { value: "month", label: "Monthly (UTC)" },
+              { value: "total", label: "Total" },
+            ]}
+          />
+        </div>
 
         {personal && (
           <Callout variant="warn" title="Provider terms apply">

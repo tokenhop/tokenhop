@@ -23,6 +23,7 @@ import {
   acknowledgeMigration,
 } from "@/app/(dashboard)/dashboard/endpoint/hooks/useApiKeys";
 import { groupKeys } from "@/app/(dashboard)/dashboard/endpoint/keyGroups";
+import { parseKeyBudget } from "@/app/(dashboard)/dashboard/endpoint/keyBudget";
 import { keyRowDisplay, maskApiKey } from "@/app/(dashboard)/dashboard/home/format";
 
 const ROOT = new URL("../../", import.meta.url);
@@ -359,7 +360,18 @@ describe("UI source contracts", () => {
   ]
     .map(read)
     .join("\n");
-  const page = read("src/app/(dashboard)/dashboard/endpoint/EndpointPageClient.js");
+  const page = [
+    "src/app/(dashboard)/dashboard/endpoint/EndpointPageClient.js",
+    "src/app/(dashboard)/dashboard/endpoint/components/KeyCreateDialog.js",
+  ]
+    .map(read)
+    .join("\n");
+  const hook = [
+    "src/app/(dashboard)/dashboard/endpoint/hooks/useApiKeys.js",
+    "src/app/(dashboard)/dashboard/endpoint/hooks/keyApi.js",
+  ]
+    .map(read)
+    .join("\n");
   const quick = read("src/app/(dashboard)/dashboard/endpoint/components/QuickConnectCard.js");
   const home = read("src/app/(dashboard)/dashboard/home/KeysSummary.js");
 
@@ -380,7 +392,6 @@ describe("UI source contracts", () => {
   });
 
   it("dismissal is manager-only, hide-on-success, noninteractive for others", () => {
-    const hook = read("src/app/(dashboard)/dashboard/endpoint/hooks/useApiKeys.js");
     // Only the manage capability may even attempt the request — helpers and
     // the hook both refuse for members/viewers before any network call.
     expect(hook).toContain('context?.storage !== "hashed" || context.canManage !== true');
@@ -444,6 +455,57 @@ describe("UI source contracts", () => {
     expect(hook).toContain("allowedCombos: comboParsed.combos ?? []");
     expect(hook).toContain("existing = await loadKeyList(ctx)");
     expect(hook).toContain('if (ctx.storage === "legacy" && existing.length === 0)');
+  });
+
+  it("key create wires an optional key-scoped budget POST with a reveal-preserving retry", () => {
+    const hook = read("src/app/(dashboard)/dashboard/endpoint/hooks/useApiKeys.js");
+    const budget = read("src/app/(dashboard)/dashboard/endpoint/hooks/useKeyBudget.js");
+    expect(budget).toContain('import { createBudget } from "@/shared/utils/createBudget"');
+    expect(budget).toContain('scopeType: "key"');
+    // Partial success: reveal is set before the budget POST, which never throws.
+    expect(hook).toMatch(
+      /setRevealed\(\{[\s\S]*?keyBudget\.saveBudget\(keyId, budget, workspaceId\)/,
+    );
+    // Retry re-posts only the budget for the stored key id and its original workspace.
+    expect(budget).toContain("postKeyBudget(f.keyId, f.budget, f.workspaceId)");
+    expect(hook).toContain("keyBudget.resetBudgetForm()");
+    expect(page).toContain("Key created, but budget was not saved");
+    expect(page).toContain("Retry budget save");
+    expect(page).toContain("apiKeys.budgetFailure");
+    expect(page).toContain("apiKeys.retryBudget");
+    expect(page).toContain("Spend limit (USD, optional)");
+    expect(page).toContain("Spend window");
+  });
+});
+
+describe("parseKeyBudget (key-create budget fields)", () => {
+  it("empty limit means no budget POST regardless of window", () => {
+    expect(parseKeyBudget("", "month")).toEqual({ budget: null, error: null });
+    expect(parseKeyBudget(null, "day")).toEqual({ budget: null, error: null });
+    expect(parseKeyBudget(undefined, "total")).toEqual({ budget: null, error: null });
+  });
+
+  it("accepts numeric strings and numbers as a positive finite USD limit", () => {
+    expect(parseKeyBudget("12.50", "week")).toEqual({
+      budget: { limitUsd: 12.5, window: "week" },
+      error: null,
+    });
+    expect(parseKeyBudget(3, "total")).toEqual({
+      budget: { limitUsd: 3, window: "total" },
+      error: null,
+    });
+  });
+
+  it("rejects non-positive or non-numeric limits before any key POST", () => {
+    for (const bad of ["0", "-1", "abc", "  "]) {
+      expect(parseKeyBudget(bad, "month").error).toBe("Enter a spend limit greater than 0.");
+      expect(parseKeyBudget(bad, "month").budget).toBeNull();
+    }
+  });
+
+  it("rejects unknown windows only when a limit is present", () => {
+    expect(parseKeyBudget("", "year")).toEqual({ budget: null, error: null });
+    expect(parseKeyBudget("5", "year").error).toBe("Unsupported budget window.");
   });
 });
 

@@ -9,6 +9,7 @@ import {
   ErrorState,
   LoadingState,
   Meter,
+  Select,
   StatusPill,
 } from "@/shared/components";
 import BudgetDialog from "./BudgetDialog";
@@ -25,6 +26,7 @@ const SCOPE_LABELS = {
   key: "API key",
   membership: "Member",
   grant: "Grant",
+  user: "User",
 };
 
 const money = (n) =>
@@ -75,7 +77,7 @@ function BudgetRow({ budget, onEdit }) {
         <span className="text-sm font-semibold text-text">
           {SCOPE_LABELS[scopeType] || scopeType}
         </span>
-        {scopeType !== "workspace" && scopeId && (
+        {scopeType !== "workspace" && scopeType !== "user" && scopeId && (
           <code className="truncate rounded-md bg-panel px-1.5 py-0.5 font-mono text-xs text-muted">
             {scopeId}
           </code>
@@ -117,18 +119,50 @@ function BudgetRow({ budget, onEdit }) {
 
 BudgetRow.propTypes = { budget: PropTypes.object.isRequired, onEdit: PropTypes.func };
 
-export default function BudgetsTab({ workspaceId, canManage = false }) {
+export default function BudgetsTab({ workspaceId, canManage = false, canManageUsers = false }) {
   const [state, setState] = useState({ budgets: null, error: null, loading: true });
   const [reload, setReload] = useState(0);
   const retry = useCallback(() => setReload((value) => value + 1), []);
   const [dialog, setDialog] = useState(null); // null | { budget: object|null }
+  // Admin/owner only (server enforces): "User" target picks one account via
+  // GET /api/users ({users:[{id,displayName,username,email}]}); budgets then
+  // read from GET /api/users/:id/budgets. Hidden when OFF (404 → error state).
+  const [target, setTarget] = useState("workspace");
+  const [userId, setUserId] = useState("");
+  const [users, setUsers] = useState([]);
+  const userTarget = canManageUsers && target === "user";
+  const canEdit = userTarget ? canManageUsers && Boolean(userId) : canManage;
+
+  useEffect(() => {
+    if (!canManageUsers) return undefined;
+    const controller = new AbortController();
+    fetch("/api/users?pageSize=100", { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`users ${r.status}`))))
+      .then(
+        (data) =>
+          !controller.signal.aborted && setUsers(Array.isArray(data.users) ? data.users : []),
+      )
+      .catch(() => {
+        if (!controller.signal.aborted) setUsers([]);
+      });
+    return () => controller.abort();
+  }, [canManageUsers]);
+
+  const listUrl =
+    userTarget && userId
+      ? `/api/users/${encodeURIComponent(userId)}/budgets`
+      : `/api/workspaces/${encodeURIComponent(workspaceId)}/budgets`;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `reload` re-fetches after a save
   useEffect(() => {
     if (!workspaceId) return undefined;
+    if (userTarget && !userId) {
+      setState({ budgets: [], error: null, loading: false });
+      return undefined;
+    }
     const controller = new AbortController();
     setState({ budgets: null, error: null, loading: true });
-    fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/budgets`, {
+    fetch(listUrl, {
       signal: controller.signal,
     })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`budgets ${r.status}`))))
@@ -145,14 +179,18 @@ export default function BudgetsTab({ workspaceId, canManage = false }) {
         if (!controller.signal.aborted) setState({ budgets: null, error, loading: false });
       });
     return () => controller.abort();
-  }, [workspaceId, reload]);
+  }, [workspaceId, userTarget, userId, listUrl, reload]);
 
   return (
     <Card
       title="Budgets"
-      subtitle="Spend limits for this workspace. Meters show what's left in the current window."
+      subtitle={
+        userTarget
+          ? "Spend limits for one account. Meters show what's left in the current window."
+          : "Spend limits for this workspace. Meters show what's left in the current window."
+      }
       action={
-        canManage ? (
+        canEdit ? (
           <Button
             variant="secondary"
             size="sm"
@@ -164,6 +202,38 @@ export default function BudgetsTab({ workspaceId, canManage = false }) {
         ) : null
       }
     >
+      {canManageUsers && (
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <Select
+            label="Budgets for"
+            placeholder={null}
+            value={target}
+            onChange={(e) => {
+              setTarget(e.target.value);
+              setUserId("");
+            }}
+            options={[
+              { value: "workspace", label: "Workspace" },
+              { value: "user", label: "User" },
+            ]}
+          />
+          {target === "user" && (
+            <Select
+              label="User"
+              placeholder={null}
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              options={[
+                { value: "", label: users.length ? "Select a user" : "No users found" },
+                ...users.map((u) => ({
+                  value: u.id,
+                  label: u.displayName || u.username || u.email || u.id,
+                })),
+              ]}
+            />
+          )}
+        </div>
+      )}
       {state.loading ? (
         <LoadingState label="Loading budgets" />
       ) : state.error ? (
@@ -175,8 +245,14 @@ export default function BudgetsTab({ workspaceId, canManage = false }) {
       ) : state.budgets.length === 0 ? (
         <EmptyState
           icon="savings"
-          title="No budgets yet"
-          body="Budgets cap cost, tokens or requests per window for this workspace, its keys, members and grants."
+          title={userTarget && !userId ? "Pick a user" : "No budgets yet"}
+          body={
+            userTarget
+              ? userId
+                ? "Budgets cap cost, tokens or requests per window for this account."
+                : "Choose a user above to see their budgets."
+              : "Budgets cap cost, tokens or requests per window for this workspace, its keys, members and grants."
+          }
         />
       ) : (
         <ul className="flex min-w-0 flex-col gap-3">
@@ -184,7 +260,7 @@ export default function BudgetsTab({ workspaceId, canManage = false }) {
             <BudgetRow
               key={budget.id}
               budget={budget}
-              onEdit={canManage ? (b) => setDialog({ budget: b }) : undefined}
+              onEdit={canEdit ? (b) => setDialog({ budget: b }) : undefined}
             />
           ))}
         </ul>
@@ -194,6 +270,7 @@ export default function BudgetsTab({ workspaceId, canManage = false }) {
           isOpen
           onClose={() => setDialog(null)}
           workspaceId={workspaceId}
+          userId={userTarget ? userId : undefined}
           budget={dialog.budget}
           onSaved={retry}
         />
@@ -205,4 +282,5 @@ export default function BudgetsTab({ workspaceId, canManage = false }) {
 BudgetsTab.propTypes = {
   workspaceId: PropTypes.string,
   canManage: PropTypes.bool,
+  canManageUsers: PropTypes.bool,
 };

@@ -260,7 +260,11 @@ function UsageContent() {
             (statsPeriod === period && stats ? <UsageBreakdown stats={stats} /> : <CardSkeleton />)}
         </div>
       ) : activeTab === "budgets" ? (
-        <BudgetsTab workspaceId={workspaceId} canManage={canManage} />
+        <BudgetsTab
+          workspaceId={workspaceId}
+          canManage={canManage}
+          canManageUsers={view.can("instance.budgets.raise")}
+        />
       ) : (
         <RequestLog usageFilters={usageFilters} />
       )}
