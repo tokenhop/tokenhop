@@ -50,6 +50,7 @@ function buildTransformStream({
   apiKey,
   credentials,
   onStreamResult,
+  keyContext = {},
 }) {
   const isDroidCLI =
     userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
@@ -74,6 +75,7 @@ function buildTransformStream({
       customToolNames,
       credentials,
       onStreamResult,
+      keyContext,
     );
   }
 
@@ -92,6 +94,7 @@ function buildTransformStream({
       customToolNames,
       credentials,
       onStreamResult,
+      keyContext,
     );
   }
 
@@ -104,6 +107,7 @@ function buildTransformStream({
     onStreamComplete,
     apiKey,
     onStreamResult,
+    keyContext,
   );
 }
 
@@ -235,6 +239,7 @@ export async function handleStreamingResponse({
     apiKey,
     credentials,
     onStreamResult: (info) => settleOnce(info),
+    keyContext,
   });
 
   // Terminal bytes when the stream aborts after HTTP 200 was already sent, so the

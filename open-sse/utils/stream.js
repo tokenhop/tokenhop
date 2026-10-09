@@ -79,6 +79,7 @@ export function createSSEStream(options = {}) {
     apiKey = null,
     credentials = null,
     onStreamResult = null,
+    keyContext = {},
   } = options;
 
   let buffer = "";
@@ -606,7 +607,16 @@ export function createSSEStream(options = {}) {
         "SSE",
         `flush | provider=${provider} | model=${model} | recvLines=${sseLineCount} | emitted=${sseEmittedCount} | events=[${evtSummary}]`,
       );
-      trackPendingRequest(model, provider, connectionId, false);
+      trackPendingRequest(
+        model,
+        provider,
+        connectionId,
+        false,
+        false,
+        keyContext?.workspaceId,
+        keyContext?.userId,
+        keyContext?.apiKeyId,
+      );
       try {
         const remaining = decoder.decode();
         if (remaining) buffer += remaining;
@@ -766,6 +776,7 @@ export function createSSETransformStreamWithLogger(
   customToolNames = null,
   credentials = null,
   onStreamResult = null,
+  keyContext = {},
 ) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
@@ -782,6 +793,7 @@ export function createSSETransformStreamWithLogger(
     apiKey,
     credentials,
     onStreamResult,
+    keyContext,
   });
 }
 
@@ -794,6 +806,7 @@ export function createPassthroughStreamWithLogger(
   onStreamComplete = null,
   apiKey = null,
   onStreamResult = null,
+  keyContext = {},
 ) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
@@ -805,5 +818,6 @@ export function createPassthroughStreamWithLogger(
     onStreamComplete,
     apiKey,
     onStreamResult,
+    keyContext,
   });
 }
