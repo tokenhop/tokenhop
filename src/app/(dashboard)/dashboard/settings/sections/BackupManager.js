@@ -14,6 +14,7 @@ import CopyField from "@/shared/components/CopyField";
 import { ACTIVE } from "@/shared/brand";
 import {
   FORCE_PHRASE,
+  buildInstanceImportBody,
   isMismatchError,
   readJsonFile,
   apiError,
@@ -336,9 +337,7 @@ function InstanceRestoreDialog({
     setBusy(true);
     setError("");
     try {
-      const body = { ...payload, password: auth.password };
-      if (auth.passphrase) body.passphrase = auth.passphrase;
-      if (forceArmed) body.force = true;
+      const body = buildInstanceImportBody(payload, auth, forceArmed);
       const res = await fetch("/api/settings/database", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

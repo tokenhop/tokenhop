@@ -62,6 +62,20 @@ export function passphraseProblem(passphrase, confirm, { headerSafe }) {
   return "";
 }
 
+/**
+ * Instance restore request body. The backup file is untrusted: drop every
+ * request-control field it may carry, then add only what the dialog proved
+ * (actor password, optional passphrase, `force` only when explicitly armed).
+ * Never mutates `payload`.
+ */
+export function buildInstanceImportBody(payload, auth, forceArmed) {
+  const { password: _p, passphrase: _s, force: _f, ...file } = payload || {};
+  const body = { ...file, password: auth.password };
+  if (auth.passphrase) body.passphrase = auth.passphrase;
+  if (forceArmed) body.force = true;
+  return body;
+}
+
 const asList = (value) => (Array.isArray(value) ? value : []);
 
 /** One user line from a diff entry (string or object, any of email/username/id). */

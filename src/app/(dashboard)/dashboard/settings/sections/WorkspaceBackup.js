@@ -43,12 +43,19 @@ export default function WorkspaceDialog({ workspaces, onClose, busy, setBusy, fl
   const selected = workspaces.find((w) => w.id === workspaceId) || null;
   const passphraseOk = Boolean(auth.passphrase);
   const problem = passphraseOk
-    ? passphraseProblem(auth.passphrase, auth.confirm, { headerSafe: false })
+    ? passphraseProblem(
+        auth.passphrase,
+        // Import has no repeat field: compare the passphrase with itself.
+        tab === "export" ? auth.confirm : auth.passphrase,
+        { headerSafe: false },
+      )
     : "";
   const ready =
-    tab === "export"
-      ? Boolean(selected) && Boolean(auth.password) && passphraseOk && !problem
-      : Boolean(selected) && Boolean(auth.password) && Boolean(importFile) && passphraseOk;
+    Boolean(selected) &&
+    Boolean(auth.password) &&
+    passphraseOk &&
+    !problem &&
+    (tab === "export" || Boolean(importFile));
 
   const pickDoc = async (event) => {
     const f = event.target.files?.[0];

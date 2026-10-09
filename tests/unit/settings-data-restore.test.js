@@ -133,3 +133,72 @@ describe("restore warning copy (source guard)", () => {
     expect(source).toContain('if (mode === "export") await handleExport(password)');
   });
 });
+
+// PR835 review fixes: instance-restore body is built by a pure helper so the
+// untrusted backup file can never inject password/passphrase/force, and
+// workspace import no longer compares against a nonexistent repeat field.
+const sectionsDir = "../../src/app/(dashboard)/dashboard/settings/sections";
+const sharedSource = readFileSync(
+  resolve(import.meta.dirname, `${sectionsDir}/backupShared.js`),
+  "utf8",
+);
+const helperMatch = sharedSource.match(
+  /export function buildInstanceImportBody\(payload, auth, forceArmed\) \{([\s\S]*?)\n\}/,
+);
+if (!helperMatch) throw new Error("buildInstanceImportBody source changed shape");
+// Rebuilt from its source slice, same as readBackupEnvelope above: runs the
+// real helper body in node without pulling the React/Next component tree.
+const buildInstanceImportBody = new Function("payload", "auth", "forceArmed", helperMatch[1]);
+
+describe("buildInstanceImportBody", () => {
+  it("never forwards the file's force flag unless force is explicitly armed", () => {
+    const file = { formatVersion: 3, force: true };
+    expect(buildInstanceImportBody(file, { password: "pw" }, false).force).toBeUndefined();
+    expect(buildInstanceImportBody(file, { password: "pw" }, true).force).toBe(true);
+  });
+
+  it("never forwards the file's passphrase; the typed one wins", () => {
+    const file = { formatVersion: 3, passphrase: "from-file" };
+    expect(buildInstanceImportBody(file, { password: "pw" }, false).passphrase).toBeUndefined();
+    expect(
+      buildInstanceImportBody(file, { password: "pw", passphrase: "typed" }, false).passphrase,
+    ).toBe("typed");
+  });
+
+  it("actor password always overrides any password the file carried", () => {
+    const file = { formatVersion: 3, password: "file-pw" };
+    expect(buildInstanceImportBody(file, { password: "actor-pw" }, false).password).toBe(
+      "actor-pw",
+    );
+  });
+
+  it("never mutates the parsed backup file", () => {
+    const file = { formatVersion: 3, password: "x", passphrase: "y", force: true };
+    const before = structuredClone(file);
+    buildInstanceImportBody(file, { password: "pw", passphrase: "z" }, true);
+    expect(file).toEqual(before);
+  });
+
+  it("keeps the rest of the file payload intact", () => {
+    expect(
+      buildInstanceImportBody({ formatVersion: 3, data: { rows: 1 } }, { password: "pw" }, false),
+    ).toEqual({ formatVersion: 3, data: { rows: 1 }, password: "pw" });
+  });
+
+  it("BackupManager routes the restore body through the helper, not a spread", () => {
+    const managerSource = readFileSync(
+      resolve(import.meta.dirname, `${sectionsDir}/BackupManager.js`),
+      "utf8",
+    );
+    expect(managerSource).toContain("buildInstanceImportBody(payload, auth, forceArmed)");
+    expect(managerSource).not.toMatch(/\{\s*\.\.\.payload,\s*password/);
+  });
+
+  it("workspace import validates the passphrase against itself; export keeps the repeat field", () => {
+    const wsSource = readFileSync(
+      resolve(import.meta.dirname, `${sectionsDir}/WorkspaceBackup.js`),
+      "utf8",
+    );
+    expect(wsSource).toMatch(/tab === "export" \? auth\.confirm : auth\.passphrase/);
+  });
+});

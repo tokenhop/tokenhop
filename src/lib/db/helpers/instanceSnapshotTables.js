@@ -72,9 +72,9 @@ export function readInstanceTableSections(db, payload, refs = null) {
     }
     let rows = db.all(`SELECT * FROM ${section.name}`);
     // Usage attribution FKs are ON DELETE SET NULL: retained live telemetry
-    // pointing at a workspace/user the snapshot replaces degrades to NULL
-    // (re-adopted into Default in-tx) exactly like the old cascade, instead of
-    // failing the restore or being dropped.
+    // pointing at a workspace/user the snapshot replaces stays unattributed
+    // (inserted after ownership adoption) exactly like the old cascade,
+    // instead of failing the restore, being dropped or being reassigned.
     if (refs && (section.name === "usageHistory" || section.name === "requestDetails")) {
       rows = rows.map((r) => ({
         ...r,
