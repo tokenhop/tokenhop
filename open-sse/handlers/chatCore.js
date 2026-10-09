@@ -212,7 +212,16 @@ export async function handleChatCore({
     // raw prompt endpoint. Never send them upstream: the node is configured
     // for the completions API only. 404 (like a disabled model, YAN-661) so a
     // combo advances to its next member instead of failing the whole request.
-    trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
+    trackPendingRequest(
+      model,
+      provider,
+      connectionId,
+      false,
+      true,
+      keyContext.workspaceId,
+      keyContext.userId,
+      keyContext.apiKeyId,
+    );
     const errResult = createErrorResult(
       HTTP_STATUS.NOT_FOUND,
       "This provider node is configured for the completions API and only serves /v1/completions, /v1/fim/completions and /infill requests",
@@ -383,14 +392,32 @@ export async function handleChatCore({
       translatedBody = { error };
     }
     if (!translatedBody) {
-      trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
+      trackPendingRequest(
+        model,
+        provider,
+        connectionId,
+        false,
+        true,
+        keyContext.workspaceId,
+        keyContext.userId,
+        keyContext.apiKeyId,
+      );
       return createErrorResult(
         HTTP_STATUS.BAD_REQUEST,
         `Failed to translate request for ${sourceFormat} → ${targetFormat}`,
       );
     }
     if (translatedBody.error) {
-      trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
+      trackPendingRequest(
+        model,
+        provider,
+        connectionId,
+        false,
+        true,
+        keyContext.workspaceId,
+        keyContext.userId,
+        keyContext.apiKeyId,
+      );
       const errResult = createErrorResult(
         HTTP_STATUS.BAD_REQUEST,
         String(translatedBody.error?.message || translatedBody.error),
@@ -553,7 +580,16 @@ export async function handleChatCore({
   if (passthrough && clientTool === "claude") anchorClaudeCache(translatedBody);
 
   const executor = getExecutor(provider);
-  trackPendingRequest(model, provider, connectionId, true, false, keyContext.workspaceId);
+  trackPendingRequest(
+    model,
+    provider,
+    connectionId,
+    true,
+    false,
+    keyContext.workspaceId,
+    keyContext.userId,
+    keyContext.apiKeyId,
+  );
   appendRequestLog({ ...keyContext, model, provider, connectionId, status: "PENDING" }).catch(
     () => {},
   );
@@ -568,11 +604,29 @@ export async function handleChatCore({
 
   const streamController = createStreamController({
     onDisconnect: (reason) => {
-      trackPendingRequest(model, provider, connectionId, false, false, keyContext.workspaceId);
+      trackPendingRequest(
+        model,
+        provider,
+        connectionId,
+        false,
+        false,
+        keyContext.workspaceId,
+        keyContext.userId,
+        keyContext.apiKeyId,
+      );
       if (onDisconnect) onDisconnect(reason);
     },
     onError: () =>
-      trackPendingRequest(model, provider, connectionId, false, false, keyContext.workspaceId),
+      trackPendingRequest(
+        model,
+        provider,
+        connectionId,
+        false,
+        false,
+        keyContext.workspaceId,
+        keyContext.userId,
+        keyContext.apiKeyId,
+      ),
     log,
     provider,
     model,
@@ -701,7 +755,16 @@ export async function handleChatCore({
     const result = await execute();
     if (fim && attemptSignal.aborted) {
       clearAttemptTimer();
-      trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
+      trackPendingRequest(
+        model,
+        provider,
+        connectionId,
+        false,
+        true,
+        keyContext.workspaceId,
+        keyContext.userId,
+        keyContext.apiKeyId,
+      );
       streamController.handleError(abortError());
       return timedOut ? timedOutResult() : createErrorResult(499, "Request aborted");
     }
@@ -715,7 +778,16 @@ export async function handleChatCore({
     clearAttemptTimer();
     if (fim && attemptSignal.aborted && error.name !== "AbortError") error = abortError();
     if (timedOut) {
-      trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
+      trackPendingRequest(
+        model,
+        provider,
+        connectionId,
+        false,
+        true,
+        keyContext.workspaceId,
+        keyContext.userId,
+        keyContext.apiKeyId,
+      );
       appendRequestLog({
         ...keyContext,
         model,
@@ -726,7 +798,16 @@ export async function handleChatCore({
       streamController.handleError(error);
       return timedOutResult();
     }
-    trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
+    trackPendingRequest(
+      model,
+      provider,
+      connectionId,
+      false,
+      true,
+      keyContext.workspaceId,
+      keyContext.userId,
+      keyContext.apiKeyId,
+    );
     appendRequestLog({
       ...keyContext,
       model,
@@ -836,7 +917,16 @@ export async function handleChatCore({
 
   if (fim && attemptSignal.aborted) {
     clearAttemptTimer();
-    trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
+    trackPendingRequest(
+      model,
+      provider,
+      connectionId,
+      false,
+      true,
+      keyContext.workspaceId,
+      keyContext.userId,
+      keyContext.apiKeyId,
+    );
     streamController.handleError(abortError());
     return timedOut ? timedOutResult() : createErrorResult(499, "Request aborted");
   }
@@ -852,7 +942,16 @@ export async function handleChatCore({
 
   // Provider returned error
   if (!providerResponse.ok) {
-    trackPendingRequest(model, provider, connectionId, false, true, keyContext.workspaceId);
+    trackPendingRequest(
+      model,
+      provider,
+      connectionId,
+      false,
+      true,
+      keyContext.workspaceId,
+      keyContext.userId,
+      keyContext.apiKeyId,
+    );
     const { statusCode, message, resetsAtMs } = await parseUpstreamError(
       providerResponse,
       executor,
@@ -946,7 +1045,16 @@ export async function handleChatCore({
   const appendLog = (extra) =>
     appendRequestLog({ ...keyContext, model, provider, connectionId, ...extra }).catch(() => {});
   const trackDone = () =>
-    trackPendingRequest(model, provider, connectionId, false, false, keyContext.workspaceId);
+    trackPendingRequest(
+      model,
+      provider,
+      connectionId,
+      false,
+      false,
+      keyContext.workspaceId,
+      keyContext.userId,
+      keyContext.apiKeyId,
+    );
 
   // Provider forced streaming but client wants JSON
   if (!clientRequestedStreaming && providerRequiresStreaming) {

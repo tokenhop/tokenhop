@@ -1,4 +1,5 @@
 "use client";
+import { appendUsageFilters } from "../lib/filterParams";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Card from "@/shared/components/Card";
@@ -39,7 +40,8 @@ const rowDomId = (id, index) => `req-${String(id).replace(/[^A-Za-z0-9_-]+/g, "-
  * Filter changes reset the page to 1; fetches are sequenced with an
  * AbortController so a stale response never overwrites a newer one.
  */
-export default function RequestLog() {
+export default function RequestLog({ usageFilters = null }) {
+  const scopeKey = appendUsageFilters("", usageFilters);
   const [details, setDetails] = useState([]);
   const [pagination, setPagination] = useState({
     page: 1,
@@ -56,12 +58,15 @@ export default function RequestLog() {
   const [nameCache, setNameCache] = useState(null);
   const [filters, setFilters] = useState({ provider: "", startDate: "", endDate: "" });
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: usageFilters is keyed by scopeKey
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
     (async () => {
       try {
-        const res = await fetch("/api/usage/providers", { signal: controller.signal });
+        const res = await fetch(appendUsageFilters("/api/usage/providers", usageFilters), {
+          signal: controller.signal,
+        });
         const data = await res.json();
         if (!cancelled) setProviders(data.providers || []);
         const nodesRes = await fetch("/api/provider-nodes", { signal: controller.signal });
@@ -81,7 +86,15 @@ export default function RequestLog() {
       cancelled = true;
       controller.abort();
     };
-  }, []);
+  }, [scopeKey]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scopeKey clears cached rows on selection change
+  useEffect(() => {
+    setDetails([]);
+    setSelected(null);
+    setDrawerOpen(false);
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  }, [scopeKey]);
 
   // datetime-local values sort lexicographically like their instants.
   const dateRangeError =
@@ -89,6 +102,7 @@ export default function RequestLog() {
       ? "Start must be before end"
       : "";
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: usageFilters is keyed by scopeKey
   const fetchDetails = useCallback(async () => {
     requestRef.current?.abort();
     const request = new AbortController();
@@ -104,11 +118,15 @@ export default function RequestLog() {
       // the server (often UTC in Docker) filters the window the table shows.
       if (filters.startDate) params.append("startDate", new Date(filters.startDate).toISOString());
       if (filters.endDate) params.append("endDate", new Date(filters.endDate).toISOString());
-      const res = await fetch(`/api/usage/request-details?${params}`, {
-        signal: request.signal,
-      });
+      const res = await fetch(
+        appendUsageFilters(`/api/usage/request-details?${params}`, usageFilters),
+        {
+          signal: request.signal,
+        },
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      if (request.signal.aborted) return;
       setDetails(data.details || []);
       setPagination((prev) => ({ ...prev, ...data.pagination }));
       setError("");
@@ -120,7 +138,7 @@ export default function RequestLog() {
     } finally {
       if (!request.signal.aborted) setLoading(false);
     }
-  }, [pagination.page, pagination.pageSize, filters]);
+  }, [pagination.page, pagination.pageSize, filters, scopeKey]);
 
   useEffect(() => {
     // An invalid range keeps the current data instead of querying a window

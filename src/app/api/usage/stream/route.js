@@ -11,7 +11,9 @@ export async function GET(request) {
   // Resolve the subscriber's scope once; every frame is filtered by workspace.
   const scope = await usageScope(request);
   if (scope instanceof Response) return scope;
-  const liveScope = scope ? { workspaceId: scope.workspaceId } : null;
+  const liveScope = scope
+    ? { workspaceId: scope.workspaceId, userId: scope.userId, apiKeyId: scope.apiKeyId }
+    : null;
   const encoder = new TextEncoder();
   const state = {
     closed: false,

@@ -15,6 +15,8 @@ import { RoutesMapCard } from "@/shared/components/routesMap/RoutesMapCard";
 import useLastActivity from "@/shared/hooks/useLastActivity";
 import useLiveRoutes from "@/shared/hooks/useLiveRoutes";
 import usePeriod from "@/shared/hooks/usePeriod";
+import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
+import { accountView } from "@/shared/utils/account";
 import {
   isIdle as routesAreIdle,
   mergeRoutes,
@@ -27,6 +29,8 @@ import useProviders from "./lib/useProviders";
 import UsageStatsCards from "./components/UsageStatsCards";
 import UsageBreakdown from "./components/UsageBreakdown";
 import RequestLog from "./components/RequestLog";
+import BudgetsTab from "./components/BudgetsTab";
+import UsageFilters from "./components/UsageFilters";
 
 const UsageTokensChart = dynamic(() => import("./components/UsageTokensChart"), {
   loading: () => <CardSkeleton />,
@@ -58,16 +62,60 @@ function UsageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { period, setPeriod, options } = usePeriod();
+  const { status, loaded } = useAuthStatusState();
+  const view = useMemo(() => accountView(status), [status]);
+  const workspaceId = view.active ? (view.activeWorkspace?.id ?? null) : null;
+  // Workspace-wide usage scope (YAN-376): instance owner/admin, or owner/
+  // manager of the active workspace. Everyone else stays scoped to "me" with
+  // no scope selector at all.
+  const instanceRole = status?.principal?.role;
+  const canViewWorkspace = Boolean(
+    view.active &&
+      (instanceRole === "owner" ||
+        instanceRole === "admin" ||
+        view.activeWorkspace?.role === "owner" ||
+        view.activeWorkspace?.role === "manager"),
+  );
+  const canManage = Boolean(
+    view.active &&
+      workspaceId &&
+      (view.can("workspace.budgets.lower", workspaceId) || view.can("instance.budgets.raise")),
+  );
   const tabFromUrl = searchParams.get("tab");
   const activeTab =
     tabFromUrl === "details" || tabFromUrl === "logs"
       ? "logs"
-      : tabFromUrl === "overview"
-        ? "overview"
-        : "overview";
-  const { stats, statsPeriod, live, loading, error, retry, catchUpKey } = useUsageStats(period, {
-    tab: activeTab,
-  });
+      : tabFromUrl === "budgets" && view.active
+        ? "budgets"
+        : tabFromUrl === "overview"
+          ? "overview"
+          : "overview";
+  const selectedView = canViewWorkspace && searchParams.get("view") !== "me" ? "workspace" : "me";
+  const usageFilters = useMemo(
+    () =>
+      view.active
+        ? {
+            workspaceId,
+            view: selectedView,
+            userId: selectedView === "workspace" ? searchParams.get("userId") || "" : "",
+            apiKeyId: searchParams.get("apiKeyId") || "",
+          }
+        : null,
+    [view.active, workspaceId, selectedView, searchParams],
+  );
+  const updateUsageFilters = (patch) => {
+    const params = new URLSearchParams(searchParams);
+    for (const [key, value] of Object.entries(patch)) {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    }
+    router.replace(`/dashboard/usage?${params}`, { scroll: false });
+  };
+  const { stats, statsPeriod, live, loading, error, retry, catchUpKey } = useUsageStats(
+    loaded ? period : null,
+    { tab: activeTab },
+    usageFilters,
+  );
   const providers = useProviders();
   // Shared live-routes map (YAN-412): the window model from Home plus the
   // connected-provider universe, with in-flight SSE frames layered on top.
@@ -107,6 +155,7 @@ function UsageContent() {
     period,
     activeTab === "overview" && stats !== null && statsPeriod === period && !quiet,
     catchUpKey,
+    usageFilters,
   );
 
   // Params come from useSearchParams, which already carries ?period= once a
@@ -129,6 +178,7 @@ function UsageContent() {
             tabs={[
               { value: "overview", label: "Overview" },
               { value: "logs", label: "Request log" },
+              ...(view.active ? [{ value: "budgets", label: "Budgets" }] : []),
             ]}
           />
           {activeTab === "overview" && (
@@ -144,6 +194,14 @@ function UsageContent() {
         </div>
       </div>
 
+      {view.active && activeTab !== "budgets" && (
+        <UsageFilters
+          workspaceId={workspaceId}
+          canViewWorkspace={canViewWorkspace}
+          filters={usageFilters}
+          onChange={updateUsageFilters}
+        />
+      )}
       {activeTab === "overview" ? (
         <div className="flex min-w-0 flex-col gap-6">
           {error && !loading ? (
@@ -201,8 +259,14 @@ function UsageContent() {
           {!quiet &&
             (statsPeriod === period && stats ? <UsageBreakdown stats={stats} /> : <CardSkeleton />)}
         </div>
+      ) : activeTab === "budgets" ? (
+        <BudgetsTab
+          workspaceId={workspaceId}
+          canManage={canManage}
+          canManageUsers={view.can("instance.budgets.raise")}
+        />
       ) : (
-        <RequestLog />
+        <RequestLog usageFilters={usageFilters} />
       )}
     </div>
   );

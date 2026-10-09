@@ -2,7 +2,14 @@
 // admin/owner only (instance.budgets.raise), re-checked live in the repo;
 // non-admins get 403. Hidden (404) while the multi-user switch is off.
 import { json } from "@/lib/users/userManagement.js";
-import { badRequest, fail, gate, publicBudget, readBody } from "@/lib/users/budgetRoutes.js";
+import {
+  badRequest,
+  fail,
+  gate,
+  publicBudget,
+  readBody,
+  withSpent,
+} from "@/lib/users/budgetRoutes.js";
 import { createBudget, listUserBudgets } from "@/lib/db/repos/budgetsRepo.js";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +23,7 @@ export async function GET(request, { params }) {
   try {
     const { id } = await params;
     const rows = await listUserBudgets(g.principal, { userId: id });
-    return json({ budgets: rows.map(publicBudget) });
+    return json({ budgets: await withSpent(rows) });
   } catch (err) {
     return fail(err);
   }

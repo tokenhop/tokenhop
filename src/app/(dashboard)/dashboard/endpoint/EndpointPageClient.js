@@ -9,8 +9,6 @@ import {
   IconButton,
   Modal,
   ConfirmDialog,
-  Input,
-  Select,
   CardSkeleton,
   Skeleton,
   Callout,
@@ -23,6 +21,7 @@ import WaysInGrid from "./components/WaysInGrid";
 import ApiKeysCard from "./components/ApiKeysCard";
 import AccessCard from "./components/AccessCard";
 import QuickConnectCard from "./components/QuickConnectCard";
+import KeyCreateDialog from "./components/KeyCreateDialog";
 import { useTunnelControls } from "./hooks/useTunnelControls";
 import { useApiKeys } from "./hooks/useApiKeys";
 import { useRemoteHost, useLocalBaseUrl } from "@/shared/hooks/useEndpointShell";
@@ -30,8 +29,7 @@ import { useRemoteHost, useLocalBaseUrl } from "@/shared/hooks/useEndpointShell"
 /**
  * Endpoint & keys page (Signal redesign): three ways in, API keys with
  * one-time reveal, access controls derived from real state, quick connect
- * snippets. Par with EndpointPageClient v1: tunnel/tailscale lifecycles,
- * security gates, key CRUD — now composed from section components.
+ * snippets. Tunnel/tailscale lifecycles, security gates, key CRUD.
  *
  * @param {object} props
  * @param {string} props.machineId Server machine id (reserved for future use).
@@ -40,7 +38,6 @@ export default function EndpointPageClient({ machineId: _machineId }) {
   const tunnel = useTunnelControls();
   const apiKeys = useApiKeys();
   const authStatus = useAuthStatus();
-  // Identity for the My keys grouping; null (off / single-user) keeps the flat list.
   const currentUserId =
     authStatus?.multiUserActive === true ? authStatus.principal?.user?.id : null;
   const isRemoteHost = useRemoteHost();
@@ -55,7 +52,6 @@ export default function EndpointPageClient({ machineId: _machineId }) {
   const setShowAddModalRef = useRef(apiKeys.setShowAddModal);
   setShowAddModalRef.current = apiKeys.setShowAddModal;
 
-  // Drop only `create`, preserving the rest of the URL (other params, hash).
   const clearCreateParam = useCallback(() => {
     const url = new URL(window.location.href);
     if (url.searchParams.get("create") !== "key") return;
@@ -63,16 +59,10 @@ export default function EndpointPageClient({ machineId: _machineId }) {
     router.replace(`${url.pathname}${url.search}${url.hash}`, { scroll: false });
   }, [router]);
 
-  // ?create=key drives the modal after keys load. Applied only when the
-  // URL's create value changes (same-route palette pushes, Back/Forward).
-  // Setter stays in a ref: useApiKeys recreates it every render, and
-  // re-applying the URL value after the user closes the modal would reopen it.
   const lastCreateRequested = useRef(null);
   useEffect(() => {
     if (!apiKeys.loading && createRequested !== lastCreateRequested.current) {
       lastCreateRequested.current = createRequested;
-      // Modal opens only on a proven context with create capability; viewer
-      // deep links (?create=key) get the inline callout instead.
       const allowed = apiKeys.contextReady && !createBlocked;
       setShowAddModalRef.current(allowed ? createRequested : false);
     }
@@ -102,8 +92,6 @@ export default function EndpointPageClient({ machineId: _machineId }) {
     remoteHost: isRemoteHost,
   });
 
-  // Gate remote exposure behind the security errors (same rules as v1, per surface:
-  // tunnel needs Require API key too; Tailscale needs safe login only).
   const guardRemote = (openModal, setStatus, message) => {
     if (tunnel.isLoginUnsafe || message) {
       setStatus?.({
@@ -140,7 +128,6 @@ export default function EndpointPageClient({ machineId: _machineId }) {
     );
   }
 
-  // If the selected key was deleted, fall back so Quick connect keeps working.
   const effectiveSelectedKeyId =
     (selectedKeyId && apiKeys.keys.some((k) => k.id === selectedKeyId) ? selectedKeyId : null) ??
     apiKeys.keys[0]?.id ??
@@ -196,7 +183,6 @@ export default function EndpointPageClient({ machineId: _machineId }) {
         onStopTailscale={tunnel.setTsLoading}
       />
 
-      {/* Pre-enable security gate (same warning as v1). */}
       {tunnel.isLoginUnsafe && !tunnel.tunnelEnabled && !tunnel.tsEnabled && (
         <Callout variant="warn">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -251,6 +237,23 @@ export default function EndpointPageClient({ machineId: _machineId }) {
             clearRenameError={apiKeys.clearRenameError}
             loading={false}
           />
+          {apiKeys.budgetFailure && (
+            <Callout variant="err" title="Key created, but budget was not saved">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm">
+                  {apiKeys.budgetFailure.detail || "Copy the key, then retry the budget save."}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={apiKeys.retryBudget}
+                  loading={apiKeys.budgetFailure.retrying}
+                >
+                  Retry budget save
+                </Button>
+              </div>
+            </Callout>
+          )}
           <QuickConnectCard
             baseUrl={localUrl}
             hashedMode={apiKeys.hashedMode}
@@ -284,116 +287,32 @@ export default function EndpointPageClient({ machineId: _machineId }) {
         </Callout>
       )}
 
-      {/* Create key modal (Signal primitives). */}
-      <Modal
+      <KeyCreateDialog
         isOpen={apiKeys.showAddModal}
         onClose={closeCreate}
-        title="Create API key"
-        footer={
-          <>
-            <Button variant="ghost" onClick={closeCreate}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={apiKeys.createKey}
-              disabled={!apiKeys.newKeyName.trim()}
-            >
-              Create
-            </Button>
-          </>
-        }
-      >
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            apiKeys.createKey();
-          }}
-        >
-          <Input
-            label="Key name"
-            value={apiKeys.newKeyName}
-            onChange={(e) => apiKeys.setNewKeyName(e.target.value)}
-            placeholder="Production key"
-            error={apiKeys.createError}
-            maxLength={64}
-          />
-          {apiKeys.hashedMode && (
-            <>
-              {apiKeys.capabilities.canCreateService && (
-                <fieldset className="flex flex-col gap-2">
-                  <legend className="text-sm font-medium text-text">Key owner</legend>
-                  <label className="flex items-center gap-2 text-sm text-text">
-                    <input
-                      type="radio"
-                      name="key-owner"
-                      value="user"
-                      checked={apiKeys.createType === "user"}
-                      onChange={() => apiKeys.setCreateType("user")}
-                      className="size-4 accent-coral"
-                    />
-                    Me (user key)
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-text">
-                    <input
-                      type="radio"
-                      name="key-owner"
-                      value="service"
-                      checked={apiKeys.createType === "service"}
-                      onChange={() => apiKeys.setCreateType("service")}
-                      className="size-4 accent-coral"
-                    />
-                    Service key
-                  </label>
-                </fieldset>
-              )}
-              <Input
-                label="Limit models (optional)"
-                value={apiKeys.createModels}
-                onChange={(e) => apiKeys.setCreateModels(e.target.value)}
-                placeholder="openai/gpt-4o, anthropic/claude"
-                hint="Empty means all models in the workspace."
-              />
-              <Input
-                label="Limit combos (optional)"
-                value={apiKeys.createCombos}
-                onChange={(e) => apiKeys.setCreateCombos(e.target.value)}
-                placeholder="fast-cheap, balanced"
-                hint="Workspace combo ids. Empty means all combos."
-              />
-              <Select
-                label="Expires"
-                value={apiKeys.createExpiry}
-                onChange={(e) => apiKeys.setCreateExpiry(e.target.value)}
-                options={[
-                  { value: "never", label: "Never" },
-                  { value: "7", label: "7 days" },
-                  { value: "30", label: "30 days" },
-                  { value: "90", label: "90 days" },
-                  { value: "custom", label: "Custom date" },
-                ]}
-              />
-              {apiKeys.createExpiry === "custom" && (
-                <Input
-                  label="Custom expiry date"
-                  type="date"
-                  value={apiKeys.customExpiryDate}
-                  onChange={(e) => apiKeys.setCustomExpiryDate(e.target.value)}
-                  min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)}
-                />
-              )}
-            </>
-          )}
-          {apiKeys.createError && (
-            <p className="sr-only" role="alert">
-              {apiKeys.createError}
-            </p>
-          )}
-        </form>
-      </Modal>
+        onCreate={apiKeys.createKey}
+        newName={apiKeys.newKeyName}
+        onNewName={apiKeys.setNewKeyName}
+        createError={apiKeys.createError}
+        hashedMode={apiKeys.hashedMode}
+        canCreateService={apiKeys.capabilities.canCreateService}
+        createType={apiKeys.createType}
+        onSetCreateType={apiKeys.setCreateType}
+        createModels={apiKeys.createModels}
+        onSetCreateModels={apiKeys.setCreateModels}
+        createCombos={apiKeys.createCombos}
+        onSetCreateCombos={apiKeys.setCreateCombos}
+        createBudgetUsd={apiKeys.createBudgetUsd}
+        onSetCreateBudgetUsd={apiKeys.setCreateBudgetUsd}
+        createBudgetWindow={apiKeys.createBudgetWindow}
+        onSetCreateBudgetWindow={apiKeys.setCreateBudgetWindow}
+        createExpiry={apiKeys.createExpiry}
+        onSetCreateExpiry={apiKeys.setCreateExpiry}
+        customExpiryDate={apiKeys.customExpiryDate}
+        onSetCustomExpiryDate={apiKeys.setCustomExpiryDate}
+        creating={apiKeys.creating}
+      />
 
-      {/* Enable tunnel modal */}
       <Modal
         isOpen={tunnel.showEnableTunnelModal}
         onClose={() => tunnel.setShowEnableTunnelModal(false)}
@@ -444,7 +363,6 @@ export default function EndpointPageClient({ machineId: _machineId }) {
         </div>
       </Modal>
 
-      {/* Disable tunnel confirm */}
       <ConfirmDialog
         isOpen={tunnel.showDisableTunnelModal}
         onClose={() => !tunnel.tunnelLoading && tunnel.setShowDisableTunnelModal(false)}
