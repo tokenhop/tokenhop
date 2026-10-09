@@ -82,8 +82,11 @@ export default function Pagination({
               onClick={() => onPageChange(currentPage - 1)}
               disabled={currentPage === 1}
               className="w-9 px-0"
+              aria-label="Previous page"
             >
-              <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+              <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                chevron_left
+              </span>
             </Button>
 
             {pageNumbers[0] > 1 && (
@@ -139,8 +142,11 @@ export default function Pagination({
               onClick={() => onPageChange(currentPage + 1)}
               disabled={currentPage === totalPages}
               className="w-9 px-0"
+              aria-label="Next page"
             >
-              <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+              <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                chevron_right
+              </span>
             </Button>
           </div>
         )}

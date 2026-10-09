@@ -16,10 +16,11 @@ import {
   Input,
   LoadingState,
   PageTitle,
-  Pagination,
   StatusPill,
 } from "@/shared/components";
 import { TABLE_HEAD_CELL, TABLE_HEAD_ROW } from "@/shared/components/displayPrimitives";
+// Not re-exported by the barrel: a barrel import is `undefined` (React #130).
+import Pagination from "@/shared/components/Pagination";
 import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
 import { accountView } from "@/shared/utils/account";
 
