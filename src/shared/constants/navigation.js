@@ -234,7 +234,7 @@ export function visibleGroups(settings = {}) {
       if (item.gate === "enableTranslator" && !enableTranslator) return false;
       if (item.gate === "multiUser" && !multiUser) return false;
       if (can && item.cap && !can(item.cap)) return false;
-      if (can && item.capAny && !item.capAny.some(can)) return false;
+      if (can && item.capAny && !item.capAny.some((cap) => can(cap))) return false;
       return true;
     }),
   }));

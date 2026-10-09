@@ -17,6 +17,12 @@ const importFrom = (source, from) => {
     .filter(Boolean);
 };
 
+it("passes the no-access explanation through EmptyState body", () => {
+  expect(page).toContain(
+    'body="The audit log is available to workspace managers and instance admins."',
+  );
+});
+
 describe("audit page imports resolve to real exports", () => {
   it("every name imported from the barrel is exported by it", () => {
     const names = importFrom(page, "@/shared/components");

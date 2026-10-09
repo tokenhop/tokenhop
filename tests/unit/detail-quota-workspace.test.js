@@ -105,6 +105,12 @@ describe("audit nav item gating (YAN-376)", () => {
     );
   });
 
+  it("calls can with only the capability so its default workspace survives", () => {
+    const can = (cap, workspaceId = "active-ws") =>
+      cap === "workspace.audit.read" && workspaceId === "active-ws";
+    expect(auditVisible({ multiUser: true, can })).toBe(true);
+  });
+
   it("hides the audit item when the principal has neither audit.read capability", () => {
     expect(auditVisible({ multiUser: true, can: () => false })).toBe(false);
     expect(auditVisible({ multiUser: true, can: (cap) => cap === "instance.hostOps" })).toBe(false);

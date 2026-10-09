@@ -44,14 +44,25 @@ export function useConnections({ providerId, notifyError }) {
     notifyRef.current?.(message);
   }, []);
 
+  const loadGenerationRef = useRef(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: provider/workspace changes must clear and invalidate in-flight loads
+  useEffect(() => {
+    setConnections([]);
+    return () => {
+      loadGenerationRef.current++;
+    };
+  }, [providerId, scope?.workspaceId]);
+
   const fetchConnections = useCallback(async () => {
     if (!ready) return;
+    const generation = ++loadGenerationRef.current;
     const [connectionsRes, proxyPoolsRes] = await Promise.all([
       fetch(withWorkspace("/api/providers", scope?.workspaceId), { cache: "no-store" }),
       fetch("/api/proxy-pools?isActive=true", { cache: "no-store" }),
     ]);
     const connectionsData = await connectionsRes.json().catch(() => ({}));
     const proxyPoolsData = await proxyPoolsRes.json().catch(() => ({}));
+    if (loadGenerationRef.current !== generation) return;
     if (connectionsRes.ok) {
       // Single ordering everywhere: rows, bubbles, DnD items, up/down and one-by-one.
       setConnections(

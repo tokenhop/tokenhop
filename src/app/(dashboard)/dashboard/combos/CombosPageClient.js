@@ -322,7 +322,11 @@ export default function CombosPageClient() {
   };
 
   const { ready, scope, canManageInstance } = useSettingsScope();
+  const loadGenerationRef = useRef(0);
   const fetchData = useCallback(async () => {
+    // Latest load wins: a workspace switch must not be overwritten by an older response.
+    const generation = ++loadGenerationRef.current;
+    const isCurrent = () => loadGenerationRef.current === generation;
     setLoadError("");
     try {
       const [combosRes, providersRes, settingsData, usageRes, aliasRes] = await Promise.all([
@@ -338,6 +342,7 @@ export default function CombosPageClient() {
       const usageData = usageRes.ok ? await usageRes.json() : {};
       const aliasData = aliasRes.ok ? await aliasRes.json() : {};
 
+      if (!isCurrent()) return;
       // Only LLM combos here — webSearch/webFetch combos belong to media-providers/web.
       const list = (combosData.combos || []).filter((c) => !c.kind || c.kind === "llm");
       setCombos(list);
@@ -357,14 +362,21 @@ export default function CombosPageClient() {
       setUsageToday(today);
       setModelAliases(aliasData.aliases || {});
     } catch (error) {
-      setLoadError(error?.message || "Failed to load combos");
+      if (isCurrent()) setLoadError(error?.message || "Failed to load combos");
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [scope, canManageInstance]);
 
   useEffect(() => {
+    setCombos([]);
+    setActiveProviders([]);
+    setModelAliases({});
+    setUsageToday({});
     if (ready) fetchData();
+    return () => {
+      loadGenerationRef.current++;
+    };
   }, [ready, fetchData]);
 
   const selected = combos.find((c) => c.id === selectedComboId) || null;

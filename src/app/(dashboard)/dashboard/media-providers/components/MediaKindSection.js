@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import PropTypes from "prop-types";
 import { useRouter } from "next/navigation";
 import { Button, AddCustomEmbeddingModal } from "@/shared/components";
@@ -42,19 +42,27 @@ export function MediaKindSection({
   const { ready, scope } = useSettingsScope();
   const workspaceId = scope?.workspaceId;
 
+  const loadGenerationRef = useRef(0);
   const load = useCallback(async () => {
+    // Latest load wins: a workspace switch must not be overwritten by an older response.
+    const generation = ++loadGenerationRef.current;
+    const isCurrent = () => loadGenerationRef.current === generation;
     setLoading(true);
     setError("");
     try {
-      const connsRes = await fetch("/api/providers", { cache: "no-store" });
+      const connsRes = await fetch(withWorkspace("/api/providers", workspaceId), {
+        cache: "no-store",
+      });
       if (!connsRes.ok) throw new Error(`Providers ${connsRes.status}`);
       const connsData = await connsRes.json();
+      if (!isCurrent()) return;
       setConnections(connsData.connections || []);
 
       if (showCustomEmbedding) {
         const nodesRes = await fetch("/api/provider-nodes", { cache: "no-store" });
         if (nodesRes.ok) {
           const nodesData = await nodesRes.json();
+          if (!isCurrent()) return;
           setCustomNodes((nodesData.nodes || []).filter((n) => n.type === "custom-embedding"));
         }
       }
@@ -65,18 +73,25 @@ export function MediaKindSection({
         });
         if (combosRes.ok) {
           const combosData = await combosRes.json();
+          if (!isCurrent()) return;
           setCombos(combosData.combos || []);
         }
       }
     } catch (e) {
-      setError(e.message || "Failed to load providers");
+      if (isCurrent()) setError(e.message || "Failed to load providers");
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [showCustomEmbedding, supportsCombo, workspaceId]);
 
   useEffect(() => {
+    setConnections([]);
+    setCustomNodes([]);
+    setCombos([]);
     if (ready) load();
+    return () => {
+      loadGenerationRef.current++;
+    };
   }, [ready, load]);
 
   const providers = getProvidersByKind(kind);

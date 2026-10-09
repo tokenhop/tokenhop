@@ -166,9 +166,11 @@ export default function AuditPage() {
     return (
       <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
         <PageTitle>Audit log</PageTitle>
-        <EmptyState icon="lock" title="No access">
-          The audit log is available to workspace managers and instance admins.
-        </EmptyState>
+        <EmptyState
+          icon="lock"
+          title="No access"
+          body="The audit log is available to workspace managers and instance admins."
+        />
       </div>
     );
   }

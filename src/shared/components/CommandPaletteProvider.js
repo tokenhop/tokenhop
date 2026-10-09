@@ -102,20 +102,26 @@ async function fetchJson(path) {
 }
 
 // Cache per browser tab + workspace: providers/combos load on open, models lazily.
-function createDataCache() {
-  const modelsLoader = createCachedLoader();
+export function createDataCache() {
+  let modelsLoader = createCachedLoader();
   let snapshot = { providers: null, combos: null, models: null };
   let cachedWorkspaceId = null;
+  // Bumped on every workspace switch. A refresh that started under an older
+  // generation must not write its result over the newer workspace's snapshot.
+  let generation = 0;
   return {
     async refresh({ includeModels, forceProviders = false, workspaceId = null }) {
       if (cachedWorkspaceId !== workspaceId) {
         cachedWorkspaceId = workspaceId;
-        snapshot = { providers: null, combos: null, models: snapshot.models };
+        generation += 1;
+        snapshot = { providers: null, combos: null, models: null };
+        modelsLoader = createCachedLoader();
         forceProviders = true;
       }
+      const startGeneration = generation;
       const [providers, combos] = await Promise.all([
         forceProviders || snapshot.providers == null
-          ? fetchJson("/api/providers")
+          ? fetchJson(withWorkspace("/api/providers", workspaceId))
               .then((d) => d.connections || [])
               .catch(() => [])
           : snapshot.providers,
@@ -127,12 +133,18 @@ function createDataCache() {
       let models = snapshot.models;
       if (includeModels && !models) {
         try {
-          models = await modelsLoader(() => fetchJson("/api/models").then((d) => d.models || []));
+          models = await modelsLoader(() =>
+            fetchJson(withWorkspace("/api/models", workspaceId)).then((d) => d.models || []),
+          );
           if (models === "fresh") models = snapshot.models;
         } catch {
           models = [];
         }
       }
+      // Stale refresh (workspace switched mid-flight): discard success and
+      // failure alike, leave the newer snapshot untouched. Callers are already
+      // cancelled by their effect cleanup, so the returned value is ignored.
+      if (startGeneration !== generation) return snapshot;
       snapshot = { providers, combos, models: models ?? snapshot.models };
       return snapshot;
     },
