@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { resolveProxyPollProvider } from "@/shared/components/oauth/authFlowHelpers";
+import { withOAuthWorkspace } from "@/shared/utils/oauthWorkspace";
 
 const POLL_INTERVAL_MS = 1500;
 const MAX_ATTEMPTS = 200; // ~5 minutes
@@ -14,6 +15,7 @@ export default function useOAuthProxyStatus({
   onSuccessRef,
   setError,
   setStep,
+  workspaceId = null,
 }) {
   useEffect(() => {
     if (!isOpen) return;
@@ -28,7 +30,10 @@ export default function useOAuthProxyStatus({
       attempts += 1;
       try {
         const res = await fetch(
-          `/api/oauth/${pollProvider}/poll-status?state=${encodeURIComponent(authData.state)}`,
+          withOAuthWorkspace(
+            `/api/oauth/${pollProvider}/poll-status?state=${encodeURIComponent(authData.state)}`,
+            workspaceId,
+          ),
         );
         const data = await res.json();
         if (cancelled || callbackProcessedRef.current) return;
@@ -59,5 +64,5 @@ export default function useOAuthProxyStatus({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, authData, callbackProcessedRef, onSuccessRef, setError, setStep]);
+  }, [isOpen, authData, callbackProcessedRef, onSuccessRef, setError, setStep, workspaceId]);
 }

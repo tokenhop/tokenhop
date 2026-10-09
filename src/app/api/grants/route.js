@@ -22,6 +22,8 @@ function toIncoming(g) {
     provider: g.connection.provider,
     name: g.connection.name,
     allowedModels: g.allowedModels,
+    granteeWorkspaceId: g.workspaceId ?? null,
+    granteeUserId: g.userId ?? null,
   };
 }
 

@@ -269,7 +269,9 @@ export async function listManagedMemberships(ctx, workspaceId) {
     managedWorkspace(db, ctx, workspaceId);
     return db
       .all(
-        `SELECT workspaceId, userId, role, source, createdAt FROM memberships WHERE workspaceId = ? ORDER BY createdAt ASC`,
+        `SELECT m.workspaceId, m.userId, m.role, m.source, m.createdAt, u.displayName
+         FROM memberships m LEFT JOIN users u ON u.id = m.userId
+         WHERE m.workspaceId = ? ORDER BY m.createdAt ASC`,
         [workspaceId],
       )
       .map(rowToMembership);

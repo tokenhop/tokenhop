@@ -21,8 +21,17 @@ export default function OAuthModal({
   onClose,
   oauthMeta,
   idcConfig,
+  workspaceId = null,
 }) {
-  const flow = useOAuthFlow({ isOpen, provider, oauthMeta, idcConfig, onSuccess, onClose });
+  const flow = useOAuthFlow({
+    isOpen,
+    provider,
+    oauthMeta,
+    idcConfig,
+    onSuccess,
+    onClose,
+    workspaceId,
+  });
   const {
     step,
     authData,
@@ -135,4 +144,6 @@ OAuthModal.propTypes = {
     startUrl: PropTypes.string,
     region: PropTypes.string,
   }),
+  /** Optional workspace scope for /api/oauth routes */
+  workspaceId: PropTypes.string,
 };

@@ -1,4 +1,5 @@
 "use client";
+import { withWorkspace } from "./connectTarget";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
@@ -123,11 +124,11 @@ export default function useProviderActions({ connections, setConnections, refres
   );
 
   const handleSaveApiKey = useCallback(
-    async (formData) => {
+    async (formData, workspaceId = null) => {
       if (!addAccountEntry) return;
       setAddConnectionError("");
       try {
-        const res = await fetch("/api/providers", {
+        const res = await fetch(withWorkspace("/api/providers", workspaceId), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider: addAccountEntry.id, ...formData }),

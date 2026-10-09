@@ -10,7 +10,13 @@ import KiroSocialOAuthModal from "./KiroSocialOAuthModal";
  * Kiro OAuth Wrapper
  * Orchestrates between method selection, device code flow, and social login flow
  */
-export default function KiroOAuthWrapper({ isOpen, providerInfo, onSuccess, onClose }) {
+export default function KiroOAuthWrapper({
+  isOpen,
+  providerInfo,
+  workspaceId = null,
+  onSuccess,
+  onClose,
+}) {
   const [authMethod, setAuthMethod] = useState(null); // null | "builder-id" | "idc" | "social" (import, import-cli-proxy and api-key finish inside KiroAuthModal)
   const [socialProvider, setSocialProvider] = useState(null); // "google" | "github"
   const [idcConfig, setIdcConfig] = useState(null);
@@ -58,7 +64,14 @@ export default function KiroOAuthWrapper({ isOpen, providerInfo, onSuccess, onCl
 
   // Show method selection first
   if (!authMethod) {
-    return <KiroAuthModal isOpen={isOpen} onMethodSelect={handleMethodSelect} onClose={onClose} />;
+    return (
+      <KiroAuthModal
+        isOpen={isOpen}
+        workspaceId={workspaceId}
+        onMethodSelect={handleMethodSelect}
+        onClose={onClose}
+      />
+    );
   }
 
   // Show device code flow (Builder ID or IDC)
@@ -68,6 +81,7 @@ export default function KiroOAuthWrapper({ isOpen, providerInfo, onSuccess, onCl
         isOpen={isOpen}
         provider="kiro"
         providerInfo={providerInfo}
+        workspaceId={workspaceId}
         onSuccess={handleDeviceSuccess}
         onClose={handleBack}
         idcConfig={idcConfig}
@@ -81,6 +95,7 @@ export default function KiroOAuthWrapper({ isOpen, providerInfo, onSuccess, onCl
       <KiroSocialOAuthModal
         isOpen={isOpen}
         provider={socialProvider}
+        workspaceId={workspaceId}
         onSuccess={handleSocialSuccess}
         onClose={handleBack}
       />
@@ -95,6 +110,7 @@ KiroOAuthWrapper.propTypes = {
   providerInfo: PropTypes.shape({
     name: PropTypes.string,
   }),
+  workspaceId: PropTypes.string,
   onSuccess: PropTypes.func,
   onClose: PropTypes.func.isRequired,
 };

@@ -1,8 +1,10 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { useEffect, useState } from "react";
 import {
   Button,
+  Modal,
   ConfirmDialog,
   CursorAuthModal,
   EditConnectionModal,
@@ -13,6 +15,8 @@ import {
   XiaomiMimoAuthModal,
 } from "@/shared/components";
 import AddApiKeyModal from "../[id]/AddApiKeyModal";
+import useConnectTarget from "../useConnectTarget";
+import WorkspaceTargetField from "../components/WorkspaceTargetField";
 import EditCompatibleNodeModal from "../[id]/EditCompatibleNodeModal";
 import AddCustomModelModal from "../[id]/AddCustomModelModal";
 import BulkImportCodexModal from "../[id]/BulkImportCodexModal";
@@ -119,33 +123,86 @@ export default function AuthFlows({
   show,
   handlers,
   models,
+  workspaceId: scopeWorkspaceId = null,
 }) {
+  const target = useConnectTarget();
+  const workspaceId = target.workspaceId ?? scopeWorkspaceId;
+  // Workspace preflight before any sign-in starts (multi-workspace only).
+  const authMode = show.oauth
+    ? "oauth"
+    : show.xiaomiMimo
+      ? "xiaomi"
+      : show.iflowCookie
+        ? "iflow"
+        : null;
+  const [confirmedMode, setConfirmedMode] = useState(null);
+  useEffect(() => {
+    if (authMode !== confirmedMode) setConfirmedMode(null);
+  }, [authMode, confirmedMode]);
+  const needsTarget =
+    target.ready && target.workspaces.length > 1 && authMode && confirmedMode !== authMode;
+  const authOpen = (flag) => Boolean(flag) && target.ready && !needsTarget;
+  const cancelTarget = {
+    oauth: handlers.closeOAuth,
+    xiaomi: handlers.closeXiaomiMimo,
+    iflow: handlers.closeIflowCookie,
+  }[authMode];
   return (
     <>
+      <Modal
+        isOpen={Boolean(needsTarget)}
+        onClose={() => cancelTarget?.()}
+        title={`Connect ${providerInfo.name}`}
+        description="Pick the workspace that will own this account."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => cancelTarget?.()}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={!workspaceId}
+              onClick={() => setConfirmedMode(authMode)}
+            >
+              Continue
+            </Button>
+          </>
+        }
+      >
+        <WorkspaceTargetField
+          value={workspaceId ?? ""}
+          onChange={target.setWorkspaceId}
+          workspaces={target.workspaces}
+        />
+      </Modal>
       {providerId === "kiro" ? (
         <KiroOAuthWrapper
-          isOpen={show.oauth}
+          workspaceId={workspaceId}
+          isOpen={authOpen(show.oauth)}
           providerInfo={providerInfo}
           onSuccess={handlers.oauthSuccess}
           onClose={handlers.closeOAuth}
         />
       ) : providerId === "cursor" ? (
         <CursorAuthModal
-          isOpen={show.oauth}
+          workspaceId={workspaceId}
+          isOpen={authOpen(show.oauth)}
           providerInfo={providerInfo}
           onSuccess={handlers.oauthSuccess}
           onClose={handlers.closeOAuth}
         />
       ) : providerId === "gitlab" ? (
         <GitLabAuthModal
-          isOpen={show.oauth}
+          workspaceId={workspaceId}
+          isOpen={authOpen(show.oauth)}
           providerInfo={providerInfo}
           onSuccess={handlers.oauthSuccess}
           onClose={handlers.closeOAuth}
         />
       ) : (
         <OAuthModal
-          isOpen={show.oauth}
+          workspaceId={workspaceId}
+          isOpen={authOpen(show.oauth)}
           provider={providerId}
           providerInfo={providerInfo}
           onSuccess={handlers.oauthSuccess}
@@ -153,18 +210,21 @@ export default function AuthFlows({
         />
       )}
       <XiaomiMimoAuthModal
-        isOpen={show.xiaomiMimo}
+        workspaceId={workspaceId}
+        isOpen={authOpen(show.xiaomiMimo)}
         onSuccess={handlers.oauthSuccess}
         onClose={handlers.closeXiaomiMimo}
       />
       {providerId === "iflow" ? (
         <IFlowCookieModal
-          isOpen={show.iflowCookie}
+          workspaceId={workspaceId}
+          isOpen={authOpen(show.iflowCookie)}
           onSuccess={handlers.iflowCookieSuccess}
           onClose={handlers.closeIflowCookie}
         />
       ) : null}
       <AddApiKeyModal
+        workspaceId={workspaceId}
         isOpen={show.addApiKey}
         provider={providerId}
         providerName={providerInfo.name}
@@ -177,6 +237,13 @@ export default function AuthFlows({
         error={addConnectionError}
         existingNames={connectionNames}
         onSave={handlers.saveApiKey}
+        targetField={
+          <WorkspaceTargetField
+            value={workspaceId ?? ""}
+            onChange={target.setWorkspaceId}
+            workspaces={target.workspaces}
+          />
+        }
         onBulkDone={handlers.refreshConnections}
         onClose={handlers.closeAddApiKey}
       />
@@ -207,6 +274,7 @@ export default function AuthFlows({
       ) : null}
       {providerId === "codex" ? (
         <BulkImportCodexModal
+          workspaceId={workspaceId}
           isOpen={show.bulkCodex}
           onClose={handlers.closeBulkCodex}
           onSuccess={handlers.refreshConnections}
@@ -214,6 +282,7 @@ export default function AuthFlows({
       ) : null}
       {providerId === "grok-cli" ? (
         <BulkImportGrokCliModal
+          workspaceId={workspaceId}
           isOpen={show.bulkGrokCli}
           onClose={handlers.closeBulkGrokCli}
           onSuccess={handlers.refreshConnections}
@@ -234,6 +303,7 @@ export default function AuthFlows({
 }
 
 AuthFlows.propTypes = {
+  workspaceId: PropTypes.string,
   providerId: PropTypes.string.isRequired,
   providerInfo: PropTypes.object.isRequired,
   isCompatible: PropTypes.bool.isRequired,

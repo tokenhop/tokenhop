@@ -26,6 +26,7 @@ import CooldownTimer from "@/shared/components/CooldownTimer";
 import { connectionHealth } from "@/shared/utils/providerHealth";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
 import { loadSettings, loadOwnedMap, onHttpError, patchSettings } from "@/shared/utils/settingsApi";
+import ConnectionSharing from "./ConnectionSharing";
 
 const shortLabel = (label) => String(label).split(" — ")[0];
 
@@ -43,7 +44,7 @@ const AUTH_PILL_LABEL = {
   compatible: "Compatible",
 };
 
-function AccountItem({ connection, index, quotaSnapshot, onToggle, onClearCooldown }) {
+function AccountItem({ connection, index, quotaSnapshot, onToggle, onClearCooldown, onShared }) {
   const health = connectionHealth(connection);
   const until = health.until;
   const displayName = connection.name || connection.email || connection.displayName || "Account";
@@ -77,6 +78,7 @@ function AccountItem({ connection, index, quotaSnapshot, onToggle, onClearCooldo
           </span>
           {sub && <span className="truncate font-mono text-xs text-muted">{sub}</span>}
         </div>
+        <ConnectionSharing connection={connection} onShared={onShared} />
         <StatusPill variant={status.variant} size="sm">
           {status.label}
         </StatusPill>
@@ -127,6 +129,7 @@ AccountItem.propTypes = {
   quotaSnapshot: PropTypes.object,
   onToggle: PropTypes.func.isRequired,
   onClearCooldown: PropTypes.func.isRequired,
+  onShared: PropTypes.func,
 };
 
 export default function ProviderDetailSidePanel({
@@ -378,6 +381,7 @@ export default function ProviderDetailSidePanel({
               quotaSnapshot={quotas[connection.id]}
               onToggle={(active) => handleToggle(connection, active)}
               onClearCooldown={() => handleClearCooldown(connection)}
+              onShared={onChanged}
             />
           ))
         )}

@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, Button, Callout, Input, Select, Toggle } from "@/shared/components";
 import { AI_PROVIDERS, AUTH_METHODS } from "@/shared/constants/config";
+import useConnectTarget from "../useConnectTarget";
+import WorkspaceTargetField from "../components/WorkspaceTargetField";
 
 const providerOptions = Object.values(AI_PROVIDERS).map((p) => ({
   value: p.id,
@@ -18,6 +20,7 @@ const authMethodOptions = Object.values(AUTH_METHODS).map((m) => ({
 
 export default function NewProviderPage() {
   const router = useRouter();
+  const target = useConnectTarget();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     provider: "",
@@ -51,7 +54,7 @@ export default function NewProviderPage() {
 
     setLoading(true);
     try {
-      const response = await fetch("/api/providers", {
+      const response = await fetch(target.url("/api/providers"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
@@ -88,6 +91,11 @@ export default function NewProviderPage() {
       {/* Form */}
       <Card>
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+          <WorkspaceTargetField
+            value={target.workspaceId ?? ""}
+            onChange={target.setWorkspaceId}
+            workspaces={target.workspaces}
+          />
           {/* Provider Selection */}
           <Select
             label="Provider"
