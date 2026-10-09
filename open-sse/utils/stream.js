@@ -25,8 +25,8 @@ import {
   isOpenAIResponsesTerminalEvent,
   formatIncompleteOpenAIResponsesStreamFailure,
 } from "./responsesStreamHelpers.js";
+import { GEMINI_FINISH, GEMINI_BLOCK_UNSPECIFIED } from "../translator/schema/finishReasons.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
-
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
 export { COLORS, formatSSE };
@@ -117,19 +117,22 @@ export function createSSEStream(options = {}) {
   // First upstream error seen mid-stream (after the 200 headers), so the
   // request is logged as an error instead of success (YAN-662).
   let streamError = null;
-  const noteStreamError = (parsed) => {
-    if (streamError || !parsed || typeof parsed !== "object") return;
+  const extractStreamError = (parsed) => {
+    if (!parsed || typeof parsed !== "object") return null;
     const type = parsed.type;
     let err = null;
     if (type === "error") err = parsed.error || parsed;
     else if (type === "response.failed")
       err = parsed.response?.error || { message: "response.failed" };
     else if (parsed.error && !parsed.choices?.length) err = parsed.error;
-    if (!err) return;
-    streamError = {
+    if (!err) return null;
+    return {
       message: typeof err === "string" ? err : err.message || JSON.stringify(err),
       ...(typeof err === "object" && (err.type || err.code) && { type: err.type || err.code }),
     };
+  };
+  const noteStreamError = (parsed) => {
+    streamError ??= extractStreamError(parsed);
   };
   let streamDoneSent = false; // track duplicate [DONE] across transform + flush
   let finalized = false;
@@ -162,6 +165,26 @@ export function createSSEStream(options = {}) {
   let routingError = null;
   const noteSynthesizedFailure = () => {
     routingError ??= { message: "stream closed before response.completed" };
+  };
+  // Gemini-family passthrough has no [DONE]; completion is a non-empty finishReason
+  // (top level or Antigravity's `response` wrapper). Any real reason counts, so new
+  // upstream values stay valid; only the "unspecified" placeholder is not terminal.
+  // Routing-only: clean EOF without it is a truncated stream.
+  const isGeminiFamily =
+    provider === "antigravity" || provider === "gemini" || provider === "vertex";
+  let geminiFinishSeen = false;
+  const isRealReason = (v, placeholder) => typeof v === "string" && v !== "" && v !== placeholder;
+  const observeGeminiFinish = (parsed) => {
+    if (geminiFinishSeen || !isGeminiFamily || !onStreamResult) return;
+    // A blocked prompt ends the stream with promptFeedback.blockReason and no candidates.
+    const block = (parsed?.promptFeedback ?? parsed?.response?.promptFeedback)?.blockReason;
+    if (isRealReason(block, GEMINI_BLOCK_UNSPECIFIED)) {
+      geminiFinishSeen = true;
+      return;
+    }
+    const cands = parsed?.candidates ?? parsed?.response?.candidates;
+    if (!Array.isArray(cands)) return;
+    geminiFinishSeen = cands.some((c) => isRealReason(c?.finishReason, GEMINI_FINISH.UNSPECIFIED));
   };
   const notifyStreamResult = ({ error } = {}) => {
     if (resultNotified || !onStreamResult) return;
@@ -266,11 +289,12 @@ export function createSSEStream(options = {}) {
           if (isDoneLine(trimmed)) {
             if (streamDoneSent) continue;
             streamDoneSent = true;
-            notifyStreamResult();
+            if (!isGeminiFamily) notifyStreamResult();
           } else if (trimmed.startsWith("data:")) {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
               noteStreamError(parsed);
+              observeGeminiFinish(parsed);
 
               const idFixed = fixInvalidId(parsed);
 
@@ -597,6 +621,15 @@ export function createSSEStream(options = {}) {
             }
             reqLogger?.appendConvertedChunk?.(output);
             observeEmittedLine(output.trim());
+            if (output.trim().startsWith("data:")) {
+              try {
+                const tail = JSON.parse(output.trim().slice(5));
+                routingError ??= extractStreamError(tail);
+                observeGeminiFinish(tail);
+              } catch {
+                // fail-open: partial/non-JSON tail is not a terminal
+              }
+            }
             controller.enqueue(sharedEncoder.encode(output));
           }
 
@@ -605,12 +638,14 @@ export function createSSEStream(options = {}) {
           //   data: [DONE]\n\n
           // Without it they can hang until timeout and trigger failover.
           // Gemini-family clients (Antigravity, Vertex, Gemini) reject this sentinel with 400 syntax errors.
-          const isGeminiFamily =
-            provider === "antigravity" || provider === "gemini" || provider === "vertex";
           if (!streamDoneSent && !isGeminiFamily) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
+          }
+
+          if (isGeminiFamily && !geminiFinishSeen) {
+            routingError ??= { message: "stream closed before finishReason" };
           }
 
           notifyStreamResult();

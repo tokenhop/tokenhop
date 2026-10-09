@@ -3,6 +3,21 @@
 // Time is driven by a mocked Date.now; chunks are stepped manually (enqueue at
 // an explicit timestamp, then read) so timing is fully deterministic.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+// Capture the fallback request-log entry finalizeStream() writes when there is
+// no usage — its status must not be polluted by routing-only tail errors.
+const { requestLogCalls } = vi.hoisted(() => ({ requestLogCalls: [] }));
+vi.mock("@/lib/usageDb.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    trackPendingRequest: vi.fn(),
+    appendRequestLog: vi.fn(async (entry) => {
+      requestLogCalls.push(entry);
+    }),
+  };
+});
+
 import { createSSEStream } from "../../open-sse/utils/stream.js";
 import { hasMeaningfulToken } from "../../open-sse/utils/streamHelpers.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
@@ -227,6 +242,141 @@ describe("createSSEStream onStreamResult", () => {
     ).text();
     expect(cb).toHaveBeenCalledTimes(1); // called despite throwing
     expect(text).toContain("hi");
+  });
+});
+
+// YAN-1014: Gemini-family passthrough has no [DONE]; a clean EOF without a
+// non-empty finishReason is a truncated stream, a routing failure (bytes untouched).
+describe("createSSEStream Gemini-family truncated EOF", () => {
+  const gem = (cand) => `data: ${JSON.stringify({ candidates: [cand] })}\n\n`;
+  const part = { content: { parts: [{ text: "hi" }] } };
+  const TXT = gem(part);
+  const wrap = (cand) => `data: ${JSON.stringify({ response: { candidates: [cand] } })}\n\n`;
+  const TRUNC = "stream closed before finishReason";
+
+  it.each([
+    ["gemini, no finishReason", "gemini", [TXT], TRUNC],
+    ["vertex, no finishReason", "vertex", [TXT], TRUNC],
+    ["antigravity wrapped, no finishReason", "antigravity", [wrap(part)], TRUNC],
+    ["empty finishReason", "gemini", [TXT, gem({ finishReason: "" })], TRUNC],
+    ["null finishReason", "gemini", [TXT, gem({ finishReason: null })], TRUNC],
+    [
+      "FINISH_REASON_UNSPECIFIED",
+      "gemini",
+      [TXT, gem({ finishReason: "FINISH_REASON_UNSPECIFIED" })],
+      TRUNC,
+    ],
+    [
+      "upstream error keeps precedence",
+      "gemini",
+      [TXT, 'data: {"error":{"message":"boom"}}\n\n'],
+      "boom",
+    ],
+    ["gemini terminal STOP", "gemini", [TXT, gem({ finishReason: "STOP" })], null],
+    ["vertex unlisted terminal reason", "vertex", [TXT, gem({ finishReason: "NEW_REASON" })], null],
+    [
+      "antigravity wrapped terminal",
+      "antigravity",
+      [wrap(part), wrap({ finishReason: "STOP" })],
+      null,
+    ],
+    ["non-Gemini provider unchanged", "x", [TXT], null],
+    [
+      "text and finishReason in one frame",
+      "gemini",
+      [gem({ ...part, finishReason: "STOP" })],
+      null,
+    ],
+    [
+      "second candidate finishes",
+      "gemini",
+      [`data: ${JSON.stringify({ candidates: [part, { finishReason: "STOP" }] })}\n\n`],
+      null,
+    ],
+    [
+      "blocked prompt is terminal",
+      "gemini",
+      [TXT, `data: ${JSON.stringify({ promptFeedback: { blockReason: "SAFETY" } })}\n\n`],
+      null,
+    ],
+    [
+      "antigravity wrapped blocked prompt is terminal",
+      "antigravity",
+      [
+        wrap(part),
+        `data: ${JSON.stringify({ response: { promptFeedback: { blockReason: "OTHER" } } })}\n\n`,
+      ],
+      null,
+    ],
+    [
+      "unspecified blockReason is not terminal",
+      "gemini",
+      [
+        TXT,
+        `data: ${JSON.stringify({ promptFeedback: { blockReason: "BLOCK_REASON_UNSPECIFIED" } })}\n\n`,
+      ],
+      TRUNC,
+    ],
+  ])("%s", async (_name, provider, frames, expected) => {
+    const r = rig({ mode: "passthrough", provider });
+    let t = 1000;
+    for (const f of frames) {
+      t += 100;
+      await r.feed(f, t);
+    }
+    await r.finish();
+    expect(r.cb).toHaveBeenCalledTimes(1);
+    const res = r.cb.mock.calls[0][0];
+    expect(res.firstTokenAt).toBe(1100);
+    expect(res.cancelled).toBe(false);
+    if (expected) expect(res.error?.message).toBe(expected);
+    else expect(res.error).toBeNull();
+    // Bytes unchanged; non-Gemini providers still get the [DONE] sentinel appended.
+    const sentinel = ["gemini", "vertex", "antigravity"].includes(provider)
+      ? ""
+      : "data: [DONE]\n\n";
+    expect(r.text()).toBe(frames.join("") + sentinel);
+  });
+
+  it("final terminal frame without trailing newline counts", async () => {
+    const r = rig({ mode: "passthrough", provider: "gemini" });
+    await r.feed(TXT, 1100);
+    await r.feed(gem({ finishReason: "STOP" }).trimEnd(), 1200);
+    await r.finish();
+    expect(r.cb).toHaveBeenCalledTimes(1);
+    expect(r.cb.mock.calls[0][0]).toEqual({ firstTokenAt: 1100, error: null, cancelled: false });
+  });
+
+  it("unterminated final error frame reports the upstream error", async () => {
+    const r = rig({ mode: "passthrough", provider: "gemini" });
+    await r.feed(TXT, 1100);
+    await r.feed('data: {"error":{"message":"boom"}}', 1200);
+    await r.finish();
+    expect(r.cb).toHaveBeenCalledTimes(1);
+    expect(r.cb.mock.calls[0][0].error?.message).toBe("boom");
+  });
+
+  it("tail error is routing-only: completion and request log stay successful", async () => {
+    requestLogCalls.length = 0;
+    const onStreamComplete = vi.fn();
+    const r = rig({ mode: "passthrough", provider: "gemini", onStreamComplete });
+    await r.feed('data: {"error":{"message":"tail boom"}}', 1100);
+    await r.finish();
+    expect(r.cb.mock.calls[0][0].error?.message).toBe("tail boom");
+    expect(onStreamComplete).toHaveBeenCalledTimes(1);
+    expect(onStreamComplete.mock.calls[0][3].error).toBeNull();
+    expect(requestLogCalls.at(-1).status).toBe("200 OK");
+  });
+
+  it.each([false, true])("Gemini DONE waits for EOF validation (finish=%s)", async (finish) => {
+    const r = rig({ mode: "passthrough", provider: "gemini" });
+    const frames = TXT + (finish ? gem({ finishReason: "STOP" }) : "") + "data: [DONE]\n\n";
+    await r.feed(frames, 1100);
+    expect(r.cb).not.toHaveBeenCalled();
+    await r.finish();
+    expect(r.cb).toHaveBeenCalledTimes(1);
+    expect(r.cb.mock.calls[0][0].error?.message ?? null).toBe(finish ? null : TRUNC);
+    expect(r.text()).toBe(frames);
   });
 });
 
