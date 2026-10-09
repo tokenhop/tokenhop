@@ -13,6 +13,7 @@ export default function WorkspaceTargetField({ value, onChange, workspaces }) {
   return (
     <Select
       label="Connect to workspace"
+      placeholder={null}
       value={value}
       onChange={(event) => onChange(event.target.value)}
       options={workspaces.map((workspace) => ({
