@@ -13,6 +13,9 @@ vi.mock("@/lib/auth/apiKeyPrincipal.js", () => ({
   clearApiKeyPrincipalCache: vi.fn(),
 }));
 
+// These YAN-365 fixtures assert the pre-Users & teams compatibility contract.
+vi.mock("@/lib/users/featureSwitch.js", () => ({ isMultiUserEnabled: vi.fn(async () => false) }));
+
 const { clearApiKeyPrincipalCache } = await import("@/lib/auth/apiKeyPrincipal.js");
 
 const NOW = "2026-10-03T00:00:00.000Z";
@@ -669,6 +672,8 @@ it("hashed snapshots round-trip disabled models and clear missing legacy section
   await dbApi.importDb(snapshot, { masterKey: MASTER });
   expect(await dbApi.getDisabledModelsUnscoped()).toEqual(snapshot.disabledModels);
   delete snapshot.disabledModels;
+  // Simulate an older hashed snapshot: no full raw-KV section either.
+  delete snapshot.kv;
   await dbApi.importDb(snapshot, { masterKey: MASTER });
   expect(await dbApi.getDisabledModelsUnscoped()).toEqual({});
 });

@@ -64,6 +64,41 @@ removes its own failed partial copies.
 **Docker is unaffected:** the image always sets `DATA_DIR=/app/data`, so the
 defaults above never apply inside a container.
 
+### Automatic backups and recovery
+
+Before a schema migration the server copies every database table, including
+the users and teams tables, into `DATA_DIR/db/backups/`. The only exclusion is the
+`requestDetails` request log. The newest three ordinary backups are kept.
+
+- Once credential encryption is active, backups contain credential ciphertext
+  and wrapped per-workspace data keys. They never contain the master key
+  (`TOKENHOP_MASTER_KEY` or `DATA_DIR/keys/master`); decrypting credentials
+  requires the matching key. Preserve that key separately and protect it.
+  Before encryption is active, and in activation backups, credentials may be
+  plaintext: protect these copies at least as carefully as the live database.
+- A backup also holds user, identity, password-hash and session-version data.
+  Treat the backup directory as sensitive: restrict access and never share it.
+- There is no automated restore. Stop tokenhop completely, then preserve the
+  current `DATA_DIR/db/data.sqlite` and any `data.sqlite-wal` and
+  `data.sqlite-shm` files together in a separate recovery directory. Copy the
+  backup's `data.sqlite` into `DATA_DIR/db/`, with no old WAL or SHM files left
+  there. Provide the matching master key if encryption was active, then start
+  tokenhop. Keep the preserved files until recovery is verified.
+
+### Workspace export and import
+
+With Users & teams enabled, an active workspace owner can transfer that
+workspace from Settings. Each operation requires the acting user's password;
+SSO-only accounts without a local password cannot use this workflow.
+A backup passphrase is required. Keep it separately: credentials are encrypted
+and bound to their source rows; the instance master key and API keys are not exported.
+Only import trusted files: credential leaves are authenticated, but nonsecret
+names, model configuration and preferences are not tamper-authenticated.
+Imports create fresh IDs and remap node references. Resource, name and KV conflicts
+reject the whole import. Preferences merge with incoming values winning while
+preserving destination-only entries. Full-instance JSON backups include telemetry
+and request details; automatic database backups exclude `requestDetails`.
+
 ## 3. Environment variables
 
 Product variables are renamed to `TOKENHOP_*`. The legacy names keep working

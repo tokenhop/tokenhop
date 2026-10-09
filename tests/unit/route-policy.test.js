@@ -166,6 +166,13 @@ const YAN365_KEY_ROUTES = new Set([
   "/api/workspaces/[id]/keys/rotate",
 ]);
 
+// YAN-375 workspace transfer routes are new too: hidden while the switch is
+// off (multiUserOnly), never satisfiable by single-user mode.
+const YAN375_TRANSFER_ROUTES = new Set([
+  "/api/workspaces/[id]/export",
+  "/api/workspaces/[id]/import",
+]);
+
 // YAN-366 tightened xiaomi-mimo/auto-import to match its cursor/kiro siblings
 // (hostOps + loopback + alwaysProtected); the pre-YAN-357 guard did not list it.
 const YAN366_TIGHTENED = new Set(["/api/oauth/xiaomi-mimo/auto-import"]);
@@ -254,6 +261,7 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
         if (YAN360_USER_ROUTES.has(route)) want.alwaysProtected = true;
         if (YAN360_PUBLIC_ROUTES.has(route)) want.public = true;
         if (YAN367_AUDIT_ROUTES.has(route)) want.alwaysProtected = true;
+        if (YAN375_TRANSFER_ROUTES.has(route)) want.alwaysProtected = true;
         if (YAN372_USER_BUDGET_ROUTES.has(route)) want.alwaysProtected = true;
         if (YAN371_ACCOUNT_ROUTES.has(route)) want.alwaysProtected = true;
         if (YAN366_TIGHTENED.has(route)) {
@@ -291,7 +299,10 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
         !MOVED_TO_GUARD.has(route) &&
           !YAN358_PASSWORD_ROUTES.has(route) &&
           !YAN360_USER_ROUTES.has(route) &&
-          !YAN360_SESSION_ONLY_ROUTES.has(route),
+          !YAN360_SESSION_ONLY_ROUTES.has(route) &&
+          // YAN-375: browser-only workspace transfer routes (session + own
+          // password re-auth); every other authenticated route keeps the CLI.
+          !YAN375_TRANSFER_ROUTES.has(route),
       );
     }
   });

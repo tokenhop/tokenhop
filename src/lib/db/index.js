@@ -9,6 +9,14 @@ import {
   poisonCredentialMaintenance,
 } from "./credentialMaintenance.js";
 import { getMetaSync } from "./helpers/metaStore.js";
+import { assertInstanceUsersMatch } from "./helpers/instanceUserDiff.js";
+import { makeInstancePortable, unlockInstancePortable } from "./helpers/instancePortable.js";
+import {
+  isConfirmedLegacyPayload,
+  preflightLegacyEncryptedImport,
+  encodeLegacyCredentialRows,
+  insertLegacyEncryptedRowsSync,
+} from "./helpers/legacyEncryptedImport.js";
 import {
   CREDENTIAL_TRANSFER_FORMAT_VERSION,
   TransferError,
@@ -278,19 +286,28 @@ export {
 // (formatVersion 1) happens before any credential-shape check, so an exact
 // version pin here closes the `{}`/`null` credentialEncryption smuggle that
 // would otherwise route to the wipe-and-write-plaintext apply.
-function assertEncryptedImportAllowed(db, payload) {
+// YAN-375: the one exception is a confirmed legacy (v1, no credential/marker
+// section) payload while the multi-user switch is ON and the marker is cleanly
+// encrypted: it imports into Default through the credential codec. Returns
+// true for that route. A corrupt marker still fails closed (strict read throws).
+async function assertEncryptedImportAllowed(db, payload) {
   let encrypted = false;
+  let clean = false;
   try {
     encrypted = readCredentialEncryptionState(db, { strict: true }).storage === "encrypted";
+    clean = true;
   } catch {
     encrypted = true;
   }
-  if (encrypted && payload?.formatVersion !== CREDENTIAL_TRANSFER_FORMAT_VERSION) {
-    throw new TransferError(
-      "TRANSFER_FORMAT_INVALID",
-      "Encrypted instance: restore a v3 snapshot with the matching root",
-    );
+  if (!encrypted || payload?.formatVersion === CREDENTIAL_TRANSFER_FORMAT_VERSION) return false;
+  if (clean && isConfirmedLegacyPayload(payload)) {
+    const { isMultiUserEnabled } = await import("@/lib/users/featureSwitch.js");
+    if (await isMultiUserEnabled()) return true;
   }
+  throw new TransferError(
+    "TRANSFER_FORMAT_INVALID",
+    "Encrypted instance: restore a v3 snapshot with the matching root",
+  );
 }
 const WS_KEY_PREFIX_RE = /^ws:[^/]+\//;
 
@@ -303,7 +320,7 @@ function isLegacyDefaultKey(key, defaultWs) {
 }
 
 // Export/import full DB
-export async function exportDb() {
+export async function exportDb({ passphrase } = {}) {
   const db = await getAdapter();
   const { exportSettings } = await import("./repos/settingsRepo.js");
   const defaultWs = defaultWorkspaceIdUnscoped(db);
@@ -389,10 +406,43 @@ export async function exportDb() {
   // YAN-363: hashed instances additionally carry the format v2 sections
   // (key metadata only, identity graph, security marker). Legacy instances
   // export the exact legacy snapshot shape — byte-compatible roundtrip.
-  return exportGatewayKeySnapshot(db, out, gatewayKeyStorageSnapshot(db));
+  const { isMultiUserEnabled } = await import("@/lib/users/featureSwitch.js");
+  const multiUserTransfer = await isMultiUserEnabled();
+  const snapshot = exportGatewayKeySnapshot(db, out, gatewayKeyStorageSnapshot(db), {
+    multiUserTransfer,
+  });
+  if (!multiUserTransfer && passphrase !== undefined) {
+    throw new TransferError(
+      "TRANSFER_PORTABLE_UNSUPPORTED",
+      "Passphrase exports require Users & teams",
+    );
+  }
+  if (passphrase === undefined) return snapshot;
+  if (!snapshot.credentialEncryption) {
+    throw new TransferError(
+      "TRANSFER_PORTABLE_UNSUPPORTED",
+      "Passphrase-protected exports need encrypted credentials",
+    );
+  }
+  const { loadMasterKey } = await import("@/lib/security/masterKey.js");
+  const root = await loadMasterKey();
+  try {
+    if (root.kid !== snapshot.credentialEncryption.kekKid) {
+      throw new TransferError(
+        "TRANSFER_ROOT_MISMATCH",
+        "Trusted master key does not match this instance's root",
+      );
+    }
+    return await makeInstancePortable(snapshot, { passphrase, masterKey: root.key });
+  } finally {
+    root.key.fill(0);
+  }
 }
 
-export async function importDb(payload, { masterKey = null } = {}) {
+export async function importDb(
+  payload,
+  { masterKey = null, force = false, actor = null, passphrase } = {},
+) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("Invalid database payload");
   }
@@ -409,13 +459,12 @@ export async function importDb(payload, { masterKey = null } = {}) {
     }
   }
   const db = await getAdapter();
-
   // YAN-365: on established credential encryption a payload without a v3
   // credential section is a plaintext/legacy restore — it would write
   // covered secrets unencrypted and drop workspaceId. Reject before the root
   // proof, backup or wipe (B5 adds the v3 path). A malformed marker fails
   // closed the same way.
-  assertEncryptedImportAllowed(db, payload);
+  const legacyEncrypted = await assertEncryptedImportAllowed(db, payload);
 
   // YAN-363: trusted root loader. Callers (HTTP route) never supply raw key
   // material; the master comes only from env/file via the crypto module when
@@ -456,13 +505,34 @@ export async function importDb(payload, { masterKey = null } = {}) {
   // into hashed storage additionally requires the separately supplied master
   // (approved Q4) and converts legacy plaintext keys to hashed rows — no raw
   // key is ever written to a hashed instance.
+  const { isMultiUserEnabled } = await import("@/lib/users/featureSwitch.js");
+  const multiUserTransfer = await isMultiUserEnabled();
+  let allowPortableHashAdoption = false;
+  if (payload.credentialEncryption?.portable !== undefined) {
+    if (!multiUserTransfer) {
+      throw new TransferError("TRANSFER_FORMAT_INVALID", "Portable restores require Users & teams");
+    }
+    if (passphrase === undefined || !resolvedMaster) {
+      throw new TransferError("TRANSFER_PASSPHRASE_REQUIRED", "This backup needs its passphrase");
+    }
+    payload = await unlockInstancePortable(payload, { passphrase, masterKey: resolvedMaster });
+    // Trusted local proof, never read from the import document or HTTP body.
+    allowPortableHashAdoption = true;
+  }
   const instance = gatewayKeyStorageSnapshot(db);
-  const plan = preflightGatewayKeyImport(payload, {
-    instance,
-    db,
-    masterKey: resolvedMaster,
-    defaultWorkspaceId: getMetaSync(db, "defaultWorkspaceId"),
-  });
+  const plan = legacyEncrypted
+    ? preflightLegacyEncryptedImport(payload, { instance, db, masterKey: resolvedMaster })
+    : preflightGatewayKeyImport(payload, {
+        instance,
+        db,
+        masterKey: resolvedMaster,
+        defaultWorkspaceId: getMetaSync(db, "defaultWorkspaceId"),
+        allowPortableHashAdoption,
+        multiUserTransfer,
+      });
+  // YAN-375: validate shape before diffing identities; refuse replacements
+  // before backups/mutations unless the authenticated owner forces them.
+  if (multiUserTransfer) assertInstanceUsersMatch(db, payload, { force, actor });
   // Capture the live state preflight proved, BEFORE any async preparation.
   // A rotation can commit while imports below yield; re-prove generation as
   // the FIRST statement of either destructive transaction, or apply nothing.
@@ -521,6 +591,9 @@ export async function importDb(payload, { masterKey = null } = {}) {
       db,
       payload.settings ? { ...payload.settings } : undefined,
     );
+    const encrypted = legacyEncrypted
+      ? encodeLegacyCredentialRows(db, payload, restoredSettings, resolvedMaster, plan)
+      : null;
     // Wipe all tables (keep _meta)
     db.run(`DELETE FROM settings`);
     db.run(`DELETE FROM providerConnections`);
@@ -539,11 +612,12 @@ export async function importDb(payload, { masterKey = null } = {}) {
     if (restoredSettings !== undefined) {
       db.run(
         `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
-        [stringifyJson(restoredSettings)],
+        [encrypted ? encrypted.settings : stringifyJson(restoredSettings)],
       );
     }
 
-    for (const c of payload.providerConnections || []) {
+    if (encrypted) insertLegacyEncryptedRowsSync(db, encrypted);
+    for (const c of encrypted ? [] : payload.providerConnections || []) {
       const {
         id,
         provider,
@@ -574,7 +648,7 @@ export async function importDb(payload, { masterKey = null } = {}) {
         ],
       );
     }
-    for (const n of payload.providerNodes || []) {
+    for (const n of encrypted ? [] : payload.providerNodes || []) {
       const {
         id,
         type,

@@ -6,6 +6,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
 const originalDataDir = process.env.DATA_DIR;
 const originalInitial = process.env.INITIAL_PASSWORD;
+const originalMultiUser = process.env.TOKENHOP_MULTI_USER;
 let tempDir;
 let db;
 
@@ -13,6 +14,9 @@ beforeAll(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-settings-secrets-"));
   process.env.DATA_DIR = tempDir;
   process.env.INITIAL_PASSWORD = "initial-pw";
+  // YAN-605 fixture verifies legacy password/CLI re-auth, even in ON CI.
+  // Multi-user principals and acting-user re-auth have their own route tests.
+  process.env.TOKENHOP_MULTI_USER = "off";
   vi.resetModules();
   db = await import("@/lib/db/index.js");
   await db.initDb();
@@ -24,6 +28,8 @@ afterAll(() => {
   else process.env.DATA_DIR = originalDataDir;
   if (originalInitial === undefined) delete process.env.INITIAL_PASSWORD;
   else process.env.INITIAL_PASSWORD = originalInitial;
+  if (originalMultiUser === undefined) delete process.env.TOKENHOP_MULTI_USER;
+  else process.env.TOKENHOP_MULTI_USER = originalMultiUser;
 });
 
 const req = (url, init = {}) => new Request(`http://localhost${url}`, init);

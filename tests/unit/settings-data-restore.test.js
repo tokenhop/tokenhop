@@ -32,9 +32,41 @@ describe("readBackupEnvelope", () => {
       formatVersion: 2,
       schemaVersion: 7,
       hashed: true,
+      encrypted: false,
+      portable: false,
       apiKeyStorageVersion: 1,
       hashKid: "kid-abc",
     });
+  });
+
+  it("reports v3 hashed/encrypted/portable from real sections, no invented schema", () => {
+    expect(
+      readBackupEnvelope({
+        formatVersion: 3,
+        schemaVersion: 7,
+        apiKeyStorage: { storage: "hashed", hashKid: "kid-3" },
+        credentialEncryption: { kekKid: "kid-kek", portable: {} },
+        workspaceKeys: [{ workspaceId: "ws-default", kid: "kid-kek", wrappedDek: "{}" }],
+      }),
+    ).toEqual({
+      formatVersion: 3,
+      schemaVersion: 7,
+      hashed: true,
+      encrypted: true,
+      portable: true,
+      // v2-only field: v3 apiKeys carry no apiKeyStorage.version to read.
+      apiKeyStorageVersion: null,
+      hashKid: "kid-3",
+    });
+    // Encrypted but not passphrase-wrapped: portable stays false.
+    expect(
+      readBackupEnvelope({
+        formatVersion: 3,
+        apiKeyStorage: { storage: "hashed" },
+        credentialEncryption: { kekKid: "kid-kek" },
+        workspaceKeys: [],
+      }),
+    ).toMatchObject({ hashed: true, encrypted: true, portable: false });
   });
 
   it("treats a file without formatVersion as legacy, never hashed", () => {

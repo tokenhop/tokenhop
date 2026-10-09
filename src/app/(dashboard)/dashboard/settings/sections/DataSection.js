@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import SectionCard from "@/shared/components/SectionCard";
 import SettingRow from "@/shared/components/SettingRow";
 import Toggle from "@/shared/components/Toggle";
@@ -11,6 +11,9 @@ import Modal from "@/shared/components/Modal";
 import Callout from "@/shared/components/Callout";
 import CopyField from "@/shared/components/CopyField";
 import { ACTIVE } from "@/shared/brand";
+import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
+import { accountView } from "@/shared/utils/account";
+import BackupManager from "./BackupManager";
 
 // Shown until the server reports the real path (and if that request fails).
 const DEFAULT_DATABASE_FILE = `~/.${ACTIVE.dataDirName}/db/data.sqlite`;
@@ -27,7 +30,10 @@ export const readBackupEnvelope = (payload) => {
   return {
     formatVersion: version,
     schemaVersion: Number.isInteger(payload.schemaVersion) ? payload.schemaVersion : null,
-    hashed: version === 2 && payload.apiKeyStorage?.storage === "hashed",
+    hashed: (version === 2 || version === 3) && payload.apiKeyStorage?.storage === "hashed",
+    encrypted:
+      version === 3 && payload.credentialEncryption != null && Array.isArray(payload.workspaceKeys),
+    portable: version === 3 && payload.credentialEncryption?.portable != null,
     apiKeyStorageVersion:
       version === 2 && Number.isInteger(payload.apiKeyStorage?.version)
         ? payload.apiKeyStorage.version
@@ -38,11 +44,30 @@ export const readBackupEnvelope = (payload) => {
 };
 
 /**
+ * Data & backup section. While users & teams is active (YAN-375) the
+ * reauth-confirmed, passphrase-aware export/import takes over; a single-user
+ * install keeps the legacy password-gated flow byte-for-byte.
+ */
+export default function DataSection({ onSettingsChange }) {
+  const { status: authStatus } = useAuthStatusState();
+  const view = useMemo(() => accountView(authStatus), [authStatus]);
+  if (view.active)
+    return (
+      <BackupManager
+        view={view}
+        onSettingsChange={onSettingsChange}
+        readEnvelope={readBackupEnvelope}
+      />
+    );
+  return <LegacyDataSection onSettingsChange={onSettingsChange} />;
+}
+
+/**
  * Data & backup section: read-only DB location and password-gated
  * download/import backup actions (parity with the legacy profile page),
  * plus the honest cloud-sync readout (the sync worker is not in this repo).
  */
-export default function DataSection({ onSettingsChange }) {
+function LegacyDataSection({ onSettingsChange }) {
   const [status, setStatus] = useState({ type: "", message: "" });
   const [loading, setLoading] = useState(false);
   const [auth, setAuth] = useState({ open: false, mode: "", password: "" });
@@ -190,6 +215,7 @@ export default function DataSection({ onSettingsChange }) {
             <input
               ref={importFileRef}
               type="file"
+              aria-label="Instance backup file"
               accept="application/json,.json"
               onChange={handleImportPick}
               className="hidden"
@@ -308,5 +334,9 @@ export default function DataSection({ onSettingsChange }) {
 }
 
 DataSection.propTypes = {
+  onSettingsChange: PropTypes.func,
+};
+
+LegacyDataSection.propTypes = {
   onSettingsChange: PropTypes.func,
 };

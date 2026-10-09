@@ -15,6 +15,14 @@ import { readCredentialEncryptionState } from "../credentialEncryptionState.js";
 import { isCredentialMaintenancePoisoned } from "../credentialMaintenance.js";
 import { insertHashedApiKeySync } from "../repos/apiKeysRepo.js";
 import { adoptOwnerlessRowsUnscoped } from "../repos/ownership.js";
+import {
+  INSTANCE_SNAPSHOT_SECTION_NAMES,
+  deleteInstanceTableSections,
+  exportInstanceTableSections,
+  insertInstanceTableSections,
+  readInstanceTableSections,
+  validateInstanceTableSections,
+} from "./instanceSnapshotTables.js";
 import { getMetaSync, setMetaSync } from "./metaStore.js";
 import { parseJson, stringifyJson } from "./jsonCol.js";
 import { parseCredentialBlob } from "./credentialStorage.js";
@@ -227,7 +235,7 @@ function hashedRowOut(row) {
  * the stored JSON string verbatim: ciphertext envelopes are copied byte-exact
  * and nothing here ever decrypts (no root is loaded for an export).
  */
-export function exportGatewayKeySnapshot(db, out, state) {
+export function exportGatewayKeySnapshot(db, out, state, { multiUserTransfer = true } = {}) {
   if (state.storage !== "hashed") return out;
   for (const row of db.all("SELECT * FROM apiKeys")) {
     if (row.hashKid !== state.hashKid || !HASH_RE.test(row.keyHash ?? "")) {
@@ -319,14 +327,33 @@ export function exportGatewayKeySnapshot(db, out, state) {
       createdByUserId: r.createdByUserId ?? null,
     }));
   }
+  if (multiUserTransfer) {
+    // YAN-375: preserve all workspace resources and user-data counters.
+    out.metadataCounters = db.all(
+      "SELECT key, value FROM _meta WHERE key IN ('savingsTokensLifetime', 'totalRequestsLifetime')",
+    );
+    out.kv = db.all("SELECT scope, key, value FROM kv");
+    out.combos = db.all("SELECT * FROM combos").map((row) => ({
+      ...row,
+      models: parseJson(row.models, []),
+    }));
+    exportInstanceTableSections(db, out);
+  }
   // Full parity: durable video-job bindings travel with the instance snapshot
   // (triple PK + connection/model provenance, matching the repo's contract).
   out.gatewayVideoJobs = liveGatewayVideoJobs(db);
+  // YAN-375 complete-table parity: every remaining instance/scoped table
+  // travels as raw SQL rows (verbatim bytes; encrypted instances keep
+  // ciphertext envelopes byte-exact). Absent sections at import retain live
+  // rows — a snapshot never silently drops data it cannot represent.
   validateConfigShape(out);
-  validateVideoJobRefs(out, {
+  const outRefs = {
+    users: new Set(out.users.map((u) => u.id)),
     workspaces: new Set(out.workspaces.map((w) => w.id)),
     connectionsById: new Map(out.providerConnections.map((c) => [c.id, c])),
-  });
+  };
+  validateVideoJobRefs(out, outRefs);
+  if (multiUserTransfer) validateInstanceTableSections(out, outRefs);
   return out;
 }
 
@@ -493,6 +520,81 @@ function validateConfigShape(payload) {
   for (const m of payload.customModels ?? []) {
     if (!isPlainObject(m) || typeof m.providerAlias !== "string" || typeof m.id !== "string") {
       fail("TRANSFER_STATE_INVALID", "customModels entries need providerAlias and id");
+    }
+  }
+
+  // YAN-376 bounded raw-KV parity: rows carry exactly scope/key/value strings,
+  // unique per (scope, key), JSON-parseable values; the cliToolPresets apiKeys
+  // row reuses the flat preset raw-key rejection via validateSnapshotPresets.
+  if (payload.kv !== undefined) {
+    if (!Array.isArray(payload.kv)) {
+      fail("TRANSFER_STATE_INVALID", "kv must be an array");
+    }
+    const seenKv = new Set();
+    for (const row of payload.kv) {
+      if (!isPlainObject(row)) {
+        fail("TRANSFER_STATE_INVALID", "kv entries must be objects");
+      }
+      for (const field of Object.keys(row)) {
+        if (!["scope", "key", "value"].includes(field)) {
+          fail("TRANSFER_STATE_INVALID", `kv entry has unknown field "${field}"`);
+        }
+      }
+      for (const field of ["scope", "key", "value"]) {
+        if (typeof row[field] !== "string") {
+          fail("TRANSFER_STATE_INVALID", `kv ${field} must be a string`);
+        }
+      }
+      const pk = JSON.stringify([row.scope, row.key]);
+      if (seenKv.has(pk)) fail("TRANSFER_STATE_INVALID", "duplicate kv row in snapshot");
+      seenKv.add(pk);
+      let parsed;
+      try {
+        parsed = JSON.parse(row.value);
+      } catch {
+        fail("TRANSFER_STATE_INVALID", "kv value must be valid JSON");
+      }
+      if (row.scope === "cliToolPresets" && row.key === "apiKeys") {
+        validateSnapshotPresets({ cliToolPresets: { apiKeys: parsed } });
+      }
+    }
+  }
+
+  // YAN-408 instance user-counters: only the two lifetime _meta counters
+  // travel; schema/app/crypto/recovery keys never enter a snapshot.
+  if (payload.metadataCounters !== undefined) {
+    if (!Array.isArray(payload.metadataCounters)) {
+      fail("TRANSFER_STATE_INVALID", "metadataCounters must be an array");
+    }
+    const seenCounters = new Set();
+    for (const row of payload.metadataCounters) {
+      if (!isPlainObject(row)) {
+        fail("TRANSFER_STATE_INVALID", "metadataCounters entries must be objects");
+      }
+      for (const field of Object.keys(row)) {
+        if (!["key", "value"].includes(field)) {
+          fail("TRANSFER_STATE_INVALID", `metadataCounters entry has unknown field "${field}"`);
+        }
+      }
+      if (!["savingsTokensLifetime", "totalRequestsLifetime"].includes(row.key)) {
+        fail("TRANSFER_STATE_INVALID", "metadataCounters entry has an unknown counter key");
+      }
+      if (typeof row.key !== "string" || typeof row.value !== "string") {
+        fail("TRANSFER_STATE_INVALID", "metadataCounters key and value must be strings");
+      }
+      if (seenCounters.has(row.key)) {
+        fail("TRANSFER_STATE_INVALID", "duplicate metadataCounters key in snapshot");
+      }
+      seenCounters.add(row.key);
+      let counter;
+      try {
+        counter = JSON.parse(row.value);
+      } catch {
+        counter = undefined;
+      }
+      if (typeof counter !== "number" || !Number.isFinite(counter) || counter < 0) {
+        fail("TRANSFER_STATE_INVALID", `metadataCounters ${row.key} must be a finite number >= 0`);
+      }
     }
   }
 
@@ -809,11 +911,59 @@ function parseTransferBlob(raw, context) {
 }
 
 /**
+ * YAN-375 shared leaf authentication: every covered leaf of the three D10
+ * tables must be a strict envelope authenticating at its own SQL row
+ * coordinates (table/id/workspace/field) under the workspace DEK map — never
+ * plaintext. `deks`: Map(workspaceId → { kid, dek }). Pure, sync, no writes;
+ * plaintext only ever lives in zeroed scratch buffers. Used by both the v3
+ * same-root proof and the v4 portable (passphrase) proof.
+ */
+export function authenticateSnapshotLeaves(payload, { deks, defaultWs }) {
+  const authenticate = (table, rowId, workspaceId, blob, fields) => {
+    for (const field of fields) {
+      const leaf = credentialLeaf(blob, field);
+      if (leaf === undefined || leaf === null || leaf === "") continue;
+      if (!isEnvelopeShape(leaf)) {
+        fail(
+          "TRANSFER_STATE_INVALID",
+          isEnvelopeLookalike(leaf)
+            ? "Credential envelope is malformed"
+            : "Plaintext credential in an encrypted snapshot",
+        );
+      }
+      const entry = typeof workspaceId === "string" ? deks.get(workspaceId) : undefined;
+      if (!entry || leaf.kid !== entry.kid) {
+        fail("TRANSFER_REF_INVALID", "Credential envelope has no matching workspace key");
+      }
+      let plain;
+      try {
+        plain = decryptBytes(entry.dek, leaf, buildAad({ table, rowId, workspaceId, field }));
+      } catch {
+        fail("TRANSFER_STATE_INVALID", "Credential envelope failed authentication");
+      }
+      zeroBuffer(plain);
+    }
+  };
+  for (const table of ["providerConnections", "providerNodes"]) {
+    for (const row of requireArray(payload, table)) {
+      const blob = parseTransferBlob(row.data, table);
+      authenticate(table, row.id, row.workspaceId ?? null, blob, CREDENTIAL_FIELD_ALLOWLIST[table]);
+    }
+  }
+  if (payload.settings !== undefined && payload.settings !== null) {
+    authenticate("settings", "1", defaultWs, payload.settings, CREDENTIAL_FIELD_ALLOWLIST.settings);
+  }
+}
+
+/**
  * YAN-365 v3 same-root credential graph proof. Pure, sync, no writes; runs
  * before any backup or wipe. Plaintext only ever lives in zeroed scratch
  * buffers during authentication. Returns the plan section apply needs.
  */
-function validateCredentialSnapshotGraph(payload, { db, masterKey, suppliedKid, hashKid, refs }) {
+function validateCredentialSnapshotGraph(
+  payload,
+  { db, masterKey, suppliedKid, hashKid, refs, allowPortableHashAdoption = false },
+) {
   let live;
   try {
     live = readCredentialEncryptionState(db, { strict: true });
@@ -856,6 +1006,7 @@ function validateCredentialSnapshotGraph(payload, { db, masterKey, suppliedKid, 
   }
   const defaultWs = payload.tenancy?.defaultWorkspaceId;
   if (typeof defaultWs !== "string" || !refs.workspaces.has(defaultWs)) {
+    zeroBuffer(liveHash.hashKey);
     fail("TRANSFER_STATE_INVALID", "Encrypted snapshot requires tenancy.defaultWorkspaceId");
   }
   const deks = new Map();
@@ -880,7 +1031,9 @@ function validateCredentialSnapshotGraph(payload, { db, masterKey, suppliedKid, 
       timingSafeEqual(snapshotHash, liveHash.hashKey);
     zeroBuffer(snapshotHash);
     zeroBuffer(liveHash.hashKey);
-    if (!same) fail("TRANSFER_ROOT_MISMATCH", "Snapshot hash key differs from this instance's");
+    if ((!allowPortableHashAdoption && !same) || snapshotHash.length !== 32) {
+      fail("TRANSFER_ROOT_MISMATCH", "Snapshot hash key differs from this instance's");
+    }
 
     const seenWs = new Set();
     const seenKid = new Set();
@@ -930,53 +1083,9 @@ function validateCredentialSnapshotGraph(payload, { db, masterKey, suppliedKid, 
 
     // Every covered leaf must be a strict envelope authenticating at its own
     // SQL row coordinates (table/id/workspace/field), never plaintext.
-    const authenticate = (table, rowId, workspaceId, blob, fields) => {
-      for (const field of fields) {
-        const leaf = credentialLeaf(blob, field);
-        if (leaf === undefined || leaf === null || leaf === "") continue;
-        if (!isEnvelopeShape(leaf)) {
-          fail(
-            "TRANSFER_STATE_INVALID",
-            isEnvelopeLookalike(leaf)
-              ? "Credential envelope is malformed"
-              : "Plaintext credential in an encrypted snapshot",
-          );
-        }
-        const entry = typeof workspaceId === "string" ? deks.get(workspaceId) : undefined;
-        if (!entry || leaf.kid !== entry.kid) {
-          fail("TRANSFER_REF_INVALID", "Credential envelope has no matching workspace key");
-        }
-        let plain;
-        try {
-          plain = decryptBytes(entry.dek, leaf, buildAad({ table, rowId, workspaceId, field }));
-        } catch {
-          fail("TRANSFER_STATE_INVALID", "Credential envelope failed authentication");
-        }
-        zeroBuffer(plain);
-      }
-    };
-    for (const table of ["providerConnections", "providerNodes"]) {
-      for (const row of requireArray(payload, table)) {
-        const blob = parseTransferBlob(row.data, table);
-        authenticate(
-          table,
-          row.id,
-          row.workspaceId ?? null,
-          blob,
-          CREDENTIAL_FIELD_ALLOWLIST[table],
-        );
-      }
-    }
-    if (payload.settings !== undefined && payload.settings !== null) {
-      authenticate(
-        "settings",
-        "1",
-        defaultWs,
-        payload.settings,
-        CREDENTIAL_FIELD_ALLOWLIST.settings,
-      );
-    }
+    authenticateSnapshotLeaves(payload, { deks, defaultWs });
   } finally {
+    zeroBuffer(liveHash.hashKey);
     for (const entry of deks.values()) zeroBuffer(entry.dek);
   }
   return {
@@ -996,6 +1105,67 @@ function validateCredentialSnapshotGraph(payload, { db, masterKey, suppliedKid, 
 }
 
 /**
+ * YAN-375 shared payload-side validation of a hashed snapshot (no root
+ * checks): full ownership/reference integrity of the identity graph, hashed
+ * key rows, presets, tenancy, and video-job retention/absence policy. Pure
+ * reads only. Both the same-root preflight and the portable (passphrase)
+ * preflight run this BEFORE any backup or wipe.
+ * @returns {{kid:string, refs:object, keyIdByHash:Map, videoJobs:object[]}}
+ */
+export function validateHashedSnapshot(payload, { db }) {
+  const kid = payload.apiKeyStorage.hashKid;
+  const refs = { users: new Set(), workspaces: new Set(), identities: new Set() };
+  validateIdentityGraph(payload, refs);
+  const keyHashes = new Set();
+  const keyIds = new Set();
+  const snapshotKeys = requireArray(payload, "apiKeys");
+  for (const row of snapshotKeys) {
+    validateHashedKeyRow(row, kid, keyHashes);
+    if (keyIds.has(row.id)) {
+      fail("TRANSFER_STATE_INVALID", "duplicate apiKey id in snapshot");
+    }
+    keyIds.add(row.id);
+    if (!refs.workspaces.has(row.workspaceId)) {
+      fail("TRANSFER_REF_INVALID", "apiKey references an unknown workspace");
+    }
+    if (row.userId != null && !refs.users.has(row.userId)) {
+      fail("TRANSFER_REF_INVALID", "apiKey references an unknown user");
+    }
+    if (row.createdByUserId != null && !refs.users.has(row.createdByUserId)) {
+      fail("TRANSFER_REF_INVALID", "apiKey references an unknown creator");
+    }
+  }
+  validateSnapshotPresets(payload);
+  if (payload.tenancy !== undefined && !isPlainObject(payload.tenancy)) {
+    fail("TRANSFER_STATE_INVALID", "tenancy must be an object");
+  }
+  const defaultWs = payload.tenancy?.defaultWorkspaceId;
+  if (defaultWs != null && !refs.workspaces.has(defaultWs)) {
+    fail("TRANSFER_REF_INVALID", "tenancy.defaultWorkspaceId references an unknown workspace");
+  }
+  // Older v2 snapshots predate gatewayVideoJobs: an absent own property
+  // retains current live bindings (validated against the incoming
+  // workspace/connection refs first — incompatible rows reject before any
+  // mutation). An explicit [] is the authoritative clear. Build the
+  // immutable retained set here in preflight; apply writes only these rows
+  // (validated references, never an unchecked payload reread).
+  let videoJobs = payload.gatewayVideoJobs;
+  if (!Object.hasOwn(payload, "gatewayVideoJobs")) {
+    const incoming = { gatewayVideoJobs: liveGatewayVideoJobs(db) };
+    validateConfigShape(incoming);
+    validateVideoJobRefs(incoming, refs);
+    videoJobs = incoming.gatewayVideoJobs;
+  }
+  videoJobs = Object.freeze((videoJobs ?? []).map((job) => Object.freeze({ ...job })));
+  return {
+    kid,
+    refs,
+    keyIdByHash: new Map(snapshotKeys.map((r) => [r.keyHash, r.id])),
+    videoJobs,
+  };
+}
+
+/**
  * Pure preflight — no DB writes. Validates payload shape, root/master/kid
  * consistency, and full ownership/reference integrity across every row BEFORE
  * the destructive import transaction. Returns the plan the apply step uses.
@@ -1004,11 +1174,25 @@ function validateCredentialSnapshotGraph(payload, { db, masterKey, suppliedKid, 
  */
 export function preflightGatewayKeyImport(
   payload,
-  { instance, db, masterKey = null, defaultWorkspaceId = null },
+  {
+    instance,
+    db,
+    masterKey = null,
+    defaultWorkspaceId = null,
+    allowPortableHashAdoption = false,
+    multiUserTransfer = true,
+  },
 ) {
   if (!isPlainObject(payload)) fail("TRANSFER_STATE_INVALID", "Invalid database payload");
   validateConfigShape(payload);
   const format = payloadFormat(payload);
+  if (!multiUserTransfer) {
+    for (const name of ["kv", "metadataCounters", ...INSTANCE_SNAPSHOT_SECTION_NAMES]) {
+      if (Object.hasOwn(payload, name)) {
+        fail("TRANSFER_FORMAT_INVALID", "This backup needs Users & teams to restore");
+      }
+    }
+  }
   if (format === "hashed") {
     const kid = payload.apiKeyStorage.hashKid;
     if (instance.storage !== "hashed") {
@@ -1040,7 +1224,10 @@ export function preflightGatewayKeyImport(
     } else if (suppliedKid !== kid) {
       fail("TRANSFER_ROOT_MISMATCH", "Supplied master key does not match the snapshot's root");
     }
-    if (kid !== instance.hashKid) {
+    if (
+      kid !== instance.hashKid &&
+      !(allowPortableHashAdoption && payload.formatVersion === CREDENTIAL_TRANSFER_FORMAT_VERSION)
+    ) {
       fail("TRANSFER_ROOT_MISMATCH", "Snapshot root differs from this instance's root");
     }
     const refs = { users: new Set(), workspaces: new Set(), identities: new Set() };
@@ -1064,7 +1251,47 @@ export function preflightGatewayKeyImport(
         fail("TRANSFER_REF_INVALID", "apiKey references an unknown creator");
       }
     }
+    const comboIds = new Set();
+    const comboNames = new Set();
+    for (const combo of payload.combos ?? []) {
+      if (
+        !multiUserTransfer &&
+        (combo.workspaceId != null || combo.createdByUserId != null || combo.sortOrder != null)
+      ) {
+        fail("TRANSFER_FORMAT_INVALID", "This backup needs Users & teams to restore");
+      }
+      if (comboIds.has(combo.id)) fail("TRANSFER_STATE_INVALID", "duplicate combo id in snapshot");
+      comboIds.add(combo.id);
+      const scopedName = JSON.stringify([combo.workspaceId ?? null, combo.name]);
+      if (comboNames.has(scopedName)) {
+        fail("TRANSFER_STATE_INVALID", "duplicate combo name in workspace");
+      }
+      comboNames.add(scopedName);
+      if (combo.workspaceId != null && !refs.workspaces.has(combo.workspaceId)) {
+        fail("TRANSFER_REF_INVALID", "combo references an unknown workspace");
+      }
+      if (combo.createdByUserId != null && !refs.users.has(combo.createdByUserId)) {
+        fail("TRANSFER_REF_INVALID", "combo references an unknown creator");
+      }
+      if (combo.sortOrder != null && !Number.isInteger(combo.sortOrder)) {
+        fail("TRANSFER_STATE_INVALID", "combo sortOrder must be an integer or null");
+      }
+      if (!Array.isArray(combo.models))
+        fail("TRANSFER_STATE_INVALID", "combo models must be an array");
+    }
     validateSnapshotPresets(payload);
+    // YAN-375: the payload rows to write, with absent sections retaining the
+    // live rows (validated against the incoming graph; explicit [] clears).
+    let instanceSections = null;
+    if (multiUserTransfer) {
+      instanceSections = readInstanceTableSections(db, payload, refs);
+      validateInstanceTableSections(instanceSections, refs);
+      for (const name of INSTANCE_SNAPSHOT_SECTION_NAMES) {
+        instanceSections[name] = Object.freeze(
+          (instanceSections[name] ?? []).map((row) => Object.freeze({ ...row })),
+        );
+      }
+    }
     if (payload.tenancy !== undefined && !isPlainObject(payload.tenancy)) {
       fail("TRANSFER_STATE_INVALID", "tenancy must be an object");
     }
@@ -1086,6 +1313,7 @@ export function preflightGatewayKeyImport(
         suppliedKid,
         hashKid: kid,
         refs,
+        allowPortableHashAdoption,
       });
     }
     // Older v2 snapshots predate gatewayVideoJobs: an absent own property
@@ -1108,6 +1336,7 @@ export function preflightGatewayKeyImport(
       credential,
       keyIdByHash: new Map(snapshotKeys.map((r) => [r.keyHash, r.id])),
       videoJobs,
+      instanceSections,
     };
   }
   // Legacy payload.
@@ -1220,6 +1449,8 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
   // live rows for older-v2 snapshots), never an unchecked payload reread.
   db.exec(GATEWAY_VIDEO_JOBS_TABLE_SQL);
   db.run("DELETE FROM gatewayVideoJobs");
+  // YAN-375: child-first clear of the complete-table sections (FK-safe).
+  if (plan.instanceSections) deleteInstanceTableSections(db);
   db.run(`DELETE FROM settings`);
   db.run(`DELETE FROM apiKeys`);
   db.run(`DELETE FROM memberships`);
@@ -1228,7 +1459,14 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
   db.run(`DELETE FROM providerNodes`);
   db.run(`DELETE FROM proxyPools`);
   db.run(`DELETE FROM combos`);
-  db.run(`DELETE FROM kv WHERE scope IN (${KV_SCOPES.map((s) => `'${s}'`).join(", ")})`);
+  const hasRawKv = Array.isArray(payload.kv);
+  // Raw-KV parity: the raw rows are authoritative — wipe the whole table
+  // (unknown scopes included) instead of only the flat KV_SCOPES subset.
+  if (hasRawKv) {
+    db.run(`DELETE FROM kv`);
+  } else {
+    db.run(`DELETE FROM kv WHERE scope IN (${KV_SCOPES.map((s) => `'${s}'`).join(", ")})`);
+  }
   db.run(`DELETE FROM workspaces`);
   db.run(`DELETE FROM users`);
   const credential = plan.credential ?? null;
@@ -1378,7 +1616,7 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
   }
   for (const c of payload.combos || []) {
     db.run(
-      `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt, workspaceId, createdByUserId, sortOrder) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         c.id,
         c.name,
@@ -1386,49 +1624,53 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
         stringifyJson(c.models || []),
         c.createdAt || new Date().toISOString(),
         c.updatedAt || new Date().toISOString(),
+        c.workspaceId ?? null,
+        c.createdByUserId ?? null,
+        c.sortOrder ?? null,
       ],
     );
   }
-  for (const [a, m] of Object.entries(payload.modelAliases || {})) {
+  // Flat KV loops are skipped when raw kv rows carry the table verbatim.
+  for (const [a, m] of hasRawKv ? [] : Object.entries(payload.modelAliases || {})) {
     db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [
       stripWsKey(a),
       stringifyJson(m),
     ]);
   }
-  for (const [provider, ids] of Object.entries(payload.disabledModels || {})) {
+  for (const [provider, ids] of hasRawKv ? [] : Object.entries(payload.disabledModels || {})) {
     db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('disabledModels', ?, ?)`, [
       stripWsKey(provider),
       stringifyJson(ids),
     ]);
   }
-  for (const m of payload.customModels || []) {
+  for (const m of hasRawKv ? [] : payload.customModels || []) {
     const k = stripWsKey(`${m.providerAlias}|${m.id}|${m.type || "llm"}`);
     db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [
       k,
       stringifyJson(m),
     ]);
   }
-  for (const [tool, mappings] of Object.entries(payload.mitmAlias || {})) {
+  for (const [tool, mappings] of hasRawKv ? [] : Object.entries(payload.mitmAlias || {})) {
     db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('mitmAlias', ?, ?)`, [
       tool,
       stringifyJson(mappings || {}),
     ]);
   }
-  for (const [tool, settings] of Object.entries(payload.cliToolSettings || {})) {
+  for (const [tool, settings] of hasRawKv ? [] : Object.entries(payload.cliToolSettings || {})) {
     if (!isPlainObject(settings)) continue;
     db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('cliToolSettings', ?, ?)`, [
       tool,
       stringifyJson(settings),
     ]);
   }
-  for (const [kind, items] of Object.entries(payload.cliToolPresets || {})) {
+  for (const [kind, items] of hasRawKv ? [] : Object.entries(payload.cliToolPresets || {})) {
     if (!["endpoints", "apiKeys"].includes(kind) || !Array.isArray(items)) continue;
     db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('cliToolPresets', ?, ?)`, [
       kind,
       stringifyJson(items),
     ]);
   }
-  for (const [provider, models] of Object.entries(payload.pricing || {})) {
+  for (const [provider, models] of hasRawKv ? [] : Object.entries(payload.pricing || {})) {
     db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('pricing', ?, ?)`, [
       provider,
       stringifyJson(models || {}),
@@ -1453,13 +1695,33 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
   // YAN-364 (decision 13): adopt NULL-workspaceId combos + bare kv keys into
   // Default in-tx, before foreign_key_check — same semantics as importDb.
   adoptOwnerlessRowsUnscoped(db);
+  // YAN-376 raw-KV parity: insert AFTER adoption so restored rows keep their
+  // exact scope/key — legitimate unscoped caches are never stripped or
+  // reassigned into Default — and before foreign_key_check (kv has no FKs,
+  // placement only keeps parity with the section restores below).
+  if (hasRawKv) {
+    for (const row of payload.kv) {
+      db.run(`INSERT INTO kv(scope, key, value) VALUES(?, ?, ?)`, [row.scope, row.key, row.value]);
+    }
+  }
+  // YAN-375: restore telemetry after adoption so unknown attribution stays
+  // byte-exact rather than being reassigned to the Default owner/workspace.
+  if (plan.instanceSections) insertInstanceTableSections(db, plan.instanceSections);
   if (credential) {
     // Marker pair + wrapped derived hash key, exactly as proven in preflight.
     // The destination was already encrypted under this root; cleanup/rotation
     // flags are cleared (preflight refused them) and never come from the body.
     setMetaSync(db, "credentialsEncryptedVersion", "1");
+    // Authenticated portable restores keep the source client-key hash graph.
+    setMetaSync(db, "apiKeysHashKid", plan.kid);
     setMetaSync(db, "credentialsKekKid", credential.kekKid);
     setMetaSync(db, "apiKeyHashKeyWrapped", credential.apiKeyHashKeyWrapped);
+  }
+  if (Array.isArray(payload.metadataCounters)) {
+    db.run("DELETE FROM _meta WHERE key IN ('savingsTokensLifetime', 'totalRequestsLifetime')");
+    for (const row of payload.metadataCounters) {
+      db.run("INSERT INTO _meta(key, value) VALUES(?, ?)", [row.key, row.value]);
+    }
   }
   if (db.all(`PRAGMA foreign_key_check`).length) {
     fail("TRANSFER_APPLY_INVALID", "Foreign key violations after snapshot apply");

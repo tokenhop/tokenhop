@@ -30,9 +30,12 @@ const nextConfig = {
     root: tracingRoot,
   },
   outputFileTracingRoot: tracingRoot,
-  // Gateway-hosted agent skills are read from disk by /skills/[...slug]; trace them into standalone.
   outputFileTracingIncludes: {
+    // Gateway-hosted agent skills are read from disk by /skills/[...slug]; trace them into standalone.
     "/skills/[...slug]": ["./skills/**/*.md"],
+    // sql.js is external and loaded dynamically (pre-import backup verifier, sql.js driver); the
+    // tracer can't see its sibling WASM, so standalone would ENOENT at sql.js init.
+    "/*": ["./node_modules/sql.js/dist/sql-wasm.wasm"],
   },
   outputFileTracingExcludes: {
     "*": ["./gitbook/**/*"],
