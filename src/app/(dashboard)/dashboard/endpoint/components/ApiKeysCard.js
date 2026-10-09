@@ -229,21 +229,21 @@ export default function ApiKeysCard({
                   </th>
                 </tr>
               </thead>
-              <tbody>
-                {ordered.map((apiKey) => (
-                  <Fragment key={apiKey.id}>
-                    {headingOf.has(apiKey.id) && (
-                      <tr className="border-b border-line">
-                        <th
-                          scope="rowgroup"
-                          colSpan={9}
-                          className="pt-4 pb-1 text-start text-xs font-semibold text-text"
-                        >
-                          {headingOf.get(apiKey.id)}
-                        </th>
-                      </tr>
-                    )}
-                    <tr className="border-b border-line last:border-b-0">
+              {(grouped ?? [{ id: "all", label: null, rows: keys }]).map((group) => (
+                <tbody key={group.id}>
+                  {group.label && (
+                    <tr className="border-b border-line">
+                      <th
+                        scope="rowgroup"
+                        colSpan={9}
+                        className="pt-4 pb-1 text-start text-xs font-semibold text-text"
+                      >
+                        {group.label}
+                      </th>
+                    </tr>
+                  )}
+                  {group.rows.map((apiKey) => (
+                    <tr key={apiKey.id} className="border-b border-line last:border-b-0">
                       <td className="py-3 pe-3">{renderName(apiKey)}</td>
                       <td className="py-3 pe-3">
                         <code className="font-mono text-[13px] text-muted" dir="ltr">
@@ -317,9 +317,9 @@ export default function ApiKeysCard({
                         </div>
                       </td>
                     </tr>
-                  </Fragment>
-                ))}
-              </tbody>
+                  ))}
+                </tbody>
+              ))}
             </table>
           </div>
 
