@@ -49,6 +49,7 @@ function buildTransformStream({
   onStreamComplete,
   apiKey,
   credentials,
+  onStreamResult,
 }) {
   const isDroidCLI =
     userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
@@ -72,6 +73,7 @@ function buildTransformStream({
       apiKey,
       customToolNames,
       credentials,
+      onStreamResult,
     );
   }
 
@@ -89,6 +91,7 @@ function buildTransformStream({
       apiKey,
       customToolNames,
       credentials,
+      onStreamResult,
     );
   }
 
@@ -100,6 +103,7 @@ function buildTransformStream({
     body,
     onStreamComplete,
     apiKey,
+    onStreamResult,
   );
 }
 
@@ -134,6 +138,7 @@ export async function handleStreamingResponse({
   reqTag,
   log,
   credentials,
+  comboAttempt = null,
 }) {
   if (onRequestSuccess) {
     Promise.resolve()
@@ -194,6 +199,27 @@ export async function handleStreamingResponse({
     };
   }
 
+  // Combo latency feedback (YAN-764): register the trusted attempt before the
+  // streamed Response is built. registerStream() may return null (already
+  // settled); every settle after that is a no-op, and feedback must never
+  // break streaming, so both registration and settle are fail-open.
+  let settleAttempt = null;
+  try {
+    settleAttempt = comboAttempt?.registerStream?.() ?? null;
+  } catch {
+    settleAttempt = null;
+  }
+  const settleOnce = (info) => {
+    if (!settleAttempt) return;
+    const settle = settleAttempt;
+    settleAttempt = null;
+    try {
+      settle(info);
+    } catch {
+      // fail-open
+    }
+  };
+
   const transformStream = buildTransformStream({
     provider,
     sourceFormat,
@@ -208,6 +234,7 @@ export async function handleStreamingResponse({
     onStreamComplete,
     apiKey,
     credentials,
+    onStreamResult: (info) => settleOnce(info),
   });
 
   // Terminal bytes when the stream aborts after HTTP 200 was already sent, so the
@@ -221,10 +248,27 @@ export async function handleStreamingResponse({
       : (message) => buildStreamErrorBytes(HTTP_STATUS.GATEWAY_TIMEOUT, message, sourceFormat);
   const stallTimeoutMs =
     PROVIDERS[provider]?.stallTimeoutMs || getActiveReliabilityPolicy().streamTimeouts.stallMs;
+  // Local proxy so combo feedback sees abnormal terminations the transform never
+  // does. Spread keeps signal/startTime/isConnected/handleComplete/abort as-is;
+  // the overridden methods call the originals on the real controller. Completion
+  // is untouched: the transform fires onStreamResult at the terminal event/flush.
+  const pipedController = settleAttempt
+    ? {
+        ...streamController,
+        handleError: (e) => {
+          settleOnce({ error: e });
+          return streamController.handleError(e);
+        },
+        handleDisconnect: (...args) => {
+          settleOnce({ cancelled: true });
+          return streamController.handleDisconnect(...args);
+        },
+      }
+    : streamController;
   const transformedBody = pipeWithDisconnect(
     providerResponse,
     transformStream,
-    streamController,
+    pipedController,
     onAbortTerminal,
     stallTimeoutMs,
   );

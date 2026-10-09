@@ -252,7 +252,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       return handleFusionChat({
         body,
         models: fusionModels,
-        handleSingleModel: (b, m, isPanel) => {
+        handleSingleModel: (b, m, isPanel, attempt) => {
           let cleanRawReq = clientRawRequest;
           if (isPanel && clientRawRequest) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
@@ -267,6 +267,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
             [modelStr],
             modelStr,
             options,
+            attempt,
           );
         },
         log,
@@ -286,7 +287,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) =>
+        (b, m, attempt) =>
           handleSingleModelChat(
             b,
             m,
@@ -296,6 +297,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
             [modelStr],
             modelStr,
             options,
+            attempt,
           ),
         adapterAdded,
       ),
@@ -345,7 +347,18 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       body,
       models: soloAugmented,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, [], null, options),
+        (b, m, attempt) =>
+          handleSingleModelChat(
+            b,
+            m,
+            clientRawRequest,
+            request,
+            apiKey,
+            [],
+            null,
+            options,
+            attempt,
+          ),
         adapterAdded,
       ),
       log,
@@ -476,6 +489,9 @@ function probeObserverFor(options, via) {
  * @param {string|null} comboName - Innermost combo that resolved to this model (usage attribution)
  * @param {object|null} options - handleChat options (probe observer); threaded so
  *   nested combos observe their own steps and skip the live-routes fallback ring.
+ * @param {object|null} [attempt] - Trusted combo latency feedback (YAN-764);
+ *   separate final argument (never merged into shared options). Forwarded as
+ *   parentAttempt to nested combos and as comboAttempt to the leaf core call.
  */
 // Same keys /v1/models checks: the provider's alias and its static alias.
 // YAN-364: with a principal only that workspace's disabled map is read (never
@@ -503,6 +519,7 @@ async function handleSingleModelChat(
   comboPath = [],
   comboName = null,
   options = null,
+  attempt = null,
 ) {
   const gateway = options?.principal || null;
   const gatewayCreds = { principal: gateway };
@@ -573,7 +590,7 @@ async function handleSingleModelChat(
         return handleFusionChat({
           body,
           models: fusionModels,
-          handleSingleModel: (b, m, isPanel) => {
+          handleSingleModel: (b, m, isPanel, innerAttempt) => {
             let cleanRawReq = clientRawRequest;
             if (isPanel && clientRawRequest) {
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
@@ -588,6 +605,7 @@ async function handleSingleModelChat(
               nextPath,
               modelStr,
               options,
+              innerAttempt,
             );
           },
           log,
@@ -595,6 +613,7 @@ async function handleSingleModelChat(
           judgeModel,
           tuning: fusionTuning,
           onAttempt: nestedObserver,
+          parentAttempt: attempt,
         });
       }
 
@@ -607,7 +626,7 @@ async function handleSingleModelChat(
         body,
         models: filteredAdapter,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) =>
+          (b, m, innerAttempt) =>
             handleSingleModelChat(
               b,
               m,
@@ -617,6 +636,7 @@ async function handleSingleModelChat(
               nextPath,
               modelStr,
               options,
+              innerAttempt,
             ),
           adapterAdded,
         ),
@@ -627,6 +647,7 @@ async function handleSingleModelChat(
         comboWeights,
         headroomFn,
         onAttempt: nestedObserver,
+        parentAttempt: attempt,
         // Real nested traffic records hops (YAN-293); probes never write the ring.
         ...(nestedObserver ? {} : { onFallback: fallbackRecorder(modelStr, gateway?.workspaceId) }),
       });
@@ -662,6 +683,7 @@ async function handleSingleModelChat(
       comboPath,
       comboName,
       options,
+      attempt,
     ),
   );
   if (held) return held;
@@ -771,6 +793,7 @@ async function handleSingleModelChat(
       pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
       onPxpipeEvent: appendPxpipeEvent,
       comboName,
+      comboAttempt: attempt,
       providerThinking,
       // Detect source format by endpoint + body
       sourceFormatOverride: sourceFormat,
