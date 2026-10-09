@@ -22,6 +22,7 @@ import {
   loadKeyList,
   acknowledgeMigration,
 } from "@/app/(dashboard)/dashboard/endpoint/hooks/useApiKeys";
+import { groupKeys } from "@/app/(dashboard)/dashboard/endpoint/keyGroups";
 import { keyRowDisplay, maskApiKey } from "@/app/(dashboard)/dashboard/home/format";
 
 const ROOT = new URL("../../", import.meta.url);
@@ -230,12 +231,23 @@ describe("loadKeyContext", () => {
 });
 
 describe("loadKeyList", () => {
-  it("hashed members never probe the manager-only list", async () => {
+  it("hashed viewers never probe the key list", async () => {
     const calls = mockFetch([]);
     await expect(
       loadKeyList({ storage: "hashed", workspaceId: "ws_1", canManage: false }),
     ).resolves.toEqual([]);
     expect(calls).toHaveLength(0);
+  });
+
+  it("hashed members list their own keys and treat 403 as empty", async () => {
+    const calls = mockFetch([
+      { status: 200, body: { keys: [{ id: "mine", prefix: "th_m…e" }], storage: "hashed" } },
+      { status: 403, body: { error: "Not allowed to list keys" } },
+    ]);
+    const ctx = { storage: "hashed", workspaceId: "ws_1", canCreate: true, canManage: false };
+    await expect(loadKeyList(ctx)).resolves.toEqual([{ id: "mine", prefix: "th_m…e" }]);
+    await expect(loadKeyList(ctx)).resolves.toEqual([]);
+    expect(calls).toEqual(["/api/keys?workspaceId=ws_1", "/api/keys?workspaceId=ws_1"]);
   });
 
   it("hashed managers list through the scoped URL", async () => {
@@ -341,7 +353,12 @@ describe("home keyRowDisplay", () => {
 });
 
 describe("UI source contracts", () => {
-  const card = read("src/app/(dashboard)/dashboard/endpoint/components/ApiKeysCard.js");
+  const card = [
+    "src/app/(dashboard)/dashboard/endpoint/components/ApiKeysCard.js",
+    "src/app/(dashboard)/dashboard/endpoint/components/ApiKeyDetails.js",
+  ]
+    .map(read)
+    .join("\n");
   const page = read("src/app/(dashboard)/dashboard/endpoint/EndpointPageClient.js");
   const quick = read("src/app/(dashboard)/dashboard/endpoint/components/QuickConnectCard.js");
   const home = read("src/app/(dashboard)/dashboard/home/KeysSummary.js");
@@ -427,5 +444,26 @@ describe("UI source contracts", () => {
     expect(hook).toContain("allowedCombos: comboParsed.combos ?? []");
     expect(hook).toContain("existing = await loadKeyList(ctx)");
     expect(hook).toContain('if (ctx.storage === "legacy" && existing.length === 0)');
+  });
+});
+
+describe("groupKeys", () => {
+  const keys = [
+    { id: "a", userId: "me", type: "user" },
+    { id: "b", userId: null, type: "service" },
+    { id: "c", userId: "bob", type: "user" },
+  ];
+
+  it("splits hashed multi-user keys into mine, service and other users", () => {
+    expect(groupKeys(keys, "me").map((g) => [g.label, g.rows.map((k) => k.id)])).toEqual([
+      ["My keys", ["a"]],
+      ["Workspace service keys", ["b"]],
+      ["Other users' keys", ["c"]],
+    ]);
+  });
+
+  it("keeps one unlabelled group without a known user and drops empty groups", () => {
+    expect(groupKeys(keys, null)).toEqual([{ id: "all", label: null, rows: keys }]);
+    expect(groupKeys([keys[0]], "me").map((g) => g.id)).toEqual(["mine"]);
   });
 });

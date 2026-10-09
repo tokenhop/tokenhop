@@ -16,6 +16,7 @@ import {
   Callout,
 } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import useAuthStatus from "@/shared/hooks/useAuthStatus";
 import { TUNNEL_BENEFITS } from "./endpointConstants";
 import { deriveSecurityState } from "./endpointLogic";
 import WaysInGrid from "./components/WaysInGrid";
@@ -38,6 +39,10 @@ import { useRemoteHost, useLocalBaseUrl } from "@/shared/hooks/useEndpointShell"
 export default function EndpointPageClient({ machineId: _machineId }) {
   const tunnel = useTunnelControls();
   const apiKeys = useApiKeys();
+  const authStatus = useAuthStatus();
+  // Identity for the My keys grouping; null (off / single-user) keeps the flat list.
+  const currentUserId =
+    authStatus?.multiUserActive === true ? authStatus.principal?.user?.id : null;
   const isRemoteHost = useRemoteHost();
   const localUrl = useLocalBaseUrl();
   const { copied, error: copyError, copy } = useCopyToClipboard();
@@ -209,6 +214,8 @@ export default function EndpointPageClient({ machineId: _machineId }) {
             keys={apiKeys.keys}
             hashedMode={apiKeys.hashedMode}
             canCreate={apiKeys.capabilities.canCreate}
+            canManage={apiKeys.capabilities.canManage}
+            currentUserId={currentUserId ?? null}
             migrationNotice={apiKeys.migrationNotice}
             requireApiKey={tunnel.requireApiKey}
             onToggleRequireApiKey={tunnel.handleRequireApiKey}
