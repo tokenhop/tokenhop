@@ -80,6 +80,7 @@ export default function AuditPage() {
       ? "From must be before to"
       : "";
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: retryTick forces a refetch
   useEffect(() => {
     if (!authorized || rangeError) return undefined;
     requestRef.current?.abort();
@@ -129,7 +130,6 @@ export default function AuditPage() {
       cancelled = true;
       request.abort();
     };
-    // biome-ignore lint/correctness/useExhaustiveDependencies: retryTick forces a refetch
   }, [
     authorized,
     workspaceId,
