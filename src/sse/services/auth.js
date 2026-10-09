@@ -35,6 +35,7 @@ import {
   grantBudgetLimit,
   reserveGrantBudget,
 } from "./budgetGuard.js";
+import { resolveOpenAICompatibleConnectionApiType } from "./model.js";
 import * as log from "../utils/logger.js";
 
 // Per-key mutex chain tails to prevent race conditions during account selection.
@@ -390,6 +391,11 @@ export async function getProviderCredentials(
       connection = availableConnections[0];
     }
 
+    // Resolve before reserving grants so a failed node lookup never leaks a reservation.
+    const apiTypePatch = String(connection.provider || providerId).startsWith("openai-compatible-")
+      ? { apiType: await resolveOpenAICompatibleConnectionApiType(connection) }
+      : {};
+
     // Reserve rpm/tpm on the chosen grant (sync check+reserve, atomic). A lost
     // race against another workspace using the same grant reads as rate-limited.
     let grantReservation = null;
@@ -436,6 +442,7 @@ export async function getProviderCredentials(
         connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
         vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
         strictProxy: resolvedProxy.strictProxy === true,
+        ...apiTypePatch,
       },
       connectionId: connection.id,
       // Include current status for optimization check

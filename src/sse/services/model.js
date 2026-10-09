@@ -16,6 +16,11 @@ import {
   getModelInfoCore,
 } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
+import {
+  OPENAI_COMPATIBLE_API_TYPES,
+  resolveOpenAICompatibleApiType,
+} from "open-sse/services/provider.js";
+import { getProviderNodeMetadataByIdUnscoped } from "@/lib/db/repos/nodesRepo.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
 const LOCAL_PROVIDER_ALIASES = {
@@ -36,6 +41,28 @@ export function parseModel(modelStr) {
     return { ...parsed, provider: LOCAL_PROVIDER_ALIASES[parsed.providerAlias] };
   }
   return parsed;
+}
+
+/**
+ * API type for an openai-compatible connection. A valid stored
+ * providerSpecificData.apiType wins (no lookup). Otherwise the current node's
+ * apiType (same workspace, type openai-compatible) beats the legacy node-id
+ * substring fallback. Lookup errors propagate; nothing is cached or written.
+ */
+export async function resolveOpenAICompatibleConnectionApiType(connection) {
+  const stored = connection?.providerSpecificData?.apiType;
+  if (OPENAI_COMPATIBLE_API_TYPES.includes(stored)) return stored;
+  if (typeof connection?.provider === "string") {
+    const node = await getProviderNodeMetadataByIdUnscoped(connection.provider);
+    if (
+      node?.type === "openai-compatible" &&
+      OPENAI_COMPATIBLE_API_TYPES.includes(node.apiType) &&
+      (node.workspaceId ?? null) === (connection.workspaceId ?? null)
+    ) {
+      return node.apiType;
+    }
+  }
+  return resolveOpenAICompatibleApiType(connection?.provider, connection);
 }
 
 /**
