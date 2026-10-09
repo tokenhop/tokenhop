@@ -18,7 +18,17 @@ export const LEGACY_CONTEXT = Object.freeze({
 // A failed context never unlocks legacy affordances. Only the pristine-off
 // unauthenticated context401 may try the existing legacy API; hashed APIs
 // still reject that request, so list errors never lead to provisioning.
-export async function loadKeyContext() {
+export function isConfirmedLegacyStatus(status) {
+  return (
+    status?.authenticated === true &&
+    typeof status.hasPassword === "boolean" &&
+    status.userSecurityEnforced !== true &&
+    !status.principal
+  );
+}
+
+export async function loadKeyContext(status) {
+  if (isConfirmedLegacyStatus(status)) return LEGACY_CONTEXT;
   const res = await fetch("/api/keys/context", { cache: "no-store" });
   if (res.status === 401) return LEGACY_CONTEXT;
   const data = await readJson(res);

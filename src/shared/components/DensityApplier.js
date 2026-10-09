@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
+import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
 import { DENSITY_CLASS, applyDensity, resolveDensity } from "@/lib/density";
 
 /**
@@ -16,13 +17,20 @@ import { DENSITY_CLASS, applyDensity, resolveDensity } from "@/lib/density";
  */
 export default function DensityApplier() {
   const pathname = usePathname();
+  const { status, loaded } = useAuthStatusState();
 
   useEffect(() => {
     const match = document.cookie.match(/(?:^|; )nr-density=([^;]*)/);
     const density = resolveDensity(match ? decodeURIComponent(match[1]) : "comfortable");
     document.documentElement.classList.toggle(DENSITY_CLASS, density === "compact");
 
-    if (pathname?.startsWith("/login")) return undefined;
+    if (
+      pathname?.startsWith("/login") ||
+      !loaded ||
+      status.userSecurityEnforced !== true ||
+      status.authenticated !== true
+    )
+      return undefined;
     // Abort on the next navigation so a slow response can't apply a stale account's value.
     const controller = new AbortController();
     fetch("/api/me/preferences", { cache: "no-store", signal: controller.signal })
@@ -34,7 +42,7 @@ export default function DensityApplier() {
       })
       .catch(() => {});
     return () => controller.abort();
-  }, [pathname]);
+  }, [pathname, loaded, status.userSecurityEnforced, status.authenticated]);
 
   return null;
 }

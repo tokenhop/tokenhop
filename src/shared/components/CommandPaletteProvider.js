@@ -33,6 +33,8 @@ import useThemeStore from "@/store/themeStore";
 import { useNotificationStore } from "@/store/notificationStore";
 import { copyTextToClipboard } from "@/shared/components/formPrimitives";
 import { GO_TO, matchGoTo } from "@/shared/utils/goToShortcuts";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { withWorkspace } from "@/app/(dashboard)/dashboard/providers/connectTarget";
 import Modal from "./Modal";
 import dynamic from "next/dynamic";
 import { getCurrentLocale } from "@/i18n/runtime";
@@ -99,32 +101,50 @@ async function fetchJson(path) {
   return res.json();
 }
 
-// Cache per browser tab: providers/combos load on open, models lazily.
-function createDataCache() {
-  const modelsLoader = createCachedLoader();
+// Cache per browser tab + workspace: providers/combos load on open, models lazily.
+export function createDataCache() {
+  let modelsLoader = createCachedLoader();
   let snapshot = { providers: null, combos: null, models: null };
+  let cachedWorkspaceId = null;
+  // Bumped on every workspace switch. A refresh that started under an older
+  // generation must not write its result over the newer workspace's snapshot.
+  let generation = 0;
   return {
-    async refresh({ includeModels, forceProviders = false }) {
+    async refresh({ includeModels, forceProviders = false, workspaceId = null }) {
+      if (cachedWorkspaceId !== workspaceId) {
+        cachedWorkspaceId = workspaceId;
+        generation += 1;
+        snapshot = { providers: null, combos: null, models: null };
+        modelsLoader = createCachedLoader();
+        forceProviders = true;
+      }
+      const startGeneration = generation;
       const [providers, combos] = await Promise.all([
         forceProviders || snapshot.providers == null
-          ? fetchJson("/api/providers")
+          ? fetchJson(withWorkspace("/api/providers", workspaceId))
               .then((d) => d.connections || [])
               .catch(() => [])
           : snapshot.providers,
         snapshot.combos ??
-          fetchJson("/api/combos")
+          fetchJson(withWorkspace("/api/combos", workspaceId))
             .then((d) => d.combos || [])
             .catch(() => []),
       ]);
       let models = snapshot.models;
       if (includeModels && !models) {
         try {
-          models = await modelsLoader(() => fetchJson("/api/models").then((d) => d.models || []));
+          models = await modelsLoader(() =>
+            fetchJson(withWorkspace("/api/models", workspaceId)).then((d) => d.models || []),
+          );
           if (models === "fresh") models = snapshot.models;
         } catch {
           models = [];
         }
       }
+      // Stale refresh (workspace switched mid-flight): discard success and
+      // failure alike, leave the newer snapshot untouched. Callers are already
+      // cancelled by their effect cleanup, so the returned value is ignored.
+      if (startGeneration !== generation) return snapshot;
       snapshot = { providers, combos, models: models ?? snapshot.models };
       return snapshot;
     },
@@ -219,6 +239,8 @@ export function CommandPaletteProvider({ children }) {
   const cacheRef = useRef(null);
   if (!cacheRef.current) cacheRef.current = createDataCache();
   const notify = useNotificationStore();
+  const { ready, scope } = useSettingsScope();
+  const workspaceId = scope?.workspaceId;
   const listboxId = `palette-list-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const inputRef = useRef(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -283,13 +305,15 @@ export function CommandPaletteProvider({ children }) {
   // the open-gate sets loadingLists so the dialog shows skeletons instead of
   // the "no results" empty state while sources are still loading.
   useEffect(() => {
-    if (!open) return;
+    if (!open || !ready) return;
     setQuery("");
     setActiveId(null);
     let cancelled = false;
     setLoadingLists(true);
     ensurePaletteSources()
-      .then(() => cacheRef.current.refresh({ includeModels: false, forceProviders: true }))
+      .then(() =>
+        cacheRef.current.refresh({ includeModels: false, forceProviders: true, workspaceId }),
+      )
       .then((snapshot) => collectCommands(snapshot))
       .then((all) => {
         if (!cancelled) setCommands(all);
@@ -306,17 +330,17 @@ export function CommandPaletteProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [open, announce]);
+  }, [open, ready, workspaceId, announce]);
 
   // Lazy models: fetch once the user starts typing (cached, shared inflight).
   // Debounced so typing does not refetch per keystroke; providers/combos
   // resolve from the open-time snapshot afterwards.
   useEffect(() => {
-    if (!open || !query.trim()) return;
+    if (!open || !query.trim() || !ready) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       ensurePaletteSources()
-        .then(() => cacheRef.current.refresh({ includeModels: true }))
+        .then(() => cacheRef.current.refresh({ includeModels: true, workspaceId }))
         .then((snapshot) => collectCommands(snapshot))
         .then((all) => {
           if (!cancelled) setCommands(all);
@@ -327,7 +351,7 @@ export function CommandPaletteProvider({ children }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [open, query]);
+  }, [open, query, ready, workspaceId]);
 
   const runCommand = useCallback(
     (command) => {

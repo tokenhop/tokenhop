@@ -368,6 +368,7 @@ export default function ConnectionsSection({
                       onEdit={() => actions.edit(entry)}
                       onDelete={() => conn.confirmDelete(entry.id)}
                       onMove={conn.moveConnection}
+                      onShared={conn.fetchConnections}
                     />
                   ))}
                 </ul>

@@ -5,6 +5,7 @@ import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/
 import { loadKeyContext, loadKeyList } from "../../endpoint/hooks/useApiKeys";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
 import { loadSettings, onHttpError } from "@/shared/utils/settingsApi";
+import { withWorkspace } from "@/app/(dashboard)/dashboard/providers/connectTarget";
 
 import { setKeyPresetStorageMode } from "../components/cliEndpointPresets";
 
@@ -37,7 +38,7 @@ export function useToolSetupData() {
         // YAN-749: ccFilterNaming is a workspace key; members never GET the instance route.
         loadSettings(scope, { canManageInstance }).catch(onHttpError(null)),
         fetch("/api/tunnel/status"),
-        fetch("/api/models/alias"),
+        fetch(withWorkspace("/api/models/alias", scope?.workspaceId)),
       ]);
       // Keys follow the YAN-363 context envelope: hashed storage lists
       // workspace-scoped metadata (managers only, no raws); legacy keeps the

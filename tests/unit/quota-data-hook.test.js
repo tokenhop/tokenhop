@@ -47,6 +47,11 @@ const rt = vi.hoisted(() => {
 });
 vi.mock("react", () => rt.hooks);
 
+const scopeMock = vi.hoisted(() => ({ value: { ready: true, scope: null } }));
+vi.mock("@/shared/hooks/useSettingsScope", () => ({
+  useSettingsScope: () => scopeMock.value,
+}));
+
 import { useQuotaData } from "../../src/app/(dashboard)/dashboard/quota/hooks/useQuotaData.js";
 import {
   QUOTA_CACHE_KEY,
@@ -101,6 +106,7 @@ async function mount(p) {
 
 beforeEach(() => {
   rt.state.slots = [];
+  scopeMock.value = { ready: true, scope: null };
   routes = {
     connections: () =>
       json(200, {
@@ -472,5 +478,26 @@ describe("useQuotaData", () => {
       .filter((u) => u.startsWith("/api/providers/client"));
     expect(listCalls).toHaveLength(1);
     expect(listCalls[0]).toContain("provider=codex");
+  });
+
+  it("appends workspaceId to the list query when scoped", async () => {
+    scopeMock.value = { ready: true, scope: { workspaceId: "ws-1" } };
+    await mount();
+    const listCalls = fetch.mock.calls
+      .map(([u]) => u)
+      .filter((u) => u.startsWith("/api/providers/client"));
+    expect(listCalls.length).toBeGreaterThan(0);
+    expect(listCalls.every((u) => u.includes("workspaceId=ws-1"))).toBe(true);
+  });
+
+  it("stays loading without fetching while the scope is not ready", async () => {
+    scopeMock.value = { ready: false, scope: null };
+    render();
+    await flush();
+    const latest = render();
+    expect(latest.connections).toEqual([]);
+    expect(latest.connectionsLoading).toBe(true);
+    expect(latest.initialQuotaLoaded).toBe(false);
+    expect(fetch.mock.calls.filter(([u]) => u.startsWith("/api/providers/client"))).toHaveLength(0);
   });
 });

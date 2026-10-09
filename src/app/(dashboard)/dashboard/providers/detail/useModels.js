@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNotificationStore } from "@/store/notificationStore";
 import { getModelKind } from "@/shared/constants/models";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { withWorkspace } from "../connectTarget";
 import {
   clearOwnedEntry,
   isAutoThinking,
@@ -48,14 +49,20 @@ export function useModels({
   const { scope } = useSettingsScope();
 
   // All requests, including follow-up reads, must report HTTP failures.
-  const request = useCallback(async (url, options, fallback) => {
-    const res = await fetch(url, options);
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || fallback);
-    }
-    return res;
-  }, []);
+  const request = useCallback(
+    async (url, options, fallback) => {
+      const scoped = /^\/api\/models\/(alias|custom|disabled)(\?|$)/.test(url)
+        ? withWorkspace(url, scope?.workspaceId)
+        : url;
+      const res = await fetch(scoped, options);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || fallback);
+      }
+      return res;
+    },
+    [scope?.workspaceId],
+  );
 
   const report = useCallback(
     (error, fallback) => {

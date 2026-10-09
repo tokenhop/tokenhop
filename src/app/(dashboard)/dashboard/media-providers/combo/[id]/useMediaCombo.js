@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { withWorkspace } from "@/app/(dashboard)/dashboard/providers/connectTarget";
 import {
   comboStrategyKeyFor,
   loadSettings,
@@ -52,7 +53,7 @@ export function useMediaCombo(id) {
         fetch("/api/usage/logs", { cache: "no-store" }),
         fetch("/api/keys", { cache: "no-store" }),
         fetch("/api/providers", { cache: "no-store" }),
-        fetch("/api/models/alias", { cache: "no-store" }),
+        fetch(withWorkspace("/api/models/alias", scope?.workspaceId), { cache: "no-store" }),
       ]);
       if (aliasesRes.ok) setModelAliases((await aliasesRes.json()).aliases || {});
       if (keysRes.ok) {

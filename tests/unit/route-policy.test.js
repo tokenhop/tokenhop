@@ -155,7 +155,8 @@ const YAN372_USER_BUDGET_ROUTES = new Set([
 const YAN360_PUBLIC_ROUTES = new Set(["/api/invitations/accept"]);
 
 // YAN-367 audit log did not exist pre-YAN-357; the table pins it stricter than
-// the legacy default: alwaysProtected (owner/admin only, 404 with switch off).
+// the legacy default: alwaysProtected, 404 with the switch off. YAN-376: the
+// edge cap is self.session; the handler enforces workspace.audit.read live.
 const YAN367_AUDIT_ROUTES = new Set(["/api/audit"]);
 
 // YAN-365 key rotation routes did not exist pre-YAN-357 either: owner only
@@ -349,6 +350,10 @@ const MATRIX = {
     ["owner*", "admin*"],
     ["owner", "manager"],
   ],
+  "workspace.audit.read": [
+    ["owner", "admin"],
+    ["owner", "manager"],
+  ],
   "workspace.budgets.lower": [
     ["owner*", "admin*"],
     ["owner", "manager"],
@@ -447,6 +452,32 @@ describe("YAN-366 oauth routes", () => {
         expect(row.scoped, key).toBe(true);
       }
     }
+  });
+});
+
+describe("YAN-376 audit route", () => {
+  it("is self.session, alwaysProtected and hidden while the switch is off", () => {
+    expect(resolveRoutePolicy("/api/audit", "GET")).toMatchObject({
+      capability: "self.session",
+      multiUserOnly: true,
+      alwaysProtected: true,
+      public: false,
+      gateway: false,
+    });
+  });
+
+  it("workspace.audit.read: owner/manager only; admin oversight; never member/viewer", () => {
+    const cap = "workspace.audit.read";
+    for (const wsRole of ["owner", "manager"]) {
+      expect(can(who("user", wsRole), cap, { workspaceId: W })).toBe(true);
+    }
+    for (const wsRole of ["member", "viewer"]) {
+      expect(can(who("user", wsRole), cap, { workspaceId: W })).toBe(false);
+    }
+    expect(can(who("user"), cap, { workspaceId: W })).toBe(false);
+    expect(can(who("user", "manager"), cap, { workspaceId: "other" })).toBe(false);
+    expect(can(who("admin"), cap, { workspaceId: W })).toBe(true);
+    expect(can(who("pending", "manager"), cap, { workspaceId: W })).toBe(false);
   });
 });
 

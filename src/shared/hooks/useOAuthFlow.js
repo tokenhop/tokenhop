@@ -19,6 +19,8 @@ import {
   parseManualCallback,
 } from "@/shared/components/oauth/authFlowHelpers";
 import { withOAuthWorkspace } from "@/shared/utils/oauthWorkspace";
+import { useAuthStatusState } from "./useAuthStatus";
+import { accountView } from "@/shared/utils/account";
 
 const POPUP_FEATURES = "width=600,height=700";
 const emptyLedger = () => ({ proxyStarted: false, proxyProvider: null, stopSent: false });
@@ -64,6 +66,11 @@ export default function useOAuthFlow({
   onClose,
   workspaceId = null,
 }) {
+  const { status: remoteStatus, loaded: remoteReady } = useAuthStatusState();
+  const hostOnly =
+    accountView(remoteStatus).active &&
+    typeof window !== "undefined" &&
+    !isLocalhostHostname(window.location.hostname);
   const workspaceRef = useRef(workspaceId);
   workspaceRef.current = workspaceId;
   const ws = useCallback((url) => withOAuthWorkspace(url, workspaceRef.current), []);
@@ -373,6 +380,12 @@ export default function useOAuthFlow({
   // `mode` beats state: open/reset and the browser tab set the mode before React re-renders.
   const startOAuthFlow = async (mode = authModeRef.current) => {
     if (!provider) return;
+    if (hostOnly && mode === "browser" && !DEVICE_CODE_PROVIDERS.has(provider)) {
+      fail(
+        "Browser callback sign-in must start on the gateway host. Use a device-code flow or paste credentials where supported, or ask the workspace owner to connect this account.",
+      );
+      return;
+    }
     try {
       // Re-arm the poll: it runs before the callback listener that also clears this.
       callbackProcessedRef.current = false;
@@ -400,7 +413,7 @@ export default function useOAuthFlow({
 
   // Reset and start exactly once per open (StrictMode re-runs never open extra tabs).
   useEffect(() => {
-    if (!isOpen || !provider) return;
+    if (!isOpen || !provider || !remoteReady) return;
     if (openedRef.current) return;
     openedRef.current = true;
     setAuthData(null);
@@ -417,14 +430,14 @@ export default function useOAuthFlow({
     setIdeStatus(null);
     pollingAbortRef.current = false;
     flowRef.current = emptyLedger();
-    if (PASTE_TOKEN_PROVIDERS[provider]) {
+    if (PASTE_TOKEN_PROVIDERS[provider] && !hostOnly) {
       fetch(ws(`/api/oauth/${provider}/ide-status`))
         .then((r) => r.json())
         .then((data) => setIdeStatus(data))
         .catch(() => setIdeStatus({ installed: false, path: null }));
     }
     startOAuthFlowRef.current("browser");
-  }, [isOpen, provider, ws]);
+  }, [isOpen, provider, ws, remoteReady, hostOnly]);
 
   // On close: abort polling and stop the owned proxy exactly once. Mark the
   // callback consumed and drop authData so the proxy-status and callback

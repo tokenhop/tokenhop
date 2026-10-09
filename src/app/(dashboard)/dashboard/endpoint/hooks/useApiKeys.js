@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
 import { useNotificationStore } from "@/store/notificationStore";
 import {
   validateKeyName,
@@ -45,6 +46,7 @@ export { loadKeyContext, loadKeyList, acknowledgeMigration };
  * and the fetch/create/rename/toggle/delete actions.
  */
 export function useApiKeys() {
+  const { status: authStatus, loaded: authReady } = useAuthStatusState();
   const notifyError = useNotificationStore((s) => s.error);
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -124,9 +126,10 @@ export function useApiKeys() {
   // so a context401 on a hashed instance cannot unlock mutations or the
   // Default provision POST. No error leaks beyond the existing list-error copy.
   useEffect(() => {
+    if (!authReady) return;
     (async () => {
       try {
-        const ctx = await loadKeyContext();
+        const ctx = await loadKeyContext(authStatus);
         let existing = await loadKeyList(ctx);
         setContext(ctx);
         // Auto-provision a default key for first-time users so the endpoint
@@ -153,7 +156,7 @@ export function useApiKeys() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [authReady, authStatus]);
 
   /** Editing the name clears the inline create error. */
   const setNewKeyName = (value) => {

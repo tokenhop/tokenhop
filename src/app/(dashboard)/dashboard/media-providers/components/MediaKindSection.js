@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import PropTypes from "prop-types";
 import { useRouter } from "next/navigation";
 import { Button, AddCustomEmbeddingModal } from "@/shared/components";
 import { getProvidersByKind, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { withWorkspace } from "@/app/(dashboard)/dashboard/providers/connectTarget";
 import { MediaProviderGrid, ComboList } from "./MediaCards";
 
 /**
@@ -37,41 +39,60 @@ export function MediaKindSection({
   const [error, setError] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [showAddCustomEmbedding, setShowAddCustomEmbedding] = useState(false);
+  const { ready, scope } = useSettingsScope();
+  const workspaceId = scope?.workspaceId;
 
+  const loadGenerationRef = useRef(0);
   const load = useCallback(async () => {
+    // Latest load wins: a workspace switch must not be overwritten by an older response.
+    const generation = ++loadGenerationRef.current;
+    const isCurrent = () => loadGenerationRef.current === generation;
     setLoading(true);
     setError("");
     try {
-      const connsRes = await fetch("/api/providers", { cache: "no-store" });
+      const connsRes = await fetch(withWorkspace("/api/providers", workspaceId), {
+        cache: "no-store",
+      });
       if (!connsRes.ok) throw new Error(`Providers ${connsRes.status}`);
       const connsData = await connsRes.json();
+      if (!isCurrent()) return;
       setConnections(connsData.connections || []);
 
       if (showCustomEmbedding) {
         const nodesRes = await fetch("/api/provider-nodes", { cache: "no-store" });
         if (nodesRes.ok) {
           const nodesData = await nodesRes.json();
+          if (!isCurrent()) return;
           setCustomNodes((nodesData.nodes || []).filter((n) => n.type === "custom-embedding"));
         }
       }
 
       if (supportsCombo) {
-        const combosRes = await fetch("/api/combos", { cache: "no-store" });
+        const combosRes = await fetch(withWorkspace("/api/combos", workspaceId), {
+          cache: "no-store",
+        });
         if (combosRes.ok) {
           const combosData = await combosRes.json();
+          if (!isCurrent()) return;
           setCombos(combosData.combos || []);
         }
       }
     } catch (e) {
-      setError(e.message || "Failed to load providers");
+      if (isCurrent()) setError(e.message || "Failed to load providers");
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [showCustomEmbedding, supportsCombo]);
+  }, [showCustomEmbedding, supportsCombo, workspaceId]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    setConnections([]);
+    setCustomNodes([]);
+    setCombos([]);
+    if (ready) load();
+    return () => {
+      loadGenerationRef.current++;
+    };
+  }, [ready, load]);
 
   const providers = getProvidersByKind(kind);
   const kindCombos = combos.filter((c) => c.kind === kind);
@@ -108,7 +129,7 @@ export function MediaKindSection({
       name = `${base}-${i++}`;
     }
     try {
-      const res = await fetch("/api/combos", {
+      const res = await fetch(withWorkspace("/api/combos", workspaceId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, models: [], kind }),

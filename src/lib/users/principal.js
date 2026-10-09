@@ -36,14 +36,17 @@ const WS_MANAGER = [
   "workspace.combos.manage",
   "workspace.budgets.lower",
   "workspace.preferences.manage",
+  "workspace.audit.read",
 ];
 
-// Instance owner/admin: oversight in every workspace (never secrets or use)…
+// Instance owner/admin: oversight in every workspace (never secrets or use;
+// audit rows are redacted at write, so reading them is oversight, YAN-376)…
 const ADMIN_ANY_WORKSPACE = new Set([
   "workspace.connections.metadata.read",
   "workspace.grants.manage",
   "workspace.budgets.read",
   "workspace.usage.read",
+  "workspace.audit.read",
 ]);
 // …and management in the workspaces they belong to (ADR-0002 `x*`).
 const ADMIN_MEMBER_WORKSPACE = new Set(

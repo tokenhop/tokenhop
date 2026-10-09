@@ -1,4 +1,5 @@
 "use client";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -22,6 +23,7 @@ import { attachForecasts } from "@/app/(dashboard)/dashboard/quota/lib/quotaFore
  * The page keeps filters, sorting, visibility, and per-row actions.
  */
 export function useQuotaData({ page, setPage, pageSize, accountFilter, providerFilter, notify }) {
+  const { ready, scope } = useSettingsScope();
   const [connections, setConnections] = useState([]);
   const [quotaData, setQuotaData] = useState({});
   const [loading, setLoading] = useState({});
@@ -95,6 +97,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
   // Fetch connections list from the backend
   const fetchConnections = useCallback(
     async (targetPage = page) => {
+      if (!ready) return null;
       const generation = connectionsGenerationRef.current + 1;
       connectionsGenerationRef.current = generation;
       try {
@@ -105,6 +108,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
           sort: "priority",
         });
 
+        if (scope?.workspaceId) params.set("workspaceId", scope.workspaceId);
         if (providerFilter !== "all") {
           params.set("provider", providerFilter);
         }
@@ -139,7 +143,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
         throw error;
       }
     },
-    [accountFilter, page, pageSize, providerFilter],
+    [accountFilter, page, pageSize, providerFilter, ready, scope?.workspaceId],
   );
 
   // Fetch quota for a specific connection; 401/404 surface as row errors.
@@ -274,6 +278,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
 
   // Initial load
   useEffect(() => {
+    if (!ready) return undefined;
     let cancelled = false;
     async function init() {
       setConnectionsLoading(true);
@@ -297,7 +302,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
     return () => {
       cancelled = true;
     };
-  }, [fetchConnections, fetchQuota, page, pruneQuotaState]);
+  }, [fetchConnections, fetchQuota, page, pruneQuotaState, ready]);
 
   // Hydrate & persist autoRefresh
   useEffect(() => {

@@ -329,8 +329,12 @@ export const ROUTE_POLICY = {
   "/api/shell/savings-milestone": scoped({ cap: USAGE }),
   "/api/gateway/status": { cap: SELF },
 
-  // YAN-367: audit log. Owner/admin only (ADR-0002); handler 404s with the switch off.
-  "/api/audit": { cap: "instance.audit.read", alwaysProtected: true },
+  // YAN-376: audit log. Any-session gate (self.session): seeing the log
+  // needs no manage right at the edge; the handler enforces the exact
+  // workspace live (workspace owner/manager, or instance owner/admin via
+  // oversight). Hidden (404) while the switch is off; never satisfiable by
+  // single-user mode; session or the local CLI token (acts as owner).
+  "/api/audit": multiUser({ cap: SELF, alwaysProtected: true }),
 
   // YAN-365: owner-only key rotation. Session or CLI token; the handler
   // rechecks instance.keys.rotate itself. Hidden (404) while off by

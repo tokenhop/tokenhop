@@ -1,4 +1,6 @@
 "use client";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { withWorkspace } from "@/app/(dashboard)/dashboard/providers/connectTarget";
 
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
@@ -135,14 +137,15 @@ export default function ComboFormModal({
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+  const { ready, scope } = useSettingsScope();
 
   useEffect(() => {
-    if (!isOpen) return;
-    fetch("/api/models/alias")
+    if (!isOpen || !ready) return;
+    fetch(withWorkspace("/api/models/alias", scope?.workspaceId))
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setModelAliases(d.aliases || {}))
       .catch(() => {});
-  }, [isOpen]);
+  }, [isOpen, ready, scope?.workspaceId]);
 
   const validateName = (value) => {
     if (!value.trim()) {

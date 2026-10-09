@@ -28,6 +28,8 @@ import {
 } from "./setupCard";
 import { DEFAULT_PLUGINS } from "@/shared/constants/coworkPlugins";
 import { buildCoworkConfig, buildCoworkMcpServers } from "@/lib/cliToolConfigs/cowork";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { withWorkspace } from "@/app/(dashboard)/dashboard/providers/connectTarget";
 import { useManualPlatform } from "@/store/manualSetupStore";
 
 const ENDPOINT = "/api/cli-tools/cowork-settings";
@@ -66,6 +68,7 @@ export default function CoworkToolCard({
   hashedContext = false,
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "cowork" });
+  const { scope } = useSettingsScope();
   const platform = useManualPlatform();
   const { status } = card;
   // YAN-363: this route reports storage/credentialConfigured directly; the
@@ -206,7 +209,7 @@ export default function CoworkToolCard({
 
   const handleCreateCombo = async ({ name, models }) => {
     try {
-      const res = await fetch("/api/combos", {
+      const res = await fetch(withWorkspace("/api/combos", scope?.workspaceId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, models }),
