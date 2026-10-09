@@ -111,7 +111,7 @@ function BudgetRow({ budget, onEdit }) {
         <p className="text-sm text-muted">No limits set — tracking spend only.</p>
       )}
       <p className="text-xs text-subtle">
-        Est. spend {money(spent.notionalUsd)} — estimate, not billing.
+        Notional spend {money(spent.notionalUsd)} — estimate, not billing.
       </p>
     </li>
   );
