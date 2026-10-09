@@ -264,6 +264,12 @@ export default function ShareDialog({
               }}
               options={workspaceOptions}
             />
+            {granteeType === "workspace" && workspaceOptions.length === 0 && (
+              <Callout variant="info">
+                This connection already belongs to your only shared workspace. Share it with one
+                member instead, or create another shared workspace.
+              </Callout>
+            )}
             {granteeType === "user" && (
               <Select
                 label="Member"
