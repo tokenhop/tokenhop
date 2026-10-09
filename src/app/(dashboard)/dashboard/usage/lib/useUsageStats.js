@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { initialStreamState, streamReducer } from "./streamLifecycle";
+import { appendUsageFilters } from "./filterParams";
 
 const EMPTY_LIVE = { activeRequests: [], lastProvider: "", errorProvider: "" };
-const statsUrl = (period) => `/api/usage/stats?period=${period}&compare=previous`;
+const statsUrl = (period, filters) =>
+  appendUsageFilters(`/api/usage/stats?period=${period}&compare=previous`, filters);
 
 /** A repeated frame (same providers, counts, last/error provider) isn't state. */
 const sameLive = (a, b) =>
@@ -34,6 +36,9 @@ const sameLive = (a, b) =>
  *   stays true so callers keep their skeletons.
  * @param {{tab?: "overview"|"logs"}} [options] active page tab; the stream
  *   only runs on "overview".
+ * @param {{workspaceId?: string, view?: string, userId?: string, apiKeyId?: string}|null} [filters]
+ *   optional scope appended to the stats and stream URLs (YAN-376); a change
+ *   resets `stats` and reconnects the stream so old-scope data never flashes.
  * @returns {{
  *   stats: object|null period stats (compare fields included when supported);
  *   statsPeriod: string|null period `stats` was fetched for;
@@ -41,7 +46,7 @@ const sameLive = (a, b) =>
  *   loading: boolean; fetching: boolean; error: Error|null; catchUpKey: number;
  *   retry: () => void}}
  */
-export default function useUsageStats(period, { tab = "overview" } = {}) {
+export default function useUsageStats(period, { tab = "overview" } = {}, filters = null) {
   const [stats, setStats] = useState(null);
   const [statsPeriod, setStatsPeriod] = useState(period);
   const [live, setLive] = useState(EMPTY_LIVE);
@@ -59,6 +64,8 @@ export default function useUsageStats(period, { tab = "overview" } = {}) {
   );
   const [reload, setReload] = useState(0);
   const hasStats = useRef(false);
+  // Callers may pass a fresh object each render: key effects on the encoded scope.
+  const scopeKey = appendUsageFilters("", filters);
 
   // A stream reopen (hidden tab, logs tab or a reconnect came back) asks for
   // one catch-up fetch: bump the reload trigger and clear the flag in the same
@@ -70,10 +77,21 @@ export default function useUsageStats(period, { tab = "overview" } = {}) {
     dispatchStream({ type: "caughtUp" });
   }, [stream.needsCatchUp]);
 
+  // Scope switch: reset stats like a new period so old-scope data never
+  // flashes; the stream effect below reconnects with the new scope.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scopeKey is the reset trigger.
+  useEffect(() => {
+    hasStats.current = false;
+    setStats(null);
+    setStatsPeriod(null);
+    setError(null);
+    setLive(EMPTY_LIVE);
+  }, [scopeKey]);
+
   // REST owns `stats`. Runs on a period change, on retry and on a catch-up.
   // Only the very first load flips the skeleton; later ones are background
   // refreshes (`fetching`).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reload is the re-fetch trigger.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload is the re-fetch trigger; filters are keyed by scopeKey.
   useEffect(() => {
     // Null period: usePeriod has not resolved yet, so hold the loading state
     // instead of fetching a placeholder window.
@@ -82,9 +100,12 @@ export default function useUsageStats(period, { tab = "overview" } = {}) {
     if (hasStats.current) setFetching(true);
     else setLoading(true);
     setError(null);
-    fetch(statsUrl(period), { signal: controller.signal })
+    fetch(statsUrl(period, filters), { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`stats ${r.status}`))))
       .then((data) => {
+        // Late success after abort (scope/period switch): the next effect run
+        // owns state, so drop this payload instead of overwriting fresh data.
+        if (controller.signal.aborted) return;
         // Replace (not merge): each period is a complete snapshot, so stale
         // period fields must not leak across period switches.
         hasStats.current = true;
@@ -100,7 +121,7 @@ export default function useUsageStats(period, { tab = "overview" } = {}) {
         setFetching(false);
       });
     return () => controller.abort();
-  }, [period, reload]);
+  }, [period, reload, scopeKey]);
 
   const retry = useCallback(() => {
     setReload((value) => value + 1);
@@ -124,10 +145,12 @@ export default function useUsageStats(period, { tab = "overview" } = {}) {
   // One EventSource while the reducer says the stream should be open; closing
   // on cleanup covers hidden-tab and logs-tab transitions. EventSource
   // auto-reconnects after an error, so onopen after onerror asks the reducer
-  // for one catch-up fetch.
+  // for one catch-up fetch. Scope changes rebuild the stream with the new
+  // filter query so live frames match the current scope (YAN-376).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scopeKey rebuilds the stream on a scope change; filters are keyed by scopeKey.
   useEffect(() => {
     if (!stream.open) return;
-    const es = new EventSource("/api/usage/stream");
+    const es = new EventSource(appendUsageFilters("/api/usage/stream", filters));
     let sawError = false;
     let warned = false;
     es.onopen = () => {
@@ -164,7 +187,7 @@ export default function useUsageStats(period, { tab = "overview" } = {}) {
       // in-flight overlay so the window model speaks alone (YAN-412).
       setLive((current) => (sameLive(current, EMPTY_LIVE) ? current : EMPTY_LIVE));
     };
-  }, [stream.open]);
+  }, [stream.open, scopeKey]);
 
   return { stats, statsPeriod, live, loading, fetching, error, catchUpKey, retry };
 }

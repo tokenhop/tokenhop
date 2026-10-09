@@ -38,8 +38,9 @@ export function cutoffDateKey(days) {
 
 /**
  * Usage scope → SQL condition. `ctx` null is the unscoped view (switch off or
- * a single user). Otherwise `{ workspaceId, userId? }`: the workspace, narrowed
- * to one user's rows when `userId` is set (members/viewers, plan D1).
+ * a single user). Otherwise `{ workspaceId, userId?, apiKeyId? }`: the
+ * workspace, narrowed to one user's rows when `userId` is set (members/viewers,
+ * plan D1) and to one gateway key's rows when `apiKeyId` is set (YAN-376).
  * @returns {{ sql: string, params: string[] }} empty condition when unscoped
  */
 export function scopeSql(ctx, alias = "") {
@@ -47,13 +48,17 @@ export function scopeSql(ctx, alias = "") {
   if (typeof ctx.workspaceId !== "string" || !ctx.workspaceId) {
     throw new Error("[usage] scoped read without workspaceId");
   }
+  const conds = [`${alias}workspaceId = ?`];
+  const params = [ctx.workspaceId];
   if (ctx.userId) {
-    return {
-      sql: `${alias}workspaceId = ? AND ${alias}userId = ?`,
-      params: [ctx.workspaceId, ctx.userId],
-    };
+    conds.push(`${alias}userId = ?`);
+    params.push(ctx.userId);
   }
-  return { sql: `${alias}workspaceId = ?`, params: [ctx.workspaceId] };
+  if (ctx.apiKeyId) {
+    conds.push(`${alias}apiKeyId = ?`);
+    params.push(ctx.apiKeyId);
+  }
+  return { sql: conds.join(" AND "), params };
 }
 
 /** "WHERE a AND b" from the non-empty conditions, or "". */

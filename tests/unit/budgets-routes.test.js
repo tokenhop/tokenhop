@@ -29,7 +29,7 @@ async function load(state) {
   vi.resetModules();
   process.env[ENV] = state;
   adapter = await (await import("@/lib/db/driver.js")).getAdapter();
-  for (const tbl of ["budgets", "auditEvents"]) adapter.run(`DELETE FROM ${tbl}`);
+  for (const tbl of ["budgets", "auditEvents", "usageHistory"]) adapter.run(`DELETE FROM ${tbl}`);
   routes = {
     ws: await import("@/app/api/workspaces/[id]/budgets/route.js"),
     wsOne: await import("@/app/api/workspaces/[id]/budgets/[budgetId]/route.js"),
@@ -172,5 +172,83 @@ describe("budget routes, switch on", () => {
     expect((await as(t.a, routes.user.POST, url, { method: "POST", body, params })).status).toBe(
       201,
     );
+  });
+
+  it("GET appends settled spent per scope; notional subset; window/status filtering; foreign workspace denied", async () => {
+    await load("on");
+    const ws = t.shared.id;
+    const ins = (id, scopeType, scopeId) =>
+      adapter.run(
+        `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, limitTokens, limitRequests, softLimitPct, resetAt, createdByUserId, createdAt)
+         VALUES(?, ?, ?, ?, 'month', 100, NULL, NULL, NULL, NULL, NULL, '2026-01-01T00:00:00.000Z')`,
+        [id, scopeType === "user" ? null : ws, scopeType, scopeId],
+      );
+    ins("bk", "key", "k1");
+    ins("bu", "user", t.b.user.id);
+    ins("bm", "membership", `${ws}:${t.b.user.id}`);
+    ins("bw", "workspace", ws);
+    ins("bg", "grant", "g1");
+    const uh = (e) =>
+      adapter.run(
+        `INSERT INTO usageHistory(timestamp, provider, promptTokens, completionTokens, cost, status, meta, workspaceId, userId, apiKeyId, grantId)
+         VALUES(?, 'openai', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          e.ts ?? "2026-01-05T10:00:00.000Z",
+          e.tok ?? 10,
+          5,
+          e.cost ?? 1,
+          e.status ?? "success",
+          e.meta ? JSON.stringify(e.meta) : null,
+          e.ws ?? null,
+          e.uid ?? null,
+          e.key ?? null,
+          e.grant ?? null,
+        ],
+      );
+    uh({ key: "k1", ws, cost: 1, meta: { notional: true } });
+    uh({ uid: t.b.user.id, ws: t.b.personal, cost: 2 }); // user-level only
+    uh({ ws, uid: t.b.user.id, cost: 3 });
+    uh({ ws, cost: 4 });
+    uh({ grant: "g1", cost: 5 });
+    uh({ ws, cost: 6, status: null }); // legacy NULL status still settled
+    uh({ ws: t.b.personal, cost: 100 }); // foreign workspace
+    uh({ ws, cost: 50, status: "error" }); // failed: never counted
+    uh({ ws, cost: 50, ts: "2025-12-05T10:00:00.000Z" }); // prior window
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-01-09T12:00:00Z"));
+      const res = await as(t.a, routes.ws.GET, `/api/workspaces/${ws}/budgets`, {
+        params: { id: ws },
+      });
+      expect(res.status).toBe(200);
+      const byScope = Object.fromEntries((await res.json()).budgets.map((b) => [b.scopeType, b]));
+      expect(byScope.key.spent).toEqual({ usd: 1, tokens: 15, requests: 1, notionalUsd: 1 });
+      expect(byScope.user).toBeUndefined(); // user-level rows live on the user route
+      expect(byScope.membership.spent).toEqual({ usd: 3, tokens: 15, requests: 1, notionalUsd: 0 });
+      expect(byScope.workspace.spent).toEqual({ usd: 14, tokens: 60, requests: 4, notionalUsd: 1 });
+      expect(byScope.grant.spent).toEqual({ usd: 5, tokens: 15, requests: 1, notionalUsd: 0 });
+      expect(JSON.stringify(byScope)).not.toContain("@tenancy.test"); // no raw user emails
+      // Non-member GET on a foreign workspace: 404, never a leak.
+      expect(
+        (
+          await as(t.b, routes.ws.GET, `/api/workspaces/${t.a.personal}/budgets`, {
+            params: { id: t.a.personal },
+          })
+        ).status,
+      ).toBe(404);
+      // User-level spent via the admin user route.
+      const userRes = await as(t.a, routes.user.GET, `/api/users/${t.b.user.id}/budgets`, {
+        params: { id: t.b.user.id },
+      });
+      expect(userRes.status).toBe(200);
+      expect((await userRes.json()).budgets[0].spent).toEqual({
+        usd: 5,
+        tokens: 30,
+        requests: 2,
+        notionalUsd: 0,
+      }); // user scope spans workspaces
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

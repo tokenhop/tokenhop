@@ -118,6 +118,26 @@ function scopeFilter(budget) {
   return [`${column} = ?`, [budget.scopeId]];
 }
 
+/**
+ * Settled spend of `budget` in the UTC window containing `now`, from
+ * usageHistory (settled-success rows in the budget's scope). `notionalUsd` is
+ * the subset of `usd` priced on subscription connections (meta.notional).
+ * Synchronous; shared by enforcement and the budget GET routes.
+ */
+export function spentFor(db, budget, now = Date.now()) {
+  const [sql, params] = scopeFilter(budget);
+  const spent = db.get(
+    `SELECT COALESCE(SUM(cost), 0) AS usd, COALESCE(SUM(promptTokens + completionTokens), 0) AS tokens, COUNT(*) AS requests, COALESCE(SUM(CASE WHEN CASE WHEN json_valid(meta) THEN json_extract(meta, '$.notional') END = 1 THEN cost ELSE 0 END), 0) AS notionalUsd FROM usageHistory WHERE ${sql} AND timestamp >= ? AND (status IS NULL OR status IN ('ok', 'success'))`,
+    [...params, new Date(windowStart(budget.window, now)).toISOString()],
+  );
+  return {
+    usd: Number(spent.usd),
+    tokens: Number(spent.tokens),
+    requests: Number(spent.requests),
+    notionalUsd: Number(spent.notionalUsd),
+  };
+}
+
 // Spent for the current UTC window: rebuilt from settled usageHistory rows the
 // first time a window is seen (also the crash-recovery path after a restart),
 // then kept current by the usage-commit hook. Synchronous.
@@ -126,19 +146,11 @@ function stateFor(budget, now = Date.now()) {
   const key = `${budget.id}:${start}`;
   let state = counters.get(key);
   if (!state) {
-    const [sql, params] = scopeFilter(budget);
-    const spent = db.get(
-      `SELECT COALESCE(SUM(cost), 0) AS usd, COALESCE(SUM(promptTokens + completionTokens), 0) AS tokens, COUNT(*) AS requests FROM usageHistory WHERE ${sql} AND timestamp >= ? AND (status IS NULL OR status IN ('ok', 'success'))`,
-      [...params, new Date(start).toISOString()],
-    );
+    const { usd, tokens, requests } = spentFor(db, budget, now);
     state = {
       start,
       budget,
-      spent: {
-        usd: Number(spent.usd),
-        tokens: Number(spent.tokens),
-        requests: Number(spent.requests),
-      },
+      spent: { usd, tokens, requests },
       reserved: zero(),
       softEmitted: false,
     };

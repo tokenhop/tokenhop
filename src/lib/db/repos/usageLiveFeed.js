@@ -1,7 +1,9 @@
 // Live usage feed state (YAN-370, plan D9): in-flight counters, the recent
 // ring and the stats emitter, process-wide but keyed by workspace so a scoped
-// subscriber only sees its own workspace. `ctx` null (switch off / one user)
-// merges every workspace: today's payload.
+// subscriber only sees its own workspace. YAN-376: counters are additionally
+// keyed by identity (workspace/user/key), and a scope carrying `userId` /
+// `apiKeyId` narrows pending, ring and last-error to that identity.
+// `ctx` null (switch off / one user) merges every workspace: today's payload.
 import { EventEmitter } from "node:events";
 import { getAdapter } from "../driver.js";
 import { parseJson } from "../helpers/jsonCol.js";
@@ -12,6 +14,7 @@ const EMPTY = () => ({ byModel: {}, byAccount: {} });
 
 // In-memory state shared across Next.js modules.
 if (!global._pendingByWorkspace) global._pendingByWorkspace = {};
+if (!global._pendingByIdentity) global._pendingByIdentity = {};
 if (!global._lastErrorProvider) global._lastErrorProvider = { provider: "", ts: 0 };
 if (!global._statsEmitter) {
   global._statsEmitter = new EventEmitter();
@@ -22,6 +25,7 @@ if (!global._recentRing) global._recentRing = { items: [], initialized: false };
 if (!global._statsEmitTimers) global._statsEmitTimers = { pending: null, update: null };
 
 const pendingByWorkspace = global._pendingByWorkspace;
+const pendingByIdentity = global._pendingByIdentity;
 const lastErrorProvider = global._lastErrorProvider;
 const pendingTimers = global._pendingTimers;
 const recentRing = global._recentRing;
@@ -40,30 +44,70 @@ export function scheduleStatsEvent(event, delayMs = 150) {
 }
 
 const inScope = (entry, ctx) =>
-  !ctx || (entry?.workspaceId === ctx.workspaceId && (!ctx.userId || entry?.userId === ctx.userId));
+  !ctx ||
+  (entry?.workspaceId === ctx.workspaceId &&
+    (!ctx.userId || entry?.userId === ctx.userId) &&
+    (!ctx.apiKeyId || entry?.apiKeyId === ctx.apiKeyId));
 
-/** In-flight counts `{ byModel, byAccount }` for one workspace, or all merged (null). */
-export function pendingView(workspaceId = null) {
-  if (workspaceId !== null) return pendingByWorkspace[workspaceId] || EMPTY();
-  const out = EMPTY();
-  for (const b of Object.values(pendingByWorkspace)) {
-    for (const [k, n] of Object.entries(b.byModel)) out.byModel[k] = (out.byModel[k] || 0) + n;
-    for (const [conn, models] of Object.entries(b.byAccount)) {
-      out.byAccount[conn] ||= {};
-      const acc = out.byAccount[conn];
-      for (const [k, n] of Object.entries(models)) acc[k] = (acc[k] || 0) + n;
-    }
+const mergeBucket = (out, b) => {
+  for (const [k, n] of Object.entries(b.byModel)) out.byModel[k] = (out.byModel[k] || 0) + n;
+  for (const [conn, models] of Object.entries(b.byAccount)) {
+    out.byAccount[conn] ||= {};
+    const acc = out.byAccount[conn];
+    for (const [k, n] of Object.entries(models)) acc[k] = (acc[k] || 0) + n;
   }
+};
+
+/**
+ * In-flight counts `{ byModel, byAccount }` for a scope:
+ * - `null`: every workspace merged (today's unscoped view).
+ * - workspace id string: that workspace's bucket, every identity inside it.
+ * - scope object: identity-filtered when `userId`/`apiKeyId` are set
+ *   (matching identity buckets only), else the workspace bucket.
+ */
+export function pendingView(scope = null) {
+  if (typeof scope === "string") return pendingByWorkspace[scope] || EMPTY();
+  if (scope && (scope.userId || scope.apiKeyId)) {
+    const out = EMPTY();
+    for (const b of Object.values(pendingByIdentity)) {
+      if (inScope(b, scope)) mergeBucket(out, b);
+    }
+    return out;
+  }
+  if (scope) return pendingByWorkspace[scope.workspaceId] || EMPTY();
+  const out = EMPTY();
+  for (const b of Object.values(pendingByWorkspace)) mergeBucket(out, b);
   return out;
 }
 
-/** Provider that failed in the last 10s, visible only inside its workspace when scoped. */
+/** Provider that failed in the last 10s, visible only inside its scope. */
 export function lastErrorFor(ctx) {
   if (Date.now() - lastErrorProvider.ts >= 10000) return "";
-  if (ctx && lastErrorProvider.workspaceId !== ctx.workspaceId) return "";
+  if (ctx && !inScope(lastErrorProvider, ctx)) return "";
   return lastErrorProvider.provider;
 }
 
+function bump(pending, connectionId, modelKey, delta) {
+  pending.byModel[modelKey] = Math.max(0, (pending.byModel[modelKey] || 0) + delta);
+  if (pending.byModel[modelKey] === 0) delete pending.byModel[modelKey];
+  if (!connectionId) return;
+  pending.byAccount[connectionId] ||= {};
+  const acc = pending.byAccount[connectionId];
+  acc[modelKey] = Math.max(0, (acc[modelKey] || 0) + delta);
+  if (acc[modelKey] === 0) {
+    delete acc[modelKey];
+    if (Object.keys(acc).length === 0) delete pending.byAccount[connectionId];
+  }
+}
+
+const str = (v) => (typeof v === "string" ? v : "");
+
+/**
+ * Count one in-flight request start/stop. Start and stop must pass the same
+ * workspace/user/key identity so they hit the same counters (connection/model
+ * alone is not unique across concurrent users). Unscoped callers (no ids)
+ * keep today's workspace-only shape.
+ */
 export function trackPendingRequest(
   model,
   provider,
@@ -71,25 +115,25 @@ export function trackPendingRequest(
   started,
   error = false,
   workspaceId = "",
+  userId = null,
+  apiKeyId = null,
 ) {
-  const ws = typeof workspaceId === "string" ? workspaceId : "";
+  const ws = str(workspaceId);
+  const uid = str(userId);
+  const kid = str(apiKeyId);
+  const modelKey = provider ? `${model} (${provider})` : model;
+
   pendingByWorkspace[ws] ||= EMPTY();
   const pending = pendingByWorkspace[ws];
-  const modelKey = provider ? `${model} (${provider})` : model;
-  const timerKey = `${ws}|${connectionId}|${modelKey}`;
-  const delta = started ? 1 : -1;
+  const idKey = `${ws}\0${uid}\0${kid}`;
+  pendingByIdentity[idKey] ||= { workspaceId: ws, userId: uid, apiKeyId: kid, ...EMPTY() };
+  const idPending = pendingByIdentity[idKey];
+  const timerKey = `${idKey}|${connectionId}|${modelKey}`;
 
-  pending.byModel[modelKey] = Math.max(0, (pending.byModel[modelKey] || 0) + delta);
-  if (pending.byModel[modelKey] === 0) delete pending.byModel[modelKey];
-
-  if (connectionId) {
-    pending.byAccount[connectionId] ||= {};
-    const acc = pending.byAccount[connectionId];
-    acc[modelKey] = Math.max(0, (acc[modelKey] || 0) + delta);
-    if (acc[modelKey] === 0) {
-      delete acc[modelKey];
-      if (Object.keys(acc).length === 0) delete pending.byAccount[connectionId];
-    }
+  bump(pending, connectionId, modelKey, started ? 1 : -1);
+  bump(idPending, connectionId, modelKey, started ? 1 : -1);
+  if (!Object.keys(idPending.byModel).length && !Object.keys(idPending.byAccount).length) {
+    delete pendingByIdentity[idKey];
   }
 
   clearTimeout(pendingTimers[timerKey]);
@@ -97,9 +141,17 @@ export function trackPendingRequest(
   if (started) {
     pendingTimers[timerKey] = setTimeout(() => {
       delete pendingTimers[timerKey];
-      if (pending.byModel[modelKey] > 0) pending.byModel[modelKey] = 0;
-      if (connectionId && pending.byAccount[connectionId]?.[modelKey] > 0) {
-        pending.byAccount[connectionId][modelKey] = 0;
+      // Expire only this identity's share; other identities keep their counts.
+      const own = pendingByIdentity[idKey];
+      if (!own) return scheduleStatsEvent("pending");
+      const modelN = own.byModel[modelKey] || 0;
+      const accN = connectionId ? own.byAccount[connectionId]?.[modelKey] || 0 : 0;
+      bump(pending, null, modelKey, -(connectionId ? accN : modelN));
+      if (connectionId)
+        bump({ byModel: {}, byAccount: pending.byAccount }, connectionId, modelKey, -accN);
+      bump(own, connectionId, modelKey, -(connectionId ? accN : modelN));
+      if (!Object.keys(own.byModel).length && !Object.keys(own.byAccount).length) {
+        delete pendingByIdentity[idKey];
       }
       scheduleStatsEvent("pending");
     }, PENDING_TIMEOUT_MS);
@@ -108,6 +160,8 @@ export function trackPendingRequest(
   if (!started && error && provider) {
     lastErrorProvider.provider = provider.toLowerCase();
     lastErrorProvider.workspaceId = ws;
+    lastErrorProvider.userId = uid;
+    lastErrorProvider.apiKeyId = kid;
     lastErrorProvider.ts = Date.now();
   }
   scheduleStatsEvent("pending");
@@ -137,12 +191,14 @@ async function ensureRingInitialized() {
  * the newest ring entry with non-zero tokens, and a recently failing provider.
  * `ctx` null merges every workspace; a usage scope keeps the caller's own
  * workspace (plan D9: workspace-wide, also for members — aggregate ops
- * telemetry; narrowed to one user only if `ctx.userId` is passed).
+ * telemetry; YAN-376: narrowed to one user and/or gateway key when
+ * `ctx.userId` / `ctx.apiKeyId` are passed — pending counters, ring and last
+ * error all honour them).
  * @returns {Promise<{activeRequests: {provider: string, count: number}[], lastProvider: string, errorProvider: string}>}
  */
 export async function getLiveSnapshot(ctx = null) {
   const counts = new Map();
-  for (const models of Object.values(pendingView(ctx ? ctx.workspaceId : null).byAccount)) {
+  for (const models of Object.values(pendingView(ctx).byAccount)) {
     for (const [modelKey, count] of Object.entries(models)) {
       if (!(count > 0)) continue;
       const provider = modelKey.match(/^(.*) \((.*)\)$/)?.[2] || "unknown";

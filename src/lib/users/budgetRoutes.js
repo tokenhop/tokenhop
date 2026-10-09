@@ -5,6 +5,8 @@ import { json, PayloadTooLarge, readJsonBody } from "@/lib/users/userManagement.
 import { requireMultiUser } from "@/lib/users/featureSwitch.js";
 import { getPrincipal } from "@/lib/users/session.js";
 import { isCrossSite, isJson } from "@/lib/auth/sameOrigin.js";
+import { getAdapter } from "@/lib/db/driver.js";
+import { spentFor } from "@/sse/services/budgetGuard.js";
 
 export const MAX_BODY = 2048;
 
@@ -46,6 +48,13 @@ export async function readBody(request, keys) {
 }
 
 export const badRequest = () => json({ error: "Invalid request", code: "invalid_request" }, 400);
+
+/** Public rows plus settled `spent` for each budget's current window (GET only). */
+export async function withSpent(rows) {
+  const db = await getAdapter();
+  const now = Date.now();
+  return rows.map((b) => ({ ...publicBudget(b), spent: spentFor(db, b, now) }));
+}
 
 export const publicBudget = (b) => ({
   id: b.id,

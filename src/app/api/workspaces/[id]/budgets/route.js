@@ -4,7 +4,14 @@
 // ownership and live authority inside its transaction and writes the audit
 // row — none here.
 import { json } from "@/lib/users/userManagement.js";
-import { badRequest, fail, gate, publicBudget, readBody } from "@/lib/users/budgetRoutes.js";
+import {
+  badRequest,
+  fail,
+  gate,
+  publicBudget,
+  readBody,
+  withSpent,
+} from "@/lib/users/budgetRoutes.js";
 import { createBudget, listBudgets } from "@/lib/db/repos/budgetsRepo.js";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +33,7 @@ export async function GET(request, { params }) {
   try {
     const { id } = await params;
     const rows = await listBudgets(g.principal, { workspaceId: id });
-    return json({ budgets: rows.map(publicBudget) });
+    return json({ budgets: await withSpent(rows) });
   } catch (err) {
     return fail(err);
   }

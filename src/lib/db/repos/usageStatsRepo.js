@@ -233,7 +233,7 @@ export async function getUsageStats(ctx, period = "all") {
   const db = await getAdapter();
   const scope = scopeSql(ctx);
   const [maps, keyNames] = [await nameMaps(), await apiKeyNames(db)];
-  const pending = pendingView(ctx ? ctx.workspaceId : null);
+  const pending = pendingView(ctx);
 
   const seen = new Set();
   const recentRequests = db
