@@ -23,7 +23,7 @@ export default function PersonalSharingSetting({ settings, onSaved }) {
     <>
       <SettingRow
         label="Allow sharing subscription connections"
-        description="Lets owners and admins share personal subscription accounts (Claude, ChatGPT, Copilot) after accepting the provider terms warning. Most provider terms forbid account sharing."
+        description="Lets owners and admins share subscription connections after accepting the provider terms warning. Most provider terms forbid account sharing."
         settingKey="allowPersonalConnectionGrants"
         control={
           <Toggle

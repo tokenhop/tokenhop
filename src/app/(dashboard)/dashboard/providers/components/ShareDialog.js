@@ -12,19 +12,19 @@ import {
 } from "../sharing";
 
 const TERMS_LINKS = [
-  { href: "https://www.anthropic.com/legal/consumer-terms", label: "Anthropic Consumer Terms" },
+  { href: "https://www.anthropic.com/legal/consumer-terms", label: "Anthropic consumer terms" },
   {
     href: "https://code.claude.com/docs/en/legal-and-compliance",
     label: "Claude Code legal and compliance",
   },
-  { href: "https://openai.com/policies/terms-of-use/", label: "OpenAI Terms of Use" },
+  { href: "https://openai.com/policies/terms-of-use/", label: "OpenAI terms of use" },
   {
     href: "https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan",
-    label: "Using Codex with your ChatGPT plan",
+    label: "Codex subscription terms",
   },
   {
     href: "https://docs.github.com/en/site-policy/github-terms/github-terms-of-service",
-    label: "GitHub Terms of Service",
+    label: "GitHub terms of service",
   },
 ];
 

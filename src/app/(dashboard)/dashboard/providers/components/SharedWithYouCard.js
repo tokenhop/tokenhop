@@ -21,7 +21,7 @@ export default function SharedWithYouCard({ grants, loading, error }) {
   }
   if (!grants || grants.length === 0) return null;
   return (
-    <Card title="Shared with you" icon="group_add">
+    <Card title="Shared with you" icon="group">
       <ul className="flex flex-col gap-2">
         {grants.map((grant) => (
           <li
