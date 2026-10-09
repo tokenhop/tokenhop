@@ -21,7 +21,7 @@ import {
   getGatewayAliases,
   getGatewayDisabled,
 } from "@/lib/auth/gatewayResources.js";
-import { getModelInfo } from "@/sse/services/model.js";
+import { getModelInfo, resolveOpenAICompatibleConnectionApiType } from "@/sse/services/model.js";
 import {
   hasLiveModelResolver,
   noAuthConnection,
@@ -422,6 +422,13 @@ export async function buildModelsList(kindFilter, options = {}) {
         new Set([...modelIds, ...customModelIds, ...aliasModelIds]),
       );
 
+      // Completions nodes serve /v1/completions (FIM), not chat: hint it on
+      // their LLM entries. Resolved once per provider, not per model.
+      const isCompletionsNode =
+        isOpenAICompatibleProvider(providerId) &&
+        kindFilter.includes(LLM_KIND) &&
+        (await resolveOpenAICompatibleConnectionApiType(conn)) === "completions";
+
       for (const modelId of mergedModelIds) {
         // Resolve kind: prefer custom/live metadata, then static, then ID heuristics.
         const customKind = customModelKindById.get(modelId);
@@ -450,6 +457,15 @@ export async function buildModelsList(kindFilter, options = {}) {
           capabilitiesFromServiceKind(customKind || liveKind) ||
           (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId) : null);
         if (caps) model.capabilities = caps;
+        if (isCompletionsNode && (kind === LLM_KIND || allowAsLlm)) {
+          model.endpoint = "/v1/completions";
+          model.capabilities = {
+            ...model.capabilities,
+            fim: true,
+            tools: false,
+            forcedToolChoice: false,
+          };
+        }
         // Token limits under the snake_case names the OpenAI/OpenRouter
         // convention uses. `capabilities.contextWindow` is camelCase and nested,
         // so clients matching context_length find nothing, fall back to guessing

@@ -16,6 +16,16 @@ import {
   getModelInfoCore,
 } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
+import {
+  OPENAI_COMPATIBLE_API_TYPES,
+  resolveOpenAICompatibleApiType,
+} from "open-sse/services/provider.js";
+import { getProviderNodeMetadataByIdUnscoped } from "@/lib/db/repos/nodesRepo.js";
+import * as log from "../utils/logger.js";
+
+// ponytail: one process-wide warning per minute; add per-connection tracking if logs prove too coarse.
+const MISSING_API_TYPE_WARN_MS = 60_000;
+let lastMissingApiTypeWarn = 0;
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
 const LOCAL_PROVIDER_ALIASES = {
@@ -36,6 +46,36 @@ export function parseModel(modelStr) {
     return { ...parsed, provider: LOCAL_PROVIDER_ALIASES[parsed.providerAlias] };
   }
   return parsed;
+}
+
+/**
+ * API type for an openai-compatible connection. A valid stored
+ * providerSpecificData.apiType wins (no lookup). Otherwise the current node's
+ * apiType (same workspace, type openai-compatible) beats the legacy node-id
+ * substring fallback. Lookup errors propagate; nothing is cached or written.
+ */
+export async function resolveOpenAICompatibleConnectionApiType(connection) {
+  const stored = connection?.providerSpecificData?.apiType;
+  if (OPENAI_COMPATIBLE_API_TYPES.includes(stored)) return stored;
+  const now = Date.now();
+  if (now - lastMissingApiTypeWarn >= MISSING_API_TYPE_WARN_MS) {
+    lastMissingApiTypeWarn = now;
+    log.warn(
+      "MODEL",
+      `openai-compatible connection ${String(connection?.id || "unknown").slice(0, 8)} has no valid stored apiType; resolving from node`,
+    );
+  }
+  if (typeof connection?.provider === "string") {
+    const node = await getProviderNodeMetadataByIdUnscoped(connection.provider);
+    if (
+      node?.type === "openai-compatible" &&
+      OPENAI_COMPATIBLE_API_TYPES.includes(node.apiType) &&
+      (node.workspaceId ?? null) === (connection.workspaceId ?? null)
+    ) {
+      return node.apiType;
+    }
+  }
+  return resolveOpenAICompatibleApiType(connection?.provider, connection);
 }
 
 /**

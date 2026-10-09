@@ -18,6 +18,8 @@ Route inline code completion (fill-in-the-middle) clients through the tokenhop g
 
 Gateway base URL is `http://localhost:20128`. Authenticate with `Authorization: Bearer $TOKENHOP_API_KEY` (the dashboard API key). The examples below use the env var name `TOKENHOP_API_KEY`, never a real key value.
 
+Models from OpenAI-compatible nodes set to the completions API type stay in `GET /v1/models`, so editors can discover them. Their entries include `endpoint: "/v1/completions"` and `capabilities.fim: true`. Use them through the endpoints above, not `/v1/chat/completions`.
+
 ## Zed
 
 Zed sends `{"model", "prompt", "max_tokens", "stop"}` to the full URL in `api_url`. Settings (`settings.json`):
