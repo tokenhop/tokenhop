@@ -64,7 +64,12 @@ export default function ShareDialog({
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState([]);
 
-  const workspaceOptions = useMemo(() => shareableWorkspaceOptions(workspaces), [workspaces]);
+  const directoryOptions = useMemo(() => shareableWorkspaceOptions(workspaces), [workspaces]);
+  const workspaceOptions = useMemo(
+    () =>
+      directoryOptions.filter((w) => granteeType === "user" || w.value !== connection?.workspaceId),
+    [directoryOptions, granteeType, connection?.workspaceId],
+  );
 
   // Reset the form whenever the dialog (re)opens for a target connection.
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset must only run when the modal opens or the target connection changes
@@ -86,7 +91,11 @@ export default function ShareDialog({
 
   // Default the workspace to the first managed shared workspace.
   useEffect(() => {
-    if (isOpen && !workspaceId && workspaceOptions.length > 0) {
+    if (
+      isOpen &&
+      !workspaceOptions.some((w) => w.value === workspaceId) &&
+      workspaceOptions.length > 0
+    ) {
       setWorkspaceId(workspaceOptions[0].value);
     }
   }, [isOpen, workspaceId, workspaceOptions]);
@@ -150,9 +159,12 @@ export default function ShareDialog({
 
   // Personal connections: admin + toggle + acknowledgement, in that order.
   const personalBlock = personal && (!isInstanceAdmin || policyAllowed !== true || !acknowledged);
-  const noWorkspace = workspaceOptions.length === 0;
+  const noWorkspace = directoryOptions.length === 0;
   const submitDisabled =
-    submitting || noWorkspace || personalBlock || (granteeType === "user" && !granteeUserId);
+    submitting ||
+    workspaceOptions.length === 0 ||
+    personalBlock ||
+    (granteeType === "user" && !granteeUserId);
 
   const submit = async () => {
     setErrors([]);
@@ -348,6 +360,7 @@ ShareDialog.propTypes = {
     id: PropTypes.string.isRequired,
     provider: PropTypes.string.isRequired,
     name: PropTypes.string,
+    workspaceId: PropTypes.string,
     sharing: PropTypes.string,
     sharingWarning: PropTypes.string,
   }),

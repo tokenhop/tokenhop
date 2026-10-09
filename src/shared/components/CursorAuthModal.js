@@ -130,6 +130,7 @@ export default function CursorAuthModal({
   if (method === "browser") {
     return (
       <OAuthModal
+        workspaceId={workspaceId}
         isOpen={isOpen}
         provider="cursor"
         providerInfo={providerInfo}
