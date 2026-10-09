@@ -230,6 +230,118 @@ describe("createSSEStream onStreamResult", () => {
   });
 });
 
+// YAN-1014: Gemini-family passthrough has no [DONE]; a clean EOF without a
+// non-empty finishReason is a truncated stream, a routing failure (bytes untouched).
+describe("createSSEStream Gemini-family truncated EOF", () => {
+  const gem = (cand) => `data: ${JSON.stringify({ candidates: [cand] })}\n\n`;
+  const part = { content: { parts: [{ text: "hi" }] } };
+  const TXT = gem(part);
+  const wrap = (cand) => `data: ${JSON.stringify({ response: { candidates: [cand] } })}\n\n`;
+  const TRUNC = "stream closed before finishReason";
+
+  it.each([
+    ["gemini, no finishReason", "gemini", [TXT], TRUNC],
+    ["vertex, no finishReason", "vertex", [TXT], TRUNC],
+    ["antigravity wrapped, no finishReason", "antigravity", [wrap(part)], TRUNC],
+    ["empty finishReason", "gemini", [TXT, gem({ finishReason: "" })], TRUNC],
+    ["null finishReason", "gemini", [TXT, gem({ finishReason: null })], TRUNC],
+    [
+      "FINISH_REASON_UNSPECIFIED",
+      "gemini",
+      [TXT, gem({ finishReason: "FINISH_REASON_UNSPECIFIED" })],
+      TRUNC,
+    ],
+    [
+      "upstream error keeps precedence",
+      "gemini",
+      [TXT, 'data: {"error":{"message":"boom"}}\n\n'],
+      "boom",
+    ],
+    ["gemini terminal STOP", "gemini", [TXT, gem({ finishReason: "STOP" })], null],
+    ["vertex unlisted terminal reason", "vertex", [TXT, gem({ finishReason: "NEW_REASON" })], null],
+    [
+      "antigravity wrapped terminal",
+      "antigravity",
+      [wrap(part), wrap({ finishReason: "STOP" })],
+      null,
+    ],
+    ["non-Gemini provider unchanged", "x", [TXT], null],
+    [
+      "text and finishReason in one frame",
+      "gemini",
+      [gem({ ...part, finishReason: "STOP" })],
+      null,
+    ],
+    [
+      "second candidate finishes",
+      "gemini",
+      [`data: ${JSON.stringify({ candidates: [part, { finishReason: "STOP" }] })}\n\n`],
+      null,
+    ],
+    [
+      "blocked prompt is terminal",
+      "gemini",
+      [TXT, `data: ${JSON.stringify({ promptFeedback: { blockReason: "SAFETY" } })}\n\n`],
+      null,
+    ],
+    [
+      "antigravity wrapped blocked prompt is terminal",
+      "antigravity",
+      [
+        wrap(part),
+        `data: ${JSON.stringify({ response: { promptFeedback: { blockReason: "OTHER" } } })}\n\n`,
+      ],
+      null,
+    ],
+    [
+      "unspecified blockReason is not terminal",
+      "gemini",
+      [
+        TXT,
+        `data: ${JSON.stringify({ promptFeedback: { blockReason: "BLOCK_REASON_UNSPECIFIED" } })}\n\n`,
+      ],
+      TRUNC,
+    ],
+  ])("%s", async (_name, provider, frames, expected) => {
+    const r = rig({ mode: "passthrough", provider });
+    let t = 1000;
+    for (const f of frames) {
+      t += 100;
+      await r.feed(f, t);
+    }
+    await r.finish();
+    expect(r.cb).toHaveBeenCalledTimes(1);
+    const res = r.cb.mock.calls[0][0];
+    expect(res.firstTokenAt).toBe(1100);
+    expect(res.cancelled).toBe(false);
+    if (expected) expect(res.error?.message).toBe(expected);
+    else expect(res.error).toBeNull();
+    // Bytes unchanged; non-Gemini providers still get the [DONE] sentinel appended.
+    const sentinel = ["gemini", "vertex", "antigravity"].includes(provider)
+      ? ""
+      : "data: [DONE]\n\n";
+    expect(r.text()).toBe(frames.join("") + sentinel);
+  });
+
+  it("final terminal frame without trailing newline counts", async () => {
+    const r = rig({ mode: "passthrough", provider: "gemini" });
+    await r.feed(TXT, 1100);
+    await r.feed(gem({ finishReason: "STOP" }).trimEnd(), 1200);
+    await r.finish();
+    expect(r.cb).toHaveBeenCalledTimes(1);
+    expect(r.cb.mock.calls[0][0]).toEqual({ firstTokenAt: 1100, error: null, cancelled: false });
+  });
+
+  it("unterminated final error frame reports the upstream error", async () => {
+    const r = rig({ mode: "passthrough", provider: "gemini" });
+    await r.feed(TXT, 1100);
+    await r.feed('data: {"error":{"message":"boom"}}', 1200);
+    await r.finish();
+    expect(r.cb).toHaveBeenCalledTimes(1);
+    expect(r.cb.mock.calls[0][0].error?.message).toBe("boom");
+  });
+});
+
 describe("hasMeaningfulToken", () => {
   // OpenAI chat / completions
   it("role-only, usage-only, finish-only frames are not tokens", () => {

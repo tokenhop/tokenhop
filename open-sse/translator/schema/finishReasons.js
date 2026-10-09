@@ -18,6 +18,7 @@ export const CLAUDE_STOP = {
 
 // Gemini finishReason values.
 export const GEMINI_FINISH = {
+  UNSPECIFIED: "FINISH_REASON_UNSPECIFIED",
   STOP: "STOP",
   MAX_TOKENS: "MAX_TOKENS",
   SAFETY: "SAFETY",
@@ -25,3 +26,6 @@ export const GEMINI_FINISH = {
   BLOCKLIST: "BLOCKLIST",
   PROHIBITED_CONTENT: "PROHIBITED_CONTENT",
 };
+
+// Gemini promptFeedback.blockReason placeholder (not a real block).
+export const GEMINI_BLOCK_UNSPECIFIED = "BLOCK_REASON_UNSPECIFIED";
