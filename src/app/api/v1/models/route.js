@@ -457,7 +457,7 @@ export async function buildModelsList(kindFilter, options = {}) {
           capabilitiesFromServiceKind(customKind || liveKind) ||
           (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId) : null);
         if (caps) model.capabilities = caps;
-        if (isCompletionsNode && kind === LLM_KIND) {
+        if (isCompletionsNode && (kind === LLM_KIND || allowAsLlm)) {
           model.endpoint = "/v1/completions";
           model.capabilities = {
             ...model.capabilities,

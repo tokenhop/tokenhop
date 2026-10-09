@@ -18,6 +18,7 @@ import { buildModelsList } from "@/app/api/v1/models/route.js";
 import {
   createProviderConnectionUnscoped,
   deleteProviderConnectionsByProviderUnscoped,
+  addCustomModelUnscoped,
 } from "@/models/index.js";
 
 const NODE_ID = "openai-compatible-completions-11111111-2222-3333-4444-555555555555";
@@ -57,6 +58,20 @@ describe("completions-node models hints (YAN-916)", () => {
       tools: false,
       forcedToolChoice: false,
     });
+  });
+
+  it("keeps image-to-text entries in the LLM list with completions hints", async () => {
+    mocks.resolveOpenAICompatibleConnectionApiType.mockResolvedValue("completions");
+    await createNodeConn();
+    await addCustomModelUnscoped({
+      id: "vision-fim",
+      providerAlias: "fimnode",
+      kind: "imageToText",
+    });
+    const entry = (await buildModelsList(["llm"])).find((m) => m.id === "fimnode/vision-fim");
+    expect(entry).toBeTruthy();
+    expect(entry.endpoint).toBe("/v1/completions");
+    expect(entry.capabilities).toMatchObject({ fim: true, tools: false });
   });
 
   it("chat entries stay unchanged when the node is not completions", async () => {

@@ -93,6 +93,30 @@ describe("resolveOpenAICompatibleConnectionApiType", () => {
     ).resolves.toBe("completions");
   });
 
+  it("warns about missing stored apiType at most once per minute", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2030-01-01T00:00:00Z"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const logs = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      nodeLookup.mockResolvedValue(node());
+      await resolveOpenAICompatibleConnectionApiType(conn({}));
+      await resolveOpenAICompatibleConnectionApiType(conn({}));
+      const calls = () =>
+        [...warn.mock.calls, ...logs.mock.calls].filter((c) =>
+          c.join(" ").includes("no valid stored apiType"),
+        ).length;
+      expect(calls()).toBe(1);
+      vi.advanceTimersByTime(60_000);
+      await resolveOpenAICompatibleConnectionApiType(conn({}));
+      expect(calls()).toBe(2);
+    } finally {
+      warn.mockRestore();
+      logs.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("propagates lookup errors", async () => {
     nodeLookup.mockRejectedValue(new Error("db down"));
     await expect(resolveOpenAICompatibleConnectionApiType(conn({}))).rejects.toThrow("db down");
