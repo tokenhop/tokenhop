@@ -134,7 +134,11 @@ export default function AuthFlows({
       ? "xiaomi"
       : show.iflowCookie
         ? "iflow"
-        : null;
+        : show.bulkCodex
+          ? "bulkCodex"
+          : show.bulkGrokCli
+            ? "bulkGrokCli"
+            : null;
   const [confirmedMode, setConfirmedMode] = useState(null);
   useEffect(() => {
     if (authMode !== confirmedMode) setConfirmedMode(null);
@@ -146,6 +150,8 @@ export default function AuthFlows({
     oauth: handlers.closeOAuth,
     xiaomi: handlers.closeXiaomiMimo,
     iflow: handlers.closeIflowCookie,
+    bulkCodex: handlers.closeBulkCodex,
+    bulkGrokCli: handlers.closeBulkGrokCli,
   }[authMode];
   return (
     <>
@@ -225,7 +231,7 @@ export default function AuthFlows({
       ) : null}
       <AddApiKeyModal
         workspaceId={workspaceId}
-        isOpen={show.addApiKey}
+        isOpen={Boolean(show.addApiKey) && target.ready}
         provider={providerId}
         providerName={providerInfo.name}
         isCompatible={isCompatible}
@@ -275,7 +281,7 @@ export default function AuthFlows({
       {providerId === "codex" ? (
         <BulkImportCodexModal
           workspaceId={workspaceId}
-          isOpen={show.bulkCodex}
+          isOpen={authOpen(show.bulkCodex)}
           onClose={handlers.closeBulkCodex}
           onSuccess={handlers.refreshConnections}
         />
@@ -283,7 +289,7 @@ export default function AuthFlows({
       {providerId === "grok-cli" ? (
         <BulkImportGrokCliModal
           workspaceId={workspaceId}
-          isOpen={show.bulkGrokCli}
+          isOpen={authOpen(show.bulkGrokCli)}
           onClose={handlers.closeBulkGrokCli}
           onSuccess={handlers.refreshConnections}
         />

@@ -11,7 +11,9 @@ export default function useConnectTarget() {
   const view = useMemo(() => accountView(status), [status]);
   const initial = defaultTarget(view);
   const [selected, setWorkspaceId] = useState(null);
-  useEffect(() => setWorkspaceId(initial), [initial]);
+  useEffect(() => {
+    setWorkspaceId((current) => current ?? initial);
+  }, [initial]);
   const workspaces = manageableWorkspaces(view);
   const workspaceId = workspaces.some((w) => w.id === selected) ? selected : initial;
   return {

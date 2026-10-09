@@ -86,6 +86,7 @@ export default function AddAccountDialog({
   };
 
   if (!isOAuthEntry) {
+    if (!target.ready) return null;
     return (
       <AddApiKeyModal
         isOpen
