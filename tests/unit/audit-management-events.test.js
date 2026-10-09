@@ -4,7 +4,7 @@
 // Fixture mirrors tests/unit/gateway-key-management.test.js (real adapter,
 // isolated temp DATA_DIR, direct hashed-store fixture).
 import crypto from "node:crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { getAdapter } from "@/lib/db/driver.js";
 import { createApiKey, revokeApiKey, updateApiKey } from "@/lib/users/apiKeyManagement.js";
 import { createConnection, deleteConnection } from "@/lib/db/repos/connectionsRepo.js";
@@ -126,6 +126,19 @@ describe("settings PATCH events (legacy single-user path)", () => {
 });
 
 describe("database export/import events", () => {
+  let originalSwitch;
+  beforeEach(() => {
+    originalSwitch = process.env.TOKENHOP_MULTI_USER;
+    // These assertions intentionally exercise null-actor legacy re-auth.
+    // Authenticated ON-state actors are covered by database-transfer-routes.
+    process.env.TOKENHOP_MULTI_USER = "off";
+    vi.resetModules();
+  });
+  afterEach(() => {
+    if (originalSwitch === undefined) delete process.env.TOKENHOP_MULTI_USER;
+    else process.env.TOKENHOP_MULTI_USER = originalSwitch;
+    vi.resetModules();
+  });
   it("emits db.export on success and db.import failure on a bad body", async () => {
     const { GET, POST } = await import("@/app/api/settings/database/route.js");
     const headers = { "x-9r-password": process.env.INITIAL_PASSWORD || "123456" };

@@ -16,6 +16,9 @@ vi.mock("@/lib/auth/apiKeyPrincipal.js", () => ({
   clearApiKeyPrincipalCache: vi.fn(),
 }));
 
+// These YAN-365 fixtures assert the pre-Users & teams compatibility contract.
+vi.mock("@/lib/users/featureSwitch.js", () => ({ isMultiUserEnabled: vi.fn(async () => false) }));
+
 const NOW = "2026-10-03T00:00:00.000Z";
 const MASTER = Buffer.from(Array.from({ length: 32 }, (_, i) => (i * 7 + 3) % 256));
 const OTHER_MASTER = Buffer.from(Array.from({ length: 32 }, (_, i) => (i * 11 + 5) % 256));

@@ -345,6 +345,26 @@ export const ROUTE_POLICY = {
     cap: { POST: "instance.keys.rotate" },
     alwaysProtected: true,
   }),
+  // YAN-375: encrypted per-workspace export/import. Scoped: the guard asks
+  // for the capability in any of the principal's workspaces; the handler
+  // enforces the exact URL workspace (active membership + workspace OWNER
+  // role only — not manager) and a same-request password re-auth of the
+  // acting user. Hidden (404) while the switch is off; never satisfiable by
+  // single-user mode or the local CLI token; requires a browser session.
+  "/api/workspaces/[id]/export": multiUser(
+    scoped({
+      cap: { POST: "workspace.preferences.manage" },
+      alwaysProtected: true,
+      cliAllowed: false, // browser-only: session + own-password re-auth
+    }),
+  ),
+  "/api/workspaces/[id]/import": multiUser(
+    scoped({
+      cap: { POST: "workspace.preferences.manage" },
+      alwaysProtected: true,
+      cliAllowed: false, // browser-only: session + own-password re-auth
+    }),
+  ),
 };
 
 // LLM API prefixes (boundary match). Middleware runs before next.config

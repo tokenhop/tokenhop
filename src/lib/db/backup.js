@@ -3,8 +3,17 @@
 // ⚠️ AGENT/DEV NOTES:
 // - Backups are a best-effort safety net before schema migrations. There is NO
 //   automated restore path; recovery is manual (copy a backup file back).
-// - Backups intentionally EXCLUDE the `requestDetails` table (observability log,
-//   auto-pruned, non-critical) so a multi-hundred-MB DB backs up as a few MB.
+// - Migration backups intentionally EXCLUDE the `requestDetails` table
+//   (observability log, auto-pruned, non-critical) so a multi-hundred-MB DB
+//   backs up as a few MB. Pre-import copies pass complete=true and keep it.
+// - Table coverage is discovered, not listed: every table (users, identities,
+//   workspaces, memberships, workspaceKeys, connectionGrants, budgets,
+//   usageRollup, ...) is copied except BACKUP_EXCLUDE_TABLES. Pinned by
+//   tests/unit/db-backup-tables.test.js. Backups never contain the master key
+//   (TOKENHOP_MASTER_KEY or DATA_DIR/keys/master). Once credential encryption
+//   is active they carry ciphertext and WRAPPED DEKs, unusable without that
+//   key; before activation, and in activation backups, credentials are raw.
+//   Backup dirs also hold identity/session data: protect them like the master key.
 // - Only the newest KEEP_BACKUPS are kept; older ones are pruned automatically.
 // - Gateway-key activation backups (PROTECTED_PREFIX) are EXEMPT from that
 //   auto-prune: they carry raw credentials predating the hashed switch-on and
