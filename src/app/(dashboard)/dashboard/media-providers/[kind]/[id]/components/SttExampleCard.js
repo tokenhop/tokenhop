@@ -17,6 +17,8 @@ import {
   tunnelToggleClass,
 } from "./exampleShared";
 import { maskPreviewApiKey, previewAuthHeader } from "@/shared/constants/previewAuth";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { withWorkspace } from "@/app/(dashboard)/dashboard/providers/connectTarget";
 
 export function SttExampleCard({ providerId }) {
   const providerAlias = getProviderAlias(providerId);
@@ -45,6 +47,8 @@ export function SttExampleCard({ providerId }) {
   const [error, setError] = useState("");
   const { copied: copiedCurl, error: errorCurl, copy: copyCurl } = useCopyToClipboard();
   const { copied: copiedRes, error: errorRes, copy: copyRes } = useCopyToClipboard();
+  const { ready, scope } = useSettingsScope();
+  const workspaceId = scope?.workspaceId;
 
   useEffect(() => {
     setLocalEndpoint(window.location.origin);
@@ -60,8 +64,13 @@ export function SttExampleCard({ providerId }) {
         if (d.tunnel?.publicUrl) setTunnelEndpoint(d.tunnel.publicUrl);
       })
       .catch(() => {});
+  }, []);
+
+  // Custom models are workspace-scoped; wait for the scope before fetching.
+  useEffect(() => {
+    if (!ready) return undefined;
     const loadCustom = () => {
-      fetch("/api/models/custom", { cache: "no-store" })
+      fetch(withWorkspace("/api/models/custom", workspaceId), { cache: "no-store" })
         .then((r) => r.json())
         .then((d) => {
           const list = (d.models || []).filter(
@@ -78,7 +87,7 @@ export function SttExampleCard({ providerId }) {
       window.removeEventListener("focus", loadCustom);
       window.removeEventListener("customModelChanged", loadCustom);
     };
-  }, [providerAlias]);
+  }, [providerAlias, ready, workspaceId]);
 
   const endpoint = useTunnel ? tunnelEndpoint : localEndpoint;
   const modelFull = selectedModel ? `${providerAlias}/${selectedModel}` : "";

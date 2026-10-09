@@ -95,6 +95,14 @@ export const NAV_GROUPS = [
         href: "/dashboard/usage",
       },
       {
+        id: "audit",
+        label: "Audit log",
+        icon: "history",
+        href: "/dashboard/audit",
+        gate: "multiUser",
+        capAny: ["instance.audit.read", "workspace.audit.read"],
+      },
+      {
         id: "quota",
         label: "Quota",
         icon: "data_usage",
@@ -226,6 +234,7 @@ export function visibleGroups(settings = {}) {
       if (item.gate === "enableTranslator" && !enableTranslator) return false;
       if (item.gate === "multiUser" && !multiUser) return false;
       if (can && item.cap && !can(item.cap)) return false;
+      if (can && item.capAny && !item.capAny.some(can)) return false;
       return true;
     }),
   }));

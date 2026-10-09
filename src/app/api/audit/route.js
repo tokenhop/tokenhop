@@ -1,10 +1,14 @@
-// YAN-367: audit log read API. Owner/admin only (ADR-0002 instance.audit.read).
-// Switch off: 404 (requireMultiUser). Rows hold no secrets by design (redacted at write).
+// YAN-376: audit log read API. Scoped (ADR-0002 workspace.audit.read):
+// workspace owner/manager of the selected workspace, or instance owner/admin
+// via oversight. Switch off: 404 (requireMultiUser). Rows hold no secrets by
+// design (redacted at write).
 import { NextResponse } from "next/server";
 import { requireMultiUser } from "@/lib/users/featureSwitch.js";
 import { can } from "@/lib/users/principal.js";
 import { resolvePrincipal } from "@/lib/users/session";
 import { auditRepo } from "@/lib/db/index.js";
+import { membershipRole } from "@/lib/db/repos/membershipsRepo.js";
+import { getAdapter } from "@/lib/db/driver.js";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +41,6 @@ export async function GET(request) {
     if (!principal) return json({ error: "Unauthorized" }, 401);
     if (!["session", "cli"].includes(principal.via) || principal.apiKeyId != null)
       return json({ error: "Forbidden" }, 403);
-    if (!can(principal, "instance.audit.read")) return json({ error: "Forbidden" }, 403);
 
     const { searchParams } = new URL(request.url);
     const pageRaw = parseInt(searchParams.get("page"), 10);
@@ -52,6 +55,27 @@ export async function GET(request) {
     for (const [param, key] of FILTERS) {
       const v = searchParams.get(param);
       if (v) filter[key] = v;
+    }
+
+    // Live authority (stale claims never grant): user status/instanceRole and
+    // the membership role are re-read from the DB. Instance owner/admin keep
+    // cross-workspace semantics (oversight); everyone else must own or manage
+    // the workspace they read — selected or active. Missing workspace or
+    // non-membership is 404 (no leak); an in-workspace member/viewer is 403.
+    const db = await getAdapter();
+    // Direct SQL: the session-user cache (5s TTL) must not delay a revocation.
+    const user = db.get(`SELECT instanceRole, status FROM users WHERE id = ?`, [principal.userId]);
+    if (user?.status !== "active") return json({ error: "Forbidden" }, 403);
+    if (!can({ instanceRole: user.instanceRole }, "instance.audit.read")) {
+      const target = filter.workspaceId ?? principal.activeWorkspaceId;
+      const ws = target ? db.get(`SELECT id FROM workspaces WHERE id = ?`, [target]) : null;
+      const role = ws ? membershipRole(db, target, principal.userId) : null;
+      if (!ws || !role) return json({ error: "Workspace not found" }, 404);
+      const live = { instanceRole: "user", workspaceRoles: { [target]: role } };
+      if (!can(live, "workspace.audit.read", { workspaceId: target }))
+        return json({ error: "Forbidden" }, 403);
+      // Forced after the query copy: an actorUserId filter can never widen scope.
+      filter.workspaceId = target;
     }
 
     const { events, pagination } = await auditRepo.list(filter);

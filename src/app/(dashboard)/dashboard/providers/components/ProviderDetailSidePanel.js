@@ -27,6 +27,7 @@ import { connectionHealth } from "@/shared/utils/providerHealth";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
 import { loadSettings, loadOwnedMap, onHttpError, patchSettings } from "@/shared/utils/settingsApi";
 import ConnectionSharing from "./ConnectionSharing";
+import { withWorkspace } from "../connectTarget";
 
 const shortLabel = (label) => String(label).split(" — ")[0];
 
@@ -160,8 +161,8 @@ export default function ProviderDetailSidePanel({
     try {
       const [data, customModelsRes, aliasesRes] = await Promise.all([
         loadSettings(scope, { canManageInstance }).catch(onHttpError(null)),
-        fetch("/api/models/custom", { cache: "no-store" }),
-        fetch("/api/models/alias", { cache: "no-store" }),
+        fetch(withWorkspace("/api/models/custom", scope?.workspaceId), { cache: "no-store" }),
+        fetch(withWorkspace("/api/models/alias", scope?.workspaceId), { cache: "no-store" }),
       ]);
       if (data) {
         const override = data.providerStrategies?.[entry.id] || {};

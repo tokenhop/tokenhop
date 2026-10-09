@@ -33,6 +33,8 @@ import useThemeStore from "@/store/themeStore";
 import { useNotificationStore } from "@/store/notificationStore";
 import { copyTextToClipboard } from "@/shared/components/formPrimitives";
 import { GO_TO, matchGoTo } from "@/shared/utils/goToShortcuts";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { withWorkspace } from "@/app/(dashboard)/dashboard/providers/connectTarget";
 import Modal from "./Modal";
 import dynamic from "next/dynamic";
 import { getCurrentLocale } from "@/i18n/runtime";
@@ -99,12 +101,18 @@ async function fetchJson(path) {
   return res.json();
 }
 
-// Cache per browser tab: providers/combos load on open, models lazily.
+// Cache per browser tab + workspace: providers/combos load on open, models lazily.
 function createDataCache() {
   const modelsLoader = createCachedLoader();
   let snapshot = { providers: null, combos: null, models: null };
+  let cachedWorkspaceId = null;
   return {
-    async refresh({ includeModels, forceProviders = false }) {
+    async refresh({ includeModels, forceProviders = false, workspaceId = null }) {
+      if (cachedWorkspaceId !== workspaceId) {
+        cachedWorkspaceId = workspaceId;
+        snapshot = { providers: null, combos: null, models: snapshot.models };
+        forceProviders = true;
+      }
       const [providers, combos] = await Promise.all([
         forceProviders || snapshot.providers == null
           ? fetchJson("/api/providers")
@@ -112,7 +120,7 @@ function createDataCache() {
               .catch(() => [])
           : snapshot.providers,
         snapshot.combos ??
-          fetchJson("/api/combos")
+          fetchJson(withWorkspace("/api/combos", workspaceId))
             .then((d) => d.combos || [])
             .catch(() => []),
       ]);
@@ -219,6 +227,8 @@ export function CommandPaletteProvider({ children }) {
   const cacheRef = useRef(null);
   if (!cacheRef.current) cacheRef.current = createDataCache();
   const notify = useNotificationStore();
+  const { ready, scope } = useSettingsScope();
+  const workspaceId = scope?.workspaceId;
   const listboxId = `palette-list-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const inputRef = useRef(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -283,13 +293,15 @@ export function CommandPaletteProvider({ children }) {
   // the open-gate sets loadingLists so the dialog shows skeletons instead of
   // the "no results" empty state while sources are still loading.
   useEffect(() => {
-    if (!open) return;
+    if (!open || !ready) return;
     setQuery("");
     setActiveId(null);
     let cancelled = false;
     setLoadingLists(true);
     ensurePaletteSources()
-      .then(() => cacheRef.current.refresh({ includeModels: false, forceProviders: true }))
+      .then(() =>
+        cacheRef.current.refresh({ includeModels: false, forceProviders: true, workspaceId }),
+      )
       .then((snapshot) => collectCommands(snapshot))
       .then((all) => {
         if (!cancelled) setCommands(all);
@@ -306,17 +318,17 @@ export function CommandPaletteProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [open, announce]);
+  }, [open, ready, workspaceId, announce]);
 
   // Lazy models: fetch once the user starts typing (cached, shared inflight).
   // Debounced so typing does not refetch per keystroke; providers/combos
   // resolve from the open-time snapshot afterwards.
   useEffect(() => {
-    if (!open || !query.trim()) return;
+    if (!open || !query.trim() || !ready) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       ensurePaletteSources()
-        .then(() => cacheRef.current.refresh({ includeModels: true }))
+        .then(() => cacheRef.current.refresh({ includeModels: true, workspaceId }))
         .then((snapshot) => collectCommands(snapshot))
         .then((all) => {
           if (!cancelled) setCommands(all);
@@ -327,7 +339,7 @@ export function CommandPaletteProvider({ children }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [open, query]);
+  }, [open, query, ready, workspaceId]);
 
   const runCommand = useCallback(
     (command) => {

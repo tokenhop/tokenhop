@@ -33,6 +33,7 @@ import CapabilityAdapterCard from "@/shared/components/combos/CapabilityAdapterC
 import useUnsavedComboGuard from "@/shared/components/combos/useUnsavedComboGuard";
 import { useCommandPalette } from "@/shared/components/CommandPaletteProvider";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { withWorkspace } from "../providers/connectTarget";
 import {
   comboStrategyKeyFor,
   loadSettings,
@@ -306,7 +307,7 @@ export default function CombosPageClient() {
     const moveLabel = `Moved ${moved?.name || "combo"} to position ${to + 1} of ${combos.length}`;
     setCombos(reordered);
     setSaveAnnouncement(moveLabel);
-    fetch("/api/combos/reorder", {
+    fetch(withWorkspace("/api/combos/reorder", scope?.workspaceId), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids: reordered.map((c) => c.id) }),
@@ -325,11 +326,11 @@ export default function CombosPageClient() {
     setLoadError("");
     try {
       const [combosRes, providersRes, settingsData, usageRes, aliasRes] = await Promise.all([
-        fetch("/api/combos"),
-        fetch("/api/providers"),
+        fetch(withWorkspace("/api/combos", scope?.workspaceId)),
+        fetch(withWorkspace("/api/providers", scope?.workspaceId)),
         loadSettings(scope, { canManageInstance }).catch(onHttpError({})),
-        fetch("/api/usage/stats?period=today"),
-        fetch("/api/models/alias"),
+        fetch(withWorkspace("/api/usage/stats?period=today", scope?.workspaceId)),
+        fetch(withWorkspace("/api/models/alias", scope?.workspaceId)),
       ]);
       if (!combosRes.ok) throw new Error(`combos ${combosRes.status}`);
       const combosData = await combosRes.json();
@@ -475,7 +476,7 @@ export default function CombosPageClient() {
   };
 
   const handleCreate = async (data) => {
-    const res = await fetch("/api/combos", {
+    const res = await fetch(withWorkspace("/api/combos", scope?.workspaceId), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
