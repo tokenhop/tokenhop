@@ -3,6 +3,21 @@
 // Time is driven by a mocked Date.now; chunks are stepped manually (enqueue at
 // an explicit timestamp, then read) so timing is fully deterministic.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+// Capture the fallback request-log entry finalizeStream() writes when there is
+// no usage — its status must not be polluted by routing-only tail errors.
+const { requestLogCalls } = vi.hoisted(() => ({ requestLogCalls: [] }));
+vi.mock("@/lib/usageDb.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    trackPendingRequest: vi.fn(),
+    appendRequestLog: vi.fn(async (entry) => {
+      requestLogCalls.push(entry);
+    }),
+  };
+});
+
 import { createSSEStream } from "../../open-sse/utils/stream.js";
 import { hasMeaningfulToken } from "../../open-sse/utils/streamHelpers.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
@@ -339,6 +354,29 @@ describe("createSSEStream Gemini-family truncated EOF", () => {
     await r.finish();
     expect(r.cb).toHaveBeenCalledTimes(1);
     expect(r.cb.mock.calls[0][0].error?.message).toBe("boom");
+  });
+
+  it("tail error is routing-only: completion and request log stay successful", async () => {
+    requestLogCalls.length = 0;
+    const onStreamComplete = vi.fn();
+    const r = rig({ mode: "passthrough", provider: "gemini", onStreamComplete });
+    await r.feed('data: {"error":{"message":"tail boom"}}', 1100);
+    await r.finish();
+    expect(r.cb.mock.calls[0][0].error?.message).toBe("tail boom");
+    expect(onStreamComplete).toHaveBeenCalledTimes(1);
+    expect(onStreamComplete.mock.calls[0][3].error).toBeNull();
+    expect(requestLogCalls.at(-1).status).toBe("200 OK");
+  });
+
+  it.each([false, true])("Gemini DONE waits for EOF validation (finish=%s)", async (finish) => {
+    const r = rig({ mode: "passthrough", provider: "gemini" });
+    const frames = TXT + (finish ? gem({ finishReason: "STOP" }) : "") + "data: [DONE]\n\n";
+    await r.feed(frames, 1100);
+    expect(r.cb).not.toHaveBeenCalled();
+    await r.finish();
+    expect(r.cb).toHaveBeenCalledTimes(1);
+    expect(r.cb.mock.calls[0][0].error?.message ?? null).toBe(finish ? null : TRUNC);
+    expect(r.text()).toBe(frames);
   });
 });
 

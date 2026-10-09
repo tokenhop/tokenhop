@@ -117,19 +117,22 @@ export function createSSEStream(options = {}) {
   // First upstream error seen mid-stream (after the 200 headers), so the
   // request is logged as an error instead of success (YAN-662).
   let streamError = null;
-  const noteStreamError = (parsed) => {
-    if (streamError || !parsed || typeof parsed !== "object") return;
+  const extractStreamError = (parsed) => {
+    if (!parsed || typeof parsed !== "object") return null;
     const type = parsed.type;
     let err = null;
     if (type === "error") err = parsed.error || parsed;
     else if (type === "response.failed")
       err = parsed.response?.error || { message: "response.failed" };
     else if (parsed.error && !parsed.choices?.length) err = parsed.error;
-    if (!err) return;
-    streamError = {
+    if (!err) return null;
+    return {
       message: typeof err === "string" ? err : err.message || JSON.stringify(err),
       ...(typeof err === "object" && (err.type || err.code) && { type: err.type || err.code }),
     };
+  };
+  const noteStreamError = (parsed) => {
+    streamError ??= extractStreamError(parsed);
   };
   let streamDoneSent = false; // track duplicate [DONE] across transform + flush
   let finalized = false;
@@ -286,7 +289,7 @@ export function createSSEStream(options = {}) {
           if (isDoneLine(trimmed)) {
             if (streamDoneSent) continue;
             streamDoneSent = true;
-            notifyStreamResult();
+            if (!isGeminiFamily) notifyStreamResult();
           } else if (trimmed.startsWith("data:")) {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
@@ -621,7 +624,7 @@ export function createSSEStream(options = {}) {
             if (output.trim().startsWith("data:")) {
               try {
                 const tail = JSON.parse(output.trim().slice(5));
-                noteStreamError(tail);
+                routingError ??= extractStreamError(tail);
                 observeGeminiFinish(tail);
               } catch {
                 // fail-open: partial/non-JSON tail is not a terminal
