@@ -1,4 +1,5 @@
 "use client";
+import { withWorkspace } from "../connectTarget";
 
 import { useCallback, useEffect, useState } from "react";
 import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
@@ -220,10 +221,10 @@ export default function ProviderDetailPage() {
     refreshShellStatus();
   };
 
-  const handleSaveApiKey = async (formData) => {
+  const handleSaveApiKey = async (formData, workspaceId = settingsScope?.workspaceId ?? null) => {
     setAddConnectionError("");
     try {
-      const res = await fetch("/api/providers", {
+      const res = await fetch(withWorkspace("/api/providers", workspaceId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider: providerId, ...formData }),
@@ -497,6 +498,7 @@ export default function ProviderDetailPage() {
         show={show}
         handlers={flowHandlers}
         models={models}
+        workspaceId={settingsScope?.workspaceId ?? null}
       />
     </div>
   );

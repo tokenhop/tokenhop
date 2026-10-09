@@ -12,6 +12,7 @@ import CopyField from "@/shared/components/CopyField";
 import { Skeleton } from "@/shared/components/Loading";
 import useAuthStatus from "@/shared/hooks/useAuthStatus";
 import { useSettingsField } from "../useSettingsField";
+import PersonalSharingSetting from "./PersonalSharingSetting";
 
 // Mirrors server MIN_PASSWORD_LENGTH (src/lib/auth/userPassword.js); server stays authoritative.
 const MIN_PASSWORD_LENGTH = 8;
@@ -253,6 +254,11 @@ export default function SecuritySection({ settings, onSettingsChange }) {
             {tunnelAccessField.error}
           </p>
         )}
+
+        <PersonalSharingSetting
+          settings={settings}
+          onSaved={onSaved("allowPersonalConnectionGrants")}
+        />
 
         <SettingRow
           label="Secure session cookie"

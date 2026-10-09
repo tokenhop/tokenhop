@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
+import { withWorkspace } from "../connectTarget";
 import { Badge, Button, Callout, Input, Modal, Select, StatusPill } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { planBulkAdd } from "@/shared/utils/bulkAdd";
@@ -23,6 +24,8 @@ export default function AddApiKeyModal({
   onSave,
   onBulkDone,
   onClose,
+  workspaceId = null,
+  targetField = null,
 }) {
   const NONE_PROXY_POOL_VALUE = "__none__";
   const isOllamaLocal = provider === "ollama-local";
@@ -189,15 +192,18 @@ export default function AddApiKeyModal({
         setValidating(false);
       }
 
-      await onSave({
-        name: formData.name || (isOllamaLocal ? "Ollama Local" : ""),
-        apiKey: formData.apiKey,
-        defaultModel: isCompatible ? formData.defaultModel.trim() : undefined,
-        priority: formData.priority,
-        proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
-        testStatus: isValid ? "active" : "unknown",
-        providerSpecificData: buildProviderSpecificData(),
-      });
+      await onSave(
+        {
+          name: formData.name || (isOllamaLocal ? "Ollama Local" : ""),
+          apiKey: formData.apiKey,
+          defaultModel: isCompatible ? formData.defaultModel.trim() : undefined,
+          priority: formData.priority,
+          proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
+          testStatus: isValid ? "active" : "unknown",
+          providerSpecificData: buildProviderSpecificData(),
+        },
+        workspaceId,
+      );
     } finally {
       setSaving(false);
     }
@@ -232,7 +238,7 @@ export default function AddApiKeyModal({
         } catch {
           isValid = false;
         }
-        const res = await fetch("/api/providers", {
+        const res = await fetch(withWorkspace("/api/providers", workspaceId), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -266,6 +272,7 @@ export default function AddApiKeyModal({
       onClose={onClose}
     >
       <div className="flex flex-col gap-4">
+        {targetField}
         {/* Mode switcher */}
         <div className="flex gap-2">
           <Button
@@ -582,4 +589,6 @@ AddApiKeyModal.propTypes = {
   onSave: PropTypes.func.isRequired,
   onBulkDone: PropTypes.func,
   onClose: PropTypes.func.isRequired,
+  workspaceId: PropTypes.string,
+  targetField: PropTypes.node,
 };

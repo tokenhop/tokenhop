@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
+import { withOAuthWorkspace } from "@/shared/utils/oauthWorkspace";
 import Modal from "./Modal";
 import Button from "./Button";
 import Callout from "./Callout";
 import Textarea from "./Textarea";
 
 /** iFlow cookie auth: paste a platform.iflow.cn browser cookie to mint a fresh API key. */
-export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
+export default function IFlowCookieModal({ isOpen, onSuccess, onClose, workspaceId = null }) {
   const [cookie, setCookie] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -29,7 +30,7 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/oauth/iflow/cookie", {
+      const res = await fetch(withOAuthWorkspace("/api/oauth/iflow/cookie", workspaceId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cookie: cookie.trim() }),
@@ -115,6 +116,7 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
 }
 
 IFlowCookieModal.propTypes = {
+  workspaceId: PropTypes.string,
   isOpen: PropTypes.bool.isRequired,
   onSuccess: PropTypes.func,
   onClose: PropTypes.func,

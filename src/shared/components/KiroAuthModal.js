@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
+import useRemoteMember, { REMOTE_IMPORT_NOTICE } from "@/shared/hooks/useRemoteMember";
 import Modal from "./Modal";
+import { withOAuthWorkspace } from "../utils/oauthWorkspace";
 import KiroMethodList from "./kiro/KiroMethodList";
 import { KiroIdcForm, KiroApiKeyForm, KiroSocialInfo } from "./kiro/KiroSetupForms";
 import { KiroTokenImport, KiroCliProxyImport } from "./kiro/KiroImportForms";
@@ -11,7 +13,8 @@ import { KiroTokenImport, KiroCliProxyImport } from "./kiro/KiroImportForms";
  * Kiro auth method selection: Builder ID device flow, IDC device flow,
  * API key, Google/GitHub social, refresh-token import, CLIProxyAPI import.
  */
-export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
+export default function KiroAuthModal({ isOpen, workspaceId = null, onMethodSelect, onClose }) {
+  const remoteMember = useRemoteMember();
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [idcStartUrl, setIdcStartUrl] = useState("");
   const [idcRegion, setIdcRegion] = useState("us-east-1");
@@ -28,6 +31,10 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   // Auto-detect token when import method is selected
   useEffect(() => {
     if (selectedMethod !== "import" || !isOpen) return;
+    if (remoteMember) {
+      setError(REMOTE_IMPORT_NOTICE);
+      return;
+    }
 
     const autoDetect = async () => {
       setAutoDetecting(true);
@@ -62,7 +69,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
     };
 
     autoDetect();
-  }, [selectedMethod, isOpen]);
+  }, [selectedMethod, isOpen, remoteMember]);
 
   const handleMethodSelect = (method) => {
     setSelectedMethod(method);
@@ -82,7 +89,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
     setImporting(true);
     setError(null);
     try {
-      const res = await fetch("/api/oauth/kiro/import", {
+      const res = await fetch(withOAuthWorkspace("/api/oauth/kiro/import", workspaceId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken: refreshToken.trim(), ...(idcCredentials || {}) }),
@@ -105,7 +112,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
     setImporting(true);
     setError(null);
     try {
-      const res = await fetch("/api/oauth/kiro/import-cli-proxy", {
+      const res = await fetch(withOAuthWorkspace("/api/oauth/kiro/import-cli-proxy", workspaceId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ json: cliProxyJson.trim() }),
@@ -136,7 +143,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
     setImporting(true);
     setError(null);
     try {
-      const res = await fetch("/api/oauth/kiro/api-key", {
+      const res = await fetch(withOAuthWorkspace("/api/oauth/kiro/api-key", workspaceId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ apiKey: apiKey.trim(), region: apiKeyRegion.trim() || "us-east-1" }),
@@ -236,6 +243,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
 
 KiroAuthModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
+  workspaceId: PropTypes.string,
   onMethodSelect: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };

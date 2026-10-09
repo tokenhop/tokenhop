@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
+import useRemoteMember, { REMOTE_IMPORT_NOTICE } from "@/shared/hooks/useRemoteMember";
+import { withOAuthWorkspace } from "@/shared/utils/oauthWorkspace";
 import Modal from "./Modal";
 import Button from "./Button";
 import Callout from "./Callout";
@@ -25,7 +27,8 @@ BusyHero.propTypes = { title: PropTypes.string.isRequired, children: PropTypes.n
  * Xiaomi MiMo: imports credentials from the local MiMo Desktop auth.json,
  * with a browser OAuth fallback. The API-key path uses the standard Add API key modal.
  */
-export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
+export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose, workspaceId = null }) {
+  const remoteMember = useRemoteMember();
   const [phase, setPhase] = useState("detecting"); // detecting | found | not-found | importing
   const [detectResult, setDetectResult] = useState(null);
   const [error, setError] = useState(null);
@@ -41,6 +44,11 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
       setError(null);
       setDetectResult(null);
       setOauthUrl(null);
+      if (remoteMember) {
+        setPhase("not-found");
+        setError(REMOTE_IMPORT_NOTICE);
+        return;
+      }
       try {
         const res = await fetch("/api/oauth/xiaomi-mimo/auto-import");
         const data = await res.json();
@@ -63,9 +71,10 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
     return () => {
       cancelled = true;
     };
-  }, [isOpen]);
+  }, [isOpen, remoteMember]);
 
   const handleRetryDetect = () => {
+    if (remoteMember) return;
     setPhase("detecting");
     fetch("/api/oauth/xiaomi-mimo/auto-import")
       .then((r) => r.json())
@@ -86,7 +95,7 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
     setPhase("importing");
     setError(null);
     try {
-      const res = await fetch("/api/oauth/xiaomi-mimo/api-key", {
+      const res = await fetch(withOAuthWorkspace("/api/oauth/xiaomi-mimo/api-key", workspaceId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -112,7 +121,9 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
     setError(null);
     try {
       const state = crypto.randomUUID();
-      const res = await fetch(`/api/oauth/xiaomi-mimo/authorize?state=${state}`);
+      const res = await fetch(
+        withOAuthWorkspace(`/api/oauth/xiaomi-mimo/authorize?state=${state}`, workspaceId),
+      );
       const data = await res.json();
       if (!data.authorizeUrl) throw new Error(data.error || "Failed to start OAuth");
       setOauthUrl(data.authorizeUrl);
@@ -127,14 +138,19 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
     if (!oauthState) return;
     setError(null);
     try {
-      const res = await fetch(`/api/oauth/xiaomi-mimo/poll-status?state=${oauthState}`);
+      const res = await fetch(
+        withOAuthWorkspace(`/api/oauth/xiaomi-mimo/poll-status?state=${oauthState}`, workspaceId),
+      );
       const data = await res.json();
       if (data.status === "done" && data.result) {
-        const exRes = await fetch("/api/oauth/xiaomi-mimo/exchange", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ state: oauthState }),
-        });
+        const exRes = await fetch(
+          withOAuthWorkspace("/api/oauth/xiaomi-mimo/exchange", workspaceId),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ state: oauthState }),
+          },
+        );
         const exData = await exRes.json();
         if (!exData.success) throw new Error(exData.error || "Exchange failed");
         onSuccess?.(exData.connection);
@@ -219,6 +235,7 @@ export default function XiaomiMimoAuthModal({ isOpen, onSuccess, onClose }) {
 }
 
 XiaomiMimoAuthModal.propTypes = {
+  workspaceId: PropTypes.string,
   isOpen: PropTypes.bool.isRequired,
   onSuccess: PropTypes.func,
   onClose: PropTypes.func.isRequired,

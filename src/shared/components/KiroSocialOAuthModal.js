@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
+import { withOAuthWorkspace } from "../utils/oauthWorkspace";
 import Button from "./Button";
 import CopyField from "./CopyField";
 import Input from "./Input";
@@ -14,7 +15,13 @@ import { parseSocialCallback } from "./oauth/authFlowHelpers";
  * Kiro social OAuth (Google/GitHub): opens the authorize URL once, then
  * exchanges a pasted kiro:// or localhost callback for tokens.
  */
-export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onClose }) {
+export default function KiroSocialOAuthModal({
+  isOpen,
+  provider,
+  workspaceId = null,
+  onSuccess,
+  onClose,
+}) {
   const [step, setStep] = useState("loading"); // loading | input | success | error
   const [authUrl, setAuthUrl] = useState("");
   const [authData, setAuthData] = useState(null);
@@ -35,7 +42,9 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
       try {
         setError(null);
         setStep("loading");
-        const res = await fetch(`/api/oauth/kiro/social-authorize?provider=${provider}`);
+        const res = await fetch(
+          withOAuthWorkspace(`/api/oauth/kiro/social-authorize?provider=${provider}`, workspaceId),
+        );
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
         setAuthData(data);
@@ -52,14 +61,14 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
     };
 
     initAuth();
-  }, [isOpen, provider]);
+  }, [isOpen, provider, workspaceId]);
 
   const handleManualSubmit = async () => {
     try {
       setError(null);
       const parsed = parseSocialCallback(callbackUrl);
       if (parsed.kind === "error") throw new Error(parsed.message);
-      const res = await fetch("/api/oauth/kiro/social-exchange", {
+      const res = await fetch(withOAuthWorkspace("/api/oauth/kiro/social-exchange", workspaceId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -143,6 +152,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
 KiroSocialOAuthModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   provider: PropTypes.oneOf(["google", "github"]).isRequired,
+  workspaceId: PropTypes.string,
   onSuccess: PropTypes.func,
   onClose: PropTypes.func.isRequired,
 };

@@ -18,6 +18,7 @@ import {
   nextDevicePollInterval,
   parseManualCallback,
 } from "@/shared/components/oauth/authFlowHelpers";
+import { withOAuthWorkspace } from "@/shared/utils/oauthWorkspace";
 
 const POPUP_FEATURES = "width=600,height=700";
 const emptyLedger = () => ({ proxyStarted: false, proxyProvider: null, stopSent: false });
@@ -34,13 +35,13 @@ async function postJson(url, body) {
 }
 
 /** Start codex/xai fixed-port server-side proxy. Returns `{active, serverSide}`. */
-async function startFixedPortProxy(provider, appPort, data, redirectUri) {
+async function startFixedPortProxy(provider, appPort, data, redirectUri, workspaceId = null) {
   const proxyUrl = new URL(`/api/oauth/${provider}/start-proxy`, window.location.origin);
   proxyUrl.searchParams.set("app_port", appPort);
   proxyUrl.searchParams.set("state", data.state);
   proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
   proxyUrl.searchParams.set("redirect_uri", redirectUri);
-  const proxyRes = await fetch(proxyUrl.toString());
+  const proxyRes = await fetch(withOAuthWorkspace(proxyUrl.toString(), workspaceId));
   const proxyData = await proxyRes.json();
   return {
     active: proxyData.success,
@@ -61,7 +62,11 @@ export default function useOAuthFlow({
   idcConfig,
   onSuccess,
   onClose,
+  workspaceId = null,
 }) {
+  const workspaceRef = useRef(workspaceId);
+  workspaceRef.current = workspaceId;
+  const ws = useCallback((url) => withOAuthWorkspace(url, workspaceRef.current), []);
   const [step, setStep] = useState("waiting");
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
@@ -107,7 +112,7 @@ export default function useOAuthFlow({
     async (code, state) => {
       if (!authData) return;
       try {
-        await postJson(`/api/oauth/${provider}/exchange`, {
+        await postJson(ws(`/api/oauth/${provider}/exchange`), {
           code,
           redirectUri: authData.redirectUri,
           codeVerifier: authData.codeVerifier,
@@ -123,14 +128,14 @@ export default function useOAuthFlow({
         fail(err.message);
       }
     },
-    [authData, provider, oauthMeta, succeed, fail],
+    [authData, provider, oauthMeta, succeed, fail, ws],
   );
 
   const completeXaiManualCode = useCallback(
     async (code) => {
       if (!authData?.state) return;
       try {
-        await postJson("/api/oauth/xai/manual-code", { code, state: authData.state });
+        await postJson(ws("/api/oauth/xai/manual-code"), { code, state: authData.state });
         if (flowCancelled(isOpenRef)) return;
         succeed();
       } catch (err) {
@@ -138,7 +143,7 @@ export default function useOAuthFlow({
         fail(err.message);
       }
     },
-    [authData, succeed, fail],
+    [authData, succeed, fail, ws],
   );
 
   const startPolling = useCallback(
@@ -161,7 +166,7 @@ export default function useOAuthFlow({
           return;
         }
         try {
-          const res = await fetch(`/api/oauth/${provider}/poll`, {
+          const res = await fetch(ws(`/api/oauth/${provider}/poll`), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
@@ -190,7 +195,7 @@ export default function useOAuthFlow({
       if (flowCancelled(isOpenRef)) return;
       fail("Authorization timeout");
     },
-    [provider, succeed, fail],
+    [provider, succeed, fail, ws],
   );
 
   // Stop the proxy owned by THIS session, at most once.
@@ -198,9 +203,9 @@ export default function useOAuthFlow({
     const flow = flowRef.current;
     if (flow.proxyStarted && !flow.stopSent && flow.proxyProvider) {
       flow.stopSent = true;
-      fetch(`/api/oauth/${flow.proxyProvider}/stop-proxy`).catch(() => {});
+      fetch(ws(`/api/oauth/${flow.proxyProvider}/stop-proxy`)).catch(() => {});
     }
-  }, []);
+  }, [ws]);
 
   const openPopup = useCallback((url) => {
     setStep("waiting");
@@ -211,7 +216,7 @@ export default function useOAuthFlow({
   // Trae/Windsurf/Zed: dynamic-port local callback then auto exchange.
   const startProxyFlow = useCallback(
     async (providerId) => {
-      const startRes = await fetch(`/api/oauth/${providerId}/start-proxy`);
+      const startRes = await fetch(ws(`/api/oauth/${providerId}/start-proxy`));
       const startData = await startRes.json();
       if (!startRes.ok || !startData.success || !startData.callbackUrl) {
         throw new Error(
@@ -225,7 +230,7 @@ export default function useOAuthFlow({
       }
       const authorizeUrl = new URL(`/api/oauth/${providerId}/authorize`, window.location.origin);
       authorizeUrl.searchParams.set("redirect_uri", startData.callbackUrl);
-      const authRes = await fetch(authorizeUrl);
+      const authRes = await fetch(ws(authorizeUrl.toString()));
       const data = await authRes.json();
       if (!authRes.ok) {
         stopOwnedProxy();
@@ -236,7 +241,7 @@ export default function useOAuthFlow({
         return;
       }
       // Secrets go in the POST body so they never land in URL/query logs.
-      const regRes = await fetch(`/api/oauth/${providerId}/register-session`, {
+      const regRes = await fetch(ws(`/api/oauth/${providerId}/register-session`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(buildProxyRegisterBody(data)),
@@ -255,7 +260,7 @@ export default function useOAuthFlow({
       setAuthData({ ...data, proxyProvider: providerId });
       openPopup(data.authUrl);
     },
-    [stopOwnedProxy, openPopup],
+    [stopOwnedProxy, openPopup, ws],
   );
 
   const startDeviceFlow = async () => {
@@ -267,7 +272,7 @@ export default function useOAuthFlow({
       if (idcConfig.region) deviceCodeUrl.searchParams.set("region", idcConfig.region);
       deviceCodeUrl.searchParams.set("auth_method", "idc");
     }
-    const res = await fetch(deviceCodeUrl.toString());
+    const res = await fetch(ws(deviceCodeUrl.toString()));
     if (flowCancelled(isOpenRef)) return; // close effect owns cleanup now
     const data = await res.json();
     if (flowCancelled(isOpenRef)) return;
@@ -295,7 +300,7 @@ export default function useOAuthFlow({
         if (v) authorizeUrl.searchParams.set(k, v);
       }
     }
-    const res = await fetch(authorizeUrl.toString());
+    const res = await fetch(ws(authorizeUrl.toString()));
     if (flowCancelled(isOpenRef)) return; // close effect owns cleanup now
     const data = await res.json();
     if (flowCancelled(isOpenRef)) return;
@@ -304,13 +309,19 @@ export default function useOAuthFlow({
     let proxy = { active: false, serverSide: false };
     if (provider === "codex") {
       try {
-        proxy = await startFixedPortProxy("codex", appPort, data, redirectUri);
+        proxy = await startFixedPortProxy(
+          "codex",
+          appPort,
+          data,
+          redirectUri,
+          workspaceRef.current,
+        );
       } catch {
         proxy = { active: false, serverSide: false };
       }
     } else if (provider === "xai") {
       try {
-        proxy = await startFixedPortProxy("xai", appPort, data, redirectUri);
+        proxy = await startFixedPortProxy("xai", appPort, data, redirectUri, workspaceRef.current);
       } catch (e) {
         if (e?.message) throw e;
         proxy = { active: false, serverSide: false };
@@ -407,13 +418,13 @@ export default function useOAuthFlow({
     pollingAbortRef.current = false;
     flowRef.current = emptyLedger();
     if (PASTE_TOKEN_PROVIDERS[provider]) {
-      fetch(`/api/oauth/${provider}/ide-status`)
+      fetch(ws(`/api/oauth/${provider}/ide-status`))
         .then((r) => r.json())
         .then((data) => setIdeStatus(data))
         .catch(() => setIdeStatus({ installed: false, path: null }));
     }
     startOAuthFlowRef.current("browser");
-  }, [isOpen, provider]);
+  }, [isOpen, provider, ws]);
 
   // On close: abort polling and stop the owned proxy exactly once. Mark the
   // callback consumed and drop authData so the proxy-status and callback
@@ -440,6 +451,7 @@ export default function useOAuthFlow({
   }, [stopOwnedProxy]);
 
   useOAuthProxyStatus({
+    workspaceId,
     isOpen,
     authData,
     callbackProcessedRef,
@@ -455,7 +467,7 @@ export default function useOAuthFlow({
       if (authMode === "paste-token" && PASTE_TOKEN_PROVIDERS[provider]) {
         const token = pasteToken.trim();
         if (!token) throw new Error("Missing token");
-        await postJson(`/api/oauth/${provider}/exchange`, { code: token });
+        await postJson(ws(`/api/oauth/${provider}/exchange`), { code: token });
         succeed();
         return;
       }
@@ -463,7 +475,7 @@ export default function useOAuthFlow({
       if (parsed.kind === "error") throw new Error(parsed.message);
       if (parsed.kind === "proxy-manual") {
         // Popup blocked or unreachable 127.0.0.1: same attempt material as the auto path.
-        await postJson(`/api/oauth/${provider}/exchange`, {
+        await postJson(ws(`/api/oauth/${provider}/exchange`), {
           code: parsed.code,
           state: authData?.state,
           ...(authData?.redirectUri ? { redirectUri: authData.redirectUri } : {}),

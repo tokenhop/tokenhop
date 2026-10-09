@@ -11,6 +11,8 @@ import {
 } from "@/lib/db/repos/connectionsRepo.js";
 import { getProviderNodesMetadataUnscoped, listNodesMetadata } from "@/lib/db/repos/nodesRepo.js";
 import { redactConnection, workspaceScope } from "@/lib/users/workspaceScope.js";
+import { getAdapter } from "@/lib/db/driver.js";
+import { getSharingWarning, resolveSharing } from "@/lib/users/grants.js";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import {
   AI_PROVIDERS,
@@ -35,6 +37,18 @@ function quotaRemainingFor(snapshot) {
 }
 
 export const dynamic = "force-dynamic";
+
+/** userId → displayName in ONE query (never email); missing users are absent. */
+async function displayNamesFor(connections) {
+  const ids = [...new Set(connections.map((c) => c.createdByUserId).filter(Boolean))];
+  if (!ids.length) return new Map();
+  const db = await getAdapter();
+  const rows = db.all(
+    `SELECT id, displayName FROM users WHERE id IN (${ids.map(() => "?").join(",")})`,
+    ids,
+  );
+  return new Map(rows.map((r) => [r.id, r.displayName ?? null]));
+}
 
 function normalizeProxyConfig(body = {}) {
   const enabled = body?.connectionProxyEnabled === true;
@@ -99,6 +113,9 @@ export async function GET(request) {
       }
     } catch {}
 
+    // YAN-376: sharing metadata, scoped (multi-user) responses only.
+    const creators = scope ? await displayNamesFor(connections) : null;
+
     // Hide sensitive fields, enrich name for compatible providers
     const safeConnections = connections.map((c) => {
       const isCompatible =
@@ -116,6 +133,16 @@ export async function GET(request) {
         accessToken: undefined,
         refreshToken: undefined,
         idToken: undefined,
+        ...(scope
+          ? (() => {
+              const sharing = resolveSharing(c.provider, c.authType);
+              return {
+                sharing,
+                sharingWarning: sharing === "personal" ? getSharingWarning(c.provider) : null,
+                createdByDisplayName: creators.get(c.createdByUserId) ?? null,
+              };
+            })()
+          : {}),
       };
     });
 

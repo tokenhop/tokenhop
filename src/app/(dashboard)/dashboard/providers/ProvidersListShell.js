@@ -29,6 +29,9 @@ import ProviderDetailSidePanel from "./components/ProviderDetailSidePanel";
 import AddAccountDialog from "./components/AddAccountDialog";
 import TestResultsModal from "./components/TestResultsModal";
 import YourProviders from "./components/YourProviders";
+import WorkspaceSharedConnections from "./components/WorkspaceSharedConnections";
+import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
+import { accountView } from "@/shared/utils/account";
 import CatalogSection from "./components/CatalogSection";
 import BringYourOwnCard from "./components/BringYourOwnCard";
 import useProviderListData from "./useProviderListData";
@@ -52,6 +55,8 @@ function useIsNarrow(query = "(max-width: 1279px)") {
 }
 
 function ProvidersListShell({ initialProviderId = null }) {
+  const { status: authStatus, loaded: authLoaded } = useAuthStatusState();
+  const authView = useMemo(() => accountView(authStatus), [authStatus]);
   const {
     connections,
     setConnections,
@@ -60,7 +65,10 @@ function ProvidersListShell({ initialProviderId = null }) {
     loading,
     fetchError,
     refreshData: reloadList,
-  } = useProviderListData();
+  } = useProviderListData({
+    ready: authLoaded,
+    workspaceId: authView.active ? authView.activeWorkspace?.id : null,
+  });
   // Every list reload follows a mutation or retry, so the shell badges refresh with it.
   const refreshData = useCallback(() => {
     reloadList();
@@ -350,6 +358,7 @@ function ProvidersListShell({ initialProviderId = null }) {
           aria-busy={isStale || undefined}
         >
           <div className="flex min-w-0 flex-1 flex-col gap-6">
+            <WorkspaceSharedConnections />
             <YourProviders
               entries={yourProviders}
               total={yourProvidersTotal}

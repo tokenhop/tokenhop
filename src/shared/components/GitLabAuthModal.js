@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
+import { withOAuthWorkspace } from "@/shared/utils/oauthWorkspace";
 import Modal from "./Modal";
 import Button from "./Button";
 import Callout from "./Callout";
@@ -20,7 +21,13 @@ function getRedirectUri() {
  * GitLab Duo auth: OAuth app (PKCE, hands off to OAuthModal with the app
  * credentials) or a Personal access token.
  */
-export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClose }) {
+export default function GitLabAuthModal({
+  isOpen,
+  providerInfo,
+  onSuccess,
+  onClose,
+  workspaceId = null,
+}) {
   const [mode, setMode] = useState(null); // null | "oauth" | "pat"
   const [baseUrl, setBaseUrl] = useState(GITLAB_COM);
   const [clientId, setClientId] = useState("");
@@ -70,7 +77,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/oauth/gitlab/pat", {
+      const res = await fetch(withOAuthWorkspace("/api/oauth/gitlab/pat", workspaceId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: pat.trim(), baseUrl: baseUrl.trim() || GITLAB_COM }),
@@ -92,6 +99,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
   if (showOAuth && oauthMeta) {
     return (
       <OAuthModal
+        workspaceId={workspaceId}
         isOpen
         provider="gitlab"
         providerInfo={providerInfo}
@@ -250,6 +258,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
 }
 
 GitLabAuthModal.propTypes = {
+  workspaceId: PropTypes.string,
   isOpen: PropTypes.bool.isRequired,
   providerInfo: PropTypes.shape({ name: PropTypes.string }),
   onSuccess: PropTypes.func,

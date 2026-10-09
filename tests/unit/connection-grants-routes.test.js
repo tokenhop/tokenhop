@@ -122,7 +122,14 @@ describe("grant routes, switch on", () => {
     expect(incoming.status).toBe(200);
     const body = await incoming.json();
     expect(body.grants).toEqual([
-      { grantId: grant.id, provider: "openai", name: "oa", allowedModels: ["openai/gpt-5"] },
+      {
+        grantId: grant.id,
+        provider: "openai",
+        name: "oa",
+        allowedModels: ["openai/gpt-5"],
+        granteeWorkspaceId: t.b.personal,
+        granteeUserId: null,
+      },
     ]);
     expect(JSON.stringify(body)).not.toMatch(/sk-secret|owner@secret|apiKey|"data"/);
   });

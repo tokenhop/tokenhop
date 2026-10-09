@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
+import useRemoteMember, { REMOTE_IMPORT_NOTICE } from "@/shared/hooks/useRemoteMember";
 import Modal from "./Modal";
 import Button from "./Button";
 import Callout from "./Callout";
@@ -9,13 +10,21 @@ import Input from "./Input";
 import Textarea from "./Textarea";
 import { Spinner } from "./Loading";
 import OAuthModal from "./OAuthModal";
+import { withOAuthWorkspace } from "../utils/oauthWorkspace";
 
 /**
  * Cursor connect: method chooser between browser login (PKCE device-style flow
  * via OAuthModal) and token import from a local Cursor IDE install (auto-detects
  * from its SQLite database, falls back to manual paste; Windows may need a retry).
  */
-export default function CursorAuthModal({ isOpen, providerInfo, onSuccess, onClose }) {
+export default function CursorAuthModal({
+  isOpen,
+  providerInfo,
+  workspaceId = null,
+  onSuccess,
+  onClose,
+}) {
+  const remoteMember = useRemoteMember();
   const [method, setMethod] = useState(null); // null | "browser" | "import"
   const [accessToken, setAccessToken] = useState("");
   const [refreshToken, setRefreshToken] = useState("");
@@ -61,8 +70,12 @@ export default function CursorAuthModal({ isOpen, providerInfo, onSuccess, onClo
   // local-only, so it must not be called on remote/Docker hosts by default.
   useEffect(() => {
     if (!isOpen || method !== "import") return;
+    if (remoteMember) {
+      setError(REMOTE_IMPORT_NOTICE);
+      return;
+    }
     runAutoDetect();
-  }, [isOpen, method, runAutoDetect]);
+  }, [isOpen, method, runAutoDetect, remoteMember]);
 
   // Return to the method chooser whenever the modal closes.
   useEffect(() => {
@@ -94,7 +107,7 @@ export default function CursorAuthModal({ isOpen, providerInfo, onSuccess, onClo
     setImporting(true);
     setError(null);
     try {
-      const res = await fetch("/api/oauth/cursor/import", {
+      const res = await fetch(withOAuthWorkspace("/api/oauth/cursor/import", workspaceId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -117,6 +130,7 @@ export default function CursorAuthModal({ isOpen, providerInfo, onSuccess, onClo
   if (method === "browser") {
     return (
       <OAuthModal
+        workspaceId={workspaceId}
         isOpen={isOpen}
         provider="cursor"
         providerInfo={providerInfo}
