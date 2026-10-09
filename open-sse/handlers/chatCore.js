@@ -143,6 +143,7 @@ export async function handleChatCore({
   sourceFormatOverride,
   providerThinking,
   comboName = null,
+  comboAttempt = null, // trusted combo latency feedback (YAN-764); never body-derived
   clientSignal = null, // FIM only: aborts the upstream call when the editor disconnects
 }) {
   // Trusted caller options only; never derive identity from the public body.
@@ -912,6 +913,7 @@ export async function handleChatCore({
     // Measured token-saver deltas; persisted only by success-path saveUsageStats.
     savings: buildSavingsEntry({ rtkStats, headroomStats, headroomDiagnostics, pxpipeSummary }),
     comboName,
+    comboAttempt,
     reqTag,
     log,
     usageEndpoint,

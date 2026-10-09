@@ -11,7 +11,13 @@ import {
   filterUsageForFormat,
   COLORS,
 } from "./usageTracking.js";
-import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import {
+  parseSSELine,
+  hasValuableContent,
+  hasMeaningfulToken,
+  fixInvalidId,
+  formatSSE,
+} from "./streamHelpers.js";
 import { extractReasoningText } from "../translator/concerns/reasoning.js";
 import { fimContextFor } from "../translator/concerns/fim.js";
 import {
@@ -53,6 +59,9 @@ const isDoneLine = (line) => line.startsWith("data:") && line.slice(5).trim() ==
  * @param {object} options.body - Request body (for input token estimation)
  * @param {function} options.onStreamComplete - Callback when stream completes (content, usage)
  * @param {string} options.apiKey - API key for usage tracking
+ * @param {function} [options.onStreamResult] - Routing-only, fail-open, called once with
+ *   { firstTokenAt, error, cancelled:false } at the actual terminal ([DONE] / Responses
+ *   terminal) or flush. firstTokenAt = first emitted meaningful payload (not raw ttftAt).
  */
 export function createSSEStream(options = {}) {
   const {
@@ -69,6 +78,7 @@ export function createSSEStream(options = {}) {
     onStreamComplete = null,
     apiKey = null,
     credentials = null,
+    onStreamResult = null,
   } = options;
 
   let buffer = "";
@@ -124,6 +134,49 @@ export function createSSEStream(options = {}) {
   let streamDoneSent = false; // track duplicate [DONE] across transform + flush
   let finalized = false;
 
+  // Routing-only observation (YAN-764): first meaningful payload actually emitted to
+  // the client. Separate from raw ttftAt/usage/output; never alters them.
+  let firstTokenAt = null;
+  let resultNotified = false;
+  const observeEmitted = (item) => {
+    if (firstTokenAt !== null || !onStreamResult) return;
+    try {
+      const payload =
+        item && typeof item === "object" && item.event && item.data ? item.data : item;
+      if (hasMeaningfulToken(payload)) firstTokenAt = Date.now();
+    } catch {
+      // fail-open
+    }
+  };
+  // Observe a raw SSE line ("data: {...}") about to be enqueued as-is (passthrough).
+  const observeEmittedLine = (line) => {
+    if (firstTokenAt !== null || !onStreamResult || !line.startsWith("data:")) return;
+    try {
+      observeEmitted(JSON.parse(line.slice(5).trim()));
+    } catch {
+      // fail-open: partial/non-JSON is never a token
+    }
+  };
+  // A synthesized response.failed (stream closed before a terminal event) is a routing
+  // failure only; usage/request logging keeps its existing semantics.
+  let routingError = null;
+  const noteSynthesizedFailure = () => {
+    routingError ??= { message: "stream closed before response.completed" };
+  };
+  const notifyStreamResult = ({ error } = {}) => {
+    if (resultNotified || !onStreamResult) return;
+    resultNotified = true;
+    try {
+      onStreamResult({
+        firstTokenAt,
+        error: error ?? streamError ?? routingError ?? null,
+        cancelled: false,
+      });
+    } catch {
+      // fail-open: routing feedback must never break streaming
+    }
+  };
+
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
   const finalizeStream = () => {
@@ -169,7 +222,7 @@ export function createSSEStream(options = {}) {
         },
         finalUsage,
         ttftAt,
-        { error: streamError },
+        { error: streamError, firstTokenAt },
       );
     }
   };
@@ -213,6 +266,7 @@ export function createSSEStream(options = {}) {
           if (isDoneLine(trimmed)) {
             if (streamDoneSent) continue;
             streamDoneSent = true;
+            notifyStreamResult();
           } else if (trimmed.startsWith("data:")) {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
@@ -297,6 +351,8 @@ export function createSSEStream(options = {}) {
                 parsed,
               );
 
+              observeEmitted(parsed);
+
               // Estimates only go to the client chunk; finalizeStream() owns the
               // persistence fallback, so a real usage chunk after finish still wins.
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
@@ -333,7 +389,10 @@ export function createSSEStream(options = {}) {
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
           // Responses clients (codex CLI) close on response.completed instead of [DONE]
-          if (responsesTerminal) finalizeStream();
+          if (responsesTerminal) {
+            notifyStreamResult();
+            finalizeStream();
+          }
           continue;
         }
 
@@ -366,6 +425,7 @@ export function createSSEStream(options = {}) {
           if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
             const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
             reqLogger?.appendConvertedChunk?.(failedOutput);
+            noteSynthesizedFailure();
             controller.enqueue(sharedEncoder.encode(failedOutput));
             openAIResponsesTerminalSeen = true;
             sseEmittedCount++;
@@ -381,6 +441,7 @@ export function createSSEStream(options = {}) {
           if (keepsOpenAIResponsesFormat) {
             streamDoneSent = true;
             openAIResponsesDoneSent = true;
+            notifyStreamResult();
           }
           continue;
         }
@@ -455,11 +516,15 @@ export function createSSEStream(options = {}) {
           }
           const output = formatSSE({ event: openAIResponsesEventName, data: parsed }, sourceFormat);
           reqLogger?.appendConvertedChunk?.(output);
+          observeEmitted(parsed);
           controller.enqueue(sharedEncoder.encode(output));
           currentOpenAIResponsesEvent = null;
           sseEmittedCount++;
           // Responses clients (codex) close on response.completed instead of [DONE]
-          if (openAIResponsesTerminalSeen) finalizeStream();
+          if (openAIResponsesTerminalSeen) {
+            notifyStreamResult();
+            finalizeStream();
+          }
           continue;
         }
 
@@ -500,6 +565,7 @@ export function createSSEStream(options = {}) {
 
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
+            observeEmitted(item);
             controller.enqueue(sharedEncoder.encode(output));
             sseEmittedCount++;
           }
@@ -530,6 +596,7 @@ export function createSSEStream(options = {}) {
               output = "data: " + buffer.slice(5);
             }
             reqLogger?.appendConvertedChunk?.(output);
+            observeEmittedLine(output.trim());
             controller.enqueue(sharedEncoder.encode(output));
           }
 
@@ -546,6 +613,7 @@ export function createSSEStream(options = {}) {
             controller.enqueue(sharedEncoder.encode(doneOutput));
           }
 
+          notifyStreamResult();
           finalizeStream();
           return;
         }
@@ -581,6 +649,7 @@ export function createSSEStream(options = {}) {
                 if (item === null || item === undefined) continue;
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
+                observeEmitted(item);
                 controller.enqueue(sharedEncoder.encode(output));
               }
             }
@@ -601,6 +670,7 @@ export function createSSEStream(options = {}) {
             if (item === null || item === undefined) continue;
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
+            observeEmitted(item);
             controller.enqueue(sharedEncoder.encode(output));
           }
         }
@@ -611,6 +681,7 @@ export function createSSEStream(options = {}) {
         if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
           const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
           reqLogger?.appendConvertedChunk?.(failedOutput);
+          noteSynthesizedFailure();
           controller.enqueue(sharedEncoder.encode(failedOutput));
           openAIResponsesTerminalSeen = true;
         }
@@ -634,9 +705,12 @@ export function createSSEStream(options = {}) {
           streamDoneSent = true;
         }
 
+        notifyStreamResult();
         finalizeStream();
       } catch (error) {
         console.log("Error in flush:", error);
+        // A flush failure must not be reported as success to the routing observer.
+        notifyStreamResult({ error });
         finalizeStream();
       }
     },
@@ -656,6 +730,7 @@ export function createSSETransformStreamWithLogger(
   apiKey = null,
   customToolNames = null,
   credentials = null,
+  onStreamResult = null,
 ) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
@@ -671,6 +746,7 @@ export function createSSETransformStreamWithLogger(
     onStreamComplete,
     apiKey,
     credentials,
+    onStreamResult,
   });
 }
 
@@ -682,6 +758,7 @@ export function createPassthroughStreamWithLogger(
   body = null,
   onStreamComplete = null,
   apiKey = null,
+  onStreamResult = null,
 ) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
@@ -692,5 +769,6 @@ export function createPassthroughStreamWithLogger(
     body,
     onStreamComplete,
     apiKey,
+    onStreamResult,
   });
 }

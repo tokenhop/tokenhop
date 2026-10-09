@@ -507,6 +507,65 @@ function retryAfterToIso(value) {
 }
 
 /**
+ * Per-attempt latency feedback (YAN-764). handleComboChat hands one of these to
+ * handleSingleModel as a trusted third argument; the streaming handler calls
+ * registerStream() before returning a streamed Response so the sample is taken
+ * at the first meaningful token (not at response headers) and at stream end
+ * for failures. Samples are recorded at most once per attempt. A nested combo's
+ * leaf attempt chains to its ancestors, so each combo level samples its own
+ * member exactly once; failed inner attempts never register upward.
+ * @param {number} startedAt
+ * @param {(ms: number, failed: boolean) => void} record
+ * @param {object|null} parent - ancestor attempt (nested combo)
+ */
+function createAttemptFeedback(startedAt, record, parent) {
+  const attempt = {
+    startedAt,
+    registered: false,
+    settled: false,
+    close() {
+      attempt.settled = true;
+    },
+    /** @returns {((info: {firstTokenAt?: number|null, error?: any, cancelled?: boolean}) => void)|null} */
+    registerStream() {
+      if (attempt.settled) return null;
+      attempt.registered = true;
+      let parentSettle = null;
+      try {
+        parentSettle = parent?.registerStream?.() ?? null;
+      } catch {
+        parentSettle = null;
+      }
+      return (info) => {
+        attempt.settle(info);
+        try {
+          parentSettle?.(info);
+        } catch {
+          // feedback must never break streaming
+        }
+      };
+    },
+    settle(info) {
+      if (attempt.settled) return;
+      attempt.settled = true;
+      try {
+        if (!info || info.cancelled) return; // explicit downstream cancel: no sample
+        if (info.error) {
+          record(Math.max(Date.now() - startedAt, 0), true);
+          return;
+        }
+        const t = info.firstTokenAt;
+        // No meaningful token (empty stream) or implausible clock: no sample.
+        if (Number.isFinite(t) && t >= startedAt) record(t - startedAt, false);
+      } catch {
+        // fail-open
+      }
+    },
+  };
+  return attempt;
+}
+
+/**
  * Handle combo chat with fallback
  * @param {Object} options
  * @param {Object} options.body - Request body
@@ -522,6 +581,10 @@ function retryAfterToIso(value) {
  * @param {Function} [options.onAttempt] - Attempt observer: (attempt) => void. Fail-open: any throw is swallowed.
  *   Called after each step resolves (success, fallback-eligible failure, or non-fallback failure).
  *   Normal traffic passes no observer, so routing behavior is unchanged.
+ * @param {object} [options.parentAttempt] - Trusted ancestor attempt (YAN-764). Only
+ *   handleSingleModelChat threads this when this combo is nested inside another
+ *   combo's attempt: register/settle events propagate up so each combo level
+ *   samples its own member exactly once. Never derived from the request body.
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({
@@ -537,6 +600,7 @@ export async function handleComboChat({
   autoSwitch = true,
   onFallback,
   onAttempt,
+  parentAttempt = null,
 }) {
   // Apply rotation strategy if enabled
   let rotatedModels =
@@ -547,7 +611,8 @@ export async function handleComboChat({
         : getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
 
   // Latency feedback for "fastest". Skipped for dry-run probes (onAttempt) so
-  // they never skew live routing. Time to response headers, not full stream.
+  // they never skew live routing. Non-streamed: time to response; streamed: time to
+  // first meaningful token (or a failure penalty), via the attempt feedback below.
   const recordLatency = (model, ms, failed) => {
     if (comboStrategy !== "fastest" || typeof onAttempt === "function") return;
     recordComboLatency(comboName, model, failed ? Math.max(ms, FAILURE_PENALTY_MS) : ms);
@@ -585,12 +650,25 @@ export async function handleComboChat({
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
     const attemptStartedAt = Date.now();
 
+    // Live "fastest" sampling or a nested-combo ancestor needs stream feedback.
+    const attempt =
+      parentAttempt || (comboStrategy === "fastest" && typeof onAttempt !== "function")
+        ? createAttemptFeedback(
+            attemptStartedAt,
+            (ms, failed) => recordLatency(modelStr, ms, failed),
+            parentAttempt,
+          )
+        : null;
+
     try {
-      const result = await handleSingleModel(body, modelStr);
+      const result = attempt
+        ? await handleSingleModel(body, modelStr, attempt)
+        : await handleSingleModel(body, modelStr);
 
       // Success (2xx) - return response
       if (result.ok) {
-        recordLatency(modelStr, Date.now() - attemptStartedAt, false);
+        // A registered stream samples itself at first token / stream end.
+        if (!attempt?.registered) recordLatency(modelStr, Date.now() - attemptStartedAt, false);
         notifyAttempt({
           model: modelStr,
           status: result.status,
@@ -601,6 +679,8 @@ export async function handleComboChat({
         log.info("COMBO", `Model ${modelStr} succeeded`);
         return result;
       }
+
+      attempt?.close();
 
       // Extract error info from response
       let errorText = result.statusText || "";
@@ -686,6 +766,7 @@ export async function handleComboChat({
       }
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
+      attempt?.close();
       lastError = error.message || String(error);
       lastStatus = 500;
       // A client cancel is not the member's fault: don't penalize it.
@@ -917,6 +998,8 @@ export function classifyProbeError(status, errorText) {
  * @param {string} [options.comboName] - Combo name (logging)
  * @param {string} [options.judgeModel] - Judge model; falls back to panel[0]
  * @param {Object} [options.tuning] - Override FUSION_DEFAULTS (minPanel, grace, timeout)
+ * @param {object} [options.parentAttempt] - Trusted ancestor attempt (see handleComboChat); forwarded to
+ *   served calls (judge / direct answer) only, never to panel calls.
  * @param {Function} [options.onAttempt] - Fail-open attempt observer, called once per panel/judge
  *   call with { model, status, latencyMs, errorType, outcome, role }. Absent for normal traffic.
  * @returns {Promise<Response>}
@@ -930,22 +1013,25 @@ export async function handleFusionChat({
   judgeModel,
   tuning,
   onAttempt,
+  parentAttempt = null,
 }) {
   // Observer wrapper: records each leaf call, never alters its result.
   const handleSingleModel =
     typeof onAttempt === "function"
-      ? async (b, m, isPanel) => {
+      ? async (b, m, isPanel, attempt) => {
           const startedAt = Date.now();
           const role = isPanel ? "panel" : "judge";
-          const notify = (attempt) => {
+          const notify = (info) => {
             try {
-              onAttempt({ model: m, role, latencyMs: Date.now() - startedAt, ...attempt });
+              onAttempt({ model: m, role, latencyMs: Date.now() - startedAt, ...info });
             } catch {
               // observer must never break routing
             }
           };
           try {
-            const res = await rawHandleSingleModel(b, m, isPanel);
+            // Panels are forced non-streaming probes; only served calls
+            // (judge / direct answer) carry the ancestor attempt.
+            const res = await rawHandleSingleModel(b, m, isPanel, isPanel ? null : attempt);
             let errorText = "";
             try {
               const errJson = await res?.clone().json();
@@ -980,7 +1066,7 @@ export async function handleFusionChat({
 
   // A single-model fusion has nothing to fuse — just answer directly.
   if (panel.length === 1) {
-    return handleSingleModel(body, panel[0]);
+    return handleSingleModel(body, panel[0], undefined, parentAttempt);
   }
 
   const cfg = { ...FUSION_DEFAULTS, ...(tuning || {}) };
@@ -1059,11 +1145,12 @@ export async function handleFusionChat({
   }
   if (answers.length === 1) {
     log.info("FUSION", `Only ${answers[0].model} succeeded — answering directly (no fusion)`);
-    return handleSingleModel(body, answers[0].model);
+    return handleSingleModel(body, answers[0].model, undefined, parentAttempt);
   }
 
   // 4. Judge analyzes + writes one final answer (streams to client if requested).
   const judgeBody = appendUserTurn(body, buildJudgePrompt(answers));
   log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
-  return handleSingleModel(judgeBody, judge);
+  // Only served calls (judge / direct answer) forward the ancestor attempt; panels never do.
+  return handleSingleModel(judgeBody, judge, undefined, parentAttempt);
 }
