@@ -1,4 +1,5 @@
 "use client";
+import ConnectionSharing from "../components/ConnectionSharing";
 
 import { useState } from "react";
 import PropTypes from "prop-types";
@@ -49,6 +50,7 @@ export default function SortableConnectionRow({
   onEdit,
   onDelete,
   onMove,
+  onShared,
 }) {
   const [proxyUpdating, setProxyUpdating] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -249,6 +251,7 @@ export default function SortableConnectionRow({
               {disabled ? "disabled" : statusLabel}
             </StatusPill>
             <StatusPill variant="neutral">{authLabel}</StatusPill>
+            <ConnectionSharing connection={connection} onShared={onShared} />
             {hasAnyProxy ? <StatusPill variant={proxyVariant}>Proxy</StatusPill> : null}
             {isCooldown && !disabled ? <CooldownTimer until={modelLockUntil} /> : null}
             {connection.lastError && !disabled ? (
@@ -437,5 +440,6 @@ SortableConnectionRow.propTypes = {
   onUpdateProxy: PropTypes.func.isRequired,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
+  onShared: PropTypes.func,
   onMove: PropTypes.func.isRequired,
 };
