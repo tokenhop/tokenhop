@@ -54,17 +54,6 @@ beforeEach(async () => {
     "DELETE FROM memberships; DELETE FROM workspaces; DELETE FROM users; DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion','apiKeysHashKid')",
   );
   db.run("DELETE FROM combos");
-  for (const [id, name] of [
-    ["combo-1", "Primary combo"],
-    ["combo-2", "Fallback combo"],
-  ]) {
-    db.run("INSERT INTO combos(id, name, models, createdAt, updatedAt) VALUES (?, ?, '[]', ?, ?)", [
-      id,
-      name,
-      NOW,
-      NOW,
-    ]);
-  }
   const users = [
     ["manager", "user"],
     ["member", "user"],
@@ -88,6 +77,15 @@ beforeEach(async () => {
     "INSERT INTO workspaces(id, name, kind, createdBy, createdAt, updatedAt) VALUES (?, ?, 'personal', 'solo', ?, ?)",
     ["mine", "mine", NOW, NOW],
   );
+  for (const [id, name] of [
+    ["combo-1", "Primary combo"],
+    ["combo-2", "Fallback combo"],
+  ]) {
+    db.run(
+      "INSERT INTO combos(id, name, models, workspaceId, createdAt, updatedAt) VALUES (?, ?, '[]', 'w', ?, ?)",
+      [id, name, NOW, NOW],
+    );
+  }
   const roles = { manager: "manager", member: "member", viewer: "viewer" };
   for (const [userId, role] of Object.entries(roles)) {
     db.run("INSERT INTO memberships(workspaceId, userId, role, createdAt) VALUES ('w', ?, ?, ?)", [
@@ -139,6 +137,16 @@ describe("hashed key management", () => {
       err = e;
     }
     expect(code(err)).toBe("FORBIDDEN");
+  });
+
+  it("member lists only own user keys", async () => {
+    const own = await createApiKey(member, "w", { type: "user", name: "mine" });
+    await createApiKey(manager, "w", { type: "user", name: "manager key" });
+    await createApiKey(manager, "w", { type: "service", name: "service" });
+    const list = await listApiKeys(member, "w");
+    expect(list.map((k) => k.id)).toEqual([own.metadata.id]);
+    expect(list[0]).toMatchObject({ type: "user", userId: "member" });
+    expect(list[0]).not.toHaveProperty("keyHash");
   });
 
   it("authorized multi-membership lists other rows strictly scoped to other", async () => {
@@ -376,8 +384,9 @@ describe("hashed key management", () => {
     // Escalated stale ctx (member claims instance admin): live role wins. A
     // trusted ctx.instanceRole would grant admin-in-member-workspace manage.
     const forgedAdmin = ctxFor("member", { instanceRole: "admin" });
+    const service = await createApiKey(manager, "w", { type: "service" });
     try {
-      await listApiKeys(forgedAdmin, "w");
+      await revokeApiKey(forgedAdmin, "w", service.metadata.id);
     } catch (e) {
       err = e;
     }
@@ -492,6 +501,29 @@ describe("hashed key management", () => {
       allowedCombos: ["combo-2"],
     });
     expect(moved.allowedCombos).toEqual(["combo-2"]);
+  });
+
+  it("allowedCombos rejects combos owned by another workspace", async () => {
+    db.run("UPDATE combos SET workspaceId = 'other' WHERE id = 'combo-2'");
+    db.run(
+      "INSERT INTO combos(id, name, models, workspaceId, createdAt, updatedAt) VALUES ('legacy', 'Legacy', '[]', NULL, ?, ?)",
+      [NOW, NOW],
+    );
+
+    await expect(
+      createApiKey(member, "w", { type: "user", allowedCombos: ["combo-2"] }),
+    ).rejects.toMatchObject({ code: "INVALID" });
+    await expect(
+      createApiKey(member, "w", { type: "user", allowedCombos: ["legacy"] }),
+    ).rejects.toMatchObject({ code: "INVALID" });
+    const key = await createApiKey(member, "w", {
+      type: "user",
+      allowedCombos: ["combo-1"],
+    });
+    expect(key.metadata.allowedCombos).toEqual(["combo-1"]);
+    await expect(
+      updateApiKey(manager, "w", key.metadata.id, { allowedCombos: ["combo-2"] }),
+    ).rejects.toMatchObject({ code: "INVALID" });
   });
 
   it("creates validate scope and expiry inputs through the strict row validator", async () => {

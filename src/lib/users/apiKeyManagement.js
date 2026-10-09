@@ -91,16 +91,11 @@ function scopeJson(value, field) {
   return JSON.stringify(value);
 }
 
-// allowedCombos is an allowlist of combo IDs; a typo'd or display-name entry
-// would persist into a key that can never authorize any combo (silent
-// deny-everything). Entries must reference an existing instance combo —
-// combos are instance-level config, not workspace-owned, until YAN-364; no
-// per-workspace combo lookup here. Empty list stays unrestricted. Field-
-// specific generic error: no combo IDs echoed back.
-function requireExistingCombos(db, combos) {
+// Only allow combos the scoped gateway can resolve for this workspace. Empty lists stay unrestricted; errors never echo combo IDs.
+function requireExistingCombos(db, combos, workspaceId) {
   if (!Array.isArray(combos) || combos.length === 0) return;
   for (const id of combos) {
-    if (!db.get(`SELECT 1 FROM combos WHERE id = ?`, [id])) {
+    if (!db.get(`SELECT 1 FROM combos WHERE id = ? AND workspaceId = ?`, [id, workspaceId])) {
       throw new TenancyError("INVALID", "allowedCombos entries must be existing combo IDs");
     }
   }
@@ -119,11 +114,13 @@ export async function listApiKeys(ctx, workspaceId) {
   const db = await getAdapter();
   requireHashedState(db);
   const access = liveAccess(db, ctx, workspaceId);
-  // D1 permission map: members create their own user keys; only managers
-  // list/manage workspace key metadata. Viewers get nothing.
-  requireManage(access, "list");
+  // Managers list workspace keys; members list only their own user keys.
+  // Viewers get nothing.
+  if (!access.create) throw new TenancyError("FORBIDDEN", "Not allowed to list keys");
+  const own = access.manage ? "" : " AND userId = ?";
+  const params = access.manage ? [workspaceId] : [workspaceId, ctx.userId];
   return db
-    .all(`SELECT * FROM apiKeys WHERE workspaceId = ? ORDER BY createdAt ASC`, [workspaceId])
+    .all(`SELECT * FROM apiKeys WHERE workspaceId = ?${own} ORDER BY createdAt ASC`, params)
     .map(apiKeyMetadata);
 }
 
@@ -192,7 +189,7 @@ export async function createApiKey(ctx, workspaceId, options = {}) {
       if (!liveAccess(db, ctx, workspaceId).create)
         throw new TenancyError("FORBIDDEN", "Not allowed to create keys");
       if (type === "service") requireManage(liveAccess(db, ctx, workspaceId), "create service");
-      requireExistingCombos(db, input.allowedCombos);
+      requireExistingCombos(db, input.allowedCombos, workspaceId);
       return apiKeyMetadata(
         insertHashedApiKeySync(db, {
           workspaceId,
@@ -271,7 +268,8 @@ export async function updateApiKey(ctx, workspaceId, id, patch = {}) {
       }
       return apiKeyMetadata(current);
     }
-    if (patch.allowedCombos !== undefined) requireExistingCombos(db, patch.allowedCombos);
+    if (patch.allowedCombos !== undefined)
+      requireExistingCombos(db, patch.allowedCombos, workspaceId);
     db.run(
       `UPDATE apiKeys SET name = ?, isActive = ?, allowedModels = ?, allowedCombos = ?, expiresAt = ? WHERE id = ? AND workspaceId = ?`,
       [

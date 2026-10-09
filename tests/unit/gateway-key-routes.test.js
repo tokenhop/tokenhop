@@ -75,13 +75,11 @@ async function seed() {
     "INSERT INTO memberships(workspaceId, userId, role, createdAt) VALUES (?, ?, 'manager', ?), (?, ?, 'member', ?)",
     [SHARED, owner.id, NOW, SHARED, member.id, NOW],
   );
-  // Management validation requires allowedCombos entries to reference real
-  // combo IDs; the item-PUT test scopes to combo-1, so seed it via the real
-  // combos schema (same fixture shape as gateway-key-management).
+  // allowedCombos entries must reference combos owned by the key workspace.
   db.run("DELETE FROM combos");
   db.run(
-    "INSERT INTO combos(id, name, models, createdAt, updatedAt) VALUES ('combo-1', 'Primary combo', '[]', ?, ?)",
-    [NOW, NOW],
+    "INSERT INTO combos(id, name, models, workspaceId, createdAt, updatedAt) VALUES ('combo-1', 'Primary combo', '[]', ?, ?, ?)",
+    [SHARED, NOW, NOW],
   );
   db.run(
     "INSERT INTO _meta(key, value) VALUES ('apiKeysHashedVersion', '1'), ('apiKeysHashKid', ?)",

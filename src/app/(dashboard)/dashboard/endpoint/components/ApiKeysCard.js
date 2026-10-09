@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useEffect, useId, useRef, useState } from "react";
+import { Fragment, useState } from "react";
 import {
   Card,
   Button,
@@ -16,292 +16,16 @@ import {
   maskKey,
   formatPrefix,
   formatLastUsed,
-  isNewKey,
   formatNumber,
   formatExpiry,
   isKeyExpired,
   scopeSummary,
 } from "../endpointLogic";
+import { groupKeys } from "../keyGroups";
 import CopyStatus from "@/shared/components/CopyStatus";
 import { LoadingState } from "@/shared/components/StateViews";
 
-/**
- * One-time reveal banner shown after a key is created. The plain key is never
- * retrievable again, so this is the only copy affordance.
- */
-function CreatedBanner({ banner, copiedId, copyError, onCopy, onDismiss }) {
-  return (
-    <div role="alert" className="mb-4 flex gap-3 rounded-xl border border-lime/40 bg-lime-bg p-4">
-      <span
-        className="material-symbols-outlined shrink-0 text-[20px] text-lime-ink"
-        aria-hidden="true"
-      >
-        vpn_key
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-text">
-          {banner.keyName} is ready. Copy it now, it won&apos;t be shown again.
-        </p>
-        <code className="mt-1 block truncate font-mono text-sm text-text" dir="ltr">
-          {banner.plainKey}
-        </code>
-        <div className="mt-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={
-              copiedId === "created-banner"
-                ? "check"
-                : copyError === "created-banner"
-                  ? "error"
-                  : "content_copy"
-            }
-            onClick={() => onCopy(banner.plainKey, "created-banner")}
-          >
-            {copiedId === "created-banner"
-              ? "Copied"
-              : copyError === "created-banner"
-                ? "Couldn't copy"
-                : "Copy key"}
-          </Button>
-          <CopyStatus copied={copiedId} error={copyError} id="created-banner" />
-        </div>
-      </div>
-      <IconButton icon="close" aria-label="Dismiss" onClick={onDismiss} className="self-start" />
-    </div>
-  );
-}
-
-CreatedBanner.propTypes = {
-  banner: PropTypes.shape({
-    keyName: PropTypes.string.isRequired,
-    plainKey: PropTypes.string.isRequired,
-  }).isRequired,
-  copiedId: PropTypes.string,
-  copyError: PropTypes.string,
-  onCopy: PropTypes.func.isRequired,
-  onDismiss: PropTypes.func.isRequired,
-};
-
-function KeyStatusTags({ apiKey }) {
-  return (
-    <>
-      {apiKey.isActive === false && (
-        <StatusPill variant="warn" size="sm">
-          Paused
-        </StatusPill>
-      )}
-      {isNewKey(apiKey.createdAt) && apiKey.isActive !== false && (
-        <StatusPill variant="live" size="sm">
-          New
-        </StatusPill>
-      )}
-      {apiKey.type && (
-        <StatusPill variant="neutral" size="sm">
-          {apiKey.type === "service" ? "Service" : "User"}
-        </StatusPill>
-      )}
-      {Boolean(apiKey.legacy) && (
-        <StatusPill variant="neutral" size="sm" title="Rotate recommended">
-          Legacy
-        </StatusPill>
-      )}
-      {isKeyExpired(apiKey.expiresAt) && (
-        <StatusPill variant="warn" size="sm">
-          Expired
-        </StatusPill>
-      )}
-    </>
-  );
-}
-
-KeyStatusTags.propTypes = {
-  apiKey: PropTypes.shape({
-    isActive: PropTypes.bool,
-    createdAt: PropTypes.string,
-    type: PropTypes.string,
-    legacy: PropTypes.oneOfType([PropTypes.bool, PropTypes.number]),
-    expiresAt: PropTypes.string,
-  }).isRequired,
-};
-
-/**
- * Inline rename control for one key row. Enter saves, Escape cancels; the
- * input stays open on save failure so the error below it can be read.
- *
- * @param {object} props
- * @param {{id: string, name: string}} props.apiKey
- * @param {boolean} props.editing Whether this row is in edit mode.
- * @param {(id: string|null) => void} props.setEditingId Shared edit-state setter.
- * @param {boolean} props.loading Rename request in flight.
- * @param {string} [props.error] Per-row rename error, announced via aria-describedby.
- * @param {(id: string, name: string) => Promise<boolean>} props.onRenameKey
- * @param {(id: string) => void} props.clearRenameError
- */
-function KeyName({ apiKey, editing, setEditingId, loading, error, onRenameKey, clearRenameError }) {
-  const [value, setValue] = useState(apiKey.name);
-  const inputRef = useRef(null);
-  const pendingRef = useRef(false);
-  const inputId = useId();
-
-  // Desktop table and mobile card both mount. Focus only the visible editor.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only re-run when edit mode opens/closes.
-  useEffect(() => {
-    if (editing) {
-      setValue(apiKey.name);
-      if (inputRef.current?.getClientRects().length) {
-        inputRef.current.focus();
-        inputRef.current.select();
-      }
-    }
-  }, [editing]);
-
-  const cancel = () => {
-    if (loading || pendingRef.current) return;
-    setValue(apiKey.name);
-    clearRenameError(apiKey.id);
-    setEditingId(null);
-  };
-
-  // pendingRef blocks a double Enter before the parent's renamingId arrives.
-  const save = async () => {
-    if (loading || pendingRef.current) return;
-    pendingRef.current = true;
-    try {
-      if (await onRenameKey(apiKey.id, value)) setEditingId(null);
-    } finally {
-      pendingRef.current = false;
-    }
-  };
-
-  if (!editing) {
-    return (
-      <span className="flex flex-wrap items-center gap-1.5 font-medium text-text">
-        {apiKey.name}
-        <KeyStatusTags apiKey={apiKey} />
-        <IconButton
-          icon="edit"
-          aria-label={`Rename key ${apiKey.name}`}
-          className="size-7"
-          onClick={() => setEditingId(apiKey.id)}
-        />
-      </span>
-    );
-  }
-
-  return (
-    <span className="flex flex-col gap-1">
-      <span className="flex items-center gap-1">
-        <input
-          ref={inputRef}
-          id={inputId}
-          type="text"
-          value={value}
-          disabled={loading}
-          onChange={(e) => {
-            setValue(e.target.value);
-            clearRenameError(apiKey.id);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              save();
-            } else if (e.key === "Escape") {
-              e.preventDefault();
-              cancel();
-            }
-          }}
-          aria-label={`Rename key ${apiKey.name}`}
-          aria-describedby={error ? `${inputId}-error` : undefined}
-          aria-invalid={error ? true : undefined}
-          className="w-full min-w-0 rounded-lg border border-line bg-raised px-2 py-1 text-sm text-text transition-colors duration-150 focus:border-coral focus:shadow-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-err"
-        />
-        <IconButton
-          icon="check"
-          aria-label="Save name"
-          loading={loading}
-          className="size-7"
-          onClick={save}
-        />
-        <IconButton
-          icon="close"
-          aria-label="Cancel rename"
-          disabled={loading}
-          className="size-7"
-          onClick={cancel}
-        />
-      </span>
-      {error && (
-        <span id={`${inputId}-error`} role="alert" className="text-xs text-err">
-          {error}
-        </span>
-      )}
-    </span>
-  );
-}
-
-KeyName.propTypes = {
-  apiKey: PropTypes.shape({
-    id: PropTypes.string.isRequired,
-    name: PropTypes.string.isRequired,
-    isActive: PropTypes.bool,
-    createdAt: PropTypes.string,
-  }).isRequired,
-  editing: PropTypes.bool.isRequired,
-  setEditingId: PropTypes.func.isRequired,
-  loading: PropTypes.bool,
-  error: PropTypes.string,
-  onRenameKey: PropTypes.func.isRequired,
-  clearRenameError: PropTypes.func.isRequired,
-};
-
-/**
- * One-time migration notice for hashed storage: keys keep working, but only
- * the prefix shows from now on. Authority is the server-side spec214 flag in
- * the key context — visible until `migrationAcknowledged` is true, including
- * across browsers and reloads. The dismiss action renders for managers only
- * and hides the notice only on PATCH success; failure keeps the notice with
- * the nonsecret server error. Members/viewers see the notice, no action.
- */
-function MigrationNotice({ notice }) {
-  if (!notice.visible) return null;
-  return (
-    <div className="mb-4">
-      <Callout variant="info" title="Keys are now stored as hashes">
-        Existing keys keep working. Full keys are no longer stored or shown — only the prefix is
-        displayed. Create a new key to get a copyable secret.
-        {notice.canDismiss && (
-          <div className="mt-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={notice.dismiss}
-              disabled={notice.dismissing}
-              loading={notice.dismissing}
-            >
-              Got it
-            </Button>
-            {notice.error && (
-              <p className="mt-1 text-xs text-err" role="alert">
-                {notice.error}
-              </p>
-            )}
-          </div>
-        )}
-      </Callout>
-    </div>
-  );
-}
-
-MigrationNotice.propTypes = {
-  notice: PropTypes.shape({
-    visible: PropTypes.bool.isRequired,
-    canDismiss: PropTypes.bool.isRequired,
-    dismissing: PropTypes.bool.isRequired,
-    error: PropTypes.string,
-    dismiss: PropTypes.func.isRequired,
-  }).isRequired,
-};
+import { CreatedBanner, KeyName, MigrationNotice } from "./ApiKeyDetails";
 
 /**
  * API keys management card: require-key gate, one-time reveal banner, key
@@ -335,6 +59,8 @@ MigrationNotice.propTypes = {
  * @param {boolean} props.loading Initial list load.
  * @param {boolean} [props.hashedMode] Stored-prefix rendering + hashed chrome.
  * @param {boolean} [props.canCreate] Viewer gate for the Create button.
+ * @param {boolean} [props.canManage] Hashed-mode gate for rename, pause and delete.
+ * @param {string|null} [props.currentUserId] Signed-in user id; enables the My keys / Workspace service keys grouping (hashed multi-user only).
  * @param {{ visible: boolean, canDismiss: boolean, dismissing: boolean, error: string|null, dismiss: () => void }|null} [props.migrationNotice] Server-flag migration notice state.
  */
 export default function ApiKeysCard({
@@ -360,6 +86,8 @@ export default function ApiKeysCard({
   loading,
   hashedMode = false,
   canCreate = true,
+  canManage = true,
+  currentUserId = null,
   migrationNotice = null,
 }) {
   const [editingId, setEditingId] = useState(null);
@@ -369,8 +97,9 @@ export default function ApiKeysCard({
       : visibleIds.has(apiKey.id)
         ? apiKey.key
         : maskKey(apiKey.key);
+  const canMutate = !hashedMode || canManage;
   const toggleDisabled = (apiKey) =>
-    togglingId === apiKey.id || (hashedMode && isKeyExpired(apiKey.expiresAt));
+    !canMutate || togglingId === apiKey.id || (hashedMode && isKeyExpired(apiKey.expiresAt));
   const renderName = (apiKey) => (
     <KeyName
       apiKey={apiKey}
@@ -380,9 +109,15 @@ export default function ApiKeysCard({
       error={renameErrors[apiKey.id]}
       onRenameKey={onRenameKey}
       clearRenameError={clearRenameError}
+      canRename={canMutate}
     />
   );
   const hasLegacy = hashedMode && keys.some((k) => Boolean(k.legacy));
+  // Hashed multi-user only: headings need identity attribution; everywhere
+  // else the card keeps its single flat list.
+  const grouped = hashedMode && currentUserId ? groupKeys(keys, currentUserId) : null;
+  const ordered = grouped ? grouped.flatMap((g) => g.rows) : keys;
+  const headingOf = new Map(grouped?.filter((g) => g.label).map((g) => [g.rows[0].id, g.label]));
 
   return (
     <Card
@@ -495,79 +230,94 @@ export default function ApiKeysCard({
                 </tr>
               </thead>
               <tbody>
-                {keys.map((apiKey) => (
-                  <tr key={apiKey.id} className="border-b border-line last:border-b-0">
-                    <td className="py-3 pe-3">{renderName(apiKey)}</td>
-                    <td className="py-3 pe-3">
-                      <code className="font-mono text-[13px] text-muted" dir="ltr">
-                        {showValue(apiKey)}
-                      </code>
-                    </td>
-                    {hashedMode && (
-                      <>
-                        <td className="py-3 pe-3 text-muted">
-                          {scopeSummary(apiKey.allowedModels, apiKey.allowedCombos)}
-                        </td>
-                        <td className="py-3 pe-3 text-muted">{formatExpiry(apiKey.expiresAt)}</td>
-                      </>
+                {ordered.map((apiKey) => (
+                  <Fragment key={apiKey.id}>
+                    {headingOf.has(apiKey.id) && (
+                      <tr className="border-b border-line">
+                        <th
+                          scope="rowgroup"
+                          colSpan={9}
+                          className="pt-4 pb-1 text-start text-xs font-semibold text-text"
+                        >
+                          {headingOf.get(apiKey.id)}
+                        </th>
+                      </tr>
                     )}
-                    <td className="py-3 pe-3 text-muted">
-                      {apiKey.createdAt ? new Date(apiKey.createdAt).toLocaleDateString() : "—"}
-                    </td>
-                    <td className="py-3 pe-3 text-muted">{formatLastUsed(apiKey.lastUsed)}</td>
-                    <td className="py-3 pe-3 text-end font-mono text-muted">
-                      {formatNumber(apiKey.requestsToday)}
-                    </td>
-                    <td className="py-3 pe-3">
-                      <Toggle
-                        size="sm"
-                        checked={apiKey.isActive !== false}
-                        disabled={toggleDisabled(apiKey)}
-                        title={
-                          hashedMode && isKeyExpired(apiKey.expiresAt)
-                            ? "This key expired"
-                            : undefined
-                        }
-                        onChange={(checked) => onToggleKey(apiKey.id, checked)}
-                        aria-label={`Enable key ${apiKey.name}`}
-                      />
-                    </td>
-                    <td className="py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        {!hashedMode && (
-                          <>
-                            <IconButton
-                              icon={visibleIds.has(apiKey.id) ? "visibility_off" : "visibility"}
-                              aria-label={visibleIds.has(apiKey.id) ? "Hide key" : "Show key"}
-                              onClick={() => onToggleVisibility(apiKey.id)}
-                            />
-                            <IconButton
-                              icon={
-                                copiedId === apiKey.id
-                                  ? "check"
-                                  : copyError === apiKey.id
-                                    ? "error"
-                                    : "content_copy"
-                              }
-                              aria-label={
-                                copyError === apiKey.id
-                                  ? `Couldn't copy key ${apiKey.name}`
-                                  : `Copy key ${apiKey.name}`
-                              }
-                              onClick={() => onCopy(apiKey.key, apiKey.id)}
-                            />
-                          </>
-                        )}
-                        <IconButton
-                          icon="delete"
-                          aria-label={`Delete key ${apiKey.name}`}
-                          loading={deletingId === apiKey.id}
-                          onClick={() => onDeleteKey(apiKey.id)}
-                          className="hover:text-err"
+                    <tr className="border-b border-line last:border-b-0">
+                      <td className="py-3 pe-3">{renderName(apiKey)}</td>
+                      <td className="py-3 pe-3">
+                        <code className="font-mono text-[13px] text-muted" dir="ltr">
+                          {showValue(apiKey)}
+                        </code>
+                      </td>
+                      {hashedMode && (
+                        <>
+                          <td className="py-3 pe-3 text-muted">
+                            {scopeSummary(apiKey.allowedModels, apiKey.allowedCombos)}
+                          </td>
+                          <td className="py-3 pe-3 text-muted">{formatExpiry(apiKey.expiresAt)}</td>
+                        </>
+                      )}
+                      <td className="py-3 pe-3 text-muted">
+                        {apiKey.createdAt ? new Date(apiKey.createdAt).toLocaleDateString() : "—"}
+                      </td>
+                      <td className="py-3 pe-3 text-muted">{formatLastUsed(apiKey.lastUsed)}</td>
+                      <td className="py-3 pe-3 text-end font-mono text-muted">
+                        {formatNumber(apiKey.requestsToday)}
+                      </td>
+                      <td className="py-3 pe-3">
+                        <Toggle
+                          size="sm"
+                          checked={apiKey.isActive !== false}
+                          disabled={toggleDisabled(apiKey)}
+                          title={
+                            hashedMode && isKeyExpired(apiKey.expiresAt)
+                              ? "This key expired"
+                              : undefined
+                          }
+                          onChange={(checked) => onToggleKey(apiKey.id, checked)}
+                          aria-label={`Enable key ${apiKey.name}`}
                         />
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          {!hashedMode && (
+                            <>
+                              <IconButton
+                                icon={visibleIds.has(apiKey.id) ? "visibility_off" : "visibility"}
+                                aria-label={visibleIds.has(apiKey.id) ? "Hide key" : "Show key"}
+                                onClick={() => onToggleVisibility(apiKey.id)}
+                              />
+                              <IconButton
+                                icon={
+                                  copiedId === apiKey.id
+                                    ? "check"
+                                    : copyError === apiKey.id
+                                      ? "error"
+                                      : "content_copy"
+                                }
+                                aria-label={
+                                  copyError === apiKey.id
+                                    ? `Couldn't copy key ${apiKey.name}`
+                                    : `Copy key ${apiKey.name}`
+                                }
+                                onClick={() => onCopy(apiKey.key, apiKey.id)}
+                              />
+                            </>
+                          )}
+                          {canMutate && (
+                            <IconButton
+                              icon="delete"
+                              aria-label={`Delete key ${apiKey.name}`}
+                              loading={deletingId === apiKey.id}
+                              onClick={() => onDeleteKey(apiKey.id)}
+                              className="hover:text-err"
+                            />
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -575,74 +325,81 @@ export default function ApiKeysCard({
 
           {/* Mobile cards */}
           <div className="flex flex-col gap-3 md:hidden">
-            {keys.map((apiKey) => (
-              <div
-                key={apiKey.id}
-                className="flex flex-col gap-2 rounded-xl border border-line bg-raised p-3"
-              >
-                {renderName(apiKey)}
-                <div className="flex items-center gap-1">
-                  <code
-                    className="min-w-0 flex-1 truncate font-mono text-[13px] text-muted"
-                    dir="ltr"
-                  >
-                    {showValue(apiKey)}
-                  </code>
-                  {!hashedMode && (
-                    <>
-                      <IconButton
-                        icon={visibleIds.has(apiKey.id) ? "visibility_off" : "visibility"}
-                        aria-label={visibleIds.has(apiKey.id) ? "Hide key" : "Show key"}
-                        onClick={() => onToggleVisibility(apiKey.id)}
-                      />
-                      <IconButton
-                        icon={
-                          copiedId === apiKey.id
-                            ? "check"
-                            : copyError === apiKey.id
-                              ? "error"
-                              : "content_copy"
-                        }
-                        aria-label={
-                          copyError === apiKey.id
-                            ? `Couldn't copy key ${apiKey.name}`
-                            : `Copy key ${apiKey.name}`
-                        }
-                        onClick={() => onCopy(apiKey.key, apiKey.id)}
-                      />
-                    </>
-                  )}
-                </div>
-                {hashedMode && (
-                  <p className="text-xs text-muted">
-                    {scopeSummary(apiKey.allowedModels, apiKey.allowedCombos)} · Expires{" "}
-                    {formatExpiry(apiKey.expiresAt)}
-                  </p>
+            {ordered.map((apiKey) => (
+              <Fragment key={apiKey.id}>
+                {headingOf.has(apiKey.id) && (
+                  <p className="mt-2 text-xs font-semibold text-text">{headingOf.get(apiKey.id)}</p>
                 )}
-                <p className="text-xs text-muted">
-                  Created {apiKey.createdAt ? new Date(apiKey.createdAt).toLocaleDateString() : "—"}{" "}
-                  · {formatLastUsed(apiKey.lastUsed)} · {formatNumber(apiKey.requestsToday)} today
-                </p>
-                <div className="flex items-center justify-between">
-                  <Toggle
-                    size="sm"
-                    checked={apiKey.isActive !== false}
-                    disabled={toggleDisabled(apiKey)}
-                    title={
-                      hashedMode && isKeyExpired(apiKey.expiresAt) ? "This key expired" : undefined
-                    }
-                    onChange={(checked) => onToggleKey(apiKey.id, checked)}
-                    aria-label={`Enable key ${apiKey.name}`}
-                  />
-                  <IconButton
-                    icon="delete"
-                    aria-label={`Delete key ${apiKey.name}`}
-                    loading={deletingId === apiKey.id}
-                    onClick={() => onDeleteKey(apiKey.id)}
-                    className="hover:text-err"
-                  />
+                <div className="flex flex-col gap-2 rounded-xl border border-line bg-raised p-3">
+                  {renderName(apiKey)}
+                  <div className="flex items-center gap-1">
+                    <code
+                      className="min-w-0 flex-1 truncate font-mono text-[13px] text-muted"
+                      dir="ltr"
+                    >
+                      {showValue(apiKey)}
+                    </code>
+                    {!hashedMode && (
+                      <>
+                        <IconButton
+                          icon={visibleIds.has(apiKey.id) ? "visibility_off" : "visibility"}
+                          aria-label={visibleIds.has(apiKey.id) ? "Hide key" : "Show key"}
+                          onClick={() => onToggleVisibility(apiKey.id)}
+                        />
+                        <IconButton
+                          icon={
+                            copiedId === apiKey.id
+                              ? "check"
+                              : copyError === apiKey.id
+                                ? "error"
+                                : "content_copy"
+                          }
+                          aria-label={
+                            copyError === apiKey.id
+                              ? `Couldn't copy key ${apiKey.name}`
+                              : `Copy key ${apiKey.name}`
+                          }
+                          onClick={() => onCopy(apiKey.key, apiKey.id)}
+                        />
+                      </>
+                    )}
+                  </div>
+                  {hashedMode && (
+                    <p className="text-xs text-muted">
+                      {scopeSummary(apiKey.allowedModels, apiKey.allowedCombos)} · Expires{" "}
+                      {formatExpiry(apiKey.expiresAt)}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted">
+                    Created{" "}
+                    {apiKey.createdAt ? new Date(apiKey.createdAt).toLocaleDateString() : "—"} ·{" "}
+                    {formatLastUsed(apiKey.lastUsed)} · {formatNumber(apiKey.requestsToday)} today
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <Toggle
+                      size="sm"
+                      checked={apiKey.isActive !== false}
+                      disabled={toggleDisabled(apiKey)}
+                      title={
+                        hashedMode && isKeyExpired(apiKey.expiresAt)
+                          ? "This key expired"
+                          : undefined
+                      }
+                      onChange={(checked) => onToggleKey(apiKey.id, checked)}
+                      aria-label={`Enable key ${apiKey.name}`}
+                    />
+                    {canMutate && (
+                      <IconButton
+                        icon="delete"
+                        aria-label={`Delete key ${apiKey.name}`}
+                        loading={deletingId === apiKey.id}
+                        onClick={() => onDeleteKey(apiKey.id)}
+                        className="hover:text-err"
+                      />
+                    )}
+                  </div>
                 </div>
-              </div>
+              </Fragment>
             ))}
           </div>
         </>
@@ -659,6 +416,7 @@ ApiKeysCard.propTypes = {
       key: PropTypes.string,
       prefix: PropTypes.string,
       type: PropTypes.string,
+      userId: PropTypes.string,
       legacy: PropTypes.oneOfType([PropTypes.bool, PropTypes.number]),
       allowedModels: PropTypes.arrayOf(PropTypes.string),
       allowedCombos: PropTypes.arrayOf(PropTypes.string),
@@ -693,6 +451,8 @@ ApiKeysCard.propTypes = {
   loading: PropTypes.bool.isRequired,
   hashedMode: PropTypes.bool,
   canCreate: PropTypes.bool,
+  canManage: PropTypes.bool,
+  currentUserId: PropTypes.string,
   migrationNotice: PropTypes.shape({
     visible: PropTypes.bool.isRequired,
     canDismiss: PropTypes.bool.isRequired,

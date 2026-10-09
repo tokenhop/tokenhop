@@ -107,13 +107,19 @@ export async function acknowledgeMigration(context) {
 }
 
 export async function loadKeyList(context) {
-  if (context.storage === "hashed" && !context.canManage) return [];
+  // Viewers (no create, no manage) have nothing to list and the server 403s
+  // them: skip the call entirely (no privilege probing). Members with create
+  // access list their own user keys; managers list every workspace key.
+  if (context.storage === "hashed" && !context.canManage && !context.canCreate) return [];
   const url =
     context.storage === "hashed"
       ? `/api/keys?workspaceId=${encodeURIComponent(context.workspaceId)}`
       : "/api/keys";
   const res = await fetch(url, { cache: "no-store" });
   const data = await readJson(res);
+  // A stale context or a mid-flight role change answers 403: nothing this
+  // principal may see — render the empty state instead of an error.
+  if (context.storage === "hashed" && res.status === 403) return [];
   if (!res.ok) throw new Error(data?.error || "Failed to load API keys.");
   // Never accept hashed metadata through the unauthenticated legacy fallback.
   if (context.storage !== "hashed" && data?.storage === "hashed") {
