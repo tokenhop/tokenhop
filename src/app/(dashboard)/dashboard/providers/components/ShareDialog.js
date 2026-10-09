@@ -202,6 +202,15 @@ export default function ShareDialog({
     onClose?.();
   };
 
+  // Passive close (Cancel / overlay / Escape) after the grant POST
+  // succeeded: the grant is active server-side, so refresh the parent list
+  // without re-POSTing — and without a success toast the user never
+  // confirmed (the budget may still be missing).
+  const close = () => {
+    if (shared) onShared?.();
+    onClose?.();
+  };
+
   const submit = async () => {
     setErrors([]);
     if (personalBlock) {
@@ -282,12 +291,12 @@ export default function ShareDialog({
   return (
     <Modal
       isOpen={isOpen}
-      onClose={onClose}
+      onClose={close}
       title={`Share "${connection.name || connection.provider}"`}
       description="Give a workspace or one of its members access through this connection."
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={submitting}>
+          <Button variant="ghost" onClick={close} disabled={submitting}>
             Cancel
           </Button>
           {shared && (

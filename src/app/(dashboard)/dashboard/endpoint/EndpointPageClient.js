@@ -310,6 +310,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
         onSetCreateExpiry={apiKeys.setCreateExpiry}
         customExpiryDate={apiKeys.customExpiryDate}
         onSetCustomExpiryDate={apiKeys.setCustomExpiryDate}
+        creating={apiKeys.creating}
       />
 
       <Modal

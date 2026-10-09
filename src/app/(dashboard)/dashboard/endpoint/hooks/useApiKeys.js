@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNotificationStore } from "@/store/notificationStore";
 import {
   validateKeyName,
@@ -53,6 +53,10 @@ export function useApiKeys() {
   const [showAddModal, setShowAddModalState] = useState(false);
   const [newKeyName, setNewKeyNameState] = useState("");
   const [createError, setCreateError] = useState(null);
+  // Rapid-create guard: the ref blocks re-entry synchronously (before the
+  // first await), the state only feeds the dialog's loading/disabled UI.
+  const creatingRef = useRef(false);
+  const [creating, setCreating] = useState(false);
   /** Just-created key, one-time reveal: { id, name, plain, prefix? } | null. */
   const [revealed, setRevealed] = useState(null);
   const [visibleKeys, setVisibleKeys] = useState(new Set());
@@ -176,6 +180,7 @@ export function useApiKeys() {
   };
 
   const createKey = async () => {
+    if (creatingRef.current) return; // duplicate submit while a create is in flight
     const nameError = validateKeyName(newKeyName);
     if (nameError) {
       setCreateError(nameError);
@@ -222,6 +227,9 @@ export function useApiKeys() {
       };
     }
 
+    // All validation above is synchronous: the guard is armed before the first await.
+    creatingRef.current = true;
+    setCreating(true);
     try {
       const res = await fetch(scopedUrl("/api/keys"), {
         method: "POST",
@@ -247,6 +255,9 @@ export function useApiKeys() {
       await refresh();
     } catch (err) {
       setCreateError(err?.message || "Failed to create API key.");
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
     }
   };
 
@@ -383,6 +394,7 @@ export function useApiKeys() {
     keys,
     loading,
     error,
+    creating,
     showAddModal,
     setShowAddModal,
     newKeyName,

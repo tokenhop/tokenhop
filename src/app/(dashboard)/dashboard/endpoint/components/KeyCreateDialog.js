@@ -32,6 +32,7 @@ export default function KeyCreateDialog({
   onSetCreateExpiry,
   customExpiryDate,
   onSetCustomExpiryDate,
+  creating = false,
 }) {
   return (
     <Modal
@@ -43,7 +44,12 @@ export default function KeyCreateDialog({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={onCreate} disabled={!newName.trim()}>
+          <Button
+            variant="primary"
+            onClick={onCreate}
+            loading={creating}
+            disabled={!newName.trim() || creating}
+          >
             Create
           </Button>
         </>
@@ -53,7 +59,7 @@ export default function KeyCreateDialog({
         className="flex flex-col gap-4"
         onSubmit={(e) => {
           e.preventDefault();
-          onCreate();
+          if (!creating) onCreate();
         }}
       >
         <Input
@@ -184,4 +190,5 @@ KeyCreateDialog.propTypes = {
   onSetCreateExpiry: PropTypes.func,
   customExpiryDate: PropTypes.string,
   onSetCustomExpiryDate: PropTypes.func,
+  creating: PropTypes.bool,
 };

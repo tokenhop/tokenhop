@@ -529,3 +529,14 @@ describe("groupKeys", () => {
     expect(groupKeys([keys[0]], "me").map((g) => g.id)).toEqual(["mine"]);
   });
 });
+
+// Creation is guarded synchronously as well as through the disabled button.
+it("key creation rejects duplicate submits while pending", () => {
+  const hook = read("src/app/(dashboard)/dashboard/endpoint/hooks/useApiKeys.js");
+  const dialog = read("src/app/(dashboard)/dashboard/endpoint/components/KeyCreateDialog.js");
+  expect(hook).toContain("if (creatingRef.current) return");
+  expect(hook).toMatch(/creatingRef.current = true;[\s\S]*?await fetch/);
+  expect(hook).toContain("creatingRef.current = false");
+  expect(dialog).toContain("loading={creating}");
+  expect(dialog).toContain("if (!creating) onCreate()");
+});
