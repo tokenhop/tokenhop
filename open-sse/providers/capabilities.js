@@ -84,7 +84,7 @@ export function capabilitiesFromServiceKind(kind) {
  * otherwise mis-match. Only declare deltas vs DEFAULT.
  */
 export const MODEL_CAPABILITIES = {
-  // Claude Fable 5.1, Opus 5.5, Opus 5, 4.6/4.7/4.8, and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
+  // Claude Fable 5.1, Sonnet 5.5, Opus 5.5, Opus 5, 4.6/4.7/4.8, and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
   "claude-fable-5-1": {
     vision: true,
     reasoning: true,
@@ -96,6 +96,19 @@ export const MODEL_CAPABILITIES = {
     forcedToolChoice: false,
   },
   "claude-opus-5-5": {
+    vision: true,
+    reasoning: true,
+    search: true,
+    thinkingFormat: "claude-adaptive",
+    thinkingCanDisable: false,
+    contextWindow: 1000000,
+    maxOutput: 128000,
+    forcedToolChoice: false,
+  },
+  // Sonnet 5.5: adaptive-only; thinking:{type:"disabled"} and enabled+budget are rejected.
+  // ponytail: Anthropic allows between_tools to switch off up-front thinking, but the
+  // abstraction only knows cannot-disable; add a between_tools mode when needed.
+  "claude-sonnet-5-5": {
     vision: true,
     reasoning: true,
     search: true,
@@ -867,6 +880,7 @@ export const PATTERN_CAPABILITIES = [
       reasoning: true,
       search: true,
       thinkingFormat: "claude-adaptive",
+      thinkingCanDisable: false,
       contextWindow: 1000000,
       maxOutput: 128000,
       forcedToolChoice: false,
@@ -917,7 +931,10 @@ export const PATTERN_CAPABILITIES = [
       vision: true,
       reasoning: true,
       search: true,
-      thinkingFormat: "claude-budget",
+      thinkingFormat: "claude-adaptive",
+      thinkingCanDisable: false,
+      contextWindow: 1000000,
+      maxOutput: 128000,
       forcedToolChoice: false,
     },
   },
@@ -933,7 +950,8 @@ export const PATTERN_CAPABILITIES = [
       search: true,
       contextWindow: 1000000,
       maxOutput: 128000,
-      thinkingFormat: "claude-budget",
+      thinkingFormat: "claude-adaptive",
+      thinkingCanDisable: false,
       forcedToolChoice: false,
     },
   },
@@ -956,7 +974,8 @@ export const PATTERN_CAPABILITIES = [
       search: true,
       contextWindow: 1000000,
       maxOutput: 128000,
-      thinkingFormat: "claude-budget",
+      thinkingFormat: "claude-adaptive",
+      thinkingCanDisable: false,
       forcedToolChoice: false,
     },
   },
