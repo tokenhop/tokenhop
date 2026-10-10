@@ -20,6 +20,7 @@ function quotaLeft(connections) {
 function rowStatus(entry, health) {
   if (entry.stats.allDisabled) return { variant: "neutral", label: "Disabled", dot: false };
   if (health.status === "err") {
+    if (health.outOfCredit) return { variant: "err", label: "Out of credit", dot: true };
     const code = entry.stats.errorCode ? ` (${entry.stats.errorCode})` : "";
     return { variant: "err", label: `${health.counts.err} Error${code}`, dot: true };
   }
@@ -50,7 +51,12 @@ const YourProviderRow = memo(function YourProviderRow({
 }) {
   const enabled = connections.filter((c) => c.isActive !== false);
   const health = providerHealth(enabled);
-  const reason = entry.stats.allDisabled ? "Disabled" : health.reason || "Ready";
+  // The pill already says "Out of credit", so the reason line explains the effect instead.
+  const reason = entry.stats.allDisabled
+    ? "Disabled"
+    : health.outOfCredit
+      ? "Requests are skipping this provider"
+      : health.reason || "Ready";
   const status = rowStatus(entry, health);
   const quota = quotaLeft(enabled);
   const name = entry.info.name;

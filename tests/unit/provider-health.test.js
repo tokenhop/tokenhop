@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  billingLockOf,
+  billingProbeFeedback,
   connectionHealth,
   providerHealth,
+  probeTimes,
   summarizeProviders,
 } from "@/shared/utils/providerHealth.js";
 
@@ -41,6 +44,84 @@ describe("provider health", () => {
     [{ isActive: false, testStatus: "error" }, "off", "Disabled"],
   ])("classifies %o as %s", (fields, status, reason) => {
     expect(connectionHealth(connection("a", fields), NOW)).toMatchObject({ status, reason });
+  });
+
+  it("classifies a billing lock as out of credit above cooldowns and other errors", () => {
+    const lock = {
+      reason: "credit_exhausted",
+      code: "insufficient_quota",
+      message: "No credit left",
+      lockedAt: "2026-09-27T10:00:00Z",
+      nextProbeAt: "2026-09-27T12:10:00Z",
+      lastProbeAt: "2026-09-27T11:55:00Z",
+      lastProbeError: null,
+      generation: 3,
+    };
+    const row = connection("a", {
+      billingLock: lock,
+      testStatus: "error",
+      lastError: "Token invalid or revoked",
+      modelLock_x: "2026-09-27T12:02:14Z",
+    });
+    expect(connectionHealth(row, NOW)).toMatchObject({
+      status: "err",
+      state: "out_of_credit",
+      reason: "Out of credit",
+      action: "open",
+      billingLock: lock,
+    });
+    // Disabled still wins.
+    expect(
+      connectionHealth(connection("a", { billingLock: lock, isActive: false }), NOW),
+    ).toMatchObject({ status: "off", reason: "Disabled" });
+    // Missing, null and non-object locks are ignored.
+    expect(connectionHealth(connection("a", { billingLock: null }), NOW).status).toBe("ok");
+    expect(connectionHealth(connection("a", { billingLock: "x" }), NOW).status).toBe("ok");
+    // Backend contract: only reason "credit_exhausted" is a lock.
+    expect(connectionHealth(connection("a", { billingLock: {} }), NOW).status).toBe("ok");
+    expect(
+      connectionHealth(connection("a", { billingLock: { ...lock, reason: "other" } }), NOW).status,
+    ).toBe("ok");
+    // Provider roll-up counts it like any other error.
+    expect(providerHealth([connection("a", { billingLock: lock })], NOW)).toMatchObject({
+      status: "err",
+      connected: true,
+      needsAttention: true,
+      counts: { err: 1 },
+    });
+    expect(billingLockOf(row)).toBe(lock);
+    expect(billingLockOf(connection("a"))).toBeNull();
+  });
+
+  it("maps probe endpoint results to short grounded feedback", () => {
+    expect(billingProbeFeedback("cleared")).toMatchObject({
+      variant: "ok",
+      text: "Credit is back. Connection is active again.",
+    });
+    expect(billingProbeFeedback("still_locked").variant).toBe("warn");
+    expect(billingProbeFeedback("error").variant).toBe("err");
+    expect(billingProbeFeedback("in_flight").variant).toBe("info");
+    expect(billingProbeFeedback("not_locked").variant).toBe("info");
+    expect(billingProbeFeedback(null)).toEqual(billingProbeFeedback("error"));
+  });
+
+  it("formats probe times for display, including never-probed locks", () => {
+    expect(
+      probeTimes(
+        {
+          lastProbeAt: "2026-09-27T11:55:00Z",
+          nextProbeAt: "2026-09-27T12:10:00Z",
+        },
+        NOW,
+      ),
+    ).toEqual({ last: "Last probe 5m ago", next: "Next probe in 10m" });
+    expect(probeTimes({ lastProbeAt: null, nextProbeAt: null }, NOW)).toEqual({
+      last: "Not probed yet",
+      next: "",
+    });
+    expect(
+      probeTimes({ lastProbeAt: "2026-09-27T11:55:00Z", nextProbeAt: "2026-09-27T11:59:00Z" }, NOW),
+    ).toEqual({ last: "Last probe 5m ago", next: "Next probe due" });
   });
 
   it("does not infer failure from an expired access token the gateway can refresh", () => {

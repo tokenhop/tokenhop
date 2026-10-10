@@ -236,6 +236,12 @@ async function runHeavyStartup() {
     .then(({ syncQuotaSnapshotPoller }) => syncQuotaSnapshotPoller())
     .catch((e) => console.log("[QuotaSnapshotPoller] scheduler start failed:", e.message));
 
+  // Billing-lock recovery probe (YAN-1041): wakes on its own tick and only
+  // probes connections whose persisted billingLock.nextProbeAt is due.
+  import("@/shared/services/billingProbe")
+    .then(({ startBillingProbe }) => startBillingProbe())
+    .catch((e) => console.log("[BillingProbe] scheduler start failed:", e.message));
+
   // Proactive OAuth token refresh (e.g. grok-cli ~6h TTL). Module is idempotent;
   // this bootstrap is its only start path.
   import("@/sse/services/backgroundTokenRefresh.js")

@@ -8,11 +8,23 @@ import { CSS } from "@dnd-kit/utilities";
 import { Toggle, StatusPill, Menu, MenuItem, Tooltip, Spinner } from "@/shared/components";
 import CooldownTimer from "@/shared/components/CooldownTimer";
 import MoveToWorkspaceButton from "@/shared/components/MoveToWorkspaceButton";
-import { cooldownUntil, connectionHealth } from "@/shared/utils/providerHealth";
+import {
+  cooldownUntil,
+  connectionHealth,
+  probeErrorLabel,
+  probeTimes,
+} from "@/shared/utils/providerHealth";
+import useAuthStatus from "@/shared/hooks/useAuthStatus";
+import { accountView } from "@/shared/utils/account";
 import { formatCooldownRemaining, weightSharePct } from "../detailUtils";
 
 function formatWeight(value) {
   return Number.isFinite(value) ? String(Number(value.toFixed(2))) : "?";
+}
+
+function absoluteTime(iso) {
+  const time = new Date(iso);
+  return Number.isNaN(time.getTime()) ? "" : time.toLocaleString();
 }
 
 function AuthIcon({ authType }) {
@@ -52,6 +64,8 @@ export default function SortableConnectionRow({
   onDelete,
   onMove,
   onShared,
+  probing = false,
+  onProbe,
 }) {
   const [proxyUpdating, setProxyUpdating] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -126,6 +140,15 @@ export default function SortableConnectionRow({
         : null;
 
   const health = connectionHealth(connection);
+  const view = accountView(useAuthStatus());
+  // Probing needs workspace.connections.manage, like the server route. Single-user installs always may.
+  const canManage =
+    !view.active || view.can("workspace.connections.manage", connection.workspaceId);
+  const billingLock = health.state === "out_of_credit" ? health.billingLock : null;
+  const probe = billingLock ? probeTimes(billingLock) : null;
+  const probeError = billingLock ? probeErrorLabel(billingLock.lastProbeError) : null;
+  // billingLock is already null for disabled rows (connectionHealth returns "off" first).
+  const showProbe = !!billingLock && canManage && typeof onProbe === "function";
   const modelLockUntil = cooldownUntil(connection);
   const isCooldown = !!modelLockUntil;
   const statusPillVariant = { off: "neutral", ok: "ok", warn: "warn", err: "err" }[health.status];
@@ -255,7 +278,23 @@ export default function SortableConnectionRow({
             <ConnectionSharing connection={connection} onShared={onShared} />
             {hasAnyProxy ? <StatusPill variant={proxyVariant}>Proxy</StatusPill> : null}
             {isCooldown && !disabled ? <CooldownTimer until={modelLockUntil} /> : null}
-            {connection.lastError && !disabled ? (
+            {billingLock && !disabled ? (
+              <span className="text-xs text-muted">
+                <span title={absoluteTime(billingLock.lastProbeAt)}>{probe.last}</span>
+                {probe.next ? (
+                  <>
+                    {" · "}
+                    <span title={absoluteTime(billingLock.nextProbeAt)}>{probe.next}</span>
+                  </>
+                ) : null}
+              </span>
+            ) : null}
+            {probeError && !disabled ? (
+              <span className="max-w-full truncate text-xs text-err sm:max-w-[300px]">
+                {probeError}
+              </span>
+            ) : null}
+            {connection.lastError && !disabled && !billingLock ? (
               <span
                 className="max-w-full truncate text-xs text-err sm:max-w-[300px]"
                 title={connection.lastError}
@@ -367,6 +406,29 @@ export default function SortableConnectionRow({
               </button>
             </Tooltip>
           ) : null}
+          {showProbe ? (
+            <Tooltip text="Checks if credit is back with one tiny billable request. Replacing the key or re-enabling also clears the lock.">
+              <button
+                type="button"
+                onClick={onProbe}
+                disabled={probing}
+                aria-busy={probing || undefined}
+                aria-label={`Probe now ${displayName}`}
+                className="flex w-full flex-col items-center rounded px-2 py-1 text-coral-ink transition-colors hover:bg-raised focus-visible:shadow-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {probing ? (
+                  <Spinner size="sm" className="text-[18px]" />
+                ) : (
+                  <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                    search
+                  </span>
+                )}
+                <span className="text-[10px] leading-tight">
+                  {probing ? "Probing…" : "Probe now"}
+                </span>
+              </button>
+            </Tooltip>
+          ) : null}
           <MoveToWorkspaceButton
             variant="stack"
             label={`Move ${displayName} to another workspace`}
@@ -425,6 +487,7 @@ SortableConnectionRow.propTypes = {
     globalPriority: PropTypes.number,
     effectiveWeight: PropTypes.object,
     providerSpecificData: PropTypes.object,
+    billingLock: PropTypes.object,
   }).isRequired,
   index: PropTypes.number.isRequired,
   total: PropTypes.number.isRequired,
@@ -450,5 +513,7 @@ SortableConnectionRow.propTypes = {
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
   onShared: PropTypes.func,
+  probing: PropTypes.bool,
+  onProbe: PropTypes.func,
   onMove: PropTypes.func.isRequired,
 };

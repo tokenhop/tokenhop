@@ -239,6 +239,7 @@ export const ROUTE_POLICY = {
   "/api/providers/[id]/models": scoped({ cap: META }),
   "/api/providers/[id]/test": scoped({ cap: USE }),
   "/api/providers/[id]/test-models": scoped({ cap: USE }),
+  "/api/providers/[id]/billing-probe": scoped({ cap: CONN }),
   "/api/providers/test-batch": scoped({ cap: USE }),
   "/api/providers/validate": scoped({ cap: CONN }),
   "/api/providers/client": scoped({ cap: META }),

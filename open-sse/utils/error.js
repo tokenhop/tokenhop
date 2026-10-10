@@ -1,4 +1,9 @@
-import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
+import {
+  ERROR_TYPES,
+  DEFAULT_ERROR_MESSAGES,
+  UPSTREAM_CODE_MARKER,
+  BILLING_RULES,
+} from "../config/errorConfig.js";
 
 /**
  * Build OpenAI-compatible error response body
@@ -51,6 +56,49 @@ export async function writeStreamError(writer, statusCode, message) {
 }
 
 /**
+ * Billing-relevant structured codes (error.code / error.type /
+ * error.details.error_code) from an upstream JSON body. Only codes listed in
+ * BILLING_RULES.codes are returned, so ordinary error messages stay untouched.
+ */
+function extractStructuredCodes(json) {
+  const err = json?.error && typeof json.error === "object" ? json.error : json;
+  const parts = [err?.code, err?.type, err?.details?.error_code, json?.code]
+    .filter((v) => typeof v === "string" && BILLING_RULES.codes.includes(v.toLowerCase()))
+    .map((v) => v.toLowerCase());
+  return [...new Set(parts)].join(",");
+}
+
+/**
+ * Append the billing structured codes of an upstream JSON body to its message
+ * as `[code=...]` (YAN-1041). Pre-existing markers in the upstream text are
+ * stripped first so an upstream/user cannot spoof one; only codes parsed from
+ * the structured fields (error.code / error.type / error.details.error_code)
+ * ever produce a marker. Non-JSON bodies pass through unmarked.
+ */
+export function withStructuredBillingCodes(message, bodyText) {
+  const markerRe = new RegExp(`\\s*\\[${UPSTREAM_CODE_MARKER}[^\\]]*\\]`, "gi");
+  // Strip to a fixpoint: removing one marker can splice its neighbours into a
+  // new one ("[co[code=x]de=insufficient_quota]"). Capped; anything still
+  // containing the bracketed marker prefix afterwards is NEUTRALIZED, never
+  // deleted — a bare "code=" in ordinary text ("HTTP error code=400") must
+  // survive untouched.
+  let clean = String(message ?? "");
+  for (let i = 0; i < 5; i++) {
+    const next = clean.replace(markerRe, "");
+    if (next === clean) break;
+    clean = next;
+  }
+  clean = clean.replace(/\[code=/gi, "(code=");
+  let structured = "";
+  try {
+    structured = extractStructuredCodes(JSON.parse(bodyText));
+  } catch {
+    /* not JSON: no structured codes */
+  }
+  return structured ? `${clean} [${UPSTREAM_CODE_MARKER}${structured}]` : clean;
+}
+
+/**
  * Parse upstream provider error response
  * @param {Response} response - Fetch response from provider
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
@@ -75,7 +123,7 @@ export async function parseUpstreamError(response, executor = null) {
           `Upstream error: ${response.status}`;
         return {
           statusCode: parsed.status || response.status,
-          message: msg,
+          message: withStructuredBillingCodes(msg, bodyText),
           resetsAtMs: parsed.resetsAtMs,
         };
       }
@@ -92,7 +140,11 @@ export async function parseUpstreamError(response, executor = null) {
     message = bodyText;
   }
 
-  const messageStr = typeof message === "string" ? message : JSON.stringify(message);
+  // Keep structured billing codes visible to text-based fallback classification.
+  const messageStr = withStructuredBillingCodes(
+    typeof message === "string" ? message : JSON.stringify(message),
+    bodyText,
+  );
   const finalMessage =
     messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 

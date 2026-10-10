@@ -5,6 +5,7 @@ import { withWorkspace } from "../connectTarget";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import { reorderConnections, selectionReducer, sortByPriority } from "../detailUtils";
+import { billingProbeOutcome } from "@/shared/utils/providerHealth";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -19,8 +20,9 @@ function sleep(ms) {
  * @param {object} args
  * @param {string} args.providerId
  * @param {(message: string) => void} [args.notifyError]
+ * @param {(variant: "ok"|"warn"|"err"|"info", message: string) => void} [args.notifyResult]
  */
-export function useConnections({ providerId, notifyError }) {
+export function useConnections({ providerId, notifyError, notifyResult }) {
   const { ready, scope } = useSettingsScope();
   const [connections, setConnections] = useState([]);
   const [proxyPools, setProxyPools] = useState([]);
@@ -36,8 +38,12 @@ export function useConnections({ providerId, notifyError }) {
     summary: null,
   });
   const stopRef = useRef(false);
+  const [probingIds, setProbingIds] = useState([]);
+  const probingRef = useRef(new Set());
   const notifyRef = useRef(notifyError);
   notifyRef.current = notifyError;
+  const resultRef = useRef(notifyResult);
+  resultRef.current = notifyResult;
 
   const fail = useCallback((message, error) => {
     if (error) console.log(message, error);
@@ -278,6 +284,30 @@ export function useConnections({ providerId, notifyError }) {
     });
   }, [removeConnections]);
 
+  // Manual billing probe: one tiny billable request. The server owns the lock
+  // state, so always refetch afterwards instead of patching locally.
+  const probeBilling = useCallback(
+    async (id) => {
+      if (probingRef.current.has(id)) return;
+      probingRef.current.add(id);
+      setProbingIds([...probingRef.current]);
+      try {
+        const res = await fetch(`/api/providers/${id}/billing-probe`, { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        const outcome = billingProbeOutcome(res.status, data);
+        resultRef.current?.(outcome.variant, outcome.text);
+      } catch (error) {
+        fail("Probe failed. Try again later.", error);
+      } finally {
+        probingRef.current.delete(id);
+        setProbingIds([...probingRef.current]);
+        await fetchConnections().catch(() => {});
+        refreshShellStatus();
+      }
+    },
+    [fail, fetchConnections],
+  );
+
   const runOneByOne = useCallback(async () => {
     if (oneByOne.running || connections.length === 0) return;
     stopRef.current = false;
@@ -379,6 +409,8 @@ export function useConnections({ providerId, notifyError }) {
     setBulkProxyOpen,
     bulkProxyUpdating,
     oneByOne,
+    probingIds,
+    probeBilling,
     fetchConnections,
     toggleSelect,
     toggleSelectAll,

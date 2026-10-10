@@ -1,5 +1,15 @@
-import { ERROR_RULES } from "../config/errorConfig.js";
+import {
+  BILLING_LOCK_AUTH_TYPES,
+  BILLING_LOCK_MESSAGES,
+  BILLING_LOCK_REASON,
+  BILLING_PROBE_CONFIG,
+  BILLING_RULES,
+  ERROR_RULES,
+  UPSTREAM_CODE_MARKER,
+} from "../config/errorConfig.js";
 import { getActiveReliabilityPolicy, RELIABILITY_DEFAULTS } from "../config/reliabilityPolicy.js";
+import REGISTRY from "../providers/registry/index.js";
+import { resolveBillingProbeSpec } from "./billingProbeSpec.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -15,6 +25,121 @@ export function getQuotaCooldown(backoffLevel = 0, policy = null) {
   return Math.min(cooldown, backoff.maxMs);
 }
 
+const CODE_MARKER_RE = new RegExp(`\\[${UPSTREAM_CODE_MARKER}([^\\]]*)\\]`, "g");
+
+/** Structured upstream codes carried in the error text as `[code=a,b]`. */
+function structuredCodes(lowerError) {
+  const codes = [];
+  for (const m of lowerError.matchAll(CODE_MARKER_RE)) codes.push(...m[1].split(","));
+  return codes;
+}
+
+/**
+ * YAN-1041: is this upstream failure a credit/spend exhaustion?
+ * Provider-agnostic structured codes (429/402/403) plus the Anthropic-specific
+ * 400 wording (gated to anthropic/claude) and a bare 402. Generic 400/403/429 are
+ * never billing. The caller still requires an API-key connection to lock.
+ * @param {number} status
+ * @param {string} errorText
+ * @param {string|null} [provider]
+ */
+export function isBillingExhausted(status, errorText, provider = null) {
+  const st = Number(status);
+  const lower = (
+    typeof errorText === "string" ? errorText : JSON.stringify(errorText ?? "")
+  ).toLowerCase();
+  if (BILLING_RULES.excludedProviders.includes(provider)) return false;
+  if (BILLING_RULES.statuses.includes(st)) return true;
+  if (
+    BILLING_RULES.codeStatuses.includes(st) &&
+    structuredCodes(lower).some((c) => BILLING_RULES.codes.includes(c))
+  )
+    return true;
+  const a = BILLING_RULES.anthropic;
+  return (
+    st === a.status &&
+    (provider == null || a.providers.includes(provider)) &&
+    a.texts.some((t) => lower.includes(t))
+  );
+}
+
+/** First billing structured code in the error text, else null. */
+function billingCode(lowerError) {
+  return structuredCodes(lowerError).find((c) => BILLING_RULES.codes.includes(c)) ?? null;
+}
+
+/**
+ * Fixed persisted lock message for a billing trigger — one of the
+ * BILLING_LOCK_MESSAGES constants, chosen from the classification. Upstream
+ * free text never reaches the lock, so no secret or PII can be persisted or
+ * echoed back by the probe route.
+ */
+export function billingLockMessage(status, errorText) {
+  if (Number(status) === 402) return BILLING_LOCK_MESSAGES.payment;
+  const lower = (
+    typeof errorText === "string" ? errorText : JSON.stringify(errorText ?? "")
+  ).toLowerCase();
+  if (/usage limit|spend_limit|usage_limit/.test(lower)) return BILLING_LOCK_MESSAGES.limit;
+  return BILLING_LOCK_MESSAGES.credit;
+}
+
+/**
+ * Probe spec for a provider id, or null when unsupported. Unsupported providers
+ * are never billing-locked (no automatic recovery path would exist).
+ */
+export function getBillingProbeSpec(provider) {
+  return resolveBillingProbeSpec(provider, REGISTRY);
+}
+
+/** Can this connection hold a billing lock? (API-key + probeable provider) */
+export function canBillingLock(connection) {
+  return (
+    !!connection &&
+    connection.isActive !== false &&
+    BILLING_LOCK_AUTH_TYPES.includes(connection.authType) &&
+    !!getBillingProbeSpec(connection.provider)
+  );
+}
+
+/**
+ * Active (set) billing lock on a connection record, else null. A lock is only
+ * valid when its reason matches BILLING_LOCK_REASON (the single validity rule;
+ * the UI mirrors it, nothing new is exported for it).
+ */
+export function getBillingLock(connection) {
+  const lock = connection?.billingLock;
+  return lock && typeof lock === "object" && lock.reason === BILLING_LOCK_REASON ? lock : null;
+}
+
+/** ISO time of the next re-probe: default interval with +/- jitter. */
+export function nextBillingProbeAt(now = Date.now()) {
+  const { intervalMs, jitterRatio } = BILLING_PROBE_CONFIG;
+  const spread = jitterRatio * intervalMs;
+  return new Date(now + intervalMs + Math.round((Math.random() * 2 - 1) * spread)).toISOString();
+}
+
+/**
+ * Build the persisted billingLock. `generation` must come from the caller's
+ * transactional floor (Math.max(nowMs, liveGeneration + 1)): a raw timestamp is
+ * NOT inherently monotonic — same-millisecond re-locks would repeat a value and
+ * let a stale probe match a newer lock.
+ */
+export function buildBillingLock(status, errorText, generation, now = Date.now()) {
+  const lower = (
+    typeof errorText === "string" ? errorText : JSON.stringify(errorText ?? "")
+  ).toLowerCase();
+  return {
+    reason: BILLING_LOCK_REASON,
+    code: billingCode(lower) ?? `http_${Number(status) || 0}`,
+    message: billingLockMessage(status, errorText),
+    lockedAt: new Date(now).toISOString(),
+    nextProbeAt: nextBillingProbeAt(now),
+    lastProbeAt: null,
+    lastProbeError: null,
+    generation,
+  };
+}
+
 /**
  * Check if error should trigger account fallback (switch to next account)
  * Config-driven: matches ERROR_RULES top-to-bottom (text rules first, then status)
@@ -22,9 +147,16 @@ export function getQuotaCooldown(backoffLevel = 0, policy = null) {
  * @param {string} errorText - Error message text
  * @param {number} backoffLevel - Current backoff level for exponential backoff
  * @param {object} [policy] - Resolved policy (defaults to the active policy)
+ * @param {string|null} [provider] - Provider id when known (gates the Anthropic 400 wording)
  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
  */
-export function checkFallbackError(status, errorText, backoffLevel = 0, policy = null) {
+export function checkFallbackError(
+  status,
+  errorText,
+  backoffLevel = 0,
+  policy = null,
+  provider = null,
+) {
   const resolved = policy || getActiveReliabilityPolicy();
   const { backoff, cooldowns } = resolved;
   const lowerError = errorText
@@ -45,6 +177,13 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, policy =
     if (rule.cooldownMs === RELIABILITY_DEFAULTS.cooldowns.shortMs) return cooldowns.shortMs;
     return rule.cooldownMs;
   };
+
+  // YAN-1041: a billing-exhausted 400 must fall back; it would otherwise hit the
+  // unmatched-4xx early return below. The account-wide lock itself is applied by
+  // markAccountUnavailable (it knows provider + authType); here only fall back.
+  if (Number(status) === 400 && isBillingExhausted(status, lowerError, provider)) {
+    return { shouldFallback: true, cooldownMs: cooldowns.longMs, billing: true };
+  }
 
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
