@@ -1,5 +1,6 @@
 import { FORMATS } from "../translator/formats.js";
 import { extractReasoningText } from "../translator/concerns/reasoning.js";
+import { CLAUDE_BLOCK, RESPONSES_ITEM } from "../translator/schema/blocks.js";
 import { buildErrorBody } from "./error.js";
 import { SSE_DONE } from "./sseConstants.js";
 
@@ -69,6 +70,99 @@ export function hasValuableContent(chunk, format) {
   }
 
   return true; // Other formats: keep all chunks
+}
+
+// True when a chunk EMITTED TO THE CLIENT carries visible payload: non-empty
+// content/reasoning text or a productive tool call (non-empty name or
+// arguments). OpenAI role-only deltas, usage-only frames, terminal-only chunks
+// ([DONE], finish_reason, Responses lifecycle events) and empty tool-call shells
+// are not tokens (backport of YAN-1023 / YAN-764 from the trunk).
+const hasTokenText = (v) => typeof v === "string" && v !== "";
+
+const isProductiveToolCall = (tc) =>
+  !!tc &&
+  (hasTokenText(tc.function?.name) ||
+    hasTokenText(tc.function?.arguments) ||
+    hasTokenText(tc.name));
+
+// Responses events whose string `delta` is user-visible text/reasoning/tool input.
+const RESPONSES_TOKEN_EVENTS = new Set([
+  "response.output_text.delta",
+  "response.refusal.delta",
+  "response.reasoning_text.delta",
+  "response.reasoning_summary_text.delta",
+  "response.function_call_arguments.delta",
+  "response.custom_tool_call_input.delta",
+]);
+
+export function hasMeaningfulToken(item) {
+  if (item && typeof item === "object" && item.event && item.data) item = item.data; // formatSSE envelope
+  if (!item || typeof item !== "object") return false;
+
+  // OpenAI chat / legacy completions / FIM
+  if (Array.isArray(item.choices)) {
+    const choice = item.choices[0];
+    if (!choice) return false; // usage-only frame
+    const delta = choice.delta || choice.message || null;
+    if (hasTokenText(delta?.content) || hasTokenText(choice.text) || hasTokenText(delta?.refusal))
+      return true;
+    if (delta && extractReasoningText(delta) !== "") return true;
+    // Audio / image output modalities (YAN-1023)
+    if (hasTokenText(delta?.audio?.data) || hasTokenText(delta?.audio?.transcript)) return true;
+    if (Array.isArray(delta?.images) && delta.images.length > 0) return true;
+    return Array.isArray(delta?.tool_calls) && delta.tool_calls.some(isProductiveToolCall);
+  }
+
+  if (typeof item.type === "string") {
+    const d = item.delta;
+    // Claude. input_json_delta partial_json is tool-arg streaming noise, not a
+    // visible token (YAN-764).
+    if (item.type === "content_block_delta" && d && typeof d === "object")
+      return hasTokenText(d.text) || hasTokenText(d.thinking);
+    if (item.type === "content_block_start" && item.content_block) {
+      const blk = item.content_block;
+      if (blk.type === CLAUDE_BLOCK.TOOL_USE || blk.type === CLAUDE_BLOCK.SERVER_TOOL_USE)
+        return hasTokenText(blk.name);
+      return hasTokenText(blk.text) || hasTokenText(blk.thinking);
+    }
+    // Responses
+    if (RESPONSES_TOKEN_EVENTS.has(item.type)) return hasTokenText(d);
+    // Audio / image-generation deltas (response.audio.delta, …partial_image)
+    if (/audio|image/.test(item.type) && /delta|partial/.test(item.type))
+      return hasTokenText(d) || hasTokenText(item.partial_image_b64);
+    if (item.type === "response.output_item.added" && item.item) {
+      const it = item.item;
+      return (
+        (it.type === RESPONSES_ITEM.FUNCTION_CALL || it.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL) &&
+        hasTokenText(it.name)
+      );
+    }
+    return false; // message_start / message_delta / ping / terminal / lifecycle
+  }
+
+  // Ollama NDJSON
+  if (item.message && typeof item.message === "object") {
+    const m = item.message;
+    return (
+      hasTokenText(m.content) ||
+      extractReasoningText(m) !== "" ||
+      (Array.isArray(m.tool_calls) && m.tool_calls.some(isProductiveToolCall))
+    );
+  }
+  // llama.cpp /infill chunk
+  if (hasTokenText(item.content)) return true;
+
+  // Gemini-family
+  const parts =
+    item.candidates?.[0]?.content?.parts ?? item.response?.candidates?.[0]?.content?.parts;
+  if (Array.isArray(parts))
+    return parts.some(
+      (p) =>
+        hasTokenText(p?.text) ||
+        hasTokenText(p?.functionCall?.name) ||
+        hasTokenText(p?.inlineData?.data),
+    );
+  return false;
 }
 
 // Fix invalid id (generic or too short)

@@ -3,6 +3,11 @@
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { probeStreamHead } from "../utils/streamProbe.js";
+import {
+  COMBO_STREAM_PROBE_MAX_BYTES,
+  COMBO_STREAM_PROBE_MAX_MS,
+} from "../config/runtimeConfig.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
@@ -513,7 +518,43 @@ export async function handleComboChat({
     const attemptStartedAt = Date.now();
 
     try {
-      const result = await handleSingleModel(body, modelStr);
+      let result = await handleSingleModel(body, modelStr);
+
+      // 2xx SSE: peek at the head so a tokenless stream (role/usage/finish
+      // only, [DONE], or an in-stream error before any token) falls through
+      // to the next member instead of serving an empty response (YAN-1023).
+      if (
+        result.ok &&
+        result.body &&
+        /text\/event-stream|ndjson/i.test(result.headers?.get?.("content-type") || "")
+      ) {
+        const probe = await probeStreamHead(result, {
+          maxBytes: COMBO_STREAM_PROBE_MAX_BYTES,
+          maxMs: COMBO_STREAM_PROBE_MAX_MS,
+        });
+        if (probe.outcome === "release") {
+          result = probe.response;
+        } else {
+          const errorType = probe.outcome === "empty" ? "empty-stream" : "stream-error";
+          lastError =
+            probe.outcome === "empty" ? "empty streaming response" : probe.error || "stream error";
+          lastStatus = 502;
+          notifyAttempt({
+            model: modelStr,
+            status: result.status,
+            latencyMs: Date.now() - attemptStartedAt,
+            errorType,
+            outcome: "skipped",
+          });
+          log.warn("COMBO", `Model ${modelStr} ${errorType}, trying next`);
+          if (onFallback) {
+            try {
+              await onFallback({ model: modelStr, status: 502 });
+            } catch {}
+          }
+          continue;
+        }
+      }
 
       // Success (2xx) - return response
       if (result.ok) {
