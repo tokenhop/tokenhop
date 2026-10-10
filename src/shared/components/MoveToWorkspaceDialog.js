@@ -43,7 +43,7 @@ function PreviewItem({ icon, conflict, issue, labels }) {
       <span className={`material-symbols-outlined shrink-0 text-[18px] ${tone}`} aria-hidden="true">
         {icon}
       </span>
-      <span className="min-w-0">
+      <span className="min-w-0 [overflow-wrap:anywhere]">
         <span className="font-medium text-text">{shortLine(named)}</span>
         <span className="block text-xs text-muted">{issue.message}</span>
         {detailsText ? (
