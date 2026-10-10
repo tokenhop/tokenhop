@@ -8,6 +8,7 @@ import Link from "next/link";
 import { Button, Callout, CardSkeleton, NoAuthProxyCard } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
 import { mergeLiveWithStatic } from "@/shared/utils/liveModels";
+import { probeNotifyMethod } from "@/shared/utils/providerHealth";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
 import { loadOwnedMap, loadSettingsValue, patchSettings } from "@/shared/utils/settingsApi";
 import { useLiveCatalog } from "../[id]/useLiveCatalog";
@@ -45,6 +46,11 @@ export default function ProviderDetailPage() {
     [],
   );
 
+  const notifyResult = useCallback((variant, message) => {
+    const store = useNotificationStore.getState();
+    store[probeNotifyMethod(variant)](message);
+  }, []);
+
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState("");
   const [providerNode, setProviderNode] = useState(null);
@@ -66,7 +72,7 @@ export default function ProviderDetailPage() {
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const { ready: settingsReady, scope: settingsScope } = useSettingsScope();
 
-  const conn = useConnections({ providerId, notifyError });
+  const conn = useConnections({ providerId, notifyError, notifyResult });
   const strategy = useProviderStrategy({ providerId, notifyError });
   const providerInfo = resolveProviderInfo(providerId, providerNode);
   const authFlags = providerAuthFlags(providerId, providerInfo);

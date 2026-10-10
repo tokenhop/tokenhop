@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { summarizeProviders } from "@/shared/utils/providerHealth.js";
+import { providerHealth, summarizeProviders } from "@/shared/utils/providerHealth.js";
 import { PROVIDER_SECTIONS } from "@/app/(dashboard)/dashboard/providers/sections.js";
 import {
   LIST_FILTERS,
@@ -95,5 +97,73 @@ describe("provider health across surfaces", () => {
     expect(needsLookLabel(0)).toBe("0 need a look");
     expect(needsLookLabel(1)).toBe("1 needs a look");
     expect(needsLookLabel(3)).toBe("3 need a look");
+  });
+});
+
+describe("out of credit across provider surfaces (YAN-1041)", () => {
+  const lock = {
+    reason: "credit_exhausted",
+    nextProbeAt: "2999-01-01T00:00:00Z",
+    lastProbeAt: null,
+    lastProbeError: null,
+  };
+  const locked = (id, fields = {}) =>
+    conn(id, "openai", "apikey", { billingLock: lock, ...fields });
+
+  it("relabels a locked provider but keeps status err for ranking and counts", () => {
+    const health = providerHealth([locked("a")]);
+    expect(health).toMatchObject({
+      status: "err",
+      reason: "Out of credit",
+      connected: true,
+      needsAttention: true,
+      outOfCredit: true,
+      counts: { err: 1 },
+    });
+  });
+
+  it("does not relabel a provider that mixes a lock with another error", () => {
+    const mixed = providerHealth([
+      locked("a"),
+      conn("b", "openai", "apikey", { testStatus: "error", lastError: "Invalid API key" }),
+    ]);
+    expect(mixed).toMatchObject({ status: "err", outOfCredit: false, counts: { err: 2 } });
+  });
+
+  it("lets disabled win; a healthy sibling does not hide the label", () => {
+    expect(providerHealth([locked("a", { isActive: false })])).toMatchObject({
+      status: "off",
+      outOfCredit: false,
+      connected: false,
+    });
+    expect(providerHealth([locked("a"), conn("b", "openai", "apikey")])).toMatchObject({
+      status: "err",
+      outOfCredit: true,
+    });
+  });
+
+  it("counts locked providers as needing attention on the list and shell", () => {
+    const list = [locked("a"), conn("c", "claude", "oauth")];
+    const summary = summarizeProviders([], list);
+    const { counts } = providersPage(list);
+    expect(summary).toMatchObject({ connected: 2, needsAttention: 1 });
+    expect(counts[LIST_FILTERS.NEEDS_ATTENTION]).toBe(summary.needsAttention);
+    expect(summary.providers.find((p) => p.id === "openai")).toMatchObject({ status: "err" });
+  });
+
+  it("renders Out of credit on the list pill, provider card and side panel", () => {
+    const read = (rel) =>
+      readFileSync(
+        resolve(__dirname, "../../src/app/(dashboard)/dashboard/providers/components", rel),
+        "utf8",
+      );
+    for (const file of ["YourProviders.js", "ProviderCard.js"]) {
+      expect(read(file), file).toMatch(
+        /if \(health\.outOfCredit\) return \{ variant: "err", label: "Out of credit", dot: true \}/,
+      );
+    }
+    const panel = read("ProviderDetailSidePanel.js");
+    expect(panel).toContain('health.state === "out_of_credit"');
+    expect(panel).toMatch(/\? "Out of credit"/);
   });
 });

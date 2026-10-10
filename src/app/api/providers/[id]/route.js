@@ -7,6 +7,8 @@ import {
 } from "@/models";
 import { deleteConnection, getConnection, updateConnection } from "@/lib/db/index.js";
 import { loadScoped, redactConnection } from "@/lib/users/workspaceScope.js";
+import { mutateBillingLockUnscoped } from "@/lib/db/repos/connectionsRepo.js";
+import { getBillingLock } from "open-sse/services/accountFallback.js";
 import { getAdapter } from "@/lib/db/driver.js";
 import { readCredentialEncryptionState } from "@/lib/db/credentialEncryptionState.js";
 import { PLAN_CAPACITY } from "open-sse/config/quotaSnapshot.js";
@@ -263,9 +265,23 @@ export async function PUT(request, { params }) {
       }
     }
 
+    // YAN-1041: recovery escapes for a permanent billing lock. A NEW api key or
+    // a disabled -> enabled flip means the credit situation may have changed,
+    // so clear billing-owned state only (transactional, conditional on the
+    // live row: model locks, auth state and everything else are preserved).
+    const keyChanged = Boolean(updateData.apiKey) && updateData.apiKey !== existing.apiKey;
+    const reEnabled = updateData.isActive === true && existing.isActive === false;
+    const clearsBilling = (keyChanged || reEnabled) && Boolean(getBillingLock(existing));
+
     const updated = loaded.scope
       ? await updateConnection(loaded.scope.ctx, id, updateData)
       : await updateProviderConnectionUnscoped(id, updateData);
+    if (clearsBilling) {
+      const cleared = await mutateBillingLockUnscoped(id, (live) =>
+        getBillingLock(live) ? { billingLock: null } : null,
+      );
+      if (cleared.applied && updated) updated.billingLock = null;
+    }
     const oldManualTier =
       existing.providerSpecificData?.planTierManual === true
         ? sanitizePlanTier(existing.providerSpecificData.planTier)

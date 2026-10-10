@@ -2,7 +2,8 @@
  * Shared combo (model combo) handling with fallback support
  */
 
-import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { checkFallbackError, formatRetryAfter, isBillingExhausted } from "./accountFallback.js";
+import { PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
@@ -779,7 +780,17 @@ export async function handleComboChat({
       // checkFallbackError; a model-scoped 4xx (410 Gone, model not available on
       // this plan, unknown model id) also advances the combo, since the next
       // member may well succeed (YAN-660).
-      const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
+      // YAN-1041: pass the member's provider so billing classification is exact
+      // (Anthropic credit wording / structured markers) — identical behavior for
+      // every non-billing error.
+      const memberProvider = providerOfModel(modelStr);
+      const { shouldFallback, cooldownMs } = checkFallbackError(
+        result.status,
+        errorText,
+        0,
+        null,
+        memberProvider,
+      );
 
       if (!shouldFallback && !isModelScopedError(result.status, errorText)) {
         // No latency sample: a request-scoped error (bad body, context too long)
@@ -788,7 +799,7 @@ export async function handleComboChat({
           model: modelStr,
           status: result.status,
           latencyMs: Date.now() - attemptStartedAt,
-          errorType: classifyProbeError(result.status, errorText),
+          errorType: classifyProbeError(result.status, errorText, memberProvider),
           outcome: "failed",
         });
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
@@ -820,7 +831,7 @@ export async function handleComboChat({
         model: modelStr,
         status: result.status,
         latencyMs: Date.now() - attemptStartedAt,
-        errorType: classifyProbeError(result.status, errorText),
+        errorType: classifyProbeError(result.status, errorText, memberProvider),
         outcome: "skipped",
       });
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
@@ -1031,7 +1042,7 @@ function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs })
 // ponytail: keep classifyProbeError here until a shared error-type
 // taxonomy exists; upgrade to import from accountFallback.js then.
 /** Classify a failed probe step into a short error type for the timeline. */
-export function classifyProbeError(status, errorText) {
+export function classifyProbeError(status, errorText, provider = null) {
   const text = typeof errorText === "string" ? errorText.toLowerCase() : "";
   if (status === 429 || text.includes("rate limit") || text.includes("429")) return "rate limited";
   if (status === 401 || status === 403 || text.includes("auth") || text.includes("unauthorized"))
@@ -1039,7 +1050,22 @@ export function classifyProbeError(status, errorText) {
   if (status === 408 || text.includes("timeout")) return "timeout";
   if (status >= 500) return "upstream error";
   if (status === 404 || text.includes("no active credentials")) return "unavailable";
+  // YAN-1041: billing exhaustion shows up as a 4xx that is none of the above
+  // (Anthropic 400 credit text / structured [code=...] markers carried by the
+  // member's error message) — tag it so metrics distinguish credit exhaustion.
+  if (isBillingExhausted(status, text, provider)) return "billing";
   return `error ${status ?? "unknown"}`;
+}
+
+/** Provider id of a combo member string ("provider/model"), or null. */
+function providerOfModel(modelStr) {
+  if (typeof modelStr !== "string" || !modelStr.includes("/")) return null;
+  const head = modelStr.slice(0, modelStr.indexOf("/"));
+  if (!head) return null;
+  // Alias head (e.g. "cc/") resolves through the registry alias map; ids and
+  // openai-compatible-* node ids pass through unchanged.
+  const aliasEntry = Object.entries(PROVIDER_ID_TO_ALIAS).find(([, alias]) => alias === head);
+  return aliasEntry ? aliasEntry[0] : head;
 }
 
 /**

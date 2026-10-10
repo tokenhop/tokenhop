@@ -676,12 +676,18 @@ export async function getLiveRoutesFeed(ctx, { windowMs = 5 * 60 * 1000, limit =
         };
       })
       .filter((row) => row.provider),
+    // Internal billing-recovery probes (YAN-1041) stay in requestDetails for
+    // accounting but are not user-request telemetry: keep them off the map.
     errorRows: errors
-      .map((row) => ({
+      .map((row) => ({ row, data: parseJson(row.data, {}) }))
+      .filter(
+        ({ data }) => data?.request?.probe !== "billing" && data?.response?.probe !== "billing",
+      )
+      .map(({ row, data }) => ({
         timestamp: row.timestamp,
         provider: row.provider,
         model: row.model,
-        status: parseJson(row.data, {})?.response?.status ?? null,
+        status: data?.response?.status ?? null,
       }))
       .filter((row) => row.provider),
     fallbackHops: global._fallbackHops.filter(

@@ -513,3 +513,22 @@ describe("YAN-365 key rotation routes", () => {
     ).toBe(false);
   });
 });
+
+// YAN-1041: the manual billing probe spends real tokens on the connection's key,
+// so it needs connection MANAGE (stricter than the read-only test endpoint) and
+// is workspace-scoped; a plain member (USE only) must not reach it.
+describe("billing-probe route policy (YAN-1041)", () => {
+  it("requires the connection manage capability and is scoped", () => {
+    const policy = resolveRoutePolicy("/api/providers/c1/billing-probe", "POST");
+    expect(policy).toMatchObject({
+      key: "/api/providers/[id]/billing-probe",
+      capability: "workspace.connections.manage",
+      scoped: true,
+      public: false,
+    });
+    // Stricter than the connection test endpoint (use).
+    expect(resolveRoutePolicy("/api/providers/c1/test", "POST").capability).toBe(
+      "workspace.connections.use",
+    );
+  });
+});

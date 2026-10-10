@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { probeTimes } from "@/shared/utils/providerHealth.js";
 import {
   applyServerPriorityPut,
   connectionIdsInPriorityOrder,
@@ -38,6 +39,16 @@ describe("provider detail reorder math", () => {
       connection({ id: "a", priority: 1 }),
     ];
     expect(connectionIdsInPriorityOrder(connections)).toEqual(["a", "b"]);
+  });
+});
+
+describe("provider detail billing probe times", () => {
+  it("clamps unknown timestamps instead of rendering Invalid Date", () => {
+    expect(probeTimes({}, Date.now())).toEqual({ last: "Not probed yet", next: "" });
+    expect(probeTimes({ lastProbeAt: "nope", nextProbeAt: "nope" }, Date.now())).toEqual({
+      last: "Not probed yet",
+      next: "",
+    });
   });
 });
 
