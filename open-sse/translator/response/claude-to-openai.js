@@ -1,10 +1,10 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK, OPENAI_FINISH } from "../schema/index.js";
+import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK, OPENAI_FINISH, CLAUDE_STOP } from "../schema/index.js";
 import { buildChunk } from "../concerns/chunk.js";
 import { toOpenAIUsage } from "../concerns/usage.js";
 import { reasoningDelta } from "../concerns/reasoning.js";
-import { toOpenAIFinish } from "../concerns/finishReason.js";
+import { claudeRefusalText, toOpenAIFinish } from "../concerns/finishReason.js";
 
 // Create OpenAI chunk helper
 function createChunk(state, delta, finishReason = null) {
@@ -182,7 +182,13 @@ export function claudeToOpenAIResponse(chunk, state) {
 
       if (chunk.delta?.stop_reason) {
         state.finishReason = convertStopReason(chunk.delta.stop_reason);
-        const finalChunk = createChunk(state, {}, state.finishReason);
+        // Refusal: surface explanation text on delta.refusal so it survives
+        // hasValuableContent filtering (finish_reason alone doesn't).
+        const delta =
+          chunk.delta.stop_reason === CLAUDE_STOP.REFUSAL
+            ? { refusal: claudeRefusalText(chunk.delta.stop_details) }
+            : {};
+        const finalChunk = createChunk(state, delta, state.finishReason);
 
         if (state.usage) finalChunk.usage = clientUsage(state.usage);
 
