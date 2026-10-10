@@ -113,7 +113,7 @@ export function translateRequest(
     // pairs like claude:kiro (avoids the claude->openai->kiro double-hop).
     const directFn = requestRegistry.get(`${sourceFormat}:${targetFormat}`);
     if (directFn) {
-      result = directFn(model, result, stream, credentials);
+      result = directFn(model, result, stream, credentials, provider);
     } else {
       // Step 1: source -> openai (if source is not openai)
       if (sourceFormat !== FORMATS.OPENAI) {
@@ -129,7 +129,7 @@ export function translateRequest(
       if (targetFormat !== FORMATS.OPENAI) {
         const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
         if (fromOpenAI) {
-          result = fromOpenAI(model, result, stream, credentials);
+          result = fromOpenAI(model, result, stream, credentials, provider);
         }
       }
     }
