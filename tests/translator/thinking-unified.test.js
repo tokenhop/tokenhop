@@ -119,6 +119,31 @@ describe("applyThinking per provider format", () => {
     expect(out.thinking).toBeUndefined();
     expect(out.output_config).toEqual({ effort: "low" });
   });
+  it("Claude 5.x adaptive-only models never emit enabled/disabled thinking", () => {
+    for (const model of [
+      "claude-sonnet-5-5",
+      "claude-opus-5-5",
+      "claude-fable-5-1",
+      "claude-mythos-5-1",
+    ]) {
+      for (const provider of ["claude", "anthropic"]) {
+        const high = apply("claude", model, { reasoning_effort: "high" }, provider);
+        expect(high.output_config).toEqual({ effort: "high" });
+        expect(high.thinking).toBeUndefined();
+        const budget = apply(
+          "claude",
+          model,
+          { thinking: { type: "enabled", budget_tokens: 8000 } },
+          provider,
+        );
+        expect(budget.thinking).toBeUndefined();
+        expect(budget.output_config?.effort).toBeTruthy();
+        const none = apply("claude", model, { reasoning_effort: "none" }, provider);
+        expect(none.thinking).toBeUndefined();
+        expect(none.output_config).toEqual({ effort: "low" });
+      }
+    }
+  });
   it("claude haiku → enabled+budget", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "high" }, "claude");
     expect(out.thinking).toEqual({ type: "enabled", budget_tokens: 24576 });
