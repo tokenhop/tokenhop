@@ -16,7 +16,8 @@ import { extractThinking as captureThinkingIntent } from "../concerns/thinkingUn
 const CLAUDE_OAUTH_TOOL_PREFIX = "";
 
 // Convert OpenAI request to Claude format
-export function openaiToClaudeRequest(model, body, stream) {
+// Official Anthropic API-key traffic must not carry the Claude Code identity prompt.
+export function openaiToClaudeRequest(model, body, stream, credentials = null, provider = null) {
   // Tool name mapping for Claude OAuth (capitalizedName → originalName)
   const toolNameMap = new Map();
   // Cap max_tokens at the model's real output ceiling (e.g. Opus 4.8 = 128000),
@@ -165,19 +166,20 @@ Respond ONLY with the JSON object, no other text.`);
   }
 
   // System with Claude Code prompt and cache_control
+  const injectIdentity = provider !== "anthropic";
   const claudeCodePrompt = { type: CLAUDE_BLOCK.TEXT, text: CLAUDE_SYSTEM_PROMPT };
 
   if (systemParts.length > 0) {
     const systemText = systemParts.join("\n");
     result.system = [
-      claudeCodePrompt,
+      ...(injectIdentity ? [claudeCodePrompt] : []),
       {
         type: CLAUDE_BLOCK.TEXT,
         text: systemText,
         cache_control: { type: "ephemeral", ttl: "1h" },
       },
     ];
-  } else {
+  } else if (injectIdentity) {
     result.system = [claudeCodePrompt];
   }
 
