@@ -61,6 +61,12 @@ export const STREAM_STALL_TIMEOUT_MS = envMs("STREAM_STALL_TIMEOUT_MS", 360 * 10
 // Time-to-first-token timeout (prompt prefill). Env: STREAM_FIRST_CHUNK_TIMEOUT_MS.
 export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_MS", 200 * 1000);
 
+// Combo empty-stream probe: peek at the head of a 2xx SSE/NDJSON body and skip
+// members that stream only role/empty-delta/usage/finish_reason/[DONE].
+// Env: COMBO_STREAM_PROBE_MAX_BYTES, COMBO_STREAM_PROBE_MAX_MS.
+export const COMBO_STREAM_PROBE_MAX_BYTES = envMs("COMBO_STREAM_PROBE_MAX_BYTES", 262144);
+export const COMBO_STREAM_PROBE_MAX_MS = envMs("COMBO_STREAM_PROBE_MAX_MS", 10 * 1000);
+
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
