@@ -11,7 +11,13 @@ import {
   filterUsageForFormat,
   COLORS,
 } from "./usageTracking.js";
-import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import {
+  hasMeaningfulToken,
+  parseSSELine,
+  hasValuableContent,
+  fixInvalidId,
+  formatSSE,
+} from "./streamHelpers.js";
 import { extractReasoningText } from "../translator/concerns/reasoning.js";
 import {
   getOpenAIResponsesEventName,
@@ -68,6 +74,7 @@ export function createSSEStream(options = {}) {
     onStreamComplete = null,
     apiKey = null,
     credentials = null,
+    onFirstToken = null,
   } = options;
 
   let buffer = "";
@@ -121,6 +128,23 @@ export function createSSEStream(options = {}) {
   let streamDoneSent = false; // track duplicate [DONE] across transform + flush
   let finalized = false;
 
+  // First user-visible token (YAN-1023). Separate from raw ttftAt: used by the
+  // combo probe path and log truthfulness, never alters streaming.
+  let firstTokenAt = null;
+  const observeToken = (item) => {
+    if (firstTokenAt !== null) return;
+    try {
+      const payload =
+        item && typeof item === "object" && item.event && item.data ? item.data : item;
+      if (hasMeaningfulToken(payload)) {
+        firstTokenAt = Date.now();
+        onFirstToken?.();
+      }
+    } catch {
+      // fail-open
+    }
+  };
+
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
   const finalizeStream = () => {
@@ -154,7 +178,12 @@ export function createSSEStream(options = {}) {
         provider,
         connectionId,
         tokens: null,
-        status: streamError ? "FAILED stream" : "200 OK",
+        // A clean 200 that never emitted a token is not a success (YAN-1023).
+        status: streamError
+          ? "FAILED stream"
+          : firstTokenAt === null && totalContentLength === 0
+            ? "200 EMPTY"
+            : "200 OK",
       }).catch(() => {});
     }
 
@@ -166,7 +195,7 @@ export function createSSEStream(options = {}) {
         },
         finalUsage,
         ttftAt,
-        { error: streamError },
+        { error: streamError, firstTokenAt },
       );
     }
   };
@@ -214,6 +243,8 @@ export function createSSEStream(options = {}) {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
               noteStreamError(parsed);
+              observeToken(parsed);
+              observeToken(parsed);
 
               const idFixed = fixInvalidId(parsed);
 
@@ -543,6 +574,7 @@ export function createSSEStream(options = {}) {
           // arrived without its closing newline.
           const parsed = parseSSELine(buffer.trim(), targetFormat);
           noteStreamError(parsed);
+          observeToken(parsed);
           // parseSSELine turns the SSE sentinel "data: [DONE]" into { done: true },
           // which must not be translated. An Ollama chunk also carries done:true,
           // but it is the real final chunk — it holds finish_reason and the token
@@ -642,6 +674,7 @@ export function createSSETransformStreamWithLogger(
   apiKey = null,
   customToolNames = null,
   credentials = null,
+  onFirstToken = null,
 ) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
@@ -657,6 +690,7 @@ export function createSSETransformStreamWithLogger(
     onStreamComplete,
     apiKey,
     credentials,
+    onFirstToken,
   });
 }
 
@@ -668,6 +702,7 @@ export function createPassthroughStreamWithLogger(
   body = null,
   onStreamComplete = null,
   apiKey = null,
+  onFirstToken = null,
 ) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
@@ -678,5 +713,6 @@ export function createPassthroughStreamWithLogger(
     body,
     onStreamComplete,
     apiKey,
+    onFirstToken,
   });
 }
