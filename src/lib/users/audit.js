@@ -2,7 +2,7 @@
 // persist in before/after, nested included. Secret material never persists.
 // NEVER throws; insert failures only console.warn.
 import { getClientIp } from "@/lib/auth/loginLimiter";
-import { insert } from "@/lib/db/repos/auditRepo.js";
+import { insert, insertSync } from "@/lib/db/repos/auditRepo.js";
 
 const ALLOWED = new Set([
   "id",
@@ -83,6 +83,31 @@ function encodeSnapshot(obj) {
   return JSON.stringify(scrubbed);
 }
 
+function buildEvent(ctx, action, target, { before, after, result } = {}) {
+  const principal = ctx?.principal ?? null;
+  let ip = ctx?.ip ?? null;
+  if (!ip && ctx?.request) {
+    try {
+      ip = getClientIp(ctx.request) || null;
+    } catch {
+      ip = null;
+    }
+  }
+  return {
+    actorUserId: principal?.userId ?? null,
+    actorApiKeyId: principal?.apiKeyId ?? null,
+    via: principal?.via ?? "system",
+    ip,
+    workspaceId: ctx?.workspaceId ?? null,
+    action,
+    targetType: target?.type ?? null,
+    targetId: target?.id != null ? String(target.id) : null,
+    before: encodeSnapshot(before),
+    after: encodeSnapshot(after),
+    result: result ?? "success",
+  };
+}
+
 /**
  * Record a graded security/admin event. Fire-and-forget: never throws.
  * @param {{ principal?: { userId, apiKeyId, via }|null, ip?: string, request?: Request, workspaceId?: string|null }} [ctx]
@@ -90,33 +115,21 @@ function encodeSnapshot(obj) {
  * @param {{ type?: string, id?: string }|null} [target]
  * @param {{ before?: object, after?: object, result?: string }} [opts]
  */
-export async function audit(ctx = {}, action, target = null, { before, after, result } = {}) {
+export async function audit(ctx = {}, action, target = null, opts = {}) {
   try {
-    const principal = ctx?.principal ?? null;
-    let ip = ctx?.ip ?? null;
-    if (!ip && ctx?.request) {
-      try {
-        ip = getClientIp(ctx.request) || null;
-      } catch {
-        ip = null;
-      }
-    }
-    await insert({
-      actorUserId: principal?.userId ?? null,
-      actorApiKeyId: principal?.apiKeyId ?? null,
-      via: principal?.via ?? "system",
-      ip,
-      workspaceId: ctx?.workspaceId ?? null,
-      action,
-      targetType: target?.type ?? null,
-      targetId: target?.id != null ? String(target.id) : null,
-      before: encodeSnapshot(before),
-      after: encodeSnapshot(after),
-      result: result ?? "success",
-    });
+    await insert(buildEvent(ctx, action, target, opts));
   } catch (err) {
     console.warn("[audit]", err?.message ?? err);
   }
+}
+
+/**
+ * Same scrubbed row, written synchronously on `db` INSIDE the caller's
+ * transaction so the change and its audit row commit or roll back together.
+ * Unlike audit() this THROWS on failure (that rollback is the point).
+ */
+export function auditSync(db, ctx = {}, action, target = null, opts = {}) {
+  insertSync(db, buildEvent(ctx, action, target, opts));
 }
 
 export const __test__ = { scrub, encodeSnapshot, ALLOWED };

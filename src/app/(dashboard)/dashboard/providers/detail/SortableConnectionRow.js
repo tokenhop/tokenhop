@@ -7,6 +7,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Toggle, StatusPill, Menu, MenuItem, Tooltip, Spinner } from "@/shared/components";
 import CooldownTimer from "@/shared/components/CooldownTimer";
+import MoveToWorkspaceButton from "@/shared/components/MoveToWorkspaceButton";
 import { cooldownUntil, connectionHealth } from "@/shared/utils/providerHealth";
 import { formatCooldownRemaining, weightSharePct } from "../detailUtils";
 
@@ -366,6 +367,13 @@ export default function SortableConnectionRow({
               </button>
             </Tooltip>
           ) : null}
+          <MoveToWorkspaceButton
+            variant="stack"
+            label={`Move ${displayName} to another workspace`}
+            items={[{ type: "connection", id: connection.id, label: displayName }]}
+            sourceWorkspaceId={connection.workspaceId}
+            onMoved={onShared}
+          />
           <button
             type="button"
             onClick={onEdit}
@@ -408,6 +416,7 @@ SortableConnectionRow.propTypes = {
     name: PropTypes.string,
     email: PropTypes.string,
     displayName: PropTypes.string,
+    workspaceId: PropTypes.string,
     testStatus: PropTypes.string,
     authType: PropTypes.string,
     isActive: PropTypes.bool,

@@ -4,8 +4,8 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 
-export async function insert(event) {
-  const db = await getAdapter();
+/** Sync insert for callers already inside a transaction (atomic with their change). */
+export function insertSync(db, event) {
   const row = {
     id: uuidv4(),
     ts: event?.ts || new Date().toISOString(),
@@ -40,6 +40,10 @@ export async function insert(event) {
     ],
   );
   return row;
+}
+
+export async function insert(event) {
+  return insertSync(await getAdapter(), event);
 }
 
 function escapeLike(s) {

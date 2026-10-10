@@ -2,6 +2,7 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { CapacityBadges, IconButton } from "@/shared/components";
 import CopyStatus from "@/shared/components/CopyStatus";
+import MoveToWorkspaceButton from "@/shared/components/MoveToWorkspaceButton";
 import { formatCompact } from "@/shared/utils/format";
 
 const STATUS_ICON = { ok: "check_circle", error: "cancel" };
@@ -30,6 +31,8 @@ export default function ModelRow({
   onDisable,
   caps,
   thinkingSuffix,
+  moveItem,
+  onMoved,
 }) {
   const displayModel = thinkingSuffix ? `${fullModel}(${thinkingSuffix})` : fullModel;
   const contextLength = Number(model.contextLength);
@@ -155,6 +158,14 @@ export default function ModelRow({
           />
         )
       ) : null}
+      {moveItem ? (
+        <MoveToWorkspaceButton
+          items={[moveItem]}
+          label={`Move ${displayModel} to another workspace`}
+          className={quietActions}
+          onMoved={onMoved}
+        />
+      ) : null}
       {onRemove ? (
         <IconButton
           icon="close"
@@ -189,4 +200,11 @@ ModelRow.propTypes = {
   onDisable: PropTypes.func,
   caps: PropTypes.object,
   thinkingSuffix: PropTypes.string,
+  /** `{type, id, label?}` for the workspace move action (alias or custom model). */
+  moveItem: PropTypes.shape({
+    type: PropTypes.string,
+    id: PropTypes.string,
+    label: PropTypes.string,
+  }),
+  onMoved: PropTypes.func,
 };
