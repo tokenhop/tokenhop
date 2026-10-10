@@ -1,6 +1,6 @@
 # Out-of-credit lock (billing lock)
 
-When an API-key connection runs out of credit or hits its spending limit,
+When a supported API-key connection runs out of credit or hits its spending limit,
 tokenhop takes that whole connection out of rotation and checks it in the
 background until credit is back. No manual step is needed.
 
@@ -17,7 +17,8 @@ background until credit is back. No manual step is needed.
    message.
 4. While tokenhop runs, a probe re-checks each locked connection about every 3
    hours (with jitter). It sends one minimal, non-streaming request with
-   `max_tokens: 1` to the provider's cheapest priced non-reasoning model.
+   `max_tokens: 1` to the provider's configured probe model (see the table
+   below).
 5. The lock clears only when the probe gets a real completion back. Any other
    result (still out of credit, timeout, network error, 5xx, 401) keeps the lock
    and schedules the next probe.
