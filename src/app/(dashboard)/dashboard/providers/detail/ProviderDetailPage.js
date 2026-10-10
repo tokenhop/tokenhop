@@ -24,6 +24,7 @@ import {
 } from "./providerDetailMeta";
 import ProviderDetailHeader, { ProviderDetailNotices } from "./ProviderDetailHeader";
 import CompatibleDetailsCard from "./CompatibleDetailsCard";
+import MoveToWorkspaceButton from "@/shared/components/MoveToWorkspaceButton";
 import ConnectionsSection from "./ConnectionsSection";
 import ModelsSection from "./ModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -434,6 +435,21 @@ export default function ProviderDetailPage() {
           onAddKey={triggerApiKeyConnection}
           onEdit={() => open("editNode")}
           onDelete={confirmDeleteNode}
+          moveAction={
+            <MoveToWorkspaceButton
+              variant="button"
+              label="Move"
+              items={[
+                {
+                  type: "node",
+                  id: providerNode.id,
+                  label: providerNode.name || providerNode.id || providerId,
+                },
+              ]}
+              sourceWorkspaceId={providerNode.workspaceId ?? null}
+              onMoved={fetchDetail}
+            />
+          }
         />
       ) : null}
 

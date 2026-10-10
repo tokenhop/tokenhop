@@ -29,6 +29,9 @@ export const DEK_CACHE_TTL_MS = 5 * 60 * 1000;
 const PSD_PREFIX = "providerSpecificData.";
 const ENVELOPE_KEYS = ["ct", "iv", "kid", "tag", "v"];
 const TRUSTED = new WeakSet();
+// Runtime contexts minted by prepareCredentialContext (YAN-701): the move-only
+// DEK provisioner admits exactly these, never a caller-forged object.
+const RUNTIME_CTX = new WeakSet();
 
 function fail(code, message) {
   throw Object.assign(new Error(`[credential-storage] ${message}`), { code });
@@ -53,13 +56,15 @@ export function prepareCredentialContext(db, root = null) {
       fail("KEY_MISMATCH", "root key does not match the stored key id");
     }
   }
-  return {
+  const ctx = {
     state,
     kek: root?.key ?? null,
     kekKid: root?.kid ?? null,
     encrypted: state.storage === "encrypted",
     allowCreate: false,
   };
+  RUNTIME_CTX.add(ctx);
+  return ctx;
 }
 
 /** Trusted-internal context for activation/rotation (mode:'migration'). Not exported on any barrel. */
@@ -168,6 +173,13 @@ export function ensureWorkspaceDekSync(db, workspaceId, ctx) {
   const existing = liveDek(db, workspaceId, ctx);
   if (existing) return existing;
   if (!ctx.allowCreate || !TRUSTED.has(ctx)) fail("KEY_MISSING", "workspace key not found");
+  insertWrappedDek(db, workspaceId, ctx);
+  // Next read goes through liveDek so the cache is keyed to the persisted row.
+  return liveDek(db, workspaceId, ctx);
+}
+
+/** Fresh random DEK wrapped under the KEK and persisted; the plaintext bytes are always zeroed. */
+function insertWrappedDek(db, workspaceId, ctx) {
   const dek = randomKey();
   try {
     const kid = randomDekKid();
@@ -180,7 +192,36 @@ export function ensureWorkspaceDekSync(db, workspaceId, ctx) {
     // Always zero the fresh key bytes, including when encrypt/INSERT throws.
     zeroBuffer(dek);
   }
-  // Next read goes through liveDek so the cache is keyed to the persisted row.
+}
+
+/**
+ * YAN-701 MOVE-ONLY target DEK provisioner (deliberately NOT a general runtime
+ * create path; runtime ensureWorkspaceDekSync stays fail-closed). Admits only a
+ * genuine runtime context from prepareCredentialContext holding a root for an
+ * encrypted instance; rereads the live marker (kid must still match) and the
+ * workspace row inside the caller's transaction. An existing DEK is validated
+ * through liveDek (unwrap + generation check); a missing one gets a FRESH
+ * random DEK — a source DEK is never copied. Not re-exported from any barrel.
+ * @returns {{kid:string,dek:Buffer}}
+ */
+export function provisionMoveTargetDekSync(db, workspaceId, ctx) {
+  if (typeof workspaceId !== "string" || workspaceId.length === 0) {
+    fail("KEY_MISSING", "workspace id required");
+  }
+  if (!ctx || !RUNTIME_CTX.has(ctx) || ctx.allowCreate || TRUSTED.has(ctx)) {
+    fail("KEY_MISSING", "not a runtime credential context");
+  }
+  if (!ctx.encrypted || !ctx.kek || !ctx.kekKid) fail("KEY_MISSING", "root key not available");
+  const live = readCredentialEncryptionState(db);
+  if (live.storage !== "encrypted" || live.kekKid !== ctx.kekKid) {
+    fail("KEY_MISMATCH", "credential encryption state changed during the operation");
+  }
+  if (!db.get(`SELECT 1 AS x FROM workspaces WHERE id = ?`, [workspaceId])) {
+    fail("KEY_MISSING", "workspace not found");
+  }
+  const existing = liveDek(db, workspaceId, ctx);
+  if (existing) return existing;
+  insertWrappedDek(db, workspaceId, ctx);
   return liveDek(db, workspaceId, ctx);
 }
 

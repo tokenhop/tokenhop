@@ -26,6 +26,7 @@ import CopyStatus from "@/shared/components/CopyStatus";
 import { LoadingState } from "@/shared/components/StateViews";
 
 import { CreatedBanner, KeyName, MigrationNotice } from "./ApiKeyDetails";
+import MoveToWorkspaceButton from "@/shared/components/MoveToWorkspaceButton";
 
 /**
  * API keys management card: require-key gate, one-time reveal banner, key
@@ -61,6 +62,8 @@ import { CreatedBanner, KeyName, MigrationNotice } from "./ApiKeyDetails";
  * @param {boolean} [props.canCreate] Viewer gate for the Create button.
  * @param {boolean} [props.canManage] Hashed-mode gate for rename, pause and delete.
  * @param {string|null} [props.currentUserId] Signed-in user id; enables the My keys / Workspace service keys grouping (hashed multi-user only).
+ * @param {string|null} [props.workspaceId] Source workspace for "Move to workspace" (hashed multi-user only).
+ * @param {() => void} [props.onMoved] Reload keys after a move.
  * @param {{ visible: boolean, canDismiss: boolean, dismissing: boolean, error: string|null, dismiss: () => void }|null} [props.migrationNotice] Server-flag migration notice state.
  */
 export default function ApiKeysCard({
@@ -89,6 +92,8 @@ export default function ApiKeysCard({
   canManage = true,
   currentUserId = null,
   migrationNotice = null,
+  workspaceId = null,
+  onMoved,
 }) {
   const [editingId, setEditingId] = useState(null);
   const showValue = (apiKey) =>
@@ -305,6 +310,20 @@ export default function ApiKeysCard({
                               />
                             </>
                           )}
+                          {hashedMode && canMutate && (
+                            <MoveToWorkspaceButton
+                              label={`Move key ${apiKey.name} to another workspace`}
+                              items={[
+                                {
+                                  type: "apiKey",
+                                  id: apiKey.id,
+                                  label: `API key "${apiKey.name}"`,
+                                },
+                              ]}
+                              sourceWorkspaceId={workspaceId}
+                              onMoved={onMoved}
+                            />
+                          )}
                           {canMutate && (
                             <IconButton
                               icon="delete"
@@ -388,6 +407,16 @@ export default function ApiKeysCard({
                       onChange={(checked) => onToggleKey(apiKey.id, checked)}
                       aria-label={`Enable key ${apiKey.name}`}
                     />
+                    {hashedMode && canMutate && (
+                      <MoveToWorkspaceButton
+                        label={`Move key ${apiKey.name} to another workspace`}
+                        items={[
+                          { type: "apiKey", id: apiKey.id, label: `API key "${apiKey.name}"` },
+                        ]}
+                        sourceWorkspaceId={workspaceId}
+                        onMoved={onMoved}
+                      />
+                    )}
                     {canMutate && (
                       <IconButton
                         icon="delete"
@@ -453,6 +482,8 @@ ApiKeysCard.propTypes = {
   canCreate: PropTypes.bool,
   canManage: PropTypes.bool,
   currentUserId: PropTypes.string,
+  workspaceId: PropTypes.string,
+  onMoved: PropTypes.func,
   migrationNotice: PropTypes.shape({
     visible: PropTypes.bool.isRequired,
     canDismiss: PropTypes.bool.isRequired,

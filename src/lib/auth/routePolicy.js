@@ -124,6 +124,10 @@ export const ROUTE_POLICY = {
     scoped({ cap: { DELETE: "workspace.members.manage" }, cliAllowed: false }),
   ),
   "/api/invitations/accept": multiUser(PUBLIC),
+  // YAN-701: move items between workspaces. Browser session only. Edge asks for
+  // connections.manage in any workspace; the handler enforces live rights per
+  // item type in source AND target (no instance-admin bypass).
+  "/api/workspaces/[id]/move": multiUser(scoped({ cap: { POST: CONN }, cliAllowed: false })),
   // YAN-372 budgets (ADR-0007): workspace rows are scoped (the repo rechecks
   // live authority, incl. the key-owner/grant-creator exceptions and the
   // raise/delete admin gate); user-level rows are instance-admin only.
