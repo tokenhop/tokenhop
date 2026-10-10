@@ -27,6 +27,7 @@ import NeedsAttentionCard from "./components/NeedsAttentionCard";
 import AddCompatibleModal from "./components/AddCompatibleModal";
 import ProviderDetailSidePanel from "./components/ProviderDetailSidePanel";
 import AddAccountDialog from "./components/AddAccountDialog";
+import MoveFromDefault from "./components/MoveFromDefault";
 import TestResultsModal from "./components/TestResultsModal";
 import YourProviders from "./components/YourProviders";
 import WorkspaceSharedConnections from "./components/WorkspaceSharedConnections";
@@ -270,6 +271,7 @@ function ProvidersListShell({ initialProviderId = null }) {
           {needsLookLabel(totals.attention)}
         </p>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <MoveFromDefault view={authView} onMoved={refreshData} />
           <Menu
             trigger={
               <Button size="sm" variant="primary" icon="add">

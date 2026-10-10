@@ -6,6 +6,7 @@ import { Button, Card, Callout, Checkbox, EmptyState, Input, Select } from "@/sh
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
+import MoveToWorkspaceButton from "@/shared/components/MoveToWorkspaceButton";
 import ModelRow from "../[id]/ModelRow";
 import FetchModelsButton from "../[id]/FetchModelsButton";
 
@@ -251,6 +252,18 @@ export default function ModelsSection({
                     onTest={showTestButton ? () => testModel(row.id) : undefined}
                     isTesting={models.testingIds.has(row.id)}
                     isCustom
+                    moveItem={
+                      row.source === "custom"
+                        ? {
+                            type: "customModel",
+                            id: `${storageAlias}|${row.id}|${effectiveKind}`,
+                            label: `custom model "${row.id}"`,
+                          }
+                        : row.alias
+                          ? { type: "alias", id: row.alias, label: `alias "${row.alias}"` }
+                          : undefined
+                    }
+                    onMoved={models.load}
                     caps={getCaps(`${providerId}/${row.id}`)}
                     thinkingSuffix={resolveThinkingSuffix(row.id)}
                   />
@@ -279,6 +292,12 @@ export default function ModelsSection({
                       isTesting={models.testingIds.has(model.id)}
                       isFree={model.isFree}
                       onDisable={() => models.disableModel(model.id)}
+                      moveItem={
+                        existingAlias
+                          ? { type: "alias", id: existingAlias, label: `alias "${existingAlias}"` }
+                          : undefined
+                      }
+                      onMoved={models.load}
                       caps={{ ...getCaps(`${providerId}/${model.id}`), ...model.capabilities }}
                       thinkingSuffix={resolveThinkingSuffix(model.id)}
                     />
@@ -333,9 +352,23 @@ export default function ModelsSection({
           ) : null}
           {models.disabledModels.length > 0 ? (
             <div className="flex flex-col gap-2">
-              <p className="text-xs text-muted">
-                Disabled models ({models.disabledModels.length}):
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-xs text-muted">
+                  Disabled models ({models.disabledModels.length}):
+                </p>
+                <MoveToWorkspaceButton
+                  variant="button"
+                  label="Move list"
+                  items={[
+                    {
+                      type: "disabledModel",
+                      id: storageAlias,
+                      label: `disabled models for "${storageAlias}"`,
+                    },
+                  ]}
+                  onMoved={models.load}
+                />
+              </div>
               <div className="flex flex-wrap gap-2" aria-live="polite">
                 {models.disabledModels.map((model) => (
                   <button

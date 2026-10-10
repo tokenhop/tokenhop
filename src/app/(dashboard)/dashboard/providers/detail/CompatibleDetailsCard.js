@@ -16,6 +16,7 @@ export default function CompatibleDetailsCard({
   onAddKey,
   onEdit,
   onDelete,
+  moveAction,
 }) {
   const apiLabel = isAnthropic ? "Messages API" : apiTypeLabel(apiType);
   const path = isAnthropic
@@ -44,6 +45,7 @@ export default function CompatibleDetailsCard({
           <Button size="sm" variant="secondary" icon="edit" onClick={onEdit}>
             Edit
           </Button>
+          {moveAction}
           <Button size="sm" variant="secondary" icon="delete" onClick={onDelete}>
             Delete
           </Button>
@@ -61,4 +63,6 @@ CompatibleDetailsCard.propTypes = {
   onAddKey: PropTypes.func.isRequired,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
+  /** Optional extra action (e.g. MoveToWorkspaceButton). */
+  moveAction: PropTypes.node,
 };

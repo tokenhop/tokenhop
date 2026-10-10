@@ -30,6 +30,8 @@ export { default as Terminal } from "./Terminal";
 export { default as ProviderTile } from "./ProviderTile";
 export { default as StatusPill } from "./StatusPill";
 export { default as Modal, ConfirmDialog, ConfirmModal } from "./Modal";
+export { default as MoveToWorkspaceDialog } from "./MoveToWorkspaceDialog";
+export { default as MoveToWorkspaceButton } from "./MoveToWorkspaceButton";
 export {
   default as Loading,
   Spinner,

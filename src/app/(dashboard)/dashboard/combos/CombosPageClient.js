@@ -760,6 +760,7 @@ export default function CombosPageClient() {
                         usageToday={usageToday[combo.id] || 0}
                         selected={combo.id === selectedComboId}
                         onSelect={selectCombo}
+                        onMoved={fetchData}
                       />
                     );
                   })}

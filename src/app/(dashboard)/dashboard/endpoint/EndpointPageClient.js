@@ -202,6 +202,8 @@ export default function EndpointPageClient({ machineId: _machineId }) {
             canCreate={apiKeys.capabilities.canCreate}
             canManage={apiKeys.capabilities.canManage}
             currentUserId={currentUserId ?? null}
+            workspaceId={apiKeys.context?.workspaceId ?? null}
+            onMoved={apiKeys.fetchKeys}
             migrationNotice={apiKeys.migrationNotice}
             requireApiKey={tunnel.requireApiKey}
             onToggleRequireApiKey={tunnel.handleRequireApiKey}

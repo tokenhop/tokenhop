@@ -203,6 +203,25 @@ describe("switch on", () => {
     expect(out).toMatchObject({ role: "owner", via: "session", user: { id: t.a.user.id } });
     expect(JSON.stringify(out)).not.toMatch(/passwordHash|sessionVersion/);
   });
+
+  it("flags the Default workspace by its marker id, not its name (YAN-701)", async () => {
+    const p = await s.resolvePrincipal(req({ token: await tokenFor(t.a) }));
+    const flags = (out) => Object.fromEntries(out.workspaces.map((w) => [w.id, w.isDefault]));
+    expect(flags(await s.describePrincipal(p))).toEqual({
+      [t.a.personal]: false,
+      [t.shared.id]: false,
+    });
+    await db.setMeta("defaultWorkspaceId", t.shared.id);
+    try {
+      // The name "Shared" is irrelevant; renaming cannot move the flag.
+      expect(flags(await s.describePrincipal(p))).toEqual({
+        [t.a.personal]: false,
+        [t.shared.id]: true,
+      });
+    } finally {
+      await db.setMeta("defaultWorkspaceId", "");
+    }
+  });
 });
 
 describe("switch on: route handlers", () => {

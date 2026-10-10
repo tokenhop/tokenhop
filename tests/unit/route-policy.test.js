@@ -131,6 +131,8 @@ const YAN360_SESSION_ONLY_ROUTES = new Set([
   // YAN-372 workspace and user budgets: browser session only.
   "/api/workspaces/[id]/budgets",
   "/api/workspaces/[id]/budgets/[budgetId]",
+  // YAN-701 workspace move: browser session only.
+  "/api/workspaces/[id]/move",
   "/api/users/[id]/budgets",
   "/api/users/[id]/budgets/[budgetId]",
   // YAN-371 account routes (workspace switch, linked identities).

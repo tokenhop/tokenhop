@@ -3,6 +3,7 @@
 import PropTypes from "prop-types";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import MoveToWorkspaceButton from "@/shared/components/MoveToWorkspaceButton";
 import ComboListCard from "./ComboListCard";
 
 /**
@@ -19,6 +20,7 @@ export default function SortableComboCard({
   usageToday,
   selected,
   onSelect,
+  onMoved,
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: combo.id,
@@ -62,6 +64,12 @@ export default function SortableComboCard({
           drag_indicator
         </span>
       </button>
+      <MoveToWorkspaceButton
+        label={`Move combo ${combo.name} to another workspace`}
+        items={[{ type: "combo", id: combo.id, label: `combo "${combo.name}"` }]}
+        onMoved={onMoved}
+        className="absolute end-3 bottom-3 size-8 rounded-md border-transparent bg-transparent"
+      />
     </li>
   );
 }
@@ -81,4 +89,5 @@ SortableComboCard.propTypes = {
   usageToday: PropTypes.number,
   selected: PropTypes.bool,
   onSelect: PropTypes.func,
+  onMoved: PropTypes.func,
 };

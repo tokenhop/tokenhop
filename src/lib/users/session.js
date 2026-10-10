@@ -423,6 +423,8 @@ export async function describePrincipal(principal) {
   const user = await getUserUnscoped(principal.userId);
   if (!user) return null;
   const workspaces = await listWorkspaces(principal);
+  // Stable Default identity (YAN-701): the marker id, never the display name.
+  const defaultWorkspaceId = (await getMeta("defaultWorkspaceId")) ?? null;
   return {
     user: {
       id: user.id,
@@ -433,6 +435,12 @@ export async function describePrincipal(principal) {
     role: principal.instanceRole,
     via: principal.via,
     activeWorkspaceId: principal.activeWorkspaceId,
-    workspaces: workspaces.map(({ id, name, kind, role }) => ({ id, name, kind, role })),
+    workspaces: workspaces.map(({ id, name, kind, role }) => ({
+      id,
+      name,
+      kind,
+      role,
+      isDefault: id === defaultWorkspaceId,
+    })),
   };
 }

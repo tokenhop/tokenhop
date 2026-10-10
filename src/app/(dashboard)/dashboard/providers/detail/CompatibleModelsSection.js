@@ -167,6 +167,18 @@ export default function CompatibleModelsSection({
               testStatus={testResults[id]}
               isTesting={testingIds.has(id)}
               isCustom
+              moveItem={
+                source === "custom"
+                  ? {
+                      type: "customModel",
+                      id: `${storageAlias}|${id}|llm`,
+                      label: `custom model "${id}"`,
+                    }
+                  : alias
+                    ? { type: "alias", id: alias, label: `alias "${alias}"` }
+                    : undefined
+              }
+              onMoved={models.load}
             />
           ))}
         </ul>
