@@ -196,13 +196,26 @@ export function connectionHealth(connection, nowMs = Date.now()) {
 export function providerHealth(connections, nowMs = Date.now()) {
   const counts = { ok: 0, warn: 0, err: 0, off: 0 };
   let worst = { status: "off", reason: null, action: null };
+  let outOfCreditCount = 0;
   for (const connection of connections || []) {
     const health = connectionHealth(connection, nowMs);
     counts[health.status] += 1;
+    if (health.state === "out_of_credit") outOfCreditCount += 1;
     if (RANK[health.status] > RANK[worst.status]) worst = health;
   }
   const connected = counts.ok + counts.warn + counts.err > 0;
-  return { ...worst, connected, needsAttention: counts.warn + counts.err > 0, counts };
+  // Counts and rank keep status "err" so the shell badge, filters and
+  // attention counts treat a lock like any other error. outOfCredit only
+  // relabels when every enabled error is a lock, so a mixed provider still
+  // reads as "N Error". Disabled rows never count.
+  return {
+    ...worst,
+    connected,
+    needsAttention: counts.warn + counts.err > 0,
+    outOfCredit: outOfCreditCount > 0 && outOfCreditCount === counts.err,
+    outOfCreditCount,
+    counts,
+  };
 }
 
 /** Unique provider totals; registry entries with noAuth are ready but not connected. */

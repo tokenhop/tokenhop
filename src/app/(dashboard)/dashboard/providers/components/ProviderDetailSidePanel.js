@@ -54,9 +54,12 @@ function AccountItem({ connection, index, quotaSnapshot, onToggle, onClearCooldo
       ? connection.email
       : connection.email || connection.displayName || "";
   const disabled = health.status === "off";
+  const outOfCredit = health.state === "out_of_credit";
   const status = {
     variant: { off: "neutral", ok: "ok", warn: "warn", err: "err" }[health.status],
-    label: { off: "Off", ok: "Active", warn: "Cooldown", err: "Error" }[health.status],
+    label: outOfCredit
+      ? "Out of credit"
+      : { off: "Off", ok: "Active", warn: "Cooldown", err: "Error" }[health.status],
   };
 
   const windows = quotaSnapshot?.windows || [];

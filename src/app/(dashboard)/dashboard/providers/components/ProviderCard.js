@@ -37,6 +37,7 @@ function statusForEntry(entry, connections) {
     return { variant: "warn", label: "Cooldown", dot: true };
   }
   if (health.status === "err") {
+    if (health.outOfCredit) return { variant: "err", label: "Out of credit", dot: true };
     const errCount = health.counts.err;
     const errText = entry.stats.errorCode
       ? `${errCount} Error (${entry.stats.errorCode})`
