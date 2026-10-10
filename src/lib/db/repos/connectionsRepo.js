@@ -460,6 +460,38 @@ function updateInTx(db, row, data, ctx) {
   return merged;
 }
 
+/**
+ * YAN-1041: transactional read-decide-write on one connection's billingLock.
+ * `decide(live)` runs INSIDE the transaction against the live decrypted row and
+ * returns a partial patch (applied through the normal update path, which only
+ * resets health state when the patch sets testStatus:"active" — billing patches
+ * never do, so model locks and auth failures stay untouched) or null to skip.
+ * Returns only the lock, never the row: callers must not see credentials.
+ * @param {string} id
+ * @param {(live: object) => (object|null)} decide
+ * @returns {Promise<{ applied: boolean, missing: boolean, billingLock: object|null, disabled?: boolean }>}
+ */
+export async function mutateBillingLockUnscoped(id, decide) {
+  const db = await getAdapter();
+  const ctx = await prepareCredentialCtx(db);
+  return db.transaction(() => {
+    const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+    if (!row) return { applied: false, missing: true, billingLock: null };
+    const live = rowToConn(db, row, ctx);
+    const patch = decide(live);
+    if (!patch) {
+      return {
+        applied: false,
+        missing: false,
+        billingLock: live.billingLock ?? null,
+        disabled: live.isActive === false,
+      };
+    }
+    const merged = updateInTx(db, row, patch, ctx);
+    return { applied: true, missing: false, billingLock: merged.billingLock ?? null };
+  });
+}
+
 export async function deleteProviderConnectionUnscoped(id) {
   const db = await getAdapter();
   return db.transaction(() =>

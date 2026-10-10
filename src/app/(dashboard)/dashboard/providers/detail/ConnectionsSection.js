@@ -369,6 +369,8 @@ export default function ConnectionsSection({
                       onDelete={() => conn.confirmDelete(entry.id)}
                       onMove={conn.moveConnection}
                       onShared={conn.fetchConnections}
+                      probing={conn.probingIds.includes(entry.id)}
+                      onProbe={() => conn.probeBilling(entry.id)}
                     />
                   ))}
                 </ul>

@@ -4,16 +4,21 @@ import {
   updateProviderConnectionUnscoped,
   getProxyPools,
 } from "@/lib/localDb";
-import { getEffectivePreferences } from "@/lib/db/index.js";
+import { getEffectivePreferences, mutateBillingLockUnscoped } from "@/lib/db/index.js";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import {
   formatRetryAfter,
+  buildBillingLock,
+  canBillingLock,
   checkFallbackError,
+  getBillingLock,
+  isBillingExhausted,
   isModelLockActive,
   buildModelLockUpdate,
   getModelLockUntil,
 } from "open-sse/services/accountFallback.js";
 import { getActiveReliabilityPolicy } from "open-sse/config/reliabilityPolicy.js";
+import { BILLING_UNAVAILABLE_MESSAGE } from "open-sse/config/errorConfig.js";
 import { getExhaustedUntil, getSnapshot } from "open-sse/services/quotaSnapshot.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { extractClientApiKey } from "@/lib/auth/clientApiKey.js";
@@ -177,6 +182,10 @@ export async function getProviderCredentials(
     const budgetCtx = grantBudgetContext();
     const availableConnections = connections.filter((c) => {
       if (excludeSet.has(c.id)) return false;
+      // YAN-1041: connection-wide credit lock. Runs before the grant checks and
+      // the preferred-connection bypass below, so no model, grant view or pin
+      // reaches an out-of-credit key until the probe clears it.
+      if (getBillingLock(c)) return false;
       if (isModelLockActive(c, model)) return false;
       if (c.grantId) {
         if (!grantAllowsModel(c, providerId, model, c.id === preferredConnectionId)) return false;
@@ -250,6 +259,14 @@ export async function getProviderCredentials(
         ...connections
           .filter((c) => isModelLockActive(c, model))
           .map((c) => ({ until: getModelLockUntil(c, model), conn: c })),
+        // YAN-1041: billing-locked keys unblock at their next probe (never in the past).
+        ...connections.filter(getBillingLock).map((c) => ({
+          until: new Date(
+            Math.max(Date.parse(getBillingLock(c).nextProbeAt) || 0, Date.now() + 1000),
+          ).toISOString(),
+          conn: c,
+          billing: true,
+        })),
         ...quotaExpiries.map((until) => ({ until })),
       ];
       if (isAntigravity && model && antigravityQuotaCache) {
@@ -269,9 +286,11 @@ export async function getProviderCredentials(
       }
       if (earliestBlocker) {
         const earliest = earliestBlocker.until;
-        const lastError = earliestBlocker.conn
-          ? earliestBlocker.conn.lastError || null
-          : "Quota exhausted";
+        const lastError = earliestBlocker.billing
+          ? `${BILLING_UNAVAILABLE_MESSAGE} (${getBillingLock(earliestBlocker.conn).code ?? "billing"})`
+          : earliestBlocker.conn
+            ? earliestBlocker.conn.lastError || null
+            : "Quota exhausted";
         log.warn(
           "AUTH",
           `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${lastError?.slice(0, 50) ?? "none"}`,
@@ -283,7 +302,9 @@ export async function getProviderCredentials(
           // Deliberately not "rate limit"/"quota exceeded": those text rules
           // back off, which would delay combo fallthrough to the next member.
           lastError,
-          lastErrorCode: earliestBlocker.conn?.errorCode || null,
+          lastErrorCode: earliestBlocker.billing
+            ? getBillingLock(earliestBlocker.conn).code
+            : earliestBlocker.conn?.errorCode || null,
         };
       }
       if (grantLimits.length) {
@@ -480,12 +501,43 @@ export async function markAccountUnavailable(
   // YAN-369 (ADR-0006): a grantee's failure falls back for this request only;
   // it never locks or cools down the owner's connection row.
   if (grantId) {
-    const { shouldFallback } = checkFallbackError(status, errorText, 0);
+    const { shouldFallback } = checkFallbackError(
+      status,
+      errorText,
+      0,
+      null,
+      resolveProviderId(provider) ?? provider,
+    );
     return { shouldFallback: !!shouldFallback, cooldownMs: 0 };
   }
   const connections = await getProviderConnectionsUnscoped({ provider });
   const conn = connections.find((c) => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
+  const providerId = resolveProviderId(provider) ?? provider;
+
+  // YAN-1041: credit exhaustion on an API-key connection locks the whole key
+  // (billingLock), not one model. Subscription/OAuth connections and providers
+  // with no probe spec fall through to the ordinary per-model handling.
+  if (conn && canBillingLock(conn) && isBillingExhausted(status, errorText, providerId)) {
+    const { applied, billingLock } = await mutateBillingLockUnscoped(connectionId, (live) => {
+      if (!canBillingLock(live) || getBillingLock(live)) return null;
+      // Floor against the live previous generation inside the transaction:
+      // same-millisecond re-locks must still strictly increase it.
+      const generation = Math.max(Date.now(), (live.billingLockGeneration || 0) + 1);
+      return {
+        billingLock: buildBillingLock(status, errorText, generation),
+        billingLockGeneration: generation,
+      };
+    });
+    if (applied) {
+      const name = conn.displayName || conn.name || conn.email || connectionId.slice(0, 8);
+      log.warn(
+        "AUTH",
+        `${name} billing-locked [${status}] ${billingLock?.code ?? ""} — next probe ${billingLock?.nextProbeAt}`,
+      );
+    }
+    return { shouldFallback: true, cooldownMs: 0 };
+  }
 
   // GitHub premium-request exhaustion is account-wide until the next UTC month.
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
@@ -510,6 +562,8 @@ export async function markAccountUnavailable(
       status,
       errorText,
       backoffLevel,
+      null,
+      providerId,
     ));
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
