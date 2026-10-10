@@ -216,3 +216,43 @@ describe("handleStreamingResponse combo TTFT feedback (YAN-764)", () => {
     expect(settleSpy).toHaveBeenCalledOnce();
   });
 });
+
+describe("handleStreamingResponse account success (YAN-1023)", () => {
+  const runWith = (frames, onRequestSuccess) => {
+    const { comboAttempt, streamController } = setupAttempt();
+    const { upstream, response } = controlledProviderResponse();
+    upstream.enqueue(encoder.encode(frames));
+    upstream.close();
+    return handleStreamingResponse({
+      providerResponse: response,
+      provider: "openai",
+      model: "m",
+      sourceFormat: FORMATS.OPENAI,
+      targetFormat: FORMATS.OPENAI,
+      body: { messages: [], model: "m", stream: true },
+      stream: true,
+      requestStartTime: 0,
+      log: quietLog,
+      streamController,
+      onRequestSuccess,
+      comboAttempt,
+    });
+  };
+
+  it("does not clear account health on a tokenless 200 stream", async () => {
+    const onRequestSuccess = vi.fn();
+    const result = await runWith(roleChunk + doneLine, onRequestSuccess);
+    expect(onRequestSuccess).not.toHaveBeenCalled(); // not on headers
+    await drain(result.response.body.getReader());
+    await Promise.resolve();
+    expect(onRequestSuccess).not.toHaveBeenCalled();
+  });
+
+  it("clears account health once the first token is emitted", async () => {
+    const onRequestSuccess = vi.fn();
+    const result = await runWith(roleChunk + contentChunk + doneLine, onRequestSuccess);
+    await drain(result.response.body.getReader());
+    await Promise.resolve();
+    expect(onRequestSuccess).toHaveBeenCalledOnce();
+  });
+});

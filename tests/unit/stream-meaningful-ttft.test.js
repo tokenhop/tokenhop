@@ -126,6 +126,16 @@ describe("createSSEStream onStreamResult", () => {
     expect(r.cb.mock.calls[0][0].error).toBeNull();
   });
 
+  it("empty stream is logged 200 EMPTY, not 200 OK (YAN-1023)", async () => {
+    requestLogCalls.length = 0;
+    const onStreamComplete = vi.fn();
+    const r = rig({ mode: "passthrough", provider: "x", onStreamComplete });
+    await r.feed(ROLE + DONE, 1000);
+    await r.finish();
+    expect(requestLogCalls.at(-1).status).toBe("200 EMPTY");
+    expect(onStreamComplete.mock.calls[0][3].firstTokenAt).toBeNull();
+  });
+
   it("downstream cancel before the terminal: no notification", async () => {
     const r = rig({ mode: "passthrough", provider: "x" });
     await r.feed(ROLE, 1000);
@@ -360,7 +370,8 @@ describe("createSSEStream Gemini-family truncated EOF", () => {
     requestLogCalls.length = 0;
     const onStreamComplete = vi.fn();
     const r = rig({ mode: "passthrough", provider: "gemini", onStreamComplete });
-    await r.feed('data: {"error":{"message":"tail boom"}}', 1100);
+    // Text first: a tokenless stream is logged "200 EMPTY" (YAN-1023).
+    await r.feed(`${TXT}data: {"error":{"message":"tail boom"}}`, 1100);
     await r.finish();
     expect(r.cb.mock.calls[0][0].error?.message).toBe("tail boom");
     expect(onStreamComplete).toHaveBeenCalledTimes(1);

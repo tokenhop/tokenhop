@@ -80,6 +80,7 @@ export function createSSEStream(options = {}) {
     credentials = null,
     onStreamResult = null,
     keyContext = {},
+    onFirstToken = null,
   } = options;
 
   let buffer = "";
@@ -143,18 +144,21 @@ export function createSSEStream(options = {}) {
   let firstTokenAt = null;
   let resultNotified = false;
   const observeEmitted = (item) => {
-    if (firstTokenAt !== null || !onStreamResult) return;
+    if (firstTokenAt !== null) return;
     try {
       const payload =
         item && typeof item === "object" && item.event && item.data ? item.data : item;
-      if (hasMeaningfulToken(payload)) firstTokenAt = Date.now();
+      if (hasMeaningfulToken(payload)) {
+        firstTokenAt = Date.now();
+        onFirstToken?.();
+      }
     } catch {
       // fail-open
     }
   };
   // Observe a raw SSE line ("data: {...}") about to be enqueued as-is (passthrough).
   const observeEmittedLine = (line) => {
-    if (firstTokenAt !== null || !onStreamResult || !line.startsWith("data:")) return;
+    if (firstTokenAt !== null || !line.startsWith("data:")) return;
     try {
       observeEmitted(JSON.parse(line.slice(5).trim()));
     } catch {
@@ -234,7 +238,12 @@ export function createSSEStream(options = {}) {
         provider,
         connectionId,
         tokens: null,
-        status: streamError ? "FAILED stream" : "200 OK",
+        // A clean 200 that never emitted a token is not a success (YAN-1023).
+        status: streamError
+          ? "FAILED stream"
+          : firstTokenAt === null && totalContentLength === 0
+            ? "200 EMPTY"
+            : "200 OK",
       }).catch(() => {});
     }
 
@@ -777,6 +786,7 @@ export function createSSETransformStreamWithLogger(
   credentials = null,
   onStreamResult = null,
   keyContext = {},
+  onFirstToken = null,
 ) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
@@ -794,6 +804,7 @@ export function createSSETransformStreamWithLogger(
     credentials,
     onStreamResult,
     keyContext,
+    onFirstToken,
   });
 }
 
@@ -807,6 +818,7 @@ export function createPassthroughStreamWithLogger(
   apiKey = null,
   onStreamResult = null,
   keyContext = {},
+  onFirstToken = null,
 ) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
@@ -819,5 +831,6 @@ export function createPassthroughStreamWithLogger(
     apiKey,
     onStreamResult,
     keyContext,
+    onFirstToken,
   });
 }

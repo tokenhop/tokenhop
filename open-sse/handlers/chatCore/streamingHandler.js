@@ -51,6 +51,7 @@ function buildTransformStream({
   credentials,
   onStreamResult,
   keyContext = {},
+  onFirstToken = null,
 }) {
   const isDroidCLI =
     userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
@@ -76,6 +77,7 @@ function buildTransformStream({
       credentials,
       onStreamResult,
       keyContext,
+      onFirstToken,
     );
   }
 
@@ -95,6 +97,7 @@ function buildTransformStream({
       credentials,
       onStreamResult,
       keyContext,
+      onFirstToken,
     );
   }
 
@@ -108,6 +111,7 @@ function buildTransformStream({
     apiKey,
     onStreamResult,
     keyContext,
+    onFirstToken,
   );
 }
 
@@ -144,13 +148,18 @@ export async function handleStreamingResponse({
   credentials,
   comboAttempt = null,
 }) {
-  if (onRequestSuccess) {
+  // Account health clears on the first real token, not on the 200 headers: a
+  // tokenless stream is a failed generation (YAN-1023).
+  let successNotified = false;
+  const notifySuccess = () => {
+    if (successNotified || !onRequestSuccess) return;
+    successNotified = true;
     Promise.resolve()
       .then(onRequestSuccess)
       .catch((err) => {
         console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
       });
-  }
+  };
 
   // When upstream returns HTML/text instead of SSE (e.g. Cloudflare 5xx error
   // page), piping it through the SSE transform stream causes Next.js
@@ -235,11 +244,20 @@ export async function handleStreamingResponse({
     model,
     connectionId,
     body,
-    onStreamComplete,
+    // Content the token check didn't recognize still proves a healthy account.
+    onStreamComplete: onStreamComplete
+      ? (content, ...rest) => {
+          if (content?.content || content?.thinking) notifySuccess();
+          return onStreamComplete(content, ...rest);
+        }
+      : (content) => {
+          if (content?.content || content?.thinking) notifySuccess();
+        },
     apiKey,
     credentials,
     onStreamResult: (info) => settleOnce(info),
     keyContext,
+    onFirstToken: notifySuccess,
   });
 
   // Terminal bytes when the stream aborts after HTTP 200 was already sent, so the
@@ -330,7 +348,11 @@ export function buildOnStreamComplete({
 }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-  const onStreamComplete = (contentObj, usage, ttftAt, { error = null } = {}) => {
+  const onStreamComplete = (contentObj, usage, ttftAt, { error = null, firstTokenAt } = {}) => {
+    // A clean 200 that never emitted text, reasoning or a tool call is a failed
+    // generation, not a success (YAN-1023). `undefined` = caller didn't track it.
+    if (!error && firstTokenAt === null && !contentObj?.content && !contentObj?.thinking)
+      error = { message: "empty streaming response" };
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime,

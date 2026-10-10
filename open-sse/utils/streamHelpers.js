@@ -102,8 +102,11 @@ export function hasMeaningfulToken(item) {
     const choice = item.choices[0];
     if (!choice) return false; // usage-only frame
     const delta = choice.delta || choice.message || null;
-    if (hasText(delta?.content) || hasText(choice.text)) return true;
+    if (hasText(delta?.content) || hasText(choice.text) || hasText(delta?.refusal)) return true;
     if (delta && extractReasoningText(delta) !== "") return true;
+    // Audio / image output modalities (YAN-1023)
+    if (hasText(delta?.audio?.data) || hasText(delta?.audio?.transcript)) return true;
+    if (Array.isArray(delta?.images) && delta.images.length > 0) return true;
     return Array.isArray(delta?.tool_calls) && delta.tool_calls.some(isProductiveToolCall);
   }
 
@@ -121,6 +124,9 @@ export function hasMeaningfulToken(item) {
     }
     // Responses
     if (RESPONSES_TOKEN_EVENTS.has(item.type)) return hasText(d);
+    // Audio / image-generation deltas (response.audio.delta, …partial_image)
+    if (/audio|image/.test(item.type) && /delta|partial/.test(item.type))
+      return hasText(d) || hasText(item.partial_image_b64);
     if (item.type === "response.output_item.added" && item.item) {
       const it = item.item;
       return (
@@ -147,7 +153,9 @@ export function hasMeaningfulToken(item) {
   const parts =
     item.candidates?.[0]?.content?.parts ?? item.response?.candidates?.[0]?.content?.parts;
   if (Array.isArray(parts))
-    return parts.some((p) => hasText(p?.text) || hasText(p?.functionCall?.name));
+    return parts.some(
+      (p) => hasText(p?.text) || hasText(p?.functionCall?.name) || hasText(p?.inlineData?.data),
+    );
   return false;
 }
 

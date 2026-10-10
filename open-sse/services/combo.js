@@ -11,6 +11,11 @@ import { coerceResponsesOutput } from "../translator/formats/responsesApi.js";
 import { pickSmoothWeighted } from "./weightedRoundRobin.js";
 import { effectiveComboWeight } from "./comboWeights.js";
 import { boundedMap } from "../utils/boundedMap.js";
+import { probeStreamHead } from "../utils/streamProbe.js";
+import {
+  COMBO_STREAM_PROBE_MAX_BYTES,
+  COMBO_STREAM_PROBE_MAX_MS,
+} from "../config/runtimeConfig.js";
 
 // LRU cap on per-combo rotation cursors (keys may be per-workspace).
 const MAX_COMBOS_TRACKED = 1000;
@@ -538,6 +543,13 @@ function createAttemptFeedback(startedAt, record, parent) {
       }
       return (info) => {
         attempt.settle(info);
+        // While the empty-stream probe reads, this level hasn't decided to
+        // serve the member yet: hold the ancestor's sample until it does, and
+        // drop it if the member is skipped (YAN-1023).
+        if (attempt.probing) {
+          attempt.heldParentSettle = () => parentSettle?.(info);
+          return;
+        }
         try {
           parentSettle?.(info);
         } catch {
@@ -661,9 +673,62 @@ export async function handleComboChat({
         : null;
 
     try {
-      const result = attempt
+      let result = attempt
         ? await handleSingleModel(body, modelStr, attempt)
         : await handleSingleModel(body, modelStr);
+
+      // 2xx SSE: peek at the head so a tokenless stream (role/usage/finish
+      // only, [DONE], or an in-stream error before any token) falls through
+      // to the next member instead of serving an empty response (YAN-1023).
+      if (
+        result.ok &&
+        result.body &&
+        /text\/event-stream|ndjson/i.test(result.headers?.get?.("content-type") || "")
+      ) {
+        if (attempt) attempt.probing = true;
+        const probe = await probeStreamHead(result, {
+          maxBytes: COMBO_STREAM_PROBE_MAX_BYTES,
+          maxMs: COMBO_STREAM_PROBE_MAX_MS,
+        });
+        if (attempt) {
+          attempt.probing = false;
+          const held = attempt.heldParentSettle;
+          attempt.heldParentSettle = null;
+          if (probe.outcome === "release") {
+            try {
+              held?.();
+            } catch {
+              // feedback must never break streaming
+            }
+          }
+        }
+        if (probe.outcome === "release") {
+          result = probe.response;
+        } else {
+          const errorType = probe.outcome === "empty" ? "empty-stream" : "stream-error";
+          // One failure sample: settle() is a no-op if the drained stream
+          // already settled the attempt; without an attempt, record directly.
+          if (attempt) attempt.settle({ error: new Error(errorType) });
+          else recordLatency(modelStr, Date.now() - attemptStartedAt, true);
+          lastError =
+            probe.outcome === "empty" ? "empty streaming response" : probe.error || "stream error";
+          lastStatus = 502;
+          notifyAttempt({
+            model: modelStr,
+            status: result.status,
+            latencyMs: Date.now() - attemptStartedAt,
+            errorType,
+            outcome: "skipped",
+          });
+          log.warn("COMBO", `Model ${modelStr} ${errorType}, trying next`);
+          if (onFallback) {
+            try {
+              await onFallback({ model: modelStr, status: 502 });
+            } catch {}
+          }
+          continue;
+        }
+      }
 
       // Success (2xx) - return response
       if (result.ok) {
