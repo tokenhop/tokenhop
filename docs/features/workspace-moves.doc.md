@@ -62,7 +62,22 @@ Active grants on moved connections are revoked. Provider account ordering is rec
 
 Set `preview: true` to receive `{ "preview": true, "moved": [], "conflicts": [], "warnings": [] }`. Omit or set `preview: false` to apply; use `confirm: true` to acknowledge warnings. Success returns `{ "preview": false, "moved": [...], "conflicts": [], "warnings": [...] }`; each moved entry includes `type` and unchanged `id`.
 
-Common failures: `400` invalid request; `403` insufficient permissions; `404` unavailable workspace; `409` `move_conflict` when conflicts remain or `confirm_required` when warnings need acknowledgement; `500` unexpected failure. Conflict and warning entries identify affected type and ID and provide user-facing messages. Other failures return fixed error text, not internal details or secrets.
+Failures return a fixed `error` text and a stable `code`; internal details and secrets are never included:
+
+| Status | `code`                                         | Meaning                                                                           |
+| ------ | ---------------------------------------------- | --------------------------------------------------------------------------------- |
+| 400    | `invalid`                                      | Malformed body, unknown keys, bad item shape, duplicates, or more than 500 items. |
+| 403    | `forbidden`                                    | Missing manage rights for an item type in the source or target workspace.         |
+| 404    | `not_found`                                    | Source or target workspace is unavailable to you.                                 |
+| 409    | `move_conflict`                                | Conflicts remain; the response lists them and nothing moves.                      |
+| 409    | `confirm_required`                             | Warnings need `confirm: true`; the response lists them.                           |
+| 409    | `plaintext_rejected`, `decrypt_failed`         | A stored credential could not be re-sealed or decrypted. Nothing moves.           |
+| 409    | `locked`                                       | Credential maintenance is in progress. Try again later.                           |
+| 413    | `payload_too_large`                            | The request body exceeds the 64 KB limit.                                         |
+| 500    | n/a                                            | Unexpected failure (`Internal error`).                                            |
+| 503    | `key_missing`, `key_mismatch`, `state_invalid` | Credential keys or encryption state are temporarily unavailable. Try again later. |
+
+Conflict and warning entries identify the affected type and ID and provide user-facing messages. Warnings that stay behind references use `COMBO_REF_NOT_MOVING` (the moving combo points at something that stays) and `COMBO_REFERENCED_BY_STAYING` (a combo that stays points at the moving item); both need confirmation but never block.
 
 ## Notes
 

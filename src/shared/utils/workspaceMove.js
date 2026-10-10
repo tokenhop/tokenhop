@@ -70,6 +70,8 @@ export function moveErrorMessage(status) {
   if (status === 403) return "You can't manage these items in both workspaces.";
   if (status === 404) return "That workspace isn't available. Reload the page and try again.";
   if (status === 400) return "These items can't be moved. Reload the page and try again.";
+  if (status === 413) return "Too many items selected. Move fewer at a time.";
+  if (status === 503) return "Workspace keys are temporarily unavailable. Try again later.";
   return "Could not move these items. Try again.";
 }
 
@@ -95,6 +97,11 @@ export function issueDetailsText(issue) {
         return plural("1 item stays behind", `${count} items stay behind`);
       if (issue?.code === "KEY_COMBO_REF")
         return plural("1 key stays behind", `${count} keys stay behind`);
+      if (issue?.code === "COMBO_REFERENCED_BY_STAYING")
+        return plural(
+          "1 combo stays behind and references it",
+          `${count} combos stay behind and reference it`,
+        );
       return plural("1 affected", `${count} affected`);
     }
     return null; // unknown object shape: never render raw

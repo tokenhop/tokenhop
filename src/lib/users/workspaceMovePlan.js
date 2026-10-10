@@ -270,5 +270,41 @@ export function buildPlan(db, input, deps) {
       ops.push({ ...it, scope });
     }
   }
+  // Reverse references: source combos that stay behind may point at a moving
+  // node (provider = node id or prefix), alias (bare name), custom model
+  // (`<providerAlias>/<modelId>`), or nested combo (by name). Warn, never block.
+  const staying = db
+    .all(`SELECT id, name, models FROM combos WHERE workspaceId = ?`, [src])
+    .filter((r) => !items.some((i) => i.type === "combo" && i.id === r.id))
+    .map((r) => parseJson(r.models, []));
+  if (staying.length > 0) {
+    const referenced = (pred) => staying.filter((models) => models.some(pred)).length;
+    for (const op of ops) {
+      let count = 0;
+      if (op.type === "node") {
+        const prefix = parseJson(op.row.data, {}).prefix;
+        count = referenced((m) => {
+          if (typeof m !== "string") return false;
+          const split = m.indexOf("/");
+          if (split <= 0) return false;
+          const provider = m.slice(0, split);
+          return provider === op.id || (prefix && provider === prefix);
+        });
+      } else if (op.type === "alias") {
+        count = referenced((m) => m === op.id);
+      } else if (op.type === "customModel") {
+        const [alias, modelId] = op.id.split("|");
+        count = referenced((m) => m === `${alias}/${modelId}`);
+      } else if (op.type === "combo") {
+        const name = op.row.name;
+        count = referenced((m) => m === name);
+      }
+      if (count > 0) {
+        warn(op, "COMBO_REFERENCED_BY_STAYING", "Combos that stay behind reference this item", {
+          count,
+        });
+      }
+    }
+  }
   return { ops, conflicts, warnings };
 }

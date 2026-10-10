@@ -5,6 +5,7 @@ import {
   confirmWarningsOf,
   issueDetailsText,
   moveConflictOf,
+  moveErrorMessage,
 } from "../../src/shared/utils/workspaceMove";
 
 // The exact shapes POST /api/workspaces/[id]/move returns (route.js fail()):
@@ -45,6 +46,12 @@ describe("issueDetailsText (server warning objects)", () => {
     expect(issueDetailsText({ code: "KEY_COMBO_REF", details: { count: 1 } })).toBe(
       "1 key stays behind",
     );
+    expect(issueDetailsText({ code: "COMBO_REFERENCED_BY_STAYING", details: { count: 1 } })).toBe(
+      "1 combo stays behind and references it",
+    );
+    expect(issueDetailsText({ code: "COMBO_REFERENCED_BY_STAYING", details: { count: 3 } })).toBe(
+      "3 combos stay behind and reference it",
+    );
   });
 
   it("passes through safe primitives", () => {
@@ -84,5 +91,17 @@ describe("409 body classification (route contract)", () => {
     expect(confirmWarningsOf(confirmBody)).toEqual(confirmBody.warnings);
     expect(confirmWarningsOf(conflictBody)).toBeNull();
     expect(confirmWarningsOf({ error: "CONFIRM_REQUIRED" })).toBeNull(); // old guess
+  });
+});
+
+describe("moveErrorMessage", () => {
+  it("gives each failure class its own copy and never echoes server text", () => {
+    const msgs = [400, 403, 404, 413, 503, 500].map(moveErrorMessage);
+    expect(new Set(msgs).size).toBe(msgs.length);
+    expect(moveErrorMessage(503)).toMatch(/temporarily unavailable/i);
+    expect(moveErrorMessage(503)).toMatch(/try again later/i);
+    expect(moveErrorMessage(413)).toMatch(/too many items/i);
+    expect(moveErrorMessage(413)).toMatch(/fewer/i);
+    expect(moveErrorMessage(418)).toBe(moveErrorMessage(500));
   });
 });

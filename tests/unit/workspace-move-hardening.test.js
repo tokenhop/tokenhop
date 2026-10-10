@@ -484,6 +484,88 @@ describe("combo refs to custom models", () => {
   });
 });
 
+describe("combos that stay behind and reference a moving item", () => {
+  beforeEach(async () => {
+    await load();
+    await clean();
+    t = await seedTenancy();
+    await db.updateSettings({ requireLogin: true });
+  });
+
+  const staying = (out, itemId) =>
+    out.warnings.filter((w) => w.code === "COMBO_REFERENCED_BY_STAYING" && w.id === itemId);
+
+  async function preview(items) {
+    const res = await moveAs(t.a, t.shared.id, {
+      targetWorkspaceId: t.a.personal,
+      preview: true,
+      items,
+    });
+    expect(res.status).toBe(200);
+    return res.json();
+  }
+
+  it("warns (confirm-gated, not a conflict) for a node, alias, custom model and nested combo", async () => {
+    const { a, shared } = t;
+    await db.createNode(a.ctx, shared.id, {
+      id: "node-ref",
+      type: "openai-compatible",
+      name: "N",
+      prefix: "refp",
+      baseUrl: "http://x",
+    });
+    await db.setModelAlias(a.ctx, shared.id, "fav", "openai/gpt-4o");
+    await db.addCustomModel(a.ctx, shared.id, { providerAlias: "openai", id: "cm", type: "llm" });
+    const inner = await db.createCombo(a.ctx, shared.id, { name: "inner", models: [] });
+    await db.createCombo(a.ctx, shared.id, {
+      name: "uses-node-id",
+      models: ["node-ref/m1"],
+    });
+    await db.createCombo(a.ctx, shared.id, { name: "uses-prefix", models: ["refp/m1"] });
+    await db.createCombo(a.ctx, shared.id, { name: "uses-alias", models: ["fav"] });
+    await db.createCombo(a.ctx, shared.id, { name: "uses-custom", models: ["openai/cm"] });
+    await db.createCombo(a.ctx, shared.id, { name: "uses-inner", models: ["inner", "openai/x"] });
+    const items = [
+      { type: "node", id: "node-ref" },
+      { type: "alias", id: "fav" },
+      { type: "customModel", id: "openai|cm|llm" },
+      { type: "combo", id: inner.id },
+    ];
+    const out = await preview(items);
+    expect(out.conflicts).toEqual([]);
+    expect(staying(out, "node-ref")).toEqual([
+      expect.objectContaining({ type: "node", details: { count: 2 } }),
+    ]);
+    expect(staying(out, "fav")).toEqual([
+      expect.objectContaining({ type: "alias", details: { count: 1 } }),
+    ]);
+    expect(staying(out, "openai|cm|llm")).toEqual([
+      expect.objectContaining({ type: "customModel", details: { count: 1 } }),
+    ]);
+    expect(staying(out, inner.id)).toEqual([
+      expect.objectContaining({ type: "combo", details: { count: 1 } }),
+    ]);
+    // Confirm-gated: an unconfirmed apply is refused, confirm proceeds.
+    const unconfirmed = await moveAs(a, shared.id, { targetWorkspaceId: a.personal, items });
+    expect(unconfirmed.status).toBe(409);
+    expect((await unconfirmed.json()).code).toBe("confirm_required");
+  });
+
+  it("stays quiet when the referencing combo moves too, or nothing references the item", async () => {
+    const { a, shared } = t;
+    await db.setModelAlias(a.ctx, shared.id, "fav", "openai/gpt-4o");
+    await db.setModelAlias(a.ctx, shared.id, "lonely", "openai/gpt-4o");
+    const user = await db.createCombo(a.ctx, shared.id, { name: "user", models: ["fav"] });
+    const out = await preview([
+      { type: "alias", id: "fav" },
+      { type: "combo", id: user.id },
+    ]);
+    expect(out.warnings.some((w) => w.code === "COMBO_REFERENCED_BY_STAYING")).toBe(false);
+    const lonely = await preview([{ type: "alias", id: "lonely" }]);
+    expect(lonely.warnings).toEqual([]);
+  });
+});
+
 describe("key-scoped budgets follow their API key", () => {
   beforeEach(async () => {
     await load();
