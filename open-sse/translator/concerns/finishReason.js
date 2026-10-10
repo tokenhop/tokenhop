@@ -15,6 +15,8 @@ export function toOpenAIFinish(reason, format) {
           return OPENAI_FINISH.TOOL_CALLS;
         case CLAUDE_STOP.STOP_SEQUENCE:
           return OPENAI_FINISH.STOP;
+        case CLAUDE_STOP.REFUSAL:
+          return OPENAI_FINISH.CONTENT_FILTER;
         default:
           return OPENAI_FINISH.STOP;
       }
@@ -76,10 +78,23 @@ export function fromOpenAIFinish(reason, format) {
           return CLAUDE_STOP.MAX_TOKENS;
         case OPENAI_FINISH.TOOL_CALLS:
           return CLAUDE_STOP.TOOL_USE;
+        case OPENAI_FINISH.CONTENT_FILTER:
+          return CLAUDE_STOP.REFUSAL;
         default:
           return CLAUDE_STOP.END_TURN;
       }
     default:
       return reason;
   }
+}
+
+// Claude stop_reason "refusal" → human-readable text for OpenAI message.refusal.
+export function claudeRefusalText(stopDetails) {
+  const explanation = stopDetails?.explanation;
+  if (typeof explanation === "string" && explanation) return explanation;
+  const category = stopDetails?.category;
+  if (typeof category === "string" && category) {
+    return `Request refused by upstream provider (category: ${category}).`;
+  }
+  return "Request refused by upstream provider.";
 }

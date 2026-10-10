@@ -47,6 +47,7 @@ describe("toOpenAIFinish - claude", () => {
     ["end_turn", "stop"],
     ["max_tokens", "length"],
     ["tool_use", "tool_calls"],
+    ["refusal", "content_filter"],
   ])("%s -> %s", (input, expected) => {
     expect(toOpenAIFinish(input, "claude")).toBe(expected);
   });
@@ -67,6 +68,9 @@ describe("fromOpenAIFinish round-trip - claude", () => {
   });
   it("length -> max_tokens", () => {
     expect(fromOpenAIFinish("length", "claude")).toBe("max_tokens");
+  });
+  it("content_filter -> refusal", () => {
+    expect(fromOpenAIFinish("content_filter", "claude")).toBe("refusal");
   });
 });
 

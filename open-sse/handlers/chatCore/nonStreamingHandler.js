@@ -18,9 +18,9 @@ import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { openAICompletionToClientFormat } from "./completionToClient.js";
 import { fimContextFor } from "../../translator/concerns/fim.js";
 import { normalizeFimNativeBody } from "../../translator/response/fim-native.js";
-import { toOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import { claudeRefusalText, toOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { geminiUsageCounts } from "../../translator/concerns/usage.js";
-import { CLAUDE_BLOCK, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { CLAUDE_BLOCK, CLAUDE_STOP, RESPONSES_ITEM } from "../../translator/schema/index.js";
 import { GEMINI_FINISH, OPENAI_FINISH } from "../../translator/schema/finishReasons.js";
 
 /**
@@ -172,6 +172,9 @@ export function translateNonStreamingResponse(
     if (!message.content && !message.tool_calls) message.content = "";
 
     const finishReason = toOpenAIFinish(responseBody.stop_reason, "claude");
+    if (responseBody.stop_reason === CLAUDE_STOP.REFUSAL) {
+      message.refusal = claudeRefusalText(responseBody.stop_details);
+    }
 
     const result = {
       id: `chatcmpl-${responseBody.id || Date.now()}`,
