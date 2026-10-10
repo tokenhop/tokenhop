@@ -71,6 +71,27 @@ describe("getCapabilitiesForModel", () => {
     });
   });
 
+  it("Claude 5.x adaptive-only families cannot disable thinking, incl. dated/prefixed ids", () => {
+    for (const provider of ["anthropic", "claude"]) {
+      for (const family of [
+        "claude-sonnet-5-5",
+        "claude-opus-5-5",
+        "claude-fable-5-1",
+        "claude-mythos-5-1",
+      ]) {
+        for (const id of [family, `anthropic/${family}`, `${family}-20260901`]) {
+          expect(getCapabilitiesForModel(provider, id), `${provider}/${id}`).toMatchObject({
+            thinkingFormat: "claude-adaptive",
+            thinkingCanDisable: false,
+            forcedToolChoice: false,
+            contextWindow: 1000000,
+            maxOutput: 128000,
+          });
+        }
+      }
+    }
+  });
+
   it("reports Kiro Claude Opus 4.8 as a 1M context model", () => {
     expect(getCapabilitiesForModel("kiro", "claude-opus-4.8").contextWindow).toBe(1000000);
     expect(getCapabilitiesForModel("kiro", "anthropic/claude-opus-4.8").contextWindow).toBe(
