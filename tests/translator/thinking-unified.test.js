@@ -144,6 +144,46 @@ describe("applyThinking per provider format", () => {
       }
     }
   });
+  it("Haiku 5.5 is adaptive-only: effort xhigh/max kept, never enabled, none → disabled", () => {
+    for (const provider of ["claude", "anthropic"]) {
+      for (const effort of ["low", "medium", "high", "xhigh", "max"]) {
+        const out = apply("claude", "claude-haiku-5-5", { reasoning_effort: effort }, provider);
+        expect(out.thinking).toEqual({ type: "adaptive" });
+        expect(out.output_config).toEqual({ effort });
+      }
+      const adaptive = apply(
+        "claude",
+        "claude-haiku-5-5",
+        { thinking: { type: "adaptive" }, output_config: { effort: "xhigh" } },
+        provider,
+      );
+      expect(adaptive.output_config).toEqual({ effort: "xhigh" });
+      const budget = apply(
+        "claude",
+        "claude-haiku-5-5",
+        { thinking: { type: "enabled", budget_tokens: 8000 } },
+        provider,
+      );
+      expect(budget.thinking).toEqual({ type: "adaptive" });
+      expect(budget.output_config?.effort).toBeTruthy();
+      const none = apply("claude", "claude-haiku-5-5", { reasoning_effort: "none" }, provider);
+      expect(none.thinking).toEqual({ type: "disabled" });
+      expect(none.output_config).toBeUndefined();
+      const noneSuffix = apply(
+        "claude",
+        "claude-haiku-5-5(none)",
+        { reasoning_effort: "max" },
+        provider,
+      );
+      expect(noneSuffix.thinking).toEqual({ type: "disabled" });
+    }
+  });
+  it("Haiku 4.5 unchanged: enabled+budget, no output_config.effort", () => {
+    const out = apply("claude", "claude-haiku-4-5", { reasoning_effort: "xhigh" }, "anthropic");
+    expect(out.thinking?.type).toBe("enabled");
+    expect(out.thinking.budget_tokens).toBeGreaterThan(0);
+    expect(out.output_config?.effort).toBeUndefined();
+  });
   it("claude haiku → enabled+budget", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "high" }, "claude");
     expect(out.thinking).toEqual({ type: "enabled", budget_tokens: 24576 });

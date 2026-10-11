@@ -6,8 +6,9 @@ import { applyCloaking } from "../../utils/claudeCloaking.js";
 import { resolveSessionId } from "../../utils/sessionManager.js";
 import { isValidClaudeSignature } from "../../utils/claudeSignature.js";
 import { PROVIDERS } from "../../providers/index.js";
-import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { getCapabilitiesForModel, isOfficialClaudeProvider } from "../../providers/capabilities.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
+import { budgetToLevel } from "../concerns/thinking.js";
 
 const CACHE_CONTROL_5M = { type: "ephemeral" };
 const CACHE_CONTROL_1H = { type: "ephemeral", ttl: "1h" };
@@ -207,9 +208,6 @@ export function fixToolUseOrdering(messages) {
   return merged;
 }
 
-// Models that reject thinking.type "adaptive" + output_config.effort (Opus 4.5+/Sonnet 4.6+ only)
-const ADAPTIVE_THINKING_UNSUPPORTED = /haiku/i;
-
 function handlesThinkingBlocks(provider) {
   return (
     provider === "claude" || provider?.startsWith("anthropic-compatible") || provider === "deepseek"
@@ -247,23 +245,45 @@ function hasForeignServerToolUseId(block) {
 
 // Normalize a native Claude passthrough body to match Anthropic Messages API spec.
 // Newer Cowork/Claude Code clients emit beta-only shapes that OAuth endpoints reject:
-// 1. thinking.type "adaptive" → unsupported on Haiku
-// 2. output_config.effort → unsupported on Haiku
+// 1. thinking.type "adaptive" → unsupported on budget-only Haiku (4.x): downgraded to enabled+budget
+// 2. output_config.effort → unsupported on budget-only Haiku: stripped
+// 2b. thinking.type "enabled" → rejected by adaptive-only models (Haiku/Sonnet 5.5) on the
+//     official Anthropic API: rewritten to adaptive, effort derived from budget_tokens
 // 3. bare content-block objects (content: {block} instead of [{block}]) → wrapped first
 // 4. role "system" messages (mid-conversation-system beta) → only top-level system is allowed
 // 5. server_tool_use blocks carrying a foreign (non-srvtoolu_) id → rejected outright
-export function normalizeClaudePassthrough(body, model = "") {
+export function normalizeClaudePassthrough(body, model = "", provider = "") {
   if (!body || typeof body !== "object") return body;
 
-  // 1. Downgrade adaptive thinking for models that don't support it
-  if (body.thinking?.type === "adaptive" && ADAPTIVE_THINKING_UNSUPPORTED.test(model)) {
-    body.thinking = { type: "enabled", budget_tokens: 10000 };
-  }
+  // body is a shallow copy shared with the caller's combo request: assign new
+  // thinking/output_config objects, never mutate the nested originals.
+  const caps = getCapabilitiesForModel(provider, model);
+  const official = isOfficialClaudeProvider(provider);
+  const officialAdaptive = official && caps.thinkingEnabledRejected;
 
-  // 2. Strip effort param for models that don't support it (keep other output_config fields)
-  if (ADAPTIVE_THINKING_UNSUPPORTED.test(model) && body.output_config?.effort != null) {
-    delete body.output_config.effort;
-    if (Object.keys(body.output_config).length === 0) delete body.output_config;
+  if (officialAdaptive) {
+    // 2b. Adaptive-only models reject thinking.type "enabled"; "disabled" is left untouched.
+    if (body.thinking?.type === "enabled") {
+      const { display, budget_tokens: budget } = body.thinking;
+      const level = Number.isFinite(budget) && budget > 0 ? budgetToLevel(budget) : null;
+      body.thinking = { type: "adaptive", ...(display !== undefined ? { display } : {}) };
+      if (level && body.output_config?.effort == null) {
+        let effort = level === "minimal" ? "low" : level;
+        if (effort === "xhigh" && !caps.thinkingXhigh) effort = "high";
+        body.output_config = { ...body.output_config, effort };
+      }
+    }
+  } else if (/haiku/i.test(model) && (caps.thinkingFormat === "claude-budget" || !official)) {
+    // 1. Downgrade adaptive thinking for models that don't support it
+    if (body.thinking?.type === "adaptive") {
+      body.thinking = { type: "enabled", budget_tokens: 10000 };
+    }
+    // 2. Strip effort param for models that don't support it (keep other output_config fields)
+    if (body.output_config?.effort != null) {
+      const { effort, ...rest } = body.output_config;
+      if (Object.keys(rest).length === 0) delete body.output_config;
+      else body.output_config = rest;
+    }
   }
 
   // 3. Wrap bare content-block objects as one-element arrays before folding.

@@ -92,6 +92,42 @@ describe("getCapabilitiesForModel", () => {
     }
   });
 
+  it("reports Claude Haiku 5.5 as adaptive and disable-able; Haiku 4.5 stays budget", () => {
+    for (const id of ["claude-haiku-5-5", "anthropic/claude-haiku-5-5"]) {
+      const caps = getCapabilitiesForModel("anthropic", id);
+      expect(caps.thinkingFormat, id).toBe("claude-adaptive");
+      expect(caps.thinkingCanDisable, id).toBe(true);
+    }
+    for (const id of ["claude-haiku-4-5", "claude-haiku-4-5-20251001"]) {
+      expect(getCapabilitiesForModel("anthropic", id).thinkingFormat, id).toBe("claude-budget");
+    }
+  });
+
+  it("third-party anthropic-compatible-* hosts keep budget thinking for Haiku 5.5", () => {
+    for (const id of ["claude-haiku-5-5", "vendor/claude-haiku-5-5"]) {
+      expect(getCapabilitiesForModel("anthropic-compatible-x", id).thinkingFormat, id).toBe(
+        "claude-budget",
+      );
+    }
+  });
+
+  it("flags only verified exact ids as rejecting thinking.type enabled", () => {
+    for (const id of [
+      "claude-haiku-5-5",
+      "claude-opus-4-7",
+      "claude-sonnet-5",
+      "claude-mythos-5-1",
+    ])
+      expect(getCapabilitiesForModel("anthropic", id).thinkingEnabledRejected, id).toBe(true);
+    for (const id of [
+      "claude-opus-4-6",
+      "claude-sonnet-4-6",
+      "claude-haiku-4-5",
+      "claude-haiku-5-5-20260101",
+    ])
+      expect(getCapabilitiesForModel("anthropic", id).thinkingEnabledRejected, id).toBe(false);
+  });
+
   it("reports Kiro Claude Opus 4.8 as a 1M context model", () => {
     expect(getCapabilitiesForModel("kiro", "claude-opus-4.8").contextWindow).toBe(1000000);
     expect(getCapabilitiesForModel("kiro", "anthropic/claude-opus-4.8").contextWindow).toBe(
