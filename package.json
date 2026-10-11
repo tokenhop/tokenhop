@@ -1,6 +1,6 @@
 {
   "name": "tokenhop-app",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "tokenhop web dashboard",
   "private": true,
   "engines": {

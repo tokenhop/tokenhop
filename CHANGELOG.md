@@ -1,3 +1,16 @@
+# v1.0.3 (2026-10-11)
+
+Third patch on the tokenhop 1.0 line: translator and provider fixes for tool choice, Anthropic refusals, Claude 5.x thinking, empty combo streams and Claude Code markers on API-key traffic.
+
+## Fixes
+
+- **Translator**: forced `tool_choice` downgraded for models that reject it (#784); Anthropic refusals surfaced as `content_filter` with refusal text (#850).
+- **Providers**: z.ai GLM-5.3 thinking clamped off to low effort (#796).
+- **Database**: disabled models included in database export/import (#803).
+- **Combos**: fall back when a member streams an empty 200 response (#852).
+- **Capabilities**: adaptive thinking for Claude 5.x (#855).
+- **Anthropic**: Claude Code markers no longer injected on API-key traffic (#859).
+
 # v1.0.1 (2026-10-02)
 
 First patch on the tokenhop 1.0 line. 21 backported fixes: translator correctness
