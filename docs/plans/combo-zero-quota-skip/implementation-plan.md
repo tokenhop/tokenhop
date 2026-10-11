@@ -20,4 +20,4 @@ Fix at shared account selector (`getProviderCredentials`), not at each combo str
 
 ## Risks
 
-Some providers expose no usable quota API or header; remain fail-open and still rely on 429 locks. A zero reading might be stale or provider-specific; bounded reprobe limits false suppression. Real secrets remain in dotenvx `.env.encrypted`, never copied to tests or commits. UI's 0% display may use quota names that cannot safely map to global/model windows; document gaps rather than assume scope.
+Some providers expose no usable quota API or header; remain fail-open and still rely on 429 locks. A zero reading might be stale or provider-specific; bounded reprobe limits false suppression. Real secrets are never copied to tests or commits. UI's 0% display may use quota names that cannot safely map to global/model windows; document gaps rather than assume scope.

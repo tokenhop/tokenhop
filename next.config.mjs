@@ -11,6 +11,8 @@ const proxyClientMaxBodySize = brand.readEnv("PROXY_CLIENT_MAX_BODY_SIZE") || "1
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Stop `next dev` from rewriting AGENTS.md/CLAUDE.md with its agent-rules block.
+  agentRules: false,
   distDir: process.env.NEXT_DIST_DIR || ".next",
   output: "standalone",
   // `open` must stay external. It derives its own directory from `import.meta.url`, and

@@ -11,10 +11,10 @@
 // (<DATA_DIR>/db/data.sqlite) via the app DB layer. Gated by RUN_REAL=1 so the
 // default `vitest run` never touches the network or the real data dir.
 //
-//   npx dotenvx run -f .env.encrypted -- npx vitest run --config tests/vitest.config.js tests/translator/real/antigravity-cache.real.test.js
+//   op run --env-file=.env.local -- npx vitest run --config tests/vitest.config.js tests/translator/real/antigravity-cache.real.test.js
 //
 // Requires RUN_REAL=1 (default skip) and ANTIGRAVITY_OAUTH_CLIENT_ID/_SECRET,
-// which live in the repo's encrypted env — hence the dotenvx wrapper (the env
+// which live in 1Password via the gitignored .env.local — hence the `op run` wrapper (the env
 // is read at module load, before the test can inject it). Tests skip cleanly
 // when the DB is unavailable or no usable Antigravity connection exists.
 import { beforeAll, describe, it, expect } from "vitest";

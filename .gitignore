@@ -36,11 +36,9 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
-# dotenvx: commit the encrypted env, never the private decryption keys
-!.env.encrypted
+# .env.local holds 1Password op:// references for `op run`; never commit it
 # built-in OAuth defaults, generated at build time by scripts/write-oauth-clients.cjs
 /oauth-clients.json
-.env.keys
 
 # vercel
 .vercel
