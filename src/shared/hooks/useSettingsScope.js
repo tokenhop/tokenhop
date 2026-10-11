@@ -7,16 +7,19 @@ import { accountView } from "@/shared/utils/account";
 
 /**
  * Settings scope for pages outside Settings (YAN-749), derived exactly like
- * the Settings page. Inactive (switch off, one user): `scope` null and
- * `canManageInstance` true, so every call keeps going to /api/settings.
- * @returns {{ ready: boolean, scope: { workspaceId: string|null }|null, canManageInstance: boolean }}
+ * the Settings page. Inactive (switch off, one user): `scope` null and both
+ * capabilities true, so every call keeps going to the legacy endpoints.
+ * `canManageInstance` gates instance settings; `canHostOps` gates host-level
+ * routes (tunnel status/mutations, MITM) — owner/admin hold both.
+ * @returns {{ ready: boolean, scope: { workspaceId: string|null }|null, canManageInstance: boolean, canHostOps: boolean }}
  */
 export function useSettingsScope() {
   const { status, loaded } = useAuthStatusState();
   return useMemo(() => {
     const view = accountView(status);
     const { canManageInstance } = layoutFor(view);
+    const canHostOps = view.active ? view.can("instance.hostOps") : true;
     const scope = view.active ? { workspaceId: view.activeWorkspace?.id ?? null } : null;
-    return { ready: loaded, scope, canManageInstance };
+    return { ready: loaded, scope, canManageInstance, canHostOps };
   }, [status, loaded]);
 }

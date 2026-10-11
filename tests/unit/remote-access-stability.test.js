@@ -17,7 +17,7 @@ const sync = readFileSync(
  * Source-contract guard against the fetch-storm regression (merge-gate BLOCK):
  * whole-object hook returns (`[tunnel, ts]`, `loadSettings`) as effect deps
  * re-created callbacks every render → endless /api/settings +
- * /api/tunnel/status refetching. The coordinator must load once on mount and
+ * /api/tunnel/status refetching. The coordinator must load once when access resolves and
  * keep every effect callback referentially stable (refs for latest values).
  */
 describe("useTunnelControls fetch-storm guard", () => {
@@ -26,8 +26,13 @@ describe("useTunnelControls fetch-storm guard", () => {
     expect(controls).not.toMatch(/\[\s*loadSettings\s*\]/);
   });
 
-  it("runs the initial load exactly once via a mount-only effect", () => {
-    expect(controls).toMatch(/useEffect\(\(\) => \{\s*\n?\s*loadSettings\(\);\s*\n?\s*\}, \[\]\)/);
+  it("loads once when access resolves, keyed only on the two capability booleans", () => {
+    // Intentional contract change (YAN-769): not mount-only any more. Still a
+    // single load per access transition, never keyed on callbacks/objects.
+    expect(controls).toMatch(
+      /useEffect\(\(\) => \{\s*epochRef\.current \+= 1;\s*if \(settingsAllowed \|\| hostAllowed\) loadSettings\(\);\s*else if \(ready\) tunnelRef\.current\.setChecking\(false\);\s*\}, \[settingsAllowed, hostAllowed\]\)/,
+    );
+    expect(controls).not.toMatch(/useEffect\(\(\) => \{\s*loadSettings\(\);\s*\}, \[\]\)/);
   });
 
   it("routes transport-hook access through latest-value refs", () => {

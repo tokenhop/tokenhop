@@ -285,6 +285,7 @@ TailscaleWay.propTypes = {
  * @param {() => void} props.onDisableTailscale Open the disable-Tailscale confirm in the parent.
  * @param {() => void} props.onInstallTailscale Open the install flow in the parent.
  * @param {() => void} props.onStopTailscale Halt an in-flight Tailscale connect.
+ * @param {boolean} [props.showRemote] Tunnel + Tailscale cards (host/instance only; hidden for members).
  */
 export default function WaysInGrid({
   localUrl,
@@ -297,7 +298,16 @@ export default function WaysInGrid({
   onDisableTailscale,
   onInstallTailscale,
   onStopTailscale,
+  showRemote = true,
 }) {
+  if (!showRemote) {
+    // Local is the only way in: one narrow card, not a third of a phantom grid.
+    return (
+      <div className="grid gap-4 lg:max-w-md lg:grid-cols-1">
+        <LocalWay localUrl={localUrl} />
+      </div>
+    );
+  }
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <LocalWay localUrl={localUrl} />
@@ -329,6 +339,7 @@ WaysInGrid.propTypes = {
   onDisableTailscale: PropTypes.func.isRequired,
   onInstallTailscale: PropTypes.func.isRequired,
   onStopTailscale: PropTypes.func.isRequired,
+  showRemote: PropTypes.bool,
 };
 
 export { WaysInGrid };
