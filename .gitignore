@@ -111,3 +111,4 @@ temp/
 /tools/shellcheck
 .playwright-cli
 .playwright-mcp
+.worktrees/
