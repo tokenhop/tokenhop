@@ -2,6 +2,7 @@ import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
 import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { getModelKind } from "@/shared/constants/models";
 import { resolveGatewayAuth, authorizeGatewayTarget } from "@/lib/auth/gatewayAuth.js";
+import { buildModelsList } from "../route.js";
 
 const KIND_ENDPOINT = {
   llm: "/v1/chat/completions",
@@ -99,6 +100,56 @@ function lookup(fullId, requestedKind) {
   return null;
 }
 
+// Public fields of a /v1/models catalog entry (compatible nodes, custom/live
+// models) in the info shape. Fields are picked explicitly: never spread the entry.
+function fromCatalogEntry(id, entry, kind) {
+  const entryKind = entry.kind || kind || "llm";
+  const out = {
+    id,
+    name: id.slice(id.indexOf("/") + 1),
+    kind: entryKind,
+    owned_by: entry.owned_by,
+    endpoint: entry.endpoint || KIND_ENDPOINT[entryKind] || null,
+  };
+  if (entry.capabilities) out.capabilities = entry.capabilities;
+  const ctx = entry.context_length ?? entry.capabilities?.contextWindow;
+  if (Number.isFinite(ctx) && ctx > 0) out.contextWindow = ctx;
+  return out;
+}
+
+const unavailable = (message) =>
+  Response.json(
+    { error: { message, type: "server_error" } },
+    { status: 503, headers: { "Access-Control-Allow-Origin": "*" } },
+  );
+
+// Static miss: look the id up in the same principal-scoped catalog as GET
+// /v1/models (compatible nodes, custom models), which already applies the key
+// allowlist, grants and disabled-model filters. Legacy storage (principal null)
+// intentionally reads the same unscoped catalog /v1/models serves.
+async function catalogInfo(auth, id, kind) {
+  let entry;
+  try {
+    const models = await buildModelsList(
+      [kind || "llm"],
+      auth.principal ? { principal: auth.principal } : undefined,
+    );
+    entry = models.find((m) => m.id === id);
+  } catch {
+    // Only errors the builder throws land here; its internal fail-open paths are unchanged.
+    return unavailable("Model catalog unavailable");
+  }
+  if (!entry) {
+    return Response.json(
+      { error: { message: `Model not found: ${id}`, type: "not_found" } },
+      { status: 404, headers: { "Access-Control-Allow-Origin": "*" } },
+    );
+  }
+  return Response.json(fromCatalogEntry(id, entry, kind), {
+    headers: { "Access-Control-Allow-Origin": "*" },
+  });
+}
+
 export async function OPTIONS() {
   return new Response(null, {
     headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, OPTIONS" },
@@ -119,6 +170,14 @@ export async function GET(request) {
     );
   }
   if (auth instanceof Response) return auth;
+  // Match the sibling catalog route: malformed auth state must never select
+  // legacy, unscoped discovery.
+  if (
+    !(auth?.legacy === true && auth.principal === null) &&
+    !(auth?.legacy === false && auth.principal)
+  ) {
+    return unavailable("Gateway authentication unavailable");
+  }
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   const kind = searchParams.get("kind");
@@ -133,8 +192,8 @@ export async function GET(request) {
       { status: 400, headers: { "Access-Control-Allow-Origin": "*" } },
     );
   }
-  const info = lookup(id, kind);
-  if (!info) {
+  const staticInfo = lookup(id, kind);
+  if (!staticInfo) {
     // Missing "/" means malformed id, not an unknown model: say so explicitly.
     if (!id.includes("/")) {
       return Response.json(
@@ -148,11 +207,9 @@ export async function GET(request) {
         { status: 400, headers: { "Access-Control-Allow-Origin": "*" } },
       );
     }
-    return Response.json(
-      { error: { message: `Model not found: ${id}`, type: "not_found" } },
-      { status: 404, headers: { "Access-Control-Allow-Origin": "*" } },
-    );
+    return catalogInfo(auth, id, kind);
   }
+  const info = staticInfo;
   const slash = id.indexOf("/");
   const provider = id.slice(0, slash);
   const denied = authorizeGatewayTarget(auth.principal, {
