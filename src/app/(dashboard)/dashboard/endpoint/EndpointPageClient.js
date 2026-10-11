@@ -149,6 +149,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
 
       <WaysInGrid
         localUrl={localUrl}
+        showRemote={tunnel.canHost}
         tunnel={{
           checking: tunnel.tunnelChecking,
           enabled: tunnel.tunnelEnabled,
@@ -183,7 +184,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
         onStopTailscale={tunnel.setTsLoading}
       />
 
-      {tunnel.isLoginUnsafe && !tunnel.tunnelEnabled && !tunnel.tsEnabled && (
+      {tunnel.canHost && tunnel.isLoginUnsafe && !tunnel.tunnelEnabled && !tunnel.tsEnabled && (
         <Callout variant="warn">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm">{tunnel.unsafeReason}</span>
@@ -195,7 +196,9 @@ export default function EndpointPageClient({ machineId: _machineId }) {
       )}
 
       <div className="grid items-start gap-4 lg:grid-cols-3">
-        <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
+        <div
+          className={`flex min-w-0 flex-col gap-4 ${tunnel.canManage ? "lg:col-span-2" : "lg:col-span-3"}`}
+        >
           <ApiKeysCard
             keys={apiKeys.keys}
             hashedMode={apiKeys.hashedMode}
@@ -206,6 +209,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
             onMoved={apiKeys.fetchKeys}
             migrationNotice={apiKeys.migrationNotice}
             requireApiKey={tunnel.requireApiKey}
+            showRequireApiKey={tunnel.canManage}
             onToggleRequireApiKey={tunnel.handleRequireApiKey}
             onCreateKey={() => apiKeys.setShowAddModal(true)}
             createdBanner={
@@ -269,15 +273,17 @@ export default function EndpointPageClient({ machineId: _machineId }) {
           />
         </div>
 
-        <div className="min-w-0">
-          <AccessCard
-            requireLogin={tunnel.requireLogin}
-            tunnelDashboardAccess={tunnel.tunnelDashboardAccess}
-            security={security}
-            onToggleLogin={tunnel.handleRequireLogin}
-            onToggleTunnelDash={tunnel.handleTunnelDashboardAccess}
-          />
-        </div>
+        {tunnel.canManage && (
+          <div className="min-w-0">
+            <AccessCard
+              requireLogin={tunnel.requireLogin}
+              tunnelDashboardAccess={tunnel.tunnelDashboardAccess}
+              security={security}
+              onToggleLogin={tunnel.handleRequireLogin}
+              onToggleTunnelDash={tunnel.handleTunnelDashboardAccess}
+            />
+          </div>
+        )}
       </div>
 
       {/* Tunnel dashboard access row is in AccessCard; the dashboard-over-tunnel

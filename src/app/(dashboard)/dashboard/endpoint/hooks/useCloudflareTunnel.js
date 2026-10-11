@@ -11,8 +11,11 @@ import { makePingTunnelHealth } from "./useReachableSync";
  *
  * @returns {object} Tunnel state, modal booleans, handlers, and
  * `applyStatusData` (consumed by the coordinator after `/api/tunnel/status`).
+ *
+ * @param {(() => boolean)|null} [isAllowed] stale-capability guard: mutations no-op when false.
  */
-export function useCloudflareTunnel() {
+export function useCloudflareTunnel(isAllowed = null) {
+  const allowed = () => (typeof isAllowed === "function" ? isAllowed() : true);
   const [checking, setChecking] = useState(true);
   const [enabled, setEnabled] = useState(false);
   const [reachable, setReachable] = useState(false);
@@ -42,9 +45,11 @@ export function useCloudflareTunnel() {
     setProgress,
     setStatus,
     setEnabled,
+    isAllowed: allowed,
   });
 
   const enableTunnel = async () => {
+    if (!allowed()) return;
     setShowEnableModal(false);
     setLoading(true);
     setStatus(null);
@@ -53,11 +58,14 @@ export function useCloudflareTunnel() {
     // Poll download progress while enable request is pending
     let polling = true;
     const pollProgress = async () => {
-      while (polling) {
+      if (!allowed()) return;
+      while (polling && allowed()) {
         try {
           const r = await fetch("/api/tunnel/status");
+          if (!allowed()) return;
           if (r.ok) {
             const s = await r.json();
+            if (!allowed()) return;
             if (s.download?.downloading) {
               setProgress(`Downloading cloudflared... ${s.download.progress}%`);
             } else if (polling) {
@@ -75,7 +83,9 @@ export function useCloudflareTunnel() {
     try {
       const res = await fetch("/api/tunnel/enable", { method: "POST" });
       polling = false;
+      if (!allowed()) return;
       const data = await res.json();
+      if (!allowed()) return;
       if (!res.ok) {
         setStatus({ type: "error", message: data.error || "Failed to enable tunnel" });
         return;
@@ -98,11 +108,13 @@ export function useCloudflareTunnel() {
   };
 
   const disableTunnel = async () => {
+    if (!allowed()) return;
     setLoading(true);
     setStatus(null);
     try {
       const res = await fetch("/api/tunnel/disable", { method: "POST" });
       const data = await res.json();
+      if (!allowed()) return;
       if (res.ok) {
         setEnabled(false);
         setUrl("");

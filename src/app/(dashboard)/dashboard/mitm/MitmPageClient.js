@@ -12,7 +12,8 @@ import {
   MitmToolCard,
   MitmRemoteSteps,
 } from "@/app/(dashboard)/dashboard/cli-tools/components";
-import { Callout } from "@/shared/components";
+import { Callout, CardSkeleton } from "@/shared/components";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useCliAccessStore } from "@/store/cliAccessStore";
 
@@ -20,8 +21,14 @@ import { useCliAccessStore } from "@/store/cliAccessStore";
  * MITM setup page shell: page-owned risk warning plus the shared server card
  * and per-tool DNS cards (owned by the CLI-tools redesign). Parity: provider,
  * key, alias and settings fetches; running/cert/DNS status; one expanded tool.
+ *
+ * YAN-769: every MITM route needs `instance.hostOps` (owner/admin), so members
+ * get a notice instead. Nothing mounts or fetches until auth resolves and
+ * host access is allowed (switch off: always allowed).
  */
 export default function MitmPageClient() {
+  const { ready, canManageInstance, canHostOps } = useSettingsScope();
+  const allowed = ready && canHostOps;
   const [connections, setConnections] = useState([]);
   const [apiKeys, setApiKeys] = useState([]);
   const [modelAliases, setModelAliases] = useState({});
@@ -36,6 +43,7 @@ export default function MitmPageClient() {
   });
   // Independent reads keep the other MITM controls usable when one endpoint fails.
   useEffect(() => {
+    if (!allowed) return undefined;
     let cancelled = false;
     const load = async (url, label, apply, fallback) => {
       try {
@@ -55,16 +63,18 @@ export default function MitmPageClient() {
     load("/api/providers", "providers", (data) => setConnections(data.connections || []), {});
     load("/api/keys", "API keys", (data) => setApiKeys(data.keys || []), {});
     load("/api/models/alias", "model aliases", (data) => setModelAliases(data.aliases || {}), {});
-    load(
-      "/api/settings",
-      "cloud settings",
-      (data) => setCloudEnabled(data.cloudEnabled || false),
-      {},
-    );
+    // cloudEnabled is an instance-settings key, not a host one.
+    if (canManageInstance)
+      load(
+        "/api/settings",
+        "cloud settings",
+        (data) => setCloudEnabled(data.cloudEnabled || false),
+        {},
+      );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [allowed, canManageInstance]);
 
   const getActiveProviders = () => connections.filter((c) => c.isActive !== false);
 
@@ -79,6 +89,22 @@ export default function MitmPageClient() {
   };
 
   const mitmTools = Object.entries(MITM_TOOLS);
+
+  if (!ready) {
+    return (
+      <div className="flex flex-col gap-4" aria-live="polite" aria-busy="true">
+        <CardSkeleton />
+      </div>
+    );
+  }
+  if (!canHostOps) {
+    return (
+      <Callout variant="info" icon="lock" title="MITM setup is for instance admins">
+        The MITM server, certificate and DNS run on the host, so only an instance owner or admin can
+        set them up. Ask one to do it.
+      </Callout>
+    );
+  }
 
   return (
     <div className="flex w-full flex-col gap-5">

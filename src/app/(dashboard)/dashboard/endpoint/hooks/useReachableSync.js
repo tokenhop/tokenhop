@@ -113,16 +113,26 @@ export function useReachableSync({ tunnel, setTunnel, tailscale, setTailscale })
  * @param {(v: string) => void} deps.setProgress
  * @param {(v: object|null) => void} deps.setStatus
  * @param {(v: boolean) => void} deps.setEnabled
+ * @param {() => boolean} [deps.isAllowed] Live host capability; stops probes after revocation.
  * @returns {(...urls: Array<string>) => Promise<boolean>}
  */
-export function makePingTunnelHealth({ setLoading, setProgress, setStatus, setEnabled }) {
+export function makePingTunnelHealth({
+  setLoading,
+  setProgress,
+  setStatus,
+  setEnabled,
+  isAllowed = () => true,
+}) {
   return async (...urls) => {
+    if (!isAllowed()) return false;
     setLoading(true);
     setProgress("Waiting for tunnel ready...");
     const targets = urls.filter(Boolean).map((u) => `${u}/api/health`);
     const start = Date.now();
     while (Date.now() - start < TUNNEL_PING_MAX_MS) {
+      if (!isAllowed()) return false;
       await new Promise((r) => setTimeout(r, TUNNEL_PING_INTERVAL_MS));
+      if (!isAllowed()) return false;
       const ok = await Promise.any(
         targets.map(async (h) => {
           const p = await fetch(h, { mode: "cors", cache: "no-store" });
@@ -130,6 +140,7 @@ export function makePingTunnelHealth({ setLoading, setProgress, setStatus, setEn
           throw new Error("not ready");
         }),
       ).catch(() => false);
+      if (!isAllowed()) return false;
       if (ok) {
         setEnabled(true);
         setLoading(false);
@@ -139,9 +150,12 @@ export function makePingTunnelHealth({ setLoading, setProgress, setStatus, setEn
       // Every ~10s, check if backend process still alive
       if ((Date.now() - start) % 10000 < TUNNEL_PING_INTERVAL_MS) {
         try {
+          if (!isAllowed()) return false;
           const statusRes = await fetch("/api/tunnel/status");
+          if (!isAllowed()) return false;
           if (statusRes.ok) {
             const status = await statusRes.json();
+            if (!isAllowed()) return false;
             if (!status.tunnel?.enabled) {
               setStatus({ type: "error", message: "Tunnel process stopped unexpectedly." });
               setLoading(false);

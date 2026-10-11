@@ -58,6 +58,7 @@ import MoveToWorkspaceButton from "@/shared/components/MoveToWorkspaceButton";
  * @param {Record<string, string>} props.renameErrors Per-row rename errors.
  * @param {(id: string) => void} props.clearRenameError
  * @param {boolean} props.loading Initial list load.
+ * @param {boolean} [props.showRequireApiKey] Instance-only gate row (hidden for members).
  * @param {boolean} [props.hashedMode] Stored-prefix rendering + hashed chrome.
  * @param {boolean} [props.canCreate] Viewer gate for the Create button.
  * @param {boolean} [props.canManage] Hashed-mode gate for rename, pause and delete.
@@ -87,6 +88,7 @@ export default function ApiKeysCard({
   renameErrors,
   clearRenameError,
   loading,
+  showRequireApiKey = true,
   hashedMode = false,
   canCreate = true,
   canManage = true,
@@ -142,18 +144,20 @@ export default function ApiKeysCard({
         </>
       }
     >
-      <SettingRow
-        label="Require API key"
-        description="Requests without a valid key get a 401. The tunnel needs this on."
-        settingKey="requireApiKey"
-        control={
-          <Toggle
-            checked={requireApiKey}
-            onChange={onToggleRequireApiKey}
-            aria-label="Require API key"
-          />
-        }
-      />
+      {showRequireApiKey && (
+        <SettingRow
+          label="Require API key"
+          description="Requests without a valid key get a 401. The tunnel needs this on."
+          settingKey="requireApiKey"
+          control={
+            <Toggle
+              checked={requireApiKey}
+              onChange={onToggleRequireApiKey}
+              aria-label="Require API key"
+            />
+          }
+        />
+      )}
 
       {createdBanner && (
         <CreatedBanner

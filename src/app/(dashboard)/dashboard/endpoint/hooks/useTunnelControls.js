@@ -6,6 +6,7 @@ import { readTunnelStatus } from "../remoteAccessLogic";
 import { useCloudflareTunnel } from "./useCloudflareTunnel";
 import { useTailscale } from "./useTailscale";
 import { useDegradedStatusPoll, useReachableSync } from "./useReachableSync";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
 
 /**
  * Coordinator for remote access: Cloudflare Tunnel + Tailscale Funnel plus
@@ -23,6 +24,13 @@ import { useDegradedStatusPoll, useReachableSync } from "./useReachableSync";
  * and the browser ping (`CLIENT_PING_FAST_MS`) hit the network. No polling
  * loop and no effect re-fires while idle.
  *
+ * Capability gate (YAN-769): `/api/settings` needs `instance.settings.manage`
+ * (`canManageInstance`); `/api/tunnel/*` needs `instance.hostOps`
+ * (`canHostOps`). Both are 403 for members. Nothing is fetched, polled, or
+ * patched until the auth scope has resolved AND the matching capability is
+ * held; switch off (one user) resolves to both, so those calls are
+ * unchanged. A load that finishes after access was lost is discarded.
+ *
  * Trust user intent (`settingsEnabled`): UI stays "enabled" while the
  * watchdog restarts the backend process.
  *
@@ -35,8 +43,19 @@ export function useTunnelControls() {
   const [hasPassword, setHasPassword] = useState(true);
   const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
 
-  const tunnel = useCloudflareTunnel();
-  const ts = useTailscale();
+  const { ready, canManageInstance, canHostOps } = useSettingsScope();
+  const settingsAllowed = ready && canManageInstance;
+  const hostAllowed = ready && canHostOps;
+  const settingsRef = useRef(settingsAllowed);
+  settingsRef.current = settingsAllowed;
+  const hostRef = useRef(hostAllowed);
+  hostRef.current = hostAllowed;
+  // Bumped whenever either capability changes: loads started before are stale.
+  const epochRef = useRef(0);
+
+  const isHostAllowed = useCallback(() => hostRef.current, []);
+  const tunnel = useCloudflareTunnel(isHostAllowed);
+  const ts = useTailscale(isHostAllowed);
 
   // Latest-value refs: effects below run once on mount / on primitive deps.
   // Refs always point at the current closures so stable callbacks never go
@@ -56,11 +75,14 @@ export function useTunnelControls() {
 
   // Trust user intent (settingsEnabled): UI stays "enabled" while watchdog restarts process
   const syncTunnelStatus = useCallback(async () => {
+    if (!hostRef.current) return;
+    const epoch = epochRef.current;
     const { tunnel: t, ts: s } = { tunnel: tunnelRef.current, ts: tsRef.current };
     try {
       const statusRes = await fetch("/api/tunnel/status", { cache: "no-store" });
       if (!statusRes.ok) return;
       const data = await statusRes.json();
+      if (epoch !== epochRef.current || !hostRef.current) return;
       const parsed = readTunnelStatus(data);
       t.setUrl(parsed.tunnel.url);
       t.setPublicUrl(parsed.tunnel.publicUrl);
@@ -73,23 +95,29 @@ export function useTunnelControls() {
   }, []);
 
   const loadSettings = useCallback(async () => {
+    const wantSettings = settingsRef.current;
+    const wantStatus = hostRef.current;
+    if (!wantSettings && !wantStatus) return;
+    const epoch = epochRef.current;
     const { tunnel: t, ts: s } = { tunnel: tunnelRef.current, ts: tsRef.current };
     t.setChecking(true);
     try {
       const [settingsRes, statusRes] = await Promise.all([
-        fetch("/api/settings"),
-        fetch("/api/tunnel/status", { cache: "no-store" }),
+        wantSettings ? fetch("/api/settings") : null,
+        wantStatus ? fetch("/api/tunnel/status", { cache: "no-store" }) : null,
       ]);
-      if (settingsRes.ok) {
-        const data = await settingsRes.json();
+      const settingsData = settingsRes?.ok ? await settingsRes.json() : null;
+      const statusData = statusRes?.ok ? await statusRes.json() : null;
+      if (epoch !== epochRef.current) return;
+      if (settingsData && settingsRef.current) {
+        const data = settingsData;
         setRequireApiKey(data.requireApiKey || false);
         setRequireLogin(data.requireLogin !== false);
         setHasPassword(data.hasPassword || false);
         setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
       }
-      if (statusRes.ok) {
-        const data = await statusRes.json();
-        const parsed = readTunnelStatus(data);
+      if (statusData && hostRef.current) {
+        const parsed = readTunnelStatus(statusData);
         t.setUrl(parsed.tunnel.url);
         t.setPublicUrl(parsed.tunnel.publicUrl);
         t.setEnabled(parsed.tunnel.enabled);
@@ -103,35 +131,38 @@ export function useTunnelControls() {
     }
   }, []);
 
-  // Load once on mount (v1 behavior). No whole-object deps.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only by design; latest closures via refs.
+  // Load once when access resolves (v1: once on mount). No whole-object deps.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the two capabilities only; latest closures via refs.
   useEffect(() => {
-    loadSettings();
-  }, []);
+    epochRef.current += 1;
+    if (settingsAllowed || hostAllowed) loadSettings();
+    else if (ready) tunnelRef.current.setChecking(false);
+  }, [settingsAllowed, hostAllowed]);
 
   // Shared reachable tracking + browser ping (one tracker per transport).
   // Stable patch callbacks → no interval resets from the coordinator.
   useReachableSync({
     tunnel: {
-      enabled: tunnel.enabled,
+      enabled: hostAllowed && tunnel.enabled,
       reachable: tunnel.reachable,
       url: tunnel.url,
       publicUrl: tunnel.publicUrl,
     },
     setTunnel: tunnel.applyReachablePatch,
-    tailscale: { enabled: ts.enabled, reachable: ts.reachable, url: ts.url },
+    tailscale: { enabled: hostAllowed && ts.enabled, reachable: ts.reachable, url: ts.url },
     setTailscale: ts.applyReachablePatch,
   });
 
   // Status poll only while degraded; stops once healthy. syncTunnelStatus is
   // stable (refs inside), so the interval survives re-renders.
   useDegradedStatusPoll({
-    anyEnabled: tunnel.enabled || ts.enabled,
+    anyEnabled: hostAllowed && (tunnel.enabled || ts.enabled),
     allHealthy: (!tunnel.enabled || tunnel.reachable) && (!ts.enabled || ts.reachable),
     onSync: syncTunnelStatus,
   });
 
   const handleTunnelDashboardAccess = async (value) => {
+    if (!settingsRef.current) return;
     try {
       const res = await fetch("/api/settings", {
         method: "PATCH",
@@ -145,6 +176,7 @@ export function useTunnelControls() {
   };
 
   const handleRequireApiKey = async (value) => {
+    if (!settingsRef.current) return;
     try {
       const res = await fetch("/api/settings", {
         method: "PATCH",
@@ -158,6 +190,7 @@ export function useTunnelControls() {
   };
 
   const handleRequireLogin = async (value) => {
+    if (!settingsRef.current) return;
     try {
       const res = await fetch("/api/settings", {
         method: "PATCH",
@@ -171,6 +204,9 @@ export function useTunnelControls() {
   };
 
   return {
+    // false: hide instance settings controls / host-level remote access
+    canManage: settingsAllowed,
+    canHost: hostAllowed,
     // settings
     requireApiKey,
     requireLogin,

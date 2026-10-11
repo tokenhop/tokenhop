@@ -10,9 +10,11 @@ import { parseSseFrames } from "../remoteAccessLogic";
  * of popups), disconnect. Popups open only from explicit user clicks —
  * `requestUserAuth` stashes the URL and the view renders the button.
  *
+ * @param {(() => boolean)|null} [isAllowed] stale-capability guard: mutations no-op when false.
  * @returns {object} Tailscale state, modal booleans, and handlers.
  */
-export function useTailscale() {
+export function useTailscale(isAllowed = null) {
+  const allowed = () => (typeof isAllowed === "function" ? isAllowed() : true);
   const [enabled, setEnabled] = useState(false);
   const [reachable, setReachable] = useState(false);
   const [everReachable, setEverReachable] = useState(false);
@@ -62,11 +64,13 @@ export function useTailscale() {
   }, []);
 
   const checkInstalled = async () => {
+    if (!allowed()) return;
     setInstalled(null);
     try {
       const res = await fetch("/api/tunnel/tailscale-check");
       if (res.ok) {
         const data = await res.json();
+        if (!allowed()) return;
         setInstalled(data.installed);
         return data;
       }
@@ -78,20 +82,26 @@ export function useTailscale() {
   };
 
   const markConnected = async (tunnelUrl) => {
+    if (!allowed()) return;
     setUrl(tunnelUrl || "");
     const ok = await pingTsHealth(tunnelUrl);
+    if (!allowed()) return;
     setEnabled(true);
     setStatus(ok ? null : { type: "warning", message: "Connected but not reachable yet." });
   };
 
   const pollFunnelEnable = async (enableUrl) => {
+    if (!allowed()) return;
     requestUserAuth(enableUrl, "Open Funnel Settings");
     setProgress('Click "Open Funnel Settings" to enable Funnel...');
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 40 && allowed(); i++) {
       await new Promise((r) => setTimeout(r, 3000));
+      if (!allowed()) return;
       try {
         const res = await fetch("/api/tunnel/tailscale-enable", { method: "POST" });
+        if (!allowed()) return;
         const data = await res.json();
+        if (!allowed()) return;
         if (res.ok && data.success) {
           clearUserAuth();
           await markConnected(data.tunnelUrl);
@@ -107,11 +117,13 @@ export function useTailscale() {
         /* retry */
       }
     }
+    if (!allowed()) return;
     clearUserAuth();
     setStatus({ type: "error", message: "Timed out waiting for Funnel to be enabled." });
   };
 
   const installTailscale = async () => {
+    if (!allowed()) return;
     setInstalling(true);
     setStatus(null);
     setInstallLog([]);
@@ -122,6 +134,7 @@ export function useTailscale() {
         body: JSON.stringify({ sudoPassword }),
       });
       setSudoPassword("");
+      if (!allowed()) return;
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -129,6 +142,7 @@ export function useTailscale() {
 
       while (true) {
         const { done, value } = await reader.read();
+        if (!allowed()) return;
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const { frames, rest } = parseSseFrames(buffer);
@@ -155,6 +169,7 @@ export function useTailscale() {
   };
 
   const connectTailscale = async () => {
+    if (!allowed()) return;
     setShowModal(false);
     setConnecting(true);
     setLoading(true);
@@ -164,6 +179,7 @@ export function useTailscale() {
     try {
       const res = await fetch("/api/tunnel/tailscale-enable", { method: "POST" });
       const data = await res.json();
+      if (!allowed()) return;
 
       if (res.ok && data.success) {
         await markConnected(data.tunnelUrl);
@@ -173,17 +189,21 @@ export function useTailscale() {
       if (data.needsLogin && data.authUrl) {
         requestUserAuth(data.authUrl, "Open Login Page");
         setProgress('Login required — click "Open Login Page" to continue');
-        for (let i = 0; i < 40; i++) {
+        for (let i = 0; i < 40 && allowed(); i++) {
           await new Promise((r) => setTimeout(r, 3000));
+          if (!allowed()) return;
           try {
             const r2 = await fetch("/api/tunnel/tailscale-check");
+            if (!allowed()) return;
             if (r2.ok) {
               const check = await r2.json();
+              if (!allowed()) return;
               if (check.loggedIn) {
                 clearUserAuth();
                 setProgress("Starting funnel...");
                 const res2 = await fetch("/api/tunnel/tailscale-enable", { method: "POST" });
                 const data2 = await res2.json();
+                if (!allowed()) return;
                 if (res2.ok && data2.success) {
                   await markConnected(data2.tunnelUrl);
                 } else if (data2.funnelNotEnabled && data2.enableUrl) {
@@ -198,6 +218,7 @@ export function useTailscale() {
             /* retry */
           }
         }
+        if (!allowed()) return;
         clearUserAuth();
         setStatus({ type: "error", message: "Login timed out. Please try again." });
         return;
@@ -220,11 +241,13 @@ export function useTailscale() {
   };
 
   const disableTailscale = async () => {
+    if (!allowed()) return;
     setLoading(true);
     setStatus(null);
     try {
       const res = await fetch("/api/tunnel/tailscale-disable", { method: "POST" });
       const data = await res.json();
+      if (!allowed()) return;
       if (res.ok) {
         setEnabled(false);
         setUrl("");
@@ -241,9 +264,11 @@ export function useTailscale() {
   };
 
   const openModal = async () => {
+    if (!allowed()) return;
     setStatus(null);
     setInstallLog([]);
     const data = await checkInstalled();
+    if (!allowed()) return;
     if (data?.installed && data?.hasCachedPassword) {
       await connectTailscale();
     } else {
