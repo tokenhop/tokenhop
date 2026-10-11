@@ -175,6 +175,11 @@ export function createSSEStream(options = {}) {
   // (top level or Antigravity's `response` wrapper). Any real reason counts, so new
   // upstream values stay valid; only the "unspecified" placeholder is not terminal.
   // Routing-only: clean EOF without it is a truncated stream.
+  // gemini-cli is left out on purpose because it can't reach stream passthrough. Stream
+  // passthrough needs sourceFormat === targetFormat; the registry target is "gemini-cli",
+  // but no source detector or override currently returns that format (detectFormat,
+  // detectFormatByEndpoint), so its streams always run in translate mode. Add it here, with
+  // a wrapped-frame row in stream-meaningful-ttft.test.js, if a client endpoint ever does.
   const isGeminiFamily =
     provider === "antigravity" || provider === "gemini" || provider === "vertex";
   let geminiFinishSeen = false;
