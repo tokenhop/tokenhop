@@ -206,32 +206,28 @@ export async function buildModelsList(kindFilter, options = {}) {
   // YAN-364: a principal reads its workspace's combos/aliases/custom/disabled
   // rows (no global fallback); legacy storage keeps the global catalog. A
   // storage error surfaces (it never widens the catalog), same as connections.
-  const readCatalog = principal
-    ? {
-        combos: getGatewayCombos(principal),
-        customModels: getGatewayCustomModels(principal),
-        aliases: getGatewayAliases(principal),
-        disabled: getGatewayDisabled(principal),
-      }
-    : {
-        combos: getCombosUnscoped(),
-        customModels: getCustomModelsUnscoped(),
-        aliases: getModelAliasesUnscoped(),
-        disabled: getDisabledModelsUnscoped(),
-      };
   let combos = [];
   let customModels = [];
   let modelAliases = {};
   let disabledByAlias = {};
-  try {
+  if (principal) {
     [combos, customModels, modelAliases, disabledByAlias] = await Promise.all([
-      readCatalog.combos.catch(() => []),
-      readCatalog.customModels.catch(() => []),
-      readCatalog.aliases.catch(() => ({})),
-      readCatalog.disabled.catch(() => ({})),
+      getGatewayCombos(principal),
+      getGatewayCustomModels(principal),
+      getGatewayAliases(principal),
+      getGatewayDisabled(principal),
     ]);
-  } catch {
-    console.log("Could not fetch model catalog");
+  } else {
+    try {
+      [combos, customModels, modelAliases, disabledByAlias] = await Promise.all([
+        getCombosUnscoped().catch(() => []),
+        getCustomModelsUnscoped().catch(() => []),
+        getModelAliasesUnscoped().catch(() => ({})),
+        getDisabledModelsUnscoped().catch(() => ({})),
+      ]);
+    } catch {
+      console.log("Could not fetch model catalog");
+    }
   }
   const isDisabled = (alias, modelId) =>
     Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
@@ -424,10 +420,15 @@ export async function buildModelsList(kindFilter, options = {}) {
 
       // Completions nodes serve /v1/completions (FIM), not chat: hint it on
       // their LLM entries. Resolved once per provider, not per model.
-      const isCompletionsNode =
-        isOpenAICompatibleProvider(providerId) &&
-        kindFilter.includes(LLM_KIND) &&
-        (await resolveOpenAICompatibleConnectionApiType(conn)) === "completions";
+      let isCompletionsNode = false;
+      if (isOpenAICompatibleProvider(providerId) && kindFilter.includes(LLM_KIND)) {
+        try {
+          isCompletionsNode =
+            (await resolveOpenAICompatibleConnectionApiType(conn)) === "completions";
+        } catch {
+          // Metadata hint only: unknown API type means no completions/FIM hint.
+        }
+      }
 
       for (const modelId of mergedModelIds) {
         // Resolve kind: prefer custom/live metadata, then static, then ID heuristics.
@@ -522,12 +523,7 @@ export async function buildModelsList(kindFilter, options = {}) {
     for (let i = models.length - 1; i >= 0; i--) {
       const entry = models[i];
       if (entry.owned_by === "combo") continue; // combos gate by combo id above
-      let canonical = null;
-      try {
-        canonical = await getModelInfo(entry.id, { principal });
-      } catch {
-        canonical = null;
-      }
+      const canonical = await getModelInfo(entry.id, { principal });
       if (
         !canonical?.provider ||
         authorizeGatewayTarget(principal, {
@@ -559,12 +555,7 @@ export async function buildModelsList(kindFilter, options = {}) {
     if ([...grantScope.values()].some((v) => v !== null)) {
       for (let i = models.length - 1; i >= 0; i--) {
         if (models[i].owned_by === "combo") continue;
-        let canonical = null;
-        try {
-          canonical = await getModelInfo(models[i].id, { principal });
-        } catch {
-          canonical = null;
-        }
+        const canonical = await getModelInfo(models[i].id, { principal });
         const allowed = canonical?.provider ? grantScope.get(canonical.provider) : undefined;
         if (allowed && !allowed.has(`${canonical.provider}/${canonical.model}`)) {
           models.splice(i, 1);
@@ -602,7 +593,16 @@ export async function OPTIONS() {
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
  */
 export async function GET(request) {
-  const auth = await resolveGatewayAuth(request);
+  let auth;
+  try {
+    auth = await resolveGatewayAuth(request);
+  } catch (error) {
+    console.log("Error authenticating model catalog:", error);
+    return Response.json(
+      { error: { message: "Gateway authentication unavailable", type: "server_error" } },
+      { status: 503, headers: { "Access-Control-Allow-Origin": "*" } },
+    );
+  }
   if (auth instanceof Response) return auth;
   const { principal } = auth;
   try {
@@ -620,6 +620,12 @@ export async function GET(request) {
     );
   } catch (error) {
     console.log("Error fetching models:", error);
+    if (principal) {
+      return Response.json(
+        { error: { message: "Model catalog unavailable", type: "server_error" } },
+        { status: 503, headers: { "Access-Control-Allow-Origin": "*" } },
+      );
+    }
     return Response.json(
       { error: { message: error.message, type: "server_error" } },
       { status: 500 },

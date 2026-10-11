@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Auth is covered by require-client-api-key.test.js.
-vi.mock("@/lib/auth/requireClientApiKey", () => ({ requireClientApiKey: async () => null }));
+// Auth is covered by gateway-auth tests; legacy = no principal.
+vi.mock("@/lib/auth/gatewayAuth.js", () => ({
+  resolveGatewayAuth: async () => ({ principal: null, legacy: true }),
+}));
 
 const buildModelsList = vi.hoisted(() => vi.fn());
 
@@ -10,7 +12,7 @@ vi.mock("../../src/app/api/v1/models/route.js", () => ({ buildModelsList }));
 const { GET } = await import("../../src/app/api/v1beta/models/route.js");
 
 async function listNames() {
-  const body = await (await GET()).json();
+  const body = await (await GET(new Request("http://localhost/v1beta/models"))).json();
   return body.models;
 }
 
