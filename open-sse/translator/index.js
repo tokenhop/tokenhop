@@ -63,7 +63,8 @@ export function translateRequest(
   clientTool = null,
 ) {
   ensureInitialized();
-  let result = body;
+  // Same-format requests must not rewrite the combo/account caller's top-level intent.
+  let result = { ...body };
   // Translators build fresh bodies; keep the /v1/responses/compact routing flag.
   // Only Codex consumes (and strips) it — other executors would send it upstream.
   const compact = body?._compact === true && provider === "codex";
@@ -144,6 +145,16 @@ export function translateRequest(
     (originalSourceFormat === FORMATS.OPENAI || originalSourceFormat === FORMATS.CLAUDE);
   if (!kiroThinkingMappedByTranslator && targetFormat !== FORMATS.FIM_NATIVE) {
     applyThinking(targetFormat, model, result, provider, thinkingIntent);
+  }
+
+  // Format conversion can drop Claude output settings; retain structured output
+  // (output_config.format) alongside the rebuilt effort. Copy-on-write: the caller's
+  // combo/account body keeps its own nested objects.
+  if (targetFormat === FORMATS.CLAUDE && body.output_config != null) {
+    const { effort, ...outputConfig } = body.output_config;
+    if (Object.keys(outputConfig).length) {
+      result.output_config = { ...outputConfig, ...result.output_config };
+    }
   }
 
   // Always normalize to clean OpenAI format when target is OpenAI
