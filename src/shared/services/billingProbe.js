@@ -14,12 +14,11 @@
 // concurrent disable / re-lock / delete always wins.
 import "open-sse/index.js";
 
+import { getPricingForModel, getProviderConnectionByIdUnscoped } from "@/lib/localDb";
 import {
-  getPricingForModel,
-  getProviderConnectionByIdUnscoped,
   getProviderConnectionsMetadataUnscoped,
-} from "@/lib/localDb";
-import { mutateBillingLockUnscoped } from "@/lib/db/repos/connectionsRepo.js";
+  mutateBillingLockUnscoped,
+} from "@/lib/db/repos/connectionsRepo.js";
 import { saveRequestDetailUnscoped } from "@/lib/usageDb.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { getExecutor } from "open-sse/executors/index.js";
