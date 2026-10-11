@@ -2,7 +2,7 @@
 // Config-driven: thinking format/limits come from capabilities.js + registry transport,
 // never hardcoded per-model here. See .docs/thinking/plan.md MATRIX VI-A.
 
-import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { getCapabilitiesForModel, isOfficialClaudeProvider } from "../../providers/capabilities.js";
 import { getThinkingLevels } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
 import {
@@ -181,7 +181,10 @@ function toGeminiThinkingLevel(cfg) {
 
 // Anthropic `output_config.effort` has no "minimal" level (the "none" clamp for
 // models that cannot disable thinking), so it maps to the lowest, "low".
-function toClaudeEffort(level) {
+function toClaudeEffort(level, keepXhigh) {
+  if (level === "xhigh" && keepXhigh) return level;
+  // ponytail: unflagged adaptive models still clamp xhigh to high; expand verified
+  // per-model thinkingXhigh metadata when auditing their effort support.
   if (level === "xhigh" || level === "auto") return "high";
   if (level === "minimal") return "low";
   return level;
@@ -314,7 +317,7 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
       // Permanently adaptive models such as Fable 5.1 accept effort directly.
       if (canDisable) body.thinking = { type: "adaptive", ...(display ? { display } : {}) };
       else delete body.thinking;
-      body.output_config = { effort: toClaudeEffort(toLevel(eff)) };
+      body.output_config = { effort: toClaudeEffort(toLevel(eff), caps.thinkingXhigh) };
       break;
     }
     case "claude-budget": {
@@ -478,7 +481,26 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   // Anthropic's `display` (summarized | omitted) decides whether thinking text
   // comes back at all; keep what the client asked for instead of resetting it.
   const display = typeof body.thinking?.display === "string" ? body.thinking.display : undefined;
+  const claude = fmt === "claude-adaptive" || fmt === "claude-budget";
+  const { effort, ...outputConfig } = claude ? body.output_config || {} : {};
+  const disabledThinking = body.thinking;
+  const disabled =
+    !override &&
+    fmt === "claude-adaptive" &&
+    caps.thinkingEnabledRejected &&
+    caps.thinkingCanDisable !== false &&
+    isOfficialClaudeProvider(provider) &&
+    disabledThinking?.type === "disabled";
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps, supportedLevels, display);
+  if (disabled) {
+    // Explicit disable + effort is an upstream decision, not a request to re-enable.
+    body.thinking = disabledThinking;
+    if (effort != null) body.output_config = { effort };
+  } else {
+    applyFormat(fmt, body, cfg, caps, supportedLevels, display);
+  }
+  if (claude && Object.keys(outputConfig).length) {
+    body.output_config = { ...outputConfig, ...body.output_config };
+  }
   return body;
 }

@@ -268,13 +268,24 @@ export async function handleChatCore({
   // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
   if (providerThinking?.mode && providerThinking.mode !== "auto") {
     const mode = providerThinking.mode;
-    if (mode === "on" && !body.thinking) {
-      console.log("Injecting provider-level thinking config override: on");
-      body = { ...body, thinking: { type: "enabled", budget_tokens: 10000 } };
-    } else if (mode === "off" && !body.thinking) {
-      body = { ...body, thinking: { type: "disabled" } };
-    } else if (!body.reasoning_effort) {
-      body = { ...body, reasoning_effort: mode };
+    const explicitThinking =
+      body.thinking != null ||
+      body.reasoning_effort != null ||
+      body.reasoning?.effort != null ||
+      body.output_config?.effort != null;
+    if (!explicitThinking) {
+      if (mode === "on") {
+        console.log("Injecting provider-level thinking config override: on");
+        body = { ...body, thinking: { type: "enabled", budget_tokens: 10000 } };
+      } else if (
+        mode === "off" &&
+        getCapabilitiesForModel(provider, stripThinkingSuffix(upstreamModel)).thinkingCanDisable !==
+          false
+      ) {
+        body = { ...body, thinking: { type: "disabled" } };
+      } else if (mode !== "on" && mode !== "off") {
+        body = { ...body, reasoning_effort: mode };
+      }
     }
   }
 
@@ -369,7 +380,8 @@ export async function handleChatCore({
       }
     }
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
-    if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
+    if (clientTool === "claude")
+      normalizeClaudePassthrough(translatedBody, translatedBody.model, provider);
   } else {
     // A throw here is a malformed client body (not an upstream failure):
     // mark it request-scoped so the caller answers 400 without account state.

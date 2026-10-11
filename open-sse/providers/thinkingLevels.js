@@ -78,6 +78,7 @@ export function getThinkingLevels(provider, model) {
       (!entry.provider || entry.provider === provider) && matchPattern(entry.pattern, model),
   );
   let levels = hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
+  if (!hit && caps.thinkingFormat === "claude-adaptive" && caps.thinkingXhigh) levels = L.budgetX;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
 }
