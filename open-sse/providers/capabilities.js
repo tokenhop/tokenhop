@@ -57,6 +57,8 @@ export const DEFAULT_CAPABILITIES = {
   // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|mimo|hunyuan|step|tokenrouter|commandcode
   thinkingFormat: null,
   thinkingCanDisable: true, // false → model cannot turn thinking off (clamp to min instead of disable)
+  thinkingXhigh: false, // claude-adaptive only: model accepts output_config.effort "xhigh" (else clamped to "high")
+  thinkingEnabledRejected: false, // claude-adaptive only: model rejects thinking.type "enabled" (verified exact IDs only; official passthrough rewrites it to adaptive)
   thinkingRange: null, // { min, max } for budget formats; null = no clamp
   thinkingEffortSupported: false, // zai format only: model accepts a reasoning_effort level (GLM-5.2+; older GLM ignores it)
   // limits (tokens)
@@ -86,6 +88,7 @@ export function capabilitiesFromServiceKind(kind) {
 export const MODEL_CAPABILITIES = {
   // Claude Fable 5.1, Sonnet 5.5, Opus 5.5, Opus 5, 4.6/4.7/4.8, and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
   "claude-fable-5-1": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -95,7 +98,19 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
     forcedToolChoice: false,
   },
+  "claude-mythos-5-1": {
+    vision: true,
+    reasoning: true,
+    search: true,
+    thinkingFormat: "claude-adaptive",
+    thinkingCanDisable: false,
+    thinkingEnabledRejected: true,
+    contextWindow: 1000000,
+    maxOutput: 128000,
+    forcedToolChoice: false,
+  },
   "claude-opus-5-5": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -109,6 +124,7 @@ export const MODEL_CAPABILITIES = {
   // ponytail: Anthropic allows between_tools to switch off up-front thinking, but the
   // abstraction only knows cannot-disable; add a between_tools mode when needed.
   "claude-sonnet-5-5": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -118,7 +134,18 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
     forcedToolChoice: false,
   },
+  // Haiku 5.5: adaptive-only (rejects thinking.type "enabled"); effort low..max incl. xhigh,
+  // "disabled" still accepted (only at effort <= high). Haiku 4.5 keeps the budget pattern.
+  "claude-haiku-5-5": {
+    vision: true,
+    reasoning: true,
+    search: true,
+    thinkingFormat: "claude-adaptive",
+    thinkingXhigh: true,
+    thinkingEnabledRejected: true,
+  },
   "claude-opus-5": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -127,6 +154,7 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
   },
   "claude-opus-5-thinking": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -135,6 +163,7 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
   },
   "claude-opus-5-agentic": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -143,6 +172,7 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
   },
   "claude-opus-5-thinking-agentic": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -159,6 +189,7 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
   },
   "claude-opus-4.7": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -167,6 +198,7 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
   },
   "claude-opus-4-7": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -175,6 +207,7 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
   },
   "claude-opus-4.8": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -191,6 +224,7 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
   },
   "claude-opus-4-8": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -199,6 +233,7 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
   },
   "claude-opus-4.8-thinking": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -207,6 +242,7 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
   },
   "claude-opus-4-8-thinking": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -231,6 +267,7 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
   },
   "claude-sonnet-5": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -239,6 +276,7 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
   },
   "claude-sonnet-5-thinking": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -247,6 +285,7 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
   },
   "claude-sonnet-5-agentic": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -255,6 +294,7 @@ export const MODEL_CAPABILITIES = {
     maxOutput: 128000,
   },
   "claude-sonnet-5-thinking-agentic": {
+    thinkingEnabledRejected: true,
     vision: true,
     reasoning: true,
     search: true,
@@ -1683,6 +1723,10 @@ function getCustomCaps(provider, model) {
   return source.get(`${provider}|${model}`) || null;
 }
 
+// Providers that speak the official Anthropic Messages API (capability data is verified there).
+export const isOfficialClaudeProvider = (provider) =>
+  provider === "claude" || provider === "anthropic";
+
 export function getCapabilitiesForModel(provider, model) {
   const resolved = resolveCapabilities(provider, model);
   const custom = model ? getCustomCaps(provider, model) : null;
@@ -1722,6 +1766,17 @@ function resolveCapabilities(provider, model) {
     const providerCaps = PROVIDER_CAPABILITIES[provider];
     if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
     if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
+  }
+
+  // Third-party Haiku 5.5 hosts keep the existing Haiku budget contract.
+  if (baseModel === "claude-haiku-5-5" && provider?.startsWith("anthropic-compatible")) {
+    return {
+      ...DEFAULT_CAPABILITIES,
+      vision: true,
+      reasoning: true,
+      search: true,
+      thinkingFormat: "claude-budget",
+    };
   }
 
   // 2. Canonical exact
