@@ -25,6 +25,7 @@ vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(async () => {}),
   saveRequestDetailUnscoped: vi.fn(async () => {}),
+  saveRequestDetail: vi.fn(async () => {}), // release/1.0 uses the legacy export
 }));
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
