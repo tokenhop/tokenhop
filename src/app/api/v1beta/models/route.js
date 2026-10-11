@@ -1,6 +1,5 @@
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
-import { requireClientApiKey } from "@/lib/auth/requireClientApiKey";
 import { buildModelsList } from "../../v1/models/route.js";
 
 const GEMINI_PREFIX = "gemini/";
@@ -32,16 +31,18 @@ function getGeminiTtsModelIds() {
  * non-chat models), in Gemini API format.
  */
 export async function GET(request) {
-  const denied = await requireClientApiKey(request);
-  if (denied) return denied;
-  // Best-effort principal (same rationale as /v1/models: gate already enforced).
-  let principal = null;
+  let auth;
   try {
-    const auth = await resolveGatewayAuth(request);
-    if (!(auth instanceof Response) && !auth?.legacy) principal = auth?.principal || null;
-  } catch {
-    principal = null;
+    auth = await resolveGatewayAuth(request);
+  } catch (error) {
+    console.log("Error authenticating model catalog:", error);
+    return Response.json(
+      { error: { message: "Gateway authentication unavailable", type: "server_error" } },
+      { status: 503, headers: { "Access-Control-Allow-Origin": "*" } },
+    );
   }
+  if (auth instanceof Response) return auth;
+  const { principal } = auth;
   try {
     const models = [];
     const seen = new Set();
@@ -90,6 +91,12 @@ export async function GET(request) {
     return Response.json({ models });
   } catch (error) {
     console.log("Error fetching models:", error);
+    if (principal) {
+      return Response.json(
+        { error: { message: "Model catalog unavailable", type: "server_error" } },
+        { status: 503, headers: { "Access-Control-Allow-Origin": "*" } },
+      );
+    }
     return Response.json({ error: { message: error.message } }, { status: 500 });
   }
 }

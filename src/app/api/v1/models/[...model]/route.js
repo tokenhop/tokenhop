@@ -95,6 +95,12 @@ export async function GET(request, { params }) {
     return json(matchedModel);
   } catch (error) {
     console.log("Error fetching model:", error);
+    if (principal) {
+      return json(
+        { error: { message: "Model catalog unavailable", type: "server_error" } },
+        { status: 503 },
+      );
+    }
     return json({ error: { message: error.message, type: "server_error" } }, { status: 500 });
   }
 }
