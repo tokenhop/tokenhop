@@ -41,6 +41,7 @@ vi.mock("@/lib/oauth/providers", () => ({
     success: true,
     tokens: { accessToken: "at-dev", email: "dev@oauth.test", expiresIn: 3600 },
   })),
+  extractCodexAccountInfo: vi.fn(() => ({ email: "jwt@oauth.test" })),
   exchangeTokens: vi.fn(async () => ({
     accessToken: "at-ex",
     refreshToken: "rt-ex",
@@ -354,6 +355,40 @@ describe("oauth user binding, switch on", () => {
     expect(row(unbound.id)).toMatchObject({ workspaceId: t.shared.id, createdByUserId: null });
   });
 
+  it("kimchi exchange needs a real binding: B denied, unbound denied for all, A lands in A personal", async () => {
+    await load("on");
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig";
+    const body = (code, state) => ({ code, redirectUri: "http://localhost:8080/callback", state });
+    const count = () => adapter.get("SELECT COUNT(*) AS c FROM providerConnections").c;
+    const { exchangeTokens } = await import("@/lib/oauth/providers");
+    const { bindingFor } = await import("@/lib/oauth/pendingBinding");
+    exchangeTokens.mockClear();
+
+    const auth = await (await call(t.a, "authorize", "kimchi")).json();
+    // B: bare JWT-shaped token with A's state → 403; no state / unknown state → 400 even for owner A.
+    expect((await call(t.b, "exchange", "kimchi", { body: body(jwt, auth.state) })).status).toBe(
+      403,
+    );
+    expect(bindingFor(auth.state)).not.toBeNull(); // B must not burn A's binding
+    for (const who of [t.a, t.b]) {
+      for (const state of [undefined, "never-issued"]) {
+        const res = await call(who, "exchange", "kimchi", { body: body(jwt, state) });
+        expect(res.status).toBe(400);
+      }
+    }
+    expect(count()).toBe(0);
+    expect(exchangeTokens).not.toHaveBeenCalled();
+
+    const ok = await call(t.a, "exchange", "kimchi", { body: body(jwt, auth.state) });
+    expect(ok.status).toBe(200);
+    expect(row((await ok.json()).connection.id)).toMatchObject({
+      workspaceId: t.a.personal,
+      createdByUserId: t.a.user.id,
+    });
+    expect(count()).toBe(1);
+    expect(bindingFor(auth.state)).toBeNull(); // no replay within TTL
+  });
+
   it("host-only: start-proxy and ide-status refuse remote; device-code stays allowed", async () => {
     await load("on");
     for (const [action, provider] of [
@@ -412,5 +447,12 @@ describe("oauth user binding, switch off", () => {
 
     // host-only gate is inert, even for a remote request.
     expect((await call(t.a, "ide-status", "trae", { headers: REMOTE })).status).toBe(200);
+
+    // Kimchi stays unscoped: bare token with no state still connects.
+    const kim = await call(t.b, "exchange", "kimchi", {
+      body: { code: "ktok", redirectUri: "http://localhost:8080/callback" },
+    });
+    expect(kim.status).toBe(200);
+    expect(landed((await kim.json()).connection.id)).toBe(t.shared.id);
   });
 });
