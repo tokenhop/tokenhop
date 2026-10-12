@@ -13,6 +13,7 @@ import Callout from "@/shared/components/Callout";
 import { manualMissingInputs } from "@/lib/cliToolConfigs/shared";
 import { useCliAccessStore } from "@/store/cliAccessStore";
 import ToolTile from "./ToolTile";
+import { useMultiUserActive } from "../hooks/useMultiUserActive";
 import { LoadingState } from "@/shared/components/StateViews";
 
 /**
@@ -53,6 +54,11 @@ export default function SetupScaffold({
   onLoadFromFile,
 }) {
   const localOnly = useCliAccessStore((s) => s.localOnly);
+  // Multi-user wording (YAN-374): Apply writes to the host, export copies for you.
+  const multiUser = useMultiUserActive();
+  const applyText = multiUser && applyLabel === "Apply" ? "Apply on this machine" : applyLabel;
+  const exportText = multiUser ? "Copy config" : "Set up manually";
+  const manualText = multiUser ? "Copy config" : "Manual config";
   const installedBlock = localOnly ? null : notInstalled;
   const showWriteActions = !hideActions && !localOnly;
   // Detection never runs off the host, so a missing CLI is not "Not installed".
@@ -174,7 +180,7 @@ export default function SetupScaffold({
                   onClick={onManualConfig}
                   className="w-full sm:w-auto"
                 >
-                  Set up manually
+                  {exportText}
                 </Button>
               )}
             </div>
@@ -204,7 +210,7 @@ export default function SetupScaffold({
                 icon="save"
                 className="w-full sm:w-auto sm:flex-1"
               >
-                {applyLabel}
+                {applyText}
               </Button>
               <Button
                 variant="secondary"
@@ -214,7 +220,7 @@ export default function SetupScaffold({
                 icon="content_copy"
                 className="w-full sm:w-auto"
               >
-                Manual config
+                {manualText}
               </Button>
               <Button
                 variant="ghost"
@@ -503,4 +509,46 @@ SingleModelRow.propTypes = {
   pickDisabled: PropTypes.bool,
   pickLabel: PropTypes.string,
   placeholder: PropTypes.string,
+};
+
+/**
+ * Free-text "add a model" row for multi-model cards (YAN-374). Shown when the
+ * model list is empty (members cannot read providers), so export is never
+ * blocked on a picker with nothing in it.
+ */
+export function ModelTextAdd({ models, onAdd, label = "Add model" }) {
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    const value = draft.trim();
+    if (!value) return;
+    if (!models.includes(value)) onAdd(value);
+    setDraft("");
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <div className="min-w-0 flex-1">
+        <Input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              add();
+            }
+          }}
+          placeholder="provider/model-id"
+          aria-label={label}
+        />
+      </div>
+      <Button type="button" variant="secondary" size="sm" onClick={add} disabled={!draft.trim()}>
+        Add
+      </Button>
+    </div>
+  );
+}
+
+ModelTextAdd.propTypes = {
+  models: PropTypes.arrayOf(PropTypes.string).isRequired,
+  onAdd: PropTypes.func.isRequired,
+  label: PropTypes.string,
 };

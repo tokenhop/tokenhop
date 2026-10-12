@@ -134,7 +134,6 @@ export const NAV_GROUPS = [
         label: "CLI tools",
         icon: "terminal",
         href: "/dashboard/cli-tools",
-        cap: "instance.hostOps",
       },
       {
         id: "media",

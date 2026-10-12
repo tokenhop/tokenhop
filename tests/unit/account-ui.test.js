@@ -9,7 +9,8 @@ import { SETTINGS_GROUPS, SETTINGS_SECTIONS } from "@/app/(dashboard)/dashboard/
 import { layoutFor } from "@/app/(dashboard)/dashboard/settings/settingsTiers";
 import { settingsEndpoint } from "@/shared/utils/settingsApi";
 
-const ADMIN_ONLY = ["console-log", "token-saver", "cli-tools", "proxy-pools", "translator"];
+// YAN-374: CLI tools is member-visible (copy config); its host writes stay hostOps.
+const ADMIN_ONLY = ["console-log", "token-saver", "proxy-pools", "translator"];
 
 function status(role, wsRole = "owner") {
   return {
@@ -63,6 +64,7 @@ describe("role-aware nav", () => {
   it("hides instance-only items from a user, shows them to an admin", () => {
     const user = ids(visibleGroups({ ...base, can: accountView(status("user")).can }));
     for (const id of ADMIN_ONLY) expect(user).not.toContain(id);
+    expect(user).toContain("cli-tools");
     const admin = ids(visibleGroups({ ...base, can: accountView(status("admin")).can }));
     for (const id of ADMIN_ONLY) expect(admin).toContain(id);
   });

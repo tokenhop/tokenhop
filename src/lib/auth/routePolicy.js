@@ -300,12 +300,16 @@ export const ROUTE_POLICY = {
 
   // Gateway API keys. PATCH is the manager-only durable migration ack (spec214);
   // the gate uses the manage cap and the handler rechecks it live per workspace.
+  // YAN-374: scoped — the guard admits keys.create in ANY of the principal's
+  // workspaces; handlers recheck the exact ?workspaceId live: apiKeyManagement
+  // liveAccess for GET/POST, and PATCH rechecks manage (keys/route.js:130-133).
   "/api/keys": {
     cap: {
       GET: "workspace.keys.manage",
       POST: "workspace.keys.create",
       PATCH: "workspace.keys.manage",
     },
+    scoped: true,
   },
   "/api/keys/[id]": { cap: "workspace.keys.manage" },
   // Exact static row: /api/keys/context must never borrow the [id] row.

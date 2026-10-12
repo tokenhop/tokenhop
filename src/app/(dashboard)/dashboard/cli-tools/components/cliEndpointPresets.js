@@ -1,5 +1,10 @@
 import { ACTIVE, LEGACY } from "@/shared/brand";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
+import { onMemberCacheReset, useCliAccessStore } from "@/store/cliAccessStore";
+
+// YAN-374: members have no host access; /api/cli-tool-presets would 403.
+// Their presets stay in this module's memory for the session.
+const noHost = () => useCliAccessStore.getState().noHost;
 
 // Read the active key; otherwise the legacy key. Used only for the one-time
 // localStorage import below.
@@ -72,6 +77,8 @@ function runApiKeyImport(store) {
 }
 
 async function importFromStorage(store, legacyOnly = false) {
+  const generation = useCliAccessStore.getState().generation;
+  if (noHost()) return;
   let local = [];
   try {
     const raw = JSON.parse(readStorageItem(window.localStorage, store.storageName) || "[]");
@@ -93,6 +100,7 @@ async function importFromStorage(store, legacyOnly = false) {
     });
     if (!res.ok) throw new Error(`status ${res.status}`);
     const { presets } = await res.json();
+    if (generation !== useCliAccessStore.getState().generation) return;
     // The acknowledged server list is canonical — including an empty one (all
     // entries removed or filtered as external). A malformed response is NOT
     // an acknowledgment: never apply the optimistic browser copy as truth.
@@ -105,6 +113,7 @@ async function importFromStorage(store, legacyOnly = false) {
     }
     applyServerItems(store, presets);
   } catch (err) {
+    if (generation !== useCliAccessStore.getState().generation) return;
     // Ambiguous rejection: keep the browser copy and the local raws — never
     // delete data the server has not confirmed it holds.
     console.log("Error importing CLI tool presets:", err.message);
@@ -131,11 +140,17 @@ function setImportError(store, kept) {
 }
 
 function load() {
+  if (noHost()) return Promise.resolve();
+  const generation = useCliAccessStore.getState().generation;
   loadPromise ??= (async () => {
     const res = await fetch("/api/cli-tool-presets");
     if (!res.ok) throw new Error(`status ${res.status}`);
     const { presets } = await res.json();
+    if (generation !== useCliAccessStore.getState().generation) return;
     for (const store of stores) {
+      // A cache reset during an awaited import makes this loader obsolete:
+      // never write the previous principal's presets into the new cache.
+      if (generation !== useCliAccessStore.getState().generation) return;
       const list = Array.isArray(presets?.[store.kind])
         ? presets[store.kind].filter(store.isValid)
         : [];
@@ -152,8 +167,9 @@ function load() {
       // confirms a mode; the cache stays untouched (never canonical empty).
       else if (!apiKeyImportDone) deferredLegacyImport = true;
     }
-    loaded = true;
+    if (generation === useCliAccessStore.getState().generation) loaded = true;
   })().catch((err) => {
+    if (generation !== useCliAccessStore.getState().generation) return;
     loadPromise = null;
     failedAt = Date.now();
     console.log("Error fetching CLI tool presets:", err.message);
@@ -186,7 +202,7 @@ function createStore({
   stores.push(store);
 
   const read = () => {
-    if (typeof window === "undefined") return store.items;
+    if (typeof window === "undefined" || noHost()) return store.items;
     if (Date.now() - failedAt >= RETRY_MS) load();
     return store.items;
   };
@@ -194,6 +210,7 @@ function createStore({
   const write = (items) => {
     if (typeof window === "undefined") return;
     setStoreItems(store, items);
+    if (noHost()) return;
     if (!loaded) {
       console.log("CLI tool presets not loaded; preset not saved");
       return;
@@ -302,3 +319,20 @@ export function rememberEndpoint(baseUrl, { tunnelPublicUrl, tailscaleUrl, cloud
 }
 
 export { stripSlash };
+
+// HIGH3: markNoHost/clearNoHost empty the preset caches and the load state, so
+// a member never sees host presets and a promoted user reloads from the server.
+// Browser localStorage is left alone (it is the user's own, not host data).
+onMemberCacheReset(() => {
+  loadPromise = null;
+  failedAt = 0;
+  loaded = false;
+  deferredLegacyImport = false;
+  apiKeyImportDone = false;
+  keyStorageMode = null;
+  keyModeVersion += 1;
+  for (const store of stores) {
+    store.importError = "";
+    setStoreItems(store, []);
+  }
+});

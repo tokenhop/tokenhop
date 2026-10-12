@@ -12,6 +12,7 @@ import { TOOL_HOSTS } from "@/shared/constants/mitmToolHosts";
 import ToolTile from "./ToolTile";
 import MitmRemoteSteps from "./MitmRemoteSteps";
 import { readInterceptStatus } from "../lib/interceptStatus";
+import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
 import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 
@@ -28,7 +29,7 @@ export default function InterceptTools({ tools }) {
 }
 
 /** Hosts-file lines for the IDEs the MITM can serve (MITM_TOOLS only). */
-function RemoteInterceptSteps() {
+function RemoteInterceptSteps({ member = false }) {
   const entries = Object.entries(MITM_TOOLS).flatMap(([toolId, tool]) => {
     const hosts = TOOL_HOSTS[toolId];
     return hosts ? [{ toolId, tool, hosts }] : [];
@@ -47,7 +48,7 @@ function RemoteInterceptSteps() {
           For IDEs that can’t change their endpoint, {ACTIVE.name} listens in (MITM) and reroutes.
         </p>
       </div>
-      <MitmRemoteSteps />
+      {!member && <MitmRemoteSteps />}
       <ul className="grid list-none grid-cols-1 gap-3 p-0 sm:grid-cols-2">
         {entries.map(({ toolId, tool, hosts }) => (
           <li
@@ -64,12 +65,14 @@ function RemoteInterceptSteps() {
             <pre className="overflow-x-auto rounded-xl border border-line bg-raised px-3 py-2 font-mono text-xs text-text">
               {hosts.map((host) => `127.0.0.1 ${host}`).join("\n")}
             </pre>
-            <Link
-              href="/dashboard/mitm"
-              className="flex min-h-11 items-center justify-center rounded-xl border border-line text-[13px] font-medium text-text transition-colors duration-150 hover:border-subtle focus-visible:outline-none focus-visible:shadow-focus motion-reduce:transition-none"
-            >
-              Map models
-            </Link>
+            {!member && (
+              <Link
+                href="/dashboard/mitm"
+                className="flex min-h-11 items-center justify-center rounded-xl border border-line text-[13px] font-medium text-text transition-colors duration-150 hover:border-subtle focus-visible:outline-none focus-visible:shadow-focus motion-reduce:transition-none"
+              >
+                Map models
+              </Link>
+            )}
           </li>
         ))}
       </ul>
@@ -77,14 +80,19 @@ function RemoteInterceptSteps() {
   );
 }
 
+RemoteInterceptSteps.propTypes = { member: PropTypes.bool };
+
 function InterceptToolsSection({ tools, onRetry }) {
   const localOnly = useCliAccessStore((s) => s.localOnly);
   const [dnsStatus, setDnsStatus] = useState(null);
   const [error, setError] = useState(null);
+  const { ready, canHostOps } = useSettingsScope();
   const [loading, setLoading] = useState(() => !useCliAccessStore.getState().localOnly);
 
   useEffect(() => {
-    if (useCliAccessStore.getState().localOnly) {
+    // Wait for auth, then members (no hostOps) never call the host route.
+    if (!ready) return;
+    if (!canHostOps || useCliAccessStore.getState().localOnly) {
       setLoading(false);
       return;
     }
@@ -122,9 +130,10 @@ function InterceptToolsSection({ tools, onRetry }) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [tools]);
+  }, [ready, canHostOps, tools]);
 
-  if (localOnly) return <RemoteInterceptSteps />;
+  if (localOnly || (ready && !canHostOps))
+    return <RemoteInterceptSteps member={ready && !canHostOps} />;
   if (!tools?.length) return null;
 
   return (

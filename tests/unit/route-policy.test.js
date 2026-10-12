@@ -442,6 +442,51 @@ describe("inventory cleanups", () => {
   });
 });
 
+describe("YAN-374 CLI configs stay host-only", () => {
+  it("scopes the keys collection without changing its caps or the item gate", () => {
+    expect(ROUTE_POLICY["/api/keys"]).toEqual({
+      cap: {
+        GET: "workspace.keys.manage",
+        POST: "workspace.keys.create",
+        PATCH: "workspace.keys.manage",
+      },
+      scoped: true,
+    });
+    expect(resolveRoutePolicy("/api/keys/k1", "PUT")).toMatchObject({
+      capability: "workspace.keys.manage",
+      scoped: false,
+    });
+  });
+
+  it("requires hostOps and local access for every CLI-tool row", () => {
+    const rows = Object.entries(ROUTE_POLICY).filter(([key]) => key.startsWith("/api/cli-tools/"));
+    expect(rows.length).toBeGreaterThan(0);
+    for (const [key, row] of rows) {
+      expect(row, key).toMatchObject({ cap: "instance.hostOps", localOnly: true });
+    }
+    expect(
+      Object.fromEntries(
+        rows.filter(([, row]) => row.remoteMethods).map(([key, row]) => [key, row.remoteMethods]),
+      ),
+    ).toEqual({
+      "/api/cli-tools/antigravity-mitm/alias": ["GET", "PUT"],
+      "/api/cli-tools/cowork-mcp-registry": ["GET"],
+    });
+    const alias = "/api/cli-tools/antigravity-mitm/alias";
+    expect(resolveRoutePolicy(alias, "PUT").localOnly).toBe(false);
+    expect(resolveRoutePolicy(alias, "DELETE").localOnly).toBe(true);
+  });
+
+  it.each([
+    "/api/cli-tool-settings",
+    "/api/cli-tool-settings/[toolId]",
+    "/api/cli-tool-presets",
+    "/api/tunnel/status",
+  ])("%s requires hostOps", (key) => {
+    expect(ROUTE_POLICY[key].cap).toBe("instance.hostOps");
+  });
+});
+
 describe("YAN-366 oauth routes", () => {
   it("scopes every /api/oauth/* row except the host auto-imports", () => {
     const oauth = Object.entries(ROUTE_POLICY).filter(([k]) => k.startsWith("/api/oauth/"));

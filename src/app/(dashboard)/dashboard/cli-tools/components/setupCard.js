@@ -6,7 +6,12 @@ import ModelSelectModal from "@/shared/components/ModelSelectModal";
 import ManualConfigModal from "@/shared/components/ManualConfigModal";
 import ApiKeySelect from "./ApiKeySelect";
 import EndpointSegmentedPicker from "./EndpointSegmentedPicker";
-import SetupScaffold, { NotInstalledBlock, SetupRow, SingleModelRow } from "./SetupScaffold";
+import SetupScaffold, {
+  ModelTextAdd,
+  NotInstalledBlock,
+  SetupRow,
+  SingleModelRow,
+} from "./SetupScaffold";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { deriveToolStatus } from "../lib/toolStatus";
@@ -23,6 +28,7 @@ import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 
 const LOCAL_ONLY = Symbol("localOnly");
+import { useCliScope } from "../hooks/useCliScope";
 
 /**
  * Shared hook for the panel-style setup cards. Owns status fetching,
@@ -35,6 +41,10 @@ export function useSetupCard({
   onStatusUpdate,
   toolId,
 }) {
+  const { ready, canHostOps } = useCliScope();
+  const allowed = ready && canHostOps;
+  const allowedRef = useRef(allowed);
+  allowedRef.current = allowed;
   const [status, setStatus] = useState(null);
   const [checking, setChecking] = useState(() => !useCliAccessStore.getState().localOnly);
   const [applying, setApplying] = useState(false);
@@ -55,18 +65,21 @@ export function useSetupCard({
   }, [onStatusUpdate]);
 
   const fetchStatus = async () => {
-    if (useCliAccessStore.getState().localOnly) {
+    if (!allowedRef.current || useCliAccessStore.getState().localOnly) {
       setChecking(false);
       return;
     }
+    const generation = useCliAccessStore.getState().generation;
     setChecking(true);
     try {
       const res = await fetch(statusUrl);
       if (await isLocalOnlyResponse(res)) return markLocalOnly();
       const data = await res.json();
+      if (!allowedRef.current || generation !== useCliAccessStore.getState().generation) return;
       setStatus(data);
       onStatusUpdateRef.current?.(toolId, data);
     } catch (err) {
+      if (!allowedRef.current || generation !== useCliAccessStore.getState().generation) return;
       setStatus({ installed: false, error: err.message });
     } finally {
       setChecking(false);
@@ -75,6 +88,12 @@ export function useSetupCard({
 
   useEffect(() => {
     let cancelled = false;
+    if (!ready) return;
+    if (!canHostOps) {
+      setStatus(null);
+      setChecking(false);
+      return;
+    }
     if (useCliAccessStore.getState().localOnly) {
       setChecking(false);
     } else {
@@ -93,8 +112,9 @@ export function useSetupCard({
           if (!cancelled) setChecking(false);
         });
     }
-    fetch(aliasesUrl)
-      .then((r) => (r.ok ? r.json() : null))
+    // Members lack the connections metadata read behind aliases (YAN-374).
+    (useCliAccessStore.getState().noHost ? Promise.resolve(null) : fetch(aliasesUrl))
+      .then((r) => (r?.ok ? r.json() : null))
       .then((data) => {
         if (!cancelled && data) setModelAliases(data.aliases || {});
       })
@@ -102,13 +122,13 @@ export function useSetupCard({
     return () => {
       cancelled = true;
     };
-  }, [statusUrl, aliasesUrl, toolId]);
+  }, [statusUrl, aliasesUrl, toolId, ready, canHostOps]);
 
   return {
-    status,
+    status: allowed ? status : null,
     setStatus,
     fetchStatus,
-    checking,
+    checking: !ready || (canHostOps && checking),
     applying,
     setApplying,
     restoring,
@@ -161,6 +181,7 @@ export {
   SetupScaffold,
   NotInstalledBlock,
   SetupRow,
+  ModelTextAdd,
   SingleModelRow,
   ModelSelectModal,
   ManualConfigModal,

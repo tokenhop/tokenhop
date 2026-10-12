@@ -36,7 +36,7 @@ export default function ToolSetupPanel({ toolId, data, onStatusUpdate }) {
   const hashedContext = data.keyContext?.storage === "hashed";
   return (
     <CardComponent
-      key={toolId}
+      key={`${toolId}:${data.identity ?? "legacy"}`}
       toolId={toolId}
       tool={tool}
       baseUrl={data.defaultBaseUrl}

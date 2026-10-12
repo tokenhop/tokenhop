@@ -37,11 +37,20 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
   const localOnly = useCliAccessStore((s) => s.localOnly);
 
   useEffect(() => {
-    if (useCliAccessStore.getState().localOnly) {
+    if (!data.ready) return;
+    if (!data.canHostOps || useCliAccessStore.getState().localOnly) {
+      // Host install-detection data must not outlive host access (role flip).
+      if (!data.canHostOps) {
+        setStatuses({});
+        setStatusesError(false);
+      }
       setStatusesLoading(false);
       return;
     }
+    // `mounted` is this run's generation: the cleanup below flips it on any
+    // dep change, so a slow old host response can never repopulate statuses.
     let mounted = true;
+    setStatusesLoading(true);
     (async () => {
       try {
         const res = await fetch("/api/cli-tools/all-statuses");
@@ -64,7 +73,7 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [data.ready, data.canHostOps]);
 
   // Detection buckets do not exist off the host; drop a stale selection.
   useEffect(() => {

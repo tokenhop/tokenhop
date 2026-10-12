@@ -5,6 +5,7 @@ import { Card, Button, Badge, Input, ModelSelectModal, Modal } from "@/shared/co
 import { ACTIVE } from "@/shared/brand";
 import { TOOL_HOSTS } from "@/shared/constants/mitmToolHosts";
 import { useNotificationStore } from "@/store/notificationStore";
+import { useCliAccessStore } from "@/store/cliAccessStore";
 import Image from "next/image";
 import {
   createLatestSaveQueue,
@@ -54,6 +55,7 @@ export default function MitmToolCard({
   const savePending = useRef(0);
   const loadGeneration = useRef(0);
   const notifyError = useNotificationStore((state) => state.error);
+  const noHost = useCliAccessStore((s) => s.noHost);
 
   const mitmHosts = TOOL_HOSTS[tool.id] ?? [];
   const canRunWithoutPassword = isWin || hasCachedPassword || needsSudoPassword === false;
@@ -92,8 +94,9 @@ export default function MitmToolCard({
   }, [tool.id, tool.name, notifyError]);
 
   useEffect(() => {
-    if (isExpanded) loadSavedMappings();
-  }, [isExpanded, loadSavedMappings]);
+    // Members never reach host MITM routes (YAN-374): no mount fetch, no 403.
+    if (isExpanded && !noHost) loadSavedMappings();
+  }, [isExpanded, noHost, loadSavedMappings]);
 
   // Whole-map PUTs run one at a time; only the newest result touches state,
   // so a slow earlier save can never overwrite a later edit.

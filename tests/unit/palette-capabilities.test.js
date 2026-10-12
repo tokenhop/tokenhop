@@ -37,9 +37,10 @@ describe("palette capabilities", () => {
       ...visibleItems({ ...context, can: context.view.can }).map((i) => `page:${i.id}`),
       ...MEDIA_TABS.map((i) => `page:media-${i.id}`),
     ]);
-    for (const id of ["console-log", "token-saver", "cli-tools", "proxy-pools", "translator"]) {
+    for (const id of ["console-log", "token-saver", "proxy-pools", "translator"]) {
       expect(pageIds(commands)).not.toContain(`page:${id}`);
     }
+    expect(pageIds(commands)).toContain("page:cli-tools"); // YAN-374 copy config
   });
 
   it("admin pages include authorized instance pages and respect feature gates", () => {

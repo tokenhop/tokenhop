@@ -1,16 +1,24 @@
 // API key name validation: POST create and PUT rename share validateKeyName; invalid names never persist.
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { validateKeyName } from "@/app/(dashboard)/dashboard/endpoint/endpointLogic";
 
 let db;
 let PUT;
 let POST;
+const previousMultiUser = process.env.TOKENHOP_MULTI_USER;
 
 beforeAll(async () => {
+  // These are legacy single-user route tests; switch-on legacy storage fails closed.
+  process.env.TOKENHOP_MULTI_USER = "off";
   db = await import("@/lib/db/index.js");
   await db.initDb();
   ({ PUT } = await import("@/app/api/keys/[id]/route.js"));
   ({ POST } = await import("@/app/api/keys/route.js"));
+});
+
+afterAll(() => {
+  if (previousMultiUser === undefined) delete process.env.TOKENHOP_MULTI_USER;
+  else process.env.TOKENHOP_MULTI_USER = previousMultiUser;
 });
 
 const post = (body) =>

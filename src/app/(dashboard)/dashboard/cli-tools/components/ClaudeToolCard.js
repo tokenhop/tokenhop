@@ -32,7 +32,7 @@ import { useToolSettings } from "../hooks/useToolSettings";
 import { markLocalOnly, useCliAccessStore } from "@/store/cliAccessStore";
 import { isLocalOnlyResponse } from "@/shared/utils/localOnly";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
-import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { useCliScope } from "../hooks/useCliScope";
 import { patchSettings } from "@/shared/utils/settingsApi";
 
 // Auto-compact window presets (CLAUDE_CODE_AUTO_COMPACT_WINDOW, valid 100K–1M).
@@ -64,8 +64,13 @@ export default function ClaudeToolCard({
   modelAliases = {},
   ccFilterNaming: ccFilterNamingProp = false,
   onStatusUpdate,
+  hashedContext = false,
 }) {
-  const [claudeStatus, setClaudeStatus] = useState(null);
+  const { ready: settingsReady, scope: settingsScope, canHostOps } = useCliScope();
+  const allowedRef = useRef(settingsReady && canHostOps);
+  allowedRef.current = settingsReady && canHostOps;
+  const [hostStatus, setClaudeStatus] = useState(null);
+  const claudeStatus = settingsReady && canHostOps ? hostStatus : null;
   const [checking, setChecking] = useState(() => !useCliAccessStore.getState().localOnly);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -75,7 +80,6 @@ export default function ClaudeToolCard({
   const [currentEditingAlias, setCurrentEditingAlias] = useState(null);
   const [showManualModal, setShowManualModal] = useState(false);
   const [ccFilterNaming, setCcFilterNaming] = useState(ccFilterNamingProp);
-  const { ready: settingsReady, scope: settingsScope } = useSettingsScope();
   // Endpoint the picker chose at mount; not a user edit, so it isn't saved.
   const [initUrl, setInitUrl] = useState("");
   // ponytail: only typed, unsaved keys stay in memory; saved picks persist by
@@ -93,18 +97,21 @@ export default function ClaudeToolCard({
   }, [onStatusUpdate]);
 
   const fetchStatus = useCallback(async () => {
-    if (useCliAccessStore.getState().localOnly) {
+    if (!allowedRef.current || useCliAccessStore.getState().localOnly) {
       setChecking(false);
       return;
     }
+    const generation = useCliAccessStore.getState().generation;
     setChecking(true);
     try {
       const res = await fetch("/api/cli-tools/claude-settings");
       if (await isLocalOnlyResponse(res)) return markLocalOnly();
       const data = await res.json();
+      if (!allowedRef.current || generation !== useCliAccessStore.getState().generation) return;
       setClaudeStatus(data);
       onStatusUpdateRef.current?.("claude", data);
     } catch (err) {
+      if (!allowedRef.current || generation !== useCliAccessStore.getState().generation) return;
       setClaudeStatus({ installed: false, error: err.message });
     } finally {
       setChecking(false);
@@ -112,8 +119,10 @@ export default function ClaudeToolCard({
   }, []);
 
   useEffect(() => {
+    if (!settingsReady) return;
+    if (!canHostOps) setClaudeStatus(null);
     fetchStatus();
-  }, [fetchStatus]);
+  }, [fetchStatus, settingsReady, canHostOps]);
 
   // Shared (useToolSetupData) already loads /api/settings once; sync here.
   useEffect(() => {
@@ -176,7 +185,7 @@ export default function ClaudeToolCard({
   const { models: modelMappings, autoCompactWindow, oneMContext, exaMcpEnabled } = values;
   // YAN-363 hashed storage: the GET is sanitized (no ANTHROPIC_AUTH_TOKEN),
   // so reuse means omitting the key; only a pasted key is ever written.
-  const hashed = claudeStatus?.storage === "hashed";
+  const hashed = claudeStatus?.storage === "hashed" || hashedContext;
   const diskToken = claudeStatus?.installed
     ? claudeStatus.settings?.env?.ANTHROPIC_AUTH_TOKEN || ""
     : "";
@@ -341,7 +350,7 @@ export default function ClaudeToolCard({
         tool={tool}
         status={derived}
         version={claudeStatus?.installed ? "detected" : undefined}
-        checking={checking || !settings.loaded}
+        checking={!settingsReady || (canHostOps && checking) || !settings.loaded}
         checkingLabel="Checking Claude CLI..."
         notInstalled={
           !checking && claudeStatus && !claudeStatus.installed && !claudeStatus.error ? (

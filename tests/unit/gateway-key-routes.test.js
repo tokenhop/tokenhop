@@ -426,6 +426,71 @@ describe("hashed migration acknowledgement via session principal", () => {
   });
 });
 
+describe("legacy storage with user security enforced", () => {
+  let managerId;
+  let original;
+
+  beforeEach(async () => {
+    await load("on");
+    seeded = await seed();
+    const users = await import("@/lib/db/index.js");
+    const manager = await users.createUserUnscoped({
+      email: "manager@legacy-keys.test",
+      instanceRole: "user",
+    });
+    managerId = manager.id;
+    db.run(
+      "INSERT INTO memberships(workspaceId, userId, role, createdAt) VALUES (?, ?, 'manager', ?)",
+      [SHARED, managerId, NOW],
+    );
+    // Security is ON, but key storage has not been activated. Never migrate or
+    // scope these global raw rows implicitly; refuse reads and writes instead.
+    db.run("DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion','apiKeysHashKid')");
+    db.exec("DROP TABLE IF EXISTS apiKeys");
+    db.exec(
+      "CREATE TABLE apiKeys (id TEXT PRIMARY KEY, key TEXT UNIQUE NOT NULL, name TEXT, machineId TEXT, isActive INTEGER DEFAULT 1, createdAt TEXT NOT NULL)",
+    );
+    db.run(
+      "INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES (?, ?, ?, ?, 1, ?)",
+      ["legacy-key", "sk-legacy-secret", "Existing", "legacy-machine", NOW],
+    );
+    original = db.all("SELECT * FROM apiKeys ORDER BY id");
+  });
+
+  it.each(["owner", "member", "manager"])(
+    "%s session cannot read or mutate global legacy keys",
+    async (role) => {
+      const userId = { owner: seeded.ownerId, member: seeded.memberId, manager: managerId }[role];
+      const cookie = await sessionCookie(userId, SHARED);
+      const { resolvePrincipal } = await import("@/lib/users/session.js");
+      const session = new NextRequest("http://localhost/api/keys", { headers: { cookie } });
+      expect(await resolvePrincipal(session)).toMatchObject({ userId, via: "session" });
+      const { isUserSecurityEnforced } = await import("@/lib/users/securityState.js");
+      expect(await isUserSecurityEnforced()).toBe(true);
+      const calls = [
+        () => callCollection("GET", { cookie }),
+        () => callCollection("POST", { cookie, body: { name: "New" } }),
+        () => callItem("GET", "legacy-key", { cookie }),
+        () => callItem("PUT", "legacy-key", { cookie, body: { name: "Changed", isActive: false } }),
+        () => callItem("DELETE", "legacy-key", { cookie }),
+      ];
+      for (const call of calls) {
+        const res = await call();
+        expect(res.status).toBe(503);
+        expect(res.headers.get("cache-control")).toBe("no-store");
+        const text = await res.text();
+        expect(JSON.parse(text)).toEqual({ error: "Key storage unavailable" });
+        expect(text).not.toContain(original[0].key);
+        expect(db.all("SELECT * FROM apiKeys ORDER BY id")).toEqual(original);
+        expect(db.get("SELECT COUNT(*) AS n FROM apiKeys").n).toBe(1);
+        expect(
+          db.all("SELECT * FROM _meta WHERE key IN ('apiKeysHashedVersion','apiKeysHashKid')"),
+        ).toEqual([]);
+      }
+    },
+  );
+});
+
 describe("pristine legacy routes", () => {
   beforeEach(async () => {
     await load("off");
