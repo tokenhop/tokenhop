@@ -24,6 +24,7 @@ afterEach(() => {
   nowSpy.mockRestore();
 });
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const encoder = new TextEncoder();
 const data = (obj) => `data: ${JSON.stringify(obj)}\n\n`;
 const roleChunk = data({ id: "c1", choices: [{ index: 0, delta: { role: "assistant" } }] });
@@ -110,6 +111,42 @@ function run(providerResponse, { comboAttempt, streamController }) {
     comboAttempt,
   });
 }
+
+describe("non-hedged disconnect accounting parity", () => {
+  it("unchanged: no discounted cancel completion, handleDisconnect passes through", async () => {
+    const { response, upstream } = controlledProviderResponse();
+    const controller = createStreamController({});
+    const complete = vi.fn();
+    const pending = handleStreamingResponse({
+      providerResponse: response,
+      provider: "openai",
+      model: "m",
+      sourceFormat: FORMATS.OPENAI,
+      targetFormat: FORMATS.OPENAI,
+      body: { messages: [] },
+      stream: true,
+      translatedBody: {},
+      requestStartTime: 0,
+      connectionId: null,
+      clientRawRequest: { endpoint: "/v1/chat/completions", headers: {} },
+      onRequestSuccess: null,
+      reqLogger: null,
+      streamController: controller,
+      onStreamComplete: complete,
+      streamDetailId: "parity",
+      comboAttempt: null,
+    });
+    const { response: out } = await pending;
+    const reader = out.body.getReader();
+    upstream.enqueue(encoder.encode(contentChunk));
+    await readUntil(reader, "hello");
+    await reader.cancel("client gone");
+    await drain(reader).catch(() => {});
+    await sleep(10);
+    // Pre-hedge semantics: cancel is terminal with no complete/usage call.
+    expect(complete).not.toHaveBeenCalled();
+  });
+});
 
 describe("handleStreamingResponse combo TTFT feedback (YAN-764)", () => {
   it("calls registerStream before the streamed Response is returned", async () => {

@@ -149,6 +149,54 @@ describe("budget levels", () => {
     }
   });
 
+  it("hedge abort signal releases a pending attempt hold immediately", async () => {
+    budget("workspace", t.shared.id, { requests: 1 });
+    const ctrl = new AbortController();
+    let finish;
+    const pending = guard.budgeted(
+      who(),
+      { provider: "openai", model: "gpt-x", nonToken: true, signal: ctrl.signal },
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+    expect((await call(who())).status).toBe(429);
+    ctrl.abort();
+    expect((await call(who())).status).toBe(200);
+    finish(new Response("cancelled", { status: 499 }));
+    expect((await pending).status).toBe(499);
+  });
+
+  it("already aborted hedge never dispatches or holds budget", async () => {
+    budget("workspace", t.shared.id, { requests: 1 });
+    const ctrl = new AbortController();
+    ctrl.abort();
+    const run = vi.fn(async () => new Response("must not run"));
+    const res = await guard.budgeted(who(), { nonToken: true, signal: ctrl.signal }, run);
+    expect(res.status).toBe(499);
+    expect(res.localError).toBe(true);
+    expect(run).not.toHaveBeenCalled();
+    expect((await call(who())).status).toBe(200);
+  });
+
+  it("abort after streaming response releases held budget and cancels upstream", async () => {
+    budget("workspace", t.shared.id, { requests: 1 });
+    const ctrl = new AbortController();
+    const cancelled = vi.fn();
+    const res = await guard.budgeted(
+      who(),
+      { nonToken: true, signal: ctrl.signal },
+      async () => new Response(new ReadableStream({ cancel: cancelled })),
+    );
+    expect((await call(who())).status).toBe(429);
+    ctrl.abort();
+    await vi.waitFor(() => expect(cancelled).toHaveBeenCalled());
+    expect((await call(who())).status).toBe(200);
+    await res.body.cancel();
+  });
+
   it("thrown attempts release too", async () => {
     budget("workspace", t.shared.id, { requests: 1 });
     await expect(
@@ -171,6 +219,24 @@ describe("settlement", () => {
     expect((await r.json()).error.message).toContain("spent 30 tokens");
     // Another member of the same workspace is unaffected.
     expect((await call(who({ userId: t.a.user.id }))).status).toBe(200);
+  });
+});
+
+describe("cancelled observed spend", () => {
+  it("partial cancelled usage counts identically live and after DB rebuild", async () => {
+    budget("workspace", t.shared.id, { usd: 2 });
+    const first = await call(who());
+    await first.body.cancel();
+    await usage(who(), { meta: { cancelled: true, partialUsage: true, billedCost: "unknown" } });
+    // Force release grace to finish before checking the live counter.
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+    const live = await call(who());
+    expect(live.status).toBe(200);
+    await live.body.cancel();
+    await load("on", { wipe: false });
+    expect((await call(who())).status).toBe(200);
+    const b = db.get("SELECT * FROM budgets WHERE scopeType = 'workspace'");
+    expect(guard.spentFor(db, b).usd).toBe(1);
   });
 });
 

@@ -51,6 +51,7 @@ import {
   CAPABILITY_ADAPTER_CAPS,
   comboSnapshot,
   isDirty,
+  buildStrategyPatch,
   STRATEGIES,
   STRATEGY_PILL,
   usageTodayForCombo,
@@ -146,6 +147,12 @@ function strategyOf(comboStrategies, key) {
   return comboStrategies?.[key]?.fallbackStrategy || "fallback";
 }
 
+/** Saved hedge delay as editor text: absent/0 is blank (off). */
+function hedgeTextOf(entry) {
+  const ms = entry?.hedgeDelayMs;
+  return Number.isInteger(ms) && ms > 0 ? String(ms) : "";
+}
+
 function strategyLabelOf(id) {
   return STRATEGIES.find((s) => s.id === id)?.label || "Fallback";
 }
@@ -175,6 +182,8 @@ export default function CombosPageClient() {
   const [draftStrategy, setDraftStrategy] = useState("fallback");
   const [draftWeights, setDraftWeights] = useState({});
   const [draftJudge, setDraftJudge] = useState("");
+  // Raw text so an invalid value stays visible (and blocks Save) while typing.
+  const [draftHedge, setDraftHedge] = useState("");
   const [headroom, setHeadroom] = useState({});
   const [headroomQuotaSource, setHeadroomQuotaSource] = useState({});
   const [saving, setSaving] = useState(false);
@@ -391,6 +400,7 @@ export default function CombosPageClient() {
           strategy: draftStrategy,
           weights: draftWeights,
           judge: draftJudge,
+          hedgeDelayMs: draftStrategy === "fastest" ? draftHedge : 0,
         })
       : null;
   const savedSnapshot =
@@ -400,6 +410,10 @@ export default function CombosPageClient() {
           strategy: selectedStrategy,
           weights: comboStrategies[strategyKey(selected)]?.weights || {},
           judge: comboStrategies[strategyKey(selected)]?.judgeModel || "",
+          hedgeDelayMs:
+            selectedStrategy === "fastest"
+              ? hedgeTextOf(comboStrategies[strategyKey(selected)])
+              : 0,
         })
       : null;
   const routeDirty =
@@ -436,6 +450,7 @@ export default function CombosPageClient() {
     setDraftStrategy(strategyOf(strategies, strategyKey(combo)));
     setDraftWeights(strategies[strategyKey(combo)]?.weights || {});
     setDraftJudge(strategies[strategyKey(combo)]?.judgeModel || "");
+    setDraftHedge(hedgeTextOf(strategies[strategyKey(combo)]));
     setSaveError("");
   };
   useEffect(() => {
@@ -563,12 +578,18 @@ export default function CombosPageClient() {
     const savedName = selected.name;
     const generation = editGenerationRef.current;
     const models = [...(draftModels || [])];
-    const patch = { fallbackStrategy: draftStrategy };
-    if (draftStrategy === "weighted") patch.weights = { ...draftWeights };
-    if (draftStrategy === "fusion" && draftJudge) patch.judgeModel = draftJudge;
-    if (draftStrategy === "fusion" && !draftJudge && selectedEntry.judgeModel) {
-      patch.judgeModel = "";
+    const built = buildStrategyPatch({
+      strategy: draftStrategy,
+      hedgeText: draftHedge,
+      savedEntry: selectedEntry,
+      weights: draftWeights,
+      judge: draftJudge,
+    });
+    if (!built.ok) {
+      setSaveError(built.error);
+      return;
     }
+    const patch = built.patch;
     setSaving(true);
     setSaveError("");
     setSaveAnnouncement("");
@@ -802,6 +823,7 @@ export default function CombosPageClient() {
               strategy={draftStrategy}
               weights={draftWeights}
               judgeModel={draftJudge}
+              hedgeDelayMs={draftHedge}
               headroom={headroom}
               headroomQuotaSource={headroomQuotaSource}
               savedModels={selected.models || []}
@@ -829,6 +851,11 @@ export default function CombosPageClient() {
               onJudgeChange={(value) => {
                 editGenerationRef.current += 1;
                 setDraftJudge(value);
+                setSaveError("");
+              }}
+              onHedgeDelayChange={(value) => {
+                editGenerationRef.current += 1;
+                setDraftHedge(value);
                 setSaveError("");
               }}
               onModelsChange={(next) => {

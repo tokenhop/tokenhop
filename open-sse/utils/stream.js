@@ -210,16 +210,15 @@ export function createSSEStream(options = {}) {
     }
   };
 
-  // Usage/logging tail, callable from transform() as well as flush(): a client that
-  // closes right after the terminal event cancels the reader, and flush() never runs.
-  const finalizeStream = () => {
+  // Terminal/flush and explicit cancel share one idempotent accounting tail.
+  const finalizeStream = ({ cancelled = false } = {}) => {
     if (finalized) return;
     finalized = true;
 
     const isPassthrough = mode === STREAM_MODE.PASSTHROUGH;
     let finalUsage = isPassthrough ? usage : state?.usage;
 
-    if (!hasValidUsage(finalUsage) && totalContentLength > 0) {
+    if (!cancelled && !hasValidUsage(finalUsage) && totalContentLength > 0) {
       finalUsage = estimateUsage(
         body,
         totalContentLength,
@@ -260,12 +259,12 @@ export function createSSEStream(options = {}) {
         },
         finalUsage,
         ttftAt,
-        { error: streamError, firstTokenAt },
+        { error: streamError, firstTokenAt, cancelled },
       );
     }
   };
 
-  return new TransformStream({
+  const transformStream = new TransformStream({
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
@@ -774,6 +773,11 @@ export function createSSEStream(options = {}) {
       }
     },
   });
+  // TransformStream cancellation does not invoke flush(). The disconnect
+  // wrapper calls this before cancelling the reader, while observed usage is
+  // still available; no estimated tokens on cancelled work.
+  transformStream.finalizeCancelled = () => finalizeStream({ cancelled: true });
+  return transformStream;
 }
 
 export function createSSETransformStreamWithLogger(

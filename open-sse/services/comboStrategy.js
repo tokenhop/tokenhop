@@ -17,6 +17,11 @@ export const COMBO_STRATEGIES = Object.freeze([
 /** Max per-model weight accepted by the validator (protects WRR float precision). */
 export const MAX_COMBO_WEIGHT = 1000;
 
+/** Per-combo fastest hedge bounds (YAN-763). Kept local: this module must stay
+ * free of src/ imports, and runtimeConfig pulls in the brand layer. */
+export const COMBO_HEDGE_DELAY_DEFAULT_MS = 0;
+export const COMBO_HEDGE_DELAY_MAX_MS = 10000;
+
 const DEFAULT_STRATEGY = "fallback";
 const MAX_COMBO_STRATEGY_ENTRIES = 500;
 const MAX_WEIGHT_ENTRIES = 200;
@@ -25,6 +30,8 @@ const BLOCKED_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+const isHedgeDelay = (v) => Number.isInteger(v) && v >= 0 && v <= COMBO_HEDGE_DELAY_MAX_MS;
 
 /**
  * Resolve the effective combo strategy config.
@@ -46,6 +53,9 @@ export function resolveComboStrategy(settings, comboName) {
     weights: isPlainObject(entry.weights) ? entry.weights : {},
     judgeModel: entry.judgeModel,
     fusionTuning: entry.fusionTuning,
+    hedgeDelayMs: isHedgeDelay(entry.hedgeDelayMs)
+      ? entry.hedgeDelayMs
+      : COMBO_HEDGE_DELAY_DEFAULT_MS,
   };
 }
 
@@ -78,6 +88,10 @@ export function validateComboStrategySettings(body) {
       !COMBO_STRATEGIES.includes(entry.fallbackStrategy)
     ) {
       return `Invalid strategy for combo "${name}"`;
+    }
+
+    if (entry.hedgeDelayMs !== undefined && !isHedgeDelay(entry.hedgeDelayMs)) {
+      return `Invalid hedgeDelayMs for combo "${name}"`;
     }
 
     const weights = entry.weights;

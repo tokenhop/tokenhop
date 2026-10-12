@@ -147,12 +147,13 @@ export async function handleStreamingResponse({
   log,
   credentials,
   comboAttempt = null,
+  onHedgeCancel = null,
 }) {
   // Account health clears on the first real token, not on the 200 headers: a
   // tokenless stream is a failed generation (YAN-1023).
   let successNotified = false;
   const notifySuccess = () => {
-    if (successNotified || !onRequestSuccess) return;
+    if (successNotified || !onRequestSuccess || comboAttempt?.signal?.aborted) return;
     successNotified = true;
     Promise.resolve()
       .then(onRequestSuccess)
@@ -275,19 +276,42 @@ export async function handleStreamingResponse({
   // does. Spread keeps signal/startTime/isConnected/handleComplete/abort as-is;
   // the overridden methods call the originals on the real controller. Completion
   // is untouched: the transform fires onStreamResult at the terminal event/flush.
-  const pipedController = settleAttempt
-    ? {
-        ...streamController,
-        handleError: (e) => {
-          settleOnce({ error: e });
-          return streamController.handleError(e);
-        },
-        handleDisconnect: (...args) => {
-          settleOnce({ cancelled: true });
-          return streamController.handleDisconnect(...args);
-        },
-      }
-    : streamController;
+  // Hedge-only extra (YAN-763): a cancelled loser's flush never runs, so the
+  // accounting tail closes on disconnect with observed usage only. Non-hedged
+  // traffic keeps the exact pre-hedge controller (no usage on client cancel).
+  const hedged = comboAttempt?.isHedged === true && !!comboAttempt.signal;
+  const pipedController =
+    settleAttempt || hedged
+      ? {
+          ...streamController,
+          handleError: (e) => {
+            settleOnce({ error: e });
+            return streamController.handleError(e);
+          },
+          handleDisconnect: (...args) => {
+            settleOnce({ cancelled: true });
+            if (hedged) {
+              try {
+                transformStream.finalizeCancelled?.();
+              } catch {
+                // accounting must never break cancel
+              }
+            }
+            return streamController.handleDisconnect(...args);
+          },
+        }
+      : streamController;
+  if (hedged) {
+    const onHedgeAbort = () => {
+      if (!comboAttempt.accepted) onHedgeCancel?.();
+      settleOnce({ cancelled: true });
+      transformStream.finalizeCancelled?.();
+      pipedController.handleDisconnect("hedge_cancelled");
+      streamController.abort();
+    };
+    if (comboAttempt.signal.aborted) onHedgeAbort();
+    else comboAttempt.signal.addEventListener("abort", onHedgeAbort, { once: true });
+  }
   const transformedBody = pipeWithDisconnect(
     providerResponse,
     transformStream,
@@ -348,10 +372,22 @@ export function buildOnStreamComplete({
 }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-  const onStreamComplete = (contentObj, usage, ttftAt, { error = null, firstTokenAt } = {}) => {
+  const onStreamComplete = (
+    contentObj,
+    usage,
+    ttftAt,
+    { error = null, firstTokenAt, cancelled = false } = {},
+  ) => {
     // A clean 200 that never emitted text, reasoning or a tool call is a failed
     // generation, not a success (YAN-1023). `undefined` = caller didn't track it.
-    if (!error && firstTokenAt === null && !contentObj?.content && !contentObj?.thinking)
+    // A cancelled stream (hedge loser / client gone) is neither.
+    if (
+      !cancelled &&
+      !error &&
+      firstTokenAt === null &&
+      !contentObj?.content &&
+      !contentObj?.thinking
+    )
       error = { message: "empty streaming response" };
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
@@ -381,9 +417,10 @@ export function buildOnStreamComplete({
             thinking: safeThinking,
             type: "streaming",
             ...(error && { error }),
+            ...(cancelled && { cancelled: true, billedCost: "unknown" }),
           },
           pxpipe,
-          status: error ? "error" : "success",
+          status: cancelled ? "cancelled" : error ? "error" : "success",
         },
         { id: streamDetailId },
       ),
@@ -392,6 +429,8 @@ export function buildOnStreamComplete({
     });
 
     // Persist stream usage to DB (no console line; the "📊 done" line below is authoritative)
+    // saveUsageStats ignores zero/empty usage, so an early cancel stores
+    // nothing — honest "unknown cost" instead of a fabricated zero-cost row.
     saveUsageStats({
       provider,
       model,
@@ -406,8 +445,9 @@ export function buildOnStreamComplete({
       comboName,
       label: "STREAM USAGE",
       silent: true,
+      cancelled,
     });
-    if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency }));
+    if (log?.line && !cancelled) log.line(reqTag, "📊", formatDoneLine({ usage, latency }));
   };
 
   return { onStreamComplete, streamDetailId };

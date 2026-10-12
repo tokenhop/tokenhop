@@ -13,6 +13,7 @@ import { pickSmoothWeighted } from "./weightedRoundRobin.js";
 import { effectiveComboWeight } from "./comboWeights.js";
 import { boundedMap } from "../utils/boundedMap.js";
 import { probeStreamHead } from "../utils/streamProbe.js";
+import { COMBO_HEDGE_DELAY_DEFAULT_MS, COMBO_HEDGE_DELAY_MAX_MS } from "./comboStrategy.js";
 import {
   COMBO_STREAM_PROBE_MAX_BYTES,
   COMBO_STREAM_PROBE_MAX_MS,
@@ -529,6 +530,28 @@ function createAttemptFeedback(startedAt, record, parent) {
     startedAt,
     registered: false,
     settled: false,
+    // YAN-763 hedging: an outermost hedge race stores its per-attempt abort
+    // controller signal here; nested attempts inherit it so a leaf core call
+    // can cancel its upstream when the race loser is aborted. isHedged marks
+    // raced attempts for the cancellation-aware failure paths.
+    signal: parent?.signal ?? null,
+    isHedged: parent?.isHedged === true,
+    pendingSamples: [],
+    deferRecord(fn) {
+      if (attempt.signal?.aborted) return;
+      if (parent?.isHedged) parent.deferRecord(fn);
+      else if (attempt.isHedged && !attempt.accepted) attempt.pendingSamples.push(fn);
+      else fn();
+    },
+    accept() {
+      attempt.accepted = true;
+      for (const fn of attempt.pendingSamples.splice(0)) {
+        if (!attempt.signal?.aborted) fn();
+      }
+    },
+    recordSample(ms, failed) {
+      attempt.deferRecord(() => record(ms, failed));
+    },
     close() {
       attempt.settled = true;
     },
@@ -563,13 +586,16 @@ function createAttemptFeedback(startedAt, record, parent) {
       attempt.settled = true;
       try {
         if (!info || info.cancelled) return; // explicit downstream cancel: no sample
+        // A hedged attempt whose race lost is cancelled work, not slowness:
+        // aborting it can surface as a stream error first; never a sample.
+        if (attempt.isHedged && attempt.signal?.aborted) return;
         if (info.error) {
-          record(Math.max(Date.now() - startedAt, 0), true);
+          attempt.recordSample(Math.max(Date.now() - startedAt, 0), true);
           return;
         }
         const t = info.firstTokenAt;
         // No meaningful token (empty stream) or implausible clock: no sample.
-        if (Number.isFinite(t) && t >= startedAt) record(t - startedAt, false);
+        if (Number.isFinite(t) && t >= startedAt) attempt.recordSample(t - startedAt, false);
       } catch {
         // fail-open
       }
@@ -590,6 +616,10 @@ function createAttemptFeedback(startedAt, record, parent) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @param {Object<string, number>} [options.comboWeights] - Per-model static weights (weighted strategy)
  * @param {Function} [options.headroomFn] - Live headroom lookup: (model) => number (weighted strategy)
+ * @param {number} [options.hedgeDelayMs] - Fastest-only hedge backup (off when 0).
+ *   After leader rank0 resolves for a hedged pair, if rank0 is still pending
+ *   the race is: leader rank0 vs a delayed rank1 backup; the first valid
+ *   response wins, the loser is aborted. Outermost fastest only.
  * @param {Function} [options.onFallback] - Awaited before trying the next model: ({ model, status }) => void
  * @param {Function} [options.onAttempt] - Attempt observer: (attempt) => void. Fail-open: any throw is swallowed.
  *   Called after each step resolves (success, fallback-eligible failure, or non-fallback failure).
@@ -609,6 +639,8 @@ export async function handleComboChat({
   comboStrategy,
   comboStickyLimit = 1,
   comboWeights,
+  hedgeDelayMs = COMBO_HEDGE_DELAY_DEFAULT_MS,
+  clientSignal = null,
   headroomFn,
   autoSwitch = true,
   onFallback,
@@ -643,244 +675,525 @@ export async function handleComboChat({
     }
   }
 
-  // Fail-open attempt observer for the dry-run probe path. Normal traffic
-  // passes no observer; even when present it never alters routing.
-  const notifyAttempt = (attempt) => {
+  // Fastest hedging (per-combo, no global opt-in): after model filters/ranking,
+  // only when fastest, outermost, >=2 members and an explicit delay is set.
+  // Probes keep their sequential timeline.
+  // ponytail: nested hedges disabled, max two raced branches; enable nested
+  // hedging only with a request-wide fanout budget.
+  const hedgeMs =
+    comboStrategy === "fastest" &&
+    !parentAttempt &&
+    typeof onAttempt !== "function" &&
+    rotatedModels.length >= 2
+      ? hedgeDelayMs
+      : 0;
+  if (Number.isInteger(hedgeMs) && hedgeMs > 0 && hedgeMs <= COMBO_HEDGE_DELAY_MAX_MS) {
+    return raceHedgedPair({
+      body,
+      models: rotatedModels,
+      handleSingleModel,
+      log,
+      comboStrategy,
+      onFallback,
+      recordLatency,
+      clientSignal,
+      delayMs: hedgeMs,
+    });
+  }
+
+  const agg = createAggregator();
+  for (let i = 0; i < rotatedModels.length; i++) {
+    const step = await runMember({
+      body,
+      modelStr: rotatedModels[i],
+      index: i,
+      total: rotatedModels.length,
+      handleSingleModel,
+      log,
+      comboStrategy,
+      onAttempt,
+      onFallback,
+      recordLatency,
+      parentAttempt,
+    });
+    if (step.outcome !== "next") return step.response;
+    agg.add(step);
+  }
+  return agg.response(log);
+}
+
+function cancelledResponse() {
+  return new Response(JSON.stringify({ error: { message: "Request aborted" } }), {
+    status: 499,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * Aggregates member failures exactly as the pre-YAN-763 loop tail did:
+ * last error/status wins, Retry-After keeps the earliest date.
+ */
+function createAggregator() {
+  let lastError = null;
+  let lastStatus = null;
+  let earliestRetryAfter = null;
+  return {
+    add(step) {
+      if (step.outcome !== "next") return;
+      lastError = step.lastError ?? lastError;
+      lastStatus = step.lastStatus ?? lastStatus;
+      if (
+        step.retryAfter &&
+        (!earliestRetryAfter || new Date(step.retryAfter) < new Date(earliestRetryAfter))
+      ) {
+        earliestRetryAfter = step.retryAfter;
+      }
+    },
+    response(log) {
+      // 503, not 406: providers are unavailable, the request is not invalid.
+      const allDisabled = lastError?.toLowerCase().includes("no credentials");
+      const status = allDisabled ? 503 : lastStatus || 503;
+      const msg = lastError || "All combo models unavailable";
+      if (earliestRetryAfter) {
+        const retryHuman = formatRetryAfter(earliestRetryAfter);
+        log.warn("COMBO", `All models failed | ${msg} (${retryHuman})`);
+        return unavailableResponse(status, msg, earliestRetryAfter, retryHuman);
+      }
+      log.warn("COMBO", `All models failed | ${msg}`);
+      return new Response(JSON.stringify({ error: { message: msg } }), {
+        status,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  };
+}
+
+/**
+ * One member attempt (the pre-YAN-763 loop body, extracted so the sequential
+ * loop and the hedged race share one implementation).
+ *
+ * `signalCtrl` marks a raced attempt: its signal is stored on the attempt
+ * (`attempt.signal`, `attempt.isHedged`) so leaf core calls can cancel the
+ * upstream, the raced body is a structuredClone (savers mutate in place), and
+ * an aborted race settles cancelled — no sample, no fallback hook.
+ *
+ * @returns {Promise<{outcome: "served"|"terminal"|"next"|"cancelled", response?: Response,
+ *   lastError?: string|null, lastStatus?: number|null, retryAfter?: string|null}>}
+ */
+async function runMember({
+  body,
+  modelStr,
+  index,
+  total,
+  handleSingleModel,
+  log,
+  comboStrategy,
+  onAttempt,
+  onFallback,
+  recordLatency,
+  parentAttempt = null,
+  signalCtrl = null,
+  cancelSignal = null,
+}) {
+  log.info("COMBO", `Trying model ${index + 1}/${total}: ${modelStr}`);
+  const attemptStartedAt = Date.now();
+  const notifyAttempt = (info) => {
     if (typeof onAttempt !== "function") return;
     try {
-      onAttempt(attempt);
+      onAttempt(info);
     } catch {
-      // observer must never break routing
+      // observer must never alter routing
     }
   };
 
-  let lastError = null;
-  let earliestRetryAfter = null;
-  let lastStatus = null;
+  // Hedged race loser already cancelled: no upstream work, no bookkeeping.
+  if (signalCtrl?.signal.aborted || parentAttempt?.signal?.aborted || cancelSignal?.aborted)
+    return { outcome: "cancelled", response: cancelledResponse() };
 
-  for (let i = 0; i < rotatedModels.length; i++) {
-    const modelStr = rotatedModels[i];
-    log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
-    const attemptStartedAt = Date.now();
+  // Live "fastest" sampling, a nested-combo ancestor, or a hedged race needs
+  // stream feedback.
+  const attempt =
+    signalCtrl || parentAttempt || (comboStrategy === "fastest" && typeof onAttempt !== "function")
+      ? createAttemptFeedback(
+          attemptStartedAt,
+          (ms, failed) => recordLatency(modelStr, ms, failed),
+          parentAttempt,
+        )
+      : null;
+  if (signalCtrl) {
+    attempt.isHedged = true;
+    attempt.signal = signalCtrl.signal;
+  }
+  if (cancelSignal && attempt) attempt.signal = cancelSignal;
+  // Raced requests mutate the body in place (RTK, prefetch, savers): clone.
+  let detachAbort = () => {};
+  try {
+    const memberBody = signalCtrl ? structuredClone(body) : body;
+    let result = attempt
+      ? await handleSingleModel(memberBody, modelStr, attempt)
+      : await handleSingleModel(memberBody, modelStr);
 
-    // Live "fastest" sampling or a nested-combo ancestor needs stream feedback.
-    const attempt =
-      parentAttempt || (comboStrategy === "fastest" && typeof onAttempt !== "function")
-        ? createAttemptFeedback(
-            attemptStartedAt,
-            (ms, failed) => recordLatency(modelStr, ms, failed),
-            parentAttempt,
-          )
-        : null;
+    const onAbortBody = () => {
+      if (result.body && !result.body.locked) result.body.cancel("hedge loser").catch(() => {});
+    };
+    attempt?.signal?.addEventListener("abort", onAbortBody, { once: true });
+    detachAbort = () => attempt?.signal?.removeEventListener("abort", onAbortBody);
 
-    try {
-      let result = attempt
-        ? await handleSingleModel(body, modelStr, attempt)
-        : await handleSingleModel(body, modelStr);
+    // Cancelled hedge loser: not an error, not a sample, not a fallback hop.
+    if (attempt?.signal?.aborted) {
+      attempt?.settle({ cancelled: true });
+      result?.body?.cancel?.("hedge loser")?.catch?.(() => {});
+      return { outcome: "cancelled", response: cancelledResponse() };
+    }
 
-      // 2xx SSE: peek at the head so a tokenless stream (role/usage/finish
-      // only, [DONE], or an in-stream error before any token) falls through
-      // to the next member instead of serving an empty response (YAN-1023).
-      if (
-        result.ok &&
-        result.body &&
-        /text\/event-stream|ndjson/i.test(result.headers?.get?.("content-type") || "")
-      ) {
-        if (attempt) attempt.probing = true;
-        const probe = await probeStreamHead(result, {
-          maxBytes: COMBO_STREAM_PROBE_MAX_BYTES,
-          maxMs: COMBO_STREAM_PROBE_MAX_MS,
-        });
-        if (attempt) {
-          attempt.probing = false;
-          const held = attempt.heldParentSettle;
-          attempt.heldParentSettle = null;
-          if (probe.outcome === "release") {
-            try {
-              held?.();
-            } catch {
-              // feedback must never break streaming
-            }
-          }
-        }
+    // 2xx SSE: peek at the head so a tokenless stream (role/usage/finish
+    // only, [DONE], or an in-stream error before any token) falls through
+    // to the next member instead of serving an empty response (YAN-1023).
+    if (
+      result.ok &&
+      result.body &&
+      /text\/event-stream|ndjson/i.test(result.headers?.get?.("content-type") || "")
+    ) {
+      if (attempt) attempt.probing = true;
+      const probe = await probeStreamHead(result, {
+        maxBytes: COMBO_STREAM_PROBE_MAX_BYTES,
+        maxMs: COMBO_STREAM_PROBE_MAX_MS,
+        signal: attempt?.signal,
+      });
+      if (attempt?.signal?.aborted) {
+        attempt?.settle({ cancelled: true });
+        (probe.response?.body ?? null)?.cancel?.("hedge loser")?.catch?.(() => {});
+        return { outcome: "cancelled", response: cancelledResponse() };
+      }
+      if (attempt) {
+        attempt.probing = false;
+        const held = attempt.heldParentSettle;
+        attempt.heldParentSettle = null;
         if (probe.outcome === "release") {
-          result = probe.response;
-        } else {
-          const errorType = probe.outcome === "empty" ? "empty-stream" : "stream-error";
-          // One failure sample: settle() is a no-op if the drained stream
-          // already settled the attempt; without an attempt, record directly.
-          if (attempt) attempt.settle({ error: new Error(errorType) });
-          else recordLatency(modelStr, Date.now() - attemptStartedAt, true);
-          lastError =
-            probe.outcome === "empty" ? "empty streaming response" : probe.error || "stream error";
-          lastStatus = 502;
-          notifyAttempt({
-            model: modelStr,
-            status: result.status,
-            latencyMs: Date.now() - attemptStartedAt,
-            errorType,
-            outcome: "skipped",
-          });
-          log.warn("COMBO", `Model ${modelStr} ${errorType}, trying next`);
-          if (onFallback) {
-            try {
-              await onFallback({ model: modelStr, status: 502 });
-            } catch {}
+          try {
+            held?.();
+          } catch {
+            // feedback must never break streaming
           }
-          continue;
         }
       }
-
-      // Success (2xx) - return response
-      if (result.ok) {
-        // A registered stream samples itself at first token / stream end.
-        if (!attempt?.registered) recordLatency(modelStr, Date.now() - attemptStartedAt, false);
+      if (probe.outcome === "release") {
+        result = probe.response;
+      } else {
+        const errorType = probe.outcome === "empty" ? "empty-stream" : "stream-error";
+        // One failure sample: settle() is a no-op if the drained stream
+        // already settled the attempt; without an attempt, record directly.
+        if (attempt) attempt.settle({ error: new Error(errorType) });
+        else recordLatency(modelStr, Date.now() - attemptStartedAt, true);
         notifyAttempt({
           model: modelStr,
           status: result.status,
           latencyMs: Date.now() - attemptStartedAt,
-          errorType: null,
-          outcome: "served",
+          errorType,
+          outcome: "skipped",
         });
-        log.info("COMBO", `Model ${modelStr} succeeded`);
-        return result;
+        log.warn("COMBO", `Model ${modelStr} ${errorType}, trying next`);
+        if (onFallback) {
+          try {
+            await onFallback({ model: modelStr, status: 502 });
+          } catch {}
+        }
+        return {
+          outcome: "next",
+          attempt,
+          lastError:
+            probe.outcome === "empty" ? "empty streaming response" : probe.error || "stream error",
+          lastStatus: 502,
+        };
       }
+    }
 
-      attempt?.close();
+    // Success (2xx) - return response
+    if (result.ok) {
+      // A registered stream samples itself at first token / stream end.
+      if (!attempt?.registered)
+        attempt
+          ? attempt.recordSample(Date.now() - attemptStartedAt, false)
+          : recordLatency(modelStr, Date.now() - attemptStartedAt, false);
+      notifyAttempt({
+        model: modelStr,
+        status: result.status,
+        latencyMs: Date.now() - attemptStartedAt,
+        errorType: null,
+        outcome: "served",
+      });
+      log.info("COMBO", `Model ${modelStr} succeeded`);
+      return { outcome: "served", response: result, attempt };
+    }
 
-      // Extract error info from response
-      let errorText = result.statusText || "";
+    detachAbort();
+    attempt?.close();
+
+    // Extract error info from response
+    let errorText = result.statusText || "";
+    try {
+      const errorBody = await result.clone().json();
+      errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+    } catch {
+      // Ignore JSON parse errors
+    }
+
+    if (attempt?.signal?.aborted) {
+      return { outcome: "cancelled", response: cancelledResponse() };
+    }
+    // Normalize error text to string (Worker-safe)
+    if (typeof errorText !== "string") {
       try {
-        const errorBody = await result.clone().json();
-        errorText =
-          errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+        errorText = JSON.stringify(errorText);
       } catch {
-        // Ignore JSON parse errors
+        errorText = String(errorText);
       }
+    }
 
-      // Track earliest Retry-After header across all combo models
-      const retryAfter = retryAfterToIso(result.headers?.get?.("retry-after"));
-      if (
-        retryAfter &&
-        (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))
-      ) {
-        earliestRetryAfter = retryAfter;
-      }
+    // Check if should fallback to next model. Account locking stays with
+    // checkFallbackError; a model-scoped 4xx (410 Gone, model not available on
+    // this plan, unknown model id) also advances the combo, since the next
+    // member may well succeed (YAN-660).
+    // YAN-1041: pass the member's provider so billing classification is exact
+    // (Anthropic credit wording / structured markers) — identical behavior for
+    // every non-billing error.
+    const memberProvider = providerOfModel(modelStr);
+    const { shouldFallback, cooldownMs } = checkFallbackError(
+      result.status,
+      errorText,
+      0,
+      null,
+      memberProvider,
+    );
 
-      // Normalize error text to string (Worker-safe)
-      if (typeof errorText !== "string") {
-        try {
-          errorText = JSON.stringify(errorText);
-        } catch {
-          errorText = String(errorText);
-        }
-      }
-
-      // Check if should fallback to next model. Account locking stays with
-      // checkFallbackError; a model-scoped 4xx (410 Gone, model not available on
-      // this plan, unknown model id) also advances the combo, since the next
-      // member may well succeed (YAN-660).
-      // YAN-1041: pass the member's provider so billing classification is exact
-      // (Anthropic credit wording / structured markers) — identical behavior for
-      // every non-billing error.
-      const memberProvider = providerOfModel(modelStr);
-      const { shouldFallback, cooldownMs } = checkFallbackError(
-        result.status,
-        errorText,
-        0,
-        null,
-        memberProvider,
-      );
-
-      if (!shouldFallback && !isModelScopedError(result.status, errorText)) {
-        // No latency sample: a request-scoped error (bad body, context too long)
-        // would fail the same on any member, so it says nothing about speed.
-        notifyAttempt({
-          model: modelStr,
-          status: result.status,
-          latencyMs: Date.now() - attemptStartedAt,
-          errorType: classifyProbeError(result.status, errorText, memberProvider),
-          outcome: "failed",
-        });
-        log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-        return result;
-      }
-
-      // For transient errors (503/502/504), wait for cooldown before falling through
-      // so a briefly-overloaded provider gets a chance to recover rather than being
-      // skipped immediately (fixes: combo falls through on transient 503)
-      if (
-        cooldownMs &&
-        cooldownMs > 0 &&
-        cooldownMs <= 5000 &&
-        (result.status === 503 || result.status === 502 || result.status === 504)
-      ) {
-        log.info(
-          "COMBO",
-          `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`,
-        );
-        await new Promise((r) => setTimeout(r, cooldownMs));
-      }
-
-      // Fallback to next model. The recorder is fail-open and off the hot
-      // path: a throwing recorder must never corrupt lastError/lastStatus.
-      lastError = errorText || String(result.status);
-      lastStatus = result.status;
-      recordLatency(modelStr, Date.now() - attemptStartedAt, true);
+    if (!shouldFallback && !isModelScopedError(result.status, errorText)) {
+      // No latency sample: a request-scoped error (bad body, context too long)
+      // would fail the same on any member, so it says nothing about speed.
       notifyAttempt({
         model: modelStr,
         status: result.status,
         latencyMs: Date.now() - attemptStartedAt,
         errorType: classifyProbeError(result.status, errorText, memberProvider),
-        outcome: "skipped",
+        outcome: "failed",
       });
-      log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
-      if (onFallback) {
-        try {
-          await onFallback({ model: modelStr, status: result.status });
-        } catch {}
-      }
-    } catch (error) {
-      // Catch unexpected exceptions to ensure fallback continues
-      attempt?.close();
-      lastError = error.message || String(error);
-      lastStatus = 500;
-      // A client cancel is not the member's fault: don't penalize it.
-      if (error?.name !== "AbortError")
-        recordLatency(modelStr, Date.now() - attemptStartedAt, true);
-      notifyAttempt({
-        model: modelStr,
-        status: null,
-        latencyMs: Date.now() - attemptStartedAt,
-        errorType: "exception",
-        outcome: "skipped",
-      });
-      log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
-      if (onFallback) {
-        try {
-          await onFallback({ model: modelStr, status: 500 });
-        } catch {}
-      }
+      log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
+      return { outcome: "terminal", response: result, attempt };
     }
+
+    // For transient errors (503/502/504), wait for cooldown before falling
+    // through so a briefly-overloaded provider gets a chance to recover rather
+    // than being skipped immediately (fixes: combo falls through on transient
+    // 503). A hedged race already has the backup in flight: no wait.
+    if (
+      !signalCtrl &&
+      cooldownMs &&
+      cooldownMs > 0 &&
+      cooldownMs <= 5000 &&
+      (result.status === 503 || result.status === 502 || result.status === 504)
+    ) {
+      log.info(
+        "COMBO",
+        `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`,
+      );
+      await new Promise((r) => setTimeout(r, cooldownMs));
+    }
+
+    // Fallback to next model. The recorder is fail-open and off the hot
+    // path: a throwing recorder must never corrupt lastError/lastStatus.
+    attempt
+      ? attempt.recordSample(Date.now() - attemptStartedAt, true)
+      : recordLatency(modelStr, Date.now() - attemptStartedAt, true);
+    notifyAttempt({
+      model: modelStr,
+      status: result.status,
+      latencyMs: Date.now() - attemptStartedAt,
+      errorType: classifyProbeError(result.status, errorText, memberProvider),
+      outcome: "skipped",
+    });
+    log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
+    if (onFallback) {
+      try {
+        await onFallback({ model: modelStr, status: result.status });
+      } catch {}
+    }
+    return {
+      outcome: "next",
+      attempt,
+      lastError: errorText || String(result.status),
+      lastStatus: result.status,
+      retryAfter: retryAfterToIso(result.headers?.get?.("retry-after")) || null,
+    };
+  } catch (error) {
+    detachAbort();
+    // Catch unexpected exceptions to ensure fallback continues
+    attempt?.close();
+    if (attempt?.signal?.aborted) {
+      attempt?.settle({ cancelled: true });
+      return { outcome: "cancelled", response: cancelledResponse() };
+    }
+    // A client cancel is not the member's fault: don't penalize it.
+    if (error?.name !== "AbortError")
+      attempt
+        ? attempt.recordSample(Date.now() - attemptStartedAt, true)
+        : recordLatency(modelStr, Date.now() - attemptStartedAt, true);
+    notifyAttempt({
+      model: modelStr,
+      status: null,
+      latencyMs: Date.now() - attemptStartedAt,
+      errorType: "exception",
+      outcome: "skipped",
+    });
+    log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: error.message });
+    if (onFallback) {
+      try {
+        await onFallback({ model: modelStr, status: 500 });
+      } catch {}
+    }
+    return { outcome: "next", attempt, lastError: error.message || String(error), lastStatus: 500 };
+  }
+}
+
+/**
+ * Fastest-strategy hedge race (YAN-763): rank0 starts immediately; rank1
+ * starts after `delayMs` only while rank0 is still pending (or immediately
+ * when rank0 fails before the timer). First valid response (probe-released
+ * stream or 2xx) wins; the loser is aborted and its already-returned body
+ * cancelled — never a latency sample, never a fallback hop. When both fail,
+ * existing failure aggregation runs and the sequence continues at rank2.
+ */
+async function raceHedgedPair({
+  body,
+  models,
+  handleSingleModel,
+  log,
+  comboStrategy,
+  onFallback,
+  recordLatency,
+  clientSignal = null,
+  delayMs,
+}) {
+  log.info("COMBO", `Fastest hedge: ${models[0]} vs delayed ${models[1]} (${delayMs}ms)`);
+  const slots = [0, 1].map(() => ({ ctrl: new AbortController(), result: null, started: false }));
+  let timer;
+  let check = () => {};
+  let decided = false;
+  let winner = -1;
+  const cancelBody = (res) => {
+    try {
+      res?.body?.cancel?.("hedge loser")?.catch?.(() => {});
+    } catch {
+      // already locked/closed
+    }
+  };
+  const onAbort = () => {
+    for (const s of slots) s.ctrl.abort();
+    check();
+  };
+  clientSignal?.addEventListener("abort", onAbort, { once: true });
+  const runSlot = (i) => {
+    const s = slots[i];
+    if (s.started) return;
+    s.started = true;
+    runMember({
+      body,
+      modelStr: models[i],
+      index: i,
+      total: models.length,
+      handleSingleModel,
+      log,
+      comboStrategy,
+      onAttempt: null,
+      onFallback,
+      recordLatency,
+      signalCtrl: s.ctrl,
+    })
+      // A rejecting member must still settle its slot, or the race hangs.
+      .catch((e) => ({
+        outcome: "next",
+        lastError: e?.message || String(e),
+        lastStatus: 500,
+      }))
+      .then((r) => {
+        s.result = r;
+        // A loser that serves after the winner was chosen keeps no live body.
+        if (decided && i !== winner) cancelBody(r.response);
+        if (r.outcome === "next") r.attempt?.accept?.();
+        if (i === 0 && r.outcome === "next" && !slots[1].started) {
+          clearTimeout(timer);
+          runSlot(1);
+        }
+        check();
+      })
+      .catch((e) => {
+        s.result = { outcome: "next", lastError: e?.message || String(e), lastStatus: 500 };
+        if (i === 0 && !slots[1].started && !decided) {
+          clearTimeout(timer);
+          runSlot(1);
+        }
+        check();
+      });
+  };
+  winner = await new Promise((resolve) => {
+    check = () => {
+      if (clientSignal?.aborted) return resolve(-1);
+      const [first, second] = [slots[0].result?.outcome, slots[1].result?.outcome];
+      // Leader: served or request-scoped terminal wins at once (sequential semantics).
+      if (first === "served" || first === "terminal") return resolve(0);
+      if (second === "served") return resolve(1);
+      // Backup terminal (e.g. a model-dependent 400) is held while the leader is
+      // pending: the leader may still serve. It wins only once the leader failed.
+      if (second === "terminal" && first === "next") return resolve(1);
+      if (slots.every((s) => s.result)) resolve(-1);
+    };
+    if (clientSignal?.aborted) return onAbort();
+    runSlot(0);
+    timer = setTimeout(() => {
+      if (!slots[0].result) runSlot(1);
+    }, delayMs);
+  });
+  decided = true;
+  clearTimeout(timer);
+  clientSignal?.removeEventListener("abort", onAbort);
+  if (winner >= 0) {
+    const loser = slots[1 - winner];
+    loser.ctrl.abort();
+    slots[winner].result.attempt?.accept?.();
+    if (loser.result && loser.result.outcome !== "next") cancelBody(loser.result.response);
+    return slots[winner].result.response;
   }
 
-  // All models failed
-  // Use 503 (Service Unavailable) rather than 406 (Not Acceptable) — 406 implies
-  // the request itself is invalid, but here the providers are simply unavailable
-  // or have no active credentials. 503 is more accurate and retryable by clients.
-  const allDisabled = lastError && lastError.toLowerCase().includes("no credentials");
-  const status = allDisabled ? 503 : lastStatus || 503;
-  const msg = lastError || "All combo models unavailable";
+  // Both raced members failed (or the client disconnected mid-race).
+  if (clientSignal?.aborted) return clientClosedResponse();
 
-  if (earliestRetryAfter) {
-    const retryHuman = formatRetryAfter(earliestRetryAfter);
-    log.warn("COMBO", `All models failed | ${msg} (${retryHuman})`);
-    return unavailableResponse(status, msg, earliestRetryAfter, retryHuman);
+  const agg = createAggregator();
+  agg.add(slots[0].result);
+  agg.add(slots[1].result);
+  // rank2+ are plain sequential members; client cancel is only a signal on
+  // the attempt (no fake parent), checked before every member.
+  for (let i = 2; i < models.length; i++) {
+    if (clientSignal?.aborted) return clientClosedResponse();
+    const step = await runMember({
+      body,
+      modelStr: models[i],
+      index: i,
+      total: models.length,
+      handleSingleModel,
+      log,
+      comboStrategy,
+      onAttempt: null,
+      onFallback,
+      recordLatency,
+      cancelSignal: clientSignal,
+    });
+    if (step.outcome !== "next") return step.response;
+    agg.add(step);
   }
+  return agg.response(log);
+}
 
-  log.warn("COMBO", `All models failed | ${msg}`);
-  return new Response(JSON.stringify({ error: { message: msg } }), {
-    status,
+function clientClosedResponse() {
+  return new Response(JSON.stringify({ error: { message: "Client closed request" } }), {
+    status: 499,
     headers: { "Content-Type": "application/json" },
   });
 }
