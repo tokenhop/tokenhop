@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Auth is covered by gateway-auth tests; legacy = no principal.
+// Auth is covered by gateway-auth tests; legacy = no principal by default.
+const authResult = vi.hoisted(() => ({ value: { principal: null, legacy: true } }));
 vi.mock("@/lib/auth/gatewayAuth.js", () => ({
-  resolveGatewayAuth: async () => ({ principal: null, legacy: true }),
+  resolveGatewayAuth: async () => authResult.value,
 }));
 
 const buildModelsList = vi.hoisted(() => vi.fn());
@@ -17,7 +18,10 @@ async function listNames() {
 }
 
 describe("GET /v1beta/models", () => {
-  beforeEach(() => buildModelsList.mockReset());
+  beforeEach(() => {
+    buildModelsList.mockReset();
+    authResult.value = { principal: null, legacy: true };
+  });
 
   it("lists only routable LLM models, with bare Gemini and Gemini TTS names", async () => {
     buildModelsList.mockResolvedValue([
@@ -51,5 +55,23 @@ describe("GET /v1beta/models", () => {
     const names = (await listNames()).map((m) => m.name);
 
     expect(names).toEqual(["models/cl/anthropic/claude-opus-4.7"]);
+  });
+
+  it("scoped caller fails closed with a generic 503 when the TTS read rejects", async () => {
+    const principal = { workspaceId: "w1" };
+    authResult.value = { principal };
+    buildModelsList.mockImplementation(async (kinds) => {
+      if (kinds[0] === "tts") throw new Error("secret storage detail");
+      return [{ id: "gemini/gemini-2.5-pro", owned_by: "gemini" }];
+    });
+
+    const res = await GET(new Request("http://localhost/v1beta/models"));
+    const body = await res.json();
+
+    expect(res.status).toBe(503);
+    expect(body).toEqual({ error: { message: "Model catalog unavailable", type: "server_error" } });
+    expect(body.models).toBeUndefined();
+    expect(buildModelsList).toHaveBeenCalledWith(["llm"], { principal });
+    expect(buildModelsList).toHaveBeenCalledWith(["tts"], { principal });
   });
 });

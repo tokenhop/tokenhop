@@ -68,7 +68,8 @@ export async function GET(request) {
       const description = `${entry.owned_by} model: ${entry.id}`;
       addModel(`models/${entry.id}`, description, CHAT_METHODS, entry);
       // ponytail: keyed on the default "gemini/" alias; a Gemini connection with
-      // a custom prefix still routes but gets no bare/TTS aliases listed.
+      // a custom prefix still routes but gets no bare/TTS aliases listed
+      // (scoped TTS below filters on the same "gemini/" prefix).
       if (entry.id.startsWith(GEMINI_PREFIX)) {
         hasGemini = true;
         // Gemini SDKs address models by their bare Google name.
@@ -82,10 +83,16 @@ export async function GET(request) {
     }
 
     // Native Gemini TTS passthrough (generateContent with AUDIO modality).
-    if (hasGemini) {
-      for (const id of getGeminiTtsModelIds()) {
-        addModel(`models/${id}`, `Gemini TTS model: ${id}`, ["generateContent"]);
-      }
+    // Scoped callers list only TTS ids their principal's catalog allows.
+    const ttsIds = principal
+      ? (await buildModelsList(["tts"], { principal }))
+          .filter((entry) => entry.id.startsWith(GEMINI_PREFIX))
+          .map((entry) => entry.id.slice(GEMINI_PREFIX.length))
+      : hasGemini
+        ? getGeminiTtsModelIds()
+        : [];
+    for (const id of ttsIds) {
+      addModel(`models/${id}`, `Gemini TTS model: ${id}`, ["generateContent"]);
     }
 
     return Response.json({ models });
