@@ -168,6 +168,12 @@ export const TABLES = {
       tokensOut: "INTEGER NOT NULL DEFAULT 0",
       tokensCached: "INTEGER NOT NULL DEFAULT 0",
       cost: "REAL NOT NULL DEFAULT 0",
+      // YAN-771 (migration 017): edit-prediction latency, see usageLatencyRollup.js.
+      latencySumMs: "REAL NOT NULL DEFAULT 0",
+      latencyCount: "INTEGER NOT NULL DEFAULT 0",
+      emptyCount: "INTEGER NOT NULL DEFAULT 0",
+      latencyRequests: "INTEGER NOT NULL DEFAULT 0",
+      latencyHistogram: "TEXT NOT NULL DEFAULT '[0,0,0,0,0,0,0,0,0,0,0,0]'",
     },
     primaryKey:
       "PRIMARY KEY (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint)",

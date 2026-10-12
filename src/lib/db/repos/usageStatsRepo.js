@@ -10,11 +10,13 @@ import { PERIOD_DAYS, periodStart } from "@/shared/utils/period";
 import { readApiKeyStorageState } from "../apiKeyState.js";
 import { tableHasColumn } from "../migrations/helpers.js";
 import { lastErrorFor, pendingView } from "./usageLiveFeed.js";
+import { rollupLatencySummary } from "../helpers/usageLatencyRollup.js";
 import {
   NO_KEY,
   cutoffDateKey,
   localDateKey,
   readRollup,
+  readLatencyRollup,
   scopeSql,
   whereAll,
 } from "./usageRollupRepo.js";
@@ -172,14 +174,32 @@ function latencySummary(samples) {
 
 /**
  * Avg/p50 latency and empty-result rate for LATENCY_ENDPOINTS (YAN-743).
- * History-backed for every period: the rollup has no meta. Sets the values on
- * each matching byEndpoint row and per endpoint in `stats.endpointLatency`
- * (a group p50 can't be derived from per-row p50s).
- * ponytail: loads up to LATENCY_SAMPLE_CAP most recent rows into JS (keystroke
- * volume can be large; "all" would otherwise scan everything). Move to rollup
- * columns if stats over the full window are needed.
+ * Day periods use rollups (YAN-771, full window, coarse p50); shorter periods
+ * and `all` keep the capped-history semantics.
+ * ponytail: sub-day / all load up to LATENCY_SAMPLE_CAP rows; move them to
+ * finer rollups if full-window coverage is needed there too.
  */
-function addCompletionsLatency(stats, db, scope, period) {
+function addCompletionsLatency(stats, db, scope, period, ctx) {
+  if (PERIOD_DAYS[period]) {
+    const byKey = {};
+    const byEndpoint = {};
+    for (const endpoint of LATENCY_ENDPOINTS) {
+      const rows = readLatencyRollup(ctx, db, endpoint, cutoffDateKey(PERIOD_DAYS[period]));
+      if (!rows.length) continue;
+      byEndpoint[endpoint] = rollupLatencySummary(rows);
+      for (const r of rows) {
+        const key = `${r.endpoint}|${r.model || ""}|${r.provider || "unknown"}`;
+        byKey[key] ||= [];
+        byKey[key].push(r);
+      }
+    }
+    for (const [key, rows] of Object.entries(byKey)) {
+      const { samples: _n, ...summary } = rollupLatencySummary(rows);
+      if (stats.byEndpoint[key]) Object.assign(stats.byEndpoint[key], summary);
+    }
+    stats.endpointLatency = byEndpoint;
+    return;
+  }
   // Same calendar window as the rollup/history rows above; "all" = no cutoff.
   const cutoff =
     period === "24h" || period === "today" || PERIOD_DAYS[period]
@@ -333,12 +353,15 @@ export async function getUsageStats(ctx, period = "all") {
       maps,
       keyNames,
     );
-    // Overlay precise lastUsed timestamps from history.
+    // Overlay precise lastUsed timestamps. Day periods group in SQL so full
+    // windows don't load per-request rows; keep the legacy `all` read unchanged.
     const cutoff = maxDays ? Date.now() - maxDays * 86400000 : 0;
-    for (const e of db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKeyId, endpoint FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?")}`,
-      [...scope.params, new Date(cutoff).toISOString()],
-    )) {
+    const lastUsedSql = maxDays
+      ? `SELECT MAX(timestamp) AS timestamp, provider, model, connectionId, apiKeyId, endpoint
+         FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?")}
+         GROUP BY provider, model, connectionId, apiKeyId, endpoint`
+      : `SELECT timestamp, provider, model, connectionId, apiKeyId, endpoint FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?")}`;
+    for (const e of db.all(lastUsedSql, [...scope.params, new Date(cutoff).toISOString()])) {
       const model = e.model || "";
       const provider = e.provider || "";
       const keys = [
@@ -360,7 +383,7 @@ export async function getUsageStats(ctx, period = "all") {
     }
   }
 
-  addCompletionsLatency(stats, db, scope, period);
+  addCompletionsLatency(stats, db, scope, period, ctx);
   stats.totalRequests = Object.values(stats.byProvider).reduce((s, p) => s + (p.requests || 0), 0);
   return stats;
 }

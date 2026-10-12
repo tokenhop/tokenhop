@@ -110,7 +110,7 @@ export function insertInstanceTableSections(db, sections) {
     for (const row of rows) {
       db.run(
         `INSERT INTO ${section.name}(${cols}) VALUES (${marks})`,
-        section.columns.map((c) => row[c] ?? null),
+        section.columns.map((c) => row[c] ?? section.defaults?.[c] ?? null),
       );
     }
   }
