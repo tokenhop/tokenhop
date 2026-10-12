@@ -1,3 +1,45 @@
+# v1.1.0 (2026-10-12)
+
+Users & teams: the multi-user switch ships in v1.1.0. Accounts, workspaces and
+permissions are now built in: password login and invitations, SSO identity
+linking with group mapping and JIT provisioning, workspace-scoped keys, combos,
+provider connections and settings, per-user/workspace/key usage attribution,
+budgets and rate limits at every scope, audit logging, and envelope-encrypted
+credentials at rest. The switch defaults to off; single-user instances keep
+working unchanged.
+
+Alongside the users & teams work: live model catalogs for 30+ providers,
+edit-prediction (FIM) passthrough for Codestral, DeepSeek and llama.cpp, combo
+hedging and a latency-first "fastest" strategy, and the usual translator and
+provider fixes.
+
+## Highlights
+
+- **Users & teams** (#666 switch, #700 identity/tenancy schema, #735 owner bootstrap, #767 password login, #776 invitations, #774 SSO/JIT, #773 audit log, #778 credential encryption at rest, #780 connection grants).
+- **Workspace scoping**: hashed workspace keys (#761), workspace-aware providers (#841), keys (#840), combos (#770), usage (#779, #843), budgets and rate limits (#799), settings split (#769), user-aware export/import and backups.
+- **Live model catalogs**: Anthropic, Gemini, OpenAI, Copilot, OpenRouter, xAI, DeepSeek, Mistral, Groq, Together, Fireworks, Cerebras, Ollama, NVIDIA NIM, Nebius, SiliconFlow, Hyperbolic, Perplexity Agent, Venice, Alibaba Coding, SambaNova and more (#691, #694, #699, #703, #709, #714, #718, #726, #734, #741, #744, #747, #752, #755, #760).
+- **Edit predictions**: native FIM passthrough for Codestral and DeepSeek (#807), Codestral `/v1/fim/completions` and llama.cpp `/infill` endpoints (#802), legacy `/v1/completions` serving (#789), editor prediction setup in the endpoint editor (#828).
+- **Combos**: latency-first "fastest" strategy (#814), opt-in hedging for the fastest strategy (#894), drag-and-drop reordering (#763).
+- **Fallback**: recover credit-exhausted accounts (#861); users can move resources between workspaces (#863).
+
+## Breaking changes
+
+- **Settings split**: instance settings are now separate from workspace/user preferences (#769). Environments that managed the single settings blob programmatically must target the new endpoints; dashboard saves outside Settings route to the workspace endpoint (#815).
+- **Database schema**: new identity/tenancy tables (users, identities, workspaces, memberships) and workspace-scoped combos, model maps, keys and provider connections (#700, #753, #761, #770). Upgrading runs a migration; downgrading afterwards is not supported — back up the database before upgrading.
+- **Credentials at rest** are envelope-encrypted (#778). Existing plaintext credentials are migrated on first start; once migrated, older versions cannot read them.
+
+## Fixes
+
+- **Translator**: haiku 5.5 adaptive thinking (#871); FIM replies no longer double the cursor's indentation (#797); forced `tool_choice` downgraded for models that reject it (#783); Anthropic refusals surfaced as `content_filter` (#849); Gemini TTS extras scoped to key catalog (#884).
+- **Capabilities**: adaptive thinking for Claude 5.x (#854); custom-model capability toggles honoured in routing and media stripping (#678, #667).
+- **Providers**: legacy completions-node connections routed (#837); z.ai GLM-5.3 thinking clamped to low effort (#794); Claude Code markers no longer injected on API-key traffic (#858); Claude Code system prompts kept and missed auto-ping windows recovered (#646); API-key re-tests and Cloud Code test errors fixed (#660).
+- **Models**: scoped catalog reads fail closed (#880); live-catalog visibility and limits in `/v1/models` (#659).
+- **Routing**: stream default, model-scoped combo fallback, disabled models and malformed messages handled (#668); malformed-body and disabled-model errors stay request-scoped (#680).
+- **Combos**: truncated Gemini streams penalized (#839); empty 200 member responses trigger fallback (#851).
+- **SSE/Proxy**: stream terminals, `[DONE]`, NDJSON, reasoning deltas and mid-stream errors (#652); Strict Proxy enforced on all request paths (#651).
+- **Database**: writer locks released on container restart and pid-recycled locks treated as stale (#764); sql.js database persisted atomically (#645); disabled models included in export/import (#798).
+- **Security/ops**: credential headers masked in request logs (#644); stored search keys kept off client URLs (#643); client `anthropic-beta` forwarded on passthrough (#647).
+
 # v1.0.3 (2026-10-11)
 
 Third patch on the tokenhop 1.0 line: translator and provider fixes for tool choice, Anthropic refusals, Claude 5.x thinking, empty combo streams and Claude Code markers on API-key traffic.

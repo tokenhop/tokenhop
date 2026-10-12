@@ -16,8 +16,8 @@ The block below is read by the ycc skills (`/ycc:git-workflow`, `/ycc:releaser`,
 <!-- ycc-release-state
 model: release-branches
 trunk: master
-maintenance: release/1.0
-frozen: release/0.6, release/0.5
+maintenance: release/1.1
+frozen: release/1.0, release/0.6, release/0.5
 support: latest-minor
 backport_label: backport:{X.Y}
 tracker: linear-labels
@@ -31,7 +31,8 @@ Model: **release-branches**. Support window: latest-minor.
 | Role        | Branch        | Notes                       |
 | ----------- | ------------- | --------------------------- |
 | Trunk       | `master`      | Next minor or major release |
-| Maintenance | `release/1.0` | Patches via `backport:1.0`  |
+| Maintenance | `release/1.1` | Patches via `backport:1.1`  |
+| Frozen      | `release/1.0` | No further patches          |
 | Frozen      | `release/0.6` | No further patches          |
 | Frozen      | `release/0.5` | No further patches          |
 
