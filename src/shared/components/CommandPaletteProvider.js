@@ -34,6 +34,9 @@ import { useNotificationStore } from "@/store/notificationStore";
 import { copyTextToClipboard } from "@/shared/components/formPrimitives";
 import { GO_TO, matchGoTo } from "@/shared/utils/goToShortcuts";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
+import useShellStatus from "@/shared/hooks/useShellStatus";
+import { accountView } from "@/shared/utils/account";
 import { withWorkspace } from "@/app/(dashboard)/dashboard/providers/connectTarget";
 import Modal from "./Modal";
 import dynamic from "next/dynamic";
@@ -241,6 +244,13 @@ export function CommandPaletteProvider({ children }) {
   const notify = useNotificationStore();
   const { ready, scope } = useSettingsScope();
   const workspaceId = scope?.workspaceId;
+  // Same gates as the sidebar so palette pages/settings match visible nav.
+  const { status: authStatus, loaded: authLoaded } = useAuthStatusState();
+  const { multiUser, enableTranslator, loading: shellLoading } = useShellStatus();
+  // Build commands only once auth AND shell gates resolved, so a member never
+  // sees the unfiltered (single-user) list while they load.
+  const sourcesReady = ready && authLoaded && !shellLoading;
+  const view = useMemo(() => accountView(authStatus), [authStatus]);
   const listboxId = `palette-list-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const inputRef = useRef(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -300,21 +310,27 @@ export function CommandPaletteProvider({ children }) {
     }
   }, []);
 
-  // Reset query on open, then pull provider/combo lists; models load lazily.
+  // Reset only when the palette opens: gates/view resolving later must not
+  // erase what the user already typed.
+  useEffect(() => {
+    if (!open) return;
+    setQuery("");
+    setActiveId(null);
+  }, [open]);
+
+  // Pull provider/combo lists; models load lazily.
   // commandSources.js registers its static sources on import (exactly once);
   // the open-gate sets loadingLists so the dialog shows skeletons instead of
   // the "no results" empty state while sources are still loading.
   useEffect(() => {
-    if (!open || !ready) return;
-    setQuery("");
-    setActiveId(null);
+    if (!open || !sourcesReady) return;
     let cancelled = false;
     setLoadingLists(true);
     ensurePaletteSources()
       .then(() =>
         cacheRef.current.refresh({ includeModels: false, forceProviders: true, workspaceId }),
       )
-      .then((snapshot) => collectCommands(snapshot))
+      .then((snapshot) => collectCommands({ ...snapshot, view, multiUser, enableTranslator }))
       .then((all) => {
         if (!cancelled) setCommands(all);
       })
@@ -330,18 +346,18 @@ export function CommandPaletteProvider({ children }) {
     return () => {
       cancelled = true;
     };
-  }, [open, ready, workspaceId, announce]);
+  }, [open, sourcesReady, workspaceId, announce, view, multiUser, enableTranslator]);
 
   // Lazy models: fetch once the user starts typing (cached, shared inflight).
   // Debounced so typing does not refetch per keystroke; providers/combos
   // resolve from the open-time snapshot afterwards.
   useEffect(() => {
-    if (!open || !query.trim() || !ready) return;
+    if (!open || !query.trim() || !sourcesReady) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       ensurePaletteSources()
         .then(() => cacheRef.current.refresh({ includeModels: true, workspaceId }))
-        .then((snapshot) => collectCommands(snapshot))
+        .then((snapshot) => collectCommands({ ...snapshot, view, multiUser, enableTranslator }))
         .then((all) => {
           if (!cancelled) setCommands(all);
         })
@@ -351,7 +367,7 @@ export function CommandPaletteProvider({ children }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [open, query, ready, workspaceId]);
+  }, [open, query, sourcesReady, workspaceId, view, multiUser, enableTranslator]);
 
   const runCommand = useCallback(
     (command) => {

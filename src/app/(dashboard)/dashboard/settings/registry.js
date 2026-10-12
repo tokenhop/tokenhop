@@ -3,8 +3,7 @@
  * `/dashboard/settings` page shell. Each section declares its id, title,
  * subtitle, icon and rows (key, label, description, keywords, tags). The
  * registry drives rendering, the anchor nav, search, and the command-palette
- * registration (YAN-294 — no palette exists yet, so `toCommandItems` exports
- * the items ready to plug in).
+ * registration (`toCommandItems`, YAN-294).
  *
  * Rows are metadata only; interactive controls live in the section components.
  * Section data lives in registryCore.js (general..token-saver) and
@@ -12,6 +11,8 @@
  */
 import { CORE_SECTIONS } from "./registryCore";
 import { OPS_SECTIONS } from "./registryOps";
+// Cycle with settingsTiers is safe: both only use the other inside functions.
+import { layoutFor } from "./settingsTiers";
 
 /**
  * @typedef {object} SettingsRow
@@ -101,14 +102,17 @@ export function filterRows(query, sections = SETTINGS_SECTIONS) {
 }
 
 /**
- * Command-palette items for every registry row, ready to register with the
- * YAN-294 palette when it lands.
+ * Command-palette items for every row the viewer's settings layout shows.
+ * Inactive (single-user) or no view returns the legacy registry rows.
+ * @param {{ active: boolean, can?: (cap: string) => boolean }} [view] `accountView(status)`.
  * @returns {Array<{ id: string, label: string, hint: string, href: string }>}
  */
-export function toCommandItems() {
-  return SETTINGS_SECTIONS.flatMap((section) =>
+export function toCommandItems(view) {
+  const sections = view?.active ? layoutFor(view).sections : SETTINGS_SECTIONS;
+  return sections.flatMap((section) =>
     section.rows.map((row) => ({
-      id: `settings:${row.key}`,
+      // "My account" rows share keys with legacy rows (password): keep ids unique.
+      id: section.id === "account" ? `settings:account:${row.key}` : `settings:${row.key}`,
       group: "Settings",
       label: `${section.title} — ${row.label}`,
       hint: row.description || "",
