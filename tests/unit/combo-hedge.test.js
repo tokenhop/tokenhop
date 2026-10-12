@@ -40,6 +40,23 @@ const delayed = (attempt, ms, make) =>
     });
   });
 
+// Non-fallback 4xx whose body.cancel we own: Response.clone() tees the real
+// body, which would leave a spy on the stale pre-clone stream.
+const terminal400 = () => {
+  const cancel = vi.fn(async () => {});
+  const json = { error: { message: "boom" } };
+  const res = {
+    ok: false,
+    status: 400,
+    statusText: "Bad Request",
+    headers: new Headers(),
+    body: { cancel },
+    clone: () => new Response(JSON.stringify(json), { status: 400 }),
+    json: async () => json,
+  };
+  return { res, cancel };
+};
+
 const run = (handleSingleModel, extra = {}) =>
   handleComboChat({
     body: { messages: [{ role: "user", content: "x" }] },
@@ -115,6 +132,54 @@ describe("hedged fastest race", () => {
     expect(await res.text()).toBe("leader");
     await sleep(60);
     expect(calls).toEqual(["p/a"]);
+  });
+
+  it("holds backup terminal 400 while leader is pending; leader 200 wins and cancels backup", async () => {
+    let resolveLeader;
+    let leaderAttempt;
+    const { res: backup, cancel: cancelBackup } = terminal400();
+    const calls = [];
+    const pending = run((_b, model, attempt) => {
+      calls.push(model);
+      if (model === "p/a") {
+        leaderAttempt = attempt;
+        return new Promise((resolve) => {
+          resolveLeader = resolve;
+        });
+      }
+      return backup;
+    });
+    await vi.waitFor(() => expect(calls).toEqual(["p/a", "p/b"]));
+    await sleep(20); // allow backup's error classification to finish
+    expect(leaderAttempt.signal.aborted).toBe(false);
+    resolveLeader(ok("leader"));
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("leader");
+    expect(cancelBackup).toHaveBeenCalledTimes(1);
+    expect(cancelBackup).toHaveBeenCalledWith("hedge loser");
+  });
+
+  it("returns held backup terminal 400 once leader fails fallback-eligible", async () => {
+    let resolveLeader;
+    const { res: backup, cancel: cancelBackup } = terminal400();
+    const calls = [];
+    const pending = run((_b, model) => {
+      calls.push(model);
+      return model === "p/a"
+        ? new Promise((resolve) => {
+            resolveLeader = resolve;
+          })
+        : backup;
+    });
+    await vi.waitFor(() => expect(calls).toEqual(["p/a", "p/b"]));
+    await sleep(20);
+    resolveLeader(fail(503));
+    const response = await pending;
+    expect(response).toBe(backup);
+    expect(response.status).toBe(400);
+    expect(cancelBackup).not.toHaveBeenCalled();
+    expect(calls).toEqual(["p/a", "p/b"]); // terminal: no rank2 fallback
   });
 
   it("delayed backup wins; slow leader is aborted with no sample, cooldown or fallback hop", async () => {

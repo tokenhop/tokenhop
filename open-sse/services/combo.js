@@ -1136,9 +1136,13 @@ async function raceHedgedPair({
   winner = await new Promise((resolve) => {
     check = () => {
       if (clientSignal?.aborted) return resolve(-1);
-      for (let i = 0; i < 2; i++) {
-        if (["served", "terminal"].includes(slots[i].result?.outcome)) return resolve(i);
-      }
+      const [first, second] = [slots[0].result?.outcome, slots[1].result?.outcome];
+      // Leader: served or request-scoped terminal wins at once (sequential semantics).
+      if (first === "served" || first === "terminal") return resolve(0);
+      if (second === "served") return resolve(1);
+      // Backup terminal (e.g. a model-dependent 400) is held while the leader is
+      // pending: the leader may still serve. It wins only once the leader failed.
+      if (second === "terminal" && first === "next") return resolve(1);
       if (slots.every((s) => s.result)) resolve(-1);
     };
     if (clientSignal?.aborted) return onAbort();
