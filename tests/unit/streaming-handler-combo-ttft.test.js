@@ -114,7 +114,6 @@ function run(providerResponse, { comboAttempt, streamController }) {
 
 describe("non-hedged disconnect accounting parity", () => {
   it("unchanged: no discounted cancel completion, handleDisconnect passes through", async () => {
-    const finalizeSpy = vi.fn();
     const { response, upstream } = controlledProviderResponse();
     const controller = createStreamController({});
     const complete = vi.fn();
@@ -144,10 +143,8 @@ describe("non-hedged disconnect accounting parity", () => {
     await reader.cancel("client gone");
     await drain(reader).catch(() => {});
     await sleep(10);
-    // Pre-hedge semantics: cancel is terminal with no complete/usage call and
-    // no transform-level finalize hook.
+    // Pre-hedge semantics: cancel is terminal with no complete/usage call.
     expect(complete).not.toHaveBeenCalled();
-    expect(finalizeSpy).not.toHaveBeenCalled();
   });
 });
 
