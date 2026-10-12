@@ -20,7 +20,7 @@ import { isMultiUserEnabled } from "@/lib/users/featureSwitch";
 // Skill markdown reads: static content any network peer may fetch (the URL is
 // pasted to AI agents), so /skills never requires auth or an API key. Still
 // only exact allowlisted ids resolve; traversal/unknown ids 404 in the route.
-const PUBLIC_PAGE_PREFIXES = ["/skills"];
+const PUBLIC_PAGE_PREFIXES = ["/skills", "/invite"];
 
 // Every /api/* route and the LLM API prefixes: src/lib/auth/routePolicy.js.
 
@@ -90,6 +90,7 @@ export const __test__ = {
   canAccessPublicLlmApi,
   canAccessLocalOnlyRoute,
   isTranslatorPath,
+  isPublicPage,
 };
 
 function isPublicPage(pathname) {

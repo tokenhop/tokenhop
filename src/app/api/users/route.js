@@ -20,9 +20,15 @@ export async function GET(request) {
       await listUsersPageUnscoped({
         page: searchParams.get("page"),
         pageSize: searchParams.get("pageSize"),
+        search: searchParams.get("search"),
+        role: searchParams.get("role"),
+        status: searchParams.get("status"),
       }),
     );
-  } catch {
+  } catch (err) {
+    if (err?.code === "INVALID") {
+      return json({ error: "Invalid request", code: "invalid_request" }, 400);
+    }
     return json({ error: "Internal error" }, 500);
   }
 }

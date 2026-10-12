@@ -14,6 +14,7 @@ import {
   verifyFreshSamlAuthnInstant,
 } from "@/lib/auth/saml.js";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { handleSsoProofCallback } from "@/lib/users/ssoPreview.js";
 import {
   OWNER_TRANSFER_COOKIE,
   openOwnerTransferState,
@@ -53,6 +54,9 @@ export async function POST(request) {
   // Snapshot then clear transient state first, so every exit (including the
   // security-state and lock returns below) leaves no state or invite cookie.
   const cookieStore = await cookies();
+  // YAN-373: reserved proof flows (SSO preview, workspace delete) never admit.
+  const proof = await handleSsoProofCallback(request, "saml", cookieStore, settings);
+  if (proof) return proof;
   const storedRequestId = cookieStore.get("saml_state")?.value || "";
   // YAN-360: captured for later; opened only after the assertion verifies.
   const sealedInvite = cookieStore.get(SAML_INVITE_COOKIE)?.value;

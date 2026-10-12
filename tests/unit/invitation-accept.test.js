@@ -37,6 +37,7 @@ describe("acceptPasswordInvitation", () => {
     expect(out.user.email).toBe("new@x.io");
     expect(out.user.status).toBe("active");
     expect(out.workspaceId).toBe(shared.id);
+    expect(out.workspaceName).toBe("S");
     expect(out.role).toBe("member");
     expect(out.invitation.state).toBe("consumed");
 

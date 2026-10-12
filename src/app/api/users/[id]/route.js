@@ -9,6 +9,7 @@ import { audit } from "@/lib/users/audit.js";
 import { json, PayloadTooLarge, readJsonBody } from "@/lib/users/userManagement.js";
 import {
   deleteUserUnscoped,
+  getUserDetailUnscoped,
   getUserUnscoped,
   updateUserUnscoped,
 } from "@/lib/db/repos/usersRepo.js";
@@ -48,6 +49,20 @@ async function guard(request, { body = false } = {}) {
   const denied = await authorize("instance.users.manage");
   if (denied) return { res: denied };
   return { principal };
+}
+
+// Same enriched DTO as one list row; 404 not_found when the user is gone.
+export async function GET(request, { params }) {
+  try {
+    const { res } = await guard(request);
+    if (res) return res;
+    const { id } = await params;
+    const user = await getUserDetailUnscoped(id);
+    if (!user) return json({ error: "Not found", code: "not_found" }, 404);
+    return json({ user });
+  } catch (err) {
+    return fail(err);
+  }
 }
 
 const snapshot = (u) => u && { role: u.instanceRole, status: u.status };

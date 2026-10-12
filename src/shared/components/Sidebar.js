@@ -10,6 +10,7 @@ import IconButton from "./IconButton";
 import BrandLockup from "./BrandLockup";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import useAuthStatus from "@/shared/hooks/useAuthStatus";
+import usePendingUsers from "@/shared/hooks/usePendingUsers";
 import { accountView } from "@/shared/utils/account";
 
 /**
@@ -37,6 +38,7 @@ export default function Sidebar({ onClose, inDrawer = false }) {
     traffic,
   } = useShellStatus();
   const view = accountView(useAuthStatus());
+  const pendingUsers = usePendingUsers(multiUser);
 
   return (
     <aside
@@ -76,7 +78,7 @@ export default function Sidebar({ onClose, inDrawer = false }) {
       <SidebarNav
         enableTranslator={enableTranslator}
         multiUser={multiUser}
-        badges={badges}
+        badges={{ ...badges, pendingUsers }}
         providerAttention={providerAttention}
         onNavigate={onClose}
         can={view.active ? view.can : undefined}

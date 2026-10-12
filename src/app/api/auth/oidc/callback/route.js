@@ -13,6 +13,7 @@ import {
   verifyOidcIdToken,
 } from "@/lib/auth/oidc";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { handleSsoProofCallback } from "@/lib/users/ssoPreview.js";
 import {
   OWNER_TRANSFER_COOKIE,
   openOwnerTransferState,
@@ -55,7 +56,7 @@ async function claimOwnerTransfer(request, cookieStore) {
   cookieStore.delete(OWNER_TRANSFER_COOKIE);
   const st = await openOwnerTransferState(sealed);
   const state = new URL(request.url).searchParams.get("state");
-  if (!st || st.provider !== "oidc" || !st.state || !state || state !== st.state) return null;
+  if (st?.provider !== "oidc" || !st.state || !state || state !== st.state) return null;
   return st;
 }
 
@@ -115,6 +116,9 @@ async function completeOwnerTransfer(request, cookieStore, st) {
 
 export async function GET(request) {
   const transferStore = await cookies();
+  // YAN-373: reserved proof flows (SSO preview, workspace delete) never admit.
+  const proof = await handleSsoProofCallback(request, "oidc", transferStore);
+  if (proof) return proof;
   const transfer = await claimOwnerTransfer(request, transferStore);
   if (transfer) return completeOwnerTransfer(request, transferStore, transfer);
   let enforced;

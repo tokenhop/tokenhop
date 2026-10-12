@@ -186,7 +186,7 @@ describe("multiUserOnly route-policy rows", () => {
   it("fails closed to hostOps on unlisted methods", () => {
     for (const [sample, method] of [
       ["/api/users", "POST"],
-      ["/api/users/u1", "GET"],
+      ["/api/users/u1", "PUT"],
       ["/api/users/ownership-transfer", "GET"],
       ["/api/workspaces/w1/members", "DELETE"],
       ["/api/workspaces/w1/members/u1", "GET"],

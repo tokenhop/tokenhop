@@ -63,6 +63,11 @@ export const getPageInfo = (pathname) => {
     };
   }
 
+  // Admin pages render their own in-page H1 (YAN-373).
+  if (pathname.startsWith("/dashboard/admin/")) {
+    return { title: "", description: "", breadcrumbs: [] };
+  }
+
   if (pathname.includes("/providers") && !pathname.includes("/media-providers"))
     return {
       title: "Providers",
