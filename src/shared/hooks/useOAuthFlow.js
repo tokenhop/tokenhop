@@ -123,7 +123,7 @@ export default function useOAuthFlow({
           code,
           redirectUri: authData.redirectUri,
           codeVerifier: authData.codeVerifier,
-          state,
+          state: state ?? (provider === "kimchi" ? authData?.state : state),
           // Zed: keep the system_id sent to zed.dev with the stored connection.
           ...(authData.systemId ? { systemId: authData.systemId } : {}),
           ...(oauthMeta ? { meta: oauthMeta } : {}),

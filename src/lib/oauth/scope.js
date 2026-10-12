@@ -35,10 +35,15 @@ export async function oauthScope(request) {
 /**
  * Completion step of a flow bound at start: the caller must be the binding's
  * owner and the connection lands in the binding's workspace. No binding falls
- * back to `oauthScope`; required unbound flows are instance-owner-only.
+ * back to `oauthScope`; required unbound flows are instance-owner-only;
+ * strictBinding unbound flows are refused for everyone (no owner fallback).
  * @returns {Promise<null|Response|{ ctx: object, workspaceId: string, binding: object|null }>}
  */
-export async function requireFlowOwner(request, key, { required = false } = {}) {
+export async function requireFlowOwner(
+  request,
+  key,
+  { required = false, strictBinding = false } = {},
+) {
   const scope = await principalScope();
   if (!scope || scope instanceof Response) return scope;
   const binding = bindingFor(key);
@@ -48,6 +53,9 @@ export async function requireFlowOwner(request, key, { required = false } = {}) 
       return json({ error: "Forbidden" }, 403);
     }
     return { ctx: scope.ctx, workspaceId: binding.workspaceId, binding };
+  }
+  if (strictBinding) {
+    return json({ error: "OAuth session not found; restart the login flow" }, 400);
   }
   if (required && scope.ctx.instanceRole !== "owner") {
     return json({ error: "OAuth session not found; restart the login flow" }, 400);

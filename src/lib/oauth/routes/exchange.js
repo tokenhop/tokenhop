@@ -15,8 +15,11 @@ export default async function exchange(provider, request, { body }) {
 
   // Binding present → caller must be the flow owner; xiaomi-mimo's whole flow
   // is server-side, so it requires a binding (authorize registers one).
+  // Kimchi's browser token only exists inside an authorize-started flow, so
+  // an unbound exchange is refused for everyone — no instance-owner fallback.
   const scope = await requireFlowOwner(request, state, {
     required: provider === "xiaomi-mimo",
+    strictBinding: provider === "kimchi",
   });
   if (scope instanceof Response) return scope;
 
@@ -151,6 +154,7 @@ export default async function exchange(provider, request, { body }) {
       testStatus: "active",
     });
 
+    if (state) forgetBinding(state);
     return NextResponse.json({
       success: true,
       connection: {
