@@ -29,6 +29,7 @@ services:
       GROK_CLI_VERSION: 1.0.44
       NEXT_PUBLIC_BRAND: tokenhop
       # Passed through from the host env (see header).
+      BASE_URL: ${BASE_URL:-}
       GEMINI_OAUTH_CLIENT_ID: ${GEMINI_OAUTH_CLIENT_ID:-}
       GEMINI_OAUTH_CLIENT_SECRET: ${GEMINI_OAUTH_CLIENT_SECRET:-}
       ANTIGRAVITY_OAUTH_CLIENT_ID: ${ANTIGRAVITY_OAUTH_CLIENT_ID:-}

@@ -18,6 +18,10 @@ const usesRealData =
 
 if (!usesRealData) isolateDataDir();
 
+// Vite injects import.meta.env.BASE_URL (default "/") into process.env before
+// setup files run, so delete that exact sentinel; real operator values stay.
+if (process.env.BASE_URL === "/") delete process.env.BASE_URL;
+
 function isolateDataDir() {
   const parent = process.env.TOKENHOP_TEST_TMP_PARENT;
   if (!parent) {

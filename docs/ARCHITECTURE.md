@@ -479,6 +479,7 @@ Layered auth (enforced in `src/proxy.js` → `src/dashboardGuard.js`; every `/ap
 - Always-protected routes (`/api/shutdown`, `/api/settings/database`, oauth auto-import): JWT or CLI token regardless of `requireLogin`; DB route adds its own password check.
 - Portable config (`/api/settings/config/export`, `import`): validated CLI token or password confirmation header — additional gate on top of the guard.
 - Dashboard pages: JWT or `requireLogin=false`; Translator page additionally requires `ENABLE_TRANSLATOR` flag.
+- Same-origin (CSRF) guard for browser mutations (`src/lib/auth/sameOrigin.js`): `Sec-Fetch-Site: cross-site` is denied; a missing `Origin` is left to the route's session/token checks. Otherwise `Origin` must be a bare http(s) origin equal to the origin (scheme, host, port) of `BASE_URL` (else `NEXT_PUBLIC_BASE_URL`); a path in that URL is ignored, and a query, fragment or credentials make it invalid. With neither set, `Origin` must match the request `Host` as host:port, with the default port for the Origin's scheme normalized. No loopback exception. `X-Forwarded-*`/`Forwarded` are never read, and an invalid configured value fails closed. Behind a proxy set `BASE_URL` to the public URL, since `nextUrl` only reflects the bind host.
 - JWT secret (`JWT_SECRET`) secures dashboard session cookie verification/signing
 - Initial password fallback (`INITIAL_PASSWORD`, default `123456`) must be overridden in real deployments
 - API key HMAC secret (`API_KEY_SECRET`) secures generated local API key format
@@ -495,7 +496,7 @@ Environment variables actively used by code:
 - Stream timeouts: `STREAM_FIRST_CHUNK_TIMEOUT_MS`, `STREAM_STALL_TIMEOUT_MS`, `FETCH_CONNECT_TIMEOUT_MS`
 - Edit predictions (`/v1/completions`, `/v1/fim/completions`, `/infill`): `FIM_ATTEMPT_TIMEOUT_MS` (per-attempt budget, default 8000; a timeout returns 504 without an account cooldown so combos advance)
 - Cloud URL (CLI target selection): `CLOUD_URL`, `NEXT_PUBLIC_CLOUD_URL`
-- Public base URL: `NEXT_PUBLIC_BASE_URL`, `BASE_URL`
+- Public base URL: `BASE_URL` (runtime, preferred), `NEXT_PUBLIC_BASE_URL` (build-time). The browser-facing origin; also the sole allowed `Origin` for dashboard same-origin (CSRF) checks. Unset falls back to the request `Host`; set-but-invalid denies every Origin-bearing mutation.
 - Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase variants
 - Platform/runtime helpers (not app-specific config): `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
 
