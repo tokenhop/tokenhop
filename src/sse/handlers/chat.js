@@ -213,6 +213,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       weights: comboWeights,
       judgeModel,
       fusionTuning,
+      hedgeDelayMs,
     } = comboStrategyFor(settings, gateway, outerCombo);
     let augmentedModels = augmentModelsWithCapacityAdapter(
       comboModels,
@@ -306,6 +307,8 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       comboStrategy,
       comboStickyLimit,
       comboWeights,
+      hedgeDelayMs,
+      clientSignal: request?.signal ?? null,
       headroomFn,
       onAttempt: comboObserver,
       // Probes must not pollute the live-routes fallback ring: pass the
@@ -521,6 +524,7 @@ async function handleSingleModelChat(
   options = null,
   attempt = null,
 ) {
+  if (attempt?.signal?.aborted) return errorResponse(499, "Request aborted");
   const gateway = options?.principal || null;
   const gatewayCreds = { principal: gateway };
   const modelInfo = await getModelInfo(modelStr, gateway ? { principal: gateway } : {});
@@ -545,6 +549,7 @@ async function handleSingleModelChat(
         weights: comboWeights,
         judgeModel,
         fusionTuning,
+        hedgeDelayMs,
       } = comboStrategyFor(chatSettings, gateway, nestedCombo);
       const requiredCapabilities = detectRequiredCapabilities(body);
       let augmentedModels = augmentModelsWithCapacityAdapter(
@@ -569,7 +574,13 @@ async function handleSingleModelChat(
       const adapterAdded = filteredAdapter.filter((m) => !comboModels.includes(m));
       const nestedObserver = probeObserverFor(options, modelStr);
 
-      if (comboStrategy === "fusion") {
+      if (comboStrategy === "fusion" && attempt?.isHedged) {
+        log.warn(
+          "COMBO",
+          `Nested fusion is sequential under an outermost hedge race; running members in order (YAN-763)`,
+        );
+      }
+      if (comboStrategy === "fusion" && !attempt?.isHedged) {
         let fusionModels = comboModels;
         if (gateway) {
           const filtered = await fusionPanelForGateway(
@@ -645,6 +656,8 @@ async function handleSingleModelChat(
         comboStrategy,
         comboStickyLimit,
         comboWeights,
+        hedgeDelayMs,
+        clientSignal: request?.signal ?? null,
         headroomFn,
         onAttempt: nestedObserver,
         parentAttempt: attempt,
@@ -673,7 +686,7 @@ async function handleSingleModelChat(
   }
 
   // YAN-372: key/user/membership/workspace budgets, reserved per leaf attempt.
-  const held = await budgeted(gateway, { provider, model, body }, () =>
+  const held = await budgeted(gateway, { provider, model, body, signal: attempt?.signal }, () =>
     handleSingleModelChat(
       body,
       modelStr,
@@ -707,7 +720,8 @@ async function handleSingleModelChat(
     // FIM only: a client that disconnected before/while typing predictions must
     // not spend another account attempt. 499 is not fallback-eligible
     // (4xx<500), so combos/accounts stop immediately — matching intent.
-    if (fim && request?.signal?.aborted) return errorResponse(499, "Client closed request");
+    if (attempt?.signal?.aborted || (fim && request?.signal?.aborted))
+      return errorResponse(499, "Client closed request");
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
       ...gatewayCreds,
       estimateTokens: () => estimateBodyTokens(body),
@@ -743,6 +757,12 @@ async function handleSingleModelChat(
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
+    const releaseOnAbort = () => releaseGrantReservation(credentials.grantReservation);
+    if (attempt?.signal?.aborted) {
+      releaseOnAbort();
+      return errorResponse(499, "Request aborted");
+    }
+    attempt?.signal?.addEventListener("abort", releaseOnAbort, { once: true });
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
     // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
@@ -794,6 +814,7 @@ async function handleSingleModelChat(
       onPxpipeEvent: appendPxpipeEvent,
       comboName,
       comboAttempt: attempt,
+      onHedgeCancel: releaseOnAbort,
       providerThinking,
       // Detect source format by endpoint + body
       sourceFormatOverride: sourceFormat,
@@ -813,6 +834,11 @@ async function handleSingleModelChat(
       },
     });
 
+    if (attempt?.signal?.aborted) {
+      releaseOnAbort();
+      return errorResponse(499, "Request aborted");
+    }
+    attempt?.signal?.removeEventListener("abort", releaseOnAbort);
     if (result.success) return result.response;
     // Failed attempts don't count against the grant's rpm/tpm.
     releaseGrantReservation(credentials.grantReservation);

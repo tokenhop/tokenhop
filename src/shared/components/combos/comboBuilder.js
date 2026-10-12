@@ -151,6 +151,63 @@ export function parseWeight(raw) {
   return { ok: true, value: parsed };
 }
 
+/**
+ * Blank/zero disables fastest hedging; never coerce invalid drafts into off.
+ * ponytail: 10000 mirrors COMBO_HEDGE_DELAY_MAX_MS in
+ * open-sse/services/comboStrategy.js (UI cannot import open-sse constants into
+ * client code without the brand layer). Keep both in sync; share the constant
+ * if a src-free client-safe config module appears.
+ */
+export function parseHedgeDelay(raw) {
+  if (raw === undefined || raw === null || (typeof raw === "string" && !raw.trim())) {
+    return { ok: true, value: 0 };
+  }
+  const value = Number(raw);
+  if (
+    (typeof raw !== "string" && typeof raw !== "number") ||
+    (typeof raw === "string" && !/^\d+$/.test(raw.trim())) ||
+    !Number.isInteger(value) ||
+    value < 0 ||
+    value > 10000
+  ) {
+    return {
+      ok: false,
+      error: "Enter a whole number from 0 to 10000 ms, or leave blank to turn off.",
+    };
+  }
+  return { ok: true, value };
+}
+
+/**
+ * Strategy PATCH body for a route save (pure; no visual/behavior change).
+ * Leaving fastest clears a stored delay; blank/0 on fastest is still sent when
+ * a delay was saved (else it could never be turned off); an invalid delay
+ * blocks the save instead of being coerced to off.
+ * @param {{ strategy: string, hedgeText?: string|number, savedEntry?: object,
+ *   weights?: object, judge?: string }} input
+ * @returns {{ ok: true, patch: object } | { ok: false, error: string }}
+ */
+export function buildStrategyPatch({
+  strategy,
+  hedgeText = "",
+  savedEntry = {},
+  weights = {},
+  judge = "",
+}) {
+  const saved = savedEntry || {};
+  const patch = { fallbackStrategy: strategy };
+  if (strategy !== "fastest" && saved.hedgeDelayMs > 0) patch.hedgeDelayMs = 0;
+  if (strategy === "fastest") {
+    const hedge = parseHedgeDelay(hedgeText);
+    if (!hedge.ok) return { ok: false, error: hedge.error };
+    if (hedge.value > 0 || saved.hedgeDelayMs !== undefined) patch.hedgeDelayMs = hedge.value;
+  }
+  if (strategy === "weighted") patch.weights = { ...weights };
+  if (strategy === "fusion" && judge) patch.judgeModel = judge;
+  if (strategy === "fusion" && !judge && saved.judgeModel) patch.judgeModel = "";
+  return { ok: true, patch };
+}
+
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.-]+$/;
 
 /** Same contract as the combo form name validation. */
@@ -217,14 +274,24 @@ export function adapterWarnings(adapter) {
  * Canonical save snapshot for dirty comparison: weights key order is
  * normalized so server round-trips never read as edits.
  */
-export function comboSnapshot({ models = [], strategy = "fallback", weights = {}, judge = "" }) {
+export function comboSnapshot({
+  models = [],
+  strategy = "fallback",
+  weights = {},
+  judge = "",
+  hedgeDelayMs = 0,
+}) {
   const sortedWeights = {};
   for (const k of Object.keys(weights || {}).sort()) sortedWeights[k] = weights[k];
+  const hedge = parseHedgeDelay(hedgeDelayMs);
   return {
     models: [...models],
     strategy,
     weights: sortedWeights,
     judge: judge || "",
+    // Absent, blank and 0 are all "off", so a server round-trip never reads as
+    // an edit. An invalid draft stays raw so it still counts as unsaved.
+    hedgeDelayMs: hedge.ok ? hedge.value : String(hedgeDelayMs),
   };
 }
 

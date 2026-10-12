@@ -29,6 +29,7 @@ import {
   explainWeightedShares,
   shareDetailText,
   parseWeight,
+  parseHedgeDelay,
   validateComboName,
   assignStepIds,
   pruneKeys,
@@ -47,6 +48,7 @@ export default function ComboEditor({
   strategy,
   weights,
   judgeModel,
+  hedgeDelayMs = "",
   headroom,
   headroomQuotaSource,
   savedModels,
@@ -64,6 +66,7 @@ export default function ComboEditor({
   onStrategyChange,
   onWeightSave,
   onJudgeChange,
+  onHedgeDelayChange,
   onModelsChange,
   activeProviders,
   modelAliases,
@@ -84,6 +87,8 @@ export default function ComboEditor({
   const modelsDirty = JSON.stringify(models) !== JSON.stringify(savedModels || []);
   const isWeighted = strategy === "weighted";
   const isFusion = strategy === "fusion";
+  const isFastest = strategy === "fastest";
+  const hedge = isFastest ? parseHedgeDelay(hedgeDelayMs) : { ok: true, value: 0 };
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -262,7 +267,7 @@ export default function ComboEditor({
             variant="primary"
             icon="save"
             loading={saving}
-            disabled={!dirty || saving}
+            disabled={!dirty || saving || !hedge.ok}
             onClick={onSave}
           >
             Save
@@ -299,6 +304,24 @@ export default function ComboEditor({
         </p>
       )}
       <StrategyPicker value={strategy} onChange={onStrategyChange} />
+
+      {isFastest && (
+        <div className="max-w-md">
+          <Input
+            inputMode="numeric"
+            label="Second model delay (ms)"
+            placeholder="Off"
+            value={hedgeDelayMs}
+            onChange={(e) => onHedgeDelayChange?.(e.target.value)}
+            error={hedge.ok ? undefined : <span role="alert">{hedge.error}</span>}
+            hint={
+              hedge.ok && hedge.value > 0
+                ? `If the first model is slow, the router may start a second model after ${hedge.value} ms. This can increase upstream cost and quota use.`
+                : "Off by default. Leave blank or 0 to keep it off. Set 1–10000 ms to allow a second model to start when the first is slow; this can increase upstream cost and quota use."
+            }
+          />
+        </div>
+      )}
 
       {/* Route track */}
       <div className="flex flex-col">
@@ -487,6 +510,7 @@ ComboEditor.propTypes = {
   strategy: PropTypes.string.isRequired,
   weights: PropTypes.object,
   judgeModel: PropTypes.string,
+  hedgeDelayMs: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   headroom: PropTypes.objectOf(PropTypes.number),
   headroomQuotaSource: PropTypes.objectOf(PropTypes.string),
   savedModels: PropTypes.arrayOf(PropTypes.string),
@@ -504,6 +528,7 @@ ComboEditor.propTypes = {
   onStrategyChange: PropTypes.func,
   onWeightSave: PropTypes.func,
   onJudgeChange: PropTypes.func,
+  onHedgeDelayChange: PropTypes.func,
   onModelsChange: PropTypes.func,
   activeProviders: PropTypes.array,
   modelAliases: PropTypes.object,

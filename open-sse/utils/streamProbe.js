@@ -122,7 +122,7 @@ function replayResponse(response, buffered, reader, pending = null) {
  */
 export async function probeStreamHead(
   response,
-  { maxBytes = DEFAULT_MAX_BYTES, maxMs = DEFAULT_MAX_MS } = {},
+  { maxBytes = DEFAULT_MAX_BYTES, maxMs = DEFAULT_MAX_MS, signal = null } = {},
 ) {
   if (!response.body) return { outcome: "release", response };
 
@@ -192,6 +192,7 @@ export async function probeStreamHead(
   for (;;) {
     const read = reader.read();
     let timer;
+    let onAbort;
     let r;
     try {
       r = await Promise.race([
@@ -199,12 +200,21 @@ export async function probeStreamHead(
         new Promise((resolve) => {
           timer = setTimeout(() => resolve(null), Math.max(0, deadline - Date.now()));
         }),
+        // A hedged race loser is aborted mid-probe: the buffered head and the
+        // still-open reader are cancelled together.
+        new Promise((_, rej) => {
+          if (!signal) return;
+          onAbort = () => rej(new Error("Attempt aborted"));
+          if (signal.aborted) return onAbort();
+          signal.addEventListener("abort", onAbort, { once: true });
+        }),
       ]);
     } catch (err) {
-      clearTimeout(timer);
       return reject(err?.message || String(err) || "stream error");
+    } finally {
+      clearTimeout(timer);
+      if (onAbort) signal?.removeEventListener("abort", onAbort);
     }
-    clearTimeout(timer);
 
     // Time cap: fail-open; replay awaits this same read first (no lost chunk).
     if (r === null) return release(read);

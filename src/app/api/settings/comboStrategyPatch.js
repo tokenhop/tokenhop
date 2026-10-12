@@ -3,7 +3,13 @@ import { validateComboStrategySettings } from "open-sse/services/comboStrategy.j
 
 const VALID_COMBO_NAME = /^[a-zA-Z0-9_.-]+$/;
 const BLOCKED_COMBO_NAMES = new Set(["__proto__", "constructor", "prototype"]);
-const PATCH_KEYS = new Set(["fallbackStrategy", "weights", "judgeModel", "fusionTuning"]);
+const PATCH_KEYS = new Set([
+  "fallbackStrategy",
+  "weights",
+  "judgeModel",
+  "fusionTuning",
+  "hedgeDelayMs",
+]);
 const MAX_ID_LENGTH = 128;
 
 /** Whether `name` is a well-formed combo name (same rule the combos routes enforce). */

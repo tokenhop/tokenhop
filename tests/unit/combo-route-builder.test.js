@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import { ACTIVE } from "../../src/shared/brand/index.cjs";
 
 import {
+  buildStrategyPatch,
+  comboSnapshot,
+  parseHedgeDelay,
   roleLabel,
   STRATEGY_EXPLAINERS,
   STRATEGIES,
@@ -269,5 +272,72 @@ describe("pruneKeys", () => {
   it("accepts a Set and tolerates missing input", () => {
     expect(pruneKeys({ a: "1" }, new Set(["a"]))).toEqual({ a: "1" });
     expect(pruneKeys(null, [])).toEqual({});
+  });
+});
+
+describe("hedgeDelay helpers", () => {
+  it.each([
+    [undefined, 0, true],
+    [null, 0, true],
+    ["", 0, true],
+    ["   ", 0, true],
+    [0, 0, true],
+    ["0", 0, true],
+    [250, 250, true],
+    ["250", 250, true],
+    [10000, 10000, true],
+    ["10000", 10000, true],
+    [-1, 0, false],
+    ["-1", 0, false],
+    [10001, 0, false],
+    ["10001", 0, false],
+    [1.5, 0, false],
+    ["1.5", 0, false],
+    ["10ms", 0, false],
+    ["abc", 0, false],
+    ["0x10", 0, false],
+    [true, 0, false],
+    [{}, 0, false],
+  ])("parseHedgeDelay(%j) ok=%s", (raw, value, ok) => {
+    const parsed = parseHedgeDelay(raw);
+    expect(parsed.ok).toBe(ok);
+    if (ok) expect(parsed.value).toBe(value);
+  });
+
+  it("snapshot treats absent/blank/0 as one off state; invalid stays dirty", () => {
+    const snap = (hedgeDelayMs) =>
+      comboSnapshot({ models: ["a"], strategy: "fastest", hedgeDelayMs });
+    expect(snap(undefined).hedgeDelayMs).toBe(0);
+    expect(snap("").hedgeDelayMs).toBe(0);
+    expect(snap(0).hedgeDelayMs).toBe(0);
+    expect(snap(250).hedgeDelayMs).toBe(250);
+    expect(isDirty({ saved: snap(250), draft: snap("250") })).toBe(false);
+    expect(isDirty({ saved: snap(0), draft: snap(250) })).toBe(true);
+    expect(snap("abc").hedgeDelayMs).toBe("abc");
+    expect(isDirty({ saved: snap(0), draft: snap("abc") })).toBe(true);
+  });
+
+  it("save gating: blank clears saved delay with 0, invalid blocks, leaving fastest clears", () => {
+    expect(
+      buildStrategyPatch({ strategy: "fastest", hedgeText: "", savedEntry: { hedgeDelayMs: 250 } }),
+    ).toEqual({ ok: true, patch: { fallbackStrategy: "fastest", hedgeDelayMs: 0 } });
+    expect(buildStrategyPatch({ strategy: "fastest", hedgeText: "", savedEntry: {} })).toEqual({
+      ok: true,
+      patch: { fallbackStrategy: "fastest" },
+    });
+    expect(buildStrategyPatch({ strategy: "fastest", hedgeText: "abc", savedEntry: {} }).ok).toBe(
+      false,
+    );
+    expect(buildStrategyPatch({ strategy: "fastest", hedgeText: "250", savedEntry: {} })).toEqual({
+      ok: true,
+      patch: { fallbackStrategy: "fastest", hedgeDelayMs: 250 },
+    });
+    expect(buildStrategyPatch({ strategy: "fallback", savedEntry: { hedgeDelayMs: 250 } })).toEqual(
+      { ok: true, patch: { fallbackStrategy: "fallback", hedgeDelayMs: 0 } },
+    );
+    expect(buildStrategyPatch({ strategy: "fallback", savedEntry: {} })).toEqual({
+      ok: true,
+      patch: { fallbackStrategy: "fallback" },
+    });
   });
 });

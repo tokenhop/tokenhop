@@ -143,6 +143,7 @@ export function saveUsageStats({
   comboName = null,
   label = "USAGE",
   silent = false,
+  cancelled = false,
 }) {
   if (!tokens || typeof tokens !== "object") return;
 
@@ -189,6 +190,7 @@ export function saveUsageStats({
     savings: savings || undefined,
     comboName: comboName || undefined,
     meta: {
+      ...(cancelled && { cancelled: true, partialUsage: true, billedCost: "unknown" }),
       ...(Number.isFinite(latencyMs) ? { latencyMs } : {}),
       ...(endpoint === FIM_USAGE_ENDPOINT && outTokens === 0 ? { empty: true } : {}),
     },

@@ -310,6 +310,10 @@ export function pipeWithDisconnect(
     },
   });
 
+  // No pipeThrough({signal}): aborting such a pipe rejects Node's internal
+  // pipe promise with an unhandled AbortError (YAN-763). Upstream teardown is
+  // owned by the executor's fetch signal (streamController.abort) and by
+  // reader.cancel on the disconnect-aware tail.
   const transformedBody = providerResponse.body
     .pipeThrough(upstreamTap)
     .pipeThrough(transformStream);

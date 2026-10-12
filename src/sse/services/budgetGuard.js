@@ -300,7 +300,7 @@ export function reserveGrantBudget(grantId, ctx) {
 // Release once the body is fully read, errors or is cancelled, plus a hard cap
 // so a never-consumed body can't hold budget forever. The settle grace lets the
 // async usage commit land before the hold drops (bounded overshoot).
-function releaseWhenDone(res, release, held) {
+function releaseWhenDone(res, release, held, signal = null) {
   if (!held || !(res instanceof Response) || !res.body || !res.ok || res.bodyUsed) {
     release();
     return res;
@@ -308,6 +308,7 @@ function releaseWhenDone(res, release, held) {
   const cap = setTimeout(release, BUDGET_RESERVATION_MAX_MS);
   cap.unref?.();
   const finish = () => {
+    signal?.removeEventListener("abort", onAbort);
     clearTimeout(cap);
     const t = setTimeout(release, BUDGET_SETTLE_GRACE_MS);
     t.unref?.();
@@ -319,6 +320,12 @@ function releaseWhenDone(res, release, held) {
     release(); // locked/disturbed body: can't observe its end
     return res;
   }
+  const onAbort = () => {
+    finish();
+    reader.cancel("aborted").catch(() => {});
+  };
+  if (signal?.aborted) onAbort();
+  else signal?.addEventListener("abort", onAbort, { once: true });
   const body = new ReadableStream({
     async pull(controller) {
       try {
@@ -369,6 +376,15 @@ export async function withBudgetScope(principal, opts, run) {
 }
 
 async function withBudget(principal, opts, run) {
+  // A hedge race may abort between selection and dispatch: no hold, no run.
+  if (opts?.signal?.aborted) {
+    const res = new Response(JSON.stringify({ error: { message: "Request aborted" } }), {
+      status: 499,
+      headers: { "Content-Type": "application/json" },
+    });
+    res.localError = true;
+    return res;
+  }
   const estimate = await estimateUsage(opts);
   const path = PATH_LEVELS.flatMap((lvl) =>
     rows.filter((b) => b.scopeType === lvl && matches(b, principal)),
@@ -380,8 +396,18 @@ async function withBudget(principal, opts, run) {
     store.releases.push(r.release);
   }
   const releaseAll = () => {
+    opts.signal?.removeEventListener("abort", releaseAll);
     for (const fn of store.releases) fn();
   };
+  if (opts.signal?.aborted) {
+    releaseAll();
+    const res = new Response(JSON.stringify({ error: { message: "Request aborted" } }), {
+      status: 499,
+    });
+    res.localError = true;
+    return res;
+  }
+  opts.signal?.addEventListener("abort", releaseAll, { once: true });
   let res;
   try {
     res = await requestHolds.run(store, run);
@@ -389,7 +415,7 @@ async function withBudget(principal, opts, run) {
     releaseAll();
     throw err;
   }
-  return releaseWhenDone(res, releaseAll, store.releases.length > 0);
+  return releaseWhenDone(res, releaseAll, store.releases.length > 0, opts.signal);
 }
 
 function notifySoftLimit(state) {

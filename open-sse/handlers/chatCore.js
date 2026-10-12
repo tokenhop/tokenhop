@@ -143,6 +143,7 @@ export async function handleChatCore({
   sourceFormatOverride,
   providerThinking,
   comboName = null,
+  onHedgeCancel = null, // release reservation on streamed hedge-loser cancel
   comboAttempt = null, // trusted combo latency feedback (YAN-764); never body-derived
   clientSignal = null, // FIM only: aborts the upstream call when the editor disconnects
 }) {
@@ -651,10 +652,16 @@ export async function handleChatCore({
   // Scoped to the attempt window: once a stream is handed off, the response
   // stream's cancel() → handleDisconnect path owns disconnects (and the
   // pending-counter decrement), so the listener is detached in clearAttemptTimer.
+  // YAN-763: a hedged combo attempt is cancelled through the same path (the
+  // loser of a fastest race), with FIM's clientSignal preserved alongside.
+  const hedgeSignal = comboAttempt?.isHedged === true ? (comboAttempt.signal ?? null) : null;
+  const requestSignal = comboAttempt?.signal ?? null;
+  const cancellable = fim || !!requestSignal;
   const onClientAbort = () => streamController.abort();
-  if (fim && clientSignal) {
-    if (clientSignal.aborted) streamController.abort();
-    else clientSignal.addEventListener("abort", onClientAbort, { once: true });
+  const cancelSources = [fim ? clientSignal : null, requestSignal].filter(Boolean);
+  for (const src of cancelSources) {
+    if (src.aborted) streamController.abort();
+    else src.addEventListener("abort", onClientAbort, { once: true });
   }
 
   // FIM per-attempt budget: headers + non-stream body read. (Streams hand off
@@ -664,7 +671,7 @@ export async function handleChatCore({
   const clearAttemptTimer = () => {
     clearTimeout(attemptTimer);
     attemptTimer = null;
-    clientSignal?.removeEventListener?.("abort", onClientAbort);
+    for (const src of cancelSources) src.removeEventListener?.("abort", onClientAbort);
   };
   let attemptSignal = streamController.signal;
   if (fim) {
@@ -680,7 +687,7 @@ export async function handleChatCore({
   // ponytail: leaked upstream socket may finish on its own; only client latency
   // is bounded here. Upgrade: make every executor honour the signal, then drop this.
   const waitForAttempt = async (run) => {
-    if (!fim) return run();
+    if (!cancellable) return run();
     if (attemptSignal.aborted) throw abortError();
     let onAbort;
     try {
@@ -709,6 +716,13 @@ export async function handleChatCore({
         proxyOptions,
       }),
     );
+  // Hedge-cancelled attempts are not account failures: localError keeps
+  // markAccountUnavailable / cooldown / combo fallback hooks out of it.
+  const abortedResult = () => {
+    const res = createErrorResult(499, "Request aborted");
+    if (hedgeSignal?.aborted) res.localError = true;
+    return res;
+  };
   const timedOutResult = () => {
     const res = createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, "Completion attempt timed out");
     res.localError = true; // no cooldown, no rotation (combo advances on 504)
@@ -765,7 +779,7 @@ export async function handleChatCore({
   let providerResponseFormat = targetFormat;
   try {
     const result = await execute();
-    if (fim && attemptSignal.aborted) {
+    if (cancellable && attemptSignal.aborted) {
       clearAttemptTimer();
       trackPendingRequest(
         model,
@@ -778,7 +792,7 @@ export async function handleChatCore({
         keyContext.apiKeyId,
       );
       streamController.handleError(abortError());
-      return timedOut ? timedOutResult() : createErrorResult(499, "Request aborted");
+      return timedOut ? timedOutResult() : abortedResult();
     }
     providerResponse = result.response;
     providerUrl = result.url;
@@ -788,7 +802,7 @@ export async function handleChatCore({
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
   } catch (error) {
     clearAttemptTimer();
-    if (fim && attemptSignal.aborted && error.name !== "AbortError") error = abortError();
+    if (cancellable && attemptSignal.aborted && error.name !== "AbortError") error = abortError();
     if (timedOut) {
       trackPendingRequest(
         model,
@@ -842,9 +856,10 @@ export async function handleChatCore({
             error: error.message || String(error),
             status: error.name === "AbortError" ? 499 : 502,
             thinking: null,
+            ...(hedgeSignal?.aborted && { cancelled: true, billedCost: "unknown" }),
           },
           pxpipe: pxpipeSummary,
-          status: "error",
+          status: hedgeSignal?.aborted ? "cancelled" : "error",
         },
         { endpoint: clientRawRequest?.endpoint || null },
       ),
@@ -852,7 +867,7 @@ export async function handleChatCore({
 
     if (error.name === "AbortError") {
       streamController.handleError(error);
-      return createErrorResult(499, "Request aborted");
+      return abortedResult();
     }
     const localPrep = error.isRequestPrepError === true;
     // Malformed client body (e.g. non-array messages): request-scoped 400 —
@@ -927,7 +942,7 @@ export async function handleChatCore({
     }
   }
 
-  if (fim && attemptSignal.aborted) {
+  if (cancellable && attemptSignal.aborted) {
     clearAttemptTimer();
     trackPendingRequest(
       model,
@@ -940,7 +955,7 @@ export async function handleChatCore({
       keyContext.apiKeyId,
     );
     streamController.handleError(abortError());
-    return timedOut ? timedOutResult() : createErrorResult(499, "Request aborted");
+    return timedOut ? timedOutResult() : abortedResult();
   }
 
   try {
@@ -1025,11 +1040,12 @@ export async function handleChatCore({
     savings: buildSavingsEntry({ rtkStats, headroomStats, headroomDiagnostics, pxpipeSummary }),
     comboName,
     comboAttempt,
+    onHedgeCancel,
     reqTag,
     log,
     usageEndpoint,
-    abortSignal: fim ? attemptSignal : null,
-    readResponse: fim
+    abortSignal: cancellable ? attemptSignal : null,
+    readResponse: cancellable
       ? async (read) => {
           try {
             return await waitForAttempt(read);
@@ -1049,9 +1065,9 @@ export async function handleChatCore({
       return result;
     } catch (error) {
       clearAttemptTimer();
-      if (!fim || !attemptSignal.aborted) throw error;
+      if (!cancellable || !attemptSignal.aborted) throw error;
       streamController.handleError(abortError());
-      return timedOut ? timedOutResult() : createErrorResult(499, "Request aborted");
+      return timedOut ? timedOutResult() : abortedResult();
     }
   };
   const appendLog = (extra) =>
