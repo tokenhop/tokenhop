@@ -190,6 +190,50 @@ describe("hashed principal catalog scoping", () => {
     expect(names).not.toContain("models/no-combo");
   });
 
+  it("YAN-1061: scoped Gemini TTS follows buildModelsList, never the static catalog", async () => {
+    // Unrestricted key + gemini connection: scoped tts catalog lists the
+    // registry's Gemini TTS ids as bare Gemini names.
+    insertHashedApiKeySync(db, hashedKeyRow({ id: "key-tts" }));
+    insertConnection("conn-gemini", "gemini", "w1");
+    const gemini = await geminiList(req(TOKEN, "http://localhost/v1beta/models"));
+    expect(gemini.status).toBe(200);
+    const names = (await gemini.json()).models.map((m) => m.name);
+    expect(names).toContain("models/gemini-2.5-flash-preview-tts");
+    expect(names).toContain("models/gemini-2.5-pro-preview-tts");
+
+    // Key restricted to a Gemini LLM: no TTS names leak from the static catalog.
+    const restricted = `th_${"S".repeat(32)}`;
+    insertHashedApiKeySync(
+      db,
+      hashedKeyRow({
+        id: "key-restricted",
+        keyHash: digest(restricted),
+        prefix: "th_SSSS…SSSS",
+        allowedModels: ["gemini/gemini-2.5-pro"],
+      }),
+    );
+    const scoped = await geminiList(req(restricted, "http://localhost/v1beta/models"));
+    expect(scoped.status).toBe(200);
+    const scopedNames = (await scoped.json()).models.map((m) => m.name);
+    expect(scopedNames).toContain("models/gemini/gemini-2.5-pro");
+    expect(scopedNames).toContain("models/gemini-2.5-pro");
+    expect(scopedNames.some((name) => name.endsWith("tts"))).toBe(false);
+  });
+
+  it("YAN-1061: key allowed only a Gemini TTS model still lists it, and nothing else", async () => {
+    // No Gemini LLM is visible, so only the scoped tts builder can surface it.
+    insertHashedApiKeySync(
+      db,
+      hashedKeyRow({ allowedModels: ["gemini/gemini-2.5-flash-preview-tts"] }),
+    );
+    insertConnection("conn-gemini", "gemini", "w1");
+    const res = await geminiList(req(TOKEN, "http://localhost/v1beta/models"));
+    expect(res.status).toBe(200);
+    const { models } = await res.json();
+    expect(models.map((m) => m.name)).toEqual(["models/gemini-2.5-flash-preview-tts"]);
+    expect(models[0].supportedGenerationMethods).toEqual(["generateContent"]);
+  });
+
   it("bad bearer rejects 401 even when requireApiKey is false (no keyless fallback)", async () => {
     db.run("UPDATE settings SET data = json_set(data, '$.requireApiKey', false) WHERE id = 1");
     const list = await listModels(req(`th_${"X".repeat(32)}`));
