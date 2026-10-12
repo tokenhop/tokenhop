@@ -6,29 +6,32 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { translate } from "@/i18n/runtime";
 import StatusPill from "@/shared/components/StatusPill";
 import EmptyState from "@/shared/components/EmptyState";
 import { ErrorState } from "@/shared/components/StateViews";
-import { roleLabel } from "@/shared/utils/account";
-import { ROLE_VARIANTS, adminLoadCopy, statusVariant, userSummary } from "../adminView";
+import { ROLE_VARIANTS, adminLoadCopy, roleLabel, statusVariant, userSummary } from "../adminView";
 
-/** Instance role pill, translated at render time. */
+/** Instance role pill, translated at render time like adminView.js. */
 export function RolePill({ role }) {
-  const fallback = roleLabel(role);
   return (
     <StatusPill variant={ROLE_VARIANTS[role] || "neutral"} size="sm">
-      {role === "pending" ? "Pending approval" : fallback}
+      {roleLabel(role)}
     </StatusPill>
   );
 }
 
 RolePill.propTypes = { role: PropTypes.string.isRequired };
 
-/** Instance status pill. */
+/** Instance status pill, translated at render time like adminView.js. */
 export function StatusBadge({ status }) {
   return (
     <StatusPill variant={statusVariant(status)} size="sm">
-      {status === "active" ? "Active" : status === "disabled" ? "Disabled" : String(status || "—")}
+      {status === "active"
+        ? translate("Active")
+        : status === "disabled"
+          ? translate("Disabled")
+          : String(status || "—")}
     </StatusPill>
   );
 }

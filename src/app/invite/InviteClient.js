@@ -15,6 +15,9 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 
 export default function InviteClient() {
   const initialized = useRef(false);
+  // Bump on every hash navigation so an identical token still re-triggers the
+  // status check: setting the same token state would not re-run its effect.
+  const [loadSeq, setLoadSeq] = useState(0);
   const [token, setToken] = useState(null);
   const [status, setStatus] = useState(null);
   const [checking, setChecking] = useState(true);
@@ -35,14 +38,18 @@ export default function InviteClient() {
     // A newly pasted hash link may reuse this route without a full remount.
     const onHash = () => {
       const next = new URLSearchParams(window.location.hash.slice(1)).get("token");
-      if (!next) return;
+      if (next === null || next === "") return;
       window.history.replaceState(null, "", window.location.pathname);
       setWorkspace(null);
       setAlreadyMember(false);
       setStatus(null);
+      setBusy(false);
+      setRetryAfter(0);
+      setForm({ email: "", username: "", displayName: "", password: "", confirmPassword: "" });
       setError("");
       setChecking(TOKEN_RE.test(next));
       setToken(next);
+      setLoadSeq((seq) => seq + 1);
       if (!TOKEN_RE.test(next)) setError("This invitation link is not valid.");
     };
     window.addEventListener("hashchange", onHash);
@@ -93,6 +100,7 @@ export default function InviteClient() {
     }
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loadSeq is the same-token hashchange re-check trigger
   useEffect(() => {
     if (token === null || !TOKEN_RE.test(token)) return;
     const controller = new AbortController();
@@ -125,7 +133,7 @@ export default function InviteClient() {
       clearTimeout(timeout);
       controller.abort();
     };
-  }, [token, showServerError]);
+  }, [token, loadSeq, showServerError]);
 
   useEffect(() => {
     if (retryAfter <= 0) return;

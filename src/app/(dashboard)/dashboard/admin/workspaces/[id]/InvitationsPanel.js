@@ -84,6 +84,8 @@ export default function InvitationsPanel({ workspaceId, onTerminal }) {
   const [email, setEmail] = useState("");
   const [link, setLink] = useState("");
   const [revoking, setRevoking] = useState(null);
+  // Revoke failures render inside the open dialog (a panel error would sit behind the modal).
+  const [revokeError, setRevokeError] = useState("");
 
   const fail = useCallback(
     (err, fallback) => {
@@ -125,10 +127,24 @@ export default function InvitationsPanel({ workspaceId, onTerminal }) {
     }
   };
 
-  const confirmRevoke = async () => {
-    await revokeInvitation(workspaceId, revoking.id);
+  const closeRevoke = () => {
     setRevoking(null);
-    await reload();
+    setRevokeError("");
+  };
+
+  const confirmRevoke = async () => {
+    setBusy(true);
+    setRevokeError("");
+    try {
+      await revokeInvitation(workspaceId, revoking.id);
+      closeRevoke();
+      await reload();
+    } catch (err) {
+      if ([403, 404].includes(err?.status)) onTerminal(err);
+      else setRevokeError(err?.message || "Could not revoke the invitation.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const revokeButton = (invitation) =>
@@ -137,7 +153,10 @@ export default function InvitationsPanel({ workspaceId, onTerminal }) {
         variant="ghost"
         icon="block"
         aria-label={`Revoke invitation for ${invitation.email || workspaceRoleLabel(invitation.role)}`}
-        onClick={() => setRevoking(invitation)}
+        onClick={() => {
+          setRevokeError("");
+          setRevoking(invitation);
+        }}
       >
         Revoke
       </Button>
@@ -216,7 +235,8 @@ export default function InvitationsPanel({ workspaceId, onTerminal }) {
 
       <ConfirmDialog
         isOpen={Boolean(revoking)}
-        onClose={() => setRevoking(null)}
+        onClose={closeRevoke}
+        error={revokeError || undefined}
         onConfirm={confirmRevoke}
         title="Revoke invitation"
         message="Revoke this invitation? Its link stops working immediately."

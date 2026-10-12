@@ -348,6 +348,10 @@ export async function handleSsoProofCallback(request, provider, jar, settings = 
         ...assignment,
         wouldProvisionRole: assignment.adminMatch ? "admin" : slot.policy.ssoDefaultRole,
         evaluatedAt: new Date().toISOString(),
+        // The validated draft this result describes, so the form can restore it
+        // after the full-page IdP round trip. Same one-time, actor-bound read;
+        // policy keys only (never secrets, claims or tokens).
+        policy: Object.fromEntries(SSO_POLICY_KEYS.map((k) => [k, slot.policy[k]])),
       };
     }
     const ref = putProofSlot({ ...slot, stage: "result", result });

@@ -78,3 +78,37 @@ describe("admin client API", () => {
     expect(fetch.mock.calls[1][1]).toMatchObject({ method: "POST" });
   });
 });
+
+describe("ok responses must carry valid JSON", () => {
+  it("ok + unparseable body throws Invalid response with the status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => Promise.reject(new Error("bad json")),
+      }),
+    );
+    await expect(listUsers()).rejects.toThrow("Invalid response (200)");
+  });
+  it("204 (or any no-content status) resolves to {} without parsing", async () => {
+    const json = vi.fn();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 204, json }));
+    await expect(deleteUser("u")).resolves.toEqual({});
+    expect(json).not.toHaveBeenCalled();
+  });
+  it("non-ok + unparseable body keeps the error shape", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        json: async () => Promise.reject(new Error("bad json")),
+      }),
+    );
+    await expect(listUsers()).rejects.toMatchObject({
+      message: "Request failed (429)",
+      status: 429,
+    });
+  });
+});

@@ -84,6 +84,8 @@ export default function MembersPanel({ workspaceId, onTerminal }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState(null);
+  // Remove failures render inside the open dialog (a panel error would sit behind the modal).
+  const [removeError, setRemoveError] = useState("");
   const [users, setUsers] = useState([]);
   const [usersPage, setUsersPage] = useState(0);
   const [usersTotal, setUsersTotal] = useState(0);
@@ -174,10 +176,24 @@ export default function MembersPanel({ workspaceId, onTerminal }) {
   const onRole = (member, next) =>
     mutate(() => setMemberRole(workspaceId, member.userId, next), "Could not change the role.");
 
-  const confirmRemove = async () => {
-    await removeMember(workspaceId, removing.userId);
+  const closeRemove = () => {
     setRemoving(null);
-    await reload();
+    setRemoveError("");
+  };
+
+  const confirmRemove = async () => {
+    setRemoveError("");
+    setBusy(true);
+    try {
+      await removeMember(workspaceId, removing.userId);
+      closeRemove();
+      await reload();
+    } catch (err) {
+      if ([403, 404].includes(err?.status)) onTerminal(err);
+      else setRemoveError(err?.message || "Could not remove member.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const removeButton = (member) =>
@@ -187,7 +203,10 @@ export default function MembersPanel({ workspaceId, onTerminal }) {
         icon="remove"
         disabled={busy}
         aria-label={`Remove ${memberName(member)}`}
-        onClick={() => setRemoving(member)}
+        onClick={() => {
+          setRemoveError("");
+          setRemoving(member);
+        }}
       >
         Remove
       </Button>
@@ -314,8 +333,9 @@ export default function MembersPanel({ workspaceId, onTerminal }) {
 
       <ConfirmDialog
         isOpen={Boolean(removing)}
-        onClose={() => setRemoving(null)}
+        onClose={closeRemove}
         onConfirm={confirmRemove}
+        error={removeError || undefined}
         title="Remove member"
         message={`Remove ${removing ? memberName(removing) : ""} from this workspace? They lose access immediately.`}
         confirmText="Remove"

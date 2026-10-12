@@ -11,6 +11,7 @@ import {
 import {
   fetchSsoPreviewResult,
   previewResultMessage,
+  previewStartMessage,
   startSsoPreview,
 } from "@/app/(dashboard)/dashboard/admin/provisioning/ssoApi.js";
 import { toPayload, toDraft } from "@/app/(dashboard)/dashboard/admin/provisioning/policyDraft.js";
@@ -54,6 +55,23 @@ describe("workspace fresh-proof API", () => {
 });
 
 describe("fresh draft preview", () => {
+  it("keeps the evaluated draft in the one-shot result", async () => {
+    const policy = toPayload(toDraft({ ssoAllowedGroups: ["unsaved"], ssoDefaultRole: "user" }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok({ policy })));
+    expect((await fetchSsoPreviewResult()).policy).toEqual(policy);
+  });
+  it.each([
+    [409, "sso_unavailable", /not set up or not enabled/],
+    [400, "invalid_request", /draft policy was rejected/],
+    [429, "rate_limited", /Too many attempts/],
+    [409, "sso_not_linked", /not linked/],
+    [403, "forbidden", /Only instance owners and admins/],
+  ])("maps start failure %s %s", (status, code, message) => {
+    expect(previewStartMessage({ status, code })).toMatch(message);
+  });
+  it("404 never claims that a provider is unconfigured", () => {
+    expect(previewStartMessage({ status: 404 })).toBe("Could not start the SSO preview.");
+  });
   it("sends only provider and the six current unsaved policy keys", async () => {
     const fetch = vi.fn().mockResolvedValue(ok({ authorizeUrl: "https://idp.test/auth" }));
     vi.stubGlobal("fetch", fetch);

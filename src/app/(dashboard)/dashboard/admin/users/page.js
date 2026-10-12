@@ -4,7 +4,7 @@
 // the paged API. No client authorization logic: hidden while the switch is
 // off (route 404), 403 renders the no-access state.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
   Card,
@@ -64,7 +64,11 @@ export default function AdminUsersPage() {
     return () => clearTimeout(timer);
   }, [role, status, query, applied]);
 
+  // Stale responses never overwrite newer ones: only the latest request id
+  // may apply data, error or loading.
+  const reqId = useRef(0);
   const load = useCallback(async () => {
+    const mine = ++reqId.current;
     setLoading(true);
     setError("");
     setLoadState(null);
@@ -76,16 +80,18 @@ export default function AdminUsersPage() {
         role: applied.role,
         status: applied.status,
       });
+      if (reqId.current !== mine) return;
       setData({
         users: Array.isArray(body.users) ? body.users : [],
         totalItems: body.pagination?.totalItems ?? 0,
       });
       refreshPendingUsers();
     } catch (err) {
+      if (reqId.current !== mine) return;
       setLoadState(adminLoadState(err?.status) ?? "error");
       setError(err?.message || "Failed to load users.");
     } finally {
-      setLoading(false);
+      if (reqId.current === mine) setLoading(false);
     }
   }, [page, pageSize, applied]);
 

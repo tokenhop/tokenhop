@@ -9,7 +9,7 @@
 // DRAFT to POST /api/auth/sso/preview, which pairs it with the SAVED protocol
 // config; it never previews the saved policy or a synthetic role.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Callout,
@@ -45,6 +45,21 @@ export function ProvisioningForm() {
 
   const preview = useSsoPreview();
 
+  // CodeRabbit #896: the preview runs against the unsaved draft, which a
+  // full-page IdP round trip would otherwise lose. The one-time result carries
+  // the exact draft back in memory; restore it and keep `saved` from the
+  // server so "dirty" still tells the truth. A late-arriving load() (or the
+  // retry effect) must not overwrite the restored draft.
+  const restoredDraft = useRef(null);
+  const restoredFor = useRef(null);
+  useEffect(() => {
+    const result = preview.result;
+    if (!result?.policy || restoredFor.current === result) return;
+    restoredFor.current = result;
+    restoredDraft.current = toDraft(result.policy);
+    setDraft(restoredDraft.current);
+  }, [preview.result]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -60,7 +75,9 @@ export function ProvisioningForm() {
       }
       setWorkspaces(Array.isArray(wsBody.workspaces) ? wsBody.workspaces : []);
       const next = toDraft(settings);
-      setDraft(next);
+      // Keep the restored preview draft, if any: load() may finish after the
+      // result restored it.
+      setDraft(restoredDraft.current ?? next);
       setSaved(next);
       setSavedOk(false);
     } catch (err) {
@@ -92,6 +109,8 @@ export function ProvisioningForm() {
   );
 
   const patchDraft = (patch) => {
+    // Editing after a restore: a later retry must not resurrect it.
+    restoredDraft.current = null;
     setSaveError("");
     setSavedOk(false);
     setDraft((d) => ({ ...d, ...patch }));
@@ -120,6 +139,7 @@ export function ProvisioningForm() {
     try {
       const body = await patchSsoPolicy(payload);
       const next = toDraft(body);
+      restoredDraft.current = null;
       setDraft(next);
       setSaved(next);
       setSavedOk(true);

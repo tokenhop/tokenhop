@@ -202,6 +202,15 @@ describe("SSO preview round trip", () => {
       adminMatch: true,
       wouldProvisionRole: "admin",
     });
+    expect(result.policy.ssoGroupWorkspaceMap).toEqual(policy.ssoGroupWorkspaceMap);
+    expect(Object.keys(result.policy).sort()).toEqual([
+      "samlAttributeGroups",
+      "ssoAdminGroups",
+      "ssoAllowedGroups",
+      "ssoDefaultRole",
+      "ssoGroupWorkspaceMap",
+      "ssoGroupsClaim",
+    ]);
     expect(await proof.consumeSsoResult(t.a.ctx, "sso_preview")).toBeNull();
     expect(db.all("SELECT * FROM users")).toEqual(before);
     expect(db.all("SELECT * FROM identities")).toEqual(identities);

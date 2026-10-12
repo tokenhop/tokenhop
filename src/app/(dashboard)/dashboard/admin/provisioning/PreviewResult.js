@@ -8,6 +8,12 @@ import PropTypes from "prop-types";
 import { formatWhen } from "../adminView";
 import { RolePill } from "../components/AdminShared";
 
+const SOURCE_LABELS = {
+  id_token: "ID token",
+  userinfo: "Userinfo endpoint",
+  saml_attribute: "SAML attribute",
+};
+
 export function PreviewResult({ result }) {
   const totalGroups = result.totalGroups;
   const shown = result.groups.length;
@@ -28,8 +34,7 @@ export function PreviewResult({ result }) {
       <div className="flex flex-col gap-2">
         <p className="text-sm font-semibold">{groupsTitle}</p>
         <p className="text-xs text-muted">
-          Source: {result.groupsSource === "userinfo" ? "Userinfo endpoint" : "ID token"} ·{" "}
-          {totalGroups} total
+          Source: {SOURCE_LABELS[result.groupsSource] ?? "Unknown"} · {totalGroups} total
         </p>
         {shown === 0 ? (
           <p className="text-sm text-muted">

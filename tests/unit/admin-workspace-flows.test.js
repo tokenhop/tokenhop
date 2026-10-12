@@ -3,7 +3,7 @@
 // DOM, so interaction wiring is pinned from source, rendering via SSR harness).
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   inviteLink,
   pickerLabel,
@@ -86,6 +86,34 @@ describe("detail 404 means the item is gone, not that Users & teams is off", () 
   });
 });
 
+describe("remove and revoke failures stay visible inside their open dialogs", () => {
+  const members = read("workspaces/[id]/MembersPanel.js");
+  const invitations = read("workspaces/[id]/InvitationsPanel.js");
+  it("pass the failure to ConfirmDialog (role=alert inside the modal), not the panel error", () => {
+    expect(members).toContain("error={removeError || undefined}");
+    expect(members).toContain('setRemoveError(err?.message || "Could not remove member.")');
+    expect(invitations).toContain("error={revokeError || undefined}");
+    expect(invitations).toContain(
+      'setRevokeError(err?.message || "Could not revoke the invitation.")',
+    );
+  });
+  it("clear the dialog error on close and on reopen so a retry starts clean", () => {
+    expect(members).toMatch(
+      /closeRemove = \(\) => \{\s*setRemoving\(null\);\s*setRemoveError\(""\)/,
+    );
+    expect(invitations).toMatch(
+      /closeRevoke = \(\) => \{\s*setRevoking\(null\);\s*setRevokeError\(""\)/,
+    );
+    expect(members).toMatch(/setRemoveError\(""\);\s*setRemoving\(member\)/);
+    expect(invitations).toMatch(/setRevokeError\(""\);\s*setRevoking\(invitation\)/);
+  });
+  it("still escalate 403/404 to the page instead of showing a dialog error", () => {
+    for (const src of [members, invitations]) {
+      expect(src).toContain("[403, 404].includes(err?.status)) onTerminal(err)");
+    }
+  });
+});
+
 describe("file size budget", () => {
   it("keeps every admin and invite file at or below 500 lines", () => {
     const files = [
@@ -101,4 +129,116 @@ describe("file size budget", () => {
     ];
     for (const f of files) expect(read(f).split("\n").length, f).toBeLessThanOrEqual(500);
   });
+});
+
+describe("review fixes (PR #896)", () => {
+  const members = read("workspaces/[id]/MembersPanel.js");
+  const invitations = read("workspaces/[id]/InvitationsPanel.js");
+  const users = read("users/page.js");
+  const shared = read("components/AdminShared.js");
+
+  it("remove member and revoke invitation surface failures instead of throwing", () => {
+    // Both confirmations catch failures and preserve terminal status handling;
+    // the dialog closes only on success and busy always resets.
+    const remove = members.slice(members.indexOf("const confirmRemove"));
+    expect(remove).toContain("await removeMember");
+    expect(remove).toContain(
+      "error={removeError || undefined}".replace("error=", "setRemoveError(").split("(")[0],
+    );
+    expect(remove).toContain("closeRemove()");
+    expect(remove.indexOf("closeRemove()")).toBeLessThan(remove.indexOf("await reload()"));
+    const revoke = invitations.slice(invitations.indexOf("const confirmRevoke"));
+    expect(revoke).toContain("try {");
+    expect(revoke).toContain("catch (err) {");
+    expect(revoke).toContain('setRevokeError(err?.message || "Could not revoke the invitation.")');
+    expect(revoke).toContain("finally {");
+    expect(revoke.indexOf("closeRevoke()")).toBeLessThan(revoke.indexOf("catch (err)"));
+  });
+
+  it("users list drops stale responses by request id", () => {
+    expect(users).toContain("useRef");
+    expect(users).toContain("++reqId.current");
+    expect(users.match(/reqId\.current !== mine/g).length).toBeGreaterThanOrEqual(2);
+    expect(users).toContain("if (reqId.current === mine) setLoading(false)");
+  });
+
+  it("role and status pills render through translated labels", () => {
+    expect(shared).not.toMatch(/role === "pending" \? "Pending approval"/);
+    expect(shared).toContain("roleLabel(role)}");
+    expect(shared).toContain('translate("Active")');
+    expect(shared).toContain('translate("Disabled")');
+    expect(shared).toContain('from "@/i18n/runtime"');
+  });
+});
+
+describe("panel confirm handlers (PR #896 failure paths)", () => {
+  // Execute the actual source handlers with state/API spies, without a DOM or
+  // copied implementation that could diverge from the component.
+  for (const [file, name, mutation, dialog, close, end] of [
+    ["MembersPanel.js", "confirmRemove", "removeMember", "removing", "setRemoving", "removeButton"],
+    [
+      "InvitationsPanel.js",
+      "confirmRevoke",
+      "revokeInvitation",
+      "revoking",
+      "setRevoking",
+      "revokeButton",
+    ],
+  ]) {
+    it(`${name}: errors surface, no rejection escapes, dialog stays open`, async () => {
+      const source = read(`workspaces/[id]/${file}`);
+      const closer = name === "confirmRemove" ? "closeRemove" : "closeRevoke";
+      const handler = source.slice(
+        source.indexOf(`const ${closer}`),
+        source.indexOf(`const ${end}`),
+      );
+      const fail = source.slice(source.indexOf("const fail"), source.indexOf("const reload"));
+      const setError = vi.fn();
+      const setBusy = vi.fn();
+      const onTerminal = vi.fn();
+      const setDialog = vi.fn();
+      const setDialogError = vi.fn();
+      const reload = vi.fn();
+      const api = vi.fn();
+      const dialogErrorSetter = name === "confirmRemove" ? "setRemoveError" : "setRevokeError";
+      const confirm = new Function(
+        "useCallback",
+        "onTerminal",
+        "setError",
+        "setBusy",
+        "reload",
+        "workspaceId",
+        mutation,
+        dialog,
+        dialogErrorSetter,
+        close,
+        `${fail}\n${handler}\nreturn ${name};`,
+      )(
+        (fn) => fn,
+        onTerminal,
+        setError,
+        setBusy,
+        reload,
+        "ws",
+        api,
+        { id: "i", userId: "u" },
+        setDialogError,
+        setDialog,
+      );
+      for (const err of [new Error("Network failed"), { status: 403 }, { status: 404 }]) {
+        api.mockRejectedValueOnce(err);
+        await expect(confirm()).resolves.toBeUndefined();
+        if (err.status) expect(onTerminal).toHaveBeenLastCalledWith(err);
+        else expect(setDialogError).toHaveBeenLastCalledWith("Network failed");
+        expect(setDialogError).toHaveBeenNthCalledWith(1, "");
+        expect(setBusy).toHaveBeenLastCalledWith(false);
+      }
+      expect(setDialog).not.toHaveBeenCalled();
+      expect(reload).not.toHaveBeenCalled();
+      api.mockResolvedValueOnce({ success: true });
+      await expect(confirm()).resolves.toBeUndefined();
+      expect(setDialog).toHaveBeenCalledWith(null);
+      expect(reload).toHaveBeenCalledTimes(1);
+    });
+  }
 });

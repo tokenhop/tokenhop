@@ -12,7 +12,14 @@ async function request(url, method, body) {
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
-  const data = await res.json().catch(() => ({}));
+  // 204 has no JSON to parse; other successful responses must contain JSON.
+  if (res.status === 204) return {};
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {
+    if (res.ok) throw new Error(`Invalid response (${res.status})`);
+  }
   if (!res.ok) {
     const err = new Error(data.error || `Request failed (${res.status})`);
     err.code = data.code;

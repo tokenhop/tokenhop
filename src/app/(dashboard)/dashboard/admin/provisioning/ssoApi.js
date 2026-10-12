@@ -78,18 +78,31 @@ export async function fetchSsoPreviewResult() {
     wouldProvisionRole: data.wouldProvisionRole ?? null,
     memberships: Array.isArray(data.memberships) ? data.memberships : [],
     evaluatedAt: data.evaluatedAt,
+    // The exact draft the server evaluated; null when absent (older server).
+    policy: data.policy && typeof data.policy === "object" ? data.policy : null,
   };
 }
 
-/** Message for a failed "start preview" POST. Never maps 404 to a feature switch. */
+/**
+ * Message for a failed "start preview" POST. Codes match proofFailure and the
+ * route: 400 invalid_request, 403 forbidden, 409 sso_not_linked/sso_unavailable,
+ * 429 rate_limited. A 404 only means the feature is off or the page is stale,
+ * so it never claims anything about the provider.
+ */
 export function previewStartMessage(err) {
   if (err?.code === "sso_not_linked") {
     return "Your account is not linked to an SSO identity, so there is nothing to re-authenticate. Sign in once through SSO to link it, then preview again.";
   }
-  if (err?.status === 403) return "Only instance owners and admins can preview SSO policy.";
-  if (err?.status === 404) {
-    return "SSO preview is not available for this provider. Check that it is configured and saved.";
+  if (err?.code === "sso_unavailable") {
+    return "This sign-in method is not set up or not enabled. Save the provider settings, then try again.";
   }
+  if (err?.code === "invalid_request") {
+    return "The draft policy was rejected. Check the groups claim, group lists and mappings, then try again.";
+  }
+  if (err?.code === "rate_limited" || err?.status === 429) {
+    return "Too many attempts. Wait a moment, then try again.";
+  }
+  if (err?.status === 403) return "Only instance owners and admins can preview SSO policy.";
   return err?.message || "Could not start the SSO preview.";
 }
 
