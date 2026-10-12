@@ -1447,6 +1447,7 @@
   "OAuth app": "OAuth-app",
   "OAuth required. Add now and authenticate after Apply; the tool list will be discovered after the first connect.": "OAuth vereist. Voeg nu toe en authenticeren na Toepassen; de hulplijst wordt ontdekt na de eerste verbinding.",
   "OIDC": "OIDC",
+  "OIDC groups claim": "OIDC-groepsclaim",
   "OIDC or SAML 2.0.": "OIDC of SAML 2.0.",
   "OK": "OK",
   "Observability": "Waarneembaarheid",

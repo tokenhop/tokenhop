@@ -1545,6 +1545,7 @@
   "OAuth required": "ต้องใช้ OAuth",
   "OAuth required. Add now and authenticate after Apply; the tool list will be discovered after the first connect.": "ต้องใช้ OAuth เพิ่มตอนนี้แล้วยืนยันตัวตนหลังจากกด Apply รายการเครื่องมือจะถูกค้นหาหลังเชื่อมต่อครั้งแรก",
   "OIDC": "OIDC",
+  "OIDC groups claim": "เคลมกลุ่ม OIDC",
   "OIDC or SAML 2.0.": "OIDC หรือ SAML 2.0.",
   "Observability": "การสังเกตการณ์",
   "Observability & logs": "การสังเกตการณ์และบันทึก",
