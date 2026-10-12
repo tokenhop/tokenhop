@@ -13,11 +13,10 @@ assertions. Baseline uses identical SQL/parameters minus only histogram UPDATE
 merge; INSERT still stores first histogram. Baseline intentionally retains
 first-insert bins and is **not a valid replacement**.
 
-Material means median paired histogram-minus-baseline overhead **>=20% AND
-
-> =0.1 ms**, on p50 **or** p95. Local diagnostic, not universal SLA. p99 reported
-> but not decision gate. Delta statistics are medians of per-rep paired differences
-> and percentages, not subtraction of arm medians.
+Material means median paired histogram-minus-baseline overhead of **at least 20% AND at least 0.1 ms**, on p50 **or** p95. Local
+diagnostic, not universal SLA. p99 reported but not decision gate. Delta
+statistics are medians of per-rep paired differences and percentages, not
+subtraction of arm medians.
 
 Fresh file-backed temporary DB per arm; current `TABLES` users/workspaces,
 history with all eight indexes and rollup with workspace/date index. 20,000
@@ -44,7 +43,7 @@ Run from worktree root (dependencies linked from root `node_modules`):
 ```bash
 # Each command run twice, default 20k rows/10k writes/1k warmup/4 reps:
 node scripts/bench-prediction-rollup.mjs
-/home/yandy/.local/share/mise/installs/node/22/bin/node scripts/bench-prediction-rollup.mjs
+mise exec node@22 -- node scripts/bench-prediction-rollup.mjs
 # Validation:
 node --check scripts/bench-prediction-rollup.mjs
 node_modules/.bin/biome check scripts/bench-prediction-rollup.mjs
