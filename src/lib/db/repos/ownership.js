@@ -4,6 +4,7 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { TenancyError, assertCtx } from "@/lib/users/errors.js";
+import { LATENCY_COLUMNS, LATENCY_MERGE_SQL } from "../helpers/usageLatencyRollup.js";
 
 const OWNED = ["providerConnections", "providerNodes", "combos"];
 
@@ -99,13 +100,13 @@ function adoptUsage(db, ws, owner) {
     ).changes;
   }
   n += db.run(
-    `INSERT INTO usageRollup (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost)
-     SELECT dateKey, ?, CASE WHEN userId = '' THEN ? ELSE userId END, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost
+    `INSERT INTO usageRollup (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost, ${LATENCY_COLUMNS.join(", ")})
+     SELECT dateKey, ?, CASE WHEN userId = '' THEN ? ELSE userId END, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost, ${LATENCY_COLUMNS.join(", ")}
      FROM usageRollup WHERE workspaceId = ''
      ON CONFLICT (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint) DO UPDATE SET
        requests = requests + excluded.requests, tokensIn = tokensIn + excluded.tokensIn,
        tokensOut = tokensOut + excluded.tokensOut, tokensCached = tokensCached + excluded.tokensCached,
-       cost = cost + excluded.cost`,
+       cost = cost + excluded.cost, ${LATENCY_MERGE_SQL}`,
     [ws, owner ?? ""],
   ).changes;
   db.run(`DELETE FROM usageRollup WHERE workspaceId = ''`);

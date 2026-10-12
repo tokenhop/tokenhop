@@ -28,6 +28,7 @@ import m013 from "./013-workspace-keys.js";
 import m014 from "./014-usage-attribution.js";
 import m015 from "./015-connection-grants.js";
 import m016 from "./016-budgets.js";
+import m017 from "./017-usage-latency-rollup.js";
 
 export const MIGRATIONS = [
   m001,
@@ -46,6 +47,7 @@ export const MIGRATIONS = [
   m014,
   m015,
   m016,
+  m017,
 ].sort((a, b) => a.version - b.version);
 
 for (let i = 1; i < MIGRATIONS.length; i++) {

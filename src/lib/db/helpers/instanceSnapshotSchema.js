@@ -2,6 +2,8 @@
 // complete-table snapshot sections. Split from instanceSnapshotTables.js;
 // see that file for the contract. No driver/barrel imports.
 
+import { LATENCY_COLUMNS, LATENCY_DEFAULTS, validateLatencyColumns } from "./usageLatencyRollup.js";
+
 export function fail(code, message) {
   const error = new Error(message);
   error.name = "TransferError";
@@ -416,7 +418,11 @@ export const SECTIONS = [
       "tokensOut",
       "tokensCached",
       "cost",
+      ...LATENCY_COLUMNS,
     ],
+    // Older snapshots lack the YAN-771 latency columns; their rows import with
+    // defaults (NOT NULL columns can't take an explicit NULL).
+    defaults: LATENCY_DEFAULTS,
     validate(row, _refs, seen) {
       const dims = [];
       for (const field of [
@@ -446,6 +452,7 @@ export const SECTIONS = [
       if (cost === null) {
         fail("TRANSFER_STATE_INVALID", "usageRollup cost must be a number");
       }
+      validateLatencyColumns(row, fail);
       const key = JSON.stringify(dims);
       if (seen.has(key)) fail("TRANSFER_STATE_INVALID", "duplicate usageRollup row");
       seen.add(key);

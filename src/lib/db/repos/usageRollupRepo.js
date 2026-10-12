@@ -6,6 +6,12 @@
 // sink, legacy JSON import) or pass a usage scope (`ctx`).
 
 import { createHash } from "node:crypto";
+import {
+  LATENCY_COLUMNS,
+  LATENCY_DEFAULTS,
+  LATENCY_MERGE_SQL,
+  latencyDeltas,
+} from "../helpers/usageLatencyRollup.js";
 
 export const NO_KEY = "local-no-key";
 const DIMS = ["workspaceId", "userId", "apiKeyId", "provider", "model", "connectionId", "endpoint"];
@@ -82,17 +88,28 @@ function dimValues(dims) {
  * @param {{requests?: number, tokensIn?: number, tokensOut?: number, tokensCached?: number, cost?: number}} deltas
  */
 export function upsertRollupRowUnscoped(db, dims, deltas = {}) {
-  const { requests = 1, tokensIn = 0, tokensOut = 0, tokensCached = 0, cost = 0 } = deltas;
+  const { requests = 1, tokensIn = 0, tokensOut = 0, tokensCached = 0, cost = 0, ...lat } = deltas;
+  const latency = { ...LATENCY_DEFAULTS, ...lat };
   db.run(
-    `INSERT INTO usageRollup (dateKey, ${DIMS.join(", ")}, requests, tokensIn, tokensOut, tokensCached, cost)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO usageRollup (dateKey, ${DIMS.join(", ")}, requests, tokensIn, tokensOut, tokensCached, cost, ${LATENCY_COLUMNS.join(", ")})
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${LATENCY_COLUMNS.map(() => ", ?").join("")})
      ON CONFLICT (dateKey, ${DIMS.join(", ")}) DO UPDATE SET
        requests = requests + excluded.requests,
        tokensIn = tokensIn + excluded.tokensIn,
        tokensOut = tokensOut + excluded.tokensOut,
        tokensCached = tokensCached + excluded.tokensCached,
-       cost = cost + excluded.cost`,
-    [dims.dateKey, ...dimValues(dims), requests, tokensIn, tokensOut, tokensCached, cost],
+       cost = cost + excluded.cost,
+       ${LATENCY_MERGE_SQL}`,
+    [
+      dims.dateKey,
+      ...dimValues(dims),
+      requests,
+      tokensIn,
+      tokensOut,
+      tokensCached,
+      cost,
+      ...LATENCY_COLUMNS.map((c) => latency[c]),
+    ],
   );
 }
 
@@ -113,17 +130,36 @@ export function readRollup(ctx, db, startDateKey = null) {
   );
 }
 
+/**
+ * Edit-prediction latency rollup rows (YAN-771) for `endpoint`, from
+ * `startDateKey` (inclusive; null = all time), within the usage scope `ctx`.
+ */
+export function readLatencyRollup(ctx, db, endpoint, startDateKey = null) {
+  const scope = scopeSql(ctx);
+  const params = [...scope.params, endpoint];
+  if (startDateKey) params.push(startDateKey);
+  return db.all(
+    `SELECT NULLIF(provider, '') AS provider, model, endpoint, ${LATENCY_COLUMNS.join(", ")} FROM usageRollup
+     ${whereAll(scope.sql, "endpoint = ?", startDateKey ? "dateKey >= ?" : "", "latencyRequests > 0")}`,
+    params,
+  );
+}
+
 /** Rebuild every rollup row from usageHistory (legacy JSON import; 014 inlines its own copy). */
 export function rebuildRollupFromHistoryUnscoped(db) {
   db.run(`DELETE FROM usageRollup`);
   for (const r of db.all(
     `SELECT timestamp, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint,
-            promptTokens, completionTokens, cost, tokens FROM usageHistory`,
+            promptTokens, completionTokens, cost, tokens, meta FROM usageHistory`,
   )) {
     let cached = 0;
     try {
       const t = r.tokens ? JSON.parse(r.tokens) : null;
       cached = t?.cached_tokens || t?.cache_read_input_tokens || 0;
+    } catch {}
+    let meta = null;
+    try {
+      meta = r.meta ? JSON.parse(r.meta) : null;
     } catch {}
     upsertRollupRowUnscoped(
       db,
@@ -133,6 +169,7 @@ export function rebuildRollupFromHistoryUnscoped(db) {
         tokensOut: r.completionTokens || 0,
         tokensCached: cached,
         cost: r.cost || 0,
+        ...latencyDeltas(r.endpoint, meta),
       },
     );
   }

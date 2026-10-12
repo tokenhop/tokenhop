@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { latencyDeltas } from "../helpers/usageLatencyRollup.js";
 import { getMetaSync, setMetaSync } from "../helpers/metaStore.js";
 import { isPeriod, periodStart, previousPeriodRange } from "@/shared/utils/period";
 import { readApiKeyStorageState } from "../apiKeyState.js";
@@ -285,6 +286,7 @@ export async function saveRequestUsageUnscoped(entry) {
           tokensOut: completionTokens,
           tokensCached: cachedTokens,
           cost: entry.cost || 0,
+          ...latencyDeltas(entry.endpoint, metaObj),
         },
       );
 
