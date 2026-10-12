@@ -93,6 +93,11 @@ export const ROUTE_POLICY = {
     alwaysProtected: true,
     cliAllowed: false,
   }),
+  "/api/workspaces": multiUser({
+    cap: { GET: "instance.users.manage" },
+    alwaysProtected: true,
+    cliAllowed: false,
+  }),
   "/api/users/ownership-transfer": multiUser({
     cap: { POST: "instance.ownership.transfer" },
     alwaysProtected: true,
@@ -104,7 +109,35 @@ export const ROUTE_POLICY = {
     cliAllowed: false,
   }),
   "/api/users/[id]": multiUser({
-    cap: { PATCH: "instance.users.manage", DELETE: "instance.users.manage" },
+    cap: {
+      GET: "instance.users.manage",
+      PATCH: "instance.users.manage",
+      DELETE: "instance.users.manage",
+    },
+    alwaysProtected: true,
+    cliAllowed: false,
+  }),
+  // YAN-373: admin "sign out everywhere" for another user.
+  "/api/users/[id]/logout-all": multiUser({
+    cap: { POST: "instance.users.manage" },
+    alwaysProtected: true,
+    cliAllowed: false,
+  }),
+  // YAN-373: admin workspace detail/deletion (+ SSO re-auth for deletion).
+  // Session only, instance admin/owner; the handler re-proves fresh auth.
+  "/api/workspaces/[id]": multiUser({
+    cap: { GET: "instance.users.manage", DELETE: "instance.users.manage" },
+    alwaysProtected: true,
+    cliAllowed: false,
+  }),
+  "/api/workspaces/[id]/reauth": multiUser({
+    cap: { GET: "instance.users.manage", POST: "instance.users.manage" },
+    alwaysProtected: true,
+    cliAllowed: false,
+  }),
+  // YAN-373: SSO policy preview. Settings managers, session only, 404 when off.
+  "/api/auth/sso/preview": multiUser({
+    cap: { GET: SETTINGS, POST: SETTINGS },
     alwaysProtected: true,
     cliAllowed: false,
   }),

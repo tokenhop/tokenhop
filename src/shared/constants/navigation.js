@@ -164,6 +164,38 @@ export const NAV_GROUPS = [
     ],
   },
   {
+    id: "admin",
+    label: "Admin",
+    items: [
+      {
+        id: "users",
+        label: "Users",
+        icon: "group",
+        href: "/dashboard/admin/users",
+        gate: "multiUser",
+        cap: "instance.users.manage",
+        badgeKey: "pendingUsers",
+      },
+      {
+        id: "workspaces",
+        label: "Workspaces",
+        icon: "groups",
+        href: "/dashboard/admin/workspaces",
+        gate: "multiUser",
+        cap: "instance.users.manage",
+      },
+      {
+        id: "provisioning",
+        label: "SSO provisioning",
+        icon: "security",
+        href: "/dashboard/admin/provisioning",
+        matchPrefixes: ["/dashboard/admin/provisioning", "/dashboard/admin/sso"],
+        gate: "multiUser",
+        cap: "instance.settings.manage",
+      },
+    ],
+  },
+  {
     id: "debug",
     label: "Debug",
     items: [
@@ -264,6 +296,7 @@ const BADGE_NOUNS = {
   providers: ["connected provider", "connected providers"],
   combos: ["combo", "combos"],
   quota: ["account low on quota", "accounts low on quota"],
+  pendingUsers: ["user awaiting approval", "users awaiting approval"],
 };
 
 /**

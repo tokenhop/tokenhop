@@ -45,8 +45,10 @@ function assertAcceptable(db, token, email) {
   const now = new Date().toISOString();
   if (inv.consumedAt || inv.revokedAt || !(inv.expiresAt > now)) throw bad();
   if (inv.email !== null && inv.email !== email) throw bad();
-  if (db.get(`SELECT kind FROM workspaces WHERE id = ?`, [inv.workspaceId])?.kind !== "shared")
-    throw bad();
+  const ws = db.get(`SELECT kind, name FROM workspaces WHERE id = ?`, [inv.workspaceId]);
+  if (ws?.kind !== "shared") throw bad();
+  // Additive response field; only reachable once the token is fully acceptable.
+  inv.workspaceName = ws.name;
   return inv;
 }
 
@@ -64,7 +66,8 @@ function assertSingleUser(db) {
  * Signed-in accept: the route passes the session's userId; the account row is
  * re-read here, and a bound invite matches the persisted account email only
  * (never a request field). An existing membership in the workspace is a
- * conflict, never overwritten. One transaction; generic INVALID on failure.
+ * conflict, never overwritten (ALREADY_MEMBER; the invite stays live). One
+ * transaction; generic INVALID on any other failure.
  * @param {{ token: string, userId: string }} input
  */
 export async function acceptExistingInvitation({ token, userId } = {}) {
@@ -76,8 +79,8 @@ export async function acceptExistingInvitation({ token, userId } = {}) {
       const user = db.get(`SELECT id, email, instanceRole, status FROM users WHERE id = ?`, [
         userId,
       ]);
-      if (!user || user.status !== "active" || user.instanceRole === "pending") throw bad();
-      const email = user.email ? user.email.toLowerCase() : null;
+      if (user?.status !== "active" || user.instanceRole === "pending") throw bad();
+      const email = user.email?.toLowerCase() ?? null;
       const inv = assertAcceptable(db, token, email);
       // A stored SSO email may be IdP-unverified. A bound invite here needs a
       // password account; SSO users accept bound invites through the SSO flow,
@@ -96,7 +99,11 @@ export async function acceptExistingInvitation({ token, userId } = {}) {
           userId,
         ])
       ) {
-        throw bad();
+        // Reached only with a live, email-compatible token for a shared
+        // workspace the caller already belongs to: nothing new is revealed.
+        // The invite is NOT consumed (same as before), so its intended
+        // recipient can still use it; the membership is never overwritten.
+        throw new TenancyError("ALREADY_MEMBER", "Already a member of this workspace");
       }
       addMembershipUnscoped(db, {
         workspaceId: inv.workspaceId,
@@ -105,7 +112,12 @@ export async function acceptExistingInvitation({ token, userId } = {}) {
         source: "invite",
       });
       const invitation = consumeInvitationSync(db, token, { email, consumedByUserId: userId });
-      return { invitation, workspaceId: inv.workspaceId, role: inv.role };
+      return {
+        invitation,
+        workspaceId: inv.workspaceId,
+        workspaceName: inv.workspaceName,
+        role: inv.role,
+      };
     });
   } catch (err) {
     if (err instanceof TenancyError && TAKEN.has(err.code)) throw bad();
@@ -181,7 +193,13 @@ export async function acceptPasswordInvitation({
           consumedByUserId: user.id,
         });
         const { sessionVersion: _sv, ...safe } = user;
-        return { user: safe, invitation, workspaceId: inv.workspaceId, role: inv.role };
+        return {
+          user: safe,
+          invitation,
+          workspaceId: inv.workspaceId,
+          workspaceName: inv.workspaceName,
+          role: inv.role,
+        };
       }),
     );
   } catch (err) {

@@ -14,7 +14,7 @@ import {
 
 describe("navigation data", () => {
   it("groups Route, Watch, Tune, Debug in order", () => {
-    expect(NAV_GROUPS.map((g) => g.id)).toEqual(["route", "watch", "tune", "debug"]);
+    expect(NAV_GROUPS.map((g) => g.id)).toEqual(["route", "watch", "tune", "admin", "debug"]);
   });
 
   it("Home points to /dashboard and Endpoint to /dashboard/endpoint", () => {

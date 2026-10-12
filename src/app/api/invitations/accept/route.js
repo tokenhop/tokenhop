@@ -86,6 +86,10 @@ export async function POST(request) {
     if (err instanceof PayloadTooLarge)
       return json({ error: "Payload too large", code: "payload_too_large" }, 413);
     if (err?.code === "PASSWORD_POLICY") return json({ error: err.message, code: err.policy }, 400);
+    // Only the signed-in path throws this, after the token proved fully valid
+    // for a workspace the caller already belongs to. Not a limiter failure.
+    if (err?.code === "ALREADY_MEMBER")
+      return json({ error: "Already a member of this workspace", code: "already_member" }, 409);
     if (err?.code === "SINGLE_USER_MODE")
       return json({ error: "Turn on login before adding users", code: "single_user_mode" }, 409);
     if (

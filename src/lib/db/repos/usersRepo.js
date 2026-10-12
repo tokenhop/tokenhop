@@ -64,27 +64,101 @@ export async function listUsersUnscoped() {
 const PAGE_COLS =
   "id, email, username, displayName, instanceRole, status, mustChangePassword, createdAt, updatedAt, lastLoginAt";
 
+const MAX_SEARCH = 100;
+const LIST_ROLES = ["owner", "admin", "user", "pending"];
+const LIST_STATUSES = ["active", "disabled"];
+
+// Optional filters. Absent (null/undefined/"") means no filter; anything else
+// invalid throws INVALID. Search is a literal, parameter-bound substring match:
+// `\`, `%` and `_` are escaped so they never act as wildcards.
+function userFilter({ search, role, status } = {}) {
+  const absent = (v) => v === undefined || v === null || v === "";
+  const where = [];
+  const params = [];
+  if (!absent(search)) {
+    const q = typeof search === "string" ? search.trim() : null;
+    if (q === null || q.length > MAX_SEARCH) throw new TenancyError("INVALID", "Invalid search");
+    if (q) {
+      const like = `%${q.replace(/[\\%_]/g, "\\$&")}%`;
+      where.push(
+        `(email LIKE ? ESCAPE '\\' OR username LIKE ? ESCAPE '\\' OR displayName LIKE ? ESCAPE '\\')`,
+      );
+      params.push(like, like, like);
+    }
+  }
+  for (const [col, v, allowed] of [
+    ["instanceRole", role, LIST_ROLES],
+    ["status", status, LIST_STATUSES],
+  ]) {
+    if (absent(v)) continue;
+    if (typeof v !== "string" || !allowed.includes(v)) {
+      throw new TenancyError("INVALID", `Invalid ${col}`);
+    }
+    where.push(`${col} = ?`);
+    params.push(v);
+  }
+  return { sql: where.length ? `WHERE ${where.join(" AND ")}` : "", params };
+}
+
+// Adds `identities` (no subject) and `workspaceCount` (all memberships,
+// personal included) with one query each for the whole page: no N+1.
+function enrichUsers(db, users) {
+  if (!users.length) return users;
+  const ids = users.map((u) => u.id);
+  const marks = ids.map(() => "?").join(",");
+  const byUser = new Map();
+  for (const { userId, ...ident } of db.all(
+    `SELECT userId, id, provider, issuer, emailAtLink, createdAt, lastLoginAt FROM identities WHERE userId IN (${marks}) ORDER BY createdAt ASC, id ASC`,
+    ids,
+  )) {
+    if (!byUser.has(userId)) byUser.set(userId, []);
+    byUser.get(userId).push(ident);
+  }
+  const counts = new Map(
+    db
+      .all(
+        `SELECT userId, COUNT(*) AS c FROM memberships WHERE userId IN (${marks}) GROUP BY userId`,
+        ids,
+      )
+      .map((r) => [r.userId, r.c]),
+  );
+  return users.map((u) => ({
+    ...u,
+    identities: byUser.get(u.id) ?? [],
+    workspaceCount: counts.get(u.id) ?? 0,
+  }));
+}
+
 /**
  * SQL-paginated admin user list, stable `createdAt, id` order. Same shape and
  * clamping as auditRepo.list: page >= 1, pageSize 1..100 (default 50); garbage
- * input falls back to the defaults.
- * @param {{ page?: number, pageSize?: number }} [opts]
+ * input falls back to the defaults. Optional `search`/`role`/`status` filters
+ * (INVALID on bad values) feed the same WHERE for the count and the page.
+ * @param {{ page?: number, pageSize?: number, search?: string, role?: string, status?: string }} [opts]
  */
-export async function listUsersPageUnscoped({ page, pageSize } = {}) {
+export async function listUsersPageUnscoped({ page, pageSize, search, role, status } = {}) {
   const db = await getAdapter();
   const p = Number.isFinite(Number(page)) ? Math.max(1, Math.floor(page) || 1) : 1;
   const size = Number.isFinite(Number(pageSize))
     ? Math.min(100, Math.max(1, Math.floor(pageSize) || 50))
     : 50;
-  const totalItems = db.get(`SELECT COUNT(*) AS c FROM users`)?.c ?? 0;
+  const { sql, params } = userFilter({ search, role, status });
+  const totalItems = db.get(`SELECT COUNT(*) AS c FROM users ${sql}`, params)?.c ?? 0;
   const users = db.all(
-    `SELECT ${PAGE_COLS} FROM users ORDER BY createdAt ASC, id ASC LIMIT ? OFFSET ?`,
-    [size, (p - 1) * size],
+    `SELECT ${PAGE_COLS} FROM users ${sql} ORDER BY createdAt ASC, id ASC LIMIT ? OFFSET ?`,
+    [...params, size, (p - 1) * size],
   );
   return {
-    users,
+    users: enrichUsers(db, users),
     pagination: { page: p, pageSize: size, totalItems, totalPages: Math.ceil(totalItems / size) },
   };
+}
+
+/** The same enriched admin DTO as one list row, or null when the user is gone. */
+export async function getUserDetailUnscoped(id) {
+  const db = await getAdapter();
+  const row = db.get(`SELECT ${PAGE_COLS} FROM users WHERE id = ?`, [id]);
+  return row ? enrichUsers(db, [row])[0] : null;
 }
 
 export async function getOwnerUnscoped() {
@@ -398,6 +472,31 @@ export async function updateUserUnscoped(id, patch = {}, options = {}) {
       return getRow(db, id);
     }),
   );
+}
+
+/**
+ * Admin "sign out everywhere" for another user: one transaction re-reads actor
+ * and target, applies the same hierarchy as every other admin mutation (no
+ * self, owner immutable, admin can't target admin) and bumps the target's
+ * sessionVersion once. Nothing else changes: API keys and the actor's own
+ * sessions stay valid. The session cache is dropped after commit.
+ */
+export async function revokeUserSessionsUnscoped(id, { actorUserId } = {}) {
+  if (!actorUserId) throw new TenancyError("FORBIDDEN", "Actor must be an active owner or admin");
+  const db = await getAdapter();
+  try {
+    return db.transaction(() => {
+      const target = requireRow(db, id);
+      assertActorAuthority(db, actorUserId, target);
+      db.run(`UPDATE users SET sessionVersion = sessionVersion + 1, updatedAt = ? WHERE id = ?`, [
+        new Date().toISOString(),
+        id,
+      ]);
+      return true;
+    });
+  } finally {
+    dropSession(id);
+  }
 }
 
 export async function deleteUserUnscoped(id, options = {}) {

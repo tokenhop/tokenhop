@@ -118,6 +118,14 @@ const YAN360_USER_ROUTES = new Set([
   "/api/users/[id]",
   "/api/users/ownership-transfer",
   "/api/users/ownership-transfer/sso",
+  // YAN-373 admin shared-workspace list: same session-only admin posture.
+  "/api/workspaces",
+  // YAN-373 admin "sign out everywhere" for another user: same posture.
+  "/api/users/[id]/logout-all",
+  // YAN-373 workspace detail/deletion/SSO re-auth + SSO preview: same posture.
+  "/api/workspaces/[id]",
+  "/api/workspaces/[id]/reauth",
+  "/api/auth/sso/preview",
 ]);
 // YAN-360 invitation management: scoped (not alwaysProtected), but the
 // handlers accept only a browser session, so the CLI token is refused.

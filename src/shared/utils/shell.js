@@ -17,7 +17,7 @@ import { accountView } from "./account";
  */
 export function badgeTint(badgeKey, count, attention = null) {
   if (typeof count !== "number" || !Number.isFinite(count) || count <= 0) return null;
-  if (badgeKey === "quota") return "warn";
+  if (badgeKey === "quota" || badgeKey === "pendingUsers") return "warn";
   if (attention === "warn" || attention === "err") return attention;
   return "neutral";
 }

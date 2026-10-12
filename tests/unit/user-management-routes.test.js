@@ -15,15 +15,18 @@ vi.mock("@/lib/users/audit.js", () => ({ audit: vi.fn() }));
 vi.mock("@/lib/db/repos/usersRepo.js", () => ({
   listUsersPageUnscoped: vi.fn(),
   getUserUnscoped: vi.fn(),
+  getUserDetailUnscoped: vi.fn(),
   updateUserUnscoped: vi.fn(),
   deleteUserUnscoped: vi.fn(),
+  revokeUserSessionsUnscoped: vi.fn(),
 }));
 
 const { requireMultiUser } = await import("@/lib/users/featureSwitch");
 const { authorize, getPrincipal } = await import("@/lib/users/session");
 const repo = await import("@/lib/db/repos/usersRepo.js");
 const { GET } = await import("@/app/api/users/route.js");
-const { DELETE, PATCH } = await import("@/app/api/users/[id]/route.js");
+const { DELETE, GET: getUser, PATCH } = await import("@/app/api/users/[id]/route.js");
+const { POST: logoutAll } = await import("@/app/api/users/[id]/logout-all/route.js");
 
 const hidden404 = () => NextResponse.json({ error: "Not found" }, { status: 404 });
 const denied403 = () => NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -82,12 +85,18 @@ beforeEach(() => {
     pagination: { page: 1, pageSize: 50, totalItems: 2, totalPages: 1 },
   });
   repo.getUserUnscoped.mockResolvedValue({ id: "user-1", instanceRole: "user", status: "active" });
+  repo.getUserDetailUnscoped.mockResolvedValue({
+    ...SAFE_USERS[0],
+    identities: [{ id: "i1", provider: "password" }],
+    workspaceCount: 1,
+  });
   repo.updateUserUnscoped.mockResolvedValue({
     id: "user-1",
     instanceRole: "admin",
     status: "active",
   });
   repo.deleteUserUnscoped.mockResolvedValue(true);
+  repo.revokeUserSessionsUnscoped.mockResolvedValue(true);
 });
 
 describe("multi-user switch off hides every route (404, no auth, no repo)", () => {
@@ -232,5 +241,117 @@ describe("GET safe DTO", () => {
     }
     expect(body.users[0]).toMatchObject({ id: "u1", instanceRole: "user", status: "active" });
     expect(body.pagination).toMatchObject({ totalItems: 2 });
+  });
+});
+
+const logoutReq = () => ({
+  url: "http://localhost/api/users/user-1/logout-all",
+  headers: new Headers(),
+});
+
+describe("GET /api/users filters", () => {
+  it("passes search/role/status through and keeps defaults when absent", async () => {
+    await GET({
+      url: "http://localhost/api/users?page=2&pageSize=5&search=ann&role=pending&status=active",
+      headers: new Headers(),
+    });
+    expect(repo.listUsersPageUnscoped).toHaveBeenCalledWith({
+      page: "2",
+      pageSize: "5",
+      search: "ann",
+      role: "pending",
+      status: "active",
+    });
+  });
+
+  it("repo INVALID -> 400 invalid_request in the route's error shape", async () => {
+    repo.listUsersPageUnscoped.mockRejectedValue(
+      Object.assign(new Error("x"), { code: "INVALID" }),
+    );
+    const res = await GET({ url: "http://localhost/api/users?role=root", headers: new Headers() });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Invalid request", code: "invalid_request" });
+  });
+});
+
+describe("GET /api/users/[id] and POST /api/users/[id]/logout-all guards", () => {
+  const calls = [
+    ["detail", () => getUser(delReq(), PARAMS), () => repo.getUserDetailUnscoped],
+    ["logout-all", () => logoutAll(logoutReq(), PARAMS), () => repo.revokeUserSessionsUnscoped],
+  ];
+
+  for (const [name, call, spy] of calls) {
+    it(`${name}: switch off -> 404 before auth, repo untouched`, async () => {
+      requireMultiUser.mockResolvedValue(hidden404());
+      expect((await call()).status).toBe(404);
+      expect(getPrincipal).not.toHaveBeenCalled();
+      expect(spy()).not.toHaveBeenCalled();
+    });
+
+    it(`${name}: CLI/api-key/anonymous principal -> 401`, async () => {
+      for (const p of [null, { via: "api-key", userId: "k" }, { via: "cli", userId: "o" }]) {
+        getPrincipal.mockResolvedValue(p);
+        expect((await call()).status, JSON.stringify(p)).toBe(401);
+      }
+      expect(authorize).not.toHaveBeenCalled();
+      expect(spy()).not.toHaveBeenCalled();
+    });
+
+    it(`${name}: non-admin session -> 403, repo untouched`, async () => {
+      authorize.mockResolvedValue(denied403());
+      expect((await call()).status).toBe(403);
+      expect(spy()).not.toHaveBeenCalled();
+    });
+  }
+
+  it("detail returns { user } no-store; unknown id -> 404 not_found", async () => {
+    const res = await getUser(delReq(), PARAMS);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toMatch(/no-store/);
+    const { user } = await res.json();
+    expect(user).toMatchObject({ id: "u1", workspaceCount: 1 });
+    expect(user).not.toHaveProperty("passwordHash");
+    expect(user).not.toHaveProperty("sessionVersion");
+    repo.getUserDetailUnscoped.mockResolvedValue(null);
+    const gone = await getUser(delReq(), PARAMS);
+    expect(gone.status).toBe(404);
+    expect(await gone.json()).toMatchObject({ code: "not_found" });
+  });
+
+  it("logout-all: cross-site origin -> 403 forbidden_origin, repo untouched", async () => {
+    const { isCrossSite } = await import("@/lib/auth/sameOrigin.js");
+    isCrossSite.mockReturnValueOnce(true);
+    const res = await logoutAll(logoutReq(), PARAMS);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: "forbidden_origin" });
+    expect(repo.revokeUserSessionsUnscoped).not.toHaveBeenCalled();
+  });
+
+  it("logout-all: success -> { success:true } and one id-only audit row", async () => {
+    const { audit } = await import("@/lib/users/audit.js");
+    const res = await logoutAll(logoutReq(), PARAMS);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+    expect(repo.revokeUserSessionsUnscoped).toHaveBeenCalledWith("user-1", {
+      actorUserId: "owner-1",
+    });
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(audit.mock.calls[0].slice(1)).toEqual([
+      "instance.users.logoutAll",
+      { type: "user", id: "user-1" },
+    ]);
+  });
+
+  it("logout-all: repo errors map to fixed responses", async () => {
+    for (const [code, status] of [
+      ["NOT_FOUND", 404],
+      ["FORBIDDEN", 403],
+      ["OWNER_IMMUTABLE", 500],
+    ]) {
+      repo.revokeUserSessionsUnscoped.mockRejectedValueOnce(
+        Object.assign(new Error("x"), { code }),
+      );
+      expect((await logoutAll(logoutReq(), PARAMS)).status, code).toBe(status);
+    }
   });
 });

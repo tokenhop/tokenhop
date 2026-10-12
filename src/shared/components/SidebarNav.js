@@ -113,6 +113,7 @@ SidebarNav.propTypes = {
     providers: PropTypes.number,
     combos: PropTypes.number,
     quota: PropTypes.number,
+    pendingUsers: PropTypes.number,
   }),
   providerAttention: PropTypes.shape({
     count: PropTypes.number,
