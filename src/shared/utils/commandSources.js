@@ -26,10 +26,13 @@ function providerIdForDetail(providerId) {
   return AI_PROVIDERS[id] ? id : null;
 }
 
-function pageCommands() {
-  // ponytail: palette pages remain ungated; APIs enforce caps. Add principal
-  // filtering when YAN-373 brings admin pages into the command palette.
-  const items = visibleItems();
+// `view`/`multiUser`/`enableTranslator` come from the palette provider. Without
+// an active view (single-user) the legacy ungated output is kept. Cosmetic:
+// the server enforces capabilities.
+function pageCommands({ view, multiUser, enableTranslator } = {}) {
+  const items = view?.active
+    ? visibleItems({ multiUser, enableTranslator, can: view.can })
+    : visibleItems();
   const pages = items.map((item) => ({
     id: `page:${item.id}`,
     group: "Pages",
@@ -265,7 +268,7 @@ registerStaticSource(actionCommands);
 registerStaticSource(providerCommands);
 registerStaticSource(comboCommands);
 registerStaticSource(modelCommands);
-registerStaticSource(() => toCommandItems());
+registerStaticSource(({ view } = {}) => toCommandItems(view));
 
 export const __test = {
   pageCommands,
@@ -273,5 +276,5 @@ export const __test = {
   comboCommands,
   modelCommands,
   actionCommands,
-  settingsCommands: () => toCommandItems(),
+  settingsCommands: ({ view } = {}) => toCommandItems(view),
 };
