@@ -591,7 +591,7 @@ describe("key-context storage mode threading (useToolSetupData seam)", () => {
   it("resets to unknown before each load and on context failure — never a silent legacy downgrade", () => {
     expect(hook).toMatch(/fetchData[\s\S]*?setKeyPresetStorageMode\(null\);/);
     expect(hook).toMatch(
-      /catch \(err\) \{\s*setKeyPresetStorageMode\(null\);\s*setKeyContext\(null\);\s*console\.error\("Error loading API keys/,
+      /catch \(err\) \{\s*(?:if \(!current\(\)\) return;\s*)?setKeyPresetStorageMode\(null\);\s*setKeyContext\(null\);\s*console\.error\("Error loading API keys/,
     );
   });
 });

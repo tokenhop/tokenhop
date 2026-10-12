@@ -37,7 +37,8 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
   const localOnly = useCliAccessStore((s) => s.localOnly);
 
   useEffect(() => {
-    if (useCliAccessStore.getState().localOnly) {
+    if (!data.ready) return;
+    if (!data.canHostOps || useCliAccessStore.getState().localOnly) {
       setStatusesLoading(false);
       return;
     }
@@ -64,7 +65,7 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [data.ready, data.canHostOps]);
 
   // Detection buckets do not exist off the host; drop a stale selection.
   useEffect(() => {

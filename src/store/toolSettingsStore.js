@@ -1,5 +1,10 @@
 import { create } from "zustand";
 import { debounce } from "@/shared/utils/debounce";
+import { onMemberCacheReset, useCliAccessStore } from "@/store/cliAccessStore";
+
+// YAN-374: a multi-user member has no host access, so /api/cli-tool-settings
+// 403s for them. Their choices live in this store only (this browser session).
+const noHost = () => useCliAccessStore.getState().noHost;
 
 /**
  * Saved CLI tool card settings (`/api/cli-tool-settings`), shared by every
@@ -26,9 +31,10 @@ function saverFor(toolId) {
   if (saver) return saver;
   saver = { dirty: false, queue: Promise.resolve() };
   const send = async () => {
-    if (!saver.dirty) return;
+    if (noHost() || !saver.dirty) return;
     saver.dirty = false;
     setStatus(toolId, "saving");
+    const generation = useCliAccessStore.getState().generation;
     try {
       const res = await api(toolId, {
         method: "PUT",
@@ -36,9 +42,11 @@ function saverFor(toolId) {
         body: JSON.stringify(useToolSettingsStore.getState().saved[toolId] || {}),
         keepalive: true,
       });
+      if (generation !== useCliAccessStore.getState().generation) return;
       if (!res.ok) throw new Error(`status ${res.status}`);
       setStatus(toolId, "saved");
     } catch {
+      if (generation !== useCliAccessStore.getState().generation) return;
       saver.dirty = true; // retried by the next edit or flush
       setStatus(toolId, "error");
     }
@@ -60,17 +68,24 @@ let loadPromise = null;
  * whole-row PUT would wipe what's saved) and the next call retries.
  */
 export function loadToolSettings() {
+  if (noHost()) {
+    useToolSettingsStore.setState({ loaded: true, loadFailed: false });
+    return Promise.resolve();
+  }
   loadPromise ??= (async () => {
+    const generation = useCliAccessStore.getState().generation;
     try {
       const res = await fetch("/api/cli-tool-settings");
       if (!res.ok) throw new Error(`status ${res.status}`);
       const data = await res.json();
+      if (generation !== useCliAccessStore.getState().generation) return;
       useToolSettingsStore.setState({
         saved: data.settings || {},
         loaded: true,
         loadFailed: false,
       });
     } catch {
+      if (generation !== useCliAccessStore.getState().generation) return;
       loadPromise = null;
       useToolSettingsStore.setState({ loaded: true, loadFailed: true });
     }
@@ -85,6 +100,7 @@ export function setToolSettings(toolId, patch) {
     for (const key of Object.keys(patch)) if (patch[key] === undefined) delete next[key];
     return { saved: { ...s.saved, [toolId]: next } };
   });
+  if (noHost()) return;
   if (useToolSettingsStore.getState().loadFailed) {
     setStatus(toolId, "error");
     return;
@@ -96,6 +112,7 @@ export function setToolSettings(toolId, patch) {
 
 /** Send a pending save now (unmount, `beforeunload`). */
 export function flushToolSettings(toolId) {
+  if (noHost()) return Promise.resolve();
   const saver = savers.get(toolId);
   if (!saver?.dirty) return Promise.resolve();
   saver.debounced.cancel();
@@ -104,6 +121,13 @@ export function flushToolSettings(toolId) {
 
 /** Delete a tool's saved row once any in-flight save has settled. */
 export async function resetToolSettings(toolId) {
+  if (noHost()) {
+    useToolSettingsStore.setState((s) => {
+      const { [toolId]: _removed, ...rest } = s.saved;
+      return { saved: rest, status: { ...s.status, [toolId]: "" } };
+    });
+    return true;
+  }
   const saver = saverFor(toolId);
   saver.debounced.cancel();
   saver.dirty = false;
@@ -130,3 +154,7 @@ export function __resetToolSettingsStore() {
   savers.clear();
   useToolSettingsStore.setState({ saved: {}, loaded: false, loadFailed: false, status: {} });
 }
+
+// HIGH3: markNoHost/clearNoHost drop saved rows, pending saves and the cached
+// load, so a member never sees (or PUTs) another principal's host settings.
+onMemberCacheReset(__resetToolSettingsStore);

@@ -29,6 +29,8 @@ import {
 import { DEFAULT_PLUGINS } from "@/shared/constants/coworkPlugins";
 import { buildCoworkConfig, buildCoworkMcpServers } from "@/lib/cliToolConfigs/cowork";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { useCliAccessStore } from "@/store/cliAccessStore";
+import { ModelTextAdd } from "./SetupScaffold";
 import { withWorkspace } from "@/app/(dashboard)/dashboard/providers/connectTarget";
 import { useManualPlatform } from "@/store/manualSetupStore";
 
@@ -68,6 +70,7 @@ export default function CoworkToolCard({
   hashedContext = false,
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "cowork" });
+  const noHost = useCliAccessStore((s) => s.noHost);
   const { scope } = useSettingsScope();
   const platform = useManualPlatform();
   const { status } = card;
@@ -337,14 +340,23 @@ export default function CoworkToolCard({
                 ))
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => setComboModalOpen(true)}
-              disabled={!hasActiveProviders}
-              className="w-fit rounded-xl border border-line bg-raised px-3 py-2 text-xs font-semibold text-coral-ink transition-colors hover:border-coral disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              + Combo
-            </button>
+            {noHost ? (
+              // Member export (YAN-374): no host provider/combo list; type ids.
+              <ModelTextAdd
+                models={selectedModels}
+                onAdd={(value) => setup.setField("models", [...selectedModels, value])}
+                label="Add model"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setComboModalOpen(true)}
+                disabled={!hasActiveProviders}
+                className="w-fit rounded-xl border border-line bg-raised px-3 py-2 text-xs font-semibold text-coral-ink transition-colors hover:border-coral disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                + Combo
+              </button>
+            )}
           </div>
         </SetupRow>
 

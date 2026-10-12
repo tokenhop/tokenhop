@@ -16,6 +16,7 @@ import {
   EndpointSegmentedPicker,
   SetupScaffold,
   SetupRow,
+  ModelTextAdd,
   ModelSelectModal,
   ManualConfigModal,
   rememberEndpoint,
@@ -48,6 +49,7 @@ export default function CopilotToolCard({
   hashedContext = false,
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "copilot" });
+  const noHost = useCliAccessStore((s) => s.noHost);
   const platform = useManualPlatform();
   const { status } = card;
   const selectedModelsRef = useRef([]);
@@ -256,14 +258,22 @@ export default function CopilotToolCard({
                 ))
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => card.setModalOpen(true)}
-              disabled={!activeProviders?.length}
-              className="w-fit rounded-xl border border-line bg-raised px-3 py-2 text-xs font-semibold text-text transition-colors hover:border-coral disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Add model
-            </button>
+            {noHost && !activeProviders?.length ? (
+              // Member export (YAN-374): no provider list, so type the model id.
+              <ModelTextAdd
+                models={models}
+                onAdd={(value) => setup.setField("models", [...models, value])}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => card.setModalOpen(true)}
+                disabled={!activeProviders?.length}
+                className="w-fit rounded-xl border border-line bg-raised px-3 py-2 text-xs font-semibold text-text transition-colors hover:border-coral disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Add model
+              </button>
+            )}
           </div>
         </SetupRow>
       </SetupScaffold>

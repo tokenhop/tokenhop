@@ -37,6 +37,7 @@ export default function CodexToolCard({
   tailscaleEnabled = false,
   tailscaleUrl = "",
   onStatusUpdate,
+  hashedContext = false,
 }) {
   const card = useSetupCard({
     statusUrl: "/api/cli-tools/codex-settings",
@@ -87,7 +88,7 @@ export default function CodexToolCard({
     typeof setup.values.subagentModel === "string" ? setup.values.subagentModel : "";
   // YAN-363 hashed storage: the GET is sanitized (no Authorization header),
   // so reuse means omitting apiKey; only a pasted key is ever written.
-  const hashed = card.status?.storage === "hashed";
+  const hashed = card.status?.storage === "hashed" || hashedContext;
 
   const currentBaseUrl = status?.config?.match(/base_url\s*=\s*"([^"]+)"/)?.[1] || "";
 

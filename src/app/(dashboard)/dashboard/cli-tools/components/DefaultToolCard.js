@@ -1,6 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
+import { useCliAccessStore } from "@/store/cliAccessStore";
 import { useMemo, useState } from "react";
 import Callout from "@/shared/components/Callout";
 import CopyField from "@/shared/components/CopyField";
@@ -39,6 +40,7 @@ export default function DefaultToolCard({
   modelAliases = {},
   hashedContext = false,
 }) {
+  const noHost = useCliAccessStore((s) => s.noHost);
   const [showModelModal, setShowModelModal] = useState(false);
   const { copied, error, copy } = useCopyToClipboard();
   // YAN-363: guide cards have no per-route status, so the shared key context
@@ -96,6 +98,7 @@ export default function DefaultToolCard({
     (tailscaleEnabled && !!tailscaleUrl);
 
   const canShowGuide = () => {
+    if (noHost) return true;
     if (tool.requiresExternalUrl && !hasExternalUrl) return false;
     if (tool.requiresCloud && !cloudEnabled) return false;
     return true;

@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { loadKeyContext, loadKeyList } from "../../endpoint/hooks/useApiKeys";
-import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { useCliScope } from "./useCliScope";
 import { loadSettings, onHttpError } from "@/shared/utils/settingsApi";
 import { withWorkspace } from "@/app/(dashboard)/dashboard/providers/connectTarget";
 
 import { setKeyPresetStorageMode } from "../components/cliEndpointPresets";
+import { setKeyCanCreate, useCliAccessStore } from "@/store/cliAccessStore";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL || "";
 
@@ -28,60 +29,89 @@ export function useToolSetupData() {
   const [modelAliases, setModelAliases] = useState({});
   const [keyContext, setKeyContext] = useState(null);
   const [loading, setLoading] = useState(true);
-  const { ready, scope, canManageInstance } = useSettingsScope();
-
+  const { ready, scope, canManageInstance, canHostOps, identity } = useCliScope();
+  const loadedIdentity = useRef(null);
+  const requestVersion = useRef(0);
+  const identityMatches = useCliAccessStore((s) => s.identity === identity);
+  // YAN-749: ccFilterNaming is a workspace key; members never GET the
+  // instance route. YAN-374: without instance.hostOps the tunnel-status and
+  // provider reads would 403, so the member export view skips them and falls
+  // back to the local origin. Inactive (switch off) behaves as today: every
+  // call goes out exactly like before.
   const fetchData = useCallback(async () => {
+    if (!ready) return;
+    const version = ++requestVersion.current;
+    const generation = useCliAccessStore.getState().generation;
+    const current = () =>
+      version === requestVersion.current && generation === useCliAccessStore.getState().generation;
+    setLoading(true);
+    const skipHost = ready && !canHostOps;
     setKeyPresetStorageMode(null);
     try {
       const [provRes, settings, tunnelRes, aliasRes] = await Promise.all([
-        fetch("/api/providers"),
-        // YAN-749: ccFilterNaming is a workspace key; members never GET the instance route.
+        skipHost ? null : fetch("/api/providers"),
         loadSettings(scope, { canManageInstance }).catch(onHttpError(null)),
-        fetch("/api/tunnel/status"),
-        fetch(withWorkspace("/api/models/alias", scope?.workspaceId)),
+        skipHost ? null : fetch("/api/tunnel/status"),
+        // Aliases need connections metadata read, which members lack.
+        skipHost ? null : fetch(withWorkspace("/api/models/alias", scope?.workspaceId)),
       ]);
+      if (!current()) return;
       // Keys follow the YAN-363 context envelope: hashed storage lists
       // workspace-scoped metadata (managers only, no raws); legacy keeps the
       // exact old /api/keys fetch. A key failure never blocks the rest.
       try {
         const ctx = await loadKeyContext();
         const keys = await loadKeyList(ctx);
+        if (!current()) return;
         setKeyPresetStorageMode(ctx.storage);
         setKeyContext(ctx);
+        setKeyCanCreate(ctx.storage === "hashed" && ctx.canCreate === true);
         setApiKeys(keys);
       } catch (err) {
+        if (!current()) return;
         setKeyPresetStorageMode(null);
         setKeyContext(null);
         console.error("Error loading API keys:", err);
+        setKeyCanCreate(false);
       }
-      if (provRes.ok) {
+      if (provRes?.ok) {
         const d = await provRes.json();
+        if (!current()) return;
         setConnections(d.connections || []);
       }
       if (settings) {
+        if (!current()) return; // loadSettings settled across an identity change
         setCloudEnabled(Boolean(settings.cloudEnabled));
         setCcFilterNaming(Boolean(settings.ccFilterNaming));
       }
-      if (tunnelRes.ok) {
+      if (tunnelRes?.ok) {
         const d = await tunnelRes.json();
+        if (!current()) return;
         setTunnelEnabled(Boolean(d.tunnel?.enabled || d.tunnel?.settingsEnabled));
         setTunnelPublicUrl(d.tunnel?.publicUrl || "");
         setTailscaleEnabled(Boolean(d.tailscale?.enabled || d.tailscale?.settingsEnabled));
         setTailscaleUrl(d.tailscale?.tunnelUrl || "");
       }
-      if (aliasRes.ok) {
+      if (aliasRes?.ok) {
         const d = await aliasRes.json();
+        if (!current()) return;
         setModelAliases(d.aliases || {});
       }
     } catch (err) {
       console.error("Error loading CLI tools data:", err);
     } finally {
-      setLoading(false);
+      if (current()) {
+        loadedIdentity.current = identity;
+        setLoading(false);
+      }
     }
-  }, [scope, canManageInstance]);
+  }, [ready, scope, canManageInstance, canHostOps, identity]);
 
   useEffect(() => {
     if (ready) fetchData();
+    return () => {
+      requestVersion.current += 1;
+    };
   }, [ready, fetchData]);
 
   const activeProviders = useMemo(
@@ -144,31 +174,36 @@ export function useToolSetupData() {
     return models;
   }, [activeProviders]);
 
-  const hasActiveProviders = availableModels.length > 0;
+  // Members cannot read providers: the model list is empty by design, so
+  // export must not wait on it (free-text model entry stays open).
+  const hasActiveProviders = availableModels.length > 0 || (ready && !canHostOps);
 
   const defaultBaseUrl = useMemo(() => {
-    if (tunnelEnabled && tunnelPublicUrl) return tunnelPublicUrl;
-    if (cloudEnabled && CLOUD_URL) return CLOUD_URL;
+    if (canHostOps && tunnelEnabled && tunnelPublicUrl) return tunnelPublicUrl;
+    if (canHostOps && cloudEnabled && CLOUD_URL) return CLOUD_URL;
     if (typeof window !== "undefined") return window.location.origin;
     return "http://localhost:20128";
-  }, [tunnelEnabled, tunnelPublicUrl, cloudEnabled]);
+  }, [canHostOps, tunnelEnabled, tunnelPublicUrl, cloudEnabled]);
 
   return {
-    loading,
-    connections,
-    activeProviders,
-    availableModels,
+    loading: loading || !ready || !identityMatches || loadedIdentity.current !== identity,
+    identity,
+    canHostOps,
+    ready,
+    connections: canHostOps ? connections : [],
+    activeProviders: canHostOps ? activeProviders : [],
+    availableModels: canHostOps ? availableModels : [],
     hasActiveProviders,
     apiKeys,
     keyContext,
-    cloudEnabled,
+    cloudEnabled: canHostOps && cloudEnabled,
     ccFilterNaming,
     cloudUrl: CLOUD_URL,
-    tunnelEnabled,
-    tunnelPublicUrl,
-    tailscaleEnabled,
-    tailscaleUrl,
-    modelAliases,
+    tunnelEnabled: canHostOps && tunnelEnabled,
+    tunnelPublicUrl: canHostOps ? tunnelPublicUrl : "",
+    tailscaleEnabled: canHostOps && tailscaleEnabled,
+    tailscaleUrl: canHostOps ? tailscaleUrl : "",
+    modelAliases: canHostOps ? modelAliases : {},
     defaultBaseUrl,
     refresh: fetchData,
   };

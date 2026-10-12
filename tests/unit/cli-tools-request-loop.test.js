@@ -37,6 +37,8 @@ describe("CLI tool status fetch stability", () => {
       "statusUrl",
       "aliasesUrl",
       "toolId",
+      "ready",
+      "canHostOps",
     ]);
   });
 

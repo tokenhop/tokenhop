@@ -16,6 +16,7 @@ import {
   SetupScaffold,
   NotInstalledBlock,
   SetupRow,
+  ModelTextAdd,
   SingleModelRow,
   ModelSelectModal,
   ManualConfigModal,
@@ -48,8 +49,10 @@ export default function OpenCodeToolCard({
   tailscaleEnabled = false,
   tailscaleUrl = "",
   onStatusUpdate,
+  hashedContext = false,
 }) {
   const card = useSetupCard({ statusUrl: ENDPOINT, onStatusUpdate, toolId: "opencode" });
+  const noHost = useCliAccessStore((s) => s.noHost);
   const { status } = card;
   const [subagentModalOpen, setSubagentModalOpen] = useState(false);
   const selectedModelsRef = useRef([]);
@@ -92,7 +95,7 @@ export default function OpenCodeToolCard({
   const setup = useSetupSettings({ toolId: "opencode", apiKeys, defaults, disk, endpointContext });
   // YAN-363 hashed storage: the GET is sanitized (no provider apiKey), so
   // reuse means omitting apiKey; only a pasted key is ever written.
-  const hashed = card.status?.storage === "hashed";
+  const hashed = card.status?.storage === "hashed" || hashedContext;
 
   const models = asList(setup.values.models);
   const activeModel = typeof setup.values.activeModel === "string" ? setup.values.activeModel : "";
@@ -360,14 +363,22 @@ export default function OpenCodeToolCard({
                 ))
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => card.setModalOpen(true)}
-              disabled={!activeProviders?.length}
-              className="w-fit rounded-xl border border-line bg-raised px-3 py-2 text-xs font-semibold text-text transition-colors hover:border-coral disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Add model
-            </button>
+            {noHost && !activeProviders?.length ? (
+              // Member export (YAN-374): no provider list, so type the model id.
+              <ModelTextAdd
+                models={models}
+                onAdd={(value) => setup.setField("models", [...models, value])}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => card.setModalOpen(true)}
+                disabled={!activeProviders?.length}
+                className="w-fit rounded-xl border border-line bg-raised px-3 py-2 text-xs font-semibold text-text transition-colors hover:border-coral disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Add model
+              </button>
+            )}
           </div>
         </SetupRow>
         <SetupRow label="Subagent model">

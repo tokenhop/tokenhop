@@ -145,10 +145,11 @@ describe("switch on", () => {
       expect((await call(t.a, path)).status, path).not.toBe(403);
     }
     // YAN-361/YAN-364: scoped routes pass the guard on any workspace B manages
-    // (his personal one); the handler then scopes to it.
+    // (his personal one); the handler then scopes to it. /api/keys POST is now
+    // scoped (YAN-374), so B is admitted: create lives in his personal workspace.
     expect((await call(t.b, "/api/providers")).status).not.toBe(403);
     expect((await call(t.b, "/api/combos")).status).not.toBe(403);
-    expect((await call(t.b, "/api/keys", "POST")).status).toBe(403);
+    expect((await call(t.b, "/api/keys", "POST")).headers.get("x-middleware-next")).toBe("1");
     expect((await call(t.b, "/api/gateway/status")).status).not.toBe(403);
     expect((await call(t.b, "/api/health")).status).not.toBe(403);
     await db.updateUserUnscoped(t.b.user.id, { instanceRole: "pending" });

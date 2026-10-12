@@ -8,6 +8,8 @@ import {
   setToolSettings,
   useToolSettingsStore,
 } from "@/store/toolSettingsStore";
+import { useCliAccessStore } from "@/store/cliAccessStore";
+import { useCliScope } from "./useCliScope";
 import { diffFromDisk, mergeToolSettings } from "@/lib/cliToolConfigs/toolSettings";
 
 /**
@@ -29,11 +31,15 @@ import { diffFromDisk, mergeToolSettings } from "@/lib/cliToolConfigs/toolSettin
  * }]} Merged values, single-field setter, and helpers. `undefined` in a patch deletes the key.
  */
 export function useToolSettings(toolId, defaults, disk = null) {
+  const { ready, identity } = useCliScope();
+  const identityMatches = useCliAccessStore((s) => s.identity === identity);
   const saved = useToolSettingsStore((s) => s.saved[toolId]);
   const loaded = useToolSettingsStore((s) => s.loaded);
   const status = useToolSettingsStore((s) => s.status[toolId] ?? "");
 
   useEffect(() => {
+    if (!ready) return;
+    void identity; // rerun after principal flips; the mount remounts via key too
     loadToolSettings();
     const flush = () => flushToolSettings(toolId);
     window.addEventListener("beforeunload", flush);
@@ -41,13 +47,18 @@ export function useToolSettings(toolId, defaults, disk = null) {
       window.removeEventListener("beforeunload", flush);
       flush();
     };
-  }, [toolId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toolId, ready, identity]);
 
   const setFields = useCallback((patch) => setToolSettings(toolId, patch), [toolId]);
   const setField = useCallback((key, value) => setFields({ [key]: value }), [setFields]);
   const reset = useCallback(() => resetToolSettings(toolId), [toolId]);
 
-  const values = useMemo(() => mergeToolSettings(defaults, disk, saved), [defaults, disk, saved]);
+  const values = useMemo(
+    () =>
+      mergeToolSettings(defaults, identityMatches ? disk : null, identityMatches ? saved : null),
+    [defaults, disk, saved, identityMatches],
+  );
   const differs = useMemo(() => diffFromDisk(saved, disk), [saved, disk]);
 
   const loadFromDisk = useCallback(() => {
