@@ -54,4 +54,4 @@ OIDC preview reads groups from verified `id_token` claims first, then matching `
 
 ## Operational limits
 
-Fresh-proof slots are in-memory, single-process, capped at 512, and live for five minutes. Multi-process deployments need shared proof storage for reliable flows. An administrator can have one pending SSO proof check at a time. Proof failures use the same account/IP login lockout buckets as sign-in attempts.
+Fresh-proof slots are in-memory, single-process, capped at 512, and live for five minutes. Multi-process deployments need shared proof storage for reliable flows. Starting another check in the same browser replaces its proof cookie, so the earlier check can no longer complete there. There is no per-admin limit across browser sessions; unused slots expire. Proof failures use the same account/IP login lockout buckets as sign-in attempts.
