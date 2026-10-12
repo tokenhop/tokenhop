@@ -188,6 +188,73 @@ describe("CLIToolsPageClient host-only fetch gating", () => {
     expect(urls()).not.toContain("/api/cli-tools/all-statuses");
   });
 
+  // Statuses reach CLIToolsView as a prop; walk the element tree for it.
+  const statusesOf = (node) => {
+    if (!node || typeof node !== "object") return undefined;
+    if (node.props && "statuses" in node.props && "remote" in node.props) {
+      return node.props.statuses;
+    }
+    const kids = node.props?.children;
+    for (const child of Array.isArray(kids) ? kids : [kids]) {
+      const found = statusesOf(child);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+
+  it("host -> member flip clears host install data and discards an in-flight response", async () => {
+    const hostPayload = { claude: { installed: true, hasTokenhop: true } };
+    let releaseSlow;
+    fetchMock.mockImplementation(
+      (url) =>
+        new Promise((resolve) => {
+          if (url !== "/api/cli-tools/all-statuses")
+            return resolve({ ok: true, json: async () => ({}) });
+          releaseSlow = () => resolve({ ok: true, status: 200, json: async () => hostPayload });
+        }),
+    );
+    // 1) host: load completes, host detection data is shown.
+    toolData.value = { ...toolData.value, ready: true, canHostOps: true };
+    render();
+    releaseSlow();
+    await flush();
+    expect(statusesOf(render())).toEqual(hostPayload);
+    // 2) role flips to member: statuses and error state are dropped at once.
+    toolData.value = { ...toolData.value, ready: true, canHostOps: false };
+    render();
+    await flush();
+    expect(statusesOf(render())).toEqual({});
+    // 3) a new host-era request that is still in flight must not resurrect data.
+    toolData.value = { ...toolData.value, ready: true, canHostOps: true };
+    render();
+    toolData.value = { ...toolData.value, ready: true, canHostOps: false };
+    render();
+    releaseSlow();
+    await flush();
+    expect(statusesOf(render())).toEqual({});
+  });
+
+  it("host -> member flip also clears a stale detection error", async () => {
+    fetchMock.mockImplementation(async (url) => {
+      if (url === "/api/cli-tools/all-statuses")
+        return { ok: false, status: 500, json: async () => ({}) };
+      return { ok: true, json: async () => ({}) };
+    });
+    toolData.value = { ...toolData.value, ready: true, canHostOps: true };
+    render();
+    await flush();
+    const failed = render();
+    expect(JSON.stringify(failed, (_k, v) => (typeof v === "symbol" ? String(v) : v))).toContain(
+      '"statusesError":true',
+    );
+    toolData.value = { ...toolData.value, ready: true, canHostOps: false };
+    render();
+    await flush();
+    expect(JSON.stringify(render(), (_k, v) => (typeof v === "symbol" ? String(v) : v))).toContain(
+      '"statusesError":false',
+    );
+  });
+
   it("waits for auth: no all-statuses fetch before the scope is ready", async () => {
     toolData.value = { ...toolData.value, ready: false, canHostOps: false };
     render();

@@ -4,8 +4,16 @@ import { validateKeyName } from "@/app/(dashboard)/dashboard/endpoint/endpointLo
 
 import { readApiKeyStorageState } from "@/lib/db/apiKeyState";
 import { getAdapter } from "@/lib/db/driver";
+import { isUserSecurityEnforced } from "@/lib/users/securityState";
 
 const NO_STORE = { "Cache-Control": "no-store" };
+
+// Legacy rows are global (no tenancy columns): once user security is enforced
+// they must not be served, so fail closed rather than expose or mutate them.
+const legacyUnavailable = async () =>
+  (await isUserSecurityEnforced())
+    ? NextResponse.json({ error: "Key storage unavailable" }, { status: 503, headers: NO_STORE })
+    : null;
 
 async function managementScope(request) {
   // Bearers never authorize dashboard management, including alongside a cookie.
@@ -63,6 +71,8 @@ export async function GET(request, { params }) {
       const key = await getApiKey(scope.ctx, scope.workspaceId, id);
       return NextResponse.json({ key, storage: "hashed" }, { headers: NO_STORE });
     }
+    const blocked = await legacyUnavailable();
+    if (blocked) return blocked;
     const key = await getApiKeyById(id);
     if (!key) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
@@ -104,6 +114,8 @@ export async function PUT(request, { params }) {
       const key = await updateApiKey(scope.ctx, scope.workspaceId, id, body);
       return NextResponse.json({ key, storage: "hashed" }, { headers: NO_STORE });
     }
+    const blocked = await legacyUnavailable();
+    if (blocked) return blocked;
     const body = await request.json();
     const { isActive, name } = body;
 
@@ -145,6 +157,8 @@ export async function DELETE(request, { params }) {
       const key = await revokeApiKey(scope.ctx, scope.workspaceId, id);
       return NextResponse.json({ key, storage: "hashed" }, { headers: NO_STORE });
     }
+    const blocked = await legacyUnavailable();
+    if (blocked) return blocked;
 
     const deleted = await deleteApiKey(id);
     if (!deleted) {

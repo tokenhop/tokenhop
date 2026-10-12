@@ -39,10 +39,18 @@ export default function CLIToolsPageClient({ initialTool = "claude" }) {
   useEffect(() => {
     if (!data.ready) return;
     if (!data.canHostOps || useCliAccessStore.getState().localOnly) {
+      // Host install-detection data must not outlive host access (role flip).
+      if (!data.canHostOps) {
+        setStatuses({});
+        setStatusesError(false);
+      }
       setStatusesLoading(false);
       return;
     }
+    // `mounted` is this run's generation: the cleanup below flips it on any
+    // dep change, so a slow old host response can never repopulate statuses.
     let mounted = true;
+    setStatusesLoading(true);
     (async () => {
       try {
         const res = await fetch("/api/cli-tools/all-statuses");
