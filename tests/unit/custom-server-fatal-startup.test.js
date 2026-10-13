@@ -22,6 +22,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -33,7 +34,9 @@ let tmp;
 const mkRoot = (name) => fs.mkdtempSync(path.join(tmp, `${name}-`));
 
 beforeAll(() => {
-  tmp = fs.mkdtempSync(path.join("/tmp/opencode", "custom-server-fatal-"));
+  // os.tmpdir(), never a dev-box-only path: CI runners have no /tmp/opencode
+  // and a mkdtemp ENOENT here fails the whole file (PR906 b391bc7).
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), "custom-server-fatal-"));
 });
 
 afterAll(() => {
