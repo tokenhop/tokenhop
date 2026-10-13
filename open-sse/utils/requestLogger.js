@@ -1,4 +1,6 @@
 // Check if running in Node.js environment (has fs module)
+import { normalizeSecrets, redactDeep, redactText, sanitizeUrl } from "./redact.js";
+
 const isNode =
   typeof process !== "undefined" && process.versions?.node && typeof window === "undefined";
 
@@ -34,8 +36,8 @@ let LOGS_DIR = null;
 async function ensureNodeModules() {
   if (!isNode || !isLoggingEnabled() || fs) return;
   try {
-    fs = await import("fs");
-    path = await import("path");
+    fs = await import("node:fs");
+    path = await import("node:path");
     LOGS_DIR = path.join(
       typeof process !== "undefined" && process.cwd ? process.cwd() : ".",
       "logs",
@@ -77,7 +79,7 @@ async function createLogSession(sourceFormat, targetFormat, model) {
 
     return sessionPath;
   } catch (err) {
-    console.log("[LOG] Failed to create log session:", err.message);
+    console.log("[LOG] Failed to create log session:", redactText(err.message));
     return null;
   }
 }
@@ -90,7 +92,7 @@ function writeJsonFile(sessionPath, filename, data) {
     const filePath = path.join(sessionPath, filename);
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
   } catch (err) {
-    console.log(`[LOG] Failed to write ${filename}:`, err.message);
+    console.log(`[LOG] Failed to write ${filename}:`, redactText(err.message));
   }
 }
 
@@ -113,6 +115,8 @@ function isSensitiveHeader(name) {
   if (SENSITIVE_EXACT_HEADERS.has(lower)) return true;
   return (
     lower.includes("token") ||
+    lower.includes("authorization") ||
+    lower.includes("cookie") ||
     lower.includes("secret") ||
     lower.includes("api-key") ||
     lower.endsWith("-key") || // e.g. qoder X-Model-Key
@@ -129,13 +133,25 @@ function maskHeaderValue(value) {
   return `${s.slice(0, 4)}...${s.slice(-4)}`;
 }
 
-export function maskSensitiveHeaders(headers) {
+const URL_HEADERS = new Set(["referer", "origin", "location", "content-location"]);
+
+function scrubHeaderValue(name, value, secrets) {
+  if (Array.isArray(value)) return value.map((v) => scrubHeaderValue(name, v, secrets));
+  if (typeof value !== "string") return value;
+  return URL_HEADERS.has(name.toLowerCase())
+    ? sanitizeUrl(value, secrets)
+    : redactText(value, secrets);
+}
+
+export function maskSensitiveHeaders(headers, secrets) {
   if (!headers) return {};
   const source =
     typeof headers.entries === "function" ? Object.fromEntries(headers.entries()) : headers;
   const masked = {};
   for (const key of Object.keys(source)) {
-    masked[key] = isSensitiveHeader(key) ? maskHeaderValue(source[key]) : source[key];
+    masked[key] = isSensitiveHeader(key)
+      ? maskHeaderValue(source[key])
+      : scrubHeaderValue(key, source[key], secrets);
   }
   return masked;
 }
@@ -164,7 +180,7 @@ function createNoOpLogger() {
  * @param {string} model - Model name
  * @returns {Promise<object>} Promise that resolves to logger object with methods to log each stage
  */
-export async function createRequestLogger(sourceFormat, targetFormat, model) {
+export async function createRequestLogger(sourceFormat, targetFormat, model, options = {}) {
   // Return no-op logger if logging is disabled
   if (!isLoggingEnabled()) {
     return createNoOpLogger();
@@ -172,8 +188,18 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
 
   // Wait for session to be created before returning logger
   const sessionPath = await createLogSession(sourceFormat, targetFormat, model);
+  // Request-local known-secret provenance (YAN-378): opaque upstream keys can
+  // echo through errors/chunks with no recognisable shape. Accept a live
+  // getter so credentials refreshed AFTER logger creation stay covered.
+  // Never query the DB here; callers pass the CURRENT request's credentials only.
+  const getSecrets = () =>
+    Array.isArray(options?.secrets)
+      ? normalizeSecrets(options.secrets)
+      : normalizeSecrets(options.secrets?.());
+  const deep = (v) => redactDeep(v, { secrets: getSecrets() });
+  const text = (v) => (typeof v === "string" ? redactText(v, getSecrets()) : v);
 
-  return {
+  const logger = {
     get sessionPath() {
       return sessionPath;
     },
@@ -182,9 +208,9 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logClientRawRequest(endpoint, body, headers = {}) {
       writeJsonFile(sessionPath, "1_req_client.json", {
         timestamp: new Date().toISOString(),
-        endpoint,
-        headers: maskSensitiveHeaders(headers),
-        body,
+        endpoint: sanitizeUrl(endpoint, getSecrets()),
+        headers: maskSensitiveHeaders(headers, getSecrets()),
+        body: deep(body),
       });
     },
 
@@ -192,8 +218,8 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logRawRequest(body, headers = {}) {
       writeJsonFile(sessionPath, "2_req_source.json", {
         timestamp: new Date().toISOString(),
-        headers: maskSensitiveHeaders(headers),
-        body,
+        headers: maskSensitiveHeaders(headers, getSecrets()),
+        body: deep(body),
       });
     },
 
@@ -201,7 +227,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logOpenAIRequest(body) {
       writeJsonFile(sessionPath, "3_req_openai.json", {
         timestamp: new Date().toISOString(),
-        body,
+        body: deep(body),
       });
     },
 
@@ -209,9 +235,9 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logTargetRequest(url, headers, body) {
       writeJsonFile(sessionPath, "4_req_target.json", {
         timestamp: new Date().toISOString(),
-        url,
-        headers: maskSensitiveHeaders(headers),
-        body,
+        url: sanitizeUrl(url, getSecrets()),
+        headers: maskSensitiveHeaders(headers, getSecrets()),
+        body: deep(body),
       });
     },
 
@@ -226,9 +252,9 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       writeJsonFile(sessionPath, filename, {
         timestamp: new Date().toISOString(),
         status,
-        statusText,
-        headers: maskSensitiveHeaders(rawHeaders),
-        body,
+        statusText: text(statusText),
+        headers: maskSensitiveHeaders(rawHeaders, getSecrets()),
+        body: deep(body),
       });
     },
 
@@ -237,8 +263,8 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "5_res_provider.txt");
-        fs.appendFileSync(filePath, chunk);
-      } catch (err) {
+        fs.appendFileSync(filePath, text(chunk));
+      } catch {
         // Ignore append errors
       }
     },
@@ -248,8 +274,8 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "6_res_openai.txt");
-        fs.appendFileSync(filePath, chunk);
-      } catch (err) {
+        fs.appendFileSync(filePath, text(chunk));
+      } catch {
         // Ignore append errors
       }
     },
@@ -258,7 +284,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logConvertedResponse(body) {
       writeJsonFile(sessionPath, "7_res_client.json", {
         timestamp: new Date().toISOString(),
-        body,
+        body: deep(body),
       });
     },
 
@@ -267,8 +293,8 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "7_res_client.txt");
-        fs.appendFileSync(filePath, chunk);
-      } catch (err) {
+        fs.appendFileSync(filePath, text(chunk));
+      } catch {
         // Ignore append errors
       }
     },
@@ -277,12 +303,24 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logError(error, requestBody = null) {
       writeJsonFile(sessionPath, "6_error.json", {
         timestamp: new Date().toISOString(),
-        error: error?.message || String(error),
-        stack: error?.stack,
-        requestBody,
+        error: text(error?.message || String(error)),
+        stack: text(error?.stack),
+        requestBody: deep(requestBody),
       });
     },
   };
+  // Diagnostics must never fail a request, including hostile getters/headers.
+  for (const [key, method] of Object.entries(logger)) {
+    if (typeof method !== "function") continue;
+    logger[key] = (...args) => {
+      try {
+        return method(...args);
+      } catch {
+        // Drop unsafe diagnostic input rather than writing it raw.
+      }
+    };
+  }
+  return logger;
 }
 
 // Legacy functions for backward compatibility
@@ -304,14 +342,14 @@ export function logError(provider, { error, url, model, requestBody }) {
       type: "error",
       provider,
       model,
-      url,
-      error: error?.message || String(error),
-      stack: error?.stack,
-      requestBody,
+      url: sanitizeUrl(url),
+      error: redactText(error?.message || String(error)),
+      stack: redactText(error?.stack),
+      requestBody: redactDeep(requestBody),
     };
 
-    fs.appendFileSync(logPath, JSON.stringify(logEntry) + "\n");
+    fs.appendFileSync(logPath, `${JSON.stringify(logEntry)}\n`);
   } catch (err) {
-    console.log("[LOG] Failed to write error log:", err.message);
+    console.log("[LOG] Failed to write error log:", redactText(err.message));
   }
 }

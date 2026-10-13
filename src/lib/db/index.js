@@ -9,6 +9,7 @@ import {
   poisonCredentialMaintenance,
 } from "./credentialMaintenance.js";
 import { getMetaSync } from "./helpers/metaStore.js";
+import { clearApiKeysSchemaCache } from "./helpers/apiKeysSchema.js";
 import { assertInstanceUsersMatch } from "./helpers/instanceUserDiff.js";
 import { makeInstancePortable, unlockInstancePortable } from "./helpers/instancePortable.js";
 import {
@@ -828,6 +829,7 @@ async function prepareTransferCacheInvalidation(db) {
   const setter = mitm?.default?.setCachedPassword ?? mitm?.setCachedPassword;
   return () => {
     try {
+      clearApiKeysSchemaCache(db);
       clearApiKeyPrincipalCache();
       clearCredentialCache(db);
       clearApiKeyHashKeyStateCache(db);

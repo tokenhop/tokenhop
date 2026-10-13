@@ -10,6 +10,17 @@ const mocks = vi.hoisted(() => ({
   validateApiKey: vi.fn(),
   getConsistentMachineId: vi.fn(),
   verifyDashboardAuthToken: vi.fn(),
+  hashedEstablished: vi.fn(),
+  resolveGatewayAuth: vi.fn(),
+}));
+
+vi.mock("@/lib/users/securityState", () => ({
+  isHashedSecurityEstablished: mocks.hashedEstablished,
+  isUserSecurityEnforced: mocks.hashedEstablished,
+}));
+
+vi.mock("@/lib/auth/gatewayAuth", () => ({
+  resolveGatewayAuth: mocks.resolveGatewayAuth,
 }));
 
 vi.mock("next/server", () => ({
@@ -83,6 +94,91 @@ describe("dashboard guard public LLM API access", () => {
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+    mocks.hashedEstablished.mockResolvedValue(false);
+    mocks.resolveGatewayAuth.mockResolvedValue({ principal: null, legacy: true });
+  });
+
+  it("fails closed (401, no throw) when the storage marker is unreadable", async () => {
+    mocks.hashedEstablished.mockRejectedValueOnce(new Error("unreadable marker"));
+    expect(
+      (await proxy(localRequest("/v1/chat/completions", { host: "localhost:20128" }))).status,
+    ).toBe(401);
+  });
+
+  it("resolves hashed gateway keys through the shared resolver, not legacy SQL", async () => {
+    mocks.hashedEstablished.mockResolvedValue(true);
+
+    mocks.resolveGatewayAuth.mockResolvedValue({ principal: { via: "apiKey" }, legacy: false });
+    const ok = await proxy(
+      request("/v1/chat/completions", {
+        host: "router.example.com",
+        authorization: "Bearer th_valid",
+      }),
+    );
+    expect(ok).toBe(mocks.nextResponse);
+    expect(mocks.resolveGatewayAuth).toHaveBeenCalled();
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+
+    // A Response (deny) has no principal: invalid bearer is not rescued by local/CLI.
+    mocks.resolveGatewayAuth.mockResolvedValueOnce({ status: 401 });
+    const denied = await proxy(
+      localRequest("/v1/chat/completions", {
+        host: "localhost:20128",
+        authorization: "Bearer th_invalid",
+      }),
+    );
+    expect(denied.status).toBe(401);
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  // Hashed storage established: every credential carrier (empty or not) goes to
+  // the shared resolver; a deny stays denied even for a local peer holding a
+  // valid CLI token, and an allow passes from either peer class.
+  const carriers = {
+    bearer: ["authorization", (v) => (v ? `Bearer ${v}` : "Bearer")],
+    "x-api-key": ["x-api-key", (v) => v],
+    "x-goog-api-key": ["x-goog-api-key", (v) => v],
+    query: [null, null],
+  };
+  for (const [name, [header, format]] of Object.entries(carriers)) {
+    for (const value of ["", "th_value"]) {
+      for (const local of [false, true]) {
+        const label = `${name} ${value ? "non-empty" : "empty"} ${local ? "local" : "remote"}`;
+        const build = () => {
+          const headers = { host: local ? "localhost:20128" : "router.example.com" };
+          headers["x-9r-cli-token"] = "cli-token"; // valid CLI token must not rescue a deny
+          if (header) headers[header] = format(value);
+          const path = `/v1beta/models${header ? "" : `?key=${value}`}`;
+          return local ? localRequest(path, headers) : request(path, headers);
+        };
+        it(`hashed ${label}: shared deny cannot fall back to local/CLI`, async () => {
+          mocks.hashedEstablished.mockResolvedValue(true);
+          mocks.resolveGatewayAuth.mockResolvedValue({ status: 401 });
+          const response = await proxy(build());
+          expect(response.status).toBe(401);
+          expect(response.body.error).toBe("API key required for remote API access");
+          expect(mocks.resolveGatewayAuth).toHaveBeenCalledTimes(1);
+          expect(mocks.validateApiKey).not.toHaveBeenCalled();
+        });
+        it(`hashed ${label}: shared allow passes`, async () => {
+          mocks.hashedEstablished.mockResolvedValue(true);
+          mocks.resolveGatewayAuth.mockResolvedValue({
+            principal: { via: "apiKey" },
+            legacy: false,
+          });
+          expect(await proxy(build())).toBe(mocks.nextResponse);
+          expect(mocks.resolveGatewayAuth).toHaveBeenCalledTimes(1);
+          expect(mocks.validateApiKey).not.toHaveBeenCalled();
+        });
+      }
+    }
+  }
+
+  it("credential-less requests keep the legacy edge on established storage", async () => {
+    mocks.hashedEstablished.mockResolvedValue(true);
+    const response = await proxy(localRequest("/v1/chat/completions", { host: "localhost:20128" }));
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.resolveGatewayAuth).not.toHaveBeenCalled();
   });
 
   it("allows public skill markdown on remote hosts without an API key", async () => {

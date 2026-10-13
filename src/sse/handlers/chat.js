@@ -43,7 +43,10 @@ import {
   grantRateLimitResponse,
   releaseGrantReservation,
 } from "../services/grantRateLimiter.js";
-import { budgetResponse, budgeted } from "../services/budgetGuard.js";
+import { budgetResponse, inBudgetScope, withBudgetScope } from "../services/budgetGuard.js";
+import { getAdapter } from "@/lib/db/driver.js";
+import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
+import { getEligibleApiKeySync } from "@/lib/db/repos/apiKeysRepo.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { notifyRequestLogsEnabled } from "open-sse/utils/requestLogger.js";
@@ -513,6 +516,28 @@ async function isModelDisabled(provider, model, principal = null) {
   return false;
 }
 
+// Live key eligibility + model scope, read straight from storage (the principal
+// snapshot is frozen at auth time). Null for keyless principals (cli/local/mitm)
+// and legacy null principals. A key principal on non-hashed or unreadable
+// storage fails closed (403): never an unguarded keyHash query, never a 500.
+async function revokedKeyTarget(principal, modelId) {
+  if (!principal?.apiKeyId) return null;
+  const deny = () => errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
+  try {
+    const db = await getAdapter();
+    if (readApiKeyStorageState(db).storage !== "hashed") return deny();
+    const hash = db.get("SELECT keyHash FROM apiKeys WHERE id = ?", [principal.apiKeyId])?.keyHash;
+    const live = hash ? getEligibleApiKeySync(db, principal.apiKeyId, { keyHash: hash }) : null;
+    if (!live) return deny();
+    return authorizeGatewayTarget(
+      { scopes: { allowedModels: live.allowedModels ?? [], allowedCombos: [] } },
+      { modelId },
+    );
+  } catch {
+    return deny();
+  }
+}
+
 async function handleSingleModelChat(
   body,
   modelStr,
@@ -673,220 +698,221 @@ async function handleSingleModelChat(
   const denied = authorizeGatewayTarget(gateway, { modelId: `${provider}/${model}` });
   if (denied) return denied;
 
-  // A model disabled on the provider page is hidden from /v1/models; refuse
-  // to route it too, under either alias the dashboard may have stored (YAN-661).
-  // 404 lets a combo advance to its next member.
-  if (await isModelDisabled(provider, model, gateway)) {
+  const disabledResponse = () => {
     log.warn("CHAT", `Model disabled: ${provider}/${model}`);
     // The combo loop must treat this as model-scoped (advance past it), not as an
     // account failure that flips connection state (YAN-661 review follow-up).
     const res = errorResponse(HTTP_STATUS.NOT_FOUND, `Model disabled: ${modelStr}`);
     res.localError = true;
     return res;
-  }
+  };
+
+  // A model disabled on the provider page is hidden from /v1/models; refuse
+  // to route it too, under either alias the dashboard may have stored (YAN-661).
+  // 404 lets a combo advance to its next member.
+  if (await isModelDisabled(provider, model, gateway)) return disabledResponse();
 
   // YAN-372: key/user/membership/workspace budgets, reserved per leaf attempt.
-  const held = await budgeted(gateway, { provider, model, body, signal: attempt?.signal }, () =>
-    handleSingleModelChat(
-      body,
-      modelStr,
-      clientRawRequest,
-      request,
-      apiKey,
-      comboPath,
-      comboName,
-      options,
-      attempt,
-    ),
-  );
-  if (held) return held;
+  // The continuation below runs after model/disabled resolution, inside the
+  // budget scope: no handler restart, so model resolution and pricing run once.
+  const dispatch = async () => {
+    // Budget pricing/reserve awaited above; disabled and key scope may have
+    // changed meanwhile (revocation). Recheck only the live state, not the
+    // model resolution. A non-ok return releases the hold (releaseWhenDone).
+    if (inBudgetScope()) {
+      // 403 (key/scope) before 404 (disabled), same order as the first pass.
+      const stale = await revokedKeyTarget(gateway, `${provider}/${model}`);
+      if (stale) return stale;
+      if (await isModelDisabled(provider, model, gateway)) return disabledResponse();
+    }
+    // Routing shown in the unified "▶" line (client model → provider/model)
 
-  // Routing shown in the unified "▶" line (client model → provider/model)
+    // Extract userAgent from request
+    const userAgent = request?.headers?.get("user-agent") || "";
 
-  // Extract userAgent from request
-  const userAgent = request?.headers?.get("user-agent") || "";
+    const sourceFormat = request?.url
+      ? detectFormatByEndpoint(new URL(request.url).pathname, body)
+      : null;
+    const fim = isFimFormat(sourceFormat);
 
-  const sourceFormat = request?.url
-    ? detectFormatByEndpoint(new URL(request.url).pathname, body)
-    : null;
-  const fim = isFimFormat(sourceFormat);
+    // Try with available accounts (fallback on errors)
+    const excludeConnectionIds = new Set();
+    let lastError = null;
+    let lastStatus = null;
 
-  // Try with available accounts (fallback on errors)
-  const excludeConnectionIds = new Set();
-  let lastError = null;
-  let lastStatus = null;
+    while (true) {
+      // FIM only: a client that disconnected before/while typing predictions must
+      // not spend another account attempt. 499 is not fallback-eligible
+      // (4xx<500), so combos/accounts stop immediately — matching intent.
+      if (attempt?.signal?.aborted || (fim && request?.signal?.aborted))
+        return errorResponse(499, "Client closed request");
+      const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+        ...gatewayCreds,
+        estimateTokens: () => estimateBodyTokens(body),
+      });
 
-  while (true) {
-    // FIM only: a client that disconnected before/while typing predictions must
-    // not spend another account attempt. 499 is not fallback-eligible
-    // (4xx<500), so combos/accounts stop immediately — matching intent.
-    if (attempt?.signal?.aborted || (fim && request?.signal?.aborted))
-      return errorResponse(499, "Client closed request");
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
-      ...gatewayCreds,
-      estimateTokens: () => estimateBodyTokens(body),
-    });
-
-    // All accounts unavailable
-    if (!credentials || credentials.allRateLimited) {
-      if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
-      if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
-      if (credentials?.allRateLimited) {
-        const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
-        log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(
-          status,
-          `[${provider}/${model}] ${errorMsg}`,
-          credentials.retryAfter,
-          credentials.retryAfterHuman,
-        );
-      }
-      if (excludeConnectionIds.size === 0) {
-        log.warn("AUTH", `No active credentials for provider: ${provider}`);
+      // All accounts unavailable
+      if (!credentials || credentials.allRateLimited) {
+        if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
+        if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
+        if (credentials?.allRateLimited) {
+          const errorMsg = lastError || credentials.lastError || "Unavailable";
+          const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
+          log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
+          return unavailableResponse(
+            status,
+            `[${provider}/${model}] ${errorMsg}`,
+            credentials.retryAfter,
+            credentials.retryAfterHuman,
+          );
+        }
+        if (excludeConnectionIds.size === 0) {
+          log.warn("AUTH", `No active credentials for provider: ${provider}`);
+          return errorResponse(
+            HTTP_STATUS.NOT_FOUND,
+            `No active credentials for provider: ${provider}`,
+          );
+        }
+        log.warn("CHAT", "No more accounts available", { provider });
         return errorResponse(
-          HTTP_STATUS.NOT_FOUND,
-          `No active credentials for provider: ${provider}`,
+          lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE,
+          lastError || "All accounts unavailable",
         );
       }
-      log.warn("CHAT", "No more accounts available", { provider });
-      return errorResponse(
-        lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE,
-        lastError || "All accounts unavailable",
-      );
-    }
 
-    // Account selection shown in the unified "▶" line (acc:...)
-    const releaseOnAbort = () => releaseGrantReservation(credentials.grantReservation);
-    if (attempt?.signal?.aborted) {
-      releaseOnAbort();
-      return errorResponse(499, "Request aborted");
-    }
-    attempt?.signal?.addEventListener("abort", releaseOnAbort, { once: true });
-    const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
-
-    // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
-    if (
-      (provider === "antigravity" || provider === "gemini-cli") &&
-      !refreshedCredentials.projectId
-    ) {
-      const pid = await getProjectIdForConnection(
-        credentials.connectionId,
-        refreshedCredentials.accessToken,
-        provider,
-      );
-      if (pid) {
-        refreshedCredentials.projectId = pid;
-        // Persist to DB in background so subsequent requests have it immediately
-        updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => {});
+      // Account selection shown in the unified "▶" line (acc:...)
+      const releaseOnAbort = () => releaseGrantReservation(credentials.grantReservation);
+      if (attempt?.signal?.aborted) {
+        releaseOnAbort();
+        return errorResponse(499, "Request aborted");
       }
+      attempt?.signal?.addEventListener("abort", releaseOnAbort, { once: true });
+      const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+
+      // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
+      if (
+        (provider === "antigravity" || provider === "gemini-cli") &&
+        !refreshedCredentials.projectId
+      ) {
+        const pid = await getProjectIdForConnection(
+          credentials.connectionId,
+          refreshedCredentials.accessToken,
+          provider,
+        );
+        if (pid) {
+          refreshedCredentials.projectId = pid;
+          // Persist to DB in background so subsequent requests have it immediately
+          updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => {});
+        }
+      }
+
+      // Use shared chatCore
+      const chatSettings = await getEffectivePreferences(gateway);
+      const providerThinking = chatSettings.providerThinking?.[provider] || null;
+      const result = await handleChatCore({
+        body: { ...body, model: `${provider}/${model}` },
+        modelInfo: { provider, model },
+        credentials: refreshedCredentials,
+        log,
+        clientRawRequest,
+        connectionId: credentials.connectionId,
+        userAgent,
+        apiKey,
+        ...gatewayKeyContext(gateway),
+        grantId: credentials.grantId ?? null,
+        ccFilterNaming: !!chatSettings.ccFilterNaming,
+        rtkEnabled: !!chatSettings.rtkEnabled,
+        headroomEnabled: !!chatSettings.headroomEnabled,
+        headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
+        headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
+        headroomTimeoutMs: chatSettings.headroomTimeoutMs,
+        cavemanEnabled: !!chatSettings.cavemanEnabled,
+        cavemanLevel: chatSettings.cavemanLevel || "full",
+        ponytailEnabled: !!chatSettings.ponytailEnabled,
+        ponytailLevel: chatSettings.ponytailLevel || "full",
+        pxpipeEnabled: !!chatSettings.pxpipeEnabled,
+        pxpipeMinChars: chatSettings.pxpipeMinChars,
+        pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
+        // Lazily warms the in-process module on first use; null when not installed (fail-open)
+        pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
+        onPxpipeEvent: appendPxpipeEvent,
+        comboName,
+        comboAttempt: attempt,
+        onHedgeCancel: releaseOnAbort,
+        providerThinking,
+        // Detect source format by endpoint + body
+        sourceFormatOverride: sourceFormat,
+        clientSignal: fim ? (request?.signal ?? null) : null,
+        onCredentialsRefreshed: async (newCreds) => {
+          // YAN-365: delta refresh — the repo merges onto the live stored
+          // siblings inside the transaction (never a stale snapshot).
+          await updateProviderCredentials(credentials.connectionId, {
+            ...newCreds,
+            testStatus: "active",
+          });
+        },
+        onRequestSuccess: async () => {
+          await clearAccountError(credentials.connectionId, credentials, model);
+          // "Consecutive" strikes: a success clears the breaker for this pair.
+          clearAntigravityStrikes(credentials.connectionId, model);
+        },
+      });
+
+      if (attempt?.signal?.aborted) {
+        releaseOnAbort();
+        return errorResponse(499, "Request aborted");
+      }
+      attempt?.signal?.removeEventListener("abort", releaseOnAbort);
+      if (result.success) return result.response;
+      // Failed attempts don't count against the grant's rpm/tpm.
+      releaseGrantReservation(credentials.grantReservation);
+      // Local request-prep failure says nothing about the account: no cooldown, no rotation.
+      if (result.localError) return result.response;
+
+      // Antigravity 409/429: refresh live quota to get exact resetAt before locking
+      let quotaResetMs = null;
+      let resetsAtMs = result.resetsAtMs;
+      if (provider === "antigravity" && (result.status === 409 || result.status === 429)) {
+        quotaResetMs = await handleAntigravityQuotaError(
+          credentials.connectionId,
+          result.status,
+          model,
+          refreshedCredentials.accessToken,
+          credentials.providerSpecificData,
+        );
+        if (quotaResetMs) resetsAtMs = quotaResetMs;
+      }
+
+      // Exhausted Antigravity model is blocked only in RAM cache until upstream resetAt.
+      // Do not persist a modelLock_* for this path.
+      const shouldFallback =
+        provider === "antigravity" && quotaResetMs
+          ? true
+          : (
+              await markAccountUnavailable(
+                credentials.connectionId,
+                result.status,
+                result.error,
+                provider,
+                model,
+                resetsAtMs,
+                { grantId: credentials.grantId },
+              )
+            ).shouldFallback;
+
+      if (shouldFallback) {
+        log.warn(
+          "FALLBACK",
+          `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`,
+        );
+        excludeConnectionIds.add(credentials.connectionId);
+        lastError = result.error;
+        lastStatus = result.status;
+        continue;
+      }
+
+      return result.response;
     }
-
-    // Use shared chatCore
-    const chatSettings = await getEffectivePreferences(gateway);
-    const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
-    const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
-      modelInfo: { provider, model },
-      credentials: refreshedCredentials,
-      log,
-      clientRawRequest,
-      connectionId: credentials.connectionId,
-      userAgent,
-      apiKey,
-      ...gatewayKeyContext(gateway),
-      grantId: credentials.grantId ?? null,
-      ccFilterNaming: !!chatSettings.ccFilterNaming,
-      rtkEnabled: !!chatSettings.rtkEnabled,
-      headroomEnabled: !!chatSettings.headroomEnabled,
-      headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
-      headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
-      headroomTimeoutMs: chatSettings.headroomTimeoutMs,
-      cavemanEnabled: !!chatSettings.cavemanEnabled,
-      cavemanLevel: chatSettings.cavemanLevel || "full",
-      ponytailEnabled: !!chatSettings.ponytailEnabled,
-      ponytailLevel: chatSettings.ponytailLevel || "full",
-      pxpipeEnabled: !!chatSettings.pxpipeEnabled,
-      pxpipeMinChars: chatSettings.pxpipeMinChars,
-      pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
-      // Lazily warms the in-process module on first use; null when not installed (fail-open)
-      pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
-      onPxpipeEvent: appendPxpipeEvent,
-      comboName,
-      comboAttempt: attempt,
-      onHedgeCancel: releaseOnAbort,
-      providerThinking,
-      // Detect source format by endpoint + body
-      sourceFormatOverride: sourceFormat,
-      clientSignal: fim ? (request?.signal ?? null) : null,
-      onCredentialsRefreshed: async (newCreds) => {
-        // YAN-365: delta refresh — the repo merges onto the live stored
-        // siblings inside the transaction (never a stale snapshot).
-        await updateProviderCredentials(credentials.connectionId, {
-          ...newCreds,
-          testStatus: "active",
-        });
-      },
-      onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
-        // "Consecutive" strikes: a success clears the breaker for this pair.
-        clearAntigravityStrikes(credentials.connectionId, model);
-      },
-    });
-
-    if (attempt?.signal?.aborted) {
-      releaseOnAbort();
-      return errorResponse(499, "Request aborted");
-    }
-    attempt?.signal?.removeEventListener("abort", releaseOnAbort);
-    if (result.success) return result.response;
-    // Failed attempts don't count against the grant's rpm/tpm.
-    releaseGrantReservation(credentials.grantReservation);
-    // Local request-prep failure says nothing about the account: no cooldown, no rotation.
-    if (result.localError) return result.response;
-
-    // Antigravity 409/429: refresh live quota to get exact resetAt before locking
-    let quotaResetMs = null;
-    let resetsAtMs = result.resetsAtMs;
-    if (provider === "antigravity" && (result.status === 409 || result.status === 429)) {
-      quotaResetMs = await handleAntigravityQuotaError(
-        credentials.connectionId,
-        result.status,
-        model,
-        refreshedCredentials.accessToken,
-        credentials.providerSpecificData,
-      );
-      if (quotaResetMs) resetsAtMs = quotaResetMs;
-    }
-
-    // Exhausted Antigravity model is blocked only in RAM cache until upstream resetAt.
-    // Do not persist a modelLock_* for this path.
-    const shouldFallback =
-      provider === "antigravity" && quotaResetMs
-        ? true
-        : (
-            await markAccountUnavailable(
-              credentials.connectionId,
-              result.status,
-              result.error,
-              provider,
-              model,
-              resetsAtMs,
-              { grantId: credentials.grantId },
-            )
-          ).shouldFallback;
-
-    if (shouldFallback) {
-      log.warn(
-        "FALLBACK",
-        `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`,
-      );
-      excludeConnectionIds.add(credentials.connectionId);
-      lastError = result.error;
-      lastStatus = result.status;
-      continue;
-    }
-
-    return result.response;
-  }
+  };
+  return withBudgetScope(gateway, { provider, model, body, signal: attempt?.signal }, dispatch);
 }

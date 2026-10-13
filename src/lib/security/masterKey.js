@@ -8,6 +8,7 @@ import { getDataDir } from "../dataDir.js";
 const HASH_INFO = "tokenhop/api-key-hash";
 const MASTER_ENV = "TOKENHOP_MASTER_KEY";
 const IS_WINDOWS = process.platform === "win32";
+const MASTER_LABEL = "master key file";
 
 // MASTER_KEY_INVALID keeps message text identical; callers may branch on code.
 // The two "missing" failures keep their established KEY_MISSING code (the
@@ -65,41 +66,6 @@ async function statKeysDir(dir) {
   if (!seen.stat.isDirectory()) fail("keys path must be a directory");
   assertPrivateMode(seen.stat, "keys directory");
   return seen;
-}
-
-async function readValidatedKey(file) {
-  // Validate the exact keys-dir component too: lstat only judges the final
-  // component, so a symlinked keys dir would otherwise be followed silently.
-  // (Symlinks inside DATA_DIR's own parents are the user's own layout; the
-  // keys component itself must be a real private directory.)
-  const dirSeen = await statKeysDir(path.dirname(file));
-  if (dirSeen.status === "missing") return { status: "missing" };
-  if (dirSeen.status === "error") return { status: "error", error: dirSeen.error };
-  // lstat gives a deterministic symlink verdict; the open below also uses
-  // O_NOFOLLOW so a link swapped in between still fails instead of being followed.
-  const pre = await lstatNoFollow(file, "master key file");
-  if (pre.status === "missing") return { status: "missing" };
-  if (pre.status === "error") return { status: "error", error: pre.error };
-  let handle;
-  try {
-    handle = await fs.open(file, IS_WINDOWS ? "r" : constants.O_RDONLY | constants.O_NOFOLLOW);
-  } catch (error) {
-    if (error?.code === "ELOOP") fail("master key file must not be a symlink");
-    return { status: error?.code === "ENOENT" ? "missing" : "error", error };
-  }
-  try {
-    const stat = await handle.stat();
-    if (!stat.isFile()) fail("master key file must be a regular file");
-    // Size precheck bounds the read: oversized roots are rejected without loading them.
-    if (stat.size !== 32) fail("master key file corrupt: expected 32 bytes");
-    assertPrivateMode(stat, "master key file");
-    const buffer = Buffer.alloc(32);
-    const { bytesRead } = await handle.read(buffer, 0, 32, 0);
-    if (bytesRead !== 32) fail("master key file corrupt: expected 32 bytes");
-    return { status: "ok", data: buffer };
-  } finally {
-    await handle.close();
-  }
 }
 
 async function ensureKeysDir(dir) {
@@ -166,10 +132,10 @@ async function createExclusive(file, dir) {
       await fs.link(tmp, file);
     } catch (error) {
       if (error?.code !== "EEXIST") throw error;
-      const seen = await readValidatedKey(file);
+      const seen = readValidatedKeyFileSync(file, MASTER_LABEL);
       if (seen.status === "error") throw seen.error;
       if (seen.status !== "ok") fail("master key disappeared during creation");
-      key = seen.data;
+      key = seen.key;
     }
     await fs.unlink(tmp);
     owned = false;
@@ -213,14 +179,16 @@ export async function loadMasterKey({ create = false, expectedKid = null } = {})
     return { kid, key };
   }
   const file = path.join(getDataDir(), "keys", "master");
-  const seen = await readValidatedKey(file);
+  // Live validated read on every call (no cache): one sync pass instead of ~6
+  // threadpool fs ops. Same validator as readMasterKeyFileSync.
+  const seen = readValidatedKeyFileSync(file, MASTER_LABEL);
   if (seen.status === "ok") {
-    const kid = masterKeyId(seen.data);
+    const kid = masterKeyId(seen.key);
     checkKid(kid, expectedKid);
-    return { kid, key: seen.data };
+    return { kid, key: seen.key };
   }
   if (seen.status === "error") throw seen.error;
-  // Corrupt/partial roots throw inside readValidatedKey and are never
+  // Corrupt/partial roots throw inside readValidatedKeyFileSync and are never
   // unlinked or regenerated, even with create:true.
   if (expectedKid != null) fail("master key missing for expected id", "KEY_MISSING");
   if (!create) fail("master key missing; pass { create: true } to initialize", "KEY_MISSING");
@@ -230,16 +198,12 @@ export async function loadMasterKey({ create = false, expectedKid = null } = {})
 
 // ─── Sync root primitives (YAN-365 B4 key rotation) ────────────────────────
 // The rotation service must not yield between its durable DB commit and file
-// publication, so these mirror the async loader's safety rules synchronously:
+// publication, so these apply the loader's safety rules synchronously (the
+// async loader reads through the same validator):
 // exclusive-create staging (0600), no symlink follows, checked size/modes and
 // POSIX directory fsync. The async loader semantics above stay unchanged, and
 // every runtime caller of loadMasterKey re-reads the root per call, so a
 // published new root is picked up without any cache invalidation.
-
-function assertPrivateModeSync(stat, label) {
-  if (IS_WINDOWS) return;
-  if ((stat.mode & 0o077) !== 0) fail(`${label} must not be group/other accessible`);
-}
 
 function lstatNoFollowSync(target, label) {
   let stat;
@@ -253,14 +217,15 @@ function lstatNoFollowSync(target, label) {
   return { status: "ok", stat };
 }
 
-// Mirrors async readValidatedKey: the keys/ component itself must be a real
-// private directory before the file inside it is judged.
+// The keys/ component itself must be a real private directory before the file
+// inside it is judged. Single validator shared by loadMasterKey (async API) and
+// readMasterKeyFileSync.
 function assertKeysDirSync(file) {
   const dirSeen = lstatNoFollowSync(path.dirname(file), "keys directory");
   if (dirSeen.status === "missing") return dirSeen;
   if (dirSeen.status === "error") return dirSeen;
   if (!dirSeen.stat.isDirectory()) fail("keys path must be a directory");
-  assertPrivateModeSync(dirSeen.stat, "keys directory");
+  assertPrivateMode(dirSeen.stat, "keys directory");
   return dirSeen;
 }
 
@@ -272,16 +237,19 @@ function readValidatedKeyFileSync(file, label) {
   if (seen.status !== "ok") return seen;
   let fd;
   try {
-    fd = fsSync.openSync(file, IS_WINDOWS ? "r" : constants.O_RDONLY | constants.O_NOFOLLOW);
+    fd = fsSync.openSync(
+      file,
+      IS_WINDOWS ? "r" : constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
   } catch (error) {
     if (error?.code === "ELOOP") fail(`${label} must not be a symlink`);
-    return { status: "error", error };
+    return error?.code === "ENOENT" ? { status: "missing" } : { status: "error", error };
   }
   try {
     const stat = fsSync.fstatSync(fd);
     if (!stat.isFile()) fail(`${label} must be a regular file`);
     if (stat.size !== 32) fail(`${label} corrupt: expected 32 bytes`);
-    assertPrivateModeSync(stat, label);
+    assertPrivateMode(stat, label);
     const buffer = Buffer.alloc(32);
     if (fsSync.readSync(fd, buffer, 0, 32, 0) !== 32) {
       fail(`${label} corrupt: expected 32 bytes`);
@@ -296,7 +264,7 @@ function ensureKeysDirSync(dir) {
   const before = lstatNoFollowSync(dir, "keys directory");
   if (before.status === "ok") {
     if (!before.stat.isDirectory()) fail("keys path must be a directory");
-    assertPrivateModeSync(before.stat, "keys directory");
+    assertPrivateMode(before.stat, "keys directory");
     return;
   }
   if (before.status === "error") throw before.error;
@@ -313,7 +281,7 @@ function ensureKeysDirSync(dir) {
   if (after.status === "missing") fail("keys directory missing after create");
   if (after.status === "error") throw after.error;
   if (!after.stat.isDirectory()) fail("keys path must be a directory");
-  assertPrivateModeSync(after.stat, "keys directory");
+  assertPrivateMode(after.stat, "keys directory");
 }
 
 function syncDirSync(dir) {

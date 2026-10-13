@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -202,5 +202,136 @@ describe("catalog schema", () => {
       globalThis.fetch = realFetch;
     }
     expect(sent[0]["if-none-match"]).toBe('W/"new"');
+  });
+});
+
+describe("catalog snapshot lookup", () => {
+  // Every write takes a fresh whole-second mtime, so no test depends on what an
+  // earlier one left behind and a replacement is always visible to the stat check.
+  let nextMtime = 10_000;
+  const write = (models, providers, mtimeSec = nextMtime++) => {
+    const tmp = `${catalogFile}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ v: 2, models, providers }));
+    fs.utimesSync(tmp, mtimeSec, mtimeSec);
+    fs.renameSync(tmp, catalogFile); // atomic replacement, as the sync writer does
+  };
+  const EMPTY_ENTRY = { modalities: null, limits: null };
+  let mod;
+  let stat;
+
+  beforeAll(async () => {
+    mod = await import("../../open-sse/providers/catalogOverride.js");
+    await mod.installCatalogSource();
+  });
+  afterAll(() => capabilities.setCatalogSource(null));
+  beforeEach(() => {
+    write({}, {}); // own empty baseline for each test
+    mod.invalidateCatalog();
+    stat = vi.spyOn(fs, "statSync");
+  });
+  afterEach(() => {
+    stat.mockRestore();
+    mod.invalidateCatalog();
+  });
+
+  const caps = () => capabilities.getCapabilitiesForModel("gw", "laguna-9-preview");
+
+  it("refine does exactly one stat per lookup", () => {
+    write(
+      { "gw:laguna-9-preview": { vision: true } },
+      { gw: { "laguna-9-preview": { contextWindow: 5000, maxOutput: 700 } } },
+    );
+    caps(); // first call parses
+    stat.mockClear();
+    const result = caps();
+    expect(result).toMatchObject({ vision: true, contextWindow: 5000, maxOutput: 700 });
+    expect(stat).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the exported getters and the combined entry consistent", () => {
+    write(
+      { "gw:laguna-9-preview": { pdf: true } },
+      { gw: { "laguna-9-preview": { contextWindow: 5000, maxOutput: 700 } } },
+    );
+    const entry = mod.getCatalogEntry("gw", "laguna-9-preview");
+    expect(entry).toEqual({
+      modalities: { pdf: true },
+      limits: { contextWindow: 5000, maxOutput: 700 },
+    });
+    expect(entry.modalities).toEqual(mod.getCatalogModalities("gw", "laguna-9-preview"));
+    expect(entry.limits).toEqual(mod.getCatalogLimits("gw", "laguna-9-preview"));
+    stat.mockClear();
+    mod.getCatalogEntry("gw", "laguna-9-preview");
+    expect(stat).toHaveBeenCalledTimes(1);
+  });
+
+  it("picks up an atomic replacement by mtime", () => {
+    expect(caps().contextWindow).toBe(capabilities.DEFAULT_CAPABILITIES.contextWindow);
+    write({}, { gw: { "laguna-9-preview": { contextWindow: 6000, maxOutput: 800 } } });
+    expect(caps()).toMatchObject({ vision: false, contextWindow: 6000, maxOutput: 800 });
+  });
+
+  it("handles deletion and recreation", () => {
+    write({ "gw:laguna-9-preview": { pdf: true } }, {});
+    expect(caps().pdf).toBe(true);
+    fs.rmSync(catalogFile);
+    expect(mod.getCatalogEntry("gw", "laguna-9-preview")).toEqual(EMPTY_ENTRY);
+    expect(caps().pdf).toBe(false);
+    write({ "gw:laguna-9-preview": { pdf: true } }, {});
+    expect(caps().pdf).toBe(true);
+  });
+
+  it("re-reads on invalidate even when mtime is unchanged", () => {
+    const mtime = nextMtime++;
+    write({ "gw:laguna-9-preview": { pdf: true } }, {}, mtime);
+    expect(caps().pdf).toBe(true);
+    // rewrite in place and restore the same mtime: the stat check cannot see it
+    fs.writeFileSync(catalogFile, JSON.stringify({ v: 2, models: {}, providers: {} }));
+    fs.utimesSync(catalogFile, mtime, mtime);
+    expect(caps().pdf).toBe(true); // stale by design: same mtime
+    mod.invalidateCatalog();
+    expect(caps().pdf).toBe(false);
+  });
+
+  it("treats malformed JSON as empty until the file is fixed", () => {
+    write({ "gw:laguna-9-preview": { vision: true } }, {});
+    expect(caps().vision).toBe(true);
+    const bad = nextMtime++;
+    fs.writeFileSync(catalogFile, "{not json");
+    fs.utimesSync(catalogFile, bad, bad);
+    expect(mod.getCatalogEntry("gw", "laguna-9-preview")).toEqual(EMPTY_ENTRY);
+    expect(caps().vision).toBe(false);
+    write({ "gw:laguna-9-preview": { vision: true } }, {});
+    expect(caps().vision).toBe(true);
+  });
+
+  it("falls back to the separate getters for a source without getEntry", async () => {
+    capabilities.setCatalogSource({
+      getModalities: () => ({ audioInput: true }),
+      getLimits: () => ({ contextWindow: 123, maxOutput: 45 }),
+    });
+    try {
+      expect(caps()).toMatchObject({ audioInput: true, contextWindow: 123, maxOutput: 45 });
+    } finally {
+      capabilities.setCatalogSource(null);
+      await mod.installCatalogSource();
+    }
+  });
+
+  it("ignores a nullish getEntry result", () => {
+    capabilities.setCatalogSource(null);
+    const baseline = caps();
+    try {
+      for (const value of [null, undefined]) {
+        capabilities.setCatalogSource({
+          getModalities: () => ({ audioInput: true }),
+          getLimits: () => ({ contextWindow: 123 }),
+          getEntry: () => value,
+        });
+        expect(caps()).toEqual(baseline);
+      }
+    } finally {
+      capabilities.setCatalogSource(null);
+    }
   });
 });

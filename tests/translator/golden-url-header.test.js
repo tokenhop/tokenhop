@@ -54,6 +54,8 @@ function sanitize(headers) {
             .replace(/sk-test-APIKEY|tok-test-ACCESS/g, "<CRED>")
             .replace(/kimi-\d{10,}/g, "kimi-<TS>")
         : v;
+    // cline buildHeaders sends process.version → varies per Node runtime.
+    if (k === "X-PLATFORM-VERSION") out[k] = "<NODE_VERSION>";
   }
   return out;
 }

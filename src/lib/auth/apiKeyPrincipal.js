@@ -6,7 +6,7 @@
 import { getAdapter } from "../db/driver.js";
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { getHashedApiKeyByHashUnscoped, getEligibleApiKeySync } from "../db/repos/apiKeysRepo.js";
-import { getApiKeyHashKey } from "../security/apiKeyHashKey.js";
+import { resolveApiKeyHashKeyForAuth } from "../security/apiKeyHashKey.js";
 import { hashApiKey } from "../security/masterKey.js";
 
 // Spec bounds (feature-spec "API Design"): bearer tokens cap at 4096 bytes,
@@ -46,9 +46,10 @@ export function clearApiKeyPrincipalCache() {
  * Missing/malformed/inactive/expired/revoked keys return null. Storage and
  * root errors propagate; never fall back to owner/session/CLI/local.
  * @param {string} presented raw bearer bytes, untrimmed
+ * @param {{apiKeyState?: object}} [opts] storage state the caller already read
  * @returns {Promise<{workspaceId:string,userId:string|null,apiKeyId:string,scopes:{allowedModels:string[],allowedCombos:string[]},via:"apiKey"}|null>}
  */
-export async function resolveApiKey(presented) {
+export async function resolveApiKey(presented, { apiKeyState } = {}) {
   if (typeof presented !== "string" || presented.length === 0) return null;
   if (presented.length > MAX_TOKEN_BYTES || Buffer.byteLength(presented, "utf8") > MAX_TOKEN_BYTES)
     return null;
@@ -58,38 +59,40 @@ export async function resolveApiKey(presented) {
     if (code <= 0x20 || code === 0x7f || /\s/u.test(ch)) return null;
   }
   const db = await getAdapter();
-  const state = readApiKeyStorageState(db);
+  const state = apiKeyState ?? readApiKeyStorageState(db);
   if (state.storage === "legacy") return null;
   // Stable hash-key getter (YAN-365 D6): pre-encryption HKDF of the frozen
   // kid's master; after credential encryption an authenticated unwrap under
   // the current KEK. Root/unwrap errors propagate; no fallback.
-  const { hashKey } = await getApiKeyHashKey(db);
-  const digest = hashApiKey(presented, hashKey);
-  const now = new Date().toISOString();
-  let row = null;
-  const cachedId = cacheGet(digest);
-  if (cachedId) {
-    row = getEligibleApiKeySync(db, cachedId, { keyHash: digest, now });
-    // Stale cache entry (revoked/disabled/left/expired): live check fails,
-    // entry is useless. Fall through to the indexed lookup so a hash that
-    // moved to a new row can still resolve without waiting for TTL.
-    if (!row) cache.delete(digest);
+  const { hashKey, mint, release } = await resolveApiKeyHashKeyForAuth(db, { apiKeyState: state });
+  try {
+    const digest = hashApiKey(presented, hashKey);
+    const now = new Date().toISOString();
+    let row = null;
+    const cachedId = cacheGet(digest);
+    if (cachedId) {
+      row = getEligibleApiKeySync(db, cachedId, { keyHash: digest, now });
+      // Stale cache entry (revoked/disabled/left/expired): live check fails,
+      // entry is useless. Fall through to the indexed lookup so a hash that
+      // moved to a new row can still resolve without waiting for TTL.
+      if (!row) cache.delete(digest);
+    }
+    if (!row) {
+      row = getHashedApiKeyByHashUnscoped(db, digest);
+      if (!row) return null;
+      row = getEligibleApiKeySync(db, row.id, { keyHash: digest, now });
+      if (!row) return null;
+    }
+    cacheSet(digest, row.id);
+    // Fresh frozen principal per call; the scope is request-local and dies with it.
+    return mint({
+      workspaceId: row.workspaceId,
+      userId: row.userId,
+      apiKeyId: row.id,
+      scopes: { allowedModels: row.allowedModels, allowedCombos: row.allowedCombos },
+      via: "apiKey",
+    });
+  } finally {
+    release(); // idempotent: the seed never outlives this authentication
   }
-  if (!row) {
-    row = getHashedApiKeyByHashUnscoped(db, digest);
-    if (!row) return null;
-    row = getEligibleApiKeySync(db, row.id, { keyHash: digest, now });
-    if (!row) return null;
-  }
-  cacheSet(digest, row.id);
-  return Object.freeze({
-    workspaceId: row.workspaceId,
-    userId: row.userId,
-    apiKeyId: row.id,
-    scopes: Object.freeze({
-      allowedModels: Object.freeze([...row.allowedModels]),
-      allowedCombos: Object.freeze([...row.allowedCombos]),
-    }),
-    via: "apiKey",
-  });
 }

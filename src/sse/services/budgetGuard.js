@@ -370,10 +370,18 @@ export async function budgeted(principal, opts, self) {
   return withBudget(principal, opts, self);
 }
 
-/** Same as `budgeted`, for callers that can't re-enter: wraps `run` or just runs it. */
+/**
+ * Same as `budgeted`, for callers that can't re-enter: reserves then runs
+ * `run` inside the scope, or just runs it (no budgets / already scoped).
+ * `run` executes exactly once on every path, whatever it returns.
+ */
 export async function withBudgetScope(principal, opts, run) {
-  return (await budgeted(principal, opts, run)) ?? run();
+  if (requestHolds.getStore() || !(await hasBudgets(principal))) return run();
+  return withBudget(principal, opts, run);
 }
+
+/** True while running inside a reserved budget scope (after pricing + reserve). */
+export const inBudgetScope = () => requestHolds.getStore() !== undefined;
 
 async function withBudget(principal, opts, run) {
   // A hedge race may abort between selection and dispatch: no hold, no run.

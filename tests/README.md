@@ -90,6 +90,26 @@ inputs. The script's header lists the exact commands, what it covers, and the
 checks that stay manual. Everything runs under a temp `HOME` and `th344-`-prefixed
 containers and volumes, all removed on exit.
 
+## v1.0.3 → master upgrade rehearsal and gateway bench (YAN-378)
+
+Two manual, Docker-based, non-CI scripts (stdlib only; helpers in `tests/e2e/upgrade-v1/`).
+
+`tests/e2e/upgrade-from-v1.0.mjs` pulls `ghcr.io/tokenhop/tokenhop:1.0.3` (never a local `:latest`) and builds this checkout as `yan378-master`, labeled with a fingerprint of HEAD, the tracked diff and untracked file contents. `--reuse-master` accepts only an image whose label matches the current tree; `--final` marks the log `EVIDENCE=final` (otherwise `baseline`). Image IDs and the 1.0.3 RepoDigest/version are printed, and each container runs the resolved immutable image ID, not the tag. The 1.0.3 tag is not digest-pinned: a registry retag between `pull` and run is a documented TOCTOU, visible as a different printed RepoDigest. It seeds v1.0.3 through its real HTTP API (stored password, mock OIDC IdP with RS256 JWKS, SAML config, an openai-compatible node on a loopback mock upstream, connection, 2 combos, alias, 2 keys, 200 stream and non-stream chat calls with exact per-key/model/token totals), then:
+
+- **Leg A** (switch off, no `INITIAL_PASSWORD`, so the stored hash must authenticate): data, keys, SSO/SAML, usage and the in-container CLI survive; no activation markers.
+- **Leg B** (`TOKENHOP_MULTI_USER=on`): activation migration, protected `gateway-key-activation-*` backup (pre-activation, integrity ok, `0700`/`0600`), master root modes, no seeded secret in live DB/WAL bytes or TEXT/BLOB rows (with a positive control on the pre-upgrade DB), authenticated envelopes and hashed keys, restart without a second activation, then a second SSO user with positive own-resource controls and exact-status negatives (providers, combos, aliases, nodes, key detail, mutations, export, users, audit, usage stats/stream, chat with no/bad/other-user keys).
+- **Fail closed**: wrong root and missing root must TERMINATE with a nonzero exit, leave no TCP listener and answer no HTTP status; a container that stays `Running` and returns 500 counts as failure. Switch-off after activation keeps hashed storage. After a second user exists, owner password re-login sends the owner's explicit login identifier, because omitting it is ambiguous by product design.
+- **Rollback** per `UPGRADING.md`: the intended pre-schema backup is restored with no `-wal`/`-shm`, sha256 and `integrity_check` verified before start, 1.0.3 started with a different `INITIAL_PASSWORD`, schema objects compared (the automatic backup snapshot is table shells and rows only: indexes, triggers and `requestDetails` are omitted by `backupDbLite` by design, so the backup is compared on table shells while the live restored DB must round-trip the complete schema), and keys, combos, alias, node, connection, SSO settings, password and usage re-asserted.
+
+`tests/e2e/gateway-overhead-bench.mjs` copies the seeded DB to three variants (1.0.3, master off, master on) and runs at least 5 rounds. Each round has four cells (sequential/concurrent x stream/non-stream) with the variant order shuffled per round. The accepted-risk note: automatic backups exclude `requestDetails`, so rollback compares only `usageHistory`. It asserts content, upstream-hit and usage-row deltas, and that activation really differs between variants. Master-on additionally carries exactly one active, non-limiting workspace TOTAL budget: spend delta must equal its request count, stay under 1% of every limit and never produce `budget_exceeded`. The gate is the median over rounds of master-on vs 1.0.3 at p50 and p95 per cell, 5% threshold, with the 95% interval and absolute ms printed. On a ~20 ms request 5% is ~1 ms, so read the absolute deltas on a noisy host. It exits 2 when 1-minute load exceeds `--max-load`.
+
+All containers and scratch state are `yan378-` prefixed and labeled `yan378-run=<id>`, bind loopback only (asserted), and are removed on exit, SIGHUP, SIGINT and SIGTERM; nothing else on a shared Docker daemon is touched. Run on a quiet host:
+
+```bash
+node tests/e2e/upgrade-from-v1.0.mjs          # --reuse-master reuses a fingerprint-matching image
+node tests/e2e/gateway-overhead-bench.mjs     # [--rounds 5..31] [--requests 120] [--concurrency 4] [--max-load N] [--reuse-master] [--final]
+```
+
 ## Tenancy isolation tests
 
 Users & teams (YAN-354). SQLite has no row-level security, so two guards run in `npm test`:

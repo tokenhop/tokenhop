@@ -208,7 +208,7 @@ restart.
   (`hashed-compat`): hash validation, key management, routing and transfer
   continue; switch-off controls rollout, not established security.
 - **Backups**: the mandatory pre-migration backup lives under
-  `DATA_DIR/backups/gateway-key-activation-*` (`0600`/`0700`) and is exempt
+  `DATA_DIR/db/backups/gateway-key-activation-*` (`0600`/`0700`) and is exempt
   from auto-prune. Backup dirs and raw historical backups are preserved, not
   forensically erased. The v2 instance backup file contains identity/password
   hashes and provider credentials — protect it like the root itself.

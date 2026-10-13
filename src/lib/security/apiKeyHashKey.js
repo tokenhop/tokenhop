@@ -10,10 +10,15 @@
 // admission. No driver/barrel/switch/session imports; callers that already
 // hold a root pass `{ root: { kid, key } }` to avoid re-loading.
 import { deriveApiKeyHashKey, loadMasterKey } from "./masterKey.js";
-import { buildHashKeyWrapAad, decryptBytes, isEnvelopeShape } from "./envelope.js";
+import { buildHashKeyWrapAad, decryptBytes, isEnvelopeShape, zeroBuffer } from "./envelope.js";
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
-import { readCredentialEncryptionState } from "../db/credentialEncryptionState.js";
+import {
+  readCredentialEncryptionState,
+  readCredentialMarkerValues,
+} from "../db/credentialEncryptionState.js";
 import { assertCredentialOperationAllowed } from "../db/credentialMaintenance.js";
+import { mintGatewayPrincipal } from "./requestCredentialScope.js";
+import { DEK_CACHE_TTL_MS } from "../db/helpers/credentialStorage.js";
 
 function fail(code, message) {
   throw Object.assign(new Error(`[api-key-hash-key] ${message}`), { code });
@@ -24,27 +29,28 @@ function metaValue(db, key) {
 }
 
 // Marker-tuple memo per adapter: the credential state is a pure function of
-// six `_meta` values plus the workspaceKeys count. The legacy verdict's
-// envelope sniff is the expensive part; the tuple check is point selects, so
+// five `_meta` values plus the workspaceKeys count. The legacy verdict's
+// envelope sniff is the expensive part; the tuple check is one batch select, so
 // hot per-request callers never rescan tables. A marker change flips the
 // tuple and forces a fresh read. If rows mutate without a marker change
 // (corruption mid-process), the next restart re-verifies from scratch.
 const stateCache = new WeakMap(); // db -> { sig, state }
 
 function credentialState(db) {
+  const values = readCredentialMarkerValues(db);
   const sig = [
-    metaValue(db, "credentialsEncryptedVersion"),
-    metaValue(db, "credentialsKekKid"),
-    metaValue(db, "credentialsCleanupPending"),
-    metaValue(db, "credentialsPendingRotation"),
-    metaValue(db, "apiKeyHashKeyWrapped"),
+    values.credentialsEncryptedVersion,
+    values.credentialsKekKid,
+    values.credentialsCleanupPending,
+    values.credentialsPendingRotation,
+    values.apiKeyHashKeyWrapped,
     db.get(`SELECT COUNT(*) AS c FROM workspaceKeys`)?.c ?? 0,
   ].join("|");
   const hit = stateCache.get(db);
-  if (hit && hit.sig === sig) return hit.state;
+  if (hit && hit.sig === sig) return { state: hit.state, values };
   const state = readCredentialEncryptionState(db);
   stateCache.set(db, { sig, state });
-  return state;
+  return { state, values };
 }
 
 /** Test/back-compat hook: drop the memoized state (marker writes in-process). */
@@ -97,8 +103,8 @@ function unwrapFrozenHashKey(db, root, cred, hashKid) {
   return { hashKid, hashKey };
 }
 
-function resolve(db, root, cred) {
-  const apiKey = readApiKeyStorageState(db);
+function resolve(db, root, cred, apiKeyState) {
+  const apiKey = apiKeyState ?? readApiKeyStorageState(db);
   if (apiKey.storage !== "hashed") {
     fail("API_KEY_STATE_INVALID", "hashed API key storage required");
   }
@@ -118,20 +124,59 @@ function resolve(db, root, cred) {
  * Async facade. `root` may be omitted; the root is then loaded with the kid
  * the current state demands (frozen hash kid pre-encryption, current KEK kid
  * after) — a rotated KEK never satisfies the legacy expectation and vice versa.
- * @param {object} [opts] `{ root?: {kid:string,key:Buffer} }`
+ * `apiKeyState` is an already-read storage state (skips the re-reads).
+ * @param {object} [opts] `{ root?, apiKeyState? }`
  * @returns {Promise<{hashKid:string,hashKey:Buffer}>}
  */
 export async function getApiKeyHashKey(db, opts = {}) {
+  return (await hashKeyAndRoot(db, opts)).out;
+}
+
+/**
+ * Gateway auth: hash key plus a ONE-SHOT `mint(fields)` that creates the single
+ * seeded principal for this authentication. The seed (root copy) is released on
+ * first use; a second call, or a call after `release()`, throws. The root never
+ * leaves this closure.
+ * @returns {Promise<{hashKid:string,hashKey:Buffer,mint:(fields:object)=>object,release:()=>void}>}
+ */
+export async function resolveApiKeyHashKeyForAuth(db, { apiKeyState } = {}) {
+  const { out, root, state, markers } = await hashKeyAndRoot(db, { apiKeyState });
+  const at = Date.now();
+  let seed = {
+    root: state.storage === "encrypted" ? { kid: root.kid, key: Buffer.from(root.key) } : null,
+    state,
+    markers,
+  };
+  const release = () => {
+    if (seed?.root) zeroBuffer(seed.root.key);
+    seed = null;
+  };
+  const mint = (fields) => {
+    if (!seed) throw new Error("Request credential seed already released");
+    try {
+      if (Date.now() - at >= DEK_CACHE_TTL_MS) throw new Error("Request credential seed expired");
+      return mintGatewayPrincipal(fields, db, seed);
+    } finally {
+      release();
+    }
+  };
+  return { ...out, mint, release };
+}
+
+async function hashKeyAndRoot(db, opts) {
   assertCredentialOperationAllowed(db);
-  const cred = credentialState(db);
-  if (opts.root !== undefined && opts.root !== null) return resolve(db, opts.root, cred);
-  const apiKey = readApiKeyStorageState(db);
-  if (apiKey.storage !== "hashed") {
-    fail("API_KEY_STATE_INVALID", "hashed API key storage required");
+  const { state: cred, values } = credentialState(db);
+  const apiKey = opts.apiKeyState ?? readApiKeyStorageState(db);
+  let root = opts.root;
+  if (root === undefined || root === null) {
+    if (apiKey.storage !== "hashed") {
+      fail("API_KEY_STATE_INVALID", "hashed API key storage required");
+    }
+    const expectedKid = cred.storage === "encrypted" ? cred.kekKid : apiKey.hashKid;
+    const { kid, key } = await loadMasterKey({ expectedKid });
+    root = { kid, key };
   }
-  const expectedKid = cred.storage === "encrypted" ? cred.kekKid : apiKey.hashKid;
-  const { kid, key } = await loadMasterKey({ expectedKid });
-  return resolve(db, { kid, key }, cred);
+  return { out: resolve(db, root, cred, apiKey), root, state: cred, markers: values };
 }
 
 /**
@@ -141,5 +186,5 @@ export async function getApiKeyHashKey(db, opts = {}) {
  */
 export function resolveApiKeyHashKeySync(db, root) {
   assertCredentialOperationAllowed(db);
-  return resolve(db, root, credentialState(db));
+  return resolve(db, root, credentialState(db).state);
 }

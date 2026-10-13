@@ -56,17 +56,35 @@ function load() {
 // by model id alone made short ids collide across vendors: "auto", "free" and
 // "efficient" are router modes in one catalog and model names in another, and a
 // request to the router mode inherited a stranger's vision.
-export function getCatalogModalities(provider, model) {
+function modalitiesIn(snapshot, provider, model) {
   if (!provider) return null;
-  return load().models[`${provider}:${baseId(model)}`] || null;
+  return snapshot.models[`${provider}:${baseId(model)}`] || null;
 }
 
 // Context and output limits are a property of the gateway too: each one
 // truncates differently, so these stay keyed by provider + model.
-export function getCatalogLimits(provider, model) {
-  const byProvider = provider && load().providers[provider];
+function limitsIn(snapshot, provider, model) {
+  const byProvider = provider && snapshot.providers[provider];
   if (!byProvider) return null;
   return byProvider[model] || byProvider[baseId(model)] || null;
+}
+
+export function getCatalogModalities(provider, model) {
+  return modalitiesIn(load(), provider, model);
+}
+
+export function getCatalogLimits(provider, model) {
+  return limitsIn(load(), provider, model);
+}
+
+// Both lookups against one snapshot: a single stat (and at most one parse) per
+// call, and modalities and limits can never come from two different files.
+export function getCatalogEntry(provider, model) {
+  const snapshot = load();
+  return {
+    modalities: modalitiesIn(snapshot, provider, model),
+    limits: limitsIn(snapshot, provider, model),
+  };
 }
 
 // Force a re-read on the next lookup (called right after a sync writes the file).
@@ -78,5 +96,9 @@ export function invalidateCatalog() {
 // too, so it cannot import this file directly — the server pushes it in.
 export async function installCatalogSource() {
   const { setCatalogSource } = await import("./capabilities.js");
-  setCatalogSource({ getModalities: getCatalogModalities, getLimits: getCatalogLimits });
+  setCatalogSource({
+    getModalities: getCatalogModalities,
+    getLimits: getCatalogLimits,
+    getEntry: getCatalogEntry,
+  });
 }

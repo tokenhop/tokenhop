@@ -1648,7 +1648,8 @@ let catalogSource = null;
 /**
  * Install the synced catalog reader (server only).
  * @param {{ getModalities: (provider: string, model: string) => object|null,
- *           getLimits: (provider: string, model: string) => object|null } | null} source
+ *           getLimits: (provider: string, model: string) => object|null,
+ *           getEntry?: (provider: string, model: string) => { modalities: object|null, limits: object|null } } | null} source
  */
 export function setCatalogSource(source) {
   catalogSource = source;
@@ -1669,14 +1670,21 @@ function refine(base, provider, model) {
 
   const source = getCatalogSource();
   if (source) {
-    const modalities = source.getModalities(provider, model);
+    // getEntry reads both from one snapshot (one stat); the pair of getters
+    // remains for sources that predate it.
+    const { modalities, limits } =
+      (source.getEntry
+        ? source.getEntry(provider, model)
+        : {
+            modalities: source.getModalities(provider, model),
+            limits: source.getLimits(provider, model),
+          }) ?? {};
     if (modalities) {
       for (const key of MODALITY_KEYS) {
         if (modalities[key] === true) result[key] = true;
       }
     }
 
-    const limits = source.getLimits(provider, model);
     if (limits) {
       if (limits.contextWindow > 0) result.contextWindow = limits.contextWindow;
       if (limits.maxOutput > 0) result.maxOutput = limits.maxOutput;

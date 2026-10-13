@@ -1,6 +1,8 @@
 // YAN-363 P0: unused crypto contracts; run only with tests/vitest.config.js.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import crypto from "node:crypto";
+import { execFileSync, spawn } from "node:child_process";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { assertIsolatedHome } from "../helpers/isolatedHome.js";
@@ -381,5 +383,203 @@ describe("lazy private master root", () => {
     ).rejects.toThrow();
     expect(await exists(file)).toBe(false);
     expect((await loadMasterKey({ expectedKid: kid })).key.equals(master)).toBe(true);
+  });
+});
+
+describe("async loader reuses the sync validated reader, uncached", () => {
+  const other = Buffer.alloc(32, 7);
+  const provision = async (bytes = master) => {
+    await fs.mkdir(path.dirname(file), { mode: 0o700 });
+    await fs.writeFile(file, bytes, { mode: 0o600 });
+  };
+  const outcome = async (run) => {
+    try {
+      return { ok: await run() };
+    } catch (e) {
+      return { code: e.code, message: e.message };
+    }
+  };
+
+  it("every call rereads the live file: replaced, rotated and removed roots are seen at once", async () => {
+    const { loadMasterKey, masterKeyId } = await security();
+    await provision();
+    expect((await loadMasterKey({ expectedKid: kid })).key.equals(master)).toBe(true);
+    await fs.writeFile(file, other, { mode: 0o600 });
+    const rotated = await loadMasterKey();
+    expect(rotated.key.equals(other)).toBe(true);
+    expect(rotated.kid).toBe(masterKeyId(other));
+    await expect(loadMasterKey({ expectedKid: kid })).rejects.toThrow(/id mismatch/);
+    // Atomic replace via rename (new inode) is also picked up.
+    const tmp = `${file}.swap`;
+    await fs.writeFile(tmp, master, { mode: 0o600 });
+    await fs.rename(tmp, file);
+    expect((await loadMasterKey()).key.equals(master)).toBe(true);
+    await fs.rm(file);
+    await expect(loadMasterKey()).rejects.toMatchObject({ code: "KEY_MISSING" });
+    await expect(loadMasterKey({ expectedKid: kid })).rejects.toMatchObject({
+      code: "KEY_MISSING",
+    });
+  });
+
+  it("returns a fresh Buffer each call (no shared memo)", async () => {
+    const { loadMasterKey } = await security();
+    await provision();
+    const a = await loadMasterKey();
+    const b = await loadMasterKey();
+    expect(a.key).not.toBe(b.key);
+    a.key.fill(0);
+    expect(b.key.equals(master)).toBe(true);
+    expect((await loadMasterKey()).key.equals(master)).toBe(true);
+  });
+
+  it("env root is unchanged: no file read, file ignored", async () => {
+    const { loadMasterKey } = await security();
+    await provision(other);
+    vi.stubEnv("TOKENHOP_MASTER_KEY", master.toString("base64"));
+    expect((await loadMasterKey({ expectedKid: kid })).key.equals(master)).toBe(true);
+    await fs.rm(file);
+    expect((await loadMasterKey()).key.equals(master)).toBe(true);
+  });
+
+  it.skipIf(process.platform === "win32")("non-regular master file is rejected", async () => {
+    await fs.mkdir(path.dirname(file), { mode: 0o700 });
+    await fs.mkdir(file, { mode: 0o700 });
+    const { loadMasterKey } = await security();
+    await expect(loadMasterKey({ create: true })).rejects.toMatchObject({
+      code: "MASTER_KEY_INVALID",
+      message: expect.stringMatching(/regular file/),
+    });
+    expect((await fs.lstat(file)).isDirectory()).toBe(true);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "async loader and readMasterKeyFileSync agree on every invalid layout",
+    async () => {
+      const mk = await security();
+      const keys = path.dirname(file);
+      const reset = async () => {
+        await fs.chmod(keys, 0o700).catch(() => {});
+        await fs.rm(keys, { recursive: true, force: true });
+      };
+      const layouts = {
+        "missing dir": async () => {},
+        "missing file": async () => fs.mkdir(keys, { mode: 0o700 }),
+        "symlink file": async () => {
+          await fs.mkdir(keys, { mode: 0o700 });
+          await fs.writeFile(path.join(dataDir, "outside"), master, { mode: 0o600 });
+          await fs.symlink(path.join(dataDir, "outside"), file);
+        },
+        "symlink dir": async () => {
+          await fs.mkdir(path.join(dataDir, "real"), { mode: 0o700 });
+          await fs.writeFile(path.join(dataDir, "real", "master"), master, { mode: 0o600 });
+          await fs.symlink(path.join(dataDir, "real"), keys);
+        },
+        "loose file": async () => {
+          await provision();
+          await fs.chmod(file, 0o640);
+        },
+        "loose dir": async () => {
+          await provision();
+          await fs.chmod(keys, 0o750);
+        },
+        "short file": async () => provision(Buffer.alloc(31, 1)),
+        "long file": async () => provision(Buffer.alloc(33, 1)),
+        "dir as file": async () => {
+          await fs.mkdir(keys, { mode: 0o700 });
+          await fs.mkdir(file, { mode: 0o700 });
+        },
+        "file as dir": async () => fs.writeFile(keys, "x", { mode: 0o600 }),
+        valid: async () => provision(),
+      };
+      for (const [name, setup] of Object.entries(layouts)) {
+        await reset();
+        await setup();
+        const a = await outcome(() => mk.loadMasterKey());
+        const s = await outcome(() => mk.readMasterKeyFileSync("master"));
+        if (name === "valid") {
+          expect(s.ok.status, name).toBe("ok");
+          expect(a.ok.key.equals(s.ok.key), name).toBe(true);
+          expect(a.ok.kid, name).toBe(s.ok.kid);
+        } else if (name.startsWith("missing")) {
+          expect(s.ok, name).toEqual({ status: "missing" });
+          expect(a.code, name).toBe("KEY_MISSING");
+        } else {
+          expect(a.code, name).toBe("MASTER_KEY_INVALID");
+          expect(a.message, name).toBe(s.message);
+        }
+      }
+      await reset();
+    },
+  );
+});
+
+describe.skipIf(process.platform === "win32")("FIFO master file never hangs the loader", () => {
+  const modulePath = path.resolve(import.meta.dirname, "../../src/lib/security/masterKey.js");
+  // Child process: a blocking open(2) on a reader-less FIFO would hang forever,
+  // so run isolated and let spawn's timeout kill it. Prints `<kind>:<code>:<message>`.
+  const runChild = (which) =>
+    new Promise((resolve) => {
+      const script = `
+        const mk = await import(${JSON.stringify(modulePath)});
+        const run = ${which === "async" ? "mk.loadMasterKey({ create: true })" : 'Promise.resolve().then(() => mk.readMasterKeyFileSync("master"))'};
+        try { await run; console.log("ok"); } catch (e) { console.log("err:" + e.code + ":" + e.message); }
+      `;
+      const child = spawn(process.execPath, ["--input-type=module", "-e", script], {
+        env: { ...process.env, DATA_DIR: dataDir, TOKENHOP_MASTER_KEY: undefined },
+        timeout: 10_000,
+        killSignal: "SIGKILL",
+      });
+      let out = "";
+      child.stdout.on("data", (d) => {
+        out += d;
+      });
+      child.on("close", (code, signal) => resolve({ out: out.trim(), code, signal }));
+    });
+
+  it.each(["async", "sync"])(
+    "%s reader rejects a FIFO promptly as a non-regular file",
+    async (which) => {
+      const keys = path.dirname(file);
+      await fs.mkdir(keys, { mode: 0o700 });
+      execFileSync("mkfifo", ["-m", "600", file]);
+      const started = Date.now();
+      const { out, signal } = await runChild(which);
+      expect(signal).toBeNull(); // not killed by the timeout
+      expect(Date.now() - started).toBeLessThan(8_000);
+      expect(out).toMatch(
+        /^err:MASTER_KEY_INVALID:\[master-key\] master key file must be a regular file$/,
+      );
+      expect((await fs.lstat(file)).isFIFO()).toBe(true); // untouched, not replaced
+    },
+  );
+
+  it("symlink swapped for the file is still refused (O_NOFOLLOW kept)", async () => {
+    const { loadMasterKey } = await security();
+    await fs.mkdir(path.dirname(file), { mode: 0o700 });
+    await fs.writeFile(path.join(dataDir, "outside"), master, { mode: 0o600 });
+    await fs.symlink(path.join(dataDir, "outside"), file);
+    await expect(loadMasterKey()).rejects.toMatchObject({
+      code: "MASTER_KEY_INVALID",
+      message: expect.stringMatching(/symlink/),
+    });
+  });
+
+  it("ENOENT at open (file vanishes after lstat) is a clean missing, not an error", async () => {
+    const mk = await security();
+    await fs.mkdir(path.dirname(file), { mode: 0o700 });
+    await fs.writeFile(file, master, { mode: 0o600 });
+    const realOpen = fsSync.openSync;
+    const spy = vi.spyOn(fsSync, "openSync").mockImplementation((p, ...rest) => {
+      if (p === file) {
+        fsSync.rmSync(file);
+        return realOpen(p, ...rest);
+      }
+      return realOpen(p, ...rest);
+    });
+    try {
+      await expect(mk.loadMasterKey()).rejects.toMatchObject({ code: "KEY_MISSING" });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

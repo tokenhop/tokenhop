@@ -50,8 +50,9 @@ export async function getPricing() {
 
 export async function getPricingForModel(provider, model) {
   if (!model) return null;
-  const userPricing = await getUserPricing();
-  const user = provider && userPricing[provider]?.[model];
+  // Targeted read of the one provider row; never scan the whole pricing scope.
+  const providerRow = provider ? await pricingKv.get(String(provider)) : null;
+  const user = providerRow?.[model];
   const { getPricingForModel: resolveConst } = await import("open-sse/providers/pricing.js");
   const defaults = resolveConst(provider, model);
   if (user && defaults) return { ...defaults, ...user };

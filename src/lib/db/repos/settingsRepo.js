@@ -7,6 +7,7 @@ import {
   mergeWorkspaceLayer,
 } from "@/lib/settings/settingsScope.js";
 import { mirrorToDefaultWorkspace } from "./workspaceSettingsRepo.js";
+import { assertCredentialCtxCurrent } from "./connectionsRepo.js";
 import { ACTIVE } from "@/shared/brand";
 import { readCredentialEncryptionState } from "../credentialEncryptionState.js";
 import { CREDENTIAL_FIELD_ALLOWLIST, buildAad, encryptBytes } from "../../security/envelope.js";
@@ -16,6 +17,10 @@ import {
   prepareCredentialContext,
 } from "../helpers/credentialStorage.js";
 import { loadMasterKey } from "../../security/masterKey.js";
+import {
+  decodeRequestCredentialRows,
+  requestScopeOf,
+} from "../../security/requestCredentialScope.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
@@ -132,8 +137,8 @@ export const GRANT_POLICY_KEYS = Object.freeze(["allowPersonalConnectionGrants"]
 
 // Raw read: stored JSON exactly as persisted. NEVER decrypts: envelope values
 // pass through byte-exact (export, raw writers, featureSwitch all rely on it).
-async function readRaw() {
-  const db = await getAdapter();
+async function readRaw(db) {
+  db ??= await getAdapter();
   const row = db.get(`SELECT data FROM settings WHERE id = 1`);
   return row ? parseJson(row.data, {}) : {};
 }
@@ -167,11 +172,26 @@ function defaultWorkspaceIdRaw(db) {
 
 // Trusted runtime: five Default-coordinate secrets decrypted. Established
 // storage needs the root (async load happens here, before any sync work).
-async function decryptSecrets(db, raw) {
+// `principal` is the wire for request scoping: a minted principal's secrets
+// decode via its memo/scope (shared once with connection/node decrypts);
+// anything else takes the live path. No ctx/root crosses this seam.
+async function decryptSecrets(db, raw, principal = null) {
   const state = readCredentialEncryptionState(db);
-  if (state.storage !== "encrypted") return raw;
-  const root = await loadMasterKey({ expectedKid: state.kekKid });
-  const ctx = prepareCredentialContext(db, root);
+  if (SECRET_KEYS.every((key) => raw[key] === undefined || raw[key] === null || raw[key] === "")) {
+    return raw;
+  }
+  if (principal) {
+    const [decoded] = await decodeRequestCredentialRows(
+      db,
+      principal,
+      [{ id: SETTINGS_ROW_ID, workspaceId: defaultWorkspaceIdRaw(db), data: JSON.stringify(raw) }],
+      { table: "settings" },
+    );
+    return decoded;
+  }
+  const root =
+    state.storage === "encrypted" ? await loadMasterKey({ expectedKid: state.kekKid }) : null;
+  const ctx = prepareCredentialContext(db, root, { state });
   const workspaceId = defaultWorkspaceIdRaw(db);
   return decodeCredentialRowSync(db, { id: SETTINGS_ROW_ID, data: JSON.stringify(raw) }, ctx, {
     table: "settings",
@@ -197,8 +217,7 @@ function metadataView(raw) {
 // Encrypt secret updates on established storage so plaintext never lands.
 // Secret updates arrive plaintext (or null/"" to clear); an envelope-shaped
 // caller value is refused (same rule as the row codec).
-function encodeSecretUpdates(db, updates, root) {
-  const state = readCredentialEncryptionState(db);
+function encodeSecretUpdates(db, updates, root, state) {
   const touched = Object.keys(updates).filter((k) => SECRET_KEYS.includes(k));
   for (const k of touched) {
     const value = updates[k];
@@ -211,7 +230,9 @@ function encodeSecretUpdates(db, updates, root) {
     }
   }
   if (state.storage !== "encrypted" || touched.length === 0) return updates;
-  const ctx = prepareCredentialContext(db, root);
+  const ctx = prepareCredentialContext(db, root, { state });
+  // Root loading yields: reject a rotation/import before using live DEKs.
+  assertCredentialCtxCurrent(db, ctx);
   const workspaceId = defaultWorkspaceIdRaw(db);
   const next = { ...updates };
   let dek = null;
@@ -243,12 +264,15 @@ const RELIABILITY_LEAF_KEYS = {
   backoff: ["startMs", "maxMs", "levels"],
   streamTimeouts: ["firstChunkMs", "stallMs", "connectMs"],
 };
-export function mergeWithDefaults(raw) {
-  const merged = { ...DEFAULT_SETTINGS, ...(raw || {}) };
+export function mergeWithDefaults(input) {
+  // Fresh object graph per call: callers (and request snapshots) may mutate freely.
+  const raw = structuredClone(input || {});
+  const defaults = structuredClone(DEFAULT_SETTINGS);
+  const merged = { ...defaults, ...raw };
   for (const [key, leaves] of Object.entries(RELIABILITY_LEAF_KEYS)) {
-    const stored = raw?.[key];
+    const stored = raw[key];
     if (stored && typeof stored === "object" && !Array.isArray(stored)) {
-      const next = { ...DEFAULT_SETTINGS[key] };
+      const next = { ...defaults[key] };
       for (const leaf of leaves) {
         if (!Object.hasOwn(stored, leaf)) continue;
         const value = stored[leaf];
@@ -260,7 +284,7 @@ export function mergeWithDefaults(raw) {
       merged[key] = next;
     }
   }
-  for (const [key, defVal] of Object.entries(DEFAULT_SETTINGS)) {
+  for (const key of Object.keys(defaults)) {
     if (merged[key] === undefined) {
       if (
         key === "outboundProxyEnabled" &&
@@ -269,7 +293,7 @@ export function mergeWithDefaults(raw) {
       ) {
         merged[key] = true;
       } else {
-        merged[key] = defVal;
+        merged[key] = defaults[key];
       }
     }
   }
@@ -303,7 +327,7 @@ export async function updateSettings(updates) {
     // (never decrypted here); touched secrets are encrypted above in encode.
     const current = row ? parseJson(row.data, {}) : {};
     const encoded =
-      state.storage === "encrypted" ? encodeSecretUpdates(db, updates, root) : updates;
+      state.storage === "encrypted" ? encodeSecretUpdates(db, updates, root, state) : updates;
     next = { ...current, ...encoded };
     // Pin the issuer the first time SAML settings are saved, so a later brand
     // flip can't change the SP entity ID the IdP already trusts.
@@ -367,6 +391,18 @@ export async function updateComboStrategies(transform, requireComboName) {
   return mergeWithDefaults(next);
 }
 
+// Lazy (featureSwitch imports this module); the import promise is shared across calls.
+let switchImport;
+const switchModule = () =>
+  (switchImport ??= import("@/lib/users/featureSwitch.js").catch((error) => {
+    switchImport = undefined;
+    throw error;
+  }));
+
+// Private memo keys (request scope slots); never exported.
+const INSTANCE_LAYER = Symbol("tokenhop.settings.instanceLayer");
+const SCOPED_LAYERS = Symbol("tokenhop.settings.scopedLayers");
+
 /**
  * Effective settings for one request (YAN-362). Switch off, or a legacy
  * caller with no principal, means today's blob: getSettings().
@@ -384,10 +420,19 @@ export async function getEffectivePreferences(ctx) {
   const sessionWs = typeof ctx?.activeWorkspaceId === "string" ? ctx.activeWorkspaceId : null;
   const userId = typeof ctx?.userId === "string" ? ctx.userId : null;
   if (!trustedWs && !sessionWs && !userId) return getSettings();
-  const { isMultiUserEnabled } = await import("@/lib/users/featureSwitch.js");
-  if (!(await isMultiUserEnabled())) return getSettings();
-  const merged = await getSettings();
+  const { isMultiUserEnabled } = await switchModule();
+  // Switch stays live on every call (never memoized).
+  const multiUser = await isMultiUserEnabled();
   const db = await getAdapter();
+  // Minted gateway principals memoize stored layers for their request; any
+  // other ctx (sessions, forged copies, aged scopes) reads live. A dead scope
+  // throws its typed KEY_MISMATCH here and is never papered over by live state.
+  const scope = requestScopeOf(ctx, db);
+  const loadInstance = async () => decryptSecrets(db, await readRaw(db), scope ? ctx : null);
+  const instance = await (scope ? scope.memo(INSTANCE_LAYER, loadInstance) : loadInstance());
+  const merged = mergeWithDefaults(instance);
+  if (!multiUser) return merged;
+  // Membership stays live: it decides which workspace layer applies.
   const wsId =
     trustedWs ??
     (sessionWs &&
@@ -398,9 +443,32 @@ export async function getEffectivePreferences(ctx) {
     ])
       ? sessionWs
       : null);
-  if (wsId) {
-    const row = db.get(`SELECT data FROM workspaceSettings WHERE workspaceId = ?`, [wsId]);
-    const wsData = pickKeys(parseJson(row?.data, {}), WORKSPACE_KEYS);
+  const loadLayers = () => ({
+    wsData: wsId
+      ? pickKeys(
+          parseJson(
+            db.get(`SELECT data FROM workspaceSettings WHERE workspaceId = ?`, [wsId])?.data,
+            {},
+          ),
+          WORKSPACE_KEYS,
+        )
+      : null,
+    userData: userId
+      ? pickKeys(
+          parseJson(
+            db.get(`SELECT data FROM userPreferences WHERE userId = ?`, [userId])?.data,
+            {},
+          ),
+          USER_KEYS,
+        )
+      : null,
+  });
+  // Gateway principals always carry a trusted workspace, so wsId is fixed per principal.
+  const layers = await (scope && trustedWs && wsId === trustedWs
+    ? scope.memo(SCOPED_LAYERS, loadLayers)
+    : loadLayers());
+  if (layers.wsData) {
+    const wsData = structuredClone(layers.wsData);
     mergeWorkspaceLayer(merged, wsData);
     // YAN-364: workspace rows key comboStrategies by combo id, the instance blob
     // by name. A workspace with no map of its own must not inherit the blob's
@@ -413,10 +481,7 @@ export async function getEffectivePreferences(ctx) {
       enumerable: false,
     });
   }
-  if (typeof userId === "string" && userId) {
-    const row = db.get(`SELECT data FROM userPreferences WHERE userId = ?`, [userId]);
-    Object.assign(merged, pickKeys(parseJson(row?.data, {}), USER_KEYS));
-  }
+  if (layers.userData) Object.assign(merged, structuredClone(layers.userData));
   return merged;
 }
 

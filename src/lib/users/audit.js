@@ -1,6 +1,9 @@
 // Audit helper (YAN-367 Lane B). DENY-BY-DEFAULT allow-list: only these keys
 // persist in before/after, nested included. Secret material never persists.
 // NEVER throws; insert failures only console.warn.
+// YAN-378: allowed STRING leaves are additionally token-redacted so a secret
+// smuggled through an allowed field (name/reason/email/path) cannot persist.
+import { redactText } from "open-sse/utils/redact.js";
 import { getClientIp } from "@/lib/auth/loginLimiter";
 import { insert, insertSync } from "@/lib/db/repos/auditRepo.js";
 
@@ -71,7 +74,7 @@ function scrub(value, depth = 0) {
     }
     return Object.keys(out).length ? out : undefined;
   }
-  if (typeof value === "string") return value.length > TRUNCATE ? value.slice(0, TRUNCATE) : value;
+  if (typeof value === "string") return redactText(value).slice(0, TRUNCATE);
   if (typeof value === "number" || typeof value === "boolean") return value;
   return undefined;
 }
@@ -101,7 +104,7 @@ function buildEvent(ctx, action, target, { before, after, result } = {}) {
     workspaceId: ctx?.workspaceId ?? null,
     action,
     targetType: target?.type ?? null,
-    targetId: target?.id != null ? String(target.id) : null,
+    targetId: target?.id != null ? redactText(String(target.id)).slice(0, 512) : null,
     before: encodeSnapshot(before),
     after: encodeSnapshot(after),
     result: result ?? "success",
@@ -119,7 +122,7 @@ export async function audit(ctx = {}, action, target = null, opts = {}) {
   try {
     await insert(buildEvent(ctx, action, target, opts));
   } catch (err) {
-    console.warn("[audit]", err?.message ?? err);
+    console.warn("[audit]", redactText(String(err?.message ?? err)));
   }
 }
 

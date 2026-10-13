@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { activateGatewayKeys } from "@/lib/db/activateGatewayKeys.js";
 import { createSqlJsAdapter } from "@/lib/db/adapters/sqljsAdapter.js";
 import { runMigrationOnce } from "@/lib/db/migrate.js";
+import { apiKeysHasKeyHash } from "@/lib/db/helpers/apiKeysSchema.js";
+import { reachSchemaCookie, schemaCookie } from "../helpers/schemaCookie.js";
 import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
 import { BACKUPS_DIR } from "@/lib/db/paths.js";
 import { deriveApiKeyHashKey, hashApiKey, masterKeyId } from "@/lib/security/masterKey.js";
@@ -508,6 +510,54 @@ describe("activateGatewayKeys (unwired switch-on orchestrator)", () => {
       db.get(`SELECT value FROM kv WHERE scope = 'cliToolPresets' AND key = 'apiKeys'`).value,
     ).toContain(RAW_GHOST);
   });
+
+  it.each([
+    ["initGatewayVideoJobs", "exec"],
+    ["verifyHashed", "get"],
+  ])(
+    "%s failure after inner clear: outer rollback + cookie reuse recomputes",
+    async (_name, method) => {
+      seedLegacy();
+      const real = db[method].bind(db);
+      let warmed = null;
+      const trigger =
+        method === "exec"
+          ? (sql) => String(sql).includes("CREATE TABLE IF NOT EXISTS gatewayVideoJobs")
+          : (sql) =>
+              String(sql).includes("name = 'gatewayVideoJobs'") &&
+              columnsOf(db).includes("keyHash");
+      const spy = vi.spyOn(db, method).mockImplementation((sql, params) => {
+        if (warmed === null && trigger(sql)) {
+          // Inner transaction already finished and cleared; warm inside the outer window.
+          expect(apiKeysHasKeyHash(db)).toBe(true);
+          warmed = schemaCookie(db);
+          if (method === "exec") throw new Error("video init failed");
+          return undefined; // requireGatewayVideoJobsSync -> GATEWAY_VIDEO_JOBS_MISSING
+        }
+        return real(sql, params);
+      });
+      try {
+        await expect(
+          activateGatewayKeys(db, {
+            enabled: true,
+            beforeServing: true,
+            credentialSinksVetted: true,
+            masterKey: MASTER,
+          }),
+        ).rejects.toThrow(method === "exec" ? "video init failed" : /Gateway video job store/);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(warmed).not.toBeNull();
+      expect(readApiKeyStorageState(db).storage).toBe("legacy");
+      expect(columnsOf(db)).toContain("key");
+      expect(
+        db.get(`SELECT name FROM sqlite_master WHERE name = 'gatewayVideoJobs'`),
+      ).toBeUndefined();
+      reachSchemaCookie(db, warmed);
+      expect(apiKeysHasKeyHash(db)).toBe(false);
+    },
+  );
 
   it("malformed marker fails closed: activation refuses, and boot sync re-runs fail too", async () => {
     db.run(`INSERT INTO _meta(key, value) VALUES('apiKeysHashedVersion', '2')`);

@@ -308,7 +308,7 @@ Notes:
 - `_meta`: schema version metadata.
 - Legacy `db.json`, `usage.json`, `disabledModels.json`, `request-details.json` under `DATA_DIR` are one-time import sources only (backup + row-count checks); `log.txt` is not an import source.
 
-Optional deep request/translation debug logs still land in `<process.cwd()>/logs` when `ENABLE_REQUEST_LOGS=true` — distinct from SQLite and not the removed `log.txt`. Credential headers are masked, but the logs still contain full request/response bodies.
+Optional deep request/translation debug logs land in `<process.cwd()>/logs` when `ENABLE_REQUEST_LOGS=true` (or the stored request-log setting enables them with no env override) — distinct from SQLite and not the removed `log.txt`. Credential headers retain masked previews (the 4+4 character preview of long values is deliberate for debuggability); copied bodies mask credential-named fields recursively, and string leaves, errors/stacks and individual stream chunks redact token-shaped values and supplied request-local known secrets. URL fields additionally mask credential query parameters and userinfo. Benign token counts, Claude signatures and conversation prose remain available for debugging; arbitrary opaque strings are not classified as secrets without credential names or request-local provenance.
 
 ## Deployment Topology
 
@@ -503,7 +503,7 @@ Environment variables actively used by code:
 ## Known Architectural Notes
 
 1. `/api/v1/route.js` re-exports `GET`/`OPTIONS` from `./models/route` — it serves the live model list, not a static one.
-2. Request logger writes full headers/body when enabled; treat the `logs/` directory as sensitive.
+2. Request logger is best-effort diagnostic redaction, not a promise of anonymous logs: treat `logs/` as sensitive because conversation content remains. Redaction is bounded and per chunk; split-chunk tokens need additional buffering, and live request-local provenance covers refreshed credentials for chat logging. Historical audit rows are masked in API response copies by token shape only (JWT, `sk-`, provider prefixes, Bearer); an opaque unshaped value already stored in an old row is returned unchanged because there is no global lookup of stored secrets; existing debug files and DB rows are never rewritten or deleted.
 3. Cloud-related settings (`cloudEnabled`, `cloudUrl`) only influence CLI-tools base-URL selection; no provider sync is performed at this revision.
 4. Legacy `/dashboard/profile` and `/dashboard/settings/pricing` redirect client-side to `/dashboard/settings` (hash/query preserved) — no server-side permanent redirects.
 

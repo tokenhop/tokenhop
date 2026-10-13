@@ -1,11 +1,7 @@
 // Re-export from open-sse with localDb integration
+import { getModelAliases, getComboByName as getComboByNameUnscoped } from "@/lib/localDb";
 import {
-  getModelAliases,
-  getComboByName as getComboByNameUnscoped,
-  getProviderNodesUnscoped,
-} from "@/lib/localDb";
-import {
-  getGatewayNodes,
+  getGatewayNodesMetadata,
   getGatewayCombos,
   getGatewayAliases,
   requireGatewayWorkspace,
@@ -117,16 +113,8 @@ export async function getModelInfo(modelStr, options = {}) {
     // provider ids/aliases such as `cf`, `cloudflare-ai`, `openai`, or `hf`.
     if (!RESERVED_PROVIDER_PREFIXES.has(parsed.providerAlias)) {
       const nodeTypes = ["openai-compatible", "anthropic-compatible", "custom-embedding"];
-      let nodes;
-      if (principal) {
-        nodes = await getGatewayNodes(principal, {});
-        nodes = nodes.filter((node) => nodeTypes.includes(node.type));
-      } else {
-        const byType = await Promise.all(
-          nodeTypes.map((type) => getProviderNodesUnscoped({ type })),
-        );
-        nodes = byType.flat();
-      }
+      // Metadata only: prefix routing needs no secrets, so no root load/decrypt.
+      const nodes = await getGatewayNodesMetadata(principal, { types: nodeTypes });
       const matchedNode = nodes.find((node) => node.prefix === parsed.providerAlias);
       if (matchedNode) {
         return { provider: matchedNode.id, model: parsed.model };

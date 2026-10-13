@@ -31,11 +31,6 @@ function createVideoJobStore({ schema = true } = {}) {
     jobs,
     connections,
     get(sql, params = []) {
-      if (sql.startsWith("SELECT value FROM _meta")) {
-        if (params[0] === "apiKeysHashedVersion") return { value: "1" };
-        if (params[0] === "apiKeysHashKid") return { value: "0123456789abcdef" };
-        return undefined; // No credential-encryption markers in this hashed-only fixture.
-      }
       if (sql.includes("sqlite_master")) {
         return schema && sql.includes("'gatewayVideoJobs'")
           ? { name: "gatewayVideoJobs" }
@@ -51,6 +46,14 @@ function createVideoJobStore({ schema = true } = {}) {
       return undefined;
     },
     all(sql, params = []) {
+      // readMetaValues: one batched `SELECT key, value FROM _meta WHERE key IN (...)`.
+      if (sql.startsWith("SELECT key, value FROM _meta")) {
+        const markers = {
+          apiKeysHashedVersion: "1",
+          apiKeysHashKid: "0123456789abcdef",
+        }; // No credential-encryption markers in this hashed-only fixture.
+        return params.filter((k) => k in markers).map((key) => ({ key, value: markers[key] }));
+      }
       if (sql.startsWith("SELECT * FROM providerConnections")) {
         return connections.filter((c) => c.workspaceId === params[0] && c.isActive === 1);
       }
@@ -607,9 +610,9 @@ describe("legacy video behavior (pristine)", () => {
     // Legacy storage: no hashed markers → resolveVideoAuth takes the original
     // requireValidApiKey path (settings requireApiKey=false via mocked localDb).
     const legacyAdapter = createVideoJobStore();
-    legacyAdapter.get = (sql, params = []) => {
-      if (sql.startsWith("SELECT value FROM _meta")) return undefined; // no markers
-      return createVideoJobStore().get(sql, params);
+    legacyAdapter.all = (sql, params = []) => {
+      if (sql.startsWith("SELECT key, value FROM _meta")) return []; // no markers
+      return createVideoJobStore().all(sql, params);
     };
     mocks.adapter = legacyAdapter;
     await upstreamOnce(upstreamJson({ request_id: "legacy-job" }));

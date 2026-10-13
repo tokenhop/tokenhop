@@ -8,8 +8,12 @@ import {
   encodeCredentialRowSync,
   prepareCredentialContext,
 } from "../helpers/credentialStorage.js";
-import { readCredentialEncryptionState } from "../credentialEncryptionState.js";
+import {
+  readCredentialEncryptionState,
+  readCredentialMarkerValues,
+} from "../credentialEncryptionState.js";
 import { loadMasterKey } from "../../security/masterKey.js";
+import { assertCredentialOperationAllowed } from "../credentialMaintenance.js";
 import { TABLE_NAMES } from "../../security/envelope.js";
 
 const TABLE = TABLE_NAMES.providerConnections;
@@ -50,16 +54,34 @@ function repoFail(code, message) {
 // then runs entirely inside it. Legacy installs never touch the key store.
 
 /**
- * Resolve the runtime credential context for `db`. Trusted loaders only: the
- * root comes from masterKey, never a caller. Shared with nodesRepo and the
- * gateway raw reads.
+ * Resolve the runtime credential context for `db` (repo-internal write paths
+ * and nodesRepo). Trusted loaders only: the root comes from masterKey, never a
+ * caller. The gateway read path never calls this — it goes through
+ * decodeRequestCredentialRows, which returns row data only, never the ctx.
  * @returns {Promise<object>} context for decode/encodeCredentialRowSync
  */
 export async function prepareCredentialCtx(db) {
+  assertCredentialOperationAllowed(db);
   const state = readCredentialEncryptionState(db);
-  if (state.storage !== "encrypted") return prepareCredentialContext(db, null);
-  const root = await loadMasterKey({ expectedKid: state.kekKid });
-  return prepareCredentialContext(db, root);
+  if (state.storage !== "encrypted") return prepareCredentialContext(db, null, { state });
+  const before = JSON.stringify(readCredentialMarkerValues(db));
+  // The root load yields: poison or a committed rotation must not slip through,
+  // whether the load succeeds or fails (typed KEY_MISMATCH retry on change).
+  const recheck = () => {
+    assertCredentialOperationAllowed(db);
+    if (JSON.stringify(readCredentialMarkerValues(db)) !== before) {
+      repoFail("KEY_MISMATCH", "credential encryption state changed during the operation; retry");
+    }
+  };
+  let root;
+  try {
+    root = await loadMasterKey({ expectedKid: state.kekKid });
+  } catch (error) {
+    recheck();
+    throw error;
+  }
+  recheck();
+  return prepareCredentialContext(db, root, { state });
 }
 
 /**

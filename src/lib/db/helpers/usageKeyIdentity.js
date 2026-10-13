@@ -88,6 +88,10 @@ export function normalizeUsageKeyEntry(
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
   if (storage === STORAGE_LEGACY) return { ...entry };
   const out = { ...entry };
+  // Ids are strings only; a number/object id is never coerced or kept.
+  if (out.apiKeyId != null && typeof out.apiKeyId !== "string") {
+    throw new Error("[usage-key-identity] malformed apiKeyId");
+  }
   const hasRaw = typeof out.apiKey === "string" && out.apiKey !== "";
   const hasExplicit = typeof out.apiKeyId === "string" && out.apiKeyId !== "";
   if (hasRaw) {

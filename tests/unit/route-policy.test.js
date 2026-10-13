@@ -480,7 +480,7 @@ describe("YAN-374 CLI configs stay host-only", () => {
     });
     expect(resolveRoutePolicy("/api/keys/k1", "PUT")).toMatchObject({
       capability: "workspace.keys.manage",
-      scoped: false,
+      scoped: true,
     });
   });
 

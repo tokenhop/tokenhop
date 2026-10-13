@@ -6,10 +6,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getAdapter } from "@/lib/db/driver.js";
+import * as driver from "@/lib/db/driver.js";
+const getAdapter = driver.getAdapter;
 import * as dbApi from "@/lib/db/index.js";
 import { BACKUPS_DIR } from "@/lib/db/paths.js";
 import { makeBackupDir, pruneOldBackups } from "@/lib/db/backup.js";
+import * as credentialMaintenance from "@/lib/db/credentialMaintenance.js";
 import { deriveApiKeyHashKey, hashApiKey, masterKeyId } from "@/lib/security/masterKey.js";
 
 vi.mock("@/lib/auth/apiKeyPrincipal.js", () => ({
@@ -158,6 +160,47 @@ beforeEach(async () => {
   // Fresh BACKUPS_DIR so preImportDirs() counts only this test's backup.
   fs.rmSync(BACKUPS_DIR, { recursive: true, force: true });
   fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+});
+
+describe("import durability: cache cleared only after a proven flush", () => {
+  beforeEach(seedLegacyInstance);
+
+  it("successful import clears the schema memo after the durable flush", async () => {
+    const schema = await import("@/lib/db/helpers/apiKeysSchema.js");
+    const clearSpy = vi.spyOn(schema, "clearApiKeysSchemaCache");
+    try {
+      await dbApi.importDb(legacyPayload());
+      expect(clearSpy).toHaveBeenCalledWith(db);
+    } finally {
+      clearSpy.mockRestore();
+    }
+    expect(credentialMaintenance.isCredentialMaintenancePoisoned(db)).toBe(false);
+  });
+
+  it("failed durability poisons, never clears, and fences later writes", async () => {
+    // Derived object = its own poison state; shared adapter stays clean.
+    const wrapper = Object.create(db);
+    const realGet = db.get.bind(db);
+    wrapper.get = (sql, params) =>
+      sql === "PRAGMA wal_checkpoint(FULL)"
+        ? { busy: 1, log: 2, checkpointed: 0 }
+        : realGet(sql, params);
+    const schema = await import("@/lib/db/helpers/apiKeysSchema.js");
+    const clearSpy = vi.spyOn(schema, "clearApiKeysSchemaCache");
+    const adapterSpy = vi.spyOn(driver, "getAdapter").mockResolvedValue(wrapper);
+    try {
+      await expect(dbApi.importDb(legacyPayload())).rejects.toMatchObject({
+        code: "IMPORT_FLUSH_FAILED",
+      });
+      expect(clearSpy).not.toHaveBeenCalled();
+      expect(credentialMaintenance.isCredentialMaintenancePoisoned(wrapper)).toBe(true);
+      expect(() => wrapper.run("DELETE FROM combos")).toThrow(/blocked until restart/);
+    } finally {
+      adapterSpy.mockRestore();
+      clearSpy.mockRestore();
+    }
+    expect(credentialMaintenance.isCredentialMaintenancePoisoned(db)).toBe(false);
+  });
 });
 
 describe("pre-import backup (legacy instance)", () => {
@@ -350,7 +393,6 @@ describe("pre-import backup (hashed instance)", () => {
     expect(tableDump()).toBe(before);
   });
 });
-
 // ─── YAN-365 (task 2.4, T lane): encrypted instance backup/import (C4) ───────
 // Authored red in B2; O turns green in B5. An import rejected by preflight
 // (wrong root, plaintext legacy payload, malformed v3 graph) must create NO

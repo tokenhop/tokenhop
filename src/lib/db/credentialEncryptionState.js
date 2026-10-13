@@ -4,6 +4,7 @@
 // CREDENTIAL_STATE_INVALID; unexpected key rows, a wrapped hash key or stored
 // envelopes without a coherent marker never read as "legacy" (fail closed).
 import { CREDENTIAL_FIELD_ALLOWLIST, isEnvelopeShape } from "../security/envelope.js";
+import { readMetaValues } from "./apiKeyState.js";
 
 const KID_RE = /^[0-9a-f]{16}$/;
 const PSD_PREFIX = "providerSpecificData.";
@@ -14,8 +15,17 @@ function failState(message) {
   });
 }
 
-function metaValue(db, key) {
-  return db.get(`SELECT value FROM _meta WHERE key = ?`, [key])?.value ?? null;
+const MARKER_KEYS = [
+  "credentialsEncryptedVersion",
+  "credentialsKekKid",
+  "credentialsCleanupPending",
+  "credentialsPendingRotation",
+  "apiKeyHashKeyWrapped",
+];
+
+/** The five marker `_meta` values in ONE select (absent => null). */
+export function readCredentialMarkerValues(db) {
+  return readMetaValues(db, MARKER_KEYS);
 }
 
 function tableExists(db, table) {
@@ -106,11 +116,13 @@ function workspaceKeyCount(db) {
  *           |{storage:"encrypted",version:1,kekKid:string,cleanupPending:boolean,pendingRotation:{oldKid:string,newKid:string}|null}}
  */
 export function readCredentialEncryptionState(db, { strict = false } = {}) {
-  const version = metaValue(db, "credentialsEncryptedVersion");
-  const kekKid = metaValue(db, "credentialsKekKid");
-  const cleanupRaw = metaValue(db, "credentialsCleanupPending");
-  const pendingRaw = metaValue(db, "credentialsPendingRotation");
-  const hashWrappedRaw = metaValue(db, "apiKeyHashKeyWrapped");
+  const {
+    credentialsEncryptedVersion: version,
+    credentialsKekKid: kekKid,
+    credentialsCleanupPending: cleanupRaw,
+    credentialsPendingRotation: pendingRaw,
+    apiKeyHashKeyWrapped: hashWrappedRaw,
+  } = readCredentialMarkerValues(db);
 
   if (cleanupRaw !== null && cleanupRaw !== "0" && cleanupRaw !== "1") {
     failState("credentialsCleanupPending must be 0 or 1");

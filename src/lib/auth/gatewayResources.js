@@ -1,13 +1,13 @@
 import { getAdapter } from "../db/driver.js";
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { parseJson } from "../db/helpers/jsonCol.js";
-import { decodeCredentialRowSync } from "../db/helpers/credentialStorage.js";
+import { decodeRequestCredentialRows } from "../security/requestCredentialScope.js";
 import { TABLE_NAMES } from "../security/envelope.js";
+import { getProviderConnectionsUnscoped } from "../db/repos/connectionsRepo.js";
 import {
-  getProviderConnectionsUnscoped,
-  prepareCredentialCtx,
-} from "../db/repos/connectionsRepo.js";
-import { getProviderNodesUnscoped } from "../db/repos/nodesRepo.js";
+  getProviderNodesUnscoped,
+  getProviderNodesRoutingUnscoped,
+} from "../db/repos/nodesRepo.js";
 import { listActiveGrantsForPrincipal } from "../db/repos/connectionGrantsRepo.js";
 import { resolveSharing } from "../users/grants.js";
 import * as combosRepo from "../db/repos/combosRepo.js";
@@ -43,13 +43,17 @@ export async function requireGatewayWorkspace(principal) {
   return { db, workspaceId: null };
 }
 
-// YAN-365: raw gateway reads bypass the repos, so decrypt here — after SQL has
-// already selected the principal's workspace. Coordinates come from the stored
-// SQL row (never the principal or caller), and a typed integrity/key failure
+// YAN-365/YAN-378: raw gateway reads bypass the repos, so decrypt here — after
+// SQL has already selected the principal's workspace. Decryption goes through
+// the request credential scope (rows in, row data out): the runtime ctx and
+// the root never reach this layer. Coordinates come from the stored SQL row
+// (never the principal or caller), and a typed integrity/key failure
 // propagates instead of yielding an empty credential.
-function decodeRow(db, ctx, table, row) {
-  const { data: _data, ...columns } = row;
-  return { ...decodeCredentialRowSync(db, row, ctx, { table }), ...columns };
+function withColumns(rows, decoded) {
+  return rows.map((row, i) => {
+    const { data: _data, ...columns } = row;
+    return { ...decoded[i], ...columns };
+  });
 }
 
 export async function getGatewayConnections(principal, filter = {}) {
@@ -65,16 +69,32 @@ export async function getGatewayConnections(principal, filter = {}) {
     where.push("isActive = ?");
     params.push(filter.isActive ? 1 : 0);
   }
-  const ctx = await prepareCredentialCtx(db);
-  const decode = (row) => ({
-    ...decodeRow(db, ctx, TABLE_NAMES.providerConnections, row),
-    isActive: row.isActive === 1 || row.isActive === true,
-  });
-  const own = db
+  const ownRows = db
     .all(`SELECT * FROM providerConnections WHERE ${where.join(" AND ")}`, params)
-    .map(decode)
     .sort((a, b) => (a.priority || 999) - (b.priority || 999));
-  return [...own, ...grantedConnections(db, principal, filter, own, decode)];
+  const granted = grantedConnections(db, principal, filter, ownRows);
+  const decoded = await decodeRequestCredentialRows(
+    db,
+    principal,
+    [...ownRows, ...granted.map((g) => g.row)],
+    { table: TABLE_NAMES.providerConnections },
+  );
+  const own = withColumns(ownRows, decoded).map((c) => ({
+    ...c,
+    isActive: c.isActive === 1 || c.isActive === true,
+  }));
+  const grantedOut = withColumns(
+    granted.map((g) => g.row),
+    decoded.slice(ownRows.length),
+  ).map((c, i) => ({
+    ...c,
+    isActive: c.isActive === 1 || c.isActive === true,
+    grantId: granted[i].grantId,
+    grantAllowedModels: granted[i].allowedModels ?? null,
+    grantRpm: granted[i].rpm ?? null,
+    grantTpm: granted[i].tpm ?? null,
+  }));
+  return [...own, ...grantedOut];
 }
 
 // YAN-369 (ADR-0006): connections granted to the principal's workspace or user,
@@ -82,7 +102,7 @@ export async function getGatewayConnections(principal, filter = {}) {
 // the union). Re-read on every call — no cache, so revocation is immediate.
 // Defense in depth: a "personal" connection without a recorded ToS
 // acknowledgement never resolves, whatever the grant row says.
-function grantedConnections(db, principal, filter, own, decode) {
+function grantedConnections(db, principal, filter, own) {
   const seen = new Set(own.map((c) => c.id));
   const out = [];
   const grants = listActiveGrantsForPrincipal(db, {
@@ -100,15 +120,9 @@ function grantedConnections(db, principal, filter, own, decode) {
       continue;
     if (resolveSharing(row.provider, row.authType) === "personal" && !g.tosAcknowledgedAt) continue;
     seen.add(row.id);
-    out.push({
-      ...decode(row),
-      grantId: g.grantId,
-      grantAllowedModels: g.allowedModels ?? null,
-      grantRpm: g.rpm ?? null,
-      grantTpm: g.tpm ?? null,
-    });
+    out.push({ row, grantId: g.grantId, allowedModels: g.allowedModels, rpm: g.rpm, tpm: g.tpm });
   }
-  return out.sort((a, b) => (a.priority || 999) - (b.priority || 999));
+  return out.sort((a, b) => (a.row.priority || 999) - (b.row.priority || 999));
 }
 
 export async function getGatewayNodes(principal, filter = {}) {
@@ -120,8 +134,21 @@ export async function getGatewayNodes(principal, filter = {}) {
     sql += " AND type = ?";
     params.push(filter.type);
   }
-  const ctx = await prepareCredentialCtx(db);
-  return db.all(sql, params).map((row) => decodeRow(db, ctx, TABLE_NAMES.providerNodes, row));
+  const rows = db.all(sql, params);
+  const decoded = await decodeRequestCredentialRows(db, principal, rows, {
+    table: TABLE_NAMES.providerNodes,
+  });
+  return withColumns(rows, decoded);
+}
+
+// Secret-free allowlisted node read for routing (prefix/type/workspace): never
+// decrypts, never loads the root key. Workspace comes only from the validated
+// principal (a caller-supplied workspaceId is ignored), so
+// this keeps its own requireGatewayWorkspace as the trust boundary. Upstream
+// credentials still come from getGatewayNodes/connection decrypt.
+export async function getGatewayNodesMetadata(principal, { types } = {}) {
+  const { workspaceId } = await requireGatewayWorkspace(principal);
+  return getProviderNodesRoutingUnscoped({ types, workspaceId });
 }
 
 // YAN-364: principal-scoped combo/model reads. Scoped miss (or empty) never

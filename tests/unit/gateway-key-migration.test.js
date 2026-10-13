@@ -1,7 +1,9 @@
 // YAN-363: hashGatewayKeysSync — atomic legacy→hashed key+usage migration core.
 // Real adapter + real isolated temp DATA_DIR (tests/vitest.config.js), legacy
 // fixture, sentinel scans. No runtime activation is performed by these tests.
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { apiKeysHasKeyHash } from "@/lib/db/helpers/apiKeysSchema.js";
+import { schemaCookie, reachSchemaCookie, hasKeyHashColumn } from "../helpers/schemaCookie.js";
 import { createHmac } from "node:crypto";
 import { getAdapter } from "@/lib/db/driver.js";
 import { hashGatewayKeysSync } from "@/lib/db/migrations/hashGatewayKeys.js";
@@ -388,6 +390,93 @@ describe("hashGatewayKeysSync", () => {
     );
     expect(readApiKeyStorageState(db)).toEqual({ storage: "legacy", version: null, hashKid: null });
     expect(db.all(`PRAGMA foreign_key_check`)).toEqual([]);
+  });
+
+  it("numeric meta.apiKey rejects typed failure with no partial mutation", () => {
+    const meta = JSON.stringify({ apiKey: 12345 });
+    db.run("INSERT INTO usageHistory(timestamp, apiKey, meta) VALUES(?, ?, ?)", [NOW, RAW_B, meta]);
+    const snapshot = () =>
+      JSON.stringify([
+        db.all("SELECT * FROM apiKeys ORDER BY id"),
+        db.all("SELECT rowid, apiKey, meta FROM usageHistory ORDER BY rowid"),
+        db.all("SELECT * FROM usageDaily ORDER BY dateKey"),
+        db.all("SELECT * FROM _meta ORDER BY key"),
+      ]);
+    const before = snapshot();
+    expect(() => run()).toThrow("[usage-key-identity] malformed apiKey credential");
+    expect(snapshot()).toBe(before);
+    expect(hasKeyHashColumn(db)).toBe(false);
+    expect(readApiKeyStorageState(db)).toEqual({ storage: "legacy", version: null, hashKid: null });
+    expect(db.get("SELECT 1 AS x FROM sqlite_master WHERE name = 'apiKeys_hash_stage'")).toBe(
+      undefined,
+    );
+  });
+
+  it.each([
+    ["apiKeyId only", { apiKeyId: 12345 }],
+    ["apiKey and apiKeyId", { apiKey: RAW_B, apiKeyId: 12345 }],
+  ])("numeric meta.apiKeyId (%s) rejects in history and daily with no mutation", (_n, meta) => {
+    const snapshot = () =>
+      JSON.stringify([
+        db.all("SELECT * FROM apiKeys ORDER BY id"),
+        db.all("SELECT rowid, apiKey, meta FROM usageHistory ORDER BY rowid"),
+        db.all("SELECT * FROM usageDaily ORDER BY dateKey"),
+        db.all("SELECT * FROM _meta ORDER BY key"),
+      ]);
+    const expectRejected = () => {
+      const before = snapshot();
+      expect(() => run()).toThrow("[usage-key-identity] malformed apiKeyId");
+      expect(snapshot()).toBe(before);
+      expect(hasKeyHashColumn(db)).toBe(false);
+      expect(readApiKeyStorageState(db)).toEqual({
+        storage: "legacy",
+        version: null,
+        hashKid: null,
+      });
+      expect(db.get("SELECT 1 AS x FROM sqlite_master WHERE name = 'apiKeys_hash_stage'")).toBe(
+        undefined,
+      );
+    };
+    // history
+    db.run("INSERT INTO usageHistory(timestamp, apiKey, meta) VALUES(?, ?, ?)", [
+      NOW,
+      RAW_B,
+      JSON.stringify(meta),
+    ]);
+    expectRejected();
+    db.run("DELETE FROM usageHistory WHERE meta = ?", [JSON.stringify(meta)]);
+    // daily
+    const day = dayFixture();
+    day.byApiKey[`${RAW_A}|gpt-4o|openai`].meta = { ...meta };
+    db.run("UPDATE usageDaily SET data = ? WHERE dateKey = '2026-10-02'", [JSON.stringify(day)]);
+    expectRejected();
+  });
+
+  it("failure after DDL clears a memo warmed in-window, even when rollback reuses the cookie", () => {
+    db.exec(
+      "CREATE TRIGGER block_key_final BEFORE INSERT ON _meta WHEN NEW.key = 'apiKeysHashKid' BEGIN SELECT RAISE(ABORT, 'marker blocked'); END",
+    );
+    let warmed = null;
+    const all = db.all.bind(db);
+    const spy = vi.spyOn(db, "all").mockImplementation((sql, params) => {
+      // First statement after the DDL rebuild: warm the memo inside the window.
+      if (warmed === null && sql.startsWith("SELECT id, apiKey, meta FROM usageHistory")) {
+        expect(apiKeysHasKeyHash(db)).toBe(true);
+        warmed = schemaCookie(db);
+      }
+      return all(sql, params);
+    });
+    try {
+      expect(() => run()).toThrow("marker blocked");
+    } finally {
+      spy.mockRestore();
+      db.exec("DROP TRIGGER block_key_final");
+    }
+    expect(warmed).not.toBeNull();
+    expect(hasKeyHashColumn(db)).toBe(false);
+    reachSchemaCookie(db, warmed);
+    expect(schemaCookie(db)).toBe(warmed);
+    expect(apiKeysHasKeyHash(db)).toBe(false);
   });
 
   it("reentry is idempotent: validates kid/state, never rehashes or re-converts", () => {

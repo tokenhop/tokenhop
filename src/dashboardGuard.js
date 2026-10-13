@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getEffectivePreferences } from "@/lib/db/index.js";
+import { isHashedSecurityEstablished } from "@/lib/users/securityState.js";
+import { resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
 import { resolveFlagSetting, resolveStartPage } from "@/lib/settingsFlags";
 import { extractClientApiKey } from "@/lib/auth/clientApiKey";
 import { isLoopbackHostname, isLoopbackPeer } from "@/lib/auth/trustedPeer";
@@ -14,6 +16,7 @@ import {
   singleUserMode,
 } from "@/lib/users/session";
 import { LOCAL_ONLY_CODE } from "@/shared/utils/localOnly";
+import { can } from "@/lib/users/principal.js";
 import { audit } from "@/lib/users/audit";
 import { isMultiUserEnabled } from "@/lib/users/featureSwitch";
 
@@ -55,9 +58,33 @@ async function hasValidApiKey(request) {
 }
 
 async function canAccessPublicLlmApi(request) {
+  try {
+    // Durable hashed storage stays enforced when rollout is off: a presented
+    // credential is the only authority (no local/CLI rescue for an invalid
+    // one), resolved by the shared gateway resolver. Credential-less requests
+    // keep the pre-existing edge rules; handlers still enforce per request.
+    if ((await isHashedSecurityEstablished()) && hasPresentedCredential(request)) {
+      const auth = await resolveGatewayAuth(request);
+      return auth.legacy === false && auth.principal != null;
+    }
+  } catch {
+    return false; // Unreadable/invalid storage never opens the edge.
+  }
   if (isLocalRequest(request)) return true;
   if (await cliTokenAccepted(request)) return true;
   return await hasValidApiKey(request);
+}
+
+// Same carriers as gatewayAuth's hashed extraction; empty values still count.
+function hasPresentedCredential(request) {
+  const auth = request.headers.get("authorization");
+  if (auth === "Bearer" || auth?.startsWith("Bearer ")) return true;
+  if (request.headers.has("x-api-key") || request.headers.has("x-goog-api-key")) return true;
+  try {
+    return new URL(request.url).searchParams.get("key") !== null;
+  } catch {
+    return false;
+  }
 }
 
 async function canAccessLocalOnlyRoute(request, cliAllowed = true) {
@@ -136,6 +163,16 @@ async function auditDenied(request, policy, principal) {
   }
 }
 
+// Workspace id of /api/workspaces/[id]/…, decoded; null when undecodable.
+function urlWorkspaceId(request) {
+  try {
+    const pathname = request.nextUrl?.pathname ?? new URL(request.url).pathname;
+    return decodeURIComponent(pathname.split("/")[3] ?? "") || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Apply a routePolicy row: multi-user hide, local-only gate, then public /
  * gateway / session auth, then the capability. Null when allowed, else the
@@ -171,19 +208,37 @@ async function checkApiPolicy(request, policy) {
     auditDenied(request, policy, null);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  // YAN-360: instance admins/owners manage members/invites in ANY shared
-  // workspace (the handler + repo re-verify authority on the row). Scoped
-  // `anyWorkspace` alone would 403 an admin with no membership rows, so this
-  // one capability also admits `instance.users.manage`. No other scoped row.
-  const membersManageOverride =
+  // YAN-360 spec219: members and invitations routes check the exact URL
+  // workspace at the edge. Non-members (foreign or missing id alike) get 404;
+  // members without manage rights keep 403. Handler/repo recheck live.
+  // Instance admins/owners pass without membership rows. CLI admission stays
+  // per row (members allow it; invitations are browser-only). No principal
+  // takes the generic path below; anonymous requests keep the 401 above.
+  // Unlisted methods retain hostOps.
+  if (
     policy.multiUserOnly &&
     policy.scoped &&
     policy.capability === "workspace.members.manage" &&
-    (await principalCan(request, "instance.users.manage"));
-  if (
-    !membersManageOverride &&
-    !(await principalCan(request, policy.capability, { anyWorkspace: policy.scoped }))
+    (policy.key === "/api/workspaces/[id]/members" ||
+      policy.key === "/api/workspaces/[id]/members/[userId]" ||
+      policy.key === "/api/workspaces/[id]/invitations" ||
+      policy.key === "/api/workspaces/[id]/invitations/[inviteId]")
   ) {
+    const principal = await resolvePrincipal(request).catch(() => null);
+    if (principal) {
+      const workspaceId = urlWorkspaceId(request);
+      if (can(principal, "instance.users.manage")) return null;
+      if (can(principal, policy.capability, { workspaceId })) return null;
+      auditDenied(request, policy, principal);
+      if (!principal.workspaceRoles?.[workspaceId])
+        return NextResponse.json(
+          { error: "Workspace not found", code: "not_found" },
+          { status: 404 },
+        );
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
+  if (!(await principalCan(request, policy.capability, { anyWorkspace: policy.scoped }))) {
     auditDenied(request, policy, await resolvePrincipal(request).catch(() => null));
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
