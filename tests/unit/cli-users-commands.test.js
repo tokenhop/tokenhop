@@ -50,6 +50,8 @@ function load(rel) {
     P("commands/keys.js"),
     P("commands/authResetMode.js"),
     P("commands/_runApi.js"),
+    P("commands/authSetupToken.js"),
+    P("commands/keysRotate.js"),
   ]) {
     delete require.cache[mod];
   }
@@ -330,6 +332,28 @@ describe("error mapping", () => {
     expect(err.join()).toMatch(
       new RegExp(`tokenhop server is not running on 127\\.0\\.0\\.1:${dead}`),
     );
+    await start();
+  });
+
+  it("auth setup-token and keys rotate report an unreachable server without raw ECONNREFUSED", async () => {
+    const dead = port();
+    await new Promise((resolve) => server.close(resolve));
+    const setupToken = load("commands/authSetupToken.js");
+    const rotate = load("commands/keysRotate.js");
+    const wanted = new RegExp(`server is not running on 127\\.0\\.0\\.1:${dead}`);
+    for (const code of [
+      await setupToken.run(["--port", String(dead)]),
+      await rotate.run(["--yes", "--port", String(dead)]),
+      await rotate.run(["--yes", "--workspace", "w1", "--port", String(dead)]),
+    ]) {
+      expect(code).toBe(1);
+    }
+    const lines = err.filter((line) => line.startsWith("❌"));
+    expect(lines).toHaveLength(3);
+    for (const line of lines) {
+      expect(line).toMatch(wanted);
+      expect(line).not.toMatch(/ECONNREFUSED|Network error/);
+    }
     await start();
   });
 
