@@ -13,6 +13,7 @@
 const { requireShared } = require("../utils/requireShared");
 const api = require("../api/client");
 const input = require("../utils/input");
+const { describeError: describeNetworkError } = require("./_runApi");
 
 const { ACTIVE } = requireShared("brand");
 
@@ -59,10 +60,11 @@ function parseArgs(argv) {
   return opts;
 }
 
-function describeError(res) {
+function describeError(res, port) {
   const code =
     res.code ?? res.data?.code ?? (typeof res.error === "object" ? res.error?.code : undefined);
   const message = typeof res.error === "string" ? res.error : (res.error?.message ?? "");
+  if (/^Network error/.test(message)) return describeNetworkError(res, port);
   if (res.statusCode === 404) {
     // `not_found` is the workspace-rotate miss; a codeless 404 is the hidden route.
     if (code === "not_found") return "Workspace not found.";
@@ -123,7 +125,7 @@ async function run(argv, deps = {}) {
     : await client.rotateInstanceKey();
 
   if (!res.success) {
-    console.error(`❌ ${describeError(res)}`);
+    console.error(`❌ ${describeError(res, opts.port)}`);
     return 1;
   }
   const data = res.data || {};

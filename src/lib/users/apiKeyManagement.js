@@ -55,7 +55,11 @@ function liveAccess(db, ctx, workspaceId) {
   // Capabilities come from the shared role map using LIVE values only.
   const live = { instanceRole: user.instanceRole, workspaceRoles: { [workspaceId]: role } };
   const allowed = (capability) => can(live, capability, { workspaceId });
-  return { create: allowed("workspace.keys.create"), manage: allowed("workspace.keys.manage") };
+  return {
+    create: allowed("workspace.keys.create"),
+    manage: allowed("workspace.keys.manage"),
+    instanceRole: user.instanceRole,
+  };
 }
 
 function requireManage(access, verb) {
@@ -140,8 +144,8 @@ export async function getApiKey(ctx, workspaceId, id) {
 
 /**
  * Explicit create. Members create exactly their own user key; managers may
- * also create service keys (userId null). No key for another user, no silent
- * provisioning. Returns `{ key, metadata }`: the raw secret leaves only here;
+ * also create service keys (userId null). Instance owners/admins with live
+ * workspace manage rights may create keys for another active member. Returns `{ key, metadata }`: the raw secret leaves only here;
  * afterwards only the prefix projection exists.
  */
 export async function createApiKey(ctx, workspaceId, options = {}) {
@@ -160,8 +164,8 @@ export async function createApiKey(ctx, workspaceId, options = {}) {
   if (type !== "user" && type !== "service") {
     throw new TenancyError("INVALID", "Key type must be user or service");
   }
-  if (userId != null && (typeof userId !== "string" || userId !== ctx.userId)) {
-    throw new TenancyError("FORBIDDEN", "Cannot create a key for another user");
+  if (userId != null && (typeof userId !== "string" || !userId)) {
+    throw new TenancyError("INVALID", "Invalid userId");
   }
   const name = validName(input.name);
   const expiresAt = validExpiry(input.expiresAt);
@@ -176,10 +180,19 @@ export async function createApiKey(ctx, workspaceId, options = {}) {
   const access = liveAccess(db, ctx, workspaceId);
   if (!access.create) throw new TenancyError("FORBIDDEN", "Not allowed to create keys");
   if (type === "service") requireManage(access, "create service");
-  const keyUser = type === "user" ? ctx.userId : null;
-  if (keyUser && !db.get(`SELECT id FROM users WHERE id = ? AND status = 'active'`, [keyUser])) {
-    throw new TenancyError("NOT_FOUND", "User not found");
+  const keyUser = type === "user" ? (userId ?? ctx.userId) : null;
+  function checkTarget(live) {
+    if (!keyUser) return;
+    const delegated = keyUser !== ctx.userId;
+    if (delegated && (!live.manage || !["owner", "admin"].includes(live.instanceRole))) {
+      throw new TenancyError("FORBIDDEN", "Cannot create a key for another user");
+    }
+    const target = db.get(`SELECT id FROM users WHERE id = ? AND status = 'active'`, [keyUser]);
+    if (!target || (delegated && !membershipRole(db, workspaceId, keyUser))) {
+      throw new TenancyError("NOT_FOUND", "User not found");
+    }
   }
+  checkTarget(access);
   const { hashKid: kid, hashKey } = await getApiKeyHashKey(db);
   const raw = generateGatewayApiKey();
   const now = new Date().toISOString();
@@ -189,6 +202,7 @@ export async function createApiKey(ctx, workspaceId, options = {}) {
       if (!liveAccess(db, ctx, workspaceId).create)
         throw new TenancyError("FORBIDDEN", "Not allowed to create keys");
       if (type === "service") requireManage(liveAccess(db, ctx, workspaceId), "create service");
+      checkTarget(liveAccess(db, ctx, workspaceId));
       requireExistingCombos(db, input.allowedCombos, workspaceId);
       return apiKeyMetadata(
         insertHashedApiKeySync(db, {

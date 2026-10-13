@@ -1,11 +1,13 @@
 // YAN-358: admin "set temporary password". The target must change it on next
 // login (mustChangePassword = 1, sv bumped so their sessions end). Full
-// browser session only; never returns the hash or the plaintext.
+// browser session or owner CLI token; never returns the hash or the plaintext.
 import { NextResponse } from "next/server";
+import { requireMultiUser } from "@/lib/users/featureSwitch.js";
 import { isUserSecurityEnforced } from "@/lib/users/securityState.js";
 import { authorize, getPrincipal } from "@/lib/users/session";
 import { hashPassword, validateNewPassword } from "@/lib/auth/userPassword.js";
 import { isCrossSite, isJson } from "@/lib/auth/sameOrigin.js";
+import { audit } from "@/lib/users/audit.js";
 import { getUserUnscoped, setUserPasswordUnscoped } from "@/lib/db/index.js";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -20,13 +22,20 @@ function mayReset(actorRole, target) {
 
 export async function POST(request, { params }) {
   try {
+    const hidden = await requireMultiUser();
+    if (hidden) return hidden;
     if (!(await isUserSecurityEnforced())) return json({ error: "Not found" }, 404);
     if (isCrossSite(request)) return json({ error: "Forbidden", code: "forbidden_origin" }, 403);
     if (!isJson(request)) {
       return json({ error: "Unsupported media type", code: "invalid_request" }, 415);
     }
     const principal = await getPrincipal();
-    if (principal?.via !== "session") return json({ error: "Unauthorized" }, 401);
+    // YAN-377: the owner CLI principal may also set a temporary password.
+    if (
+      principal?.via !== "session" &&
+      !(principal?.via === "cli" && principal.instanceRole === "owner")
+    )
+      return json({ error: "Unauthorized" }, 401);
     const denied = await authorize("instance.users.manage");
     if (denied) return denied;
 
@@ -52,6 +61,7 @@ export async function POST(request, { params }) {
       mustChangePassword: true,
       expectedSessionVersion: target.sessionVersion,
     });
+    audit({ principal, request }, "instance.users.passwordReset", { type: "user", id: target.id });
     return json({ success: true });
   } catch (err) {
     if (err?.code === "STALE") return json({ error: "User changed, retry", code: "stale" }, 409);

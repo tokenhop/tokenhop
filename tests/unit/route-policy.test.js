@@ -109,6 +109,18 @@ const MOVED_TO_GUARD = new Set(["/api/auth/oidc/test", "/api/auth/saml/test"]);
 // YAN-358 password routes did not exist pre-YAN-357, so the legacy oracle has
 // no row for them; the table pins them stricter than the legacy default:
 // alwaysProtected with no CLI token. Every historical row stays unchanged.
+// YAN-377: the members rows were already CLI-admitted at the edge (not
+// session-only); only their handlers change. They are pinned here because
+// the edge starts admitting them in the legacy CLiAllowed test too.
+const YAN377_CLI_ROUTES = new Set([
+  "/api/users",
+  "/api/users/[id]",
+  "/api/users/[id]/password",
+  "/api/users/ownership-transfer",
+  "/api/workspaces",
+  "/api/workspaces/[id]/members",
+  "/api/workspaces/[id]/members/[userId]",
+]);
 const YAN358_PASSWORD_ROUTES = new Set(["/api/auth/change-password", "/api/users/[id]/password"]);
 
 // YAN-360 user routes intentionally session-only like the password endpoint:
@@ -267,6 +279,11 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
       for (const m of [...methods, "HEAD"]) {
         const { localOnly, alwaysProtected, gateway, public: pub } = resolveRoutePolicy(sample, m);
         const want = legacyFlags(sample, m);
+        if (YAN377_CLI_ROUTES.has(route)) want.alwaysProtected = true;
+        if (route === "/api/auth/reset-mode") {
+          want.localOnly = true;
+          want.alwaysProtected = true;
+        }
         if (MOVED_TO_GUARD.has(route)) want.public = false;
         if (YAN358_PASSWORD_ROUTES.has(route)) want.alwaysProtected = true;
         if (YAN360_USER_ROUTES.has(route)) want.alwaysProtected = true;
@@ -307,13 +324,14 @@ describe("single-user regression: flags match the pre-YAN-357 guard", () => {
     for (const { route, sample } of ROUTES) {
       const { cliAllowed } = resolveRoutePolicy(sample, "GET");
       expect(cliAllowed, route).toBe(
-        !MOVED_TO_GUARD.has(route) &&
-          !YAN358_PASSWORD_ROUTES.has(route) &&
-          !YAN360_USER_ROUTES.has(route) &&
-          !YAN360_SESSION_ONLY_ROUTES.has(route) &&
-          // YAN-375: browser-only workspace transfer routes (session + own
-          // password re-auth); every other authenticated route keeps the CLI.
-          !YAN375_TRANSFER_ROUTES.has(route),
+        YAN377_CLI_ROUTES.has(route) ||
+          (!MOVED_TO_GUARD.has(route) &&
+            !YAN358_PASSWORD_ROUTES.has(route) &&
+            !YAN360_USER_ROUTES.has(route) &&
+            !YAN360_SESSION_ONLY_ROUTES.has(route) &&
+            // YAN-375: browser-only workspace transfer routes (session + own
+            // password re-auth); every other authenticated route keeps the CLI.
+            !YAN375_TRANSFER_ROUTES.has(route)),
       );
     }
   });

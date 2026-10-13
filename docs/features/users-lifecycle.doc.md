@@ -113,3 +113,15 @@ Current password is re-verified in request with login-style rate limiting. Sessi
 ## References
 
 - [Feature spec](../plans/yan-360-invitations/feature-spec.md)
+
+## CLI (YAN-377)
+
+`tokenhop users …` and `tokenhop workspaces …` manage the same lifecycle from
+the terminal against the running local server (`users list|approve|role|
+disable|enable|reset-password|transfer-owner`, `workspaces list|members|
+add-member|remove-member`). Approve maps to `PATCH /api/users/:id
+{"instanceRole":"user"}`; disable/enable to `{"status":"disabled"|"active"}`.
+The CLI token is host-local, acts as the instance owner, is never printed, and
+is accepted only from loopback in multi-user mode; while
+`TOKENHOP_MULTI_USER` is off these commands answer 404. Passwords are prompted
+hidden and never echoed.

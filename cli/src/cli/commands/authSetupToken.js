@@ -7,6 +7,7 @@
 
 const { requireShared } = require("../utils/requireShared");
 const api = require("../api/client");
+const { describeError } = require("./_runApi");
 
 const { ACTIVE } = requireShared("brand");
 
@@ -55,6 +56,8 @@ async function run(argv) {
   if (!res.success) {
     if (res.statusCode === 404) {
       console.error(`❌ Users & teams is not turned on for this instance.`);
+    } else if (/^Network error/.test(res.error || "")) {
+      console.error(`❌ ${describeError(res, opts.port)}`);
     } else {
       const err = typeof res.error === "string" ? res.error : JSON.stringify(res.error);
       console.error(`❌ ${err}`);

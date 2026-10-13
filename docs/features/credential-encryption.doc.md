@@ -44,6 +44,10 @@ Both routes return 404 when `TOKENHOP_MULTI_USER` is off. KEK rotation with `TOK
 
 KEK rotation replaces the live file-managed key; it does not retain the old key. Backups made before rotation require the previous key. Keep that key offline if those backups must remain restorable.
 
+## CLI backup hint
+
+`tokenhop keys backup-hint` (no network) names the KEK location — the `TOKENHOP_MASTER_KEY` environment variable when set (value never printed), else `DATA_DIR/keys/master` — and repeats the backup rule: back the KEK up separately from database backups; losing it makes encrypted credentials unrecoverable.
+
 ## Backups, exports, and workspace deletion
 
 First activation makes a verified, protected pre-encryption backup with prefix `credential-encryption-activation-`. That backup, older rolling/pre-import backups, older backups, and earlier exports may contain plaintext credentials. Activation cleans old plaintext pages from the live database, not from historical copies.

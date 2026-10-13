@@ -75,18 +75,25 @@ export async function readJsonBody(request, { max = 1024 } = {}) {
 
 /**
  * Shared prelude for management routes: multi-user switch, same-origin
- * (all methods) and JSON (mutators only), full browser session, scoped
+ * (all methods) and JSON (mutators only), full browser session or — with
+ * `allowCli` (YAN-377) — the owner CLI principal, scoped
  * capability. Returns `{ res }` when denied, else `{ principal }`.
  * `allowInstanceUsersManage` (YAN-360): the member-management routes also
  * admit an active instance admin/owner holding `instance.users.manage` —
  * they may manage any shared workspace without a membership row. No other
  * capability or route opts in; the repo still re-checks authority live.
  * @param {Request} request
- * @param {{ capability: string, workspaceId?: string|null, body?: boolean, allowInstanceUsersManage?: boolean }} [opts]
+ * @param {{ capability: string, workspaceId?: string|null, body?: boolean, allowInstanceUsersManage?: boolean, allowCli?: boolean }} [opts]
  */
 export async function requireManagedSession(
   request,
-  { capability, workspaceId = null, body = false, allowInstanceUsersManage = false } = {},
+  {
+    capability,
+    workspaceId = null,
+    body = false,
+    allowInstanceUsersManage = false,
+    allowCli = false,
+  } = {},
 ) {
   const hidden = await requireMultiUser();
   if (hidden) return { res: hidden };
@@ -97,7 +104,10 @@ export async function requireManagedSession(
     return { res: json({ error: "Unsupported media type", code: "invalid_request" }, 415) };
   }
   const principal = await getPrincipal();
-  if (principal?.via !== "session") return { res: json({ error: "Unauthorized" }, 401) };
+  const sessionOk =
+    principal?.via === "session" ||
+    (allowCli && principal?.via === "cli" && principal.instanceRole === "owner");
+  if (!sessionOk) return { res: json({ error: "Unauthorized" }, 401) };
   if (allowInstanceUsersManage && can(principal, "instance.users.manage")) return { principal };
   const denied = await authorize(capability, workspaceId ? { workspaceId } : {});
   if (denied) return { res: denied };

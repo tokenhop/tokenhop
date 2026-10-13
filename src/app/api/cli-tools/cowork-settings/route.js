@@ -13,7 +13,7 @@ import os from "os";
 import crypto from "crypto";
 import { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS } from "@/shared/constants/coworkPlugins";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
-import { CLI_TOKEN_HEADER, getCliToken } from "@/lib/auth/cliToken";
+import { CLI_TOKEN_HEADER, CLI_TOKEN_HEADERS, getCliToken } from "@/lib/auth/cliToken";
 import { configErrorResponse, readJsonConfig } from "@/lib/cliToolConfig";
 import {
   PROVIDER,
@@ -274,7 +274,9 @@ export async function GET() {
         // Local bridge entries carry the machine-bound CLI token; it stays on disk.
         for (const m of sanitizedConfig.managedMcpServers ?? []) {
           if (m?.headers) {
-            delete m.headers[CLI_TOKEN_HEADER];
+            for (const key of Object.keys(m.headers)) {
+              if (CLI_TOKEN_HEADERS.includes(key.toLowerCase())) delete m.headers[key];
+            }
             if (Object.keys(m.headers).length === 0) delete m.headers;
           }
         }

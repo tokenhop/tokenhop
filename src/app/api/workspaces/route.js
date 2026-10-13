@@ -11,7 +11,12 @@ export async function GET() {
     const hidden = await requireMultiUser();
     if (hidden) return hidden;
     const principal = await getPrincipal();
-    if (principal?.via !== "session") return json({ error: "Unauthorized" }, 401);
+    // YAN-377: owner CLI principal admitted alongside a browser session.
+    if (
+      principal?.via !== "session" &&
+      !(principal?.via === "cli" && principal.instanceRole === "owner")
+    )
+      return json({ error: "Unauthorized" }, 401);
     const denied = await authorize("instance.users.manage");
     if (denied) return denied;
 

@@ -231,6 +231,7 @@ const SECRET_HEADERS = [
   "authorization",
   "x-api-key",
   "x-goog-api-key",
+  "x-tokenhop-cli-token",
   "x-9r-cli-token",
   "x-9r-peer-token",
   // The dashboard session cookie is never a gateway credential, but /v1 calls

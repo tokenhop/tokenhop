@@ -35,8 +35,9 @@ function fail(err) {
   return json({ error: "Internal error" }, 500);
 }
 
-// Shared prelude: switch, origin, full session, capability. Null when allowed.
-async function guard(request, { body = false } = {}) {
+// Shared prelude: switch, origin, session or (YAN-377, allowCli) owner CLI
+// principal, capability. Null when allowed. DELETE stays browser-session only.
+async function guard(request, { body = false, allowCli = false } = {}) {
   const hidden = await requireMultiUser();
   if (hidden) return { res: hidden };
   if (isCrossSite(request))
@@ -45,7 +46,10 @@ async function guard(request, { body = false } = {}) {
     return { res: json({ error: "Unsupported media type", code: "invalid_request" }, 415) };
   }
   const principal = await getPrincipal();
-  if (principal?.via !== "session") return { res: json({ error: "Unauthorized" }, 401) };
+  const allowed =
+    principal?.via === "session" ||
+    (allowCli && principal?.via === "cli" && principal.instanceRole === "owner");
+  if (!allowed) return { res: json({ error: "Unauthorized" }, 401) };
   const denied = await authorize("instance.users.manage");
   if (denied) return { res: denied };
   return { principal };
@@ -54,7 +58,7 @@ async function guard(request, { body = false } = {}) {
 // Same enriched DTO as one list row; 404 not_found when the user is gone.
 export async function GET(request, { params }) {
   try {
-    const { res } = await guard(request);
+    const { res } = await guard(request, { allowCli: true });
     if (res) return res;
     const { id } = await params;
     const user = await getUserDetailUnscoped(id);
@@ -73,7 +77,7 @@ function publicUser(u) {
 
 export async function PATCH(request, { params }) {
   try {
-    const { res, principal } = await guard(request, { body: true });
+    const { res, principal } = await guard(request, { body: true, allowCli: true });
     if (res) return res;
     let body;
     try {

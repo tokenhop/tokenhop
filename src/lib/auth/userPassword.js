@@ -12,6 +12,9 @@ export const DUMMY_HASH = "$2b$10$maUNk5tLUAmdidX5dRsQKueBpGd3eSvGPVmLbLoQVUk2tx
 
 const BCRYPT_HASH_RE = /^\$2[abxy]\$\d{2}\$[./A-Za-z0-9]{53}$/;
 
+/** Whether the stored value is a usable bcrypt password credential. */
+export const isUsablePasswordHash = (hash) => typeof hash === "string" && BCRYPT_HASH_RE.test(hash);
+
 const reject = (code, error) => ({ code, error });
 
 /**

@@ -1,10 +1,12 @@
 const api = require("./api/client");
-const { showMenuWithBack } = require("./utils/menuHelper");
+const workspace = require("./api/workspaceSelection");
+const { selectMenu } = require("./utils/input");
 const { showProvidersMenu } = require("./menus/providers");
 const { showApiKeysMenu } = require("./menus/apiKeys");
 const { showCombosMenu } = require("./menus/combos");
 const { showSettingsMenu } = require("./menus/settings");
 const { showCliToolsMenu } = require("./menus/cliTools");
+const { showUsersWorkspacesMenu, pickWorkspace } = require("./menus/usersWorkspaces");
 const { requireShared } = require("./utils/requireShared");
 
 const { ACTIVE } = requireShared("brand");
@@ -35,6 +37,10 @@ function renderHeader(port, keys, tunnel) {
       `Tunnel:   ${COLORS.red}OFF${COLORS.reset} ${COLORS.dim}(local only)${COLORS.reset}`,
     );
   }
+  const selected = workspace
+    .getWorkspaceChoices()
+    .find((w) => w.id === workspace.getSelectedWorkspaceId());
+  if (selected) lines.push(`Workspace: ${selected.name || selected.id}`);
   if (!keys || keys.length === 0) {
     lines.push(`Key:      ${COLORS.dim}No API keys yet${COLORS.reset}`);
   } else {
@@ -59,15 +65,6 @@ async function refreshHeaderBg(port) {
   }
 }
 
-function getHeader(port) {
-  // Kick off background refresh; return cache (or placeholder on first call).
-  refreshHeaderBg(port);
-  return (
-    cachedHeader ||
-    `Endpoint: http://localhost:${port}/v1\nTunnel:   ${COLORS.dim}...${COLORS.reset}\nKey:      ${COLORS.dim}...${COLORS.reset}`
-  );
-}
-
 /**
  * Start Terminal UI
  * @param {number} port - Server port number
@@ -78,53 +75,92 @@ async function startTerminalUI(port) {
 
   const basePath = [ACTIVE.name];
 
-  // Prime header cache before first render
-  await refreshHeaderBg(port);
+  // Multi-user state is reloaded on every main-menu entry: a switch
+  // change or server restart while the TUI runs takes effect on return here.
+  // Off/unavailable clears the selection (see workspaceSelection) and the
+  // menu below is exactly the legacy one.
+  while (true) {
+    const multiUser = Boolean(await workspace.loadMultiUserState());
+    // Fresh header so a dropped/changed workspace line never lingers.
+    await refreshHeaderBg(port);
 
-  // Main menu
-  await showMenuWithBack({
-    title: `📡 ${ACTIVE.name} Terminal UI`,
-    breadcrumb: basePath,
-    headerContent: () => getHeader(port),
-    items: [
+    const items = [
       {
         label: "Providers",
         action: async () => {
           await showProvidersMenu([...basePath, "Providers"]);
-          return true; // Continue
         },
       },
       {
         label: "API Keys",
         action: async () => {
           await showApiKeysMenu(port, [...basePath, "API Keys"]);
-          return true;
         },
       },
       {
         label: "Combos",
         action: async () => {
           await showCombosMenu([...basePath, "Combos"]);
-          return true;
         },
       },
       {
         label: "CLI Tools",
         action: async () => {
           await showCliToolsMenu(port, [...basePath, "CLI Tools"]);
-          return true;
         },
       },
+      ...(multiUser
+        ? [
+            {
+              label: () => {
+                const current = workspace
+                  .getWorkspaceChoices()
+                  .find((w) => w.id === workspace.getSelectedWorkspaceId());
+                return `Workspace: ${current?.name || current?.id || "none"} (change)`;
+              },
+              action: async () => {
+                await pickWorkspace([...basePath, "Workspace"]);
+                await refreshHeaderBg(port);
+              },
+            },
+            {
+              label: "Users & workspaces",
+              action: async () => {
+                await showUsersWorkspacesMenu(port, [...basePath, "Users & workspaces"]);
+              },
+            },
+          ]
+        : []),
       {
         label: "Settings",
         action: async () => {
           await showSettingsMenu([...basePath, "Settings"]);
-          return true;
         },
       },
-    ],
-    backLabel: "← Back to Interface Menu",
-  });
+    ];
+
+    // Same rendering contract as showMenuWithBack (back first, icons, ESC).
+    const menuItems = [
+      { label: "← Back to Interface Menu", icon: "☆" },
+      ...items.map((item) => ({
+        label: typeof item.label === "function" ? item.label() : item.label,
+        icon: "☆",
+      })),
+    ];
+    const selected = await selectMenu(
+      `📡 ${ACTIVE.name} Terminal UI`,
+      menuItems,
+      0,
+      "",
+      // Freshly refreshed above; no background re-fetch kick.
+      cachedHeader ||
+        `Endpoint: http://localhost:${port}/v1\nTunnel:   ${COLORS.dim}...${COLORS.reset}\nKey:      ${COLORS.dim}...${COLORS.reset}`,
+      basePath,
+    );
+    if (selected === -1 || selected === 0) return;
+    const item = items[selected - 1];
+    if (item?.action) await item.action();
+  }
 }
 
 module.exports = { startTerminalUI };

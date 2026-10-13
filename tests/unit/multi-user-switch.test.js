@@ -92,6 +92,7 @@ describe("requireMultiUser", () => {
       "src/app/api/auth/sso/preview/route.js",
       "src/app/api/audit/route.js",
       "src/app/api/auth/logout-all/route.js",
+      "src/app/api/auth/reset-mode/route.js",
       "src/app/api/auth/setup-token/route.js",
       "src/app/api/grants/route.js",
       "src/app/api/me/identities/[id]/route.js",
@@ -102,6 +103,7 @@ describe("requireMultiUser", () => {
       "src/app/api/providers/[id]/grants/[grantId]/route.js",
       "src/app/api/providers/[id]/grants/route.js",
       "src/app/api/settings/keys/rotate/route.js",
+      "src/app/api/users/[id]/password/route.js",
       "src/app/api/users/[id]/route.js",
       "src/app/api/users/ownership-transfer/route.js",
       "src/app/api/users/ownership-transfer/sso/route.js",
@@ -171,6 +173,11 @@ describe("multiUserEnabled setting", () => {
     ]);
     // Defaults and the denylists name the key to hide or reject it; they never read it.
     expect(hits).toEqual([
+      // CLI strings document required server mode; they never read the switch.
+      "cli/README.md",
+      "cli/src/cli/commands/_runApi.js",
+      "cli/src/cli/commands/keys.js",
+      "cli/src/cli/commands/users.js",
       "src/app/api/settings/database/route.js",
       "src/app/api/settings/route.js",
       "src/app/api/settings/validateSectionSettings.js",

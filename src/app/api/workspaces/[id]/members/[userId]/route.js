@@ -1,5 +1,5 @@
 // YAN-360: per-member role change (PATCH) and removal (DELETE). Hidden (404)
-// while the multi-user switch is off. Full browser session only; exact
+// while the multi-user switch is off. Full browser session or owner CLI token; exact
 // workspace URL id is authoritative and the repo re-checks live manager
 // authority, provenance (IdP rows are read-only), and the last-manager guard
 // in-transaction. The repo writes the membership.roleChange/membership.remove
@@ -46,6 +46,7 @@ export async function PATCH(request, { params }) {
       workspaceId: id,
       body: true,
       allowInstanceUsersManage: true,
+      allowCli: true,
     });
     if (res) return res;
     const body = await readJsonBody(request, { max: MAX_BODY });
@@ -75,6 +76,7 @@ export async function DELETE(request, { params }) {
       capability: CAPABILITY,
       workspaceId: id,
       allowInstanceUsersManage: true,
+      allowCli: true,
     });
     if (res) return res;
     const removed = await removeMembership(principal, id, userId);

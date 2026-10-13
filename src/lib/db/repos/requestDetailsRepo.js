@@ -102,6 +102,7 @@ function sanitizeHeaders(headers) {
     "authorization",
     "x-api-key",
     "x-goog-api-key",
+    "x-tokenhop-cli-token",
     "x-9r-cli-token",
     "x-9r-peer-token",
     "cookie",
