@@ -485,15 +485,20 @@ describe("Schema migrations", () => {
     const all = vi.spyOn(db, "all");
     try {
       expect(readCredentialEncryptionState(db).storage).toBe("legacy");
-      expect(all).not.toHaveBeenCalled();
+      // Only the single batched _meta marker read; never a credential-table scan.
+      expect(all).toHaveBeenCalledTimes(1);
+      expect(all.mock.calls[0][0]).toMatch(/FROM _meta WHERE key IN/);
       expect(
         get.mock.calls.every(
           ([sql]) => !/FROM (providerConnections|providerNodes|settings)\b/i.test(sql),
         ),
       ).toBe(true);
       get.mockClear();
+      all.mockClear();
       readCredentialEncryptionState(db, { strict: true });
-      expect(all).toHaveBeenCalledTimes(3);
+      // One batched marker read plus one envelope-sniff scan per credential table.
+      expect(all).toHaveBeenCalledTimes(4);
+      expect(all.mock.calls[0][0]).toMatch(/FROM _meta WHERE key IN/);
     } finally {
       get.mockRestore();
       all.mockRestore();

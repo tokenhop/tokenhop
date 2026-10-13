@@ -34,6 +34,7 @@ async function load(state = "on") {
     logout: await import("@/app/api/users/[id]/logout-all/route.js"),
     workspace: await import("@/app/api/workspaces/[id]/route.js"),
     invitation: await import("@/app/api/workspaces/[id]/invitations/route.js"),
+    invitationItem: await import("@/app/api/workspaces/[id]/invitations/[inviteId]/route.js"),
     ssoTransfer: await import("@/app/api/users/ownership-transfer/sso/route.js"),
   };
   jar.cookies.clear();
@@ -152,6 +153,7 @@ it("pins CLI-enabled route rows and session-only rows", async () => {
     "/api/workspaces/w",
     "/api/workspaces/w/reauth",
     "/api/workspaces/w/invitations",
+    "/api/workspaces/w/invitations/i1",
     "/api/workspaces/w/move",
     "/api/workspaces/w/budgets",
     "/api/workspaces/w/export",
@@ -258,7 +260,15 @@ describe("owner CLI management", () => {
       [routes.user.DELETE, "/api/users/u", "DELETE", undefined, { id: tenancy.b.user.id }],
       [routes.logout.POST, "/api/users/u/logout-all", "POST", {}, { id: tenancy.b.user.id }],
       [routes.workspace.GET, `/api/workspaces/${id}`, "GET", undefined, { id }],
+      [routes.invitation.GET, `/api/workspaces/${id}/invitations`, "GET", undefined, { id }],
       [routes.invitation.POST, `/api/workspaces/${id}/invitations`, "POST", {}, { id }],
+      [
+        routes.invitationItem.DELETE,
+        `/api/workspaces/${id}/invitations/i1`,
+        "DELETE",
+        undefined,
+        { id, inviteId: "i1" },
+      ],
       [routes.ssoTransfer.POST, "/api/users/ownership-transfer/sso", "POST", {}, {}],
     ])
       expect((await call(handler, path, method, body, params)).status).toBe(401);

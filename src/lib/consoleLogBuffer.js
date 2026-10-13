@@ -1,4 +1,5 @@
-import { EventEmitter } from "events";
+import { EventEmitter } from "node:events";
+import { redactText } from "open-sse/utils/redact.js";
 import { CONSOLE_LOG_CONFIG } from "@/shared/constants/config.js";
 
 const consoleLevels = ["log", "info", "warn", "error", "debug"];
@@ -41,8 +42,8 @@ function scheduleFlush() {
   state.flushTimer?.unref?.();
 }
 
-function toLogLine(level, args) {
-  return args.map(formatArg).join(" ");
+function toLogLine(args) {
+  return redactText(args.map(formatArg).join(" "));
 }
 
 // Strip ANSI escape codes so terminal colors don't bleed into UI
@@ -57,7 +58,7 @@ function formatArg(arg) {
   if (typeof arg === "string") return stripAnsi(arg);
   if (arg instanceof Error) return stripAnsi(arg.stack || arg.message || String(arg));
   try {
-    return stripAnsi(JSON.stringify(arg));
+    return stripAnsi(JSON.stringify(arg) ?? "");
   } catch {
     return stripAnsi(String(arg));
   }
@@ -87,7 +88,7 @@ export function initConsoleLogCapture() {
   for (const level of consoleLevels) {
     state.originals[level] = console[level];
     console[level] = (...args) => {
-      appendLine(toLogLine(level, args));
+      appendLine(toLogLine(args));
       state.originals[level](...args);
     };
   }

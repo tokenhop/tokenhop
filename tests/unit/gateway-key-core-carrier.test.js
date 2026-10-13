@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   detail: vi.fn(async () => {}),
   appendLog: vi.fn(async () => {}),
   forceStream: false,
+  loggerSecrets: null,
 }));
 vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
@@ -32,15 +33,18 @@ vi.mock("../../open-sse/config/providers.js", async (importOriginal) => {
   };
 });
 vi.mock("../../open-sse/utils/requestLogger.js", () => ({
-  createRequestLogger: async () => ({
-    logClientRawRequest() {},
-    logRawRequest() {},
-    logTargetRequest() {},
-    logProviderResponse() {},
-    logConvertedResponse() {},
-    logError() {},
-    logStreamChunk() {},
-  }),
+  createRequestLogger: async (_src, _tgt, _model, options) => {
+    mocks.loggerSecrets = options?.secrets;
+    return {
+      logClientRawRequest() {},
+      logRawRequest() {},
+      logTargetRequest() {},
+      logProviderResponse() {},
+      logConvertedResponse() {},
+      logError() {},
+      logStreamChunk() {},
+    };
+  },
 }));
 vi.mock("../../open-sse/services/quotaHeaders.js", () => ({ ingestResponseHeaders() {} }));
 
@@ -119,6 +123,32 @@ function assertUsage(legacy = false) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.forceStream = false;
+});
+
+describe("chatCore logger provenance carrier", () => {
+  it("forwards live credential-named leaves incl. psd.cookie, not metadata", async () => {
+    upstream(JSON.stringify(completion), "application/json");
+    const opts = options(false, true);
+    opts.credentials = {
+      apiKey: "provider-secret",
+      connectionName: "My Personal Connection",
+      providerSpecificData: { cookie: "opaque-psd-cookie-ZZ77", region: "us-east-1" },
+    };
+    const result = await handleChatCore(opts);
+    expect(result.success).toBe(true);
+    expect(typeof mocks.loggerSecrets).toBe("function");
+    let secrets = mocks.loggerSecrets();
+    expect(secrets).toEqual(
+      expect.arrayContaining(["legacy-raw-key", "provider-secret", "opaque-psd-cookie-ZZ77"]),
+    );
+    expect(secrets).not.toContain("My Personal Connection");
+    expect(secrets).not.toContain("us-east-1");
+    expect(secrets).not.toContain("body-secret");
+    // Live: a credential minted after logger creation is picked up.
+    opts.credentials.providerSpecificData.cookie = "refreshed-psd-cookie-ZZ88";
+    secrets = mocks.loggerSecrets();
+    expect(secrets).toContain("refreshed-psd-cookie-ZZ88");
+  });
 });
 
 describe("gateway chat core ID-only telemetry carrier", () => {

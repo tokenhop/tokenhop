@@ -6,6 +6,7 @@ import { readApiKeyStorageState } from "./apiKeyState.js";
 import { readCredentialEncryptionState } from "./credentialEncryptionState.js";
 import { MIGRATIONS, latestVersion } from "./migrations/index.js";
 import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
+import { clearApiKeysSchemaCache } from "./helpers/apiKeysSchema.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
@@ -147,6 +148,7 @@ export function runVersionedMigrations(adapter, migrations = MIGRATIONS) {
         setMetaSync(adapter, "schemaVersion", m.version);
       });
     } finally {
+      clearApiKeysSchemaCache(adapter); // DDL rollback can reuse schema_version
       adapter.exec("PRAGMA foreign_keys = ON");
     }
     lastApplied = m.version;

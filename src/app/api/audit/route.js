@@ -1,8 +1,9 @@
 // YAN-376: audit log read API. Scoped (ADR-0002 workspace.audit.read):
 // workspace owner/manager of the selected workspace, or instance owner/admin
-// via oversight. Switch off: 404 (requireMultiUser). Rows hold no secrets by
-// design (redacted at write).
+// via oversight. Switch off: 404 (requireMultiUser). New writes are redacted;
+// response copies additionally protect historical rows without DB mutation.
 import { NextResponse } from "next/server";
+import { redactText } from "open-sse/utils/redact.js";
 import { requireMultiUser } from "@/lib/users/featureSwitch.js";
 import { can } from "@/lib/users/principal.js";
 import { resolvePrincipal } from "@/lib/users/session";
@@ -79,10 +80,21 @@ export async function GET(request) {
     }
 
     const { events, pagination } = await auditRepo.list(filter);
-    return json({ events, pagination });
+    // Historical rows predate write-time redaction. Mask response copies only;
+    // never rewrite or purge the append-only audit history.
+    return json({
+      events: events.map((event) => ({
+        ...event,
+        targetId: redactText(event.targetId),
+        before: redactText(event.before),
+        after: redactText(event.after),
+        ip: redactText(event.ip),
+      })),
+      pagination,
+    });
   } catch (error) {
     if (error?.code === "API_KEY_STATE_INVALID") return json({ error: "Service unavailable" }, 503);
-    console.error("[API] Failed to read audit log:", error);
+    console.error("[API] Failed to read audit log:", redactText(String(error?.message ?? error)));
     return json({ error: "Failed to fetch audit log" }, 500);
   }
 }

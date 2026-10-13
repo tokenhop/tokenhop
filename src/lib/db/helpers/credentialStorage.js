@@ -49,8 +49,8 @@ function integrity(code = "DECRYPT_FAILED") {
  * Memory-only context. `root` is `{kid,key}` from loadMasterKey (or null when
  * never encrypted / metadata-only). Validates the root against the marker kid.
  */
-export function prepareCredentialContext(db, root = null) {
-  const state = readCredentialEncryptionState(db);
+export function prepareCredentialContext(db, root = null, { state } = {}) {
+  state ??= readCredentialEncryptionState(db);
   if (state.storage === "encrypted" && root) {
     if (!root.key || root.kid !== state.kekKid) {
       fail("KEY_MISMATCH", "root key does not match the stored key id");

@@ -177,14 +177,61 @@ http.createServer = (...args) => {
 };
 
 if (require.main === module) {
+  // Next listens before instrumentation settles and turns a rejected
+  // readiness promise into per-request 500s. The wrapper owns the fatal
+  // boundary: it resolves the same built `server/instrumentation.js` the
+  // real server will use, awaits registration (via a module-level promise
+  // Next caches, so the server's later register() reuses the settled call),
+  // exits nonzero on rejection before any HTTP listener exists, and only
+  // then requires the standalone server / `next start`. Never load Next
+  // config here: the baked standalone config must stay untouched.
+  // Entry-only: dev, build, tests and library imports of this file never
+  // reach this block, so reusable startup modules stay process.exit-free.
+  const startupGate = async () => {
+    // The standalone server installs Next's node environment only when it is
+    // required below; the gate runs first, so mirror the one global its
+    // instrumentation loading needs (node-environment-baseline.js).
+    if (typeof globalThis.AsyncLocalStorage !== "function") {
+      globalThis.AsyncLocalStorage = require("node:async_hooks").AsyncLocalStorage;
+    }
+    // ponytail: pinned private Next module; recheck on Next upgrades.
+    const {
+      ensureInstrumentationRegistered,
+    } = require("next/dist/server/lib/router-utils/instrumentation-globals.external");
+    // ponytail: assumes the app dir is this file's dir (standalone, CLI,
+    // and repo `npm start` all run the wrapper from the app root).
+    const dir = __dirname;
+    const distDir = [process.env.NEXT_DIST_DIR, ".next", ".next-cli-build"].find(
+      (candidate) =>
+        candidate && fs.existsSync(path.join(dir, candidate, "server", "instrumentation.js")),
+    );
+    if (!distDir) {
+      throw new Error(
+        "No built instrumentation found: expected server/instrumentation.js under NEXT_DIST_DIR, .next or .next-cli-build",
+      );
+    }
+    // Instrumentation gates its nodejs work (the readiness chain) on this env.
+    process.env.NEXT_RUNTIME = "nodejs";
+    await ensureInstrumentationRegistered(dir, distDir);
+  };
+
   const standalone = path.join(__dirname, "server.js");
-  if (fs.existsSync(standalone)) {
-    require(standalone);
-  } else {
+  const start = () => {
+    if (fs.existsSync(standalone)) {
+      require(standalone);
+      return;
+    }
     // Repo checkout has no standalone build next to us. `next start` builds its HTTP
     // server in-process, so the wrapper above still sanitizes every request.
     const nextBin = require.resolve("next/dist/bin/next");
     process.argv = [process.argv[0], nextBin, "start", ...process.argv.slice(2)];
     require(nextBin);
-  }
+  };
+
+  startupGate()
+    .then(start)
+    .catch((error) => {
+      console.error("[custom-server] Fatal startup failure:", error);
+      process.exit(1);
+    });
 }

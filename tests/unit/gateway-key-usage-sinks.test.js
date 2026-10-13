@@ -1,7 +1,12 @@
 import crypto from "node:crypto";
-import { beforeEach, afterEach, describe, expect, it } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import * as apiKeyHashKey from "@/lib/security/apiKeyHashKey.js";
+import * as masterKey from "@/lib/security/masterKey.js";
+import * as credentialMaintenance from "@/lib/db/credentialMaintenance.js";
 import { getAdapter } from "@/lib/db/driver.js";
-import { saveRequestUsageUnscoped } from "@/lib/db/repos/usageRepo.js";
+import * as driver from "@/lib/db/driver.js";
+import { apiKeysHasKeyHash } from "@/lib/db/helpers/apiKeysSchema.js";
+import { resolveUsageKeyIdentity, saveRequestUsageUnscoped } from "@/lib/db/repos/usageRepo.js";
 import { getUsageStats } from "@/lib/db/repos/usageStatsRepo.js";
 import { insertHashedApiKeySync } from "@/lib/db/repos/apiKeysRepo.js";
 import { deriveApiKeyHashKey, hashApiKey, masterKeyId } from "@/lib/security/masterKey.js";
@@ -155,6 +160,84 @@ describe("usage sinks under hashed storage", () => {
     expect(JSON.stringify(db.all("SELECT value FROM _meta"))).not.toContain(RAW);
   });
 
+  it("explicit-id and keyless writes need no master root: succeed with no key material", async () => {
+    delete process.env.TOKENHOP_MASTER_KEY;
+    const rootSpy = vi.spyOn(masterKey, "loadMasterKey");
+    try {
+      await saveRequestUsageUnscoped(entry({ apiKeyId: "known" }));
+      await saveRequestUsageUnscoped(entry({ model: "gpt-4o-mini" }));
+      expect(rootSpy).not.toHaveBeenCalled();
+    } finally {
+      rootSpy.mockRestore();
+    }
+    expect(db.all("SELECT apiKeyId FROM usageHistory ORDER BY id").map((r) => r.apiKeyId)).toEqual([
+      "known",
+      "local-no-key",
+    ]);
+  });
+
+  it("maintenance poison still blocks raw credential use and raw mutations (isolated adapter)", async () => {
+    // Derived object = distinct poison state; the shared adapter stays clean.
+    const poisoned = Object.create(db);
+    credentialMaintenance.poisonCredentialMaintenance(poisoned, new Error("test poison"));
+    await expect(resolveUsageKeyIdentity(poisoned, { apiKey: RAW })).rejects.toMatchObject({
+      code: "CREDENTIAL_MAINTENANCE_POISONED",
+    });
+    expect(() => poisoned.run("DELETE FROM usageHistory")).toThrow(/blocked until restart/);
+    expect(credentialMaintenance.isCredentialMaintenancePoisoned(db)).toBe(false);
+  });
+
+  it("non-string apiKeyId fails closed with no write", async () => {
+    for (const apiKeyId of [42, { id: "known" }]) {
+      await expect(saveRequestUsageUnscoped(entry({ apiKeyId }))).rejects.toThrow(
+        /malformed apiKeyId/,
+      );
+    }
+    expect(db.get("SELECT COUNT(*) AS n FROM usageHistory").n).toBe(0);
+    expect(db.get("SELECT COUNT(*) AS n FROM usageRollup").n).toBe(0);
+  });
+
+  it("non-string apiKey fails closed with no write", async () => {
+    for (const apiKey of [42, { k: RAW }]) {
+      await expect(saveRequestUsageUnscoped(entry({ apiKey }))).rejects.toThrow(/malformed apiKey/);
+    }
+    expect(db.get("SELECT COUNT(*) AS n FROM usageHistory").n).toBe(0);
+    expect(JSON.stringify(db.all("SELECT * FROM usageHistory"))).not.toContain(RAW);
+  });
+
+  it("explicit-id and keyless writes skip hash-key load and the apiKeys scan", async () => {
+    const hashSpy = vi.spyOn(apiKeyHashKey, "getApiKeyHashKey");
+    const allSpy = vi.spyOn(db, "all");
+    const getSpy = vi.spyOn(db, "get");
+    try {
+      await saveRequestUsageUnscoped(entry({ apiKeyId: "known" }));
+      await saveRequestUsageUnscoped(entry({}));
+      expect(hashSpy).not.toHaveBeenCalled();
+      expect(
+        [...allSpy.mock.calls, ...getSpy.mock.calls]
+          .map(([q, params]) => `${q} ${JSON.stringify(params)}`)
+          .filter((q) =>
+            /FROM\s+(apiKeys|workspaceKeys)\b|apiKeyHashKeyWrapped|credentials/i.test(q),
+          ),
+      ).toEqual([]);
+      // Positive control: the spy sees the raw path, so the checks above bite.
+      await saveRequestUsageUnscoped(entry({ apiKey: RAW }));
+      expect(hashSpy).toHaveBeenCalledTimes(1);
+      expect(
+        allSpy.mock.calls.map(([q]) => String(q)).filter((q) => /FROM\s+apiKeys\b/i.test(q)),
+      ).toHaveLength(1);
+    } finally {
+      allSpy.mockRestore();
+      getSpy.mockRestore();
+      hashSpy.mockRestore();
+    }
+    expect(db.all("SELECT apiKeyId FROM usageHistory ORDER BY id").map((r) => r.apiKeyId)).toEqual([
+      "known",
+      "local-no-key",
+      "known",
+    ]);
+  });
+
   it("stats join by id in hashed state: names resolve, counts preserved, no raw", async () => {
     await saveRequestUsageUnscoped(entry({ apiKeyId: "known" }));
     await saveRequestUsageUnscoped(entry({ apiKeyId: "known", model: "gpt-4o-mini" }));
@@ -305,5 +388,34 @@ describe("requestDetails capture sanitization", () => {
     const url = sanitizeUrl("http://localhost/v1/chat?key=secret&model=x");
     expect(url).not.toContain("secret");
     expect(url).toContain("model=x");
+  });
+});
+
+describe("warmed schema memo under admission poison", () => {
+  beforeEach(() => {
+    process.env.TOKENHOP_MASTER_KEY = MASTER.toString("base64");
+    installHashedFixture();
+  });
+
+  it("keyless and explicit-id writes still hit the guarded transaction", async () => {
+    // Derived object = distinct poison state; the shared adapter stays clean.
+    const poisoned = Object.create(db);
+    expect(apiKeysHasKeyHash(poisoned)).toBe(true); // warm the memo
+    credentialMaintenance.poisonCredentialMaintenance(poisoned, new Error("test poison"));
+    const adapterSpy = vi.spyOn(driver, "getAdapter").mockResolvedValue(poisoned);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (const patch of [{}, { apiKeyId: "known" }]) {
+        await saveRequestUsageUnscoped(entry(patch));
+      }
+      // The memo answered the schema check, yet the write path was fenced.
+      expect(errSpy.mock.calls.flat().join(" ")).toMatch(/blocked until restart/);
+    } finally {
+      adapterSpy.mockRestore();
+      errSpy.mockRestore();
+    }
+    expect(db.get("SELECT COUNT(*) AS n FROM usageHistory").n).toBe(0);
+    expect(db.get("SELECT COUNT(*) AS n FROM usageRollup").n).toBe(0);
+    expect(credentialMaintenance.isCredentialMaintenancePoisoned(db)).toBe(false);
   });
 });

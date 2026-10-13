@@ -15,6 +15,7 @@ import { getAdapter } from "../db/driver.js";
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { getSettings } from "../db/repos/settingsRepo.js";
 import { isMultiUserEnabled } from "../users/featureSwitch.js";
+import { mintGatewayPrincipal } from "../security/requestCredentialScope.js";
 
 /** Admin-only keyless opt-in (YAN-363); default false. Not API-writable here. */
 export const ALLOW_KEYLESS_SETTING = "allowKeylessGatewayRequests";
@@ -35,13 +36,17 @@ function ownerPrincipal(db, via) {
     )
   )
     return null;
-  return Object.freeze({
-    userId: owner.id,
-    workspaceId,
-    apiKeyId: null,
-    scopes: Object.freeze({ allowedModels: Object.freeze([]), allowedCombos: Object.freeze([]) }),
-    via,
-  });
+  // Lazy, root-free scope (owner): the root loads inside decode on first use.
+  return mintGatewayPrincipal(
+    {
+      userId: owner.id,
+      workspaceId,
+      apiKeyId: null,
+      scopes: { allowedModels: [], allowedCombos: [] },
+      via,
+    },
+    db,
+  );
 }
 
 /**
@@ -147,7 +152,7 @@ export async function resolveGatewayAuth(request) {
     }
     let principal;
     try {
-      principal = await resolveApiKey(hashedCredential);
+      principal = await resolveApiKey(hashedCredential, { apiKeyState: state });
     } catch (err) {
       if (err?.code === "API_KEY_STATE_INVALID") throw err;
       return errorResponse(503, "Gateway storage unavailable");

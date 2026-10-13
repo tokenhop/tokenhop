@@ -14,6 +14,7 @@ import { readCredentialEncryptionState } from "./credentialEncryptionState.js";
 import { getApiKeyHashKey } from "../security/apiKeyHashKey.js";
 import { HASHED_API_KEYS_TABLE } from "./schema.js";
 import { hashGatewayKeysSync } from "./migrations/hashGatewayKeys.js";
+import { clearApiKeysSchemaCache } from "./helpers/apiKeysSchema.js";
 import {
   initGatewayVideoJobsSync,
   requireGatewayVideoJobsSync,
@@ -308,6 +309,7 @@ async function activate(
       backupDir: backup.dir,
     };
   } finally {
+    clearApiKeysSchemaCache(db); // Outer rollback can reuse the inner transaction's cookie
     db.exec(`PRAGMA synchronous = ${synchronous}`);
   }
 }

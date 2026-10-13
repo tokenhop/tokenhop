@@ -5,7 +5,7 @@ import { getMetaSync, setMetaSync } from "../helpers/metaStore.js";
 import { isPeriod, periodStart, previousPeriodRange } from "@/shared/utils/period";
 import { readApiKeyStorageState } from "../apiKeyState.js";
 import { normalizeUsageKeyEntry } from "../helpers/usageKeyIdentity.js";
-import { tableHasColumn } from "../migrations/helpers.js";
+import { apiKeysHasKeyHash } from "../helpers/apiKeysSchema.js";
 import { getApiKeyHashKey } from "../../security/apiKeyHashKey.js";
 import { pushToRing, scheduleStatsEvent } from "./usageLiveFeed.js";
 import { emitUsageCommitted } from "../../usage/usageCommitted.js";
@@ -154,7 +154,7 @@ export async function resolveUsageKeyIdentity(
     // Hashed mode is decided by the actual apiKeys schema, never by whether
     // key rows exist. A table carrying keyHash is hashed no matter what the
     // marker says: storing a raw into it would persist a raw key.
-    if (tableHasColumn(db, "apiKeys", "keyHash")) {
+    if (apiKeysHasKeyHash(db)) {
       const err = new Error("[usage] hashed apiKeys schema without hashed marker");
       err.code = "API_KEY_STATE_INVALID";
       throw err;
@@ -164,19 +164,23 @@ export async function resolveUsageKeyIdentity(
     }
     return { storage: "legacy", credential: apiKey ?? null, workspaceId, userId };
   }
-  const { hashKey } = await getApiKeyHashKey(db);
   // Schema inspected directly (PRAGMA table_info), never inferred from
   // returned rows: an empty but validly-migrated hashed table must still
   // accept keyless and explicit-id writes; only a missing keyHash column
   // (migration never ran) fails closed.
-  if (!tableHasColumn(db, "apiKeys", "keyHash")) {
+  if (!apiKeysHasKeyHash(db)) {
     const err = new Error("[usage] hashed storage without hashed apiKeys schema");
     err.code = "API_KEY_STATE_INVALID";
     throw err;
   }
+  let hashKey = null;
   const keyIdByHash = new Map();
-  for (const row of db.all(`SELECT id, keyHash FROM apiKeys`)) {
-    if (row?.keyHash && row?.id) keyIdByHash.set(row.keyHash, row.id);
+  // Only late raw keys need the root/hash key and key-table scan.
+  if (typeof apiKey === "string" && apiKey !== "") {
+    ({ hashKey } = await getApiKeyHashKey(db));
+    for (const row of db.all(`SELECT id, keyHash FROM apiKeys`)) {
+      if (row?.keyHash && row?.id) keyIdByHash.set(row.keyHash, row.id);
+    }
   }
   const normalized = normalizeUsageKeyEntry(
     { apiKey, apiKeyId },

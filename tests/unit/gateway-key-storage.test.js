@@ -204,7 +204,11 @@ describe("hashed gateway key storage", () => {
       get: () => {
         throw new Error("injected _meta read failure");
       },
-      all: (...args) => db.all(...args),
+      // Marker reads are one batched `all` SELECT on _meta (readMetaValues).
+      all: (sql, ...rest) => {
+        if (/FROM _meta/.test(sql)) throw new Error("injected _meta read failure");
+        return db.all(sql, ...rest);
+      },
       run: (...args) => db.run(...args),
       exec: (...args) => db.exec(...args),
     };

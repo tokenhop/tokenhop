@@ -8,7 +8,7 @@ import { getAdapter } from "../driver.js";
 import { parseJson } from "../helpers/jsonCol.js";
 import { PERIOD_DAYS, periodStart } from "@/shared/utils/period";
 import { readApiKeyStorageState } from "../apiKeyState.js";
-import { tableHasColumn } from "../migrations/helpers.js";
+import { apiKeysHasKeyHash } from "../helpers/apiKeysSchema.js";
 import { lastErrorFor, pendingView } from "./usageLiveFeed.js";
 import { rollupLatencySummary } from "../helpers/usageLatencyRollup.js";
 import {
@@ -40,7 +40,7 @@ export async function apiKeyNames(db) {
   } catch {}
   if (!hashed) {
     try {
-      hashed = tableHasColumn(db, "apiKeys", "keyHash");
+      hashed = apiKeysHasKeyHash(db);
     } catch {}
   }
   const map = {};

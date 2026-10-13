@@ -1,0 +1,344 @@
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createSqlJsAdapter } from "@/lib/db/adapters/sqljsAdapter.js";
+import { runMigrationOnce } from "@/lib/db/migrate.js";
+import { HASHED_API_KEYS_TABLE, buildCreateTableSql } from "@/lib/db/schema.js";
+import { activateCredentialEncryption } from "@/lib/db/activateCredentialEncryption.js";
+import { rotateKek } from "@/lib/security/keyRotation.js";
+import { poisonCredentialMaintenance } from "@/lib/db/credentialMaintenance.js";
+import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
+import { insertHashedApiKeySync } from "@/lib/db/repos/apiKeysRepo.js";
+import {
+  prepareCredentialCtx,
+  assertCredentialCtxCurrent,
+} from "@/lib/db/repos/connectionsRepo.js";
+import * as scopeModule from "@/lib/security/requestCredentialScope.js";
+import { resolveApiKey, clearApiKeyPrincipalCache } from "@/lib/auth/apiKeyPrincipal.js";
+import { resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
+import { getGatewayConnections, getGatewayNodes } from "@/lib/auth/gatewayResources.js";
+import { getApiKeyHashKey, resolveApiKeyHashKeyForAuth } from "@/lib/security/apiKeyHashKey.js";
+
+vi.mock("@/lib/db/driver.js", () => ({ getAdapter: vi.fn() }));
+vi.mock("@/lib/auth/cliTokenPolicy.js", () => ({ cliTokenAcceptedWith: vi.fn() }));
+vi.mock("@/lib/security/masterKey.js", async (original) => ({
+  ...(await original()),
+  loadMasterKey: vi.fn(),
+}));
+import { getAdapter } from "@/lib/db/driver.js";
+import { cliTokenAcceptedWith } from "@/lib/auth/cliTokenPolicy.js";
+import {
+  loadMasterKey,
+  masterKeyId,
+  deriveApiKeyHashKey,
+  hashApiKey,
+} from "@/lib/security/masterKey.js";
+
+const MASTER = Buffer.alloc(32, 7);
+const NEXT = Buffer.alloc(32, 23);
+const root = { kid: masterKeyId(MASTER), key: MASTER };
+const nextRoot = { kid: masterKeyId(NEXT), key: NEXT };
+const token = `th_${"A".repeat(32)}`;
+const request = () =>
+  new Request("http://localhost/v1/chat/completions", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+const invalid = (code) => expect.objectContaining({ code });
+let db;
+let sequence = 0;
+
+beforeEach(async () => {
+  db = await createSqlJsAdapter(path.join(process.env.DATA_DIR, `scope-${sequence++}.sqlite`));
+  await runMigrationOnce(db);
+  getAdapter.mockResolvedValue(db);
+  loadMasterKey.mockReset().mockResolvedValue(root);
+  cliTokenAcceptedWith.mockReset().mockResolvedValue(false);
+  clearApiKeyPrincipalCache();
+  db.exec(`DROP TABLE apiKeys; ${buildCreateTableSql("apiKeys", HASHED_API_KEYS_TABLE)}`);
+  db.run(
+    `INSERT INTO users(id,instanceRole,status,createdAt,updatedAt) VALUES('u','owner','active','n','n')`,
+  );
+  db.run(
+    `INSERT INTO workspaces(id,name,kind,createdAt,updatedAt) VALUES('w','Default','shared','n','n')`,
+  );
+  db.run(`INSERT INTO memberships(workspaceId,userId,role,createdAt) VALUES('w','u','owner','n')`);
+  db.run(
+    `INSERT INTO _meta(key,value) VALUES('defaultWorkspaceId','w'),('apiKeysHashedVersion','1'),('apiKeysHashKid',?)`,
+    [root.kid],
+  );
+  insertHashedApiKeySync(db, {
+    id: "key",
+    workspaceId: "w",
+    userId: "u",
+    createdByUserId: "u",
+    keyHash: hashApiKey(token, deriveApiKeyHashKey(MASTER)),
+    hashKid: root.kid,
+    prefix: "th_AAAA…AAAA",
+    name: "key",
+    legacy: 0,
+    isActive: 1,
+    allowedModels: [],
+    allowedCombos: [],
+    createdAt: new Date().toISOString(),
+  });
+  db.run(`INSERT OR REPLACE INTO settings(id,data) VALUES(1,'{"requireApiKey":true}')`);
+  db.run(`INSERT INTO providerConnections(id,provider,authType,name,priority,isActive,data,workspaceId,createdAt,updatedAt)
+    VALUES('c','openai','apikey','c',1,1,'{"apiKey":"connection-secret"}','w','n','n')`);
+  db.run(`INSERT INTO providerNodes(id,type,name,data,workspaceId,createdAt,updatedAt)
+    VALUES('node','openai-compatible','node','{"apiKey":"node-secret"}','w','n','n')`);
+  await activateCredentialEncryption(db, { enabled: true, beforeServing: true, root });
+  loadMasterKey.mockClear();
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  db.close();
+});
+
+const rotate = () => rotateKek(db, { root, newRoot: nextRoot, fileManaged: false });
+
+describe("request credential scope", () => {
+  it("loads root once for handler auth plus repeated connection/node decrypts; edge separate", async () => {
+    const edge = await resolveGatewayAuth(request());
+    expect(edge.principal).toBeTruthy();
+    expect(loadMasterKey).toHaveBeenCalledOnce();
+    loadMasterKey.mockClear();
+    const { principal } = await resolveGatewayAuth(request());
+    expect(principal).not.toBe(edge.principal);
+    expect((await getGatewayConnections(principal))[0].apiKey).toBe("connection-secret");
+    expect((await getGatewayNodes(principal))[0].apiKey).toBe("node-secret");
+    const rows = db.all("SELECT * FROM providerConnections");
+    const one = await scopeModule.decodeRequestCredentialRows(db, principal, rows, {
+      table: "providerConnections",
+    });
+    const two = await scopeModule.decodeRequestCredentialRows(db, principal, rows, {
+      table: "providerConnections",
+    });
+    expect(one[0]).toEqual(two[0]);
+    expect(one[0]).not.toBe(two[0]);
+    expect(loadMasterKey).toHaveBeenCalledOnce();
+  });
+
+  it("threads API-key state through auth/hash without duplicate reads (eligibility stays live)", async () => {
+    const spy = vi.spyOn(db, "all");
+    const apiReads = () =>
+      spy.mock.calls.filter(([, keys]) => keys?.includes("apiKeysHashedVersion")).length;
+    await resolveGatewayAuth(request());
+    expect(apiReads()).toBe(2); // gateway state + live getEligibleApiKeySync
+    spy.mockClear();
+    await getApiKeyHashKey(db, { apiKeyState: readApiKeyStorageState(db) });
+    expect(apiReads()).toBe(1);
+  });
+
+  it("rotation after auth kills scope, aborts write with typed retry, next request succeeds", async () => {
+    const { principal } = await resolveGatewayAuth(request());
+    const ctx = await prepareCredentialCtx(db);
+    await rotate();
+    const before = db.get(`SELECT data FROM providerConnections WHERE id='c'`).data;
+    expect(() =>
+      db.transaction(() => {
+        assertCredentialCtxCurrent(db, ctx);
+        db.run(`UPDATE providerConnections SET data='{}' WHERE id='c'`);
+      }),
+    ).toThrow(invalid("KEY_MISMATCH"));
+    expect(db.get(`SELECT data FROM providerConnections WHERE id='c'`).data).toBe(before);
+    await expect(getGatewayConnections(principal)).rejects.toMatchObject({
+      code: "KEY_MISMATCH",
+      message: "credential encryption state changed during the request; retry",
+    });
+    await expect(getGatewayConnections(principal)).rejects.toThrow(invalid("KEY_MISMATCH"));
+    loadMasterKey.mockResolvedValue(nextRoot);
+    const fresh = await resolveGatewayAuth(request());
+    expect((await getGatewayConnections(fresh.principal))[0].apiKey).toBe("connection-secret");
+  });
+
+  it("marker signature rechecked after async lazy root load; scope remains dead", async () => {
+    cliTokenAcceptedWith.mockResolvedValue(true);
+    const { principal } = await resolveGatewayAuth(new Request("http://localhost/v1/models"));
+    loadMasterKey.mockImplementationOnce(async () => {
+      await rotate();
+      return root;
+    });
+    await expect(getGatewayConnections(principal)).rejects.toThrow(invalid("KEY_MISMATCH"));
+    loadMasterKey.mockResolvedValue(nextRoot);
+    await expect(getGatewayConnections(principal)).rejects.toThrow(invalid("KEY_MISMATCH"));
+  });
+
+  it("owner scope loads root lazily and only once", async () => {
+    cliTokenAcceptedWith.mockResolvedValue(true);
+    const { principal } = await resolveGatewayAuth(new Request("http://localhost/v1/models"));
+    expect(principal.via).toBe("cli");
+    expect(loadMasterKey).not.toHaveBeenCalled();
+    await Promise.all([getGatewayConnections(principal), getGatewayNodes(principal)]);
+    expect(loadMasterKey).toHaveBeenCalledOnce();
+  });
+
+  it("poison checked on every decode, scoped and live fallback", async () => {
+    const { principal } = await resolveGatewayAuth(request());
+    expect((await getGatewayConnections(principal))[0].apiKey).toBe("connection-secret");
+    poisonCredentialMaintenance(db, new Error("uncertain publication"));
+    for (const p of [principal, Object.freeze({ ...principal })]) {
+      await expect(getGatewayConnections(p)).rejects.toThrow(
+        invalid("CREDENTIAL_MAINTENANCE_POISONED"),
+      );
+      await expect(getGatewayNodes(p)).rejects.toThrow(invalid("CREDENTIAL_MAINTENANCE_POISONED"));
+    }
+    await expect(prepareCredentialCtx(db)).rejects.toThrow(
+      invalid("CREDENTIAL_MAINTENANCE_POISONED"),
+    );
+  });
+
+  it("live fallback (forged/aged/other adapter/repo ctx) rechecks marker + poison after root load", async () => {
+    const { principal } = await resolveGatewayAuth(request());
+    const forged = Object.freeze({ ...principal });
+    loadMasterKey.mockImplementationOnce(async () => {
+      await rotate();
+      return root;
+    });
+    await expect(getGatewayConnections(forged)).rejects.toThrow(invalid("KEY_MISMATCH"));
+    loadMasterKey.mockResolvedValue(nextRoot);
+    expect((await getGatewayConnections(forged))[0].apiKey).toBe("connection-secret");
+    // poison landing during the load
+    loadMasterKey.mockImplementationOnce(async () => {
+      poisonCredentialMaintenance(db, new Error("p"));
+      return nextRoot;
+    });
+    await expect(getGatewayNodes(forged)).rejects.toThrow(
+      invalid("CREDENTIAL_MAINTENANCE_POISONED"),
+    );
+  });
+
+  it("repository live path rechecks marker after async root load", async () => {
+    loadMasterKey.mockImplementationOnce(async () => {
+      await rotate();
+      return root;
+    });
+    await expect(prepareCredentialCtx(db)).rejects.toThrow(invalid("KEY_MISMATCH"));
+    loadMasterKey.mockRejectedValueOnce(Object.assign(new Error("gone"), { code: "KEY_MISSING" }));
+    await expect(prepareCredentialCtx(db)).rejects.toThrow(invalid("KEY_MISSING"));
+  });
+
+  it("aged and different-adapter scopes fall back to live path with the same rechecks", async () => {
+    const now = Date.now();
+    const spy = vi.spyOn(Date, "now").mockReturnValue(now);
+    const { principal } = await resolveGatewayAuth(request());
+    spy.mockReturnValue(now + 5 * 60 * 1000);
+    loadMasterKey.mockImplementationOnce(async () => {
+      await rotate();
+      return root;
+    });
+    await expect(getGatewayConnections(principal)).rejects.toThrow(invalid("KEY_MISMATCH"));
+    // A distinct adapter identity wrapping the same store must not reuse root.
+    const other = { all: db.all.bind(db), get: db.get.bind(db) };
+    expect(scopeModule.requestScopeOf(principal, other)).toBeNull();
+    loadMasterKey.mockImplementationOnce(async () => {
+      db.run("INSERT OR REPLACE INTO _meta(key,value) VALUES('credentialsCleanupPending','1')");
+      return nextRoot;
+    });
+    await expect(
+      scopeModule.decodeRequestCredentialRows(other, principal, [], {
+        table: "providerConnections",
+      }),
+    ).rejects.toThrow(invalid("KEY_MISMATCH"));
+    loadMasterKey.mockImplementationOnce(async () => {
+      poisonCredentialMaintenance(other, new Error("uncertain publication"));
+      throw new Error("load failed");
+    });
+    await expect(
+      scopeModule.decodeRequestCredentialRows(other, principal, [], {
+        table: "providerConnections",
+      }),
+    ).rejects.toThrow(invalid("CREDENTIAL_MAINTENANCE_POISONED"));
+  });
+
+  it("forged frozen principal has no scope and always takes live root path", async () => {
+    const real = await resolveApiKey(token);
+    const forged = Object.freeze({ ...real });
+    expect(scopeModule.requestScopeOf(forged)).toBeNull();
+    expect(() => scopeModule.mintGatewayPrincipal(real, db)).toThrow(/not a frozen principal/);
+    loadMasterKey.mockClear();
+    await getGatewayConnections(forged);
+    await getGatewayNodes(forged);
+    expect(loadMasterKey).toHaveBeenCalledTimes(2);
+    loadMasterKey.mockRejectedValue(
+      Object.assign(new Error("removed root"), { code: "KEY_MISSING" }),
+    );
+    await expect(getGatewayConnections(forged)).rejects.toThrow(invalid("KEY_MISSING"));
+    expect((await getGatewayConnections(real))[0].apiKey).toBe("connection-secret");
+    const next = await resolveGatewayAuth(request());
+    expect(next.status).toBe(503);
+  });
+
+  it("revoked key rejected next request even with warm digest/scope", async () => {
+    const { principal } = await resolveGatewayAuth(request());
+    await getGatewayConnections(principal);
+    db.run(`UPDATE apiKeys SET revokedAt=? WHERE id='key'`, [new Date().toISOString()]);
+    const denied = await resolveGatewayAuth(request());
+    expect(denied.status).toBe(401);
+  });
+
+  it("five-minute hard age falls back to live state and drops the retained root", async () => {
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const principal = await resolveApiKey(token);
+    const held = scopeModule.requestScopeOf(principal);
+    loadMasterKey.mockClear();
+    Date.now.mockReturnValue(now + 5 * 60 * 1000 - 1);
+    expect(held.expired).toBe(false);
+    await getGatewayConnections(principal);
+    expect(loadMasterKey).not.toHaveBeenCalled(); // seeded by auth
+    await rotate();
+    Date.now.mockReturnValue(now + 5 * 60 * 1000);
+    expect(held.expired).toBe(true);
+    expect(scopeModule.requestScopeOf(principal)).toBeNull();
+    loadMasterKey.mockResolvedValue(nextRoot);
+    expect((await getGatewayConnections(principal))[0].apiKey).toBe("connection-secret");
+    expect(loadMasterKey).toHaveBeenCalledOnce();
+  });
+
+  it("scope boundary: no root/ctx/kek exported, one-shot seeded mint, no secret in returns", async () => {
+    expect(Object.keys(scopeModule).sort()).toEqual([
+      "decodeRequestCredentialRows",
+      "mintGatewayPrincipal",
+      "requestScopeOf",
+    ]);
+    const auth = await resolveApiKeyHashKeyForAuth(db);
+    expect(Object.keys(auth).sort()).toEqual(["hashKey", "hashKid", "mint", "release"]);
+    const fields = {
+      workspaceId: "w",
+      userId: "u",
+      apiKeyId: "key",
+      scopes: { allowedModels: [], allowedCombos: [] },
+      via: "apiKey",
+    };
+    const seeded = auth.mint(fields);
+    expect(() => auth.mint(fields)).toThrow(/already released/); // reused closure
+    const auth2 = await resolveApiKeyHashKeyForAuth(db);
+    auth2.release();
+    expect(() => auth2.mint(fields)).toThrow(/already released/);
+    expect(() => auth.mint(Object.freeze(fields))).toThrow(); // forged frozen principal as fields
+    expect(() => auth2.mint(seeded)).toThrow(); // frozen real principal never rebinds
+    // Returned handle: memo + expired only.
+    const handle = scopeModule.requestScopeOf(seeded);
+    expect(Object.keys(handle).sort()).toEqual(["expired", "memo"]);
+    // Decoded rows carry data but no kek/ctx fields; principal/handle neither.
+    const rows = await scopeModule.decodeRequestCredentialRows(
+      db,
+      seeded,
+      db.all("SELECT * FROM providerConnections"),
+      { table: "providerConnections" },
+    );
+    for (const value of [seeded, handle, rows]) {
+      const text = JSON.stringify(value);
+      expect(text).not.toMatch(/"kek"|"kekKid"|"allowCreate"|"root"/);
+      expect(JSON.stringify(value, (_k, v) => (Buffer.isBuffer(v) ? "buf" : v))).not.toContain(
+        MASTER.toString("base64"),
+      );
+    }
+  });
+
+  it("owner principals cannot be minted from a frozen copy and stay lazy/unseeded", async () => {
+    cliTokenAcceptedWith.mockResolvedValue(true);
+    const { principal } = await resolveGatewayAuth(new Request("http://localhost/v1/models"));
+    expect(() => scopeModule.mintGatewayPrincipal(principal, db)).toThrow();
+    expect(loadMasterKey).not.toHaveBeenCalled();
+  });
+});

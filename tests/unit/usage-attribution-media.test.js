@@ -48,7 +48,8 @@ vi.mock("@/lib/db/repos/gatewayVideoJobsRepo.js", () => ({
   recordGatewayVideoJobSync: vi.fn(),
   getGatewayVideoJobsSync: vi.fn(() => null),
 }));
-vi.mock("@/lib/db/apiKeyState.js", () => ({
+vi.mock("@/lib/db/apiKeyState.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   readApiKeyStorageState: vi.fn(() => ({ storage: "hashed" })),
 }));
 vi.mock("../../src/sse/services/tokenRefresh.js", () => ({

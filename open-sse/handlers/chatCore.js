@@ -16,6 +16,12 @@ import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import {
+  collectCredentialSecrets,
+  normalizeSecrets,
+  redactText,
+  sanitizeUrl,
+} from "../utils/redact.js";
+import {
   getModelTargetFormat,
   getModelSupportedFormats,
   getModelStrip,
@@ -327,7 +333,14 @@ export async function handleChatCore({
     stream = false;
   }
 
-  const reqLogger = await createRequestLogger(sourceFormat, targetFormat, model);
+  // Live request-local provenance: credential-named leaves from credentials
+  // (plus client gateway key) refreshed during execution are covered. Metadata
+  // under other names (model, connection names) is deliberately not provenance.
+  const requestSecrets = () => [apiKey, ...collectCredentialSecrets(credentials)];
+  const currentSecrets = () => normalizeSecrets(requestSecrets());
+  const reqLogger = await createRequestLogger(sourceFormat, targetFormat, model, {
+    secrets: requestSecrets,
+  });
   if (clientRawRequest)
     reqLogger.logClientRawRequest(
       clientRawRequest.endpoint,
@@ -878,7 +891,7 @@ export async function handleChatCore({
       log.errorLine(
         reqTag,
         "✗",
-        `ERROR ${errStatus} · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`,
+        `ERROR ${errStatus} · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${redactText(errMsg, currentSecrets())}${error.stack ? `\n    ${redactText(error.stack, currentSecrets())}` : ""}`,
       );
     }
     const errResult = createErrorResult(errStatus, errMsg);
@@ -1011,11 +1024,11 @@ export async function handleChatCore({
 
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     if (log?.errorLine) {
-      const urlStr = providerUrl ? `\n    URL: ${providerUrl}` : "";
+      const urlStr = providerUrl ? `\n    URL: ${sanitizeUrl(providerUrl, currentSecrets())}` : "";
       log.errorLine(
         reqTag,
         "✗",
-        `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`,
+        `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${redactText(errMsg, currentSecrets())}`,
       );
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);

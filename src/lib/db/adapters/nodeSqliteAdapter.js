@@ -83,7 +83,15 @@ export async function createNodeSqliteAdapter(filePath) {
       return prepare(sql).all(...params);
     },
     exec(sql) {
-      return db.exec(sql);
+      // Node 24 StatementSync keeps prepared-shape metadata. Rollback / DDL
+      // invalidate cached SELECT * (Node 24.15 bug: stale names fail, missing
+      // columns silently return null). Clear on any schema-affecting path.
+      // ponytail: clears whole cache; per-statement invalidation if perf matters.
+      try {
+        return db.exec(sql);
+      } finally {
+        stmtCache.clear();
+      }
     },
     transaction(fn) {
       // node:sqlite has no transaction wrapper. Use SAVEPOINT for nested support.
@@ -99,6 +107,8 @@ export async function createNodeSqliteAdapter(filePath) {
           db.exec(`RELEASE ${sp}`);
         } catch {}
         throw e;
+      } finally {
+        stmtCache.clear(); // savepoint/rollback may have undone DDL
       }
     },
     checkpoint() {

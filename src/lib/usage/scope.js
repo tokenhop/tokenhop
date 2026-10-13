@@ -27,7 +27,7 @@ const INSTANCE_ADMIN = (ctx) => ctx.instanceRole === "owner" || ctx.instanceRole
 const MANAGER = (role) => role === "owner" || role === "manager";
 
 /** Active, non-pending user with a live membership in the workspace. */
-function liveMember(db, workspaceId, userId) {
+export function liveMember(db, workspaceId, userId) {
   const u = db.get(`SELECT status, instanceRole FROM users WHERE id = ?`, [userId]);
   return (
     u?.status === "active" &&
@@ -36,8 +36,12 @@ function liveMember(db, workspaceId, userId) {
   );
 }
 
-/** Historical attribution survives pause, expiry and revocation. */
-function historicalKey(db, workspaceId, id) {
+/**
+ * Historical attribution survives pause, expiry and revocation: a key filter
+ * stays valid while the row exists in the same workspace. Exported for the
+ * usage stream's per-frame recheck (moved/deleted keys lose the filter).
+ */
+export function historicalKey(db, workspaceId, id) {
   return db.get(`SELECT userId FROM apiKeys WHERE id = ? AND workspaceId = ?`, [id, workspaceId]);
 }
 

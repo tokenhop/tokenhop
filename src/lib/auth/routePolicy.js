@@ -360,7 +360,10 @@ export const ROUTE_POLICY = {
     },
     scoped: true,
   },
-  "/api/keys/[id]": { cap: "workspace.keys.manage" },
+  // YAN-378: scoped like the collection — a user manages keys in their own
+  // personal workspace (YAN-363); the handler rechecks the exact ?workspaceId
+  // live (getApiKey/updateApiKey/revokeApiKey), so a foreign id still 403s/404s.
+  "/api/keys/[id]": { cap: "workspace.keys.manage", scoped: true },
   // Exact static row: /api/keys/context must never borrow the [id] row.
   // Any live member (create is the least key capability) may read their own
   // metadata-only context; the handler rechecks everything against the DB.

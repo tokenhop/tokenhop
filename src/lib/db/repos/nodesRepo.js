@@ -3,8 +3,12 @@ import { getAdapter } from "../driver.js";
 import { TenancyError, assertCtx } from "@/lib/users/errors.js";
 import { defaultWorkspaceIdUnscoped, memberWorkspaceId } from "./ownership.js";
 import { parseJson } from "../helpers/jsonCol.js";
-import { decodeCredentialRowSync, encodeCredentialRowSync } from "../helpers/credentialStorage.js";
-import { TABLE_NAMES } from "../../security/envelope.js";
+import {
+  decodeCredentialRowSync,
+  encodeCredentialRowSync,
+  parseCredentialBlob,
+} from "../helpers/credentialStorage.js";
+import { CREDENTIAL_FIELD_ALLOWLIST, TABLE_NAMES } from "../../security/envelope.js";
 import { prepareCredentialCtx, assertCredentialCtxCurrent } from "./connectionsRepo.js";
 
 const TABLE = TABLE_NAMES.providerNodes;
@@ -89,6 +93,82 @@ export async function getProviderNodesMetadataUnscoped(filter = {}) {
   }
   const sql = `SELECT * FROM providerNodes${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
   return db.all(sql, params).map(rowToNodeMetadata);
+}
+
+// ─── Gateway routing read (YAN-378) ──────────────────────────────────────
+// Prefix/type resolution needs no secrets. Output is an explicit allowlist of
+// non-secret node fields (not a redaction of the whole blob), so nested or
+// unlisted credential-like leaves (providerSpecificData, headers, custom
+// keys) can never survive. Never decrypts and never loads the root key.
+// This is a leak-minimizing projection, not a claim that the secret codec's
+// allowlist covers every credential-like field.
+const ROUTING_STRING_FIELDS = ["prefix", "apiType", "baseUrl", "fimTemplate"];
+const ROUTING_FILTER_KEYS = new Set(["types", "workspaceId"]);
+
+function invalidFilter(message) {
+  throw Object.assign(new TypeError(`[nodes-routing] ${message}`), { code: "INVALID_FILTER" });
+}
+
+// types: absent = any type; [] = matches nothing; else non-empty strings.
+// workspaceId: absent or null = no workspace filter (legacy/host); present
+// must be a non-empty string (an empty/undefined value never drops the filter).
+function checkRoutingFilter(filter) {
+  if (!filter || typeof filter !== "object" || Array.isArray(filter)) {
+    invalidFilter("filter must be an object");
+  }
+  for (const key of Object.keys(filter)) {
+    if (!ROUTING_FILTER_KEYS.has(key)) invalidFilter(`unknown filter key: ${key}`);
+  }
+  const { types } = filter;
+  if (types !== undefined) {
+    if (!Array.isArray(types) || types.some((t) => typeof t !== "string" || t.length === 0)) {
+      invalidFilter("types must be an array of non-empty strings");
+    }
+  }
+  if (Object.hasOwn(filter, "workspaceId")) {
+    const ws = filter.workspaceId;
+    if (ws !== null && (typeof ws !== "string" || ws.length === 0)) {
+      invalidFilter("workspaceId must be a non-empty string or null");
+    }
+  }
+}
+
+function rowToRoutingNode(row) {
+  const blob = parseCredentialBlob(row.data);
+  const node = {
+    id: row.id,
+    type: row.type,
+    name: row.name,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    ...(row.workspaceId ? { workspaceId: row.workspaceId } : {}),
+  };
+  for (const field of ROUTING_STRING_FIELDS) {
+    if (typeof blob[field] === "string") node[field] = blob[field];
+  }
+  node.configured = CREDENTIAL_FIELD_ALLOWLIST[TABLE].filter(
+    (f) => blob[f] !== undefined && blob[f] !== null && blob[f] !== "",
+  );
+  return node;
+}
+
+export async function getProviderNodesRoutingUnscoped(filter = {}) {
+  checkRoutingFilter(filter);
+  const db = await getAdapter();
+  const where = [];
+  const params = [];
+  if (filter.types !== undefined) {
+    where.push(`type IN (${filter.types.map(() => "?").join(",") || "NULL"})`);
+    params.push(...filter.types);
+  }
+  if (typeof filter.workspaceId === "string") {
+    where.push("workspaceId = ?");
+    params.push(filter.workspaceId);
+  }
+  const sql = `SELECT id, type, name, data, createdAt, updatedAt, workspaceId FROM providerNodes${
+    where.length ? ` WHERE ${where.join(" AND ")}` : ""
+  }`;
+  return db.all(sql, params).map(rowToRoutingNode);
 }
 
 export async function getProviderNodeByIdUnscoped(id) {
