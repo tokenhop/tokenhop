@@ -17,13 +17,14 @@ const MAX_PROOF_BYTES = 72;
 /**
  * Verify the actor's current password, then run the repo transfer with the
  * proof bound to the actor's live sessionVersion.
- * @param {{ actorUserId: string, toUserId: string, currentPassword: unknown, expectedSessionVersion?: number }} p
+ * @param {{ actorUserId: string, toUserId: string, currentPassword: unknown, expectedSessionVersion?: number, via?: "session"|"cli" }} p
  */
 export async function transferWithPasswordProof({
   actorUserId,
   toUserId,
   currentPassword,
   expectedSessionVersion,
+  via = "session",
 }) {
   // The session's sv is mandatory proof binding: no verified sv, no transfer.
   if (!Number.isInteger(expectedSessionVersion)) {
@@ -60,7 +61,7 @@ export async function transferWithPasswordProof({
     throw new TenancyError("REAUTH_REQUIRED", "Invalid current password");
   }
   return transferOwnership(
-    { userId: actor.id },
+    { userId: actor.id, via },
     toUserId,
     // Re-checked in the swap transaction: a change during bcrypt voids it.
     { expectedSessionVersion },

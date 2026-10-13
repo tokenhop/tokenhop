@@ -34,6 +34,7 @@ const STRIP_HEADERS = new Set([
   "x-forwarded-host",
   "x-real-ip",
   "forwarded",
+  "x-tokenhop-cli-token",
   "x-9r-cli-token",
   "x-9r-peer-token",
   "x-9r-real-ip",

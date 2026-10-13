@@ -1,6 +1,8 @@
 // YAN-360: instance ownership transfer. Hidden (404) while the multi-user
-// switch is off. Full browser session only (the CLI token is an owner proof by
-// itself, but transfer demands a password the terminal never holds). The live
+// switch is off. Browser session or owner CLI principal (YAN-377) — the CLI
+// token is an owner proof by itself, but transfer still demands the current
+// password in the same request, which the terminal must obtain separately.
+// The live
 // session is never enough: the owner re-proves the current password in the
 // same request, rate-limited like login. Audit stays in the repo
 // (instance.ownership.transfer) — this route never duplicates it.
@@ -80,7 +82,13 @@ export async function POST(request) {
       return json({ error: "Unsupported media type", code: "invalid_request" }, 415);
     }
     const principal = await getPrincipal();
-    if (principal?.via !== "session") return json({ error: "Unauthorized" }, 401);
+    // YAN-377: owner CLI principal admitted; the same-request password proof
+    // below is still mandatory (a CLI token alone never transfers ownership).
+    if (
+      principal?.via !== "session" &&
+      !(principal?.via === "cli" && principal.instanceRole === "owner")
+    )
+      return json({ error: "Unauthorized" }, 401);
     const denied = await authorize("instance.ownership.transfer");
     if (denied) return denied;
 
@@ -126,18 +134,27 @@ export async function POST(request) {
       );
     }
 
-    // Bind the proof to this session's sv; no matching sv claim fails closed
-    // (STALE), and the repo re-checks it against the DB row in the swap tx.
+    // Bind the proof to the live sessionVersion; no matching sv claim fails
+    // closed (STALE), and the repo re-checks it against the DB row in the
+    // swap tx. YAN-377: the owner CLI principal has no cookie claims — use
+    // its live sv read server-side (the same-request password proof below
+    // stays mandatory) instead of an absent cookie claim.
     const cookieStore = await cookies();
     const claims = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
+    let expectedSessionVersion =
+      claims?.sub === principal.userId && typeof claims.sv === "number" ? claims.sv : undefined;
+    if (principal.via === "cli") {
+      const { getUserUnscoped } = await import("@/lib/db/repos/usersRepo.js");
+      expectedSessionVersion = (await getUserUnscoped(principal.userId))?.sessionVersion;
+    }
 
     try {
       const user = await transferWithPasswordProof({
         actorUserId: principal.userId,
         toUserId: body.toUserId,
         currentPassword: body.currentPassword,
-        expectedSessionVersion:
-          claims?.sub === principal.userId && typeof claims.sv === "number" ? claims.sv : undefined,
+        expectedSessionVersion,
+        via: principal.via,
       });
       clearAccount(account);
       const { sessionVersion: _sv, ...safe } = user;

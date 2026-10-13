@@ -83,6 +83,25 @@ if (args[0] === "keys" && args[1] === "rotate") {
   return;
 }
 
+// YAN-377 lifecycle commands: early dispatch against the running server.
+const lifecycle = (() => {
+  const [group, sub] = args;
+  if (group === "users") return () => require("./src/cli/commands/users").runUsers(args.slice(1));
+  if (group === "workspaces") return () => require("./src/cli/commands/users").runWorkspaces(args.slice(1));
+  if (group === "keys" && sub !== "rotate") return () => require("./src/cli/commands/keys").run(args.slice(1));
+  if (group === "auth" && sub === "reset-mode") return () => require("./src/cli/commands/authResetMode").run(args.slice(2));
+  return null;
+})();
+if (lifecycle) {
+  lifecycle()
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(`❌ ${err?.message || err}`);
+      process.exit(1);
+    });
+  return;
+}
+
 // `data migrate` moves the legacy data dir; it must run before the self-heal
 // below writes into it. Offered only under the tokenhop brand.
 const dataMigrate = require("./src/cli/commands/dataMigrate");

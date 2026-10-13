@@ -1,6 +1,6 @@
 // YAN-360: workspace member management. GET lists members; POST adds a
 // manual member. Hidden (404) while the multi-user switch is off. Full
-// browser session only; exact workspace URL id is authoritative and the repo
+// browser session or owner CLI token; exact workspace URL id is authoritative and the repo
 // re-checks live manager authority in-transaction. The repo writes the
 // membership.add audit row — none here. `source` is server-controlled
 // (manual) and never read from the body.
@@ -46,6 +46,7 @@ export async function GET(request, { params }) {
       capability: CAPABILITY,
       workspaceId: id,
       allowInstanceUsersManage: true,
+      allowCli: true,
     });
     if (res) return res;
     return json({ members: await listManagedMemberships(principal, id) });
@@ -62,6 +63,7 @@ export async function POST(request, { params }) {
       workspaceId: id,
       body: true,
       allowInstanceUsersManage: true,
+      allowCli: true,
     });
     if (res) return res;
     const body = await readJsonBody(request, { max: MAX_BODY });

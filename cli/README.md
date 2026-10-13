@@ -89,6 +89,42 @@ tokenhop --help            # Show all options
 
 ---
 
+## 👥 Users & teams (multi-user) commands
+
+These talk to the running local server over a host-local CLI token: it acts as
+the instance owner, is never printed, and in multi-user mode it is accepted
+only from loopback. They answer `404 → "multi-user is not enabled…"` until
+`TOKENHOP_MULTI_USER=on`.
+
+```bash
+tokenhop users list [--search x] [--role r] [--status s] [--page n] [--json]
+tokenhop users approve <id> | role <id> <admin|user|pending> | disable <id> | enable <id>
+tokenhop users reset-password <id>        # prompts for a hidden temporary password
+tokenhop users transfer-owner <id>        # prompts for YOUR current password (hidden)
+
+tokenhop workspaces list | members <wsId>
+tokenhop workspaces add-member <wsId> <userId> [--role manager|member|viewer]
+tokenhop workspaces remove-member <wsId> <userId>
+
+tokenhop keys list [--workspace <id>] [--json]
+tokenhop keys create <name> [--workspace <id>] [--type user|service] [--user <userId>]
+tokenhop keys revoke <id> [--workspace <id>]
+tokenhop keys backup-hint                # where the master key lives + backup advice
+
+tokenhop auth reset-mode password        # restore password login (409 → set owner password)
+tokenhop keys rotate                     # pre-existing: rotate KEK / workspace DEK
+tokenhop auth setup-token                # pre-existing: mint one-time owner setup token
+```
+
+- Key creation prints the raw key exactly once — store it now, it is never shown again.
+- `keys backup-hint` never prints the key value: it names `TOKENHOP_MASTER_KEY`
+  (when set) or `<DATA_DIR>/keys/master`, and reminds you to back the KEK up
+  separately from the DB — losing it makes encrypted credentials unrecoverable.
+- If the server is not running you get `tokenhop server is not running on
+127.0.0.1:<port> — start it with tokenhop`; exit code is `1` on any failure.
+
+---
+
 ## 🛠️ Supported CLI Tools
 
 Claude-Code • OpenClaw • Codex • OpenCode • Cursor • Antigravity • Cline • Continue • Droid • Roo • Copilot • Kilo Code • Gemini CLI • Qwen Code • iFlow • Crush • Crusher • Aider

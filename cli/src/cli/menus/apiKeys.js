@@ -1,4 +1,5 @@
 const api = require("../api/client");
+const workspace = require("../api/workspaceSelection");
 const { prompt, confirm, pause } = require("../utils/input");
 const { clearScreen, showStatus, showHeader } = require("../utils/display");
 const { maskKey, formatDate, getRelativeTime } = require("../utils/format");
@@ -450,8 +451,16 @@ async function showLegacyKeysMenu(port, breadcrumb = []) {
  * @param {Array<string>} breadcrumb - Breadcrumb path
  */
 async function showApiKeysMenu(port, breadcrumb = []) {
-  const context = await api.getApiKeysContext();
+  // YAN-377: owner-selected workspace (multi-user only) scopes the key context.
+  const selected = workspace.getSelectedWorkspaceId();
+  const context = selected
+    ? await api.makeRequest("GET", `/api/keys/context?workspaceId=${encodeURIComponent(selected)}`)
+    : await api.getApiKeysContext();
 
+  if (context.success && selected && context.data?.workspaceId !== selected) {
+    context.success = false;
+    context.error = "Invalid key context";
+  }
   if (!context.success) {
     clearScreen();
     showStatus(`Failed to fetch key context: ${context.error}`, "error");

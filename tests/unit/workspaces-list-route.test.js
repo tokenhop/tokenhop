@@ -87,13 +87,16 @@ describe("GET /api/workspaces", () => {
 });
 
 describe("routePolicy /api/workspaces", () => {
-  it("is multiUserOnly, admin-gated, session only", () => {
+  // YAN-377: the owner CLI principal is admitted alongside a browser session
+  // (multiUserOnly + alwaysProtected still hold; the handler checks via:"cli"
+  // resolves to the owner).
+  it("is multiUserOnly, admin-gated, session or owner-CLI", () => {
     expect(resolveRoutePolicy("/api/workspaces", "GET")).toMatchObject({
       key: "/api/workspaces",
       capability: "instance.users.manage",
       multiUserOnly: true,
       alwaysProtected: true,
-      cliAllowed: false,
+      cliAllowed: true,
     });
   });
 });

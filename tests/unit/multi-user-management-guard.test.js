@@ -70,6 +70,7 @@ const GATED = [
     route: "/api/workspaces/[id]/members",
     method: "GET",
     cap: MEMBERS,
+    always: true,
     scoped: true,
   },
   {
@@ -77,6 +78,7 @@ const GATED = [
     route: "/api/workspaces/[id]/members",
     method: "POST",
     cap: MEMBERS,
+    always: true,
     scoped: true,
   },
   {
@@ -84,6 +86,7 @@ const GATED = [
     route: "/api/workspaces/[id]/members/[userId]",
     method: "PATCH",
     cap: MEMBERS,
+    always: true,
     scoped: true,
   },
   {
@@ -91,6 +94,7 @@ const GATED = [
     route: "/api/workspaces/[id]/members/[userId]",
     method: "DELETE",
     cap: MEMBERS,
+    always: true,
     scoped: true,
   },
   {
@@ -262,12 +266,11 @@ describe("multiUserOnly rows with the switch on", () => {
     // instance.users.manage: anonymous gets the auth gate, never the hide.
     const denied = await proxy(request("/api/users", { method: "GET" }));
     expect(denied.status).toBe(401);
-    // Security latch off with login off: the single admin is let through the
-    // scoped members row (not alwaysProtected), still through its capability.
+    // YAN-377: members row is alwaysProtected; login-off never opens it.
     mocks.securityEnforced.mockResolvedValue(false);
     mocks.getSettings.mockResolvedValue({ requireLogin: false });
-    expect(await proxy(request("/api/workspaces/w1/members", { method: "GET" }))).toBe(
-      mocks.nextResponse,
+    expect((await proxy(request("/api/workspaces/w1/members", { method: "GET" }))).status).toBe(
+      401,
     );
     // alwaysProtected rows never open via single-user mode (YAN-358 semantics).
     expect((await proxy(request("/api/users", { method: "GET" }))).status).toBe(401);

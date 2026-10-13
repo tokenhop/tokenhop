@@ -14,6 +14,8 @@ const DEFAULT_CONFIG = {
 };
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
+// YAN-377: new name for the same proof; both sent, old servers only read legacy.
+const CLI_TOKEN_HEADER_V2 = "x-tokenhop-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
 
 const MACHINE_ID_FILE = path.join(getDataDir(), "machine-id");
@@ -21,6 +23,19 @@ const AUTH_DIR = path.join(getDataDir(), "auth");
 const CLI_SECRET_FILE = path.join(AUTH_DIR, "cli-secret");
 
 let config = { ...DEFAULT_CONFIG };
+// YAN-377: owner-selected workspace for provider/combo collection calls.
+// Unset (single-user, or never picked) leaves every path pristine.
+let selectedWorkspaceId;
+
+function setSelectedWorkspace(workspaceId) {
+  selectedWorkspaceId = workspaceId || undefined;
+}
+
+function scoped(pathname) {
+  return selectedWorkspaceId === undefined
+    ? pathname
+    : `${pathname}${pathname.includes("?") ? "&" : "?"}workspaceId=${encodeURIComponent(selectedWorkspaceId)}`;
+}
 let cachedCliToken = null;
 let cachedCliSecret = null;
 
@@ -96,6 +111,7 @@ function makeRequest(method, path, body = null, { timeoutMs = 30000 } = {}) {
       headers: {
         "Content-Type": "application/json",
         [CLI_TOKEN_HEADER]: getCliToken(),
+        [CLI_TOKEN_HEADER_V2]: getCliToken(),
       },
     };
 
@@ -176,7 +192,7 @@ function makeRequest(method, path, body = null, { timeoutMs = 30000 } = {}) {
  * @returns {Promise<Object>} { success, data: { connections } }
  */
 async function getProviders() {
-  return makeRequest("GET", "/api/providers");
+  return makeRequest("GET", scoped("/api/providers"));
 }
 
 /**
@@ -232,7 +248,7 @@ async function getOAuthAuthUrl(provider) {
       : "http://localhost:20128/callback";
   return makeRequest(
     "GET",
-    `/api/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`,
+    scoped(`/api/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`),
   );
 }
 
@@ -271,7 +287,7 @@ async function pollOAuthToken(provider, data) {
  * @returns {Promise<Object>} { success, data }
  */
 async function createApiKeyProvider(data) {
-  return makeRequest("POST", "/api/providers", data);
+  return makeRequest("POST", scoped("/api/providers"), data);
 }
 
 /**
@@ -357,17 +373,24 @@ async function getApiKeyById(id, workspaceId) {
  */
 async function createApiKey(name, options) {
   if (options === undefined) return makeRequest("POST", "/api/keys", { name });
-  const { workspaceId, type = "user" } = options;
+  const { workspaceId, type = "user", userId } = options;
   if (typeof workspaceId !== "string" || !workspaceId.trim()) {
     return { success: false, error: "Workspace ID is required" };
   }
   if (type !== "user" && type !== "service") {
     return { success: false, error: "Invalid key type" };
   }
+  if (userId !== undefined && (type !== "user" || typeof userId !== "string" || !userId.trim())) {
+    return { success: false, error: "Invalid key owner (--user needs a user key)" };
+  }
   if (typeof name !== "string" || !name.trim()) {
     return { success: false, error: "Invalid key name" };
   }
-  return makeRequest("POST", withWorkspace("/api/keys", workspaceId), { type, name: name.trim() });
+  return makeRequest("POST", withWorkspace("/api/keys", workspaceId), {
+    type,
+    name: name.trim(),
+    ...(userId !== undefined && { userId }),
+  });
 }
 
 /**
@@ -388,7 +411,7 @@ async function deleteApiKey(id, workspaceId) {
  * @returns {Promise<Object>} { success, data: { combos } }
  */
 async function getCombos() {
-  return makeRequest("GET", "/api/combos");
+  return makeRequest("GET", scoped("/api/combos"));
 }
 
 /**
@@ -406,7 +429,7 @@ async function getComboById(id) {
  * @returns {Promise<Object>} { success, data: combo }
  */
 async function createCombo(data) {
-  return makeRequest("POST", "/api/combos", data);
+  return makeRequest("POST", scoped("/api/combos"), data);
 }
 
 /**
@@ -496,6 +519,24 @@ async function resetPassword() {
  */
 async function mintSetupToken() {
   return makeRequest("POST", "/api/auth/setup-token");
+}
+
+/**
+ * GET /api/auth/status — auth modes, principal + workspaces, multiUserActive.
+ * @returns {Promise<Object>} { success, data }
+ */
+async function getAuthStatus() {
+  return makeRequest("GET", "/api/auth/status");
+}
+
+/**
+ * POST /api/auth/reset-mode — switch auth mode (YAN-377, CLI token = owner).
+ * 409 OWNER_PASSWORD_REQUIRED: owner has no local password; retry with one.
+ * @param {Object} body - { mode: "password", password?: string }
+ * @returns {Promise<Object>} { success, data: { success, authMode, ownerPasswordSet } }
+ */
+async function resetAuthMode(body) {
+  return makeRequest("POST", "/api/auth/reset-mode", body);
 }
 
 /**
@@ -601,6 +642,9 @@ async function disableTunnel() {
 
 module.exports = {
   configure,
+  setSelectedWorkspace,
+  makeRequest,
+  getDataDir,
 
   // Providers
   getProviders,
@@ -645,6 +689,8 @@ module.exports = {
   updateSettings,
   resetPassword,
   mintSetupToken,
+  getAuthStatus,
+  resetAuthMode,
   rotateInstanceKey,
   rotateWorkspaceKey,
 

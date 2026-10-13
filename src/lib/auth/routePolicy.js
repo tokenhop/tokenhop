@@ -53,6 +53,13 @@ export const ROUTE_POLICY = {
   "/api/auth/saml/metadata": PUBLIC,
   "/api/auth/saml/test": { cap: SETTINGS, cliAllowed: false },
   "/api/auth/reset-password": LOCAL_HOST,
+  // YAN-377: local recovery from an SSO-only lockout (YAN-349). Owner-only,
+  // loopback or CLI token, hidden (404) while the switch is off.
+  "/api/auth/reset-mode": multiUser({
+    cap: { POST: "instance.ownership.transfer" },
+    localOnly: true,
+    alwaysProtected: true,
+  }),
   "/api/auth/setup-token": { cap: "instance.ownership.transfer", localOnly: true },
   // YAN-358: POST-only (other methods fail closed to hostOps via the
   // per-method cap). A valid restricted password-change token also admits
@@ -63,11 +70,12 @@ export const ROUTE_POLICY = {
     cliAllowed: false,
     passwordChange: true,
   },
-  "/api/users/[id]/password": {
-    cap: "instance.users.manage",
+  // YAN-377: password reset now admits the same owner CLI principal as the
+  // sibling user rows; the edge row gains multiUserOnly so it hides like them.
+  "/api/users/[id]/password": multiUser({
+    cap: { POST: "instance.users.manage" },
     alwaysProtected: true,
-    cliAllowed: false,
-  },
+  }),
   // YAN-362: workspace overrides (handler re-checks the row's workspace) and
   // personal UI preferences (browser session only).
   "/api/workspaces/[id]/settings": scoped(read(USE, "workspace.preferences.manage")),
@@ -88,20 +96,23 @@ export const ROUTE_POLICY = {
   // the principal's workspaces, the handler rechecks the exact URL workspace
   // (workspace manager, or instance admin/owner). Accept is public: the invite
   // token is the authorization; it is still hidden while the switch is off.
+  // YAN-377: the marked rows also admit the owner CLI principal (via:"cli",
+  // loopback-only once 2+ users are active); the handlers re-check it.
+  // The members rows were already CLI-admitted at the edge; their handler
+  // guard now takes the same owner-CLI principal. SSO transfer, logout-all,
+  // workspace detail/delete/reauth, invitations, move, budgets, grants,
+  // export/import stay browser-session only.
   "/api/users": multiUser({
     cap: { GET: "instance.users.manage" },
     alwaysProtected: true,
-    cliAllowed: false,
   }),
   "/api/workspaces": multiUser({
     cap: { GET: "instance.users.manage" },
     alwaysProtected: true,
-    cliAllowed: false,
   }),
   "/api/users/ownership-transfer": multiUser({
     cap: { POST: "instance.ownership.transfer" },
     alwaysProtected: true,
-    cliAllowed: false,
   }),
   "/api/users/ownership-transfer/sso": multiUser({
     cap: { POST: "instance.ownership.transfer" },
@@ -115,7 +126,6 @@ export const ROUTE_POLICY = {
       DELETE: "instance.users.manage",
     },
     alwaysProtected: true,
-    cliAllowed: false,
   }),
   // YAN-373: admin "sign out everywhere" for another user.
   "/api/users/[id]/logout-all": multiUser({
@@ -142,10 +152,16 @@ export const ROUTE_POLICY = {
     cliAllowed: false,
   }),
   "/api/workspaces/[id]/members": multiUser(
-    scoped({ cap: { GET: "workspace.members.manage", POST: "workspace.members.manage" } }),
+    scoped({
+      cap: { GET: "workspace.members.manage", POST: "workspace.members.manage" },
+      alwaysProtected: true,
+    }),
   ),
   "/api/workspaces/[id]/members/[userId]": multiUser(
-    scoped({ cap: { PATCH: "workspace.members.manage", DELETE: "workspace.members.manage" } }),
+    scoped({
+      cap: { PATCH: "workspace.members.manage", DELETE: "workspace.members.manage" },
+      alwaysProtected: true,
+    }),
   ),
   "/api/workspaces/[id]/invitations": multiUser(
     scoped({
