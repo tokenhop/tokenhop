@@ -4,7 +4,7 @@
 // body is exactly { mode: "password", password? }.
 import { requireMultiUser } from "@/lib/users/featureSwitch.js";
 import { isLocalRequest } from "@/dashboardGuard";
-import { authorize, cliTokenAccepted, getPrincipal } from "@/lib/users/session";
+import { authorize, getPrincipal } from "@/lib/users/session";
 import { audit } from "@/lib/users/audit.js";
 import { isCrossSite, isJson } from "@/lib/auth/sameOrigin.js";
 import { json, PayloadTooLarge, readJsonBody } from "@/lib/users/userManagement.js";
@@ -35,7 +35,9 @@ export async function POST(request) {
     if (!["session", "cli"].includes(principal.via)) return json({ error: "Forbidden" }, 403);
     const denied = await authorize("instance.ownership.transfer");
     if (denied) return denied;
-    if (!(await cliTokenAccepted(request)) && !isLocalRequest(request)) {
+    // Direct loopback only, CLI token or session alike: a valid token never
+    // lifts this (single-user cardinality otherwise admits it from anywhere).
+    if (!isLocalRequest(request)) {
       return json({ error: "Local only", code: "LOCAL_ONLY" }, 403);
     }
 

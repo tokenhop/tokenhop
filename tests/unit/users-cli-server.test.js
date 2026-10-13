@@ -380,6 +380,24 @@ describe("reset mode", () => {
     ).toMatchObject({ ownerPasswordSet: false });
     expect(await users.getUserPasswordHashUnscoped(tenancy.a.user.id)).toBe(hash);
   });
+  it("valid CLI token from a remote or proxied peer is denied, even at cardinality 1", async () => {
+    await users.updateUserUnscoped(tenancy.b.user.id, { status: "disabled" });
+    expect(await users.countActiveUsersUnscoped()).toBe(1);
+    jar.headers.set("x-9r-real-ip", "203.0.113.1");
+    expect(
+      (await call(routes.reset.POST, "/api/auth/reset-mode", "POST", { mode: "password" })).status,
+    ).toBe(403);
+    jar.headers.set("x-9r-real-ip", "127.0.0.1");
+    jar.headers.set("x-9r-via-proxy", "1");
+    expect(
+      (await call(routes.reset.POST, "/api/auth/reset-mode", "POST", { mode: "password" })).status,
+    ).toBe(403);
+    jar.headers.delete("x-9r-via-proxy");
+    expect(
+      (await call(routes.reset.POST, "/api/auth/reset-mode", "POST", { mode: "password" })).status,
+    ).not.toBe(403);
+    await users.updateUserUnscoped(tenancy.b.user.id, { status: "active" });
+  });
   it("invalid mode/password/extra keys and non-owner denied", async () => {
     for (const body of [
       { mode: "sso" },
