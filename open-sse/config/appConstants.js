@@ -1,6 +1,6 @@
 import { platform, arch, hostname } from "os";
 import { PROVIDERS, PROVIDER_OAUTH } from "./providers.js";
-import { ANTIGRAVITY_IDE_USER_AGENT } from "../providers/shared.js";
+import { ANTIGRAVITY_HUB_USER_AGENT, ANTIGRAVITY_IDE_USER_AGENT } from "../providers/shared.js";
 import { createRequire } from "module";
 import { UPSTREAM_CLIENT_IDS } from "../../src/shared/brand/index.js";
 
@@ -135,8 +135,10 @@ export const AG_DEFAULT_TOOLS = new Set([
 ]);
 
 // Antigravity chat/stream headers
+// Model-serving traffic uses the hub identity (Argon is hidden from the IDE family);
+// onboarding below keeps the IDE identity.
 export const ANTIGRAVITY_HEADERS = {
-  "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
+  "User-Agent": ANTIGRAVITY_HUB_USER_AGENT,
 };
 
 // Cloud Code Assist API endpoints differ by client ecosystem.

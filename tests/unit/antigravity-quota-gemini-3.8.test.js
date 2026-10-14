@@ -12,6 +12,18 @@ const proxyAwareFetch = vi.fn(async (url) => ({
         }
       : {
           models: {
+            "gemini-4-argon-high": {
+              displayName: "Gemini 4 Argon (High)",
+              quotaInfo: { remainingFraction: 0.92, resetTime: "2026-08-25T12:00:00Z" },
+            },
+            "gemini-4-argon-medium": {
+              displayName: "Gemini 4 Argon (Medium)",
+              quotaInfo: { remainingFraction: 0.5, resetTime: "2026-08-25T12:00:00Z" },
+            },
+            "gemini-4-argon-low": {
+              displayName: "Gemini 4 Argon (Low)",
+              quotaInfo: { remainingFraction: 0.12, resetTime: "2026-08-25T12:00:00Z" },
+            },
             "gemini-3.8-flash-high": {
               displayName: "Gemini 3.8 Flash (High)",
               quotaInfo: { remainingFraction: 0.85, resetTime: "2026-08-25T12:00:00Z" },
@@ -38,10 +50,10 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   proxyAwareFetch,
 }));
 
-describe("Antigravity quota tracker: Gemini 3.8 Flash usage bars", () => {
+describe("Antigravity quota tracker: Gemini 3.8 Flash and Gemini 4 Argon usage bars", () => {
   beforeEach(() => proxyAwareFetch.mockClear());
 
-  it("returns Gemini 3.8 Flash tier quotas so the dashboard can render usage bars", async () => {
+  it("returns Gemini 3.8 Flash and Argon tier quotas so the dashboard can render usage bars", async () => {
     const { getAntigravityUsage } = await import("../../open-sse/services/usage/google.js");
 
     const usage = await getAntigravityUsage("access-token", {});
@@ -61,6 +73,22 @@ describe("Antigravity quota tracker: Gemini 3.8 Flash usage bars", () => {
       used: 650,
       total: 1000,
       remainingPercentage: 35,
+    });
+    expect(usage.quotas["gemini-4-argon-high"]).toMatchObject({
+      used: 80,
+      total: 1000,
+      remainingPercentage: 92,
+      displayName: "Gemini 4 Argon (High)",
+    });
+    expect(usage.quotas["gemini-4-argon-medium"]).toMatchObject({
+      used: 500,
+      total: 1000,
+      remainingPercentage: 50,
+    });
+    expect(usage.quotas["gemini-4-argon-low"]).toMatchObject({
+      used: 880,
+      total: 1000,
+      remainingPercentage: 12,
     });
   });
 });

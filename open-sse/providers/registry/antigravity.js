@@ -1,4 +1,5 @@
 import {
+  ANTIGRAVITY_HUB_USER_AGENT,
   ANTIGRAVITY_IDE_BASE_URL,
   ANTIGRAVITY_IDE_USER_AGENT,
   ANTIGRAVITY_OAUTH_CLIENT,
@@ -27,7 +28,9 @@ export default {
     baseUrls: [ANTIGRAVITY_IDE_BASE_URL],
     format: "antigravity",
     headers: {
-      "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
+      // Generation rides the hub identity (Argon is hidden from the IDE family);
+      // onboarding (oauth.loadCodeAssistUserAgent below) stays on the IDE identity.
+      "User-Agent": ANTIGRAVITY_HUB_USER_AGENT,
     },
     retry: {
       429: {
@@ -50,6 +53,30 @@ export default {
     clientSecret: ANTIGRAVITY_OAUTH_CLIENT.clientSecret,
   },
   models: [
+    // Gemini 4 Argon: wire ids are only the three tiers; bare `gemini-4-argon` 404s
+    // upstream, so the bare alias defaults to medium but accepts client effort.
+    // Successful discovery reconciles aliases against live tier ids; the existing
+    // static fallback still lists them when discovery fails.
+    {
+      id: "gemini-4-argon-high",
+      name: "Gemini 4 Argon (High)",
+      upstreamModelId: "gemini-4-argon-high(high)",
+    },
+    {
+      id: "gemini-4-argon-medium",
+      name: "Gemini 4 Argon (Medium)",
+      upstreamModelId: "gemini-4-argon-medium(medium)",
+    },
+    {
+      id: "gemini-4-argon-low",
+      name: "Gemini 4 Argon (Low)",
+      upstreamModelId: "gemini-4-argon-low(low)",
+    },
+    {
+      id: "gemini-4-argon",
+      name: "Gemini 4 Argon",
+      upstreamModelId: "gemini-4-argon-medium",
+    },
     {
       id: "gemini-3.8-flash-high",
       name: "Gemini 3.8 Flash (High)",

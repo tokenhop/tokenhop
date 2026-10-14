@@ -8,8 +8,8 @@ import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import {
   ANTIGRAVITY_IDE_BASE_URL,
-  ANTIGRAVITY_IDE_USER_AGENT,
-  ANTIGRAVITY_IDE_VERSION,
+  ANTIGRAVITY_HUB_USER_AGENT,
+  ANTIGRAVITY_HUB_VERSION,
 } from "open-sse/providers/shared.js";
 
 const kindOf = (model) => model?.kind || model?.type || "llm";
@@ -186,9 +186,9 @@ const resolveAntigravityOAuth = buildOAuthResolver({
       ANTIGRAVITY_CONFIG.clientSecret,
     ),
   fetchFn: cloudCodeFetch(ANTIGRAVITY_MODELS_URL, {
-    "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
+    "User-Agent": ANTIGRAVITY_HUB_USER_AGENT,
     "X-Client-Name": "antigravity",
-    "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
+    "X-Client-Version": ANTIGRAVITY_HUB_VERSION,
   }),
   parseFn: parseCloudCodeModels,
   errorLabel: "Failed to fetch Antigravity models",

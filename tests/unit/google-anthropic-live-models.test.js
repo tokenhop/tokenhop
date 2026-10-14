@@ -219,7 +219,7 @@ describe("antigravity", () => {
     ]);
   });
 
-  it("calls fetchAvailableModels with the IDE headers", async () => {
+  it("calls fetchAvailableModels with the hub headers", async () => {
     respond = () => Response.json({ models: { "claude-sonnet-4-6": { displayName: "S" } } });
     const conn = await seed("antigravity", { authType: "oauth", accessToken: "at" });
 
@@ -229,6 +229,8 @@ describe("antigravity", () => {
       "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
     );
     expect(calls[0].headers["X-Client-Name"]).toBe("antigravity");
+    expect(calls[0].headers["User-Agent"]).toBe("antigravity/hub/2.23.0 darwin/arm64");
+    expect(calls[0].headers["X-Client-Version"]).toBe("2.23.0");
     expect(body.models.map((m) => m.id)).toEqual(["claude-sonnet-4-6"]);
   });
 });
