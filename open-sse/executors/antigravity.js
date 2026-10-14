@@ -17,6 +17,7 @@ import {
 } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
 import { getGeminiThoughtSignatureSync } from "../services/thoughtSignatureStore.js";
+import { stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -30,6 +31,39 @@ const MAX_RETRY_AFTER_MS = 10000;
 const ANTIGRAVITY_TRANSIENT_RETRY_MAX_MS = 15000;
 const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 64000;
 const ANTIGRAVITY_IDE_REQUEST_ID_RE = /^agent\/[^/]+\/\d+\/[^/]+\/\d+$/;
+
+// Gemini 4 Argon is served only as three tier wire ids (gemini-4-argon-{low,medium,high});
+// the bare id 404s upstream and integer thinkingBudget is ignored. Tier follows level:
+//  - explicit tier id (gemini-4-argon-high) is authoritative — suffix/effort cannot change it;
+//  - the bare id (gemini-4-argon) is steered by thinkingConfig.thinkingLevel (from
+//    reasoning_effort or a "(level)" suffix), defaulting to medium.
+// Argon cannot disable thinking, so includeThoughts is always on.
+const ARGON_MODEL_RE = /^gemini-4-argon(?:-(low|medium|high))?$/;
+const ARGON_DEFAULT_LEVEL = "medium";
+const ARGON_LEVEL_MAP = {
+  minimal: "low",
+  none: "low",
+  off: "low",
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "high",
+  max: "high",
+  ultra: "high",
+  auto: "high",
+};
+
+function normalizeArgonRequest(requestedModel, generationConfig) {
+  const match = ARGON_MODEL_RE.exec(stripThinkingSuffix(requestedModel) || "");
+  if (!match) return null;
+  const tier = match[1];
+  const raw = String(generationConfig.thinkingConfig?.thinkingLevel || "").toLowerCase();
+  const level = tier || ARGON_LEVEL_MAP[raw] || ARGON_DEFAULT_LEVEL;
+  return {
+    model: `gemini-4-argon-${level}`,
+    thinkingConfig: { thinkingLevel: level, includeThoughts: true },
+  };
+}
 
 const ANTIGRAVITY_TRANSIENT_ERROR_PATTERNS = [
   /high\s+traffic/i,
@@ -321,6 +355,10 @@ export class AntigravityExecutor extends BaseExecutor {
       generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
     }
 
+    // Argon-only: derive the wire tier from the effective level and force a string level.
+    const argon = normalizeArgonRequest(model, generationConfig);
+    if (argon) generationConfig.thinkingConfig = argon.thinkingConfig;
+
     const transformedRequest = {
       ...requestWithoutTools,
       generationConfig,
@@ -339,7 +377,7 @@ export class AntigravityExecutor extends BaseExecutor {
     return {
       ...body,
       project: projectId,
-      model: body.model || model,
+      model: argon?.model || body.model || model,
       userAgent: "antigravity",
       requestType: "agent",
       requestId: buildIdeRequestId({

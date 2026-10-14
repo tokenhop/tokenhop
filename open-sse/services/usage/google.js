@@ -4,8 +4,9 @@
 
 import { CLIENT_METADATA } from "../../config/appConstants.js";
 import {
+  ANTIGRAVITY_HUB_USER_AGENT,
+  ANTIGRAVITY_HUB_VERSION,
   ANTIGRAVITY_IDE_USER_AGENT,
-  ANTIGRAVITY_IDE_VERSION,
   ANTIGRAVITY_OAUTH_CLIENT,
 } from "../../providers/shared.js";
 import { U, parseResetTime, normalizeCloudCodeProjectId, fetchWithTimeout } from "./shared.js";
@@ -15,7 +16,10 @@ import { fetchAntigravityWeeklyQuota } from "./antigravity-weekly.js";
 const ANTIGRAVITY_CONFIG = {
   ...U("antigravity"),
   ...ANTIGRAVITY_OAUTH_CLIENT,
-  userAgent: ANTIGRAVITY_IDE_USER_AGENT,
+  // Model catalog/quota (fetchAvailableModels) rides the hub identity.
+  userAgent: ANTIGRAVITY_HUB_USER_AGENT,
+  // loadCodeAssist subscription lookup is onboarding-class → keeps the IDE identity.
+  loadCodeAssistUserAgent: ANTIGRAVITY_IDE_USER_AGENT,
 };
 
 /**
@@ -137,7 +141,7 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
           "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
           "Content-Type": "application/json",
           "X-Client-Name": "antigravity",
-          "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
+          "X-Client-Version": ANTIGRAVITY_HUB_VERSION,
         },
         body: JSON.stringify({
           ...(projectId ? { project: projectId } : {}),
@@ -179,6 +183,9 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     if (!isFreeTier && data.models) {
       // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
       const importantModels = [
+        "gemini-4-argon-high",
+        "gemini-4-argon-medium",
+        "gemini-4-argon-low",
         "gemini-3.8-flash-high",
         "gemini-3.8-flash-medium",
         "gemini-3.8-flash-low",
@@ -306,7 +313,7 @@ async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null) 
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
-          "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
+          "User-Agent": ANTIGRAVITY_CONFIG.loadCodeAssistUserAgent,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ metadata: CLIENT_METADATA, mode: 1 }),

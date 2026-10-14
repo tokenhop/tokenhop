@@ -37,6 +37,7 @@ const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
+  { pattern: "*gemini-4-argon*", levels: ["low", "medium", "high"] },
   // Kimi K3 accepts only low/high/max; a defaulting client sends "medium",
   // which K3 hosts reject with 400. thinkingUnified clamps to this set.
   { pattern: "*kimi-k3", levels: ["none", "low", "high", "max"] },
