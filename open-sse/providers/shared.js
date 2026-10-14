@@ -158,12 +158,25 @@ export const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
 export const OPENAI_COMPAT_BASE = "https://api.openai.com/v1";
 export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";
 
-// Official Antigravity IDE Desktop 2.11.0 fingerprint captured from macOS arm64.
-// Keep this static even when tokenhop runs on Linux: the provider profile is
-// intentionally matching the IDE client, not the server host.
+// Two static Antigravity client fingerprints (macOS arm64 platform). Keep the platform
+// pinned even when tokenhop runs on Linux: the provider profile intentionally matches a
+// captured client, not the server host.
+//
+// IDE profile (2.11.0): OAuth/project provisioning (loadCodeAssist, onboardUser),
+// subscription lookup and search. Google fingerprints those onboarding calls, and
+// onboarding under the hub identity is unverified, so they keep the proven IDE
+// identity. Gemini 3.8 was gated on IDE >= 2.11.0.
 export const ANTIGRAVITY_IDE_VERSION = "2.11.0";
 export const ANTIGRAVITY_IDE_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";
 export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/ide/${ANTIGRAVITY_IDE_VERSION} darwin/arm64`;
+
+// Hub profile (desktop app, 2.23.0): model-serving traffic — generation,
+// fetchAvailableModels discovery, daily/weekly quota. Google gates some models by
+// client family + minimum version: Gemini 4 Argon is hidden from fetchAvailableModels
+// (and 404s on generation) for the `ide` family, but exposed to the `hub` family from
+// 2.23.0 (verified: same token/project/endpoint, only the User-Agent changed).
+export const ANTIGRAVITY_HUB_VERSION = "2.23.0";
+export const ANTIGRAVITY_HUB_USER_AGENT = `antigravity/hub/${ANTIGRAVITY_HUB_VERSION} darwin/arm64`;
 
 // Google "installed app" OAuth clients (Antigravity IDE, Gemini CLI). Kept out of
 // source control — supply them via env. When unset, OAuth login and token refresh
