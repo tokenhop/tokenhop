@@ -2,6 +2,7 @@
 // backend accepts them. Catalog and other passthrough requests retain the
 // client's current identity. Hardcoded MVP — toggle/version configurable later.
 
+// Argon is unavailable via MITM IDE passthrough: Google excludes the IDE surface.
 const ANTIGRAVITY_IDE_VERSION = "2.11.0";
 const ANTIGRAVITY_IDE_VERSION_OVERRIDE_ENABLED = true;
 
