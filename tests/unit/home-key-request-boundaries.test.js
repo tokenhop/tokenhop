@@ -52,7 +52,12 @@ vi.mock("@/shared/hooks/useAuthStatus", () => ({ useAuthStatusState: () => auth.
 vi.mock("@/shared/hooks/useSettingsScope", () => ({ useSettingsScope: () => scope.value }));
 vi.mock("@/store/notificationStore", () => ({ useNotificationStore: () => vi.fn() }));
 import { useApiKeys } from "../../src/app/(dashboard)/dashboard/endpoint/hooks/useApiKeys";
-import { useHomeKeys, useHomeWaysIn } from "../../src/app/(dashboard)/dashboard/home/useHomeData";
+import {
+  useHomeCombos,
+  useHomeKeys,
+  useHomeProviders,
+  useHomeWaysIn,
+} from "../../src/app/(dashboard)/dashboard/home/useHomeData";
 import { resetHomeResourceStore } from "../../src/app/(dashboard)/dashboard/home/homeResourceStore";
 const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 const statusFor = (id = "a", workspaceId = "w1") => ({
@@ -78,6 +83,8 @@ const ADMIN = {
   scope: { workspaceId: "w1" },
   canManageInstance: true,
   canHostOps: true,
+  canReadConnections: true,
+  canUseConnections: true,
 };
 const flush = async () => {
   for (let i = 0; i < 30; i++) await Promise.resolve();
@@ -218,6 +225,144 @@ describe("Home request boundaries", () => {
     render(useHomeKeys);
     await flush();
     expect(urls()).toEqual(["/api/keys/context?workspaceId=w1", "/api/keys?workspaceId=w1"]);
+  });
+  it("providers and combos make no requests before scope is ready", async () => {
+    scope.value = { ...ADMIN, ready: false };
+    const both = () => ({ providers: useHomeProviders(), combos: useHomeCombos() });
+    const r = render(both);
+    await flush();
+    expect(urls()).toEqual([]);
+    expect(r.providers).toEqual({ connections: [], loading: true, error: null });
+    expect(r.combos).toEqual({
+      combos: [],
+      strategies: {},
+      globalStrategy: "fallback",
+      loading: true,
+      error: null,
+    });
+  });
+  it("member (canReadConnections false, canUseConnections true) skips providers, combos and settings", async () => {
+    scope.value = {
+      ...ADMIN,
+      canManageInstance: false,
+      canHostOps: false,
+      canReadConnections: false,
+      canUseConnections: true,
+    };
+    const both = () => ({ providers: useHomeProviders(), combos: useHomeCombos() });
+    render(both);
+    await flush();
+    const r = render(both);
+    expect(urls()).toEqual([]);
+    expect(r.providers).toEqual({ connections: [], loading: false, error: null });
+    expect(r.combos).toEqual({
+      combos: [],
+      strategies: {},
+      globalStrategy: "fallback",
+      loading: false,
+      error: null,
+    });
+  });
+  it("viewer (both connection capabilities false) makes no providers, combos or settings requests", async () => {
+    scope.value = {
+      ...ADMIN,
+      canManageInstance: false,
+      canHostOps: false,
+      canReadConnections: false,
+      canUseConnections: false,
+    };
+    const both = () => ({ providers: useHomeProviders(), combos: useHomeCombos() });
+    render(both);
+    await flush();
+    const r = render(both);
+    expect(urls()).toEqual([]);
+    expect(r.providers).toEqual({ connections: [], loading: false, error: null });
+    expect(r.combos).toEqual({
+      combos: [],
+      strategies: {},
+      globalStrategy: "fallback",
+      loading: false,
+      error: null,
+    });
+  });
+  it("manager/owner (both capabilities true) fetches workspace-scoped providers, combos and settings", async () => {
+    fetchMock.mockImplementation(async (url) => {
+      if (url.startsWith("/api/providers")) return json({ connections: [{ id: "p1" }] });
+      if (url.startsWith("/api/combos")) return json({ combos: [{ id: "c1", name: "fast" }] });
+      return json({
+        effective: {
+          comboStrategies: { c1: { strategy: "round-robin" } },
+          comboStrategy: "least-used",
+        },
+      });
+    });
+    const both = () => ({ providers: useHomeProviders(), combos: useHomeCombos() });
+    render(both);
+    await flush();
+    const r = render(both);
+    expect(urls().sort()).toEqual([
+      "/api/combos?workspaceId=w1",
+      "/api/providers?workspaceId=w1",
+      "/api/workspaces/w1/settings",
+    ]);
+    expect(r.providers).toEqual({ connections: [{ id: "p1" }], loading: false, error: null });
+    expect(r.combos).toEqual({
+      combos: [{ id: "c1", name: "fast" }],
+      strategies: { fast: { strategy: "round-robin" } },
+      globalStrategy: "least-used",
+      loading: false,
+      error: null,
+    });
+  });
+  it("inactive/switch-off (scope null, both true) uses bare legacy endpoints", async () => {
+    scope.value = { ...ADMIN, scope: null };
+    fetchMock.mockImplementation(async (url) => {
+      if (url === "/api/providers") return json({ connections: [{ id: "p1" }] });
+      if (url === "/api/combos") return json({ combos: [{ id: "c1", name: "fast" }] });
+      return json({
+        comboStrategies: { fast: { strategy: "round-robin" } },
+        comboStrategy: "fallback",
+      });
+    });
+    const both = () => ({ providers: useHomeProviders(), combos: useHomeCombos() });
+    render(both);
+    await flush();
+    const r = render(both);
+    expect(urls().sort()).toEqual(["/api/combos", "/api/providers", "/api/settings"]);
+    expect(r.providers.connections).toEqual([{ id: "p1" }]);
+    expect(r.combos.strategies).toEqual({ fast: { strategy: "round-robin" } });
+    expect(r.combos.error).toBeNull();
+  });
+  it("settings 404 while combos 200 degrades to fallback strategy without surfacing an error", async () => {
+    fetchMock.mockImplementation(async (url) => {
+      if (url.startsWith("/api/combos")) return json({ combos: [{ id: "c1", name: "fast" }] });
+      return json({ error: "Workspace not found" }, 404);
+    });
+    render(useHomeCombos);
+    await flush();
+    const r = render(useHomeCombos);
+    expect(r).toEqual({
+      combos: [{ id: "c1", name: "fast" }],
+      strategies: {},
+      globalStrategy: "fallback",
+      loading: false,
+      error: null,
+    });
+  });
+  it("admin oversight without workspace use (canReadConnections true, canUseConnections false) skips workspace settings", async () => {
+    scope.value = { ...ADMIN, canReadConnections: true, canUseConnections: false };
+    fetchMock.mockResolvedValue(json({ combos: [{ id: "c1", name: "fast" }] }));
+    render(useHomeCombos);
+    await flush();
+    const r = render(useHomeCombos);
+    expect(urls()).toEqual(["/api/combos?workspaceId=w1"]);
+    expect(r).toEqual({
+      combos: [{ id: "c1", name: "fast" }],
+      strategies: {},
+      globalStrategy: "fallback",
+      loading: false,
+      error: null,
+    });
   });
 });
 

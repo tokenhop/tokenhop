@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { can as principalCan } from "@/lib/users/principal";
+import { toCapabilityPrincipal } from "@/shared/utils/account";
 
 // YAN-373: pending-approval count for the Users nav badge. One shared poller
 // for desktop sidebar + mobile drawer, mirroring useShellStatus. The count is
@@ -20,6 +22,25 @@ const store = { count: null, timer: null, inFlight: null, queued: false, listene
 export function pendingCountFrom(body) {
   const total = body?.pagination?.totalItems;
   return Number.isInteger(total) && total >= 0 ? total : null;
+}
+
+/**
+ * Whether the shell may poll the pending-approval count: an authenticated
+ * admin/owner principal holds `instance.users.manage`; everyone else would
+ * get a 403 every minute (YAN-1159). The auth principal is read directly
+ * (independent of accountView, which stays inactive until multi-user is on):
+ * an owner whose only other users are pending still keeps the badge. An
+ * absent/failed principal never polls.
+ * @param {object} [authStatus] `/api/auth/status` payload.
+ * @param {boolean} loaded Whether the auth request has settled.
+ * @param {boolean} multiUser Users & teams switch from the shell summary.
+ * @returns {boolean}
+ */
+export function canPollPendingUsers(authStatus, loaded, multiUser) {
+  if (!loaded || !multiUser) return false;
+  const principal = authStatus?.principal;
+  if (!principal?.user) return false;
+  return principalCan(toCapabilityPrincipal(principal), "instance.users.manage") === true;
 }
 
 async function fetchCount() {
