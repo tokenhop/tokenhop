@@ -14,6 +14,13 @@ import {
 } from "@/app/(dashboard)/dashboard/cli-tools/components";
 import { Callout, CardSkeleton } from "@/shared/components";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
+import {
+  keyIdentity,
+  keyIdentityReady,
+  loadKeyContext,
+  loadKeyList,
+} from "@/app/(dashboard)/dashboard/endpoint/hooks/keyApi";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useCliAccessStore } from "@/store/cliAccessStore";
 
@@ -29,8 +36,13 @@ import { useCliAccessStore } from "@/store/cliAccessStore";
 export default function MitmPageClient() {
   const { ready, canManageInstance, canHostOps } = useSettingsScope();
   const allowed = ready && canHostOps;
+  const { status: authStatus } = useAuthStatusState();
+  // Keys reload per user/workspace identity, not only on capability flips.
+  const keysIdentity = keyIdentity(authStatus);
+  const keysReady = keyIdentityReady(authStatus);
   const [connections, setConnections] = useState([]);
-  const [apiKeys, setApiKeys] = useState([]);
+  const [keyState, setKeyState] = useState(null);
+  const apiKeys = allowed && keyState?.identity === keysIdentity ? keyState.keys : [];
   const [modelAliases, setModelAliases] = useState({});
   const [cloudEnabled, setCloudEnabled] = useState(false);
   const [expandedTool, setExpandedTool] = useState(null);
@@ -61,7 +73,6 @@ export default function MitmPageClient() {
       }
     };
     load("/api/providers", "providers", (data) => setConnections(data.connections || []), {});
-    load("/api/keys", "API keys", (data) => setApiKeys(data.keys || []), {});
     load("/api/models/alias", "model aliases", (data) => setModelAliases(data.aliases || {}), {});
     // cloudEnabled is an instance-settings key, not a host one.
     if (canManageInstance)
@@ -75,6 +86,32 @@ export default function MitmPageClient() {
       cancelled = true;
     };
   }, [allowed, canManageInstance]);
+
+  // Keys go through the storage-aware context: hashed storage needs the
+  // active workspace selector (a bare /api/keys answers 400 there). Hashed
+  // rows carry only metadata; the server card already handles them.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: authStatus covered by keysIdentity
+  useEffect(() => {
+    if (!allowed || !keysReady) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const context = await loadKeyContext(authStatus);
+        if (cancelled) return; // identity/access changed: never list with a stale context
+        const keys = await loadKeyList(context);
+        if (!cancelled) setKeyState({ identity: keysIdentity, keys });
+      } catch {
+        if (!cancelled) {
+          useNotificationStore
+            .getState()
+            .error("Couldn't load API keys. MITM options may be incomplete.");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [allowed, keysReady, keysIdentity]);
 
   const getActiveProviders = () => connections.filter((c) => c.isActive !== false);
 

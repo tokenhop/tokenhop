@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import PropTypes from "prop-types";
 import Button from "@/shared/components/Button";
 import Callout from "@/shared/components/Callout";
@@ -10,7 +10,6 @@ import Modal from "@/shared/components/Modal";
 import Toggle from "@/shared/components/Toggle";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { duplicateKeyLabel, validateKeyName } from "../endpoint/endpointLogic";
-import { loadKeyContext, loadKeyList } from "../endpoint/hooks/useApiKeys";
 import CopyStatus from "@/shared/components/CopyStatus";
 import { keyRowDisplay } from "./format";
 import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
@@ -43,7 +42,7 @@ export function recentKeys(keys) {
  * @param {() => void} props.onRetry
  * @param {() => void} props.onChanged bump the parent refresh key after create/toggle
  */
-export default function KeysSummary({ keys, loading, error, onRetry, onChanged }) {
+export default function KeysSummary({ context, keys, loading, error, onRetry, onChanged }) {
   const [toggling, setToggling] = useState(null);
   const [toggleError, setToggleError] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -52,59 +51,25 @@ export default function KeysSummary({ keys, loading, error, onRetry, onChanged }
   const [createError, setCreateError] = useState(null);
   const [keyName, setKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
-  /** Key-management context; null until /api/keys/context resolves. */
-  const [keyCtx, setKeyCtx] = useState(null);
-  /** Nonsecret context-load failure; rendered instead of the widget body. */
-  const [ctxError, setCtxError] = useState(null);
-  /** Hashed manager list; null while the scoped fetch is in flight. */
-  const [ownKeys, setOwnKeys] = useState(null);
-  const [ownError, setOwnError] = useState(null);
+  /** Key-management context from Home's single identity-keyed list source. */
   const { copied, error: copyError, copy } = useCopyToClipboard();
-
+  const keyCtx = context;
   const hashed = keyCtx?.storage === "hashed";
-  // D1: listing is manager-only. Members/viewers never probe the list.
-  const canList = hashed && keyCtx.canManage;
+  // Members see their own keys (no mutation affordance on Home).
+  const canList = Boolean(keyCtx) && (!hashed || keyCtx.canManage || keyCtx.canCreate);
+  const canManage = hashed ? keyCtx.canManage === true : true;
+  const canCreate = hashed ? keyCtx.canCreate === true : true;
   /** Scoped mutation URL; no-op path passthrough for legacy. */
   const keyUrl = useCallback(
     (path) =>
-      hashed
+      hashed && keyCtx?.workspaceId
         ? `${path}${path.includes("?") ? "&" : "?"}workspaceId=${encodeURIComponent(keyCtx.workspaceId)}`
         : path,
     [hashed, keyCtx],
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    loadKeyContext()
-      .then(async (ctx) => {
-        // Context401 can also mean an expired hashed session. A successful
-        // legacy list must confirm the fallback before legacy mutations show.
-        if (ctx.storage === "legacy") await loadKeyList(ctx);
-        if (!cancelled) setKeyCtx(ctx);
-      })
-      .catch(() => {
-        if (!cancelled) setCtxError("Could not load key permissions. Reload to try again.");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const reloadOwn = useCallback(async () => {
-    try {
-      setOwnKeys(await loadKeyList(keyCtx));
-      setOwnError(null);
-    } catch (err) {
-      setOwnKeys([]);
-      setOwnError(err?.message || "Could not load the keys");
-    }
-  }, [keyCtx]);
-
-  useEffect(() => {
-    if (canList) reloadOwn();
-  }, [canList, reloadOwn]);
-
   const toggle = async (key) => {
+    if (!keyCtx || !canManage) return;
     setToggling(key.id);
     setToggleError(null);
     try {
@@ -116,7 +81,6 @@ export default function KeysSummary({ keys, loading, error, onRetry, onChanged }
       const payload = await response.json().catch(() => null);
       if (!response.ok) throw new Error(payload?.error || "Could not update the key");
       onChanged?.();
-      if (canList) await reloadOwn();
     } catch (err) {
       setToggleError(err.message || "Could not update the key");
     } finally {
@@ -125,6 +89,7 @@ export default function KeysSummary({ keys, loading, error, onRetry, onChanged }
   };
 
   const create = async () => {
+    if (!keyCtx || !canCreate || saving) return;
     const name = keyName.trim();
     // Same rule as the endpoint create API (no blank/oversized/control chars).
     const nameError = validateKeyName(keyName);
@@ -150,7 +115,6 @@ export default function KeysSummary({ keys, loading, error, onRetry, onChanged }
       });
       setKeyName("");
       onChanged?.();
-      if (canList) await reloadOwn();
     } catch (err) {
       setCreateError(err.message || "Could not create the key");
     } finally {
@@ -166,30 +130,14 @@ export default function KeysSummary({ keys, loading, error, onRetry, onChanged }
     setKeyName("");
   };
 
-  // Context failure or unproven legacy fallback (a context401 can also mean
-  // an expired hashed session): fail closed. Never fall back to the legacy
-  // props flow with create/toggle affordances. Concise nonsecret state with
-  // reload.
-  if (ctxError) {
-    return (
-      <div className="flex min-w-0 flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold tracking-[0.08em] text-muted uppercase">
-            API keys
-          </span>
-        </div>
-        <WidgetError message={ctxError} onRetry={() => window.location.reload()} />
-      </div>
-    );
-  }
+  // Context failure or unproven legacy fallback: fail closed.
+  if (error) return <WidgetError message={error} onRetry={onRetry} />;
+  if (loading || !keyCtx) return <WidgetSkeleton lines={2} label="Loading API keys" />;
 
-  // Stay on skeleton until the context (and its fallback proof) resolves.
-  if (!keyCtx) return <WidgetSkeleton lines={2} label="Loading API keys" />;
-
-  // Hashed storage: context-aware render. Managers get the scoped list with
-  // prefix rows; members get create-only; viewers get a quiet note.
+  // Managers get workspace keys; members see only their own prefix rows;
+  // viewers keep the existing quiet note and never probe the key list.
   if (hashed) {
-    const list = canList ? (ownKeys ?? []) : [];
+    const list = keys ?? [];
     const active = list.filter((key) => key.isActive !== false).length;
     const paused = list.length - active;
     return (
@@ -211,11 +159,7 @@ export default function KeysSummary({ keys, loading, error, onRetry, onChanged }
           )}
         </div>
 
-        {canList && ownKeys === null && ownError === null ? (
-          <WidgetSkeleton lines={2} label="Loading API keys" />
-        ) : canList && ownError ? (
-          <WidgetError message={ownError} onRetry={reloadOwn} />
-        ) : canList ? (
+        {canList ? (
           <>
             <p className="flex items-baseline gap-2">
               <span className="font-display text-[44px] leading-none font-bold text-text">
@@ -241,13 +185,15 @@ export default function KeysSummary({ keys, loading, error, onRetry, onChanged }
                     >
                       {keyRowDisplay(key)}
                     </span>
-                    <Toggle
-                      checked={enabled}
-                      disabled={toggling === key.id}
-                      onChange={() => toggle(key)}
-                      aria-label={`${label} key ${enabled ? "enabled" : "paused"}`}
-                      className="ms-auto"
-                    />
+                    {canManage && (
+                      <Toggle
+                        checked={enabled}
+                        disabled={toggling === key.id}
+                        onChange={() => toggle(key)}
+                        aria-label={`${label} key ${enabled ? "enabled" : "paused"}`}
+                        className="ms-auto"
+                      />
+                    )}
                   </li>
                 );
               })}
@@ -459,6 +405,7 @@ export default function KeysSummary({ keys, loading, error, onRetry, onChanged }
 }
 
 KeysSummary.propTypes = {
+  context: PropTypes.object,
   keys: PropTypes.arrayOf(PropTypes.object),
   loading: PropTypes.bool,
   error: PropTypes.string,

@@ -27,9 +27,40 @@ export function isConfirmedLegacyStatus(status) {
   );
 }
 
+/** Auth failure/expired sessions must not be mistaken for pristine local mode. */
+export function keyIdentityReady(status) {
+  return Boolean(
+    (status?.authenticated === true && status?.principal?.user?.id) ||
+      (typeof status?.hasPassword === "boolean" &&
+        status.userSecurityEnforced !== true &&
+        (status.authenticated === true || status.requireLogin === false)),
+  );
+}
+
+/** Nonsecret identity + permissions fingerprint; independent of rollout switch. */
+export function keyIdentity(status) {
+  return JSON.stringify([
+    status?.authenticated,
+    status?.requireLogin,
+    status?.hasPassword,
+    status?.userSecurityEnforced,
+    status?.multiUserActive,
+    status?.principal ?? null,
+  ]);
+}
+
 export async function loadKeyContext(status) {
-  if (isConfirmedLegacyStatus(status)) return LEGACY_CONTEXT;
-  const res = await fetch("/api/keys/context", { cache: "no-store" });
+  if (
+    isConfirmedLegacyStatus(status) ||
+    (keyIdentityReady(status) && !status?.principal && status?.userSecurityEnforced !== true)
+  ) {
+    return LEGACY_CONTEXT;
+  }
+  const workspaceId = status?.principal?.activeWorkspaceId;
+  const url = workspaceId
+    ? `/api/keys/context?workspaceId=${encodeURIComponent(workspaceId)}`
+    : "/api/keys/context";
+  const res = await fetch(url, { cache: "no-store" });
   if (res.status === 401) return LEGACY_CONTEXT;
   const data = await readJson(res);
   if (!res.ok) throw new Error(data?.error || "Failed to load key permissions.");
