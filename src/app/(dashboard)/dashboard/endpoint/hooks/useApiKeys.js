@@ -16,6 +16,8 @@ import {
   readJson,
   loadKeyContext,
   loadKeyList,
+  keyIdentity,
+  keyIdentityReady,
   acknowledgeMigration,
 } from "./keyApi";
 
@@ -39,6 +41,11 @@ export { loadKeyContext, loadKeyList, acknowledgeMigration };
  * pause / resume failures go to the notification toast. No optimistic updates:
  * local state changes only after the server confirms.
  *
+ * Identity: the bootstrap (and any re-list) is identity-keyed, so a context,
+ * a refresh or a bootstrap response that outlives its identity never serves
+ * another user's keys. Before identity/auth is ready (except the existing
+ * auth status bootstrap) no request starts and capabilities stay closed.
+ *
  * @returns {object} context + hashedMode + capabilities, keys, loading, error,
  * modal/new-name state + createError, revealed + dismissRevealed, visibleKeys +
  * toggleVisibility, togglingId, deletingId, renamingId + renameErrors,
@@ -47,11 +54,41 @@ export { loadKeyContext, loadKeyList, acknowledgeMigration };
  */
 export function useApiKeys() {
   const { status: authStatus, loaded: authReady } = useAuthStatusState();
+  const bootstrapIdentity = keyIdentity(authStatus);
+  const ready = authReady && keyIdentityReady(authStatus);
   const notifyError = useNotificationStore((s) => s.error);
-  const [keys, setKeys] = useState([]);
+  /** Key list tagged with its identity: { id, list } — see bootstrap render guard. */
+  const [keyState, setKeyState] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [context, setContext] = useState(null);
+  /** List error tagged with the identity it belongs to: { id, message } | null. */
+  const [errorState, setErrorState] = useState(null);
+  const [rawContext, setContext] = useState(null);
+  /** Identity (user + active workspace) the cached context belongs to. */
+  const [bootstrapId, setBootstrapId] = useState(null);
+  /** Latest render identity: stale refresh callers read this, never a capture. */
+  const identityRef = useRef(null);
+  identityRef.current = bootstrapIdentity;
+  const context = ready && bootstrapId === bootstrapIdentity ? rawContext : null;
+  /** Record (or clear) a list error for the current identity only. */
+  const setError = useCallback((message) => {
+    setErrorState(message ? { id: identityRef.current, message } : null);
+  }, []);
+  const error = errorState && errorState.id === bootstrapIdentity ? errorState.message : null;
+  /**
+   * Only the list loaded for the current identity is ever exposed: a prior
+   * user's rows (or a metadata-only row, if storage changed mid-session)
+   * never renders under a new identity. Writes land on the list of the
+   * identity current when they apply; id-matched mutation updates
+   * (rename/toggle/delete) cannot introduce another identity's rows.
+   */
+  const keys = keyState && keyState.id === bootstrapIdentity ? keyState.list : [];
+  const setKeys = useCallback((next) => {
+    const forId = identityRef.current;
+    setKeyState((prev) => {
+      const prevList = prev && prev.id === forId ? prev.list : [];
+      return { id: forId, list: typeof next === "function" ? next(prevList) : next };
+    });
+  }, []);
   const [showAddModal, setShowAddModalState] = useState(false);
   const [newKeyName, setNewKeyNameState] = useState("");
   const [createError, setCreateError] = useState(null);
@@ -109,29 +146,49 @@ export function useApiKeys() {
     [hashedMode, context],
   );
 
-  const fetchKeys = useCallback(async () => loadKeyList(context ?? LEGACY_CONTEXT), [context]);
-
   const refresh = useCallback(async () => {
+    const current = () =>
+      ready && identityRef.current === bootstrapIdentity && bootstrapId === bootstrapIdentity;
+    if (!current() || !context) return;
     try {
-      setKeys(await fetchKeys());
+      const listed = await loadKeyList(context);
+      if (!current()) return;
+      setKeys(listed);
       setError(null);
     } catch (err) {
-      setError(err?.message || "Failed to load API keys.");
+      if (current()) setError(err?.message || "Failed to load API keys.");
     }
-  }, [fetchKeys]);
+  }, [context, bootstrapId, bootstrapIdentity, ready, setError, setKeys]);
 
   // Bootstrap: storage context first, then the mode-appropriate list. The
   // prove-then-reveal rule applies when the context fell back to legacy:
   // allow the legacy UI only after a successful list proves the fallback,
   // so a context401 on a hashed instance cannot unlock mutations or the
   // Default provision POST. No error leaks beyond the existing list-error copy.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: authStatus covered by bootstrapIdentity
   useEffect(() => {
-    if (!authReady) return;
+    // A new identity starts clean: no prior one-time reveal or shown rows.
+    setRevealed(null);
+    setVisibleKeys(new Set());
+    if (!ready) {
+      // Settled but unusable auth (failed/expired status): stop loading and
+      // surface a nonsecret error; no key request starts.
+      if (authReady) {
+        setLoading(false);
+        setError("Could not load key permissions. Reload to try again.");
+      }
+      return;
+    }
+    setLoading(true);
+    let cancelled = false;
     (async () => {
       try {
         const ctx = await loadKeyContext(authStatus);
+        if (cancelled) return; // identity changed while the context was in flight
         let existing = await loadKeyList(ctx);
+        if (cancelled) return;
         setContext(ctx);
+        setBootstrapId(bootstrapIdentity);
         // Auto-provision a default key for first-time users so the endpoint
         // works out of the box. Legacy-only and only on the proven truthful
         // empty list: hashed mode never provisions.
@@ -147,16 +204,20 @@ export function useApiKeys() {
             /* provisioning is best-effort; the empty list still renders */
           }
         }
+        if (cancelled) return;
         setKeys(existing);
         setError(null);
       } catch (err) {
         // Error state before any context — capabilities stay closed.
-        setError(err?.message || "Failed to load API keys.");
+        if (!cancelled) setError(err?.message || "Failed to load API keys.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
-  }, [authReady, authStatus]);
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, bootstrapIdentity, authReady, setError, setKeys]);
 
   /** Editing the name clears the inline create error. */
   const setNewKeyName = (value) => {
@@ -233,6 +294,7 @@ export function useApiKeys() {
     // All validation above is synchronous: the guard is armed before the first await.
     creatingRef.current = true;
     setCreating(true);
+    const startedFor = identityRef.current;
     try {
       const res = await fetch(scopedUrl("/api/keys"), {
         method: "POST",
@@ -240,12 +302,15 @@ export function useApiKeys() {
         body: JSON.stringify(body),
       });
       const data = await readJson(res);
+      // Identity changed mid-flight: never reveal one user's new key to another.
+      if (identityRef.current !== startedFor) return;
       if (!res.ok) {
         setCreateError(data?.error || "Failed to create API key.");
         return;
       }
       const keyId = data?.id || data?.key?.id;
       setRevealed({
+        identity: startedFor,
         id: keyId,
         name: data?.name || name,
         plain: typeof data?.key === "string" ? data.key : data?.plain || "",
@@ -420,7 +485,9 @@ export function useApiKeys() {
     setCreateBudgetWindow: keyBudget.setCreateBudgetWindow,
     budgetFailure,
     retryBudget: keyBudget.retryBudget,
-    revealed,
+    // Never render a reveal created under a different identity (the effect
+    // also clears it; this covers the render before the effect runs).
+    revealed: revealed && revealed.identity === bootstrapIdentity ? revealed : null,
     dismissRevealed,
     migrationNotice: {
       visible: hashedMode && context?.migrationAcknowledged !== true,

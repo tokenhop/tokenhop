@@ -2,6 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
+import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
+import { STALE_MS, FOCUS_THROTTLE_MS } from "./homeResourceStore";
+import {
+  keyIdentity,
+  keyIdentityReady,
+  loadKeyContext,
+  loadKeyList,
+} from "../endpoint/hooks/keyApi";
 import { settingsEndpoint } from "@/shared/utils/settingsApi";
 import { useHomeResource } from "./useHomeResource";
 
@@ -79,43 +87,125 @@ export function useHomeSummary(period, refreshKey = 0) {
 }
 
 /**
- * API keys list (full records; callers mask before display).
+ * API keys list (context-aware: workspace-scoped in hashed storage, legacy
+ * unscoped when pristine/off). Members list their own keys; viewers skip.
  * @param {number} refreshKey bump to re-read after create/toggle
- * @returns {{ keys: Array<object>, loading: boolean, error: string|null }}
+ * @returns {{ keys: Array<object>, context: object|null, loading: boolean, error: string|null }}
  */
 export function useHomeKeys(refreshKey = 0) {
-  const { data, loading, error } = useHomeResource("/api/keys", refreshKey);
-  const keys = Array.isArray(data?.keys) ? data.keys : [];
-  return { keys, loading, error };
+  const { status: authStatus, loaded: authReady } = useAuthStatusState();
+  const identity = keyIdentity(authStatus);
+  const ready = authReady && keyIdentityReady(authStatus);
+  const [state, setState] = useState({
+    id: null,
+    keys: [],
+    context: null,
+    loading: true,
+    error: null,
+  });
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: authStatus covered by identity; refreshKey forces reload
+  useEffect(() => {
+    if (!ready) return undefined;
+    let cancelled = false;
+    let inFlight = false;
+    let lastLoadedAt = 0;
+    let lastFocusAt = 0;
+    const load = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const context = await loadKeyContext(authStatus);
+        if (cancelled) return;
+        const keys = await loadKeyList(context);
+        if (!cancelled) setState({ id: identity, keys, context, loading: false, error: null });
+      } catch (err) {
+        if (!cancelled) {
+          setState({
+            id: identity,
+            keys: [],
+            context: null,
+            loading: false,
+            error: err?.message || "Could not load the keys",
+          });
+        }
+      } finally {
+        inFlight = false;
+        lastLoadedAt = Date.now();
+      }
+    };
+    load();
+    // Same stale-on-focus contract as the shared Home resource store.
+    const onVisible = () => {
+      const now = Date.now();
+      if (document.hidden || now - lastFocusAt < FOCUS_THROTTLE_MS) return;
+      if (now - lastLoadedAt < STALE_MS) return;
+      lastFocusAt = now;
+      load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [ready, identity, refreshKey]);
+
+  if (!authReady) return { identity, keys: [], context: null, loading: true, error: null };
+  if (!ready) {
+    return {
+      keys: [],
+      context: null,
+      loading: false,
+      identity,
+      error: "Could not load key permissions. Reload to try again.",
+    };
+  }
+  if (state.id !== identity)
+    return { identity, keys: [], context: null, loading: true, error: null };
+  return {
+    identity,
+    keys: state.keys,
+    context: state.context,
+    loading: state.loading,
+    error: state.error,
+  };
 }
 
 /**
  * Tailscale + Cloudflare tunnel status, trust state and settings flags.
+ * Settings and host status are gated independently by their capabilities;
+ * unavailable settings leave `requireApiKey: null` so local UI still renders.
  * @param {number} refreshKey bump to re-read after enable/disable
  * @returns {{ tunnel: object, loading: boolean, error: string|null }}
  */
 export function useHomeWaysIn(refreshKey = 0) {
+  const { ready, canManageInstance, canHostOps } = useSettingsScope();
   const {
     data,
     loading: statusLoading,
     error: statusError,
-  } = useHomeResource("/api/tunnel/status", refreshKey);
-  // YAN-749: requireApiKey is an instance key; members never GET /api/settings.
-  const { ready, canManageInstance } = useSettingsScope();
+  } = useHomeResource(ready && canHostOps ? "/api/tunnel/status" : null, refreshKey);
   const {
     data: settings,
     loading: settingsLoading,
     error: settingsError,
   } = useHomeResource(ready && canManageInstance ? "/api/settings" : null, refreshKey);
+  // A failed refresh keeps the last good snapshot in the store: never drive
+  // host chips or the Enable action from that stale/errored state.
+  const hostAvailable = ready && canHostOps && data != null && !statusError;
   const tunnel = {
-    tunnel: data?.tunnel ?? null,
-    tailscale: data?.tailscale ?? null,
-    requireApiKey: Boolean(settings?.requireApiKey),
+    tunnel: hostAvailable ? (data.tunnel ?? null) : null,
+    tailscale: hostAvailable ? (data.tailscale ?? null) : null,
+    canHostOps: hostAvailable,
+    requireApiKey:
+      ready && canManageInstance && settings != null ? Boolean(settings.requireApiKey) : null,
   };
   return {
     tunnel,
-    loading: statusLoading || settingsLoading || !ready,
-    error: statusError || settingsError,
+    loading: !ready || statusLoading || settingsLoading,
+    error:
+      (ready && canHostOps ? statusError : null) ||
+      (ready && canManageInstance ? settingsError : null),
   };
 }
 
