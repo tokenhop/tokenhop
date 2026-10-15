@@ -24,6 +24,7 @@ export default function ProviderDetailHeader({
   authVariant,
   modelSnippet,
   loading,
+  titleRef,
 }) {
   const activeCount = connections.filter((entry) => entry.isActive !== false).length;
   const cooldownCount = connections.filter((entry) => getCooldownUntil(entry)).length;
@@ -50,7 +51,7 @@ export default function ProviderDetailHeader({
           status={status.variant === "neutral" ? undefined : status.variant}
         />
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <PageTitle>{providerInfo?.name || providerId}</PageTitle>
+          <PageTitle titleRef={titleRef}>{providerInfo?.name || providerId}</PageTitle>
           <div className="flex flex-wrap items-center gap-1.5" aria-live="polite">
             <StatusPill variant={authVariant}>{authLabel}</StatusPill>
             <StatusPill variant={status.variant} dot={status.variant !== "neutral"}>
@@ -98,6 +99,7 @@ ProviderDetailHeader.propTypes = {
   authVariant: PropTypes.string.isRequired,
   modelSnippet: PropTypes.string.isRequired,
   loading: PropTypes.bool,
+  titleRef: PropTypes.shape({ current: PropTypes.any }),
 };
 
 /** Strips a leading warning glyph and redundant "Risk notice:" label; the Callout supplies both. */

@@ -74,6 +74,8 @@ export default function MoveToWorkspaceDialog({
   sourceName,
   items,
   onMoved,
+  successFocusRef,
+  returnFocusRef,
 }) {
   // Callers pass fresh arrays every render; key on content so a parent
   // re-render never resets an open dialog.
@@ -94,10 +96,25 @@ export default function MoveToWorkspaceDialog({
   const [acknowledged, setAcknowledged] = useState(false);
   const [error, setError] = useState("");
   const requestRef = useRef(0);
+  // Return target resolved lazily, at trap-release time: a successful refresh
+  // can unmount the original heading and mount a replacement in the same
+  // commit, so the live element is read only then. `successMarked` flips only
+  // after an HTTP success (before onMoved/onClose) and resets on every open;
+  // cancel/Escape/error/conflict never set it, so they keep opener restoration.
+  const successMarked = useRef(false);
+  const latest = useRef({ successFocusRef, returnFocusRef });
+  latest.current = { successFocusRef, returnFocusRef };
+  const returnProxy = useRef({
+    get current() {
+      const { successFocusRef: success, returnFocusRef: always } = latest.current;
+      return always?.current ?? (successMarked.current ? success?.current : null) ?? null;
+    },
+  });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset runs on open or when the item set changes; setters are stable
   useEffect(() => {
     if (!isOpen) return;
+    successMarked.current = false;
     setTargetId("");
     setPhase("pick");
     setConflicts([]);
@@ -191,6 +208,8 @@ export default function MoveToWorkspaceDialog({
         setError(moveErrorMessage(status));
         return;
       }
+      // Mark before refresh can unmount the row (including this dialog).
+      successMarked.current = true;
       onMoved?.(data?.moved);
       onClose?.();
     } catch {
@@ -211,6 +230,7 @@ export default function MoveToWorkspaceDialog({
   return (
     <Modal
       isOpen={isOpen}
+      returnFocusRef={returnProxy.current}
       onClose={close}
       title={title}
       size="lg"
@@ -400,4 +420,6 @@ MoveToWorkspaceDialog.propTypes = {
   ).isRequired,
   /** Called with the server `moved` list after success; caller refreshes. */
   onMoved: PropTypes.func,
+  successFocusRef: PropTypes.shape({ current: PropTypes.any }),
+  returnFocusRef: PropTypes.shape({ current: PropTypes.any }),
 };
