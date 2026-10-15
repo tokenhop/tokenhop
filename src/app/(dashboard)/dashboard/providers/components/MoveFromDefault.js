@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Callout, Checkbox, Modal, MoveToWorkspaceDialog } from "@/shared/components";
 import { Spinner } from "@/shared/components/Loading";
@@ -30,6 +30,7 @@ export default function MoveFromDefault({ view, onMoved }) {
       ),
   );
 
+  const triggerRef = useRef(null);
   const [stage, setStage] = useState("closed"); // closed | pick | review
   const [rows, setRows] = useState(null);
   const [loadError, setLoadError] = useState("");
@@ -72,12 +73,19 @@ export default function MoveFromDefault({ view, onMoved }) {
 
   return (
     <>
-      <Button size="sm" variant="secondary" icon="sync_alt" onClick={() => setStage("pick")}>
+      <Button
+        ref={triggerRef}
+        size="sm"
+        variant="secondary"
+        icon="sync_alt"
+        onClick={() => setStage("pick")}
+      >
         Move from default
       </Button>
 
       <Modal
         isOpen={stage === "pick"}
+        returnFocusRef={triggerRef}
         onClose={() => setStage("closed")}
         title="Move from default"
         description="Choose the connections to move out of the default workspace."
@@ -130,6 +138,7 @@ export default function MoveFromDefault({ view, onMoved }) {
 
       <MoveToWorkspaceDialog
         isOpen={stage === "review"}
+        returnFocusRef={triggerRef}
         onClose={() => setStage("closed")}
         view={view}
         sourceWorkspaceId={defaultWs.id}

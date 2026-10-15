@@ -21,6 +21,7 @@ export default function SortableComboCard({
   selected,
   onSelect,
   onMoved,
+  successFocusRef,
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: combo.id,
@@ -67,6 +68,7 @@ export default function SortableComboCard({
       <MoveToWorkspaceButton
         label={`Move combo ${combo.name} to another workspace`}
         items={[{ type: "combo", id: combo.id, label: `combo "${combo.name}"` }]}
+        successFocusRef={successFocusRef}
         onMoved={onMoved}
         className="absolute end-3 bottom-3 size-8 rounded-md border-transparent bg-transparent"
       />
@@ -90,4 +92,5 @@ SortableComboCard.propTypes = {
   selected: PropTypes.bool,
   onSelect: PropTypes.func,
   onMoved: PropTypes.func,
+  successFocusRef: PropTypes.shape({ current: PropTypes.any }),
 };

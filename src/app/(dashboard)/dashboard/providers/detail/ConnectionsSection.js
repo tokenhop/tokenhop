@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import PropTypes from "prop-types";
 import {
   DndContext,
@@ -57,6 +57,7 @@ export default function ConnectionsSection({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+  const focusTargetRef = useRef(null);
   const [announcement, setAnnouncement] = useState("");
   const [bulkPoolId, setBulkPoolId] = useState("__none__");
 
@@ -176,6 +177,7 @@ export default function ConnectionsSection({
     <>
       <Card
         title="Connections"
+        headingRef={focusTargetRef}
         subtitle={`${connections.length} connection${connections.length === 1 ? "" : "s"}`}
         action={
           connections.length > 0 ? (
@@ -369,6 +371,7 @@ export default function ConnectionsSection({
                       onDelete={() => conn.confirmDelete(entry.id)}
                       onMove={conn.moveConnection}
                       onShared={conn.fetchConnections}
+                      successFocusRef={focusTargetRef}
                       probing={conn.probingIds.includes(entry.id)}
                       onProbe={() => conn.probeBilling(entry.id)}
                     />

@@ -20,6 +20,7 @@ export default function CompatibleModelsSection({
   connections,
   models,
   actions,
+  successFocusRef,
 }) {
   const { copied, error: copyError, copy } = useCopyToClipboard();
   const [newModel, setNewModel] = useState("");
@@ -178,6 +179,7 @@ export default function CompatibleModelsSection({
                     ? { type: "alias", id: alias, label: `alias "${alias}"` }
                     : undefined
               }
+              successFocusRef={successFocusRef}
               onMoved={models.load}
             />
           ))}
@@ -200,6 +202,8 @@ CompatibleModelsSection.propTypes = {
   isAnthropic: PropTypes.bool.isRequired,
   connections: PropTypes.array.isRequired,
   models: PropTypes.object.isRequired,
+  /** Ref to the outer Available models heading (owned by ModelsSection). */
+  successFocusRef: PropTypes.shape({ current: PropTypes.any }),
   actions: PropTypes.shape({
     notifyError: PropTypes.func.isRequired,
     notifySuccess: PropTypes.func.isRequired,

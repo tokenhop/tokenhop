@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Card, Callout, Checkbox, EmptyState, Input, Select } from "@/shared/components";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
@@ -43,7 +43,13 @@ export default function ModelsSection({
   onDisableAll,
   kind = "llm",
   title,
+  headingRef,
 }) {
+  // Stable return-focus target for workspace moves (YAN-1052): the card title
+  // stays mounted for empty and last-item states, unlike any row. The parent
+  // (provider detail) may supply its own ref so all sections share one target.
+  const localHeadingRef = useRef(null);
+  const focusTargetRef = headingRef ?? localHeadingRef;
   const { getCaps } = useModelCaps();
   const { copied, error: copyError, copy } = useCopyToClipboard();
   const effectiveKind = kind || "llm";
@@ -125,6 +131,7 @@ export default function ModelsSection({
   return (
     <Card
       title={title || "Available models"}
+      headingRef={focusTargetRef}
       subtitle={
         isCompatible
           ? `Manual ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible catalog`
@@ -263,6 +270,7 @@ export default function ModelsSection({
                           ? { type: "alias", id: row.alias, label: `alias "${row.alias}"` }
                           : undefined
                     }
+                    successFocusRef={focusTargetRef}
                     onMoved={models.load}
                     caps={getCaps(`${providerId}/${row.id}`)}
                     thinkingSuffix={resolveThinkingSuffix(row.id)}
@@ -297,6 +305,7 @@ export default function ModelsSection({
                           ? { type: "alias", id: existingAlias, label: `alias "${existingAlias}"` }
                           : undefined
                       }
+                      successFocusRef={focusTargetRef}
                       onMoved={models.load}
                       caps={{ ...getCaps(`${providerId}/${model.id}`), ...model.capabilities }}
                       thinkingSuffix={resolveThinkingSuffix(model.id)}
@@ -366,6 +375,7 @@ export default function ModelsSection({
                       label: `disabled models for "${storageAlias}"`,
                     },
                   ]}
+                  successFocusRef={focusTargetRef}
                   onMoved={models.load}
                 />
               </div>
@@ -412,4 +422,5 @@ ModelsSection.propTypes = {
   onDisableAll: PropTypes.func.isRequired,
   kind: PropTypes.string,
   title: PropTypes.string,
+  headingRef: PropTypes.shape({ current: PropTypes.any }),
 };

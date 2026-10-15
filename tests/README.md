@@ -77,6 +77,26 @@ node tests/e2e/kimi-live-models.mjs          # headless HTTP assertions
 node tests/e2e/kimi-live-models.mjs --serve  # keep alive for browser protocol
 ```
 
+## Workspace move browser regression (YAN-1052)
+
+`tests/e2e/workspace-move-browser.mjs` (helpers in `tests/e2e/workspace-move/`) is a
+dependency-free Chrome DevTools Protocol runner: it serves the real move components
+(`MoveToWorkspaceButton`/`Dialog`, `Modal`, `Card`, the combo, connection, model and
+API-key rows, `MoveFromDefault`) through the installed Vite, drives them with the
+keyboard in headless Chrome, and asserts focus after move success (stable list heading,
+never `<body>`), cancel, Escape, conflict and error. It is a component-browser test, not
+a full dashboard-routing E2E: auth status, `next/link`, `os` and `fetch` are faked.
+
+Everything runs under a `mkdtemp` directory in `/tmp/opencode` (HOME, DATA_DIR, caches,
+Chrome profile), uses fake data only and blocks every non-loopback request. It fails
+loudly if Chrome is missing (set `CHROME_BIN`/`CHROMIUM_BIN`; Node >= 22 for native
+WebSocket). CI runs it on the default test leg.
+
+```bash
+CHROME_BIN=/usr/bin/google-chrome npm run test:e2e:move   # all cases
+node tests/e2e/workspace-move-browser.mjs --only=delayed-middle
+```
+
 ## Upgrade end to end
 
 `tests/e2e/` holds the upgrade verification for the rebrand (`UPGRADING.md`). It

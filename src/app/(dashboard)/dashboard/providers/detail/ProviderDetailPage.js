@@ -1,7 +1,7 @@
 "use client";
 import { withWorkspace } from "../connectTarget";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -53,6 +53,11 @@ export default function ProviderDetailPage() {
   }, []);
 
   const [loading, setLoading] = useState(true);
+  // Stable YAN-1052 return-focus targets: the H1 for the compatible node move
+  // (PageTitle in the header) and the Available models card heading for every
+  // model-family move. Refs stay mounted while cards/rows unmount.
+  const headerFocusTargetRef = useRef(null);
+  const modelsFocusTargetRef = useRef(null);
   const [fetchError, setFetchError] = useState("");
   const [providerNode, setProviderNode] = useState(null);
   const [show, setShow] = useState({
@@ -75,7 +80,14 @@ export default function ProviderDetailPage() {
 
   const conn = useConnections({ providerId, notifyError, notifyResult });
   const strategy = useProviderStrategy({ providerId, notifyError });
-  const providerInfo = resolveProviderInfo(providerId, providerNode);
+  // Keep the existing identity heading mounted when the node details disappear.
+  // Refresh does not re-enter loading; don't discard the last known identity.
+  const lastProviderInfo = useRef(null);
+  const resolvedProviderInfo = resolveProviderInfo(providerId, providerNode);
+  if (resolvedProviderInfo) lastProviderInfo.current = { providerId, info: resolvedProviderInfo };
+  const providerInfo =
+    resolvedProviderInfo ??
+    (lastProviderInfo.current?.providerId === providerId ? lastProviderInfo.current.info : null);
   const authFlags = providerAuthFlags(providerId, providerInfo);
   const isCompatible = authFlags.isOpenAICompatible || authFlags.isAnthropicCompatible;
   const { storageAlias, displayAlias } = providerAliases(providerId, providerNode, isCompatible);
@@ -408,6 +420,7 @@ export default function ProviderDetailPage() {
       <ProviderDetailHeader
         providerId={providerId}
         providerInfo={providerInfo}
+        titleRef={headerFocusTargetRef}
         connections={conn.connections}
         authLabel={authLabel}
         authVariant={authVariant}
@@ -447,6 +460,7 @@ export default function ProviderDetailPage() {
                 },
               ]}
               sourceWorkspaceId={providerNode.workspaceId ?? null}
+              successFocusRef={headerFocusTargetRef}
               onMoved={fetchDetail}
             />
           }
@@ -478,6 +492,7 @@ export default function ProviderDetailPage() {
       )}
 
       <ModelsSection
+        headingRef={modelsFocusTargetRef}
         providerId={providerId}
         storageAlias={storageAlias}
         displayAlias={displayAlias}
@@ -495,6 +510,7 @@ export default function ProviderDetailPage() {
         onDisableAll={(state) => conn.setConfirmState(state)}
         compatibleSection={
           <CompatibleModelsSection
+            successFocusRef={modelsFocusTargetRef}
             isFreeNoAuth={authFlags.isFreeNoAuth}
             storageAlias={storageAlias}
             displayAlias={displayAlias}

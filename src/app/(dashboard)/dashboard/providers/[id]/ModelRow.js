@@ -33,6 +33,7 @@ export default function ModelRow({
   thinkingSuffix,
   moveItem,
   onMoved,
+  successFocusRef,
 }) {
   const displayModel = thinkingSuffix ? `${fullModel}(${thinkingSuffix})` : fullModel;
   const contextLength = Number(model.contextLength);
@@ -163,6 +164,7 @@ export default function ModelRow({
           items={[moveItem]}
           label={`Move ${displayModel} to another workspace`}
           className={quietActions}
+          successFocusRef={successFocusRef}
           onMoved={onMoved}
         />
       ) : null}
@@ -207,4 +209,5 @@ ModelRow.propTypes = {
     label: PropTypes.string,
   }),
   onMoved: PropTypes.func,
+  successFocusRef: PropTypes.shape({ current: PropTypes.any }),
 };
