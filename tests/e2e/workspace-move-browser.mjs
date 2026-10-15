@@ -152,17 +152,9 @@ try {
     try {
       const result = await runCase(cdp, server.url, definition);
       // Vite is not running HMR; do not confuse its optional websocket diagnostic
-      // with a component exception. Other browser errors fail the scenario.
-      // Planned props are not wired in unchanged source, so React warns about the unknown
-      // DOM attribute; that warning is the (expected) pre-fix noise, filtered by exact prop name.
-      const planned = /headingRef|titleRef|successFocusRef|returnFocusRef/;
-      const unexpected = browserErrors.filter((entry) => {
-        const text = JSON.stringify(entry);
-        return (
-          !text.includes("[vite]") &&
-          !(text.includes("React does not recognize") && planned.test(text))
-        );
-      });
+      // with a component exception. Every other browser error fails the scenario,
+      // including React unknown-prop warnings (a leaked focus ref is a real bug).
+      const unexpected = browserErrors.filter((entry) => !JSON.stringify(entry).includes("[vite]"));
       assert.deepEqual(unexpected, [], "Unexpected browser errors");
       console.log(`PASS ${definition.name} focus=${result.active}`);
     } catch (error) {

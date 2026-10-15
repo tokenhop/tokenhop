@@ -95,6 +95,8 @@ export function buildPlan(db, input, deps) {
       // must also have the right shape (providerSpecificData a plain object,
       // chatgptAccountId/username strings) — anything else counts as corrupt
       // so the fail-closed paths below yield NAME_TAKEN.
+      // Scope matches creation dedup: rows already in the target workspace.
+      // Legacy same-identity duplicates moved together are not cross-checked.
       const identityOf = (r) => {
         const { data } = decodeCredentialRowSync(null, r, null, {
           mode: "metadata",
