@@ -195,7 +195,7 @@ function category({ route, method }) {
       comboReadWrite: read ? "metadata" : "combos",
       modelAvailability: read ? "metadata" : "use",
       catalog: read ? "metadataDefault" : "settings",
-      keyCollection: method === "POST" ? "keyCreate" : "keyManage",
+      keyCollection: read || method === "POST" ? "keyCreate" : "keyManage",
       usageReadWrite: read ? "usage" : "connManage",
       preferencesReadWrite: read ? "use" : "preferences",
       budgetsReadWrite: read ? "budgetRead" : "budgetLower",
