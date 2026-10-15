@@ -469,10 +469,10 @@ describe("inventory cleanups", () => {
 });
 
 describe("YAN-374 CLI configs stay host-only", () => {
-  it("scopes the keys collection without changing its caps or the item gate", () => {
+  it("scopes the keys collection, GET admits create for own-key listing (YAN-1160)", () => {
     expect(ROUTE_POLICY["/api/keys"]).toEqual({
       cap: {
-        GET: "workspace.keys.manage",
+        GET: "workspace.keys.create",
         POST: "workspace.keys.create",
         PATCH: "workspace.keys.manage",
       },

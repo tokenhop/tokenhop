@@ -9,8 +9,8 @@ import SidebarUserRow from "./SidebarUserRow";
 import IconButton from "./IconButton";
 import BrandLockup from "./BrandLockup";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
-import useAuthStatus from "@/shared/hooks/useAuthStatus";
-import usePendingUsers from "@/shared/hooks/usePendingUsers";
+import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
+import usePendingUsers, { canPollPendingUsers } from "@/shared/hooks/usePendingUsers";
 import { accountView } from "@/shared/utils/account";
 
 /**
@@ -37,8 +37,9 @@ export default function Sidebar({ onClose, inDrawer = false }) {
     multiUser,
     traffic,
   } = useShellStatus();
-  const view = accountView(useAuthStatus());
-  const pendingUsers = usePendingUsers(multiUser);
+  const { status: authStatus, loaded: authLoaded } = useAuthStatusState();
+  const view = accountView(authStatus);
+  const pendingUsers = usePendingUsers(canPollPendingUsers(authStatus, authLoaded, multiUser));
 
   return (
     <aside
