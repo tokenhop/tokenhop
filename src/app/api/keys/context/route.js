@@ -75,7 +75,8 @@ export async function GET(request) {
     if (!workspaceId) return json("Not found", 404);
 
     // Capabilities come from the shared role map on LIVE values only. Members
-    // keep their context even though listing keys is manager-only (D1).
+    // keep their context; a member's own-key listing is admitted by keys.create
+    // at the collection edge (YAN-1160), while full listing stays manager-only.
     const live = { instanceRole: user.instanceRole, workspaceRoles: { [workspaceId]: role } };
     const canCreate = can(live, "workspace.keys.create", { workspaceId });
     const canManage = can(live, "workspace.keys.manage", { workspaceId });

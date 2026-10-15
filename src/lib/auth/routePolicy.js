@@ -336,9 +336,11 @@ export const ROUTE_POLICY = {
   // YAN-374: scoped — the guard admits keys.create in ANY of the principal's
   // workspaces; handlers recheck the exact ?workspaceId live: apiKeyManagement
   // liveAccess for GET/POST, and PATCH rechecks manage (keys/route.js:130-133).
+  // YAN-1160: GET admits member own-key listing via keys.create; the handler
+  // still narrows live — manage sees all rows, a member only their own.
   "/api/keys": {
     cap: {
-      GET: "workspace.keys.manage",
+      GET: "workspace.keys.create",
       POST: "workspace.keys.create",
       PATCH: "workspace.keys.manage",
     },

@@ -11,6 +11,7 @@ import {
   loadKeyList,
 } from "../endpoint/hooks/keyApi";
 import { settingsEndpoint } from "@/shared/utils/settingsApi";
+import { withWorkspace } from "@/app/(dashboard)/dashboard/providers/connectTarget";
 import { useHomeResource } from "./useHomeResource";
 
 /** Builds the period-scoped endpoint URL; null while the period is unresolved. */
@@ -210,35 +211,45 @@ export function useHomeWaysIn(refreshKey = 0) {
 }
 
 /**
- * Provider connections (secrets stripped server-side).
+ * Provider connections (secrets stripped server-side). Members/viewers lack
+ * `workspace.connections.metadata.read`, so their reads stay empty locally
+ * and never fire a 403 (YAN-1159).
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ connections: Array<object>, loading: boolean, error: string|null }}
  */
 export function useHomeProviders(refreshKey = 0) {
-  const { data, loading, error } = useHomeResource("/api/providers", refreshKey);
+  const { ready, scope, canReadConnections } = useSettingsScope();
+  const url =
+    ready && canReadConnections ? withWorkspace("/api/providers", scope?.workspaceId) : null;
+  const { data, loading, error } = useHomeResource(url, refreshKey);
   const connections = Array.isArray(data?.connections) ? data.connections : [];
-  return { connections, loading, error };
+  return { connections, loading: loading || !ready, error };
 }
 
 /**
- * Combos plus strategy metadata for the top-used cards.
+ * Combos plus strategy metadata for the top-used cards. The workspace
+ * settings read owns no separate gate (YAN-749 scoped it), so it loads only
+ * when combos can too (`canReadConnections`); `canUseConnections` mirrors the
+ * server gate on that endpoint and a failure there degrades to defaults.
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ combos: Array<object>, strategies: object, globalStrategy: string, loading: boolean, error: string|null }}
  */
 export function useHomeCombos(refreshKey = 0) {
+  const { ready, scope, canReadConnections, canUseConnections } = useSettingsScope();
+  const combosUrl =
+    ready && canReadConnections ? withWorkspace("/api/combos", scope?.workspaceId) : null;
   const {
     data,
     loading: combosLoading,
     error: combosError,
-  } = useHomeResource("/api/combos", refreshKey);
+  } = useHomeResource(combosUrl, refreshKey);
   // YAN-749: scoped, read the workspace's effective values (id-keyed
   // comboStrategies, YAN-364) and re-key them by name for CombosTop.
-  const { ready, scope } = useSettingsScope();
-  const {
-    data: settings,
-    loading: settingsLoading,
-    error: settingsError,
-  } = useHomeResource(ready ? settingsEndpoint("comboStrategies", scope) : null, refreshKey);
+  const settingsAllowed = ready && canReadConnections && canUseConnections;
+  const { data: settings, loading: settingsLoading } = useHomeResource(
+    settingsAllowed ? settingsEndpoint("comboStrategies", scope) : null,
+    refreshKey,
+  );
   const combos = Array.isArray(data?.combos) ? data.combos : [];
   // Workspace GET is `{ data, effective }`; the instance GET is the flat blob.
   const values = scope?.workspaceId ? settings?.effective : settings;
@@ -247,12 +258,16 @@ export function useHomeCombos(refreshKey = 0) {
   const strategies = scope?.workspaceId
     ? Object.fromEntries(combos.filter((c) => map[c.id]).map((c) => [c.name, map[c.id]]))
     : map;
+  const loading = !ready || combosLoading || (settingsAllowed && settingsLoading);
+  if (!ready || !canReadConnections) {
+    return { combos: [], strategies: {}, globalStrategy: "fallback", loading: !ready, error: null };
+  }
   return {
     combos,
     strategies,
     globalStrategy: values?.comboStrategy || "fallback",
-    loading: combosLoading || settingsLoading || !ready,
-    error: combosError || settingsError,
+    loading,
+    error: combosError,
   };
 }
 
