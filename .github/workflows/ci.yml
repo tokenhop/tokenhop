@@ -58,6 +58,14 @@ jobs:
         run: node tests/__baseline__/verify-alias.mjs
       - name: OAuth URL baseline
         run: node tests/__baseline__/verify-oauth-urls.mjs
+      # Real-browser focus regression for workspace moves (YAN-1052). Dependency-free
+      # Chrome CDP runner over native WebSocket (Node >= 22); fake data, loopback only.
+      # Runs on the default legs only: the fixture does not depend on brand or the multi-user switch.
+      - name: Workspace move browser regression
+        if: matrix.brand == 'default' && matrix.multi_user == 'off'
+        env:
+          CHROME_BIN: google-chrome
+        run: npm run test:e2e:move
 
   build:
     name: ${{ matrix.brand == 'default' && 'Next.js build' || format('Next.js build ({0} brand)', matrix.brand) }}

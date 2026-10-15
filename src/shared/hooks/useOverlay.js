@@ -54,6 +54,7 @@ export function Portal({ children }) {
  * @param {Document} options.doc
  * @param {HTMLElement} options.container
  * @param {() => (HTMLElement|null)} [options.getInitialFocus]
+ * @param {() => (HTMLElement|null|undefined)} [options.getReturnFocus] Read at release time; a connected result beats `returnFocusTo`.
  * @param {HTMLElement|null} [options.returnFocusTo] Captured before the panel mounts, so autoFocus inside it is not recorded as the trigger.
  * @param {ReturnType<import("../components/overlayPrimitives").createDismissStack>} [options.stack]
  * @returns {{ release: () => void }}
@@ -62,6 +63,7 @@ export function createFocusTrap({
   doc,
   container,
   getInitialFocus,
+  getReturnFocus,
   returnFocusTo,
   stack = trapStack,
 }) {
@@ -155,24 +157,30 @@ export function createFocusTrap({
       doc.removeEventListener("keydown", onKeyDown);
       // Deferred: when nested dialogs close in one commit, every trap has
       // released (and portals are gone) before anyone picks a focus target.
-      queueMicrotask(() => restoreFocus(stack, trigger));
+      queueMicrotask(() => restoreFocus(stack, trigger, getReturnFocus?.()));
     },
   };
 }
 
 /**
- * Focus after a trap releases: the opener if it still exists and the remaining
+ * Focus after a trap releases: an explicit preferred target (YAN-1052, e.g.
+ * the list heading a successful move leaves behind) wins over the opener,
+ * without scrolling; otherwise the opener if it still exists and the remaining
  * top trap (if any) contains it; else the remaining top trap's last focused
  * item or panel; else nothing (focus stays on <body>, never throws).
  */
-export function restoreFocus(stack, trigger) {
+export function restoreFocus(stack, trigger, preferred) {
+  const target = preferred?.isConnected ? preferred : trigger;
   const top = stack.top();
-  const triggerOk = Boolean(trigger?.isConnected);
-  if (top && !(triggerOk && top.container?.contains(trigger))) {
+  const targetOk = Boolean(target?.isConnected);
+  if (top && !(targetOk && top.container?.contains(target))) {
     top.refocus?.();
     return;
   }
-  if (triggerOk) trigger.focus?.();
+  if (targetOk) {
+    if (target === preferred) target.focus?.({ preventScroll: true });
+    else target.focus?.();
+  }
 }
 
 /**
@@ -272,14 +280,20 @@ Portal.propTypes = {
  * `container` is the panel node itself (callback-ref state), so the trap
  * attaches whenever the portaled panel mounts, however late. Returns focus to
  * the element that opened the overlay; an autoFocus inside the panel keeps
- * focus. `initialFocusRef` forces a target when given.
+ * focus. `initialFocusRef` forces a target when given. `returnFocusRef` is an
+ * opt-in preferred return target, read when the trap releases (not at creation),
+ * so setting it never recreates the trap.
  * @param {object} options
  * @param {HTMLElement|null} options.container
  * @param {boolean} [options.active=true]
  * @param {React.RefObject<HTMLElement>} [options.initialFocusRef]
+ * @param {React.RefObject<HTMLElement|null>} [options.returnFocusRef]
  */
-export function useFocusTrap({ container, active = true, initialFocusRef } = {}) {
+export function useFocusTrap({ container, active = true, initialFocusRef, returnFocusRef } = {}) {
   const openerRef = useRef(null);
+  const returnRef = useRef(returnFocusRef);
+  returnRef.current = returnFocusRef;
+  const getReturnFocus = useCallback(() => returnRef.current?.current, []);
   // Runs in the commit that opens the overlay, before the portal content
   // (and any autoFocus inside it) mounts: that is the real opener.
   useEffect(() => {
@@ -291,10 +305,11 @@ export function useFocusTrap({ container, active = true, initialFocusRef } = {})
       doc: document,
       container,
       getInitialFocus: () => initialFocusRef?.current,
+      getReturnFocus,
       returnFocusTo: openerRef.current,
     });
     return () => trap.release();
-  }, [active, container, initialFocusRef]);
+  }, [active, container, initialFocusRef, getReturnFocus]);
 }
 
 /** `[node, callbackRef]`: callback ref that also keeps `ref.current` in sync. */

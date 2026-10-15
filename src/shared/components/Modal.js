@@ -119,6 +119,7 @@ const isComposed = (children) =>
  * @param {boolean} [props.closeOnOverlay=true]
  * @param {boolean} [props.closeOnEscape=true]
  * @param {React.RefObject<HTMLElement>} [props.initialFocusRef]
+ * @param {React.RefObject<HTMLElement|null>} [props.returnFocusRef] Preferred focus target on close, read at close time; falls back to the opener.
  * @param {string} [props.aria-label] Name when there is no visible title.
  * @param {string} [props.className]
  */
@@ -133,6 +134,7 @@ export default function Modal({
   closeOnOverlay = true,
   closeOnEscape = true,
   initialFocusRef,
+  returnFocusRef,
   "aria-label": ariaLabel,
   className,
   showTrafficLights: _showTrafficLights,
@@ -142,7 +144,7 @@ export default function Modal({
   const { titleId, descriptionId } = useOverlayIds("signal-modal");
   const open = Boolean(isOpen);
   useScrollLock(open);
-  useFocusTrap({ container: panel, active: open, initialFocusRef });
+  useFocusTrap({ container: panel, active: open, initialFocusRef, returnFocusRef });
   useDismiss({
     onClose,
     containerRef: panelRef,
@@ -218,6 +220,7 @@ Modal.propTypes = {
   closeOnOverlay: PropTypes.bool,
   closeOnEscape: PropTypes.bool,
   initialFocusRef: PropTypes.shape({ current: PropTypes.any }),
+  returnFocusRef: PropTypes.shape({ current: PropTypes.any }),
   "aria-label": PropTypes.string,
   className: PropTypes.string,
   showTrafficLights: PropTypes.bool,

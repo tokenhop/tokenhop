@@ -28,6 +28,7 @@ export default function MoveToWorkspaceButton({
   label = "Move to workspace",
   className,
   onMoved,
+  successFocusRef,
 }) {
   const status = useAuthStatus();
   const view = useMemo(() => accountView(status), [status]);
@@ -87,6 +88,7 @@ export default function MoveToWorkspaceButton({
         sourceWorkspaceId={sourceId}
         sourceName={sourceName}
         items={items}
+        successFocusRef={successFocusRef}
         onMoved={() => onMoved?.()}
       />
     </>
@@ -106,4 +108,5 @@ MoveToWorkspaceButton.propTypes = {
   label: PropTypes.string,
   className: PropTypes.string,
   onMoved: PropTypes.func,
+  successFocusRef: PropTypes.shape({ current: PropTypes.any }),
 };

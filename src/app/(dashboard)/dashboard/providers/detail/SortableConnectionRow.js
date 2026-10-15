@@ -66,6 +66,7 @@ export default function SortableConnectionRow({
   onShared,
   probing = false,
   onProbe,
+  successFocusRef,
 }) {
   const [proxyUpdating, setProxyUpdating] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -434,6 +435,7 @@ export default function SortableConnectionRow({
             label={`Move ${displayName} to another workspace`}
             items={[{ type: "connection", id: connection.id, label: displayName }]}
             sourceWorkspaceId={connection.workspaceId}
+            successFocusRef={successFocusRef}
             onMoved={onShared}
           />
           <button
@@ -516,4 +518,6 @@ SortableConnectionRow.propTypes = {
   probing: PropTypes.bool,
   onProbe: PropTypes.func,
   onMove: PropTypes.func.isRequired,
+  /** Stable list heading focused after a successful move removes this row. */
+  successFocusRef: PropTypes.shape({ current: PropTypes.any }),
 };

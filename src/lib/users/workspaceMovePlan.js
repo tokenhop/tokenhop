@@ -5,6 +5,8 @@
 // inside the apply transaction so the verdict can't go stale before the write.
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { parseJson } from "../db/helpers/jsonCol.js";
+import { matchesConnectionIdentity } from "../db/helpers/connectionIdentity.js";
+import { decodeCredentialRowSync } from "../db/helpers/credentialStorage.js";
 import { moveError } from "./workspaceMoveShared.js";
 
 export const kvKey = (workspaceId, key) => `ws:${workspaceId}/${key}`;
@@ -81,17 +83,63 @@ export function buildPlan(db, input, deps) {
       if (viaNode && !inSet("node", viaNode.id)) {
         conflict(it, "NODE_NOT_MOVING", "The custom node this connection uses is not moving");
       }
-      // Dedup identity mirrors the repo: email for OAuth logins, else the name.
-      const byEmail = row.authType === "oauth" && row.email;
-      const column = byEmail || !row.name ? "email" : "name";
-      const value = column === "email" ? row.email : row.name;
-      if (
-        value &&
-        db.get(
-          `SELECT 1 AS x FROM providerConnections WHERE provider = ? AND workspaceId = ? AND ${column} = ?`,
-          [row.provider, dst, value],
-        )
-      ) {
+      // Dedup identity mirrors creation (matchesConnectionIdentity): same
+      // provider + OAuth email/account-id/username rules, or apikey name.
+      // Identity metadata (username, chatgptAccountId) lives inside the
+      // credential blob, so both sides are canonicalized through the strict
+      // metadata decoder (never decrypts, never forgiving-parses) with the SQL
+      // provider/authType/email/name overlaid. A strict-decode failure means a
+      // corrupt credential row: fail closed and refuse the move rather than
+      // decide identity on partial data.
+      // The strict codec only validates the top-level object: identity fields
+      // must also have the right shape (providerSpecificData a plain object,
+      // chatgptAccountId/username strings) — anything else counts as corrupt
+      // so the fail-closed paths below yield NAME_TAKEN.
+      const identityOf = (r) => {
+        const { data } = decodeCredentialRowSync(null, r, null, {
+          mode: "metadata",
+          table: "providerConnections",
+        });
+        const psd = data.providerSpecificData;
+        if (psd !== undefined && psd !== null && (typeof psd !== "object" || Array.isArray(psd))) {
+          throw new Error("malformed credential identity metadata");
+        }
+        for (const key of ["chatgptAccountId", "username"]) {
+          const value = psd?.[key];
+          if (value !== undefined && value !== null && typeof value !== "string") {
+            throw new Error("malformed credential identity metadata");
+          }
+        }
+        return {
+          provider: r.provider,
+          authType: r.authType,
+          email: r.email,
+          name: r.name,
+          providerSpecificData: psd,
+        };
+      };
+      let movingIdentity = null;
+      let unreadableSource = false;
+      try {
+        movingIdentity = identityOf(row);
+      } catch {
+        unreadableSource = true;
+      }
+      const clash = unreadableSource
+        ? true
+        : db
+            .all(`SELECT * FROM providerConnections WHERE provider = ? AND workspaceId = ?`, [
+              row.provider,
+              dst,
+            ])
+            .some((r) => {
+              try {
+                return matchesConnectionIdentity(identityOf(r), movingIdentity);
+              } catch {
+                return true; // unreadable target row: never guess it apart
+              }
+            });
+      if (clash) {
         conflict(it, "NAME_TAKEN", "The target workspace already has this account");
       }
       const grants = db.get(
