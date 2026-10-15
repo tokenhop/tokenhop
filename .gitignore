@@ -53,9 +53,6 @@ logs/*
 source/*
 .cursor/*
 docs/*
-!docs/plans/
-!docs/prps/
-!docs/ARCHITECTURE.md
 test/*
 open-sse/test/*
 RM.vn.md
