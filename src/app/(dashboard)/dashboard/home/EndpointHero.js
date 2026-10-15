@@ -20,14 +20,14 @@ import { WidgetEmpty, WidgetError, WidgetSkeleton } from "./WidgetStates";
 export function deriveWaysIn(tunnel) {
   const cf = tunnel?.tunnel ?? {};
   const ts = tunnel?.tailscale ?? {};
+  const canHost =
+    tunnel?.canHostOps !== false && (tunnel?.tunnel != null || tunnel?.tailscale != null);
   const tunnelOn = Boolean(cf.settingsEnabled ?? cf.enabled);
   const tunnelUrl = cf.publicUrl || cf.tunnelUrl || "";
   const tsOn = Boolean(ts.settingsEnabled ?? ts.enabled);
-  return {
-    tunnelOn,
-    tunnelUrl,
-    items: [
-      { id: "local", label: "Local", value: "127.0.0.1", status: "ok" },
+  const items = [{ id: "local", label: "Local", value: "127.0.0.1", status: "ok" }];
+  if (canHost) {
+    items.push(
       {
         id: "tailscale",
         label: "Tailscale",
@@ -40,8 +40,9 @@ export function deriveWaysIn(tunnel) {
         value: tunnelOn ? tunnelUrl || "On" : null,
         status: tunnelOn ? "ok" : "off",
       },
-    ],
-  };
+    );
+  }
+  return { tunnelOn: canHost && tunnelOn, tunnelUrl: canHost ? tunnelUrl : "", items };
 }
 
 /**
@@ -62,11 +63,10 @@ export default function EndpointHero({ origin, tunnel, loading, error, onRetry, 
   const { copied, error: copyError, copy } = useCopyToClipboard();
 
   if (loading) return <WidgetSkeleton lines={3} label="Loading endpoint" />;
-  if (error) return <WidgetError message={error} onRetry={onRetry} />;
 
   const endpoint = `${origin || ""}/v1`;
   const { items, tunnelOn, tunnelUrl } = deriveWaysIn(tunnel);
-  const requireApiKey = Boolean(tunnel?.requireApiKey);
+  const requireApiKey = tunnel?.requireApiKey;
 
   const enableTunnel = async () => {
     setEnabling(true);
@@ -137,12 +137,14 @@ export default function EndpointHero({ origin, tunnel, loading, error, onRetry, 
             )}
           </li>
         ))}
-        <li className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line bg-raised px-3 text-[13px] font-medium text-text">
-          <span className="material-symbols-outlined text-[16px] text-ok" aria-hidden="true">
-            {requireApiKey ? "verified_user" : "lock_open"}
-          </span>
-          {requireApiKey ? "API key required" : "API key not required"}
-        </li>
+        {requireApiKey != null && (
+          <li className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line bg-raised px-3 text-[13px] font-medium text-text">
+            <span className="material-symbols-outlined text-[16px] text-ok" aria-hidden="true">
+              {requireApiKey ? "verified_user" : "lock_open"}
+            </span>
+            {requireApiKey ? "API key required" : "API key not required"}
+          </li>
+        )}
       </ul>
 
       {tunnelOn && tunnelUrl ? (
@@ -159,6 +161,7 @@ export default function EndpointHero({ origin, tunnel, loading, error, onRetry, 
           />
         </div>
       ) : null}
+      {error ? <WidgetError message={error} onRetry={onRetry} /> : null}
       {enableError ? <Callout variant="err">{enableError}</Callout> : null}
     </div>
   );

@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { transformSync } from "next/dist/build/swc";
 import { readFileSync } from "node:fs";
+import * as keyApi from "../../src/app/(dashboard)/dashboard/endpoint/hooks/keyApi.js";
 
 const rt = vi.hoisted(() => {
   const state = { slots: [], index: 0, pending: [] };
@@ -52,6 +53,10 @@ const rt = vi.hoisted(() => {
 vi.mock("react", () => rt.hooks);
 
 const scopeMock = vi.hoisted(() => ({ value: {} }));
+// Pristine single-user auth status: the key context resolves to legacy
+// locally, so only the bare legacy key list is requested.
+const LEGACY_AUTH = { authenticated: true, requireLogin: true, hasPassword: true };
+const authMock = vi.hoisted(() => ({ value: {} }));
 vi.mock("@/shared/hooks/useSettingsScope", () => ({
   useSettingsScope: () => scopeMock.value,
 }));
@@ -75,6 +80,10 @@ const dependencies = {
   react: rt.hooks,
   "react/jsx-runtime": { jsx, jsxs: jsx },
   "@/shared/hooks/useSettingsScope": { useSettingsScope: () => scopeMock.value },
+  "@/shared/hooks/useAuthStatus": {
+    useAuthStatusState: () => ({ loaded: true, status: authMock.value }),
+  },
+  "@/app/(dashboard)/dashboard/endpoint/hooks/keyApi": keyApi,
   "@/shared/components": { Callout: "Callout", CardSkeleton: "CardSkeleton" },
   "@/shared/constants/cliTools": { MITM_TOOLS: { tool: { id: "tool" } } },
   "@/shared/constants/models": { getModelsByProviderId: () => [] },
@@ -144,7 +153,8 @@ const nodeTitle = (node) =>
 beforeEach(() => {
   rt.state.slots = [];
   scopeMock.value = ADMIN;
-  fetchMock = vi.fn(async () => json({}));
+  authMock.value = LEGACY_AUTH;
+  fetchMock = vi.fn(async (url) => json(url === "/api/keys" ? { keys: [] } : {}));
   vi.stubGlobal("fetch", fetchMock);
 });
 
@@ -154,6 +164,36 @@ afterEach(() => {
 });
 
 describe("MitmPageClient capability gate", () => {
+  it("never starts the key list from a context started before an identity change", async () => {
+    let resolveContext;
+    authMock.value = {
+      authenticated: true,
+      userSecurityEnforced: true,
+      multiUserActive: true,
+      principal: { user: { id: "a" }, role: "owner", activeWorkspaceId: "w1" },
+    };
+    fetchMock.mockImplementation((url) =>
+      url.startsWith("/api/keys/context")
+        ? new Promise((resolve) => {
+            resolveContext = resolve;
+          })
+        : Promise.resolve(json({ keys: [{ id: "b" }] })),
+    );
+    render();
+    await flush();
+    authMock.value = {
+      ...authMock.value,
+      principal: { user: { id: "b" }, role: "owner", activeWorkspaceId: "w2" },
+    };
+    render();
+    scopeMock.value = MEMBER;
+    render();
+    resolveContext(
+      json({ storage: "hashed", workspaceId: "w1", canCreate: true, canManage: true }),
+    );
+    await flush();
+    expect(urls()).not.toContain("/api/keys?workspaceId=w1");
+  });
   it("hostOps without settings.manage skips the instance settings GET", async () => {
     scopeMock.value = { ...ADMIN, canManageInstance: false };
     render();
@@ -220,5 +260,74 @@ describe("MitmPageClient capability gate", () => {
     const server = view.props.children.find((node) => node?.type === "MitmServerCard");
     expect(server.props.apiKeys).toEqual([]);
     expect(server.props.cloudEnabled).toBe(false);
+  });
+
+  it("hashed storage lists keys scoped to the active workspace, never bare /api/keys", async () => {
+    authMock.value = {
+      authenticated: true,
+      userSecurityEnforced: true,
+      multiUserActive: true,
+      principal: { user: { id: "o" }, role: "owner", activeWorkspaceId: "w 1" },
+    };
+    fetchMock.mockImplementation(async (url) =>
+      json(
+        url.startsWith("/api/keys/context")
+          ? { storage: "hashed", workspaceId: "w 1", canCreate: true, canManage: true }
+          : url.startsWith("/api/keys")
+            ? { storage: "hashed", keys: [{ id: "k", prefix: "th_ab…cd" }] }
+            : {},
+      ),
+    );
+    render();
+    await flush();
+    expect(urls()).toContain("/api/keys/context?workspaceId=w%201");
+    expect(urls()).toContain("/api/keys?workspaceId=w%201");
+    expect(urls()).not.toContain("/api/keys");
+    const server = render().props.children.find((node) => node?.type === "MitmServerCard");
+    expect(server.props.apiKeys).toEqual([{ id: "k", prefix: "th_ab…cd" }]);
+  });
+
+  it("drops a key list that resolves after the identity changed", async () => {
+    let resolveList;
+    authMock.value = LEGACY_AUTH;
+    fetchMock.mockImplementation((url) =>
+      url === "/api/keys"
+        ? new Promise((resolve) => {
+            resolveList = resolve;
+          })
+        : Promise.resolve(json({})),
+    );
+    render();
+    await flush();
+    authMock.value = { ...LEGACY_AUTH, hasPassword: false };
+    fetchMock.mockImplementation(async (url) =>
+      json(url === "/api/keys" ? { keys: [{ id: "new" }] } : {}),
+    );
+    render();
+    await flush();
+    resolveList(json({ keys: [{ id: "old", key: "stale-secret" }] }));
+    await flush();
+    const server = render().props.children.find((node) => node?.type === "MitmServerCard");
+    expect(server.props.apiKeys).toEqual([{ id: "new" }]);
+  });
+
+  it("does not render the previous identity's keys during an identity transition", async () => {
+    authMock.value = LEGACY_AUTH;
+    fetchMock.mockImplementation(async (url) =>
+      json(url === "/api/keys" ? { keys: [{ id: "old", key: "sk-old" }] } : {}),
+    );
+    render();
+    await flush();
+    const loaded = render().props.children.find((node) => node?.type === "MitmServerCard");
+    expect(loaded.props.apiKeys).toEqual([{ id: "old", key: "sk-old" }]);
+    authMock.value = { ...LEGACY_AUTH, hasPassword: false };
+    fetchMock.mockImplementation(async (url) =>
+      json(url === "/api/keys" ? { keys: [{ id: "new", key: "sk-new" }] } : {}),
+    );
+    const during = render().props.children.find((node) => node?.type === "MitmServerCard");
+    expect(during.props.apiKeys).toEqual([]);
+    await flush();
+    const after = render().props.children.find((node) => node?.type === "MitmServerCard");
+    expect(after.props.apiKeys).toEqual([{ id: "new", key: "sk-new" }]);
   });
 });

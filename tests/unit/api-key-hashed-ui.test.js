@@ -439,13 +439,17 @@ describe("UI source contracts", () => {
     expect(quick).toContain("hashedMode && !canCopy");
   });
 
-  it("KeysSummary consumes the shared context loader and prefix display", () => {
-    expect(home).toContain('loadKeyContext, loadKeyList } from "../endpoint/hooks/useApiKeys"');
+  it("KeysSummary consumes the shared context (via useHomeKeys) and prefix display", () => {
+    const homeData = read("src/app/(dashboard)/dashboard/home/useHomeData.js");
+    expect(homeData).toContain("loadKeyContext");
+    expect(homeData).toContain("loadKeyList");
+    expect(home).not.toContain("loadKeyContext");
+    expect(home).toContain("context,");
     expect(home).toContain("{keyRowDisplay(key)}");
   });
 
   it("KeysSummary fails closed on context error, never a silent legacy fallback", () => {
-    expect(home).toContain('setCtxError("Could not load key permissions. Reload to try again.")');
+    expect(home).toContain("if (error) return <WidgetError");
   });
 
   it("create form state carries the combo allowlist next to models", () => {

@@ -118,6 +118,8 @@ export default function HomePageClient() {
           onChanged={bump}
         />
         <KeysSummaryCard
+          key={keys.identity}
+          context={keys.context}
           keys={keys.keys}
           loading={keys.loading}
           error={keys.error}
