@@ -264,8 +264,7 @@ The suite is not all-green on a plain checkout, so `npm test` fails only on fail
 in `tests/__baseline__/known-fails.txt`. These are the checks CI runs, plus a `linux/amd64`
 Docker build on pull requests.
 
-Architecture notes: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (system overview) and
-[`open-sse/AGENTS.md`](open-sse/AGENTS.md) (routing/translation engine conventions).
+Routing and translation conventions: [`open-sse/AGENTS.md`](open-sse/AGENTS.md).
 
 ## License
 

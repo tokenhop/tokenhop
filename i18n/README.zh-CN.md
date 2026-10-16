@@ -1275,8 +1275,6 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 8. 记录使用/日志（`src/lib/usageDb.js`）。
 9. 根据组合规则在提供商/账户/模型错误时应用回退。
 
-完整架构参考：[`docs/ARCHITECTURE`](../docs/ARCHITECTURE.md)
-
 ---
 
 ## 📧 支持
