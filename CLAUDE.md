@@ -70,10 +70,7 @@ npx vitest run unit/capabilities.test.js   # single file (path relative to tests
 
 ## Architecture
 
-Two authoritative docs already exist — read them before working in these areas rather than re-deriving:
-
-- `docs/ARCHITECTURE.md` — full system: request lifecycle, combo/account fallback, OAuth + token refresh, cloud sync, data model.
-- `open-sse/AGENTS.md` — the routing/translation engine's own conventions and "how to add a provider/executor/translator". **Read this before editing anything under `open-sse/`.**
+Request flow, fallback, OAuth and persistence are in the sections below. Read [`open-sse/AGENTS.md`](open-sse/AGENTS.md) before editing anything under `open-sse/`. That file covers the routing and translation engine, including how to add a provider, executor, or translator.
 
 ### Request flow (the thing to understand first)
 
@@ -97,7 +94,7 @@ Two authoritative docs already exist — read them before working in these areas
 - One file per provider. `providers/registry/index.js` is an **auto-generated** static import list — regenerate it with `scripts/migrate-registry.mjs` / `injectDisplayToRegistry.mjs`, don't hand-edit.
 - Add a provider: copy `providers/REGISTRY_TEMPLATE.js`, add models to `config/providerModels.js`. Only add an executor for non-OpenAI-compatible upstreams.
 
-### Persistence — IMPORTANT (ARCHITECTURE.md is stale here)
+### Persistence
 
 State is **no longer `db.json`**. It's a SQLite layer under `src/lib/db/` with an adapter fallback chain (`driver.js`): `bun:sqlite` → `better-sqlite3` (optional native dep) → `node:sqlite` (Node ≥22.5) → `sql.js` (pure-JS fallback, always works). `better-sqlite3` is deliberately in `optionalDependencies` so install never fails without build tools.
 
@@ -119,6 +116,6 @@ Pre-translate hooks that compress `tool_result` content in-place to cut tokens. 
 
 - Plain JavaScript (ESM), no TypeScript. `@/*` path alias → `src/*` (`jsconfig.json`).
 - `custom-server.js` wraps the Next standalone server to derive client IP from the TCP socket and strip attacker-controlled `X-Forwarded-For` — trusting forwarding headers only from a loopback reverse proxy, and then only the rightmost XFF hop (appending proxies like cloudflared/nginx leave the leftmost entries client-controlled). Preserve this when touching request/IP/rate-limit code.
-- Security-sensitive env: `JWT_SECRET` (session cookie), `INITIAL_PASSWORD` (default `123456` — must override), `API_KEY_SECRET`, `MACHINE_ID_SALT`. Full env contract in `.env.example` and ARCHITECTURE.md's env matrix.
+- Security-sensitive env: `JWT_SECRET` (session cookie), `INITIAL_PASSWORD` (default `123456`, must override), `API_KEY_SECRET`, `MACHINE_ID_SALT`. The full env contract is [`.env.example`](.env.example).
 - Binary/protobuf upstreams (kiro EventStream, cursor protobuf, commandcode NDJSON) don't round-trip through OpenAI — they're handled inside their own executor, not the translator.
 - Versioning, CHANGELOG, and tagging: see [`RELEASING.md`](RELEASING.md). Commit style is Conventional Commits (`fix(translator): …`, `feat(...)`).

@@ -153,6 +153,8 @@ You can use any model configured in your tokenhop dashboard. Common examples:
 
 To use a tokenhop instance on your VPS, or exposed with the Endpoint page's Cloudflare tunnel or Tailscale Funnel, instead of localhost:
 
+With Users & teams on, only an instance owner or admin can turn on **Require API key**. A single-user install still shows that switch.
+
 1. In Cline settings, set Base URL to: `https://<your-tokenhop-host>/v1`
 2. Use an API key from that instance's dashboard and turn on **Require API key** for any public URL
 3. Ensure the instance is running and reachable at that URL

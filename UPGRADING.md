@@ -1,8 +1,11 @@
 # Upgrading from 9router
 
 This guide explains what happens when an existing 9router install upgrades to
-**tokenhop v1.0.0**. tokenhop is this project's new name — same code, same data,
-new name everywhere a user sees it. Everything below describes v1.0.0 behavior.
+tokenhop. tokenhop is this project's new name. The code and the data stay.
+The name changes everywhere a user sees it.
+
+The rename steps describe v1.0.0. Backups, workspace export and import, and
+hashed API-key storage describe the current server.
 
 ## 1. TL;DR
 

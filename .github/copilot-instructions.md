@@ -81,9 +81,7 @@ what lands on the default branch. Interior commits may be informal during
 development; the final PR title is the contract.
 
 If the repo is configured for merge commits instead, each interior commit is
-independently enforced by the project's `commit-msg` hook (see
-[`docs/lefthook-usage.md`](../docs/lefthook-usage.md) when `--git` was used
-during `init`).
+independently enforced by the project's `commit-msg` hook.
 
 ## Security
 

@@ -83,7 +83,7 @@ It intelligently routes requests across multiple AI providers using a 3-tier fal
 - **OpenAI Codex** (Plus/Pro) - GPT 5.2 Codex, GPT 5.1 Codex Max
 - **Gemini CLI** (FREE) - Gemini 3 Flash/Pro, 2.5 Pro/Flash
 - **GitHub Copilot** - GPT-5, Claude 4.5, Gemini 3
-- **Antigravity** (Google) - Gemini 3 Pro, Claude Sonnet 4.5
+- **Antigravity** (Google) - Gemini 4 Argon, Claude Sonnet 4.6
 
 ### Cheap Providers
 
@@ -175,7 +175,7 @@ See [quota tracking documentation](features/quota-tracking.md) for details.
 
 **Problem:** Cursor IDE doesn't support localhost endpoints.
 
-**Solution:** Expose your tokenhop instance over HTTPS (dashboard → **Endpoint** → Cloudflare tunnel or Tailscale Funnel), or deploy it on a VPS:
+**Solution:** Expose your tokenhop instance over HTTPS (dashboard → **Endpoint** → Cloudflare tunnel or Tailscale Funnel), or deploy it on a VPS. With Users & teams on, only an instance owner or admin sees those Endpoint cards. A single-user install still shows them.
 
 ```
 Cursor Settings → Models → Advanced:

@@ -30,6 +30,4 @@ backports, and releases.
 
 ## Before editing `open-sse/`
 
-Read [`open-sse/AGENTS.md`](open-sse/AGENTS.md) — the routing/translation
-engine's own conventions. Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-before working on request flow, fallback, OAuth, or persistence.
+Read [`open-sse/AGENTS.md`](open-sse/AGENTS.md) before editing the routing and translation engine. Request flow, fallback, OAuth and persistence are in [`CLAUDE.md`](CLAUDE.md).
