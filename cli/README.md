@@ -91,10 +91,9 @@ tokenhop --help            # Show all options
 
 ## 👥 Users & teams (multi-user) commands
 
-These talk to the running local server over a host-local CLI token: it acts as
-the instance owner, is never printed, and in multi-user mode it is accepted
-only from loopback. They answer `404 → "multi-user is not enabled…"` until
-`TOKENHOP_MULTI_USER=on`.
+These talk to the running local server over a host-local CLI token. The token acts as the instance owner and is never printed. When more than one user is active, the server accepts it only from loopback, and not through a proxy hop.
+
+`users`, `workspaces`, `keys list`, `keys create`, `keys revoke`, and `auth reset-mode` answer a codeless 404 with `multi-user is not enabled on this server (TOKENHOP_MULTI_USER=on)` until `TOKENHOP_MULTI_USER=on`. `keys backup-hint` reads the local master-key path and does not call the server. `keys rotate` says `Not available: users & teams is not turned on for this instance (or the workspace was not found).` `auth setup-token` says `Users & teams is not turned on for this instance.`
 
 ```bash
 tokenhop users list [--search x] [--role r] [--status s] [--page n] [--json]
