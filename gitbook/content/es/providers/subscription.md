@@ -227,8 +227,8 @@ Model: gh/gpt-5
 
 ### Precios
 
-| Plan | Costo mensual | Cuota                | Modelos                         |
-| ---- | ------------- | -------------------- | ------------------------------- |
+| Plan | Costo mensual | Cuota                | Modelos                           |
+| ---- | ------------- | -------------------- | --------------------------------- |
 | FREE | $0            | Similar a Gemini CLI | Gemini 4 Argon, Claude Sonnet 4.6 |
 
 ### Configuración
@@ -257,15 +257,15 @@ Model: ag/gemini-4-argon-high
 
 ### IDs de modelo
 
-| ID del modelo                 | Descripción                         |
-| ----------------------------- | ----------------------------------- |
-| `ag/gemini-4-argon-high`      | Gemini 4 Argon (High)               |
-| `ag/gemini-4-argon-medium`    | Gemini 4 Argon (Medium)             |
-| `ag/gemini-4-argon-low`       | Gemini 4 Argon (Low)                |
-| `ag/gemini-4-argon`           | Gemini 4 Argon                      |
-| `ag/gemini-pro-agent`         | Gemini 3.1 Pro (High)               |
-| `ag/claude-sonnet-4-6`        | Claude Sonnet 4.6 (Thinking)        |
-| `ag/claude-opus-4-6-thinking` | Claude Opus 4.6 (Thinking)          |
+| ID del modelo                 | Descripción                  |
+| ----------------------------- | ---------------------------- |
+| `ag/gemini-4-argon-high`      | Gemini 4 Argon (High)        |
+| `ag/gemini-4-argon-medium`    | Gemini 4 Argon (Medium)      |
+| `ag/gemini-4-argon-low`       | Gemini 4 Argon (Low)         |
+| `ag/gemini-4-argon`           | Gemini 4 Argon               |
+| `ag/gemini-pro-agent`         | Gemini 3.1 Pro (High)        |
+| `ag/claude-sonnet-4-6`        | Claude Sonnet 4.6 (Thinking) |
+| `ag/claude-opus-4-6-thinking` | Claude Opus 4.6 (Thinking)   |
 
 ### Pro Tips
 
