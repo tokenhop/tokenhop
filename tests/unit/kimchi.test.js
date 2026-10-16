@@ -1,4 +1,5 @@
 import { describe, it, beforeAll, expect } from "vitest";
+import { matchesConnectionIdentity } from "../../src/lib/db/helpers/connectionIdentity.js";
 
 // Load the registry entry once for the suite so a load failure is reported
 // next to the failing test instead of cascading as "undefined" in every
@@ -172,26 +173,11 @@ describe("kimchi validateToken", () => {
   });
 });
 
-// ── OAuth dedup logic (pure clone of connectionsRepo matcher) ──
-// Mimics the find() predicate in createProviderConnectionUnscoped for OAuth
-// connections, so we can test the IdP-collision fix in isolation.
+// ── OAuth dedup logic (production matcher shared with connectionsRepo) ──
+// Uses the real matchesConnectionIdentity so the IdP-collision fix is tested
+// against the code that creation dedup and workspace moves actually run.
 function findExistingOAuth(all, incoming) {
-  const incomingEmail = incoming.email;
-  const incomingUsername = incoming.providerSpecificData?.username;
-  const incomingWs = incoming.providerSpecificData?.chatgptAccountId;
-  return all.find((c) => {
-    if (c.authType !== "oauth" || c.email !== incomingEmail) return false;
-    const existingWs = c.providerSpecificData?.chatgptAccountId;
-    if (incomingWs && existingWs) return incomingWs === existingWs;
-    if (incomingWs && !existingWs) return false;
-    if (!incomingWs && existingWs) return false;
-    const existingUsername = c.providerSpecificData?.username;
-    if (incomingUsername && existingUsername) {
-      return incomingUsername === existingUsername;
-    }
-    if (incomingUsername || existingUsername) return false;
-    return true;
-  });
+  return all.find((c) => matchesConnectionIdentity(c, incoming));
 }
 
 describe("kimchi OAuth dedup", () => {

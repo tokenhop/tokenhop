@@ -26,6 +26,7 @@ export default function Card({
   padding = "md",
   hover = false,
   elev: _legacyElev = false,
+  headingRef,
   className,
   role,
   ...props
@@ -51,6 +52,7 @@ export default function Card({
           icon={icon}
           actions={action}
           as={as}
+          headingRef={headingRef}
           className="mb-4"
         />
       )}
@@ -71,6 +73,8 @@ Card.propTypes = {
   elev: PropTypes.bool,
   className: PropTypes.string,
   role: PropTypes.string,
+  /** Optional ref for a programmatically focusable title heading (tabIndex -1). */
+  headingRef: PropTypes.shape({ current: PropTypes.any }),
 };
 
 /** Card header: display title (+ subtitle, optional icon tile) with an actions slot. */
@@ -80,6 +84,7 @@ Card.Header = function CardHeader({
   icon,
   actions,
   as: Heading = "h2",
+  headingRef,
   className,
 }) {
   return (
@@ -93,7 +98,15 @@ Card.Header = function CardHeader({
           </span>
         )}
         <div className="min-w-0">
-          {title && <Heading className="font-display text-lg font-bold text-text">{title}</Heading>}
+          {title && (
+            <Heading
+              ref={headingRef}
+              tabIndex={headingRef ? -1 : undefined}
+              className="font-display text-lg font-bold text-text"
+            >
+              {title}
+            </Heading>
+          )}
           {subtitle && <p className="text-sm text-muted">{subtitle}</p>}
         </div>
       </div>
@@ -108,6 +121,7 @@ Card.Header.propTypes = {
   icon: PropTypes.string,
   actions: PropTypes.node,
   as: PropTypes.oneOf(["h2", "h3", "h4"]),
+  headingRef: PropTypes.shape({ current: PropTypes.any }),
   className: PropTypes.string,
 };
 

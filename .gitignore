@@ -112,3 +112,4 @@ temp/
 .playwright-cli
 .playwright-mcp
 .worktrees/
+.opencode/worktrees/

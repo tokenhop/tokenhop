@@ -197,6 +197,9 @@ export default function CombosPageClient() {
   const saveQueueRef = useRef(Promise.resolve());
   const editGenerationRef = useRef(0);
   const selectedIdRef = useRef(null);
+  // Stable, always-mounted focus target for a successful combo move: the moved
+  // card (and, for the last combo, the whole list) is removed by the refresh.
+  const combosHeadingRef = useRef(null);
 
   useEffect(() => {
     strategiesRef.current = comboStrategies;
@@ -737,6 +740,9 @@ export default function CombosPageClient() {
       <span aria-live="polite" className="sr-only">
         {saveAnnouncement}
       </span>
+      <h2 ref={combosHeadingRef} tabIndex={-1} className="sr-only">
+        Combos
+      </h2>
 
       {combos.length === 0 ? (
         <EmptyState
@@ -782,6 +788,7 @@ export default function CombosPageClient() {
                         selected={combo.id === selectedComboId}
                         onSelect={selectCombo}
                         onMoved={fetchData}
+                        successFocusRef={combosHeadingRef}
                       />
                     );
                   })}

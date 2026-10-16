@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import {
   Card,
   Button,
@@ -96,7 +96,10 @@ export default function ApiKeysCard({
   migrationNotice = null,
   workspaceId = null,
   onMoved,
+  headingRef: suppliedHeadingRef,
 }) {
+  const localHeadingRef = useRef(null);
+  const headingRef = suppliedHeadingRef ?? localHeadingRef;
   const [editingId, setEditingId] = useState(null);
   const showValue = (apiKey) =>
     hashedMode
@@ -130,6 +133,7 @@ export default function ApiKeysCard({
     <Card
       id="require-api-key"
       title="API keys"
+      headingRef={headingRef}
       icon="vpn_key"
       action={
         <>
@@ -325,6 +329,7 @@ export default function ApiKeysCard({
                                 },
                               ]}
                               sourceWorkspaceId={workspaceId}
+                              successFocusRef={headingRef}
                               onMoved={onMoved}
                             />
                           )}
@@ -418,6 +423,7 @@ export default function ApiKeysCard({
                           { type: "apiKey", id: apiKey.id, label: `API key "${apiKey.name}"` },
                         ]}
                         sourceWorkspaceId={workspaceId}
+                        successFocusRef={headingRef}
                         onMoved={onMoved}
                       />
                     )}
@@ -442,6 +448,7 @@ export default function ApiKeysCard({
 }
 
 ApiKeysCard.propTypes = {
+  headingRef: PropTypes.shape({ current: PropTypes.any }),
   keys: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.string.isRequired,
