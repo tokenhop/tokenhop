@@ -175,7 +175,7 @@ See [quota tracking documentation](features/quota-tracking.md) for details.
 
 **Problem:** Cursor IDE doesn't support localhost endpoints.
 
-**Solution:** Expose your tokenhop instance over HTTPS (dashboard → **Endpoint** → Cloudflare tunnel or Tailscale Funnel), or deploy it on a VPS:
+**Solution:** Expose your tokenhop instance over HTTPS (dashboard → **Endpoint** → Cloudflare tunnel or Tailscale Funnel), or deploy it on a VPS. With Users & teams on, only an instance owner or admin sees those Endpoint cards. A single-user install still shows them.
 
 ```
 Cursor Settings → Models → Advanced:

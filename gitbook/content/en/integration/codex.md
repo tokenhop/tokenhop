@@ -116,7 +116,7 @@ To use a tokenhop instance on your VPS, or exposed with the Endpoint page's Clou
 export OPENAI_BASE_URL="https://<your-tokenhop-host>/v1"
 ```
 
-Use an API key from that instance's dashboard (**Endpoint**), and turn on **Require API key** for any public URL.
+Use an API key from that instance's dashboard (**Endpoint**). With Users & teams on, only an instance owner or admin can turn on **Require API key**. A single-user install still shows that switch. Turn it on for any public URL.
 
 ## Advanced Configuration
 

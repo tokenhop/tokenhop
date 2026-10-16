@@ -137,6 +137,8 @@ You can use any model configured in your tokenhop dashboard. Common examples:
 
 If you're running tokenhop locally and want to use it with Cursor:
 
+With Users & teams on, only an instance owner or admin sees the tunnel cards and **Require API key**. A single-user install still shows both.
+
 1. Open the tokenhop dashboard → **Endpoint**
 2. Enable the **Cloudflare tunnel** (a `*.trycloudflare.com` URL) or **Tailscale Funnel** (needs Tailscale installed and logged in)
 3. Copy the public URL and use it, followed by `/v1`, as the Base URL in Cursor
