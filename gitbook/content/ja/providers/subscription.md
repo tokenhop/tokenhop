@@ -12,7 +12,7 @@
 - ✅ **OpenAI Codex** (Plus/Pro) - GPT 5.2 Codex、GPT 5.1 Codex Max
 - ✅ **Gemini CLI** (無料階層!) - 月18万コンプリーション
 - ✅ **GitHub Copilot** - GPT-5、Claude 4.5、Gemini 3
-- ✅ **Antigravity** (Google) - Gemini 3 Pro、Claude Sonnet 4.5
+- ✅ **Antigravity** (Google) - Gemini 4 Argon、Claude Sonnet 4.6
 
 **戦略:** これらを最初に使用、クォータをリアルタイムで追跡、消費時に低価格/無料へフォールバック。
 
@@ -229,7 +229,7 @@ Model: gh/gpt-5
 
 | プラン | 月額コスト | クォータ         | モデル                          |
 | ------ | ---------- | ---------------- | ------------------------------- |
-| FREE   | $0         | Gemini CLIと同様 | Gemini 3 Pro、Claude Sonnet 4.5 |
+| FREE   | $0         | Gemini CLIと同様 | Gemini 4 Argon、Claude Sonnet 4.6 |
 
 ### セットアップ
 
@@ -250,18 +250,22 @@ tokenhop
 **ステップ3: CLIで使用**
 
 ```
-Model: ag/gemini-3-pro-high
-       ag/claude-sonnet-4-5
-       ag/claude-opus-4-5-thinking
+Model: ag/gemini-4-argon-high
+       ag/gemini-4-argon
+       ag/claude-sonnet-4-6
 ```
 
-### 利用可能なモデル
+### モデル ID
 
-| モデルID                      | 説明                     | 最適用途      |
-| ----------------------------- | ------------------------ | ------------- |
-| `ag/gemini-3-pro-high`        | Gemini 3 Pro High        | 高品質応答    |
-| `ag/claude-sonnet-4-5`        | Claude Sonnet 4.5        | Anthropic品質 |
-| `ag/claude-opus-4-5-thinking` | Claude Opus 4.5 Thinking | 複雑な推論    |
+| モデルID                      | 説明                                |
+| ----------------------------- | ----------------------------------- |
+| `ag/gemini-4-argon-high`      | Gemini 4 Argon (High)               |
+| `ag/gemini-4-argon-medium`    | Gemini 4 Argon (Medium)             |
+| `ag/gemini-4-argon-low`       | Gemini 4 Argon (Low)                |
+| `ag/gemini-4-argon`           | Gemini 4 Argon                      |
+| `ag/gemini-pro-agent`         | Gemini 3.1 Pro (High)               |
+| `ag/claude-sonnet-4-6`        | Claude Sonnet 4.6 (Thinking)        |
+| `ag/claude-opus-4-6-thinking` | Claude Opus 4.6 (Thinking)          |
 
 ### プロのヒント
 

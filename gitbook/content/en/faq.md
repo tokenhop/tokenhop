@@ -83,7 +83,7 @@ It intelligently routes requests across multiple AI providers using a 3-tier fal
 - **OpenAI Codex** (Plus/Pro) - GPT 5.2 Codex, GPT 5.1 Codex Max
 - **Gemini CLI** (FREE) - Gemini 3 Flash/Pro, 2.5 Pro/Flash
 - **GitHub Copilot** - GPT-5, Claude 4.5, Gemini 3
-- **Antigravity** (Google) - Gemini 3 Pro, Claude Sonnet 4.5
+- **Antigravity** (Google) - Gemini 4 Argon, Claude Sonnet 4.6
 
 ### Cheap Providers
 

@@ -12,7 +12,7 @@ Provider tier subscription là lựa chọn **chính** - bạn đã trả tiền
 - ✅ **OpenAI Codex** (Plus/Pro) - GPT 5.2 Codex, GPT 5.1 Codex Max
 - ✅ **Gemini CLI** (Free tier!) - 180K completions/tháng
 - ✅ **GitHub Copilot** - GPT-5, Claude 4.5, Gemini 3
-- ✅ **Antigravity** (Google) - Gemini 3 Pro, Claude Sonnet 4.5
+- ✅ **Antigravity** (Google) - Gemini 4 Argon, Claude Sonnet 4.6
 
 **Chiến lược:** Dùng đầu tiên, theo dõi quota thời gian thực, fallback sang cheap/free khi hết.
 
@@ -229,7 +229,7 @@ Model: gh/gpt-5
 
 | Plan | Chi phí Hàng tháng | Quota               | Models                          |
 | ---- | ------------------ | ------------------- | ------------------------------- |
-| FREE | $0                 | Tương tự Gemini CLI | Gemini 3 Pro, Claude Sonnet 4.5 |
+| FREE | $0                 | Tương tự Gemini CLI | Gemini 4 Argon, Claude Sonnet 4.6 |
 
 ### Setup
 
@@ -250,18 +250,22 @@ tokenhop
 **Bước 3: Dùng trong CLI**
 
 ```
-Model: ag/gemini-3-pro-high
-       ag/claude-sonnet-4-5
-       ag/claude-opus-4-5-thinking
+Model: ag/gemini-4-argon-high
+       ag/gemini-4-argon
+       ag/claude-sonnet-4-6
 ```
 
-### Model có sẵn
+### Model ID
 
-| Model ID                      | Mô tả                    | Tốt nhất cho            |
-| ----------------------------- | ------------------------ | ----------------------- |
-| `ag/gemini-3-pro-high`        | Gemini 3 Pro High        | Phản hồi chất lượng cao |
-| `ag/claude-sonnet-4-5`        | Claude Sonnet 4.5        | Chất lượng Anthropic    |
-| `ag/claude-opus-4-5-thinking` | Claude Opus 4.5 Thinking | Reasoning phức tạp      |
+| Model ID                      | Mô tả                               |
+| ----------------------------- | ----------------------------------- |
+| `ag/gemini-4-argon-high`      | Gemini 4 Argon (High)               |
+| `ag/gemini-4-argon-medium`    | Gemini 4 Argon (Medium)             |
+| `ag/gemini-4-argon-low`       | Gemini 4 Argon (Low)                |
+| `ag/gemini-4-argon`           | Gemini 4 Argon                      |
+| `ag/gemini-pro-agent`         | Gemini 3.1 Pro (High)               |
+| `ag/claude-sonnet-4-6`        | Claude Sonnet 4.6 (Thinking)        |
+| `ag/claude-opus-4-6-thinking` | Claude Opus 4.6 (Thinking)          |
 
 ### Mẹo Pro
 

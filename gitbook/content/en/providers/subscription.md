@@ -12,7 +12,7 @@ Subscription tier providers are your **primary** choice - you're already paying 
 - ✅ **OpenAI Codex** (Plus/Pro) - GPT 5.2 Codex, GPT 5.1 Codex Max
 - ✅ **Gemini CLI** (FREE tier!) - 180K completions/month
 - ✅ **GitHub Copilot** - GPT-5, Claude 4.5, Gemini 3
-- ✅ **Antigravity** (Google) - Gemini 3 Pro, Claude Sonnet 4.5
+- ✅ **Antigravity** (Google) - Gemini 4 Argon, Claude Sonnet 4.6
 
 **Strategy:** Use these first, track quota in real-time, fallback to cheap/free when exhausted.
 
@@ -250,7 +250,7 @@ Model: gh/gpt-5
 
 | Plan | Monthly Cost | Quota                 | Models                          |
 | ---- | ------------ | --------------------- | ------------------------------- |
-| FREE | $0           | Similar to Gemini CLI | Gemini 3 Pro, Claude Sonnet 4.5 |
+| FREE | $0           | Similar to Gemini CLI | Gemini 4 Argon, Claude Sonnet 4.6 |
 
 ### Setup
 
@@ -271,18 +271,24 @@ tokenhop
 **Step 3: Use in CLI**
 
 ```
-Model: ag/gemini-3-pro-high
-       ag/claude-sonnet-4-5
-       ag/claude-opus-4-5-thinking
+Model: ag/gemini-4-argon-high
+       ag/gemini-4-argon
+       ag/claude-sonnet-4-6
 ```
 
-### Available Models
+### Model ids
 
-| Model ID                      | Description              | Best For               |
-| ----------------------------- | ------------------------ | ---------------------- |
-| `ag/gemini-3-pro-high`        | Gemini 3 Pro High        | High-quality responses |
-| `ag/claude-sonnet-4-5`        | Claude Sonnet 4.5        | Anthropic quality      |
-| `ag/claude-opus-4-5-thinking` | Claude Opus 4.5 Thinking | Complex reasoning      |
+The static Antigravity catalog includes these ids. `ag/gemini-4-argon` uses the medium wire id. When model discovery succeeds, the dashboard keeps a static id only if its wire id is in the live catalog. When discovery fails, the dashboard shows this static list.
+
+| Model ID                      | Name                            |
+| ----------------------------- | ------------------------------- |
+| `ag/gemini-4-argon-high`      | Gemini 4 Argon (High)           |
+| `ag/gemini-4-argon-medium`    | Gemini 4 Argon (Medium)         |
+| `ag/gemini-4-argon-low`       | Gemini 4 Argon (Low)            |
+| `ag/gemini-4-argon`           | Gemini 4 Argon                  |
+| `ag/gemini-pro-agent`         | Gemini 3.1 Pro (High)           |
+| `ag/claude-sonnet-4-6`        | Claude Sonnet 4.6 (Thinking)    |
+| `ag/claude-opus-4-6-thinking` | Claude Opus 4.6 (Thinking)      |
 
 ### Pro Tips
 

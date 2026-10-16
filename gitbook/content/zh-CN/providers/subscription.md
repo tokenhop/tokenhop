@@ -12,7 +12,7 @@
 - ✅ **OpenAI Codex**(Plus/Pro)- GPT 5.2 Codex、GPT 5.1 Codex Max
 - ✅ **Gemini CLI**(免费层!)- 每月 180K 次补全
 - ✅ **GitHub Copilot** - GPT-5、Claude 4.5、Gemini 3
-- ✅ **Antigravity**(Google)- Gemini 3 Pro、Claude Sonnet 4.5
+- ✅ **Antigravity**(Google)- Gemini 4 Argon、Claude Sonnet 4.6
 
 **策略:** 优先使用这些,实时跟踪配额,耗尽时回退到低价/免费层。
 
@@ -229,7 +229,7 @@ Model: gh/gpt-5
 
 | 套餐 | 月费 | 配额            | 模型                            |
 | ---- | ---- | --------------- | ------------------------------- |
-| 免费 | $0   | 类似 Gemini CLI | Gemini 3 Pro、Claude Sonnet 4.5 |
+| 免费 | $0   | 类似 Gemini CLI | Gemini 4 Argon、Claude Sonnet 4.6 |
 
 ### 设置
 
@@ -250,18 +250,22 @@ tokenhop
 **步骤 3:在 CLI 中使用**
 
 ```
-Model: ag/gemini-3-pro-high
-       ag/claude-sonnet-4-5
-       ag/claude-opus-4-5-thinking
+Model: ag/gemini-4-argon-high
+       ag/gemini-4-argon
+       ag/claude-sonnet-4-6
 ```
 
-### 可用模型
+### 模型 ID
 
-| 模型 ID                       | 描述                     | 最佳场景       |
-| ----------------------------- | ------------------------ | -------------- |
-| `ag/gemini-3-pro-high`        | Gemini 3 Pro High        | 高质量响应     |
-| `ag/claude-sonnet-4-5`        | Claude Sonnet 4.5        | Anthropic 质量 |
-| `ag/claude-opus-4-5-thinking` | Claude Opus 4.5 Thinking | 复杂推理       |
+| 模型 ID                       | 描述                            |
+| ----------------------------- | ------------------------------- |
+| `ag/gemini-4-argon-high`      | Gemini 4 Argon (High)           |
+| `ag/gemini-4-argon-medium`    | Gemini 4 Argon (Medium)         |
+| `ag/gemini-4-argon-low`       | Gemini 4 Argon (Low)            |
+| `ag/gemini-4-argon`           | Gemini 4 Argon                  |
+| `ag/gemini-pro-agent`         | Gemini 3.1 Pro (High)           |
+| `ag/claude-sonnet-4-6`        | Claude Sonnet 4.6 (Thinking)    |
+| `ag/claude-opus-4-6-thinking` | Claude Opus 4.6 (Thinking)      |
 
 ### 专业建议
 
