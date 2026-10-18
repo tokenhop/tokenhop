@@ -22,6 +22,12 @@ import { isUserSecurityEnforced } from "./securityState.js";
 export async function mintSessionCookie(cookieStore, request, claims, { from } = {}) {
   const fromExp = Number.isInteger(from?.exp) ? from.exp : undefined;
 
+  // A re-mint of a user-bound session must never downgrade to a sub-less token.
+  if (!claims?.sub && from?.sub) {
+    clearDashboardAuthCookie(cookieStore);
+    return false;
+  }
+
   if (!claims?.sub || !(await isUserSecurityEnforced())) {
     await setDashboardAuthCookie(
       cookieStore,

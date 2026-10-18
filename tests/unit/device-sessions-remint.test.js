@@ -244,6 +244,70 @@ describe("YAN-751 re-mint keeps sid and exp", () => {
     expect(await db.listSessions(t.a.ctx)).toEqual([]);
   });
 
+  it("mintSessionCookie: from={sid} without a valid exp fails and clears the cookie", async () => {
+    const session = await signIn(t.a);
+    const user = await db.getUserUnscoped(t.a.user.id);
+    const claims = { sub: user.id, sv: user.sessionVersion, wid: t.a.personal, amr: ["pwd"] };
+    const cookieStore = await (await import("next/headers")).cookies();
+    expect(authToken()).toBe(session.token);
+    expect(
+      await mint.mintSessionCookie(cookieStore, post("/x", {}), claims, {
+        from: { sid: session.sid },
+      }),
+    ).toBe(false);
+    expect(authToken()).toBeUndefined();
+    expect(row(session.sid)).toMatchObject({ revokedAt: null });
+    expect(rowCount(user.id)).toBe(1);
+  });
+
+  it("mintSessionCookie: from={sid, exp in the past} fails", async () => {
+    const session = await signIn(t.a);
+    const user = await db.getUserUnscoped(t.a.user.id);
+    const claims = { sub: user.id, sv: user.sessionVersion, wid: t.a.personal, amr: ["pwd"] };
+    const cookieStore = await (await import("next/headers")).cookies();
+    const from = { sid: session.sid, sub: user.id, exp: nowSec() - 10 };
+    expect(await mint.mintSessionCookie(cookieStore, post("/x", {}), claims, { from })).toBe(false);
+    expect(authToken()).toBeUndefined();
+  });
+
+  it("workspace switch: a failed pref write after a concurrent sv bump leaves no live cookie", async () => {
+    const session = await signIn(t.a);
+    const realTx = adapter.transaction.bind(adapter);
+    let bumped = false;
+    const spy = vi.spyOn(adapter, "transaction").mockImplementation((fn) => {
+      // Concurrent sign-out-everywhere lands (outside the tx), then the write fails.
+      if (!bumped) {
+        bumped = true;
+        adapter.run(`UPDATE users SET sessionVersion = sessionVersion + 1 WHERE id = ?`, [
+          t.a.user.id,
+        ]);
+        throw new Error("pref write failed");
+      }
+      return realTx(fn);
+    });
+    let res;
+    try {
+      res = await workspacePOST(post("/api/me/workspace", { workspaceId: t.shared.id }));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(res.status).toBe(500);
+    const token = authToken();
+    expect(token === undefined || (await s.isLiveSession(token)) === false).toBe(true);
+    expect(token).not.toBe(session.token);
+  });
+
+  it("mintSessionCookie: a sub-less re-mint of a user-bound session fails and clears", async () => {
+    const session = await signIn(t.a);
+    const from = await jwt.getDashboardAuthSession(session.token);
+    const cookieStore = await (await import("next/headers")).cookies();
+    expect(
+      await mint.mintSessionCookie(cookieStore, post("/x", {}), { authenticated: true }, { from }),
+    ).toBe(false);
+    expect(authToken()).toBeUndefined();
+    expect(rowCount(t.a.user.id)).toBe(1);
+  });
+
   it("restricted forced-change flow mints a fresh row with a fresh ~24 h exp (D7)", async () => {
     await db.setUserPasswordUnscoped(t.b.user.id, {
       passwordHash: await bcrypt.hash(PW_B, 4),

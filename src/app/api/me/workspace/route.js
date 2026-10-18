@@ -9,7 +9,7 @@ import { cookies } from "next/headers";
 import { requireMultiUser } from "@/lib/users/featureSwitch.js";
 import { getPrincipal, remintClaims } from "@/lib/users/session.js";
 import { mintSessionCookie } from "@/lib/users/sessionMint.js";
-import { getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
+import { clearDashboardAuthCookie, getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
 import { listWorkspaces, updateUserPreferences } from "@/lib/db/index.js";
 import { isCrossSite, isJson } from "@/lib/auth/sameOrigin.js";
 import { isPlainObject } from "@/app/api/settings/validateSettings.js";
@@ -68,10 +68,16 @@ export async function POST(request) {
     try {
       await updateUserPreferences(principal, { lastWorkspaceId: workspaceId });
     } catch (error) {
-      // Don't leave the cookie switched when the preference write failed.
-      await mintSessionCookie(cookieStore, request, await remintClaims(session, session.wid), {
-        from: session,
-      });
+      // Don't leave the cookie switched when the preference write failed, but
+      // never undo a concurrent sign-out-everywhere: restore only when the sv
+      // is unchanged since the switch, otherwise drop the cookie.
+      const switched = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
+      const original = await remintClaims(session, session.wid);
+      if (original?.sub && switched && original.sv === switched.sv) {
+        await mintSessionCookie(cookieStore, request, original, { from: switched });
+      } else {
+        clearDashboardAuthCookie(cookieStore);
+      }
       throw error;
     }
 

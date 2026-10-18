@@ -66,7 +66,9 @@ export default function SessionsList({ loginMethod, reloadKey = 0 }) {
         } catch {}
         if (n !== seq.current) return;
         if (!authenticated) return toLogin();
-        return setLoadError(translate("Could not load sessions."));
+        // Legacy token: show the "This browser" fallback row.
+        setLoadError("");
+        return setSessions([]);
       }
       setLoadError(
         err.status === 404

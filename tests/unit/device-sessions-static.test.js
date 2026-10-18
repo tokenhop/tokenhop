@@ -33,7 +33,7 @@ describe("session cookie choke point", () => {
   });
 
   it("sets the auth_token cookie directly only inside dashboardSession.js", () => {
-    expect(scan(/\.set\(\s*["']auth_token["']/)).toEqual([COOKIE_FILE]);
+    expect(scan(/\.set\(\s*(?:["']auth_token["']|AUTH_COOKIE\b)/)).toEqual([COOKIE_FILE]);
   });
 
   it("keeps sessionMint.js free of a ./session.js import (cycle guard)", () => {
