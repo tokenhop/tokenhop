@@ -162,6 +162,9 @@ function validProviderStrategies(value) {
     ) {
       return false;
     }
+    if (Object.hasOwn(strategy, "cacheAffinity") && typeof strategy.cacheAffinity !== "boolean") {
+      return false;
+    }
     // Non-routing keys owned by other pages: NoAuthProxyCard writes
     // proxyPoolId (a pool id string) + rotateStrategy (none/round-robin/random).
     if (

@@ -80,3 +80,28 @@ export function selectWeightedConnection({
     continued: false,
   };
 }
+
+/**
+ * The pinned connection if it is still eligible, else null. Pure (no DB/state writes).
+ * Eligible = present in `connections` (the already-filtered available set, so locks,
+ * exclusions, grants and budgets are never bypassed); for "weighted" also weight > 0.
+ */
+export function pickPinnedConnection({
+  pinnedId,
+  connections,
+  strategy,
+  provider,
+  model,
+  getSnapshot: snapshotFor = getSnapshot,
+  now = Date.now(),
+}) {
+  const pinned = pinnedId ? connections.find((c) => c.id === pinnedId) : null;
+  if (!pinned) return null;
+  if (strategy !== "weighted") return pinned;
+  const { weight } = effectiveWeightFor(pinned, {
+    provider,
+    model,
+    snapshot: snapshotFor(pinned.id, now),
+  });
+  return weight > 0 ? pinned : null;
+}

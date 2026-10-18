@@ -184,6 +184,7 @@ export default function CombosPageClient() {
   const [draftJudge, setDraftJudge] = useState("");
   // Raw text so an invalid value stays visible (and blocks Save) while typing.
   const [draftHedge, setDraftHedge] = useState("");
+  const [draftAffinity, setDraftAffinity] = useState(true);
   const [headroom, setHeadroom] = useState({});
   const [headroomQuotaSource, setHeadroomQuotaSource] = useState({});
   const [saving, setSaving] = useState(false);
@@ -404,6 +405,7 @@ export default function CombosPageClient() {
           weights: draftWeights,
           judge: draftJudge,
           hedgeDelayMs: draftStrategy === "fastest" ? draftHedge : 0,
+          cacheAffinity: draftAffinity,
         })
       : null;
   const savedSnapshot =
@@ -417,6 +419,7 @@ export default function CombosPageClient() {
             selectedStrategy === "fastest"
               ? hedgeTextOf(comboStrategies[strategyKey(selected)])
               : 0,
+          cacheAffinity: comboStrategies[strategyKey(selected)]?.cacheAffinity !== false,
         })
       : null;
   const routeDirty =
@@ -454,6 +457,7 @@ export default function CombosPageClient() {
     setDraftWeights(strategies[strategyKey(combo)]?.weights || {});
     setDraftJudge(strategies[strategyKey(combo)]?.judgeModel || "");
     setDraftHedge(hedgeTextOf(strategies[strategyKey(combo)]));
+    setDraftAffinity(strategies[strategyKey(combo)]?.cacheAffinity !== false);
     setSaveError("");
   };
   useEffect(() => {
@@ -587,6 +591,7 @@ export default function CombosPageClient() {
       savedEntry: selectedEntry,
       weights: draftWeights,
       judge: draftJudge,
+      cacheAffinity: draftAffinity,
     });
     if (!built.ok) {
       setSaveError(built.error);
@@ -831,6 +836,7 @@ export default function CombosPageClient() {
               weights={draftWeights}
               judgeModel={draftJudge}
               hedgeDelayMs={draftHedge}
+              cacheAffinity={draftAffinity}
               headroom={headroom}
               headroomQuotaSource={headroomQuotaSource}
               savedModels={selected.models || []}
@@ -863,6 +869,11 @@ export default function CombosPageClient() {
               onHedgeDelayChange={(value) => {
                 editGenerationRef.current += 1;
                 setDraftHedge(value);
+                setSaveError("");
+              }}
+              onCacheAffinityChange={(value) => {
+                editGenerationRef.current += 1;
+                setDraftAffinity(value);
                 setSaveError("");
               }}
               onModelsChange={(next) => {

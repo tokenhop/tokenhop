@@ -14,6 +14,9 @@ export const COMBO_STRATEGIES = Object.freeze([
   "fastest",
 ]);
 
+/** Combo strategies whose order changes per turn; cache affinity applies only to these. */
+export const CACHE_AFFINITY_STRATEGIES = Object.freeze(["round-robin", "weighted", "fastest"]);
+
 /** Max per-model weight accepted by the validator (protects WRR float precision). */
 export const MAX_COMBO_WEIGHT = 1000;
 
@@ -56,6 +59,7 @@ export function resolveComboStrategy(settings, comboName) {
     hedgeDelayMs: isHedgeDelay(entry.hedgeDelayMs)
       ? entry.hedgeDelayMs
       : COMBO_HEDGE_DELAY_DEFAULT_MS,
+    cacheAffinity: entry.cacheAffinity !== false,
   };
 }
 
@@ -63,9 +67,11 @@ export function resolveComboStrategy(settings, comboName) {
  * Validate combo-strategy keys in a settings PATCH body.
  * Only keys present (own property) are checked; absent keys pass.
  * @param {object | null | undefined} body JSON-parsed PATCH body.
+ * @param {{ partial?: boolean }} [options] `partial`: entries are PATCH fragments merged later,
+ *   so skip the "cacheAffinity requires fallbackStrategy" check.
  * @returns {string | null} Error message, or null when valid.
  */
-export function validateComboStrategySettings(body) {
+export function validateComboStrategySettings(body, { partial = false } = {}) {
   if (!isPlainObject(body)) return null;
 
   if (Object.hasOwn(body, "comboStrategy") && !COMBO_STRATEGIES.includes(body.comboStrategy)) {
@@ -92,6 +98,14 @@ export function validateComboStrategySettings(body) {
 
     if (entry.hedgeDelayMs !== undefined && !isHedgeDelay(entry.hedgeDelayMs)) {
       return `Invalid hedgeDelayMs for combo "${name}"`;
+    }
+
+    if (entry.cacheAffinity !== undefined && typeof entry.cacheAffinity !== "boolean") {
+      return `Invalid cacheAffinity for combo "${name}"`;
+    }
+    // A partial patch is merged with the stored entry later, so only complete entries are checked.
+    if (!partial && entry.cacheAffinity !== undefined && entry.fallbackStrategy === undefined) {
+      return `Invalid cacheAffinity for combo "${name}": requires fallbackStrategy`;
     }
 
     const weights = entry.weights;

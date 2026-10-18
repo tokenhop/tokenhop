@@ -341,3 +341,57 @@ describe("hedgeDelay helpers", () => {
     });
   });
 });
+
+describe("cache affinity (YAN-1211)", () => {
+  it("buildStrategyPatch sends cacheAffinity only when off or turned back on", () => {
+    expect(buildStrategyPatch({ strategy: "round-robin", cacheAffinity: false }).patch).toEqual({
+      fallbackStrategy: "round-robin",
+      cacheAffinity: false,
+    });
+    expect(
+      buildStrategyPatch({
+        strategy: "round-robin",
+        cacheAffinity: true,
+        savedEntry: { cacheAffinity: false },
+      }).patch,
+    ).toEqual({ fallbackStrategy: "round-robin", cacheAffinity: true });
+    const untouched = buildStrategyPatch({ strategy: "round-robin", cacheAffinity: true });
+    expect(untouched.patch).not.toHaveProperty("cacheAffinity");
+    expect(buildStrategyPatch({ strategy: "round-robin" }).patch).not.toHaveProperty(
+      "cacheAffinity",
+    );
+  });
+
+  it("buildStrategyPatch applies to weighted and fastest but not fallback or fusion", () => {
+    expect(
+      buildStrategyPatch({ strategy: "weighted", cacheAffinity: false }).patch.cacheAffinity,
+    ).toBe(false);
+    expect(
+      buildStrategyPatch({ strategy: "fastest", cacheAffinity: false }).patch.cacheAffinity,
+    ).toBe(false);
+    for (const strategy of ["fallback", "fusion"]) {
+      expect(
+        buildStrategyPatch({ strategy, cacheAffinity: false, savedEntry: { cacheAffinity: false } })
+          .patch,
+      ).not.toHaveProperty("cacheAffinity");
+    }
+  });
+
+  it("comboSnapshot defaults cacheAffinity to true and isDirty sees a toggle", () => {
+    const snap = (cacheAffinity) =>
+      comboSnapshot({ models: ["a"], strategy: "round-robin", cacheAffinity });
+    expect(comboSnapshot({ models: ["a"] }).cacheAffinity).toBe(true);
+    expect(snap(undefined).cacheAffinity).toBe(true);
+    expect(snap(false).cacheAffinity).toBe(false);
+    expect(isDirty({ saved: snap(undefined), draft: snap(true) })).toBe(false);
+    expect(isDirty({ saved: snap(true), draft: snap(false) })).toBe(true);
+    expect(isDirty({ saved: snap(false), draft: snap(true) })).toBe(true);
+  });
+
+  it("comboSnapshot normalizes cacheAffinity to true for non-affinity strategies", () => {
+    const snap = (cacheAffinity) =>
+      comboSnapshot({ models: ["a"], strategy: "fallback", cacheAffinity });
+    expect(snap(false).cacheAffinity).toBe(true);
+    expect(isDirty({ saved: snap(true), draft: snap(false) })).toBe(false);
+  });
+});

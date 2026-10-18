@@ -49,6 +49,7 @@ import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
 import { getEligibleApiKeySync } from "@/lib/db/repos/apiKeysRepo.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+import { resolveConversationKey } from "open-sse/utils/sessionManager.js";
 import { notifyRequestLogsEnabled } from "open-sse/utils/requestLogger.js";
 import { ensureReliabilityPolicy } from "@/lib/reliability/initReliabilityPolicy.js";
 import {
@@ -157,6 +158,14 @@ export async function handleChat(request, clientRawRequest = null, options = nul
         : {}),
     };
   }
+  // Conversation cache affinity (YAN-1211/1213): always overwrite so a caller-supplied
+  // value is never trusted; probes (dry-runs) must never read or write pins.
+  options = {
+    ...options,
+    conversationKey: probeObserverFor(options)
+      ? null
+      : resolveConversationKey({ headers: clientRawRequest?.headers, body }),
+  };
   const settings = await getEffectivePreferences(gateway);
   notifyRequestLogsEnabled(settings.requestLogsEnabled === true);
 
@@ -217,6 +226,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       judgeModel,
       fusionTuning,
       hedgeDelayMs,
+      cacheAffinity,
     } = comboStrategyFor(settings, gateway, outerCombo);
     let augmentedModels = augmentModelsWithCapacityAdapter(
       comboModels,
@@ -311,6 +321,9 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       comboStickyLimit,
       comboWeights,
       hedgeDelayMs,
+      conversationKey: options?.conversationKey ?? null,
+      cacheAffinity,
+      pinExclude: adapterAdded,
       clientSignal: request?.signal ?? null,
       headroomFn,
       onAttempt: comboObserver,
@@ -575,6 +588,7 @@ async function handleSingleModelChat(
         judgeModel,
         fusionTuning,
         hedgeDelayMs,
+        cacheAffinity,
       } = comboStrategyFor(chatSettings, gateway, nestedCombo);
       const requiredCapabilities = detectRequiredCapabilities(body);
       let augmentedModels = augmentModelsWithCapacityAdapter(
@@ -682,6 +696,9 @@ async function handleSingleModelChat(
         comboStickyLimit,
         comboWeights,
         hedgeDelayMs,
+        conversationKey: options?.conversationKey ?? null,
+        cacheAffinity,
+        pinExclude: adapterAdded,
         clientSignal: request?.signal ?? null,
         headroomFn,
         onAttempt: nestedObserver,
@@ -748,6 +765,7 @@ async function handleSingleModelChat(
         return errorResponse(499, "Client closed request");
       const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
         ...gatewayCreds,
+        conversationKey: options?.conversationKey ?? null,
         estimateTokens: () => estimateBodyTokens(body),
       });
 

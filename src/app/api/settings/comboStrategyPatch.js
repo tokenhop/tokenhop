@@ -9,6 +9,7 @@ const PATCH_KEYS = new Set([
   "judgeModel",
   "fusionTuning",
   "hedgeDelayMs",
+  "cacheAffinity",
 ]);
 const MAX_ID_LENGTH = 128;
 
@@ -51,12 +52,16 @@ export async function applyComboStrategyPatch(body, update, { allowId = false } 
   if (Object.keys(patch).some((k) => !PATCH_KEYS.has(k))) {
     return fail("Invalid combo strategy patch", 400);
   }
-  const error = validateComboStrategySettings({ comboStrategies: { [key]: patch } });
+  const error = validateComboStrategySettings(
+    { comboStrategies: { [key]: patch } },
+    { partial: true },
+  );
   if (error) return fail(error, 400);
 
   // Validation against the merged entry happens inside the transaction too (weight-count cap).
   let mergedError;
   let missingWeightedEntry = false;
+  let missingStrategyEntry = false;
   let settings;
   try {
     settings = await update((strategies) => {
@@ -70,6 +75,10 @@ export async function applyComboStrategyPatch(body, update, { allowId = false } 
         return strategies;
       }
       const next = { ...base, ...patch };
+      if (!next.fallbackStrategy && patch.cacheAffinity !== undefined) {
+        missingStrategyEntry = true;
+        return strategies;
+      }
       if (patch.weights) next.weights = { ...base?.weights, ...patch.weights };
       mergedError = validateComboStrategySettings({ comboStrategies: { [key]: next } });
       if (mergedError) return strategies;
@@ -88,6 +97,9 @@ export async function applyComboStrategyPatch(body, update, { allowId = false } 
     throw err;
   }
   if (missingWeightedEntry) return fail("Combo not found", 409);
+  if (missingStrategyEntry) {
+    return fail("cacheAffinity requires a fallbackStrategy for this combo", 400);
+  }
   if (mergedError) return fail(mergedError, 400);
   return { settings };
 }

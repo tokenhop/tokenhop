@@ -526,6 +526,32 @@ Dashboard → Combos → Clone "premium-coding"
 
 **Use case**: Create variations for different scenarios.
 
+### Conversation Cache Affinity
+
+Providers cache the start of a prompt (system prompt, tools, earlier turns) and bill cached tokens at a lower price. The cache lives with one model, so if a combo sends turn 2 of a chat to a different model than turn 1, the cache is lost.
+
+With cache affinity, tokenhop remembers which combo model answered a conversation and sends that conversation's next turns to the same model.
+
+- **Strategies**: Round robin, Weighted and Fastest. Fallback and Fusion already keep a fixed order, so the setting does not apply to them.
+- **Default**: On for every combo. Turn it off per combo in **Dashboard → Combos → Edit** with the **Keep each conversation on one model** switch, then save.
+- **New conversations** are still spread by the strategy. Round robin and Weighted advance once per conversation, not once per request.
+- **On failure** the conversation moves to the model that answers instead, and stays there.
+- **Fastest**: a pinned conversation does not start a second model, even when a second model delay is set.
+- **Expiry**: a pin lasts 1 hour after the conversation's last request and is renewed on every turn. This applies to combo pins and account pins alike. Set `CACHE_AFFINITY_TTL_MS` to change this. tokenhop keeps up to 10,000 pins per store (combo pins and account pins each have their own limit) and drops the least recently used first. Set `CACHE_AFFINITY_MAX_PINS` to change this.
+- **Saving settings** resets pins. Saving combo routing settings (the global combo strategy, its sticky limit, or any per-combo strategy, including this switch) clears the pins of every combo in every workspace, so those conversations are routed fresh. Saving account routing settings (account strategy, its sticky limit, or per-provider strategies) clears account pins the same way. Editing or deleting a single combo clears only that combo's pins, and importing a configuration clears all combo pins.
+
+How tokenhop recognises a conversation, in order:
+
+1. A Claude Code session: the session in `metadata.user_id`, or the `x-claude-code-session-id` header.
+2. An Antigravity session id in the request body.
+3. A session header: `x-session-id`, `session-id`, `session_id` or `x-amp-thread-id`.
+4. A body field: `prompt_cache_key`, `session_id` or `conversation_id`.
+5. A hash of the leading system prompt and the first user message.
+
+If a client sends a constant session id, or identical prompts with no session id, all of those requests share one pin.
+
+Pins are kept in memory only and are separate for each workspace. A restart clears them.
+
 ---
 
 ## Troubleshooting

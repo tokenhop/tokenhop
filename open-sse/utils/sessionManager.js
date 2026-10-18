@@ -8,7 +8,7 @@
  * Reference: antigravity-claude-proxy/src/cloudcode/session-manager.js
  */
 
-import crypto from "crypto";
+import crypto from "node:crypto";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 
 // Runtime storage: Key = connectionId, Value = { sessionId, lastUsed }
@@ -139,7 +139,8 @@ function extractAntigravitySession(body) {
   return m ? normalizeSessionId(m[1]) : null;
 }
 
-function extractClientSessionId(headers, body, scope = "") {
+// routing:true (conversation key) skips per-request/per-user ids: x-client-request-id, generic metadata.user_id
+function extractClientSessionId(headers, body, scope = "", { routing = false } = {}) {
   // Claude Code sends the session in a header AND in metadata.user_id; the header
   // survives translation to formats that drop metadata (e.g. Responses API).
   const claude =
@@ -152,14 +153,83 @@ function extractClientSessionId(headers, body, scope = "") {
     const v = headerValue(headers, key);
     if (v) return v;
   }
-  const requestId = scope === "kiro" ? null : headerValue(headers, "x-client-request-id");
+  const requestId =
+    scope === "kiro" || routing ? null : headerValue(headers, "x-client-request-id");
   if (requestId) return requestId;
   const fromBody =
     normalizeSessionId(body?.prompt_cache_key) ||
     normalizeSessionId(body?.session_id) ||
     normalizeSessionId(body?.conversation_id) ||
-    (scope === "kiro" ? null : normalizeSessionId(body?.metadata?.user_id));
+    (scope === "kiro" || routing ? null : normalizeSessionId(body?.metadata?.user_id));
   return fromBody || null;
+}
+
+const CONVERSATION_PREFIX_CAP = 8192;
+
+// Text of a content value: string, or array of strings / {text} blocks / Gemini parts
+function contentText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((c) => (typeof c === "string" ? c : typeof c?.text === "string" ? c.text : ""))
+      .join("");
+  }
+  if (content && typeof content === "object") {
+    if (Array.isArray(content.parts)) return contentText(content.parts);
+    if (typeof content.text === "string") return content.text;
+  }
+  return "";
+}
+
+const isSystemRole = (role) => role === "system" || role === "developer";
+
+// Leading system/instructions text across Claude, OpenAI, Responses and Gemini
+// shapes. Only the contiguous system/developer items at the start of the list
+// count, so a reminder injected mid-conversation never changes the key. Stops
+// accumulating once past the prefix cap.
+function systemText(body) {
+  let text = contentText(body.system) + contentText(body.instructions);
+  text += contentText(body.systemInstruction) + contentText(body.system_instruction);
+  for (const list of [body.messages, body.input]) {
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      if (text.length >= CONVERSATION_PREFIX_CAP || !isSystemRole(item?.role)) break;
+      text += contentText(item.content);
+    }
+  }
+  return text;
+}
+
+// Text of the first user item (messages / Responses input / Gemini contents)
+function firstUserText(body) {
+  if (typeof body.input === "string") return body.input;
+  for (const list of [body.messages, body.input, body.contents]) {
+    if (!Array.isArray(list)) continue;
+    const item = list.find((m) => m?.role === "user");
+    if (item) return contentText(item.content ?? item.parts);
+  }
+  return "";
+}
+
+/**
+ * Conversation-stable routing key for cache affinity. Pure: no store writes.
+ * 1. Client session id (as extractClientSessionId, minus x-client-request-id and
+ *    generic metadata.user_id) → "s:" + sha16(id)
+ * 2. Else sha16 of leading system/instructions text + first user item text (≤ 8 KB) → "p:" + hash
+ * 3. Else null (no pinning). Never falls back to workspace, connection or random ids.
+ * @param {{ headers?: object, body?: object }} opts headers: lowercase-key object
+ * @returns {string|null}
+ */
+export function resolveConversationKey({ headers, body } = {}) {
+  const client = extractClientSessionId(headers, body, "", { routing: true });
+  if (client) return `s:${sha16(client)}`;
+  if (!body || typeof body !== "object") return null;
+  const user = firstUserText(body).slice(0, CONVERSATION_PREFIX_CAP);
+  // No user text (tool-output-only or image-only first turn): a system-only key would
+  // collide across unrelated conversations sharing the same instructions.
+  if (!user) return null;
+  const system = systemText(body).slice(0, CONVERSATION_PREFIX_CAP);
+  return `p:${sha16(`${system}\n\u0000\n${user}`)}`;
 }
 
 function requestMessages(body) {

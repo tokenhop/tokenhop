@@ -166,6 +166,16 @@ Dashboard → Settings → Notifications
 → Alert when 80% quota used
 ```
 
+**5. Account Cache Affinity**
+
+When a provider has several accounts and uses the round robin or weighted account strategy, tokenhop keeps each conversation on the account that served it, so the provider's prompt cache stays warm. New conversations are still spread across accounts.
+
+- A pin never overrides a quota, rate-limit or billing lock. A locked account is skipped and the conversation moves to the next account.
+- An `x-connection-id` header still picks the account.
+- To turn it off for one provider, set `providerStrategies.<provider>.cacheAffinity` to `false` through the settings API. There is no dashboard switch for this yet.
+
+See [Combos → Conversation Cache Affinity](combos.md#conversation-cache-affinity) for how conversations are recognised and how long pins last.
+
 ---
 
 ## Examples

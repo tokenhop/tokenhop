@@ -16,6 +16,9 @@ import {
   comboShares,
   effectiveComboWeight,
 } from "open-sse/services/comboWeights.js";
+import { CACHE_AFFINITY_STRATEGIES } from "open-sse/services/comboStrategy.js";
+
+export { CACHE_AFFINITY_STRATEGIES };
 
 /** Where the remaining-quota number came from → plain-English label. */
 export const QUOTA_SOURCE_LABELS = {
@@ -183,8 +186,10 @@ export function parseHedgeDelay(raw) {
  * Leaving fastest clears a stored delay; blank/0 on fastest is still sent when
  * a delay was saved (else it could never be turned off); an invalid delay
  * blocks the save instead of being coerced to off.
+ * Cache affinity is sent only when it differs from the default (absent = on)
+ * or when turning it back on, so an untouched combo save writes nothing.
  * @param {{ strategy: string, hedgeText?: string|number, savedEntry?: object,
- *   weights?: object, judge?: string }} input
+ *   weights?: object, judge?: string, cacheAffinity?: boolean }} input
  * @returns {{ ok: true, patch: object } | { ok: false, error: string }}
  */
 export function buildStrategyPatch({
@@ -193,6 +198,7 @@ export function buildStrategyPatch({
   savedEntry = {},
   weights = {},
   judge = "",
+  cacheAffinity = true,
 }) {
   const saved = savedEntry || {};
   const patch = { fallbackStrategy: strategy };
@@ -205,6 +211,10 @@ export function buildStrategyPatch({
   if (strategy === "weighted") patch.weights = { ...weights };
   if (strategy === "fusion" && judge) patch.judgeModel = judge;
   if (strategy === "fusion" && !judge && saved.judgeModel) patch.judgeModel = "";
+  if (CACHE_AFFINITY_STRATEGIES.includes(strategy)) {
+    if (cacheAffinity === false) patch.cacheAffinity = false;
+    else if (saved.cacheAffinity === false) patch.cacheAffinity = true;
+  }
   return { ok: true, patch };
 }
 
@@ -280,6 +290,7 @@ export function comboSnapshot({
   weights = {},
   judge = "",
   hedgeDelayMs = 0,
+  cacheAffinity = true,
 }) {
   const sortedWeights = {};
   for (const k of Object.keys(weights || {}).sort()) sortedWeights[k] = weights[k];
@@ -292,6 +303,8 @@ export function comboSnapshot({
     // Absent, blank and 0 are all "off", so a server round-trip never reads as
     // an edit. An invalid draft stays raw so it still counts as unsaved.
     hedgeDelayMs: hedge.ok ? hedge.value : String(hedgeDelayMs),
+    // The toggle is hidden for other strategies; normalize so it never reads as an edit.
+    cacheAffinity: !CACHE_AFFINITY_STRATEGIES.includes(strategy) || cacheAffinity !== false,
   };
 }
 

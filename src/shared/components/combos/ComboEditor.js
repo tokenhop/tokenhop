@@ -24,7 +24,9 @@ import IconButton from "@/shared/components/IconButton";
 import Input from "@/shared/components/Input";
 import ModelSelectModal from "@/shared/components/ModelSelectModal";
 import { ConfirmDialog } from "@/shared/components/Modal";
+import Toggle from "@/shared/components/Toggle";
 import {
+  CACHE_AFFINITY_STRATEGIES,
   roleLabel,
   explainWeightedShares,
   shareDetailText,
@@ -49,6 +51,7 @@ export default function ComboEditor({
   weights,
   judgeModel,
   hedgeDelayMs = "",
+  cacheAffinity = true,
   headroom,
   headroomQuotaSource,
   savedModels,
@@ -67,6 +70,7 @@ export default function ComboEditor({
   onWeightSave,
   onJudgeChange,
   onHedgeDelayChange,
+  onCacheAffinityChange,
   onModelsChange,
   activeProviders,
   modelAliases,
@@ -323,6 +327,16 @@ export default function ComboEditor({
         </div>
       )}
 
+      {CACHE_AFFINITY_STRATEGIES.includes(strategy) && (
+        <Toggle
+          className="max-w-xl"
+          checked={cacheAffinity !== false}
+          onChange={(next) => onCacheAffinityChange?.(next)}
+          label="Keep each conversation on one model"
+          description="Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. It switches only if that model fails. New conversations are still spread by the strategy."
+        />
+      )}
+
       {/* Route track */}
       <div className="flex flex-col">
         <p className="mb-3 text-xs font-semibold tracking-wider text-muted uppercase">The route</p>
@@ -511,6 +525,7 @@ ComboEditor.propTypes = {
   weights: PropTypes.object,
   judgeModel: PropTypes.string,
   hedgeDelayMs: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  cacheAffinity: PropTypes.bool,
   headroom: PropTypes.objectOf(PropTypes.number),
   headroomQuotaSource: PropTypes.objectOf(PropTypes.string),
   savedModels: PropTypes.arrayOf(PropTypes.string),
@@ -529,6 +544,7 @@ ComboEditor.propTypes = {
   onWeightSave: PropTypes.func,
   onJudgeChange: PropTypes.func,
   onHedgeDelayChange: PropTypes.func,
+  onCacheAffinityChange: PropTypes.func,
   onModelsChange: PropTypes.func,
   activeProviders: PropTypes.array,
   modelAliases: PropTypes.object,

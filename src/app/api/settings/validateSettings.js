@@ -209,6 +209,9 @@ function validAccountSettings(body) {
       ) {
         return false;
       }
+      if (Object.hasOwn(strategy, "cacheAffinity") && typeof strategy.cacheAffinity !== "boolean") {
+        return false;
+      }
     }
   }
   return true;
