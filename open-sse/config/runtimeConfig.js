@@ -45,6 +45,10 @@ function envMs(name, def) {
   return Number.isFinite(n) && n > 0 ? n : def;
 }
 
+// Conversation cache affinity (YAN-1211/1213): sliding TTL + LRU cap per pin store.
+export const CACHE_AFFINITY_TTL_MS = envMs("CACHE_AFFINITY_TTL_MS", 60 * 60 * 1000);
+export const CACHE_AFFINITY_MAX_PINS = envMs("CACHE_AFFINITY_MAX_PINS", 10000);
+
 function envUrl(name, def) {
   const raw = process.env[name]?.trim();
   return raw || def;

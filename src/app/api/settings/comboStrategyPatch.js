@@ -9,6 +9,7 @@ const PATCH_KEYS = new Set([
   "judgeModel",
   "fusionTuning",
   "hedgeDelayMs",
+  "cacheAffinity",
 ]);
 const MAX_ID_LENGTH = 128;
 

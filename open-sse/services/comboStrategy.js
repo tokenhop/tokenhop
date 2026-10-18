@@ -14,6 +14,9 @@ export const COMBO_STRATEGIES = Object.freeze([
   "fastest",
 ]);
 
+/** Combo strategies whose order changes per turn; cache affinity applies only to these. */
+export const CACHE_AFFINITY_STRATEGIES = Object.freeze(["round-robin", "weighted", "fastest"]);
+
 /** Max per-model weight accepted by the validator (protects WRR float precision). */
 export const MAX_COMBO_WEIGHT = 1000;
 
@@ -56,6 +59,7 @@ export function resolveComboStrategy(settings, comboName) {
     hedgeDelayMs: isHedgeDelay(entry.hedgeDelayMs)
       ? entry.hedgeDelayMs
       : COMBO_HEDGE_DELAY_DEFAULT_MS,
+    cacheAffinity: entry.cacheAffinity !== false,
   };
 }
 
@@ -92,6 +96,10 @@ export function validateComboStrategySettings(body) {
 
     if (entry.hedgeDelayMs !== undefined && !isHedgeDelay(entry.hedgeDelayMs)) {
       return `Invalid hedgeDelayMs for combo "${name}"`;
+    }
+
+    if (entry.cacheAffinity !== undefined && typeof entry.cacheAffinity !== "boolean") {
+      return `Invalid cacheAffinity for combo "${name}"`;
     }
 
     const weights = entry.weights;
