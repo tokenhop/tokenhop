@@ -195,7 +195,7 @@ export {
   trackPendingRequest,
   getLiveSnapshot,
 } from "./repos/usageLiveFeed.js";
-export { getUsageStats, getChartData } from "./repos/usageStatsRepo.js";
+export { getUsageStats, getChartData, getRollupUsageTotals } from "./repos/usageStatsRepo.js";
 export {
   saveRequestUsageUnscoped,
   getUsageHistory,

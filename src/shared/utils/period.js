@@ -13,10 +13,24 @@ export const PERIODS = [
   { value: "7d", label: "7d" },
   { value: "30d", label: "30d" },
   { value: "60d", label: "60d" },
+  { value: "90d", label: "90d" },
+  { value: "all", label: "All time" },
 ];
 
 /** Every valid period value, in ascending range order. */
 export const PERIOD_VALUES = PERIODS.map((p) => p.value);
+
+/**
+ * Periods whose data only lives in usageHistory (savings, Home summary): no
+ * rollup source exists, so 90d/all are not offered there.
+ */
+export const HISTORY_PERIOD_VALUES = ["today", "24h", "7d", "30d", "60d"];
+
+/**
+ * Periods served from usageRollup only (never usageHistory): usage stats,
+ * chart and compare totals for these must not scan history.
+ */
+export const ROLLUP_ONLY_PERIODS = ["90d", "all"];
 
 /** Safe-storage key for the remembered period. */
 export const PERIOD_STORAGE_KEY = "signal.period";
@@ -31,6 +45,24 @@ export const DEFAULT_PERIOD = "today";
  */
 export function isPeriod(value) {
   return PERIOD_VALUES.includes(value);
+}
+
+/**
+ * True when `value` is a period backed by usageHistory (see HISTORY_PERIOD_VALUES).
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function isHistoryPeriod(value) {
+  return HISTORY_PERIOD_VALUES.includes(value);
+}
+
+/**
+ * True when `value` is a rollup-only period (see ROLLUP_ONLY_PERIODS).
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function isRollupOnlyPeriod(value) {
+  return ROLLUP_ONLY_PERIODS.includes(value);
 }
 
 /**
@@ -79,8 +111,11 @@ export function periodOptions(allowed) {
   return PERIODS.filter((p) => allowed.includes(p.value));
 }
 
-/** Calendar-day length of each multi-day period. */
-export const PERIOD_DAYS = { "7d": 7, "30d": 30, "60d": 60 };
+/**
+ * Calendar-day length of each multi-day period. `all` is deliberately absent:
+ * it has no fixed length (callers treat a PERIOD_DAYS hit as "day-grain window").
+ */
+export const PERIOD_DAYS = { "7d": 7, "30d": 30, "60d": 60, "90d": 90 };
 
 /**
  * Inclusive start (ms) of `period` — the single window definition for every
@@ -89,7 +124,8 @@ export const PERIOD_DAYS = { "7d": 7, "30d": 30, "60d": 60 };
  * `today` is local midnight (server's local time on the server); `24h` is a
  * rolling now−24h window; `7d/30d/60d` are calendar windows starting at local
  * midnight of (today − (N−1)) so every bucket start is at or before the
- * corresponding API window start.
+ * corresponding API window start; `90d` is the same calendar window; `all` is
+ * the epoch (0).
  * @param {string} period
  * @param {number} [now]
  * @returns {number}
@@ -105,9 +141,12 @@ export function periodStart(period, now = Date.now()) {
     case "7d":
     case "30d":
     case "60d":
+    case "90d":
       // Calendar days (setDate), not 24h multiples, so DST shifts keep local midnight.
       midnight.setDate(midnight.getDate() - (PERIOD_DAYS[period] - 1));
       return midnight.getTime();
+    case "all":
+      return 0;
     default:
       throw new Error(`Unknown period: ${period}`);
   }
@@ -120,12 +159,13 @@ export function periodStart(period, now = Date.now()) {
  * `today` compares the same elapsed time slice of yesterday (midnight
  * shifted back one calendar day via setDate, so DST days stay at local
  * midnight); `24h` is the preceding rolling 24h; `7d/30d/60d` end at the
- * current start.
+ * current start. `all` has no previous window and yields null.
  * @param {string} period
  * @param {number} [now]
- * @returns {{start: number, end: number}}
+ * @returns {{start: number, end: number}|null}
  */
 export function previousPeriodRange(period, now = Date.now()) {
+  if (period === "all") return null;
   const currentStart = periodStart(period, now);
   if (period === "today") {
     const yesterday = new Date(currentStart);
@@ -145,6 +185,8 @@ export function previousPeriodRange(period, now = Date.now()) {
  * @returns {string|null}
  */
 export function smallestPeriodWithData(lastAt, allowed = PERIOD_VALUES, now = Date.now()) {
+  // new Date(null) is the epoch, which `all` (start 0) would now match.
+  if (lastAt == null) return null;
   const t = lastAt instanceof Date ? lastAt.getTime() : new Date(lastAt).getTime();
   if (Number.isNaN(t)) return null;
   for (const period of allowed) {
@@ -201,6 +243,8 @@ export const QUIET_COPY = {
   "7d": { title: "Quiet in the last 7d", actionLabel: "Show 7d" },
   "30d": { title: "Quiet in the last 30d", actionLabel: "Show 30d" },
   "60d": { title: "Quiet in the last 60d", actionLabel: "Show 60d" },
+  "90d": { title: "Quiet in the last 90d", actionLabel: "Show 90d" },
+  all: { title: "No requests in this view", actionLabel: "Show all time" },
   default: { title: "Quiet in this period" },
 };
 

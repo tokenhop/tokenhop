@@ -3,6 +3,7 @@
 import PropTypes from "prop-types";
 import { Button, Callout, Card, CountUp, EmptyState, Skeleton } from "@/shared/components";
 import PeriodControl from "@/shared/components/PeriodControl";
+import { HISTORY_PERIOD_VALUES, periodOptions } from "@/shared/utils/period";
 import { formatCompact, formatMoney } from "../home/format";
 import {
   SAVINGS_METHOD_LABELS,
@@ -17,14 +18,20 @@ import {
  * @param {object} props
  * @param {string|null} props.period
  * @param {(period: string) => void} props.onPeriodChange
+ * @param {Array<{value: string, label: string}>} [props.options] period choices from usePeriod
  */
-export function TokenSaverHeader({ period, onPeriodChange }) {
+export function TokenSaverHeader({
+  period,
+  onPeriodChange,
+  options = periodOptions(HISTORY_PERIOD_VALUES),
+}) {
   return (
     <div className="flex min-w-0 justify-end">
       <PeriodControl
         aria-label="Savings period"
         value={period}
         onChange={onPeriodChange}
+        options={options}
         className="w-full sm:w-auto"
       />
     </div>
@@ -34,6 +41,7 @@ export function TokenSaverHeader({ period, onPeriodChange }) {
 TokenSaverHeader.propTypes = {
   period: PropTypes.string,
   onPeriodChange: PropTypes.func.isRequired,
+  options: PropTypes.arrayOf(PropTypes.shape({ value: PropTypes.string, label: PropTypes.string })),
 };
 
 const SEGMENT_OPACITY = ["bg-on-lime/90", "bg-on-lime/55", "bg-on-lime/30"];

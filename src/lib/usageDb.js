@@ -7,6 +7,7 @@ export {
   getUsageHistory,
   getUsageStats,
   getChartData,
+  getRollupUsageTotals,
   getUsageSavings,
   getUsageTotals,
   getLastActivity,

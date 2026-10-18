@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getHomeSummary } from "@/lib/db/index.js";
-import { isPeriod } from "@/shared/utils/period";
+import { isHistoryPeriod } from "@/shared/utils/period";
 import { usageScope } from "@/lib/usage/scope.js";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // /api/* is deny-by-default protected by src/dashboardGuard.js (proxy middleware).
 export async function GET(request) {
   const period = new URL(request.url).searchParams.get("period") || "7d";
-  if (!isPeriod(period)) {
+  if (!isHistoryPeriod(period)) {
     return NextResponse.json({ error: "Invalid period" }, { status: 400 });
   }
   try {

@@ -5,7 +5,7 @@ import PropTypes from "prop-types";
 import CountUp from "@/shared/components/CountUp";
 import StatTile from "@/shared/components/StatTile";
 import { Skeleton } from "@/shared/components/Loading";
-import { bucketSeries, NO_PRIOR, PRIOR_LABELS, trendDelta } from "../lib/tileTrends";
+import { ALL_TIME_NOTE, bucketSeries, NO_PRIOR, PRIOR_LABELS, trendDelta } from "../lib/tileTrends";
 
 const fmt = (n) => new Intl.NumberFormat().format(Math.round(n) || 0);
 const trim = (n) => String(Math.round(n * 10) / 10);
@@ -50,6 +50,9 @@ const SPARKLINE_TONE = {
  * @returns {React.ReactNode}
  */
 function TrendLine({ current, previous, period }) {
+  if (period === "all") {
+    return <span className="text-muted">{ALL_TIME_NOTE.caption}</span>;
+  }
   const delta = trendDelta(current, previous);
   if (delta.kind === "none") {
     return <span className="text-muted">{NO_PRIOR.caption}</span>;

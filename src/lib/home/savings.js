@@ -1,10 +1,10 @@
-import { isPeriod, periodStart, previousPeriodRange } from "@/shared/utils/period";
+import { isHistoryPeriod, periodStart, previousPeriodRange } from "@/shared/utils/period";
 
 /**
  * Return [startMs, endMs] for a period, plus previous period range for delta math.
  */
 export function resolvePeriodRange(period, now = Date.now()) {
-  if (!isPeriod(period)) {
+  if (!isHistoryPeriod(period)) {
     throw new Error(`Invalid period: ${period}`);
   }
   const { start, end } = previousPeriodRange(period, now);

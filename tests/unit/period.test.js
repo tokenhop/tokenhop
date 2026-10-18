@@ -4,11 +4,13 @@ import { describe, expect, it } from "vitest";
 import {
   coercePeriod,
   formatRelativeFromNow,
+  isHistoryPeriod,
   isPeriod,
   loadStoredPeriod,
   PERIOD_STORAGE_KEY,
   periodOptions,
   periodStart,
+  previousPeriodRange,
   resolvePeriod,
   saveStoredPeriod,
   smallestPeriodWithData,
@@ -23,8 +25,17 @@ describe("period selection", () => {
   it("recognizes only known period values", () => {
     expect(isPeriod("today")).toBe(true);
     expect(isPeriod("60d")).toBe(true);
+    expect(isPeriod("90d")).toBe(true);
+    expect(isPeriod("all")).toBe(true);
     expect(isPeriod("7D")).toBe(false);
     expect(isPeriod(null)).toBe(false);
+  });
+
+  it("limits history-backed periods to today..60d", () => {
+    expect(["today", "24h", "7d", "30d", "60d"].every(isHistoryPeriod)).toBe(true);
+    expect(isHistoryPeriod("90d")).toBe(false);
+    expect(isHistoryPeriod("all")).toBe(false);
+    expect(coercePeriod("all", ["today", "24h", "7d", "30d", "60d"])).toBe("60d");
   });
 
   it("coerces to the next allowed rank or the largest allowed period", () => {
@@ -56,6 +67,12 @@ describe("period boundaries", () => {
     expect(periodStart("7d", now)).toBe(new Date(2026, 8, 23).getTime());
     expect(periodStart("30d", now)).toBe(new Date(2026, 7, 31).getTime());
     expect(periodStart("60d", now)).toBe(new Date(2026, 7, 1).getTime());
+    expect(periodStart("90d", now)).toBe(new Date(2026, 6, 2).getTime());
+    expect(periodStart("all", now)).toBe(0);
+  });
+
+  it("has no previous window for all", () => {
+    expect(previousPeriodRange("all", now)).toBeNull();
   });
 
   it("keeps local midnight across a DST change", () => {
@@ -78,7 +95,8 @@ describe("period boundaries", () => {
       [new Date(2026, 8, 27, 12), "7d"],
       [new Date(2026, 8, 9, 12), "30d"],
       [new Date(2026, 7, 15, 12), "60d"],
-      [new Date(2026, 5, 30, 12), null],
+      [new Date(2026, 6, 15, 12), "90d"],
+      [new Date(2026, 5, 30, 12), "all"],
       [new Date(2026, 8, 30, 12), "today"],
       ["not a timestamp", null],
     ];
@@ -86,6 +104,7 @@ describe("period boundaries", () => {
       expect(smallestPeriodWithData(lastAt, undefined, now)).toBe(expected);
     }
     expect(smallestPeriodWithData(new Date(2026, 8, 28, 23), SUBSET, now)).toBe("7d");
+    expect(smallestPeriodWithData(new Date(2026, 5, 30, 12), SUBSET, now)).toBeNull();
     expect(
       smallestPeriodWithData(
         new Date(2026, 8, 28, 22),
@@ -140,5 +159,7 @@ describe("relative time and storage", () => {
     expect(loadStoredPeriod(storage)).toBeNull();
     saveStoredPeriod("30d", storage);
     expect(loadStoredPeriod(storage)).toBe("30d");
+    saveStoredPeriod("all", storage);
+    expect(loadStoredPeriod(storage)).toBe("all");
   });
 });

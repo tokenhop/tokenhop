@@ -6,16 +6,19 @@
 import { createHash } from "node:crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson } from "../helpers/jsonCol.js";
-import { PERIOD_DAYS, periodStart } from "@/shared/utils/period";
+import { PERIOD_DAYS, isRollupOnlyPeriod, periodStart } from "@/shared/utils/period";
 import { readApiKeyStorageState } from "../apiKeyState.js";
 import { apiKeysHasKeyHash } from "../helpers/apiKeysSchema.js";
 import { lastErrorFor, pendingView } from "./usageLiveFeed.js";
+import { buildAllTimeBuckets } from "@/lib/usage/allTimeBuckets.js";
 import { rollupLatencySummary } from "../helpers/usageLatencyRollup.js";
 import {
   NO_KEY,
   cutoffDateKey,
   localDateKey,
   readRollup,
+  readRollupDaily,
+  readRollupTotals,
   readLatencyRollup,
   scopeSql,
   whereAll,
@@ -174,17 +177,18 @@ function latencySummary(samples) {
 
 /**
  * Avg/p50 latency and empty-result rate for LATENCY_ENDPOINTS (YAN-743).
- * Day periods use rollups (YAN-771, full window, coarse p50); shorter periods
- * and `all` keep the capped-history semantics.
- * ponytail: sub-day / all load up to LATENCY_SAMPLE_CAP rows; move them to
+ * Day periods and `all` use rollups (YAN-771, full window, coarse p50);
+ * sub-day periods keep the capped-history semantics.
+ * ponytail: sub-day periods load up to LATENCY_SAMPLE_CAP rows; move them to
  * finer rollups if full-window coverage is needed there too.
  */
 function addCompletionsLatency(stats, db, scope, period, ctx) {
-  if (PERIOD_DAYS[period]) {
+  if (PERIOD_DAYS[period] || period === "all") {
     const byKey = {};
     const byEndpoint = {};
+    const startKey = period === "all" ? null : cutoffDateKey(PERIOD_DAYS[period]);
     for (const endpoint of LATENCY_ENDPOINTS) {
-      const rows = readLatencyRollup(ctx, db, endpoint, cutoffDateKey(PERIOD_DAYS[period]));
+      const rows = readLatencyRollup(ctx, db, endpoint, startKey);
       if (!rows.length) continue;
       byEndpoint[endpoint] = rollupLatencySummary(rows);
       for (const r of rows) {
@@ -200,11 +204,8 @@ function addCompletionsLatency(stats, db, scope, period, ctx) {
     stats.endpointLatency = byEndpoint;
     return;
   }
-  // Same calendar window as the rollup/history rows above; "all" = no cutoff.
-  const cutoff =
-    period === "24h" || period === "today" || PERIOD_DAYS[period]
-      ? periodStart(period, Date.now())
-      : 0;
+  // Same window as the history rows above.
+  const cutoff = periodStart(period, Date.now());
   const rows = db.all(
     `SELECT endpoint, model, provider,
        CASE WHEN json_valid(meta) THEN json_extract(meta, '$.latencyMs') END AS ms,
@@ -353,32 +354,34 @@ export async function getUsageStats(ctx, period = "all") {
       maps,
       keyNames,
     );
-    // Overlay precise lastUsed timestamps. Day periods group in SQL so full
-    // windows don't load per-request rows; keep the legacy `all` read unchanged.
-    const cutoff = maxDays ? Date.now() - maxDays * 86400000 : 0;
-    const lastUsedSql = maxDays
-      ? `SELECT MAX(timestamp) AS timestamp, provider, model, connectionId, apiKeyId, endpoint
+    // Overlay precise lastUsed timestamps for 7d/30d/60d, grouped in SQL so
+    // full windows don't load per-request rows. 90d and all stay rollup-only
+    // (lastUsed = rollup dateKey) so they never scan usageHistory.
+    if (maxDays && !isRollupOnlyPeriod(period)) {
+      const lastUsedSql = `SELECT MAX(timestamp) AS timestamp, provider, model, connectionId, apiKeyId, endpoint
          FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?")}
-         GROUP BY provider, model, connectionId, apiKeyId, endpoint`
-      : `SELECT timestamp, provider, model, connectionId, apiKeyId, endpoint FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?")}`;
-    for (const e of db.all(lastUsedSql, [...scope.params, new Date(cutoff).toISOString()])) {
-      const model = e.model || "";
-      const provider = e.provider || "";
-      const keys = [
-        [stats.byModel, provider ? `${model} (${provider})` : model],
-        [
-          stats.byApiKey,
-          `${apiKeyIdentity(e.apiKeyId, keyNames).id}|${model}|${provider || "unknown"}`,
-        ],
-        [stats.byEndpoint, `${e.endpoint || "Unknown"}|${model}|${provider || "unknown"}`],
-      ];
-      if (e.connectionId) {
-        const name = maps.connections[e.connectionId] || `Account ${e.connectionId.slice(0, 8)}...`;
-        keys.push([stats.byAccount, `${model} (${provider} - ${name})`]);
-      }
-      for (const [bucket, key] of keys) {
-        if (bucket[key] && new Date(e.timestamp) > new Date(bucket[key].lastUsed))
-          bucket[key].lastUsed = e.timestamp;
+         GROUP BY provider, model, connectionId, apiKeyId, endpoint`;
+      const cutoff = Date.now() - maxDays * 86400000;
+      for (const e of db.all(lastUsedSql, [...scope.params, new Date(cutoff).toISOString()])) {
+        const model = e.model || "";
+        const provider = e.provider || "";
+        const keys = [
+          [stats.byModel, provider ? `${model} (${provider})` : model],
+          [
+            stats.byApiKey,
+            `${apiKeyIdentity(e.apiKeyId, keyNames).id}|${model}|${provider || "unknown"}`,
+          ],
+          [stats.byEndpoint, `${e.endpoint || "Unknown"}|${model}|${provider || "unknown"}`],
+        ];
+        if (e.connectionId) {
+          const name =
+            maps.connections[e.connectionId] || `Account ${e.connectionId.slice(0, 8)}...`;
+          keys.push([stats.byAccount, `${model} (${provider} - ${name})`]);
+        }
+        for (const [bucket, key] of keys) {
+          if (bucket[key] && new Date(e.timestamp) > new Date(bucket[key].lastUsed))
+            bucket[key].lastUsed = e.timestamp;
+        }
       }
     }
   }
@@ -431,9 +434,11 @@ export async function getChartData(ctx, period = "7d") {
     return buckets;
   }
 
+  if (period === "all") return buildAllTimeBuckets(readRollupDaily(ctx, db, null));
+
   const bucketCount = PERIOD_DAYS[period];
   const days = {};
-  for (const r of readRollup(ctx, db, cutoffDateKey(bucketCount))) {
+  for (const r of readRollupDaily(ctx, db, cutoffDateKey(bucketCount))) {
     days[r.dateKey] ||= { requests: 0, prompt: 0, cached: 0, output: 0, cost: 0 };
     const d = days[r.dateKey];
     d.requests += r.requests;
@@ -459,4 +464,25 @@ export async function getChartData(ctx, period = "7d") {
       requests: day ? day.requests : 0,
     };
   });
+}
+
+/**
+ * Compare totals for the rollup-only periods (90d, all), read from usageRollup
+ * so long windows never scan usageHistory (YAN-421). `90d`: current = the last
+ * 90 calendar days, previous = the 90 calendar days before them. `all`: the
+ * whole rollup and `previous: null` (no prior window). Other periods keep the
+ * usageHistory-based getUsageTotals.
+ * @returns {Promise<{currentTotals: object, previous: object|null}>}
+ */
+export async function getRollupUsageTotals(ctx, period) {
+  if (!isRollupOnlyPeriod(period)) {
+    throw new Error(`getRollupUsageTotals: unsupported period ${period}`);
+  }
+  const db = await getAdapter();
+  if (period === "all") return { currentTotals: readRollupTotals(ctx, db), previous: null };
+  const cutoff = cutoffDateKey(PERIOD_DAYS["90d"]);
+  return {
+    currentTotals: readRollupTotals(ctx, db, cutoff),
+    previous: readRollupTotals(ctx, db, cutoffDateKey(PERIOD_DAYS["90d"] * 2), cutoff),
+  };
 }
