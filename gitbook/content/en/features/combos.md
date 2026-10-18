@@ -526,6 +526,28 @@ Dashboard → Combos → Clone "premium-coding"
 
 **Use case**: Create variations for different scenarios.
 
+### Conversation Cache Affinity
+
+Providers cache the start of a prompt (system prompt, tools, earlier turns) and bill cached tokens at a lower price. The cache lives with one model, so if a combo sends turn 2 of a chat to a different model than turn 1, the cache is lost.
+
+With cache affinity, tokenhop remembers which combo model answered a conversation and sends that conversation's next turns to the same model.
+
+- **Strategies**: Round robin, Weighted and Fastest. Fallback and Fusion already keep a fixed order, so the setting does not apply to them.
+- **Default**: On for every combo. Turn it off per combo in **Dashboard → Combos → Edit** with the **Keep each conversation on one model** switch, then save.
+- **New conversations** are still spread by the strategy. Round robin and Weighted advance once per conversation, not once per request.
+- **On failure** the conversation moves to the model that answers instead, and stays there.
+- **Fastest**: a pinned conversation does not start a second model, even when a second model delay is set.
+- **Expiry**: a pin lasts 1 hour after the conversation's last request and is renewed on every turn. Set `CACHE_AFFINITY_TTL_MS` to change this. tokenhop keeps up to 10,000 pins and drops the least recently used first. Set `CACHE_AFFINITY_MAX_PINS` to change this.
+- **Saving a strategy** clears the combo's pins, so every conversation is routed fresh.
+
+How tokenhop recognises a conversation, in order:
+
+1. A session header: `x-session-id`, `session_id` or `x-claude-code-session-id`.
+2. The `prompt_cache_key` field in the request body.
+3. A hash of the system prompt and the first user message.
+
+Pins are kept in memory only and are separate for each workspace. A restart clears them.
+
 ---
 
 ## Troubleshooting
