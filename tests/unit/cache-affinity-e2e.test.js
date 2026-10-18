@@ -181,6 +181,27 @@ describe("conversation cache affinity end-to-end", () => {
     expect(servedModels()[0]).toBe(other);
   });
 
+  it("nested combo: a conversation stays on the same inner model across turns", async () => {
+    const stamp = unique();
+    const inner = `aff-in-${stamp}`;
+    const outer = `aff-out-${stamp}`;
+    await db.createComboUnscoped({
+      name: inner,
+      models: [`openai/ia-${stamp}`, `openai/ib-${stamp}`],
+    });
+    await db.createComboUnscoped({ name: outer, models: [inner, `openai/o-${stamp}`] });
+    await db.updateSettings({
+      comboStrategies: {
+        [inner]: { fallbackStrategy: "round-robin" },
+        [outer]: { fallbackStrategy: "round-robin" },
+      },
+    });
+    for (let i = 0; i < 4; i++) expect((await turn(outer, "s1")).status).toBe(200);
+    const served = servedModels();
+    expect(served).toHaveLength(4);
+    expect(new Set(served).size).toBe(1);
+  });
+
   it("cacheAffinity:false keeps today's per-turn rotation", async () => {
     const { combo } = await makeRoundRobinCombo({ cacheAffinity: false });
     for (let i = 0; i < 4; i++) await turn(combo, "s1");

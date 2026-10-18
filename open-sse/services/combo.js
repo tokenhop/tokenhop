@@ -627,6 +627,7 @@ function createAttemptFeedback(startedAt, record, parent) {
  * @param {string|null} [options.conversationKey] - Conversation-stable key (resolveConversationKey); null ⇒ no pins
  * @param {boolean} [options.cacheAffinity=false] - Pin each conversation to the member that served it
  *   (round-robin/weighted/fastest only; off for probes). Pinned: no strategy advance, no hedging.
+ * @param {Iterable<string>} [options.pinExclude] - Capacity-adapter-added members; never pinned
  * @param {Function} [options.onFallback] - Awaited before trying the next model: ({ model, status }) => void
  * @param {Function} [options.onAttempt] - Attempt observer: (attempt) => void. Fail-open: any throw is swallowed.
  *   Called after each step resolves (success, fallback-eligible failure, or non-fallback failure).
@@ -655,6 +656,7 @@ export async function handleComboChat({
   parentAttempt = null,
   conversationKey = null,
   cacheAffinity = false,
+  pinExclude = [],
 }) {
   // Cache affinity: a valid pin skips the strategy call entirely (no state advance).
   const affinityKey = comboAffinityKey({
@@ -667,7 +669,8 @@ export async function handleComboChat({
   const pin = validComboPin(affinityKey, models, { comboStrategy, comboWeights, headroomFn });
   const pinned = pin !== undefined;
   const repin = (model) => {
-    if (affinityKey) comboPins.set(affinityKey, model);
+    // Capacity-adapter members are never pinned (spec §2): the old pin stays.
+    if (affinityKey && !new Set(pinExclude).has(model)) comboPins.set(affinityKey, model);
   };
 
   // Apply rotation strategy if enabled

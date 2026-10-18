@@ -538,13 +538,17 @@ With cache affinity, tokenhop remembers which combo model answered a conversatio
 - **On failure** the conversation moves to the model that answers instead, and stays there.
 - **Fastest**: a pinned conversation does not start a second model, even when a second model delay is set.
 - **Expiry**: a pin lasts 1 hour after the conversation's last request and is renewed on every turn. Set `CACHE_AFFINITY_TTL_MS` to change this. tokenhop keeps up to 10,000 pins and drops the least recently used first. Set `CACHE_AFFINITY_MAX_PINS` to change this.
-- **Saving a strategy** clears the combo's pins, so every conversation is routed fresh.
+- **Saving a strategy** clears the combo's pins, so every conversation is routed fresh. Saving any routing settings clears pins too.
 
 How tokenhop recognises a conversation, in order:
 
-1. A session header: `x-session-id`, `session_id` or `x-claude-code-session-id`.
-2. The `prompt_cache_key` field in the request body.
-3. A hash of the system prompt and the first user message.
+1. A Claude Code session: the session in `metadata.user_id`, or the `x-claude-code-session-id` header.
+2. An Antigravity session id in the request body.
+3. A session header: `x-session-id`, `session-id`, `session_id` or `x-amp-thread-id`.
+4. A body field: `prompt_cache_key`, `session_id` or `conversation_id`.
+5. A hash of the leading system prompt and the first user message.
+
+If a client sends a constant session id, or identical prompts with no session id, all of those requests share one pin.
 
 Pins are kept in memory only and are separate for each workspace. A restart clears them.
 

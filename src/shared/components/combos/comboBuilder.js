@@ -303,7 +303,8 @@ export function comboSnapshot({
     // Absent, blank and 0 are all "off", so a server round-trip never reads as
     // an edit. An invalid draft stays raw so it still counts as unsaved.
     hedgeDelayMs: hedge.ok ? hedge.value : String(hedgeDelayMs),
-    cacheAffinity: cacheAffinity !== false,
+    // The toggle is hidden for other strategies; normalize so it never reads as an edit.
+    cacheAffinity: !CACHE_AFFINITY_STRATEGIES.includes(strategy) || cacheAffinity !== false,
   };
 }
 

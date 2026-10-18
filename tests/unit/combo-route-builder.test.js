@@ -387,4 +387,11 @@ describe("cache affinity (YAN-1211)", () => {
     expect(isDirty({ saved: snap(true), draft: snap(false) })).toBe(true);
     expect(isDirty({ saved: snap(false), draft: snap(true) })).toBe(true);
   });
+
+  it("comboSnapshot normalizes cacheAffinity to true for non-affinity strategies", () => {
+    const snap = (cacheAffinity) =>
+      comboSnapshot({ models: ["a"], strategy: "fallback", cacheAffinity });
+    expect(snap(false).cacheAffinity).toBe(true);
+    expect(isDirty({ saved: snap(true), draft: snap(false) })).toBe(false);
+  });
 });

@@ -59,6 +59,15 @@ describe("resolveConversationKey: prefix hash", () => {
     expect(resolveConversationKey({ body: turn1 })).toBe(resolveConversationKey({ body: turn3 }));
   });
 
+  it("a mid-conversation system message does not change the key", () => {
+    const withReminder = {
+      messages: [...turn3.messages.slice(0, 3), msg("system", "reminder"), turn3.messages[3]],
+    };
+    expect(resolveConversationKey({ body: withReminder })).toBe(
+      resolveConversationKey({ body: turn1 }),
+    );
+  });
+
   it("a different first user message gives a different key", () => {
     const other = { messages: [msg("system", "S"), msg("user", "something else")] };
     expect(resolveConversationKey({ body: other })).not.toBe(

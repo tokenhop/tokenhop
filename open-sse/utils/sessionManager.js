@@ -183,13 +183,19 @@ function contentText(content) {
 
 const isSystemRole = (role) => role === "system" || role === "developer";
 
-// System/instructions text across Claude, OpenAI, Responses and Gemini shapes
+// Leading system/instructions text across Claude, OpenAI, Responses and Gemini
+// shapes. Only the contiguous system/developer items at the start of the list
+// count, so a reminder injected mid-conversation never changes the key. Stops
+// accumulating once past the prefix cap.
 function systemText(body) {
   let text = contentText(body.system) + contentText(body.instructions);
   text += contentText(body.systemInstruction) + contentText(body.system_instruction);
   for (const list of [body.messages, body.input]) {
     if (!Array.isArray(list)) continue;
-    for (const item of list) if (isSystemRole(item?.role)) text += contentText(item.content);
+    for (const item of list) {
+      if (text.length >= CONVERSATION_PREFIX_CAP || !isSystemRole(item?.role)) break;
+      text += contentText(item.content);
+    }
   }
   return text;
 }
@@ -209,7 +215,7 @@ function firstUserText(body) {
  * Conversation-stable routing key for cache affinity. Pure: no store writes.
  * 1. Client session id (as extractClientSessionId, minus x-client-request-id and
  *    generic metadata.user_id) → "s:" + sha16(id)
- * 2. Else sha16 of system/instructions text + first user item text (≤ 8 KB) → "p:" + hash
+ * 2. Else sha16 of leading system/instructions text + first user item text (≤ 8 KB) → "p:" + hash
  * 3. Else null (no pinning). Never falls back to workspace, connection or random ids.
  * @param {{ headers?: object, body?: object }} opts headers: lowercase-key object
  * @returns {string|null}

@@ -6,6 +6,7 @@ import {
   recordComboLatency,
   resetComboRotation,
 } from "../../open-sse/services/combo.js";
+import { comboRotationKey } from "../../src/lib/comboKeys.js";
 import { comboPins } from "../../open-sse/services/cacheAffinity.js";
 
 const log = { info: () => {}, warn: () => {}, debug: () => {} };
@@ -116,6 +117,45 @@ describe("re-pin on failure", () => {
     expect(res.status).toBeGreaterThanOrEqual(500);
     failing.clear();
     expect(await turn(handle)).toBe("p/a");
+  });
+});
+
+describe("capacity-adapter members", () => {
+  it("an adapter-added member serving a turn never moves the pin", async () => {
+    const { handle, failing } = makeHandler();
+    const extra = { models: ["p/a", "p/b", "p/x"], pinExclude: ["p/x"] };
+    expect(await turn(handle, extra)).toBe("p/a");
+    failing.add("p/a");
+    failing.add("p/b");
+    expect(await turn(handle, extra)).toBe("p/x");
+    expect(comboPins.get("c\nconv1")).toBe("p/a");
+    failing.clear();
+    expect(await turn(handle, extra)).toBe("p/a");
+  });
+});
+
+describe("hedged rank2+ re-pin", () => {
+  it("pins the third member when both hedged members fail", async () => {
+    const { handle, failing } = makeHandler(new Set(["p/a", "p/b"]));
+    const res = await turn(handle, { comboStrategy: "fastest", hedgeDelayMs: 30 });
+    expect(res).toBe("p/c");
+    expect(failing.size).toBe(2);
+    expect(comboPins.get("c\nconv1")).toBe("p/c");
+  });
+});
+
+describe("workspace isolation", () => {
+  it("comboRotationKey-built names keep per-workspace pins independent", async () => {
+    const { handle, failing } = makeHandler();
+    const ws1 = comboRotationKey("w1", "c");
+    const ws2 = comboRotationKey("w2", "c");
+    expect(await turn(handle, { comboName: ws1 })).toBe("p/a");
+    expect(await turn(handle, { comboName: ws2 })).toBe("p/a");
+    failing.add("p/a");
+    expect(await turn(handle, { comboName: ws1 })).toBe("p/b");
+    failing.clear();
+    expect(comboPins.get(`${ws1}\nconv1`)).toBe("p/b");
+    expect(comboPins.get(`${ws2}\nconv1`)).toBe("p/a");
   });
 });
 
