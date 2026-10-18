@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/shared/components/Modal";
 import useAuthStatus from "@/shared/hooks/useAuthStatus";
 import { accountView } from "@/shared/utils/account";
 import { fetchIdentities, signOutEverywhere, unlinkIdentity } from "@/shared/utils/accountApi";
+import SessionsList from "./SessionsList";
 
 const PROVIDER_LABELS = { password: "Password", oidc: "OIDC", saml: "SAML" };
 
@@ -23,7 +24,7 @@ function formatDate(value) {
 }
 
 /** Linked sign-in identities: list, and unlink SSO ones (never the last way in). */
-function IdentitiesList() {
+function IdentitiesList({ onUnlinked }) {
   const [identities, setIdentities] = useState(null);
   const [error, setError] = useState("");
   const [target, setTarget] = useState(null);
@@ -50,6 +51,7 @@ function IdentitiesList() {
       await unlinkIdentity(target.id);
       setTarget(null);
       await load();
+      onUnlinked?.();
     } catch (err) {
       setUnlinkError(err.message || translate("Could not unlink this sign-in."));
     } finally {
@@ -130,6 +132,7 @@ export default function AccountSection() {
   const [confirmAll, setConfirmAll] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [sessionsKey, setSessionsKey] = useState(0);
 
   const signOutAll = async () => {
     setBusy(true);
@@ -189,19 +192,13 @@ export default function AccountSection() {
         <p className="mt-0.5 mb-2 text-[13px] text-muted">
           Single sign-on accounts linked to you. You can't unlink your last way to sign in.
         </p>
-        <IdentitiesList />
+        <IdentitiesList onUnlinked={() => setSessionsKey((k) => k + 1)} />
       </div>
 
       <div className="rounded-2xl border border-line bg-panel p-5 shadow-card divide-y divide-line">
-        <SettingRow
-          label="This session"
-          description={`Signed in with ${view.loginMethod}. Sign out ends this browser only.`}
-          control={
-            <Badge variant="ok" dot>
-              Active
-            </Badge>
-          }
-        />
+        <div className="pb-3">
+          <SessionsList loginMethod={view.loginMethod} reloadKey={sessionsKey} />
+        </div>
         <SettingRow
           label="Sign out everywhere"
           description="End every session on every browser and device, including this one."

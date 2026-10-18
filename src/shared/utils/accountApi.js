@@ -1,6 +1,7 @@
 /**
- * Client helpers for the account routes (YAN-371). Each throws
- * `Error(body.error)` with `.code` set on any non-2xx response.
+ * Client helpers for the account routes (YAN-371) and the device sessions
+ * routes (YAN-751). Each throws
+ * `Error(body.error)` with `.code` and `.status` set on any non-2xx response.
  */
 
 async function request(url, method, body) {
@@ -33,3 +34,9 @@ export const unlinkIdentity = (id) =>
 export const signOut = () => request("/api/auth/logout", "POST");
 
 export const signOutEverywhere = () => request("/api/auth/logout-all", "POST");
+
+export const fetchSessions = () => request("/api/me/sessions", "GET");
+
+/** @param {string} id */
+export const revokeSession = (id) =>
+  request(`/api/me/sessions/${encodeURIComponent(id)}`, "DELETE");
