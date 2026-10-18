@@ -15,7 +15,7 @@ import { readCredentialEncryptionState } from "../credentialEncryptionState.js";
 import { isCredentialMaintenancePoisoned } from "../credentialMaintenance.js";
 import { insertHashedApiKeySync } from "../repos/apiKeysRepo.js";
 import { adoptOwnerlessRowsUnscoped } from "../repos/ownership.js";
-import { invalidateSessionCache } from "../repos/sessionsRepo.js";
+import { invalidateSessionCache } from "./sessionCache.js";
 import {
   INSTANCE_SNAPSHOT_SECTION_NAMES,
   deleteInstanceTableSections,

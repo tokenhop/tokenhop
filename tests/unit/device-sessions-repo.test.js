@@ -172,6 +172,46 @@ describe("device sessions repo", () => {
     expect(rowOf(bSid)).toBeTruthy();
   });
 
+  it("evicts by least recent activity and never the row just inserted", async () => {
+    const base = Date.now() - 3 * 60 * MIN;
+    const sids = [];
+    for (let i = 0; i < 50; i++) {
+      sids.push(await mk(s.a, { createdAt: new Date(base + i * 1000).toISOString() }));
+    }
+    // The oldest-created row was seen most recently; the second-oldest never.
+    adapter.run(`UPDATE sessions SET lastSeenAt = ? WHERE id = ?`, [
+      new Date(Date.now() - MIN).toISOString(),
+      sids[0],
+    ]);
+    // A new row created long ago would sort first by createdAt: it must survive.
+    const fresh = await mk(s.a, { createdAt: new Date(base - DAY).toISOString() });
+
+    expect(rowOf(fresh)).toBeTruthy();
+    expect(rowOf(sids[0])).toBeTruthy();
+    expect(rowOf(sids[1])).toBeUndefined();
+    expect(
+      adapter.get(`SELECT COUNT(*) AS n FROM sessions WHERE userId = ?`, [s.a.user.id]).n,
+    ).toBe(50);
+  });
+
+  it("a new login deletes this user's revoked rows older than 1 hour only", async () => {
+    const oldRevoked = await mk(s.a);
+    const recentRevoked = await mk(s.a);
+    const otherUser = await mk(s.b);
+    for (const id of [oldRevoked, recentRevoked, otherUser]) {
+      adapter.run(`UPDATE sessions SET revokedAt = ? WHERE id = ?`, [
+        new Date(Date.now() - (id === recentRevoked ? 5 * MIN : 2 * 60 * MIN)).toISOString(),
+        id,
+      ]);
+    }
+
+    await mk(s.a);
+
+    expect(rowOf(oldRevoked)).toBeUndefined();
+    expect(rowOf(recentRevoked)).toBeTruthy();
+    expect(rowOf(otherUser)).toBeTruthy();
+  });
+
   it("replacesId deletes only a same-user row", async () => {
     const aSid = await mk(s.a);
 

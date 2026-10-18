@@ -65,7 +65,15 @@ export async function POST(request) {
     // write preferences, so the mint comes first.
     const minted = await mintSessionCookie(cookieStore, request, claims, { from: session });
     if (!minted) return json({ error: "Unauthorized" }, 401);
-    await updateUserPreferences(principal, { lastWorkspaceId: workspaceId });
+    try {
+      await updateUserPreferences(principal, { lastWorkspaceId: workspaceId });
+    } catch (error) {
+      // Don't leave the cookie switched when the preference write failed.
+      await mintSessionCookie(cookieStore, request, await remintClaims(session, session.wid), {
+        from: session,
+      });
+      throw error;
+    }
 
     const workspace = (await listWorkspaces(principal)).find((w) => w.id === workspaceId);
     return json({

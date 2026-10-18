@@ -2,42 +2,26 @@
 // JWT claim. Timestamps are ISO strings so string comparison orders correctly.
 import { getAdapter } from "../driver.js";
 import { TenancyError, assertCtx } from "@/lib/users/errors.js";
-import { SESSION_TTL_MS } from "./usersRepo.js";
+import {
+  SESSION_CACHE_TTL_MS,
+  dropSessionCache as dropCache,
+  invalidateSessionCache,
+  lastTouch,
+  sessionCache,
+  sessionCacheKey as cacheKey,
+} from "../helpers/sessionCache.js";
+
+export { invalidateSessionCache };
 
 const MAX_ACTIVE_PER_USER = 50;
 const TOUCH_WINDOW_MS = 5 * 60 * 1000;
 const CACHE_MAX = 5000;
-
-// On globalThis: Next bundles proxy handlers separately, each with its own
-// module copy; a revoke in a route must reach the guard's cache.
-// Hits only: a miss is never cached, so a just-created row is visible at once.
-globalThis.__tokenhopDeviceSessionCache ??= new Map();
-const sessionCache = globalThis.__tokenhopDeviceSessionCache;
-const lastTouch = new Map();
-
-const cacheKey = (id) => `sid:${id}`;
-
-function dropCache(...ids) {
-  for (const id of ids) {
-    if (typeof id !== "string") continue;
-    sessionCache.delete(cacheKey(id));
-    lastTouch.delete(id);
-  }
-}
-
-export function invalidateSessionCache(...ids) {
-  if (ids.length === 0) {
-    sessionCache.clear();
-    lastTouch.clear();
-    return;
-  }
-  dropCache(...ids);
-}
+const REVOKED_RETENTION_MS = 60 * 60 * 1000;
 
 /**
  * Insert a session row for a fresh login (or a legacy-token adoption). Runs in
  * one transaction: sweeps this user's expired rows, drops the row being
- * replaced, inserts, then evicts the oldest rows above the per-user cap.
+ * replaced, inserts, then evicts the least recently used rows above the per-user cap.
  * Insert errors propagate: the caller must fail the login.
  */
 export async function createSessionUnscoped({
@@ -56,6 +40,11 @@ export async function createSessionUnscoped({
   const dropped = [id];
   db.transaction(() => {
     db.run(`DELETE FROM sessions WHERE userId = ? AND expiresAt <= ?`, [userId, now]);
+    // Revoked rows stay visible briefly (cache/audit), then go.
+    db.run(`DELETE FROM sessions WHERE userId = ? AND revokedAt IS NOT NULL AND revokedAt < ?`, [
+      userId,
+      new Date(Date.now() - REVOKED_RETENTION_MS).toISOString(),
+    ]);
     if (typeof replacesId === "string" && replacesId) {
       db.run(`DELETE FROM sessions WHERE id = ? AND userId = ?`, [replacesId, userId]);
       dropped.push(replacesId);
@@ -66,11 +55,12 @@ export async function createSessionUnscoped({
       [id, userId, sv, amr, userAgent, ip, createdAt ?? now, expiresAt],
     );
     const active = db.all(
-      `SELECT id FROM sessions WHERE userId = ? AND revokedAt IS NULL AND expiresAt > ?
-       ORDER BY createdAt ASC, rowid ASC`,
-      [userId, now],
+      `SELECT id FROM sessions WHERE userId = ? AND revokedAt IS NULL AND expiresAt > ? AND id != ?
+       ORDER BY COALESCE(lastSeenAt, createdAt) ASC, rowid ASC`,
+      [userId, now, id],
     );
-    const excess = active.length - MAX_ACTIVE_PER_USER;
+    // The just-inserted row counts toward the cap but is never evicted.
+    const excess = active.length + 1 - MAX_ACTIVE_PER_USER;
     for (let i = 0; i < excess; i++) {
       db.run(`DELETE FROM sessions WHERE id = ? AND userId = ?`, [active[i].id, userId]);
       dropped.push(active[i].id);
@@ -83,7 +73,7 @@ export async function getSessionForValidationUnscoped(id) {
   if (typeof id !== "string" || !id) return null;
   const key = cacheKey(id);
   const hit = sessionCache.get(key);
-  if (hit && Date.now() - hit.at < SESSION_TTL_MS) return hit.value;
+  if (hit && Date.now() - hit.at < SESSION_CACHE_TTL_MS) return hit.value;
   const db = await getAdapter();
   const row = db.get(`SELECT id, userId, sv, expiresAt, revokedAt FROM sessions WHERE id = ?`, [
     id,

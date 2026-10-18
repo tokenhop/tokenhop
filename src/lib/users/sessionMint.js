@@ -43,6 +43,11 @@ export async function mintSessionCookie(cookieStore, request, claims, { from } =
   }
 
   if (typeof from?.sid === "string" && from.sid) {
+    // A sid-bound token without a valid exp must never get a fresh lifetime.
+    if (fromExp === undefined) {
+      clearDashboardAuthCookie(cookieStore);
+      return false;
+    }
     if (!(await rebindSessionUnscoped(from.sid, claims.sub, claims.sv))) {
       clearDashboardAuthCookie(cookieStore);
       return false;

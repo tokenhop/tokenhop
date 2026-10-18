@@ -8,7 +8,7 @@ const SESSION_PRUNE_MS = 24 * 60 * 60 * 1000;
 async function pruneSessions() {
   try {
     const { isUserSecurityEnforced } = await import("@/lib/users/securityState.js");
-    // Multi-user switch off: zero queries.
+    // Multi-user switch off: no `sessions` query runs (the switch check itself reads settings).
     if (!(await isUserSecurityEnforced())) return;
     const { pruneExpiredSessionsUnscoped } = await import("@/lib/db/index.js");
     await pruneExpiredSessionsUnscoped(new Date().toISOString());

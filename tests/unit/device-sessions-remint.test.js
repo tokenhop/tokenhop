@@ -147,6 +147,23 @@ describe("YAN-751 re-mint keeps sid and exp", () => {
     expect((await jwt.getDashboardAuthSession(authToken())).wid).toBe(t.shared.id);
   });
 
+  it("workspace switch: a failed preference write re-mints the original wid", async () => {
+    const session = await signIn(t.a);
+    adapter.run(`ALTER TABLE userPreferences RENAME TO userPreferencesBroken`);
+    let res;
+    try {
+      res = await workspacePOST(post("/api/me/workspace", { workspaceId: t.shared.id }));
+    } finally {
+      adapter.run(`ALTER TABLE userPreferencesBroken RENAME TO userPreferences`);
+    }
+    expect(res.status).toBe(500);
+    const claims = await jwt.getDashboardAuthSession(authToken());
+    expect(claims.wid).toBe(t.a.personal);
+    expect(claims.sid).toBe(session.sid);
+    expect(claims.exp).toBe(session.exp);
+    expect(await s.isLiveSession(authToken())).toBe(true);
+  });
+
   it("identity unlink: same sid, same exp, row rebound to the bumped sv", async () => {
     const ida = await db.linkIdentityUnscoped(t.a.user.id, {
       provider: "oidc",
