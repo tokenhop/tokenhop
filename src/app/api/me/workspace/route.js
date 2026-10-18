@@ -58,6 +58,12 @@ export async function POST(request) {
     // claims copied from the allow-list; exp is never copied or extended.
     const claims = await remintClaims(session, workspaceId);
     if (!claims?.sub) return json({ error: "Unauthorized" }, 401);
+    // The sv was checked once, at the start: a sign-out-everywhere landing
+    // since then must end this session, never rebind it to the new sv.
+    if (claims.sv !== session.sv) {
+      clearDashboardAuthCookie(cookieStore);
+      return json({ error: "Unauthorized" }, 401);
+    }
     // Membership can vanish between the check above and the re-mint
     // (principalFor then falls back to personal): report what was minted.
     if (claims.wid !== workspaceId) return json({ error: "Workspace not found" }, 404);
