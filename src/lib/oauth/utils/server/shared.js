@@ -159,7 +159,7 @@ export function waitForCallback(timeoutMs = 300000) {
   });
 }
 
-export function escapeHtml(str) {
+function escapeHtml(str) {
   return String(str)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

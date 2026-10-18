@@ -68,10 +68,6 @@ function renderXiaomiMimoResultPage(success, message) {
 </html>`;
 }
 
-/**
- * Start the Xiaomi Desktop OAuth callback proxy.
- * @returns {Promise<{success: boolean, port?: number, callbackUrl?: string, reason?: string}>}
- */
 function armXiaomiMimoProxyTimeout() {
   if (xiaomiMimoProxyTimeout) clearTimeout(xiaomiMimoProxyTimeout);
   xiaomiMimoProxyTimeout = setTimeout(() => {
@@ -80,6 +76,10 @@ function armXiaomiMimoProxyTimeout() {
   }, XIAOMI_MIMO_PROXY_TIMEOUT_MS);
 }
 
+/**
+ * Start the Xiaomi Desktop OAuth callback proxy.
+ * @returns {Promise<{success: boolean, port?: number, callbackUrl?: string, reason?: string}>}
+ */
 export function startXiaomiMimoProxy() {
   return new Promise((resolve) => {
     if (xiaomiMimoProxyServer) {
