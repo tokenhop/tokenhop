@@ -22,12 +22,13 @@ const row = (dateKey, over = {}) => ({
 });
 
 describe("buildAllTimeBuckets", () => {
-  const today = new Date(2026, 8, 30, 12); // Wed 2026-09-30
+  let today; // Wed 2026-09-30, built after the TZ pin
   let prevTz;
   // Pin a DST zone so the DST case is not vacuous on UTC CI (Node re-reads TZ at runtime).
   beforeAll(() => {
     prevTz = process.env.TZ;
     process.env.TZ = "America/New_York";
+    today = new Date(2026, 8, 30, 12);
   });
   afterAll(() => {
     if (prevTz === undefined) delete process.env.TZ;
@@ -124,13 +125,29 @@ describe("buildAllTimeBuckets", () => {
     expect(yearly.at(-1).requests).toBe(1);
   });
 
+  it("never throws when every row is future-dated or malformed", () => {
+    const sunday = new Date(2026, 8, 27, 12);
+    const future = buildAllTimeBuckets([row("2026-09-28")], sunday);
+    expect(future.map((b) => b.label)).toEqual(["Sep 21"]);
+    expect(future[0].requests).toBe(1);
+    const bad = buildAllTimeBuckets([row("garbage")], today);
+    expect(bad).toHaveLength(1);
+    expect(bad[0].requests).toBe(1);
+  });
+
   it("is DST-safe: every week boundary lands on a distinct Monday", () => {
     // Spans both US DST transitions.
-    const out = buildAllTimeBuckets([row("2026-01-05")], new Date(2026, 10, 20, 12));
+    const out = buildAllTimeBuckets(
+      [row("2026-01-05"), row("2026-03-09"), row("2026-11-16")],
+      new Date(2026, 10, 20, 12),
+    );
     const labels = out.map((b) => b.label);
     expect(new Set(labels).size).toBe(labels.length);
     expect(labels[0]).toBe("Jan 5");
     expect(out).toHaveLength(46);
+    for (const label of labels) expect(new Date(`${label}, 2026`).getDay()).toBe(1);
+    expect(out.find((b) => b.label === "Mar 9").requests).toBe(1);
+    expect(out.find((b) => b.label === "Nov 16").requests).toBe(1);
   });
 });
 

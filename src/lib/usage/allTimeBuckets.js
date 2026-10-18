@@ -46,9 +46,11 @@ export function buildAllTimeBuckets(rows, today = new Date()) {
       emptyBucket(currentWeek.toLocaleDateString("en-US", { month: "short", day: "numeric" })),
     ];
   }
-  const first = parseDateKey(
+  const minDay = parseDateKey(
     valid.reduce((m, r) => (r.dateKey < m ? r.dateKey : m), valid[0].dateKey),
   );
+  // Future-only (clock skew) or malformed keys start the series today, so it is never empty.
+  const first = Number.isNaN(minDay.getTime()) || minDay > today ? today : minDay;
   const firstWeek = weekStart(first);
   const weeks = Math.round((currentWeek - firstWeek) / (7 * 86400000)) + 1;
   const months =
