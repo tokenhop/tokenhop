@@ -5,11 +5,8 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { isUserSecurityEnforced } from "@/lib/users/securityState.js";
 import { isLiveSession, passwordSessionClaims } from "@/lib/users/session";
-import {
-  clearDashboardAuthCookie,
-  getDashboardAuthSession,
-  setDashboardAuthCookie,
-} from "@/lib/auth/dashboardSession";
+import { mintSessionCookie } from "@/lib/users/sessionMint.js";
+import { clearDashboardAuthCookie, getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import {
   PASSWORD_CHANGE_COOKIE,
   clearPasswordChangeCookie,
@@ -57,15 +54,15 @@ function validBody(body) {
   );
 }
 
-/** `{ userId, restricted, wid }` from the cookies, or null. */
+/** `{ userId, restricted, wid, session }` from the cookies, or null. */
 async function resolveSubject(cookieStore) {
   const challenge = await getPasswordChangeUser(cookieStore.get(PASSWORD_CHANGE_COOKIE)?.value);
   const token = cookieStore.get("auth_token")?.value;
   const full = token && (await isLiveSession(token)) ? await getDashboardAuthSession(token) : null;
   const fullSub = typeof full?.sub === "string" && full.sub ? full.sub : null;
   if (challenge && fullSub && fullSub !== challenge.id) return null; // two different users
-  if (challenge) return { userId: challenge.id, restricted: true, wid: null };
-  if (fullSub) return { userId: fullSub, restricted: false, wid: full.wid ?? null };
+  if (challenge) return { userId: challenge.id, restricted: true, wid: null, session: null };
+  if (fullSub) return { userId: fullSub, restricted: false, wid: full.wid ?? null, session: full };
   return null;
 }
 
@@ -141,7 +138,12 @@ export async function POST(request) {
     // Fresh claims from the post-commit row: never reuse the old token's sv.
     const claims = await passwordSessionClaims(user.id, subject.wid);
     if (!claims?.sub) return expired(cookieStore);
-    await setDashboardAuthCookie(cookieStore, request, claims);
+    // Full session: keep its sid and original exp (D3). Restricted forced
+    // change: fresh session row (D7).
+    const minted = subject.session
+      ? await mintSessionCookie(cookieStore, request, claims, { from: subject.session })
+      : await mintSessionCookie(cookieStore, request, claims);
+    if (!minted) return expired(cookieStore);
     clearPasswordChangeCookie(cookieStore);
     // YAN-362: the user's effective startPage (instance ⊕ user preference);
     // switch off returns the instance blob, unchanged.

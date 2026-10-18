@@ -12,7 +12,7 @@ import {
   pickOidcEmail,
   verifyOidcIdToken,
 } from "@/lib/auth/oidc";
-import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { mintSessionCookie } from "@/lib/users/sessionMint";
 import { handleSsoProofCallback } from "@/lib/users/ssoPreview.js";
 import {
   OWNER_TRANSFER_COOKIE,
@@ -309,7 +309,7 @@ export async function GET(request) {
         new URL("/login?error=sso_not_linked", getPublicOrigin(request)),
       );
     }
-    await setDashboardAuthCookie(cookieStore, request, {
+    await mintSessionCookie(cookieStore, request, {
       ...claims,
       oidc: true,
       oidcSub: payload.sub || null,

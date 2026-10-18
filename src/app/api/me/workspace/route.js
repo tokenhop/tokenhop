@@ -8,7 +8,8 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { requireMultiUser } from "@/lib/users/featureSwitch.js";
 import { getPrincipal, remintClaims } from "@/lib/users/session.js";
-import { getDashboardAuthSession, setDashboardAuthCookie } from "@/lib/auth/dashboardSession.js";
+import { mintSessionCookie } from "@/lib/users/sessionMint.js";
+import { getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
 import { listWorkspaces, updateUserPreferences } from "@/lib/db/index.js";
 import { isCrossSite, isJson } from "@/lib/auth/sameOrigin.js";
 import { isPlainObject } from "@/app/api/settings/validateSettings.js";
@@ -60,9 +61,11 @@ export async function POST(request) {
     // Membership can vanish between the check above and the re-mint
     // (principalFor then falls back to personal): report what was minted.
     if (claims.wid !== workspaceId) return json({ error: "Workspace not found" }, 404);
-    // Persist first: a failed write must not leave the cookie switched.
+    // A revoked session fails the mint (cookie already cleared) and must not
+    // write preferences, so the mint comes first.
+    const minted = await mintSessionCookie(cookieStore, request, claims, { from: session });
+    if (!minted) return json({ error: "Unauthorized" }, 401);
     await updateUserPreferences(principal, { lastWorkspaceId: workspaceId });
-    await setDashboardAuthCookie(cookieStore, request, claims, { exp: session.exp });
 
     const workspace = (await listWorkspaces(principal)).find((w) => w.id === workspaceId);
     return json({
