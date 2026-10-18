@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
+  setDashboardAuthCookie: vi.fn(),
   cookieStore: { get: vi.fn(), set: vi.fn(), delete: vi.fn() },
 }));
 
@@ -14,8 +15,12 @@ vi.mock("next/server", () => ({
 vi.mock("next/headers", () => ({ cookies: async () => mocks.cookieStore }));
 vi.mock("@/lib/localDb", () => ({ getSettings: mocks.getSettings }));
 vi.mock("@/lib/auth/dashboardSession", () => ({
-  setDashboardAuthCookie: vi.fn(),
+  setDashboardAuthCookie: mocks.setDashboardAuthCookie,
   shouldUseSecureCookie: () => false,
+}));
+vi.mock("@/lib/users/sessionMint", () => ({
+  mintSessionCookie: (cookieStore, request, claims) =>
+    mocks.setDashboardAuthCookie(cookieStore, request, claims),
 }));
 vi.mock("@/lib/auth/loginLimiter", () => ({
   checkLock: () => ({ locked: false }),

@@ -39,6 +39,12 @@ vi.mock("@/lib/users/session", () => ({ sessionClaims: mocks.sessionClaims }));
 vi.mock("@/lib/auth/dashboardSession", () => ({
   setDashboardAuthCookie: mocks.setDashboardAuthCookie,
 }));
+// The mint choke point is mocked: these suites use synthetic subs (no DB users),
+// so a real session-row insert would hit the FK. Forward to the hoisted mock so
+// assertions on the claims keep working.
+vi.mock("@/lib/users/sessionMint", () => ({
+  mintSessionCookie: mocks.setDashboardAuthCookie,
+}));
 
 const { GET } = await import("@/app/api/auth/oidc/callback/route.js");
 

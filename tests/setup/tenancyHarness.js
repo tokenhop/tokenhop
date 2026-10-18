@@ -4,7 +4,7 @@
 // gateway key. Usage: tests/README.md "Tenancy isolation tests".
 import { NextRequest } from "next/server";
 
-const TENANCY_TABLES = ["memberships", "identities", "workspaces", "users"];
+const TENANCY_TABLES = ["memberships", "identities", "workspaces", "sessions", "users"];
 
 /** Principal (`@/lib/users/principal.js`) for a seeded user. */
 function principal(user, workspaceIds) {

@@ -159,6 +159,8 @@ const YAN360_SESSION_ONLY_ROUTES = new Set([
   "/api/me/workspace",
   "/api/me/identities",
   "/api/me/identities/[id]",
+  "/api/me/sessions",
+  "/api/me/sessions/[id]",
 ]);
 // YAN-371 account routes are alwaysProtected too (like the password routes):
 // single-user mode never satisfies them, only a full browser session.
@@ -166,6 +168,8 @@ const YAN371_ACCOUNT_ROUTES = new Set([
   "/api/me/workspace",
   "/api/me/identities",
   "/api/me/identities/[id]",
+  "/api/me/sessions",
+  "/api/me/sessions/[id]",
 ]);
 // YAN-372 user-level budgets: instance admin only, alwaysProtected.
 const YAN372_USER_BUDGET_ROUTES = new Set([

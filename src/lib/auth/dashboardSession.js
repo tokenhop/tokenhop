@@ -7,7 +7,7 @@ import { DATA_DIR } from "@/lib/dataDir";
 import { getLegacyPasswordHash, getSettings } from "@/lib/db/index.js";
 
 const DEFAULT_PASSWORD = "123456";
-const SESSION_MAX_AGE_SEC = 24 * 60 * 60;
+export const SESSION_MAX_AGE_SEC = 24 * 60 * 60;
 
 function loadJwtSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;

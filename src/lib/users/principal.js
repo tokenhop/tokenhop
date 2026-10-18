@@ -10,6 +10,7 @@
  * @property {string[]} workspaceIds Workspaces the user belongs to.
  * @property {Record<string, WorkspaceRole>} [workspaceRoles] Membership role per workspace id.
  * @property {string|null} activeWorkspaceId
+ * @property {string} [sessionId] Backing `sessions` row id of the cookie (YAN-751).
  * @property {string} [apiKeyId] Set when the request came in with a gateway key.
  * @property {"session"|"apiKey"|"cli"|"local"} via
  */

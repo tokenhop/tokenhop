@@ -15,7 +15,11 @@ export const ACCOUNT_SECTION = {
     { key: "profile", label: "Profile", keywords: "name email role" },
     { key: "password", label: "Password", keywords: "change password" },
     { key: "identities", label: "Linked sign-ins", keywords: "sso oidc saml unlink identity" },
-    { key: "sessions", label: "Sign out everywhere", keywords: "sessions devices logout" },
+    {
+      key: "sessions",
+      label: "Sessions",
+      keywords: "sessions devices browsers logout revoke sign out everywhere",
+    },
     { key: "apiKeys", label: "API keys", keywords: "keys gateway" },
   ],
 };

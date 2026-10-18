@@ -387,6 +387,24 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_budgets_ws ON budgets(workspaceId)",
     ],
   },
+  // YAN-751: one row per signed-in device, keyed by the non-secret `sid` JWT
+  // claim. userAgent/ip hold derived labels only (never the raw UA or full IP).
+  // Soft revoke (revokedAt) stays as a tombstone until expiresAt.
+  sessions: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      userId: "TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE",
+      sv: "INTEGER NOT NULL",
+      amr: "TEXT",
+      userAgent: "TEXT",
+      ip: "TEXT",
+      createdAt: "TEXT NOT NULL",
+      lastSeenAt: "TEXT",
+      expiresAt: "TEXT NOT NULL",
+      revokedAt: "TEXT",
+    },
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_sessions_user_exp ON sessions(userId, expiresAt)"],
+  },
 };
 
 // YAN-363: the final hashed apiKeys shape, INERT here. Nothing reads it at

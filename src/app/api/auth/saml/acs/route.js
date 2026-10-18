@@ -13,7 +13,7 @@ import {
   validateSamlResponse,
   verifyFreshSamlAuthnInstant,
 } from "@/lib/auth/saml.js";
-import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { mintSessionCookie } from "@/lib/users/sessionMint";
 import { handleSsoProofCallback } from "@/lib/users/ssoPreview.js";
 import {
   OWNER_TRANSFER_COOKIE,
@@ -229,7 +229,7 @@ export async function POST(request) {
     }
     if (!enforced) recordSuccess(ip);
 
-    await setDashboardAuthCookie(cookieStore, request, {
+    await mintSessionCookie(cookieStore, request, {
       ...claims,
       saml: true,
       samlEmail,

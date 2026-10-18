@@ -53,6 +53,7 @@ vi.mock("@/lib/auth/dashboardSession", () => ({
   setDashboardAuthCookie: mocks.setDashboardAuthCookie,
   deriveSecretKey: (p) => createHmac("sha256", "test-key").update(`tokenhop:${p}`).digest(),
 }));
+vi.mock("@/lib/users/sessionMint", () => ({ mintSessionCookie: mocks.setDashboardAuthCookie }));
 
 const { POST } = await import("@/app/api/auth/saml/acs/route.js");
 const { sealOwnerTransferState, OWNER_TRANSFER_COOKIE } = await import(

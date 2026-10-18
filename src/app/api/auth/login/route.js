@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/localDb";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
-import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { mintSessionCookie } from "@/lib/users/sessionMint";
 import { resolveStartPage } from "@/lib/settingsFlags";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
@@ -246,7 +246,7 @@ async function handleEstablishedLogin(request, settings, ip, login, password) {
     );
   }
   const cookieStore = await cookies();
-  await setDashboardAuthCookie(cookieStore, request, claims);
+  await mintSessionCookie(cookieStore, request, claims);
   clearPasswordChangeCookie(cookieStore);
   audit(
     { principal: { userId: user.id, via: "session" }, ip },
@@ -386,7 +386,7 @@ export async function POST(request) {
       }
 
       const cookieStore = await cookies();
-      await setDashboardAuthCookie(cookieStore, request, await sessionClaims("pwd"));
+      await mintSessionCookie(cookieStore, request, await sessionClaims("pwd"));
       audit({ ip }, "auth.login", { type: "user" }, { after: { provider: "password" } });
 
       return NextResponse.json(

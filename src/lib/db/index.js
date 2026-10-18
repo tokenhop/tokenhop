@@ -247,6 +247,17 @@ export {
   linkIdentityUnscoped,
 } from "./repos/identitiesRepo.js";
 export {
+  createSessionUnscoped,
+  getSessionForValidationUnscoped,
+  touchSessionUnscoped,
+  rebindSessionUnscoped,
+  listSessions,
+  revokeSession,
+  revokeSessionUnscoped,
+  pruneExpiredSessionsUnscoped,
+  invalidateSessionCache,
+} from "./repos/sessionsRepo.js"; // YAN-751
+export {
   listWorkspaces,
   getWorkspace,
   listWorkspacesUnscoped,

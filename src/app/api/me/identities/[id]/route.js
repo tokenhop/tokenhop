@@ -5,7 +5,8 @@
 import { cookies } from "next/headers";
 import { requireMultiUser } from "@/lib/users/featureSwitch.js";
 import { getPrincipal, remintClaims } from "@/lib/users/session.js";
-import { getDashboardAuthSession, setDashboardAuthCookie } from "@/lib/auth/dashboardSession.js";
+import { mintSessionCookie } from "@/lib/users/sessionMint.js";
+import { getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
 import { isCrossSite } from "@/lib/auth/sameOrigin.js";
 import { bumpSessionVersion, unlinkSsoIdentityGuarded } from "@/lib/db/index.js";
 import { audit } from "@/lib/users/audit.js";
@@ -55,7 +56,8 @@ export async function DELETE(request, { params }) {
     await bumpSessionVersion(principal.userId);
     const claims = await remintClaims(session, session.wid, { dropProvider: provider });
     if (claims?.sub) {
-      await setDashboardAuthCookie(cookieStore, request, claims, { exp: session.exp });
+      // The unlink already committed: a revoked session just ends with a cleared cookie.
+      await mintSessionCookie(cookieStore, request, claims, { from: session });
     }
     await audit({ principal, request }, "identity.unlink", { type: "identity", id });
     return json({ success: true });

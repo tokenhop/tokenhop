@@ -6,11 +6,7 @@
 // YAN-356: lazy owner bootstrap on the multi-user paths, sessionClaims(method,
 // identity) for SSO owner linking, singleUserMode + owner password hash sync.
 import { cookies, headers } from "next/headers";
-import {
-  getDashboardAuthSession,
-  setDashboardAuthCookie,
-  verifyDashboardAuthToken,
-} from "@/lib/auth/dashboardSession";
+import { getDashboardAuthSession, verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { cliTokenAcceptedWith } from "@/lib/auth/cliTokenPolicy.js";
 import {
   bumpSessionVersion,
@@ -18,16 +14,19 @@ import {
   findIdentityUnscoped,
   getMeta,
   getOwnerUnscoped,
+  getSessionForValidationUnscoped,
   getSessionUserUnscoped,
   getSettings,
   getUserUnscoped,
   listWorkspaces,
+  touchSessionUnscoped,
   updateUserUnscoped,
 } from "@/lib/db/index.js";
 import { NextResponse } from "next/server";
 import { isUserSecurityEnforced } from "./securityState.js";
 import { ensureOwnerBootstrap } from "./bootstrap.js";
 import { can } from "./principal.js";
+import { mintSessionCookie } from "./sessionMint.js";
 import { audit } from "./audit.js";
 import { getUserPreferences } from "@/lib/db/index.js";
 
@@ -117,6 +116,20 @@ async function validateSessionToken(token) {
   if (user?.status !== "active" || user.sessionVersion !== payload.sv) return null;
   // YAN-358: no full session for an unapproved user or a pending rotation.
   if (user.instanceRole === "pending" || user.mustChangePassword) return null;
+  // YAN-751: a token with a `sid` claim is bound to a revocable sessions row.
+  // Sid-less tokens are untouched; a non-string, unknown or foreign sid fails closed.
+  if (Object.hasOwn(payload, "sid")) {
+    const row =
+      typeof payload.sid === "string" ? await getSessionForValidationUnscoped(payload.sid) : null;
+    if (
+      !row ||
+      row.userId !== user.id ||
+      row.revokedAt ||
+      row.expiresAt <= new Date().toISOString()
+    )
+      return null;
+    void touchSessionUnscoped(payload.sid).catch(() => {});
+  }
   return { user, payload };
 }
 
@@ -154,7 +167,7 @@ export async function cliTokenAccepted(request) {
 }
 
 /** @returns {Promise<Principal|null>} */
-async function principalFor(user, via, wid) {
+async function principalFor(user, via, wid, sid) {
   if (!user) return null;
   const workspaces = await listWorkspaces({ userId: user.id });
   const workspaceIds = workspaces.map((w) => w.id);
@@ -166,6 +179,7 @@ async function principalFor(user, via, wid) {
     workspaceRoles: Object.fromEntries(workspaces.map((w) => [w.id, w.role])),
     activeWorkspaceId: workspaceIds.includes(wid) ? wid : personal,
     via,
+    ...(sid ? { sessionId: sid } : {}),
   };
 }
 
@@ -192,7 +206,8 @@ async function resolvePrincipalOrThrow(request) {
   const token = request.cookies.get(AUTH_COOKIE)?.value;
   if (token) {
     const session = await validateSessionToken(token);
-    if (session?.user) return principalFor(session.user, "session", session.payload.wid);
+    if (session?.user)
+      return principalFor(session.user, "session", session.payload.wid, session.payload.sid);
     if (session?.legacy) return principalFor(await getOwnerUnscoped(), "session");
     // A stale/invalid token falls through: CLI needs its own token, and
     // singleUserMode refuses while the owner owes a rotation (YAN-358).
@@ -414,7 +429,7 @@ export async function revokeOwnerSessions(request, { passwordHash } = {}) {
   // Keep the caller's active workspace if it is still one of the owner's.
   const ownWorkspaces = (await listWorkspaces({ userId: owner.id })).map((w) => w.id);
   if (ownWorkspaces.includes(session.wid)) claims.wid = session.wid;
-  await setDashboardAuthCookie(cookieStore, request, claims);
+  await mintSessionCookie(cookieStore, request, claims, { from: session });
 }
 
 /** Public view of a principal for /api/auth/status: no secrets, no hashes. */

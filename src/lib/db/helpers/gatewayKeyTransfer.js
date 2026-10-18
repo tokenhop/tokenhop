@@ -15,6 +15,7 @@ import { readCredentialEncryptionState } from "../credentialEncryptionState.js";
 import { isCredentialMaintenancePoisoned } from "../credentialMaintenance.js";
 import { insertHashedApiKeySync } from "../repos/apiKeysRepo.js";
 import { adoptOwnerlessRowsUnscoped } from "../repos/ownership.js";
+import { invalidateSessionCache } from "./sessionCache.js";
 import {
   INSTANCE_SNAPSHOT_SECTION_NAMES,
   deleteInstanceTableSections,
@@ -1455,6 +1456,8 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
   db.run(`DELETE FROM apiKeys`);
   db.run(`DELETE FROM memberships`);
   db.run(`DELETE FROM identities`);
+  // YAN-751 (D6): sessions are never exported; a restore invalidates them all.
+  db.run(`DELETE FROM sessions`);
   db.run(`DELETE FROM providerConnections`);
   db.run(`DELETE FROM providerNodes`);
   db.run(`DELETE FROM proxyPools`);
@@ -1726,4 +1729,7 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
   if (db.all(`PRAGMA foreign_key_check`).length) {
     fail("TRANSFER_APPLY_INVALID", "Foreign key violations after snapshot apply");
   }
+  // Synchronous through the caller's commit (no await can interleave a
+  // re-cache); a rollback only costs a cache refill.
+  invalidateSessionCache();
 }

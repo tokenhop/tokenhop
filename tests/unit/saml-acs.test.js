@@ -39,6 +39,7 @@ vi.mock("@/lib/users/audit", () => ({ audit: mocks.audit }));
 vi.mock("@/lib/auth/dashboardSession", () => ({
   setDashboardAuthCookie: mocks.setDashboardAuthCookie,
 }));
+vi.mock("@/lib/users/sessionMint", () => ({ mintSessionCookie: mocks.setDashboardAuthCookie }));
 
 const { POST } = await import("@/app/api/auth/saml/acs/route.js");
 const { SsoAdmissionError } = await import("@/lib/users/ssoProvisioning");

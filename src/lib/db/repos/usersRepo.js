@@ -171,7 +171,7 @@ export async function getOwnerUnscoped() {
 // revocation lands on the next request.
 // ponytail: single process. Another process sharing DATA_DIR sees a bump only
 // when its entry expires (<= 5 s); a sessions table or shared invalidation lifts that.
-const SESSION_TTL_MS = 5000;
+export const SESSION_TTL_MS = 5000;
 const SESSION_COLS = "id, instanceRole, status, sessionVersion, mustChangePassword";
 const ACTIVE_COUNT = Symbol.for("tokenhop.activeUserCount");
 // On globalThis: Next bundles the proxy and route handlers separately, each with

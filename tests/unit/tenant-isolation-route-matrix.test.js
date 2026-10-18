@@ -97,7 +97,8 @@ const GROUPS = {
     settings/keys/rotate workspaces/[id]/keys/rotate`,
   admin: `users users/[id] users/[id]/password users/[id]/logout-all workspaces workspaces/[id]
     workspaces/[id]/reauth users/[id]/budgets users/[id]/budgets/[budgetId] auth/sso/preview`,
-  session: `auth/change-password me/workspace me/identities me/identities/[id] grants audit`,
+  session: `auth/change-password me/workspace me/identities me/identities/[id]
+    me/sessions me/sessions/[id] grants audit`,
   members: `workspaces/[id]/members workspaces/[id]/members/[userId]
     workspaces/[id]/invitations workspaces/[id]/invitations/[inviteId]`,
   grants: `providers/[id]/grants providers/[id]/grants/[grantId]`,
@@ -156,20 +157,21 @@ const HIDDEN = set(`auth/reset-mode users users/[id] users/[id]/password users/[
   workspaces/[id]/invitations/[inviteId] workspaces/[id]/move workspaces/[id]/budgets
   workspaces/[id]/budgets/[budgetId] invitations/accept providers/[id]/grants
   providers/[id]/grants/[grantId] grants me/workspace me/identities me/identities/[id]
-  audit settings/keys/rotate workspaces/[id]/keys/rotate workspaces/[id]/export workspaces/[id]/import`);
+  me/sessions me/sessions/[id] audit settings/keys/rotate workspaces/[id]/keys/rotate workspaces/[id]/export workspaces/[id]/import`);
 const ALWAYS = set(`shutdown version/shutdown settings/database oauth/cursor/auto-import
   oauth/kiro/auto-import oauth/xiaomi-mimo/auto-import auth/change-password auth/reset-mode
   users users/[id] users/[id]/password users/[id]/logout-all users/ownership-transfer
   users/ownership-transfer/sso workspaces workspaces/[id] workspaces/[id]/reauth auth/sso/preview
   workspaces/[id]/members workspaces/[id]/members/[userId] users/[id]/budgets users/[id]/budgets/[budgetId]
-  me/workspace me/identities me/identities/[id] audit settings/keys/rotate
+  me/workspace me/identities me/identities/[id] me/sessions me/sessions/[id] audit settings/keys/rotate
   workspaces/[id]/keys/rotate workspaces/[id]/export workspaces/[id]/import`);
 const NO_CLI = set(`auth/oidc/test auth/saml/test auth/change-password users/ownership-transfer/sso
   users/[id]/logout-all workspaces/[id] workspaces/[id]/reauth auth/sso/preview
   workspaces/[id]/invitations workspaces/[id]/invitations/[inviteId] providers/[id]/grants
   providers/[id]/grants/[grantId] grants workspaces/[id]/budgets workspaces/[id]/budgets/[budgetId]
   workspaces/[id]/move users/[id]/budgets users/[id]/budgets/[budgetId] me/workspace
-  me/identities me/identities/[id] workspaces/[id]/export workspaces/[id]/import`);
+  me/identities me/identities/[id] me/sessions me/sessions/[id] workspaces/[id]/export
+  workspaces/[id]/import`);
 const LOCAL = set(`auth/reset-password auth/reset-mode auth/setup-token mcp/[plugin]/message
   mcp/[plugin]/sse headroom/start headroom/stop headroom/proxy/[...path]
   tunnel/enable tunnel/disable tunnel/tailscale-check tunnel/tailscale-enable

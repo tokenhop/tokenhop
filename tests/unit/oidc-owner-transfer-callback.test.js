@@ -47,6 +47,11 @@ vi.mock("@/lib/users/session", () => ({ sessionClaims: mocks.sessionClaims }));
 vi.mock("@/lib/users/ssoOwnershipTransfer.js", () => ({
   completeSsoOwnershipTransfer: mocks.completeSsoOwnershipTransfer,
 }));
+// The mint choke point is mocked: these suites use synthetic subs (no DB users),
+// so a real session-row insert would hit the FK.
+vi.mock("@/lib/users/sessionMint", () => ({
+  mintSessionCookie: mocks.setDashboardAuthCookie,
+}));
 // Real sign/verify for the sealed transfer state (JWE under deriveSecretKey);
 // only cookie writing is stubbed.
 vi.mock("@/lib/auth/dashboardSession", async () => {

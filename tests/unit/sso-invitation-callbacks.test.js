@@ -54,6 +54,11 @@ vi.mock("@/lib/users/ssoProvisioning", async (importOriginal) => ({
   ssoAdmit: mocks.ssoAdmit,
 }));
 vi.mock("@/lib/users/session", () => ({ sessionClaims: mocks.sessionClaims }));
+// The mint choke point is mocked: this suite uses synthetic subs (no DB users),
+// so a real session-row insert would hit the FK. Forward to the hoisted mock.
+vi.mock("@/lib/users/sessionMint", () => ({
+  mintSessionCookie: mocks.setDashboardAuthCookie,
+}));
 vi.mock("@/lib/auth/saml.js", async (importOriginal) => ({
   ...(await importOriginal()),
   validateSamlResponse: mocks.validateSamlResponse,
