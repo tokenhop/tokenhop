@@ -14,6 +14,8 @@ import { effectiveComboWeight } from "./comboWeights.js";
 import { boundedMap } from "../utils/boundedMap.js";
 import { probeStreamHead } from "../utils/streamProbe.js";
 import { COMBO_HEDGE_DELAY_DEFAULT_MS, COMBO_HEDGE_DELAY_MAX_MS } from "./comboStrategy.js";
+import { clearComboPins, comboPins, orderAroundPin } from "./cacheAffinity.js";
+import { comboAffinityKey, validComboPin } from "./comboAffinityOrder.js";
 import {
   COMBO_STREAM_PROBE_MAX_BYTES,
   COMBO_STREAM_PROBE_MAX_MS,
@@ -427,10 +429,12 @@ export function resetComboRotation(comboName) {
     comboRotationState.delete(comboName);
     comboWeightedState.delete(comboName);
     comboLatencyState.delete(comboName);
+    clearComboPins(comboName);
   } else {
     comboRotationState.clear();
     comboWeightedState.clear();
     comboLatencyState.clear();
+    clearComboPins();
   }
 }
 
@@ -620,6 +624,9 @@ function createAttemptFeedback(startedAt, record, parent) {
  *   After leader rank0 resolves for a hedged pair, if rank0 is still pending
  *   the race is: leader rank0 vs a delayed rank1 backup; the first valid
  *   response wins, the loser is aborted. Outermost fastest only.
+ * @param {string|null} [options.conversationKey] - Conversation-stable key (resolveConversationKey); null ⇒ no pins
+ * @param {boolean} [options.cacheAffinity=false] - Pin each conversation to the member that served it
+ *   (round-robin/weighted/fastest only; off for probes). Pinned: no strategy advance, no hedging.
  * @param {Function} [options.onFallback] - Awaited before trying the next model: ({ model, status }) => void
  * @param {Function} [options.onAttempt] - Attempt observer: (attempt) => void. Fail-open: any throw is swallowed.
  *   Called after each step resolves (success, fallback-eligible failure, or non-fallback failure).
@@ -646,10 +653,32 @@ export async function handleComboChat({
   onFallback,
   onAttempt,
   parentAttempt = null,
+  conversationKey = null,
+  cacheAffinity = false,
 }) {
+  // Cache affinity: a valid pin skips the strategy call entirely (no state advance).
+  const affinityKey = comboAffinityKey({
+    cacheAffinity,
+    conversationKey,
+    comboStrategy,
+    comboName,
+    onAttempt,
+  });
+  const pin = validComboPin(affinityKey, models, { comboStrategy, comboWeights, headroomFn });
+  const pinned = pin !== undefined;
+  const repin = (model) => {
+    if (affinityKey) comboPins.set(affinityKey, model);
+  };
+
   // Apply rotation strategy if enabled
-  let rotatedModels =
-    comboStrategy === "weighted"
+  let rotatedModels = pinned
+    ? comboStrategy === "round-robin"
+      ? rotateModelsFromIndex(models, models.indexOf(pin))
+      : orderAroundPin(
+          comboStrategy === "fastest" ? getFastestModels(models, comboName, () => 1) : models,
+          pin,
+        )
+    : comboStrategy === "weighted"
       ? getWeightedModels(models, comboName, comboWeights, headroomFn, comboStickyLimit)
       : comboStrategy === "fastest"
         ? getFastestModels(models, comboName)
@@ -683,6 +712,7 @@ export async function handleComboChat({
   const hedgeMs =
     comboStrategy === "fastest" &&
     !parentAttempt &&
+    !pinned &&
     typeof onAttempt !== "function" &&
     rotatedModels.length >= 2
       ? hedgeDelayMs
@@ -698,6 +728,7 @@ export async function handleComboChat({
       recordLatency,
       clientSignal,
       delayMs: hedgeMs,
+      onServed: repin,
     });
   }
 
@@ -716,6 +747,7 @@ export async function handleComboChat({
       recordLatency,
       parentAttempt,
     });
+    if (step.outcome === "served") repin(rotatedModels[i]);
     if (step.outcome !== "next") return step.response;
     agg.add(step);
   }
@@ -1071,6 +1103,7 @@ async function raceHedgedPair({
   recordLatency,
   clientSignal = null,
   delayMs,
+  onServed,
 }) {
   log.info("COMBO", `Fastest hedge: ${models[0]} vs delayed ${models[1]} (${delayMs}ms)`);
   const slots = [0, 1].map(() => ({ ctrl: new AbortController(), result: null, started: false }));
@@ -1158,6 +1191,7 @@ async function raceHedgedPair({
     const loser = slots[1 - winner];
     loser.ctrl.abort();
     slots[winner].result.attempt?.accept?.();
+    if (slots[winner].result.outcome === "served") onServed?.(models[winner]);
     if (loser.result && loser.result.outcome !== "next") cancelBody(loser.result.response);
     return slots[winner].result.response;
   }
@@ -1185,6 +1219,7 @@ async function raceHedgedPair({
       recordLatency,
       cancelSignal: clientSignal,
     });
+    if (step.outcome === "served") onServed?.(models[i]);
     if (step.outcome !== "next") return step.response;
     agg.add(step);
   }
