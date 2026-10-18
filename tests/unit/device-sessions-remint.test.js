@@ -297,6 +297,23 @@ describe("YAN-751 re-mint keeps sid and exp", () => {
     expect(token).not.toBe(session.token);
   });
 
+  it("workspace switch: a sv bump after the principal check fails closed (YAN-1218)", async () => {
+    const session = await signIn(t.a);
+    const { sv } = await jwt.getDashboardAuthSession(session.token);
+    const req = post("/api/me/workspace", { workspaceId: t.shared.id });
+    // The body is read after the principal check and before the re-mint:
+    // land a concurrent sign-out-everywhere right there.
+    req.json = async () => {
+      await db.bumpSessionVersion(t.a.user.id);
+      return { workspaceId: t.shared.id };
+    };
+    const res = await workspacePOST(req);
+    expect(res.status).toBe(401);
+    expect(authToken()).toBeUndefined();
+    expect(await s.isLiveSession(session.token)).toBe(false);
+    expect(row(session.sid).sv).toBe(sv); // never rebound to the bumped sv
+  });
+
   it("mintSessionCookie: a sub-less re-mint of a user-bound session fails and clears", async () => {
     const session = await signIn(t.a);
     const from = await jwt.getDashboardAuthSession(session.token);
