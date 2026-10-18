@@ -668,9 +668,10 @@ export async function handleComboChat({
   });
   const pin = validComboPin(affinityKey, models, { comboStrategy, comboWeights, headroomFn });
   const pinned = pin !== undefined;
+  const pinExcludeSet = new Set(pinExclude);
   const repin = (model) => {
     // Capacity-adapter members are never pinned (spec §2): the old pin stays.
-    if (affinityKey && !new Set(pinExclude).has(model)) comboPins.set(affinityKey, model);
+    if (affinityKey && !pinExcludeSet.has(model)) comboPins.set(affinityKey, model);
   };
 
   // Apply rotation strategy if enabled

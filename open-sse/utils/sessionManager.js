@@ -224,9 +224,11 @@ export function resolveConversationKey({ headers, body } = {}) {
   const client = extractClientSessionId(headers, body, "", { routing: true });
   if (client) return `s:${sha16(client)}`;
   if (!body || typeof body !== "object") return null;
-  const system = systemText(body).slice(0, CONVERSATION_PREFIX_CAP);
   const user = firstUserText(body).slice(0, CONVERSATION_PREFIX_CAP);
-  if (!system && !user) return null;
+  // No user text (tool-output-only or image-only first turn): a system-only key would
+  // collide across unrelated conversations sharing the same instructions.
+  if (!user) return null;
+  const system = systemText(body).slice(0, CONVERSATION_PREFIX_CAP);
   return `p:${sha16(`${system}\n\u0000\n${user}`)}`;
 }
 

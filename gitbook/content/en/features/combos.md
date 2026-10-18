@@ -537,8 +537,8 @@ With cache affinity, tokenhop remembers which combo model answered a conversatio
 - **New conversations** are still spread by the strategy. Round robin and Weighted advance once per conversation, not once per request.
 - **On failure** the conversation moves to the model that answers instead, and stays there.
 - **Fastest**: a pinned conversation does not start a second model, even when a second model delay is set.
-- **Expiry**: a pin lasts 1 hour after the conversation's last request and is renewed on every turn. Set `CACHE_AFFINITY_TTL_MS` to change this. tokenhop keeps up to 10,000 pins and drops the least recently used first. Set `CACHE_AFFINITY_MAX_PINS` to change this.
-- **Saving a strategy** clears the combo's pins, so every conversation is routed fresh. Saving any routing settings clears pins too.
+- **Expiry**: a pin lasts 1 hour after the conversation's last request and is renewed on every turn. This applies to combo pins and account pins alike. Set `CACHE_AFFINITY_TTL_MS` to change this. tokenhop keeps up to 10,000 pins per store (combo pins and account pins each have their own limit) and drops the least recently used first. Set `CACHE_AFFINITY_MAX_PINS` to change this.
+- **Saving settings** resets pins. Saving combo routing settings (the global combo strategy, its sticky limit, or any per-combo strategy, including this switch) clears the pins of every combo in every workspace, so those conversations are routed fresh. Saving account routing settings (account strategy, its sticky limit, or per-provider strategies) clears account pins the same way. Editing or deleting a single combo clears only that combo's pins, and importing a configuration clears all combo pins.
 
 How tokenhop recognises a conversation, in order:
 

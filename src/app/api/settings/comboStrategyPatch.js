@@ -52,7 +52,10 @@ export async function applyComboStrategyPatch(body, update, { allowId = false } 
   if (Object.keys(patch).some((k) => !PATCH_KEYS.has(k))) {
     return fail("Invalid combo strategy patch", 400);
   }
-  const error = validateComboStrategySettings({ comboStrategies: { [key]: patch } });
+  const error = validateComboStrategySettings(
+    { comboStrategies: { [key]: patch } },
+    { partial: true },
+  );
   if (error) return fail(error, 400);
 
   // Validation against the merged entry happens inside the transaction too (weight-count cap).
@@ -72,7 +75,7 @@ export async function applyComboStrategyPatch(body, update, { allowId = false } 
         return strategies;
       }
       const next = { ...base, ...patch };
-      if (!next.fallbackStrategy && patch.cacheAffinity === false) {
+      if (!next.fallbackStrategy && patch.cacheAffinity !== undefined) {
         missingStrategyEntry = true;
         return strategies;
       }
@@ -95,7 +98,7 @@ export async function applyComboStrategyPatch(body, update, { allowId = false } 
   }
   if (missingWeightedEntry) return fail("Combo not found", 409);
   if (missingStrategyEntry) {
-    return fail("cacheAffinity requires a stored fallbackStrategy for this combo", 400);
+    return fail("cacheAffinity requires a fallbackStrategy for this combo", 400);
   }
   if (mergedError) return fail(mergedError, 400);
   return { settings };

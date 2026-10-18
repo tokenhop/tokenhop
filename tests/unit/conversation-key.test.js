@@ -113,6 +113,25 @@ describe("resolveConversationKey: prefix hash", () => {
   });
 });
 
+describe("resolveConversationKey: no user text", () => {
+  it("returns null when only system text exists and the first user text is empty", () => {
+    const a = {
+      instructions: "same instructions",
+      input: [{ type: "function_call_output", call_id: "1", output: "x" }],
+    };
+    const b = {
+      instructions: "same instructions",
+      input: [{ type: "function_call_output", call_id: "2", output: "y" }],
+    };
+    expect(resolveConversationKey({ body: a })).toBeNull();
+    expect(resolveConversationKey({ body: b })).toBeNull();
+    const imageOnly = {
+      messages: [msg("system", "S"), msg("user", [{ type: "image_url", image_url: {} }])],
+    };
+    expect(resolveConversationKey({ body: imageOnly })).toBeNull();
+  });
+});
+
 describe("resolveConversationKey: purity", () => {
   it("returns null for empty input", () => {
     expect(resolveConversationKey()).toBeNull();

@@ -48,6 +48,17 @@ describe("validateComboStrategySettings cacheAffinity", () => {
     expect(check(true)).toBeNull();
     expect(check(false)).toBeNull();
   });
+
+  it("rejects cacheAffinity without fallbackStrategy in a full body", () => {
+    for (const value of [true, false]) {
+      expect(
+        validateComboStrategySettings({ comboStrategies: { c: { cacheAffinity: value } } }),
+      ).toBe('Invalid cacheAffinity for combo "c": requires fallbackStrategy');
+    }
+    expect(
+      validateComboStrategySettings({ comboStrategies: { c: { weights: { a: 1 } } } }),
+    ).toBeNull();
+  });
 });
 
 describe("applyComboStrategyPatch cacheAffinity", () => {
@@ -75,14 +86,16 @@ describe("applyComboStrategyPatch cacheAffinity", () => {
     expect(state.strategies.c).toEqual({ fallbackStrategy: "round-robin", cacheAffinity: false });
   });
 
-  it("rejects cacheAffinity:false for an entry with no stored fallbackStrategy", async () => {
-    const { state, update } = makeUpdate();
-    const result = await applyComboStrategyPatch(
-      { comboStrategyPatch: { name: "c", patch: { cacheAffinity: false } } },
-      update,
-    );
-    expect(result.response.status).toBe(400);
-    expect(state.strategies).toEqual({});
+  it("rejects any cacheAffinity for an entry with no stored fallbackStrategy", async () => {
+    for (const value of [false, true]) {
+      const { state, update } = makeUpdate();
+      const result = await applyComboStrategyPatch(
+        { comboStrategyPatch: { name: "c", patch: { cacheAffinity: value } } },
+        update,
+      );
+      expect(result.response.status).toBe(400);
+      expect(state.strategies).toEqual({});
+    }
   });
 
   it("rejects a non-boolean cacheAffinity", async () => {
