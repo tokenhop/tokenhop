@@ -24,7 +24,8 @@ import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.
 import { extractClientApiKey } from "@/lib/auth/clientApiKey.js";
 import { getGatewayConnections, requireGatewayWorkspace } from "@/lib/auth/gatewayResources.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
-import { resolveWeightedStickyLimit, selectWeightedConnection } from "./accountSelection.js";
+import * as selection from "./accountSelection.js";
+import { accountPinKey, accountPins, clearAccountPins } from "open-sse/services/cacheAffinity.js";
 import { boundedMap } from "open-sse/utils/boundedMap.js";
 import {
   checkAndReserveGrant,
@@ -52,6 +53,7 @@ const selectionMutexes = new Map();
 const weightedStates = boundedMap(1000);
 
 export function resetAccountSelection(providerId) {
+  clearAccountPins(providerId ? (resolveProviderId(providerId) ?? providerId) : undefined);
   if (providerId) {
     const id = resolveProviderId(providerId) ?? providerId;
     weightedStates.delete(id);
@@ -344,6 +346,26 @@ export async function getProviderCredentials(
         );
       }
     }
+    // Cache affinity: keep a conversation on one account while it stays eligible.
+    // Never with an explicit x-connection-id; the pin only reads the filtered set.
+    const pinnable =
+      !preferredConnectionId &&
+      (strategy === "round-robin" || strategy === "weighted") &&
+      providerOverride.cacheAffinity !== false;
+    const workspaceId = options?.principal?.workspaceId ?? null;
+    const affinityKey = pinnable
+      ? accountPinKey(workspaceId, providerId, options?.conversationKey)
+      : null;
+    if (!connection && affinityKey) {
+      connection = selection.pickPinnedConnection({
+        pinnedId: accountPins.get(affinityKey),
+        connections: availableConnections,
+        strategy,
+        provider: providerId,
+        model,
+      });
+      if (connection) log.info("AUTH", `${provider} | cache pin ${connection.id?.slice(0, 8)}`);
+    }
     if (connection) {
       // skip strategy
     } else if (strategy === "weighted") {
@@ -352,8 +374,12 @@ export async function getProviderCredentials(
       const weightedKey = options?.principal
         ? `${options.principal.workspaceId}:${providerId}`
         : providerId;
-      const stickyLimit = resolveWeightedStickyLimit(providerId, providerOverride, settings);
-      const result = selectWeightedConnection({
+      const stickyLimit = selection.resolveWeightedStickyLimit(
+        providerId,
+        providerOverride,
+        settings,
+      );
+      const result = selection.selectWeightedConnection({
         connections: availableConnections,
         provider: providerId,
         model,
@@ -437,6 +463,9 @@ export async function getProviderCredentials(
         return budgetLimitedResult(budget.hit);
       }
     }
+
+    // Pin only after grant/budget reservations succeeded.
+    if (affinityKey) accountPins.set(affinityKey, connection.id);
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
