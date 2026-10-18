@@ -249,6 +249,9 @@ async function runHeavyStartup() {
     .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
 
   startAuditRetention(settings);
+  import("@/shared/services/sessionPrune.js")
+    .then(({ startSessionPrune }) => startSessionPrune())
+    .catch((e) => console.log("[Sessions] prune start failed:", e.message));
 }
 
 // YAN-367: audit retention sweep: once now, then daily. Never breaks startup.

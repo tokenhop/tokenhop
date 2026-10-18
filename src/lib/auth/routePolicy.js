@@ -89,6 +89,13 @@ export const ROUTE_POLICY = {
     alwaysProtected: true,
     cliAllowed: false,
   }),
+  // YAN-751: device sessions — list / revoke the caller's own (browser session only).
+  "/api/me/sessions": multiUser({ cap: { GET: SELF }, alwaysProtected: true, cliAllowed: false }),
+  "/api/me/sessions/[id]": multiUser({
+    cap: { DELETE: SELF },
+    alwaysProtected: true,
+    cliAllowed: false,
+  }),
   // YAN-360: admin user lifecycle, ownership transfer, memberships, invitations.
   // Per-method caps: any unlisted method fails closed to hostOps. The static
   // ownership-transfer row is exact-matched before the dynamic [id] pattern.
