@@ -41,6 +41,8 @@ export const TABLE_CLASSES = {
   requestDetails: { class: "scoped", scopeColumn: "workspaceId" },
   users: { class: "instance", note: "admin-managed; self reads go through getUser(ctx)" },
   identities: { class: "scoped", scopeColumn: "userId" },
+  // YAN-751: per-device sessions; a user only ever sees/revokes their own rows.
+  sessions: { class: "scoped", scopeColumn: "userId" },
   workspaces: { class: "scoped", scopeColumn: "id", note: "visible through memberships" },
   memberships: { class: "scoped", scopeColumn: "workspaceId" },
   auditEvents: {
