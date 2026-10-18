@@ -122,6 +122,8 @@ describe("switch on", () => {
       expect(before.sessions.map((x) => x.id).sort()).toEqual([one.sid, two.sid].sort());
       expect(before.currentSessionId).toBe(one.sid);
 
+      // Populate the sid cache first so the post-revoke false proves the drop.
+      expect(await s.isLiveSession(two.token)).toBe(true);
       const res = await remove(two.sid);
       expect(res.status).toBe(200);
       await expect(res.json()).resolves.toEqual({ success: true, current: false });
@@ -335,7 +337,14 @@ describe("switch on", () => {
       expect((await remove("00000000-0000-4000-8000-000000000000")).status).toBe(404);
       expect(total()).toBe(baseline);
 
-      expect((await remove(two.sid)).status).toBe(200);
+      // A real browser UA on the revoke request must not leak into the audit row.
+      expect(
+        (
+          await remove(two.sid, {
+            "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0",
+          })
+        ).status,
+      ).toBe(200);
       const events = revokeAudits(two.sid);
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({

@@ -138,6 +138,22 @@ describe("YAN-751 re-mint keeps sid and exp", () => {
     expect((await db.listSessions(t.a.ctx)).map((r) => r.id)).toEqual([claims.sid]);
   });
 
+  it("fresh login with the same user's cookie supersedes the old row (R7)", async () => {
+    const old = await signIn(t.a);
+    expect(await s.isLiveSession(old.token)).toBe(true);
+    const res = await loginPOST(
+      post("/api/auth/login", { login: "a@tenancy.test", password: PW_A }, peer),
+    );
+    expect(res.status).toBe(200);
+    const claims = await jwt.getDashboardAuthSession(authToken());
+    expect(claims.sid).not.toBe(old.sid);
+    expect(row(old.sid)).toBeUndefined();
+    expect(rowCount(t.a.user.id)).toBe(1);
+    expect(row(claims.sid)).toMatchObject({ userId: t.a.user.id, revokedAt: null });
+    expect(await s.isLiveSession(old.token)).toBe(false);
+    expect((await db.listSessions(t.a.ctx)).map((r) => r.id)).toEqual([claims.sid]);
+  });
+
   it("workspace switch: same sid, same exp, wid changed", async () => {
     const session = await signIn(t.a);
     await expectRemint(t.a, session, async () => {
@@ -205,7 +221,10 @@ describe("YAN-751 re-mint keeps sid and exp", () => {
 
   it("revoked sid: re-mint fails, cookie cleared, workspace 401, row not resurrected", async () => {
     const session = await signIn(t.a);
+    // Populate the sid cache so the post-revoke checks prove the cache drop.
+    expect(await s.isLiveSession(session.token)).toBe(true);
     expect(await db.revokeSessionUnscoped(session.sid, t.a.user.id)).toBe(true);
+    expect(await s.isLiveSession(session.token)).toBe(false);
     const revokedAt = row(session.sid).revokedAt;
     expect(revokedAt).toBeTruthy();
 

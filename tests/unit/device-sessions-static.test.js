@@ -1,38 +1,39 @@
 // YAN-751: static guard that every dashboard session cookie is minted through
 // the single choke point (sessionMint.js -> dashboardSession.js).
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const MINT_FILE = "src/lib/users/sessionMint.js";
 const COOKIE_FILE = "src/lib/auth/dashboardSession.js";
+const SOURCE_EXT = /\.(?:[cm]?[jt]sx?)$/;
 
-// Tracked + untracked files matching; git grep exits 1 when nothing matches.
-const gitGrep = (args) => {
-  try {
-    return execFileSync("git", ["grep", "--untracked", "-l", ...args], {
-      cwd: REPO_ROOT,
-      encoding: "utf8",
-    })
-      .split("\n")
-      .filter(Boolean)
-      .sort();
-  } catch (error) {
-    if (error.status === 1) return [];
-    throw error;
-  }
-};
+// Recursive scan of src/ with plain fs (no .git dependency); repo-relative POSIX paths.
+const sourceFiles = (dir = "src") =>
+  readdirSync(path.join(REPO_ROOT, dir), { withFileTypes: true }).flatMap((entry) => {
+    const rel = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) return entry.name === "node_modules" ? [] : sourceFiles(rel);
+    return SOURCE_EXT.test(entry.name) ? [rel] : [];
+  });
+
+// Files under `dir` whose source matches `pattern`.
+const scan = (pattern, dir = "src") =>
+  sourceFiles(dir)
+    .filter((file) => pattern.test(readFileSync(path.join(REPO_ROOT, file), "utf8")))
+    .sort();
 
 describe("session cookie choke point", () => {
   it("calls setDashboardAuthCookie( only from dashboardSession.js and sessionMint.js", () => {
-    const files = gitGrep(["-F", "setDashboardAuthCookie(", "--", "src/"]);
-    expect(files).toEqual([COOKIE_FILE, MINT_FILE].sort());
+    expect(scan(/setDashboardAuthCookie\(/)).toEqual([COOKIE_FILE, MINT_FILE].sort());
   });
 
   it("never calls setDashboardAuthCookie( from a route or page under src/app", () => {
-    expect(gitGrep(["-F", "setDashboardAuthCookie(", "--", "src/app/"])).toEqual([]);
+    expect(scan(/setDashboardAuthCookie\(/, "src/app")).toEqual([]);
+  });
+
+  it("sets the auth_token cookie directly only inside dashboardSession.js", () => {
+    expect(scan(/\.set\(\s*["']auth_token["']/)).toEqual([COOKIE_FILE]);
   });
 
   it("keeps sessionMint.js free of a ./session.js import (cycle guard)", () => {
