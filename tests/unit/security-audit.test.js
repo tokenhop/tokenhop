@@ -115,7 +115,7 @@ describe("AUDIT-003: Proxy URL validation", () => {
 describe("AUDIT-018: XSS escaping in OAuth callback", () => {
   it("source should contain escapeHtml function", () => {
     const source = fs.readFileSync(
-      path.resolve(import.meta.dirname, "../../src/lib/oauth/utils/server.js"),
+      path.resolve(import.meta.dirname, "../../src/lib/oauth/utils/server/shared.js"),
       "utf-8",
     );
     expect(source).toContain("function escapeHtml");
@@ -123,7 +123,7 @@ describe("AUDIT-018: XSS escaping in OAuth callback", () => {
 
   it("should escape ampersand, angle brackets, and quotes", () => {
     const source = fs.readFileSync(
-      path.resolve(import.meta.dirname, "../../src/lib/oauth/utils/server.js"),
+      path.resolve(import.meta.dirname, "../../src/lib/oauth/utils/server/shared.js"),
       "utf-8",
     );
     expect(source).toContain("&amp;");
@@ -135,7 +135,7 @@ describe("AUDIT-018: XSS escaping in OAuth callback", () => {
 
   it("should use safeMessage in rendered HTML, not raw message", () => {
     const source = fs.readFileSync(
-      path.resolve(import.meta.dirname, "../../src/lib/oauth/utils/server.js"),
+      path.resolve(import.meta.dirname, "../../src/lib/oauth/utils/server/shared.js"),
       "utf-8",
     );
     expect(source).toContain("safeMessage");
