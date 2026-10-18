@@ -7,7 +7,7 @@ import CountUp from "@/shared/components/CountUp";
 import QuietPeriod from "@/shared/components/QuietPeriod";
 import StatTile from "@/shared/components/StatTile";
 import { periodDelta } from "@/shared/utils/commandCenter";
-import { PERIOD_VALUES } from "@/shared/utils/period";
+import { HISTORY_PERIOD_VALUES } from "@/shared/utils/period";
 import { cachedShare, formatCompact, formatInt, formatMoney } from "./format";
 import { WidgetError, WidgetSkeleton } from "./WidgetStates";
 
@@ -117,6 +117,7 @@ export default function HomeStats({
         <QuietPeriod
           compact
           period={period}
+          allowed={HISTORY_PERIOD_VALUES}
           lastRequestAt={lastRequestAt}
           loading={lastActivityLoading}
           error={lastActivityError}
@@ -221,7 +222,7 @@ HomeStats.propTypes = {
   loading: PropTypes.bool,
   error: PropTypes.string,
   onRetry: PropTypes.func.isRequired,
-  period: PropTypes.oneOf(PERIOD_VALUES),
+  period: PropTypes.oneOf(HISTORY_PERIOD_VALUES),
   lastRequestAt: PropTypes.string,
   lastActivityLoading: PropTypes.bool,
   lastActivityError: PropTypes.string,

@@ -15,8 +15,15 @@ export const PRIOR_LABELS = {
   "7d": { caption: "vs prior 7d" },
   "30d": { caption: "vs prior 30d" },
   "60d": { caption: "vs prior 60d" },
+  "90d": { caption: "vs prior 90d" },
   default: { caption: "vs prior period" },
 };
+
+/**
+ * Neutral caption for the `all` period: there is no previous window to
+ * compare against, so tiles say what the number covers instead.
+ */
+export const ALL_TIME_NOTE = { caption: "All recorded usage" };
 
 /**
  * Muted caption shown instead of a percentage when no usable baseline exists.

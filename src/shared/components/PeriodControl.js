@@ -4,7 +4,7 @@ import PropTypes from "prop-types";
 import { useEffect, useMemo, useState } from "react";
 import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
 import SegmentedControl from "@/shared/components/SegmentedControl";
-import { PERIODS } from "@/shared/utils/period";
+import { PERIOD_VALUES, PERIODS } from "@/shared/utils/period";
 
 /** zh labels per period value (runtime i18n parity on every page). */
 const ZH_LABELS = {
@@ -13,6 +13,8 @@ const ZH_LABELS = {
   "7d": "7天",
   "30d": "30天",
   "60d": "60天",
+  "90d": "90天",
+  all: "全部时间",
 };
 
 /**
@@ -72,7 +74,7 @@ PeriodControl.propTypes = {
   onChange: PropTypes.func,
   options: PropTypes.arrayOf(
     PropTypes.shape({
-      value: PropTypes.oneOf(["today", "24h", "7d", "30d", "60d"]).isRequired,
+      value: PropTypes.oneOf(PERIOD_VALUES).isRequired,
       label: PropTypes.string.isRequired,
     }),
   ),

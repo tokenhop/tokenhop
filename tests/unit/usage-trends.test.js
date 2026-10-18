@@ -46,13 +46,20 @@ function seed(timestamp, promptTokens, completionTokens, cost, tokens) {
 }
 
 describe("previousPeriodRange", () => {
-  it.each(PERIOD_VALUES)("%s uses an equal-length preceding window", (period) => {
-    const currentStart = periodStart(period, NOW);
-    const { start, end } = previousPeriodRange(period, NOW);
-    expect(end - start).toBe(NOW - currentStart);
-    expect(end).toBeLessThanOrEqual(currentStart);
-    if (period !== "today") expect(end).toBe(currentStart);
+  it("all has no previous window", () => {
+    expect(previousPeriodRange("all", NOW)).toBeNull();
   });
+
+  it.each(PERIOD_VALUES.filter((p) => p !== "all"))(
+    "%s uses an equal-length preceding window",
+    (period) => {
+      const currentStart = periodStart(period, NOW);
+      const { start, end } = previousPeriodRange(period, NOW);
+      expect(end - start).toBe(NOW - currentStart);
+      expect(end).toBeLessThanOrEqual(currentStart);
+      if (period !== "today") expect(end).toBe(currentStart);
+    },
+  );
 
   it("today compares the same elapsed slice yesterday", () => {
     const midnight = new Date(periodStart("today", NOW));
@@ -120,12 +127,26 @@ describe("getUsageTotals", () => {
 });
 
 describe("stats compare route", () => {
-  it("rejects unknown compare values and all-period comparison", async () => {
+  it("rejects unknown compare values", async () => {
     const { GET } = await import("../../src/app/api/usage/stats/route.js");
-    for (const query of ["period=7d&compare=bogus", "period=all&compare=previous"]) {
+    for (const query of ["period=7d&compare=bogus", "period=all&compare=bogus"]) {
       const response = await GET(new Request(`http://localhost/api/usage/stats?${query}`));
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({ error: "Invalid compare" });
+    }
+  });
+
+  it("serves compare=previous for 90d and all from the rollup (all has no previous)", async () => {
+    const { GET } = await import("../../src/app/api/usage/stats/route.js");
+    for (const period of ["90d", "all"]) {
+      const response = await GET(
+        new Request(`http://localhost/api/usage/stats?period=${period}&compare=previous`),
+      );
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(Number.isFinite(data.currentTotals.requests)).toBe(true);
+      if (period === "all") expect(data.previous).toBeNull();
+      else expect(Number.isFinite(data.previous.requests)).toBe(true);
     }
   });
 

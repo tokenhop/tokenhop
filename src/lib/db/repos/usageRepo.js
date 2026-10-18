@@ -2,7 +2,7 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { latencyDeltas } from "../helpers/usageLatencyRollup.js";
 import { getMetaSync, setMetaSync } from "../helpers/metaStore.js";
-import { isPeriod, periodStart, previousPeriodRange } from "@/shared/utils/period";
+import { isHistoryPeriod, periodStart, previousPeriodRange } from "@/shared/utils/period";
 import { readApiKeyStorageState } from "../apiKeyState.js";
 import { normalizeUsageKeyEntry } from "../helpers/usageKeyIdentity.js";
 import { apiKeysHasKeyHash } from "../helpers/apiKeysSchema.js";
@@ -495,7 +495,7 @@ export async function getRecentLogs(ctx, limit = 200) {
  * never the JSONL events file, so there is no double counting.
  */
 export async function getUsageSavings(ctx, period = "7d", now = Date.now()) {
-  if (!isPeriod(period)) throw new Error(`Invalid period: ${period}`);
+  if (!isHistoryPeriod(period)) throw new Error(`Invalid period: ${period}`);
   const db = await getAdapter();
   const scope = scopeSql(ctx);
 
@@ -703,7 +703,7 @@ export async function getLiveRoutesFeed(ctx, { windowMs = 5 * 60 * 1000, limit =
 }
 
 export async function getHomeSummary(ctx, period = "7d", now = Date.now()) {
-  if (!isPeriod(period)) throw new Error(`Invalid period: ${period}`);
+  if (!isHistoryPeriod(period)) throw new Error(`Invalid period: ${period}`);
   const db = await getAdapter();
   const scope = scopeSql(ctx);
 

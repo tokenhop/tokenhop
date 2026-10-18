@@ -131,6 +131,50 @@ export function readRollup(ctx, db, startDateKey = null) {
 }
 
 /**
+ * Summed rollup totals for dateKeys in `[startDateKey, endDateKeyExclusive)`
+ * (either bound null = open) within the usage scope `ctx`. Read from the
+ * rollup only, so long windows never touch usageHistory.
+ */
+export function readRollupTotals(ctx, db, startDateKey = null, endDateKeyExclusive = null) {
+  const scope = scopeSql(ctx);
+  const params = [...scope.params];
+  if (startDateKey) params.push(startDateKey);
+  if (endDateKeyExclusive) params.push(endDateKeyExclusive);
+  const row = db.get(
+    `SELECT COALESCE(SUM(requests), 0) AS requests, COALESCE(SUM(tokensIn), 0) AS promptTokens,
+       COALESCE(SUM(tokensOut), 0) AS completionTokens, COALESCE(SUM(tokensCached), 0) AS cachedTokens,
+       COALESCE(SUM(cost), 0) AS cost FROM usageRollup
+     ${whereAll(scope.sql, startDateKey ? "dateKey >= ?" : "", endDateKeyExclusive ? "dateKey < ?" : "")}`,
+    params,
+  );
+  return {
+    requests: Number(row?.requests) || 0,
+    promptTokens: Number(row?.promptTokens) || 0,
+    completionTokens: Number(row?.completionTokens) || 0,
+    cachedTokens: Number(row?.cachedTokens) || 0,
+    cost: Number(row?.cost) || 0,
+  };
+}
+
+/**
+ * One row per dateKey (summed over every dimension) from `startDateKey`
+ * (inclusive; null = all time), grouped in SQL so the result is bounded by
+ * days, not by days x dims.
+ */
+export function readRollupDaily(ctx, db, startDateKey = null) {
+  const scope = scopeSql(ctx);
+  const params = [...scope.params];
+  if (startDateKey) params.push(startDateKey);
+  return db.all(
+    `SELECT dateKey, SUM(requests) AS requests, SUM(tokensIn) AS tokensIn,
+       SUM(tokensOut) AS tokensOut, SUM(tokensCached) AS tokensCached, SUM(cost) AS cost
+     FROM usageRollup ${whereAll(scope.sql, startDateKey ? "dateKey >= ?" : "")}
+     GROUP BY dateKey ORDER BY dateKey`,
+    params,
+  );
+}
+
+/**
  * Edit-prediction latency rollup rows (YAN-771) for `endpoint`, from
  * `startDateKey` (inclusive; null = all time), within the usage scope `ctx`.
  */

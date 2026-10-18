@@ -26,6 +26,11 @@ const noData = (
 );
 const fmtTime = (iso) => {
   if (!iso) return "Never";
+  // Rollup lastUsed (90d/all) is a local date-only "YYYY-MM-DD": show the local date, never "Xh ago".
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (dateOnly) {
+    return new Date(+dateOnly[1], +dateOnly[2] - 1, +dateOnly[3]).toLocaleDateString();
+  }
   const diffMins = Math.floor((Date.now() - new Date(iso)) / 60000);
   if (diffMins < 1) return "Just now";
   if (diffMins < 60) return `${diffMins}m ago`;

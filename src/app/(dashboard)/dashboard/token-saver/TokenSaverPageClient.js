@@ -13,6 +13,7 @@ import {
 } from "@/shared/components";
 import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
 import usePeriod from "@/shared/hooks/usePeriod";
+import { HISTORY_PERIOD_VALUES } from "@/shared/utils/period";
 import { WENYAN_LOCALES, CAVEMAN_LEVELS, PONYTAIL_LEVELS } from "../endpoint/endpointConstants";
 import { TokenSaverHeader, SavingsHero, MethodFooter } from "./SavingsHero";
 import {
@@ -42,7 +43,7 @@ const RTK_CHIPS = ["git log", "git diff", "grep / rg", "ls / tree", "test output
  * same store the Settings page uses.
  */
 export default function TokenSaverPageClient() {
-  const { period, setPeriod } = usePeriod();
+  const { period, setPeriod, options } = usePeriod(HISTORY_PERIOD_VALUES);
   const [refreshKey, setRefreshKey] = useState(0);
   const bump = useCallback(() => setRefreshKey((value) => value + 1), []);
   const { ready, scope, canManageInstance } = useSettingsScope();
@@ -153,7 +154,7 @@ export default function TokenSaverPageClient() {
   if (!settings) {
     return (
       <div className="flex min-w-0 flex-col gap-5 pb-8">
-        <TokenSaverHeader period={period} onPeriodChange={setPeriod} />
+        <TokenSaverHeader period={period} onPeriodChange={setPeriod} options={options} />
         <Callout variant="err" title="Could not load Token saver">
           Settings failed to load.
           <div className="mt-3">
@@ -174,7 +175,7 @@ export default function TokenSaverPageClient() {
 
   return (
     <div className="flex min-w-0 flex-col gap-5 pb-8">
-      <TokenSaverHeader period={period} onPeriodChange={setPeriod} />
+      <TokenSaverHeader period={period} onPeriodChange={setPeriod} options={options} />
       <div aria-live="polite" className="sr-only">
         {savedTick ? "Saved" : ""}
       </div>

@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
-import { getUsageStats, getUsageTotals } from "@/lib/usageDb";
-import { isPeriod, periodStart, previousPeriodRange } from "@/shared/utils/period";
+import { getRollupUsageTotals, getUsageStats, getUsageTotals } from "@/lib/usageDb";
+import {
+  isPeriod,
+  isRollupOnlyPeriod,
+  periodStart,
+  previousPeriodRange,
+} from "@/shared/utils/period";
 import { usageScope } from "@/lib/usage/scope.js";
 
 export const dynamic = "force-dynamic";
@@ -11,13 +16,13 @@ export async function GET(request) {
     const period = searchParams.get("period") || "7d";
     const compare = searchParams.get("compare");
 
-    if (period !== "all" && !isPeriod(period)) {
+    if (!isPeriod(period)) {
       return NextResponse.json({ error: "Invalid period" }, { status: 400 });
     }
     // Optional compare=previous adds `currentTotals` + `previous` computed
-    // from the same usageHistory windows, so both sides of a delta match.
-    // "all" has no previous window, so comparison stays off there.
-    if (compare !== null && (compare !== "previous" || !isPeriod(period))) {
+    // from the same windows, so both sides of a delta match: usageHistory for
+    // today..60d, usageRollup for 90d/all ("all" has `previous: null`).
+    if (compare !== null && compare !== "previous") {
       return NextResponse.json({ error: "Invalid compare" }, { status: 400 });
     }
 
@@ -25,6 +30,9 @@ export async function GET(request) {
     if (scope instanceof Response) return scope;
 
     const stats = await getUsageStats(scope, period);
+    if (compare === "previous" && isRollupOnlyPeriod(period)) {
+      return NextResponse.json({ ...stats, ...(await getRollupUsageTotals(scope, period)) });
+    }
     if (compare === "previous") {
       const now = Date.now();
       const currentRange = { start: periodStart(period, now), end: now };

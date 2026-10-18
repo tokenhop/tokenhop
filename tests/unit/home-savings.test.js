@@ -33,7 +33,9 @@ describe("resolvePeriodRange", () => {
   });
 
   it("rejects unknown periods", () => {
+    expect(() => resolvePeriodRange("bogus")).toThrow(/period/);
     expect(() => resolvePeriodRange("90d")).toThrow(/period/);
+    expect(() => resolvePeriodRange("all")).toThrow(/period/);
   });
 });
 
@@ -264,6 +266,8 @@ describe("recorded savings (saveRequestUsageUnscoped -> getUsageSavings)", () =>
 
   it("getUsageSavings rejects invalid period", async () => {
     await expect(db.getUsageSavings(null, "90d")).rejects.toThrow(/Invalid period/);
+    await expect(db.getUsageSavings(null, "all")).rejects.toThrow(/Invalid period/);
+    await expect(db.getHomeSummary(null, "all")).rejects.toThrow(/Invalid period/);
   });
 });
 
@@ -330,6 +334,18 @@ describe("savings route validation", () => {
     ]) {
       const res = await GET(new Request(`http://localhost/api/${path}?period=${period}`));
       expect(res.status).toBe(200);
+    }
+  });
+
+  it.each(["90d", "all"])("savings and home summary routes reject %s with 400", async (period) => {
+    const savings = await import("../../src/app/api/usage/savings/route.js");
+    const home = await import("../../src/app/api/home/summary/route.js");
+    for (const [GET, path] of [
+      [savings.GET, "usage/savings"],
+      [home.GET, "home/summary"],
+    ]) {
+      const res = await GET(new Request(`http://localhost/api/${path}?period=${period}`));
+      expect(res.status).toBe(400);
     }
   });
 

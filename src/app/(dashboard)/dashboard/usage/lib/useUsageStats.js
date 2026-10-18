@@ -31,7 +31,7 @@ const sameLive = (a, b) =>
  * error — triggers exactly one catch-up stats fetch (`caughtUp` clears the
  * flag, `catchUpKey` lets background consumers re-fetch too).
  *
- * @param {string|null} period "today"|"24h"|"7d"|"30d"|"60d"; null until
+ * @param {string|null} period "today"|"24h"|"7d"|"30d"|"60d"|"90d"|"all"; null until
  *   usePeriod resolves after hydration — no fetch happens and `loading`
  *   stays true so callers keep their skeletons.
  * @param {{tab?: "overview"|"logs"}} [options] active page tab; the stream
