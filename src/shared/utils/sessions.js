@@ -3,6 +3,17 @@
  * component so the node-environment unit tests can cover them.
  */
 
+import { translate } from "@/i18n/runtime";
+
+/**
+ * Replace `{name}` placeholders in an already-translated template. Call as
+ * `fill(translate("Network {ip}"), { ip })` so the literal stays extractable.
+ * @param {string} template
+ * @param {Record<string, string|number>} vars
+ */
+export const fill = (template, vars) =>
+  String(template).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
+
 const METHOD_LABELS = { pwd: "Password", password: "Password", oidc: "OIDC", saml: "SAML" };
 
 const MINUTE = 60_000;
@@ -39,12 +50,12 @@ export function sortSessions(sessions) {
  */
 export function formatLastActive(iso, now = Date.now()) {
   const t = time(iso);
-  if (!t) return "Active recently";
+  if (!t) return translate("Active recently");
   const diff = Math.max(0, now - t);
-  if (diff < 5 * MINUTE) return "Active now";
-  if (diff < HOUR) return `Active ${Math.floor(diff / MINUTE)} min ago`;
-  if (diff < 24 * HOUR) return `Active ${Math.floor(diff / HOUR)} h ago`;
-  return `Active ${new Date(t).toLocaleDateString()}`;
+  if (diff < 5 * MINUTE) return translate("Active now");
+  if (diff < HOUR) return fill(translate("Active {n} min ago"), { n: Math.floor(diff / MINUTE) });
+  if (diff < 24 * HOUR) return fill(translate("Active {n} h ago"), { n: Math.floor(diff / HOUR) });
+  return fill(translate("Active {date}"), { date: new Date(t).toLocaleDateString() });
 }
 
 /** Absolute local date/time for titles and "Signed in …". */
