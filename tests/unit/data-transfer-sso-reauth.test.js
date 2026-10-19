@@ -2,6 +2,7 @@
 // sealing, DB, routes and databaseTransfer; only protocol I/O and the core
 // snapshot layer are mocked.
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { Readable } from "node:stream";
 import { NextRequest, NextResponse } from "next/server";
 import { seedTenancy } from "../setup/tenancyHarness.js";
 
@@ -13,6 +14,7 @@ const m = vi.hoisted(() => ({
   importWorkspace: vi.fn(),
   exportDb: vi.fn(),
   importDb: vi.fn(),
+  importDbStream: vi.fn(),
 }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({
@@ -51,8 +53,9 @@ vi.mock("@/lib/db/workspaceTransfer.js", () => ({
   importWorkspace: m.importWorkspace,
 }));
 vi.mock("@/lib/localDb", () => ({
-  exportDb: m.exportDb,
+  exportDbToFile: m.exportDb,
   importDb: m.importDb,
+  importDbStream: m.importDbStream,
   getSettings: vi.fn(async () => ({})),
 }));
 vi.mock("@/lib/network/outboundProxy", () => ({ applyOutboundProxyEnv: vi.fn() }));
@@ -157,7 +160,12 @@ beforeEach(async () => {
   });
   m.exportWorkspace.mockResolvedValue({ snapshot: true });
   m.importWorkspace.mockResolvedValue(undefined);
-  m.exportDb.mockResolvedValue({ db: true });
+  m.exportDb.mockImplementation(async () => ({
+    size: 11,
+    openStream: () => Readable.from([Buffer.from('{"db":true}')]),
+    cleanup: vi.fn(),
+  }));
+  m.importDbStream.mockResolvedValue(undefined);
   m.importDb.mockResolvedValue(undefined);
 });
 afterAll(() => {

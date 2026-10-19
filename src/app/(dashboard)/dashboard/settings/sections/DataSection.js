@@ -15,6 +15,12 @@ import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
 import { accountView } from "@/shared/utils/account";
 import BackupManager from "./BackupManager";
 import UsageHistoryRetention from "./UsageHistoryRetention";
+import {
+  backupFileName,
+  downloadBlob,
+  instanceImportHeaders,
+  readSnapshotEnvelopeSource,
+} from "./backupShared";
 
 // Shown until the server reports the real path (and if that request fails).
 const DEFAULT_DATABASE_FILE = `~/.${ACTIVE.dataDirName}/db/data.sqlite`;
@@ -112,17 +118,7 @@ function LegacyDataSection({ onSettingsChange }) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to export database");
       }
-      const payload = await res.json();
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      const stamp = new Date().toISOString().replace(/[.:]/g, "-");
-      anchor.href = url;
-      anchor.download = `${ACTIVE.backupFilePrefix}${stamp}.json`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
+      downloadBlob(await res.blob(), backupFileName());
       setStatus({ type: "ok", message: "Database backup downloaded" });
     } catch (err) {
       setStatus({ type: "err", message: err.message || "Failed to export database" });
@@ -140,7 +136,7 @@ function LegacyDataSection({ onSettingsChange }) {
     // Envelope-only preview for the restore warning; a file that won't parse
     // still opens the dialog so the error can surface on confirm.
     try {
-      setPendingEnvelope(readBackupEnvelope(JSON.parse(await file.text())));
+      setPendingEnvelope(readBackupEnvelope(await readSnapshotEnvelopeSource(file)));
     } catch {
       setPendingEnvelope(null);
     }
@@ -152,12 +148,10 @@ function LegacyDataSection({ onSettingsChange }) {
     if (!file) return;
     setLoading(true);
     try {
-      const raw = await file.text();
-      const payload = JSON.parse(raw);
       const res = await fetch("/api/settings/database", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, password }),
+        headers: instanceImportHeaders({ password }, false),
+        body: file,
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to import database");

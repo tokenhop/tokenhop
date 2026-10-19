@@ -13,9 +13,9 @@ import Callout from "@/shared/components/Callout";
 import CopyField from "@/shared/components/CopyField";
 import {
   FORCE_PHRASE,
-  buildInstanceImportBody,
+  instanceImportHeaders,
   isMismatchError,
-  readJsonFile,
+  readSnapshotEnvelopeSource,
   apiError,
   passphraseProblem,
   normalizeDiff,
@@ -235,13 +235,13 @@ function InstanceImportButton({
   const [pending, setPending] = useState(null);
 
   const open = async (file) => {
-    let payload = null;
+    let head = null;
     try {
-      payload = await readJsonFile(file);
+      head = await readSnapshotEnvelopeSource(file);
     } catch (err) {
       return err.message || "This file could not be read.";
     }
-    setPending({ name: file.name, payload, envelope: readEnvelope(payload), reauth });
+    setPending({ name: file.name, file, envelope: readEnvelope(head), reauth });
     clearReauth();
   };
 
@@ -281,7 +281,7 @@ function InstanceImportButton({
       {pending && (
         <InstanceRestoreDialog
           name={pending.name}
-          payload={pending.payload}
+          file={pending.file}
           envelope={pending.envelope}
           ownerOnly={ownerOnly}
           dismiss={() => setPending(null)}
@@ -312,7 +312,7 @@ InstanceImportButton.propTypes = {
 
 function InstanceRestoreDialog({
   name,
-  payload,
+  file,
   envelope,
   ownerOnly,
   dismiss,
@@ -338,7 +338,7 @@ function InstanceRestoreDialog({
   const mismatch = Boolean(diff);
   const forceArmed =
     mismatch && confirmForce && typed.trim().toUpperCase() === FORCE_PHRASE && ownerOnly;
-  const problem = passphraseProblem(auth.passphrase, auth.passphrase, { headerSafe: false });
+  const problem = passphraseProblem(auth.passphrase, auth.passphrase, { headerSafe: true });
   const ready =
     hasProof(auth) &&
     (!envelope?.portable || Boolean(auth.passphrase)) &&
@@ -350,11 +350,10 @@ function InstanceRestoreDialog({
     setBusy(true);
     setError("");
     try {
-      const body = buildInstanceImportBody(payload, auth, forceArmed);
       const res = await fetch("/api/settings/database", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        headers: instanceImportHeaders(auth, forceArmed),
+        body: file,
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -487,7 +486,7 @@ function InstanceRestoreDialog({
 
 InstanceRestoreDialog.propTypes = {
   name: PropTypes.string.isRequired,
-  payload: PropTypes.object.isRequired,
+  file: PropTypes.object.isRequired,
   envelope: PropTypes.object,
   ownerOnly: PropTypes.bool,
   dismiss: PropTypes.func.isRequired,

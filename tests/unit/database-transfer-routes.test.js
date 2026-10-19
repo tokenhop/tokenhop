@@ -8,6 +8,7 @@
 // core snapshot layer and the multi-user plumbing are mocked.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextResponse } from "next/server";
+import { Readable } from "node:stream";
 
 const hidden404 = () => NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -17,9 +18,10 @@ const transfer = vi.hoisted(() => ({ exportWorkspace: vi.fn(), importWorkspace: 
 vi.mock("@/lib/db/workspaceTransfer.js", () => transfer);
 
 vi.mock("@/lib/localDb", () => ({
-  exportDb: vi.fn(),
+  exportDbToFile: vi.fn(),
   getSettings: vi.fn(async () => ({})),
   importDb: vi.fn(),
+  importDbStream: vi.fn(),
 }));
 // Live workspace membership for the post-hash ownership re-check.
 vi.mock("@/lib/db/index.js", () => ({ listWorkspaces: vi.fn() }));
@@ -159,7 +161,12 @@ beforeEach(async () => {
   );
   dbIndex.listWorkspaces.mockResolvedValue([{ id: "ws-1", role: "owner" }]);
 
-  db.exportDb.mockReset().mockResolvedValue({ schemaVersion: 9, settings: {} });
+  db.exportDbToFile.mockReset().mockImplementation(async () => ({
+    size: 19,
+    openStream: () => Readable.from([Buffer.from('{"schemaVersion":9}')]),
+    cleanup: vi.fn(),
+  }));
+  db.importDbStream.mockReset().mockResolvedValue(undefined);
   db.importDb.mockReset().mockResolvedValue(undefined);
   transfer.exportWorkspace.mockReset().mockResolvedValue({ workspaceId: "ws-1", sealed: "AES" });
   transfer.importWorkspace.mockReset().mockResolvedValue({ ok: true });
@@ -176,9 +183,9 @@ describe("instance database routes, switch off (legacy compat)", () => {
   it("GET keeps the x-9r-password header contract", async () => {
     expect((await get({ "x-9r-password": "legacy-pw" })).status).toBe(200);
     expect((await get({ "x-9r-password": "nope" })).status).toBe(401);
-    expect(db.exportDb).toHaveBeenCalledTimes(1);
+    expect(db.exportDbToFile).toHaveBeenCalledTimes(1);
     // Off: exactly one export arg, no actor added.
-    expect(db.exportDb.mock.calls[0].length).toBe(1);
+    expect(db.exportDbToFile.mock.calls[0].length).toBe(1);
   });
 
   it("POST keeps body { password, data } and strips multiUserEnabled", async () => {
@@ -200,7 +207,7 @@ describe("instance database routes, switch off (legacy compat)", () => {
       "x-tokenhop-backup-passphrase": "top-secret",
     });
     expect(res.status).toBe(200);
-    expect(db.exportDb).toHaveBeenCalledWith({ passphrase: "top-secret" });
+    expect(db.exportDbToFile).toHaveBeenCalledWith({ passphrase: "top-secret" });
     const wrote = await POST(
       requestOf({ body: { password: "legacy-pw", passphrase: "top-secret" } }),
     );
@@ -236,7 +243,7 @@ describe("instance database routes, switch on", () => {
     expect(noCookie.status).toBe(409);
     expect(await noCookie.json()).toMatchObject({ code: "stale_session" });
     expect(db.importDb).not.toHaveBeenCalled();
-    expect(db.exportDb).toHaveBeenCalledTimes(1);
+    expect(db.exportDbToFile).toHaveBeenCalledTimes(1);
   });
 
   it("active owner and admin pass; user and pending are forbidden", async () => {
