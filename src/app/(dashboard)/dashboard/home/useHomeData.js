@@ -80,9 +80,10 @@ export function useHomeSavings(period, refreshKey = 0) {
 }
 
 /**
- * Previous-period request count + top-combo counts for a Home period.
- * Failures degrade gracefully: delta text and combo counts fall back to
- * "unavailable", derived from /api/usage/stats instead of erroring.
+ * Top-combo counts for a Home period (stat-tile trends come from
+ * /api/usage/stats and /api/usage/savings with compare=previous instead).
+ * Failures degrade gracefully: combo counts fall back to values derived
+ * from /api/usage/stats instead of erroring.
  * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ summary: object|null, loading: boolean, error: null }}

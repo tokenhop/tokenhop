@@ -135,7 +135,7 @@ export default function HomePageClient() {
           buckets={chart.buckets}
           savings={savings}
           savingsUnavailable={savingsUnavailable}
-          loading={usage.loading || chart.loading || savingsLoading || summary.loading}
+          loading={usage.loading || chart.loading || savingsLoading}
           error={usage.error || chart.error}
           onRetry={bump}
           period={period}

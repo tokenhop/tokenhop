@@ -97,6 +97,7 @@ export function PairTrendLine({ parts, period, hero = false }) {
       {shown.map((part, index) => (
         <span key={part.label}>
           {index > 0 && " · "}
+          {/* Literal JSX text (not {part.label}) so the i18n extractor sees both labels. */}
           {part.label === "In" ? <span>In</span> : <span>Out</span>}{" "}
           <TrendPct current={part.current} previous={part.previous} hero={hero} />
         </span>
