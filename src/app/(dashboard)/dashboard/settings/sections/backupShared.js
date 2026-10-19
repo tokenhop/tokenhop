@@ -65,15 +65,100 @@ export function passphraseProblem(passphrase, confirm, { headerSafe }) {
 /**
  * Instance restore request body. The backup file is untrusted: drop every
  * request-control field it may carry, then add only what the dialog proved
- * (actor password, optional passphrase, `force` only when explicitly armed).
- * Never mutates `payload`.
+ * (a one-time `ssoProof` OR the actor password — never both, optional
+ * passphrase, `force` only when explicitly armed). Never mutates `payload`.
  */
 export function buildInstanceImportBody(payload, auth, forceArmed) {
-  const { password: _p, passphrase: _s, force: _f, ...file } = payload || {};
-  const body = { ...file, password: auth.password };
+  const { password: _p, passphrase: _s, force: _f, ssoProof: _o, ...file } = payload || {};
+  const body = { ...file };
+  if (typeof auth.ssoProof === "string" && auth.ssoProof) body.ssoProof = auth.ssoProof;
+  else body.password = auth.password;
   if (auth.passphrase) body.passphrase = auth.passphrase;
   if (forceArmed) body.force = true;
   return body;
+}
+
+// ── YAN-1012: fresh single sign-on check for backup export/import ─────────
+// The proof is a one-time secret: it only ever lives in dialog state and in
+// the request that spends it. Never stored, logged or put in a URL.
+
+export const SSO_PROOF_HEADER = "x-tokenhop-sso-proof";
+export const DATA_ACTIONS = [
+  "instance.export",
+  "instance.import",
+  "workspace.export",
+  "workspace.import",
+];
+
+/** A proof is present, or (outside an SSO-started attempt) a password is typed. */
+export const hasProof = (auth) =>
+  auth.ssoProof ? true : auth.ssoOnly ? false : Boolean(auth.password);
+
+/** Exactly one of `ssoProof` / `password` for a JSON request body. */
+export const proofFields = (auth) =>
+  auth.ssoProof ? { ssoProof: auth.ssoProof } : { password: auth.password };
+
+async function reauthRequest(url, init, fallback) {
+  const res = await fetch(url, { cache: "no-store", ...init });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw apiError(res, data, fallback);
+  return data;
+}
+
+/** Start a fresh provider sign-in bound to one backup action → `{ authorizeUrl }`. */
+export function startDataReauth({ provider, action, workspaceId = null }) {
+  const body = { provider, action };
+  if (workspaceId) body.workspaceId = workspaceId;
+  return reauthRequest(
+    "/api/me/reauth",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    "Could not start single sign-on.",
+  );
+}
+
+/** Collect the completed check ONCE → `{ ssoProof }`; the server rejects a second call. */
+export function consumeDataReauth({ action, workspaceId = null }) {
+  const query = new URLSearchParams({ action });
+  if (workspaceId) query.set("workspaceId", workspaceId);
+  return reauthRequest(`/api/me/reauth?${query}`, {}, "No completed single sign-on check.");
+}
+
+/** Only http(s) provider URLs are followed (never javascript:, data:, …). */
+export function safeAuthorizeUrl(value) {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+const START_ERRORS = {
+  sso_not_linked: "Your account is not linked to that provider.",
+  sso_unavailable: "That provider is not available on this instance.",
+  rate_limited: "Too many attempts. Wait a moment and try again.",
+};
+
+export const startErrorText = (err) =>
+  START_ERRORS[err?.code] || err?.message || "Could not start single sign-on.";
+
+/** Dialog copy for a failed export/import; `usedSso` picks the no-fallback wording. */
+export function reauthErrorText(err, usedSso, fallback) {
+  if (err?.status === 401 || err?.code === "reauth_required") {
+    return usedSso
+      ? "Your single sign-on check expired or was already used. Verify again."
+      : err?.message || fallback;
+  }
+  if (err?.code === "reauth_unsupported") {
+    return "Your account has no password. Verify with single sign-on instead.";
+  }
+  if (err?.code === "stale_session") return "Your session is out of date. Sign in again.";
+  return err?.message || fallback;
 }
 
 const asList = (value) => (Array.isArray(value) ? value : []);

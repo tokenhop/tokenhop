@@ -18,11 +18,14 @@ import {
   isPassphraseFail,
   passphraseImportLock,
   recordPassphraseFail,
+  reauthActor,
   reauthPrincipal,
   transferConflictFailure,
 } from "@/lib/users/databaseTransfer.js";
+import { DATA_TRANSFER_PURPOSES } from "@/lib/users/ssoProofState.js";
 
 const PASSWORD_HEADER = "x-9r-password";
+const SSO_PROOF_HEADER = "x-tokenhop-sso-proof";
 const PASSPHRASE_HEADER = "x-tokenhop-backup-passphrase";
 const NO_STORE = { "Cache-Control": "no-store" };
 const json = (body, status = 200, headers = {}) =>
@@ -98,10 +101,21 @@ async function authenticate(request) {
   return { principal };
 }
 
-/** Password re-auth of the ACTING user (no CLI-token bypass once multi-user is on). */
-async function reauth(request, principal, password) {
-  return reauthPrincipal(request, principal, password, { instanceAdmin: true });
+/**
+ * Re-auth of the ACTING user (no CLI-token bypass once multi-user is on):
+ * their password (unchanged path), or — YAN-1012 — a one-time SSO proof bound
+ * to this exact instance action; exactly one of the two.
+ */
+async function reauth(request, principal, password, ssoProof, purpose) {
+  if (ssoProof === undefined || ssoProof === null) {
+    return reauthPrincipal(request, principal, password, { instanceAdmin: true });
+  }
+  return reauthActor(request, principal, { password, ssoProof }, { purpose, instanceAdmin: true });
 }
+
+/** Audit tag for how the acting user re-authenticated (never the proof itself). */
+const reauthMethod = (auth, usedSso) =>
+  auth?.legacy ? {} : { reauth: usedSso ? "sso" : "password" };
 
 const actorOf = (principal) =>
   principal
@@ -128,19 +142,31 @@ export async function GET(request) {
         return json({ error: "Invalid password" }, 401);
       }
     } else {
-      const denied = await reauth(request, principal, request.headers.get(PASSWORD_HEADER));
+      const denied = await reauth(
+        request,
+        principal,
+        request.headers.get(PASSWORD_HEADER),
+        request.headers.get(SSO_PROOF_HEADER),
+        DATA_TRANSFER_PURPOSES["instance.export"],
+      );
       if (denied) return denied;
     }
     const passphrase = boundPassphrase(request.headers.get(PASSPHRASE_HEADER));
     if (passphrase === null) {
       return json({ error: "Invalid passphrase", code: "invalid_request" }, 400);
     }
+    const usedSso = request.headers.get(SSO_PROOF_HEADER) != null;
     const payload = await exportDb(passphrase === undefined ? undefined : { passphrase });
     await audit(
       { principal, ip: getClientIp(request) },
       "db.export",
       { type: "database" },
-      { after: { method: passphrase === undefined ? "plain" : "passphrase" } },
+      {
+        after: {
+          method: passphrase === undefined ? "plain" : "passphrase",
+          ...reauthMethod(auth, usedSso),
+        },
+      },
     );
     return json(payload);
   } catch (error) {
@@ -180,7 +206,8 @@ export async function POST(request) {
       );
       return json({ error: "Invalid request", code: "invalid_request" }, 400);
     }
-    const { password, passphrase: rawPassphrase, force, ...payload } = body;
+    // ssoProof is stripped in every branch: it never reaches importDb.
+    const { password, ssoProof, passphrase: rawPassphrase, force, ...payload } = body;
     const passphrase = boundPassphrase(rawPassphrase);
     if (passphrase === null || (force !== undefined && typeof force !== "boolean")) {
       return json({ error: "Invalid request", code: "invalid_request" }, 400);
@@ -190,22 +217,37 @@ export async function POST(request) {
         return json({ error: "Invalid password" }, 401);
       }
     } else {
-      const denied = await reauth(request, principal, password);
+      // Predictable denials run BEFORE re-auth so they never burn a one-time
+      // SSO proof. Only the instance owner may replace differing users (core re-checks).
+      if (force === true && principal && !forceAllowed(principal, force)) {
+        await audit(
+          { principal, ip: getClientIp(request) },
+          "db.import",
+          { type: "database" },
+          { result: "denied", after: { reason: "force_forbidden" } },
+        );
+        return json(
+          { error: "Only the instance owner can force a restore", code: "FORBIDDEN" },
+          403,
+        );
+      }
+      const early = passphraseImportLock(request);
+      if (early) return early;
+      const denied = await reauth(
+        request,
+        principal,
+        password,
+        ssoProof,
+        DATA_TRANSFER_PURPOSES["instance.import"],
+      );
       if (denied) return denied;
     }
-    // Only the instance owner may replace differing users (core re-checks).
-    if (force === true && principal && !forceAllowed(principal, force)) {
-      await audit(
-        { principal, ip: getClientIp(request) },
-        "db.import",
-        { type: "database" },
-        { result: "denied", after: { reason: "force_forbidden" } },
-      );
-      return json({ error: "Only the instance owner can force a restore", code: "FORBIDDEN" }, 403);
+    // Wrong passphrases cost a scrypt unwrap each: back off per IP first
+    // (legacy keeps its original order: after the password check).
+    if (auth.legacy) {
+      const locked = passphraseImportLock(request);
+      if (locked) return locked;
     }
-    // Wrong passphrases cost a scrypt unwrap each: back off per IP first.
-    const locked = passphraseImportLock(request);
-    if (locked) return locked;
     // YAN-351: a restore must not flip the users & teams switch before its
     // release. Plain settings only: never rewrite an encrypted/sealed blob.
     const s = payload.settings;
@@ -239,7 +281,12 @@ export async function POST(request) {
       { principal, ip: getClientIp(request) },
       "db.import",
       { type: "database" },
-      { after: { method: passphrase === undefined ? "plain" : "passphrase" } },
+      {
+        after: {
+          method: passphrase === undefined ? "plain" : "passphrase",
+          ...reauthMethod(auth, ssoProof != null),
+        },
+      },
     );
 
     return json({ success: true });

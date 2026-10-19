@@ -172,6 +172,16 @@ describe("buildInstanceImportBody", () => {
     );
   });
 
+  it("never forwards the file's ssoProof; sends exactly one of proof or password", () => {
+    const file = { formatVersion: 3, ssoProof: "from-file", password: "file-pw" };
+    const withPassword = buildInstanceImportBody(file, { password: "pw" }, false);
+    expect(withPassword.ssoProof).toBeUndefined();
+    expect(withPassword.password).toBe("pw");
+    const withProof = buildInstanceImportBody(file, { password: "", ssoProof: "real" }, false);
+    expect(withProof.ssoProof).toBe("real");
+    expect(withProof).not.toHaveProperty("password");
+  });
+
   it("never mutates the parsed backup file", () => {
     const file = { formatVersion: 3, password: "x", passphrase: "y", force: true };
     const before = structuredClone(file);
