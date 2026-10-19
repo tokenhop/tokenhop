@@ -13,15 +13,19 @@ import {
   clearCodexSessionsFor,
   otherOwnerActive,
 } from "@/lib/oauth/utils/server";
+import { forgetBinding } from "@/lib/oauth/pendingBinding";
 import { oauthScope } from "@/lib/oauth/scope";
 
 // Resolved lazily so partial module mocks (xiaomi-mimo tests) stay valid.
 const clearOwn = (provider, userId) => {
-  if (provider === "trae") clearTraeSessionsFor(userId);
-  else if (provider === "windsurf") clearWindsurfSessionsFor(userId);
-  else if (provider === "zed") clearZedSessionsFor(userId);
-  else if (provider === "xai") clearXaiSessionsFor(userId);
-  else if (provider === "codex") clearCodexSessionsFor(userId);
+  let cleared = [];
+  if (provider === "trae") cleared = clearTraeSessionsFor(userId);
+  else if (provider === "windsurf") cleared = clearWindsurfSessionsFor(userId);
+  else if (provider === "zed") cleared = clearZedSessionsFor(userId);
+  else if (provider === "xai") cleared = clearXaiSessionsFor(userId);
+  else if (provider === "codex") cleared = clearCodexSessionsFor(userId);
+  // The cleared flows are dead: drop their pending bindings too.
+  for (const state of cleared ?? []) forgetBinding(state);
 };
 
 // GET /api/oauth/[provider]/stop-proxy - stop the loopback callback server

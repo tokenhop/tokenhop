@@ -62,7 +62,7 @@ export function codexLiveSessions() {
 
 /** Drop this user's still-pending sessions (stop-proxy by that user). */
 export function clearCodexSessionsFor(userId) {
-  clearPendingFor(pendingExchanges, userId);
+  return clearPendingFor(pendingExchanges, userId);
 }
 
 /**

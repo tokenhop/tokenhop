@@ -45,7 +45,7 @@ export function clearZedSession(state) {
 
 /** Drop this user's still-pending sessions (stop-proxy by that user). */
 export function clearZedSessionsFor(userId) {
-  clearPendingFor(zedSessions, userId);
+  return clearPendingFor(zedSessions, userId);
 }
 
 /** Stop the listener unless another live login still needs it (see listenerStillNeeded). */

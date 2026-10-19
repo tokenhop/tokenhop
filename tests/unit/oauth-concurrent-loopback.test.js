@@ -238,4 +238,76 @@ describe("review fixes", () => {
     codex.registerCodexSession(codexReg("fresh", "ud"));
     expect(codex.getCodexSessionStatus("old")).toBeNull();
   });
+
+  it("never replaces an in-flight (exchanging) session, for any provider", () => {
+    for (const [mod, reg, get, args] of [
+      [codex, "registerCodexSession", "getCodexSessionStatus", codexReg("inflight", "ua")],
+      [xai, "registerXaiSession", "getXaiSessionStatus", codexReg("inflight", "ua")],
+      [
+        trae,
+        "registerTraeSession",
+        "getTraeSessionStatus",
+        { state: "inflight", binding: bind("ua") },
+      ],
+      [
+        windsurf,
+        "registerWindsurfSession",
+        "getWindsurfSessionStatus",
+        { state: "inflight", binding: bind("ua") },
+      ],
+      [
+        zed,
+        "registerZedSession",
+        "getZedSessionStatus",
+        { state: "inflight", codeVerifier: "k", binding: bind("ua") },
+      ],
+    ]) {
+      expect(mod[reg](args)).toBe(true);
+      const live = mod[get]("inflight");
+      live.status = "exchanging";
+      expect(mod[reg](args)).toBe(false); // even the same user
+      expect(mod[get]("inflight")).toBe(live);
+    }
+  });
+
+  it("zed: with two bound sessions, the one whose key matches (the SECOND) completes; the other is untouched", async () => {
+    const { createZedNativeAuthData } = await import("open-sse/shared/zedAuth.js");
+    const crypto = await import("node:crypto");
+    const first = createZedNativeAuthData({}, { nativeAppPort: 1 });
+    const second = createZedNativeAuthData({}, { nativeAppPort: 1 });
+    const enc = crypto
+      .publicEncrypt(
+        {
+          key: crypto.createPublicKey({
+            key: Buffer.from(second.publicKey, "base64url"),
+            format: "der",
+            type: "pkcs1",
+          }),
+          padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+          oaepHash: "sha256",
+        },
+        Buffer.from("second-user-token"),
+      )
+      .toString("base64url");
+    zed.registerZedSession({
+      state: "z1",
+      codeVerifier: first.privateKeyVerifier,
+      binding: bind("ua"),
+    });
+    zed.registerZedSession({
+      state: "z2",
+      codeVerifier: second.privateKeyVerifier,
+      binding: bind("ub"),
+    });
+    const started = await zed.startZedProxy(0);
+    try {
+      const res = await fetch(`http://127.0.0.1:${started.port}/?user_id=u&access_token=${enc}`);
+      expect(res.status).toBe(200);
+      expect(zed.getZedSessionStatus("z2").status).toBe("done");
+      expect(zed.getZedSessionStatus("z1").status).toBe("pending");
+      expect(created.map((c) => c.binding.userId)).toEqual(["ub"]);
+    } finally {
+      zed.stopZedProxy();
+    }
+  });
 });

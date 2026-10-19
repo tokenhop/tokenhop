@@ -106,19 +106,29 @@ export function supersedeOwnSessions(map, binding) {
 }
 
 /**
- * True when `state` is already registered by a different user. Only the bound
- * (multi-user) path can conflict; unbound registers keep today's overwrite.
+ * True when registering `state` must be refused: it is held by a different user
+ * (only the bound/multi-user path can conflict; unbound registers keep today's
+ * overwrite), or it is mid-exchange (an in-flight session object is never replaced).
  */
 export function stateConflict(map, state, binding) {
   const existing = map.get(state);
+  if (existing?.status === "exchanging") return true;
   return Boolean(binding && existing?.binding && existing.binding.userId !== binding.userId);
 }
 
-/** Drop a user's still-pending sessions; one mid-exchange is left to finish. */
+/**
+ * Drop a user's still-pending sessions; one mid-exchange is left to finish.
+ * @returns {string[]} the cleared states
+ */
 export function clearPendingFor(map, userId) {
+  const cleared = [];
   for (const [key, s] of map) {
-    if (s.status === "pending" && s.binding?.userId === userId) map.delete(key);
+    if (s.status === "pending" && s.binding?.userId === userId) {
+      map.delete(key);
+      cleared.push(key);
+    }
   }
+  return cleared;
 }
 
 /** Result page for a repeated callback on a session that is no longer pending. */

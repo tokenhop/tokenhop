@@ -40,7 +40,7 @@ export function clearWindsurfSession(state) {
 
 /** Drop this user's still-pending sessions (stop-proxy by that user). */
 export function clearWindsurfSessionsFor(userId) {
-  clearPendingFor(windsurfSessions, userId);
+  return clearPendingFor(windsurfSessions, userId);
 }
 
 /** Stop the listener unless another live login still needs it (see listenerStillNeeded). */

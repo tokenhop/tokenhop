@@ -53,7 +53,7 @@ function renderXaiResultPage(success, message) {
 
 /** Drop this user's still-pending sessions (stop-proxy by that user). */
 export function clearXaiSessionsFor(userId) {
-  clearPendingFor(xaiPendingExchanges, userId);
+  return clearPendingFor(xaiPendingExchanges, userId);
 }
 
 /**

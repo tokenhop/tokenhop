@@ -40,7 +40,7 @@ export function clearTraeSession(state) {
 
 /** Drop this user's still-pending sessions (stop-proxy by that user). */
 export function clearTraeSessionsFor(userId) {
-  clearPendingFor(traeSessions, userId);
+  return clearPendingFor(traeSessions, userId);
 }
 
 /** Stop the listener unless another live login still needs it (see listenerStillNeeded). */
