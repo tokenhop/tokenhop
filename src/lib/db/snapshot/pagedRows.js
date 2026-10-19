@@ -11,7 +11,7 @@ const q = (id) => `"${id}"`;
 
 // length() counts characters for TEXT (bytes for BLOB): an estimate that is
 // exact for ASCII and never reads more than SQLite already scans internally.
-function sizeExpr(columns) {
+export function sizeExpr(columns) {
   return columns.map((c) => `COALESCE(length(${q(c)}), 0)`).join(" + ") || "0";
 }
 
@@ -28,11 +28,14 @@ export function forEachBoundedPage(
   { table, key, columns, pageSize, maxBytes = PAGE_BYTE_BUDGET },
   onRows,
 ) {
-  const sizes = `SELECT ${key} AS __k, (${sizeExpr(columns)}) AS __sz FROM ${table} WHERE ${key} > ? ORDER BY ${key} LIMIT ?`;
-  const fetch = `SELECT *, ${key} AS __k FROM ${table} WHERE ${key} > ? AND ${key} <= ? ORDER BY ${key}`;
-  let last = 0;
+  const sizes = `SELECT ${key} AS __k, (${sizeExpr(columns)}) AS __sz FROM ${table} WHERE (? IS NULL OR ${key} > ?) ORDER BY ${key} LIMIT ?`;
+  const fetch = `SELECT *, ${key} AS __k FROM ${table} WHERE (? IS NULL OR ${key} > ?) AND ${key} <= ? ORDER BY ${key}`;
+  // A null cursor means "from the first row": rowids may be zero or negative
+  // (usageHistory.id is a user-importable INTEGER PRIMARY KEY), so no numeric
+  // sentinel is safe — `key > 0` would silently skip those rows.
+  let last = null;
   for (;;) {
-    const probe = all(sizes, [last, pageSize]);
+    const probe = all(sizes, [last, last, pageSize]);
     if (probe.length === 0) return;
     let end = 0;
     let bytes = 0;
@@ -42,7 +45,7 @@ export function forEachBoundedPage(
       end++;
     }
     const upTo = probe[end - 1].__k;
-    const rows = all(fetch, [last, upTo]);
+    const rows = all(fetch, [last, last, upTo]);
     if (rows.length === 0) return;
     last = upTo;
     for (const row of rows) delete row.__k;

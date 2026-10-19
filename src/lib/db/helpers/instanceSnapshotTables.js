@@ -57,26 +57,6 @@ export function validateSectionRow(section, row, refs, seen = NOOP_SEEN) {
   section.validate(row, refs, seen);
 }
 
-/**
- * Keyset-page the live rows of one section (`rowid` order, constant memory).
- * `onRows(rows)` receives each page with the internal `__rid` cursor column
- * stripped. Callers must not write to the table between pages.
- */
-export function forEachSectionPage(db, section, pageSize, onRows) {
-  let last = 0;
-  for (;;) {
-    const rows = db.all(
-      `SELECT *, rowid AS __rid FROM ${section.name} WHERE rowid > ? ORDER BY rowid LIMIT ?`,
-      [last, pageSize],
-    );
-    if (rows.length === 0) return;
-    last = rows[rows.length - 1].__rid;
-    for (const row of rows) delete row.__rid;
-    onRows(rows);
-    if (rows.length < pageSize) return;
-  }
-}
-
 function strKey(value) {
   return typeof value === "string" && value ? value : null;
 }

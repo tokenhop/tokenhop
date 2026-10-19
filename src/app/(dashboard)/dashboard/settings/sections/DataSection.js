@@ -19,6 +19,7 @@ import {
   backupFileName,
   downloadBlob,
   instanceImportHeaders,
+  passwordHeaders,
   readSnapshotEnvelopeSource,
 } from "./backupShared";
 
@@ -112,7 +113,7 @@ function LegacyDataSection({ onSettingsChange }) {
     setStatus({ type: "", message: "" });
     try {
       const res = await fetch("/api/settings/database", {
-        headers: { "x-9r-password": password },
+        headers: passwordHeaders(password),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));

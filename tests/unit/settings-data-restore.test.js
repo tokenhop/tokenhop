@@ -129,7 +129,7 @@ describe("restore warning copy (source guard)", () => {
   });
 
   it("keeps the legacy export path and password gate", () => {
-    expect(source).toContain('headers: { "x-9r-password": password }');
+    expect(source).toContain("headers: passwordHeaders(password)");
     expect(source).toContain('if (mode === "export") await handleExport(password)');
   });
 });
@@ -158,12 +158,19 @@ const constant = (name) => {
 const UPLOAD_MODE_HEADER = constant("UPLOAD_MODE_HEADER");
 const FORCE_HEADER = constant("FORCE_HEADER");
 const PASSWORD_HEADER = constant("PASSWORD_HEADER");
+const PASSWORD_B64_HEADER = constant("PASSWORD_B64_HEADER");
+const encodeMatch = sharedSource.match(
+  /export function encodePasswordB64\(password\) \{([\s\S]*?)\n\}/,
+);
+if (!encodeMatch) throw new Error("encodePasswordB64 source changed shape");
+const encodePasswordB64 = new Function("password", encodeMatch[1]);
 const PASSPHRASE_HEADER = constant("PASSPHRASE_HEADER");
 const SSO_PROOF_HEADER = constant("SSO_PROOF_HEADER");
 const instanceImportHeaders = new Function(
   "UPLOAD_MODE_HEADER",
   "FORCE_HEADER",
-  "PASSWORD_HEADER",
+  "PASSWORD_B64_HEADER",
+  "encodePasswordB64",
   "PASSPHRASE_HEADER",
   "SSO_PROOF_HEADER",
   "auth",
@@ -173,7 +180,8 @@ const instanceImportHeaders = new Function(
   null,
   UPLOAD_MODE_HEADER,
   FORCE_HEADER,
-  PASSWORD_HEADER,
+  PASSWORD_B64_HEADER,
+  encodePasswordB64,
   PASSPHRASE_HEADER,
   SSO_PROOF_HEADER,
 );
@@ -183,6 +191,7 @@ describe("instanceImportHeaders", () => {
     expect(UPLOAD_MODE_HEADER).toBe("x-tokenhop-snapshot-upload");
     expect(FORCE_HEADER).toBe("x-tokenhop-import-force");
     expect(PASSWORD_HEADER).toBe("x-9r-password");
+    expect(PASSWORD_B64_HEADER).toBe("x-tokenhop-password-b64");
     expect(PASSPHRASE_HEADER).toBe("x-tokenhop-backup-passphrase");
     expect(SSO_PROOF_HEADER).toBe("x-tokenhop-sso-proof");
   });
@@ -210,11 +219,23 @@ describe("instanceImportHeaders", () => {
 
   it("sends exactly one of proof or password", () => {
     const withPassword = instanceImportHeaders({ password: "pw" }, false);
-    expect(withPassword[PASSWORD_HEADER]).toBe("pw");
+    expect(withPassword[PASSWORD_B64_HEADER]).toBe(encodePasswordB64("pw"));
+    expect(withPassword).not.toHaveProperty(PASSWORD_HEADER);
     expect(withPassword).not.toHaveProperty(SSO_PROOF_HEADER);
     const withProof = instanceImportHeaders({ password: "", ssoProof: "real" }, false);
     expect(withProof[SSO_PROOF_HEADER]).toBe("real");
+    expect(withProof).not.toHaveProperty(PASSWORD_B64_HEADER);
     expect(withProof).not.toHaveProperty(PASSWORD_HEADER);
+  });
+
+  it("password b64 round-trips non-ASCII, edge-whitespace and emoji passwords", async () => {
+    const { readPasswordHeader } = await import("@/lib/users/snapshotUpload.js");
+    for (const pw of ["pw", "ÿ", "  spaced  ", "pässwörd-日本語-😀", "a+b/c=d", ""]) {
+      const encoded = encodePasswordB64(pw);
+      expect(encoded).toMatch(/^[A-Za-z0-9_-]*$/);
+      const headers = new Headers({ [PASSWORD_B64_HEADER]: encoded });
+      expect(readPasswordHeader(headers)).toEqual({ value: pw });
+    }
   });
 
   it("never mutates auth", () => {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { exportDbToFile, getSettings, importDb, importDbStream } from "@/lib/localDb";
+import { getSettings, importDb } from "@/lib/localDb";
+import { exportDbToFile, importDbStream } from "@/lib/db/index.js";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";
 import { hasValidCliToken } from "@/lib/auth/cliToken";
@@ -25,11 +26,11 @@ import {
 import { DATA_TRANSFER_PURPOSES } from "@/lib/users/ssoProofState.js";
 import {
   PASSPHRASE_HEADER,
-  PASSWORD_HEADER,
   SSO_PROOF_HEADER,
   UPLOAD_MODE_HEADER,
   instanceStreamImportCap,
   readHeaderImportAuth,
+  readPasswordHeader,
   snapshotDownloadResponse,
 } from "@/lib/users/snapshotUpload.js";
 
@@ -176,10 +177,14 @@ export async function GET(request) {
     const auth = await authenticate(request);
     if (auth.res) return auth.res;
     principal = auth.principal ?? null;
+    const headerPassword = readPasswordHeader(request.headers);
+    if (headerPassword.invalid) {
+      return json({ error: "Invalid request", code: "invalid_request" }, 400);
+    }
     if (auth.legacy) {
       if (
         !(await hasValidCliToken(request)) &&
-        !(await verifyDashboardPassword(request.headers.get(PASSWORD_HEADER)))
+        !(await verifyDashboardPassword(headerPassword.value))
       ) {
         return json({ error: "Invalid password" }, 401);
       }
@@ -187,7 +192,7 @@ export async function GET(request) {
       const denied = await reauth(
         request,
         principal,
-        request.headers.get(PASSWORD_HEADER),
+        headerPassword.value,
         request.headers.get(SSO_PROOF_HEADER),
         DATA_TRANSFER_PURPOSES["instance.export"],
       );

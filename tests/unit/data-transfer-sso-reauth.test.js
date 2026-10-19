@@ -53,10 +53,13 @@ vi.mock("@/lib/db/workspaceTransfer.js", () => ({
   importWorkspace: m.importWorkspace,
 }));
 vi.mock("@/lib/localDb", () => ({
-  exportDbToFile: m.exportDb,
   importDb: m.importDb,
-  importDbStream: m.importDbStream,
   getSettings: vi.fn(async () => ({})),
+}));
+vi.mock("@/lib/db/index.js", async (orig) => ({
+  ...(await orig()),
+  exportDbToFile: m.exportDb,
+  importDbStream: m.importDbStream,
 }));
 vi.mock("@/lib/network/outboundProxy", () => ({ applyOutboundProxyEnv: vi.fn() }));
 vi.mock("@/lib/auth/cliToken", () => ({ hasValidCliToken: async () => false }));

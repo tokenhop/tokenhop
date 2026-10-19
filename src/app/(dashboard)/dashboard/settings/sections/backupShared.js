@@ -8,6 +8,9 @@ export const PASSPHRASE_HEADER = "x-tokenhop-backup-passphrase";
 export const UPLOAD_MODE_HEADER = "x-tokenhop-snapshot-upload";
 export const FORCE_HEADER = "x-tokenhop-import-force";
 export const PASSWORD_HEADER = "x-9r-password";
+// base64url(UTF-8(password)): HTTP header values are Latin-1 and get trimmed,
+// so a raw password with other characters would make fetch throw or change.
+export const PASSWORD_B64_HEADER = "x-tokenhop-password-b64";
 export const WORKSPACE_EXPORT_TYPE = "tokenhop.workspaceExport";
 export const WORKSPACE_EXPORT_VERSION = 1;
 export const MISMATCH_CODE = "IMPORT_USER_MISMATCH";
@@ -96,6 +99,20 @@ export function passphraseProblem(passphrase, confirm, { headerSafe }) {
   return "";
 }
 
+/** base64url of the UTF-8 bytes of `password` (lossless for any password). */
+export function encodePasswordB64(password) {
+  let binary = "";
+  for (const byte of new TextEncoder().encode(String(password ?? ""))) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** The password header for the instance export/import requests. */
+export const passwordHeaders = (password) => ({
+  [PASSWORD_B64_HEADER]: encodePasswordB64(password),
+});
+
 /**
  * Instance restore request headers. The body is the raw backup file, so the
  * file can never carry request control: everything here comes from `auth` /
@@ -105,7 +122,7 @@ export function passphraseProblem(passphrase, confirm, { headerSafe }) {
 export function instanceImportHeaders(auth, forceArmed) {
   const headers = { "Content-Type": "application/json", [UPLOAD_MODE_HEADER]: "raw" };
   if (typeof auth.ssoProof === "string" && auth.ssoProof) headers[SSO_PROOF_HEADER] = auth.ssoProof;
-  else headers[PASSWORD_HEADER] = auth.password;
+  else headers[PASSWORD_B64_HEADER] = encodePasswordB64(auth.password);
   if (auth.passphrase) headers[PASSPHRASE_HEADER] = auth.passphrase;
   if (forceArmed) headers[FORCE_HEADER] = "true";
   return headers;

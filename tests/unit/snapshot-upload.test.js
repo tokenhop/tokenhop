@@ -107,6 +107,19 @@ describe("readHeaderImportAuth", () => {
     });
   });
 
+  it("prefers the base64url UTF-8 password header and rejects malformed values", () => {
+    const b64 = Buffer.from("pässwörd 😀 ÿ", "utf8").toString("base64url");
+    expect(
+      readHeaderImportAuth(req({ "x-tokenhop-password-b64": b64, "x-9r-password": "legacy" }))
+        .password,
+    ).toBe("pässwörd 😀 ÿ");
+    for (const bad of ["a", "ab$d", "/+==", "_w"]) {
+      expect(readHeaderImportAuth(req({ "x-tokenhop-password-b64": bad })), bad).toEqual({
+        invalid: true,
+      });
+    }
+  });
+
   it("force is true only for the exact value 'true'", () => {
     expect(readHeaderImportAuth(req({ [FORCE_HEADER]: "true" })).force).toBe(true);
     expect(readHeaderImportAuth(req({})).force).toBe(false);

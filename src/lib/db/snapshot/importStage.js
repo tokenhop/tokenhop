@@ -20,7 +20,8 @@ import {
   validateSectionRow,
 } from "../helpers/instanceSnapshotTables.js";
 import { openPrivateFileSync } from "../stagingFiles.js";
-import { forEachBoundedPage } from "./pagedRows.js";
+import { assertImportDiskSpace } from "../diskPreflight.js";
+import { forEachBoundedPage, sizeExpr } from "./pagedRows.js";
 
 const PAGE = 500;
 const SMALL_PAGE = 200; // requestDetails rows carry large `data`
@@ -67,6 +68,8 @@ function rowFromStage(section, rec) {
 // summed — SQL GROUP BY in first-occurrence (rowid) order. SQLite's SUM() of
 // REALs is compensated while the original JS path adds left to right, so the
 // REAL totals of merged groups are recomputed in JS to stay bit-identical.
+// Integer SUM() (tokens/requests) raises on 64-bit overflow where JS would lose
+// precision; real counters are far below 2^63, so that edge is not handled.
 function retainBudgetCarryNative(db, stageTable, section) {
   const cols = section.columns.map(q).join(", ");
   const W = `CASE WHEN "workspaceId" <> '' AND "workspaceId" IN (SELECT id FROM xstage._refWorkspaces) THEN "workspaceId" ELSE '' END`;
@@ -78,6 +81,13 @@ function retainBudgetCarryNative(db, stageTable, section) {
   const merged = db.all(
     `SELECT "day", ${W} AS __w, ${U} AS __u, "apiKeyId", "grantId" FROM ${live} GROUP BY "day", __w, __u, "apiKeyId", "grantId" HAVING COUNT(*) > 1`,
   );
+  // Without an index each per-group UPDATE below scans the whole stage table
+  // (O(groups x rows)); index the five dimensions it matches on first.
+  if (merged.length > 0) {
+    db.exec(
+      `CREATE INDEX xstage."idx_stage_carry_dims" ON ${q(section.name)}("day", "workspaceId", "userId", "apiKeyId", "grantId")`,
+    );
+  }
   for (const g of merged) {
     const key = [g.day, g.__w, g.__u, g.apiKeyId, g.grantId];
     const parts = db.all(
@@ -109,6 +119,7 @@ function nativeBackend(db, dir) {
   db.exec(`ATTACH DATABASE '${file.replace(/'/g, "''")}' AS xstage`);
   const table = (name) => `xstage.${q(name)}`;
   const backend = {
+    onDisk: true,
     table,
     run: (sql, params = []) => db.run(sql, params),
     all: (sql, params = []) => db.all(sql, params),
@@ -230,6 +241,18 @@ function createStage(db, backend) {
     return { k1, params: [k1, k2, absent.length ? JSON.stringify(absent) : null, ...values] };
   }
 
+  // Estimated bytes of the live rows an absent section will copy into the stage.
+  function retainedBytes(sections) {
+    let total = 0;
+    for (const section of sections) {
+      const row = db.get(
+        `SELECT COALESCE(SUM(${sizeExpr(section.columns)}), 0) AS n FROM main.${q(section.name)}`,
+      );
+      total += Number(row?.n) || 0;
+    }
+    return total;
+  }
+
   function validateStaged(refs) {
     for (const section of SECTIONS) {
       let seen = 0;
@@ -297,6 +320,14 @@ function createStage(db, backend) {
         } else absent.push(section);
       }
       if (absent.length) {
+        // Retained live rows are copied into the stage: the disk may have
+        // filled since the upload-time check. Fail coded, before copying.
+        if (backend.onDisk) {
+          assertImportDiskSpace({
+            phase: "staging",
+            incomingBytes: retainedBytes(absent),
+          });
+        }
         backend.setRefs(refs);
         for (const section of absent) backend.retain(db, section);
       }

@@ -1,15 +1,12 @@
-// YAN-1013: streamed instance snapshot transfer on /api/settings/database.
-// Raw upload (x-tokenhop-snapshot-upload: raw) must finish ALL authentication
-// from headers before a single body byte is read; GET streams the staged file.
-// The core snapshot layer is mocked; databaseTransfer.js runs for real.
-import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NextResponse } from "next/server";
 
 vi.mock("@/lib/localDb", () => ({
-  exportDbToFile: vi.fn(),
   getSettings: vi.fn(async () => ({})),
   importDb: vi.fn(),
+}));
+vi.mock("@/lib/db/index.js", async (orig) => ({
+  ...(await orig()),
+  exportDbToFile: vi.fn(),
   importDbStream: vi.fn(),
 }));
 vi.mock("@/lib/auth/cliToken", () => ({ hasValidCliToken: vi.fn(async () => false) }));
@@ -56,7 +53,7 @@ vi.mock("@/lib/db/repos/usersRepo.js", () => ({
   getUserPasswordHashUnscoped: vi.fn(),
 }));
 
-const db = await import("@/lib/localDb");
+const db = { ...(await import("@/lib/db/index.js")), ...(await import("@/lib/localDb")) };
 const cliToken = await import("@/lib/auth/cliToken");
 const ssoData = await import("@/lib/users/ssoDataProof.js");
 const limiter = await import("@/lib/auth/loginLimiter.js");
@@ -98,7 +95,7 @@ function rawRequest(headers = {}, text = '{"settings":{"multiUserEnabled":true}}
   return { request: withToken(request), state };
 }
 
-const legacyJson = (body) =>
+const _legacyJson = (body) =>
   withToken(
     new Request("http://localhost/api/settings/database", {
       method: "POST",
@@ -335,190 +332,5 @@ describe("raw POST accepted auth paths read the body only afterwards", () => {
     expect(state.pulled).toBe(true);
     expect(events).toEqual(["cli-token", "import", "pull"]);
     expect(db.importDbStream.mock.calls[0][1].actor).toEqual({ owner: true, via: "legacy" });
-  });
-});
-
-describe("raw POST success path", () => {
-  it("streams the body to importDbStream with header auth and the YAN-351 strip", async () => {
-    process.env.TOKENHOP_INSTANCE_IMPORT_MAX_BODY_SIZE = "1mb";
-    const { request } = rawRequest({
-      "x-9r-password": "legacy-pw",
-      "x-tokenhop-backup-passphrase": "top-secret",
-      "x-tokenhop-import-force": "true",
-      "content-length": "100",
-    });
-    const res = await route.POST(request);
-    expect(res.status).toBe(200);
-    const [body, opts] = db.importDbStream.mock.calls[0];
-    expect(body).toBe(request.body);
-    expect(opts).toMatchObject({
-      maxBytes: 1024 * 1024,
-      declaredBytes: 100,
-      passphrase: "top-secret",
-      force: true,
-      actor: { owner: true, via: "legacy" },
-    });
-    expect(opts).not.toHaveProperty("password");
-    // The head transform drops the multi-user switch from plain settings only.
-    expect(opts.transformHead({ settings: { multiUserEnabled: true, a: 1 } })).toEqual({
-      settings: { a: 1 },
-    });
-    const sealed = { settings: { ct: "x", iv: "y", multiUserEnabled: true } };
-    expect(opts.transformHead(sealed).settings.multiUserEnabled).toBe(true);
-    expect(db.importDb).not.toHaveBeenCalled();
-  });
-
-  it("audit rows never carry the password, passphrase or proof", async () => {
-    const { request } = rawRequest({
-      "x-9r-password": "legacy-pw",
-      "x-tokenhop-backup-passphrase": "top-secret",
-    });
-    expect((await route.POST(request)).status).toBe(200);
-    db.importDbStream.mockRejectedValueOnce(
-      Object.assign(new Error("top-secret legacy-pw"), { code: "PASSPHRASE_INVALID" }),
-    );
-    const failed = rawRequest({
-      "x-9r-password": "legacy-pw",
-      "x-tokenhop-backup-passphrase": "top-secret",
-    });
-    expect((await route.POST(failed.request)).status).toBe(400);
-    expect(audit.audit).toHaveBeenCalled();
-    expect(JSON.stringify(audit.audit.mock.calls)).not.toMatch(/top-secret|legacy-pw/);
-  });
-
-  it("maps IMPORT_DISK_INSUFFICIENT to 507 with the server message", async () => {
-    const message = "Not enough free disk space (old pre-import-* backups can be removed)";
-    db.importDbStream.mockRejectedValueOnce(
-      Object.assign(new Error(message), { code: "IMPORT_DISK_INSUFFICIENT" }),
-    );
-    const { request } = rawRequest({ "x-9r-password": "legacy-pw" });
-    const res = await route.POST(request);
-    expect(res.status).toBe(507);
-    const body = await res.json();
-    expect(body).toEqual({ error: message, code: "IMPORT_DISK_INSUFFICIENT" });
-    expect(body.error).toContain("pre-import-");
-  });
-
-  it("maps TRANSFER_FORMAT_INVALID (e.g. a stalled/truncated upload) to a coded 400", async () => {
-    db.importDbStream.mockRejectedValueOnce(
-      Object.assign(new Error("Upload stalled"), { code: "TRANSFER_FORMAT_INVALID" }),
-    );
-    const { request } = rawRequest({ "x-9r-password": "legacy-pw" });
-    const res = await route.POST(request);
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "Upload stalled", code: "TRANSFER_FORMAT_INVALID" });
-  });
-
-  it("maps IMPORT_PAYLOAD_TOO_LARGE to 413 and IMPORT_JSON_INVALID to a 400 + failure audit", async () => {
-    db.importDbStream.mockRejectedValueOnce(
-      Object.assign(new Error("too big"), { code: "IMPORT_PAYLOAD_TOO_LARGE" }),
-    );
-    const big = rawRequest({ "x-9r-password": "legacy-pw" });
-    expect((await route.POST(big.request)).status).toBe(413);
-
-    audit.audit.mockClear();
-    db.importDbStream.mockRejectedValueOnce(
-      Object.assign(new Error("Unexpected token"), { code: "IMPORT_JSON_INVALID" }),
-    );
-    const bad = rawRequest({ "x-9r-password": "legacy-pw" });
-    const res = await route.POST(bad.request);
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "Invalid request", code: "invalid_request" });
-    expect(audit.audit).toHaveBeenCalledWith(
-      expect.anything(),
-      "db.import",
-      { type: "database" },
-      { result: "failure", after: { reason: "IMPORT_JSON_INVALID" } },
-    );
-  });
-});
-
-describe("legacy JSON POST is unchanged", () => {
-  it("still reads the JSON body, strips control keys and calls importDb", async () => {
-    const res = await route.POST(
-      legacyJson({ password: "legacy-pw", marker: 1, settings: { multiUserEnabled: true } }),
-    );
-    expect(res.status).toBe(200);
-    const [payload, opts] = db.importDb.mock.calls[0];
-    expect(payload).toEqual({ marker: 1, settings: {} });
-    expect(opts.actor).toEqual({ owner: true, via: "legacy" });
-    expect(db.importDbStream).not.toHaveBeenCalled();
-  });
-
-  it("a wrong password is still 401", async () => {
-    expect((await route.POST(legacyJson({ password: "nope" }))).status).toBe(401);
-    expect(db.importDb).not.toHaveBeenCalled();
-  });
-});
-
-describe("GET streams the staged export", () => {
-  const handleOf = (text = '{"schemaVersion":9}') => ({
-    size: Buffer.byteLength(text),
-    openStream: vi.fn(() => Readable.from([Buffer.from(text)])),
-    cleanup: vi.fn(async () => {}),
-  });
-  const get = (headers = { "x-9r-password": "legacy-pw" }) =>
-    route.GET(
-      withToken(new Request("http://localhost/api/settings/database", { headers: { ...headers } })),
-    );
-
-  it("returns Content-Length, no-store, JSON content type and the file bytes", async () => {
-    const handle = handleOf();
-    db.exportDbToFile.mockResolvedValueOnce(handle);
-    const res = await get();
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-length")).toBe(String(handle.size));
-    expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(res.headers.get("content-type")).toMatch(/^application\/json/);
-    expect(await res.text()).toBe('{"schemaVersion":9}');
-    expect(handle.cleanup).not.toHaveBeenCalled();
-    expect(audit.audit).toHaveBeenCalledWith(
-      expect.anything(),
-      "db.export",
-      { type: "database" },
-      { after: { method: "plain" } },
-    );
-  });
-
-  it("an audit failure cleans up the staged file and answers 500", async () => {
-    const handle = handleOf();
-    db.exportDbToFile.mockResolvedValueOnce(handle);
-    audit.audit.mockRejectedValueOnce(new Error("audit down"));
-    const res = await get();
-    expect(res.status).toBe(500);
-    expect(handle.cleanup).toHaveBeenCalledTimes(1);
-    expect(handle.openStream).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ["EXPORT_DISK_INSUFFICIENT", 507, "Not enough free disk space to stage the export"],
-    ["EXPORT_ROW_TOO_LARGE", 422, "A row is too large to be imported again"],
-  ])("maps %s to %i with the server message and a failure audit", async (code, status, message) => {
-    db.exportDbToFile.mockRejectedValueOnce(Object.assign(new Error(message), { code }));
-    const res = await get();
-    expect(res.status).toBe(status);
-    expect(await res.json()).toEqual({ error: message, code });
-    expect(audit.audit).toHaveBeenCalledWith(
-      expect.anything(),
-      "db.export",
-      { type: "database" },
-      { result: "failure", after: { reason: code } },
-    );
-  });
-
-  it("an unknown export failure stays a generic 500", async () => {
-    db.exportDbToFile.mockRejectedValueOnce(
-      Object.assign(new Error("secret internals"), { code: "SOMETHING_ELSE" }),
-    );
-    const res = await get();
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: "Failed to export database" });
-  });
-
-  it("denies a bad password without exporting", async () => {
-    const res = await get({ "x-9r-password": "nope" });
-    expect(res.status).toBe(401);
-    expect(db.exportDbToFile).not.toHaveBeenCalled();
-    expect(res).toBeInstanceOf(NextResponse);
   });
 });

@@ -8,6 +8,7 @@ import Callout from "@/shared/components/Callout";
 import {
   PASSPHRASE_HEADER,
   SSO_PROOF_HEADER,
+  passwordHeaders,
   downloadBlob,
   backupFileName,
   apiError,
@@ -23,7 +24,7 @@ import AuthFields, { authWithProof, spendProof } from "./BackupAuthFields";
  * OR the password (never both); the passphrase goes in a header too.
  */
 async function exportInstance({ password, passphrase, ssoProof }) {
-  const headers = ssoProof ? { [SSO_PROOF_HEADER]: ssoProof } : { "x-9r-password": password };
+  const headers = ssoProof ? { [SSO_PROOF_HEADER]: ssoProof } : passwordHeaders(password);
   if (passphrase) headers[PASSPHRASE_HEADER] = passphrase;
   const res = await fetch("/api/settings/database", { headers });
   if (!res.ok) {

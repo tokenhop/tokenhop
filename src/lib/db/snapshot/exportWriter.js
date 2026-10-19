@@ -14,13 +14,10 @@ import {
   STREAMED_SECTION,
   validateSectionRow,
 } from "../helpers/instanceSnapshotTables.js";
-import { DEFAULT_MAX_KEPT_BYTES } from "@/shared/utils/snapshotJsonSplitter.js";
+import { MAX_SNAPSHOT_ROW_BYTES } from "./limits.js";
 import { forEachBoundedSectionPage } from "./pagedRows.js";
 
 export const EXPORT_ROW_TOO_LARGE = "EXPORT_ROW_TOO_LARGE";
-// The importer's per-element cap (feedStream raises it to this value). A row
-// above it would produce a file this build cannot read back.
-export const MAX_ROW_BYTES = DEFAULT_MAX_KEPT_BYTES;
 
 const FLUSH_CHARS = 1 << 20; // ~1 MiB buffer
 const DEFAULT_PAGE = 500;
@@ -59,7 +56,7 @@ export function writeSnapshotFileSync(
   db,
   head,
   fd,
-  { onProgress, maxRowBytes = MAX_ROW_BYTES } = {},
+  { onProgress, maxRowBytes = MAX_SNAPSHOT_ROW_BYTES } = {},
 ) {
   const sectionByName = new Map(SECTIONS.map((s) => [s.name, s]));
   let buf = "";

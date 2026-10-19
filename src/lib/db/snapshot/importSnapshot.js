@@ -1,11 +1,8 @@
 // Whole-instance import: validation, root proof, preflight, pre-import backup
 // and the destructive apply. Moved from the db barrel; error codes unchanged.
 import { getAdapter } from "../driver.js";
-import {
-  DEFAULT_MAX_KEPT_BYTES,
-  parseSnapshotValue,
-  createSnapshotSplitter,
-} from "@/shared/utils/snapshotJsonSplitter.js";
+import { parseSnapshotValue, createSnapshotSplitter } from "@/shared/utils/snapshotJsonSplitter.js";
+import { MAX_SNAPSHOT_ROW_BYTES } from "./limits.js";
 import { INSTANCE_SNAPSHOT_SECTION_NAMES } from "../helpers/instanceSnapshotTables.js";
 import { makeStagingDir, removeStagingDir } from "../stagingFiles.js";
 import { openStage } from "./importStage.js";
@@ -41,10 +38,6 @@ import { withInstanceImportLock } from "./transferLock.js";
 const STRIP_KEYS = ["password", "ssoProof", "passphrase", "force"];
 const STAGE_BATCH_ROWS = 500;
 const STAGE_BATCH_BYTES = 4 * 1024 * 1024;
-// Largest single section row accepted from a raw upload. Matches what the
-// whole-document import accepted before (64 MiB) and the export writer's cap
-// (EXPORT_ROW_TOO_LARGE), so every file this build writes can be read back.
-const MAX_ROW_BYTES = DEFAULT_MAX_KEPT_BYTES;
 // A client that stops sending must not pin the import lock and its staging disk.
 const DEFAULT_IDLE_TIMEOUT_MS = 60_000;
 
@@ -262,10 +255,44 @@ function importDbUnlocked(payload, opts) {
   });
 }
 
-// Next chunk of `iterator`, or an "Upload was incomplete" error when none
-// arrives within `idleMs` (the stalled source is closed best-effort).
-async function nextChunk(iterator, idleMs) {
-  if (!(idleMs > 0)) return iterator.next();
+// Uniform pull/cancel view over every accepted body shape: a web
+// ReadableStream (reader), an async iterable (Node stream, async generator), a
+// sync iterable (array of chunks) or a single binary chunk. `cancel()` is
+// best-effort, never awaited by callers and never throws: it must not mask the
+// error that ended the import.
+function openSource(body) {
+  if (body === null || body === undefined) body = [];
+  else if (ArrayBuffer.isView(body) || typeof body === "string") body = [body];
+  if (typeof body.getReader === "function") {
+    const reader = body.getReader();
+    return {
+      next: () => reader.read(),
+      cancel() {
+        try {
+          reader.cancel().catch(() => {});
+        } catch {}
+      },
+    };
+  }
+  const factory = body[Symbol.asyncIterator] ?? body[Symbol.iterator];
+  if (typeof factory !== "function") {
+    throw new TypeError("Import body must be a stream or an iterable of chunks");
+  }
+  const iterator = factory.call(body);
+  return {
+    next: () => iterator.next(),
+    cancel() {
+      try {
+        Promise.resolve(iterator.return?.()).catch(() => {});
+      } catch {}
+    },
+  };
+}
+
+// Next chunk of `source`, or an "Upload was incomplete" error when none
+// arrives within `idleMs` (the caller then cancels the stalled source).
+async function nextChunk(source, idleMs) {
+  if (!(idleMs > 0)) return source.next();
   let timer;
   const stalled = new Promise((_, reject) => {
     timer = setTimeout(
@@ -274,12 +301,7 @@ async function nextChunk(iterator, idleMs) {
     );
   });
   try {
-    return await Promise.race([iterator.next(), stalled]);
-  } catch (error) {
-    if (error?.code === "TRANSFER_FORMAT_INVALID") {
-      Promise.resolve(iterator.return?.()).catch(() => {});
-    }
-    throw error;
+    return await Promise.race([source.next(), stalled]);
   } finally {
     clearTimeout(timer);
   }
@@ -302,7 +324,7 @@ async function feedStream(
   };
   const splitter = createSnapshotSplitter({
     streamedArrays: sections,
-    maxElementBytes: MAX_ROW_BYTES,
+    maxElementBytes: MAX_SNAPSHOT_ROW_BYTES,
     onValue(key, bytes) {
       const value = parseSnapshotValue(bytes);
       // Reject a newer-schema file as soon as its version is seen, before the
@@ -332,10 +354,12 @@ async function feedStream(
   });
   const encoder = new TextEncoder();
   let total = 0;
-  const iterator = body[Symbol.asyncIterator]();
+  let source = null;
+  let clean = false;
   try {
+    source = openSource(body);
     for (;;) {
-      const { done, value: chunk } = await nextChunk(iterator, idleTimeoutMs);
+      const { done, value: chunk } = await nextChunk(source, idleTimeoutMs);
       if (done) break;
       const bytes = typeof chunk === "string" ? encoder.encode(chunk) : chunk;
       total += bytes.length;
@@ -349,8 +373,13 @@ async function feedStream(
       throw new TransferError("TRANSFER_FORMAT_INVALID", "Upload was incomplete");
     }
     splitter.end();
+    clean = true;
   } catch (error) {
     throw jsonInvalid(error);
+  } finally {
+    // Any non-clean exit (too large, invalid JSON, schema gate, staging error,
+    // stall, source error) must release the request body, not leave it open.
+    if (!clean) source?.cancel();
   }
   return head;
 }

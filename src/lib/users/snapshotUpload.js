@@ -7,7 +7,12 @@ import { readEnv } from "@/shared/brand";
 // (a client module that must not be imported from server code).
 export const UPLOAD_MODE_HEADER = "x-tokenhop-snapshot-upload";
 export const FORCE_HEADER = "x-tokenhop-import-force";
+// Legacy ASCII-only header (CLI/e2e callers). HTTP header values are Latin-1
+// bytes, so a non-ASCII password sent here arrives mangled (U+00FF, trimmed
+// whitespace). Browsers send PASSWORD_B64_HEADER instead.
 export const PASSWORD_HEADER = "x-9r-password";
+// base64url(UTF-8(password)): lossless for any password.
+export const PASSWORD_B64_HEADER = "x-tokenhop-password-b64";
 export const SSO_PROOF_HEADER = "x-tokenhop-sso-proof";
 export const PASSPHRASE_HEADER = "x-tokenhop-backup-passphrase";
 
@@ -59,6 +64,28 @@ export function instanceStreamImportCap(env = process.env) {
   return override === null ? proxyLimit : Math.min(override, proxyLimit);
 }
 
+const B64URL_RE = /^[A-Za-z0-9_-]*$/;
+
+/**
+ * The password a request carries in its headers. `x-tokenhop-password-b64`
+ * (base64url of the UTF-8 password) wins over the legacy `x-9r-password`.
+ * A malformed b64 value is `{ invalid: true }` (never silently the wrong password).
+ * @param {Headers} headers
+ * @returns {{ value: string|null } | { invalid: true }}
+ */
+export function readPasswordHeader(headers) {
+  const b64 = headers.get(PASSWORD_B64_HEADER);
+  if (b64 === null) return { value: headers.get(PASSWORD_HEADER) };
+  if (!B64URL_RE.test(b64) || b64.length % 4 === 1) return { invalid: true };
+  try {
+    return {
+      value: new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(b64, "base64url")),
+    };
+  } catch {
+    return { invalid: true };
+  }
+}
+
 /**
  * Auth + force carried in request headers (the raw body is the snapshot file
  * itself). Absent headers yield `null` (`force: false`); values are returned
@@ -72,8 +99,10 @@ export function readHeaderImportAuth(request) {
   const h = request.headers;
   const forceRaw = h.get(FORCE_HEADER);
   if (forceRaw !== null && forceRaw !== "true") return { invalid: true };
+  const password = readPasswordHeader(h);
+  if (password.invalid) return { invalid: true };
   return {
-    password: h.get(PASSWORD_HEADER),
+    password: password.value,
     ssoProof: h.get(SSO_PROOF_HEADER),
     passphrase: h.get(PASSPHRASE_HEADER),
     force: forceRaw === "true",
