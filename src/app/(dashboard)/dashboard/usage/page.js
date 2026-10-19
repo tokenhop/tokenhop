@@ -17,6 +17,7 @@ import useLiveRoutes from "@/shared/hooks/useLiveRoutes";
 import usePeriod from "@/shared/hooks/usePeriod";
 import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
 import { accountView } from "@/shared/utils/account";
+import { PERIOD_VALUES } from "@/shared/utils/period";
 import {
   isIdle as routesAreIdle,
   mergeRoutes,
@@ -26,6 +27,7 @@ import {
 import useUsageStats from "./lib/useUsageStats";
 import { useChartBuckets } from "./lib/useChartBuckets";
 import useProviders from "./lib/useProviders";
+import { periodKey } from "./lib/periodRequest";
 import UsageStatsCards from "./components/UsageStatsCards";
 import UsageBreakdown from "./components/UsageBreakdown";
 import RequestLog from "./components/RequestLog";
@@ -43,7 +45,8 @@ const UsageTokensChart = dynamic(() => import("./components/UsageTokensChart"), 
  * Usage page: header + Tabs (Overview/Request log) + shared period control.
  * `?tab=` accepts overview|logs, plus `details` as an alias of `logs`
  * (old tab name preserved as a contract). The period lives in `?period=` via
- * usePeriod (URL first, remembered default after hydration). A quiet period
+ * usePeriod (URL first, remembered default after hydration); a custom day
+ * range lives only in the URL as `?period=custom&from=&to=` (YAN-426). A quiet period
  * renders one shared QuietPeriod card in place of stats tiles, chart and
  * breakdown; topology always stays. The live stream only runs on the
  * visible Overview tab (see useUsageStats).
@@ -61,7 +64,12 @@ export default function UsagePage() {
 function UsageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { period, setPeriod, options } = usePeriod();
+  const { period, range, setPeriod, setRange, options } = usePeriod(PERIOD_VALUES, {
+    allowCustom: true,
+  });
+  // Identity of the selected window (`custom:from:to` for a range): fetched
+  // stats/buckets only count as current when their key matches.
+  const windowKey = periodKey(period, range);
   const { status, loaded } = useAuthStatusState();
   const view = useMemo(() => accountView(status), [status]);
   const workspaceId = view.active ? (view.activeWorkspace?.id ?? null) : null;
@@ -113,7 +121,7 @@ function UsageContent() {
   };
   const { stats, statsPeriod, live, loading, error, retry, catchUpKey } = useUsageStats(
     loaded ? period : null,
-    { tab: activeTab },
+    { tab: activeTab, range },
     usageFilters,
   );
   const providers = useProviders();
@@ -146,16 +154,17 @@ function UsageContent() {
   const routesIdle =
     routesModel && routesModel.providers.length > 0 ? routesAreIdle(routesModel) : false;
   const quiet =
-    Boolean(stats) && statsPeriod === period && !loading && !error && !stats.totalRequests;
+    Boolean(stats) && statsPeriod === windowKey && !loading && !error && !stats.totalRequests;
   const activity = useLastActivity(quiet || routesIdle);
   // One chart fetch feeds both the tile sparklines and the tokens chart. It
   // stays off until the stats fetch proved the period isn't quiet; catchUpKey
   // re-fetches after a live-stream catch-up without flashing the skeleton.
   const chart = useChartBuckets(
     period,
-    activeTab === "overview" && stats !== null && statsPeriod === period && !quiet,
+    activeTab === "overview" && stats !== null && statsPeriod === windowKey && !quiet,
     catchUpKey,
     usageFilters,
+    range,
   );
 
   // Params come from useSearchParams, which already carries ?period= once a
@@ -187,6 +196,8 @@ function UsageContent() {
               options={options}
               value={period}
               onChange={setPeriod}
+              range={range}
+              onRangeChange={setRange}
               size="sm"
               className="w-full sm:w-auto"
             />
@@ -228,18 +239,18 @@ function UsageContent() {
             <>
               <Suspense fallback={<CardSkeleton />}>
                 <UsageStatsCards
-                  stats={statsPeriod === period ? stats : null}
-                  loading={period === null || loading || statsPeriod !== period}
-                  previous={statsPeriod === period ? stats?.previous : null}
-                  currentTotals={statsPeriod === period ? stats?.currentTotals : null}
-                  buckets={chart.bucketsPeriod === period ? chart.buckets : null}
+                  stats={statsPeriod === windowKey ? stats : null}
+                  loading={period === null || loading || statsPeriod !== windowKey}
+                  previous={statsPeriod === windowKey ? stats?.previous : null}
+                  currentTotals={statsPeriod === windowKey ? stats?.currentTotals : null}
+                  buckets={chart.bucketsPeriod === windowKey ? chart.buckets : null}
                   period={period ?? ""}
                 />
               </Suspense>
               {period ? (
                 <UsageTokensChart
                   buckets={chart.buckets}
-                  loading={chart.loading || (chart.bucketsPeriod !== period && !chart.error)}
+                  loading={chart.loading || (chart.bucketsPeriod !== windowKey && !chart.error)}
                   error={chart.error}
                   onRetry={chart.retry}
                 />
@@ -257,7 +268,11 @@ function UsageContent() {
             onRetryLastActivity={activity.retry}
           />
           {!quiet &&
-            (statsPeriod === period && stats ? <UsageBreakdown stats={stats} /> : <CardSkeleton />)}
+            (statsPeriod === windowKey && stats ? (
+              <UsageBreakdown stats={stats} />
+            ) : (
+              <CardSkeleton />
+            ))}
         </div>
       ) : activeTab === "budgets" ? (
         <BudgetsTab

@@ -6,11 +6,17 @@
 import { createHash } from "node:crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson } from "../helpers/jsonCol.js";
-import { PERIOD_DAYS, isRollupOnlyPeriod, periodStart } from "@/shared/utils/period";
+import {
+  PERIOD_DAYS,
+  isCustomPeriod,
+  isRollupOnlyPeriod,
+  periodStart,
+} from "@/shared/utils/period";
 import { readApiKeyStorageState } from "../apiKeyState.js";
 import { apiKeysHasKeyHash } from "../helpers/apiKeysSchema.js";
 import { lastErrorFor, pendingView } from "./usageLiveFeed.js";
 import { buildAllTimeBuckets } from "@/lib/usage/allTimeBuckets.js";
+import { customChartBuckets } from "@/lib/usage/customRange.js";
 import { rollupLatencySummary } from "../helpers/usageLatencyRollup.js";
 import {
   NO_KEY,
@@ -18,7 +24,6 @@ import {
   localDateKey,
   readRollup,
   readRollupDaily,
-  readRollupTotals,
   readLatencyRollup,
   scopeSql,
   whereAll,
@@ -182,13 +187,18 @@ function latencySummary(samples) {
  * ponytail: sub-day periods load up to LATENCY_SAMPLE_CAP rows; move them to
  * finer rollups if full-window coverage is needed there too.
  */
-function addCompletionsLatency(stats, db, scope, period, ctx) {
-  if (PERIOD_DAYS[period] || period === "all") {
+function addCompletionsLatency(stats, db, scope, period, ctx, range = null) {
+  if (range || PERIOD_DAYS[period] || period === "all") {
     const byKey = {};
     const byEndpoint = {};
-    const startKey = period === "all" ? null : cutoffDateKey(PERIOD_DAYS[period]);
+    const startKey = range
+      ? range.from
+      : period === "all"
+        ? null
+        : cutoffDateKey(PERIOD_DAYS[period]);
+    const endKey = range ? range.to : null;
     for (const endpoint of LATENCY_ENDPOINTS) {
-      const rows = readLatencyRollup(ctx, db, endpoint, startKey);
+      const rows = readLatencyRollup(ctx, db, endpoint, startKey, endKey);
       if (!rows.length) continue;
       byEndpoint[endpoint] = rollupLatencySummary(rows);
       for (const r of rows) {
@@ -250,7 +260,23 @@ const historyRow = (r) => {
   };
 };
 
-export async function getUsageStats(ctx, period = "all") {
+/**
+ * Custom ranges (YAN-426) arrive pre-validated by the route as inclusive local
+ * day keys; anything else here is a programming error.
+ */
+function requireRange(period, range) {
+  if (!isCustomPeriod(period)) return null;
+  if (!range?.from || !range?.to) throw new Error("custom period requires a {from, to} range");
+  return range;
+}
+
+/**
+ * @param {object|null} ctx usage scope
+ * @param {string} [period] a named period, or "custom" with `range`
+ * @param {{from: string, to: string}|null} [range] inclusive local day keys (custom only)
+ */
+export async function getUsageStats(ctx, period = "all", range = null) {
+  const customRange = requireRange(period, range);
   const db = await getAdapter();
   const scope = scopeSql(ctx);
   const [maps, keyNames] = [await nameMaps(), await apiKeyNames(db)];
@@ -339,7 +365,16 @@ export async function getUsageStats(ctx, period = "all") {
   }
 
   const HIST_COLS = `timestamp, provider, model, connectionId, apiKeyId, endpoint, promptTokens, completionTokens, cost, tokens`;
-  if (period === "24h" || period === "today") {
+  if (customRange) {
+    // Rollup only, never usageHistory: lastUsed is the rollup dateKey (like 90d/all).
+    const rows = readRollup(ctx, db, customRange.from, customRange.to);
+    aggregate(
+      stats,
+      rows.map((r) => ({ ...r, lastUsed: r.dateKey })),
+      maps,
+      keyNames,
+    );
+  } else if (period === "24h" || period === "today") {
     const rows = db.all(
       `SELECT ${HIST_COLS} FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?")}`,
       [...scope.params, new Date(periodStart(period, Date.now())).toISOString()],
@@ -386,7 +421,7 @@ export async function getUsageStats(ctx, period = "all") {
     }
   }
 
-  addCompletionsLatency(stats, db, scope, period, ctx);
+  addCompletionsLatency(stats, db, scope, period, ctx, customRange);
   stats.totalRequests = Object.values(stats.byProvider).reduce((s, p) => s + (p.requests || 0), 0);
   return stats;
 }
@@ -394,8 +429,14 @@ export async function getUsageStats(ctx, period = "all") {
 const hourLabel = (ts) =>
   new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
 
-export async function getChartData(ctx, period = "7d") {
+export async function getChartData(ctx, period = "7d", range = null) {
+  const customRange = requireRange(period, range);
   const db = await getAdapter();
+  if (customRange)
+    return customChartBuckets(
+      readRollupDaily(ctx, db, customRange.from, customRange.to),
+      customRange,
+    );
   const scope = scopeSql(ctx);
   const now = Date.now();
 
@@ -464,25 +505,4 @@ export async function getChartData(ctx, period = "7d") {
       requests: day ? day.requests : 0,
     };
   });
-}
-
-/**
- * Compare totals for the rollup-only periods (90d, all), read from usageRollup
- * so long windows never scan usageHistory (YAN-421). `90d`: current = the last
- * 90 calendar days, previous = the 90 calendar days before them. `all`: the
- * whole rollup and `previous: null` (no prior window). Other periods keep the
- * usageHistory-based getUsageTotals.
- * @returns {Promise<{currentTotals: object, previous: object|null}>}
- */
-export async function getRollupUsageTotals(ctx, period) {
-  if (!isRollupOnlyPeriod(period)) {
-    throw new Error(`getRollupUsageTotals: unsupported period ${period}`);
-  }
-  const db = await getAdapter();
-  if (period === "all") return { currentTotals: readRollupTotals(ctx, db), previous: null };
-  const cutoff = cutoffDateKey(PERIOD_DAYS["90d"]);
-  return {
-    currentTotals: readRollupTotals(ctx, db, cutoff),
-    previous: readRollupTotals(ctx, db, cutoffDateKey(PERIOD_DAYS["90d"] * 2), cutoff),
-  };
 }

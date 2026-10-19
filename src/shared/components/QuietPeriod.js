@@ -11,6 +11,7 @@ import { LoadingState } from "@/shared/components/StateViews";
 import { useLocalBaseUrl } from "@/shared/hooks/useEndpointShell";
 import {
   formatRelativeFromNow,
+  isCustomPeriod,
   PERIOD_VALUES,
   QUIET_COPY,
   smallestPeriodWithData,
@@ -22,7 +23,9 @@ import {
  * still has data. `lastRequestAt === null` renders the fresh-install hint.
  *
  * @param {object} props
- * @param {string} props.period Currently selected period value.
+ * @param {string} props.period Currently selected period value, or "custom" for a
+ *   date range (custom ranges get their own copy and no jump action: a named
+ *   period isn't a smaller window of an arbitrary range).
  * @param {string|null|undefined} props.lastRequestAt ISO timestamp of the last request,
  *   undefined until loaded, null when there was never one.
  * @param {boolean} [props.loading] True while last-activity loads.
@@ -109,8 +112,9 @@ export default function QuietPeriod({
   }
 
   // Canonical ascending order: the first match is the smallest period with data.
+  const custom = isCustomPeriod(period);
   const ordered = PERIOD_VALUES.filter((value) => allowed.includes(value));
-  const target = smallestPeriodWithData(lastRequestAt, ordered);
+  const target = custom ? null : smallestPeriodWithData(lastRequestAt, ordered);
   const jump = target && ordered.indexOf(target) > ordered.indexOf(period);
 
   return (
@@ -137,6 +141,7 @@ export default function QuietPeriod({
 }
 
 QuietPeriod.propTypes = {
+  // Any named period or "custom" (QUIET_COPY.custom); unknown values use QUIET_COPY.default.
   period: PropTypes.string,
   lastRequestAt: PropTypes.string,
   loading: PropTypes.bool,

@@ -2,21 +2,26 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { appendUsageFilters } from "./filterParams";
+import { periodKey, periodQuery, readUsageJson } from "./periodRequest";
 import { shapeChartSeries } from "./usageShapes";
 
 /**
  * Shared /api/usage/chart fetch for the Usage page: one request feeds both
  * the stat-tile sparklines and the tokens chart.
- * @param {string|null} period selected period; null disables the fetch
+ * @param {string|null} period selected period ("custom" for a date range); null disables the fetch
  * @param {boolean} enabled false keeps the fetch off (quiet state / logs tab)
  * @param {number} [refreshKey] re-runs the fetch as a background refresh
  *   (same period keeps the old buckets visible instead of flashing a skeleton)
  * @param {{workspaceId?: string, view?: string, userId?: string, apiKeyId?: string}|null} [filters]
  *   optional scope appended to the chart URL (YAN-376); a change resets
  *   buckets so old-scope data never flashes. Null preserves unscoped behavior.
+ * @param {{from: string, to: string}|null} [range] inclusive day range for "custom"
  * @returns {{ buckets: Array<object>, bucketsPeriod: string|null, loading: boolean, error: string|null, retry: () => void }}
+ *   `bucketsPeriod` is periodKey(period, range): the bare period, or `custom:from:to`.
  */
-export function useChartBuckets(period, enabled, refreshKey, filters = null) {
+export function useChartBuckets(period, enabled, refreshKey, filters = null, range = null) {
+  // Window identity: a new custom range must re-fetch even though period stays "custom".
+  const windowKey = periodKey(period, range);
   const [buckets, setBuckets] = useState([]);
   const [bucketsPeriod, setBucketsPeriod] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -38,29 +43,28 @@ export function useChartBuckets(period, enabled, refreshKey, filters = null) {
     setError(null);
   }, [scopeKey]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt re-runs the fetch on retry; refreshKey re-runs it on catch-up; scopeKey re-runs it on a scope change.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt re-runs the fetch on retry; refreshKey re-runs it on catch-up; scopeKey re-runs it on a scope change; windowKey covers period and range.
   useEffect(() => {
-    if (!enabled || !period) return;
-    const key = `${period}|${attempt}|${refreshKey ?? 0}|${scopeKey}`;
+    if (!enabled || !windowKey) return;
+    const key = `${windowKey}|${attempt}|${refreshKey ?? 0}|${scopeKey}`;
     if (lastFetch.current === key) return;
     const controller = new AbortController();
     // Only a first fetch (or a new period) flips the skeleton; background
     // refreshes keep the current buckets on screen.
-    if (bucketsPeriod !== period) setLoading(true);
+    if (bucketsPeriod !== windowKey) setLoading(true);
     setError(null);
-    fetch(appendUsageFilters(`/api/usage/chart?period=${encodeURIComponent(period)}`, filters), {
+    fetch(appendUsageFilters(`/api/usage/chart?${periodQuery(period, range)}`, filters), {
       signal: controller.signal,
     })
-      .then((response) =>
-        response.ok ? response.json() : Promise.reject(new Error(`chart ${response.status}`)),
-      )
+      // A 400 (invalid custom range) surfaces the server's `error` message.
+      .then((response) => readUsageJson(response, "chart"))
       .then((json) => {
         // Late success after abort (scope/period switch): the next effect run
         // owns state, so drop this payload instead of overwriting fresh data.
         if (controller.signal.aborted) return;
         lastFetch.current = key;
         setBuckets(shapeChartSeries(json));
-        setBucketsPeriod(period);
+        setBucketsPeriod(windowKey);
       })
       .catch((cause) => {
         if (cause?.name === "AbortError") return;
@@ -70,7 +74,7 @@ export function useChartBuckets(period, enabled, refreshKey, filters = null) {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [enabled, period, attempt, refreshKey, scopeKey]);
+  }, [enabled, windowKey, attempt, refreshKey, scopeKey]);
 
   return { buckets, bucketsPeriod, loading, error, retry };
 }

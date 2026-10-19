@@ -245,8 +245,113 @@ export const QUIET_COPY = {
   "60d": { title: "Quiet in the last 60d", actionLabel: "Show 60d" },
   "90d": { title: "Quiet in the last 90d", actionLabel: "Show 90d" },
   all: { title: "No requests in this view", actionLabel: "Show all time" },
+  custom: { title: "No requests in this date range" },
   default: { title: "Quiet in this period" },
 };
+
+/**
+ * Custom date ranges (YAN-426). `custom` is deliberately NOT in PERIODS /
+ * PERIOD_VALUES: it has no fixed window, so periodStart/coercePeriod and every
+ * named-period consumer keep rejecting it. A custom range is a pair of
+ * inclusive local-day keys (`YYYY-MM-DD`, the same keys as usageDaily.dateKey).
+ */
+export const CUSTOM_PERIOD = "custom";
+
+/** Longest allowed custom range, as an inclusive day count. */
+export const MAX_CUSTOM_RANGE_DAYS = 366;
+
+/**
+ * True when `value` is the custom-range period string.
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function isCustomPeriod(value) {
+  return value === CUSTOM_PERIOD;
+}
+
+const pad2 = (n) => String(n).padStart(2, "0");
+const keyOf = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Local `YYYY-MM-DD` of `now` (same key shape as the usage rollup's dateKey).
+ * @param {number} [now]
+ * @returns {string}
+ */
+export function localTodayKey(now = Date.now()) {
+  return keyOf(new Date(now));
+}
+
+/**
+ * True for a well-formed `YYYY-MM-DD` that is a real calendar day (rejects 2026-02-30).
+ * @param {unknown} key
+ * @returns {boolean}
+ */
+export function isValidDateKey(key) {
+  if (typeof key !== "string" || !DATE_KEY_RE.test(key)) return false;
+  const [y, m, d] = key.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
+}
+
+/**
+ * Day key `n` calendar days after `key` (negative = before). Steps with
+ * setDate on a local date, never millisecond math, so DST shifts keep days whole.
+ * @param {string} key valid `YYYY-MM-DD`
+ * @param {number} n
+ * @returns {string}
+ */
+export function shiftDateKey(key, n) {
+  const [y, m, d] = key.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + n);
+  return keyOf(date);
+}
+
+/**
+ * Whole days from `fromKey` to `toKey` (`to - from`; 0 for the same day).
+ * Computed on UTC calendar dates so DST never skews the count.
+ * @param {string} fromKey valid `YYYY-MM-DD`
+ * @param {string} toKey valid `YYYY-MM-DD`
+ * @returns {number}
+ */
+export function daysBetweenDateKeys(fromKey, toKey) {
+  const [fy, fm, fd] = fromKey.split("-").map(Number);
+  const [ty, tm, td] = toKey.split("-").map(Number);
+  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86400000);
+}
+
+// Each message is nested under `message` so scripts/i18n-literals.mjs extracts it.
+const RANGE_MESSAGES = {
+  range_missing: { message: "Choose a start and end date" },
+  range_format: { message: "Dates must be valid YYYY-MM-DD days" },
+  range_order: { message: "Start date must be on or before end date" },
+  range_future: { message: "End date can't be in the future" },
+  range_span: { message: "Range can't be longer than 366 days" },
+};
+
+const rangeError = (reason) => ({ ok: false, reason, message: RANGE_MESSAGES[reason].message });
+
+/**
+ * Validate an inclusive custom day range. Checks run in order: both present,
+ * real `YYYY-MM-DD` days, from <= to, to <= today, span <= MAX_CUSTOM_RANGE_DAYS.
+ * @param {unknown} from
+ * @param {unknown} to
+ * @param {string} todayKey local `YYYY-MM-DD` of "now" (see localTodayKey)
+ * @param {{futureToleranceDays?: number}} [opts] `to` may be up to this many days after `todayKey`
+ * @returns {{ok: true, from: string, to: string, days: number} | {ok: false, reason: string, message: string}}
+ */
+export function parseDateRange(from, to, todayKey, { futureToleranceDays = 0 } = {}) {
+  if (from == null || from === "" || to == null || to === "") return rangeError("range_missing");
+  if (!isValidDateKey(from) || !isValidDateKey(to)) return rangeError("range_format");
+  if (from > to) return rangeError("range_order");
+  if (todayKey && to > shiftDateKey(todayKey, futureToleranceDays)) {
+    return rangeError("range_future");
+  }
+  const days = daysBetweenDateKeys(from, to) + 1;
+  if (days > MAX_CUSTOM_RANGE_DAYS) return rangeError("range_span");
+  return { ok: true, from, to, days };
+}
 
 /**
  * Localized elapsed-time copy such as "2 days ago", clamped so it never

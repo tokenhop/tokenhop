@@ -3,11 +3,8 @@
 // buckets stay weekly/monthly/yearly with at most ~100 points.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getAdapter } from "@/lib/db/driver.js";
-import {
-  getChartData,
-  getRollupUsageTotals,
-  getUsageStats,
-} from "@/lib/db/repos/usageStatsRepo.js";
+import { getChartData, getUsageStats } from "@/lib/db/repos/usageStatsRepo.js";
+import { getRollupUsageTotals } from "@/lib/db/repos/usageRollupTotals.js";
 import { saveRequestUsageUnscoped } from "@/lib/db/repos/usageRepo.js";
 import { buildAllTimeBuckets } from "@/lib/usage/allTimeBuckets.js";
 

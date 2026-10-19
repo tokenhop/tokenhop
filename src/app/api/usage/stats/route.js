@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
-import { getRollupUsageTotals, getUsageStats, getUsageTotals } from "@/lib/usageDb";
 import {
+  getRollupRangeTotals,
+  getRollupUsageTotals,
+  getUsageStats,
+  getUsageTotals,
+} from "@/lib/usageDb";
+import {
+  isCustomPeriod,
   isPeriod,
   isRollupOnlyPeriod,
+  localTodayKey,
+  parseDateRange,
   periodStart,
   previousPeriodRange,
 } from "@/shared/utils/period";
@@ -16,7 +24,24 @@ export async function GET(request) {
     const period = searchParams.get("period") || "7d";
     const compare = searchParams.get("compare");
 
-    if (!isPeriod(period)) {
+    // Custom range (YAN-426): inclusive local day keys, rollup-only.
+    let range = null;
+    if (isCustomPeriod(period)) {
+      const parsed = parseDateRange(
+        searchParams.get("from"),
+        searchParams.get("to"),
+        localTodayKey(),
+        // Server accepts `to` one day past its local today so a browser timezone ahead of the server still validates.
+        { futureToleranceDays: 1 },
+      );
+      if (!parsed.ok) {
+        return NextResponse.json(
+          { error: parsed.message, code: "invalid_request", reason: parsed.reason },
+          { status: 400 },
+        );
+      }
+      range = { from: parsed.from, to: parsed.to, days: parsed.days };
+    } else if (!isPeriod(period)) {
       return NextResponse.json({ error: "Invalid period" }, { status: 400 });
     }
     // Optional compare=previous adds `currentTotals` + `previous` computed
@@ -28,6 +53,12 @@ export async function GET(request) {
 
     const scope = await usageScope(request);
     if (scope instanceof Response) return scope;
+
+    if (range) {
+      const stats = await getUsageStats(scope, period, range);
+      const extra = compare === "previous" ? await getRollupRangeTotals(scope, range) : {};
+      return NextResponse.json({ ...stats, range, ...extra });
+    }
 
     const stats = await getUsageStats(scope, period);
     if (compare === "previous" && isRollupOnlyPeriod(period)) {
