@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { exchangeTokens } from "@/lib/oauth/providers";
 import {
-  stopXaiProxy,
+  releaseXaiListener,
   getXaiSessionStatus,
   clearXaiSession,
   createSessionConnection,
@@ -38,7 +38,7 @@ async function completeXaiManualCode(code, state, session, scope) {
       ? await createSessionConnection(session.binding, data)
       : await createIn(scope, data);
     clearXaiSession(state);
-    stopXaiProxy();
+    releaseXaiListener(state);
     return {
       id: connection.id,
       provider: connection.provider,
@@ -47,7 +47,7 @@ async function completeXaiManualCode(code, state, session, scope) {
     };
   } catch (err) {
     clearXaiSession(state);
-    stopXaiProxy();
+    releaseXaiListener(state);
     throw err;
   }
 }

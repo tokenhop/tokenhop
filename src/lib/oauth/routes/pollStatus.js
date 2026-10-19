@@ -70,5 +70,8 @@ export default async function pollStatus(provider, request, { searchParams }) {
     forgetBinding(state);
     return NextResponse.json(payload);
   }
-  return NextResponse.json({ status: session.status });
+  // "exchanging" is server-internal: the client just sees a login still in progress.
+  return NextResponse.json({
+    status: session.status === "exchanging" ? "pending" : session.status,
+  });
 }

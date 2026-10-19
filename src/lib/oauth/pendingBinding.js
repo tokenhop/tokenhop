@@ -14,11 +14,18 @@ function sweep(now = Date.now()) {
   }
 }
 
-/** Bind `key` to the initiating principal. Overwrites an existing entry. */
+/**
+ * Bind `key` to the initiating principal. Overwrites the same user's entry, but a
+ * live entry held by a DIFFERENT user is never replaced (YAN-739: a client-chosen
+ * `state` must not let one user hijack another's pending flow).
+ * @returns {boolean} false when refused because another user owns the key
+ */
 export function rememberBinding(key, { provider, userId, workspaceId, ctx }, { ttlMs } = {}) {
-  if (!key) return;
+  if (!key) return true;
   const now = Date.now();
   sweep(now);
+  const held = bindings.get(key);
+  if (held && held.userId !== userId) return false;
   bindings.delete(key); // re-insert so FIFO order follows the latest write
   // Per-user cap first, so one member can't evict everyone else's flows; the
   // global cap stays as a backstop.
@@ -34,6 +41,7 @@ export function rememberBinding(key, { provider, userId, workspaceId, ctx }, { t
     ctx,
     expiresAt: now + (ttlMs ?? DEFAULT_TTL_MS),
   });
+  return true;
 }
 
 /** @returns {{provider, userId, workspaceId, ctx, expiresAt}|null} */

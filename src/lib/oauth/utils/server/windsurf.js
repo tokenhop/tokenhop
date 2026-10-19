@@ -1,35 +1,66 @@
 import http from "http";
 import { URL } from "url";
 import { WINDSURF_CONFIG } from "../../constants/oauth.js";
-import { createSessionConnection, isLoopbackOrigin, renderCodexResultPage } from "./shared.js";
+import {
+  createSessionConnection,
+  alreadyHandledPage,
+  anyLiveBoundSession,
+  clearPendingFor,
+  listenerStillNeeded,
+  isLoopbackOrigin,
+  renderCodexResultPage,
+  stateConflict,
+  supersedeOwnSessions,
+  unknownLoginPage,
+} from "./shared.js";
 
 // ───────────────────────────────────────────────────────────────────────────
-// Windsurf dynamic-port proxy. Singleton session.
+// Windsurf dynamic-port proxy. One listener, sessions keyed by state.
 // Callback path = /windsurf-auth-callback with params access_token (firebase JWT) + state.
 // ───────────────────────────────────────────────────────────────────────────
 
 let windsurfProxyServer = null;
 let windsurfProxyTimeout = null;
 let windsurfProxyPort = null;
-let windsurfSession = null;
+const windsurfSessions = new Map();
 
 export function registerWindsurfSession({ state, binding }) {
   if (!state) return false;
-  windsurfSession = { state, binding, status: "pending", createdAt: Date.now() };
+  if (stateConflict(windsurfSessions, state, binding)) return false;
+  supersedeOwnSessions(windsurfSessions, binding);
+  windsurfSessions.set(state, { state, binding, status: "pending", createdAt: Date.now() });
   return true;
 }
 export function getWindsurfSessionStatus(state) {
-  if (!windsurfSession) return null;
-  if (state && windsurfSession.state !== state) return null;
-  return windsurfSession;
+  return (state && windsurfSessions.get(state)) || null;
 }
 export function clearWindsurfSession(state) {
-  if (!state || (windsurfSession && windsurfSession.state === state)) windsurfSession = null;
+  if (state) windsurfSessions.delete(state);
+}
+
+/** Drop this user's still-pending sessions (stop-proxy by that user). */
+export function clearWindsurfSessionsFor(userId) {
+  return clearPendingFor(windsurfSessions, userId);
+}
+
+/** Stop the listener unless another live login still needs it (see listenerStillNeeded). */
+export function releaseWindsurfListener(exceptState) {
+  if (listenerStillNeeded(windsurfSessions.values(), exceptState)) return false;
+  stopWindsurfProxy();
+  return true;
 }
 
 export function startWindsurfProxy() {
   return new Promise((resolve) => {
     if (windsurfProxyServer) {
+      // Renew the idle timeout only while a bound login is live (switch-off parity).
+      if (anyLiveBoundSession(windsurfSessions.values())) {
+        if (windsurfProxyTimeout) clearTimeout(windsurfProxyTimeout);
+        windsurfProxyTimeout = setTimeout(
+          () => stopWindsurfProxy(),
+          WINDSURF_CONFIG.oauthTimeoutMs,
+        );
+      }
       resolve({
         success: true,
         port: windsurfProxyPort,
@@ -44,8 +75,7 @@ export function startWindsurfProxy() {
         res.end("Not found");
         return;
       }
-      const session = windsurfSession;
-      if (!session) {
+      if (windsurfSessions.size === 0) {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderCodexResultPage(false, "No active Windsurf login session"));
         return;
@@ -57,15 +87,32 @@ export function startWindsurfProxy() {
         return;
       }
       const cbState = url.searchParams.get("state");
-      if (!cbState || !session.state || cbState !== session.state) {
-        session.status = "error";
-        session.error = "Windsurf callback state mismatch";
+      const session = cbState ? windsurfSessions.get(cbState) : null;
+      if (session && session.status !== "pending") {
+        // Repeated/concurrent hit: never re-run the exchange or mutate the session.
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(renderCodexResultPage(false, session.error));
+        res.end(alreadyHandledPage(session));
+        return;
+      }
+      if (!session) {
+        if (listenerStillNeeded(windsurfSessions.values())) {
+          // Other users' logins share this listener: fail only this response.
+          res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(unknownLoginPage());
+          return;
+        }
+        for (const s of windsurfSessions.values()) {
+          if (s.status !== "pending") continue;
+          s.status = "error";
+          s.error = "Windsurf callback state mismatch";
+        }
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderCodexResultPage(false, "Windsurf callback state mismatch"));
         stopWindsurfProxy();
         return;
       }
       const rawCallback = `${url.pathname}?${url.searchParams.toString()}`;
+      session.status = "exchanging"; // claim synchronously, before any await
       try {
         const { exchangeTokens } = await import("../../providers.js");
         const tokenData = await exchangeTokens("windsurf", rawCallback, null, null, session.state);
@@ -86,7 +133,7 @@ export function startWindsurfProxy() {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderCodexResultPage(false, err.message));
       } finally {
-        stopWindsurfProxy();
+        releaseWindsurfListener(session.state);
       }
     });
     server.listen(0, "127.0.0.1", () => {
@@ -116,5 +163,5 @@ export function stopWindsurfProxy() {
 }
 
 export function windsurfLiveSessions() {
-  return [windsurfSession];
+  return [...windsurfSessions.values()];
 }

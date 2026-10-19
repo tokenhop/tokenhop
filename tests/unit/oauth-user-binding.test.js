@@ -203,7 +203,7 @@ describe("oauth user binding, switch on", () => {
     expect(body).not.toHaveProperty("binding");
   });
 
-  it("stop-proxy: B cannot kill A's live codex flow; A can", async () => {
+  it("stop-proxy: B can't kill or clear A's live codex flow (200 listenerKept); A can", async () => {
     await load("on");
     server.registerCodexSession({
       state: "cx2",
@@ -212,19 +212,35 @@ describe("oauth user binding, switch on", () => {
       binding: { userId: t.a.user.id, workspaceId: t.a.personal, ctx: t.a.ctx },
     });
     expect(server.otherOwnerActive("codex", t.b.user.id)).toBe(true);
-    expect((await call(t.b, "stop-proxy", "codex")).status).toBe(403);
+    const kept = await call(t.b, "stop-proxy", "codex");
+    expect(kept.status).toBe(200);
+    expect(await kept.json()).toEqual({ success: true, listenerKept: true });
     expect(server.stopCodexProxy).not.toHaveBeenCalled();
+    expect(server.getCodexSessionStatus("cx2")?.status).toBe("pending");
     const ok = await call(t.a, "stop-proxy", "codex");
     expect(await ok.json()).toEqual({ success: true });
+    expect(server.getCodexSessionStatus("cx2")).toBeNull();
 
-    // A second live flow owned by B: A can no longer stop the shared proxy.
+    // A second live flow owned by B: A's stop no longer stops the shared proxy.
     server.registerCodexSession({
       state: "cx3",
       codeVerifier: "cv",
       redirectUri: "http://localhost:1455/auth/callback",
       binding: { userId: t.b.user.id, workspaceId: t.b.personal, ctx: t.b.ctx },
     });
-    expect((await call(t.a, "stop-proxy", "codex")).status).toBe(403);
+    const aKept = await call(t.a, "stop-proxy", "codex");
+    expect(await aKept.json()).toEqual({ success: true, listenerKept: true });
+    expect(server.getCodexSessionStatus("cx3")?.status).toBe("pending");
+  });
+
+  it("register-session: B can't take over a state A already holds (409); A can re-register", async () => {
+    await load("on");
+    const reg = (who) =>
+      call(who, "register-session", "trae", { qs: "?state=held-st", body: { state: "held-st" } });
+    expect((await reg(t.a)).status).toBe(200);
+    expect((await reg(t.b)).status).toBe(409);
+    expect(server.getTraeSessionStatus("held-st").binding.userId).toBe(t.a.user.id);
+    expect((await reg(t.a)).status).toBe(200);
   });
 
   it("unbound flows (started before a second user): instance owner only", async () => {
@@ -314,7 +330,9 @@ describe("oauth user binding, switch on", () => {
     reg("cx-stale");
     server.getCodexSessionStatus("cx-stale").createdAt = Date.now() - 31 * 60_000;
     expect(server.otherOwnerActive("codex", t.b.user.id)).toBe(false);
-    expect((await call(t.b, "stop-proxy", "codex")).status).toBe(200);
+    const stop = await call(t.b, "stop-proxy", "codex");
+    expect(stop.status).toBe(200);
+    expect(await stop.json()).toEqual({ success: true });
   });
 
   it("xAI manual-code on an unbound session lands in the owner's personal workspace", async () => {

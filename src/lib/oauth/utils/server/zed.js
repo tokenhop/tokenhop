@@ -1,10 +1,18 @@
 import http from "http";
 import { URL } from "url";
 import { ZED_HOSTED_CONFIG } from "../../constants/oauth.js";
-import { createSessionConnection, isLoopbackOrigin, renderCodexResultPage } from "./shared.js";
+import {
+  createSessionConnection,
+  clearPendingFor,
+  listenerStillNeeded,
+  isLoopbackOrigin,
+  renderCodexResultPage,
+  stateConflict,
+  supersedeOwnSessions,
+} from "./shared.js";
 
 // ───────────────────────────────────────────────────────────────────────────
-// Zed RSA native-app proxy. Singleton session.
+// Zed RSA native-app proxy. One listener, sessions keyed by state (one pending login per user).
 // Callback: GET http://127.0.0.1:<port>/?user_id=...&access_token=<RSA-encrypted>
 // The proxy decrypts the access token using the private key stored in session.codeVerifier.
 // ───────────────────────────────────────────────────────────────────────────
@@ -12,27 +20,75 @@ import { createSessionConnection, isLoopbackOrigin, renderCodexResultPage } from
 let zedProxyServer = null;
 let zedProxyTimeout = null;
 let zedProxyPort = null;
-let zedSession = null;
+const zedSessions = new Map();
 
 export function registerZedSession({ state, codeVerifier, systemId, binding }) {
   if (!state || !codeVerifier) return false;
-  zedSession = {
+  if (stateConflict(zedSessions, state, binding)) return false;
+  supersedeOwnSessions(zedSessions, binding);
+  zedSessions.set(state, {
     state,
     codeVerifier,
     systemId: systemId || null,
     binding,
     status: "pending",
     createdAt: Date.now(),
-  };
+  });
   return true;
 }
 export function getZedSessionStatus(state) {
-  if (!zedSession) return null;
-  if (state && zedSession.state !== state) return null;
-  return zedSession;
+  return (state && zedSessions.get(state)) || null;
 }
 export function clearZedSession(state) {
-  if (!state || (zedSession && zedSession.state === state)) zedSession = null;
+  if (state) zedSessions.delete(state);
+}
+
+/** Drop this user's still-pending sessions (stop-proxy by that user). */
+export function clearZedSessionsFor(userId) {
+  return clearPendingFor(zedSessions, userId);
+}
+
+/** Stop the listener unless another live login still needs it (see listenerStillNeeded). */
+export function releaseZedListener(exceptState) {
+  if (listenerStillNeeded(zedSessions.values(), exceptState)) return false;
+  stopZedProxy();
+  return true;
+}
+
+// A failed attempt (e.g. a stale popup's wrong-key token) leaves the session in
+// "error" but the listener up so the live attempt's genuine callback can still
+// land; so unlike the other providers, "error" stays claimable here.
+const claimable = (s) => s.status === "pending" || s.status === "error";
+
+/**
+ * The Zed redirect carries no state: the owner is whichever claimable session's
+ * RSA key decrypts the token. Only a lone UNBOUND session (switch-off / pre-flip
+ * flow) is used as-is, so decrypt failures mark it exactly as before; bound
+ * sessions always go through key matching and are never touched on failure.
+ */
+async function pickZedSession(rawCallback) {
+  const candidates = [...zedSessions.values()].filter(claimable);
+  if (candidates.length === 1 && !candidates[0].binding) return candidates[0];
+  if (candidates.length === 0) return null;
+  // Lazy: zedAuth pulls in proxyFetch, which patches globalThis.fetch on import.
+  const { decryptZedAccessToken, parseZedCallbackPayload } = await import(
+    "open-sse/shared/zedAuth.js"
+  );
+  let encrypted;
+  try {
+    encrypted = parseZedCallbackPayload(rawCallback).encryptedAccessToken;
+  } catch {
+    return null;
+  }
+  for (const s of candidates) {
+    try {
+      decryptZedAccessToken(encrypted, s.codeVerifier);
+      return s;
+    } catch {
+      // not this session's key
+    }
+  }
+  return null;
 }
 
 export function startZedProxy(preferredPort = 0) {
@@ -40,6 +96,7 @@ export function startZedProxy(preferredPort = 0) {
     if (zedProxyServer) {
       // Reuse the live listener, but renew its idle timeout so a previous
       // flow's deadline can never kill the flow that just adopted the port.
+      // (Zed already re-armed here before YAN-739, so this is switch-off parity.)
       if (zedProxyTimeout) clearTimeout(zedProxyTimeout);
       zedProxyTimeout = setTimeout(() => {
         console.log("[Zed proxy] timeout, stopping");
@@ -75,8 +132,7 @@ export function startZedProxy(preferredPort = 0) {
         res.end("Not found");
         return;
       }
-      const session = zedSession;
-      if (!session) {
+      if (zedSessions.size === 0) {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderCodexResultPage(false, "No active Zed login session"));
         return;
@@ -109,6 +165,17 @@ export function startZedProxy(preferredPort = 0) {
       const rawCallback = url.search
         ? `${url.pathname}?${url.searchParams.toString()}`
         : url.pathname;
+      const session = await pickZedSession(rawCallback);
+      // Re-check after the await: a concurrent callback may have claimed or
+      // replaced this session while pickZedSession was loading zedAuth.
+      if (!session || zedSessions.get(session.state) !== session || !claimable(session)) {
+        // Unmatched callback (stale popup or foreign key): fail this response only.
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderCodexResultPage(false, "No matching Zed login session"));
+        return;
+      }
+      // Claim synchronously (before any await) so a duplicate hit cannot re-run the exchange.
+      session.status = "exchanging";
       try {
         const { exchangeTokens } = await import("../../providers.js");
         const tokenData = await exchangeTokens(
@@ -130,7 +197,7 @@ export function startZedProxy(preferredPort = 0) {
         session.email = connection.email;
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderCodexResultPage(true, "You can close this window."));
-        stopZedProxy();
+        releaseZedListener(session.state);
       } catch (err) {
         session.status = "error";
         session.error = err.message;
@@ -194,5 +261,5 @@ export function stopZedProxy() {
 }
 
 export function zedLiveSessions() {
-  return [zedSession];
+  return [...zedSessions.values()];
 }

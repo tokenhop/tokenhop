@@ -11,6 +11,7 @@ import {
 } from "@/lib/oauth/utils/server";
 import { ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 import { hostOnlyRefusal, oauthScope } from "@/lib/oauth/scope";
+import { stateOwnedByOther } from "./registerSession";
 
 // GET /api/oauth/[provider]/start-proxy - loopback callback server (host only)
 export default async function startProxy(provider, request, { searchParams }) {
@@ -55,6 +56,10 @@ export default async function startProxy(provider, request, { searchParams }) {
     return NextResponse.json({ error: "Missing app_port" }, { status: 400 });
   }
   const state = searchParams.get("state");
+  // A client-chosen state already held by another user is refused (no hijack).
+  if (binding && state && stateOwnedByOther(provider, state, binding.userId)) {
+    return NextResponse.json({ error: "State already in use" }, { status: 409 });
+  }
   const codeVerifier = searchParams.get("code_verifier");
   const redirectUri = searchParams.get("redirect_uri");
   const result =
