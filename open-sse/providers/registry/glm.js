@@ -70,6 +70,7 @@ export default {
     cacheTTLMs: 300000,
   },
   features: {
+    liveModels: true,
     usage: true,
     usageApikey: true,
   },

@@ -2,13 +2,14 @@
 // DeepSeek, Mistral, Groq, Together AI, Fireworks AI, Cerebras, Perplexity
 // Agent, Vercel AI Gateway, Chutes, NVIDIA NIM, Nebius, SiliconFlow,
 // Hyperbolic, OpenCode Go, Venice, Bazaarlink, LLM7, SambaNova, Alibaba Coding
-// (CN) and Alibaba Coding Intl. Each list
+// (CN), Alibaba Coding Intl, GLM Coding and GLM (China). Each list
 // carries every kind the provider serves, so it is authoritative: no static
 // extras are added back (except NIM's speech models).
 // OpenCode Free is the keyless exception: its Zen catalog is public.
 
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { OPENCODE_PUBLIC_HEADERS } from "open-sse/executors/opencode.js";
+import { PROVIDERS } from "open-sse/providers/index.js";
 import { FILTERS } from "@/app/api/providers/suggested-models/filters.js";
 import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
 
@@ -373,6 +374,24 @@ export function parseAlicodeModels(body) {
   return ids.map((id) => ({ id, name: names.get(id) || id }));
 }
 
+// ── GLM (Z.AI / BigModel) ─────────────────────────────────────────────────
+// Both coding catalogs are ids only, all chat. Names: the provider's own registry
+// first, then the other GLM provider's, then the id. Registry models missing from
+// a non-empty live list are appended: upstream serves glm-4.6v but doesn't list it.
+export function parseGlmModels(body, providerId = "glm") {
+  const own = getModelsByProviderId(providerId);
+  const other = getModelsByProviderId(providerId === "glm" ? "glm-cn" : "glm");
+  const names = new Map([...other, ...own].map((m) => [m.id, m.name]));
+  const ids = [...new Set(entries(body).map(idOf).filter(Boolean))];
+  if (!ids.length) return [];
+  const live = new Set(ids);
+  const unlisted = own.filter((m) => !live.has(m.id)).map(({ id, name }) => ({ id, name }));
+  return [...ids.map((id) => ({ id, name: names.get(id) || id })), ...unlisted];
+}
+
+// The models endpoint sits beside the registry's OpenAI chat transport.
+const glmModelsUrl = (chatUrl) => chatUrl.replace(/\/chat\/completions$/, "/models");
+
 // ── OpenCode Free ─────────────────────────────────────────────────────────
 // The Zen catalog lists every model, paid and free; the shared "opencode-free"
 // filter keeps the free ones. Ids the registry lacks default to chat/completions.
@@ -511,4 +530,19 @@ export const resolveAlicodeIntl = resolver(
   "Alibaba Coding Intl",
   "https://coding-intl.dashscope.aliyuncs.com/v1/models",
   parseAlicodeModels,
+);
+export const resolveGlm = resolver(
+  "GLM Coding",
+  glmModelsUrl(
+    PROVIDERS.glm?.transports?.find((t) => t.format === "openai")?.baseUrl ??
+      "https://api.z.ai/api/coding/paas/v4/chat/completions",
+  ),
+  (body) => parseGlmModels(body, "glm"),
+);
+export const resolveGlmCn = resolver(
+  "GLM (China)",
+  glmModelsUrl(
+    PROVIDERS["glm-cn"]?.baseUrl ?? "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
+  ),
+  (body) => parseGlmModels(body, "glm-cn"),
 );

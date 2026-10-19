@@ -26,6 +26,8 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "gemini",
       "gemini-cli",
       "github",
+      "glm",
+      "glm-cn",
       "grok-cli",
       "groq",
       "hyperbolic",

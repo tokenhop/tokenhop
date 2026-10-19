@@ -34,6 +34,7 @@ export default {
     { id: "glm-4.5-air", name: "GLM-4.5-Air" },
   ],
   features: {
+    liveModels: true,
     usage: true,
     usageApikey: true,
   },
