@@ -1193,6 +1193,7 @@ export function preflightGatewayKeyImport(
     defaultWorkspaceId = null,
     allowPortableHashAdoption = false,
     multiUserTransfer = true,
+    stage = null,
   },
 ) {
   if (!isPlainObject(payload)) fail("TRANSFER_STATE_INVALID", "Invalid database payload");
@@ -1200,7 +1201,7 @@ export function preflightGatewayKeyImport(
   const format = payloadFormat(payload);
   if (!multiUserTransfer) {
     for (const name of ["kv", "metadataCounters", ...INSTANCE_SNAPSHOT_SECTION_NAMES]) {
-      if (Object.hasOwn(payload, name)) {
+      if (Object.hasOwn(payload, name) || stage?.present.has(name)) {
         fail("TRANSFER_FORMAT_INVALID", "This backup needs Users & teams to restore");
       }
     }
@@ -1295,7 +1296,9 @@ export function preflightGatewayKeyImport(
     // YAN-375: the payload rows to write, with absent sections retaining the
     // live rows (validated against the incoming graph; explicit [] clears).
     let instanceSections = null;
-    if (multiUserTransfer) {
+    if (multiUserTransfer && stage) {
+      instanceSections = stage.prepare(db, payload, refs);
+    } else if (multiUserTransfer) {
       instanceSections = readInstanceTableSections(db, payload, refs);
       validateInstanceTableSections(instanceSections, refs);
       for (const name of INSTANCE_SNAPSHOT_SECTION_NAMES) {
@@ -1720,7 +1723,10 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
   }
   // YAN-375: restore telemetry after adoption so unknown attribution stays
   // byte-exact rather than being reassigned to the Default owner/workspace.
-  if (plan.instanceSections) insertInstanceTableSections(db, plan.instanceSections);
+  if (plan.instanceSections) {
+    if (typeof plan.instanceSections.apply === "function") plan.instanceSections.apply(db);
+    else insertInstanceTableSections(db, plan.instanceSections);
+  }
   if (credential) {
     // Marker pair + wrapped derived hash key, exactly as proven in preflight.
     // The destination was already encrypted under this root; cleanup/rotation

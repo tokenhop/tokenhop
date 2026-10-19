@@ -1,6 +1,10 @@
 // Whole-instance import: validation, root proof, preflight, pre-import backup
 // and the destructive apply. Moved from the db barrel; error codes unchanged.
 import { getAdapter } from "../driver.js";
+import { parseSnapshotValue, createSnapshotSplitter } from "@/shared/utils/snapshotJsonSplitter.js";
+import { INSTANCE_SNAPSHOT_SECTION_NAMES } from "../helpers/instanceSnapshotTables.js";
+import { makeStagingDir, removeStagingDir } from "../stagingFiles.js";
+import { openStage } from "./importStage.js";
 import { latestVersion } from "../migrations/index.js";
 import { readCredentialEncryptionState } from "../credentialEncryptionState.js";
 import { isCredentialMaintenancePoisoned } from "../credentialMaintenance.js";
@@ -30,13 +34,17 @@ import {
 import { applyLegacySnapshotSync } from "./legacyApply.js";
 import { withInstanceImportLock } from "./transferLock.js";
 
-async function importDbUnlocked(
-  payload,
-  { masterKey = null, force = false, actor = null, passphrase, returnSnapshot = false } = {},
-) {
+const STRIP_KEYS = ["password", "ssoProof", "passphrase", "force"];
+const STAGE_BATCH_ROWS = 500;
+const STAGE_BATCH_BYTES = 4 * 1024 * 1024;
+
+function assertSnapshotObject(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("Invalid database payload");
   }
+}
+
+function assertSchemaGate(payload) {
   // Exports before YAN-352 carry no schemaVersion; they are the v1.0.0 shape.
   const { schemaVersion } = payload;
   if (schemaVersion !== undefined) {
@@ -49,6 +57,20 @@ async function importDbUnlocked(
       );
     }
   }
+}
+
+/**
+ * Import core: `head` is the snapshot WITHOUT its staged instance sections
+ * (those live in `stage`). Everything past the schema gate is the former
+ * importDb order, with `stage` threaded into preflight.
+ */
+async function importStaged(
+  payload,
+  stage,
+  { masterKey = null, force = false, actor = null, passphrase, returnSnapshot = false } = {},
+) {
+  assertSnapshotObject(payload);
+  assertSchemaGate(payload);
   const db = await getAdapter();
   // YAN-365: on established credential encryption a payload without a v3
   // credential section is a plaintext/legacy restore — it would write
@@ -120,6 +142,7 @@ async function importDbUnlocked(
         defaultWorkspaceId: getMetaSync(db, "defaultWorkspaceId"),
         allowPortableHashAdoption,
         multiUserTransfer,
+        stage,
       });
   // YAN-375: validate shape before diffing identities; refuse replacements
   // before backups/mutations unless the authenticated owner forces them.
@@ -152,7 +175,7 @@ async function importDbUnlocked(
   const verifyBackup = await prepareProtectedBackupVerifier(db);
 
   // Disk preflight stays inside the no-await window (synchronous).
-  assertImportDiskSpace({ phase: "backup", stageBytes: 0 });
+  assertImportDiskSpace({ phase: "backup", stageBytes: stage.size() });
 
   // Pre-import backup AFTER all validation above (shape, root, preflight):
   // a recoverable private pre-import-* snapshot before either destructive
@@ -184,8 +207,114 @@ async function importDbUnlocked(
 
   commitDurably(db, invalidateCaches);
   if (!returnSnapshot) return undefined;
-  const { exportDb } = await import("../index.js");
+  const { exportDb } = await import("./exportSnapshot.js");
   return await exportDb();
+}
+
+const tooLarge = (maxBytes) =>
+  Object.assign(new Error(`Import body exceeds ${maxBytes} bytes`), {
+    code: "IMPORT_PAYLOAD_TOO_LARGE",
+  });
+
+function jsonInvalid(error) {
+  if (error?.code !== "SNAPSHOT_JSON_INVALID") return error;
+  return new TransferError("IMPORT_JSON_INVALID", error.message);
+}
+
+async function withStage(opts, run) {
+  const db = await getAdapter();
+  const dir = makeStagingDir("import-");
+  let stage = null;
+  try {
+    stage = await openStage(db, dir);
+    stage.onProgress = opts.__onProgress ?? null;
+    return await run(stage);
+  } finally {
+    // After commit/rollback: DETACH is illegal inside a transaction.
+    stage?.close();
+    removeStagingDir(dir);
+  }
+}
+
+function importDbUnlocked(payload, opts) {
+  assertSnapshotObject(payload);
+  assertSchemaGate(payload);
+  return withStage(opts, async (stage) => {
+    const head = { ...payload };
+    for (const name of INSTANCE_SNAPSHOT_SECTION_NAMES) {
+      // A non-array stays in the head so preflight fails it with a typed error.
+      if (Array.isArray(head[name])) {
+        stage.stageArray(name, head[name]);
+        delete head[name];
+      }
+    }
+    return importStaged(head, stage, opts);
+  });
+}
+
+async function feedStream(body, stage, { maxBytes, declaredBytes }) {
+  const head = {};
+  const sections = new Set(INSTANCE_SNAPSHOT_SECTION_NAMES);
+  let batch = [];
+  let batchBytes = 0;
+  let current = null;
+  const flush = () => {
+    if (current && batch.length) stage.stageRows(current, batch);
+    batch = [];
+    batchBytes = 0;
+  };
+  const splitter = createSnapshotSplitter({
+    streamedArrays: sections,
+    onValue(key, bytes) {
+      head[key] = parseSnapshotValue(bytes);
+    },
+    onArrayStart(key) {
+      current = key;
+      stage.stageRows(key, []); // marks own-present, so [] clears
+    },
+    onElement(_key, bytes) {
+      batch.push(parseSnapshotValue(bytes));
+      batchBytes += bytes.length;
+      if (batch.length >= STAGE_BATCH_ROWS || batchBytes >= STAGE_BATCH_BYTES) flush();
+    },
+    onArrayEnd() {
+      flush();
+      current = null;
+    },
+  });
+  const encoder = new TextEncoder();
+  let total = 0;
+  try {
+    for await (const chunk of body) {
+      const bytes = typeof chunk === "string" ? encoder.encode(chunk) : chunk;
+      total += bytes.length;
+      if (maxBytes != null && total > maxBytes) throw tooLarge(maxBytes);
+      if (declaredBytes != null && total > declaredBytes) {
+        throw new TransferError("TRANSFER_FORMAT_INVALID", "Upload was incomplete");
+      }
+      splitter.write(bytes);
+    }
+    if (declaredBytes != null && total !== declaredBytes) {
+      throw new TransferError("TRANSFER_FORMAT_INVALID", "Upload was incomplete");
+    }
+    splitter.end();
+  } catch (error) {
+    throw jsonInvalid(error);
+  }
+  return head;
+}
+
+async function importStreamUnlocked(body, opts) {
+  const { maxBytes, declaredBytes, transformHead, stripKeys = STRIP_KEYS } = opts;
+  // Before any byte is staged: fail with zero side effects when the disk is short.
+  assertImportDiskSpace({ phase: "staging", incomingBytes: declaredBytes ?? maxBytes ?? 0 });
+  return withStage(opts, async (stage) => {
+    let head = await feedStream(body, stage, { maxBytes, declaredBytes });
+    // An uploaded file never carries request control (auth/force).
+    for (const key of stripKeys) delete head[key];
+    if (typeof transformHead === "function") head = transformHead(head) ?? head;
+    return importStaged(head, stage, opts);
+  });
 }
 
 /**
@@ -194,4 +323,14 @@ async function importDbUnlocked(
  */
 export function importDb(payload, opts = {}) {
   return withInstanceImportLock(() => importDbUnlocked(payload, opts));
+}
+
+/**
+ * Replace the instance from a raw snapshot byte stream (async iterable of
+ * Uint8Array). Rows go straight into the staging DB; the heap holds only the
+ * head and one batch. Options: maxBytes, declaredBytes, transformHead,
+ * stripKeys, __onProgress plus the importDb options.
+ */
+export function importDbStream(body, opts = {}) {
+  return withInstanceImportLock(() => importStreamUnlocked(body, opts));
 }
