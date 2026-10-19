@@ -547,6 +547,21 @@ describe("instance full-table sections (encrypted v3)", () => {
       mutate((c) => {
         c.usageBudgetCarry[0].mystery = 1;
       }),
+      mutate((c) => {
+        c.usageBudgetCarry[0].day = "10/01/2026";
+      }),
+      mutate((c) => {
+        c.usageBudgetCarry[0].usd = -0.01;
+      }),
+      mutate((c) => {
+        c.usageBudgetCarry[0].notionalUsd = -1;
+      }),
+      mutate((c) => {
+        c.usageBudgetCarry[0].tokens = -1;
+      }),
+      mutate((c) => {
+        c.usageBudgetCarry[0].requests = -1;
+      }),
     ]) {
       await expect(dbApi.importDb(bad, { masterKey: MASTER })).rejects.toThrow(
         transferError("TRANSFER_STATE_INVALID"),

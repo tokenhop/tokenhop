@@ -474,6 +474,9 @@ export const SECTIONS = [
     ],
     validate(row, _refs, seen) {
       const dims = [reqStr(row, "day", "usageBudgetCarry")];
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dims[0])) {
+        fail("TRANSFER_STATE_INVALID", "usageBudgetCarry day must be YYYY-MM-DD");
+      }
       for (const field of ["workspaceId", "userId", "apiKeyId", "grantId"]) {
         // '' is the schema default for unknown attribution; null is not allowed.
         const value = optStr(row, field, "usageBudgetCarry");
@@ -487,11 +490,14 @@ export const SECTIONS = [
         if (value === null) {
           fail("TRANSFER_STATE_INVALID", `usageBudgetCarry ${field} must be a number`);
         }
+        if (value < 0) fail("TRANSFER_STATE_INVALID", `usageBudgetCarry ${field} must be >= 0`);
       }
       for (const field of ["tokens", "requests"]) {
         if (!Number.isInteger(row[field])) {
           fail("TRANSFER_STATE_INVALID", `usageBudgetCarry ${field} must be an integer`);
         }
+        if (row[field] < 0)
+          fail("TRANSFER_STATE_INVALID", `usageBudgetCarry ${field} must be >= 0`);
       }
       const key = JSON.stringify(dims);
       if (seen.has(key)) fail("TRANSFER_STATE_INVALID", "duplicate usageBudgetCarry row");

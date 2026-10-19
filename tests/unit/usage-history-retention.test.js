@@ -12,6 +12,7 @@ import { localDateKey } from "@/lib/db/repos/usageRollupRepo.js";
 import { pruneUsageHistoryUnscoped } from "@/lib/db/repos/usageRetentionRepo.js";
 import { spentFor } from "@/sse/services/budgetGuard.js";
 import { validateSettingsBody } from "@/app/api/settings/validateSettings.js";
+import { readInstanceTableSections } from "@/lib/db/helpers/instanceSnapshotTables.js";
 import { seedTenancy } from "../setup/tenancyHarness.js";
 
 const NOW = Date.UTC(2026, 9, 19, 12); // Mon 2026-10-19 12:00Z
@@ -283,5 +284,87 @@ describe("carry follows deleted workspaces and users", () => {
         "idx_ubc_grant_day",
       ]),
     );
+  });
+});
+
+describe("retention follow-ups (PR review)", () => {
+  it("keeps the newest row per (workspace, member) so member-scoped last activity survives", async () => {
+    const ws = t.shared.id;
+    const b = t.b.user.id;
+    await save(ago(50, 8), { workspaceId: ws, userId: b });
+    await save(ago(40, 8), { workspaceId: ws, userId: b });
+    await pruneUsageHistoryUnscoped(7, { now: NOW });
+    const rows = db.all(`SELECT timestamp FROM usageHistory WHERE workspaceId = ? AND userId = ?`, [
+      ws,
+      b,
+    ]);
+    expect(rows.map((r) => r.timestamp)).toEqual([ago(40, 8)]);
+  });
+
+  it("counts non-canonical rows per day without scanning in one query", async () => {
+    for (const odd of ["2026-01-05 10:00:00", "2026-03-09 10:00:00", "1999-garbage"]) {
+      db.run(
+        `INSERT INTO usageHistory(timestamp, provider, model, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, 'openai', 'gpt-x', '/v1/x', 1, 1, 0.1, 'ok', '{}', '{}')`,
+        [odd],
+      );
+    }
+    const r = await pruneUsageHistoryUnscoped(7, { now: NOW });
+    expect(r.nonCanonicalRows).toBe(3);
+  });
+
+  it("remaps retained carry rows of dead workspaces/users to '' and merges by primary key", () => {
+    const rows = [
+      ["2026-10-01", "w-live", "u-live", 1],
+      ["2026-10-01", "w-dead", "u-live", 2],
+      ["2026-10-01", "", "u-live", 4],
+      ["2026-10-01", "w-dead2", "u-dead", 8],
+      ["2026-10-01", "", "", 16],
+    ].map(([day, workspaceId, userId, n]) => ({
+      day,
+      workspaceId,
+      userId,
+      apiKeyId: "k",
+      grantId: "",
+      usd: n,
+      tokens: n,
+      requests: n,
+      notionalUsd: n,
+    }));
+    const fake = { all: (sql) => (/usageBudgetCarry/.test(sql) ? structuredClone(rows) : []) };
+    const refs = { workspaces: new Set(["w-live"]), users: new Set(["u-live"]) };
+    const out = readInstanceTableSections(fake, {}, refs).usageBudgetCarry;
+    const byKey = Object.fromEntries(out.map((r) => [`${r.workspaceId}|${r.userId}`, r]));
+    expect(Object.keys(byKey).sort()).toEqual(["w-live|u-live", "|", "|u-live"].sort());
+    expect(byKey["|u-live"]).toMatchObject({ usd: 6, tokens: 6, requests: 6, notionalUsd: 6 });
+    expect(byKey["|"]).toMatchObject({ usd: 24, requests: 24 });
+    expect(byKey["w-live|u-live"].usd).toBe(1);
+  });
+
+  it("reports the history row count capped, with an honest flag", async () => {
+    const { getUsageHistoryStatsUnscoped } = await import("@/lib/db/repos/usageRetentionRepo.js");
+    const total = histCount();
+    const exact = await getUsageHistoryStatsUnscoped();
+    expect(exact).toMatchObject({ rows: total, capped: false });
+    expect(exact.oldest).toBeTruthy();
+    expect(await getUsageHistoryStatsUnscoped({ cap: 5 })).toMatchObject({ rows: 5, capped: true });
+  });
+
+  it("does not cache a failed stats read in the environment route", async () => {
+    vi.resetModules();
+    const repo = await import("@/lib/db/repos/usageRetentionRepo.js");
+    const spy = vi
+      .spyOn(repo, "getUsageHistoryStatsUnscoped")
+      .mockRejectedValueOnce(new Error("boom"));
+    const { GET } = await import("@/app/api/settings/environment/route.js");
+    const first = await (
+      await GET(new Request("http://localhost/api/settings/environment"))
+    ).json();
+    expect(first.usageHistoryRows).toBeNull();
+    const second = await (
+      await GET(new Request("http://localhost/api/settings/environment"))
+    ).json();
+    expect(typeof second.usageHistoryRows).toBe("number");
+    expect(second.usageHistoryRowsCapped).toBe(false);
+    spy.mockRestore();
   });
 });

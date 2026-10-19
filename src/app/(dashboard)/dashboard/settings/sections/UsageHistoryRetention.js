@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import SettingRow from "@/shared/components/SettingRow";
 import Select from "@/shared/components/Select";
 import Callout from "@/shared/components/Callout";
@@ -138,6 +138,10 @@ export default function UsageHistoryRetention({ settings, onSettingsChange }) {
   // A shorter limit waits here for confirmation; cancel drops it, so the
   // select falls back to the saved value.
   const [pending, setPending] = useState(null);
+  // The dialog keeps rendering while it closes; hold the last value so the
+  // message never shows "older than  days".
+  const lastPending = useRef(0);
+  if (pending !== null) lastPending.current = pending;
 
   const choose = (next) => {
     if (next === days) return;
@@ -187,7 +191,11 @@ export default function UsageHistoryRetention({ settings, onSettingsChange }) {
           />
           <Stat
             label="Requests in history"
-            value={rows == null ? null : rows.toLocaleString()}
+            value={
+              rows == null
+                ? null
+                : `${rows.toLocaleString()}${stats?.usageHistoryRowsCapped ? "+" : ""}`
+            }
             loading={loading}
           />
           <Stat
@@ -210,7 +218,7 @@ export default function UsageHistoryRetention({ settings, onSettingsChange }) {
           translate(
             "Request details older than {days} days will be permanently deleted. Daily totals and budgets are kept.",
           ),
-          { days: pending ?? "" },
+          { days: pending ?? lastPending.current },
         )}
         confirmText="Delete older details"
         variant="danger"

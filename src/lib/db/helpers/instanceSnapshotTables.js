@@ -57,6 +57,25 @@ export function validateInstanceTableSections(payload, refs) {
   }
 }
 
+function remapBudgetCarry(rows, refs) {
+  const merged = new Map();
+  for (const r of rows) {
+    const row = {
+      ...r,
+      workspaceId: r.workspaceId && refs.workspaces.has(r.workspaceId) ? r.workspaceId : "",
+      userId: r.userId && refs.users.has(r.userId) ? r.userId : "",
+    };
+    const key = JSON.stringify([row.day, row.workspaceId, row.userId, row.apiKeyId, row.grantId]);
+    const prev = merged.get(key);
+    if (prev) {
+      for (const f of ["usd", "tokens", "requests", "notionalUsd"]) prev[f] += row[f] || 0;
+    } else {
+      merged.set(key, row);
+    }
+  }
+  return [...merged.values()];
+}
+
 /**
  * Build the plan rows to write at apply: payload sections when own-present
  * (explicit [] = the authoritative clear), otherwise the live rows retained
@@ -82,6 +101,10 @@ export function readInstanceTableSections(db, payload, refs = null) {
         userId: r.userId && refs.users.has(r.userId) ? r.userId : null,
       }));
     }
+    // YAN-424: carry has no FKs, but a retained row naming a workspace/user the
+    // snapshot replaces moves to the unknown ('') attribution like the SET NULL
+    // history rows above; rows that now share a primary key are summed.
+    if (refs && section.name === "usageBudgetCarry") rows = remapBudgetCarry(rows, refs);
     sections[section.name] = rows;
   }
   return sections;

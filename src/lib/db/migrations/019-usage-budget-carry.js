@@ -13,6 +13,8 @@ export default {
       );
     }
     // spentFor filters one scope column + day range (membership: workspaceId + userId).
+    // Retention walks distinct usageRollup.apiKeyId values (loose index scan).
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_ur_key ON usageRollup(apiKeyId)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_ubc_ws_day ON usageBudgetCarry(workspaceId, day)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_ubc_user_day ON usageBudgetCarry(userId, day)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_ubc_key_day ON usageBudgetCarry(apiKeyId, day)`);

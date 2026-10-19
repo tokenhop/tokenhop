@@ -44,26 +44,84 @@ function localDayRange(key) {
   return { startIso: start.toISOString(), endIso: end.toISOString(), endMs: end.getTime() };
 }
 
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_COUNT_CHUNKS = 40000;
+
 /**
- * Newest canonical row per workspace group (NULL included) and per non-null
- * apiKeyId, as id -> timestamp. Groups come from the small `workspaces` and
- * `usageRollup` tables, never a GROUP BY over usageHistory.
+ * Rows older than `endIso` whose timestamp is not canonical (never deleted).
+ * Counted one UTC-day string range at a time through idx_uh_ts, yielding as it
+ * goes, so no single query touches more than a day of rows. Odd timestamps that
+ * don't start with a date fall back to one chunk over the whole range.
  */
-function keepNewestRows(db) {
+async function countNonCanonical(db, endIso) {
+  const count = (lo, hi) =>
+    Number(
+      db.get(
+        `SELECT COUNT(*) AS n FROM usageHistory WHERE timestamp >= ? AND timestamp < ? AND NOT (${CANONICAL})`,
+        [lo, hi],
+      ).n,
+    );
+  const min = db.get(`SELECT MIN(timestamp) AS ts FROM usageHistory`)?.ts;
+  if (typeof min !== "string" || min >= endIso) return 0;
+  const startDay = min.slice(0, 10);
+  const endDay = endIso.slice(0, 10);
+  const spanDays = (Date.parse(endDay) - Date.parse(startDay)) / DAY_MS;
+  if (
+    !DAY_RE.test(startDay) ||
+    !DAY_RE.test(endDay) ||
+    !(spanDays >= 0 && spanDays <= MAX_COUNT_CHUNKS)
+  ) {
+    return count(min, endIso);
+  }
+  let total = 0;
+  let lo = startDay;
+  for (let i = 0; lo <= endDay; i++) {
+    const next = new Date(Date.parse(lo) + DAY_MS).toISOString().slice(0, 10);
+    const n = count(lo, next > endDay ? endIso : next);
+    total += n;
+    if (n > 0 || i % 50 === 49) await yieldToLoop();
+    lo = next;
+  }
+  return total;
+}
+
+/**
+ * Newest canonical row to protect, as id -> timestamp: per workspace group
+ * (NULL included), per (workspace, user) membership and per non-null apiKeyId.
+ * Every lookup is a LIMIT 1 query on an idx_uh_* index; the groups come from
+ * small tables (`workspaces`, `memberships`) or an index-driven walk over the
+ * distinct usageRollup.apiKeyId values (idx_ur_key). The loop yields every
+ * LOOKUPS_PER_YIELD queries so the event loop is never held for long.
+ */
+const LOOKUPS_PER_YIELD = 25;
+
+async function keepNewestRows(db) {
   const keep = new Map();
-  const newest = (cond, params) => {
+  let lookups = 0;
+  const newest = async (cond, params) => {
     const row = db.get(
       `SELECT id, timestamp FROM usageHistory WHERE ${cond} AND ${CANONICAL} ORDER BY timestamp DESC, id DESC LIMIT 1`,
       params,
     );
     if (row && Number.isInteger(row.id)) keep.set(row.id, row.timestamp);
+    if (++lookups % LOOKUPS_PER_YIELD === 0) await yieldToLoop();
   };
-  newest("workspaceId IS NULL", []);
-  for (const w of db.all(`SELECT id FROM workspaces`)) newest("workspaceId = ?", [w.id]);
-  for (const k of db.all(`SELECT DISTINCT apiKeyId FROM usageRollup WHERE apiKeyId != ?`, [
-    NO_KEY,
-  ])) {
-    newest("apiKeyId = ?", [k.apiKeyId]);
+  await newest("workspaceId IS NULL", []);
+  for (const w of db.all(`SELECT id FROM workspaces`)) await newest("workspaceId = ?", [w.id]);
+  // Member-scoped last activity (getLastActivity with workspaceId + userId).
+  for (const m of db.all(`SELECT workspaceId, userId FROM memberships`)) {
+    await newest("workspaceId = ? AND userId = ?", [m.workspaceId, m.userId]);
+  }
+  // Loose index scan: next distinct key after the previous one, O(log n) each.
+  let key = "";
+  for (;;) {
+    const next = db.get(
+      `SELECT apiKeyId FROM usageRollup WHERE apiKeyId > ? ORDER BY apiKeyId LIMIT 1`,
+      [key],
+    );
+    if (!next) break;
+    key = next.apiKeyId;
+    if (key !== NO_KEY) await newest("apiKeyId = ?", [key]);
   }
   return keep;
 }
@@ -152,16 +210,9 @@ export async function pruneUsageHistoryUnscoped(retentionDays, opts = {}) {
   const cutoff = new Date((opts.now ?? Date.now()) - days * DAY_MS);
   const eligibleEnd = new Date(cutoff.getFullYear(), cutoff.getMonth(), cutoff.getDate());
   const eligibleEndIso = eligibleEnd.toISOString();
-  const keep = keepNewestRows(db);
+  const keep = await keepNewestRows(db);
 
-  // Non-canonical timestamps are never deleted; report them. The GLOB only
-  // reads `timestamp`, so idx_uh_ts covers this count (no table access).
-  result.nonCanonicalRows = Number(
-    db.get(`SELECT COUNT(*) AS n FROM usageHistory WHERE timestamp < ? AND NOT (${CANONICAL})`, [
-      eligibleEndIso,
-    ]).n,
-  );
-  await yieldToLoop();
+  result.nonCanonicalRows = await countNonCanonical(db, eligibleEndIso);
 
   // Jump from populated day to populated day via the timestamp index.
   let from = "0000-01-01T00:00:00.000Z";
@@ -190,9 +241,19 @@ export async function pruneUsageHistoryUnscoped(retentionDays, opts = {}) {
   return result;
 }
 
-/** Dashboard readout: row count + oldest timestamp (ISO) of usageHistory. */
-export async function getUsageHistoryStatsUnscoped() {
+/** Row counts above this are reported as "at least" (COUNT(*) over a huge table is a long sync scan). */
+export const STATS_ROW_CAP = 100_000;
+
+/**
+ * Dashboard readout: row count + oldest timestamp (ISO) of usageHistory.
+ * `rows` is exact up to `cap`; beyond it `rows` is the cap and `capped` is
+ * true ("at least"). The oldest value is one index seek.
+ */
+export async function getUsageHistoryStatsUnscoped({ cap = STATS_ROW_CAP } = {}) {
   const db = await getAdapter();
-  const row = db.get(`SELECT COUNT(*) AS n, MIN(timestamp) AS oldest FROM usageHistory`);
-  return { rows: Number(row?.n) || 0, oldest: row?.oldest || null };
+  const n = Number(
+    db.get(`SELECT COUNT(*) AS n FROM (SELECT 1 FROM usageHistory LIMIT ?)`, [cap + 1])?.n,
+  );
+  const oldest = db.get(`SELECT MIN(timestamp) AS oldest FROM usageHistory`)?.oldest || null;
+  return { rows: Math.min(n || 0, cap), capped: n > cap, oldest };
 }

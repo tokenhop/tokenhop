@@ -177,7 +177,11 @@ export const TABLES = {
     },
     primaryKey:
       "PRIMARY KEY (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint)",
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_ur_ws_date ON usageRollup(workspaceId, dateKey)"],
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ur_ws_date ON usageRollup(workspaceId, dateKey)",
+      // YAN-424 (migration 019): usage retention walks distinct apiKeyId values.
+      "CREATE INDEX IF NOT EXISTS idx_ur_key ON usageRollup(apiKeyId)",
+    ],
   },
   // YAN-424 (migration 019): settled spend of usageHistory rows pruned by the
   // retention job, so budget windows stay exact. `day` is the UTC date

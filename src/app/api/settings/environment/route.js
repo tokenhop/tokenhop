@@ -14,17 +14,22 @@ async function storageReadout() {
   if (storageCache.value && Date.now() - storageCache.at < STORAGE_TTL_MS)
     return storageCache.value;
   storageCache.pending ??= (async () => {
-    let history = { rows: null, oldest: null };
+    let history = { rows: null, capped: false, oldest: null };
+    let ok = true;
     try {
       const { getUsageHistoryStatsUnscoped } = await import("@/lib/db/repos/usageRetentionRepo.js");
       history = await getUsageHistoryStatsUnscoped();
-    } catch {}
+    } catch {
+      ok = false; // a failed read is never cached
+    }
     const value = {
       databaseSizeBytes: databaseSizeBytes(),
+      // Exact up to a cap; `usageHistoryRowsCapped` means "at least this many".
       usageHistoryRows: history.rows,
+      usageHistoryRowsCapped: history.capped,
       usageHistoryOldest: history.oldest,
     };
-    storageCache = { at: Date.now(), value, pending: null };
+    if (ok) storageCache = { at: Date.now(), value, pending: null };
     return value;
   })().finally(() => {
     storageCache.pending = null;
