@@ -54,6 +54,7 @@ const fullDump = () =>
     invitations: dump("SELECT * FROM invitations ORDER BY id"),
     usageHistory: dump("SELECT * FROM usageHistory ORDER BY id"),
     usageRollup: dump("SELECT * FROM usageRollup ORDER BY dateKey, apiKeyId"),
+    usageBudgetCarry: dump("SELECT * FROM usageBudgetCarry ORDER BY day, apiKeyId"),
     requestDetails: dump("SELECT * FROM requestDetails ORDER BY id"),
   });
 
@@ -71,6 +72,7 @@ function rebuildApiKeysHashed() {
 
 function seedHashedInstanceFull() {
   db.exec(`DELETE FROM usageRollup`);
+  db.exec(`DELETE FROM usageBudgetCarry`);
   db.exec(`DELETE FROM requestDetails`);
   db.exec(`DELETE FROM usageHistory`);
   db.exec(`DELETE FROM auditEvents`);
@@ -175,6 +177,11 @@ function seedHashedInstanceFull() {
     [WS],
   );
   db.run(
+    `INSERT INTO usageBudgetCarry(day, workspaceId, userId, apiKeyId, grantId, usd, tokens, requests, notionalUsd)
+     VALUES('2026-10-01', ?, 'owner', 'hk-1', 'grant-1', 1.5, 300, 4, 0.25)`,
+    [WS],
+  );
+  db.run(
     `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data, workspaceId, userId, apiKeyId, grantId)
      VALUES('rd-1', ?, 'openai', 'gpt-4o', 'conn-1', 'ok', ?, ?, 'owner', 'hk-1', 'grant-1')`,
     [NOW, JSON.stringify({ model: "gpt-4o" }), WS],
@@ -231,6 +238,7 @@ describe("instance full-table sections (encrypted v3)", () => {
       "invitations",
       "usageHistory",
       "usageRollup",
+      "usageBudgetCarry",
       "requestDetails",
     ]) {
       expect(Array.isArray(snapshot[section])).toBe(true);
@@ -244,6 +252,7 @@ describe("instance full-table sections (encrypted v3)", () => {
 
     // Wipe everything the apply deletes, then restore.
     db.run(`DELETE FROM usageRollup`);
+    db.run(`DELETE FROM usageBudgetCarry`);
     db.run(`DELETE FROM requestDetails`);
     db.run(`DELETE FROM usageHistory`);
     db.run(`DELETE FROM auditEvents`);
@@ -270,6 +279,7 @@ describe("instance full-table sections (encrypted v3)", () => {
       "invitations",
       "usageHistory",
       "usageRollup",
+      "usageBudgetCarry",
       "requestDetails",
     ]) {
       expect(restored[section]).toEqual(snapshot[section]);
@@ -514,6 +524,52 @@ describe("instance full-table sections (encrypted v3)", () => {
     expect(dump("SELECT id FROM auditEvents ORDER BY id").map((r) => r.id)).toEqual(["audit-live"]);
   });
 
+  it("validates usageBudgetCarry rows (YAN-424) before mutation", async () => {
+    const snapshot = await dbApi.exportDb();
+    expect(snapshot.usageBudgetCarry).toHaveLength(1);
+    const before = fullDump();
+    const mutate = (fn) => {
+      const copy = structuredClone(snapshot);
+      fn(copy);
+      return copy;
+    };
+    for (const bad of [
+      mutate((c) => c.usageBudgetCarry.push({ ...c.usageBudgetCarry[0] })), // duplicate PK
+      mutate((c) => {
+        c.usageBudgetCarry[0].usd = "1";
+      }),
+      mutate((c) => {
+        c.usageBudgetCarry[0].requests = 1.5;
+      }),
+      mutate((c) => {
+        c.usageBudgetCarry[0].userId = null;
+      }),
+      mutate((c) => {
+        c.usageBudgetCarry[0].mystery = 1;
+      }),
+      mutate((c) => {
+        c.usageBudgetCarry[0].day = "10/01/2026";
+      }),
+      mutate((c) => {
+        c.usageBudgetCarry[0].usd = -0.01;
+      }),
+      mutate((c) => {
+        c.usageBudgetCarry[0].notionalUsd = -1;
+      }),
+      mutate((c) => {
+        c.usageBudgetCarry[0].tokens = -1;
+      }),
+      mutate((c) => {
+        c.usageBudgetCarry[0].requests = -1;
+      }),
+    ]) {
+      await expect(dbApi.importDb(bad, { masterKey: MASTER })).rejects.toThrow(
+        transferError("TRANSFER_STATE_INVALID"),
+      );
+    }
+    expect(fullDump()).toBe(before);
+  });
+
   it("rejects unknown fields and bad budget scope before mutation", async () => {
     const first = await dbApi.exportDb();
     first.budgets[0].mystery = "x";
@@ -546,12 +602,14 @@ describe("instance full-table sections (plain hashed v2)", () => {
       "invitations",
       "usageHistory",
       "usageRollup",
+      "usageBudgetCarry",
       "requestDetails",
     ]) {
       expect(Array.isArray(snapshot[section])).toBe(true);
       expect(snapshot[section].length).toBeGreaterThan(0);
     }
     db.run(`DELETE FROM usageRollup`);
+    db.run(`DELETE FROM usageBudgetCarry`);
     db.run(`DELETE FROM requestDetails`);
     db.run(`DELETE FROM usageHistory`);
     db.run(`DELETE FROM auditEvents`);
@@ -573,6 +631,7 @@ describe("instance full-table sections (plain hashed v2)", () => {
       "invitations",
       "usageHistory",
       "usageRollup",
+      "usageBudgetCarry",
       "requestDetails",
     ]) {
       expect(restored[section]).toEqual(snapshot[section]);

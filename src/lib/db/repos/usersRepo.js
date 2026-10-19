@@ -12,6 +12,7 @@ import { getSettings } from "./settingsRepo.js";
 import { setMetaSync } from "../helpers/metaStore.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { adoptOwnerlessRowsUnscoped } from "./ownership.js";
+import { detachBudgetCarryUnscoped } from "./usageBudgetCarryRepo.js";
 import { clearCredentialCache } from "../helpers/credentialStorage.js";
 import { audit } from "@/lib/users/audit.js";
 
@@ -517,6 +518,9 @@ export async function deleteUserUnscoped(id, options = {}) {
       const prefix = `ws:${wsId}/`;
       db.run(`DELETE FROM kv WHERE substr(key, 1, ?) = ?`, [prefix.length, prefix]);
     }
+    // YAN-424: usageHistory FKs go SET NULL; the pruned-spend carry follows.
+    for (const { id: wsId } of personal) detachBudgetCarryUnscoped(db, "workspaceId", wsId);
+    detachBudgetCarryUnscoped(db, "userId", id);
     db.run(`DELETE FROM workspaces WHERE createdBy = ? AND kind = 'personal'`, [id]);
     // identities and memberships cascade.
     dropSession(id);

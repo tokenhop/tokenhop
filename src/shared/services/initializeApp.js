@@ -252,6 +252,9 @@ async function runHeavyStartup() {
   import("@/shared/services/sessionPrune.js")
     .then(({ startSessionPrune }) => startSessionPrune())
     .catch((e) => console.log("[Sessions] prune start failed:", e.message));
+  import("@/shared/services/usageHistoryRetention.js")
+    .then(({ startUsageHistoryRetention }) => startUsageHistoryRetention())
+    .catch((e) => console.log("[UsageRetention] start failed:", e.message));
 }
 
 // YAN-367: audit retention sweep: once now, then daily. Never breaks startup.

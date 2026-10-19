@@ -169,6 +169,14 @@ export const OPS_SECTIONS = [
         keywords: "backup download import export restore password",
       },
       {
+        key: "usageHistoryRetentionDays",
+        label: "Request history",
+        description: "How long to keep the details of each request.",
+        keywords:
+          "request history retention usage keep delete prune cleanup days database size rows oldest",
+        tags: ["new"],
+      },
+      {
         key: "cloudEnabled",
         label: "Cloud sync",
         description: "Keep settings and connections in sync across machines.",

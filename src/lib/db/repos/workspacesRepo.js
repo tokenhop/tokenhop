@@ -8,6 +8,7 @@ import { clearCredentialCache } from "../helpers/credentialStorage.js";
 import { readApiKeyStorageState } from "../apiKeyState.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { defaultWorkspaceIdUnscoped } from "./ownership.js";
+import { detachBudgetCarryUnscoped } from "./usageBudgetCarryRepo.js";
 import { auditSync } from "@/lib/users/audit.js";
 
 const COLS = "w.id, w.name, w.kind, w.createdBy, w.createdAt, w.updatedAt";
@@ -117,6 +118,7 @@ export async function deleteWorkspace(ctx, id) {
     if (current.kind === "personal") {
       throw new TenancyError("PERSONAL_WORKSPACE", "A personal workspace goes with its user");
     }
+    detachBudgetCarryUnscoped(db, "workspaceId", id);
     return db.run(`DELETE FROM workspaces WHERE id = ?`, [id]).changes > 0;
   });
   // Always purge, even for an unchanged outcome: cheap and never wrong.
@@ -143,6 +145,7 @@ export async function deleteWorkspaceUnscoped(db, id, _opts = {}) {
     if (current.kind === "personal") {
       throw new TenancyError("PERSONAL_WORKSPACE", "A personal workspace goes with its user");
     }
+    detachBudgetCarryUnscoped(db, "workspaceId", id);
     const deleted = db.run(`DELETE FROM workspaces WHERE id = ?`, [id]).changes > 0;
     clearCredentialCache(db, id);
     return deleted;
@@ -303,6 +306,7 @@ export function deleteWorkspaceSyncUnscoped(
   // FK cascade removes connections, nodes, combos, memberships, invitations,
   // apiKeys, workspaceKeys (the DEK), workspaceSettings and the workspace's
   // own budgets/grants.
+  detachBudgetCarryUnscoped(db, "workspaceId", id); // YAN-424: history FKs SET NULL; so does the carry
   db.run(`DELETE FROM workspaces WHERE id = ?`, [id]);
 
   auditSync(

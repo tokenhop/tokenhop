@@ -126,15 +126,22 @@ function scopeFilter(budget) {
  */
 export function spentFor(db, budget, now = Date.now()) {
   const [sql, params] = scopeFilter(budget);
+  const startIso = new Date(windowStart(budget.window, now)).toISOString();
   const spent = db.get(
-    `SELECT COALESCE(SUM(cost), 0) AS usd, COALESCE(SUM(promptTokens + completionTokens), 0) AS tokens, COUNT(*) AS requests, COALESCE(SUM(CASE WHEN CASE WHEN json_valid(meta) THEN json_extract(meta, '$.notional') END = 1 THEN cost ELSE 0 END), 0) AS notionalUsd FROM usageHistory WHERE ${sql} AND timestamp >= ? AND (status IS NULL OR status IN ('ok', 'success'))`,
-    [...params, new Date(windowStart(budget.window, now)).toISOString()],
+    `SELECT COALESCE(SUM(cost), 0) AS usd, COALESCE(SUM(COALESCE(promptTokens, 0) + COALESCE(completionTokens, 0)), 0) AS tokens, COUNT(*) AS requests, COALESCE(SUM(CASE WHEN CASE WHEN json_valid(meta) THEN json_extract(meta, '$.notional') END = 1 THEN cost ELSE 0 END), 0) AS notionalUsd FROM usageHistory WHERE ${sql} AND timestamp >= ? AND (status IS NULL OR status IN ('ok', 'success'))`,
+    [...params, startIso],
+  );
+  // YAN-424: settled spend of history rows pruned by the retention job. Windows
+  // are UTC-day aligned, so the day-granular carry is exact.
+  const carried = db.get(
+    `SELECT COALESCE(SUM(usd), 0) AS usd, COALESCE(SUM(tokens), 0) AS tokens, COALESCE(SUM(requests), 0) AS requests, COALESCE(SUM(notionalUsd), 0) AS notionalUsd FROM usageBudgetCarry WHERE ${sql} AND day >= ?`,
+    [...params, startIso.slice(0, 10)],
   );
   return {
-    usd: Number(spent.usd),
-    tokens: Number(spent.tokens),
-    requests: Number(spent.requests),
-    notionalUsd: Number(spent.notionalUsd),
+    usd: Number(spent.usd) + Number(carried.usd),
+    tokens: Number(spent.tokens) + Number(carried.tokens),
+    requests: Number(spent.requests) + Number(carried.requests),
+    notionalUsd: Number(spent.notionalUsd) + Number(carried.notionalUsd),
   };
 }
 

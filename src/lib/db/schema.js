@@ -177,7 +177,35 @@ export const TABLES = {
     },
     primaryKey:
       "PRIMARY KEY (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint)",
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_ur_ws_date ON usageRollup(workspaceId, dateKey)"],
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ur_ws_date ON usageRollup(workspaceId, dateKey)",
+      // YAN-424 (migration 019): usage retention walks distinct apiKeyId values.
+      "CREATE INDEX IF NOT EXISTS idx_ur_key ON usageRollup(apiKeyId)",
+    ],
+  },
+  // YAN-424 (migration 019): settled spend of usageHistory rows pruned by the
+  // retention job, so budget windows stay exact. `day` is the UTC date
+  // (budget windows are UTC-aligned); null dims are '' like usageRollup.
+  usageBudgetCarry: {
+    columns: {
+      day: "TEXT NOT NULL",
+      workspaceId: "TEXT NOT NULL DEFAULT ''",
+      userId: "TEXT NOT NULL DEFAULT ''",
+      apiKeyId: "TEXT NOT NULL DEFAULT ''",
+      grantId: "TEXT NOT NULL DEFAULT ''",
+      usd: "REAL NOT NULL DEFAULT 0",
+      tokens: "INTEGER NOT NULL DEFAULT 0",
+      requests: "INTEGER NOT NULL DEFAULT 0",
+      notionalUsd: "REAL NOT NULL DEFAULT 0",
+    },
+    primaryKey: "PRIMARY KEY (day, workspaceId, userId, apiKeyId, grantId)",
+    // spentFor filters one scope column + day range.
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ubc_ws_day ON usageBudgetCarry(workspaceId, day)",
+      "CREATE INDEX IF NOT EXISTS idx_ubc_user_day ON usageBudgetCarry(userId, day)",
+      "CREATE INDEX IF NOT EXISTS idx_ubc_key_day ON usageBudgetCarry(apiKeyId, day)",
+      "CREATE INDEX IF NOT EXISTS idx_ubc_grant_day ON usageBudgetCarry(grantId, day)",
+    ],
   },
   requestDetails: {
     columns: {

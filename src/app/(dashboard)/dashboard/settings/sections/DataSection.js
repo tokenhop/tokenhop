@@ -14,6 +14,7 @@ import { ACTIVE } from "@/shared/brand";
 import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
 import { accountView } from "@/shared/utils/account";
 import BackupManager from "./BackupManager";
+import UsageHistoryRetention from "./UsageHistoryRetention";
 
 // Shown until the server reports the real path (and if that request fails).
 const DEFAULT_DATABASE_FILE = `~/.${ACTIVE.dataDirName}/db/data.sqlite`;
@@ -46,20 +47,29 @@ export const readBackupEnvelope = (payload) => {
 /**
  * Data & backup section. While users & teams is active (YAN-375) the
  * reauth-confirmed, passphrase-aware export/import takes over; a single-user
- * install keeps the legacy password-gated flow byte-for-byte.
+ * install keeps the legacy password-gated flow byte-for-byte. Request history
+ * retention (YAN-424) renders under either flow, for instance managers only.
  */
-export default function DataSection({ onSettingsChange }) {
+export default function DataSection({ settings, onSettingsChange }) {
   const { status: authStatus } = useAuthStatusState();
   const view = useMemo(() => accountView(authStatus), [authStatus]);
-  if (view.active)
-    return (
-      <BackupManager
-        view={view}
-        onSettingsChange={onSettingsChange}
-        readEnvelope={readBackupEnvelope}
-      />
-    );
-  return <LegacyDataSection onSettingsChange={onSettingsChange} />;
+  const canManageInstance = !view.active || (view.can?.("instance.settings.manage") ?? false);
+  return (
+    <div className="space-y-4">
+      {view.active ? (
+        <BackupManager
+          view={view}
+          onSettingsChange={onSettingsChange}
+          readEnvelope={readBackupEnvelope}
+        />
+      ) : (
+        <LegacyDataSection onSettingsChange={onSettingsChange} />
+      )}
+      {canManageInstance && (
+        <UsageHistoryRetention settings={settings} onSettingsChange={onSettingsChange} />
+      )}
+    </div>
+  );
 }
 
 /**
@@ -334,6 +344,7 @@ function LegacyDataSection({ onSettingsChange }) {
 }
 
 DataSection.propTypes = {
+  settings: PropTypes.object,
   onSettingsChange: PropTypes.func,
 };
 

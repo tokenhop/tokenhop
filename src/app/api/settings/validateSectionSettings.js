@@ -414,5 +414,14 @@ export function validateSectionSettings(body) {
     return "Invalid observabilityMaxJsonSize: must be an integer number of kilobytes";
   }
 
+  // YAN-424: 0 = keep usage history forever; otherwise 2..3650 days (a 1-day
+  // window would prune rows the 24h stats and today's reads still need).
+  if (Object.hasOwn(body, "usageHistoryRetentionDays")) {
+    const v = body.usageHistoryRetentionDays;
+    if (v !== 0 && !intInRange(v, 2, 3650)) {
+      return "Invalid usageHistoryRetentionDays: must be 0 (keep forever) or an integer between 2 and 3650";
+    }
+  }
+
   return null;
 }
