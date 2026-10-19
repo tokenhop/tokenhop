@@ -66,10 +66,18 @@ describe("parsers", () => {
     expect(ids).not.toContain("");
   });
 
-  it("appends registry models missing from the live list, after live ids", () => {
-    const models = parseGlmModels({ data: [{ id: "glm-5.3" }] }, "glm-cn");
-    expect(models[0]).toEqual({ id: "glm-5.3", name: "GLM 5.3" });
-    expect(models).toContainEqual({ id: "glm-4.6v", name: "GLM 4.6V (Vision)" });
+  it("appends only liveUnlisted registry models, after every live id, with metadata", () => {
+    const models = parseGlmModels({ data: [{ id: "glm-5.3" }, { id: "acme" }] }, "glm-cn");
+    const idx = (id) => models.findIndex((m) => m.id === id);
+    expect(models.slice(0, 2).map((m) => m.id)).toEqual(["glm-5.3", "acme"]);
+    expect(idx("glm-4.6v")).toBeGreaterThan(idx("acme"));
+    expect(models[idx("glm-4.6v")]).toEqual({
+      id: "glm-4.6v",
+      name: "GLM 4.6V (Vision)",
+      liveUnlisted: true,
+    });
+    // Static-only models without the flag drop out of the live list.
+    expect(idx("glm-4.5-air")).toBe(-1);
     expect(models.filter((m) => m.id === "glm-5.3")).toHaveLength(1);
   });
 
@@ -109,6 +117,15 @@ describe("live catalogs end to end", () => {
       url: "https://open.bigmodel.cn/api/coding/paas/v4/models",
       auth: "Bearer cn-test",
     });
+  });
+
+  it("200 with an empty list warns that no live models were returned", async () => {
+    respond = () => Response.json({ object: "list", data: [] });
+    const conn = await connect("glm", "glm-empty");
+
+    const body = await dashboardModels(conn.id);
+    expect(body.models).toEqual([]);
+    expect(body.warning).toMatch(/returned no live models/);
   });
 
   it.each([
