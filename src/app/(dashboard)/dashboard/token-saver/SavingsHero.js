@@ -5,6 +5,8 @@ import { Button, Callout, Card, CountUp, EmptyState, Skeleton } from "@/shared/c
 import PeriodControl from "@/shared/components/PeriodControl";
 import { HISTORY_PERIOD_VALUES, periodOptions } from "@/shared/utils/period";
 import { formatCompact, formatMoney } from "../home/format";
+import TrendLine from "../usage/components/TrendLine";
+import { savingsTrendInput } from "../usage/lib/tileTrends";
 import {
   SAVINGS_METHOD_LABELS,
   SAVINGS_SEGMENT_ORDER,
@@ -86,8 +88,9 @@ const QUIET_NOTES = {
  * @param {object} props.savings YAN-292 aggregation
  * @param {string} props.eyebrow
  * @param {string|null} [props.note] Quiet note about the empty selected period.
+ * @param {React.ReactNode} [props.trend] Previous-period trend (selected-period state only).
  */
-function FilledHero({ savings, eyebrow, note = null }) {
+function FilledHero({ savings, eyebrow, note = null, trend = null }) {
   const saved = Number(savings.tokensSavedEst) || 0;
   const share = savingsShare(savings);
   const segments = SAVINGS_SEGMENT_ORDER.filter((method) => (share[method] || 0) > 0);
@@ -106,6 +109,7 @@ function FilledHero({ savings, eyebrow, note = null }) {
           {Math.round(Number(savings.percentage) || 0)}% lighter than raw requests
           {savingsDollarLine(savings, formatMoney)}
         </span>
+        {trend && <span className="text-sm font-medium">{trend}</span>}
         {note && <span className="text-xs font-semibold text-on-lime/80">{note}</span>}
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
@@ -149,6 +153,7 @@ FilledHero.propTypes = {
   savings: PropTypes.object.isRequired,
   eyebrow: PropTypes.string.isRequired,
   note: PropTypes.string,
+  trend: PropTypes.node,
 };
 
 /**
@@ -204,7 +209,11 @@ export function SavingsHero({
   const saved = Number(savings.tokensSavedEst) || 0;
   if (saved > 0) {
     return (
-      <FilledHero savings={savings} eyebrow={(SAVED_COPY[period] ?? SAVED_COPY.default).eyebrow} />
+      <FilledHero
+        savings={savings}
+        eyebrow={(SAVED_COPY[period] ?? SAVED_COPY.default).eyebrow}
+        trend={<TrendLine hero {...savingsTrendInput(savings)} period={period} />}
+      />
     );
   }
   if (fallback) {

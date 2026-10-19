@@ -19,6 +19,8 @@ const hasSavings = (data) => Number(data?.tokensSavedEst) > 0;
  *
  * @param {string|null} period Current summary period.
  * @param {number} [refreshKey] Bump to re-read.
+ * The selected period's `savings` also carries `currentTotals`/`previous` (compare=previous);
+ * fallback probes never request them.
  * @returns {{ savings: object|null, loading: boolean, error: string|null, fallback: { period: string, savings: object }|null, neverSaved: boolean }}
  */
 export function useSavingsWithFallback(period, refreshKey = 0) {
@@ -35,13 +37,15 @@ export function useSavingsWithFallback(period, refreshKey = 0) {
     setState({ savings: null, loading: true, error: null, fallback: null, neverSaved: false });
     if (!period) return;
     const controller = new AbortController();
-    const get = (value) =>
-      fetchJson(`/api/usage/savings?period=${value}`, { signal: controller.signal });
+    const get = (value, compare = false) =>
+      fetchJson(`/api/usage/savings?period=${value}${compare ? "&compare=previous" : ""}`, {
+        signal: controller.signal,
+      });
 
     (async () => {
       let savings;
       try {
-        savings = await get(period);
+        savings = await get(period, true);
       } catch (fetchError) {
         if (!controller.signal.aborted) {
           setState((s) => ({ ...s, loading: false, error: fetchError.message }));
@@ -69,7 +73,7 @@ export function useSavingsWithFallback(period, refreshKey = 0) {
       if (controller.signal.aborted) return;
       if (!hasSavings(widest)) return done({ neverSaved: true });
       const smaller = candidates.slice(0, -1);
-      const results = await Promise.allSettled(smaller.map(get));
+      const results = await Promise.allSettled(smaller.map((value) => get(value)));
       if (controller.signal.aborted) return;
       const hit = results.findIndex((r) => r.status === "fulfilled" && hasSavings(r.value));
       done({

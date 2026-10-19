@@ -53,6 +53,20 @@ export function trendDelta(current, previous) {
 }
 
 /**
+ * Trend inputs for the saved-tokens tile from a /api/usage/savings payload
+ * fetched with `compare=previous`. Sides are undefined when the compare
+ * fields are missing, so `trendDelta` reports "none".
+ * @param {object|null|undefined} savings
+ * @returns {{ current: number|undefined, previous: number|undefined }}
+ */
+export function savingsTrendInput(savings) {
+  return {
+    current: savings?.currentTotals?.tokensSavedEst,
+    previous: savings?.previous?.tokensSavedEst,
+  };
+}
+
+/**
  * Values of one field across shaped chart buckets, for a StatTile sparkline.
  * @param {Array<object>|null|undefined} buckets shaped by shapeChartSeries
  * @param {"requests"|"input"|"cached"|"output"|"cost"} field

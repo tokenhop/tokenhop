@@ -15,7 +15,8 @@ import { withWorkspace } from "@/app/(dashboard)/dashboard/providers/connectTarg
 import { useHomeResource } from "./useHomeResource";
 
 /** Builds the period-scoped endpoint URL; null while the period is unresolved. */
-const periodUrl = (path, period) => (period ? `${path}?period=${period}` : null);
+const periodUrl = (path, period, query = "") =>
+  period ? `${path}?period=${period}${query}` : null;
 
 /**
  * Usage stats for a Home period (today/24h/7d/30d/60d). A null period (URL and
@@ -23,12 +24,13 @@ const periodUrl = (path, period) => (period ? `${path}?period=${period}` : null)
  * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ current: object|null, currentPeriod: string|null, loading: boolean, error: string|null }}
- *   `currentPeriod` is the period `current` was fetched for (it lags a switch until the refetch lands).
+ *   `current` also carries `currentTotals`/`previous` ({requests, promptTokens, completionTokens, cachedTokens, cost})
+ *   for the tile trends. `currentPeriod` is the period `current` was fetched for (it lags a switch until the refetch lands).
  */
 export function useHomeUsage(period, refreshKey = 0) {
   const [currentPeriod, setCurrentPeriod] = useState(null);
   const { data, loading, error } = useHomeResource(
-    periodUrl("/api/usage/stats", period),
+    periodUrl("/api/usage/stats", period, "&compare=previous"),
     refreshKey,
   );
   useEffect(() => {
@@ -58,9 +60,13 @@ export function useHomeChart(period, refreshKey = 0) {
  * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ savings: object|null, loading: boolean, error: null, savingsUnavailable: boolean }}
+ *   `savings` also carries `currentTotals`/`previous` ({tokensSavedEst, requestsWithSavings}) for the trend.
  */
 export function useHomeSavings(period, refreshKey = 0) {
-  const { data, loading } = useHomeResource(periodUrl("/api/usage/savings", period), refreshKey);
+  const { data, loading } = useHomeResource(
+    periodUrl("/api/usage/savings", period, "&compare=previous"),
+    refreshKey,
+  );
   const waiting = loading || period === null;
   const valid =
     data && typeof data.tokensSavedEst === "number" && Array.isArray(data.methods) ? data : null;
@@ -74,9 +80,10 @@ export function useHomeSavings(period, refreshKey = 0) {
 }
 
 /**
- * Previous-period request count + top-combo counts for a Home period.
- * Failures degrade gracefully: delta text and combo counts fall back to
- * "unavailable", derived from /api/usage/stats instead of erroring.
+ * Top-combo counts for a Home period (stat-tile trends come from
+ * /api/usage/stats and /api/usage/savings with compare=previous instead).
+ * Failures degrade gracefully: combo counts fall back to values derived
+ * from /api/usage/stats instead of erroring.
  * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ summary: object|null, loading: boolean, error: null }}

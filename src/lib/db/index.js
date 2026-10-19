@@ -197,6 +197,7 @@ export {
 } from "./repos/usageLiveFeed.js";
 export { getUsageStats, getChartData } from "./repos/usageStatsRepo.js";
 export { getRollupUsageTotals, getRollupRangeTotals } from "./repos/usageRollupTotals.js";
+export { getSavingsTotals } from "./repos/usageSavingsTotals.js";
 export {
   saveRequestUsageUnscoped,
   getUsageHistory,

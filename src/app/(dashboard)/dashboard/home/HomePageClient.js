@@ -132,11 +132,10 @@ export default function HomePageClient() {
       <div className="grid min-w-0 grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         <HomeStats
           current={usage.current}
-          previousRequests={summary.summary?.previousRequests}
           buckets={chart.buckets}
           savings={savings}
           savingsUnavailable={savingsUnavailable}
-          loading={usage.loading || chart.loading || savingsLoading || summary.loading}
+          loading={usage.loading || chart.loading || savingsLoading}
           error={usage.error || chart.error}
           onRetry={bump}
           period={period}

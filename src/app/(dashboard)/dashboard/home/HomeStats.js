@@ -6,8 +6,9 @@ import Card from "@/shared/components/Card";
 import CountUp from "@/shared/components/CountUp";
 import QuietPeriod from "@/shared/components/QuietPeriod";
 import StatTile from "@/shared/components/StatTile";
-import { periodDelta } from "@/shared/utils/commandCenter";
 import { HISTORY_PERIOD_VALUES } from "@/shared/utils/period";
+import TrendLine, { PairTrendLine } from "../usage/components/TrendLine";
+import { savingsTrendInput } from "../usage/lib/tileTrends";
 import { cachedShare, formatCompact, formatInt, formatMoney } from "./format";
 import { WidgetError, WidgetSkeleton } from "./WidgetStates";
 
@@ -37,39 +38,17 @@ export function costSparkline(buckets) {
 }
 
 /**
- * Signed delta line: "+12% vs previous period"; "No previous data" when the
- * backend could not supply a previous-period count or it was zero.
- * @param {number} current
- * @param {number|null|undefined} previous
- * @returns {React.ReactNode}
- */
-export function deltaLine(current, previous) {
-  if (!Number.isFinite(previous)) return <span className="text-muted">Delta unavailable</span>;
-  const { delta, pct } = periodDelta(current, previous);
-  if (pct === null) return <span className="text-muted">No previous data</span>;
-  const sign = delta > 0 ? "+" : "";
-  return (
-    <span>
-      <span className={`font-semibold ${delta >= 0 ? "text-ok" : "text-err"}`}>
-        {sign}
-        {pct}%
-      </span>{" "}
-      <span className="text-muted">vs previous period</span>
-    </span>
-  );
-}
-
-/**
  * Four StatTiles: requests (+delta +sparkline), tokens in/out (cached %),
  * est. cost, saved-by-token-saver lime hero. Driven by the shared period control.
+ * Every tile carries a trend vs the previous equal window: `current.currentTotals`/
+ * `current.previous` (stats compare) and `savings.currentTotals`/`savings.previous`.
  * A quiet period collapses to one compact QuietPeriod row that names the
  * real last-request time and can jump to the smallest period with data.
  *
  * @param {object} props
- * @param {object|null} props.current usage stats for the period
- * @param {number|null} [props.previousRequests] previous-period request count from /api/home/summary
+ * @param {object|null} props.current usage stats for the period (+ currentTotals/previous from compare=previous)
  * @param {Array|null} props.buckets /api/usage/chart buckets (requests + cost sparklines)
- * @param {object|null} props.savings /api/usage/savings aggregation
+ * @param {object|null} props.savings /api/usage/savings aggregation (+ currentTotals/previous)
  * @param {boolean} [props.savingsUnavailable] savings endpoint failed
  * @param {boolean} props.loading
  * @param {string|null} props.error
@@ -83,7 +62,6 @@ export function deltaLine(current, previous) {
  */
 export default function HomeStats({
   current,
-  previousRequests,
   buckets,
   savings,
   savingsUnavailable = false,
@@ -129,6 +107,8 @@ export default function HomeStats({
     );
   }
 
+  const totals = current.currentTotals;
+  const prev = current.previous;
   const requests = current.totalRequests;
   const prompt = current.totalPromptTokens || 0;
   const completion = current.totalCompletionTokens || 0;
@@ -148,7 +128,7 @@ export default function HomeStats({
       <StatTile
         eyebrow="Requests"
         value={<CountUp value={requests} format={formatInt} />}
-        delta={deltaLine(requests, previousRequests)}
+        trend={<TrendLine current={totals?.requests} previous={prev?.requests} period={period} />}
         sparkline={requestsSparkline(buckets)}
         className="min-w-0 text-sky"
       />
@@ -173,12 +153,22 @@ export default function HomeStats({
             </span>
           )
         }
+        trend={
+          <PairTrendLine
+            period={period}
+            parts={[
+              { label: "In", current: totals?.promptTokens, previous: prev?.promptTokens },
+              { label: "Out", current: totals?.completionTokens, previous: prev?.completionTokens },
+            ]}
+          />
+        }
         className="min-w-0"
       />
       <StatTile
         eyebrow="Est. cost"
         value={<CountUp value={current.totalCost} format={formatMoney} />}
         delta={<span className="text-muted">Estimate at list prices, not your bill</span>}
+        trend={<TrendLine current={totals?.cost} previous={prev?.cost} period={period} />}
         sparkline={costSparkline(buckets)}
         className="min-w-0 text-coral-ink"
       />
@@ -203,6 +193,11 @@ export default function HomeStats({
             </Link>
           </span>
         }
+        trend={
+          savingsUnavailable ? undefined : (
+            <TrendLine hero {...savingsTrendInput(savings)} period={period} />
+          )
+        }
         className="min-w-0"
       />
     </>
@@ -211,7 +206,6 @@ export default function HomeStats({
 
 HomeStats.propTypes = {
   current: PropTypes.object,
-  previousRequests: PropTypes.number,
   buckets: PropTypes.array,
   savings: PropTypes.shape({
     tokensSavedEst: PropTypes.number,
