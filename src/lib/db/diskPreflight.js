@@ -11,6 +11,12 @@ const MIB = 1024 * 1024;
 const MIN_MARGIN_BYTES = 32 * MIB;
 const MARGIN_FRACTION = 0.02;
 const MAX_MESSAGE_CHARS = 300;
+// Staged row JSON text plus the UNIQUE(k1)/UNIQUE(k2) indexes and per-row
+// overhead make the stage file larger than the uploaded document.
+const STAGE_OVERHEAD = 1.6;
+// Export file vs. live DB: JSON escaping/keys can outgrow SQLite's packing.
+const EXPORT_OVERHEAD = 1.25;
+export const EXPORT_DISK_INSUFFICIENT = "EXPORT_DISK_INSUFFICIENT";
 
 function sizeOf(file) {
   try {
@@ -32,7 +38,7 @@ export function diskMargin(bytes) {
 
 /**
  * Per-component byte needs for an import phase.
- *  - "staging": before the body is read. stage = wal = incomingBytes.
+ *  - "staging": before the body is read. stage = ceil(incomingBytes * 1.6), wal = incomingBytes.
  *  - "backup": right before the pre-import backup. stage is already on disk (0);
  *    wal = actual stage size (stageBytes).
  * @param {{ phase: "staging" | "backup", incomingBytes?: number, stageBytes?: number, dbFootprint?: number }} p
@@ -45,7 +51,7 @@ export function computeImportNeeds({ phase, incomingBytes = 0, stageBytes = 0, d
   const footprint = nonNegative(dbFootprint);
   if (phase === "staging") {
     const incoming = nonNegative(incomingBytes);
-    return { backup: footprint, stage: incoming, wal: incoming };
+    return { backup: footprint, stage: Math.ceil(incoming * STAGE_OVERHEAD), wal: incoming };
   }
   return { backup: footprint, stage: 0, wal: nonNegative(stageBytes) };
 }
@@ -83,10 +89,9 @@ function buildMessage(requiredBytes, free) {
   const head = `Not enough free disk space to import: about ${mib(requiredBytes)} MiB needed, ${Math.floor(
     free / MIB,
   )} MiB free.`;
-  const full = `${head} Free space (old pre-import backups are in ${BACKUPS_DIR}/pre-import-*) and retry.`;
-  if (full.length <= MAX_MESSAGE_CHARS) return full;
-  const short = `${head} Free space (old pre-import backups are in the db/backups/pre-import-* folder) and retry.`;
-  return short.length <= MAX_MESSAGE_CHARS ? short : short.slice(0, MAX_MESSAGE_CHARS);
+  // Relative on purpose: the message reaches the client, never an absolute server path.
+  const full = `${head} Free space (old pre-import backups are in db/backups/pre-import-*) and retry.`;
+  return full.length <= MAX_MESSAGE_CHARS ? full : full.slice(0, MAX_MESSAGE_CHARS);
 }
 
 /**
@@ -109,5 +114,26 @@ export function assertImportDiskSpace({ phase, incomingBytes = 0, stageBytes = 0
         freeBytes: free,
       });
     }
+  }
+}
+
+/**
+ * Throw EXPORT_DISK_INSUFFICIENT when the export staging file cannot fit.
+ * Synchronous; skipped when free space is unknown. Estimate: the live DB
+ * (data file + WAL) with 25% headroom, plus the usual margin.
+ */
+export function assertExportDiskSpace() {
+  const footprint = sizeOf(DATA_FILE) + sizeOf(`${DATA_FILE}-wal`);
+  const bytes = Math.ceil(footprint * EXPORT_OVERHEAD);
+  const free = freeBytes(STAGING_DIR);
+  if (free === null || free === undefined || !Number.isFinite(free)) return;
+  const requiredBytes = bytes + diskMargin(bytes);
+  if (free < requiredBytes) {
+    const message = `Not enough free disk space to stage the export: about ${mib(requiredBytes)} MiB needed, ${Math.floor(free / MIB)} MiB free. Free space and retry.`;
+    throw Object.assign(new Error(message.slice(0, MAX_MESSAGE_CHARS)), {
+      code: EXPORT_DISK_INSUFFICIENT,
+      requiredBytes,
+      freeBytes: free,
+    });
   }
 }

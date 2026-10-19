@@ -53,6 +53,22 @@ const IMPORT_CODES = {
   // Recoverable: the message names where to free space (no secrets).
   IMPORT_DISK_INSUFFICIENT: 507,
 };
+// Export failures the operator can act on (message is server-authored, no secrets).
+const EXPORT_CODES = {
+  EXPORT_DISK_INSUFFICIENT: 507,
+  EXPORT_ROW_TOO_LARGE: 422,
+};
+function exportFailure(err) {
+  const code = typeof err?.code === "string" ? err.code : undefined;
+  if (code && Object.hasOwn(EXPORT_CODES, code)) {
+    const message =
+      typeof err.message === "string" && err.message
+        ? err.message.slice(0, 300)
+        : "Failed to export database";
+    return json({ error: message, code }, EXPORT_CODES[code]);
+  }
+  return json({ error: "Failed to export database" }, 500);
+}
 function importFailure(err, legacy) {
   const code = typeof err?.code === "string" ? err.code : undefined;
   if (code === "IMPORT_USER_MISMATCH") {
@@ -209,7 +225,7 @@ export async function GET(request) {
       { type: "database" },
       { result: "failure", after: { reason: error?.code } },
     );
-    return json({ error: "Failed to export database" }, 500);
+    return exportFailure(error);
   }
 }
 
@@ -229,6 +245,12 @@ export async function POST(request) {
     let rawPassphrase;
     let force;
     let payload;
+    // Raw only: refuse a declared oversize body without reading anything.
+    const rawMax = raw ? instanceStreamImportCap() : 0;
+    const rawHeader = raw ? request.headers.get("content-length") : null;
+    const rawDeclared =
+      rawHeader !== null && /^\d+$/.test(rawHeader.trim()) ? Number(rawHeader) : null;
+    const rawOversize = raw && rawDeclared !== null && rawDeclared > rawMax;
     if (raw) {
       const headerAuth = readHeaderImportAuth(request);
       if (headerAuth.invalid) {
@@ -264,6 +286,7 @@ export async function POST(request) {
       if (!(await hasValidCliToken(request)) && !(await verifyDashboardPassword(password))) {
         return json({ error: "Invalid password" }, 401);
       }
+      if (rawOversize) return payloadTooLarge();
     } else {
       // Predictable denials run BEFORE re-auth so they never burn a one-time
       // SSO proof. Only the instance owner may replace differing users (core re-checks).
@@ -279,6 +302,9 @@ export async function POST(request) {
           403,
         );
       }
+      // A predictable size denial must not consume a one-time SSO proof or a
+      // password attempt, so it runs before the lock check and re-auth.
+      if (rawOversize) return payloadTooLarge();
       const early = passphraseImportLock(request);
       if (early) return early;
       const denied = await reauth(
@@ -304,14 +330,10 @@ export async function POST(request) {
     if (raw) {
       // Authenticated: only now may the body be touched. An oversize
       // Content-Length is refused without reading anything.
-      const maxBytes = instanceStreamImportCap();
-      const header = request.headers.get("content-length");
-      const declared = header !== null && /^\d+$/.test(header.trim()) ? Number(header) : null;
-      if (declared !== null && declared > maxBytes) return payloadTooLarge();
       await importDbStream(request.body ?? [], {
         ...importOpts,
-        maxBytes,
-        ...(declared === null ? {} : { declaredBytes: declared }),
+        maxBytes: rawMax,
+        ...(rawDeclared === null ? {} : { declaredBytes: rawDeclared }),
         transformHead: stripRestoreSwitch,
       });
     } else {

@@ -3,6 +3,8 @@ import fs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   IMPORT_DISK_INSUFFICIENT,
+  EXPORT_DISK_INSUFFICIENT,
+  assertExportDiskSpace,
   assertImportDiskSpace,
   computeImportNeeds,
   diskMargin,
@@ -53,12 +55,12 @@ describe("diskMargin", () => {
 });
 
 describe("computeImportNeeds", () => {
-  it("staging phase: stage and wal both equal the incoming size", () => {
+  it("staging phase: stage is ceil(incoming * 1.6), wal equals the incoming size", () => {
     expect(
       computeImportNeeds({ phase: "staging", incomingBytes: 50, dbFootprint: 10, stageBytes: 999 }),
     ).toEqual({
       backup: 10,
-      stage: 50,
+      stage: 80,
       wal: 50,
     });
   });
@@ -120,8 +122,8 @@ describe("assertImportDiskSpace", () => {
   it("passes when free space covers the staging-phase requirement", () => {
     writeSized(DATA_FILE, 10 * MIB);
     writeSized(`${DATA_FILE}-wal`, 2 * MIB);
-    // backup 12 + stage 100 + wal 100 (same device) = 212 MiB + margin
-    const need = 212 * MIB + diskMargin(212 * MIB);
+    // backup 12 + stage 160 + wal 100 (same device) = 272 MiB + margin
+    const need = 272 * MIB + diskMargin(272 * MIB);
     __setFreeBytesProbeForTests(() => need);
     expect(() =>
       assertImportDiskSpace({ phase: "staging", incomingBytes: 100 * MIB }),
@@ -131,7 +133,7 @@ describe("assertImportDiskSpace", () => {
   it("throws IMPORT_DISK_INSUFFICIENT one byte below the staging-phase requirement", () => {
     writeSized(DATA_FILE, 10 * MIB);
     writeSized(`${DATA_FILE}-wal`, 2 * MIB);
-    const need = 212 * MIB + diskMargin(212 * MIB);
+    const need = 272 * MIB + diskMargin(272 * MIB);
     __setFreeBytesProbeForTests(() => need - 1);
     const err = catchErr(() =>
       assertImportDiskSpace({ phase: "staging", incomingBytes: 100 * MIB }),
@@ -179,10 +181,17 @@ describe("assertImportDiskSpace", () => {
     );
     expect(err.code).toBe(IMPORT_DISK_INSUFFICIENT);
     expect(err.message.length).toBeLessThanOrEqual(300);
-    expect(err.message).toContain("pre-import-");
+    expect(err.message).toContain("db/backups/pre-import-*");
     expect(err.message).toMatch(/Not enough free disk space to import/);
     expect(err.message).toMatch(/1 MiB free/);
     expect(err.message).toMatch(/retry/);
+  });
+
+  it("never leaks an absolute server path", () => {
+    __setFreeBytesProbeForTests(() => 0);
+    const err = catchErr(() => assertImportDiskSpace({ phase: "staging", incomingBytes: MIB }));
+    expect(err.message).not.toContain(BACKUPS_DIR);
+    expect(err.message).not.toMatch(/(^|\s)\//);
   });
 
   it("keeps the message under 300 chars even for huge numbers", () => {
@@ -206,5 +215,28 @@ describe("assertImportDiskSpace", () => {
     assertImportDiskSpace({ phase: "staging", incomingBytes: MIB });
     // same device in the test DATA_DIR => one group, probed on BACKUPS_DIR
     expect([...seen].every((d) => d === BACKUPS_DIR || d === STAGING_DIR)).toBe(true);
+  });
+});
+
+describe("assertExportDiskSpace", () => {
+  it("passes with room for the db footprint (+25%) and margin, throws one byte below", () => {
+    writeSized(DATA_FILE, 80 * MIB);
+    writeSized(`${DATA_FILE}-wal`, 20 * MIB);
+    const bytes = 125 * MIB;
+    const need = bytes + diskMargin(bytes);
+    __setFreeBytesProbeForTests(() => need);
+    expect(() => assertExportDiskSpace()).not.toThrow();
+    __setFreeBytesProbeForTests(() => need - 1);
+    const err = catchErr(() => assertExportDiskSpace());
+    expect(err.code).toBe(EXPORT_DISK_INSUFFICIENT);
+    expect(err.requiredBytes).toBe(need);
+    expect(err.message.length).toBeLessThanOrEqual(300);
+    expect(err.message).not.toContain(DATA_FILE);
+  });
+
+  it("skips the check when free bytes are unknown", () => {
+    writeSized(DATA_FILE, 10 * MIB);
+    __setFreeBytesProbeForTests(() => null);
+    expect(() => assertExportDiskSpace()).not.toThrow();
   });
 });

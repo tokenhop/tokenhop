@@ -132,9 +132,11 @@ export function removeStagingDir(dir) {
   }
 }
 
+const processStartMs = () => Date.now() - process.uptime() * 1000;
+
 /**
  * Boot sweep: remove everything under STAGING_DIR (keeping the root) plus orphaned
- * `data.sqlite.<pid>.<rand>.tmp` files from other pids. Safe because processLock
+ * `data.sqlite.<pid>.<rand>.tmp` files from other pids (or from this pid but older than this process). Safe because processLock
  * guarantees a single writer per DATA_DIR. Never follows symlinks.
  * @returns {number} count of removed entries
  */
@@ -161,10 +163,14 @@ export function sweepStagingDir() {
   } catch {}
   for (const name of names) {
     const m = DB_TMP_RE.exec(name);
-    if (!m || Number(m[1]) === process.pid) continue;
+    if (!m) continue;
     const file = path.join(DB_DIR, name);
     try {
-      if (!fs.lstatSync(file).isFile()) continue;
+      const st = fs.lstatSync(file);
+      if (!st.isFile()) continue;
+      // Our own pid: a temp file older than this process is a leftover of a
+      // previous incarnation (containers reuse low pids). Newer ones are live.
+      if (Number(m[1]) === process.pid && st.mtimeMs >= processStartMs()) continue;
       fs.rmSync(file, { force: true });
       removed++;
     } catch {}

@@ -12,7 +12,8 @@ vi.mock("@/lib/localDb", () => ({
   importDb: vi.fn(),
   importDbStream: vi.fn(),
 }));
-vi.mock("@/lib/auth/cliToken", () => ({ hasValidCliToken: () => false }));
+vi.mock("@/lib/auth/cliToken", () => ({ hasValidCliToken: vi.fn(async () => false) }));
+vi.mock("@/lib/users/ssoDataProof.js", () => ({ consumeDataTransferProof: vi.fn() }));
 vi.mock("@/lib/network/outboundProxy", () => ({ applyOutboundProxyEnv: vi.fn() }));
 vi.mock("@/lib/users/audit.js", () => ({ audit: vi.fn() }));
 vi.mock("@/lib/auth/loginLimiter.js", async (orig) => ({
@@ -56,6 +57,9 @@ vi.mock("@/lib/db/repos/usersRepo.js", () => ({
 }));
 
 const db = await import("@/lib/localDb");
+const cliToken = await import("@/lib/auth/cliToken");
+const ssoData = await import("@/lib/users/ssoDataProof.js");
+const limiter = await import("@/lib/auth/loginLimiter.js");
 const featureSwitch = await import("@/lib/users/featureSwitch");
 const audit = await import("@/lib/users/audit.js");
 const session = await import("@/lib/users/session");
@@ -71,13 +75,14 @@ const withToken = (req) =>
   });
 
 /** A raw upload whose body stream records whether anything ever pulled from it. */
-function rawRequest(headers = {}, text = '{"settings":{"multiUserEnabled":true}}') {
+function rawRequest(headers = {}, text = '{"settings":{"multiUserEnabled":true}}', events = null) {
   const state = { pulled: false };
   const bytes = new TextEncoder().encode(text);
   const body = new ReadableStream(
     {
       pull(controller) {
         state.pulled = true;
+        events?.push("pull");
         controller.enqueue(bytes);
         controller.close();
       },
@@ -135,6 +140,9 @@ beforeEach(() => {
   db.importDbStream.mockReset().mockResolvedValue(undefined);
   db.importDb.mockReset().mockResolvedValue(undefined);
   db.exportDbToFile.mockReset();
+  cliToken.hasValidCliToken.mockReset().mockResolvedValue(false);
+  ssoData.consumeDataTransferProof.mockReset();
+  limiter.checkLoginLocks.mockReset().mockReturnValue({ locked: false });
   delete process.env.TOKENHOP_INSTANCE_IMPORT_MAX_BODY_SIZE;
 });
 afterEach(() => {
@@ -218,6 +226,116 @@ describe("raw POST authenticates before reading the body", () => {
     expect(state.pulled).toBe(false);
     expect(db.importDbStream).not.toHaveBeenCalled();
   });
+
+  it("Content-Length over the cap is 413 BEFORE re-auth: a valid SSO proof is not consumed", async () => {
+    process.env.TOKENHOP_INSTANCE_IMPORT_MAX_BODY_SIZE = "1kb";
+    asPrincipal("owner");
+    const { request, state } = rawRequest({
+      "x-tokenhop-sso-proof": "good-proof",
+      "content-length": "2048",
+    });
+    const res = await route.POST(request);
+    expect(res.status).toBe(413);
+    expect(ssoData.consumeDataTransferProof).not.toHaveBeenCalled();
+    expect(limiter.checkLoginLocks).not.toHaveBeenCalled();
+    expect(userRepo.getUserPasswordHashUnscoped).not.toHaveBeenCalled();
+    expect(state.pulled).toBe(false);
+    expect(db.importDbStream).not.toHaveBeenCalled();
+  });
+
+  it("switch on: an IP/passphrase lock is 429 with no re-auth and no read", async () => {
+    asPrincipal("owner");
+    limiter.checkLoginLocks.mockReturnValue({ locked: true, retryAfter: 30 });
+    const { request, state } = rawRequest({ "x-9r-password": "actor-pw" });
+    const res = await route.POST(request);
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("30");
+    expect(state.pulled).toBe(false);
+    expect(userRepo.getUserPasswordHashUnscoped).not.toHaveBeenCalled();
+    expect(db.importDbStream).not.toHaveBeenCalled();
+  });
+
+  it("legacy: an IP/passphrase lock is 429 after the password check, no read", async () => {
+    limiter.checkLoginLocks.mockReturnValue({ locked: true, retryAfter: 30 });
+    const { request, state } = rawRequest({ "x-9r-password": "legacy-pw" });
+    expect((await route.POST(request)).status).toBe(429);
+    expect(state.pulled).toBe(false);
+    expect(db.importDbStream).not.toHaveBeenCalled();
+  });
+
+  it("switch on: an invalid or replayed SSO proof is 401 with no read", async () => {
+    asPrincipal("owner");
+    const { TenancyError } = await import("@/lib/users/errors.js");
+    ssoData.consumeDataTransferProof.mockImplementation(() => {
+      throw new TenancyError("REAUTH_REQUIRED", "Fresh authentication required");
+    });
+    for (let i = 0; i < 2; i++) {
+      const { request, state } = rawRequest({ "x-tokenhop-sso-proof": "replayed" });
+      const res = await route.POST(request);
+      expect(res.status).toBe(401);
+      expect(state.pulled).toBe(false);
+    }
+    expect(ssoData.consumeDataTransferProof).toHaveBeenCalledTimes(2);
+    expect(db.importDbStream).not.toHaveBeenCalled();
+  });
+});
+
+describe("raw POST accepted auth paths read the body only afterwards", () => {
+  const drain = async (stream) => {
+    const reader = stream.getReader();
+    while (!(await reader.read()).done);
+  };
+
+  it("switch on: a valid SSO proof is consumed, then the body is first pulled", async () => {
+    asPrincipal("owner");
+    const events = [];
+    ssoData.consumeDataTransferProof.mockImplementation(() => {
+      events.push("consume");
+    });
+    userRepo.getUserUnscoped.mockImplementation(async () => {
+      events.push("live-reread");
+      return { id: "actor-1", instanceRole: "owner", status: "active", sessionVersion: 3 };
+    });
+    db.importDbStream.mockImplementation(async (body) => {
+      events.push("import");
+      await drain(body);
+    });
+    const { request, state } = rawRequest(
+      { "x-tokenhop-sso-proof": "good-proof" },
+      undefined,
+      events,
+    );
+    const res = await route.POST(request);
+    expect(res.status).toBe(200);
+    expect(ssoData.consumeDataTransferProof).toHaveBeenCalledTimes(1);
+    expect(state.pulled).toBe(true);
+    expect(events).toEqual(["consume", "live-reread", "import", "pull"]);
+    expect(audit.audit).toHaveBeenCalledWith(
+      expect.anything(),
+      "db.import",
+      { type: "database" },
+      { after: { method: "plain", reauth: "sso" } },
+    );
+  });
+
+  it("legacy: a valid CLI token is accepted without a password, body read after auth", async () => {
+    const events = [];
+    cliToken.hasValidCliToken.mockImplementation(async () => {
+      events.push("cli-token");
+      return true;
+    });
+    db.importDbStream.mockImplementation(async (body) => {
+      events.push("import");
+      await drain(body);
+    });
+    const { request, state } = rawRequest({}, undefined, events);
+    const res = await route.POST(request);
+    expect(res.status).toBe(200);
+    expect(dash.verifyDashboardPassword).not.toHaveBeenCalled();
+    expect(state.pulled).toBe(true);
+    expect(events).toEqual(["cli-token", "import", "pull"]);
+    expect(db.importDbStream.mock.calls[0][1].actor).toEqual({ owner: true, via: "legacy" });
+  });
 });
 
 describe("raw POST success path", () => {
@@ -279,6 +397,16 @@ describe("raw POST success path", () => {
     const body = await res.json();
     expect(body).toEqual({ error: message, code: "IMPORT_DISK_INSUFFICIENT" });
     expect(body.error).toContain("pre-import-");
+  });
+
+  it("maps TRANSFER_FORMAT_INVALID (e.g. a stalled/truncated upload) to a coded 400", async () => {
+    db.importDbStream.mockRejectedValueOnce(
+      Object.assign(new Error("Upload stalled"), { code: "TRANSFER_FORMAT_INVALID" }),
+    );
+    const { request } = rawRequest({ "x-9r-password": "legacy-pw" });
+    const res = await route.POST(request);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "Upload stalled", code: "TRANSFER_FORMAT_INVALID" });
   });
 
   it("maps IMPORT_PAYLOAD_TOO_LARGE to 413 and IMPORT_JSON_INVALID to a 400 + failure audit", async () => {
@@ -360,6 +488,31 @@ describe("GET streams the staged export", () => {
     expect(res.status).toBe(500);
     expect(handle.cleanup).toHaveBeenCalledTimes(1);
     expect(handle.openStream).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["EXPORT_DISK_INSUFFICIENT", 507, "Not enough free disk space to stage the export"],
+    ["EXPORT_ROW_TOO_LARGE", 422, "A row is too large to be imported again"],
+  ])("maps %s to %i with the server message and a failure audit", async (code, status, message) => {
+    db.exportDbToFile.mockRejectedValueOnce(Object.assign(new Error(message), { code }));
+    const res = await get();
+    expect(res.status).toBe(status);
+    expect(await res.json()).toEqual({ error: message, code });
+    expect(audit.audit).toHaveBeenCalledWith(
+      expect.anything(),
+      "db.export",
+      { type: "database" },
+      { result: "failure", after: { reason: code } },
+    );
+  });
+
+  it("an unknown export failure stays a generic 500", async () => {
+    db.exportDbToFile.mockRejectedValueOnce(
+      Object.assign(new Error("secret internals"), { code: "SOMETHING_ELSE" }),
+    );
+    const res = await get();
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "Failed to export database" });
   });
 
   it("denies a bad password without exporting", async () => {

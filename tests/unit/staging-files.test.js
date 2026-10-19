@@ -169,6 +169,37 @@ describe("sweepStagingDir", () => {
     }
   });
 
+  it("removes same-pid tmp files older than this process, keeps newer ones", () => {
+    const stale = `${DATA_FILE}.${process.pid}.stale1.tmp`;
+    const live = `${DATA_FILE}.${process.pid}.live01.tmp`;
+    fs.writeFileSync(stale, "x");
+    fs.writeFileSync(live, "x");
+    const longAgo = new Date(Date.now() - process.uptime() * 1000 - 3_600_000);
+    fs.utimesSync(stale, longAgo, longAgo);
+    try {
+      expect(sweepStagingDir()).toBe(1);
+      expect(fs.existsSync(stale)).toBe(false);
+      expect(fs.existsSync(live)).toBe(true);
+    } finally {
+      for (const f of [stale, live]) fs.rmSync(f, { force: true });
+    }
+  });
+
+  it.skipIf(!POSIX)("unlinks a symlink child without deleting its target", () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "staging-solo-"));
+    const victim = path.join(outside, "victim.txt");
+    fs.writeFileSync(victim, "keep");
+    try {
+      fs.mkdirSync(STAGING_DIR, { recursive: true, mode: 0o700 });
+      fs.symlinkSync(victim, path.join(STAGING_DIR, "only-link"));
+      expect(sweepStagingDir()).toBe(1);
+      expect(fs.readdirSync(STAGING_DIR)).toEqual([]);
+      expect(fs.readFileSync(victim, "utf8")).toBe("keep");
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it.skipIf(!POSIX)("never follows symlinks out of the staging root", () => {
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), "staging-link-"));
     const victim = path.join(outside, "victim.txt");

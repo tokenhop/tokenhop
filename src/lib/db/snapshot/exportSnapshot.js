@@ -19,6 +19,8 @@ import {
 } from "../helpers/gatewayKeyTransfer.js";
 import { makeStagingDir, openPrivateFileSync, removeStagingDir } from "../stagingFiles.js";
 import { isLegacyDefaultKey, stripWsKey } from "./legacyKeys.js";
+import { assertExportDiskSpace } from "../diskPreflight.js";
+import { withInstanceExportLock } from "./transferLock.js";
 import { writeSnapshotFileSync } from "./exportWriter.js";
 
 // Legacy single-user snapshot shape (copied from the barrel's exportDb; the
@@ -158,10 +160,14 @@ async function portableBundle(db, settings, multiUserTransfer, passphrase) {
 
 /**
  * Export the instance to a private staging file.
- * @param {{ passphrase?: string, __onProgress?: Function }} [opts]
+ * @param {{ passphrase?: string, __onProgress?: Function, __maxRowBytes?: number }} [opts]
  * @returns {Promise<{ file: string, size: number, openStream: () => fs.ReadStream, cleanup: () => void }>}
  */
-export async function exportDbToFile({ passphrase, __onProgress } = {}) {
+export function exportDbToFile(opts = {}) {
+  return withInstanceExportLock(() => exportDbToFileUnlocked(opts));
+}
+
+async function exportDbToFileUnlocked({ passphrase, __onProgress, __maxRowBytes } = {}) {
   // ---- async preparation (all awaits happen before the sync section) ----
   const db = await getAdapter();
   const { exportSettings } = await import("../repos/settingsRepo.js");
@@ -182,6 +188,9 @@ export async function exportDbToFile({ passphrase, __onProgress } = {}) {
   }
 
   // ---- synchronous section: head build + file write, no await ----
+  // By design (D3) this section blocks the event loop for the whole write:
+  // nothing may interleave a write between the head and the last section page.
+  assertExportDiskSpace();
   const dir = makeStagingDir("export-");
   let fd = null;
   try {
@@ -197,7 +206,10 @@ export async function exportDbToFile({ passphrase, __onProgress } = {}) {
     }
     const file = path.join(dir, "snapshot.json");
     fd = openPrivateFileSync(file);
-    const { bytes } = writeSnapshotFileSync(db, head, fd, { onProgress: __onProgress });
+    const { bytes } = writeSnapshotFileSync(db, head, fd, {
+      onProgress: __onProgress,
+      ...(__maxRowBytes === undefined ? {} : { maxRowBytes: __maxRowBytes }),
+    });
     fs.fsyncSync(fd);
     fs.closeSync(fd);
     fd = null;

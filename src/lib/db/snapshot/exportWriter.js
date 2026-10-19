@@ -12,9 +12,15 @@ import { SECTIONS } from "../helpers/instanceSnapshotSchema.js";
 import {
   NOOP_SEEN,
   STREAMED_SECTION,
-  forEachSectionPage,
   validateSectionRow,
 } from "../helpers/instanceSnapshotTables.js";
+import { DEFAULT_MAX_KEPT_BYTES } from "@/shared/utils/snapshotJsonSplitter.js";
+import { forEachBoundedSectionPage } from "./pagedRows.js";
+
+export const EXPORT_ROW_TOO_LARGE = "EXPORT_ROW_TOO_LARGE";
+// The importer's per-element cap (feedStream raises it to this value). A row
+// above it would produce a file this build cannot read back.
+export const MAX_ROW_BYTES = DEFAULT_MAX_KEPT_BYTES;
 
 const FLUSH_CHARS = 1 << 20; // ~1 MiB buffer
 const DEFAULT_PAGE = 500;
@@ -24,15 +30,37 @@ function pageSizeFor(name) {
   return PAGE_SIZES[name] ?? DEFAULT_PAGE;
 }
 
+function rowTooLarge(section, maxRowBytes) {
+  return Object.assign(
+    new Error(
+      `A ${section} row is larger than ${Math.floor(maxRowBytes / (1024 * 1024))} MiB and could not be imported again. Delete or trim it, then retry the export.`,
+    ),
+    { code: EXPORT_ROW_TOO_LARGE },
+  );
+}
+
+// True when the UTF-8 size of `json` exceeds `max` (cheap for the common small row).
+function exceedsBytes(json, max) {
+  if (json.length > max) return true; // bytes >= chars
+  if (json.length * 3 <= max) return false; // bytes <= 3 * chars
+  return Buffer.byteLength(json, "utf8") > max;
+}
+
 /**
  * Write `head` to `fd` as compact JSON.
  * @param {object} db sync adapter
  * @param {object} head export head; `head.__refs` (non-enumerable) carries validation refs
  * @param {number} fd open, writable file descriptor
- * @param {{ onProgress?: (p: {phase: "export", section: string, rows: number}) => void }} [opts]
+ * @param {{ onProgress?: (p: {phase: "export", section: string, rows: number}) => void, maxRowBytes?: number }} [opts]
+ *   a serialized row above `maxRowBytes` throws EXPORT_ROW_TOO_LARGE (the importer would reject it)
  * @returns {{ bytes: number }}
  */
-export function writeSnapshotFileSync(db, head, fd, { onProgress } = {}) {
+export function writeSnapshotFileSync(
+  db,
+  head,
+  fd,
+  { onProgress, maxRowBytes = MAX_ROW_BYTES } = {},
+) {
   const sectionByName = new Map(SECTIONS.map((s) => [s.name, s]));
   let buf = "";
   let bytes = 0;
@@ -60,10 +88,14 @@ export function writeSnapshotFileSync(db, head, fd, { onProgress } = {}) {
       put(`${first ? "" : ","}${JSON.stringify(key)}:[`);
       first = false;
       let rowCount = 0;
-      forEachSectionPage(db, section, pageSizeFor(key), (rows) => {
+      forEachBoundedSectionPage(db, section, pageSizeFor(key), (rows) => {
         for (const row of rows) {
           validateSectionRow(section, row, head.__refs, NOOP_SEEN);
-          put(`${rowCount === 0 ? "" : ","}${JSON.stringify(row)}`);
+          const json = JSON.stringify(row);
+          if (exceedsBytes(json, maxRowBytes)) {
+            throw rowTooLarge(key, maxRowBytes);
+          }
+          put(`${rowCount === 0 ? "" : ","}${json}`);
           rowCount++;
         }
         onProgress?.({ phase: "export", section: key, rows: rowCount });

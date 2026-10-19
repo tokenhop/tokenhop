@@ -4,8 +4,8 @@
 // documented exception: bounded memory is NOT guaranteed on sql.js.
 import initSqlJs from "sql.js";
 import { SECTIONS } from "../helpers/instanceSnapshotSchema.js";
-import { forEachSectionPage } from "../helpers/instanceSnapshotTables.js";
 import { SET_NULL_SECTIONS, STAGE_PAGE, q, stageDdl } from "./importStage.js";
+import { forEachBoundedPage, forEachBoundedSectionPage } from "./pagedRows.js";
 
 let SQL = null;
 
@@ -65,7 +65,7 @@ export async function sqlJsBackend() {
       const cols = section.columns;
       const sql = `INSERT INTO ${q(section.name)}(k1, k2, absent, ${cols.map(q).join(", ")}) VALUES(NULL, NULL, NULL, ${cols.map(() => "?").join(", ")})`;
       const nullify = SET_NULL_SECTIONS.has(section.name);
-      forEachSectionPage(db, section, STAGE_PAGE, (rows) => {
+      forEachBoundedSectionPage(db, section, STAGE_PAGE, (rows) => {
         stage.exec("SAVEPOINT retain");
         try {
           for (const r of rows) {
@@ -91,22 +91,18 @@ export async function sqlJsBackend() {
     apply(db, section) {
       const cols = section.columns;
       const sql = `INSERT INTO ${q(section.name)}(${cols.map(q).join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`;
-      let last = 0;
-      for (;;) {
-        const rows = all(`SELECT * FROM ${q(section.name)} WHERE seq > ? ORDER BY seq LIMIT ?`, [
-          last,
-          STAGE_PAGE,
-        ]);
-        if (rows.length === 0) return;
-        last = rows[rows.length - 1].seq;
-        for (const r of rows) {
-          db.run(
-            sql,
-            cols.map((c) => r[c] ?? section.defaults?.[c] ?? null),
-          );
-        }
-        if (rows.length < STAGE_PAGE) return;
-      }
+      forEachBoundedPage(
+        all,
+        { table: q(section.name), key: "seq", columns: section.columns, pageSize: STAGE_PAGE },
+        (rows) => {
+          for (const r of rows) {
+            db.run(
+              sql,
+              cols.map((c) => r[c] ?? section.defaults?.[c] ?? null),
+            );
+          }
+        },
+      );
     },
     size: () => 0,
     close() {

@@ -20,6 +20,7 @@ import {
   validateSectionRow,
 } from "../helpers/instanceSnapshotTables.js";
 import { openPrivateFileSync } from "../stagingFiles.js";
+import { forEachBoundedPage } from "./pagedRows.js";
 
 const PAGE = 500;
 const SMALL_PAGE = 200; // requestDetails rows carry large `data`
@@ -65,9 +66,11 @@ function nativeBackend(db, dir) {
   const file = path.join(dir, "stage.sqlite");
   if (file.includes("\0")) throw new Error("Invalid staging path");
   fs.closeSync(openPrivateFileSync(file)); // private (0600) before SQLite touches it
-  try {
-    db.exec("DETACH DATABASE xstage"); // stale attach from an interrupted import
-  } catch {}
+  // Imports are serialized process-wide (transferLock), so an attached xstage is
+  // a leak from a failed close — never another import's live stage.
+  if (db.all("PRAGMA database_list").some((r) => r.name === "xstage")) {
+    db.exec("DETACH DATABASE xstage");
+  }
   db.exec(`ATTACH DATABASE '${file.replace(/'/g, "''")}' AS xstage`);
   const table = (name) => `xstage.${q(name)}`;
   const backend = {
@@ -190,23 +193,22 @@ function createStage(db, backend) {
 
   function validateStaged(refs) {
     for (const section of SECTIONS) {
-      const size = pageSizeOf(section);
-      const table = backend.table(section.name);
-      let last = 0;
       let seen = 0;
-      for (;;) {
-        const rows = backend.all(`SELECT * FROM ${table} WHERE seq > ? ORDER BY seq LIMIT ?`, [
-          last,
-          size,
-        ]);
-        if (rows.length === 0) break;
-        last = rows[rows.length - 1].seq;
-        for (const rec of rows)
-          validateSectionRow(section, rowFromStage(section, rec), refs, NOOP_SEEN);
-        seen += rows.length;
-        progress(section.name, seen);
-        if (rows.length < size) break;
-      }
+      forEachBoundedPage(
+        (sql, params) => backend.all(sql, params),
+        {
+          table: backend.table(section.name),
+          key: "seq",
+          columns: section.columns,
+          pageSize: pageSizeOf(section),
+        },
+        (rows) => {
+          for (const rec of rows)
+            validateSectionRow(section, rowFromStage(section, rec), refs, NOOP_SEEN);
+          seen += rows.length;
+          progress(section.name, seen);
+        },
+      );
     }
   }
 

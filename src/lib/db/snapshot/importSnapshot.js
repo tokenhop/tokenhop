@@ -1,7 +1,11 @@
 // Whole-instance import: validation, root proof, preflight, pre-import backup
 // and the destructive apply. Moved from the db barrel; error codes unchanged.
 import { getAdapter } from "../driver.js";
-import { parseSnapshotValue, createSnapshotSplitter } from "@/shared/utils/snapshotJsonSplitter.js";
+import {
+  DEFAULT_MAX_KEPT_BYTES,
+  parseSnapshotValue,
+  createSnapshotSplitter,
+} from "@/shared/utils/snapshotJsonSplitter.js";
 import { INSTANCE_SNAPSHOT_SECTION_NAMES } from "../helpers/instanceSnapshotTables.js";
 import { makeStagingDir, removeStagingDir } from "../stagingFiles.js";
 import { openStage } from "./importStage.js";
@@ -37,6 +41,12 @@ import { withInstanceImportLock } from "./transferLock.js";
 const STRIP_KEYS = ["password", "ssoProof", "passphrase", "force"];
 const STAGE_BATCH_ROWS = 500;
 const STAGE_BATCH_BYTES = 4 * 1024 * 1024;
+// Largest single section row accepted from a raw upload. Matches what the
+// whole-document import accepted before (64 MiB) and the export writer's cap
+// (EXPORT_ROW_TOO_LARGE), so every file this build writes can be read back.
+const MAX_ROW_BYTES = DEFAULT_MAX_KEPT_BYTES;
+// A client that stops sending must not pin the import lock and its staging disk.
+const DEFAULT_IDLE_TIMEOUT_MS = 60_000;
 
 function assertSnapshotObject(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -252,7 +262,34 @@ function importDbUnlocked(payload, opts) {
   });
 }
 
-async function feedStream(body, stage, { maxBytes, declaredBytes }) {
+// Next chunk of `iterator`, or an "Upload was incomplete" error when none
+// arrives within `idleMs` (the stalled source is closed best-effort).
+async function nextChunk(iterator, idleMs) {
+  if (!(idleMs > 0)) return iterator.next();
+  let timer;
+  const stalled = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new TransferError("TRANSFER_FORMAT_INVALID", "Upload was incomplete")),
+      idleMs,
+    );
+  });
+  try {
+    return await Promise.race([iterator.next(), stalled]);
+  } catch (error) {
+    if (error?.code === "TRANSFER_FORMAT_INVALID") {
+      Promise.resolve(iterator.return?.()).catch(() => {});
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function feedStream(
+  body,
+  stage,
+  { maxBytes, declaredBytes, idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS },
+) {
   const head = {};
   const sections = new Set(INSTANCE_SNAPSHOT_SECTION_NAMES);
   let batch = [];
@@ -265,8 +302,19 @@ async function feedStream(body, stage, { maxBytes, declaredBytes }) {
   };
   const splitter = createSnapshotSplitter({
     streamedArrays: sections,
+    maxElementBytes: MAX_ROW_BYTES,
     onValue(key, bytes) {
-      head[key] = parseSnapshotValue(bytes);
+      const value = parseSnapshotValue(bytes);
+      // Reject a newer-schema file as soon as its version is seen, before the
+      // (possibly huge) rest of the upload is staged. Same gate and message.
+      if (key === "schemaVersion") assertSchemaGate({ schemaVersion: value });
+      // defineProperty: a "__proto__" key must stay an own data property.
+      Object.defineProperty(head, key, {
+        value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     },
     onArrayStart(key) {
       current = key;
@@ -284,8 +332,11 @@ async function feedStream(body, stage, { maxBytes, declaredBytes }) {
   });
   const encoder = new TextEncoder();
   let total = 0;
+  const iterator = body[Symbol.asyncIterator]();
   try {
-    for await (const chunk of body) {
+    for (;;) {
+      const { done, value: chunk } = await nextChunk(iterator, idleTimeoutMs);
+      if (done) break;
       const bytes = typeof chunk === "string" ? encoder.encode(chunk) : chunk;
       total += bytes.length;
       if (maxBytes != null && total > maxBytes) throw tooLarge(maxBytes);
@@ -305,11 +356,15 @@ async function feedStream(body, stage, { maxBytes, declaredBytes }) {
 }
 
 async function importStreamUnlocked(body, opts) {
-  const { maxBytes, declaredBytes, transformHead, stripKeys = STRIP_KEYS } = opts;
+  const { maxBytes, declaredBytes, idleTimeoutMs, transformHead, stripKeys = STRIP_KEYS } = opts;
   // Before any byte is staged: fail with zero side effects when the disk is short.
   assertImportDiskSpace({ phase: "staging", incomingBytes: declaredBytes ?? maxBytes ?? 0 });
   return withStage(opts, async (stage) => {
-    let head = await feedStream(body, stage, { maxBytes, declaredBytes });
+    let head = await feedStream(body, stage, {
+      maxBytes,
+      declaredBytes,
+      ...(idleTimeoutMs === undefined ? {} : { idleTimeoutMs }),
+    });
     // An uploaded file never carries request control (auth/force).
     for (const key of stripKeys) delete head[key];
     if (typeof transformHead === "function") head = transformHead(head) ?? head;
@@ -329,7 +384,8 @@ export function importDb(payload, opts = {}) {
  * Replace the instance from a raw snapshot byte stream (async iterable of
  * Uint8Array). Rows go straight into the staging DB; the heap holds only the
  * head and one batch. Options: maxBytes, declaredBytes, transformHead,
- * stripKeys, __onProgress plus the importDb options.
+ * stripKeys, idleTimeoutMs (per-chunk stall limit, default 60 s; 0 = off),
+ * __onProgress plus the importDb options.
  */
 export function importDbStream(body, opts = {}) {
   return withInstanceImportLock(() => importStreamUnlocked(body, opts));
