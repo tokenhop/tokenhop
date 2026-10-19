@@ -22,6 +22,7 @@ import {
   exportInstanceTableSections,
   insertInstanceTableSections,
   readInstanceTableSections,
+  STREAMED_SECTION,
   validateInstanceTableSections,
 } from "./instanceSnapshotTables.js";
 import { getMetaSync, setMetaSync } from "./metaStore.js";
@@ -236,7 +237,12 @@ function hashedRowOut(row) {
  * the stored JSON string verbatim: ciphertext envelopes are copied byte-exact
  * and nothing here ever decrypts (no root is loaded for an export).
  */
-export function exportGatewayKeySnapshot(db, out, state, { multiUserTransfer = true } = {}) {
+export function exportGatewayKeySnapshot(
+  db,
+  out,
+  state,
+  { multiUserTransfer = true, deferSections = false } = {},
+) {
   if (state.storage !== "hashed") return out;
   for (const row of db.all("SELECT * FROM apiKeys")) {
     if (row.hashKid !== state.hashKid || !HASH_RE.test(row.keyHash ?? "")) {
@@ -338,7 +344,10 @@ export function exportGatewayKeySnapshot(db, out, state, { multiUserTransfer = t
       ...row,
       models: parseJson(row.models, []),
     }));
-    exportInstanceTableSections(db, out);
+    // deferSections: the streaming writer pages + validates the rows itself.
+    if (deferSections) {
+      for (const name of INSTANCE_SNAPSHOT_SECTION_NAMES) out[name] = STREAMED_SECTION;
+    } else exportInstanceTableSections(db, out);
   }
   // Full parity: durable video-job bindings travel with the instance snapshot
   // (triple PK + connection/model provenance, matching the repo's contract).
@@ -354,7 +363,9 @@ export function exportGatewayKeySnapshot(db, out, state, { multiUserTransfer = t
     connectionsById: new Map(out.providerConnections.map((c) => [c.id, c])),
   };
   validateVideoJobRefs(out, outRefs);
-  if (multiUserTransfer) validateInstanceTableSections(out, outRefs);
+  if (multiUserTransfer && !deferSections) validateInstanceTableSections(out, outRefs);
+  // The deferred writer reuses these refs to validate each streamed row.
+  if (deferSections) Object.defineProperty(out, "__refs", { value: outRefs, enumerable: false });
   return out;
 }
 

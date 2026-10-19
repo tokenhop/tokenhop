@@ -1040,7 +1040,10 @@ describe("import durability gate (YAN-365 B5)", () => {
     expect(db.driver === "sql.js" ? typeof db.flushSync === "function" : !("flushSync" in db)).toBe(
       true,
     );
-    const result = await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    const result = await dbApi.importDb(structuredClone(snapshot), {
+      masterKey: MASTER,
+      returnSnapshot: true,
+    });
     expect(result.apiKeys[0].name).toBe("Durable import");
     expect(one(`SELECT name FROM apiKeys WHERE id = 'hk-1'`).name).toBe("Durable import");
   });
