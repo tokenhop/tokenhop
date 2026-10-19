@@ -3,10 +3,27 @@ import {
   registerTraeSession,
   registerWindsurfSession,
   registerZedSession,
-  otherOwnerActive,
+  getTraeSessionStatus,
+  getWindsurfSessionStatus,
+  getZedSessionStatus,
+  getXaiSessionStatus,
+  getCodexSessionStatus,
 } from "@/lib/oauth/utils/server";
-import { rememberBinding } from "@/lib/oauth/pendingBinding";
+import { bindingFor, rememberBinding } from "@/lib/oauth/pendingBinding";
 import { hostOnlyRefusal, oauthScope } from "@/lib/oauth/scope";
+
+/** True when `state` is already bound (pending binding or live session) to a different user. */
+export function stateOwnedByOther(provider, state, userId) {
+  const get = {
+    trae: getTraeSessionStatus,
+    windsurf: getWindsurfSessionStatus,
+    zed: getZedSessionStatus,
+    xai: getXaiSessionStatus,
+    codex: getCodexSessionStatus,
+  }[provider];
+  const owner = bindingFor(state) || get?.(state)?.binding;
+  return Boolean(owner) && owner.userId !== userId;
+}
 
 // POST /api/oauth/[provider]/register-session - bind proxy session to state
 export default async function registerSession(provider, request, { searchParams, body }) {
@@ -20,14 +37,14 @@ export default async function registerSession(provider, request, { searchParams,
   const state = searchParams.get("state") || body?.state;
   if (!state) return NextResponse.json({ error: "Missing state" }, { status: 400 });
 
-  // Singleton session: refuse to clobber another principal's pending flow.
+  // YAN-739: sessions are keyed by state and superseded per user, so concurrent
+  // logins from different users coexist on the shared listener.
   const binding = scope
     ? { userId: scope.ctx.userId, workspaceId: scope.workspaceId, ctx: scope.ctx }
     : undefined;
-  if (scope) {
-    if (otherOwnerActive(provider, scope.ctx.userId)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  // A client-chosen state already held by another user is refused (no hijack).
+  if (binding && stateOwnedByOther(provider, state, binding.userId)) {
+    return NextResponse.json({ error: "State already in use" }, { status: 409 });
   }
 
   let ok = false;
@@ -45,6 +62,6 @@ export default async function registerSession(provider, request, { searchParams,
       { error: "register-session only supported for trae/windsurf/zed" },
       { status: 400 },
     );
-  if (binding) rememberBinding(state, { provider, ...binding });
+  if (binding && ok) rememberBinding(state, { provider, ...binding });
   return NextResponse.json({ success: ok });
 }

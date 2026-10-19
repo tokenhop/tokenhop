@@ -42,6 +42,98 @@ export async function createSessionConnection(binding, data) {
 
 export const LIVE_FLOW_MAX_AGE_MS = 30 * 60_000;
 
+/** A session still in flight: waiting for its callback or mid token-exchange. */
+export function isLiveSession(s, cutoff = Date.now() - LIVE_FLOW_MAX_AGE_MS) {
+  return (
+    Boolean(s) &&
+    (s.status === "pending" || s.status === "exchanging") &&
+    (s.createdAt ?? 0) > cutoff
+  );
+}
+
+/**
+ * YAN-739: should the shared loopback listener stay up after `exceptState`
+ * finishes (or for an unmatched callback, when omitted)? True only when another
+ * live (pending/exchanging, younger than the ceiling) session exists AND the
+ * multi-user path is involved, i.e. a bound session is among them or is the one
+ * finishing. Bindings only exist while the multi-user switch is active, so a pure
+ * switch-off flow (nothing bound) always stops, exactly as before; an unbound
+ * flow started before the switch flipped still keeps the listener for a bound one
+ * and vice versa.
+ * @param {Iterable<object>} sessions
+ * @param {string} [exceptState]
+ */
+export function listenerStillNeeded(sessions, exceptState) {
+  const cutoff = Date.now() - LIVE_FLOW_MAX_AGE_MS;
+  let anyBound = false;
+  let otherLive = false;
+  for (const s of sessions) {
+    if (!s) continue;
+    if (s.state === exceptState) {
+      if (s.binding) anyBound = true;
+    } else if (isLiveSession(s, cutoff)) {
+      otherLive = true;
+      if (s.binding) anyBound = true;
+    }
+  }
+  return otherLive && anyBound;
+}
+
+/** True when any live session carries a binding (the multi-user path is active). */
+export function anyLiveBoundSession(sessions) {
+  const cutoff = Date.now() - LIVE_FLOW_MAX_AGE_MS;
+  for (const s of sessions) if (s?.binding && isLiveSession(s, cutoff)) return true;
+  return false;
+}
+
+/** Remove sessions older than the live-flow ceiling (abandoned flows). */
+export function sweepExpiredSessions(map) {
+  const cutoff = Date.now() - LIVE_FLOW_MAX_AGE_MS;
+  for (const [key, s] of map) if ((s.createdAt ?? 0) <= cutoff) map.delete(key);
+}
+
+/**
+ * Per-user supersede for state-keyed session maps: drop the same owner's older
+ * sessions (unbound sessions share one owner key = today's single-session rule),
+ * plus expired ones. A session mid-exchange is never dropped.
+ */
+export function supersedeOwnSessions(map, binding) {
+  const owner = binding?.userId ?? null;
+  sweepExpiredSessions(map);
+  for (const [key, s] of map) {
+    if (s.status !== "exchanging" && (s.binding?.userId ?? null) === owner) map.delete(key);
+  }
+}
+
+/**
+ * True when `state` is already registered by a different user. Only the bound
+ * (multi-user) path can conflict; unbound registers keep today's overwrite.
+ */
+export function stateConflict(map, state, binding) {
+  const existing = map.get(state);
+  return Boolean(binding && existing?.binding && existing.binding.userId !== binding.userId);
+}
+
+/** Drop a user's still-pending sessions; one mid-exchange is left to finish. */
+export function clearPendingFor(map, userId) {
+  for (const [key, s] of map) {
+    if (s.status === "pending" && s.binding?.userId === userId) map.delete(key);
+  }
+}
+
+/** Result page for a repeated callback on a session that is no longer pending. */
+export function alreadyHandledPage(session) {
+  if (session.status === "error") {
+    return renderCodexResultPage(false, session.error || "Login failed");
+  }
+  return renderCodexResultPage(true, "Sign-in received. You can close this window.");
+}
+
+/** Plain-text style error page for a callback that matches no pending login. */
+export function unknownLoginPage() {
+  return renderCodexResultPage(false, "Unknown or expired login. Restart it from the dashboard.");
+}
+
 /**
  * Start a local HTTP server to receive OAuth callback
  * @param {Function} onCallback - Called with query params when callback received

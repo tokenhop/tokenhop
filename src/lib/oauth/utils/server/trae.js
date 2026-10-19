@@ -1,35 +1,63 @@
 import http from "http";
 import { URL } from "url";
 import { TRAE_CONFIG } from "../../constants/oauth.js";
-import { createSessionConnection, isLoopbackOrigin, renderCodexResultPage } from "./shared.js";
+import {
+  createSessionConnection,
+  alreadyHandledPage,
+  anyLiveBoundSession,
+  clearPendingFor,
+  listenerStillNeeded,
+  isLoopbackOrigin,
+  renderCodexResultPage,
+  stateConflict,
+  supersedeOwnSessions,
+  unknownLoginPage,
+} from "./shared.js";
 
 // ───────────────────────────────────────────────────────────────────────────
-// Trae dynamic-port proxy. Singleton session (one connect at a time per provider).
+// Trae dynamic-port proxy. One listener, sessions keyed by state (one pending login per user).
 // Callback path = /callback with params refreshToken + loginHost.
 // ───────────────────────────────────────────────────────────────────────────
 
 let traeProxyServer = null;
 let traeProxyTimeout = null;
 let traeProxyPort = null;
-let traeSession = null;
+const traeSessions = new Map();
 
 export function registerTraeSession({ state, binding }) {
   if (!state) return false;
-  traeSession = { state, binding, status: "pending", createdAt: Date.now() };
+  if (stateConflict(traeSessions, state, binding)) return false;
+  supersedeOwnSessions(traeSessions, binding);
+  traeSessions.set(state, { state, binding, status: "pending", createdAt: Date.now() });
   return true;
 }
 export function getTraeSessionStatus(state) {
-  if (!traeSession) return null;
-  if (state && traeSession.state !== state) return null;
-  return traeSession;
+  return (state && traeSessions.get(state)) || null;
 }
 export function clearTraeSession(state) {
-  if (!state || (traeSession && traeSession.state === state)) traeSession = null;
+  if (state) traeSessions.delete(state);
+}
+
+/** Drop this user's still-pending sessions (stop-proxy by that user). */
+export function clearTraeSessionsFor(userId) {
+  clearPendingFor(traeSessions, userId);
+}
+
+/** Stop the listener unless another live login still needs it (see listenerStillNeeded). */
+export function releaseTraeListener(exceptState) {
+  if (listenerStillNeeded(traeSessions.values(), exceptState)) return false;
+  stopTraeProxy();
+  return true;
 }
 
 export function startTraeProxy() {
   return new Promise((resolve) => {
     if (traeProxyServer) {
+      // Renew the idle timeout only while a bound login is live (switch-off parity).
+      if (anyLiveBoundSession(traeSessions.values())) {
+        if (traeProxyTimeout) clearTimeout(traeProxyTimeout);
+        traeProxyTimeout = setTimeout(() => stopTraeProxy(), TRAE_CONFIG.oauthTimeoutMs);
+      }
       resolve({
         success: true,
         port: traeProxyPort,
@@ -44,30 +72,53 @@ export function startTraeProxy() {
         res.end("Not found");
         return;
       }
-      const session = traeSession;
-      if (!session) {
+      if (traeSessions.size === 0) {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderCodexResultPage(false, "No active Trae login session"));
         return;
       }
       // Anti-CSRF: reject cross-origin fetches (legit redirects send no Origin),
-      // and reject state mismatch when state is present.
+      // and match the callback to its session by state.
       if (!isLoopbackOrigin(req.headers.origin)) {
         res.writeHead(403, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderCodexResultPage(false, "Cross-origin callback rejected"));
         return;
       }
       const cbState = url.searchParams.get("state");
-      if (cbState && session.state && cbState !== session.state) {
-        session.status = "error";
-        session.error = "Trae callback state mismatch";
+      let session = cbState ? traeSessions.get(cbState) : null;
+      // No state in the callback: only unambiguous when exactly one login is PENDING
+      // (finished/failed/in-flight sessions never qualify); otherwise fail closed.
+      if (!cbState) {
+        const pending = [...traeSessions.values()].filter((s) => s.status === "pending");
+        if (pending.length === 1) session = pending[0];
+      }
+      if (session && session.status !== "pending") {
+        // Repeated/concurrent hit: never re-run the exchange or mutate the session.
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(renderCodexResultPage(false, session.error));
+        res.end(alreadyHandledPage(session));
+        return;
+      }
+      if (!session) {
+        if (listenerStillNeeded(traeSessions.values())) {
+          // Other users' logins share this listener: fail only this response.
+          res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(unknownLoginPage());
+          return;
+        }
+        // Single-user behaviour: mismatch poisons the (sole) pending session.
+        for (const s of traeSessions.values()) {
+          if (s.status !== "pending") continue;
+          s.status = "error";
+          s.error = "Trae callback state mismatch";
+        }
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderCodexResultPage(false, "Trae callback state mismatch"));
         stopTraeProxy();
         return;
       }
       // Pass the raw callback query to exchangeTokens → parseTraeCallback
       const rawCallback = `${url.pathname}?${url.searchParams.toString()}`;
+      session.status = "exchanging"; // claim synchronously, before any await
       try {
         const { exchangeTokens } = await import("../../providers.js");
         const tokenData = await exchangeTokens("trae", rawCallback);
@@ -91,7 +142,7 @@ export function startTraeProxy() {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderCodexResultPage(false, err.message));
       } finally {
-        stopTraeProxy();
+        releaseTraeListener(session.state);
       }
     });
     server.listen(0, "127.0.0.1", () => {
@@ -121,5 +172,5 @@ export function stopTraeProxy() {
 }
 
 export function traeLiveSessions() {
-  return [traeSession];
+  return [...traeSessions.values()];
 }
