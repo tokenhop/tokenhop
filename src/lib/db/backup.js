@@ -22,7 +22,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { BACKUPS_DIR, ensureDirs } from "./paths.js";
-import { publishDurableSync } from "./stagingFiles.js";
 import { timestampSlug, getAppVersion } from "./version.js";
 
 const KEEP_BACKUPS = 3;
@@ -196,7 +195,8 @@ export function backupDbLite(adapter, destDir, destName = "data.sqlite", complet
     fs.rmSync(dest, { force: true });
   } catch {}
   if (adapter.snapshot) {
-    publishDurableSync(dest, adapter.snapshot(complete ? [] : BACKUP_EXCLUDE_TABLES));
+    // Protected backups get chmod + file/dir fsync in verifyProtectedBackupSync.
+    fs.writeFileSync(dest, adapter.snapshot(complete ? [] : BACKUP_EXCLUDE_TABLES));
     return dest;
   }
   const escaped = dest.replace(/'/g, "''");
