@@ -1,7 +1,7 @@
 // YAN-375 complete-table snapshot parity: the raw-row instance sections a
 // hashed/encrypted snapshot must carry beyond the identity graph —
 // workspaceSettings, userPreferences, connectionGrants, budgets, auditEvents,
-// invitations, usageHistory, usageRollup, requestDetails. Rows travel as the
+// invitations, usageHistory, usageRollup, usageBudgetCarry, requestDetails. Rows travel as the
 // exact stored SQL values (JSON blobs and ciphertext envelopes stay verbatim
 // strings; nothing here decrypts or re-encodes). Sync + adapter-passed, no
 // barrel/driver imports (cycle-free), same contract as gatewayKeyTransfer.

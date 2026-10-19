@@ -110,6 +110,17 @@ function adoptUsage(db, ws, owner) {
     [ws, owner ?? ""],
   ).changes;
   db.run(`DELETE FROM usageRollup WHERE workspaceId = ''`);
+  // YAN-424: pruned-history budget carry follows its (formerly ownerless) rows.
+  n += db.run(
+    `INSERT INTO usageBudgetCarry (day, workspaceId, userId, apiKeyId, grantId, usd, tokens, requests, notionalUsd)
+     SELECT day, ?, CASE WHEN userId = '' THEN ? ELSE userId END, apiKeyId, grantId, usd, tokens, requests, notionalUsd
+     FROM usageBudgetCarry WHERE workspaceId = ''
+     ON CONFLICT (day, workspaceId, userId, apiKeyId, grantId) DO UPDATE SET
+       usd = usd + excluded.usd, tokens = tokens + excluded.tokens,
+       requests = requests + excluded.requests, notionalUsd = notionalUsd + excluded.notionalUsd`,
+    [ws, owner ?? ""],
+  ).changes;
+  db.run(`DELETE FROM usageBudgetCarry WHERE workspaceId = ''`);
   return n;
 }
 

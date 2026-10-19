@@ -249,7 +249,9 @@ export default function SettingsPage() {
                     onModalChange={handlePricingModalChange}
                   />
                 )}
-                {visibleIds.has("data") && <DataSection onSettingsChange={onSettingsChange} />}
+                {visibleIds.has("data") && (
+                  <DataSection settings={settings} onSettingsChange={onSettingsChange} />
+                )}
                 {visibleIds.has("environment") && <EnvironmentSection />}
                 {visibleIds.has("danger") && <DangerSection />}
               </div>

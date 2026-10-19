@@ -1,8 +1,49 @@
+import fs from "node:fs";
 import { NextResponse } from "next/server";
 import { buildEnvironmentReadout } from "@/lib/settingsFlags";
 import { shouldUseSecureCookie } from "@/lib/auth/dashboardSession";
 import { DATA_DIR, ignoredLegacyDataDir, isLegacyDataDir } from "@/lib/dataDir";
 import { DATA_FILE } from "@/lib/db/paths";
+
+// COUNT(*)/MIN() over usageHistory and two stats per request add up on a big
+// DB and the dashboard polls this route: serve the storage readout from a short cache.
+const STORAGE_TTL_MS = 60_000;
+let storageCache = { at: 0, value: null, pending: null };
+
+async function storageReadout() {
+  if (storageCache.value && Date.now() - storageCache.at < STORAGE_TTL_MS)
+    return storageCache.value;
+  storageCache.pending ??= (async () => {
+    let history = { rows: null, oldest: null };
+    try {
+      const { getUsageHistoryStatsUnscoped } = await import("@/lib/db/repos/usageRetentionRepo.js");
+      history = await getUsageHistoryStatsUnscoped();
+    } catch {}
+    const value = {
+      databaseSizeBytes: databaseSizeBytes(),
+      usageHistoryRows: history.rows,
+      usageHistoryOldest: history.oldest,
+    };
+    storageCache = { at: Date.now(), value, pending: null };
+    return value;
+  })().finally(() => {
+    storageCache.pending = null;
+  });
+  return storageCache.pending;
+}
+
+// Main file + WAL (the sidecar can be the bulk of a busy DB); null if unreadable.
+function databaseSizeBytes() {
+  try {
+    let total = fs.statSync(DATA_FILE).size;
+    try {
+      total += fs.statSync(`${DATA_FILE}-wal`).size;
+    } catch {}
+    return total;
+  } catch {
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,11 +56,13 @@ export const revalidate = 0;
  */
 export async function GET(request) {
   try {
+    const storage = await storageReadout();
     return NextResponse.json(
       {
         values: buildEnvironmentReadout(),
         dataDir: DATA_DIR,
         databaseFile: DATA_FILE,
+        ...storage,
         isLegacyDataDir: isLegacyDataDir(),
         ignoredLegacyDataDir: ignoredLegacyDataDir(),
         cookieSecure: shouldUseSecureCookie(request),

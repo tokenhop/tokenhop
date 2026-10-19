@@ -50,6 +50,9 @@ export const DEFAULT_SETTINGS = {
   multiUserEnabled: false,
   // YAN-367: audit events older than this are pruned daily (initializeApp).
   auditRetentionDays: 365,
+  // YAN-424: usageHistory rows older than this many days are pruned daily
+  // (rollup + budget carry keep totals exact). 0 = keep forever (default).
+  usageHistoryRetentionDays: 0,
   // YAN-369 (ADR-0006): instance-only ToS override for granting personal
   // connections. Follows the SSO_POLICY_KEYS rollout-gating pattern (see
   // GRANT_POLICY_KEYS); shape validated in app/api/settings/validateSettings.js.
