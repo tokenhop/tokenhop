@@ -45,6 +45,8 @@ import {
 } from "@/lib/providerModels/apiKeyModels.js";
 import { resolveOllama, resolveOllamaLocal } from "@/lib/providerModels/ollamaModels.js";
 import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
+import { normalizeLiveModelId } from "@/shared/utils/liveModels.js";
+import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { ANTHROPIC_API_VERSION } from "open-sse/providers/shared.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -387,6 +389,24 @@ export const noAuthConnection = (provider) => ({
 
 const cache = new Map();
 
+// Registry models flagged `liveUnlisted` are served by chat but omitted from the
+// upstream list, so they are appended (full registry entry, once) after a
+// non-empty live catalog. Other static-only models still drop out.
+export function withLiveUnlistedModels(
+  providerId,
+  liveModels,
+  statics = getModelsByProviderId(providerId),
+) {
+  if (!liveModels.length) return liveModels;
+  // Compare normalized ids so a prefixed live id (Qoder's "qoder/<key>")
+  // matches its bare registry id.
+  const live = new Set(liveModels.map((m) => normalizeLiveModelId(providerId, m?.id)));
+  const unlisted = statics
+    .filter((m) => m?.liveUnlisted && m.id && !live.has(normalizeLiveModelId(providerId, m.id)))
+    .map((m) => ({ ...m }));
+  return unlisted.length ? [...liveModels, ...unlisted] : liveModels;
+}
+
 export function clearLiveModelsCache() {
   cache.clear();
 }
@@ -409,7 +429,10 @@ export async function resolveLiveModels(connection, { forceRefresh = false } = {
   try {
     const resolved = await resolver(connection, { forceRefresh });
     result = {
-      models: Array.isArray(resolved?.models) ? resolved.models : [],
+      models: withLiveUnlistedModels(
+        connection.provider,
+        Array.isArray(resolved?.models) ? resolved.models : [],
+      ),
       ...(resolved?.warning ? { warning: resolved.warning } : {}),
     };
   } catch (error) {
