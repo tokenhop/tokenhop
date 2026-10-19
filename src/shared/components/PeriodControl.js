@@ -36,7 +36,7 @@ const ZH_LABELS = {
  * @param {string} [props.className]
  * @param {string} [props["aria-label"]="Period"]
  * @param {{from: string, to: string}|null} [props.range] Active custom range.
- * @param {(from: string, to: string) => void} [props.onRangeChange] Enables the custom range trigger.
+ * @param {(from: string, to: string) => boolean} [props.onRangeChange] Enables the custom range trigger.
  */
 export default function PeriodControl({
   value,

@@ -47,7 +47,11 @@ export function useChartBuckets(period, enabled, refreshKey, filters = null, ran
   useEffect(() => {
     if (!enabled || !windowKey) return;
     const key = `${windowKey}|${attempt}|${refreshKey ?? 0}|${scopeKey}`;
-    if (lastFetch.current === key) return;
+    if (lastFetch.current === key) {
+      // Back on already-loaded data: a fetch aborted by this switch can't clear its own skeleton.
+      setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     // Only a first fetch (or a new period) flips the skeleton; background
     // refreshes keep the current buckets on screen.

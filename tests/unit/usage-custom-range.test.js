@@ -1,6 +1,6 @@
 // YAN-426: custom date range for usage stats/chart. `custom` stays out of
 // PERIOD_VALUES; ranges are inclusive local day keys read from usageRollup only.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getAdapter } from "@/lib/db/driver.js";
 import { upsertRollupRowUnscoped } from "@/lib/db/repos/usageRollupRepo.js";
 import { getRollupRangeTotals } from "@/lib/db/repos/usageRollupTotals.js";
@@ -94,9 +94,18 @@ describe("parseDateRange", () => {
   });
 });
 
+// Pin the local clock (Date only: timers/promises keep working) so "today"
+// can't roll over mid-test.
+const pinNoon = () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 8, 30, 12));
+};
+
 describe("custom range stats + chart routes", () => {
   let db;
-  const today = localTodayKey();
+  beforeAll(pinNoon);
+  afterAll(() => vi.useRealTimers());
+  const today = "2026-09-30";
   const dayKey = (n) => shiftDateKey(today, -n);
   const url = (route, query) => `http://localhost/api/usage/${route}?${query}`;
   const seed = (n, requests) =>
@@ -228,7 +237,9 @@ describe("custom range stats + chart routes", () => {
 });
 
 describe("custom range respects usage scope", () => {
-  const today = localTodayKey();
+  beforeAll(pinNoon);
+  afterAll(() => vi.useRealTimers());
+  const today = "2026-09-30";
   const day = shiftDateKey(today, -2);
 
   it("stats, chart and range totals exclude the other workspace", async () => {

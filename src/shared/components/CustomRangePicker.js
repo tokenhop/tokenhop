@@ -8,15 +8,7 @@ import Button from "@/shared/components/Button";
 import Input from "@/shared/components/Input";
 import Popover from "@/shared/components/Popover";
 import { cn } from "@/shared/utils/cn";
-import { localTodayKey, parseDateRange } from "@/shared/utils/period";
-
-/** Day key `days` calendar days before `todayKey` (setDate, so DST keeps whole days). */
-function daysBefore(todayKey, days) {
-  const [y, m, d] = todayKey.split("-").map(Number);
-  const date = new Date(y, m - 1, d);
-  date.setDate(date.getDate() - days);
-  return localTodayKey(date.getTime());
-}
+import { localTodayKey, parseDateRange, shiftDateKey } from "@/shared/utils/period";
 
 /** Local-midnight Date for a `YYYY-MM-DD` key (never UTC parsing, which shifts the day). */
 function keyToDate(key) {
@@ -69,7 +61,7 @@ function errorField(reason, from) {
  *
  * @param {object} props
  * @param {{from: string, to: string}|null} props.range Active custom range, or null.
- * @param {(from: string, to: string) => void} props.onApply Called with a valid range.
+ * @param {(from: string, to: string) => boolean} props.onApply Called with a valid range; returns true when applied (the panel closes only then).
  * @param {string} [props.className] Classes on the trigger.
  */
 export default function CustomRangePicker({ range, onApply, className }) {
@@ -79,6 +71,7 @@ export default function CustomRangePicker({ range, onApply, className }) {
   const [draft, setDraft] = useState({ from: "", to: "" });
   const [today, setToday] = useState("");
   const [showErrors, setShowErrors] = useState(false);
+  const [applyFailed, setApplyFailed] = useState(false);
   const fromRef = useRef(null);
   const toRef = useRef(null);
 
@@ -92,8 +85,9 @@ export default function CustomRangePicker({ range, onApply, className }) {
     if (next) {
       const todayKey = localTodayKey();
       setToday(todayKey);
-      setDraft(range ?? { from: daysBefore(todayKey, 6), to: todayKey });
+      setDraft(range ?? { from: shiftDateKey(todayKey, -6), to: todayKey });
       setShowErrors(false);
+      setApplyFailed(false);
     }
     setOpen(next);
   };
@@ -125,15 +119,25 @@ export default function CustomRangePicker({ range, onApply, className }) {
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    if (!result.ok) {
+    // The panel may have been open across midnight: validate against a fresh today.
+    const todayKey = localTodayKey();
+    setToday(todayKey);
+    const fresh = parseDateRange(draft.from, draft.to, todayKey);
+    if (!fresh.ok) {
       setShowErrors(true);
+      setApplyFailed(false);
       // Move focus to the field at fault so its message is announced.
-      const field = errorField(result.reason, draft.from);
+      const field = errorField(fresh.reason, draft.from);
       (field === "from" ? fromRef : toRef).current?.focus();
       return;
     }
-    onApply(result.from, result.to);
-    closeAndRefocus();
+    if (onApply(fresh.from, fresh.to)) {
+      closeAndRefocus();
+      return;
+    }
+    // Rejected by the owner: keep the panel open with the message in place.
+    setApplyFailed(true);
+    toRef.current?.focus();
   };
 
   const active = Boolean(range);
@@ -186,7 +190,7 @@ export default function CustomRangePicker({ range, onApply, className }) {
             <span className="material-symbols-outlined text-[14px] leading-4" aria-hidden="true">
               schedule
             </span>
-            <span>Dates use the server's local days.</span>
+            <span>Days are counted in the server's time zone.</span>
           </p>
         </div>
         <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2">
@@ -208,7 +212,13 @@ export default function CustomRangePicker({ range, onApply, className }) {
             min={draft.from || undefined}
             max={today || undefined}
             onChange={(event) => setDraft((d) => ({ ...d, to: event.target.value }))}
-            error={invalidField === "to" ? result.message : undefined}
+            error={
+              invalidField === "to"
+                ? result.message
+                : applyFailed
+                  ? "Couldn't apply this range"
+                  : undefined
+            }
             inputClassName="tabular-nums"
           />
         </div>
