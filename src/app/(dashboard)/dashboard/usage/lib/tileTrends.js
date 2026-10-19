@@ -16,6 +16,8 @@ export const PRIOR_LABELS = {
   "30d": { caption: "vs prior 30d" },
   "60d": { caption: "vs prior 60d" },
   "90d": { caption: "vs prior 90d" },
+  // Custom date range: compared with the same number of days just before it.
+  custom: { caption: "vs prior range" },
   default: { caption: "vs prior period" },
 };
 

@@ -1,7 +1,8 @@
 // Pure bucketing for the "All time" usage chart (YAN-421): folds per-day
 // rollup rows into weekly buckets (weeks start Monday, local) while the span
 // is at most MAX_WEEKS, else monthly while at most MAX_MONTHS, else yearly
-// (always ≤ 100 points). No DB or DOM access.
+// (always ≤ 100 points). An explicit `{from, to}` day range (YAN-426) fixes
+// both ends of the series instead of the first row / today. No DB or DOM access.
 
 const MAX_WEEKS = 98;
 const MAX_MONTHS = 100;
@@ -35,19 +36,22 @@ const emptyBucket = (label) => ({
 /**
  * @param {Array<{dateKey:string,requests:number,tokensIn:number,tokensOut:number,tokensCached:number,cost:number}>} rows
  *   one row per local dateKey
- * @param {Date} [today]
+ * @param {Date} [todayArg] "today" for the series end (ignored when `range` is set)
+ * @param {{from: string, to: string}|null} [range] inclusive local day keys; the
+ *   series spans exactly from..to (rows outside are clamped into the edge buckets)
  * @returns {Array<{label:string,input:number,cached:number,output:number,tokens:number,cost:number,requests:number}>}
  */
-export function buildAllTimeBuckets(rows, today = new Date()) {
+export function buildAllTimeBuckets(rows, todayArg = new Date(), range = null) {
   const valid = rows.filter((r) => r?.dateKey);
+  const today = range ? parseDateKey(range.to) : todayArg;
   const currentWeek = weekStart(today);
-  if (!valid.length) {
+  if (!valid.length && !range) {
     return [
       emptyBucket(currentWeek.toLocaleDateString("en-US", { month: "short", day: "numeric" })),
     ];
   }
   const minDay = parseDateKey(
-    valid.reduce((m, r) => (r.dateKey < m ? r.dateKey : m), valid[0].dateKey),
+    range ? range.from : valid.reduce((m, r) => (r.dateKey < m ? r.dateKey : m), valid[0].dateKey),
   );
   // Future-only (clock skew) or malformed keys start the series today, so it is never empty.
   const first = Number.isNaN(minDay.getTime()) || minDay > today ? today : minDay;

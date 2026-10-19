@@ -114,18 +114,19 @@ export function upsertRollupRowUnscoped(db, dims, deltas = {}) {
 }
 
 /**
- * Rollup rows from `startDateKey` (inclusive; null = all time) within the
- * usage scope `ctx`. Empty dims come back as null; apiKeyId keeps its
- * 'local-no-key' sentinel.
+ * Rollup rows from `startDateKey` (inclusive; null = all time) through the
+ * optional `endDateKey` (inclusive; null = open) within the usage scope `ctx`.
+ * Empty dims come back as null; apiKeyId keeps its 'local-no-key' sentinel.
  */
-export function readRollup(ctx, db, startDateKey = null) {
+export function readRollup(ctx, db, startDateKey = null, endDateKey = null) {
   const scope = scopeSql(ctx);
   const params = [...scope.params];
   if (startDateKey) params.push(startDateKey);
+  if (endDateKey) params.push(endDateKey);
   const proj = DIMS.map((k) => (k === "apiKeyId" ? k : `NULLIF(${k}, '') AS ${k}`)).join(", ");
   return db.all(
     `SELECT dateKey, ${proj}, requests, tokensIn, tokensOut, tokensCached, cost FROM usageRollup
-     ${whereAll(scope.sql, startDateKey ? "dateKey >= ?" : "")} ORDER BY dateKey`,
+     ${whereAll(scope.sql, startDateKey ? "dateKey >= ?" : "", endDateKey ? "dateKey <= ?" : "")} ORDER BY dateKey`,
     params,
   );
 }
@@ -158,17 +159,18 @@ export function readRollupTotals(ctx, db, startDateKey = null, endDateKeyExclusi
 
 /**
  * One row per dateKey (summed over every dimension) from `startDateKey`
- * (inclusive; null = all time), grouped in SQL so the result is bounded by
- * days, not by days x dims.
+ * (inclusive; null = all time) through the optional `endDateKey` (inclusive),
+ * grouped in SQL so the result is bounded by days, not by days x dims.
  */
-export function readRollupDaily(ctx, db, startDateKey = null) {
+export function readRollupDaily(ctx, db, startDateKey = null, endDateKey = null) {
   const scope = scopeSql(ctx);
   const params = [...scope.params];
   if (startDateKey) params.push(startDateKey);
+  if (endDateKey) params.push(endDateKey);
   return db.all(
     `SELECT dateKey, SUM(requests) AS requests, SUM(tokensIn) AS tokensIn,
        SUM(tokensOut) AS tokensOut, SUM(tokensCached) AS tokensCached, SUM(cost) AS cost
-     FROM usageRollup ${whereAll(scope.sql, startDateKey ? "dateKey >= ?" : "")}
+     FROM usageRollup ${whereAll(scope.sql, startDateKey ? "dateKey >= ?" : "", endDateKey ? "dateKey <= ?" : "")}
      GROUP BY dateKey ORDER BY dateKey`,
     params,
   );
@@ -176,15 +178,17 @@ export function readRollupDaily(ctx, db, startDateKey = null) {
 
 /**
  * Edit-prediction latency rollup rows (YAN-771) for `endpoint`, from
- * `startDateKey` (inclusive; null = all time), within the usage scope `ctx`.
+ * `startDateKey` (inclusive; null = all time) through the optional
+ * `endDateKey` (inclusive), within the usage scope `ctx`.
  */
-export function readLatencyRollup(ctx, db, endpoint, startDateKey = null) {
+export function readLatencyRollup(ctx, db, endpoint, startDateKey = null, endDateKey = null) {
   const scope = scopeSql(ctx);
   const params = [...scope.params, endpoint];
   if (startDateKey) params.push(startDateKey);
+  if (endDateKey) params.push(endDateKey);
   return db.all(
     `SELECT NULLIF(provider, '') AS provider, model, endpoint, ${LATENCY_COLUMNS.join(", ")} FROM usageRollup
-     ${whereAll(scope.sql, "endpoint = ?", startDateKey ? "dateKey >= ?" : "", "latencyRequests > 0")}`,
+     ${whereAll(scope.sql, "endpoint = ?", startDateKey ? "dateKey >= ?" : "", endDateKey ? "dateKey <= ?" : "", "latencyRequests > 0")}`,
     params,
   );
 }

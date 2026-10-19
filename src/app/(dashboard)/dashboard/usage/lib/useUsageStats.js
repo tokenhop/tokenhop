@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { initialStreamState, streamReducer } from "./streamLifecycle";
 import { appendUsageFilters } from "./filterParams";
+import { periodKey, periodQuery, readUsageJson } from "./periodRequest";
 
 const EMPTY_LIVE = { activeRequests: [], lastProvider: "", errorProvider: "" };
-const statsUrl = (period, filters) =>
-  appendUsageFilters(`/api/usage/stats?period=${period}&compare=previous`, filters);
+const statsUrl = (period, range, filters) =>
+  appendUsageFilters(`/api/usage/stats?${periodQuery(period, range)}&compare=previous`, filters);
 
 /** A repeated frame (same providers, counts, last/error provider) isn't state. */
 const sameLive = (a, b) =>
@@ -31,24 +32,32 @@ const sameLive = (a, b) =>
  * error — triggers exactly one catch-up stats fetch (`caughtUp` clears the
  * flag, `catchUpKey` lets background consumers re-fetch too).
  *
- * @param {string|null} period "today"|"24h"|"7d"|"30d"|"60d"|"90d"|"all"; null until
- *   usePeriod resolves after hydration — no fetch happens and `loading`
- *   stays true so callers keep their skeletons.
- * @param {{tab?: "overview"|"logs"}} [options] active page tab; the stream
- *   only runs on "overview".
+ * @param {string|null} period "today"|"24h"|"7d"|"30d"|"60d"|"90d"|"all"|"custom";
+ *   null until usePeriod resolves after hydration — no fetch happens and
+ *   `loading` stays true so callers keep their skeletons.
+ * @param {{tab?: "overview"|"logs", range?: {from: string, to: string}|null}} [options]
+ *   active page tab (the stream only runs on "overview") and, for "custom",
+ *   the inclusive day range sent as `from`/`to`.
  * @param {{workspaceId?: string, view?: string, userId?: string, apiKeyId?: string}|null} [filters]
  *   optional scope appended to the stats and stream URLs (YAN-376); a change
  *   resets `stats` and reconnects the stream so old-scope data never flashes.
  * @returns {{
  *   stats: object|null period stats (compare fields included when supported);
- *   statsPeriod: string|null period `stats` was fetched for;
+ *   statsPeriod: string|null periodKey(period, range) `stats` was fetched for
+ *     (the bare period for named periods, `custom:from:to` for a range);
  *   live: {activeRequests: object[], lastProvider: string, errorProvider: string};
  *   loading: boolean; fetching: boolean; error: Error|null; catchUpKey: number;
  *   retry: () => void}}
  */
-export default function useUsageStats(period, { tab = "overview" } = {}, filters = null) {
+export default function useUsageStats(
+  period,
+  { tab = "overview", range = null } = {},
+  filters = null,
+) {
+  // Fetch identity: a new custom range is a new window even though period stays "custom".
+  const key = periodKey(period, range);
   const [stats, setStats] = useState(null);
-  const [statsPeriod, setStatsPeriod] = useState(period);
+  const [statsPeriod, setStatsPeriod] = useState(key);
   const [live, setLive] = useState(EMPTY_LIVE);
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
@@ -91,7 +100,7 @@ export default function useUsageStats(period, { tab = "overview" } = {}, filters
   // REST owns `stats`. Runs on a period change, on retry and on a catch-up.
   // Only the very first load flips the skeleton; later ones are background
   // refreshes (`fetching`).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reload is the re-fetch trigger; filters are keyed by scopeKey.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reload is the re-fetch trigger; filters are keyed by scopeKey; period/range are keyed by key.
   useEffect(() => {
     // Null period: usePeriod has not resolved yet, so hold the loading state
     // instead of fetching a placeholder window.
@@ -100,8 +109,9 @@ export default function useUsageStats(period, { tab = "overview" } = {}, filters
     if (hasStats.current) setFetching(true);
     else setLoading(true);
     setError(null);
-    fetch(statsUrl(period, filters), { signal: controller.signal })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`stats ${r.status}`))))
+    // A 400 (invalid custom range) surfaces the server's `error` message.
+    fetch(statsUrl(period, range, filters), { signal: controller.signal })
+      .then((r) => readUsageJson(r, "stats"))
       .then((data) => {
         // Late success after abort (scope/period switch): the next effect run
         // owns state, so drop this payload instead of overwriting fresh data.
@@ -110,7 +120,7 @@ export default function useUsageStats(period, { tab = "overview" } = {}, filters
         // period fields must not leak across period switches.
         hasStats.current = true;
         setStats(data);
-        setStatsPeriod(period);
+        setStatsPeriod(key);
       })
       .catch((e) => {
         if (!controller.signal.aborted) setError(e);
@@ -121,7 +131,7 @@ export default function useUsageStats(period, { tab = "overview" } = {}, filters
         setFetching(false);
       });
     return () => controller.abort();
-  }, [period, reload, scopeKey]);
+  }, [key, reload, scopeKey]);
 
   const retry = useCallback(() => {
     setReload((value) => value + 1);
