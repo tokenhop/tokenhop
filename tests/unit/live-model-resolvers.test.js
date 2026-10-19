@@ -122,6 +122,8 @@ describe("resolver registry", () => {
       "sambanova",
       "alicode",
       "alicode-intl",
+      "glm",
+      "glm-cn",
     ]) {
       expect(hasLiveModelResolver(id)).toBe(true);
     }
