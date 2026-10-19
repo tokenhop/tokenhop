@@ -260,6 +260,7 @@ npm run deploy:cloudflare
 - `DATA_DIR` - Database storage path (default: `~/.tokenhop`)
 - `INITIAL_PASSWORD` - Dashboard login (default: `123456`)
 - `NODE_ENV` - Set to `production` for deploy
+- `BASE_URL` - Public origin when browsers reach the dashboard through a reverse proxy. Leave unset for direct access. See the [configuration table](https://github.com/tokenhop/tokenhop/blob/master/README.md#configuration).
 
 See [deployment guide](getting-started/installation.md#deployment) for details.
 

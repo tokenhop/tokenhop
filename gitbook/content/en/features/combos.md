@@ -526,6 +526,14 @@ Dashboard → Combos → Clone "premium-coding"
 
 **Use case**: Create variations for different scenarios.
 
+### Second model delay
+
+The fastest strategy tries one model at a time unless you set a delay. Open Dashboard, then Combos, then Edit, and choose Fastest. The field is Second model delay (ms). Leave it blank or set 0. That is the default.
+
+Enter a whole number from 1 to 10000. tokenhop starts the first model immediately. If that model has not produced a valid response after the delay, tokenhop starts the second model. The client receives the first valid response, including the start of a stream. tokenhop cancels the other request. The cancelled request is not recorded as a latency sample. A delay can raise upstream cost and quota use.
+
+A combo with fewer than two models never starts a second request. A conversation pinned to one model does not start a second model. A combo that is itself a member of another combo does not start a second model. If the first model fails before the delay ends, the second model starts immediately. If both fail, tokenhop continues with the next model in the list.
+
 ### Conversation Cache Affinity
 
 Providers cache the start of a prompt (system prompt, tools, earlier turns) and bill cached tokens at a lower price. The cache lives with one model, so if a combo sends turn 2 of a chat to a different model than turn 1, the cache is lost.
