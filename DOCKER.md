@@ -69,6 +69,8 @@ docker run -d \
   ghcr.io/tokenhop/tokenhop:latest
 ```
 
+Behind a reverse proxy, set `BASE_URL` to the public origin, such as `https://tokenhop.example.com`. For HTTPS, also set `AUTH_COOKIE_SECURE=true`. See [Configuration](README.md#configuration).
+
 ## Optional Headroom sidecar
 
 The tokenhop image does not bundle Python or Headroom. To use Headroom in Docker, run it as a separate service and point tokenhop at that proxy:

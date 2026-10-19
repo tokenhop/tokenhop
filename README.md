@@ -120,8 +120,11 @@ image; pass it with `--env-file` / `env_file`.
 | `DATA_DIR`                                           | `/app/data` (image)         | SQLite database and backups.                         |
 | `PORT` / `HOSTNAME`                                  | `20128` / `0.0.0.0` (image) | Listen address.                                      |
 | `AUTH_COOKIE_SECURE`                                 | `false`                     | Set `true` behind an HTTPS reverse proxy.            |
+| `BASE_URL`                                           | unset                       | Public origin for the dashboard and for OIDC/SAML.   |
 | `API_KEY_SECRET`, `MACHINE_ID_SALT`                  | built-in                    | Secrets for generated API keys / machine IDs.        |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | —                           | Outbound proxy for upstream calls.                   |
+
+Set `BASE_URL` to the origin browsers use to open the dashboard, including the scheme and port, such as `https://tokenhop.example.com`. tokenhop reads it at runtime. When `BASE_URL` is set, `NEXT_PUBLIC_BASE_URL` is not used for the origin check or for OIDC and SAML callbacks. A browser request that sends an `Origin` header must send this origin. A mismatch returns HTTP 403 with code `forbidden_origin`. A request with no `Origin` header is not rejected by this check. A value that is not an `http` or `https` origin, or that includes a user, password, path, query, or hash, rejects requests that send `Origin`. Leave both variables unset when browsers open tokenhop directly. The check then compares the request `Host` header with `Origin`, and it ignores `X-Forwarded-*`. OIDC redirect URLs are built from `BASE_URL` when it is set. SAML callback URLs use `BASE_URL` when the saved settings have no `baseUrl`. TODO(docs): nothing in the dashboard writes settings `baseUrl`. Confirm whether an operator can set it.
 
 **Claude Code fingerprint** — these ship together in each Claude Code release; bump them
 as a set. A malformed value fails startup rather than sending an impossible fingerprint.

@@ -93,6 +93,8 @@ tokenhop
 - Login to OpenAI account
 - Auto token refresh enabled
 
+On a multi-user instance, more than one person can run this Codex login at the same time. Each Codex login still uses the callback on port 1455. Finishing one login does not stop another login that is still in progress. xAI (port 56121), Trae, Windsurf, and Zed loopback logins also stay up while another person's login is still in progress.
+
 **Step 3: Use in CLI**
 
 ```

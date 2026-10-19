@@ -448,6 +448,8 @@ server {
 }
 ```
 
+Set `BASE_URL` to the public origin browsers use, for example `https://your-domain.com`. For HTTPS, also set `AUTH_COOKIE_SECURE=true`. A browser request that sends an `Origin` header must send that origin, or tokenhop returns HTTP 403 with code `forbidden_origin`.
+
 **Use case:** HTTPS, custom domain, load balancing
 
 ---

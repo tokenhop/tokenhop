@@ -249,7 +249,7 @@ server {
 
     # Proxy to tokenhop
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://localhost:20128;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -279,6 +279,8 @@ server {
     }
 }
 ```
+
+tokenhop listens on port 20128 by default, for the dashboard and for `/v1`. Set `BASE_URL` to the public origin in `server_name`, including the scheme, such as `https://your-domain.com`. For HTTPS, also set `AUTH_COOKIE_SECURE=true`. A browser request that sends an `Origin` header must send that origin, or tokenhop returns HTTP 403 with code `forbidden_origin`. The same-origin check does not trust `X-Forwarded-*` headers. Restart tokenhop after changing `BASE_URL`.
 
 ### Step 3: Enable Site
 

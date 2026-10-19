@@ -6,7 +6,7 @@ Route inline code completion (fill-in-the-middle) clients through the tokenhop g
 
 - A provider connected in the dashboard (**Providers**) with an API key (**Endpoint**). Define it in your shell as `TOKENHOP_API_KEY` and keep the value out of files and screenshots — every config below references the env var name, never a real key.
 - A combo named `prediction-fast`, or address a small fast non-reasoning chat model directly as `<provider-alias>/<model>`. The gateway translates FIM requests into chat completions, so the combo members should be fast chat models served through the adapter, native Codestral, or self-hosted FIM completions nodes — not reasoning models.
-- Tune the combo for latency: use the fastest combo strategy: untried models are explored first, then recent latency ranks members; failed attempts count as slow. Members are tried sequentially. Avoid fusion, which queries multiple models in parallel.
+- Tune the combo for latency: use the fastest combo strategy: untried models are explored first, then recent latency ranks members; failed attempts count as slow. Members are tried sequentially unless you set a second model delay. Leave that blank for edit predictions. A delay starts a second model and spends extra quota. See [Second model delay](../features/combos.md#second-model-delay). Avoid fusion, which queries multiple models in parallel.
 
 ## Gateway endpoints
 

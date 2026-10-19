@@ -398,6 +398,14 @@ The dashboard now refuses to save SSO-only sign-in when the selected protocol is
 
 ---
 
+## Sign out one device
+
+While Users & teams is on, open Settings, then My account, then Sessions. Each row is one browser that is signed in. Sign out ends that browser only. The other browsers stay signed in. Signing out the browser you are using asks you to confirm, then opens the login page. Sign out everywhere ends every session, including the one you are using.
+
+A browser that signed in before per-device sessions were recorded shows as "This browser" until the next sign-in. With Users & teams off, this list is hidden.
+
+---
+
 ## Need More Help?
 
 - **GitHub Issues:** [github.com/tokenhop/tokenhop/issues](https://github.com/tokenhop/tokenhop/issues)

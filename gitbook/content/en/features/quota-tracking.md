@@ -568,6 +568,16 @@ Optimization:
 
 ---
 
+## Usage page periods
+
+The Usage page Overview tab has a period control. The choices are Today, 24h, 7d, 30d, 60d, 90d, and All time. Home and Token saver stop at 60d. They do not offer 90d, All time, or a custom range.
+
+90d is the last 90 local calendar days, including today. All time totals every day in the daily usage rollup. Both of those periods, and a custom range, are totaled from that rollup. They do not scan each stored request. All time has no previous period. Its tiles say "All recorded usage". 90d compares with the 90 days before the current window.
+
+Custom sits beside those choices. Choose From and To, then Apply. The range is inclusive. Dates are local calendar days in `YYYY-MM-DD`. The start must be on or before the end. The end cannot be in the future. The range cannot be longer than 366 days. A valid range stays in the page URL as `period=custom&from=YYYY-MM-DD&to=YYYY-MM-DD`, so a reload or a shared link keeps it. It is not saved as the remembered period. The next visit without those query parameters uses the last named period. An invalid custom URL does the same. The tiles compare the range with the same number of days immediately before it.
+
+Example: `/dashboard/usage?period=custom&from=2026-09-01&to=2026-09-30`
+
 ## API Access
 
 ### Get Quota Status
