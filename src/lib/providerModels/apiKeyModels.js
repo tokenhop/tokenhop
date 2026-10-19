@@ -4,8 +4,8 @@
 // Hyperbolic, OpenCode Go, Venice, Bazaarlink, LLM7, SambaNova, Alibaba Coding
 // (CN), Alibaba Coding Intl, GLM Coding and GLM (China). Each list carries
 // every kind the provider serves, so it is authoritative: no static extras are
-// added back (except NIM's speech models and GLM's `liveUnlisted` registry
-// models, which chat serves but /models omits).
+// added back (except NIM's speech models). Registry models flagged
+// `liveUnlisted` are appended for every provider in resolveLiveModels.
 // OpenCode Free is the keyless exception: its Zen catalog is public.
 
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
@@ -377,18 +377,15 @@ export function parseAlicodeModels(body) {
 
 // ── GLM (Z.AI / BigModel) ─────────────────────────────────────────────────
 // Both coding catalogs are ids only, all chat. Names: the provider's own registry
-// first, then the other GLM provider's, then the id. Only registry models flagged
-// `liveUnlisted` (served by chat, omitted by /models) are appended to a non-empty
-// live list; every other static-only model drops out.
+// first, then the other GLM provider's, then the id. Registry models flagged
+// `liveUnlisted` (served by chat, omitted by /models) are appended by the
+// shared resolver path (resolveLiveModels), not here.
 export function parseGlmModels(body, providerId = "glm") {
   const own = getModelsByProviderId(providerId);
   const other = getModelsByProviderId(providerId === "glm" ? "glm-cn" : "glm");
   const names = new Map([...other, ...own].map((m) => [m.id, m.name]));
   const ids = [...new Set(entries(body).map(idOf).filter(Boolean))];
-  if (!ids.length) return [];
-  const live = new Set(ids);
-  const unlisted = own.filter((m) => m.liveUnlisted && !live.has(m.id)).map((m) => ({ ...m }));
-  return [...ids.map((id) => ({ id, name: names.get(id) || id })), ...unlisted];
+  return ids.map((id) => ({ id, name: names.get(id) || id }));
 }
 
 // The models endpoint sits beside the registry's OpenAI chat transport.

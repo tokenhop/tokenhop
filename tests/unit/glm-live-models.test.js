@@ -66,19 +66,9 @@ describe("parsers", () => {
     expect(ids).not.toContain("");
   });
 
-  it("appends only liveUnlisted registry models, after every live id, with metadata", () => {
+  it("returns live ids only; liveUnlisted is appended by the shared path", () => {
     const models = parseGlmModels({ data: [{ id: "glm-5.3" }, { id: "acme" }] }, "glm-cn");
-    const idx = (id) => models.findIndex((m) => m.id === id);
-    expect(models.slice(0, 2).map((m) => m.id)).toEqual(["glm-5.3", "acme"]);
-    expect(idx("glm-4.6v")).toBeGreaterThan(idx("acme"));
-    expect(models[idx("glm-4.6v")]).toEqual({
-      id: "glm-4.6v",
-      name: "GLM 4.6V (Vision)",
-      liveUnlisted: true,
-    });
-    // Static-only models without the flag drop out of the live list.
-    expect(idx("glm-4.5-air")).toBe(-1);
-    expect(models.filter((m) => m.id === "glm-5.3")).toHaveLength(1);
+    expect(models.map((m) => m.id)).toEqual(["glm-5.3", "acme"]);
   });
 
   it("returns nothing for an empty live list", () => {
@@ -111,8 +101,17 @@ describe("live catalogs end to end", () => {
 
     const body = await dashboardModels(conn.id);
     expect(body.warning).toBeUndefined();
-    expect(body.models.map((m) => m.id)).toEqual(expect.arrayContaining(["glm-5.3", "acme-cn"]));
-    expect(body.models.map((m) => m.id)).toContain("glm-4.6v");
+    const ids = body.models.map((m) => m.id);
+    expect(ids.slice(0, 2)).toEqual(["glm-5.3", "acme-cn"]);
+    // Regression (YAN-1244): appended once, after live ids, with registry metadata;
+    // unflagged static-only models drop out.
+    expect(ids.filter((id) => id === "glm-4.6v")).toHaveLength(1);
+    expect(body.models[ids.indexOf("glm-4.6v")]).toEqual({
+      id: "glm-4.6v",
+      name: "GLM 4.6V (Vision)",
+      liveUnlisted: true,
+    });
+    expect(ids).not.toContain("glm-4.5-air");
     expect(calls[0]).toEqual({
       url: "https://open.bigmodel.cn/api/coding/paas/v4/models",
       auth: "Bearer cn-test",
