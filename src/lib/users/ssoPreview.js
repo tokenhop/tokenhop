@@ -408,8 +408,10 @@ export async function handleSsoProofCallback(request, provider, jar, settings = 
       path: "/",
       maxAge: 300,
     });
-    clearAccount(accountKey({ userId: state.actorId }));
     const action = DATA_ACTION_BY_PURPOSE[slot.purpose];
+    // Data-transfer proofs (open to any workspace owner) never reset the
+    // password-failure bucket; admin preview/delete keep their prior behavior.
+    if (!action) clearAccount(accountKey({ userId: state.actorId }));
     if (action) {
       const ws = isWorkspaceDataPurpose(slot.purpose) ? `&workspace=${slot.workspaceId}` : "";
       return redirect(`/dashboard/settings?ssoReauth=${action}${ws}#data`);

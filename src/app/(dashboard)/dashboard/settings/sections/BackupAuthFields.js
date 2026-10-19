@@ -7,7 +7,7 @@ import Select from "@/shared/components/Select";
 import Button from "@/shared/components/Button";
 import Callout from "@/shared/components/Callout";
 import { safeAuthorizeUrl, startDataReauth, startErrorText } from "./backupShared";
-import { rememberReauthIntent } from "./BackupReauth";
+import { providersShape, rememberReauthIntent } from "./BackupReauth";
 
 /**
  * `ssoProof` is a one-time single sign-on proof (dialog state only, never
@@ -36,7 +36,8 @@ const PROVIDER_LABELS = { oidc: "OIDC", saml: "SAML" };
  * exact backup action and leaves the page. Shown only for linked providers.
  */
 function SsoVerify({ sso, again, importing, disabled }) {
-  const [provider, setProvider] = useState(sso.providers[0]);
+  const list = sso.providers.list;
+  const [provider, setProvider] = useState(list[0]);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
 
@@ -73,12 +74,12 @@ function SsoVerify({ sso, again, importing, disabled }) {
         {importing ? " and need to choose the backup file again." : "."}
       </p>
       <div className="flex flex-wrap items-end gap-2">
-        {sso.providers.length > 1 && (
+        {list.length > 1 && (
           <Select
             label="Provider"
             value={provider}
             onChange={(e) => setProvider(e.target.value)}
-            options={sso.providers.map((p) => ({ value: p, label: PROVIDER_LABELS[p] || p }))}
+            options={list.map((p) => ({ value: p, label: PROVIDER_LABELS[p] || p }))}
             placeholder={null}
             disabled={starting || disabled}
             className="min-w-32"
@@ -106,7 +107,7 @@ function SsoVerify({ sso, again, importing, disabled }) {
 
 SsoVerify.propTypes = {
   sso: PropTypes.shape({
-    providers: PropTypes.arrayOf(PropTypes.string).isRequired,
+    providers: providersShape.isRequired,
     action: PropTypes.string,
     workspaceId: PropTypes.string,
     force: PropTypes.bool,
@@ -116,10 +117,38 @@ SsoVerify.propTypes = {
   disabled: PropTypes.bool,
 };
 
+/** No provider to offer after an SSO attempt: still loading, load failed, or none linked. */
+function ProvidersUnavailable({ providers }) {
+  if (providers?.status === "loading") {
+    return (
+      <p className="text-[13px] text-muted" role="status">
+        Checking your sign-in providers…
+      </p>
+    );
+  }
+  if (providers?.status === "failed") {
+    return (
+      <div className="flex flex-wrap items-center gap-2" role="alert">
+        <p className="text-[13px] text-err">Could not load your sign-in providers.</p>
+        <Button type="button" variant="ghost" size="sm" icon="refresh" onClick={providers.retry}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <p className="text-[13px] text-err" role="alert">
+      Single sign-on is not available for your account right now.
+    </p>
+  );
+}
+
+ProvidersUnavailable.propTypes = { providers: providersShape };
+
 /** Who-are-you check: verified state, password, or a fresh single sign-on check. */
 function IdentityCheck({ auth, setAuth, mode, sso, disabled }) {
   const importing = mode === "import" || mode === "workspaceImport";
-  const canSso = Boolean(sso?.providers?.length);
+  const canSso = Boolean(sso?.providers?.list?.length);
   if (auth.ssoProof) {
     return (
       <Callout variant="ok" icon="verified_user" title="Verified with single sign-on">
@@ -128,13 +157,8 @@ function IdentityCheck({ auth, setAuth, mode, sso, disabled }) {
     );
   }
   if (auth.ssoOnly) {
-    return canSso ? (
-      <SsoVerify sso={sso} again importing={importing} disabled={disabled} />
-    ) : (
-      <p className="text-[13px] text-err" role="alert">
-        Single sign-on is not available for your account right now.
-      </p>
-    );
+    if (canSso) return <SsoVerify sso={sso} again importing={importing} disabled={disabled} />;
+    return <ProvidersUnavailable providers={sso?.providers} />;
   }
   return (
     <>
@@ -224,7 +248,7 @@ AuthFields.propTypes = {
   requiredPassphrase: PropTypes.bool,
   /** Linked SSO providers and the action/workspace a fresh check is bound to. */
   sso: PropTypes.shape({
-    providers: PropTypes.arrayOf(PropTypes.string).isRequired,
+    providers: providersShape.isRequired,
     action: PropTypes.string,
     workspaceId: PropTypes.string,
     /** Owner already chose to replace differing users (kept across the trip). */

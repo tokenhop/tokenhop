@@ -25,7 +25,15 @@ import {
 import AuthFields, { authWithProof, spendProof } from "./BackupAuthFields";
 import InstanceDialog from "./InstanceBackupDownload";
 import WorkspaceDialog from "./WorkspaceBackup";
-import { ChooseFileAgain, DiffList, useDataReauth, useDatabaseFile } from "./BackupReauth";
+import {
+  ChooseFileAgain,
+  DiffList,
+  NO_PROVIDERS,
+  providersShape,
+  routeReturned,
+  useDataReauth,
+  useDatabaseFile,
+} from "./BackupReauth";
 
 /**
  * User-aware Data & backup UI (YAN-375): runs only while multi-user is
@@ -62,13 +70,7 @@ export default function BackupManager({ view, onSettingsChange, readEnvelope }) 
   useEffect(() => {
     if (!returned) return;
     clearReturned();
-    const { action, workspaceId, ssoProof, error, force } = returned;
-    const result = { ssoProof: ssoProof || null, ssoOnly: true, error: error || "", force };
-    if (action === "instance.export") setInstanceOpen(result);
-    else if (action === "instance.import") setImportReauth(result);
-    else if (action?.startsWith("workspace.")) {
-      setWorkspaceOpen({ ...result, workspaceId, tab: action.slice("workspace.".length) });
-    } else setStatus({ type: "err", message: error });
+    routeReturned(returned, { setInstanceOpen, setImportReauth, setWorkspaceOpen, setStatus });
   }, [returned, clearReturned]);
 
   return (
@@ -215,8 +217,7 @@ BackupManager.propTypes = {
 /**
  * Instance import: hidden file input + restore dialog with envelope preview,
  * user-mismatch diff, and an explicit owner-only typed confirmation before
- * `force`. Never auto-forces. After a provider round trip (`reauth`) the file
- * is gone, so it is asked for again; the proof rides along to the dialog.
+ * `force`. Never auto-forces. After an SSO round trip (`reauth`) the file is re-picked.
  */
 function InstanceImportButton({
   ownerOnly,
@@ -238,8 +239,7 @@ function InstanceImportButton({
     try {
       payload = await readJsonFile(file);
     } catch (err) {
-      flash("err", err.message);
-      return;
+      return err.message || "This file could not be read.";
     }
     setPending({ name: file.name, payload, envelope: readEnvelope(payload), reauth });
     clearReauth();
@@ -248,7 +248,7 @@ function InstanceImportButton({
   const pick = (event) => {
     const file = event.target.files?.[0];
     if (fileRef.current) fileRef.current.value = "";
-    if (file) open(file);
+    if (file) open(file).then((message) => message && flash("err", message));
   };
 
   return (
@@ -305,7 +305,7 @@ InstanceImportButton.propTypes = {
   flash: PropTypes.func.isRequired,
   onSettingsChange: PropTypes.func,
   readEnvelope: PropTypes.func.isRequired,
-  providers: PropTypes.arrayOf(PropTypes.string),
+  providers: providersShape,
   reauth: PropTypes.object,
   clearReauth: PropTypes.func.isRequired,
 };
@@ -320,7 +320,7 @@ function InstanceRestoreDialog({
   setBusy,
   flash,
   onSettingsChange,
-  providers = [],
+  providers = NO_PROVIDERS,
   reauth = {},
 }) {
   const [auth, setAuth] = useState(() => ({
@@ -495,6 +495,6 @@ InstanceRestoreDialog.propTypes = {
   setBusy: PropTypes.func.isRequired,
   flash: PropTypes.func.isRequired,
   onSettingsChange: PropTypes.func,
-  providers: PropTypes.arrayOf(PropTypes.string),
+  providers: providersShape,
   reauth: PropTypes.object,
 };

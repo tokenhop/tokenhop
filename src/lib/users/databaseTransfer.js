@@ -228,7 +228,8 @@ export async function reauthActor(
     if (err?.code === "REAUTH_REQUIRED") recordLoginFail({ ip, account });
     return reauthErrorResponse(err);
   }
-  clearAccount(account);
+  // No clearAccount here: an SSO proof says nothing about the local password,
+  // so it must not reset the account's password-failure bucket.
   return null;
 }
 

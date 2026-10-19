@@ -19,6 +19,7 @@ import {
   proofFields,
   reauthErrorText,
 } from "./backupShared";
+import { NO_PROVIDERS, providersShape } from "./BackupReauth";
 import AuthFields, { authWithProof, spendProof } from "./BackupAuthFields";
 
 const slug = (name) =>
@@ -44,7 +45,7 @@ export default function WorkspaceDialog({
   busy,
   setBusy,
   flash,
-  providers = [],
+  providers = NO_PROVIDERS,
   initial = null,
 }) {
   // A proof is bound to its workspace: drop it if that one is no longer listed.
@@ -257,7 +258,7 @@ WorkspaceDialog.propTypes = {
   busy: PropTypes.bool,
   setBusy: PropTypes.func.isRequired,
   flash: PropTypes.func.isRequired,
-  providers: PropTypes.arrayOf(PropTypes.string),
+  providers: providersShape,
   initial: PropTypes.shape({
     tab: PropTypes.oneOf(["export", "import"]),
     workspaceId: PropTypes.string,

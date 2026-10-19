@@ -1,7 +1,7 @@
 "use client";
 
 import PropTypes from "prop-types";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Button from "@/shared/components/Button";
 import Modal from "@/shared/components/Modal";
 import Callout from "@/shared/components/Callout";
@@ -63,32 +63,47 @@ function scrubReturnQuery() {
   window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash || "#data"}`);
 }
 
+/** Linked SSO providers: `list` ("oidc"/"saml"), load `status`, and `retry`. */
+export const providersShape = PropTypes.shape({
+  list: PropTypes.arrayOf(PropTypes.string).isRequired,
+  status: PropTypes.oneOf(["loading", "ready", "failed"]).isRequired,
+  retry: PropTypes.func,
+});
+export const NO_PROVIDERS = { list: [], status: "ready", retry: () => {} };
+
 /**
  * Fresh single sign-on for backups (YAN-1012).
  *
- * - `providers`: linked SSO providers ("oidc"/"saml"); empty hides the option.
+ * - `providers`: linked SSO providers (`providersShape`); an empty `list`
+ *   hides the option, `status` tells loading/failed apart from "none linked".
  * - `returned`: the provider round trip result, consumed exactly once (the ref
  *   survives the dev StrictMode double effect): `{ action, workspaceId,
  *   ssoProof, error, force }`. The query is scrubbed before the one-shot GET;
  *   the proof lives only in React state, never in storage, URL or logs.
  */
 export function useDataReauth() {
-  const [providers, setProviders] = useState([]);
+  const [linked, setLinked] = useState({ list: [], status: "loading" });
+  const [attempt, setAttempt] = useState(0);
   const [returned, setReturned] = useState(null);
   const doneRef = useRef(false);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` re-runs the load on retry.
   useEffect(() => {
     let cancelled = false;
+    setLinked((s) => ({ ...s, status: "loading" }));
     fetchIdentities()
       .then((body) => {
-        const linked = new Set((body?.identities || []).map((i) => i?.provider));
-        if (!cancelled) setProviders(["oidc", "saml"].filter((p) => linked.has(p)));
+        const have = new Set((body?.identities || []).map((i) => i?.provider));
+        const list = ["oidc", "saml"].filter((p) => have.has(p));
+        if (!cancelled) setLinked({ list, status: "ready" });
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setLinked({ list: [], status: "failed" });
+      });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -97,7 +112,8 @@ export function useDataReauth() {
     doneRef.current = true;
     const intent = takeReauthIntent();
     scrubReturnQuery();
-    const force = Boolean(intent?.force);
+    // The stored intent only counts for the action that actually came back.
+    const force = intent?.action === flag && Boolean(intent.force);
     if (!DATA_ACTIONS.includes(flag)) {
       // `failed`: never call the one-shot GET; reopen the dialog that started it.
       if (flag === "failed") {
@@ -112,8 +128,12 @@ export function useDataReauth() {
       return;
     }
     const workspaceId = flag.startsWith("workspace.") ? params.get("workspace") : null;
-    if (flag.startsWith("workspace.") && !workspaceId) return;
     const target = { action: flag, workspaceId };
+    if (flag.startsWith("workspace.") && !workspaceId) {
+      // Malformed return: no workspace to consume for, so report a failed check.
+      setReturned({ ...target, ssoProof: null, error: FAILED_TEXT, force });
+      return;
+    }
     consumeDataReauth(target)
       .then((body) => {
         if (typeof body?.ssoProof !== "string" || !body.ssoProof) throw new Error("No proof.");
@@ -123,19 +143,37 @@ export function useDataReauth() {
   }, []);
 
   const clearReturned = useCallback(() => setReturned(null), []);
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  const providers = useMemo(() => ({ ...linked, retry }), [linked, retry]);
   return { providers, returned, clearReturned };
+}
+
+/** Open the dialog a provider round trip result belongs to (state setters in `to`). */
+export function routeReturned(returned, to) {
+  const { action, workspaceId, ssoProof, error, force } = returned;
+  const result = { ssoProof: ssoProof || null, ssoOnly: true, error: error || "", force };
+  if (action === "instance.export") to.setInstanceOpen(result);
+  else if (action === "instance.import") to.setImportReauth(result);
+  else if (action?.startsWith("workspace.")) {
+    to.setWorkspaceOpen({ ...result, workspaceId, tab: action.slice("workspace.".length) });
+  } else to.setStatus({ type: "err", message: error });
 }
 
 /**
  * Instance import after the provider round trip: the page reloaded, so the
  * picked file is gone. Ask for it again while the check is still fresh.
+ * `onFile` resolves to an error message when the file can't be read; it is
+ * shown here, not behind the modal.
  */
 export function ChooseFileAgain({ title, verified, error, onFile, onClose }) {
   const fileRef = useRef(null);
-  const pick = (event) => {
+  const [readError, setReadError] = useState("");
+  const pick = async (event) => {
     const file = event.target.files?.[0];
     if (fileRef.current) fileRef.current.value = "";
-    if (file) onFile(file);
+    if (!file) return;
+    setReadError("");
+    setReadError((await onFile(file)) || "");
   };
   return (
     <Modal
@@ -163,6 +201,11 @@ export function ChooseFileAgain({ title, verified, error, onFile, onClose }) {
           <Callout variant="err" title={error || FAILED_TEXT}>
             Choose the backup file again, then verify once more.
           </Callout>
+        )}
+        {readError && (
+          <p className="text-[13px] text-err" role="alert">
+            {readError}
+          </p>
         )}
       </div>
       <input

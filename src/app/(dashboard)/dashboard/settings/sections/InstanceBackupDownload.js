@@ -15,6 +15,7 @@ import {
   hasProof,
   reauthErrorText,
 } from "./backupShared";
+import { NO_PROVIDERS, providersShape } from "./BackupReauth";
 import AuthFields, { authWithProof, spendProof } from "./BackupAuthFields";
 
 /**
@@ -40,7 +41,7 @@ export default function InstanceDialog({
   busy,
   setBusy,
   flash,
-  providers = [],
+  providers = NO_PROVIDERS,
   ssoProof = null,
   ssoOnly = false,
   initialError = "",
@@ -117,7 +118,7 @@ InstanceDialog.propTypes = {
   busy: PropTypes.bool,
   setBusy: PropTypes.func.isRequired,
   flash: PropTypes.func.isRequired,
-  providers: PropTypes.arrayOf(PropTypes.string),
+  providers: providersShape,
   ssoProof: PropTypes.string,
   ssoOnly: PropTypes.bool,
   initialError: PropTypes.string,
