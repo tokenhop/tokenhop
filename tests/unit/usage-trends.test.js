@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PERIOD_VALUES, periodStart, previousPeriodRange } from "@/shared/utils/period.js";
 import {
   bucketSeries,
+  savingsTrendInput,
   trendDelta,
 } from "../../src/app/(dashboard)/dashboard/usage/lib/tileTrends.js";
 
@@ -180,5 +181,35 @@ describe("tile trends", () => {
     expect(bucketSeries(null, "input")).toBeUndefined();
     expect(bucketSeries([{ input: 1 }], "input")).toBeUndefined();
     expect(bucketSeries([{ input: 2 }, {}, { input: 4 }], "input")).toEqual([2, 0, 4]);
+  });
+
+  it("maps a savings compare payload to trend inputs", () => {
+    const input = savingsTrendInput({
+      tokensSavedEst: 5000,
+      currentTotals: { tokensSavedEst: 5000, requestsWithSavings: 2 },
+      previous: { tokensSavedEst: 4000, requestsWithSavings: 3 },
+    });
+    expect(input).toEqual({ current: 5000, previous: 4000 });
+    expect(trendDelta(input.current, input.previous)).toEqual({ kind: "up", pct: 25 });
+  });
+
+  it("yields no trend for a missing previous, missing compare fields or null savings", () => {
+    const noPrev = savingsTrendInput({ currentTotals: { tokensSavedEst: 10 } });
+    expect(noPrev).toEqual({ current: 10, previous: undefined });
+    expect(trendDelta(noPrev.current, noPrev.previous)).toEqual({ kind: "none" });
+    for (const savings of [null, undefined, { tokensSavedEst: 9 }]) {
+      const input = savingsTrendInput(savings);
+      expect(trendDelta(input.current, input.previous)).toEqual({ kind: "none" });
+    }
+  });
+
+  it("computes deltas over the Home stats field mappings", () => {
+    const totals = { requests: 120, promptTokens: 900, completionTokens: 300, cost: 1.5 };
+    const prev = { requests: 100, promptTokens: 1000, completionTokens: 0, cost: 1 };
+    expect(trendDelta(totals.requests, prev.requests)).toEqual({ kind: "up", pct: 20 });
+    expect(trendDelta(totals.promptTokens, prev.promptTokens)).toEqual({ kind: "down", pct: -10 });
+    // A previous of 0 is the neutral "No prior data" case, never Infinity%.
+    expect(trendDelta(totals.completionTokens, prev.completionTokens)).toEqual({ kind: "none" });
+    expect(trendDelta(totals.cost, prev.cost)).toEqual({ kind: "up", pct: 50 });
   });
 });

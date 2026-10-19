@@ -9,6 +9,7 @@ export {
   getChartData,
   getRollupUsageTotals,
   getRollupRangeTotals,
+  getSavingsTotals,
   getUsageSavings,
   getUsageTotals,
   getLastActivity,
