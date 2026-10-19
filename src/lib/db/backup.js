@@ -22,6 +22,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { BACKUPS_DIR, ensureDirs } from "./paths.js";
+import { publishDurableSync } from "./stagingFiles.js";
 import { timestampSlug, getAppVersion } from "./version.js";
 
 const KEEP_BACKUPS = 3;
@@ -67,9 +68,25 @@ export function makeProtectedBackupDir(prefix) {
 // → destructive txn never yields. Cached: one init per process.
 let verifierPromise = null;
 
-/** Resolve sql.js before the snapshot. Caller must not await again until the
- * destructive transaction has finished. */
-export function prepareProtectedBackupVerifier() {
+const invalidBackup = (message, cause) =>
+  Object.assign(new Error(`[db-backup] ${message}`), {
+    code: "BACKUP_INVALID",
+    ...(cause ? { cause } : {}),
+  });
+
+/**
+ * Resolve the backup verifier before the snapshot. Caller must not await again
+ * until the destructive transaction has finished.
+ *
+ * Native drivers (better-sqlite3, node:sqlite, bun:sqlite) get a sync verifier
+ * that ATTACHes the backup and runs `PRAGMA quick_check`, so the backup bytes
+ * never enter the JS heap. The verifier must run OUTSIDE a transaction (ATTACH
+ * and DETACH are illegal inside one). sql.js, or no `db`, keeps the in-memory
+ * check (documented exception).
+ */
+export function prepareProtectedBackupVerifier(db = null) {
+  if (db && typeof db.exec === "function" && db.driver && db.driver !== "sql.js")
+    return Promise.resolve((dir, file) => verifyProtectedBackupNativeSync(db, dir, file));
   verifierPromise ??= (async () => {
     const { default: initSqlJs } = await import("sql.js");
     const SQL = await initSqlJs();
@@ -78,16 +95,14 @@ export function prepareProtectedBackupVerifier() {
   return verifierPromise;
 }
 
-function verifyProtectedBackupSync(SQL, dir, file) {
+/** chmod + fsync file, backup dir and BACKUPS_DIR; reject empty/non-file backups. */
+function hardenBackupFileSync(dir, file) {
   fs.chmodSync(dir, 0o700);
   fs.chmodSync(file, 0o600);
   const fd = fs.openSync(file, "r");
   try {
     const stat = fs.fstatSync(fd);
-    if (!stat.isFile() || stat.size === 0)
-      throw Object.assign(new Error("[db-backup] Empty or invalid backup"), {
-        code: "BACKUP_INVALID",
-      });
+    if (!stat.isFile() || stat.size === 0) throw invalidBackup("Empty or invalid backup");
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);
@@ -102,20 +117,65 @@ function verifyProtectedBackupSync(SQL, dir, file) {
       }
     }
   }
+}
+
+function verifyProtectedBackupNativeSync(db, dir, file) {
+  hardenBackupFileSync(dir, file);
+  if (file.includes("\0")) throw invalidBackup("Invalid backup path");
+  const escaped = file.replace(/'/g, "''");
+  let attached = false;
+  try {
+    db.exec(`ATTACH DATABASE '${escaped}' AS vchk`);
+    attached = true;
+    const rows = db.all("PRAGMA vchk.quick_check");
+    if (rows.length !== 1 || rows[0]?.quick_check !== "ok")
+      throw invalidBackup("Backup failed SQLite integrity check");
+  } catch (err) {
+    if (err?.code === "BACKUP_INVALID") throw err;
+    throw invalidBackup("Backup failed SQLite integrity check", err);
+  } finally {
+    if (attached) {
+      try {
+        db.exec("DETACH DATABASE vchk");
+      } catch {}
+    }
+  }
+}
+
+function verifyProtectedBackupSync(SQL, dir, file) {
+  hardenBackupFileSync(dir, file);
   const ro = new SQL.Database(fs.readFileSync(file));
   try {
     const stmt = ro.prepare("PRAGMA quick_check");
     try {
       const row = stmt.step() ? stmt.getAsObject() : undefined;
-      if (row?.quick_check !== "ok")
-        throw Object.assign(new Error("[db-backup] Backup failed SQLite integrity check"), {
-          code: "BACKUP_INVALID",
-        });
+      if (row?.quick_check !== "ok") throw invalidBackup("Backup failed SQLite integrity check");
     } finally {
       stmt.free();
     }
   } finally {
     ro.close();
+  }
+}
+
+/**
+ * Remove an unverified/partial pre-import backup dir. Guarded: only a direct
+ * child of BACKUPS_DIR named `pre-import-*` is ever removed (no symlink follow).
+ * @returns {boolean} true when removal was attempted and did not throw
+ */
+export function removeUnverifiedBackupDir(dir) {
+  if (typeof dir !== "string" || !dir) return false;
+  const resolved = path.resolve(dir);
+  if (
+    path.dirname(resolved) !== path.resolve(BACKUPS_DIR) ||
+    !path.basename(resolved).startsWith(PRE_IMPORT_BACKUP_PREFIX)
+  )
+    return false;
+  try {
+    fs.rmSync(resolved, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -136,7 +196,7 @@ export function backupDbLite(adapter, destDir, destName = "data.sqlite", complet
     fs.rmSync(dest, { force: true });
   } catch {}
   if (adapter.snapshot) {
-    fs.writeFileSync(dest, adapter.snapshot(complete ? [] : BACKUP_EXCLUDE_TABLES));
+    publishDurableSync(dest, adapter.snapshot(complete ? [] : BACKUP_EXCLUDE_TABLES));
     return dest;
   }
   const escaped = dest.replace(/'/g, "''");
