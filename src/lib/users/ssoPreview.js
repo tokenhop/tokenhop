@@ -44,6 +44,7 @@ import {
   SSO_PROOF_COOKIE,
   SSO_PREVIEW_PURPOSE,
   WORKSPACE_DELETE_PURPOSE,
+  DATA_TRANSFER_PURPOSES,
   PROOF_FLOW_PREFIX,
   putProofSlot,
   peekProofSlot,
@@ -53,6 +54,7 @@ import {
   assertSlotBinding,
   assertFreshIdentity,
 } from "./ssoProofState.js";
+export { consumeDataTransferProof } from "./ssoDataProof.js";
 import { randomBytes } from "node:crypto";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -75,6 +77,7 @@ export function proofFailure(err) {
     SSO_UNAVAILABLE: [409, "sso_unavailable"],
     REAUTH_REQUIRED: [401, "reauth_required"],
     PROOF_CAPACITY: [503, "service_unavailable"],
+    PROOF_RATE_LIMITED: [429, "rate_limited"],
   };
   const [status, code] = codes[err?.code] ?? [500, "internal_error"];
   return proofJson({ error: "SSO proof unavailable", code }, status);
@@ -101,6 +104,35 @@ export function assertProofActor(db, actorId, sv) {
     throw new TenancyError("STALE", "Session is out of date");
 }
 
+const DATA_ACTION_BY_PURPOSE = Object.fromEntries(
+  Object.entries(DATA_TRANSFER_PURPOSES).map(([action, purpose]) => [purpose, action]),
+);
+const isWorkspaceDataPurpose = (purpose) =>
+  DATA_ACTION_BY_PURPOSE[purpose]?.startsWith("workspace.");
+
+// YAN-1012: workspace data transfers bind to the LIVE workspace owner (not an
+// instance admin): active, not pending, sv equal, owner membership right now.
+export function assertWorkspaceOwnerActor(db, actorId, sv, workspaceId) {
+  const row = db.get(
+    "SELECT u.status AS status, u.instanceRole AS instanceRole, u.sessionVersion AS sessionVersion, m.role AS role FROM users u LEFT JOIN memberships m ON m.userId = u.id AND m.workspaceId = ? WHERE u.id = ?",
+    [workspaceId, actorId],
+  );
+  if (row?.status !== "active" || row.instanceRole === "pending" || row.role !== "owner") {
+    throw new TenancyError("FORBIDDEN", "Forbidden");
+  }
+  if (!Number.isInteger(sv) || row.sessionVersion !== sv)
+    throw new TenancyError("STALE", "Session is out of date");
+}
+
+// Actor authority per purpose; `slotLike` = { purpose, actorId, sv, workspaceId }.
+export function assertActorFor(db, { purpose, actorId, sv, workspaceId = null }) {
+  if (isWorkspaceDataPurpose(purpose)) {
+    if (!UUID_RE.test(workspaceId ?? "")) throw new TenancyError("INVALID", "Invalid workspace");
+    return assertWorkspaceOwnerActor(db, actorId, sv, workspaceId);
+  }
+  return assertProofActor(db, actorId, sv);
+}
+
 export function proofLock(request, userId) {
   const lock = checkLoginLocks({ ip: getClientIp(request), account: accountKey({ userId }) });
   if (!lock.locked) return null;
@@ -112,12 +144,21 @@ export function proofLock(request, userId) {
   return res;
 }
 
-export async function beginSsoProof(request, principal, { provider, policy, workspaceId = null }) {
+export async function beginSsoProof(
+  request,
+  principal,
+  { provider, policy, workspaceId = null, purpose: explicit },
+) {
   const jar = await cookies();
   const sv = await proofSessionVersion(principal, jar);
   const db = await getAdapter();
-  assertProofActor(db, principal.userId, sv);
-  const purpose = workspaceId ? WORKSPACE_DELETE_PURPOSE : SSO_PREVIEW_PURPOSE;
+  // Explicit purpose wins; otherwise today's inference (workspace -> delete).
+  const purpose = explicit ?? (workspaceId ? WORKSPACE_DELETE_PURPOSE : SSO_PREVIEW_PURPOSE);
+  if (explicit && !Object.values(DATA_TRANSFER_PURPOSES).includes(explicit))
+    throw new TenancyError("INVALID", "Invalid purpose");
+  if (explicit && !isWorkspaceDataPurpose(explicit) && workspaceId)
+    throw new TenancyError("INVALID", "Invalid workspace");
+  assertActorFor(db, { purpose, actorId: principal.userId, sv, workspaceId });
   // Deletion re-auth carries no policy: a broken saved SSO map must never block
   // it (the delete transaction itself cleans that map).
   let draft = null;
@@ -186,6 +227,10 @@ export async function beginSsoProof(request, principal, { provider, policy, work
   );
   if (hits.length !== 1) throw new TenancyError("SSO_NOT_LINKED", "SSO not linked");
   const state = { purpose, actorId: principal.userId, sv, provider, flow };
+  // A new flow supersedes this actor's previous one (frees its slot), so
+  // repeated begins cannot pile up drafts in the global store.
+  const previous = await openSsoProofState(jar.get(SSO_PROOF_COOKIE)?.value);
+  if (previous?.actorId === principal.userId) takeProofSlot(previous.ref);
   const ref = putProofSlot({
     ...state,
     workspaceId,
@@ -299,7 +344,7 @@ export async function handleSsoProofCallback(request, provider, jar, settings = 
     if (!(await isMultiUserEnabled())) throw new Error("multi_user_disabled");
     if (proofLock(request, state.actorId)) throw new Error("rate_limited");
     const db = await getAdapter();
-    assertProofActor(db, state.actorId, state.sv);
+    assertActorFor(db, slot);
     let source;
     if (provider === "oidc") source = await oidcClaims(request, slot);
     else {
@@ -329,7 +374,7 @@ export async function handleSsoProofCallback(request, provider, jar, settings = 
       }
     }
     // Re-read after network/verification, including exact identity link. No writes.
-    assertProofActor(db, state.actorId, state.sv);
+    assertActorFor(db, slot);
     const identity = db.get(
       "SELECT userId FROM identities WHERE provider = ? AND issuer = ? AND subject = ?",
       [provider, slot.issuer, slot.subject],
@@ -363,7 +408,14 @@ export async function handleSsoProofCallback(request, provider, jar, settings = 
       path: "/",
       maxAge: 300,
     });
-    clearAccount(accountKey({ userId: state.actorId }));
+    const action = DATA_ACTION_BY_PURPOSE[slot.purpose];
+    // Data-transfer proofs (open to any workspace owner) never reset the
+    // password-failure bucket; admin preview/delete keep their prior behavior.
+    if (!action) clearAccount(accountKey({ userId: state.actorId }));
+    if (action) {
+      const ws = isWorkspaceDataPurpose(slot.purpose) ? `&workspace=${slot.workspaceId}` : "";
+      return redirect(`/dashboard/settings?ssoReauth=${action}${ws}#data`);
+    }
     return redirect(
       slot.purpose === SSO_PREVIEW_PURPOSE
         ? "/dashboard/admin/sso?ssoPreview=1"
@@ -378,6 +430,10 @@ export async function handleSsoProofCallback(request, provider, jar, settings = 
     console.warn("[SSO] fresh proof failed");
     // The admin is still logged in: return to the originating surface. Ids come
     // from the server-side slot only, never the request; unknown slot -> fixed path.
+    // Data-transfer proofs return to the settings Data tab (fixed path).
+    // slot is null when missing/expired: fall back to the unsealed state purpose.
+    if (DATA_ACTION_BY_PURPOSE[slot?.purpose ?? state?.purpose])
+      return redirect("/dashboard/settings?ssoReauth=failed#data");
     return redirect(
       slot?.purpose === WORKSPACE_DELETE_PURPOSE && UUID_RE.test(slot.workspaceId ?? "")
         ? `/dashboard/admin/workspaces/${slot.workspaceId}?ssoReauth=failed`
@@ -402,9 +458,10 @@ export async function consumeSsoResult(principal, purpose, workspaceId = null) {
   if (slot.workspaceId !== workspaceId) return null;
   takeProofSlot(state.ref);
   jar.delete(SSO_PROOF_COOKIE);
-  assertProofActor(db, principal.userId, sv);
+  assertActorFor(db, slot);
   if (purpose === SSO_PREVIEW_PURPOSE) return slot.result;
-  const ssoProof = putProofSlot({ ...slot, stage: "delete_proof" });
+  const stage = DATA_ACTION_BY_PURPOSE[purpose] ? "action_proof" : "delete_proof";
+  const ssoProof = putProofSlot({ ...slot, stage });
   return { ssoProof };
 }
 

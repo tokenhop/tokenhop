@@ -18,7 +18,7 @@ export const revalidate = 0;
 
 export async function POST(request, route) {
   const pre = await workspaceTransferPrelude(request, route, {
-    allowed: ["password", "passphrase", "data"],
+    allowed: ["password", "passphrase", "data", "ssoProof"],
     maxBody: WORKSPACE_IMPORT_MAX_BODY,
     requireData: true,
     action: "workspace.import",
@@ -31,10 +31,12 @@ export async function POST(request, route) {
     await importWorkspaceSnapshot(principal, workspaceId, body.data, {
       passphrase: body.passphrase,
     });
-    await audit({ principal, request, workspaceId }, "workspace.import", {
-      type: "workspace",
-      id: workspaceId,
-    });
+    await audit(
+      { principal, request, workspaceId },
+      "workspace.import",
+      { type: "workspace", id: workspaceId },
+      { after: { reauth: body.ssoProof == null ? "password" : "sso" } },
+    );
     return NextResponse.json({ success: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     await audit(

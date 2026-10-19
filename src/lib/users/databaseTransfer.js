@@ -23,6 +23,8 @@ import { requireMultiUser } from "./featureSwitch.js";
 import { can } from "./principal.js";
 import { getPrincipal } from "./session.js";
 import { audit } from "./audit.js";
+import { consumeDataTransferProof } from "./ssoDataProof.js";
+import { DATA_TRANSFER_PURPOSES } from "./ssoProofState.js";
 import { isCrossSite, isJson } from "@/lib/auth/sameOrigin.js";
 import { PayloadTooLarge, json, payloadTooLarge, readJsonBody } from "./userManagement.js";
 
@@ -61,8 +63,8 @@ export async function sessionVersionProof(request, principal) {
 /**
  * Verify the ACTING USER's current password against their own users row,
  * bound to their live sessionVersion — never the instance-wide legacy
- * password hash. SSO-only accounts fail closed (REAUTH_UNSUPPORTED; a fresh
- * SSO re-auth challenge is a follow-up issue).
+ * password hash. SSO-only accounts fail closed here (REAUTH_UNSUPPORTED); they
+ * use a fresh SSO proof through `reauthActor` instead (YAN-1012).
  * @param {import("./principal.js").Principal} principal the acting principal
  * @param {unknown} password request-supplied password
  * @param {number|undefined} expectedSessionVersion live sv claim, when known
@@ -162,6 +164,72 @@ export async function reauthPrincipal(request, principal, password, opts = {}) {
     return reauthErrorResponse(err);
   }
   clearAccount(account);
+  return null;
+}
+
+const MAX_SSO_PROOF_CHARS = 128;
+const reauthInvalid = () =>
+  NextResponse.json({ error: "Invalid request", code: "invalid_request" }, { status: 400 });
+
+/** Exactly one proof: a string `password` XOR a bounded non-empty string `ssoProof`. */
+export function hasExactlyOneProof({ password, ssoProof } = {}) {
+  const hasPw = password !== undefined && password !== null;
+  const hasSso = ssoProof !== undefined && ssoProof !== null;
+  if (hasPw === hasSso) return false;
+  if (hasPw) return typeof password === "string";
+  return (
+    typeof ssoProof === "string" && ssoProof.length > 0 && ssoProof.length <= MAX_SSO_PROOF_CHARS
+  );
+}
+
+/**
+ * Re-auth the acting user with EITHER their password (unchanged
+ * `reauthPrincipal`) OR a one-time SSO proof from /api/me/reauth, bound to
+ * the exact action (purpose), actor, sv and workspace. SSO proofs are session
+ * principals only with a verified sv claim; a live row re-read follows the
+ * consumption. Returns null on success, else the error Response.
+ * @param {Request} request
+ * @param {import("./principal.js").Principal} principal
+ * @param {{ password?: unknown, ssoProof?: unknown }} proofs
+ * @param {{ purpose: string, workspaceId?: string|null, instanceAdmin?: boolean }} opts
+ * @returns {Promise<Response|null>}
+ */
+export async function reauthActor(
+  request,
+  principal,
+  { password, ssoProof },
+  { purpose, workspaceId = null, instanceAdmin = false },
+) {
+  if (!hasExactlyOneProof({ password, ssoProof })) return reauthInvalid();
+  if (password !== undefined && password !== null) {
+    return reauthPrincipal(request, principal, password, { instanceAdmin });
+  }
+  if (!Object.values(DATA_TRANSFER_PURPOSES).includes(purpose)) return reauthInvalid();
+  const ip = getClientIp(request);
+  const account = accountKey({ userId: principal?.userId });
+  const lock = checkLoginLocks({ ip, account });
+  if (lock.locked) return tooManyAttempts(lock);
+  try {
+    // SSO proofs belong to browser sessions only: never CLI/local principals.
+    if (principal?.via !== "session") throw new TenancyError("FORBIDDEN", "Forbidden");
+    const sv = await sessionVersionProof(request, principal);
+    if (!Number.isInteger(sv)) throw new TenancyError("STALE", "Session is out of date");
+    consumeDataTransferProof(ssoProof, { purpose, actorId: principal.userId, workspaceId, sv });
+    // Live re-read after consumption: demotion/deactivation/sv bump fail closed.
+    const live = await getUserUnscoped(principal.userId);
+    if (live?.status !== "active" || live.instanceRole === "pending") {
+      throw new TenancyError("REAUTH_REQUIRED", "Fresh authentication required");
+    }
+    if (live.sessionVersion !== sv) throw new TenancyError("STALE", "Session is out of date");
+    if (instanceAdmin && live.instanceRole !== "owner" && live.instanceRole !== "admin") {
+      throw new TenancyError("FORBIDDEN", "Only an instance owner or admin may do this");
+    }
+  } catch (err) {
+    if (err?.code === "REAUTH_REQUIRED") recordLoginFail({ ip, account });
+    return reauthErrorResponse(err);
+  }
+  // No clearAccount here: an SSO proof says nothing about the local password,
+  // so it must not reset the account's password-failure bucket.
   return null;
 }
 
@@ -309,7 +377,7 @@ export async function workspaceTransferPrelude(request, { params }, opts) {
   if (Object.keys(body).some((k) => !opts.allowed.includes(k))) return invalid();
   const passphrase = boundPassphrase(body.passphrase);
   if (typeof passphrase !== "string") return invalid(); // required, non-empty, bounded
-  if (typeof body.password !== "string") return invalid();
+  if (!hasExactlyOneProof(body)) return invalid();
   if (
     opts.requireData &&
     (!body.data || typeof body.data !== "object" || Array.isArray(body.data))
@@ -317,7 +385,12 @@ export async function workspaceTransferPrelude(request, { params }, opts) {
     return invalid();
   }
 
-  const denied = await reauthPrincipal(request, principal, body.password);
+  const denied = await reauthActor(
+    request,
+    principal,
+    { password: body.password, ssoProof: body.ssoProof },
+    { purpose: DATA_TRANSFER_PURPOSES[opts.action], workspaceId },
+  );
   if (denied) return { res: denied };
   // Re-check LIVE ownership after the slow hash: a demotion/removal during the
   // bcrypt window must not slip through on the pre-hash principal.

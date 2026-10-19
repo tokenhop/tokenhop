@@ -28,6 +28,8 @@ const ALLOWED = new Set([
   "to",
   "count",
   "method",
+  // YAN-1012: how a data transfer re-authenticated ("password" | "sso"); never the proof.
+  "reauth",
   "path",
   "capability",
   "keyNames",

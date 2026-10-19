@@ -15,8 +15,12 @@ import {
   backupFileName,
   apiError,
   passphraseProblem,
+  hasProof,
+  proofFields,
+  reauthErrorText,
 } from "./backupShared";
-import AuthFields, { blankAuth } from "./BackupAuthFields";
+import { NO_PROVIDERS, providersShape } from "./BackupReauth";
+import AuthFields, { authWithProof, spendProof } from "./BackupAuthFields";
 
 const slug = (name) =>
   String(name)
@@ -30,12 +34,32 @@ const slug = (name) =>
  * signer owns, so nothing about sibling workspaces ever renders. Export
  * downloads `type: tokenhop.workspaceExport v1`; import posts the doc plus
  * reauth and shows backend user/role errors inline.
+ *
+ * YAN-1012: `initial` reopens the dialog after a single sign-on round trip —
+ * same tab and workspace, with the one-time proof (or the failure). A proof is
+ * bound to that tab + workspace, so both are locked while it is held.
  */
-export default function WorkspaceDialog({ workspaces, onClose, busy, setBusy, flash }) {
-  const [tab, setTab] = useState("export");
-  const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id ?? "");
-  const [auth, setAuth] = useState(blankAuth);
-  const [error, setError] = useState("");
+export default function WorkspaceDialog({
+  workspaces,
+  onClose,
+  busy,
+  setBusy,
+  flash,
+  providers = NO_PROVIDERS,
+  initial = null,
+}) {
+  // A proof is bound to its workspace: drop it if that one is no longer listed.
+  const owned = workspaces.some((w) => w.id === initial?.workspaceId);
+  const [tab, setTab] = useState(initial?.tab || "export");
+  const [workspaceId, setWorkspaceId] = useState(() =>
+    owned ? initial.workspaceId : (workspaces[0]?.id ?? ""),
+  );
+  const [auth, setAuth] = useState(() => ({
+    ...authWithProof(owned ? initial?.ssoProof : null),
+    ssoOnly: Boolean(initial?.ssoOnly || initial?.ssoProof),
+  }));
+  const [error, setError] = useState(initial?.error || "");
+  const proofHeld = Boolean(auth.ssoProof);
   const [importFile, setImportFile] = useState(null);
   const [docName, setDocName] = useState("");
   const fileRef = useRef(null);
@@ -52,7 +76,7 @@ export default function WorkspaceDialog({ workspaces, onClose, busy, setBusy, fl
     : "";
   const ready =
     Boolean(selected) &&
-    Boolean(auth.password) &&
+    hasProof(auth) &&
     passphraseOk &&
     !problem &&
     (tab === "export" || Boolean(importFile));
@@ -84,7 +108,7 @@ export default function WorkspaceDialog({ workspaces, onClose, busy, setBusy, fl
     setError("");
     try {
       if (tab === "export") {
-        const body = { password: auth.password };
+        const body = proofFields(auth);
         if (auth.passphrase) body.passphrase = auth.passphrase;
         const res = await fetch(`/api/workspaces/${selected.id}/export`, {
           method: "POST",
@@ -97,7 +121,7 @@ export default function WorkspaceDialog({ workspaces, onClose, busy, setBusy, fl
         flash("ok", `Workspace “${selected.name}” exported. Keep the file private.`);
         onClose();
       } else {
-        const body = { password: auth.password, data: importFile };
+        const body = { ...proofFields(auth), data: importFile };
         if (auth.passphrase) body.passphrase = auth.passphrase;
         const res = await fetch(`/api/workspaces/${selected.id}/import`, {
           method: "POST",
@@ -110,7 +134,9 @@ export default function WorkspaceDialog({ workspaces, onClose, busy, setBusy, fl
         onClose();
       }
     } catch (err) {
-      setError(err.message || "Request failed");
+      setError(reauthErrorText(err, Boolean(auth.ssoProof), "Request failed"));
+      // A proof is single-use: any failed attempt that sent one needs a fresh check.
+      if (auth.ssoProof) setAuth(spendProof);
     } finally {
       setBusy(false);
     }
@@ -134,18 +160,24 @@ export default function WorkspaceDialog({ workspaces, onClose, busy, setBusy, fl
       }
     >
       <div className="space-y-4">
-        <SegmentedControl
-          aria-label="Workspace backup mode"
-          value={tab}
-          onChange={(value) => {
-            setTab(value);
-            setError("");
-          }}
-          options={[
-            { value: "export", label: "Export" },
-            { value: "import", label: "Import" },
-          ]}
-        />
+        {proofHeld ? (
+          <p className="text-sm font-semibold text-text">
+            {tab === "export" ? "Export" : "Import"}
+          </p>
+        ) : (
+          <SegmentedControl
+            aria-label="Workspace backup mode"
+            value={tab}
+            onChange={(value) => {
+              setTab(value);
+              setError("");
+            }}
+            options={[
+              { value: "export", label: "Export" },
+              { value: "import", label: "Import" },
+            ]}
+          />
+        )}
         <Select
           label="Workspace"
           value={workspaceId}
@@ -155,7 +187,12 @@ export default function WorkspaceDialog({ workspaces, onClose, busy, setBusy, fl
             label: `${w.name}${w.kind === "personal" ? " (personal)" : ""}`,
           }))}
           placeholder={null}
-          hint="Only workspaces you own are listed."
+          disabled={proofHeld}
+          hint={
+            proofHeld
+              ? "Your single sign-on check is for this workspace only."
+              : "Only workspaces you own are listed."
+          }
         />
         {error && <Callout variant="err" title={error} />}
         {tab === "import" && (
@@ -176,10 +213,16 @@ export default function WorkspaceDialog({ workspaces, onClose, busy, setBusy, fl
               onChange={pickDoc}
               className="hidden"
             />
-            {docName && (
+            {docName ? (
               <p className="text-[13px] text-muted" role="status">
                 {docName}
               </p>
+            ) : (
+              proofHeld && (
+                <p className="text-[13px] text-muted" role="status">
+                  Choose the backup file again to continue. The check expires in 5 minutes.
+                </p>
+              )
             )}
             <Callout variant="warn" title="Adds copies with new IDs — never replaces">
               Only {selected ? `“${selected.name}”` : "the chosen workspace"} is touched. You must
@@ -192,6 +235,12 @@ export default function WorkspaceDialog({ workspaces, onClose, busy, setBusy, fl
           auth={auth}
           setAuth={setAuth}
           mode={tab === "export" ? "workspaceExport" : "workspaceImport"}
+          sso={{
+            providers,
+            action: tab === "export" ? "workspace.export" : "workspace.import",
+            workspaceId: selected?.id,
+          }}
+          disabled={busy}
         />
         {problem && (
           <p className="text-[13px] text-err" role="alert">
@@ -209,4 +258,12 @@ WorkspaceDialog.propTypes = {
   busy: PropTypes.bool,
   setBusy: PropTypes.func.isRequired,
   flash: PropTypes.func.isRequired,
+  providers: providersShape,
+  initial: PropTypes.shape({
+    tab: PropTypes.oneOf(["export", "import"]),
+    workspaceId: PropTypes.string,
+    ssoProof: PropTypes.string,
+    ssoOnly: PropTypes.bool,
+    error: PropTypes.string,
+  }),
 };

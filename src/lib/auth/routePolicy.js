@@ -152,6 +152,13 @@ export const ROUTE_POLICY = {
     alwaysProtected: true,
     cliAllowed: false,
   }),
+  // YAN-1012: fresh SSO re-auth for instance/workspace export/import. Session
+  // only; the handler gates per action (hostOps / workspace owner).
+  "/api/me/reauth": multiUser({
+    cap: { GET: SELF, POST: SELF },
+    alwaysProtected: true,
+    cliAllowed: false,
+  }),
   // YAN-373: SSO policy preview. Settings managers, session only, 404 when off.
   "/api/auth/sso/preview": multiUser({
     cap: { GET: SETTINGS, POST: SETTINGS },

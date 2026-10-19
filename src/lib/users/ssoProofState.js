@@ -9,7 +9,19 @@ export const SSO_PROOF_COOKIE = "sso_proof_state";
 export const SSO_PREVIEW_PURPOSE = "sso_preview";
 export const WORKSPACE_DELETE_PURPOSE = "workspace_delete";
 export const PROOF_FLOW_PREFIX = "sso-proof:";
-const PURPOSES = [SSO_PREVIEW_PURPOSE, WORKSPACE_DELETE_PURPOSE];
+// YAN-1012: one purpose per data-transfer action, so purpose equality blocks
+// cross-action replay.
+export const DATA_TRANSFER_PURPOSES = Object.freeze({
+  "instance.export": "data_instance_export",
+  "instance.import": "data_instance_import",
+  "workspace.export": "data_workspace_export",
+  "workspace.import": "data_workspace_import",
+});
+const PURPOSES = [
+  SSO_PREVIEW_PURPOSE,
+  WORKSPACE_DELETE_PURPOSE,
+  ...Object.values(DATA_TRANSFER_PURPOSES),
+];
 // Parked on globalThis (saml.js __tokenhopSamlRequestCache precedent) so
 // duplicate module instances (dev HMR) share one store. Still bounded and
 // single-process: use shared storage keyed by ref if ever replicated.
@@ -19,6 +31,8 @@ if (!globalThis.__tokenhopSsoProofSlots) {
 const slots = globalThis.__tokenhopSsoProofSlots;
 const TTL = 300_000;
 const MAX = 512;
+// Per-actor ceiling on live slots, so one user cannot exhaust the global store.
+const MAX_PER_ACTOR = 5;
 
 function sweep(now) {
   for (const [id, slot] of slots) if (slot.expiresAt <= now) slots.delete(id);
@@ -26,6 +40,11 @@ function sweep(now) {
 
 export function putProofSlot(slot, now = Date.now()) {
   sweep(now);
+  if (slot.actorId) {
+    let live = 0;
+    for (const s of slots.values()) if (s.actorId === slot.actorId) live++;
+    if (live >= MAX_PER_ACTOR) throw new TenancyError("PROOF_RATE_LIMITED", "Too many attempts");
+  }
   if (slots.size >= MAX) throw new TenancyError("PROOF_CAPACITY", "Service unavailable");
   const ref = randomBytes(32).toString("base64url");
   // Handoffs never extend freshness: draft, result and deletion share one TTL.

@@ -11,7 +11,6 @@ import Checkbox from "@/shared/components/Checkbox";
 import Modal from "@/shared/components/Modal";
 import Callout from "@/shared/components/Callout";
 import CopyField from "@/shared/components/CopyField";
-import { ACTIVE } from "@/shared/brand";
 import {
   FORCE_PHRASE,
   buildInstanceImportBody,
@@ -19,14 +18,22 @@ import {
   readJsonFile,
   apiError,
   passphraseProblem,
-  describeDiffEntry,
   normalizeDiff,
+  hasProof,
+  reauthErrorText,
 } from "./backupShared";
-import AuthFields, { blankAuth } from "./BackupAuthFields";
+import AuthFields, { authWithProof, spendProof } from "./BackupAuthFields";
 import InstanceDialog from "./InstanceBackupDownload";
 import WorkspaceDialog from "./WorkspaceBackup";
-
-const DEFAULT_DATABASE_FILE = `~/.${ACTIVE.dataDirName}/db/data.sqlite`;
+import {
+  ChooseFileAgain,
+  DiffList,
+  NO_PROVIDERS,
+  providersShape,
+  routeReturned,
+  useDataReauth,
+  useDatabaseFile,
+} from "./BackupReauth";
 
 /**
  * User-aware Data & backup UI (YAN-375): runs only while multi-user is
@@ -36,13 +43,20 @@ const DEFAULT_DATABASE_FILE = `~/.${ACTIVE.dataDirName}/db/data.sqlite`;
  * (owner/admin reauth) and one per owned workspace. The instance keeps the
  * existing `tokenhop-backup-<stamp>.json` name. Workspace exports carry
  * `type: "tokenhop.workspaceExport", version: 1`.
+ *
+ * YAN-1012: users with a linked SSO identity can verify with their provider
+ * instead of a password. On return the matching dialog reopens with the
+ * one-time proof (or the failure); imports ask for the file again.
  */
 export default function BackupManager({ view, onSettingsChange, readEnvelope }) {
   const [status, setStatus] = useState({ type: "", message: "" });
   const [busy, setBusy] = useState(false);
-  const [instanceOpen, setInstanceOpen] = useState(false);
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
-  const [databaseFile, setDatabaseFile] = useState(DEFAULT_DATABASE_FILE);
+  // `null` closed, else `{}` or the provider round trip result for that dialog.
+  const [instanceOpen, setInstanceOpen] = useState(null);
+  const [workspaceOpen, setWorkspaceOpen] = useState(null);
+  const [importReauth, setImportReauth] = useState(null);
+  const databaseFile = useDatabaseFile();
+  const { providers, returned, clearReturned } = useDataReauth();
 
   const ownedWorkspaces = (view.workspaces || []).filter((w) => w.role === "owner");
   const canInstance = view.can?.("instance.settings.manage") ?? false;
@@ -50,20 +64,14 @@ export default function BackupManager({ view, onSettingsChange, readEnvelope }) 
   const isManager = canInstance;
   const ownerOnly = isOwner;
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/settings/environment", { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!cancelled && data?.databaseFile) setDatabaseFile(data.databaseFile);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const flash = (type, message) => setStatus({ type, message });
+
+  // Route the provider round trip result to its dialog exactly once.
+  useEffect(() => {
+    if (!returned) return;
+    clearReturned();
+    routeReturned(returned, { setInstanceOpen, setImportReauth, setWorkspaceOpen, setStatus });
+  }, [returned, clearReturned]);
 
   return (
     <div id="data" className="scroll-mt-24 space-y-4">
@@ -94,7 +102,7 @@ export default function BackupManager({ view, onSettingsChange, readEnvelope }) 
                 disabled={!isManager}
                 onClick={() => {
                   flash("", "");
-                  setInstanceOpen(true);
+                  setInstanceOpen({});
                 }}
               >
                 Download
@@ -107,6 +115,9 @@ export default function BackupManager({ view, onSettingsChange, readEnvelope }) 
                 flash={flash}
                 onSettingsChange={onSettingsChange}
                 readEnvelope={readEnvelope}
+                providers={providers}
+                reauth={importReauth}
+                clearReauth={() => setImportReauth(null)}
               />
             </div>
           }
@@ -127,7 +138,7 @@ export default function BackupManager({ view, onSettingsChange, readEnvelope }) 
               disabled={busy || ownedWorkspaces.length === 0}
               onClick={() => {
                 flash("", "");
-                setWorkspaceOpen(true);
+                setWorkspaceOpen({});
               }}
             >
               Workspace
@@ -168,19 +179,25 @@ export default function BackupManager({ view, onSettingsChange, readEnvelope }) 
 
       {instanceOpen && (
         <InstanceDialog
-          onClose={() => setInstanceOpen(false)}
+          onClose={() => setInstanceOpen(null)}
           busy={busy}
           setBusy={setBusy}
           flash={flash}
+          providers={providers}
+          ssoProof={instanceOpen.ssoProof}
+          ssoOnly={instanceOpen.ssoOnly}
+          initialError={instanceOpen.error}
         />
       )}
-      {workspaceOpen && (
+      {workspaceOpen && ownedWorkspaces.length > 0 && (
         <WorkspaceDialog
           workspaces={ownedWorkspaces}
-          onClose={() => setWorkspaceOpen(false)}
+          onClose={() => setWorkspaceOpen(null)}
           busy={busy}
           setBusy={setBusy}
           flash={flash}
+          providers={providers}
+          initial={workspaceOpen.tab ? workspaceOpen : null}
         />
       )}
     </div>
@@ -200,7 +217,7 @@ BackupManager.propTypes = {
 /**
  * Instance import: hidden file input + restore dialog with envelope preview,
  * user-mismatch diff, and an explicit owner-only typed confirmation before
- * `force`. Never auto-forces.
+ * `force`. Never auto-forces. After an SSO round trip (`reauth`) the file is re-picked.
  */
 function InstanceImportButton({
   ownerOnly,
@@ -210,22 +227,28 @@ function InstanceImportButton({
   flash,
   onSettingsChange,
   readEnvelope,
+  providers,
+  reauth,
+  clearReauth,
 }) {
   const fileRef = useRef(null);
   const [pending, setPending] = useState(null);
 
-  const pick = async (event) => {
-    const file = event.target.files?.[0];
-    if (fileRef.current) fileRef.current.value = "";
-    if (!file) return;
+  const open = async (file) => {
     let payload = null;
     try {
       payload = await readJsonFile(file);
     } catch (err) {
-      flash("err", err.message);
-      return;
+      return err.message || "This file could not be read.";
     }
-    setPending({ name: file.name, payload, envelope: readEnvelope(payload) });
+    setPending({ name: file.name, payload, envelope: readEnvelope(payload), reauth });
+    clearReauth();
+  };
+
+  const pick = (event) => {
+    const file = event.target.files?.[0];
+    if (fileRef.current) fileRef.current.value = "";
+    if (file) open(file).then((message) => message && flash("err", message));
   };
 
   return (
@@ -246,6 +269,15 @@ function InstanceImportButton({
         onChange={pick}
         className="hidden"
       />
+      {reauth && !pending && (
+        <ChooseFileAgain
+          title="Restore instance backup"
+          verified={Boolean(reauth.ssoProof)}
+          error={reauth.error}
+          onFile={open}
+          onClose={clearReauth}
+        />
+      )}
       {pending && (
         <InstanceRestoreDialog
           name={pending.name}
@@ -257,6 +289,8 @@ function InstanceImportButton({
           setBusy={setBusy}
           flash={flash}
           onSettingsChange={onSettingsChange}
+          providers={providers}
+          reauth={pending.reauth || undefined}
         />
       )}
     </>
@@ -271,37 +305,9 @@ InstanceImportButton.propTypes = {
   flash: PropTypes.func.isRequired,
   onSettingsChange: PropTypes.func,
   readEnvelope: PropTypes.func.isRequired,
-};
-
-function DiffList({ title, entries, variant }) {
-  if (!entries.length) return null;
-  return (
-    <div className="rounded-xl border border-line p-3">
-      <p className="text-sm font-semibold text-text">
-        {title} ({entries.length})
-      </p>
-      <ul className="mt-1.5 max-h-36 space-y-1 overflow-y-auto text-[13px] text-muted">
-        {entries.map((entry) => {
-          const { label, detail } = describeDiffEntry(entry);
-          return (
-            <li
-              key={typeof entry === "string" ? entry : entry.id || JSON.stringify(entry)}
-              className="flex flex-wrap gap-x-2"
-            >
-              <span className="font-medium text-text">{label}</span>
-              {detail && <span className={variant === "err" ? "text-err" : ""}>{detail}</span>}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-DiffList.propTypes = {
-  title: PropTypes.string.isRequired,
-  entries: PropTypes.array.isRequired,
-  variant: PropTypes.string,
+  providers: providersShape,
+  reauth: PropTypes.object,
+  clearReauth: PropTypes.func.isRequired,
 };
 
 function InstanceRestoreDialog({
@@ -314,10 +320,17 @@ function InstanceRestoreDialog({
   setBusy,
   flash,
   onSettingsChange,
+  providers = NO_PROVIDERS,
+  reauth = {},
 }) {
-  const [auth, setAuth] = useState(blankAuth);
-  const [error, setError] = useState("");
-  const [diff, setDiff] = useState(null);
+  const [auth, setAuth] = useState(() => ({
+    ...authWithProof(reauth.ssoProof),
+    ssoOnly: Boolean(reauth.ssoOnly),
+  }));
+  const [error, setError] = useState(reauth.error || "");
+  // The owner chose to replace users before the round trip: the diff is gone,
+  // but the typed confirmation below is still required again.
+  const [diff, setDiff] = useState(reauth.force && ownerOnly ? {} : null);
   const [confirmForce, setConfirmForce] = useState(false);
   const [typed, setTyped] = useState("");
 
@@ -327,7 +340,7 @@ function InstanceRestoreDialog({
     mismatch && confirmForce && typed.trim().toUpperCase() === FORCE_PHRASE && ownerOnly;
   const problem = passphraseProblem(auth.passphrase, auth.passphrase, { headerSafe: false });
   const ready =
-    Boolean(auth.password) &&
+    hasProof(auth) &&
     (!envelope?.portable || Boolean(auth.passphrase)) &&
     !problem &&
     (!mismatch || forceArmed);
@@ -346,9 +359,15 @@ function InstanceRestoreDialog({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         const err = apiError(res, data, "Failed to import database");
+        // Any answer after the server read the proof means it is spent.
+        if (auth.ssoProof) setAuth(spendProof);
         if (isMismatchError(err)) {
           setDiff(err.diff || {});
-          setError("");
+          setError(
+            auth.ssoProof && ownerOnly
+              ? "Your single sign-on check was used. Verify again to replace the users."
+              : "",
+          );
           return;
         }
         throw err;
@@ -357,7 +376,8 @@ function InstanceRestoreDialog({
       onSettingsChange?.();
       flash("ok", "Database imported. Restart to apply.");
     } catch (err) {
-      setError(err.message || "Failed to import database");
+      setError(reauthErrorText(err, Boolean(auth.ssoProof), "Failed to import database"));
+      if (auth.ssoProof) setAuth(spendProof);
     } finally {
       setBusy(false);
     }
@@ -453,6 +473,12 @@ function InstanceRestoreDialog({
           setAuth={setAuth}
           mode="import"
           requiredPassphrase={Boolean(envelope?.portable)}
+          disabled={busy}
+          sso={{
+            providers,
+            action: "instance.import",
+            force: mismatch && ownerOnly,
+          }}
         />
       </div>
     </Modal>
@@ -469,4 +495,6 @@ InstanceRestoreDialog.propTypes = {
   setBusy: PropTypes.func.isRequired,
   flash: PropTypes.func.isRequired,
   onSettingsChange: PropTypes.func,
+  providers: providersShape,
+  reauth: PropTypes.object,
 };
