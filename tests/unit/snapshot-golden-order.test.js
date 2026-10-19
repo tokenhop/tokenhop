@@ -5,14 +5,17 @@
 //  1. Golden order: top-level key arrays for the legacy / hashed-switch-off /
 //     v2 / v3 export shapes and the first-row key order of every array, taken
 //     from the pre-change exportDb (commit 0a4c1919) and hardcoded here.
-//  2. Bind fidelity: the 9 instance sections written by the staged import
+//  2. Bind fidelity: the 10 instance sections written by the staged import
 //     (importDb, importDbStream, and the absent-section retain path) must land
 //     with byte-identical SQLite storage classes and values as the original
 //     bind path `insertInstanceTableSections` (still exported, unchanged).
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getAdapter } from "@/lib/db/driver.js";
 import * as dbApi from "@/lib/db/index.js";
-import { insertInstanceTableSections } from "@/lib/db/helpers/instanceSnapshotTables.js";
+import {
+  insertInstanceTableSections,
+  remapBudgetCarry,
+} from "@/lib/db/helpers/instanceSnapshotTables.js";
 import { assertIsolatedHome } from "../helpers/isolatedHome.js";
 import {
   KID,
@@ -25,6 +28,7 @@ import {
   dumpSections,
   insertViaOracle,
   seedHashedGraph,
+  stateDump,
   trickySections,
 } from "../helpers/snapshotOracle.js";
 
@@ -87,6 +91,7 @@ const GOLDEN_V2_TOP = [
   "usageHistory",
   "requestDetails",
   "usageRollup",
+  "usageBudgetCarry",
   "gatewayVideoJobs",
 ];
 
@@ -112,10 +117,11 @@ const GOLDEN_V3_TOP = [
   "usageHistory",
   "requestDetails",
   "usageRollup",
+  "usageBudgetCarry",
   "gatewayVideoJobs",
 ];
 
-// Column / key order of one row of each of the 9 sections.
+// Column / key order of one row of each of the 10 sections.
 const GOLDEN_SECTION_COLUMNS = {
   workspaceSettings: ["workspaceId", "data", "updatedAt"],
   userPreferences: ["userId", "data", "updatedAt"],
@@ -226,6 +232,17 @@ const GOLDEN_SECTION_COLUMNS = {
     "emptyCount",
     "latencyRequests",
     "latencyHistogram",
+  ],
+  usageBudgetCarry: [
+    "day",
+    "workspaceId",
+    "userId",
+    "apiKeyId",
+    "grantId",
+    "usd",
+    "tokens",
+    "requests",
+    "notionalUsd",
   ],
 };
 
@@ -596,6 +613,70 @@ describe("bind fidelity vs the original insertInstanceTableSections", () => {
     for (const table of SECTION_TABLES) delete slim[table];
     await dbApi.importDbStream(bodyOf(slim, 997), { masterKey: MASTER });
     expect(dumpSections(db)).toEqual(oracleDump);
+  });
+
+  it("a duplicate usageBudgetCarry row keeps the validator's message and changes nothing", async () => {
+    insertViaOracle(db, insertInstanceTableSections, tricky);
+    const before = stateDump(db);
+    const dup = structuredClone(doc);
+    dup.usageBudgetCarry.push({ ...dup.usageBudgetCarry[0] });
+    for (const body of [dup]) {
+      await expect(dbApi.importDbStream(bodyOf(body), { masterKey: MASTER })).rejects.toMatchObject(
+        {
+          code: "TRANSFER_STATE_INVALID",
+          message: "duplicate usageBudgetCarry row",
+        },
+      );
+      await expect(
+        dbApi.importDb(structuredClone(body), { masterKey: MASTER }),
+      ).rejects.toMatchObject({
+        code: "TRANSFER_STATE_INVALID",
+        message: "duplicate usageBudgetCarry row",
+      });
+    }
+    expect(stateDump(db)).toBe(before);
+  });
+
+  it("a retained usageBudgetCarry matches the original remap + sum, REALs bit-identical", async () => {
+    const live = [
+      ["2026-10-01", WS, "owner", 0.1],
+      ["2026-10-01", "w-dead", "owner", 0.2],
+      ["2026-10-01", "", "owner", 0.3],
+      ["2026-10-01", "w-dead2", "u-dead", 1e-7],
+      ["2026-10-01", "", "", 123456789.12345679],
+      ["2026-10-02", "w-dead", "", 5.0],
+    ].map(([day, workspaceId, userId, n], i) => ({
+      day,
+      workspaceId,
+      userId,
+      apiKeyId: "k",
+      grantId: "",
+      usd: n,
+      tokens: i + 1,
+      requests: i + 2,
+      notionalUsd: n * 3,
+    }));
+    const put = () => {
+      db.run("DELETE FROM usageBudgetCarry");
+      insertViaOracle(db, insertInstanceTableSections, { usageBudgetCarry: live });
+    };
+    // The original in-memory path: remap live rows against the incoming refs, then insert.
+    const refs = { workspaces: new Set([WS, "ws-other"]), users: new Set(["owner", "member1"]) };
+    db.run("DELETE FROM usageBudgetCarry");
+    insertViaOracle(db, insertInstanceTableSections, {
+      usageBudgetCarry: remapBudgetCarry(live, refs),
+    });
+    const expected = dumpSections(db).usageBudgetCarry;
+    expect(expected.length).toBeLessThan(live.length);
+
+    const slim = structuredClone(doc);
+    delete slim.usageBudgetCarry;
+    put();
+    await dbApi.importDbStream(bodyOf(slim, 997), { masterKey: MASTER });
+    expect(dumpSections(db).usageBudgetCarry).toEqual(expected);
+    put();
+    await dbApi.importDb(structuredClone(slim), { masterKey: MASTER });
+    expect(dumpSections(db).usageBudgetCarry).toEqual(expected);
   });
 
   it("a second export of the restored instance is byte-identical to the first", async () => {

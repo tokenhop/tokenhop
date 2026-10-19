@@ -62,6 +62,41 @@ function rowFromStage(section, rec) {
   return row;
 }
 
+// Retained usageBudgetCarry (YAN-424): attribution naming a workspace/user the
+// snapshot replaces moves to '' and rows that then share the primary key are
+// summed — SQL GROUP BY in first-occurrence (rowid) order. SQLite's SUM() of
+// REALs is compensated while the original JS path adds left to right, so the
+// REAL totals of merged groups are recomputed in JS to stay bit-identical.
+function retainBudgetCarryNative(db, stageTable, section) {
+  const cols = section.columns.map(q).join(", ");
+  const W = `CASE WHEN "workspaceId" <> '' AND "workspaceId" IN (SELECT id FROM xstage._refWorkspaces) THEN "workspaceId" ELSE '' END`;
+  const U = `CASE WHEN "userId" <> '' AND "userId" IN (SELECT id FROM xstage._refUsers) THEN "userId" ELSE '' END`;
+  const live = `main.${q(section.name)}`;
+  db.run(
+    `INSERT INTO ${stageTable}(k1, k2, absent, ${cols}) SELECT NULL, NULL, NULL, "day", ${W} AS __w, ${U} AS __u, "apiKeyId", "grantId", SUM("usd"), SUM("tokens"), SUM("requests"), SUM("notionalUsd") FROM ${live} GROUP BY "day", __w, __u, "apiKeyId", "grantId" ORDER BY MIN(rowid)`,
+  );
+  const merged = db.all(
+    `SELECT "day", ${W} AS __w, ${U} AS __u, "apiKeyId", "grantId" FROM ${live} GROUP BY "day", __w, __u, "apiKeyId", "grantId" HAVING COUNT(*) > 1`,
+  );
+  for (const g of merged) {
+    const key = [g.day, g.__w, g.__u, g.apiKeyId, g.grantId];
+    const parts = db.all(
+      `SELECT "usd", "notionalUsd" FROM ${live} WHERE "day" = ? AND ${W} = ? AND ${U} = ? AND "apiKeyId" = ? AND "grantId" = ? ORDER BY rowid`,
+      key,
+    );
+    let usd = parts[0].usd;
+    let notionalUsd = parts[0].notionalUsd;
+    for (let i = 1; i < parts.length; i++) {
+      usd += parts[i].usd || 0;
+      notionalUsd += parts[i].notionalUsd || 0;
+    }
+    db.run(
+      `UPDATE ${stageTable} SET "usd" = ?, "notionalUsd" = ? WHERE "day" = ? AND "workspaceId" = ? AND "userId" = ? AND "apiKeyId" = ? AND "grantId" = ?`,
+      [usd, notionalUsd, ...key],
+    );
+  }
+}
+
 function nativeBackend(db, dir) {
   const file = path.join(dir, "stage.sqlite");
   if (file.includes("\0")) throw new Error("Invalid staging path");
@@ -93,6 +128,10 @@ function nativeBackend(db, dir) {
     // Absent section: copy live rows. usageHistory/requestDetails attribution
     // FKs are ON DELETE SET NULL — a ref the snapshot replaces becomes NULL.
     retain(_db, section) {
+      if (section.name === "usageBudgetCarry") {
+        retainBudgetCarryNative(db, table(section.name), section);
+        return;
+      }
       const sel = section.columns
         .map((c) => {
           if (!SET_NULL_SECTIONS.has(section.name)) return q(c);

@@ -14,7 +14,7 @@ export const WS = "ws-default";
 export const WS2 = "ws-other";
 const RAW_KEY = "th_ORACLEGATEWAYTOKENxxxxxxxxxxxxxxxx";
 
-/** The 9 complete-table sections, parents first (FK-safe insert order). */
+/** The 10 complete-table sections, parents first (FK-safe insert order). */
 export const SECTION_TABLES = [
   "workspaceSettings",
   "userPreferences",
@@ -25,10 +25,12 @@ export const SECTION_TABLES = [
   "usageHistory",
   "requestDetails",
   "usageRollup",
+  "usageBudgetCarry",
 ];
 
 export function clearSections(db) {
   for (const table of [
+    "usageBudgetCarry",
     "usageRollup",
     "requestDetails",
     "usageHistory",
@@ -119,7 +121,7 @@ const HIST_ZERO = "[0,0,0,0,0,0,0,0,0,0,0,0]";
 const UNICODE_JSON = '{"名前":"値","emoji":"🙂","q":"it\'s \\"x\\" \\\\ \\n","é":"e\\u0301"}';
 
 /**
- * Snapshot rows for all 9 sections with the awkward values a bind path can get
+ * Snapshot rows for all 10 sections with the awkward values a bind path can get
  * wrong: integer-valued REALs (5.0), fractions (0.1), 2^53-1, empty strings,
  * NULLs, numeric-looking TEXT ("007", "1e3", "5.0", "0x10"), unicode, quotes,
  * and keys deliberately ABSENT (NULL / schema default at insert). Every row is
@@ -379,11 +381,36 @@ export function trickySections() {
         latencyHistogram: HIST_ZERO,
       },
     ],
+    // YAN-424: every column is required by the validator (no absent keys).
+    usageBudgetCarry: [
+      {
+        day: "2026-10-09",
+        workspaceId: WS,
+        userId: "owner",
+        apiKeyId: "hk-1",
+        grantId: "g-user",
+        usd: 5.0,
+        tokens: BIG,
+        requests: 0,
+        notionalUsd: 0.1,
+      },
+      {
+        day: "2026-10-10",
+        workspaceId: "",
+        userId: "",
+        apiKeyId: "密钥🙂'q",
+        grantId: "",
+        usd: 0,
+        tokens: 7,
+        requests: 3,
+        notionalUsd: 123456789.12345679,
+      },
+    ],
   };
 }
 
 /**
- * Exact stored-value dump of the 9 section tables: for every live column the
+ * Exact stored-value dump of the 10 section tables: for every live column the
  * SQLite storage class and `quote()` text, in rowid order. `typeof/quote`
  * distinguishes 5 from 5.0 and '5' from 5, which JS equality cannot.
  */

@@ -4,6 +4,7 @@
 // documented exception: bounded memory is NOT guaranteed on sql.js.
 import initSqlJs from "sql.js";
 import { SECTIONS } from "../helpers/instanceSnapshotSchema.js";
+import { remapBudgetCarry } from "../helpers/instanceSnapshotTables.js";
 import { SET_NULL_SECTIONS, STAGE_PAGE, q, stageDdl } from "./importStage.js";
 import { forEachBoundedPage, forEachBoundedSectionPage } from "./pagedRows.js";
 
@@ -65,7 +66,13 @@ export async function sqlJsBackend() {
       const cols = section.columns;
       const sql = `INSERT INTO ${q(section.name)}(k1, k2, absent, ${cols.map(q).join(", ")}) VALUES(NULL, NULL, NULL, ${cols.map(() => "?").join(", ")})`;
       const nullify = SET_NULL_SECTIONS.has(section.name);
+      const remapCarry = section.name === "usageBudgetCarry";
+      const carry = [];
       forEachBoundedSectionPage(db, section, STAGE_PAGE, (rows) => {
+        if (remapCarry) {
+          carry.push(...rows);
+          return;
+        }
         stage.exec("SAVEPOINT retain");
         try {
           for (const r of rows) {
@@ -87,6 +94,25 @@ export async function sqlJsBackend() {
           throw error;
         }
       });
+      if (remapCarry) {
+        // sql.js exception: the (small) carry table is merged in JS, same
+        // remap + sum as the in-memory path.
+        stage.exec("SAVEPOINT retain");
+        try {
+          for (const r of remapBudgetCarry(carry, refs)) {
+            run(
+              sql,
+              cols.map((c) => r[c] ?? null),
+            );
+          }
+          stage.exec("RELEASE retain");
+        } catch (error) {
+          try {
+            stage.exec("ROLLBACK TO retain; RELEASE retain");
+          } catch {}
+          throw error;
+        }
+      }
     },
     apply(db, section) {
       const cols = section.columns;

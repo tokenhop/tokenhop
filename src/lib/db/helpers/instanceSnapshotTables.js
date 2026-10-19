@@ -116,6 +116,17 @@ export function sectionDedupKeys(section, row) {
       }
       return [JSON.stringify(dims), null];
     }
+    case "usageBudgetCarry": {
+      // validate(): non-empty YYYY-MM-DD day + four string attributions (''
+      // allowed), keyed on JSON.stringify(dims).
+      if (typeof row.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(row.day)) return [null, null];
+      const dims = [row.day];
+      for (const field of ["workspaceId", "userId", "apiKeyId", "grantId"]) {
+        if (typeof row[field] !== "string") return [null, null];
+        dims.push(row[field]);
+      }
+      return [JSON.stringify(dims), null];
+    }
     default:
       return [strKey(row.id), null];
   }
@@ -151,7 +162,7 @@ export function validateInstanceTableSections(payload, refs) {
   }
 }
 
-function remapBudgetCarry(rows, refs) {
+export function remapBudgetCarry(rows, refs) {
   const merged = new Map();
   for (const r of rows) {
     const row = {
