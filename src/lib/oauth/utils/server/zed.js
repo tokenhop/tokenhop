@@ -166,7 +166,9 @@ export function startZedProxy(preferredPort = 0) {
         ? `${url.pathname}?${url.searchParams.toString()}`
         : url.pathname;
       const session = await pickZedSession(rawCallback);
-      if (!session) {
+      // Re-check after the await: a concurrent callback may have claimed or
+      // replaced this session while pickZedSession was loading zedAuth.
+      if (!session || zedSessions.get(session.state) !== session || !claimable(session)) {
         // Unmatched callback (stale popup or foreign key): fail this response only.
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderCodexResultPage(false, "No matching Zed login session"));
