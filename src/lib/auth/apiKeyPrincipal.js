@@ -47,14 +47,27 @@ export function clearApiKeyPrincipalCache() {
  * Missing/malformed/inactive/expired/revoked keys return null. Storage and
  * root errors propagate; never fall back to owner/session/CLI/local.
  * @param {string} presented raw bearer bytes, untrimmed
- * @param {{apiKeyState?: object, verifyOnly?: boolean}} [opts] storage state the
- *   caller already read. `verifyOnly` runs the identical hash + live eligibility
- *   proof but mints no request scope and copies no root: the result is an internal
- *   frozen `{ verified: true, apiKeyId }` (no workspace, no scopes), which
- *   resolveGatewayAuth converts to an admission verdict. Never a principal.
+ * @param {{apiKeyState?: object}} [opts] storage state the caller already read
  * @returns {Promise<{workspaceId:string,userId:string|null,apiKeyId:string,scopes:{allowedModels:string[],allowedCombos:string[]},via:"apiKey"}|null>}
  */
-export async function resolveApiKey(presented, { apiKeyState, verifyOnly = false } = {}) {
+export async function resolveApiKey(presented, { apiKeyState } = {}) {
+  return resolveKey(presented, apiKeyState, false);
+}
+
+/**
+ * Edge admission: the identical hash + live eligibility proof as resolveApiKey,
+ * but no request scope is minted and no root is copied. The result is an
+ * admission verdict, NOT a principal: it has no workspace and no scopes, and
+ * resolveGatewayAuth reports it as `admitted`.
+ * @param {string} presented raw bearer bytes, untrimmed
+ * @param {{apiKeyState?: object}} [opts] storage state the caller already read
+ * @returns {Promise<Readonly<{verified: true, apiKeyId: string}>|null>}
+ */
+export async function verifyApiKey(presented, { apiKeyState } = {}) {
+  return resolveKey(presented, apiKeyState, true);
+}
+
+async function resolveKey(presented, apiKeyState, verifyOnly) {
   if (typeof presented !== "string" || presented.length === 0) return null;
   if (presented.length > MAX_TOKEN_BYTES || Buffer.byteLength(presented, "utf8") > MAX_TOKEN_BYTES)
     return null;

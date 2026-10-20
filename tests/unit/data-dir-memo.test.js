@@ -63,3 +63,22 @@ describe("getDataDirMemo", () => {
     expect(mod.getDataDirMemo()).toBe(path.join(dirs[0], "blocker", "x"));
   });
 });
+
+describe("nothing on the request path depends on a per-call mkdir", () => {
+  it("a repeat resolve never calls mkdirSync, even after the directory is removed", () => {
+    vi.stubEnv("DATA_DIR", dirs[0]);
+    expect(mod.getDataDirMemo()).toBe(dirs[0]);
+    fs.rmSync(dirs[0], { recursive: true, force: true });
+    const mkdir = vi.spyOn(fs, "mkdirSync");
+    expect(mod.getDataDirMemo()).toBe(dirs[0]); // pinned: no re-probe, no re-create
+    expect(mkdir).not.toHaveBeenCalled();
+    expect(fs.existsSync(dirs[0])).toBe(false);
+  });
+
+  it("getDataDir() itself still creates the directory when asked", () => {
+    const fresh = path.join(dirs[1], "child");
+    vi.stubEnv("DATA_DIR", fresh);
+    expect(mod.getDataDir()).toBe(fresh);
+    expect(fs.existsSync(fresh)).toBe(true);
+  });
+});

@@ -55,7 +55,7 @@ import {
   gatewayKeyContext,
 } from "@/lib/auth/gatewayAuth.js";
 import { requireGatewayWorkspace } from "@/lib/auth/gatewayResources.js";
-import { isModelDisabledLive } from "../services/modelDisabled.js";
+import { disabledGate } from "../services/modelDisabled.js";
 
 /**
  * Handle chat completion request
@@ -689,20 +689,20 @@ async function handleSingleModelChat(
   // A model disabled on the provider page is hidden from /v1/models; refuse
   // to route it too, under either alias the dashboard may have stored (YAN-661).
   // 404 lets a combo advance to its next member. Live read: runs on every hop.
-  if (await isModelDisabledLive(provider, model, gateway)) return disabledResponse();
+  const blocked = await disabledGate(provider, model, gateway, disabledResponse);
+  if (blocked) return blocked;
 
   // YAN-372: key/user/membership/workspace budgets, reserved per leaf attempt.
-  // The continuation below runs after model/disabled resolution, inside the
-  // budget scope: no handler restart, so model resolution and pricing run once.
+  // Runs after model/disabled resolution inside the budget scope (no restart).
   const dispatch = async () => {
-    // Budget pricing/reserve awaited above; disabled and key scope may have
-    // changed meanwhile (revocation). Recheck only the live state, not the model
-    // resolution. A non-ok return releases the hold.
+    // Disabled/key scope may have changed during the hold (revocation): recheck
+    // live state only. A non-ok return releases the hold.
     if (inBudgetScope()) {
       // 403 (key/scope) before 404 (disabled), same order as the first pass.
       const stale = await revokedKeyTarget(gateway, `${provider}/${model}`);
       if (stale) return stale;
-      if (await isModelDisabledLive(provider, model, gateway)) return disabledResponse();
+      const gated = await disabledGate(provider, model, gateway, disabledResponse);
+      if (gated) return gated;
     }
     // Routing shown in the unified "▶" line (client model → provider/model)
 

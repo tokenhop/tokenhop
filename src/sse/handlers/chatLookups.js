@@ -1,15 +1,18 @@
+import { cloneJson } from "@/lib/db/helpers/cloneJson.js";
+import { deepFreeze } from "@/lib/utils/deepFreeze.js";
 import { getModelInfo, getComboModels, getComboByName } from "../services/model.js";
 
 // Resolved lookups are shared by every attempt of one request (and concurrent
 // hedged attempts), so they are handed out frozen: no attempt can alter what a
-// sibling or the authorization walk sees. Deep-frozen; callers only read them.
-function deepFreeze(value) {
-  if (value && typeof value === "object" && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const key of Object.keys(value)) deepFreeze(value[key]);
-  }
-  return value;
-}
+// sibling or the authorization walk sees.
+//
+// Freezing is in place and permanent, so the lookup freezes only objects it OWNS:
+// every result is cloned first. The services behind these calls may return
+// objects that other code still holds (a combo's `models` array is a reference
+// into the combo; a scoped combo is the request's shared gatewayResources memo;
+// a test double may return a module-level fixture), and freezing those would
+// change behavior for their other holders.
+const own = (value) => deepFreeze(cloneJson(value));
 
 /**
  * Per-request routing lookups for the chat handler. One instance lives for one
@@ -29,7 +32,7 @@ export function createChatLookups(gateway) {
   const memo = (cache, key, load) => {
     let hit = cache.get(key);
     if (!hit) {
-      hit = load().then(deepFreeze);
+      hit = load().then(own);
       cache.set(key, hit);
       hit.catch(() => {
         if (cache.get(key) === hit) cache.delete(key);

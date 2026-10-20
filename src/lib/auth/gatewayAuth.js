@@ -10,7 +10,7 @@ import { cliTokenAcceptedWith } from "./cliTokenPolicy.js";
 import { hasTrustedPeerHeaders, isLoopbackPeer } from "./trustedPeer.js";
 import { matchesLocalVerifier, MITM_VERIFIER_SETTING } from "./mitmCredential.js";
 import { validateApiKey } from "../db/repos/apiKeysRepo.js";
-import { resolveApiKey } from "./apiKeyPrincipal.js";
+import { resolveApiKey, verifyApiKey } from "./apiKeyPrincipal.js";
 import { getAdapter } from "../db/driver.js";
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { getSettings } from "../db/repos/settingsRepo.js";
@@ -119,12 +119,16 @@ function extractHashedCredential(request) {
  */
 export async function resolveGatewayAuth(request, { verifyOnly = false } = {}) {
   const out = await resolveGatewayAuthInner(request, verifyOnly);
-  if (!verifyOnly || out instanceof Response || !out.principal) return out;
+  if (!verifyOnly || out instanceof Response) return out;
+  // Hashed bearers already arrive as an admission verdict; keyless principals
+  // (cli/local/mitm) are reduced to one here, so edge callers never see a principal.
+  const admission = out.admission ?? (out.principal ? { apiKeyId: out.principal.apiKeyId } : null);
+  if (!admission) return out;
   return Object.freeze({
     principal: null,
     legacy: false,
     admitted: true,
-    apiKeyId: out.principal.apiKeyId ?? null,
+    apiKeyId: admission.apiKeyId ?? null,
   });
 }
 
@@ -168,14 +172,17 @@ async function resolveGatewayAuthInner(request, verifyOnly) {
         return errorResponse(503, "Gateway storage unavailable");
       }
     }
-    let principal;
+    let resolved;
     try {
-      principal = await resolveApiKey(hashedCredential, { apiKeyState: state, verifyOnly });
+      resolved = verifyOnly
+        ? await verifyApiKey(hashedCredential, { apiKeyState: state })
+        : await resolveApiKey(hashedCredential, { apiKeyState: state });
     } catch (err) {
       if (err?.code === "API_KEY_STATE_INVALID") throw err;
       return errorResponse(503, "Gateway storage unavailable");
     }
-    if (principal) return { principal, legacy: false };
+    if (resolved && verifyOnly) return { admission: resolved, principal: null, legacy: false };
+    if (resolved) return { principal: resolved, legacy: false };
     return errorResponse(401, "Invalid API key");
   }
 

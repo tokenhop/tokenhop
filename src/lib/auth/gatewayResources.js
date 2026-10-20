@@ -1,6 +1,7 @@
 import { getAdapter } from "../db/driver.js";
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { parseJson } from "../db/helpers/jsonCol.js";
+import { deepFreeze } from "../utils/deepFreeze.js";
 import { decodeRequestCredentialRows, requestScopeOf } from "../security/requestCredentialScope.js";
 import { TABLE_NAMES } from "../security/envelope.js";
 import { getProviderConnectionsUnscoped } from "../db/repos/connectionsRepo.js";
@@ -48,14 +49,6 @@ const memoKeyFor = (name) => {
   }
   return key;
 };
-
-function deepFreeze(value) {
-  if (value && typeof value === "object" && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const key of Object.keys(value)) deepFreeze(value[key]);
-  }
-  return value;
-}
 
 // These are plain config reads: they need the scope only for memoization, never
 // for credentials. A dead scope (rotation/poison mid-request) therefore degrades

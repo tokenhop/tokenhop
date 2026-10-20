@@ -25,7 +25,7 @@ import {
   getGatewayDisabled,
   getGatewayNodesMetadata,
 } from "@/lib/auth/gatewayResources.js";
-import { isModelDisabled, isModelDisabledLive } from "@/sse/services/modelDisabled.js";
+import { isModelDisabled, isModelDisabledCached } from "@/sse/services/modelDisabled.js";
 
 const MASTER = Buffer.alloc(32, 7);
 const NEXT = Buffer.alloc(32, 23);
@@ -129,8 +129,10 @@ describe("isModelDisabled error handling", () => {
       const all = vi.spyOn(db, "all").mockImplementation(() => {
         throw Object.assign(new Error(code), { code });
       });
-      await expect(isModelDisabledLive("openai", "gpt-4o", live)).rejects.toMatchObject({ code });
-      await expect(isModelDisabled("openai", "gpt-4o", memoized)).rejects.toMatchObject({ code });
+      await expect(isModelDisabled("openai", "gpt-4o", live)).rejects.toMatchObject({ code });
+      await expect(isModelDisabledCached("openai", "gpt-4o", memoized)).rejects.toMatchObject({
+        code,
+      });
       all.mockRestore();
     }
   });
@@ -140,17 +142,17 @@ describe("isModelDisabled error handling", () => {
     const all = vi.spyOn(db, "all").mockImplementation(() => {
       throw new Error("db down");
     });
-    expect(await isModelDisabledLive("openai", "gpt-4o", principal)).toBe(false);
+    expect(await isModelDisabled("openai", "gpt-4o", principal)).toBe(false);
     all.mockRestore();
   });
 
   it("a rotation mid-request does not turn into 'enabled' or a spurious error", async () => {
     const principal = mint();
-    expect(await isModelDisabled("openai", "gpt-4o", principal)).toBe(true);
+    expect(await isModelDisabledCached("openai", "gpt-4o", principal)).toBe(true);
     await rotate();
     // Dead scope: the plain disabled-map read stays correct via the live fallback.
+    expect(await isModelDisabledCached("openai", "gpt-4o", principal)).toBe(true);
     expect(await isModelDisabled("openai", "gpt-4o", principal)).toBe(true);
-    expect(await isModelDisabledLive("openai", "gpt-4o", principal)).toBe(true);
   });
 });
 

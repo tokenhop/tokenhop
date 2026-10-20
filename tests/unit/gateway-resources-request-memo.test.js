@@ -12,7 +12,7 @@ import {
   getGatewayDisabled,
   getGatewayNodesMetadata,
 } from "@/lib/auth/gatewayResources.js";
-import { isModelDisabled, isModelDisabledLive } from "@/sse/services/modelDisabled.js";
+import { isModelDisabled, isModelDisabledCached } from "@/sse/services/modelDisabled.js";
 
 const NOW = "2026-10-13T00:00:00.000Z";
 const FIELDS = {
@@ -119,20 +119,21 @@ describe("per-request memo on a minted principal", () => {
 });
 
 describe("disabled-model rechecks", () => {
-  it("first pass may use the request memo; the live recheck always sees new state", async () => {
+  it("is live by default; only the explicit cached variant uses the request memo", async () => {
     const principal = mint();
-    expect(await isModelDisabled("openai", "gpt-4o", principal)).toBe(true);
+    expect(await isModelDisabledCached("openai", "gpt-4o", principal)).toBe(true);
     db.run(`UPDATE kv SET value = '[]' WHERE scope = 'disabledModels' AND key = 'ws:w1/openai'`);
-    expect(await isModelDisabled("openai", "gpt-4o", principal)).toBe(true); // memoized
-    expect(await isModelDisabledLive("openai", "gpt-4o", principal)).toBe(false); // live
+    expect(await isModelDisabledCached("openai", "gpt-4o", principal)).toBe(true); // memoized
+    expect(await isModelDisabled("openai", "gpt-4o", principal)).toBe(false); // live default
+    expect(await isModelDisabled("openai", "gpt-4o", principal, { cached: true })).toBe(true);
   });
 
-  it("disabling mid-request is caught by the live recheck", async () => {
+  it("disabling mid-request is caught by the default (live) check", async () => {
     db.run(`DELETE FROM kv WHERE scope = 'disabledModels'`);
     const principal = mint();
-    expect(await isModelDisabled("openai", "gpt-4o", principal)).toBe(false);
+    expect(await isModelDisabledCached("openai", "gpt-4o", principal)).toBe(false);
     db.run(`INSERT INTO kv(scope,key,value) VALUES('disabledModels','ws:w1/openai','["gpt-4o"]')`);
-    expect(await isModelDisabledLive("openai", "gpt-4o", principal)).toBe(true);
+    expect(await isModelDisabled("openai", "gpt-4o", principal)).toBe(true);
   });
 
   it("still fails open on a read error", async () => {
@@ -141,7 +142,7 @@ describe("disabled-model rechecks", () => {
       throw new Error("db down");
     });
     try {
-      expect(await isModelDisabledLive("openai", "gpt-4o", principal)).toBe(false);
+      expect(await isModelDisabled("openai", "gpt-4o", principal)).toBe(false);
     } finally {
       all.mockRestore();
     }

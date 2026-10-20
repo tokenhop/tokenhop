@@ -1,6 +1,7 @@
-import { clockTime } from "./clockTime.js";
 // Debug logging utility — only active in dev mode (NODE_ENV !== "production")
 // Outputs are tagged with [DBG:tag] for easy grep/filter
+import { clockTime } from "./clockTime.js";
+
 const isDev = process.env.NODE_ENV !== "production";
 
 function ts() {

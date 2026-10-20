@@ -23,17 +23,16 @@ export const CATALOG_VERSION = 2;
 export const STAT_INTERVAL_MS = 1000;
 
 const EMPTY = { models: {}, providers: {} };
-let cache = EMPTY;
-let cachedMtime = -1;
-let checkedAt = -Infinity; // Date.now() of the last stat
-// Bumps whenever the served snapshot may have changed. Kept on a shared slot so
-// duplicate bundle copies of this module agree (like apiKeyState's tracker).
-const GENERATION_KEY = Symbol.for("tokenhop.catalogGeneration");
-globalThis[GENERATION_KEY] ??= { n: 0 };
-const generation = globalThis[GENERATION_KEY];
+// ALL mutable state lives on one shared slot so duplicate bundle copies of this
+// module agree (like apiKeyState's tracker): an invalidateCatalog() through one
+// copy resets the stat clock and mtime for every copy, not just the generation.
+// `cache: null` means "no catalog file / unparsable".
+const SLOT_KEY = Symbol.for("tokenhop.catalogGeneration");
+globalThis[SLOT_KEY] ??= { n: 0, cache: null, cachedMtime: -1, checkedAt: -Infinity };
+const slot = globalThis[SLOT_KEY]; // n = generation: bumps whenever the served snapshot may have changed
 
 /** Changes whenever the catalog snapshot is invalidated or re-read from disk. */
-export const catalogGeneration = () => generation.n;
+export const catalogGeneration = () => slot.n;
 
 // "zai-org/GLM-4.6V:free" -> "glm-4.6v"
 function baseId(model) {
@@ -45,28 +44,28 @@ function baseId(model) {
 function load() {
   const now = Date.now();
   // Backwards clock jumps re-stat too (now < checkedAt).
-  if (now >= checkedAt && now - checkedAt < STAT_INTERVAL_MS) return cache;
-  checkedAt = now;
+  if (now >= slot.checkedAt && now - slot.checkedAt < STAT_INTERVAL_MS) return slot.cache ?? EMPTY;
+  slot.checkedAt = now;
   let mtime;
   try {
     mtime = fs.statSync(CATALOG_FILE).mtimeMs;
   } catch {
-    if (cache !== EMPTY) generation.n++;
-    cache = EMPTY;
-    cachedMtime = -1;
-    return cache;
+    if (slot.cache) slot.n++;
+    slot.cache = null;
+    slot.cachedMtime = -1;
+    return EMPTY;
   }
-  if (mtime === cachedMtime) return cache;
+  if (mtime === slot.cachedMtime) return slot.cache ?? EMPTY;
 
-  generation.n++;
-  cachedMtime = mtime;
+  slot.n++;
+  slot.cachedMtime = mtime;
   try {
     const parsed = JSON.parse(fs.readFileSync(CATALOG_FILE, "utf8"));
-    cache = { models: parsed?.models || {}, providers: parsed?.providers || {} };
+    slot.cache = { models: parsed?.models || {}, providers: parsed?.providers || {} };
   } catch {
-    cache = EMPTY;
+    slot.cache = null;
   }
-  return cache;
+  return slot.cache ?? EMPTY;
 }
 
 // Modalities are recorded per gateway upstream, and gateways disagree about the
@@ -108,9 +107,9 @@ export function getCatalogEntry(provider, model) {
 
 // Force a re-read on the next lookup (called right after a sync writes the file).
 export function invalidateCatalog() {
-  cachedMtime = -1;
-  checkedAt = -Infinity;
-  generation.n++;
+  slot.cachedMtime = -1;
+  slot.checkedAt = -Infinity;
+  slot.n++;
 }
 
 // Hand the reader to capabilities.js. That module is bundled into the browser

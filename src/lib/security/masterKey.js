@@ -3,7 +3,18 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import { constants } from "node:fs";
 import path from "node:path";
-import { getDataDirMemo as getDataDir } from "../dataDir.js";
+import { getDataDirMemo } from "../dataDir.js";
+import {
+  cachedRoot,
+  clearMasterKeyCache,
+  dropRootEntry,
+  onMasterKeyChange,
+  rememberRoot,
+  rootChanged,
+  rootFingerprint,
+} from "./rootKeyCache.js";
+
+export { clearMasterKeyCache, onMasterKeyChange };
 
 const HASH_INFO = "tokenhop/api-key-hash";
 const MASTER_ENV = "TOKENHOP_MASTER_KEY";
@@ -170,106 +181,6 @@ export function randomMasterKey() {
   return crypto.randomBytes(32);
 }
 
-// YAN-1106 root-file memo. The validated 32-byte root is reused only while
-// fresh lstat fingerprints of the keys directory AND the file are unchanged
-// (dev, ino, size, mode, mtime, ctime; bigint stats so 64-bit inodes and
-// nanosecond times compare exactly). An atomic rename publishes a new inode and
-// any in-place write moves mtime/ctime, so a rotated or replaced root is never
-// served. Racy-clean rule: a file modified within RACY_MS of the read is not
-// cached (a same-tick rewrite could keep an identical fingerprint). Any
-// symlink, type, mode or stat failure drops the entry and takes the full
-// validating path, which keeps the original fail-closed errors. The entry
-// lives at most ROOT_CACHE_TTL_MS: an unref'd timer zeroes it at expiry even
-// when no further request arrives. Callers always receive private copies.
-const ROOT_CACHE_TTL_MS = 30_000;
-const ROOT_RACY_MS = 2_000;
-
-// The entry, its timer and the listener registry live in ONE process-wide slot
-// (Symbol.for, like apiKeyState.js), so every bundled or HMR-reloaded copy of
-// this module shares invalidation and zeroing: a stage/promote in one copy drops
-// the root another copy cached. Listeners register under an id so a re-evaluated
-// module replaces its previous listener instead of stacking.
-const CACHE_KEY = Symbol.for("tokenhop.masterKeyCache");
-globalThis[CACHE_KEY] ??= { entry: null, timer: null, listeners: new Map() };
-const cache = globalThis[CACHE_KEY];
-
-// Derived caches (the unwrapped API-key hash key) depend on the root. They
-// register here and are told whenever a cached root is dropped, and on every
-// explicit root change (stage, promote, clear), cached or not.
-/** Register a callback run when the root may have changed. Returns an unregister fn. */
-export function onMasterKeyChange(listener, id = listener) {
-  cache.listeners.set(id, listener);
-  return () => {
-    if (cache.listeners.get(id) === listener) cache.listeners.delete(id);
-  };
-}
-
-function notifyRootChange() {
-  for (const listener of [...cache.listeners.values()]) listener();
-}
-
-function dropRootEntry() {
-  if (cache.timer) clearTimeout(cache.timer);
-  cache.timer = null;
-  const had = cache.entry !== null;
-  if (cache.entry) cache.entry.key.fill(0);
-  cache.entry = null;
-  if (had) notifyRootChange();
-}
-
-// Explicit change (stage/promote/clear): derived caches drop even when the
-// racy-clean rule kept the root itself out of the cache.
-function rootChanged() {
-  dropRootEntry();
-  notifyRootChange();
-}
-
-const fingerprintOf = (s) => `${s.dev}:${s.ino}:${s.size}:${s.mode}:${s.mtimeNs}:${s.ctimeNs}`;
-
-// Null when the pair cannot be proven plain (missing, symlink, wrong type).
-function rootFingerprint(file) {
-  if (IS_WINDOWS) return null;
-  try {
-    const dir = fsSync.lstatSync(path.dirname(file), { bigint: true });
-    const st = fsSync.lstatSync(file, { bigint: true });
-    if (dir.isSymbolicLink() || !dir.isDirectory()) return null;
-    if (st.isSymbolicLink() || !st.isFile()) return null;
-    const changedNs = st.mtimeNs > st.ctimeNs ? st.mtimeNs : st.ctimeNs;
-    return {
-      dir: fingerprintOf(dir),
-      file: fingerprintOf(st),
-      changedAt: Number(changedNs / 1_000_000n),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function cachedRoot(file) {
-  const entry = cache.entry;
-  if (!entry) return null;
-  if (entry.path !== file || Date.now() - entry.at >= ROOT_CACHE_TTL_MS) return dropRootEntry();
-  const now = rootFingerprint(file);
-  if (!now || now.dir !== entry.dir || now.file !== entry.file) return dropRootEntry();
-  return entry;
-}
-
-function rememberRoot(file, before, kid, key) {
-  const after = rootFingerprint(file);
-  if (!before || !after || before.dir !== after.dir || before.file !== after.file) return;
-  const at = Date.now();
-  if (at - after.changedAt < ROOT_RACY_MS) return;
-  dropRootEntry();
-  cache.entry = { path: file, at, kid, dir: after.dir, file: after.file, key: Buffer.from(key) };
-  cache.timer = setTimeout(dropRootEntry, ROOT_CACHE_TTL_MS);
-  cache.timer.unref?.();
-}
-
-/** Drop the memoized root (in-process rotation/staging; also test hook). */
-export function clearMasterKeyCache() {
-  rootChanged();
-}
-
 export async function loadMasterKey({ create = false, expectedKid = null } = {}) {
   const env = process.env[MASTER_ENV];
   if (env !== undefined) {
@@ -279,7 +190,7 @@ export async function loadMasterKey({ create = false, expectedKid = null } = {})
     checkKid(kid, expectedKid);
     return { kid, key };
   }
-  const file = path.join(getDataDir(), "keys", "master");
+  const file = path.join(getDataDirMemo(), "keys", "master");
   const hit = cachedRoot(file);
   if (hit) {
     checkKid(hit.kid, expectedKid);
@@ -403,7 +314,7 @@ function syncDirSync(dir) {
 
 /** `keys/` dir, the master file and the fixed rotation stage path. */
 export function masterKeyPaths() {
-  const dir = path.join(getDataDir(), "keys");
+  const dir = path.join(getDataDirMemo(), "keys");
   return { dir, file: path.join(dir, "master"), stage: path.join(dir, "master.next") };
 }
 

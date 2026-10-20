@@ -155,6 +155,37 @@ describe("catalog generation shared across bundle copies", () => {
     expect(copyA.catalogGeneration()).toBe(copyB.catalogGeneration());
   });
 
+  it("invalidateCatalog in one copy forces a re-stat in the other copy within the interval", async () => {
+    vi.resetModules();
+    const copyA = await import("../../open-sse/providers/catalogOverride.js?copy=c");
+    const copyB = await import("../../open-sse/providers/catalogOverride.js?copy=d");
+    expect(copyA).not.toBe(copyB);
+    const write = (limit, mtimeSec) => {
+      const tmp = `${catalogFile}.tmp`;
+      fs.writeFileSync(
+        tmp,
+        JSON.stringify({ v: 2, models: {}, providers: { gw: { m: { output: limit } } } }),
+      );
+      fs.utimesSync(tmp, mtimeSec, mtimeSec);
+      fs.renameSync(tmp, catalogFile);
+    };
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+    try {
+      write(100, 70_000);
+      copyA.invalidateCatalog();
+      expect(copyB.getCatalogLimits("gw", "m")).toMatchObject({ output: 100 });
+      // Inside the stat interval the other copy would otherwise keep serving 100.
+      write(200, 70_001);
+      expect(copyB.getCatalogLimits("gw", "m")).toMatchObject({ output: 100 });
+      copyA.invalidateCatalog();
+      expect(copyB.getCatalogLimits("gw", "m")).toMatchObject({ output: 200 });
+      expect(copyA.getCatalogLimits("gw", "m")).toMatchObject({ output: 200 });
+    } finally {
+      clock.mockRestore();
+      catalog.invalidateCatalog();
+    }
+  });
+
   it("the counter lives on a Symbol.for slot", () => {
     const slot = globalThis[Symbol.for("tokenhop.catalogGeneration")];
     expect(typeof slot?.n).toBe("number");

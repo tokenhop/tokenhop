@@ -20,7 +20,7 @@ import {
   releaseGrantReservation,
 } from "@/sse/services/grantRateLimiter.js";
 import { budgetResponse, budgeted } from "@/sse/services/budgetGuard.js";
-import { isModelDisabled } from "@/sse/services/modelDisabled.js";
+import { disabledGate } from "@/sse/services/modelDisabled.js";
 import { errorResponse } from "open-sse/utils/error.js";
 
 let initialized = false;
@@ -287,9 +287,11 @@ async function forwardGeminiNativeRequest(request, body, model, action, gateway)
   // YAN-1062: same disabled-model gate as chat (workspace map for a principal,
   // the global map for legacy callers). Runs again on the budgeted re-entry,
   // so a model disabled while the hold was reserved is still refused.
-  if (await isModelDisabled("gemini", modelId, gateway)) {
-    return errorResponse(HTTP_STATUS.NOT_FOUND, `Model disabled: gemini/${modelId}`);
-  }
+  // Live read (kill switch); a credential-state error fails closed with a 503.
+  const blocked = await disabledGate("gemini", modelId, gateway, () =>
+    errorResponse(HTTP_STATUS.NOT_FOUND, `Model disabled: gemini/${modelId}`),
+  );
+  if (blocked) return blocked;
   // YAN-372: budgets on the principal's path (Gemini-native body: contents).
   const held = await budgeted(gateway, { provider: "gemini", model: modelId, body }, () =>
     forwardGeminiNativeRequest(request, body, model, action, gateway),

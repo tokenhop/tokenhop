@@ -1,7 +1,6 @@
 // YAN-372/378: a budgeted leaf resolves model and pricing once, checks disabled
 // models before and after reservation, and reserves BEFORE dispatch without
 // restarting the handler. A denied budget never reaches the upstream executor.
-import crypto from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { executeMock, counts, pricingHook } = vi.hoisted(() => {
@@ -67,68 +66,28 @@ vi.mock("@/lib/db/repos/pricingRepo.js", async (importOriginal) => {
 
 import { getAdapter } from "@/lib/db/driver.js";
 import { insertHashedApiKeySync } from "@/lib/db/repos/apiKeysRepo.js";
-import { deriveApiKeyHashKey, hashApiKey, masterKeyId } from "@/lib/security/masterKey.js";
+import { deriveApiKeyHashKey, hashApiKey } from "@/lib/security/masterKey.js";
 import { clearApiKeyPrincipalCache } from "@/lib/auth/apiKeyPrincipal.js";
 import { bumpBudgetsGeneration } from "@/lib/users/budgets.js";
-import { handleChat } from "@/sse/handlers/chat.js";
 import { inBudgetScope, withBudgetScope } from "@/sse/services/budgetGuard.js";
 import { getProviderAlias } from "@/shared/constants/providers.js";
-
-const NOW = "2026-10-04T00:00:00.000Z";
-const MASTER = crypto.randomBytes(32);
-const KID = masterKeyId(MASTER);
-const TOKEN = `th_${"B".repeat(32)}`;
+import {
+  KID,
+  MASTER,
+  NOW,
+  addBudget as addBudgetRow,
+  chat,
+  hashedKeyRow,
+  hashedKeysDdl,
+  ok,
+  seedLeafDb,
+  setBudget,
+} from "../helpers/budgetLeafFixture.js";
 
 let db;
 
-const ok = () => ({
-  response: new Response(
-    JSON.stringify({
-      choices: [{ message: { role: "assistant", content: "ok" }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 8, completion_tokens: 2 },
-    }),
-    { status: 200, headers: { "content-type": "application/json" } },
-  ),
-  url: "https://fake.local/v1/chat/completions",
-  headers: {},
-  transformedBody: null,
-});
-
-const chat = (model = "openai/gpt-4o", { token = TOKEN, headers = {} } = {}) =>
-  handleChat(
-    new Request("http://localhost/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-        ...headers,
-      },
-      body: JSON.stringify({ model, messages: [{ role: "user", content: "hi" }] }),
-    }),
-  );
-
-let seq = 0;
-function addBudget(scopeType, scopeId, limits) {
-  db.run(
-    `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, limitTokens, limitRequests, softLimitPct, resetAt, createdByUserId, createdAt)
-     VALUES(?, ?, ?, ?, 'day', ?, NULL, ?, NULL, NULL, NULL, ?)`,
-    [
-      `bl${++seq}`,
-      scopeType === "user" ? null : "w1",
-      scopeType,
-      scopeId,
-      limits.usd ?? null,
-      limits.requests ?? null,
-      NOW,
-    ],
-  );
-  bumpBudgetsGeneration();
-}
-// Single workspace budget (replaces any previous rows).
-function budget(limits) {
-  db.run("DELETE FROM budgets");
-  addBudget("workspace", "w1", limits);
-}
+const addBudget = (scopeType, scopeId, limits) => addBudgetRow(db, scopeType, scopeId, limits);
+const budget = (limits) => setBudget(db, limits);
 const who = (patch = {}) => ({
   via: "apiKey",
   workspaceId: "w1",
@@ -139,73 +98,9 @@ const who = (patch = {}) => ({
 const restoreKey = () =>
   db.run("UPDATE apiKeys SET revokedAt = NULL, allowedModels = '[]' WHERE id = 'key1'");
 
-const hashedKeysDdl = `CREATE TABLE apiKeys (
-    id TEXT PRIMARY KEY, workspaceId TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    userId TEXT REFERENCES users(id) ON DELETE CASCADE,
-    createdByUserId TEXT REFERENCES users(id) ON DELETE SET NULL,
-    keyHash TEXT UNIQUE NOT NULL, hashKid TEXT NOT NULL, prefix TEXT NOT NULL, name TEXT,
-    machineId TEXT, legacy INTEGER NOT NULL DEFAULT 0, isActive INTEGER NOT NULL DEFAULT 1,
-    revokedAt TEXT, allowedModels TEXT NOT NULL DEFAULT '[]', allowedCombos TEXT NOT NULL DEFAULT '[]',
-    expiresAt TEXT, lastUsedAt TEXT, createdAt TEXT NOT NULL)`;
-
-function hashedKeyRow(patch = {}) {
-  return {
-    id: "key1",
-    workspaceId: "w1",
-    userId: "u1",
-    createdByUserId: "u1",
-    keyHash: hashApiKey(TOKEN, deriveApiKeyHashKey(MASTER)),
-    hashKid: KID,
-    prefix: "th_BBBB…BBBB",
-    name: "k",
-    machineId: null,
-    legacy: 0,
-    isActive: 1,
-    revokedAt: null,
-    allowedModels: [],
-    allowedCombos: [],
-    expiresAt: null,
-    lastUsedAt: null,
-    createdAt: NOW,
-    ...patch,
-  };
-}
-
 beforeEach(async () => {
-  process.env.TOKENHOP_MASTER_KEY = MASTER.toString("base64");
-  process.env.TOKENHOP_PEER_TOKEN = "peer";
-  clearApiKeyPrincipalCache();
   db = await getAdapter();
-  // An old settings row survives tests (INSERT OR REPLACE merges nothing).
-  db.exec("DELETE FROM settings");
-  db.run("INSERT INTO settings(id,data) VALUES (1, ?)", [JSON.stringify({ requireApiKey: true })]);
-  db.exec("DROP TABLE apiKeys");
-  db.exec(hashedKeysDdl);
-  db.exec(
-    "DELETE FROM budgets; DELETE FROM memberships; DELETE FROM workspaces; DELETE FROM users; DELETE FROM providerConnections; DELETE FROM combos; DELETE FROM workspaceSettings; DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion','apiKeysHashKid','defaultWorkspaceId')",
-  );
-  db.run(
-    "INSERT INTO users(id, instanceRole, status, createdAt, updatedAt) VALUES ('u1', 'user', 'active', ?, ?)",
-    [NOW, NOW],
-  );
-  db.run(
-    "INSERT INTO workspaces(id,name,kind,createdAt,updatedAt) VALUES ('w1', 'w1', 'shared', ?, ?)",
-    [NOW, NOW],
-  );
-  db.run(
-    "INSERT INTO memberships(workspaceId,userId,role,createdAt) VALUES ('w1', 'u1', 'member', ?)",
-    [NOW],
-  );
-  db.run("INSERT INTO _meta(key,value) VALUES ('apiKeysHashedVersion','1'), ('apiKeysHashKid',?)", [
-    KID,
-  ]);
-  insertHashedApiKeySync(db, hashedKeyRow());
-  db.run(
-    `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt, workspaceId, createdByUserId)
-     VALUES('conn-w1', 'openai', 'apikey', 'c', NULL, 1, 1, ?, ?, ?, 'w1', NULL)`,
-    [JSON.stringify({ apiKey: "sk-w1" }), NOW, NOW],
-  );
-  bumpBudgetsGeneration(); // budgets table wiped above: drop cached rows/holds
+  seedLeafDb(db);
   executeMock.mockReset();
   executeMock.mockImplementation(async () => ok());
   counts.model = 0;
@@ -231,54 +126,6 @@ describe("budgeted leaf attempt", () => {
     expect(counts.disabled).toBe(2);
     expect(counts.pricing).toBe(1);
     expect(executeMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("reads each settings layer and scoped resource once per request (YAN-1106)", async () => {
-    budget({ requests: 5 });
-    await (await chat()).text(); // warm module-level caches (observability config etc.)
-    const get = vi.spyOn(db, "get");
-    const all = vi.spyOn(db, "all");
-    try {
-      await (await chat()).text();
-      const sqls = [...get.mock.calls, ...all.mock.calls].map(([sql]) => String(sql));
-      const count = (re) => sqls.filter((sql) => re.test(sql)).length;
-      expect(count(/FROM settings WHERE id = 1/)).toBe(1);
-      expect(count(/FROM workspaceSettings/)).toBe(1);
-      expect(count(/FROM userPreferences/)).toBe(1);
-      // Both disabled checks (dispatch-time and post-reserve) read storage live.
-      expect(count(/FROM kv WHERE scope = \? AND substr/)).toBe(2);
-    } finally {
-      get.mockRestore();
-      all.mockRestore();
-    }
-  });
-
-  it("without budgets, a model disabled between combo hops is not served on the next hop", async () => {
-    const key = `ws:w1/${getProviderAlias("openai")}`;
-    const insertCombo = (name, models) =>
-      db.run(
-        "INSERT INTO combos(id,name,kind,models,workspaceId,createdAt,updatedAt) VALUES (?, ?, 'llm', ?, 'w1', ?, ?)",
-        [`combo-${name}`, name, JSON.stringify(models), NOW, NOW],
-      );
-    insertCombo("hops", ["openai/gpt-4o", "openai/gpt-4o-mini"]);
-    // Hop 1 fails upstream; the model of hop 2 is disabled while hop 1 runs.
-    executeMock.mockImplementationOnce(async () => {
-      db.run(
-        `INSERT INTO kv(scope, key, value) VALUES('disabledModels', ?, '["gpt-4o-mini"]')
-         ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
-        [key],
-      );
-      return { response: new Response("boom", { status: 500 }), url: "x", headers: {} };
-    });
-    try {
-      const res = await chat("hops");
-      await res.text();
-      expect(res.status).not.toBe(200);
-      // Only hop 1 reached the upstream; the disabled hop-2 model never did.
-      expect(executeMock).toHaveBeenCalledTimes(1);
-    } finally {
-      db.run("DELETE FROM kv WHERE scope = 'disabledModels' AND key = ?", [key]);
-    }
   });
 
   it("without budgets the leaf also resolves once and has no pricing lookup", async () => {
