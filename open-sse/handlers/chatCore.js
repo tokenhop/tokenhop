@@ -14,6 +14,8 @@ import { FORMATS, isFimFormat } from "../translator/formats.js";
 import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
+import { buildObservedLifetimePatch, probeEarlyTokenExpiry } from "../services/earlyTokenExpiry.js";
+import { isLifetimeAware } from "../services/tokenLifetime.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import {
   getModelTargetFormat,
@@ -892,6 +894,13 @@ export async function handleChatCore({
       providerResponse.status === HTTP_STATUS.FORBIDDEN)
   ) {
     try {
+      // YAN-1035: snapshot a `token_expired` 401 before the refresh overwrites the
+      // credentials (null for other providers / bodies).
+      const earlyExpiryProbe = await probeEarlyTokenExpiry({
+        provider,
+        credentials,
+        response: providerResponse,
+      });
       // Mutate credentials after each successful refresh: rotating refresh_token
       // providers (xAI/grok-cli) issue a new RT on every refresh; without this,
       // refreshWithRetry's 2nd/3rd attempt reuses the already-consumed RT →
@@ -910,7 +919,31 @@ export async function handleChatCore({
       );
       if (newCredentials?.accessToken || newCredentials?.copilotToken) {
         if (log?.line) log.line(reqTag, "🔑", `TOKEN REFRESHED · ${provider}/${model}`);
+        // Only a successful refresh teaches us anything: a revoked token fails to
+        // refresh and never reaches this point (YAN-1035).
+        const observed = buildObservedLifetimePatch(earlyExpiryProbe);
+        if (observed) {
+          log?.warn?.(
+            "TOKEN",
+            `${provider.toUpperCase()} | token_expired ${Math.round(observed.observedLifetimeMs / 60000)}m after refresh while stored expiry was in the future; recording observed lifetime`,
+          );
+          newCredentials.providerSpecificData = {
+            ...(newCredentials.providerSpecificData || {}),
+            ...observed,
+          };
+        }
+        // providerSpecificData in newCredentials is a DELTA (persisted as such); the
+        // in-memory credentials keep their siblings (account id, proxy options) for the
+        // retry. Lifetime-aware providers only: the rest keep the prior assign behaviour.
+        const mergedProviderData =
+          isLifetimeAware(provider) && newCredentials.providerSpecificData
+            ? {
+                ...(credentials.providerSpecificData || {}),
+                ...newCredentials.providerSpecificData,
+              }
+            : undefined;
         Object.assign(credentials, newCredentials);
+        if (mergedProviderData) credentials.providerSpecificData = mergedProviderData;
         if (onCredentialsRefreshed) {
           try {
             await onCredentialsRefreshed(newCredentials);

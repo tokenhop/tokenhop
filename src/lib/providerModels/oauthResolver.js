@@ -21,6 +21,8 @@ export const buildOAuthResolver =
             accessToken: refreshed.accessToken,
             refreshToken: refreshed.refreshToken || refreshToken,
             expiresIn: refreshed.expiresIn,
+            // Only refreshers that stamp it (codex) set this; others are unchanged.
+            ...(refreshed.lastRefreshAt ? { lastRefreshAt: refreshed.lastRefreshAt } : {}),
           });
           connection.accessToken = refreshed.accessToken;
           if (refreshed.refreshToken) connection.refreshToken = refreshed.refreshToken;

@@ -4,6 +4,7 @@ import { OAUTH_ENDPOINTS, GITHUB_COPILOT, buildKimiHeaders } from "../../config/
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { mintMetaCodeKey } from "../metaCode.js";
 import { dedupRefresh } from "./dedup.js";
+import { clampExpiresInSeconds } from "../tokenLifetime.js";
 import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
 
 let _xaiServiceSingleton = null;
@@ -453,7 +454,8 @@ export async function refreshCodexToken(refreshToken, log, proxyOptions = null) 
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token || refreshToken,
           idToken: tokens.id_token,
-          expiresIn: tokens.expires_in,
+          // YAN-1033: never report a lifetime longer than the access token's JWT exp.
+          expiresIn: clampExpiresInSeconds(tokens.expires_in, tokens.access_token),
         };
       } catch (error) {
         log?.error?.("TOKEN_REFRESH", `Network error refreshing Codex token: ${error.message}`);

@@ -1,4 +1,5 @@
 import { CODEX_CONFIG } from "../constants/oauth.js";
+import { clampExpiresInSeconds, computeExpiresAt } from "open-sse/services/tokenLifetime.js";
 import { extractCodexAccountInfo, extractEmailFromAccessToken } from "../providerHelpers.js";
 
 const codex = {
@@ -51,7 +52,12 @@ const codex = {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       idToken: tokens.id_token,
-      expiresIn: tokens.expires_in,
+      expiresIn: clampExpiresInSeconds(tokens.expires_in, tokens.access_token),
+      // YAN-1033: min(now + expires_in, access-token JWT exp)
+      expiresAt: computeExpiresAt({
+        expiresIn: tokens.expires_in,
+        accessToken: tokens.access_token,
+      }),
       lastRefreshAt: new Date().toISOString(),
     };
     const email = info.email || extractEmailFromAccessToken(tokens.access_token);
