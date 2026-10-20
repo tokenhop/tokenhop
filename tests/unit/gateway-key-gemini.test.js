@@ -217,6 +217,13 @@ describe("gemini native passthrough disabled models", () => {
       JSON.stringify(ids),
     ]);
 
+  // A 404 alone could come from another path (e.g. no Gemini key); pin the reason.
+  const expectDisabled = async (res) => {
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.message).toContain("Model disabled");
+    expect(global.fetch).not.toHaveBeenCalled();
+  };
+
   for (const action of ["generateContent", "streamGenerateContent"]) {
     it(`${action}: a model disabled in the key's workspace is refused before upstream`, async () => {
       insertHashedApiKeySync(db, hashedKeyRow());
@@ -226,9 +233,7 @@ describe("gemini native passthrough disabled models", () => {
         post(`${TTS_MODEL}:${action}`, audioBody()),
         paramsFor(`${TTS_MODEL}:${action}`),
       );
-      expect(res.status).toBe(404);
-      expect((await res.json()).error.message).toContain("Model disabled");
-      expect(global.fetch).not.toHaveBeenCalled();
+      await expectDisabled(res);
       expect(mocks.handleChat).not.toHaveBeenCalled();
     });
   }
@@ -240,8 +245,7 @@ describe("gemini native passthrough disabled models", () => {
     const res = await POST(post(`gemini/${TTS_MODEL}:generateContent`, audioBody()), {
       params: Promise.resolve({ path: ["gemini", `${TTS_MODEL}:generateContent`] }),
     });
-    expect(res.status).toBe(404);
-    expect(global.fetch).not.toHaveBeenCalled();
+    await expectDisabled(res);
   });
 
   it("the models/ prefixed model id is refused too", async () => {
@@ -251,8 +255,7 @@ describe("gemini native passthrough disabled models", () => {
     const res = await POST(post(`models/${TTS_MODEL}:generateContent`, audioBody()), {
       params: Promise.resolve({ path: ["models", `${TTS_MODEL}:generateContent`] }),
     });
-    expect(res.status).toBe(404);
-    expect(global.fetch).not.toHaveBeenCalled();
+    await expectDisabled(res);
   });
 
   it("a model disabled only in another workspace still routes", async () => {
@@ -283,8 +286,7 @@ describe("gemini native passthrough disabled models", () => {
       post(`${TTS_MODEL}:generateContent`, audioBody(), { key: "sk-legacy-raw" }),
       paramsFor(`${TTS_MODEL}:generateContent`),
     );
-    expect(res.status).toBe(404);
-    expect(global.fetch).not.toHaveBeenCalled();
+    await expectDisabled(res);
     // An enabled model still routes for the same legacy caller.
     await enableModelsUnscoped("gemini", [TTS_MODEL]);
     const ok = await POST(
