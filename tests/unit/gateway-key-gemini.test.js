@@ -12,6 +12,7 @@ import { getAdapter } from "@/lib/db/driver.js";
 import { insertHashedApiKeySync } from "@/lib/db/repos/apiKeysRepo.js";
 import { deriveApiKeyHashKey, hashApiKey, masterKeyId } from "@/lib/security/masterKey.js";
 import { clearApiKeyPrincipalCache } from "@/lib/auth/apiKeyPrincipal.js";
+import { disableModelsUnscoped, enableModelsUnscoped } from "@/lib/db/index.js";
 
 const { POST } = await import("../../src/app/api/v1beta/models/[...path]/route.js");
 
@@ -84,7 +85,7 @@ function resetHashedSchema() {
     revokedAt TEXT, allowedModels TEXT NOT NULL DEFAULT '[]', allowedCombos TEXT NOT NULL DEFAULT '[]',
     expiresAt TEXT, lastUsedAt TEXT, createdAt TEXT NOT NULL)`);
   db.exec(
-    "DELETE FROM memberships; DELETE FROM workspaces; DELETE FROM users; DELETE FROM providerConnections; DELETE FROM providerNodes; DELETE FROM combos; DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion','apiKeysHashKid','defaultWorkspaceId')",
+    "DELETE FROM memberships; DELETE FROM workspaces; DELETE FROM users; DELETE FROM providerConnections; DELETE FROM providerNodes; DELETE FROM combos; DELETE FROM kv WHERE scope = 'disabledModels'; DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion','apiKeysHashKid','defaultWorkspaceId')",
   );
   db.run(
     "INSERT INTO users(id, instanceRole, status, createdAt, updatedAt) VALUES ('u1', 'user', 'active', ?, ?)",
@@ -205,6 +206,92 @@ describe("gemini native passthrough auth", () => {
     );
     expect(url).not.toContain("key=");
     expect(options.headers["x-goog-api-key"]).toBe("sk-conn-w1");
+  });
+});
+
+// YAN-1062: the native forward honors disabled models exactly like chat.
+describe("gemini native passthrough disabled models", () => {
+  const disableFor = (workspaceId, ids) =>
+    db.run("INSERT INTO kv(scope, key, value) VALUES ('disabledModels', ?, ?)", [
+      `ws:${workspaceId}/gemini`,
+      JSON.stringify(ids),
+    ]);
+
+  for (const action of ["generateContent", "streamGenerateContent"]) {
+    it(`${action}: a model disabled in the key's workspace is refused before upstream`, async () => {
+      insertHashedApiKeySync(db, hashedKeyRow());
+      insertConnection("conn-w1", "gemini", "w1");
+      disableFor("w1", [TTS_MODEL]);
+      const res = await POST(
+        post(`${TTS_MODEL}:${action}`, audioBody()),
+        paramsFor(`${TTS_MODEL}:${action}`),
+      );
+      expect(res.status).toBe(404);
+      expect((await res.json()).error.message).toContain("Model disabled");
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(mocks.handleChat).not.toHaveBeenCalled();
+    });
+  }
+
+  it("the gemini/ prefixed model id is refused too", async () => {
+    insertHashedApiKeySync(db, hashedKeyRow());
+    insertConnection("conn-w1", "gemini", "w1");
+    disableFor("w1", [TTS_MODEL]);
+    const res = await POST(post(`gemini/${TTS_MODEL}:generateContent`, audioBody()), {
+      params: Promise.resolve({ path: ["gemini", `${TTS_MODEL}:generateContent`] }),
+    });
+    expect(res.status).toBe(404);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("the models/ prefixed model id is refused too", async () => {
+    insertHashedApiKeySync(db, hashedKeyRow());
+    insertConnection("conn-w1", "gemini", "w1");
+    disableFor("w1", [TTS_MODEL]);
+    const res = await POST(post(`models/${TTS_MODEL}:generateContent`, audioBody()), {
+      params: Promise.resolve({ path: ["models", `${TTS_MODEL}:generateContent`] }),
+    });
+    expect(res.status).toBe(404);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("a model disabled only in another workspace still routes", async () => {
+    insertHashedApiKeySync(db, hashedKeyRow());
+    insertConnection("conn-w1", "gemini", "w1");
+    disableFor("w2", [TTS_MODEL]);
+    const res = await POST(
+      post(`${TTS_MODEL}:generateContent`, audioBody()),
+      paramsFor(`${TTS_MODEL}:generateContent`),
+    );
+    expect(res.status).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("legacy (unscoped) callers are refused a globally disabled model", async () => {
+    db.run("DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion','apiKeysHashKid')");
+    db.exec("DROP TABLE apiKeys");
+    db.exec(`CREATE TABLE apiKeys (
+      id TEXT PRIMARY KEY, key TEXT UNIQUE, name TEXT, machineId TEXT,
+      isActive INTEGER NOT NULL DEFAULT 1, createdAt TEXT NOT NULL)`);
+    db.run(
+      `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES ('legacy1', ?, 'l', NULL, 1, ?)`,
+      ["sk-legacy-raw", NOW],
+    );
+    insertConnection("conn-legacy", "gemini", "w1");
+    await disableModelsUnscoped("gemini", [TTS_MODEL]);
+    const res = await POST(
+      post(`${TTS_MODEL}:generateContent`, audioBody(), { key: "sk-legacy-raw" }),
+      paramsFor(`${TTS_MODEL}:generateContent`),
+    );
+    expect(res.status).toBe(404);
+    expect(global.fetch).not.toHaveBeenCalled();
+    // An enabled model still routes for the same legacy caller.
+    await enableModelsUnscoped("gemini", [TTS_MODEL]);
+    const ok = await POST(
+      post(`${TTS_MODEL}:generateContent`, audioBody(), { key: "sk-legacy-raw" }),
+      paramsFor(`${TTS_MODEL}:generateContent`),
+    );
+    expect(ok.status).toBe(200);
   });
 });
 

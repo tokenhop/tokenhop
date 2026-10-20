@@ -13,13 +13,15 @@ import {
 } from "@/sse/services/auth.js";
 import { getModelInfo } from "@/sse/services/model.js";
 import { PROVIDER_MODELS } from "@/shared/constants/models";
-import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
+import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS, HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { initTranslators } from "open-sse/translator/index.js";
 import {
   grantRateLimitResponse,
   releaseGrantReservation,
 } from "@/sse/services/grantRateLimiter.js";
 import { budgetResponse, budgeted } from "@/sse/services/budgetGuard.js";
+import { isModelDisabled } from "@/sse/services/modelDisabled.js";
+import { errorResponse } from "open-sse/utils/error.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -282,6 +284,12 @@ async function forwardGeminiNativeRequest(request, body, model, action, gateway)
   }
   const denied = authorizeGatewayTarget(gateway, { modelId: `gemini/${modelId}` });
   if (denied) return denied;
+  // YAN-1062: same disabled-model gate as chat (workspace map for a principal,
+  // the global map for legacy callers). Runs again on the budgeted re-entry,
+  // so a model disabled while the hold was reserved is still refused.
+  if (await isModelDisabled("gemini", modelId, gateway)) {
+    return errorResponse(HTTP_STATUS.NOT_FOUND, `Model disabled: gemini/${modelId}`);
+  }
   // YAN-372: budgets on the principal's path (Gemini-native body: contents).
   const held = await budgeted(gateway, { provider: "gemini", model: modelId, body }, () =>
     forwardGeminiNativeRequest(request, body, model, action, gateway),
