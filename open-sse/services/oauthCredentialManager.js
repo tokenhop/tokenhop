@@ -4,37 +4,33 @@ import {
   refreshTokenByProvider,
 } from "./tokenRefresh.js";
 import { PROVIDER_OAUTH } from "../providers/index.js";
+import {
+  computeExpiresAt,
+  getCredentialExpiryMs as getExpiryMs,
+  getCredentialLastRefreshMs,
+  getObservedLifetimeMs,
+  getTokenLifetimeMs,
+  isLifetimeAware,
+  isWithinProactiveRefreshInterval,
+  scaleMaxRefreshAgeMs,
+  scaleRefreshLeadMs,
+} from "./tokenLifetime.js";
+
+export { getCredentialLastRefreshMs };
 
 // Single source: codex.oauth.maxRefreshAgeMs (8 days) — proactive refresh window
 export const CODEX_MAX_REFRESH_AGE_MS = PROVIDER_OAUTH["codex"]?.maxRefreshAgeMs;
 
 const refreshLocks = new Map();
 
-function parseTimeMs(value) {
-  if (value === undefined || value === null || value === "") return null;
-  if (typeof value === "number") {
-    return value < 1e12 ? value * 1000 : value;
-  }
-
-  const parsed = new Date(value).getTime();
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 function toExpiresAt(expiresIn, nowMs = Date.now()) {
   if (!expiresIn) return null;
   return new Date(nowMs + expiresIn * 1000).toISOString();
 }
 
-export function getCredentialExpiryMs(credentials) {
-  return parseTimeMs(credentials?.expiresAt ?? credentials?.tokenExpiresAt);
-}
-
-export function getCredentialLastRefreshMs(credentials) {
-  return parseTimeMs(
-    credentials?.lastRefreshAt ??
-      credentials?.lastRefresh ??
-      credentials?.providerSpecificData?.lastRefreshAt,
-  );
+/** Stored expiry; for lifetime-aware providers (codex) also capped by the access token's JWT exp. */
+export function getCredentialExpiryMs(credentials, provider) {
+  return getExpiryMs(credentials, provider);
 }
 
 export function isCodexRefreshStale(
@@ -46,18 +42,82 @@ export function isCodexRefreshStale(
   return !lastRefreshMs || nowMs - lastRefreshMs >= maxAgeMs;
 }
 
+/**
+ * Lifetime facts for a lifetime-aware provider (codex), or null for the rest.
+ * Everything else keeps its declared lead / max age untouched.
+ * `expiresAtMs` is also capped by lastRefreshAt + observedLifetime (YAN-1035):
+ * with a learned lifetime L, the lead L/2 then refreshes at half of L.
+ */
+function describeLifetime(provider, credentials, nowMs) {
+  if (!isLifetimeAware(provider)) return null;
+  const lastRefreshMs = getCredentialLastRefreshMs(credentials);
+  const storedExpiryMs = getCredentialExpiryMs(credentials, provider);
+  const observedLifetimeMs = getObservedLifetimeMs(credentials.providerSpecificData, nowMs);
+  let expiresAtMs = storedExpiryMs;
+  if (observedLifetimeMs && lastRefreshMs != null) {
+    const learnedExpiry = lastRefreshMs + observedLifetimeMs;
+    expiresAtMs = expiresAtMs === null ? learnedExpiry : Math.min(expiresAtMs, learnedExpiry);
+  }
+  return {
+    expiresAtMs,
+    lastRefreshMs,
+    lifetimeMs: getTokenLifetimeMs({
+      accessToken: credentials.accessToken,
+      expiresAtMs: storedExpiryMs,
+      lastRefreshMs,
+    }),
+    observedLifetimeMs,
+  };
+}
+
+/**
+ * Lead (ms before expiry) at which a credential is refreshed proactively.
+ * Lifetime-aware providers: min(declared lead, 50% of the token lifetime,
+ * observedLifetime / 2), floored at 5 min. Others: the declared lead.
+ */
+export function getEffectiveRefreshLeadMs(provider, credentials, nowMs = Date.now()) {
+  const declaredLeadMs = getRefreshLeadMs(provider);
+  const facts = credentials ? describeLifetime(provider, credentials, nowMs) : null;
+  if (!facts) return declaredLeadMs;
+  return scaleRefreshLeadMs({ declaredLeadMs, ...facts });
+}
+
+/** Expiry used for scheduling: stored/JWT expiry, capped by a learned lifetime. */
+export function getSchedulingExpiryMs(provider, credentials, nowMs = Date.now()) {
+  const facts = credentials ? describeLifetime(provider, credentials, nowMs) : null;
+  return facts ? facts.expiresAtMs : getCredentialExpiryMs(credentials, provider);
+}
+
+/** True when a lifetime-aware connection was refreshed less than 5 min ago and its token is still live. */
+export function isProactiveRefreshThrottled(provider, credentials, nowMs = Date.now()) {
+  if (!credentials || !isLifetimeAware(provider)) return false;
+  const expiresAtMs = getCredentialExpiryMs(credentials, provider);
+  if (expiresAtMs !== null && expiresAtMs <= nowMs) return false;
+  return isWithinProactiveRefreshInterval(getCredentialLastRefreshMs(credentials), nowMs);
+}
+
 export function shouldRefreshCredentials(provider, credentials, nowMs = Date.now()) {
   if (!credentials) return false;
+  if (isProactiveRefreshThrottled(provider, credentials, nowMs)) return false;
+  // Access-token imports (no refresh token) now carry a JWT-derived expiry; there is nothing to refresh.
+  if (isLifetimeAware(provider) && !credentials.refreshToken) return false;
 
-  const expiresAtMs = getCredentialExpiryMs(credentials);
-  if (expiresAtMs !== null && expiresAtMs - nowMs < getRefreshLeadMs(provider)) {
+  const expiresAtMs = getSchedulingExpiryMs(provider, credentials, nowMs);
+  if (
+    expiresAtMs !== null &&
+    expiresAtMs - nowMs < getEffectiveRefreshLeadMs(provider, credentials, nowMs)
+  ) {
     return true;
   }
 
   // Proactive stale refresh for providers declaring oauth.maxRefreshAgeMs (e.g. codex)
-  const maxAgeMs = PROVIDER_OAUTH[provider]?.maxRefreshAgeMs;
-  if (maxAgeMs && credentials.refreshToken && isCodexRefreshStale(credentials, nowMs, maxAgeMs)) {
-    return true;
+  const declaredMaxAgeMs = PROVIDER_OAUTH[provider]?.maxRefreshAgeMs;
+  if (declaredMaxAgeMs && credentials.refreshToken) {
+    const facts = describeLifetime(provider, credentials, nowMs);
+    const maxAgeMs = facts
+      ? scaleMaxRefreshAgeMs({ declaredMaxAgeMs, lifetimeMs: facts.lifetimeMs })
+      : declaredMaxAgeMs;
+    if (isCodexRefreshStale(credentials, nowMs, maxAgeMs)) return true;
   }
 
   return false;
@@ -93,7 +153,21 @@ export function mergeRefreshedCredentials(
   const idToken = refreshedCredentials.idToken ?? currentCredentials?.idToken;
   if (idToken) next.idToken = idToken;
 
-  if (refreshedCredentials.expiresIn) {
+  if (isLifetimeAware(provider)) {
+    // YAN-1033: expires_in alone overstates the lifetime; the JWT exp wins when earlier.
+    // expiresIn is re-derived from the clamped expiresAt: several persistence sites
+    // (usage/test/translator routes) recompute `now + expiresIn`.
+    const expiresAt = computeExpiresAt({
+      expiresIn: refreshedCredentials.expiresIn,
+      expiresAt: refreshedCredentials.expiresAt,
+      accessToken: refreshedCredentials.accessToken,
+      nowMs,
+    });
+    if (expiresAt) {
+      next.expiresAt = expiresAt;
+      next.expiresIn = Math.max(1, Math.floor((new Date(expiresAt).getTime() - nowMs) / 1000));
+    }
+  } else if (refreshedCredentials.expiresIn) {
     next.expiresIn = refreshedCredentials.expiresIn;
     next.expiresAt = toExpiresAt(refreshedCredentials.expiresIn, nowMs);
   } else if (refreshedCredentials.expiresAt) {
@@ -108,6 +182,11 @@ export function mergeRefreshedCredentials(
       refreshedCredentials.providerSpecificData,
     );
   }
+
+  // YAN-1035: the learned lifetime (providerSpecificData.observedLifetimeMs) is never
+  // cleared here. Token age alone cannot disprove it (an idle account's proactive
+  // refresh can come long after the token died). It is replaced by a newer
+  // observation and ignored after OBSERVED_LIFETIME_TTL_MS (tokenLifetime.js).
 
   if (refreshedCredentials.copilotToken) next.copilotToken = refreshedCredentials.copilotToken;
   if (refreshedCredentials.copilotTokenExpiresAt) {
