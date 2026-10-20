@@ -62,7 +62,7 @@ Each person creates their own key.
 2. Give it a name. Optionally limit which models or combos it can use, set a **Spend limit (USD, optional)** with a **Spend window**, and choose an expiry.
 3. Select **Create** and copy the key from the banner. It is shown once.
 
-Members create **user keys**. They stop working if the person is disabled or removed. See [API keys](/en/users/concepts#api-keys).
+Members create **user keys**. They stop working when the person's account is disabled or deleted, and **Remove member** revokes their keys in that workspace only (see [Offboarding](/en/users/teams#offboarding)). See [API keys](/en/users/concepts#api-keys).
 
 ---
 

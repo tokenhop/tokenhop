@@ -24,14 +24,14 @@ In authentik, create an OAuth2/OpenID provider (and an application that uses it)
 
 - **Client type:** confidential. Note the **Client ID** and **Client Secret**.
 - **Redirect URI:** a strict match for `https://tokenhop.example.com/api/auth/oidc/callback`. Use your real public URL.
-- **Signing Key: select a certificate. This is required.** Pick any available certificate-key pair (authentik ships a self-signed one).
+- **Signing Key: select a certificate.** Pick any available certificate-key pair (authentik ships a self-signed one). Builds before v0.5.2 cannot sign in without it, and current builds strongly recommend it (see below).
 
 ### Why the signing key matters
 
 When no signing key is selected, authentik signs id_tokens with `HS256` and the provider's client secret. It publishes no public key (JWKS) for them. The behavior in tokenhop depends on the build:
 
 - **Current builds** verify `HS256`, `HS384` and `HS512` id_tokens against the client secret, but only if the IdP's discovery document lists that algorithm in `id_token_signing_alg_values_supported` (when discovery lists nothing usable, only asymmetric algorithms are accepted). Unsigned (`alg: none`) tokens are always rejected, and the login nonce is always checked. Sign-in works.
-- **Older builds** only accepted asymmetric signatures and failed to log in with authentik's default `HS256` tokens.
+- **Older builds** (before v0.5.2) only accepted asymmetric signatures and failed to log in with authentik's default `HS256` tokens.
 
 Even on a current build, select a signing key. Settings → Single sign-on → **Test sign-in** warns when the provider offers only `HS*` and recommends an `RS256` key. An asymmetric key also keeps working if the client secret is rotated.
 

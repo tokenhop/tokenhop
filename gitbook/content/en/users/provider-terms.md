@@ -71,7 +71,7 @@ tokenhop has **not** reviewed the terms of other providers (Google, Cursor, Kiro
 | A Copilot Individual login | **Copilot Business** seats: each person signs in with their own seat        | One login, one person. Organization plans are per seat.                         |
 | Any other personal login   | An API-key connection, or one login per person                              | The same single-user logic applies.                                             |
 
-In tokenhop, an **API-key connection** can be granted to a shared workspace or to one member without the override described below. tokenhop treats `anthropic`, `openai` and most other API-key providers as shareable.
+In tokenhop, an **API-key connection** can be granted to a shared workspace or to one member without the override described below. tokenhop treats `anthropic`, `openai` and most other API-key providers as shareable. A grant shares **access through tokenhop**, not the key itself: the provider key stays on the server and members use their own tokenhop keys. Never copy or hand out the raw provider key, and check that your provider plan allows the people you grant access to.
 
 If everyone brings their own subscription, nothing needs sharing: each person adds their own login to **their own workspace** and uses their own gateway key. A household where one person has Claude Max and another has ChatGPT Plus works this way. See [Concepts](/en/users/concepts) and [Teams](/en/users/teams).
 

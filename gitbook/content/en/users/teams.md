@@ -17,7 +17,7 @@ Day to day, an instance owner or admin manages people under **Admin → Workspac
 - **Change a role or remove someone:** use the role selector and remove button on the member row. A workspace always keeps at least one active manager.
 - **Map groups from your identity provider:** see [SSO](/en/users/sso). Memberships created that way are owned by the provider and are not edited by hand.
 
-From a terminal on the host, the owner can do the same with `tokenhop workspaces list`, `workspaces members <workspaceId>`, `workspaces add-member <workspaceId> <userId> --role manager|member|viewer` and `workspaces remove-member <workspaceId> <userId>`. These commands need users & teams on and a running server.
+From a terminal on the host, the owner can do the same with `tokenhop workspaces list`, `tokenhop workspaces members <workspaceId>`, `tokenhop workspaces add-member <workspaceId> <userId> --role manager|member|viewer` and `tokenhop workspaces remove-member <workspaceId> <userId>`. These commands need users & teams on and a running server.
 
 Roles are explained in [Concepts](/en/users/concepts#memberships-and-workspace-roles). In short: managers run the workspace, members use it and create their own keys, viewers only see usage.
 
@@ -97,7 +97,7 @@ Things to know:
 - **SSO users:** disable or delete the account in **Admin → Users** as well as in your identity provider, so the tokenhop account and its keys are dealt with explicitly.
 - **Temporary password:** to hand an account over or recover it, use **Set temporary password**. It is shown once and the person must change it at next sign-in.
 
-From a terminal the owner can run `tokenhop users disable <id>`, `users enable <id>`, `keys list` and `keys revoke <id>`.
+From a terminal the owner can run `tokenhop users disable <id>`, `tokenhop users enable <id>`, `tokenhop keys list` and `tokenhop keys revoke <id>`.
 
 ---
 
