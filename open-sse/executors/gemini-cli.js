@@ -5,6 +5,7 @@ import {
   GEMINI_CLI_API_CLIENT,
   geminiCLIUserAgent,
 } from "../config/appConstants.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 export class GeminiCLIExecutor extends BaseExecutor {
   constructor() {
@@ -57,23 +58,27 @@ export class GeminiCLIExecutor extends BaseExecutor {
     return base;
   }
 
-  async refreshCredentials(credentials, log) {
-    if (!credentials.refreshToken) return null;
+  async refreshCredentials(credentials, log, proxyOptions = null) {
+    if (!credentials?.refreshToken) return null;
 
     try {
-      const response = await fetch(OAUTH_ENDPOINTS.google.token, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Accept: "application/json",
+      const response = await proxyAwareFetch(
+        OAUTH_ENDPOINTS.google.token,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            Accept: "application/json",
+          },
+          body: new URLSearchParams({
+            grant_type: "refresh_token",
+            refresh_token: credentials.refreshToken,
+            client_id: this.config.clientId,
+            client_secret: this.config.clientSecret,
+          }),
         },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          refresh_token: credentials.refreshToken,
-          client_id: this.config.clientId,
-          client_secret: this.config.clientSecret,
-        }),
-      });
+        proxyOptions,
+      );
 
       if (!response.ok) return null;
 

@@ -42,6 +42,7 @@ import { warnLegacyOnce } from "../../src/shared/brand/index.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetailUnscoped } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
+import { proxyOptionsFromCredentials } from "../utils/connectionProxyOptions.js";
 import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDetail.js";
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
@@ -741,14 +742,7 @@ export async function handleChatCore({
     res.localError = true; // no cooldown, no rotation (combo advances on 504)
     return res;
   };
-  const proxyOptions = {
-    connectionProxyEnabled: credentials?.providerSpecificData?.connectionProxyEnabled === true,
-    connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
-    connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
-    vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
-    strictProxy: credentials?.providerSpecificData?.strictProxy === true,
-    connectionProxyPoolId: credentials?.providerSpecificData?.connectionProxyPoolId || null,
-  };
+  const proxyOptions = proxyOptionsFromCredentials(credentials);
 
   if (proxyOptions.vercelRelayUrl) {
     const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";

@@ -125,11 +125,11 @@ export class VertexExecutor extends BaseExecutor {
     return headers;
   }
 
-  async refreshCredentials(credentials, log) {
+  async refreshCredentials(credentials, log, proxyOptions = null) {
     const saJson = parseVertexSaJson(credentials?.apiKey);
     if (!saJson) return null;
 
-    const result = await refreshVertexToken(saJson, log);
+    const result = await refreshVertexToken(saJson, log, proxyOptions);
     if (!result) return null;
 
     return { accessToken: result.accessToken, expiresAt: result.expiresAt };
@@ -141,7 +141,7 @@ export class VertexExecutor extends BaseExecutor {
 
     // SA JSON flow: mint Bearer token via JWT assertion (cached)
     if (saJson) {
-      const result = await refreshVertexToken(saJson, log);
+      const result = await refreshVertexToken(saJson, log, proxyOptions);
       if (!result?.accessToken)
         throw new Error("Vertex: failed to mint access token from Service Account JSON");
       credentials.accessToken = result.accessToken;
@@ -154,6 +154,7 @@ export class VertexExecutor extends BaseExecutor {
         adcJson.client_id,
         adcJson.client_secret,
         log,
+        proxyOptions,
       );
       if (!result?.accessToken)
         throw new Error("Vertex: failed to refresh access token from ADC JSON (authorized_user)");
