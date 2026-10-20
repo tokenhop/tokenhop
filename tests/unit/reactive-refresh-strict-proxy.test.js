@@ -1,8 +1,8 @@
 // YAN-1036: with Strict Proxy on and the proxy unreachable, the reactive Codex
 // refresh fails closed instead of reaching the token endpoint directly.
 // proxyFetch captures globalThis.fetch at import as its direct fallback, so
-// stub it before importing anything that loads proxyFetch.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+// stub fetch and re-import a fresh module graph.
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchStub = vi.fn(async (_url, options = {}) => {
   if (options?.dispatcher) throw new Error("connect ECONNREFUSED 127.0.0.1:9");
@@ -11,9 +11,6 @@ const fetchStub = vi.fn(async (_url, options = {}) => {
     headers: { "content-type": "application/json" },
   });
 });
-globalThis.fetch = fetchStub;
-
-const { CodexExecutor } = await import("../../open-sse/executors/codex.js");
 
 const STRICT_POOL = {
   connectionProxyEnabled: true,
@@ -25,8 +22,17 @@ const STRICT_POOL = {
 };
 
 describe("Codex reactive refresh under Strict Proxy (YAN-1036)", () => {
-  beforeEach(() => {
+  let CodexExecutor;
+
+  beforeEach(async () => {
+    vi.resetModules();
     fetchStub.mockClear();
+    vi.stubGlobal("fetch", fetchStub);
+    ({ CodexExecutor } = await import("../../open-sse/executors/codex.js"));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("fails closed and never goes direct when the proxy is down", async () => {
@@ -36,7 +42,8 @@ describe("Codex reactive refresh under Strict Proxy (YAN-1036)", () => {
       STRICT_POOL,
     );
 
-    expect(result?.accessToken).not.toBe("direct-leak");
+    expect(result?.accessToken).toBeUndefined();
+    // Only the proxied attempt ran; no direct fallback call.
     expect(fetchStub).toHaveBeenCalledTimes(1);
     expect(fetchStub.mock.calls[0][1]?.dispatcher).toBeTruthy();
   });
