@@ -357,7 +357,7 @@ export class DefaultExecutor extends BaseExecutor {
       kimi: () => this.refreshKimi(credentials, proxyOptions),
       "kimi-coding": () => this.refreshKimi(credentials, proxyOptions),
       // No refresh grant: refreshToken is the `dca:` device token, re-mint the key.
-      "meta-code": () => refreshMetaCodeToken(credentials.refreshToken, log),
+      "meta-code": () => refreshMetaCodeToken(credentials.refreshToken, log, proxyOptions),
     };
   }
 
