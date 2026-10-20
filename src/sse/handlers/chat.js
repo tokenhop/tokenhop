@@ -12,8 +12,6 @@ import {
 } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
 import { getEffectivePreferences } from "@/lib/db/index.js";
-import { PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { getProviderAlias } from "@/shared/constants/providers";
 import { getModelInfo, getComboModels, getComboByName } from "../services/model.js";
 import { comboRotationKey, comboStrategyFor } from "@/lib/comboKeys.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
@@ -54,8 +52,8 @@ import {
   sanitizeGatewayCapture,
   gatewayKeyContext,
 } from "@/lib/auth/gatewayAuth.js";
-import { getGatewayDisabled, requireGatewayWorkspace } from "@/lib/auth/gatewayResources.js";
-import { getDisabledModelsUnscoped } from "@/lib/db/index.js";
+import { requireGatewayWorkspace } from "@/lib/auth/gatewayResources.js";
+import { isModelDisabled } from "../services/modelDisabled.js";
 
 /**
  * Handle chat completion request
@@ -496,23 +494,6 @@ function probeObserverFor(options, via) {
  *   separate final argument (never merged into shared options). Forwarded as
  *   parentAttempt to nested combos and as comboAttempt to the leaf core call.
  */
-// Same keys /v1/models checks: the provider's alias and its static alias.
-// YAN-364: with a principal only that workspace's disabled map is read (never
-// the global one); a read error is still fail-open, exactly as before.
-async function isModelDisabled(provider, model, principal = null) {
-  let disabled;
-  try {
-    disabled = principal ? await getGatewayDisabled(principal) : await getDisabledModelsUnscoped();
-  } catch {
-    return false; // fail open: a DB read error must not block traffic
-  }
-  const aliases = new Set([getProviderAlias(provider), PROVIDER_ID_TO_ALIAS[provider], provider]);
-  for (const alias of aliases) {
-    if (alias && Array.isArray(disabled?.[alias]) && disabled[alias].includes(model)) return true;
-  }
-  return false;
-}
-
 async function handleSingleModelChat(
   body,
   modelStr,
