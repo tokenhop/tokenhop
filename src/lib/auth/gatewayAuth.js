@@ -10,7 +10,7 @@ import { cliTokenAcceptedWith } from "./cliTokenPolicy.js";
 import { hasTrustedPeerHeaders, isLoopbackPeer } from "./trustedPeer.js";
 import { matchesLocalVerifier, MITM_VERIFIER_SETTING } from "./mitmCredential.js";
 import { validateApiKey } from "../db/repos/apiKeysRepo.js";
-import { resolveApiKey } from "./apiKeyPrincipal.js";
+import { resolveApiKey, verifyApiKey } from "./apiKeyPrincipal.js";
 import { getAdapter } from "../db/driver.js";
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { getSettings } from "../db/repos/settingsRepo.js";
@@ -104,13 +104,35 @@ function extractHashedCredential(request) {
 
 /**
  * Resolve gateway request auth.
- * @returns {Promise<{principal: object|null, legacy: boolean}|Response>}
+ * `verifyOnly` (edge admission): same proof and denials, but a hashed bearer,
+ * MITM, CLI or keyless success is reported as `{ principal: null, legacy: false,
+ * admitted: true, apiKeyId }`: an admission verdict, never a principal and with
+ * no request scope. The route handler authenticates again for real.
+ * @param {Request} request
+ * @param {{ verifyOnly?: boolean }} [opts]
+ * @returns {Promise<{principal: object|null, legacy: boolean, admitted?: true, apiKeyId?: string|null}|Response>}
  *   `{ principal, legacy: false }` — hashed bearer/CLI/keyless principal.
  *   `{ principal: null, legacy: true }` — legacy storage, caller keeps today's
  *   raw-key behavior (the presented key already passed the legacy check).
+ *   `{ principal: null, legacy: false, admitted: true, apiKeyId }` — verifyOnly admit.
  *   `Response` — deny: 401 credential, 503 storage/master. Never a fallback.
  */
-export async function resolveGatewayAuth(request) {
+export async function resolveGatewayAuth(request, { verifyOnly = false } = {}) {
+  const out = await resolveGatewayAuthInner(request, verifyOnly);
+  if (!verifyOnly || out instanceof Response) return out;
+  // Hashed bearers already arrive as an admission verdict; keyless principals
+  // (cli/local/mitm) are reduced to one here, so edge callers never see a principal.
+  const admission = out.admission ?? (out.principal ? { apiKeyId: out.principal.apiKeyId } : null);
+  if (!admission) return out;
+  return Object.freeze({
+    principal: null,
+    legacy: false,
+    admitted: true,
+    apiKeyId: admission.apiKeyId ?? null,
+  });
+}
+
+async function resolveGatewayAuthInner(request, verifyOnly) {
   const presented = extractClientApiKey(request); // null only when no credential at all
   let state;
   try {
@@ -150,14 +172,17 @@ export async function resolveGatewayAuth(request) {
         return errorResponse(503, "Gateway storage unavailable");
       }
     }
-    let principal;
+    let resolved;
     try {
-      principal = await resolveApiKey(hashedCredential, { apiKeyState: state });
+      resolved = verifyOnly
+        ? await verifyApiKey(hashedCredential, { apiKeyState: state })
+        : await resolveApiKey(hashedCredential, { apiKeyState: state });
     } catch (err) {
       if (err?.code === "API_KEY_STATE_INVALID") throw err;
       return errorResponse(503, "Gateway storage unavailable");
     }
-    if (principal) return { principal, legacy: false };
+    if (resolved && verifyOnly) return { admission: resolved, principal: null, legacy: false };
+    if (resolved) return { principal: resolved, legacy: false };
     return errorResponse(401, "Invalid API key");
   }
 
@@ -198,8 +223,14 @@ export async function resolveGatewayAuth(request) {
  * @returns {Response|null} 403 when denied, null when allowed.
  */
 export function authorizeGatewayTarget(principal, { modelId = null, comboId = null } = {}) {
-  const scopes = principal?.scopes;
-  if (!scopes) return null;
+  // A null principal is the legacy (no-principal) path. Anything else must be a
+  // real gateway principal: an admission verdict, a bare object or a principal
+  // shape without a workspace never passes as "unrestricted".
+  if (principal == null) return null;
+  const scopes = principal.scopes;
+  if (typeof principal.workspaceId !== "string" || !principal.workspaceId || !scopes) {
+    return errorResponse(403, "Forbidden");
+  }
   if (
     modelId != null &&
     scopes.allowedModels.length > 0 &&

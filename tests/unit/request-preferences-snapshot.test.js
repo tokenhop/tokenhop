@@ -237,6 +237,20 @@ describe("per-request preferences snapshot", () => {
     expect(instanceReads()).toBe(2);
   });
 
+  // Not reachable today: pickKeys(USER_KEYS) drops "__proto__" before the merge, and
+  // assignOwnData (unit-tested in gateway-hot-path-memo) is the second line of defense.
+  it("a stored own __proto__ key in user preferences is dropped end to end", async () => {
+    db.run(`INSERT OR REPLACE INTO userPreferences(userId,data,updatedAt) VALUES('u',?,'n')`, [
+      '{"__proto__":{"polluted":true},"startPage":"/mine"}',
+    ]);
+    const eff = await getEffectivePreferences(mint());
+    expect(Object.getPrototypeOf(eff)).toBe(Object.prototype);
+    expect(eff.polluted).toBeUndefined();
+    expect(Object.hasOwn(eff, "__proto__")).toBe(false);
+    expect(eff.startPage).toBe("/mine");
+    expect({}.polluted).toBeUndefined();
+  });
+
   it("keeps the non-enumerable comboStrategiesById symbol and id-keyed lookup", async () => {
     const principal = mint();
     for (let i = 0; i < 2; i++) {

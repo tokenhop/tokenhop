@@ -1,7 +1,8 @@
 import { getAdapter } from "../db/driver.js";
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { parseJson } from "../db/helpers/jsonCol.js";
-import { decodeRequestCredentialRows } from "../security/requestCredentialScope.js";
+import { deepFreeze } from "../utils/deepFreeze.js";
+import { decodeRequestCredentialRows, requestScopeOf } from "../security/requestCredentialScope.js";
 import { TABLE_NAMES } from "../security/envelope.js";
 import { getProviderConnectionsUnscoped } from "../db/repos/connectionsRepo.js";
 import {
@@ -30,6 +31,47 @@ function assertGatewayPrincipal(principal) {
     throw new Error("Invalid gateway principal");
   }
   return principal.workspaceId;
+}
+
+// Per-request memo for the scoped reads below (nodes metadata, combos, aliases,
+// custom models, disabled map). They live on the minted principal's RequestScope,
+// so they die with the request and never cross requests or principals; a forged,
+// plain or aged principal reads live. Results are deep-frozen because every
+// consumer of one request shares them. Connections and grants are NOT memoized
+// (grant revocation must stay live), and `live: true` bypasses the memo for
+// rechecks that must observe a change made since the first read.
+const memoKeys = new Map(); // read name → Symbol (private slot, finite set of names)
+const memoKeyFor = (name) => {
+  let key = memoKeys.get(name);
+  if (!key) {
+    key = Symbol(`tokenhop.gateway.${name}`);
+    memoKeys.set(name, key);
+  }
+  return key;
+};
+
+// These are plain config reads: they need the scope only for memoization, never
+// for credentials. A dead scope (rotation/poison mid-request) therefore degrades
+// to a live read instead of failing the request; credential reads keep the typed
+// KEY_MISMATCH. Any other error (including a loader failure) propagates.
+const scopeDied = (error) => error?.code === "KEY_MISMATCH";
+
+async function scopedRead(principal, db, name, live, load) {
+  if (live) return load();
+  let scope;
+  try {
+    scope = requestScopeOf(principal, db);
+  } catch (error) {
+    if (scopeDied(error)) return load();
+    throw error;
+  }
+  if (!scope) return load();
+  try {
+    return await scope.memo(memoKeyFor(name), async () => deepFreeze(await load()));
+  } catch (error) {
+    if (scopeDied(error)) return load();
+    throw error;
+  }
 }
 
 export async function requireGatewayWorkspace(principal) {
@@ -147,8 +189,12 @@ export async function getGatewayNodes(principal, filter = {}) {
 // this keeps its own requireGatewayWorkspace as the trust boundary. Upstream
 // credentials still come from getGatewayNodes/connection decrypt.
 export async function getGatewayNodesMetadata(principal, { types } = {}) {
-  const { workspaceId } = await requireGatewayWorkspace(principal);
-  return getProviderNodesRoutingUnscoped({ types, workspaceId });
+  const { db, workspaceId } = await requireGatewayWorkspace(principal);
+  const load = () => getProviderNodesRoutingUnscoped({ types, workspaceId });
+  if (!workspaceId) return load();
+  // `undefined` (every type) and `[]` (no type) are different queries: key them apart.
+  const typesKey = JSON.stringify(types == null ? null : [...types].sort());
+  return scopedRead(principal, db, `nodes:${typesKey}`, false, load);
 }
 
 // YAN-364: principal-scoped combo/model reads. Scoped miss (or empty) never
@@ -188,9 +234,11 @@ export async function getGatewayCombos(principal) {
     const getAll = combosRepo.getCombosUnscoped;
     return getAll();
   }
-  return db
-    .all(`SELECT * FROM combos WHERE workspaceId = ? ORDER BY ${COMBO_ORDER_BY}`, [workspaceId])
-    .map(rowToGatewayCombo);
+  return scopedRead(principal, db, "combos", false, async () =>
+    db
+      .all(`SELECT * FROM combos WHERE workspaceId = ? ORDER BY ${COMBO_ORDER_BY}`, [workspaceId])
+      .map(rowToGatewayCombo),
+  );
 }
 
 export async function getGatewayAliases(principal) {
@@ -199,10 +247,12 @@ export async function getGatewayAliases(principal) {
     const getAll = aliasRepo.getModelAliasesUnscoped;
     return getAll();
   }
-  const raw = getScopedKvMap(db, "modelAliases", workspaceId);
-  const out = {};
-  for (const [k, v] of Object.entries(raw)) out[k] = parseJson(v);
-  return out;
+  return scopedRead(principal, db, "aliases", false, async () => {
+    const raw = getScopedKvMap(db, "modelAliases", workspaceId);
+    const out = {};
+    for (const [k, v] of Object.entries(raw)) out[k] = parseJson(v);
+    return out;
+  });
 }
 
 export async function getGatewayCustomModels(principal) {
@@ -211,17 +261,21 @@ export async function getGatewayCustomModels(principal) {
     const getAll = aliasRepo.getCustomModelsUnscoped;
     return getAll();
   }
-  return Object.values(getScopedKvMap(db, "customModels", workspaceId)).map((v) => parseJson(v));
+  return scopedRead(principal, db, "customModels", false, async () =>
+    Object.values(getScopedKvMap(db, "customModels", workspaceId)).map((v) => parseJson(v)),
+  );
 }
 
-export async function getGatewayDisabled(principal) {
+export async function getGatewayDisabled(principal, { live = false } = {}) {
   const { db, workspaceId } = await requireGatewayWorkspace(principal);
   if (!workspaceId) {
     const getAll = disabledModelsRepo.getDisabledModelsUnscoped;
     return getAll();
   }
-  const raw = getScopedKvMap(db, "disabledModels", workspaceId);
-  const out = {};
-  for (const [k, v] of Object.entries(raw)) out[k] = parseJson(v, []);
-  return out;
+  return scopedRead(principal, db, "disabled", live, async () => {
+    const raw = getScopedKvMap(db, "disabledModels", workspaceId);
+    const out = {};
+    for (const [k, v] of Object.entries(raw)) out[k] = parseJson(v, []);
+    return out;
+  });
 }

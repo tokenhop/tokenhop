@@ -1,3 +1,5 @@
+import { clockTime } from "open-sse/utils/clockTime.js";
+
 // Logger utility for cloud
 
 const LOG_LEVELS = {
@@ -9,9 +11,7 @@ const LOG_LEVELS = {
 
 const LEVEL = LOG_LEVELS[process.env.LOG_LEVEL?.toUpperCase?.()] ?? LOG_LEVELS.INFO;
 
-function formatTime() {
-  return new Date().toLocaleTimeString("en-US", { hour12: false });
-}
+const formatTime = () => clockTime();
 
 // Colored-dot tags to correlate request lines by session (same session → same color)
 const REQ_TAGS = ["🟢", "🔵", "🟣", "🟡", "🟠", "🔴", "⚪", "🟤"];

@@ -6,8 +6,9 @@
 import { getAdapter } from "../db/driver.js";
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { getHashedApiKeyByHashUnscoped, getEligibleApiKeySync } from "../db/repos/apiKeysRepo.js";
-import { resolveApiKeyHashKeyForAuth } from "../security/apiKeyHashKey.js";
+import { getApiKeyHashKey, resolveApiKeyHashKeyForAuth } from "../security/apiKeyHashKey.js";
 import { hashApiKey } from "../security/masterKey.js";
+import { attachGatewayKeyDigest } from "../security/gatewayKeyDigest.js";
 
 // Spec bounds (feature-spec "API Design"): bearer tokens cap at 4096 bytes,
 // scope arrays at 128 x 256 chars. The resolver rejects larger input without
@@ -50,6 +51,23 @@ export function clearApiKeyPrincipalCache() {
  * @returns {Promise<{workspaceId:string,userId:string|null,apiKeyId:string,scopes:{allowedModels:string[],allowedCombos:string[]},via:"apiKey"}|null>}
  */
 export async function resolveApiKey(presented, { apiKeyState } = {}) {
+  return resolveKey(presented, apiKeyState, false);
+}
+
+/**
+ * Edge admission: the identical hash + live eligibility proof as resolveApiKey,
+ * but no request scope is minted and no root is copied. The result is an
+ * admission verdict, NOT a principal: it has no workspace and no scopes, and
+ * resolveGatewayAuth reports it as `admitted`.
+ * @param {string} presented raw bearer bytes, untrimmed
+ * @param {{apiKeyState?: object}} [opts] storage state the caller already read
+ * @returns {Promise<Readonly<{verified: true, apiKeyId: string}>|null>}
+ */
+export async function verifyApiKey(presented, { apiKeyState } = {}) {
+  return resolveKey(presented, apiKeyState, true);
+}
+
+async function resolveKey(presented, apiKeyState, verifyOnly) {
   if (typeof presented !== "string" || presented.length === 0) return null;
   if (presented.length > MAX_TOKEN_BYTES || Buffer.byteLength(presented, "utf8") > MAX_TOKEN_BYTES)
     return null;
@@ -64,7 +82,15 @@ export async function resolveApiKey(presented, { apiKeyState } = {}) {
   // Stable hash-key getter (YAN-365 D6): pre-encryption HKDF of the frozen
   // kid's master; after credential encryption an authenticated unwrap under
   // the current KEK. Root/unwrap errors propagate; no fallback.
-  const { hashKey, mint, release } = await resolveApiKeyHashKeyForAuth(db, { apiKeyState: state });
+  let auth;
+  if (verifyOnly) {
+    const key = await getApiKeyHashKey(db, { apiKeyState: state });
+    // No seed to release here, but the derived-key copy is ours: wipe it when done.
+    auth = { ...key, release: () => key.hashKey.fill(0) };
+  } else {
+    auth = await resolveApiKeyHashKeyForAuth(db, { apiKeyState: state });
+  }
+  const { hashKey, release } = auth;
   try {
     const digest = hashApiKey(presented, hashKey);
     const now = new Date().toISOString();
@@ -84,14 +110,16 @@ export async function resolveApiKey(presented, { apiKeyState } = {}) {
       if (!row) return null;
     }
     cacheSet(digest, row.id);
+    if (verifyOnly) return Object.freeze({ verified: true, apiKeyId: row.id });
     // Fresh frozen principal per call; the scope is request-local and dies with it.
-    return mint({
+    const principal = auth.mint({
       workspaceId: row.workspaceId,
       userId: row.userId,
       apiKeyId: row.id,
       scopes: { allowedModels: row.allowedModels, allowedCombos: row.allowedCombos },
       via: "apiKey",
     });
+    return attachGatewayKeyDigest(principal, digest);
   } finally {
     release(); // idempotent: the seed never outlives this authentication
   }

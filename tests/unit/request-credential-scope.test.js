@@ -1,22 +1,17 @@
-import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createSqlJsAdapter } from "@/lib/db/adapters/sqljsAdapter.js";
-import { runMigrationOnce } from "@/lib/db/migrate.js";
-import { HASHED_API_KEYS_TABLE, buildCreateTableSql } from "@/lib/db/schema.js";
-import { activateCredentialEncryption } from "@/lib/db/activateCredentialEncryption.js";
 import { rotateKek } from "@/lib/security/keyRotation.js";
 import { poisonCredentialMaintenance } from "@/lib/db/credentialMaintenance.js";
 import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
-import { insertHashedApiKeySync } from "@/lib/db/repos/apiKeysRepo.js";
 import {
   prepareCredentialCtx,
   assertCredentialCtxCurrent,
 } from "@/lib/db/repos/connectionsRepo.js";
 import * as scopeModule from "@/lib/security/requestCredentialScope.js";
-import { resolveApiKey, clearApiKeyPrincipalCache } from "@/lib/auth/apiKeyPrincipal.js";
-import { resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
+import { resolveApiKey } from "@/lib/auth/apiKeyPrincipal.js";
+import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
 import { getGatewayConnections, getGatewayNodes } from "@/lib/auth/gatewayResources.js";
 import { getApiKeyHashKey, resolveApiKeyHashKeyForAuth } from "@/lib/security/apiKeyHashKey.js";
+import { MASTER, nextRoot, request, root, seedScopeDb, token } from "../helpers/scopeFixture.js";
 
 vi.mock("@/lib/db/driver.js", () => ({ getAdapter: vi.fn() }));
 vi.mock("@/lib/auth/cliTokenPolicy.js", () => ({ cliTokenAcceptedWith: vi.fn() }));
@@ -26,67 +21,13 @@ vi.mock("@/lib/security/masterKey.js", async (original) => ({
 }));
 import { getAdapter } from "@/lib/db/driver.js";
 import { cliTokenAcceptedWith } from "@/lib/auth/cliTokenPolicy.js";
-import {
-  loadMasterKey,
-  masterKeyId,
-  deriveApiKeyHashKey,
-  hashApiKey,
-} from "@/lib/security/masterKey.js";
+import { loadMasterKey } from "@/lib/security/masterKey.js";
 
-const MASTER = Buffer.alloc(32, 7);
-const NEXT = Buffer.alloc(32, 23);
-const root = { kid: masterKeyId(MASTER), key: MASTER };
-const nextRoot = { kid: masterKeyId(NEXT), key: NEXT };
-const token = `th_${"A".repeat(32)}`;
-const request = () =>
-  new Request("http://localhost/v1/chat/completions", {
-    headers: { authorization: `Bearer ${token}` },
-  });
 const invalid = (code) => expect.objectContaining({ code });
 let db;
-let sequence = 0;
 
 beforeEach(async () => {
-  db = await createSqlJsAdapter(path.join(process.env.DATA_DIR, `scope-${sequence++}.sqlite`));
-  await runMigrationOnce(db);
-  getAdapter.mockResolvedValue(db);
-  loadMasterKey.mockReset().mockResolvedValue(root);
-  cliTokenAcceptedWith.mockReset().mockResolvedValue(false);
-  clearApiKeyPrincipalCache();
-  db.exec(`DROP TABLE apiKeys; ${buildCreateTableSql("apiKeys", HASHED_API_KEYS_TABLE)}`);
-  db.run(
-    `INSERT INTO users(id,instanceRole,status,createdAt,updatedAt) VALUES('u','owner','active','n','n')`,
-  );
-  db.run(
-    `INSERT INTO workspaces(id,name,kind,createdAt,updatedAt) VALUES('w','Default','shared','n','n')`,
-  );
-  db.run(`INSERT INTO memberships(workspaceId,userId,role,createdAt) VALUES('w','u','owner','n')`);
-  db.run(
-    `INSERT INTO _meta(key,value) VALUES('defaultWorkspaceId','w'),('apiKeysHashedVersion','1'),('apiKeysHashKid',?)`,
-    [root.kid],
-  );
-  insertHashedApiKeySync(db, {
-    id: "key",
-    workspaceId: "w",
-    userId: "u",
-    createdByUserId: "u",
-    keyHash: hashApiKey(token, deriveApiKeyHashKey(MASTER)),
-    hashKid: root.kid,
-    prefix: "th_AAAA…AAAA",
-    name: "key",
-    legacy: 0,
-    isActive: 1,
-    allowedModels: [],
-    allowedCombos: [],
-    createdAt: new Date().toISOString(),
-  });
-  db.run(`INSERT OR REPLACE INTO settings(id,data) VALUES(1,'{"requireApiKey":true}')`);
-  db.run(`INSERT INTO providerConnections(id,provider,authType,name,priority,isActive,data,workspaceId,createdAt,updatedAt)
-    VALUES('c','openai','apikey','c',1,1,'{"apiKey":"connection-secret"}','w','n','n')`);
-  db.run(`INSERT INTO providerNodes(id,type,name,data,workspaceId,createdAt,updatedAt)
-    VALUES('node','openai-compatible','node','{"apiKey":"node-secret"}','w','n','n')`);
-  await activateCredentialEncryption(db, { enabled: true, beforeServing: true, root });
-  loadMasterKey.mockClear();
+  db = await seedScopeDb({ getAdapter, loadMasterKey, cliTokenAcceptedWith });
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -122,10 +63,12 @@ describe("request credential scope", () => {
     const apiReads = () =>
       spy.mock.calls.filter(([, keys]) => keys?.includes("apiKeysHashedVersion")).length;
     await resolveGatewayAuth(request());
-    expect(apiReads()).toBe(2); // gateway state + live getEligibleApiKeySync
+    // YAN-1106: gateway state is read once; the live eligibility SQL joins the
+    // `_meta` markers itself, so revocation/kid checks stay live regardless.
+    expect(apiReads()).toBe(1);
     spy.mockClear();
     await getApiKeyHashKey(db, { apiKeyState: readApiKeyStorageState(db) });
-    expect(apiReads()).toBe(1);
+    expect(apiReads()).toBe(0); // no write since the last read: memo hit
   });
 
   it("rotation after auth kills scope, aborts write with typed retry, next request succeeds", async () => {
@@ -340,5 +283,101 @@ describe("request credential scope", () => {
     const { principal } = await resolveGatewayAuth(new Request("http://localhost/v1/models"));
     expect(() => scopeModule.mintGatewayPrincipal(principal, db)).toThrow();
     expect(loadMasterKey).not.toHaveBeenCalled();
+  });
+
+  // YAN-1106: edge admission proves the key without building a request scope.
+  describe("verifyOnly edge admission", () => {
+    const edge = (headers) =>
+      resolveGatewayAuth(new Request("http://localhost/v1/models", { headers }), {
+        verifyOnly: true,
+      });
+    const bearer = { authorization: `Bearer ${token}` };
+
+    it("admits a live key as a verdict only: no principal, no scope, no root copy", async () => {
+      loadMasterKey.mockClear();
+      const out = await edge(bearer);
+      expect(out).toEqual({ principal: null, legacy: false, admitted: true, apiKeyId: "key" });
+      expect(Object.isFrozen(out)).toBe(true);
+      expect(JSON.stringify(out)).not.toContain(MASTER.toString("base64"));
+      expect(JSON.stringify(out)).not.toMatch(/workspaceId|scopes|keyHash/);
+    });
+
+    it("the admission verdict can never act as a principal", async () => {
+      const out = await edge(bearer);
+      // Every shape an edge result could be mistaken for is refused.
+      for (const shape of [
+        out,
+        { verified: true, apiKeyId: "key" },
+        Object.freeze({ verified: true, apiKeyId: "key" }),
+      ]) {
+        const denied = authorizeGatewayTarget(shape, { modelId: "any/model" });
+        expect(denied).toBeInstanceOf(Response);
+        expect(denied.status).toBe(403);
+      }
+      // A principal-shaped object with no workspace is refused too.
+      expect(
+        authorizeGatewayTarget(
+          { scopes: { allowedModels: [], allowedCombos: [] } },
+          { modelId: "m" },
+        )?.status,
+      ).toBe(403);
+      // Resource resolution rejects it (assertGatewayPrincipal) and no scope exists.
+      expect(scopeModule.requestScopeOf(out)).toBeNull();
+      await expect(getGatewayConnections(out)).rejects.toThrow();
+      await expect(getGatewayNodes(out)).rejects.toThrow();
+      // A real principal and the legacy null path are unchanged.
+      const real = (await resolveGatewayAuth(request())).principal;
+      expect(authorizeGatewayTarget(real, { modelId: "any/model" })).toBeNull();
+      expect(authorizeGatewayTarget(null, { modelId: "any/model" })).toBeNull();
+    });
+
+    it.each([
+      ["wrong key", { authorization: `Bearer th_${"B".repeat(32)}` }],
+      ["empty bearer", { authorization: "Bearer" }],
+      ["malformed whitespace", { authorization: `Bearer ${token} x` }],
+    ])("denies %s exactly like the full resolver", async (_n, headers) => {
+      const full = await resolveGatewayAuth(new Request("http://localhost/v1/models", { headers }));
+      const out = await edge(headers);
+      expect(out).toBeInstanceOf(Response);
+      expect(out.status).toBe(full.status);
+    });
+
+    it.each([
+      ["revoked", "UPDATE apiKeys SET revokedAt = '2026-01-01T00:00:00.000Z'"],
+      ["paused", "UPDATE apiKeys SET isActive = 0"],
+      ["expired", "UPDATE apiKeys SET expiresAt = '2000-01-01T00:00:00.000Z'"],
+      ["owner left workspace", "DELETE FROM memberships"],
+      ["owner disabled", "UPDATE users SET status = 'disabled'"],
+    ])(
+      "a %s key is denied on the very next edge check (even after a cached admit)",
+      async (_n, sql) => {
+        expect((await edge(bearer)).admitted).toBe(true); // warms the digest cache
+        db.run(sql);
+        const out = await edge(bearer);
+        expect(out).toBeInstanceOf(Response);
+        expect(out.status).toBe(401);
+      },
+    );
+
+    it("a root rotated mid-flight fails closed at the edge too (no admit on stale root)", async () => {
+      expect((await edge(bearer)).admitted).toBe(true);
+      await rotate();
+      loadMasterKey.mockResolvedValue(root); // stale root: kid no longer matches the marker
+      loadMasterKey.mockImplementation(async ({ expectedKid } = {}) => {
+        if (expectedKid && expectedKid !== root.kid)
+          throw Object.assign(new Error("master key id mismatch"), { code: "MASTER_KEY_INVALID" });
+        return root;
+      });
+      const out = await edge(bearer);
+      expect(out).toBeInstanceOf(Response);
+      expect(out.status).toBe(503);
+    });
+
+    it("a poisoned adapter denies the edge", async () => {
+      poisonCredentialMaintenance(db, new Error("uncertain commit"));
+      const out = await edge(bearer);
+      expect(out).toBeInstanceOf(Response);
+      expect(out.status).toBe(503);
+    });
   });
 });

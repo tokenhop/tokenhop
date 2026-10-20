@@ -9,9 +9,13 @@
 // Imports: masterKey loader/HKDF, B1 codec/state and the maintenance
 // admission. No driver/barrel/switch/session imports; callers that already
 // hold a root pass `{ root: { kid, key } }` to avoid re-loading.
-import { deriveApiKeyHashKey, loadMasterKey } from "./masterKey.js";
+import { deriveApiKeyHashKey, loadMasterKey, onMasterKeyChange } from "./masterKey.js";
 import { buildHashKeyWrapAad, decryptBytes, isEnvelopeShape, zeroBuffer } from "./envelope.js";
-import { readApiKeyStorageState } from "../db/apiKeyState.js";
+import {
+  invalidateMarkerCache,
+  readApiKeyStorageState,
+  readMetaValueCached,
+} from "../db/apiKeyState.js";
 import {
   readCredentialEncryptionState,
   readCredentialMarkerValues,
@@ -25,37 +29,84 @@ function fail(code, message) {
 }
 
 function metaValue(db, key) {
-  return db.get(`SELECT value FROM _meta WHERE key = ?`, [key])?.value ?? null;
+  return readMetaValueCached(db, key);
 }
 
-// Marker-tuple memo per adapter: the credential state is a pure function of
-// five `_meta` values plus the workspaceKeys count. The legacy verdict's
-// envelope sniff is the expensive part; the tuple check is one batch select, so
-// hot per-request callers never rescan tables. A marker change flips the
-// tuple and forces a fresh read. If rows mutate without a marker change
-// (corruption mid-process), the next restart re-verifies from scratch.
-const stateCache = new WeakMap(); // db -> { sig, state }
-
+// The credential state is a pure function of the five marker `_meta` values plus
+// the workspaceKeys count. Both readers follow the adapter write generation
+// (apiKeyState.js): a read repeats after any write made through THIS adapter.
+// That is sound because processLock gives a DATA_DIR exactly one writer process
+// and every marker writer goes through this adapter (enforced by
+// marker-generation.test.js). A commit from another connection or an
+// out-of-band edit of the live database file is NOT detected here: such edits
+// require a restart, like any other offline change to a running instance.
 function credentialState(db) {
-  const values = readCredentialMarkerValues(db);
-  const sig = [
-    values.credentialsEncryptedVersion,
-    values.credentialsKekKid,
-    values.credentialsCleanupPending,
-    values.credentialsPendingRotation,
-    values.apiKeyHashKeyWrapped,
-    db.get(`SELECT COUNT(*) AS c FROM workspaceKeys`)?.c ?? 0,
-  ].join("|");
-  const hit = stateCache.get(db);
-  if (hit && hit.sig === sig) return { state: hit.state, values };
-  const state = readCredentialEncryptionState(db);
-  stateCache.set(db, { sig, state });
-  return { state, values };
+  return { state: readCredentialEncryptionState(db), values: readCredentialMarkerValues(db) };
 }
 
-/** Test/back-compat hook: drop the memoized state (marker writes in-process). */
+// YAN-1106 derived-key memo. The unwrapped hash key is a pure function of: the
+// five credential markers (wrapped envelope + KEK kid), the frozen hash kid, the
+// default workspace id (unwrap AAD) and the root that unwrapped it. The memo key
+// is exactly that tuple, read through the write-generation readers, so ANY
+// marker change (rotation, activation, import, restore) misses and re-runs the
+// authenticated unwrap; it does not depend on how often unrelated rows write.
+// Only a root loaded here by loadMasterKey is eligible (its kid is derived from
+// its bytes). A caller-supplied `{kid, key}` is a proof input (rotation, import)
+// and always runs the full authenticated unwrap. One entry, at most
+// HASH_KEY_TTL_MS, zeroed by an unref'd timer, on any root change, and on
+// clearApiKeyHashKeyStateCache. Callers always receive private copies.
+const HASH_KEY_TTL_MS = 30_000;
+// One process-wide slot (Symbol.for) so every bundled or reloaded copy of this
+// module shares the entry, its timer and its zeroing.
+const HASH_CACHE_KEY = Symbol.for("tokenhop.apiKeyHashKeyCache");
+globalThis[HASH_CACHE_KEY] ??= { entry: null, timer: null };
+const hashCache = globalThis[HASH_CACHE_KEY];
+
+function dropHashKeyEntry() {
+  if (hashCache.timer) clearTimeout(hashCache.timer);
+  hashCache.timer = null;
+  if (hashCache.entry) hashCache.entry.hashKey.fill(0);
+  hashCache.entry = null;
+}
+onMasterKeyChange(dropHashKeyEntry, "apiKeyHashKey");
+
+/** Drop memoized marker reads and the derived hash key (marker writes in-process). */
 export function clearApiKeyHashKeyStateCache(db) {
-  stateCache.delete(db);
+  invalidateMarkerCache(db);
+  dropHashKeyEntry();
+}
+
+function hashKeyFingerprint(db, cred, apiKey, values, root) {
+  return JSON.stringify([
+    cred.storage,
+    values,
+    apiKey.hashKid,
+    root.kid,
+    cred.storage === "encrypted" ? metaValue(db, "defaultWorkspaceId") : null,
+  ]);
+}
+
+function cachedHashKey(db, fingerprint) {
+  const entry = hashCache.entry;
+  if (!entry) return null;
+  if (entry.db !== db || entry.fingerprint !== fingerprint || Date.now() >= entry.expiresAt) {
+    if (Date.now() >= entry.expiresAt) dropHashKeyEntry();
+    return null;
+  }
+  return { hashKid: entry.hashKid, hashKey: Buffer.from(entry.hashKey) };
+}
+
+function rememberHashKey(db, fingerprint, out) {
+  dropHashKeyEntry();
+  hashCache.entry = {
+    db,
+    fingerprint,
+    hashKid: out.hashKid,
+    hashKey: Buffer.from(out.hashKey),
+    expiresAt: Date.now() + HASH_KEY_TTL_MS,
+  };
+  hashCache.timer = setTimeout(dropHashKeyEntry, HASH_KEY_TTL_MS);
+  hashCache.timer.unref?.();
 }
 
 function requireRoot(root) {
@@ -168,7 +219,8 @@ async function hashKeyAndRoot(db, opts) {
   const { state: cred, values } = credentialState(db);
   const apiKey = opts.apiKeyState ?? readApiKeyStorageState(db);
   let root = opts.root;
-  if (root === undefined || root === null) {
+  const loadedHere = root === undefined || root === null;
+  if (loadedHere) {
     if (apiKey.storage !== "hashed") {
       fail("API_KEY_STATE_INVALID", "hashed API key storage required");
     }
@@ -176,7 +228,28 @@ async function hashKeyAndRoot(db, opts) {
     const { kid, key } = await loadMasterKey({ expectedKid });
     root = { kid, key };
   }
-  return { out: resolve(db, root, cred, apiKey), root, state: cred, markers: values };
+  if (!loadedHere)
+    return { out: resolve(db, root, cred, apiKey), root, state: cred, markers: values };
+  // The root load yields. The fingerprint is built from reads taken BEFORE the
+  // await, so re-read it now: if a rotation or marker write landed during the
+  // load, bypass the memo completely (no lookup, no remember) and unwrap exactly
+  // as before. The caller's own request-scope check then rejects the request.
+  assertCredentialOperationAllowed(db);
+  const fingerprint = hashKeyFingerprint(db, cred, apiKey, values, root);
+  let stable = false;
+  try {
+    const now = credentialState(db);
+    const apiNow = readApiKeyStorageState(db); // live: a caller-supplied state is the old read
+    stable = hashKeyFingerprint(db, now.state, apiNow, now.values, root) === fingerprint;
+  } catch {
+    stable = false;
+  }
+  let out = stable ? cachedHashKey(db, fingerprint) : null;
+  if (!out) {
+    out = resolve(db, root, cred, apiKey);
+    if (stable && apiKey.storage === "hashed") rememberHashKey(db, fingerprint, out);
+  }
+  return { out, root, state: cred, markers: values };
 }
 
 /**

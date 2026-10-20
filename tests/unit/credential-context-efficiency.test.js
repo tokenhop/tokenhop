@@ -104,7 +104,10 @@ describe("credential context round trips", () => {
     db.all.mockClear();
     loadMasterKey.mockResolvedValue({ kid, key: Buffer.alloc(32) });
     expect((await prepareCredentialCtx(db)).encrypted).toBe(true);
-    expect(markerReads()).toBe(3); // state + signature + post-await recheck
+    // YAN-1106: no write happens between state, signature and the post-await
+    // recheck, so they share ONE live read (write-generation memo). A write in
+    // that window still forces a re-read: see marker-generation.test.js.
+    expect(markerReads()).toBe(1);
   });
 
   it("batches API-key markers with stable null semantics and half-marker errors", () => {

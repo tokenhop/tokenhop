@@ -3,7 +3,18 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import { constants } from "node:fs";
 import path from "node:path";
-import { getDataDir } from "../dataDir.js";
+import { getDataDirMemo } from "../dataDir.js";
+import {
+  cachedRoot,
+  clearMasterKeyCache,
+  dropRootEntry,
+  onMasterKeyChange,
+  rememberRoot,
+  rootChanged,
+  rootFingerprint,
+} from "./rootKeyCache.js";
+
+export { clearMasterKeyCache, onMasterKeyChange };
 
 const HASH_INFO = "tokenhop/api-key-hash";
 const MASTER_ENV = "TOKENHOP_MASTER_KEY";
@@ -173,18 +184,25 @@ export function randomMasterKey() {
 export async function loadMasterKey({ create = false, expectedKid = null } = {}) {
   const env = process.env[MASTER_ENV];
   if (env !== undefined) {
+    dropRootEntry(); // env wins: never keep a file root alive behind it
     const key = decodeStrictEnv(env);
     const kid = masterKeyId(key);
     checkKid(kid, expectedKid);
     return { kid, key };
   }
-  const file = path.join(getDataDir(), "keys", "master");
-  // Live validated read on every call (no cache): one sync pass instead of ~6
-  // threadpool fs ops. Same validator as readMasterKeyFileSync.
+  const file = path.join(getDataDirMemo(), "keys", "master");
+  const hit = cachedRoot(file);
+  if (hit) {
+    checkKid(hit.kid, expectedKid);
+    return { kid: hit.kid, key: Buffer.from(hit.key) };
+  }
+  // Cold path: the full validated read (symlink, type, size, mode checks).
+  const before = rootFingerprint(file);
   const seen = readValidatedKeyFileSync(file, MASTER_LABEL);
   if (seen.status === "ok") {
     const kid = masterKeyId(seen.key);
     checkKid(kid, expectedKid);
+    rememberRoot(file, before, kid, seen.key);
     return { kid, key: seen.key };
   }
   if (seen.status === "error") throw seen.error;
@@ -202,8 +220,8 @@ export async function loadMasterKey({ create = false, expectedKid = null } = {})
 // async loader reads through the same validator):
 // exclusive-create staging (0600), no symlink follows, checked size/modes and
 // POSIX directory fsync. The async loader semantics above stay unchanged, and
-// every runtime caller of loadMasterKey re-reads the root per call, so a
-// published new root is picked up without any cache invalidation.
+// every runtime caller of loadMasterKey revalidates the root per call (stat
+// fingerprint memo above), so a published new root is picked up immediately.
 
 function lstatNoFollowSync(target, label) {
   let stat;
@@ -296,7 +314,7 @@ function syncDirSync(dir) {
 
 /** `keys/` dir, the master file and the fixed rotation stage path. */
 export function masterKeyPaths() {
-  const dir = path.join(getDataDir(), "keys");
+  const dir = path.join(getDataDirMemo(), "keys");
   return { dir, file: path.join(dir, "master"), stage: path.join(dir, "master.next") };
 }
 
@@ -333,6 +351,7 @@ export function stageMasterKeySync(key) {
   } finally {
     fsSync.closeSync(fd);
   }
+  rootChanged();
   syncDirSync(paths.dir);
   syncDirSync(path.dirname(paths.dir));
   return paths.stage;
@@ -360,6 +379,7 @@ export function promoteStagedMasterSync() {
   const dirSeen = assertKeysDirSync(paths.stage);
   if (dirSeen.status === "error") throw dirSeen.error;
   fsSync.renameSync(paths.stage, paths.file);
+  rootChanged();
   syncDirSync(paths.dir);
   syncDirSync(path.dirname(paths.dir));
 }

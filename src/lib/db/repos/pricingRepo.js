@@ -4,11 +4,35 @@ import { makeKv } from "../helpers/kvStore.js";
 
 const pricingKv = makeKv("pricing");
 const CACHE_TTL_MS = 5000;
+// Keys include the client-supplied model id, so the memo is bounded: expired
+// entries are swept on every insert and the oldest are evicted past the cap.
+export const MODEL_CACHE_MAX = 512;
 
 let cache = { value: null, expiresAt: 0 };
 
+// Resolved (provider, model) pricing for the gateway hot path (budget estimate,
+// usage settle). Every writer in this module and the import/restore paths call
+// invalidate(); the generation guard drops a read that raced a write, and the
+// TTL bounds anything that edits the kv rows behind our back.
+const modelCache = new Map(); // `${provider}\0${model}` → { value, expiresAt }
+let generation = 0;
+let pricingModule = null;
+
+function rememberModel(key, value, now) {
+  for (const [k, entry] of modelCache) {
+    if (entry.expiresAt <= now) modelCache.delete(k);
+  }
+  modelCache.delete(key); // re-insert so Map order stays oldest-first
+  while (modelCache.size >= MODEL_CACHE_MAX) {
+    modelCache.delete(modelCache.keys().next().value);
+  }
+  modelCache.set(key, { value, expiresAt: now + CACHE_TTL_MS });
+}
+
 function invalidate() {
   cache = { value: null, expiresAt: 0 };
+  modelCache.clear();
+  generation++;
 }
 
 export async function getUserPricing() {
@@ -50,14 +74,22 @@ export async function getPricing() {
 
 export async function getPricingForModel(provider, model) {
   if (!model) return null;
+  const key = `${provider ?? ""}\0${model}`;
+  const hit = modelCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.value;
+  const startedAt = generation;
   // Targeted read of the one provider row; never scan the whole pricing scope.
   const providerRow = provider ? await pricingKv.get(String(provider)) : null;
   const user = providerRow?.[model];
-  const { getPricingForModel: resolveConst } = await import("open-sse/providers/pricing.js");
-  const defaults = resolveConst(provider, model);
-  if (user && defaults) return { ...defaults, ...user };
-  if (user) return user;
-  return defaults;
+  pricingModule ??= await import("open-sse/providers/pricing.js");
+  const defaults = pricingModule.getPricingForModel(provider, model);
+  const resolved = user && defaults ? { ...defaults, ...user } : user || defaults;
+  // Shared across requests: frozen so no caller can corrupt later reads. Callers
+  // only read rates (calculateCostFromTokens, billing probe); defaults stay unfrozen.
+  const value =
+    resolved && typeof resolved === "object" ? Object.freeze({ ...resolved }) : resolved;
+  if (startedAt === generation) rememberModel(key, value, Date.now());
+  return value;
 }
 
 // Atomic merge inside transaction (per-provider read-modify-write)

@@ -108,7 +108,12 @@ describe("dashboard guard public LLM API access", () => {
   it("resolves hashed gateway keys through the shared resolver, not legacy SQL", async () => {
     mocks.hashedEstablished.mockResolvedValue(true);
 
-    mocks.resolveGatewayAuth.mockResolvedValue({ principal: { via: "apiKey" }, legacy: false });
+    mocks.resolveGatewayAuth.mockResolvedValue({
+      principal: null,
+      legacy: false,
+      admitted: true,
+      apiKeyId: "k",
+    });
     const ok = await proxy(
       request("/v1/chat/completions", {
         host: "router.example.com",
@@ -163,8 +168,10 @@ describe("dashboard guard public LLM API access", () => {
         it(`hashed ${label}: shared allow passes`, async () => {
           mocks.hashedEstablished.mockResolvedValue(true);
           mocks.resolveGatewayAuth.mockResolvedValue({
-            principal: { via: "apiKey" },
+            principal: null,
             legacy: false,
+            admitted: true,
+            apiKeyId: "k",
           });
           expect(await proxy(build())).toBe(mocks.nextResponse);
           expect(mocks.resolveGatewayAuth).toHaveBeenCalledTimes(1);
@@ -173,6 +180,16 @@ describe("dashboard guard public LLM API access", () => {
       }
     }
   }
+
+  it("a principal-shaped auth result is not an edge admission", async () => {
+    mocks.hashedEstablished.mockResolvedValue(true);
+    mocks.resolveGatewayAuth.mockResolvedValue({
+      principal: { via: "apiKey", workspaceId: "w" },
+      legacy: false,
+    });
+    const response = await proxy(request("/v1/chat/completions", { authorization: "Bearer x" }));
+    expect(response.status).toBe(401);
+  });
 
   it("credential-less requests keep the legacy edge on established storage", async () => {
     mocks.hashedEstablished.mockResolvedValue(true);

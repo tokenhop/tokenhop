@@ -1103,21 +1103,37 @@ export const PATTERN_PRICING = [
   },
 ];
 
+// Patterns are static strings, so each compiles once. Bounded because matchPattern
+// is exported: a caller feeding arbitrary patterns can't grow it without limit.
+const PATTERN_REGEX_MAX = 256;
+const patternRegexes = new Map();
+
+function regexForPattern(pattern) {
+  let regex = patternRegexes.get(pattern);
+  if (!regex) {
+    regex = new RegExp(
+      "^" +
+        pattern
+          .split("*")
+          .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+          .join(".*") +
+        "$",
+      "i",
+    );
+    if (patternRegexes.size >= PATTERN_REGEX_MAX) {
+      patternRegexes.delete(patternRegexes.keys().next().value);
+    }
+    patternRegexes.set(pattern, regex);
+  }
+  return regex;
+}
+
 /**
  * Match a model ID against a glob pattern (* = wildcard). Case-insensitive:
  * registry ids mix casing (e.g. "MiniMax-M2.5" vs "minimax-m2.5").
  */
 export function matchPattern(pattern, model) {
-  const regex = new RegExp(
-    "^" +
-      pattern
-        .split("*")
-        .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-        .join(".*") +
-      "$",
-    "i",
-  );
-  return regex.test(model);
+  return regexForPattern(pattern).test(model);
 }
 
 /**

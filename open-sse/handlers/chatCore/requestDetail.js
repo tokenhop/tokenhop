@@ -6,6 +6,7 @@ import {
   geminiUsageCounts,
   reasoningInclusiveCompletion,
 } from "../../translator/concerns/usage.js";
+import { clockTime } from "../../utils/clockTime.js";
 
 const OPTIONAL_PARAMS = [
   "temperature",
@@ -158,12 +159,7 @@ export function saveUsageStats({
   if (endpoint === COMBO_PROBE_ENDPOINT) return;
 
   if (!silent) {
-    const time = new Date().toLocaleTimeString("en-US", {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
+    const time = clockTime();
     const accountSuffix = connectionId ? ` | account=${connectionId.slice(0, 8)}...` : "";
     console.log(
       `${COLORS.green}[${time}] 📊 [${label}] ${provider.toUpperCase()} | in=${inTokens} | out=${outTokens}${accountSuffix}${COLORS.reset}`,

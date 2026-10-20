@@ -218,6 +218,13 @@ describe("catalog snapshot lookup", () => {
   const EMPTY_ENTRY = { modalities: null, limits: null };
   let mod;
   let stat;
+  let clock;
+  let now;
+  // Moves time past the stat interval so the next lookup re-stats the file.
+  const pastInterval = () => {
+    now += mod.STAT_INTERVAL_MS + 1;
+    clock.mockReturnValue(now);
+  };
 
   beforeAll(async () => {
     mod = await import("../../open-sse/providers/catalogOverride.js");
@@ -225,27 +232,56 @@ describe("catalog snapshot lookup", () => {
   });
   afterAll(() => capabilities.setCatalogSource(null));
   beforeEach(() => {
+    now = Date.now();
+    clock = vi.spyOn(Date, "now").mockReturnValue(now);
     write({}, {}); // own empty baseline for each test
     mod.invalidateCatalog();
     stat = vi.spyOn(fs, "statSync");
   });
   afterEach(() => {
     stat.mockRestore();
+    clock.mockRestore();
     mod.invalidateCatalog();
   });
 
   const caps = () => capabilities.getCapabilitiesForModel("gw", "laguna-9-preview");
 
-  it("refine does exactly one stat per lookup", () => {
+  it("stats at most once per interval, however many lookups", () => {
     write(
       { "gw:laguna-9-preview": { vision: true } },
       { gw: { "laguna-9-preview": { contextWindow: 5000, maxOutput: 700 } } },
     );
-    caps(); // first call parses
-    stat.mockClear();
-    const result = caps();
-    expect(result).toMatchObject({ vision: true, contextWindow: 5000, maxOutput: 700 });
+    caps(); // first call stats + parses
     expect(stat).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 10; i++) {
+      expect(caps()).toMatchObject({ vision: true, contextWindow: 5000, maxOutput: 700 });
+    }
+    expect(stat).toHaveBeenCalledTimes(1);
+    now += mod.STAT_INTERVAL_MS - 1; // still inside the interval
+    clock.mockReturnValue(now);
+    caps();
+    expect(stat).toHaveBeenCalledTimes(1);
+    pastInterval();
+    caps();
+    expect(stat).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-stats immediately after invalidateCatalog, inside the interval", () => {
+    write({ "gw:laguna-9-preview": { pdf: true } }, {});
+    expect(caps().pdf).toBe(true);
+    write({}, {}); // another writer replaces the file; same interval
+    expect(caps().pdf).toBe(true); // not looked at yet: by design
+    mod.invalidateCatalog(); // what the in-process sync writer does
+    expect(caps().pdf).toBe(false);
+  });
+
+  it("re-stats when the clock moves backwards", () => {
+    write({ "gw:laguna-9-preview": { pdf: true } }, {});
+    expect(caps().pdf).toBe(true);
+    write({}, {});
+    now -= 5000;
+    clock.mockReturnValue(now);
+    expect(caps().pdf).toBe(false);
   });
 
   it("keeps the exported getters and the combined entry consistent", () => {
@@ -261,6 +297,7 @@ describe("catalog snapshot lookup", () => {
     expect(entry.modalities).toEqual(mod.getCatalogModalities("gw", "laguna-9-preview"));
     expect(entry.limits).toEqual(mod.getCatalogLimits("gw", "laguna-9-preview"));
     stat.mockClear();
+    pastInterval();
     mod.getCatalogEntry("gw", "laguna-9-preview");
     expect(stat).toHaveBeenCalledTimes(1);
   });
@@ -268,6 +305,7 @@ describe("catalog snapshot lookup", () => {
   it("picks up an atomic replacement by mtime", () => {
     expect(caps().contextWindow).toBe(capabilities.DEFAULT_CAPABILITIES.contextWindow);
     write({}, { gw: { "laguna-9-preview": { contextWindow: 6000, maxOutput: 800 } } });
+    pastInterval();
     expect(caps()).toMatchObject({ vision: false, contextWindow: 6000, maxOutput: 800 });
   });
 
@@ -275,9 +313,11 @@ describe("catalog snapshot lookup", () => {
     write({ "gw:laguna-9-preview": { pdf: true } }, {});
     expect(caps().pdf).toBe(true);
     fs.rmSync(catalogFile);
+    pastInterval();
     expect(mod.getCatalogEntry("gw", "laguna-9-preview")).toEqual(EMPTY_ENTRY);
     expect(caps().pdf).toBe(false);
     write({ "gw:laguna-9-preview": { pdf: true } }, {});
+    pastInterval();
     expect(caps().pdf).toBe(true);
   });
 
@@ -288,6 +328,7 @@ describe("catalog snapshot lookup", () => {
     // rewrite in place and restore the same mtime: the stat check cannot see it
     fs.writeFileSync(catalogFile, JSON.stringify({ v: 2, models: {}, providers: {} }));
     fs.utimesSync(catalogFile, mtime, mtime);
+    pastInterval();
     expect(caps().pdf).toBe(true); // stale by design: same mtime
     mod.invalidateCatalog();
     expect(caps().pdf).toBe(false);
@@ -299,9 +340,11 @@ describe("catalog snapshot lookup", () => {
     const bad = nextMtime++;
     fs.writeFileSync(catalogFile, "{not json");
     fs.utimesSync(catalogFile, bad, bad);
+    pastInterval();
     expect(mod.getCatalogEntry("gw", "laguna-9-preview")).toEqual(EMPTY_ENTRY);
     expect(caps().vision).toBe(false);
     write({ "gw:laguna-9-preview": { vision: true } }, {});
+    pastInterval();
     expect(caps().vision).toBe(true);
   });
 

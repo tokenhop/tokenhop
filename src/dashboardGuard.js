@@ -64,8 +64,10 @@ async function canAccessPublicLlmApi(request) {
     // one), resolved by the shared gateway resolver. Credential-less requests
     // keep the pre-existing edge rules; handlers still enforce per request.
     if ((await isHashedSecurityEstablished()) && hasPresentedCredential(request)) {
-      const auth = await resolveGatewayAuth(request);
-      return auth.legacy === false && auth.principal != null;
+      // Admission proof only (no request scope): the route handler authenticates
+      // again for real and owns the principal.
+      const auth = await resolveGatewayAuth(request, { verifyOnly: true });
+      return auth.legacy === false && auth.admitted === true && auth.principal === null;
     }
   } catch {
     return false; // Unreadable/invalid storage never opens the edge.

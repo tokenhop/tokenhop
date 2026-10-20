@@ -95,17 +95,41 @@ export async function getRequestRateSeries(ctx) {
   );
 }
 
+// Lazy imports resolved once (keeps the registry/pricing graphs out of this
+// module's static imports without paying a dynamic import per usage write).
+let pricingDeps;
+const loadPricingDeps = () =>
+  (pricingDeps ??= Promise.all([
+    import("./pricingRepo.js"),
+    import("open-sse/providers/pricing.js"),
+  ])
+    .then(([repo, math]) => ({
+      getPricingForModel: repo.getPricingForModel,
+      calculateCostFromTokens: math.calculateCostFromTokens,
+    }))
+    .catch((error) => {
+      pricingDeps = undefined;
+      throw error;
+    }));
+let grantsImport;
+const loadResolveSharing = () =>
+  (grantsImport ??= import("../../users/grants.js")
+    .then((m) => m.resolveSharing)
+    .catch((error) => {
+      grantsImport = undefined;
+      throw error;
+    }));
+
 async function calculateCost(provider, model, tokens) {
   if (!tokens || !provider || !model) return 0;
   try {
-    const { getPricingForModel } = await import("./pricingRepo.js");
+    const { getPricingForModel, calculateCostFromTokens } = await loadPricingDeps();
     const pricing = await getPricingForModel(provider, model);
     if (!pricing) return 0;
 
     // Delegate the actual math to the single source of truth (avoids the two
     // copies drifting apart — see open-sse/providers/pricing.js for the
     // cache-inclusive prompt_tokens convention this assumes).
-    const { calculateCostFromTokens } = await import("open-sse/providers/pricing.js");
     return calculateCostFromTokens(tokens, pricing);
   } catch (e) {
     console.error("Error calculating cost:", e);
@@ -237,8 +261,7 @@ export async function saveRequestUsageUnscoped(entry) {
         entry.connectionId,
       ]);
       if (conn) {
-        // Lazy: keeps the provider registry out of this module's import graph.
-        const { resolveSharing } = await import("../../users/grants.js");
+        const resolveSharing = await loadResolveSharing();
         if (resolveSharing(entry.provider, conn.authType) === "personal") metaObj.notional = true;
       }
     }

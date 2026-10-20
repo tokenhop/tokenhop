@@ -27,7 +27,7 @@ import {
   BUDGET_RESERVATION_MAX_MS,
   BUDGET_SETTLE_GRACE_MS,
 } from "open-sse/config/runtimeConfig.js";
-import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { maxOutputFor } from "./modelOutputCap.js";
 import { calculateCostFromTokens } from "open-sse/providers/pricing.js";
 import { estimateBodyTokens } from "./grantRateLimiter.js";
 
@@ -228,7 +228,7 @@ async function estimateUsage({ provider, model, body, nonToken, noOutput }) {
   const asked = Number(
     body?.max_tokens ?? body?.max_completion_tokens ?? body?.generationConfig?.maxOutputTokens,
   );
-  const cap = Number(getCapabilitiesForModel(provider, model)?.maxOutput) || Infinity;
+  const cap = maxOutputFor(provider, model);
   const output = noOutput ? 0 : Math.min(asked > 0 ? asked : BUDGET_DEFAULT_MAX_TOKENS, cap);
   const input = estimateBodyTokens({ ...body, max_tokens: 0, max_completion_tokens: 0 });
   let pricing = null;

@@ -4,7 +4,7 @@
 // CREDENTIAL_STATE_INVALID; unexpected key rows, a wrapped hash key or stored
 // envelopes without a coherent marker never read as "legacy" (fail closed).
 import { CREDENTIAL_FIELD_ALLOWLIST, isEnvelopeShape } from "../security/envelope.js";
-import { readMetaValues } from "./apiKeyState.js";
+import { memoizeUntilWrite, readMetaValues } from "./apiKeyState.js";
 
 const KID_RE = /^[0-9a-f]{16}$/;
 const PSD_PREFIX = "providerSpecificData.";
@@ -23,9 +23,15 @@ const MARKER_KEYS = [
   "apiKeyHashKeyWrapped",
 ];
 
-/** The five marker `_meta` values in ONE select (absent => null). */
+/**
+ * The five marker `_meta` values in ONE select (absent => null). Memoized per
+ * adapter until the next write through it (apiKeyState.js write generation);
+ * callers get a fresh copy.
+ */
 export function readCredentialMarkerValues(db) {
-  return readMetaValues(db, MARKER_KEYS);
+  return {
+    ...memoizeUntilWrite(db, "credentialMarkerValues", () => readMetaValues(db, MARKER_KEYS)),
+  };
 }
 
 function tableExists(db, table) {
@@ -116,13 +122,25 @@ function workspaceKeyCount(db) {
  *           |{storage:"encrypted",version:1,kekKid:string,cleanupPending:boolean,pendingRotation:{oldKid:string,newKid:string}|null}}
  */
 export function readCredentialEncryptionState(db, { strict = false } = {}) {
+  // The marker-only read is a pure function of database content, so it follows
+  // the same write-generation memo. The strict scan is never memoized.
+  if (strict) return computeCredentialEncryptionState(db, true);
+  const state = memoizeUntilWrite(db, "credentialEncryptionState", () =>
+    computeCredentialEncryptionState(db, false),
+  );
+  return state.pendingRotation
+    ? { ...state, pendingRotation: { ...state.pendingRotation } }
+    : { ...state };
+}
+
+function computeCredentialEncryptionState(db, strict) {
   const {
     credentialsEncryptedVersion: version,
     credentialsKekKid: kekKid,
     credentialsCleanupPending: cleanupRaw,
     credentialsPendingRotation: pendingRaw,
     apiKeyHashKeyWrapped: hashWrappedRaw,
-  } = readCredentialMarkerValues(db);
+  } = strict ? readMetaValues(db, MARKER_KEYS) : readCredentialMarkerValues(db);
 
   if (cleanupRaw !== null && cleanupRaw !== "0" && cleanupRaw !== "1") {
     failState("credentialsCleanupPending must be 0 or 1");
