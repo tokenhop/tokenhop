@@ -76,7 +76,13 @@ export function missingStaticCodexIds(liveModels, staticModels) {
 }
 
 const resolveCodexOAuthModels = buildOAuthResolver({
-  refreshFn: (conn) => refreshCodexToken(conn.refreshToken),
+  refreshFn: async (conn) => {
+    const refreshed = await refreshCodexToken(conn.refreshToken);
+    // Stamp the refresh so lastRefreshAt-based lifetime tracking (YAN-1034/1035) stays accurate.
+    return refreshed?.accessToken
+      ? { ...refreshed, lastRefreshAt: new Date().toISOString() }
+      : refreshed;
+  },
   fetchFn: (token) =>
     fetch(CODEX_MODELS_URL, {
       method: "GET",

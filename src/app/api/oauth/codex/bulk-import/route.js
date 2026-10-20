@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { extractCodexAccountInfo } from "@/lib/oauth/providers";
+import { computeExpiresAt } from "open-sse/services/tokenLifetime.js";
 import { createIn, oauthScope } from "@/lib/oauth/scope";
 
 /**
@@ -92,10 +93,14 @@ export async function POST(request) {
         item.providerSpecificData = psd;
       }
 
-      // Compute expiresAt from expiresIn if absent
-      if (!item.expiresAt && typeof item.expiresIn === "number" && item.expiresIn > 0) {
-        item.expiresAt = new Date(Date.now() + item.expiresIn * 1000).toISOString();
-      }
+      // YAN-1033: expiresAt = earliest of the given expiresAt, now + expiresIn and the
+      // access token's JWT exp (a caller-supplied value can overstate the lifetime).
+      const expiresAt = computeExpiresAt({
+        expiresIn: typeof item.expiresIn === "number" ? item.expiresIn : undefined,
+        expiresAt: item.expiresAt,
+        accessToken: item.accessToken,
+      });
+      if (expiresAt) item.expiresAt = expiresAt;
 
       // Defaults aligned with OAuth-completed flow
       if (item.testStatus === undefined) item.testStatus = "active";
