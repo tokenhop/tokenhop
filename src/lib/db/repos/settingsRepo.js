@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { assignOwnData, cloneJson } from "../helpers/cloneJson.js";
 import {
   WORKSPACE_KEYS,
   USER_KEYS,
@@ -269,13 +270,20 @@ const RELIABILITY_LEAF_KEYS = {
 };
 export function mergeWithDefaults(input) {
   // Fresh object graph per call: callers (and request snapshots) may mutate freely.
-  const raw = structuredClone(input || {});
-  const defaults = structuredClone(DEFAULT_SETTINGS);
-  const merged = { ...defaults, ...raw };
+  const raw = cloneJson(input || {});
+  const merged = { ...DEFAULT_SETTINGS, ...raw };
+  // The shallow spread shares DEFAULT_SETTINGS' nested values; give every key the
+  // stored blob did not override its own copy (only these, not the whole table).
+  for (const key of Object.keys(DEFAULT_SETTINGS)) {
+    const value = merged[key];
+    if (value !== null && typeof value === "object" && value === DEFAULT_SETTINGS[key]) {
+      merged[key] = cloneJson(value);
+    }
+  }
   for (const [key, leaves] of Object.entries(RELIABILITY_LEAF_KEYS)) {
     const stored = raw[key];
     if (stored && typeof stored === "object" && !Array.isArray(stored)) {
-      const next = { ...defaults[key] };
+      const next = cloneJson(DEFAULT_SETTINGS[key]);
       for (const leaf of leaves) {
         if (!Object.hasOwn(stored, leaf)) continue;
         const value = stored[leaf];
@@ -287,7 +295,7 @@ export function mergeWithDefaults(input) {
       merged[key] = next;
     }
   }
-  for (const key of Object.keys(defaults)) {
+  for (const key of Object.keys(DEFAULT_SETTINGS)) {
     if (merged[key] === undefined) {
       if (
         key === "outboundProxyEnabled" &&
@@ -296,7 +304,7 @@ export function mergeWithDefaults(input) {
       ) {
         merged[key] = true;
       } else {
-        merged[key] = defaults[key];
+        merged[key] = cloneJson(DEFAULT_SETTINGS[key]);
       }
     }
   }
@@ -471,7 +479,7 @@ export async function getEffectivePreferences(ctx) {
     ? scope.memo(SCOPED_LAYERS, loadLayers)
     : loadLayers());
   if (layers.wsData) {
-    const wsData = structuredClone(layers.wsData);
+    const wsData = cloneJson(layers.wsData);
     mergeWorkspaceLayer(merged, wsData);
     // YAN-364: workspace rows key comboStrategies by combo id, the instance blob
     // by name. A workspace with no map of its own must not inherit the blob's
@@ -484,7 +492,7 @@ export async function getEffectivePreferences(ctx) {
       enumerable: false,
     });
   }
-  if (layers.userData) Object.assign(merged, structuredClone(layers.userData));
+  if (layers.userData) assignOwnData(merged, cloneJson(layers.userData));
   return merged;
 }
 

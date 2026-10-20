@@ -6,7 +6,7 @@
 import { getAdapter } from "../db/driver.js";
 import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { getHashedApiKeyByHashUnscoped, getEligibleApiKeySync } from "../db/repos/apiKeysRepo.js";
-import { resolveApiKeyHashKeyForAuth } from "../security/apiKeyHashKey.js";
+import { getApiKeyHashKey, resolveApiKeyHashKeyForAuth } from "../security/apiKeyHashKey.js";
 import { hashApiKey } from "../security/masterKey.js";
 
 // Spec bounds (feature-spec "API Design"): bearer tokens cap at 4096 bytes,
@@ -46,10 +46,14 @@ export function clearApiKeyPrincipalCache() {
  * Missing/malformed/inactive/expired/revoked keys return null. Storage and
  * root errors propagate; never fall back to owner/session/CLI/local.
  * @param {string} presented raw bearer bytes, untrimmed
- * @param {{apiKeyState?: object}} [opts] storage state the caller already read
+ * @param {{apiKeyState?: object, verifyOnly?: boolean}} [opts] storage state the
+ *   caller already read. `verifyOnly` runs the identical hash + live eligibility
+ *   proof but mints no request scope and copies no root: the result is an internal
+ *   frozen `{ verified: true, apiKeyId }` (no workspace, no scopes), which
+ *   resolveGatewayAuth converts to an admission verdict. Never a principal.
  * @returns {Promise<{workspaceId:string,userId:string|null,apiKeyId:string,scopes:{allowedModels:string[],allowedCombos:string[]},via:"apiKey"}|null>}
  */
-export async function resolveApiKey(presented, { apiKeyState } = {}) {
+export async function resolveApiKey(presented, { apiKeyState, verifyOnly = false } = {}) {
   if (typeof presented !== "string" || presented.length === 0) return null;
   if (presented.length > MAX_TOKEN_BYTES || Buffer.byteLength(presented, "utf8") > MAX_TOKEN_BYTES)
     return null;
@@ -64,7 +68,10 @@ export async function resolveApiKey(presented, { apiKeyState } = {}) {
   // Stable hash-key getter (YAN-365 D6): pre-encryption HKDF of the frozen
   // kid's master; after credential encryption an authenticated unwrap under
   // the current KEK. Root/unwrap errors propagate; no fallback.
-  const { hashKey, mint, release } = await resolveApiKeyHashKeyForAuth(db, { apiKeyState: state });
+  const auth = verifyOnly
+    ? { ...(await getApiKeyHashKey(db, { apiKeyState: state })), release() {} }
+    : await resolveApiKeyHashKeyForAuth(db, { apiKeyState: state });
+  const { hashKey, release } = auth;
   try {
     const digest = hashApiKey(presented, hashKey);
     const now = new Date().toISOString();
@@ -84,8 +91,9 @@ export async function resolveApiKey(presented, { apiKeyState } = {}) {
       if (!row) return null;
     }
     cacheSet(digest, row.id);
+    if (verifyOnly) return Object.freeze({ verified: true, apiKeyId: row.id });
     // Fresh frozen principal per call; the scope is request-local and dies with it.
-    return mint({
+    return auth.mint({
       workspaceId: row.workspaceId,
       userId: row.userId,
       apiKeyId: row.id,

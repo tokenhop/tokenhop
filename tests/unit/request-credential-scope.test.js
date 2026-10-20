@@ -14,7 +14,7 @@ import {
 } from "@/lib/db/repos/connectionsRepo.js";
 import * as scopeModule from "@/lib/security/requestCredentialScope.js";
 import { resolveApiKey, clearApiKeyPrincipalCache } from "@/lib/auth/apiKeyPrincipal.js";
-import { resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
+import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
 import { getGatewayConnections, getGatewayNodes } from "@/lib/auth/gatewayResources.js";
 import { getApiKeyHashKey, resolveApiKeyHashKeyForAuth } from "@/lib/security/apiKeyHashKey.js";
 
@@ -122,10 +122,12 @@ describe("request credential scope", () => {
     const apiReads = () =>
       spy.mock.calls.filter(([, keys]) => keys?.includes("apiKeysHashedVersion")).length;
     await resolveGatewayAuth(request());
-    expect(apiReads()).toBe(2); // gateway state + live getEligibleApiKeySync
+    // YAN-1106: gateway state is read once; the live eligibility SQL joins the
+    // `_meta` markers itself, so revocation/kid checks stay live regardless.
+    expect(apiReads()).toBe(1);
     spy.mockClear();
     await getApiKeyHashKey(db, { apiKeyState: readApiKeyStorageState(db) });
-    expect(apiReads()).toBe(1);
+    expect(apiReads()).toBe(0); // no write since the last read: memo hit
   });
 
   it("rotation after auth kills scope, aborts write with typed retry, next request succeeds", async () => {
@@ -340,5 +342,101 @@ describe("request credential scope", () => {
     const { principal } = await resolveGatewayAuth(new Request("http://localhost/v1/models"));
     expect(() => scopeModule.mintGatewayPrincipal(principal, db)).toThrow();
     expect(loadMasterKey).not.toHaveBeenCalled();
+  });
+
+  // YAN-1106: edge admission proves the key without building a request scope.
+  describe("verifyOnly edge admission", () => {
+    const edge = (headers) =>
+      resolveGatewayAuth(new Request("http://localhost/v1/models", { headers }), {
+        verifyOnly: true,
+      });
+    const bearer = { authorization: `Bearer ${token}` };
+
+    it("admits a live key as a verdict only: no principal, no scope, no root copy", async () => {
+      loadMasterKey.mockClear();
+      const out = await edge(bearer);
+      expect(out).toEqual({ principal: null, legacy: false, admitted: true, apiKeyId: "key" });
+      expect(Object.isFrozen(out)).toBe(true);
+      expect(JSON.stringify(out)).not.toContain(MASTER.toString("base64"));
+      expect(JSON.stringify(out)).not.toMatch(/workspaceId|scopes|keyHash/);
+    });
+
+    it("the admission verdict can never act as a principal", async () => {
+      const out = await edge(bearer);
+      // Every shape an edge result could be mistaken for is refused.
+      for (const shape of [
+        out,
+        { verified: true, apiKeyId: "key" },
+        Object.freeze({ verified: true, apiKeyId: "key" }),
+      ]) {
+        const denied = authorizeGatewayTarget(shape, { modelId: "any/model" });
+        expect(denied).toBeInstanceOf(Response);
+        expect(denied.status).toBe(403);
+      }
+      // A principal-shaped object with no workspace is refused too.
+      expect(
+        authorizeGatewayTarget(
+          { scopes: { allowedModels: [], allowedCombos: [] } },
+          { modelId: "m" },
+        )?.status,
+      ).toBe(403);
+      // Resource resolution rejects it (assertGatewayPrincipal) and no scope exists.
+      expect(scopeModule.requestScopeOf(out)).toBeNull();
+      await expect(getGatewayConnections(out)).rejects.toThrow();
+      await expect(getGatewayNodes(out)).rejects.toThrow();
+      // A real principal and the legacy null path are unchanged.
+      const real = (await resolveGatewayAuth(request())).principal;
+      expect(authorizeGatewayTarget(real, { modelId: "any/model" })).toBeNull();
+      expect(authorizeGatewayTarget(null, { modelId: "any/model" })).toBeNull();
+    });
+
+    it.each([
+      ["wrong key", { authorization: `Bearer th_${"B".repeat(32)}` }],
+      ["empty bearer", { authorization: "Bearer" }],
+      ["malformed whitespace", { authorization: `Bearer ${token} x` }],
+    ])("denies %s exactly like the full resolver", async (_n, headers) => {
+      const full = await resolveGatewayAuth(new Request("http://localhost/v1/models", { headers }));
+      const out = await edge(headers);
+      expect(out).toBeInstanceOf(Response);
+      expect(out.status).toBe(full.status);
+    });
+
+    it.each([
+      ["revoked", "UPDATE apiKeys SET revokedAt = '2026-01-01T00:00:00.000Z'"],
+      ["paused", "UPDATE apiKeys SET isActive = 0"],
+      ["expired", "UPDATE apiKeys SET expiresAt = '2000-01-01T00:00:00.000Z'"],
+      ["owner left workspace", "DELETE FROM memberships"],
+      ["owner disabled", "UPDATE users SET status = 'disabled'"],
+    ])(
+      "a %s key is denied on the very next edge check (even after a cached admit)",
+      async (_n, sql) => {
+        expect((await edge(bearer)).admitted).toBe(true); // warms the digest cache
+        db.run(sql);
+        const out = await edge(bearer);
+        expect(out).toBeInstanceOf(Response);
+        expect(out.status).toBe(401);
+      },
+    );
+
+    it("a root rotated mid-flight fails closed at the edge too (no admit on stale root)", async () => {
+      expect((await edge(bearer)).admitted).toBe(true);
+      await rotate();
+      loadMasterKey.mockResolvedValue(root); // stale root: kid no longer matches the marker
+      loadMasterKey.mockImplementation(async ({ expectedKid } = {}) => {
+        if (expectedKid && expectedKid !== root.kid)
+          throw Object.assign(new Error("master key id mismatch"), { code: "MASTER_KEY_INVALID" });
+        return root;
+      });
+      const out = await edge(bearer);
+      expect(out).toBeInstanceOf(Response);
+      expect(out.status).toBe(503);
+    });
+
+    it("a poisoned adapter denies the edge", async () => {
+      poisonCredentialMaintenance(db, new Error("uncertain commit"));
+      const out = await edge(bearer);
+      expect(out).toBeInstanceOf(Response);
+      expect(out.status).toBe(503);
+    });
   });
 });

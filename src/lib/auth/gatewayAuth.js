@@ -104,13 +104,31 @@ function extractHashedCredential(request) {
 
 /**
  * Resolve gateway request auth.
- * @returns {Promise<{principal: object|null, legacy: boolean}|Response>}
+ * `verifyOnly` (edge admission): same proof and denials, but a hashed bearer,
+ * MITM, CLI or keyless success is reported as `{ principal: null, legacy: false,
+ * admitted: true, apiKeyId }`: an admission verdict, never a principal and with
+ * no request scope. The route handler authenticates again for real.
+ * @param {Request} request
+ * @param {{ verifyOnly?: boolean }} [opts]
+ * @returns {Promise<{principal: object|null, legacy: boolean, admitted?: true, apiKeyId?: string|null}|Response>}
  *   `{ principal, legacy: false }` — hashed bearer/CLI/keyless principal.
  *   `{ principal: null, legacy: true }` — legacy storage, caller keeps today's
  *   raw-key behavior (the presented key already passed the legacy check).
+ *   `{ principal: null, legacy: false, admitted: true, apiKeyId }` — verifyOnly admit.
  *   `Response` — deny: 401 credential, 503 storage/master. Never a fallback.
  */
-export async function resolveGatewayAuth(request) {
+export async function resolveGatewayAuth(request, { verifyOnly = false } = {}) {
+  const out = await resolveGatewayAuthInner(request, verifyOnly);
+  if (!verifyOnly || out instanceof Response || !out.principal) return out;
+  return Object.freeze({
+    principal: null,
+    legacy: false,
+    admitted: true,
+    apiKeyId: out.principal.apiKeyId ?? null,
+  });
+}
+
+async function resolveGatewayAuthInner(request, verifyOnly) {
   const presented = extractClientApiKey(request); // null only when no credential at all
   let state;
   try {
@@ -152,7 +170,7 @@ export async function resolveGatewayAuth(request) {
     }
     let principal;
     try {
-      principal = await resolveApiKey(hashedCredential, { apiKeyState: state });
+      principal = await resolveApiKey(hashedCredential, { apiKeyState: state, verifyOnly });
     } catch (err) {
       if (err?.code === "API_KEY_STATE_INVALID") throw err;
       return errorResponse(503, "Gateway storage unavailable");
@@ -198,8 +216,14 @@ export async function resolveGatewayAuth(request) {
  * @returns {Response|null} 403 when denied, null when allowed.
  */
 export function authorizeGatewayTarget(principal, { modelId = null, comboId = null } = {}) {
-  const scopes = principal?.scopes;
-  if (!scopes) return null;
+  // A null principal is the legacy (no-principal) path. Anything else must be a
+  // real gateway principal: an admission verdict, a bare object or a principal
+  // shape without a workspace never passes as "unrestricted".
+  if (principal == null) return null;
+  const scopes = principal.scopes;
+  if (typeof principal.workspaceId !== "string" || !principal.workspaceId || !scopes) {
+    return errorResponse(403, "Forbidden");
+  }
   if (
     modelId != null &&
     scopes.allowedModels.length > 0 &&

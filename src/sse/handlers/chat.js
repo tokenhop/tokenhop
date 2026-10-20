@@ -12,7 +12,7 @@ import {
 } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
 import { getEffectivePreferences } from "@/lib/db/index.js";
-import { getModelInfo, getComboModels, getComboByName } from "../services/model.js";
+import { createChatLookups } from "./chatLookups.js";
 import { comboRotationKey, comboStrategyFor } from "@/lib/comboKeys.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -42,9 +42,7 @@ import {
   releaseGrantReservation,
 } from "../services/grantRateLimiter.js";
 import { budgetResponse, inBudgetScope, withBudgetScope } from "../services/budgetGuard.js";
-import { getAdapter } from "@/lib/db/driver.js";
-import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
-import { getEligibleApiKeySync } from "@/lib/db/repos/apiKeysRepo.js";
+import { revokedKeyTarget } from "./chatRevocation.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { resolveConversationKey } from "open-sse/utils/sessionManager.js";
@@ -165,6 +163,9 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       : resolveConversationKey({ headers: clientRawRequest?.headers, body }),
   };
   const settings = await getEffectivePreferences(gateway);
+  // Per-request snapshot + lookups (overwritten, never caller-supplied).
+  const lookups = createChatLookups(gateway);
+  options = { ...options, settings, lookups };
   notifyRequestLogsEnabled(settings.requestLogsEnabled === true);
 
   if (!modelStr) {
@@ -182,8 +183,8 @@ export async function handleChat(request, clientRawRequest = null, options = nul
     detectFormatByEndpoint(new URL(request.url).pathname, body) === FORMATS.LLAMACPP_INFILL
   ) {
     if (gateway) {
-      const combo = await getComboByName(modelStr, { principal: gateway });
-      const info = combo ? null : await getModelInfo(modelStr, { principal: gateway });
+      const combo = await lookups.comboByName(modelStr);
+      const info = combo ? null : await lookups.modelInfo(modelStr);
       const denied = combo
         ? authorizeGatewayTarget(gateway, { comboId: combo.id })
         : info?.provider
@@ -210,8 +211,8 @@ export async function handleChat(request, clientRawRequest = null, options = nul
   const requiredCapabilities = detectRequiredCapabilities(body);
 
   // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await getComboModels(modelStr, { principal: gateway });
-  const outerCombo = comboModels ? await getComboByName(modelStr, { principal: gateway }) : null;
+  const comboModels = await lookups.comboModels(modelStr);
+  const outerCombo = comboModels ? await lookups.comboByName(modelStr) : null;
   if (comboModels && gateway) {
     const denied = authorizeGatewayTarget(gateway, { comboId: outerCombo?.id });
     if (denied) return denied;
@@ -232,7 +233,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       settings,
     );
     if (gateway) {
-      augmentedModels = await allowedGatewayModels(gateway, augmentedModels, body, settings, [
+      augmentedModels = await allowedGatewayModels(lookups, augmentedModels, body, settings, [
         modelStr,
       ]);
       if (!augmentedModels.length) return errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
@@ -250,7 +251,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       let fusionModels = comboModels;
       if (gateway) {
         const filtered = await fusionPanelForGateway(
-          gateway,
+          lookups,
           comboModels,
           judgeModel,
           body,
@@ -342,7 +343,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
     // the request's own model is terminal, never a fallback reason to serve an
     // adapter member instead (authorizeGatewayTarget denied = 403 Response).
     if (gateway) {
-      const requested = await getModelInfo(modelStr, { principal: gateway });
+      const requested = await lookups.modelInfo(modelStr);
       if (requested.provider) {
         const denied = authorizeGatewayTarget(gateway, {
           modelId: `${requested.provider}/${requested.model}`,
@@ -351,7 +352,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       }
     }
     if (gateway) {
-      soloAugmented = await allowedGatewayModels(gateway, soloAugmented, body, settings);
+      soloAugmented = await allowedGatewayModels(lookups, soloAugmented, body, settings);
       if (!soloAugmented.length) return errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
     }
     const adapterAdded = soloAugmented.filter((m) => m !== modelStr);
@@ -421,19 +422,20 @@ function fallbackRecorder(comboName, workspaceId = null) {
 
 // Filter authorization denials BEFORE engine fallback classification. Engine 403s
 // are upstream credential errors; gateway denials must never enter that path.
-async function allowedGatewayModels(gateway, models, body, settings, path = []) {
+async function allowedGatewayModels(lookups, models, body, settings, path = []) {
   const allowed = [];
   for (const model of models) {
-    if (await gatewayAllowsTarget(gateway, model, body, settings, path)) allowed.push(model);
+    if (await gatewayAllowsTarget(lookups, model, body, settings, path)) allowed.push(model);
   }
   return allowed;
 }
 
-async function gatewayAllowsTarget(gateway, candidate, body, settings, path = []) {
-  const models = await getComboModels(candidate, { principal: gateway });
+async function gatewayAllowsTarget(lookups, candidate, body, settings, path = []) {
+  const gateway = lookups.gateway;
+  const models = await lookups.comboModels(candidate);
   if (models) {
     if (path.includes(candidate)) return false;
-    const combo = await getComboByName(candidate, { principal: gateway });
+    const combo = await lookups.comboByName(candidate);
     if (!combo?.id || authorizeGatewayTarget(gateway, { comboId: combo.id })) return false;
     const nextPath = [...path, candidate];
     const { strategy, judgeModel } = comboStrategyFor(settings, gateway, combo);
@@ -441,28 +443,28 @@ async function gatewayAllowsTarget(gateway, candidate, body, settings, path = []
       strategy === "fusion"
         ? models
         : augmentModelsWithCapacityAdapter(models, detectRequiredCapabilities(body), settings);
-    const allowed = await allowedGatewayModels(gateway, pool, body, settings, nextPath);
+    const allowed = await allowedGatewayModels(lookups, pool, body, settings, nextPath);
     if (!allowed.length) return false;
     // Preserve the configured/default judge, not a scope-dependent replacement.
     if (strategy === "fusion" && models.length > 1) {
       const judge = judgeModel?.trim() || models[0];
-      return gatewayAllowsTarget(gateway, judge, body, settings, nextPath);
+      return gatewayAllowsTarget(lookups, judge, body, settings, nextPath);
     }
     return true;
   }
-  const info = await getModelInfo(candidate, { principal: gateway });
+  const info = await lookups.modelInfo(candidate);
   return (
     !!info.provider &&
     !authorizeGatewayTarget(gateway, { modelId: `${info.provider}/${info.model}` })
   );
 }
 
-async function fusionPanelForGateway(gateway, models, judgeModel, body, settings, path) {
-  const panel = await allowedGatewayModels(gateway, models, body, settings, path);
+async function fusionPanelForGateway(lookups, models, judgeModel, body, settings, path) {
+  const panel = await allowedGatewayModels(lookups, models, body, settings, path);
   if (!panel.length) return errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
   if (models.length > 1) {
     const judge = judgeModel?.trim() || models[0];
-    if (!(await gatewayAllowsTarget(gateway, judge, body, settings, path))) {
+    if (!(await gatewayAllowsTarget(lookups, judge, body, settings, path))) {
       return errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
     }
   }
@@ -510,28 +512,6 @@ function probeObserverFor(options, via) {
  *   separate final argument (never merged into shared options). Forwarded as
  *   parentAttempt to nested combos and as comboAttempt to the leaf core call.
  */
-// Live key eligibility + model scope, read straight from storage (the principal
-// snapshot is frozen at auth time). Null for keyless principals (cli/local/mitm)
-// and legacy null principals. A key principal on non-hashed or unreadable
-// storage fails closed (403): never an unguarded keyHash query, never a 500.
-async function revokedKeyTarget(principal, modelId) {
-  if (!principal?.apiKeyId) return null;
-  const deny = () => errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
-  try {
-    const db = await getAdapter();
-    if (readApiKeyStorageState(db).storage !== "hashed") return deny();
-    const hash = db.get("SELECT keyHash FROM apiKeys WHERE id = ?", [principal.apiKeyId])?.keyHash;
-    const live = hash ? getEligibleApiKeySync(db, principal.apiKeyId, { keyHash: hash }) : null;
-    if (!live) return deny();
-    return authorizeGatewayTarget(
-      { scopes: { allowedModels: live.allowedModels ?? [], allowedCombos: [] } },
-      { modelId },
-    );
-  } catch {
-    return deny();
-  }
-}
-
 async function handleSingleModelChat(
   body,
   modelStr,
@@ -546,13 +526,14 @@ async function handleSingleModelChat(
   if (attempt?.signal?.aborted) return errorResponse(499, "Request aborted");
   const gateway = options?.principal || null;
   const gatewayCreds = { principal: gateway };
-  const modelInfo = await getModelInfo(modelStr, gateway ? { principal: gateway } : {});
+  const lookups = options?.lookups ?? createChatLookups(gateway);
+  const modelInfo = await lookups.modelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
-    const comboModels = await getComboModels(modelStr, { principal: gateway });
+    const comboModels = await lookups.comboModels(modelStr);
     if (comboModels) {
-      const nestedCombo = await getComboByName(modelStr, { principal: gateway });
+      const nestedCombo = await lookups.comboByName(modelStr);
       const denied = authorizeGatewayTarget(gateway, { comboId: nestedCombo?.id });
       if (denied) return denied;
       if (comboPath.includes(modelStr)) {
@@ -561,7 +542,7 @@ async function handleSingleModelChat(
         return errorResponse(HTTP_STATUS.BAD_REQUEST, cycleMsg);
       }
       const nextPath = [...comboPath, modelStr];
-      const chatSettings = await getEffectivePreferences(gateway);
+      const chatSettings = options?.settings ?? (await getEffectivePreferences(gateway));
       const {
         strategy: comboStrategy,
         stickyLimit: comboStickyLimit,
@@ -579,7 +560,7 @@ async function handleSingleModelChat(
       );
       if (gateway) {
         augmentedModels = await allowedGatewayModels(
-          gateway,
+          lookups,
           augmentedModels,
           body,
           chatSettings,
@@ -588,7 +569,7 @@ async function handleSingleModelChat(
         if (!augmentedModels.length) return errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
       }
       const filteredAdapter = gateway
-        ? await allowedGatewayModels(gateway, augmentedModels, body, chatSettings, nextPath)
+        ? await allowedGatewayModels(lookups, augmentedModels, body, chatSettings, nextPath)
         : augmentedModels;
       if (!filteredAdapter.length) return errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
       const adapterAdded = filteredAdapter.filter((m) => !comboModels.includes(m));
@@ -604,7 +585,7 @@ async function handleSingleModelChat(
         let fusionModels = comboModels;
         if (gateway) {
           const filtered = await fusionPanelForGateway(
-            gateway,
+            lookups,
             comboModels,
             judgeModel,
             body,
@@ -748,6 +729,7 @@ async function handleSingleModelChat(
         ...gatewayCreds,
         conversationKey: options?.conversationKey ?? null,
         estimateTokens: () => estimateBodyTokens(body),
+        settings: options?.settings ?? null,
       });
 
       // All accounts unavailable
@@ -806,7 +788,7 @@ async function handleSingleModelChat(
       }
 
       // Use shared chatCore
-      const chatSettings = await getEffectivePreferences(gateway);
+      const chatSettings = options?.settings ?? (await getEffectivePreferences(gateway));
       const providerThinking = chatSettings.providerThinking?.[provider] || null;
       const result = await handleChatCore({
         body: { ...body, model: `${provider}/${model}` },

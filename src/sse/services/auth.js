@@ -127,7 +127,8 @@ export async function getProviderCredentials(
 
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
-      const settings = await getEffectivePreferences(options?.principal ?? null);
+      const settings =
+        options?.settings ?? (await getEffectivePreferences(options?.principal ?? null));
       const override = (settings.providerStrategies || {})[providerId] || {};
       const strategy = override.rotateStrategy || "none";
       let pickedId = override.proxyPoolId || null;
@@ -321,7 +322,8 @@ export async function getProviderCredentials(
       return null;
     }
 
-    const settings = await getEffectivePreferences(options?.principal ?? null);
+    const settings =
+      options?.settings ?? (await getEffectivePreferences(options?.principal ?? null));
     // Per-provider strategy overrides global setting
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
     const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";

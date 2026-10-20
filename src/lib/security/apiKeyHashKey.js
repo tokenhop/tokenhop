@@ -11,7 +11,11 @@
 // hold a root pass `{ root: { kid, key } }` to avoid re-loading.
 import { deriveApiKeyHashKey, loadMasterKey } from "./masterKey.js";
 import { buildHashKeyWrapAad, decryptBytes, isEnvelopeShape, zeroBuffer } from "./envelope.js";
-import { readApiKeyStorageState } from "../db/apiKeyState.js";
+import {
+  invalidateMarkerCache,
+  readApiKeyStorageState,
+  readMetaValueCached,
+} from "../db/apiKeyState.js";
 import {
   readCredentialEncryptionState,
   readCredentialMarkerValues,
@@ -25,37 +29,24 @@ function fail(code, message) {
 }
 
 function metaValue(db, key) {
-  return db.get(`SELECT value FROM _meta WHERE key = ?`, [key])?.value ?? null;
+  return readMetaValueCached(db, key);
 }
 
-// Marker-tuple memo per adapter: the credential state is a pure function of
-// five `_meta` values plus the workspaceKeys count. The legacy verdict's
-// envelope sniff is the expensive part; the tuple check is one batch select, so
-// hot per-request callers never rescan tables. A marker change flips the
-// tuple and forces a fresh read. If rows mutate without a marker change
-// (corruption mid-process), the next restart re-verifies from scratch.
-const stateCache = new WeakMap(); // db -> { sig, state }
-
+// The credential state is a pure function of the five marker `_meta` values plus
+// the workspaceKeys count. Both readers follow the adapter write generation
+// (apiKeyState.js): a read repeats after any write made through THIS adapter.
+// That is sound because processLock gives a DATA_DIR exactly one writer process
+// and every marker writer goes through this adapter (enforced by
+// marker-generation.test.js). A commit from another connection or an
+// out-of-band edit of the live database file is NOT detected here: such edits
+// require a restart, like any other offline change to a running instance.
 function credentialState(db) {
-  const values = readCredentialMarkerValues(db);
-  const sig = [
-    values.credentialsEncryptedVersion,
-    values.credentialsKekKid,
-    values.credentialsCleanupPending,
-    values.credentialsPendingRotation,
-    values.apiKeyHashKeyWrapped,
-    db.get(`SELECT COUNT(*) AS c FROM workspaceKeys`)?.c ?? 0,
-  ].join("|");
-  const hit = stateCache.get(db);
-  if (hit && hit.sig === sig) return { state: hit.state, values };
-  const state = readCredentialEncryptionState(db);
-  stateCache.set(db, { sig, state });
-  return { state, values };
+  return { state: readCredentialEncryptionState(db), values: readCredentialMarkerValues(db) };
 }
 
-/** Test/back-compat hook: drop the memoized state (marker writes in-process). */
+/** Test/back-compat hook: drop memoized marker reads (marker writes in-process). */
 export function clearApiKeyHashKeyStateCache(db) {
-  stateCache.delete(db);
+  invalidateMarkerCache(db);
 }
 
 function requireRoot(root) {
