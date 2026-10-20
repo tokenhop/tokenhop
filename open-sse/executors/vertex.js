@@ -36,12 +36,13 @@ function parseVertexAdcJson(apiKey) {
  * Resolve GCP project ID from a raw Vertex API key.
  * Sends a dummy 404 request and parses "projects/{id}" from the error message.
  */
-async function resolveProjectId(apiKey) {
+async function resolveProjectId(apiKey, proxyOptions = null) {
   if (projectIdCache.has(apiKey)) return projectIdCache.get(apiKey);
 
-  const res = await fetch(
+  const res = await proxyAwareFetch(
     `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent?key=${apiKey}`,
     { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+    proxyOptions,
   );
   const json = await res.json().catch(() => null);
   const msg = json?.[0]?.error?.message || json?.error?.message || "";
@@ -168,7 +169,7 @@ export class VertexExecutor extends BaseExecutor {
       !adcJson &&
       !credentials?.providerSpecificData?.projectId
     ) {
-      const projectId = await resolveProjectId(credentials.apiKey);
+      const projectId = await resolveProjectId(credentials.apiKey, proxyOptions);
       if (!projectId)
         throw new Error(
           "Vertex: could not resolve project_id from API key. Please add it manually in provider settings.",
