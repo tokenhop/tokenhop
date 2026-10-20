@@ -105,11 +105,24 @@ describe("output-cap memo for the budget estimate", () => {
   it("returns the same value as the capability table, memoized within the interval", () => {
     const expected = Number(capabilities.getCapabilitiesForModel("gw", "cap-model").maxOutput);
     expect(outputCap.maxOutputFor("gw", "cap-model")).toBe(expected || Infinity);
-    stat.mockClear();
-    const spy = vi.spyOn(capabilities, "getCapabilitiesForModel");
-    for (let i = 0; i < 5; i++) outputCap.maxOutputFor("gw", "cap-model");
-    expect(stat).not.toHaveBeenCalled();
-    spy.mockRestore();
+    // Count lookups through the installed catalog source: a memo hit never
+    // reaches it (the stat interval alone would not prove that).
+    const realSource = {
+      getModalities: catalog.getCatalogModalities,
+      getLimits: catalog.getCatalogLimits,
+      getEntry: catalog.getCatalogEntry,
+    };
+    const getEntry = vi.fn((provider, model) => catalog.getCatalogEntry(provider, model));
+    capabilities.setCatalogSource({ ...realSource, getEntry });
+    try {
+      for (let i = 0; i < 5; i++) outputCap.maxOutputFor("gw", "cap-model");
+      expect(getEntry).not.toHaveBeenCalled();
+      // Control: a model the memo has not seen does reach the source.
+      outputCap.maxOutputFor("gw", "cap-model-unseen");
+      expect(getEntry).toHaveBeenCalled();
+    } finally {
+      capabilities.setCatalogSource(realSource);
+    }
   });
 
   it("drops the memo on invalidateCatalog (in-process catalog sync)", () => {
