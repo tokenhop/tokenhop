@@ -83,6 +83,20 @@ Request flow, fallback, OAuth and persistence are in the sections below. Read [`
 
 `src/sse/` is the app-side entry glue; `open-sse/` is the provider-agnostic engine (also usable standalone). Cross that boundary consciously.
 
+With users & teams on, `handlers/chat.js` first resolves the caller via `resolveGatewayAuth` (`src/lib/auth/gatewayAuth.js`) into a frozen principal, and everything after reads through it (see "Users & teams" below).
+
+### Users & teams (multi-user)
+
+Docs: user guide in `gitbook/content/en/users/`; design in `docs/users/` (local only; `docs/` is gitignored).
+
+- **Switch:** `isMultiUserEnabled()` in `src/lib/users/featureSwitch.js` is the only reader of `TOKENHOP_MULTI_USER` (`on`/`off`; else the stored `multiUserEnabled` setting; default off). Off = today's single-user install. New routes start with `const hidden = await requireMultiUser(); if (hidden) return hidden;` (404 while off). Activation is restart-only; irreversible migrations (key hashing, credential encryption, owner bootstrap) run only with it on, after a backup.
+- **Data model** (`src/lib/db/schema.js`, repos in `src/lib/db/repos/`): `users` (`instanceRole` owner|admin|user|pending, `sessionVersion`), `identities` (password/oidc/saml, linked by issuer+subject, never email), `workspaces` (personal|shared; a **Default** shared workspace holds legacy data), `memberships` (owner|manager|member|viewer, source manual|invite|idp). Connections, nodes, combos, aliases, custom/disabled models and workspace settings carry `workspaceId`; proxy pools and pricing stay instance-wide. `tests/unit/tenancy-guard.test.js` fails on any unclassified table (`src/lib/db/tenancy.js`).
+- **Sharing and limits:** `connectionGrants` share a connection with a workspace or user (`src/lib/users/grants.js` blocks subscription-OAuth by default per ADR-0006); `budgets` scope key|user|membership|workspace|grant (`src/lib/users/budgets.js`); `auditEvents` via `src/lib/users/audit.js` (deny-by-default field allow-list, never secrets).
+- **Keys at rest:** gateway keys are stored hashed (`keyHash`, HMAC keyed from the master key; `src/lib/auth/apiKeyPrincipal.js`, `src/lib/security/masterKey.js`). Credentials are envelope-encrypted (`src/lib/security/envelope.js`): master key (KEK: `TOKENHOP_MASTER_KEY` or `DATA_DIR/keys/master`) wraps one DEK per workspace in `workspaceKeys`. Rotation: `src/lib/security/keyRotation.js`, CLI `tokenhop keys rotate`. Never log, export or return key material.
+- **Request principal:** `resolveGatewayAuth` hashes the bearer key → `resolveApiKey` → principal `{ workspaceId, userId?, apiKeyId, scopes }` (also CLI/local owner and the internal MITM credential, loopback only). An invalid presented key is 401 with no fallback. `authorizeGatewayTarget` enforces the key's allowed models/combos. `src/lib/auth/gatewayResources.js` (`getGatewayConnections`, `getGatewayCombos`, …) returns only the workspace's own resources plus active grants, so the account-fallback loop in `src/sse/handlers/chat.js` never sees other workspaces. Rotation/lock state keys on `workspaceId`.
+- **Budgets and usage:** `src/sse/services/budgetGuard.js` checks every level (key → user → membership → workspace, plus the routed grant) and reserves an estimate before the upstream call; over budget → 429. Actual usage settles via `onUsageCommitted` (`src/lib/usage/usageCommitted.js`) and is attributed to workspace, user, key and grant.
+- **Dashboard sessions:** HS256 JWT in `auth_token` with `sub`/`sv`/`sid`; `sv` is checked against `users.sessionVersion` (`src/lib/users/session.js`), so disable/role/password changes revoke at once. Use `getPrincipal()` + `can(principal, capability)` (`src/lib/users/principal.js`), never path lists.
+
 ### Translator engine (`open-sse/translator/`)
 
 - Pivots through **OpenAI as the intermediate format**. A translator registered on an exact `source:target` pair (e.g. `claude:kiro`) runs as a **direct route**, skipping the lossy double-hop. Prefer a direct route for fragile pairs (thinking blocks, tool ids, non-base64 images, `is_error`).
