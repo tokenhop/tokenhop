@@ -176,7 +176,12 @@ export async function unlockInstancePortable(snapshot, { passphrase, masterKey }
   if (!isPassphraseWrapShape(src.cred.portable)) fail();
   requireMaster(masterKey);
   if (typeof passphrase !== "string" || passphrase.length === 0) fail();
-  const out = structuredClone(snapshot);
+  // Clone only the head fields rewritten below; the rest is shared by reference.
+  const out = {
+    ...snapshot,
+    credentialEncryption: structuredClone(snapshot.credentialEncryption),
+    workspaceKeys: structuredClone(snapshot.workspaceKeys),
+  };
   const rows = out.workspaceKeys;
   const cred = out.credentialEncryption;
   let unsealed = null;

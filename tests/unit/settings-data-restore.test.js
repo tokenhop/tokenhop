@@ -129,13 +129,14 @@ describe("restore warning copy (source guard)", () => {
   });
 
   it("keeps the legacy export path and password gate", () => {
-    expect(source).toContain('headers: { "x-9r-password": password }');
+    expect(source).toContain("headers: passwordHeaders(password)");
     expect(source).toContain('if (mode === "export") await handleExport(password)');
   });
 });
 
-// PR835 review fixes: instance-restore body is built by a pure helper so the
-// untrusted backup file can never inject password/passphrase/force, and
+// PR835 review fixes (YAN-1013: raw upload): instance-restore headers are built
+// by a pure helper from the dialog's `auth` only. The body is the raw backup
+// file, so the untrusted file can never inject password/passphrase/force, and
 // workspace import no longer compares against a nonexistent repeat field.
 const sectionsDir = "../../src/app/(dashboard)/dashboard/settings/sections";
 const sharedSource = readFileSync(
@@ -143,65 +144,127 @@ const sharedSource = readFileSync(
   "utf8",
 );
 const helperMatch = sharedSource.match(
-  /export function buildInstanceImportBody\(payload, auth, forceArmed\) \{([\s\S]*?)\n\}/,
+  /export function instanceImportHeaders\(auth, forceArmed\) \{([\s\S]*?)\n\}/,
 );
-if (!helperMatch) throw new Error("buildInstanceImportBody source changed shape");
+if (!helperMatch) throw new Error("instanceImportHeaders source changed shape");
 // Rebuilt from its source slice, same as readBackupEnvelope above: runs the
 // real helper body in node without pulling the React/Next component tree.
-const buildInstanceImportBody = new Function("payload", "auth", "forceArmed", helperMatch[1]);
+// The header-name constants are module-level in backupShared.js; read from source.
+const constant = (name) => {
+  const m = sharedSource.match(new RegExp(`export const ${name} = "([^"]+)";`));
+  if (!m) throw new Error(`${name} source changed shape`);
+  return m[1];
+};
+const UPLOAD_MODE_HEADER = constant("UPLOAD_MODE_HEADER");
+const FORCE_HEADER = constant("FORCE_HEADER");
+const PASSWORD_HEADER = constant("PASSWORD_HEADER");
+const PASSWORD_B64_HEADER = constant("PASSWORD_B64_HEADER");
+const encodeMatch = sharedSource.match(
+  /export function encodePasswordB64\(password\) \{([\s\S]*?)\n\}/,
+);
+if (!encodeMatch) throw new Error("encodePasswordB64 source changed shape");
+const encodePasswordB64 = new Function("password", encodeMatch[1]);
+const PASSPHRASE_HEADER = constant("PASSPHRASE_HEADER");
+const SSO_PROOF_HEADER = constant("SSO_PROOF_HEADER");
+const instanceImportHeaders = new Function(
+  "UPLOAD_MODE_HEADER",
+  "FORCE_HEADER",
+  "PASSWORD_B64_HEADER",
+  "encodePasswordB64",
+  "PASSPHRASE_HEADER",
+  "SSO_PROOF_HEADER",
+  "auth",
+  "forceArmed",
+  helperMatch[1],
+).bind(
+  null,
+  UPLOAD_MODE_HEADER,
+  FORCE_HEADER,
+  PASSWORD_B64_HEADER,
+  encodePasswordB64,
+  PASSPHRASE_HEADER,
+  SSO_PROOF_HEADER,
+);
 
-describe("buildInstanceImportBody", () => {
-  it("never forwards the file's force flag unless force is explicitly armed", () => {
-    const file = { formatVersion: 3, force: true };
-    expect(buildInstanceImportBody(file, { password: "pw" }, false).force).toBeUndefined();
-    expect(buildInstanceImportBody(file, { password: "pw" }, true).force).toBe(true);
+describe("instanceImportHeaders", () => {
+  it("uses the server's header names", () => {
+    expect(UPLOAD_MODE_HEADER).toBe("x-tokenhop-snapshot-upload");
+    expect(FORCE_HEADER).toBe("x-tokenhop-import-force");
+    expect(PASSWORD_HEADER).toBe("x-9r-password");
+    expect(PASSWORD_B64_HEADER).toBe("x-tokenhop-password-b64");
+    expect(PASSPHRASE_HEADER).toBe("x-tokenhop-backup-passphrase");
+    expect(SSO_PROOF_HEADER).toBe("x-tokenhop-sso-proof");
   });
 
-  it("never forwards the file's passphrase; the typed one wins", () => {
-    const file = { formatVersion: 3, passphrase: "from-file" };
-    expect(buildInstanceImportBody(file, { password: "pw" }, false).passphrase).toBeUndefined();
+  it("marks the upload raw JSON", () => {
+    const headers = instanceImportHeaders({ password: "pw" }, false);
+    expect(headers[UPLOAD_MODE_HEADER]).toBe("raw");
+    expect(headers["Content-Type"]).toBe("application/json");
+  });
+
+  it("sends force only when it is explicitly armed", () => {
+    expect(instanceImportHeaders({ password: "pw" }, false)).not.toHaveProperty(FORCE_HEADER);
+    expect(instanceImportHeaders({ password: "pw" }, true)[FORCE_HEADER]).toBe("true");
+  });
+
+  it("sends the passphrase only when typed", () => {
+    expect(instanceImportHeaders({ password: "pw" }, false)).not.toHaveProperty(PASSPHRASE_HEADER);
+    expect(instanceImportHeaders({ password: "pw", passphrase: "" }, false)).not.toHaveProperty(
+      PASSPHRASE_HEADER,
+    );
     expect(
-      buildInstanceImportBody(file, { password: "pw", passphrase: "typed" }, false).passphrase,
+      instanceImportHeaders({ password: "pw", passphrase: "typed" }, false)[PASSPHRASE_HEADER],
     ).toBe("typed");
   });
 
-  it("actor password always overrides any password the file carried", () => {
-    const file = { formatVersion: 3, password: "file-pw" };
-    expect(buildInstanceImportBody(file, { password: "actor-pw" }, false).password).toBe(
-      "actor-pw",
-    );
+  it("sends exactly one of proof or password", () => {
+    const withPassword = instanceImportHeaders({ password: "pw" }, false);
+    expect(withPassword[PASSWORD_B64_HEADER]).toBe(encodePasswordB64("pw"));
+    expect(withPassword).not.toHaveProperty(PASSWORD_HEADER);
+    expect(withPassword).not.toHaveProperty(SSO_PROOF_HEADER);
+    const withProof = instanceImportHeaders({ password: "", ssoProof: "real" }, false);
+    expect(withProof[SSO_PROOF_HEADER]).toBe("real");
+    expect(withProof).not.toHaveProperty(PASSWORD_B64_HEADER);
+    expect(withProof).not.toHaveProperty(PASSWORD_HEADER);
   });
 
-  it("never forwards the file's ssoProof; sends exactly one of proof or password", () => {
-    const file = { formatVersion: 3, ssoProof: "from-file", password: "file-pw" };
-    const withPassword = buildInstanceImportBody(file, { password: "pw" }, false);
-    expect(withPassword.ssoProof).toBeUndefined();
-    expect(withPassword.password).toBe("pw");
-    const withProof = buildInstanceImportBody(file, { password: "", ssoProof: "real" }, false);
-    expect(withProof.ssoProof).toBe("real");
-    expect(withProof).not.toHaveProperty("password");
+  it("password b64 round-trips non-ASCII, edge-whitespace and emoji passwords", async () => {
+    const { readPasswordHeader } = await import("@/lib/users/snapshotUpload.js");
+    for (const pw of ["pw", "ÿ", "  spaced  ", "pässwörd-日本語-😀", "a+b/c=d", ""]) {
+      const encoded = encodePasswordB64(pw);
+      expect(encoded).toMatch(/^[A-Za-z0-9_-]*$/);
+      const headers = new Headers({ [PASSWORD_B64_HEADER]: encoded });
+      expect(readPasswordHeader(headers)).toEqual({ value: pw });
+    }
   });
 
-  it("never mutates the parsed backup file", () => {
-    const file = { formatVersion: 3, password: "x", passphrase: "y", force: true };
-    const before = structuredClone(file);
-    buildInstanceImportBody(file, { password: "pw", passphrase: "z" }, true);
-    expect(file).toEqual(before);
+  it("never mutates auth", () => {
+    const auth = { password: "pw", passphrase: "z", ssoProof: "" };
+    const before = structuredClone(auth);
+    instanceImportHeaders(auth, true);
+    expect(auth).toEqual(before);
   });
 
-  it("keeps the rest of the file payload intact", () => {
-    expect(
-      buildInstanceImportBody({ formatVersion: 3, data: { rows: 1 } }, { password: "pw" }, false),
-    ).toEqual({ formatVersion: 3, data: { rows: 1 }, password: "pw" });
-  });
-
-  it("BackupManager routes the restore body through the helper, not a spread", () => {
+  it("BackupManager sends the raw file with helper headers, never a JSON spread", () => {
     const managerSource = readFileSync(
       resolve(import.meta.dirname, `${sectionsDir}/BackupManager.js`),
       "utf8",
     );
-    expect(managerSource).toContain("buildInstanceImportBody(payload, auth, forceArmed)");
+    expect(managerSource).toContain("headers: instanceImportHeaders(auth, forceArmed)");
+    expect(managerSource).toContain("body: file");
     expect(managerSource).not.toMatch(/\{\s*\.\.\.payload,\s*password/);
+    expect(managerSource).not.toContain("buildInstanceImportBody");
+    expect(sharedSource).not.toContain("buildInstanceImportBody");
+  });
+
+  it("instance import passphrases must be header-safe", () => {
+    const managerSource = readFileSync(
+      resolve(import.meta.dirname, `${sectionsDir}/BackupManager.js`),
+      "utf8",
+    );
+    expect(managerSource).toMatch(
+      /passphraseProblem\(auth\.passphrase, auth\.passphrase, \{ headerSafe: true \}\)/,
+    );
   });
 
   it("workspace import validates the passphrase against itself; export keeps the repeat field", () => {

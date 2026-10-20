@@ -17,6 +17,102 @@ import { fail, isPlainObject, SECTIONS } from "./instanceSnapshotSchema.js";
 export const INSTANCE_SNAPSHOT_SECTION_NAMES = SECTIONS.map((s) => s.name);
 
 /**
+ * Placeholder for a section whose rows are streamed by the export writer.
+ * Only ever present in deferred export heads; never serialized itself.
+ */
+export const STREAMED_SECTION = Object.freeze({ streamed: true });
+
+/** `seen` stand-in for paths whose duplicates are caught elsewhere (DB constraints / stage UNIQUE). */
+export const NOOP_SEEN = Object.freeze({
+  has: () => false,
+  add() {},
+});
+
+const COLUMN_SETS = new WeakMap();
+
+function columnSet(section) {
+  let set = COLUMN_SETS.get(section);
+  if (!set) {
+    set = new Set(section.columns);
+    COLUMN_SETS.set(section, set);
+  }
+  return set;
+}
+
+/**
+ * Structural + reference validation of ONE row: plain object, no unknown
+ * field, then the section's own validator. Shared by the in-memory
+ * validateInstanceTableSections, the export writer and the staged import.
+ */
+export function validateSectionRow(section, row, refs, seen = NOOP_SEEN) {
+  if (!isPlainObject(row)) {
+    fail("TRANSFER_STATE_INVALID", `${section.name} entries must be objects`);
+  }
+  const columns = columnSet(section);
+  for (const field of Object.keys(row)) {
+    if (!columns.has(field)) {
+      fail("TRANSFER_STATE_INVALID", `${section.name} entry has unknown field "${field}"`);
+    }
+  }
+  section.validate(row, refs, seen);
+}
+
+function strKey(value) {
+  return typeof value === "string" && value ? value : null;
+}
+
+/**
+ * Dedup keys `[k1, k2|null]` mirroring each section validator's `seen` set, so
+ * a staging UNIQUE(k1)/UNIQUE(k2) catches the same duplicates. Never throws;
+ * malformed values yield null (the later row validation rejects them).
+ */
+export function sectionDedupKeys(section, row) {
+  if (!isPlainObject(row)) return [null, null];
+  switch (section.name) {
+    case "workspaceSettings":
+      return [strKey(row.workspaceId), null];
+    case "userPreferences":
+      return [strKey(row.userId), null];
+    case "invitations": {
+      const id = strKey(row.id);
+      return [strKey(row.tokenHash), id === null ? null : `id|${id}`];
+    }
+    case "usageHistory":
+      return [Number.isInteger(row.id) ? row.id : null, null];
+    case "usageRollup": {
+      const dims = [];
+      for (const field of [
+        "dateKey",
+        "workspaceId",
+        "userId",
+        "apiKeyId",
+        "provider",
+        "model",
+        "connectionId",
+        "endpoint",
+      ]) {
+        if (typeof row[field] !== "string") return [null, null];
+        dims.push(row[field]);
+      }
+      return [JSON.stringify(dims), null];
+    }
+    case "usageBudgetCarry": {
+      // validate(): non-empty YYYY-MM-DD day + four string attributions (''
+      // allowed), keyed on JSON.stringify(dims).
+      if (typeof row.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(row.day)) return [null, null];
+      const dims = [row.day];
+      for (const field of ["workspaceId", "userId", "apiKeyId", "grantId"]) {
+        if (typeof row[field] !== "string") return [null, null];
+        dims.push(row[field]);
+      }
+      return [JSON.stringify(dims), null];
+    }
+    default:
+      return [strKey(row.id), null];
+  }
+}
+
+/**
  * Read the raw SQL rows of every complete-table section into `out`. Own-present
  * arrays always (the export is authoritative); rows are the stored values
  * verbatim so an encrypted restore rewrites identical bytes.
@@ -41,23 +137,12 @@ export function validateInstanceTableSections(payload, refs) {
     if (!Array.isArray(value)) {
       fail("TRANSFER_STATE_INVALID", `${section.name} must be an array`);
     }
-    const columns = new Set(section.columns);
     const seen = new Set();
-    for (const row of value) {
-      if (!isPlainObject(row)) {
-        fail("TRANSFER_STATE_INVALID", `${section.name} entries must be objects`);
-      }
-      for (const field of Object.keys(row)) {
-        if (!columns.has(field)) {
-          fail("TRANSFER_STATE_INVALID", `${section.name} entry has unknown field "${field}"`);
-        }
-      }
-      section.validate(row, refs, seen);
-    }
+    for (const row of value) validateSectionRow(section, row, refs, seen);
   }
 }
 
-function remapBudgetCarry(rows, refs) {
+export function remapBudgetCarry(rows, refs) {
   const merged = new Map();
   for (const r of rows) {
     const row = {

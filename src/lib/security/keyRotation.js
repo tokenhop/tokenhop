@@ -327,7 +327,7 @@ export async function rotateKek(
   if (publishFile && root !== null && !root.key.equals(current.key))
     throw fail("KEY_MISMATCH", "master file does not match the explicit root");
   zeroBuffer(resolveApiKeyHashKeySync(db, current).hashKey);
-  const verifyBackup = await prepareProtectedBackupVerifier();
+  const verifyBackup = await prepareProtectedBackupVerifier(db);
   const backupDir = makeProtectedBackupDir(CREDENTIAL_ENCRYPTION_BACKUP_PREFIX);
   const backupFile = backupDbLite(db, backupDir);
   verifyBackup(backupDir, backupFile);

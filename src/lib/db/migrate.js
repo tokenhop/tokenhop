@@ -9,6 +9,7 @@ import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { clearApiKeysSchemaCache } from "./helpers/apiKeysSchema.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
+import { sweepStagingDir } from "./stagingFiles.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
 import { legacyKeyId, rebuildRollupFromHistoryUnscoped } from "./repos/usageRollupRepo.js";
 import m014 from "./migrations/014-usage-attribution.js";
@@ -474,6 +475,12 @@ async function migrateAdapterOnce(adapter) {
 
   // Prune stale backups every boot so old oversized backups shrink to KEEP.
   pruneOldBackups();
+  // Drop leftover import/export staging from an interrupted process.
+  try {
+    sweepStagingDir();
+  } catch (err) {
+    console.warn("[db] staging sweep failed:", err?.message ?? err);
+  }
 
   // Bootstrap _meta so we can read the stored schema version below
   // (runVersionedMigrations also ensures this, but we need it earlier here).

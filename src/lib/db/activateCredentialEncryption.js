@@ -176,7 +176,7 @@ async function activate(
   // D7: it is a pre-existing copy with manual retention, exempt from prune).
   // sql.js resolves before the snapshot so verify is sync; a nonempty but
   // corrupt or wrong backup aborts here with zero mutation.
-  const verifyBackup = await prepareProtectedBackupVerifier();
+  const verifyBackup = await prepareProtectedBackupVerifier(db);
   const backupDir = makeProtectedBackupDir(CREDENTIAL_ENCRYPTION_BACKUP_PREFIX);
   const backupFile = backupDbLite(db, backupDir);
   verifyBackup(backupDir, backupFile);

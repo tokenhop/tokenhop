@@ -10,6 +10,7 @@ import * as driver from "@/lib/db/driver.js";
 const getAdapter = driver.getAdapter;
 import * as dbApi from "@/lib/db/index.js";
 import { BACKUPS_DIR } from "@/lib/db/paths.js";
+import { __setFreeBytesProbeForTests } from "@/lib/db/stagingFiles.js";
 import { makeBackupDir, pruneOldBackups } from "@/lib/db/backup.js";
 import * as credentialMaintenance from "@/lib/db/credentialMaintenance.js";
 import { deriveApiKeyHashKey, hashApiKey, masterKeyId } from "@/lib/security/masterKey.js";
@@ -146,7 +147,7 @@ function seedHashedInstance() {
 
 async function importAndCapture(payload, opts) {
   const before = tableDump();
-  const result = await dbApi.importDb(payload, opts);
+  const result = await dbApi.importDb(payload, { ...opts, returnSnapshot: true });
   const dirs = preImportDirs();
   expect(dirs).toHaveLength(1);
   return { result, backupDir: dirs[0], before };
@@ -160,6 +161,31 @@ beforeEach(async () => {
   // Fresh BACKUPS_DIR so preImportDirs() counts only this test's backup.
   fs.rmSync(BACKUPS_DIR, { recursive: true, force: true });
   fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+});
+
+describe("import return value and disk preflight", () => {
+  beforeEach(seedLegacyInstance);
+
+  it("resolves undefined by default and the snapshot only with returnSnapshot", async () => {
+    await expect(dbApi.importDb(legacyPayload())).resolves.toBeUndefined();
+    const snapshot = await dbApi.importDb(legacyPayload(), { returnSnapshot: true });
+    expect(snapshot).toMatchObject({ schemaVersion: expect.any(Number) });
+    expect(Array.isArray(snapshot.combos)).toBe(true);
+  });
+
+  it("fails IMPORT_DISK_INSUFFICIENT before any mutation or backup", async () => {
+    const before = tableDump();
+    __setFreeBytesProbeForTests(() => 1024 * 1024);
+    try {
+      await expect(dbApi.importDb(legacyPayload())).rejects.toMatchObject({
+        code: "IMPORT_DISK_INSUFFICIENT",
+      });
+    } finally {
+      __setFreeBytesProbeForTests(null);
+    }
+    expect(tableDump()).toBe(before);
+    expect(preImportDirs()).toHaveLength(0);
+  });
 });
 
 describe("import durability: cache cleared only after a proven flush", () => {

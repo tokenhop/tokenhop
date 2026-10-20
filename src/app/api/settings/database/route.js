@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { exportDb, getSettings, importDb } from "@/lib/localDb";
+import { getSettings, importDb } from "@/lib/localDb";
+import { exportDbToFile, importDbStream } from "@/lib/db/index.js";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";
 import { hasValidCliToken } from "@/lib/auth/cliToken";
@@ -23,14 +24,21 @@ import {
   transferConflictFailure,
 } from "@/lib/users/databaseTransfer.js";
 import { DATA_TRANSFER_PURPOSES } from "@/lib/users/ssoProofState.js";
+import {
+  PASSPHRASE_HEADER,
+  SSO_PROOF_HEADER,
+  UPLOAD_MODE_HEADER,
+  instanceStreamImportCap,
+  readHeaderImportAuth,
+  readPasswordHeader,
+  snapshotDownloadResponse,
+} from "@/lib/users/snapshotUpload.js";
 
-const PASSWORD_HEADER = "x-9r-password";
-const SSO_PROOF_HEADER = "x-tokenhop-sso-proof";
-const PASSPHRASE_HEADER = "x-tokenhop-backup-passphrase";
 const NO_STORE = { "Cache-Control": "no-store" };
 const json = (body, status = 200, headers = {}) =>
   NextResponse.json(body, { status, headers: { ...NO_STORE, ...headers } });
-// Instance snapshots land in the same 64 MiB envelope the workspace lane caps.
+// Legacy buffered JSON imports land in the same 64 MiB envelope the workspace
+// lane caps. The raw streamed upload uses instanceStreamImportCap() instead.
 const INSTANCE_IMPORT_MAX_BODY = WORKSPACE_IMPORT_MAX_BODY;
 
 // Snapshot errors the client may act on. Only allowlisted core-lane codes get
@@ -43,7 +51,25 @@ const IMPORT_CODES = {
   PASSPHRASE_INVALID: 400,
   TRANSFER_FORMAT_INVALID: 400,
   INVALID: 400,
+  // Recoverable: the message names where to free space (no secrets).
+  IMPORT_DISK_INSUFFICIENT: 507,
 };
+// Export failures the operator can act on (message is server-authored, no secrets).
+const EXPORT_CODES = {
+  EXPORT_DISK_INSUFFICIENT: 507,
+  EXPORT_ROW_TOO_LARGE: 422,
+};
+function exportFailure(err) {
+  const code = typeof err?.code === "string" ? err.code : undefined;
+  if (code && Object.hasOwn(EXPORT_CODES, code)) {
+    const message =
+      typeof err.message === "string" && err.message
+        ? err.message.slice(0, 300)
+        : "Failed to export database";
+    return json({ error: message, code }, EXPORT_CODES[code]);
+  }
+  return json({ error: "Failed to export database" }, 500);
+}
 function importFailure(err, legacy) {
   const code = typeof err?.code === "string" ? err.code : undefined;
   if (code === "IMPORT_USER_MISMATCH") {
@@ -57,6 +83,10 @@ function importFailure(err, legacy) {
     );
   }
   if (code === "TRANSFER_CONFLICT") return transferConflictFailure(err);
+  if (code === "IMPORT_PAYLOAD_TOO_LARGE") return payloadTooLarge();
+  if (code === "IMPORT_JSON_INVALID") {
+    return json({ error: "Invalid request", code: "invalid_request" }, 400);
+  }
   const curated = curatedTransferFailure(code);
   if (curated) return curated;
   if (code && Object.hasOwn(IMPORT_CODES, code)) {
@@ -128,16 +158,33 @@ const actorOf = (principal) =>
     : // Switch off: every authenticated caller is the single owner.
       { owner: true, via: "legacy" };
 
+/**
+ * YAN-351: a restore must not flip the users & teams switch before its
+ * release. Plain settings only: never rewrite an encrypted/sealed blob. Used by
+ * both the legacy JSON body and the raw stream (as its head transform).
+ */
+function stripRestoreSwitch(payload) {
+  const s = payload.settings;
+  if (s && typeof s === "object" && !Array.isArray(s) && !("ct" in s) && !("iv" in s)) {
+    delete s.multiUserEnabled;
+  }
+  return payload;
+}
+
 export async function GET(request) {
   let principal = null;
   try {
     const auth = await authenticate(request);
     if (auth.res) return auth.res;
     principal = auth.principal ?? null;
+    const headerPassword = readPasswordHeader(request.headers);
+    if (headerPassword.invalid) {
+      return json({ error: "Invalid request", code: "invalid_request" }, 400);
+    }
     if (auth.legacy) {
       if (
         !(await hasValidCliToken(request)) &&
-        !(await verifyDashboardPassword(request.headers.get(PASSWORD_HEADER)))
+        !(await verifyDashboardPassword(headerPassword.value))
       ) {
         return json({ error: "Invalid password" }, 401);
       }
@@ -145,7 +192,7 @@ export async function GET(request) {
       const denied = await reauth(
         request,
         principal,
-        request.headers.get(PASSWORD_HEADER),
+        headerPassword.value,
         request.headers.get(SSO_PROOF_HEADER),
         DATA_TRANSFER_PURPOSES["instance.export"],
       );
@@ -156,19 +203,25 @@ export async function GET(request) {
       return json({ error: "Invalid passphrase", code: "invalid_request" }, 400);
     }
     const usedSso = request.headers.get(SSO_PROOF_HEADER) != null;
-    const payload = await exportDb(passphrase === undefined ? undefined : { passphrase });
-    await audit(
-      { principal, ip: getClientIp(request) },
-      "db.export",
-      { type: "database" },
-      {
-        after: {
-          method: passphrase === undefined ? "plain" : "passphrase",
-          ...reauthMethod(auth, usedSso),
+    const handle = await exportDbToFile(passphrase === undefined ? undefined : { passphrase });
+    try {
+      await audit(
+        { principal, ip: getClientIp(request) },
+        "db.export",
+        { type: "database" },
+        {
+          after: {
+            method: passphrase === undefined ? "plain" : "passphrase",
+            ...reauthMethod(auth, usedSso),
+          },
         },
-      },
-    );
-    return json(payload);
+      );
+      return snapshotDownloadResponse(handle, NO_STORE);
+    } catch (err) {
+      // The staged file would otherwise outlive a response that never streams.
+      await handle.cleanup();
+      throw err;
+    }
   } catch (error) {
     console.log("Error exporting database:", error?.code || error?.message);
     await audit(
@@ -177,7 +230,7 @@ export async function GET(request) {
       { type: "database" },
       { result: "failure", after: { reason: error?.code } },
     );
-    return json({ error: "Failed to export database" }, 500);
+    return exportFailure(error);
   }
 }
 
@@ -189,25 +242,47 @@ export async function POST(request) {
     if (auth.res) return auth.res;
     principal = auth.principal ?? null;
     legacy = auth.legacy === true;
-    let body;
-    try {
-      body = await readJsonBody(request, { max: INSTANCE_IMPORT_MAX_BODY });
-    } catch (err) {
-      if (err instanceof PayloadTooLarge) return payloadTooLarge();
-      throw err;
+    // Raw upload: the body IS the snapshot file; auth/force ride in headers and
+    // are fully checked BEFORE a single body byte is read.
+    const raw = request.headers.get(UPLOAD_MODE_HEADER) === "raw";
+    let password;
+    let ssoProof;
+    let rawPassphrase;
+    let force;
+    let payload;
+    // Raw only: refuse a declared oversize body without reading anything.
+    const rawMax = raw ? instanceStreamImportCap() : 0;
+    const rawHeader = raw ? request.headers.get("content-length") : null;
+    const rawDeclared =
+      rawHeader !== null && /^\d+$/.test(rawHeader.trim()) ? Number(rawHeader) : null;
+    const rawOversize = raw && rawDeclared !== null && rawDeclared > rawMax;
+    if (raw) {
+      const headerAuth = readHeaderImportAuth(request);
+      if (headerAuth.invalid) {
+        return json({ error: "Invalid request", code: "invalid_request" }, 400);
+      }
+      ({ password, ssoProof, passphrase: rawPassphrase, force } = headerAuth);
+    } else {
+      let body;
+      try {
+        body = await readJsonBody(request, { max: INSTANCE_IMPORT_MAX_BODY });
+      } catch (err) {
+        if (err instanceof PayloadTooLarge) return payloadTooLarge();
+        throw err;
+      }
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        // A rejected body is still an import attempt: audit the failure event.
+        await audit(
+          { principal, ip: getClientIp(request) },
+          "db.import",
+          { type: "database" },
+          { result: "failure", after: { reason: "invalid_request" } },
+        );
+        return json({ error: "Invalid request", code: "invalid_request" }, 400);
+      }
+      // ssoProof is stripped in every branch: it never reaches importDb.
+      ({ password, ssoProof, passphrase: rawPassphrase, force, ...payload } = body);
     }
-    if (!body || typeof body !== "object" || Array.isArray(body)) {
-      // A rejected body is still an import attempt: audit the failure event.
-      await audit(
-        { principal, ip: getClientIp(request) },
-        "db.import",
-        { type: "database" },
-        { result: "failure", after: { reason: "invalid_request" } },
-      );
-      return json({ error: "Invalid request", code: "invalid_request" }, 400);
-    }
-    // ssoProof is stripped in every branch: it never reaches importDb.
-    const { password, ssoProof, passphrase: rawPassphrase, force, ...payload } = body;
     const passphrase = boundPassphrase(rawPassphrase);
     if (passphrase === null || (force !== undefined && typeof force !== "boolean")) {
       return json({ error: "Invalid request", code: "invalid_request" }, 400);
@@ -216,6 +291,7 @@ export async function POST(request) {
       if (!(await hasValidCliToken(request)) && !(await verifyDashboardPassword(password))) {
         return json({ error: "Invalid password" }, 401);
       }
+      if (rawOversize) return payloadTooLarge();
     } else {
       // Predictable denials run BEFORE re-auth so they never burn a one-time
       // SSO proof. Only the instance owner may replace differing users (core re-checks).
@@ -231,6 +307,9 @@ export async function POST(request) {
           403,
         );
       }
+      // A predictable size denial must not consume a one-time SSO proof or a
+      // password attempt, so it runs before the lock check and re-auth.
+      if (rawOversize) return payloadTooLarge();
       const early = passphraseImportLock(request);
       if (early) return early;
       const denied = await reauth(
@@ -248,17 +327,23 @@ export async function POST(request) {
       const locked = passphraseImportLock(request);
       if (locked) return locked;
     }
-    // YAN-351: a restore must not flip the users & teams switch before its
-    // release. Plain settings only: never rewrite an encrypted/sealed blob.
-    const s = payload.settings;
-    if (s && typeof s === "object" && !Array.isArray(s) && !("ct" in s) && !("iv" in s)) {
-      delete s.multiUserEnabled;
-    }
-    await importDb(payload, {
+    const importOpts = {
       ...(passphrase === undefined ? {} : { passphrase }),
       ...(force === true ? { force: true } : {}),
       actor: actorOf(principal),
-    });
+    };
+    if (raw) {
+      // Authenticated: only now may the body be touched. An oversize
+      // Content-Length is refused without reading anything.
+      await importDbStream(request.body ?? [], {
+        ...importOpts,
+        maxBytes: rawMax,
+        ...(rawDeclared === null ? {} : { declaredBytes: rawDeclared }),
+        transformHead: stripRestoreSwitch,
+      });
+    } else {
+      await importDb(stripRestoreSwitch(payload), importOpts);
+    }
     // A restore replaces custom models wholesale; reload their declared caps.
     await (await import("@/lib/customModelCaps")).refreshCustomModelCaps().catch(() => {});
 

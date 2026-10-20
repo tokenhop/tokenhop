@@ -8,7 +8,8 @@ import Callout from "@/shared/components/Callout";
 import {
   PASSPHRASE_HEADER,
   SSO_PROOF_HEADER,
-  downloadJson,
+  passwordHeaders,
+  downloadBlob,
   backupFileName,
   apiError,
   passphraseProblem,
@@ -23,12 +24,14 @@ import AuthFields, { authWithProof, spendProof } from "./BackupAuthFields";
  * OR the password (never both); the passphrase goes in a header too.
  */
 async function exportInstance({ password, passphrase, ssoProof }) {
-  const headers = ssoProof ? { [SSO_PROOF_HEADER]: ssoProof } : { "x-9r-password": password };
+  const headers = ssoProof ? { [SSO_PROOF_HEADER]: ssoProof } : passwordHeaders(password);
   if (passphrase) headers[PASSPHRASE_HEADER] = passphrase;
   const res = await fetch("/api/settings/database", { headers });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw apiError(res, data, "Failed to export database");
-  return data;
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw apiError(res, data, "Failed to export database");
+  }
+  return res.blob();
 }
 
 /**
@@ -60,8 +63,8 @@ export default function InstanceDialog({
     setBusy(true);
     setError("");
     try {
-      const payload = await exportInstance(auth);
-      downloadJson(payload, backupFileName());
+      const blob = await exportInstance(auth);
+      downloadBlob(blob, backupFileName());
       flash("ok", "Instance backup downloaded. Keep the file private.");
       onClose();
     } catch (err) {

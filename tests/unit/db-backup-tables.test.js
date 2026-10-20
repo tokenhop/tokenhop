@@ -3,10 +3,18 @@
 // + real isolated DATA_DIR (tests/vitest.config.js).
 import fs from "node:fs";
 import path from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { getAdapter } from "@/lib/db/driver.js";
 import * as dbApi from "@/lib/db/index.js";
-import { backupDbLite, makeBackupDir } from "@/lib/db/backup.js";
+import {
+  backupDbLite,
+  makeBackupDir,
+  makeProtectedBackupDir,
+  prepareProtectedBackupVerifier,
+  removeUnverifiedBackupDir,
+} from "@/lib/db/backup.js";
+import { BACKUPS_DIR, STAGING_DIR } from "@/lib/db/paths.js";
+import { sweepStagingDir } from "@/lib/db/stagingFiles.js";
 
 const NOW = "2026-10-08T00:00:00.000Z";
 const TENANCY_TABLES = [
@@ -136,5 +144,91 @@ describe("automatic backup table coverage (YAN-375)", () => {
       ro.close();
     }
     expect(fs.existsSync(path.join(dir, "data.sqlite"))).toBe(true);
+  });
+});
+
+describe("bounded protected-backup verifier (YAN-1013)", () => {
+  it("verifies a good backup and leaves vchk detached", async () => {
+    const dir = makeProtectedBackupDir("pre-import-");
+    try {
+      const file = backupDbLite(db, dir, "data.sqlite", true);
+      const verify = await prepareProtectedBackupVerifier(db);
+      expect(() => verify(dir, file)).not.toThrow();
+      const attached = db.all("PRAGMA database_list").map((r) => r.name);
+      expect(attached).not.toContain("vchk");
+    } finally {
+      removeUnverifiedBackupDir(dir);
+    }
+  });
+
+  it("never reads the backup bytes into JS on native drivers", async () => {
+    if (db.driver === "sql.js") return; // documented exception
+    const dir = makeProtectedBackupDir("pre-import-");
+    try {
+      const file = backupDbLite(db, dir, "data.sqlite", true);
+      const verify = await prepareProtectedBackupVerifier(db);
+      const spy = vi.spyOn(fs, "readFileSync");
+      try {
+        verify(dir, file);
+        expect(spy.mock.calls.filter(([p]) => String(p) === file)).toEqual([]);
+      } finally {
+        spy.mockRestore();
+      }
+    } finally {
+      removeUnverifiedBackupDir(dir);
+    }
+  });
+
+  it("rejects a corrupted backup with BACKUP_INVALID", async () => {
+    const dir = makeProtectedBackupDir("pre-import-");
+    try {
+      const file = backupDbLite(db, dir, "data.sqlite", true);
+      fs.writeFileSync(file, Buffer.alloc(8192, 0x41));
+      const verify = await prepareProtectedBackupVerifier(db);
+      expect(() => verify(dir, file)).toThrow(expect.objectContaining({ code: "BACKUP_INVALID" }));
+      expect(db.all("PRAGMA database_list").map((r) => r.name)).not.toContain("vchk");
+      expect(db.get("SELECT COUNT(*) AS c FROM users").c).toBeGreaterThan(0);
+    } finally {
+      removeUnverifiedBackupDir(dir);
+    }
+  });
+
+  it("rejects an empty backup with BACKUP_INVALID", async () => {
+    const dir = makeProtectedBackupDir("pre-import-");
+    try {
+      const file = path.join(dir, "data.sqlite");
+      fs.writeFileSync(file, "");
+      const verify = await prepareProtectedBackupVerifier(db);
+      expect(() => verify(dir, file)).toThrow(expect.objectContaining({ code: "BACKUP_INVALID" }));
+    } finally {
+      removeUnverifiedBackupDir(dir);
+    }
+  });
+
+  it("removeUnverifiedBackupDir only removes pre-import-* children of BACKUPS_DIR", () => {
+    const keep = makeProtectedBackupDir("gateway-key-activation-");
+    const outside = fs.mkdtempSync(path.join(path.dirname(BACKUPS_DIR), "pre-import-outside-"));
+    const target = makeProtectedBackupDir("pre-import-");
+    try {
+      expect(removeUnverifiedBackupDir(keep)).toBe(false);
+      expect(fs.existsSync(keep)).toBe(true);
+      expect(removeUnverifiedBackupDir(outside)).toBe(false);
+      expect(fs.existsSync(outside)).toBe(true);
+      expect(removeUnverifiedBackupDir(BACKUPS_DIR)).toBe(false);
+      expect(removeUnverifiedBackupDir(path.join(target, ".."))).toBe(false);
+      expect(removeUnverifiedBackupDir(target)).toBe(true);
+      expect(fs.existsSync(target)).toBe(false);
+    } finally {
+      fs.rmSync(keep, { recursive: true, force: true });
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("boot sweep removes leftover staging dirs (as migrate does)", () => {
+    const dir = path.join(STAGING_DIR, "import-x");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "stage.sqlite"), "x");
+    expect(sweepStagingDir()).toBeGreaterThanOrEqual(1);
+    expect(fs.existsSync(dir)).toBe(false);
   });
 });
