@@ -2,6 +2,7 @@ import { createErrorResult, parseUpstreamError, formatProviderError } from "../u
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { getActiveReliabilityPolicy } from "../config/reliabilityPolicy.js";
 import { getExecutor } from "../executors/index.js";
+import { proxyOptionsFromCredentials } from "../utils/connectionProxyOptions.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getEmbeddingAdapter } from "./embeddingProviders/index.js";
 
@@ -93,7 +94,7 @@ export async function handleEmbeddingsCore({
       providerResponse.status === HTTP_STATUS.FORBIDDEN)
   ) {
     const newCredentials = await refreshWithRetry(
-      () => executor.refreshCredentials(credentials, log),
+      () => executor.refreshCredentials(credentials, log, proxyOptionsFromCredentials(credentials)),
       3,
       log,
     );
