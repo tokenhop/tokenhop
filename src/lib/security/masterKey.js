@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import { constants } from "node:fs";
 import path from "node:path";
-import { getDataDir } from "../dataDir.js";
+import { getDataDirMemo as getDataDir } from "../dataDir.js";
 
 const HASH_INFO = "tokenhop/api-key-hash";
 const MASTER_ENV = "TOKENHOP_MASTER_KEY";
@@ -183,14 +183,45 @@ export function randomMasterKey() {
 // when no further request arrives. Callers always receive private copies.
 const ROOT_CACHE_TTL_MS = 30_000;
 const ROOT_RACY_MS = 2_000;
-let rootEntry = null;
-let rootTimer = null;
+
+// The entry, its timer and the listener registry live in ONE process-wide slot
+// (Symbol.for, like apiKeyState.js), so every bundled or HMR-reloaded copy of
+// this module shares invalidation and zeroing: a stage/promote in one copy drops
+// the root another copy cached. Listeners register under an id so a re-evaluated
+// module replaces its previous listener instead of stacking.
+const CACHE_KEY = Symbol.for("tokenhop.masterKeyCache");
+globalThis[CACHE_KEY] ??= { entry: null, timer: null, listeners: new Map() };
+const cache = globalThis[CACHE_KEY];
+
+// Derived caches (the unwrapped API-key hash key) depend on the root. They
+// register here and are told whenever a cached root is dropped, and on every
+// explicit root change (stage, promote, clear), cached or not.
+/** Register a callback run when the root may have changed. Returns an unregister fn. */
+export function onMasterKeyChange(listener, id = listener) {
+  cache.listeners.set(id, listener);
+  return () => {
+    if (cache.listeners.get(id) === listener) cache.listeners.delete(id);
+  };
+}
+
+function notifyRootChange() {
+  for (const listener of [...cache.listeners.values()]) listener();
+}
 
 function dropRootEntry() {
-  if (rootTimer) clearTimeout(rootTimer);
-  rootTimer = null;
-  if (rootEntry) rootEntry.key.fill(0);
-  rootEntry = null;
+  if (cache.timer) clearTimeout(cache.timer);
+  cache.timer = null;
+  const had = cache.entry !== null;
+  if (cache.entry) cache.entry.key.fill(0);
+  cache.entry = null;
+  if (had) notifyRootChange();
+}
+
+// Explicit change (stage/promote/clear): derived caches drop even when the
+// racy-clean rule kept the root itself out of the cache.
+function rootChanged() {
+  dropRootEntry();
+  notifyRootChange();
 }
 
 const fingerprintOf = (s) => `${s.dev}:${s.ino}:${s.size}:${s.mode}:${s.mtimeNs}:${s.ctimeNs}`;
@@ -215,7 +246,7 @@ function rootFingerprint(file) {
 }
 
 function cachedRoot(file) {
-  const entry = rootEntry;
+  const entry = cache.entry;
   if (!entry) return null;
   if (entry.path !== file || Date.now() - entry.at >= ROOT_CACHE_TTL_MS) return dropRootEntry();
   const now = rootFingerprint(file);
@@ -229,14 +260,14 @@ function rememberRoot(file, before, kid, key) {
   const at = Date.now();
   if (at - after.changedAt < ROOT_RACY_MS) return;
   dropRootEntry();
-  rootEntry = { path: file, at, kid, dir: after.dir, file: after.file, key: Buffer.from(key) };
-  rootTimer = setTimeout(dropRootEntry, ROOT_CACHE_TTL_MS);
-  rootTimer.unref?.();
+  cache.entry = { path: file, at, kid, dir: after.dir, file: after.file, key: Buffer.from(key) };
+  cache.timer = setTimeout(dropRootEntry, ROOT_CACHE_TTL_MS);
+  cache.timer.unref?.();
 }
 
 /** Drop the memoized root (in-process rotation/staging; also test hook). */
 export function clearMasterKeyCache() {
-  dropRootEntry();
+  rootChanged();
 }
 
 export async function loadMasterKey({ create = false, expectedKid = null } = {}) {
@@ -409,7 +440,7 @@ export function stageMasterKeySync(key) {
   } finally {
     fsSync.closeSync(fd);
   }
-  dropRootEntry();
+  rootChanged();
   syncDirSync(paths.dir);
   syncDirSync(path.dirname(paths.dir));
   return paths.stage;
@@ -437,7 +468,7 @@ export function promoteStagedMasterSync() {
   const dirSeen = assertKeysDirSync(paths.stage);
   if (dirSeen.status === "error") throw dirSeen.error;
   fsSync.renameSync(paths.stage, paths.file);
-  dropRootEntry();
+  rootChanged();
   syncDirSync(paths.dir);
   syncDirSync(path.dirname(paths.dir));
 }

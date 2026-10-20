@@ -227,10 +227,58 @@ describe("budgeted leaf attempt", () => {
     expect(res.status).toBe(200);
     await res.text();
     expect(counts.model).toBe(1);
-    // First pass + post-reserve recheck: exactly 2 when the budget scope runs.
+    // Dispatch-time check + post-reserve recheck: both live, exactly 2 under a budget scope.
     expect(counts.disabled).toBe(2);
     expect(counts.pricing).toBe(1);
     expect(executeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads each settings layer and scoped resource once per request (YAN-1106)", async () => {
+    budget({ requests: 5 });
+    await (await chat()).text(); // warm module-level caches (observability config etc.)
+    const get = vi.spyOn(db, "get");
+    const all = vi.spyOn(db, "all");
+    try {
+      await (await chat()).text();
+      const sqls = [...get.mock.calls, ...all.mock.calls].map(([sql]) => String(sql));
+      const count = (re) => sqls.filter((sql) => re.test(sql)).length;
+      expect(count(/FROM settings WHERE id = 1/)).toBe(1);
+      expect(count(/FROM workspaceSettings/)).toBe(1);
+      expect(count(/FROM userPreferences/)).toBe(1);
+      // Both disabled checks (dispatch-time and post-reserve) read storage live.
+      expect(count(/FROM kv WHERE scope = \? AND substr/)).toBe(2);
+    } finally {
+      get.mockRestore();
+      all.mockRestore();
+    }
+  });
+
+  it("without budgets, a model disabled between combo hops is not served on the next hop", async () => {
+    const key = `ws:w1/${getProviderAlias("openai")}`;
+    const insertCombo = (name, models) =>
+      db.run(
+        "INSERT INTO combos(id,name,kind,models,workspaceId,createdAt,updatedAt) VALUES (?, ?, 'llm', ?, 'w1', ?, ?)",
+        [`combo-${name}`, name, JSON.stringify(models), NOW, NOW],
+      );
+    insertCombo("hops", ["openai/gpt-4o", "openai/gpt-4o-mini"]);
+    // Hop 1 fails upstream; the model of hop 2 is disabled while hop 1 runs.
+    executeMock.mockImplementationOnce(async () => {
+      db.run(
+        `INSERT INTO kv(scope, key, value) VALUES('disabledModels', ?, '["gpt-4o-mini"]')
+         ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
+        [key],
+      );
+      return { response: new Response("boom", { status: 500 }), url: "x", headers: {} };
+    });
+    try {
+      const res = await chat("hops");
+      await res.text();
+      expect(res.status).not.toBe(200);
+      // Only hop 1 reached the upstream; the disabled hop-2 model never did.
+      expect(executeMock).toHaveBeenCalledTimes(1);
+    } finally {
+      db.run("DELETE FROM kv WHERE scope = 'disabledModels' AND key = ?", [key]);
+    }
   });
 
   it("without budgets the leaf also resolves once and has no pricing lookup", async () => {

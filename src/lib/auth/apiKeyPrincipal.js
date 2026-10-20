@@ -8,6 +8,7 @@ import { readApiKeyStorageState } from "../db/apiKeyState.js";
 import { getHashedApiKeyByHashUnscoped, getEligibleApiKeySync } from "../db/repos/apiKeysRepo.js";
 import { getApiKeyHashKey, resolveApiKeyHashKeyForAuth } from "../security/apiKeyHashKey.js";
 import { hashApiKey } from "../security/masterKey.js";
+import { attachGatewayKeyDigest } from "../security/gatewayKeyDigest.js";
 
 // Spec bounds (feature-spec "API Design"): bearer tokens cap at 4096 bytes,
 // scope arrays at 128 x 256 chars. The resolver rejects larger input without
@@ -68,9 +69,14 @@ export async function resolveApiKey(presented, { apiKeyState, verifyOnly = false
   // Stable hash-key getter (YAN-365 D6): pre-encryption HKDF of the frozen
   // kid's master; after credential encryption an authenticated unwrap under
   // the current KEK. Root/unwrap errors propagate; no fallback.
-  const auth = verifyOnly
-    ? { ...(await getApiKeyHashKey(db, { apiKeyState: state })), release() {} }
-    : await resolveApiKeyHashKeyForAuth(db, { apiKeyState: state });
+  let auth;
+  if (verifyOnly) {
+    const key = await getApiKeyHashKey(db, { apiKeyState: state });
+    // No seed to release here, but the derived-key copy is ours: wipe it when done.
+    auth = { ...key, release: () => key.hashKey.fill(0) };
+  } else {
+    auth = await resolveApiKeyHashKeyForAuth(db, { apiKeyState: state });
+  }
   const { hashKey, release } = auth;
   try {
     const digest = hashApiKey(presented, hashKey);
@@ -93,13 +99,14 @@ export async function resolveApiKey(presented, { apiKeyState, verifyOnly = false
     cacheSet(digest, row.id);
     if (verifyOnly) return Object.freeze({ verified: true, apiKeyId: row.id });
     // Fresh frozen principal per call; the scope is request-local and dies with it.
-    return auth.mint({
+    const principal = auth.mint({
       workspaceId: row.workspaceId,
       userId: row.userId,
       apiKeyId: row.id,
       scopes: { allowedModels: row.allowedModels, allowedCombos: row.allowedCombos },
       via: "apiKey",
     });
+    return attachGatewayKeyDigest(principal, digest);
   } finally {
     release(); // idempotent: the seed never outlives this authentication
   }

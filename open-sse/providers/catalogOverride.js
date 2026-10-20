@@ -2,8 +2,10 @@
 //
 // The file is the source of truth; the only thing held in memory is a parsed
 // copy dropped as soon as the file's mtime changes. getCapabilitiesForModel is
-// synchronous and runs per request, so the hot path is one stat (~1us) and the
-// parse (~0.1ms on a ~18KB file) only reruns after a sync.
+// synchronous and runs several times per request, so the file is stat'ed at most
+// once per STAT_INTERVAL_MS (the parse, ~0.1ms on a ~18KB file, only reruns after
+// a sync). The in-process writer calls invalidateCatalog(), which forces an
+// immediate re-stat; only a write from another process waits out the interval.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -18,9 +20,20 @@ export const CATALOG_RAW_FILE = path.join(DATA_DIR, "model-catalog-raw.json");
 // looked up here, so the sync rebuilds it instead of asking upstream for a 304.
 export const CATALOG_VERSION = 2;
 
+export const STAT_INTERVAL_MS = 1000;
+
 const EMPTY = { models: {}, providers: {} };
 let cache = EMPTY;
 let cachedMtime = -1;
+let checkedAt = -Infinity; // Date.now() of the last stat
+// Bumps whenever the served snapshot may have changed. Kept on a shared slot so
+// duplicate bundle copies of this module agree (like apiKeyState's tracker).
+const GENERATION_KEY = Symbol.for("tokenhop.catalogGeneration");
+globalThis[GENERATION_KEY] ??= { n: 0 };
+const generation = globalThis[GENERATION_KEY];
+
+/** Changes whenever the catalog snapshot is invalidated or re-read from disk. */
+export const catalogGeneration = () => generation.n;
 
 // "zai-org/GLM-4.6V:free" -> "glm-4.6v"
 function baseId(model) {
@@ -30,16 +43,22 @@ function baseId(model) {
 }
 
 function load() {
+  const now = Date.now();
+  // Backwards clock jumps re-stat too (now < checkedAt).
+  if (now >= checkedAt && now - checkedAt < STAT_INTERVAL_MS) return cache;
+  checkedAt = now;
   let mtime;
   try {
     mtime = fs.statSync(CATALOG_FILE).mtimeMs;
   } catch {
+    if (cache !== EMPTY) generation.n++;
     cache = EMPTY;
     cachedMtime = -1;
     return cache;
   }
   if (mtime === cachedMtime) return cache;
 
+  generation.n++;
   cachedMtime = mtime;
   try {
     const parsed = JSON.parse(fs.readFileSync(CATALOG_FILE, "utf8"));
@@ -90,6 +109,8 @@ export function getCatalogEntry(provider, model) {
 // Force a re-read on the next lookup (called right after a sync writes the file).
 export function invalidateCatalog() {
   cachedMtime = -1;
+  checkedAt = -Infinity;
+  generation.n++;
 }
 
 // Hand the reader to capabilities.js. That module is bundled into the browser

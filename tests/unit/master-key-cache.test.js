@@ -267,4 +267,38 @@ describe("loadMasterKey fingerprint memo", () => {
     expect((await mk.loadMasterKey()).key.equals(A)).toBe(true);
     expect(spy).toHaveBeenCalled();
   });
+
+  it("two module copies share one root cache, timer and listener registry", async () => {
+    await mk.loadMasterKey();
+    settle();
+    await mk.loadMasterKey(); // populates through copy 1
+    const slot = globalThis[Symbol.for("tokenhop.masterKeyCache")];
+    expect(slot.entry).toBeTruthy();
+    vi.resetModules();
+    const copy = await import("@/lib/security/masterKey.js");
+    expect(copy === mk).toBe(false);
+    const heard = vi.fn();
+    const off = mk.onMasterKeyChange(heard, "probe");
+    // copy 2 sees copy 1's entry: the next load is a memo hit (no file read)
+    const spy = statSpy();
+    expect((await copy.loadMasterKey()).key.equals(A)).toBe(true);
+    expect(spy).not.toHaveBeenCalled();
+    // and copy 2's clear zeroes it and notifies copy 1's listener
+    const retained = slot.entry.key;
+    copy.clearMasterKeyCache();
+    expect(retained.equals(Buffer.alloc(32))).toBe(true);
+    expect(slot.entry).toBeNull();
+    expect(heard).toHaveBeenCalled();
+    off();
+  });
+
+  it("re-registering a listener id replaces the previous listener", async () => {
+    const a = vi.fn();
+    const b = vi.fn();
+    mk.onMasterKeyChange(a, "same");
+    mk.onMasterKeyChange(b, "same");
+    mk.clearMasterKeyCache();
+    expect(a).not.toHaveBeenCalled();
+    expect(b).toHaveBeenCalledTimes(1);
+  });
 });
