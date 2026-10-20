@@ -179,6 +179,18 @@ describe("chatCore 401 token_expired → observed lifetime", () => {
     ).toBeUndefined();
   });
 
+  it("prefers the access token's JWT iat over an import-time lastRefreshAt", async () => {
+    const iat = Math.floor((Date.now() - 3 * HOUR) / 1000);
+    const accessToken = `h.${Buffer.from(JSON.stringify({ iat, exp: iat + 10 * 86400 })).toString("base64url")}.s`;
+    const { onCredentialsRefreshed } = await run({
+      credentials: storedCreds(0, 9 * DAY, { accessToken }),
+    });
+    const observed =
+      onCredentialsRefreshed.mock.calls[0][0].providerSpecificData.observedLifetimeMs;
+    expect(observed).toBeGreaterThan(2.9 * HOUR);
+    expect(observed).toBeLessThan(3.1 * HOUR);
+  });
+
   it("keeps sibling providerSpecificData untouched for non-lifetime-aware providers", async () => {
     const credentials = storedCreds(HOUR, 9 * DAY);
     refreshCredentialsMock.mockResolvedValue({

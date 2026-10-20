@@ -6,11 +6,23 @@ import {
   MIN_OBSERVED_LIFETIME_MS,
   getCredentialExpiryMs,
   getCredentialLastRefreshMs,
+  getJwtTimesMs,
   isLifetimeAware,
 } from "./tokenLifetime.js";
 
 const TOKEN_EXPIRED_CODE = "token_expired";
 const TOKEN_EXPIRED_MESSAGE = "your authentication token has expired";
+
+/**
+ * When the current access token was issued: its JWT `iat` when usable, else the
+ * stored lastRefreshAt. `iat` stays right for imports, which stamp lastRefreshAt
+ * with the import time rather than the token's age.
+ */
+function getTokenIssuedMs(credentials, nowMs) {
+  const { iatMs } = getJwtTimesMs(credentials?.accessToken);
+  if (iatMs !== null && iatMs <= nowMs) return iatMs;
+  return getCredentialLastRefreshMs(credentials);
+}
 
 /** True when an upstream 401 body says the access token expired. */
 export function isTokenExpiredBody(text) {
@@ -49,7 +61,7 @@ export async function probeEarlyTokenExpiry({
   if (!isTokenExpiredBody(text)) return null;
   return {
     storedExpiryMs: getCredentialExpiryMs(credentials, provider),
-    lastRefreshMs: getCredentialLastRefreshMs(credentials),
+    lastRefreshMs: getTokenIssuedMs(credentials, nowMs),
     nowMs,
   };
 }
