@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { extractCodexAccountInfo } from "@/lib/oauth/providers";
+import { computeExpiresAt } from "open-sse/services/tokenLifetime.js";
 import { createIn, oauthScope } from "@/lib/oauth/scope";
 
 /**
@@ -66,6 +67,7 @@ export async function POST(request) {
       if (info.chatgptPlanType) providerSpecificData.chatgptPlanType = info.chatgptPlanType;
     }
 
+    const expiresAt = computeExpiresAt({ accessToken: token });
     const connectionName = name || email || "ChatGPT Access token";
 
     // Save to database as access_token authType (no refresh token)
@@ -73,6 +75,8 @@ export async function POST(request) {
       provider: "codex",
       authType: "access_token",
       accessToken: token,
+      // YAN-1033: also expose the JWT exp as expiresAt so scheduling/UI see it.
+      ...(expiresAt ? { expiresAt } : {}),
       name: connectionName,
       email: email,
       providerSpecificData,

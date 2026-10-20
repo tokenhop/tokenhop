@@ -3,9 +3,18 @@
 
 import * as log from "../utils/logger.js";
 import { getRefreshLeadMs } from "open-sse/services/tokenRefresh.js";
-import { getCredentialExpiryMs } from "open-sse/services/oauthCredentialManager.js";
+import {
+  getEffectiveRefreshLeadMs,
+  getSchedulingExpiryMs,
+  isProactiveRefreshThrottled,
+} from "open-sse/services/oauthCredentialManager.js";
+import { isLifetimeAware } from "open-sse/services/tokenLifetime.js";
 
-/** Refresh when expiry is within 30 minutes (or the provider on-request lead, whichever larger). */
+/**
+ * Refresh when expiry is within 30 minutes (or the provider on-request lead, whichever larger).
+ * Lifetime-aware providers (codex) instead use the lifetime-scaled lead (YAN-1034), so a
+ * 1h token is not selected on every tick.
+ */
 export const BACKGROUND_REFRESH_LEAD_MS = 30 * 60 * 1000;
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
 const INITIAL_DELAY_MS = 10 * 1000;
@@ -35,7 +44,8 @@ function isNonServerRuntime() {
 
 /**
  * Pure selection: OAuth connections with a refreshToken whose access token
- * expires within max(provider on-request lead, BACKGROUND_REFRESH_LEAD_MS).
+ * expires within max(provider on-request lead, BACKGROUND_REFRESH_LEAD_MS); for lifetime-aware
+ * providers within their lifetime-scaled lead, and not refreshed in the last 5 minutes.
  *
  * @param {Array<object>} connections
  * @param {number} [nowMs]
@@ -54,14 +64,20 @@ export function selectConnectionsNeedingRefresh(connections, nowMs = Date.now())
     if (authType !== "oauth") continue;
     if (!conn.refreshToken) continue;
 
-    const expiresAtMs = getCredentialExpiryMs(conn);
+    const expiresAtMs = getSchedulingExpiryMs(conn.provider, conn, nowMs);
     if (expiresAtMs === null) continue;
 
-    const providerLead = getRefreshLeadMs(conn.provider);
-    const leadMs = Math.max(
-      Number.isFinite(providerLead) ? providerLead : 0,
-      BACKGROUND_REFRESH_LEAD_MS,
-    );
+    let leadMs;
+    if (isLifetimeAware(conn.provider)) {
+      if (isProactiveRefreshThrottled(conn.provider, conn, nowMs)) continue;
+      leadMs = getEffectiveRefreshLeadMs(conn.provider, conn, nowMs);
+    } else {
+      const providerLead = getRefreshLeadMs(conn.provider);
+      leadMs = Math.max(
+        Number.isFinite(providerLead) ? providerLead : 0,
+        BACKGROUND_REFRESH_LEAD_MS,
+      );
+    }
 
     if (expiresAtMs - nowMs < leadMs) {
       out.push(conn);

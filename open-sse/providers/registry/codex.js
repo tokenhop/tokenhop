@@ -180,6 +180,8 @@ export default {
     },
     maxRefreshAgeMs: 691200000,
     trackRefreshAt: true,
+    // expires_in is unreliable: trust the JWT exp, scale lead/max-age to the real lifetime (YAN-1033/1034).
+    lifetimeAware: true,
   },
   features: {
     usage: true,

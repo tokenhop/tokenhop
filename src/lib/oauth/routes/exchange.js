@@ -6,6 +6,7 @@ import {
   getXiaomiMimoSessionStatus,
   clearXiaomiMimoSession,
 } from "@/lib/oauth/utils/server";
+import { isLifetimeAware } from "open-sse/services/tokenLifetime.js";
 import { forgetBinding } from "@/lib/oauth/pendingBinding";
 import { createIn, requireFlowOwner } from "@/lib/oauth/scope";
 
@@ -185,9 +186,15 @@ export default async function exchange(provider, request, { body }) {
     provider,
     authType: "oauth",
     ...tokenData,
-    expiresAt: tokenData.expiresIn
-      ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
-      : null,
+    // Lifetime-aware providers (codex) already clamp expiresAt to the JWT exp in mapTokens.
+    expiresAt: isLifetimeAware(provider)
+      ? (tokenData.expiresAt ??
+        (tokenData.expiresIn
+          ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
+          : null))
+      : tokenData.expiresIn
+        ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
+        : null,
     testStatus: "active",
   });
   if (state) forgetBinding(state);
