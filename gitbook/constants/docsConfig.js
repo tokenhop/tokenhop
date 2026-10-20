@@ -41,6 +41,17 @@ const NAV_STRUCTURE = [
     ],
   },
   {
+    key: "usersTeams",
+    items: [
+      { key: "usersConcepts", slug: "users/concepts" },
+      { key: "usersHouseholds", slug: "users/households" },
+      { key: "usersTeamsGuide", slug: "users/teams" },
+      { key: "usersSso", slug: "users/sso" },
+      { key: "usersProviderTerms", slug: "users/provider-terms" },
+      { key: "usersSecurity", slug: "users/security" },
+    ],
+  },
+  {
     key: "deployment",
     items: [
       { key: "localhost", slug: "deployment/localhost" },
@@ -81,6 +92,13 @@ const TRANSLATIONS = {
     continue: "Continue",
     editPredictions: "Edit Predictions",
     otherTools: "Other Tools",
+    usersTeams: "Users & Teams",
+    usersConcepts: "Concepts",
+    usersHouseholds: "Household Guide",
+    usersTeamsGuide: "Small-Team Guide",
+    usersSso: "Single Sign-On",
+    usersProviderTerms: "Provider Terms",
+    usersSecurity: "Security & Operations",
     deployment: "Deployment",
     localhost: "Localhost",
     cloud: "Cloud (VPS/Docker)",
