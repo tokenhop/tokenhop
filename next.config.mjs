@@ -15,7 +15,7 @@ const nextConfig = {
   agentRules: false,
   // `next dev` blocks cross-origin HMR websockets (e.g. tailscale serve at
   // https://<host>.ts.net) unless the origin is allow-listed here.
-  allowedDevOrigins: ["ubdevsrv.azules-celsius.ts.net", "localhost"],
+  allowedDevOrigins: ["hstr-ubsrv.azules-celsius.ts.net", "localhost"],
   distDir: process.env.NEXT_DIST_DIR || ".next",
   output: "standalone",
   // `open` must stay external. It derives its own directory from `import.meta.url`, and
