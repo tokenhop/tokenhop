@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { PHASE_DEVELOPMENT_SERVER } from "next/constants.js";
 import brand from "./src/shared/brand/index.cjs";
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
@@ -8,12 +9,13 @@ const projectRoot = dirname(fileURLToPath(import.meta.url));
 const tracingRoot =
   process.env.NEXT_TRACING_ROOT_MODE === "workspace" ? join(projectRoot, "..") : projectRoot;
 const proxyClientMaxBodySize = brand.readEnv("PROXY_CLIENT_MAX_BODY_SIZE") || "128mb";
-// `next dev` only allows localhost by default. Any other host (e.g. tailscale serve at
+// `next dev` only allows localhost. Any other host (e.g. tailscale serve at
 // https://<host>.ts.net) must be listed in TOKENHOP_DEV_ALLOWED_ORIGINS, comma-separated.
 // Full URLs are accepted; only the hostname is kept.
+const devAllowedOriginsEnv = brand.readEnv("DEV_ALLOWED_ORIGINS") || "";
 const devAllowedOrigins = [
   "localhost",
-  ...(brand.readEnv("DEV_ALLOWED_ORIGINS") || "")
+  ...devAllowedOriginsEnv
     .split(",")
     .map((origin) =>
       origin
@@ -139,4 +141,32 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+// Host `next dev` binds to: --hostname/-H flag, else HOSTNAME env.
+function devBindHost() {
+  const args = process.argv;
+  const i = args.findIndex((arg) => arg === "--hostname" || arg === "-H");
+  if (i !== -1) return args[i + 1];
+  const flag = args.find((arg) => arg.startsWith("--hostname="));
+  return flag ? flag.slice("--hostname=".length) : process.env.HOSTNAME;
+}
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+export default function config(phase) {
+  const bindHost = devBindHost();
+  // A dev server bound beyond loopback is meant to be reached from other hosts, which
+  // `next dev` blocks unless allow-listed: fail fast instead of a dashboard with dead HMR.
+  if (
+    phase === PHASE_DEVELOPMENT_SERVER &&
+    bindHost &&
+    !LOOPBACK_HOSTS.has(bindHost) &&
+    !devAllowedOriginsEnv.trim()
+  ) {
+    throw new Error(
+      `next dev is bound to ${bindHost} but TOKENHOP_DEV_ALLOWED_ORIGINS is not set. ` +
+        "Set it to the hostname(s) you open the dashboard from (e.g. devbox.example.ts.net), " +
+        "or bind to localhost.",
+    );
+  }
+  return nextConfig;
+}

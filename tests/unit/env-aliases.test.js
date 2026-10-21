@@ -40,9 +40,13 @@ afterEach(() => {
 
 let configLoads = 0;
 // next.config.mjs reads the env at import; a query string forces a fresh evaluation.
-async function bodySizeLimit() {
+async function loadNextConfig(phase = "phase-production-build") {
   const { default: config } = await import(`${NEXT_CONFIG}?load=${++configLoads}`);
-  return config.experimental.proxyClientMaxBodySize;
+  return config(phase);
+}
+
+async function bodySizeLimit() {
+  return (await loadNextConfig()).experimental.proxyClientMaxBodySize;
 }
 
 describe("PROXY_CLIENT_MAX_BODY_SIZE (next.config.mjs, build time)", () => {
@@ -60,6 +64,45 @@ describe("PROXY_CLIENT_MAX_BODY_SIZE (next.config.mjs, build time)", () => {
 
   it("defaults to 128mb", async () => {
     expect(await bodySizeLimit()).toBe("128mb");
+  });
+});
+
+describe("TOKENHOP_DEV_ALLOWED_ORIGINS (next.config.mjs, dev server)", () => {
+  const DEV = "phase-development-server";
+  let hostname;
+  beforeEach(() => {
+    hostname = process.env.HOSTNAME;
+    delete process.env.TOKENHOP_DEV_ALLOWED_ORIGINS;
+  });
+  afterEach(() => {
+    if (hostname === undefined) delete process.env.HOSTNAME;
+    else process.env.HOSTNAME = hostname;
+    delete process.env.TOKENHOP_DEV_ALLOWED_ORIGINS;
+  });
+
+  it("allows only localhost when unset on loopback", async () => {
+    process.env.HOSTNAME = "localhost";
+    expect((await loadNextConfig(DEV)).allowedDevOrigins).toEqual(["localhost"]);
+  });
+
+  it("refuses to start a non-loopback dev server without it", async () => {
+    process.env.HOSTNAME = "0.0.0.0";
+    await expect(loadNextConfig(DEV)).rejects.toThrow(/TOKENHOP_DEV_ALLOWED_ORIGINS/);
+  });
+
+  it("keeps the hostname of each listed origin", async () => {
+    process.env.HOSTNAME = "0.0.0.0";
+    process.env.TOKENHOP_DEV_ALLOWED_ORIGINS = "https://box.example.ts.net:20128/x, *.tail.ts.net";
+    expect((await loadNextConfig(DEV)).allowedDevOrigins).toEqual([
+      "localhost",
+      "box.example.ts.net",
+      "*.tail.ts.net",
+    ]);
+  });
+
+  it("does not require it outside the dev server", async () => {
+    process.env.HOSTNAME = "0.0.0.0";
+    expect((await loadNextConfig()).allowedDevOrigins).toEqual(["localhost"]);
   });
 });
 
