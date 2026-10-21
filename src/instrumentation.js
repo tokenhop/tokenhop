@@ -3,6 +3,16 @@ export async function register() {
     const { isStartupExcludedBuildPhase } = await import("@/lib/db/processLock.js");
     if (isStartupExcludedBuildPhase()) return;
 
+    // YAN-1037/1038: lets open-sse persist rotated refresh tokens and flag
+    // re-authentication from inside the refresh lock. Installed first so a later
+    // startup step cannot leave refreshes without it; the store only touches the
+    // DB per call. Failure is non-fatal: refresh then behaves as before.
+    try {
+      (await import("@/sse/services/credentialStore.js")).installCredentialStore();
+    } catch (err) {
+      console.warn("[CredentialStore] install failed:", err?.message);
+    }
+
     // YAN-363 final wiring: exclusive DATA_DIR writer lock -> adapter
     // open/migrate -> multi-user resolved once -> strict owner bootstrap when
     // enabled -> activateGatewayKeys (legacy+off: skipped, no master/backup;

@@ -36,6 +36,7 @@ export {
   createProviderConnectionUnscoped,
   updateProviderConnectionUnscoped,
   mutateBillingLockUnscoped,
+  mutateProviderConnectionUnscoped,
   deleteProviderConnectionUnscoped,
   deleteProviderConnectionsByProviderUnscoped,
   reorderProviderConnectionsUnscoped,

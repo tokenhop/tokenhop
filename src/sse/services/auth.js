@@ -41,7 +41,9 @@ import {
   grantBudgetLimit,
   reserveGrantBudget,
 } from "./budgetGuard.js";
+import { getReauthRequired, needsReauthentication } from "open-sse/services/reauthState.js";
 import { resolveOpenAICompatibleConnectionApiType } from "./model.js";
+import { handleReauthOnFailure, scheduleFlagExpiredAccessToken } from "./reauthRequired.js";
 import * as log from "../utils/logger.js";
 
 // Per-key mutex chain tails to prevent race conditions during account selection.
@@ -183,12 +185,22 @@ export async function getProviderCredentials(
     // YAN-372: grant budgets apply only when routed through that grant; null
     // (zero cost) outside a budgeted request or when no grant budget exists.
     const budgetCtx = grantBudgetContext();
+    let reauthSkipped = 0;
     const availableConnections = connections.filter((c) => {
       if (excludeSet.has(c.id)) return false;
       // YAN-1041: connection-wide credit lock. Runs before the grant checks and
       // the preferred-connection bypass below, so no model, grant view or pin
       // reaches an out-of-credit key until the probe clears it.
       if (getBillingLock(c)) return false;
+      // YAN-1038: refresh token rejected / access token expired with nothing to
+      // refresh it. Skipped for every model, before the preferred-connection bypass.
+      if (needsReauthentication(c.provider || providerId, c)) {
+        reauthSkipped += 1;
+        // Expired access-token-only rows (no stored expiry, raw-JWT imports) are
+        // flagged lazily so the dashboard shows them; never blocks selection.
+        if (!getReauthRequired(c)) scheduleFlagExpiredAccessToken(c, c.provider || providerId);
+        return false;
+      }
       if (isModelLockActive(c, model)) return false;
       if (c.grantId) {
         if (!grantAllowsModel(c, providerId, model, c.id === preferredConnectionId)) return false;
@@ -238,6 +250,7 @@ export async function getProviderCredentials(
       return true;
     });
 
+    if (reauthSkipped > 0) log.debug("AUTH", `${provider} | REAUTH_SKIP ${reauthSkipped}`);
     log.debug(
       "AUTH",
       `${provider} | available: ${availableConnections.length}/${connections.length}`,
@@ -545,6 +558,13 @@ export async function markAccountUnavailable(
   const conn = connections.find((c) => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
   const providerId = resolveProviderId(provider) ?? provider;
+
+  // YAN-1038: a connection that needs re-authentication falls through at once and
+  // keeps its precise state (no 2-min model lock, no "unavailable" overwrite).
+  const reauth = conn
+    ? await handleReauthOnFailure({ conn, connectionId, status, errorText, providerId })
+    : null;
+  if (reauth) return reauth;
 
   // YAN-1041: credit exhaustion on an API-key connection locks the whole key
   // (billingLock), not one model. Subscription/OAuth connections and providers

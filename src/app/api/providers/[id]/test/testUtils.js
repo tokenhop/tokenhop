@@ -25,6 +25,8 @@ import {
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 import { fetchZedAuthenticatedUser } from "open-sse/shared/zedAuth.js";
+import { REAUTH_LAST_ERROR, REAUTH_REASONS } from "open-sse/config/reauthConstants.js";
+import { getReauthRequired, needsReauthentication } from "open-sse/services/reauthState.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -1234,6 +1236,18 @@ export async function testSingleConnection(id) {
       latencyMs: 0,
       testedAt: new Date().toISOString(),
     };
+
+  // YAN-1038: flagged / expired access-token-only rows are not probed or written: the repo
+  // drops health writes for a flagged row, so a "valid" result here would contradict it.
+  if (needsReauthentication(connection.provider, connection)) {
+    const reason = getReauthRequired(connection)?.reason || REAUTH_REASONS.accessTokenExpired;
+    return {
+      valid: false,
+      error: REAUTH_LAST_ERROR[reason],
+      latencyMs: 0,
+      testedAt: new Date().toISOString(),
+    };
+  }
 
   const effectiveProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 

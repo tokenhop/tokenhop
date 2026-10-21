@@ -4,7 +4,10 @@
 // newest models silently missing, so ids the static catalog knows but the live list
 // lacks are surfaced as a warning pointing at the version to bump.
 
-import { refreshCodexToken } from "@/sse/services/tokenRefresh";
+import { refreshProviderCredentials } from "open-sse/services/oauthCredentialManager.js";
+import { needsReauthentication } from "open-sse/services/reauthState.js";
+import { isUnrecoverableRefreshError } from "open-sse/services/tokenRefresh.js";
+import * as log from "@/sse/utils/logger.js";
 import { buildOAuthResolver } from "@/lib/providerModels/oauthResolver.js";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
@@ -77,11 +80,18 @@ export function missingStaticCodexIds(liveModels, staticModels) {
 
 const resolveCodexOAuthModels = buildOAuthResolver({
   refreshFn: async (conn) => {
-    const refreshed = await refreshCodexToken(conn.refreshToken);
+    // A flagged row's refresh token is dead: never redeem it (YAN-1038).
+    if (needsReauthentication("codex", conn)) return null;
+    // Same lock / store re-read / reauth flag as the request path (YAN-1037): a direct
+    // refreshCodexToken here would redeem a stale rotated token.
+    const refreshed = await refreshProviderCredentials(
+      "codex",
+      { ...conn, connectionId: conn.id },
+      log,
+    );
+    if (!refreshed?.accessToken || isUnrecoverableRefreshError(refreshed)) return null;
     // Stamp the refresh so lastRefreshAt-based lifetime tracking (YAN-1034/1035) stays accurate.
-    return refreshed?.accessToken
-      ? { ...refreshed, lastRefreshAt: new Date().toISOString() }
-      : refreshed;
+    return { ...refreshed, lastRefreshAt: new Date().toISOString() };
   },
   fetchFn: (token) =>
     fetch(CODEX_MODELS_URL, {
