@@ -316,9 +316,9 @@ run_ts_lint() {
       mapfile -t ts_relative_biome_files < <(relativize_paths "$TS_PROJECT_DIR" "${ts_biome_files[@]}")
 
       if (( fix )); then
-        (cd "$TS_PROJECT_DIR" && npx @biomejs/biome check --fix "${ts_relative_biome_files[@]}") || exit_code=1
+        (cd "$TS_PROJECT_DIR" && npx @biomejs/biome check --fix --no-errors-on-unmatched "${ts_relative_biome_files[@]}") || exit_code=1
       else
-        (cd "$TS_PROJECT_DIR" && npx @biomejs/biome ci "${ts_relative_biome_files[@]}") || exit_code=1
+        (cd "$TS_PROJECT_DIR" && npx @biomejs/biome ci --no-errors-on-unmatched "${ts_relative_biome_files[@]}") || exit_code=1
       fi
     fi
 
@@ -343,7 +343,7 @@ run_ts_lint() {
     echo "=== TypeScript/JavaScript: biome ==="
     local -a ts_relative_biome_files=()
     mapfile -t ts_relative_biome_files < <(relativize_paths "$TS_PROJECT_DIR" "${ts_biome_files[@]}")
-    (cd "$TS_PROJECT_DIR" && npx @biomejs/biome ci "${ts_relative_biome_files[@]}") || exit_code=1
+    (cd "$TS_PROJECT_DIR" && npx @biomejs/biome ci --no-errors-on-unmatched "${ts_relative_biome_files[@]}") || exit_code=1
   fi
 
   if compgen -G "$TS_PROJECT_DIR/tsconfig*.json" >/dev/null; then
@@ -641,8 +641,8 @@ run_ts_format() {
     echo "=== TypeScript/JavaScript: biome ==="
     local -a ts_relative_files=()
     mapfile -t ts_relative_files < <(relativize_paths "$TS_PROJECT_DIR" "${ts_files[@]}")
-    (cd "$TS_PROJECT_DIR" && npx @biomejs/biome format --write "${ts_relative_files[@]}")
-    (cd "$TS_PROJECT_DIR" && npx @biomejs/biome check --fix "${ts_relative_files[@]}")
+    (cd "$TS_PROJECT_DIR" && npx @biomejs/biome format --write --no-errors-on-unmatched "${ts_relative_files[@]}")
+    (cd "$TS_PROJECT_DIR" && npx @biomejs/biome check --fix --no-errors-on-unmatched "${ts_relative_files[@]}")
     return 0
   fi
 
@@ -657,8 +657,8 @@ run_ts_format() {
   echo "=== TypeScript/JavaScript: biome ==="
   local -a ts_relative_files=()
   mapfile -t ts_relative_files < <(relativize_paths "$TS_PROJECT_DIR" "${ts_files[@]}")
-  (cd "$TS_PROJECT_DIR" && npx @biomejs/biome format --write "${ts_relative_files[@]}")
-  (cd "$TS_PROJECT_DIR" && npx @biomejs/biome check --fix "${ts_relative_files[@]}")
+  (cd "$TS_PROJECT_DIR" && npx @biomejs/biome format --write --no-errors-on-unmatched "${ts_relative_files[@]}")
+  (cd "$TS_PROJECT_DIR" && npx @biomejs/biome check --fix --no-errors-on-unmatched "${ts_relative_files[@]}")
 }
 
 run_docs_format() {
