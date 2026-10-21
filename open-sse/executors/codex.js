@@ -281,6 +281,11 @@ export class CodexExecutor extends BaseExecutor {
     return body?._compact || compactBodies.has(body) ? `${base}/compact` : base;
   }
 
+  // Access-token-only rows (no refresh token) cannot refresh: skip the futile retries.
+  canRefreshCredentials(credentials) {
+    return Boolean(credentials?.refreshToken);
+  }
+
   async refreshCredentials(credentials, log, proxyOptions = null) {
     if (!credentials?.refreshToken) return null;
     return refreshProviderCredentials("codex", credentials, log, proxyOptions);

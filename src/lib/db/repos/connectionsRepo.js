@@ -40,6 +40,7 @@ const OPTIONAL_FIELDS = [
 ];
 
 const MODEL_LOCK_PREFIX = "modelLock_";
+const REAUTH_HEALTH_KEYS = ["testStatus", "lastError", "lastErrorAt", "lastErrorType", "errorCode"];
 
 function repoFail(code, message) {
   throw Object.assign(new Error(`[credential-repo] ${message}`), { code });
@@ -93,6 +94,36 @@ function resetHealthStateOnActivation(existing, patch) {
   }
 
   return normalized;
+}
+
+/**
+ * YAN-1038 (D9): `reauthRequired` clears only when the credential itself is
+ * replaced (a patch carrying a refresh/access token that differs from the live
+ * one: OAuth re-login upsert, bulk re-import, any refresh persist). Any other
+ * patch (clearAccountError, a passing Test) keeps the flag AND the flagged health
+ * fields, otherwise one success on a still-valid access token would restart the loop.
+ */
+function clearReauthOnCredentialReplace(existing, patch) {
+  if (!existing?.reauthRequired || !patch) return patch;
+  const replaced = ["refreshToken", "accessToken"].some(
+    (k) => typeof patch[k] === "string" && patch[k] && patch[k] !== existing[k],
+  );
+  if (!replaced) {
+    // Not a credential replacement: a passing Test or a successful request must not
+    // turn the flagged row healthy, so drop every health-state write from the patch.
+    const kept = { ...patch };
+    for (const key of REAUTH_HEALTH_KEYS) delete kept[key];
+    return kept;
+  }
+  return {
+    ...patch,
+    reauthRequired: null,
+    lastErrorType: null,
+    errorCode: null,
+    lastError: Object.hasOwn(patch, "lastError") ? patch.lastError : null,
+    lastErrorAt: Object.hasOwn(patch, "lastErrorAt") ? patch.lastErrorAt : null,
+    testStatus: patch.testStatus ?? "active",
+  };
 }
 
 function connColumns(row) {
@@ -351,7 +382,10 @@ function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}, 
   }
 
   if (existing) {
-    const normalized = resetHealthStateOnActivation(existing, data);
+    const normalized = clearReauthOnCredentialReplace(
+      existing,
+      resetHealthStateOnActivation(existing, data),
+    );
     const merged = { ...existing, ...normalized, updatedAt: now };
     if (data.authType === "oauth") {
       const providerSpecificData = mergeReloginProviderData(
@@ -418,7 +452,10 @@ function updateInTx(db, row, data, ctx) {
   if (!row) return null;
   const existing = rowToConn(db, row, ctx);
   const { workspaceId: _ws, createdByUserId: _by, ...patch } = data || {};
-  const normalized = resetHealthStateOnActivation(existing, patch);
+  const normalized = clearReauthOnCredentialReplace(
+    existing,
+    resetHealthStateOnActivation(existing, patch),
+  );
   const merged = { ...existing, ...normalized, updatedAt: new Date().toISOString() };
   applyPsdDelta(merged, existing, normalized);
   upsert(db, merged, ctx);
@@ -438,23 +475,51 @@ function updateInTx(db, row, data, ctx) {
  * @returns {Promise<{ applied: boolean, missing: boolean, billingLock: object|null, disabled?: boolean }>}
  */
 export async function mutateBillingLockUnscoped(id, decide) {
+  let live = null;
+  let merged = null;
+  const r = await mutateProviderConnectionUnscoped(
+    id,
+    (row) => {
+      live = row;
+      return decide(row);
+    },
+    (m) => {
+      merged = m;
+    },
+  );
+  if (r.missing) return { applied: false, missing: true, billingLock: null };
+  if (!r.applied) {
+    return {
+      applied: false,
+      missing: false,
+      billingLock: live?.billingLock ?? null,
+      disabled: live?.isActive === false,
+    };
+  }
+  return { applied: true, missing: false, billingLock: merged?.billingLock ?? null };
+}
+
+/**
+ * YAN-1037/1038: generic transactional read-decide-write on one connection.
+ * `decide(live)` runs INSIDE the SQLite transaction against the live decrypted
+ * row and returns a patch (applied through the normal update path) or null to
+ * skip. Returns only `{ applied, missing }`: callers never see the row.
+ * `onMerged` is an internal hook (used by mutateBillingLockUnscoped).
+ * @param {string} id
+ * @param {(live: object) => (object|null)} decide
+ * @returns {Promise<{ applied: boolean, missing: boolean }>}
+ */
+export async function mutateProviderConnectionUnscoped(id, decide, onMerged) {
   const db = await getAdapter();
   const ctx = await prepareCredentialCtx(db);
   return db.transaction(() => {
     const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
-    if (!row) return { applied: false, missing: true, billingLock: null };
-    const live = rowToConn(db, row, ctx);
-    const patch = decide(live);
-    if (!patch) {
-      return {
-        applied: false,
-        missing: false,
-        billingLock: live.billingLock ?? null,
-        disabled: live.isActive === false,
-      };
-    }
+    if (!row) return { applied: false, missing: true };
+    const patch = decide(rowToConn(db, row, ctx));
+    if (!patch) return { applied: false, missing: false };
     const merged = updateInTx(db, row, patch, ctx);
-    return { applied: true, missing: false, billingLock: merged.billingLock ?? null };
+    if (typeof onMerged === "function") onMerged(merged);
+    return { applied: true, missing: false };
   });
 }
 
