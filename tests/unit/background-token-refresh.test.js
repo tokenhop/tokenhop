@@ -201,3 +201,111 @@ describe("start/stop guards", () => {
     stopBackgroundTokenRefresh();
   });
 });
+
+describe("re-authentication state (YAN-1038)", () => {
+  const flagged = () =>
+    conn({
+      id: "dead",
+      provider: "codex",
+      reauthRequired: {
+        reason: "refresh_token_rejected",
+        code: "refresh_token_reused",
+        at: new Date(NOW).toISOString(),
+      },
+      expiresAt: new Date(NOW - 60 * 1000).toISOString(),
+    });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("does not select a due codex oauth row flagged reauthRequired", async () => {
+    const { selectConnectionsNeedingRefresh } = await import(
+      "../../src/sse/services/backgroundTokenRefresh.js"
+    );
+    const healthy = { ...flagged(), id: "ok", reauthRequired: undefined };
+    const list = selectConnectionsNeedingRefresh([flagged(), healthy], NOW);
+    expect(list.map((c) => c.id)).toEqual(["ok"]);
+  });
+
+  it("a tick never refreshes the flagged row", async () => {
+    const refreshConnection = vi.fn(async (c) => c);
+    const loadConnections = vi.fn(async () => [flagged()]);
+    const { runBackgroundTokenRefreshTick } = await import(
+      "../../src/sse/services/backgroundTokenRefresh.js"
+    );
+    await runBackgroundTokenRefreshTick({ loadConnections, refreshConnection });
+    expect(refreshConnection).not.toHaveBeenCalled();
+  });
+});
+
+describe("expired access-token-only rows are flagged by the tick (YAN-1038 H1)", () => {
+  const fakeJwt = (payload) => `h.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.s`;
+  const row = (id, extra = {}) => ({
+    id,
+    provider: "codex",
+    authType: "access_token",
+    accessToken: fakeJwt({ exp: Math.floor((NOW - 3600 * 1000) / 1000) }),
+    isActive: true,
+    ...extra,
+  });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("flags only unflagged expired access-token-only rows, with no refresh", async () => {
+    const live = row("live", {
+      accessToken: fakeJwt({ exp: Math.floor((NOW + 3600 * 1000) / 1000) }),
+    });
+    const flaggedAlready = row("flagged", {
+      reauthRequired: { reason: "access_token_expired", code: "token_expired", at: "x" },
+    });
+    const withRt = row("with-rt", { authType: "oauth", refreshToken: "rt" });
+    const flagExpired = vi.fn(async () => true);
+    const refreshConnection = vi.fn();
+    const loadConnections = vi.fn(async () => [row("dead"), live, flaggedAlready, withRt]);
+    const { runBackgroundTokenRefreshTick } = await import(
+      "../../src/sse/services/backgroundTokenRefresh.js"
+    );
+    await runBackgroundTokenRefreshTick({
+      loadConnections,
+      refreshConnection,
+      flagExpired,
+    });
+    expect(flagExpired.mock.calls.map((c) => c[0].id)).toEqual(["dead"]);
+    // Only the refreshable oauth row is refreshed; the flagged-only passes make no refresh call.
+    expect(refreshConnection.mock.calls.map((c) => c[0].id)).toEqual(["with-rt"]);
+  });
+
+  it("a flag failure never kills the tick", async () => {
+    const flagExpired = vi.fn(async () => {
+      throw new Error("db down");
+    });
+    const refreshConnection = vi.fn(async (c) => c);
+    const due = conn({ id: "due" });
+    const { runBackgroundTokenRefreshTick } = await import(
+      "../../src/sse/services/backgroundTokenRefresh.js"
+    );
+    await runBackgroundTokenRefreshTick({
+      loadConnections: async () => [row("dead"), due],
+      refreshConnection,
+      flagExpired,
+    });
+    expect(refreshConnection).toHaveBeenCalledTimes(1);
+  });
+});

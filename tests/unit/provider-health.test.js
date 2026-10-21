@@ -6,6 +6,7 @@ import {
   providerHealth,
   probeTimes,
   summarizeProviders,
+  tokenExpiryText,
 } from "@/shared/utils/providerHealth.js";
 
 const NOW = Date.parse("2026-09-27T12:00:00Z");
@@ -270,5 +271,94 @@ describe("provider health", () => {
       noAuthReady: 0,
       providers: [],
     });
+  });
+});
+
+describe("re-authentication required (YAN-1038)", () => {
+  const flag = (reason = "refresh_token_rejected") => ({
+    reason,
+    code: "refresh_token_reused",
+    at: "2026-09-27T11:00:00Z",
+  });
+
+  it("outranks a cooldown and an unavailable overwrite for a flagged oauth row", () => {
+    const row = connection("codex", {
+      reauthRequired: flag(),
+      testStatus: "unavailable",
+      modelLock___all: "2026-09-27T12:02:14Z",
+    });
+    expect(connectionHealth(row, NOW)).toMatchObject({
+      status: "err",
+      state: "reauth_required",
+      reason: "Token refresh failed · reconnect",
+      action: "reconnect",
+    });
+  });
+
+  it("points a flagged access_token row at the provider, not a reconnect", () => {
+    const row = connection("codex", {
+      authType: "access_token",
+      reauthRequired: flag("access_token_expired"),
+    });
+    expect(connectionHealth(row, NOW)).toMatchObject({
+      status: "err",
+      state: "reauth_required",
+      reason: "Token expired · open provider",
+      action: "open",
+    });
+  });
+
+  it("treats an unflagged access_token row past its expiry the same way", () => {
+    const row = connection("codex", {
+      authType: "access_token",
+      expiresAt: "2026-09-27T11:59:00Z",
+    });
+    expect(connectionHealth(row, NOW)).toMatchObject({
+      status: "err",
+      state: "reauth_required",
+      reason: "Token expired · open provider",
+      action: "open",
+    });
+    const future = connection("codex", {
+      authType: "access_token",
+      expiresAt: "2026-09-27T13:00:00Z",
+    });
+    expect(connectionHealth(future, NOW).status).toBe("ok");
+  });
+
+  it("lets disabled and billing locks win over it", () => {
+    expect(
+      connectionHealth(connection("codex", { reauthRequired: flag(), isActive: false }), NOW),
+    ).toMatchObject({ status: "off", reason: "Disabled" });
+    const lock = { reason: "credit_exhausted" };
+    expect(
+      connectionHealth(connection("codex", { reauthRequired: flag(), billingLock: lock }), NOW),
+    ).toMatchObject({ state: "out_of_credit", reason: "Out of credit" });
+  });
+
+  it("ignores a malformed reauthRequired", () => {
+    for (const reauthRequired of [null, "x", {}, { reason: "other" }, { reason: 5 }]) {
+      expect(connectionHealth(connection("codex", { reauthRequired }), NOW).status).toBe("ok");
+    }
+  });
+
+  it("does not apply to access_token rows of providers that are not lifetime-aware", () => {
+    const expired = { authType: "access_token", expiresAt: "2026-09-27T11:59:00Z" };
+    expect(connectionHealth(connection("claude", expired), NOW).status).toBe("ok");
+    expect(tokenExpiryText(connection("claude", expired), NOW)).toBe("");
+  });
+
+  it("formats the access-token expiry text", () => {
+    const at = (offsetMs) => new Date(NOW + offsetMs).toISOString();
+    const row = (fields) => connection("codex", { authType: "access_token", ...fields });
+    expect(tokenExpiryText(row({ expiresAt: at(3 * 3600e3 + 60e3) }), NOW)).toBe(
+      "Token expires in 3h",
+    );
+    expect(tokenExpiryText(row({ expiresAt: at(-(2 * 86400e3 + 60e3)) }), NOW)).toBe(
+      "Token expired 2d ago",
+    );
+    expect(tokenExpiryText(connection("claude", { expiresAt: at(3600e3) }), NOW)).toBe("");
+    expect(tokenExpiryText(row({ expiresAt: "not a date" }), NOW)).toBe("");
+    expect(tokenExpiryText(row({}), NOW)).toBe("");
   });
 });

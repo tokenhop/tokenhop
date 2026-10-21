@@ -372,6 +372,8 @@ export async function refreshGoogleToken(
   );
 }
 
+const PERMANENT_REFRESH_STATUSES = new Set([400, 401, 403]);
+
 export function classifyOAuthRefreshError(errorText = "", status = 0) {
   let parsed = null;
   try {
@@ -383,12 +385,14 @@ export function classifyOAuthRefreshError(errorText = "", status = 0) {
   const code = parsed?.error?.code || parsed?.error || parsed?.error_code || "";
   const description = parsed?.error_description || parsed?.message || errorText || "";
   const combined = `${code} ${description}`.toLowerCase();
-  const permanent = [
+  const hasMarker = [
     "refresh_token_expired",
     "refresh_token_reused",
     "refresh_token_invalidated",
     "invalid_grant",
   ].some((marker) => combined.includes(marker));
+  // Only 400/401/403 (or an unknown status) are a verdict on the token; 408/429/5xx are transient.
+  const permanent = hasMarker && (!status || PERMANENT_REFRESH_STATUSES.has(status));
 
   return { status, code, description, permanent };
 }

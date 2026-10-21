@@ -167,3 +167,39 @@ describe("out of credit across provider surfaces (YAN-1041)", () => {
     expect(panel).toMatch(/\? "Out of credit"/);
   });
 });
+
+describe("re-authentication required across provider surfaces (YAN-1038)", () => {
+  const flagged = (id, authType, reason) =>
+    conn(id, "codex", authType, {
+      testStatus: "error",
+      lastError:
+        reason === "access_token_expired" ? "Token expired" : "Token expired and refresh failed",
+      reauthRequired: { reason, code: "unknown", at: "2026-09-27T11:00:00Z" },
+    });
+
+  it("routes repair to reauthorize for oauth and open for access_token", () => {
+    expect(repairTarget(flagged("a", "oauth", "refresh_token_rejected"))).toBe("reauthorize");
+    expect(repairTarget(flagged("b", "access_token", "access_token_expired"))).toBe("open");
+  });
+
+  it("counts a flagged row as needing attention", () => {
+    const list = [flagged("a", "oauth", "refresh_token_rejected")];
+    const summary = summarizeProviders([], list);
+    expect(summary).toMatchObject({ connected: 1, needsAttention: 1 });
+    expect(summary.providers.find((p) => p.id === "codex")).toMatchObject({
+      status: "err",
+      state: "reauth_required",
+    });
+  });
+
+  it("shows the access-token expiry in the connection row", () => {
+    const src = readFileSync(
+      resolve(
+        __dirname,
+        "../../src/app/(dashboard)/dashboard/providers/detail/SortableConnectionRow.js",
+      ),
+      "utf8",
+    );
+    expect(src).toContain("tokenExpiryText(");
+  });
+});

@@ -182,6 +182,9 @@ export default {
     trackRefreshAt: true,
     // expires_in is unreliable: trust the JWT exp, scale lead/max-age to the real lifetime (YAN-1033/1034).
     lifetimeAware: true,
+    // Refresh tokens are single-use: a redeemed RT must be persisted before the lock is
+    // released and other requests adopt it instead of redeeming a stale snapshot (YAN-1037).
+    rotatingRefreshToken: true,
   },
   features: {
     usage: true,

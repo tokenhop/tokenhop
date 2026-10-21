@@ -6,6 +6,7 @@ import { getConnection } from "@/lib/db/index.js";
 import { loadScoped } from "@/lib/users/workspaceScope.js";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
+import { needsReauthentication } from "open-sse/services/reauthState.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
 import {
@@ -32,6 +33,11 @@ function isAuthExpiredMessage(usage) {
  * @returns Promise<{ connection, refreshed: boolean }>
  */
 export async function refreshAndUpdateCredentials(connection, force = false, proxyOptions = null) {
+  // YAN-1038: a flagged connection can never refresh; do not hit the token endpoint.
+  if (needsReauthentication(connection.provider, connection)) {
+    return { connection, refreshed: false };
+  }
+
   const executor = getExecutor(connection.provider);
 
   // Build credentials object from connection
@@ -58,7 +64,8 @@ export async function refreshAndUpdateCredentials(connection, force = false, pro
   // Use executor's refreshCredentials method (with optional proxy)
   const refreshResult = await executor.refreshCredentials(credentials, console, proxyOptions);
 
-  if (!refreshResult) {
+  // A refresher can return {error} (e.g. unrecoverable_refresh_error): not a refresh.
+  if (!refreshResult || refreshResult.error) {
     // Refresh failed but we still have an accessToken — try with existing token
     if (connection.accessToken) {
       return { connection, refreshed: false };

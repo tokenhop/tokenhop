@@ -1,3 +1,5 @@
+import { REAUTH_REASONS } from "open-sse/config/reauthConstants.js";
+
 // One rule for every dashboard provider status. Connected means at least one enabled
 // connection, even when that connection needs attention. No-auth ready is separate.
 const RANK = { off: 0, ok: 1, warn: 2, err: 3 };
@@ -43,6 +45,35 @@ export function repairAction(connection) {
 export function billingLockOf(connection) {
   const lock = connection?.billingLock;
   return lock && typeof lock === "object" && lock.reason === "credit_exhausted" ? lock : null;
+}
+
+const REAUTH_REASON_VALUES = new Set(Object.values(REAUTH_REASONS));
+
+/** Persisted re-authentication flag, or null. Malformed or unknown reasons are ignored. */
+export function reauthRequiredOf(connection) {
+  const flag = connection?.reauthRequired;
+  return flag && typeof flag === "object" && REAUTH_REASON_VALUES.has(flag.reason) ? flag : null;
+}
+
+// Providers whose registry entry sets oauth.lifetimeAware (open-sse/providers/registry/*).
+// Keep in sync by hand: client code must not import the registry. The backend only
+// skips/flags imported access tokens for these, so the dashboard expiry rules match.
+const LIFETIME_AWARE_PROVIDERS = new Set(["codex"]);
+
+function expiryMs(connection) {
+  if (
+    connection?.authType !== "access_token" ||
+    !LIFETIME_AWARE_PROVIDERS.has(connection.provider) ||
+    !connection.expiresAt
+  )
+    return NaN;
+  return new Date(connection.expiresAt).getTime();
+}
+
+/** An imported access token (no refresh token) past its stored expiry. */
+export function isImportedTokenExpired(connection, nowMs = Date.now()) {
+  const exp = expiryMs(connection);
+  return !Number.isNaN(exp) && exp <= nowMs;
 }
 
 // lastProbeError is an allowlisted code, never raw provider text. Anything else reads as a generic failure.
@@ -124,6 +155,15 @@ function span(ms) {
   return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
 }
 
+/** Expiry copy for imported access tokens. Empty for other auth types and bad or missing dates. */
+export function tokenExpiryText(connection, nowMs = Date.now()) {
+  const exp = expiryMs(connection);
+  if (Number.isNaN(exp)) return "";
+  return exp > nowMs
+    ? `Token expires in ${span(exp - nowMs)}`
+    : `Token expired ${span(nowMs - exp)} ago`;
+}
+
 /** Last/next probe copy for a billing lock. Bad or missing timestamps never render as NaN. */
 export function probeTimes(lock, nowMs = Date.now()) {
   const last = lock?.lastProbeAt ? new Date(lock.lastProbeAt).getTime() : NaN;
@@ -154,6 +194,23 @@ export function connectionHealth(connection, nowMs = Date.now()) {
       action: "open",
       billingLock: billingLockOf(connection),
     };
+
+  // A dead refresh token or expired imported access token needs a new credential.
+  // It outranks cooldowns and "unavailable" overwrites; repair reuses the existing flow.
+  const reauth = reauthRequiredOf(connection);
+  if (reauth || isImportedTokenExpired(connection, nowMs)) {
+    const label =
+      reauth?.reason === REAUTH_REASONS.refreshTokenRejected
+        ? "Token refresh failed"
+        : "Token expired";
+    const action = repairAction(connection);
+    return {
+      status: "err",
+      state: "reauth_required",
+      reason: action === "reconnect" ? `${label} · reconnect` : `${label} · open provider`,
+      action,
+    };
+  }
 
   const until = cooldownUntil(connection, nowMs);
   const code = Number(connection.errorCode);
