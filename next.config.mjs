@@ -8,14 +8,28 @@ const projectRoot = dirname(fileURLToPath(import.meta.url));
 const tracingRoot =
   process.env.NEXT_TRACING_ROOT_MODE === "workspace" ? join(projectRoot, "..") : projectRoot;
 const proxyClientMaxBodySize = brand.readEnv("PROXY_CLIENT_MAX_BODY_SIZE") || "128mb";
+// `next dev` only allows localhost by default. Any other host (e.g. tailscale serve at
+// https://<host>.ts.net) must be listed in TOKENHOP_DEV_ALLOWED_ORIGINS, comma-separated.
+// Full URLs are accepted; only the hostname is kept.
+const devAllowedOrigins = [
+  "localhost",
+  ...(brand.readEnv("DEV_ALLOWED_ORIGINS") || "")
+    .split(",")
+    .map((origin) =>
+      origin
+        .trim()
+        .replace(/^[a-z]+:\/\//i, "")
+        .replace(/[:/].*$/, ""),
+    )
+    .filter(Boolean),
+];
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Stop `next dev` from rewriting AGENTS.md/CLAUDE.md with its agent-rules block.
   agentRules: false,
-  // `next dev` blocks cross-origin HMR websockets (e.g. tailscale serve at
-  // https://<host>.ts.net) unless the origin is allow-listed here.
-  allowedDevOrigins: ["hstr-ubsrv.azules-celsius.ts.net", "localhost"],
+  // `next dev` blocks cross-origin HMR websockets unless the origin is allow-listed here.
+  allowedDevOrigins: devAllowedOrigins,
   distDir: process.env.NEXT_DIST_DIR || ".next",
   output: "standalone",
   // `open` must stay external. It derives its own directory from `import.meta.url`, and
