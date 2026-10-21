@@ -77,15 +77,15 @@ describe("installCredentialStore", () => {
     });
   });
 
-  it("load returns the stored tokens, flag and active state", async () => {
+  it("load returns the stored tokens and flag only", async () => {
     const conn = await mk();
     const loaded = await store.load(conn.id);
     expect(loaded).toMatchObject({
       accessToken: "at-1",
       refreshToken: "rt-1",
       reauthRequired: null,
-      isActive: true,
     });
+    expect(loaded).not.toHaveProperty("isActive");
     expect(await store.load("missing")).toBeNull();
   });
 });

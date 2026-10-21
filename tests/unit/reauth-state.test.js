@@ -252,12 +252,15 @@ describe("credentialStore slot", () => {
 });
 
 describe("registry flag", () => {
-  it("marks codex as rotatingRefreshToken and nothing else", async () => {
+  it("marks codex as rotatingRefreshToken; every such provider is lifetime-aware or has a refresh endpoint", async () => {
     const { PROVIDER_OAUTH } = await import("../../open-sse/providers/index.js");
     expect(PROVIDER_OAUTH.codex.rotatingRefreshToken).toBe(true);
-    const flagged = Object.entries(PROVIDER_OAUTH)
-      .filter(([, o]) => o.rotatingRefreshToken === true)
-      .map(([id]) => id);
-    expect(flagged).toEqual(["codex"]);
+    for (const [id, oauth] of Object.entries(PROVIDER_OAUTH)) {
+      if (oauth.rotatingRefreshToken !== true) continue;
+      expect(
+        oauth.lifetimeAware === true || Boolean(oauth.refreshUrl || oauth.tokenUrl),
+        `${id} rotates refresh tokens but is neither lifetime-aware nor refreshable`,
+      ).toBe(true);
+    }
   });
 });

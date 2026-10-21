@@ -89,7 +89,7 @@ describe("account selection skips connections that need re-authentication", () =
       oauth("c1", { reauthRequired: flag() }),
       oauth("c2", { priority: 2 }),
     ]);
-    const r = await getProviderCredentials("codex", null, "gpt-5", false, {
+    const r = await getProviderCredentials("codex", null, "gpt-5", {
       preferredConnectionId: "c1",
     });
     expect(idOf(r)).toBe("c2");
@@ -207,6 +207,41 @@ describe("H1: selection lazily persists the flag for expired access-token-only r
     expect(idOf(await getProviderCredentials("codex", null, "gpt-5"))).toBe("live");
     await flush();
     expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it("backs off per connection after a failed write, so selection does not warn on every request", async () => {
+    const dead = accessTokenRow("cool", { accessToken: expiredJwt(), expiresAt: undefined });
+    const other = accessTokenRow("cool-2", { accessToken: expiredJwt(), expiresAt: undefined });
+    dbMocks.getProviderConnectionsUnscoped.mockResolvedValue([dead, accessTokenRow("live")]);
+    mutateProviderConnectionUnscoped.mockRejectedValue(new Error("db down"));
+
+    await getProviderCredentials("codex", null, "gpt-5");
+    await flush();
+    await getProviderCredentials("codex", null, "gpt-5");
+    await flush();
+    await getProviderCredentials("codex", null, "gpt-5");
+    await flush();
+    // One attempt and one warning within the cooldown window.
+    expect(mutateProviderConnectionUnscoped).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+
+    // Another connection is not affected by the first one's cooldown.
+    dbMocks.getProviderConnectionsUnscoped.mockResolvedValue([other, accessTokenRow("live")]);
+    await getProviderCredentials("codex", null, "gpt-5");
+    await flush();
+    expect(mutateProviderConnectionUnscoped).toHaveBeenCalledTimes(2);
+
+    // After the cooldown the write is retried.
+    const realNow = Date.now();
+    const spy = vi.spyOn(Date, "now").mockReturnValue(realNow + 61_000);
+    try {
+      dbMocks.getProviderConnectionsUnscoped.mockResolvedValue([dead, accessTokenRow("live")]);
+      await getProviderCredentials("codex", null, "gpt-5");
+      await flush();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(mutateProviderConnectionUnscoped).toHaveBeenCalledTimes(3);
   });
 
   it("does not schedule a write for an already flagged or healthy row", async () => {

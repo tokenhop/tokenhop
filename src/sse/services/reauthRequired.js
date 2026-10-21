@@ -15,6 +15,18 @@ import * as log from "../utils/logger.js";
 const FALLBACK = Object.freeze({ shouldFallback: true, cooldownMs: 0 });
 // Connections with a flag write in flight: selection runs per request and must not stack writes.
 const flagsInFlight = new Set();
+// Per-connection backoff after a failed write: a persistently failing store would otherwise
+// warn on every request (selection) and every tick.
+const FLAG_FAILURE_COOLDOWN_MS = 60_000;
+const flagFailureUntil = new Map();
+
+function inFailureCooldown(id, nowMs) {
+  const until = flagFailureUntil.get(id);
+  if (until === undefined) return false;
+  if (until > nowMs) return true;
+  flagFailureUntil.delete(id);
+  return false;
+}
 
 function isAccessTokenOnly(conn, providerId) {
   return (
@@ -61,11 +73,14 @@ async function writeAccessTokenFlag(conn, connectionId) {
 export async function flagExpiredAccessTokenRow(conn, providerId = conn?.provider) {
   const id = conn?.id;
   if (!id || getReauthRequired(conn) || !isAccessTokenOnlyExpired(providerId, conn)) return false;
-  if (flagsInFlight.has(id)) return false;
+  if (flagsInFlight.has(id) || inFailureCooldown(id, Date.now())) return false;
   flagsInFlight.add(id);
   try {
-    return await writeAccessTokenFlag(conn, id);
+    const applied = await writeAccessTokenFlag(conn, id);
+    flagFailureUntil.delete(id);
+    return applied;
   } catch (error) {
+    flagFailureUntil.set(id, Date.now() + FLAG_FAILURE_COOLDOWN_MS);
     log.warn("AUTH", `Could not persist re-authentication state: ${error?.message || error}`);
     return false;
   } finally {

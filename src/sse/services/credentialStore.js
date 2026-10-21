@@ -50,7 +50,6 @@ async function load(connectionId) {
     ...pick(live),
     providerSpecificData: pickLifetimeData(live.providerSpecificData),
     reauthRequired: live.reauthRequired ?? null,
-    isActive: live.isActive !== false,
   };
 }
 

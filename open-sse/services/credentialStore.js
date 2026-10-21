@@ -25,7 +25,6 @@ export function getCredentialStore() {
  * @property {string} [lastRefreshAt]
  * @property {Object} [providerSpecificData]
  * @property {Object|null} [reauthRequired]
- * @property {boolean} [isActive]
  *
  * @typedef {Object} CredentialStore
  * @property {(connectionId: string) => Promise<StoredCredentials|null>} load
