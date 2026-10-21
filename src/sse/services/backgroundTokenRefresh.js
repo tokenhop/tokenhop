@@ -9,6 +9,7 @@ import {
   isProactiveRefreshThrottled,
 } from "open-sse/services/oauthCredentialManager.js";
 import { isLifetimeAware } from "open-sse/services/tokenLifetime.js";
+import { getReauthRequired, isAccessTokenOnlyExpired } from "open-sse/services/reauthState.js";
 
 /**
  * Refresh when expiry is within 30 minutes (or the provider on-request lead, whichever larger).
@@ -62,7 +63,8 @@ export function selectConnectionsNeedingRefresh(connections, nowMs = Date.now())
       .toLowerCase()
       .replace(/_/g, "");
     if (authType !== "oauth") continue;
-    if (!conn.refreshToken) continue;
+    // YAN-1038: a rejected refresh token is dead; retrying every tick only burns requests.
+    if (!conn.refreshToken || getReauthRequired(conn)) continue;
 
     const expiresAtMs = getSchedulingExpiryMs(conn.provider, conn, nowMs);
     if (expiresAtMs === null) continue;
@@ -110,8 +112,26 @@ async function refreshOne(connection) {
 }
 
 /**
+ * Unflagged access-token-only rows (no refresh token) already past their expiry:
+ * nothing can refresh them, so the tick only persists the flag (no network).
+ * @param {Array<object>} connections
+ * @param {number} [nowMs]
+ */
+export function selectExpiredAccessTokenOnly(connections, nowMs = Date.now()) {
+  if (!Array.isArray(connections)) return [];
+  return connections.filter(
+    (c) => c && !getReauthRequired(c) && isAccessTokenOnlyExpired(c.provider, c, nowMs),
+  );
+}
+
+async function flagExpiredOne(connection) {
+  const { flagExpiredAccessTokenRow } = await import("./reauthRequired.js");
+  return flagExpiredAccessTokenRow(connection, connection.provider);
+}
+
+/**
  * One scheduler tick. Fail-open at top level and per connection.
- * @param {{ loadConnections?: Function, refreshConnection?: Function }} [deps]
+ * @param {{ loadConnections?: Function, refreshConnection?: Function, flagExpired?: Function }} [deps]
  */
 export async function runBackgroundTokenRefreshTick(deps = {}) {
   if (tickRunning) return;
@@ -122,6 +142,21 @@ export async function runBackgroundTokenRefreshTick(deps = {}) {
     const sleep = deps.sleep || ((ms) => new Promise((res) => setTimeout(res, ms)));
 
     const connections = await load();
+
+    // YAN-1038: persist the re-authentication state for dead access-token-only rows.
+    const flagExpired = deps.flagExpired || flagExpiredOne;
+    for (const conn of selectExpiredAccessTokenOnly(connections, Date.now())) {
+      try {
+        await flagExpired(conn);
+      } catch (err) {
+        log.warn("BG_TOKEN_REFRESH", "Re-authentication flag failed (swallowed)", {
+          id: conn?.id,
+          provider: conn?.provider,
+          error: err?.message ?? String(err),
+        });
+      }
+    }
+
     const due = selectConnectionsNeedingRefresh(connections, Date.now());
 
     if (due.length === 0) return;

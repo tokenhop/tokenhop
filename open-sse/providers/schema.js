@@ -33,7 +33,9 @@ import { DEFAULT_RETRY_CONFIG, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtim
  *
  * OAuthConfig: { clientId, authorizeUrl, tokenUrl, deviceCodeUrl, refreshUrl, scope|scopes, redirectUri,
  *   callbackPath, fixedPort, codeChallengeMethod, extraParams, refresh:{encoding,scope}, refreshLeadMs,
- *   maxRefreshAgeMs, trackRefreshAt, lifetimeAware, userInfoUrl }.
+ *   maxRefreshAgeMs, trackRefreshAt, lifetimeAware, rotatingRefreshToken, userInfoUrl }.
+ *   rotatingRefreshToken: single-use refresh tokens; the refresh lock re-reads the stored row, adopts
+ *   a token rotated by another request and persists the new one before unlocking (YAN-1037).
  *
  * MediaConfig: { serviceKinds:[...], ttsConfig, sttConfig, embeddingConfig, imageConfig,
  *   searchViaChat:{defaultModel,pricingUrl}, hiddenKinds } — each *Config: {baseUrl,authType,authHeader,

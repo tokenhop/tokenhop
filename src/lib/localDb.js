@@ -10,6 +10,7 @@ export {
   getProviderConnectionByIdUnscoped,
   createProviderConnectionUnscoped,
   updateProviderConnectionUnscoped,
+  mutateProviderConnectionUnscoped,
   deleteProviderConnectionUnscoped,
   deleteProviderConnectionsByProviderUnscoped,
   reorderProviderConnectionsUnscoped,

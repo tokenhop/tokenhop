@@ -3,12 +3,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 const tokenMocks = vi.hoisted(() => ({
-  refreshCodexToken: vi.fn(),
   updateProviderCredentials: vi.fn(async () => true),
 }));
+const managerMocks = vi.hoisted(() => ({ refreshProviderCredentials: vi.fn() }));
 vi.mock("@/sse/services/tokenRefresh", async (importOriginal) => ({
   ...(await importOriginal()),
   ...tokenMocks,
+}));
+vi.mock("open-sse/services/oauthCredentialManager.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  ...managerMocks,
 }));
 
 import { GET } from "@/app/api/providers/[id]/models/route.js";
@@ -17,6 +21,8 @@ import {
   createProviderConnectionUnscoped,
   deleteProviderConnectionsByProviderUnscoped,
 } from "@/models/index.js";
+import { mutateProviderConnectionUnscoped } from "@/lib/localDb";
+import { buildReauthPatch, buildReauthRequired } from "open-sse/services/reauthState.js";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { clearLiveModelsCache } from "@/lib/providerModels/liveResolvers.js";
 import { parseCodexModels } from "@/lib/providerModels/codexModels.js";
@@ -54,7 +60,7 @@ beforeEach(async () => {
   calls = [];
   respond = () => Response.json(FULL);
   clearLiveModelsCache();
-  tokenMocks.refreshCodexToken.mockReset();
+  managerMocks.refreshProviderCredentials.mockReset();
   tokenMocks.updateProviderCredentials.mockClear();
   await deleteProviderConnectionsByProviderUnscoped("codex");
   const nativeFetch = globalThis.fetch.bind(globalThis);
@@ -139,9 +145,9 @@ describe("Codex live models (dashboard)", () => {
     expect(body.warning).toBeUndefined();
   });
 
-  it("refreshes the token on 401, persists it and retries", async () => {
+  it("refreshes the token on 401 through the locked refresh path, persists it and retries", async () => {
     const conn = await seedCodex();
-    tokenMocks.refreshCodexToken.mockResolvedValue({
+    managerMocks.refreshProviderCredentials.mockResolvedValue({
       accessToken: "at-new",
       refreshToken: "rt-new",
     });
@@ -152,12 +158,50 @@ describe("Codex live models (dashboard)", () => {
 
     const { body } = await dashboardModels(conn.id);
 
-    expect(tokenMocks.refreshCodexToken).toHaveBeenCalledWith("rt-codex");
+    expect(managerMocks.refreshProviderCredentials).toHaveBeenCalledTimes(1);
+    const [provider, creds] = managerMocks.refreshProviderCredentials.mock.calls[0];
+    expect(provider).toBe("codex");
+    expect(creds).toMatchObject({ connectionId: conn.id, refreshToken: "rt-codex" });
     expect(tokenMocks.updateProviderCredentials).toHaveBeenCalledWith(
       conn.id,
       expect.objectContaining({ accessToken: "at-new" }),
     );
     expect(body.models.map((m) => m.id)).toContain("gpt-live-9");
+  });
+
+  it.each([
+    [
+      "an unrecoverable refresh error",
+      { error: "unrecoverable_refresh_error", code: "invalid_grant" },
+    ],
+    ["a null result", null],
+  ])("treats %s as a failed refresh: no persist, no retry, warning", async (_n, result) => {
+    const conn = await seedCodex();
+    managerMocks.refreshProviderCredentials.mockResolvedValue(result);
+    respond = () => new Response("expired", { status: 401 });
+
+    const { status, body } = await dashboardModels(conn.id);
+
+    expect(status).toBe(200);
+    expect(tokenMocks.updateProviderCredentials).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(1);
+    expect(body.warning).toMatch(/Failed to fetch Codex models: 401/);
+  });
+
+  it("skips the refresh for a row flagged as needing re-authentication", async () => {
+    const conn = await seedCodex();
+    await mutateProviderConnectionUnscoped(conn.id, () =>
+      buildReauthPatch(
+        buildReauthRequired({ reason: "refresh_token_rejected", code: "invalid_grant" }),
+      ),
+    );
+    respond = () => new Response("expired", { status: 401 });
+
+    const { body } = await dashboardModels(conn.id);
+
+    expect(managerMocks.refreshProviderCredentials).not.toHaveBeenCalled();
+    expect(tokenMocks.updateProviderCredentials).not.toHaveBeenCalled();
+    expect(body.warning).toMatch(/Failed to fetch Codex models: 401/);
   });
 
   it("returns an empty list with a warning when upstream fails", async () => {

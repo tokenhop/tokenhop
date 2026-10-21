@@ -149,6 +149,56 @@ function _refreshProjectId(provider, connectionId, accessToken) {
 // ─── Local-specific: persist credentials to localDb ──────────────────────────
 
 /**
+ * Pure mapping of refreshed credentials to a connection patch. Only fields
+ * present in `newCredentials` are written (YAN-365 delta contract).
+ *
+ * @param {object} newCredentials
+ * @returns {object}
+ */
+export function buildCredentialUpdates(newCredentials) {
+  const updates = {};
+
+  if (newCredentials.accessToken) updates.accessToken = newCredentials.accessToken;
+  if (newCredentials.refreshToken) updates.refreshToken = newCredentials.refreshToken;
+  if (newCredentials.idToken) updates.idToken = newCredentials.idToken;
+  // YAN-365: runtime refreshers can mint a replacement key (e.g. meta-code);
+  // a minted apiKey must persist or the next request reuses a dead one.
+  if (newCredentials.apiKey) updates.apiKey = newCredentials.apiKey;
+  if (newCredentials.lastRefreshAt) updates.lastRefreshAt = newCredentials.lastRefreshAt;
+  if (newCredentials.expiresAt) updates.expiresAt = newCredentials.expiresAt;
+  if (newCredentials.expiresIn) {
+    updates.expiresAt = toExpiresAt(newCredentials.expiresIn);
+    updates.expiresIn = newCredentials.expiresIn;
+  } else if (newCredentials.expiresAt) {
+    const expiresAt = normalizeExpiresAt(newCredentials.expiresAt);
+    if (expiresAt) {
+      updates.expiresAt = expiresAt;
+      updates.expiresIn = Math.max(
+        1,
+        Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000),
+      );
+    }
+  }
+  // YAN-365 delta contract: only the refreshed keys go in the patch. The
+  // repo merges them onto the live decrypted row's siblings inside the
+  // transaction — never a stale request-time snapshot.
+  if (newCredentials.providerSpecificData) {
+    updates.providerSpecificData = { ...newCredentials.providerSpecificData };
+  }
+  if (newCredentials.copilotToken || newCredentials.copilotTokenExpiresAt) {
+    updates.providerSpecificData = {
+      ...(updates.providerSpecificData || {}),
+      ...(newCredentials.copilotToken ? { copilotToken: newCredentials.copilotToken } : {}),
+      ...(newCredentials.copilotTokenExpiresAt
+        ? { copilotTokenExpiresAt: newCredentials.copilotTokenExpiresAt }
+        : {}),
+    };
+  }
+  if (newCredentials.projectId) updates.projectId = newCredentials.projectId;
+  return updates;
+}
+
+/**
  * Persist updated credentials for a connection to localDb.
  * Only fields that are present in `newCredentials` are written.
  *
@@ -158,45 +208,7 @@ function _refreshProjectId(provider, connectionId, accessToken) {
  */
 export async function updateProviderCredentials(connectionId, newCredentials) {
   try {
-    const updates = {};
-
-    if (newCredentials.accessToken) updates.accessToken = newCredentials.accessToken;
-    if (newCredentials.refreshToken) updates.refreshToken = newCredentials.refreshToken;
-    if (newCredentials.idToken) updates.idToken = newCredentials.idToken;
-    // YAN-365: runtime refreshers can mint a replacement key (e.g. meta-code);
-    // a minted apiKey must persist or the next request reuses a dead one.
-    if (newCredentials.apiKey) updates.apiKey = newCredentials.apiKey;
-    if (newCredentials.lastRefreshAt) updates.lastRefreshAt = newCredentials.lastRefreshAt;
-    if (newCredentials.expiresAt) updates.expiresAt = newCredentials.expiresAt;
-    if (newCredentials.expiresIn) {
-      updates.expiresAt = toExpiresAt(newCredentials.expiresIn);
-      updates.expiresIn = newCredentials.expiresIn;
-    } else if (newCredentials.expiresAt) {
-      const expiresAt = normalizeExpiresAt(newCredentials.expiresAt);
-      if (expiresAt) {
-        updates.expiresAt = expiresAt;
-        updates.expiresIn = Math.max(
-          1,
-          Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000),
-        );
-      }
-    }
-    // YAN-365 delta contract: only the refreshed keys go in the patch. The
-    // repo merges them onto the live decrypted row's siblings inside the
-    // transaction — never a stale request-time snapshot.
-    if (newCredentials.providerSpecificData) {
-      updates.providerSpecificData = { ...newCredentials.providerSpecificData };
-    }
-    if (newCredentials.copilotToken || newCredentials.copilotTokenExpiresAt) {
-      updates.providerSpecificData = {
-        ...(updates.providerSpecificData || {}),
-        ...(newCredentials.copilotToken ? { copilotToken: newCredentials.copilotToken } : {}),
-        ...(newCredentials.copilotTokenExpiresAt
-          ? { copilotTokenExpiresAt: newCredentials.copilotTokenExpiresAt }
-          : {}),
-      };
-    }
-    if (newCredentials.projectId) updates.projectId = newCredentials.projectId;
+    const updates = buildCredentialUpdates(newCredentials);
 
     const result = await updateProviderConnectionUnscoped(connectionId, updates);
     log.info("TOKEN_REFRESH", "Credentials updated in localDb", {

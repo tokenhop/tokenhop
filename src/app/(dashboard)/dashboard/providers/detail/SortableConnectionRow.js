@@ -13,6 +13,7 @@ import {
   connectionHealth,
   probeErrorLabel,
   probeTimes,
+  tokenExpiryText,
 } from "@/shared/utils/providerHealth";
 import useAuthStatus from "@/shared/hooks/useAuthStatus";
 import { accountView } from "@/shared/utils/account";
@@ -155,6 +156,7 @@ export default function SortableConnectionRow({
   const statusPillVariant = { off: "neutral", ok: "ok", warn: "warn", err: "err" }[health.status];
   const statusLabel = health.status === "ok" ? "active" : health.reason;
   const disabled = health.status === "off";
+  const expiryText = tokenExpiryText(connection);
   const weightInfo =
     showWeighted && !disabled
       ? {
@@ -279,6 +281,11 @@ export default function SortableConnectionRow({
             <ConnectionSharing connection={connection} onShared={onShared} />
             {hasAnyProxy ? <StatusPill variant={proxyVariant}>Proxy</StatusPill> : null}
             {isCooldown && !disabled ? <CooldownTimer until={modelLockUntil} /> : null}
+            {expiryText && !disabled ? (
+              <span className="text-xs text-muted" title={absoluteTime(connection.expiresAt)}>
+                {expiryText}
+              </span>
+            ) : null}
             {billingLock && !disabled ? (
               <span className="text-xs text-muted">
                 <span title={absoluteTime(billingLock.lastProbeAt)}>{probe.last}</span>
