@@ -2,7 +2,7 @@
 # Secrets: optional, loaded on the host from the gitignored ./.env.local by
 # scripts/with-env.sh (plain KEY=value, or 1Password op:// refs via `op run`)
 # and passed through by name below. All are optional except
-# TOKENHOP_DEV_ALLOWED_ORIGINS, required because the container is reachable beyond localhost.
+# TOKENHOP_DEV_ALLOWED_ORIGINS, which next dev requires.
 #
 # Usage: npm run dev:docker
 services:

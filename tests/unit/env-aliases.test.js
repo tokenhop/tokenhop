@@ -80,14 +80,16 @@ describe("TOKENHOP_DEV_ALLOWED_ORIGINS (next.config.mjs, dev server)", () => {
     delete process.env.TOKENHOP_DEV_ALLOWED_ORIGINS;
   });
 
-  it("allows only localhost when unset on loopback", async () => {
-    process.env.HOSTNAME = "localhost";
-    expect((await loadNextConfig(DEV)).allowedDevOrigins).toEqual(["localhost"]);
+  it("refuses to start the dev server without it, on any host", async () => {
+    for (const host of ["localhost", "0.0.0.0"]) {
+      process.env.HOSTNAME = host;
+      await expect(loadNextConfig(DEV)).rejects.toThrow(/TOKENHOP_DEV_ALLOWED_ORIGINS/);
+    }
   });
 
-  it("refuses to start a non-loopback dev server without it", async () => {
-    process.env.HOSTNAME = "0.0.0.0";
-    await expect(loadNextConfig(DEV)).rejects.toThrow(/TOKENHOP_DEV_ALLOWED_ORIGINS/);
+  it("allows only localhost when set to localhost", async () => {
+    process.env.TOKENHOP_DEV_ALLOWED_ORIGINS = "localhost";
+    expect((await loadNextConfig(DEV)).allowedDevOrigins).toEqual(["localhost"]);
   });
 
   it("keeps the hostname of each listed origin", async () => {

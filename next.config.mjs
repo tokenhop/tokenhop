@@ -9,21 +9,23 @@ const projectRoot = dirname(fileURLToPath(import.meta.url));
 const tracingRoot =
   process.env.NEXT_TRACING_ROOT_MODE === "workspace" ? join(projectRoot, "..") : projectRoot;
 const proxyClientMaxBodySize = brand.readEnv("PROXY_CLIENT_MAX_BODY_SIZE") || "128mb";
-// `next dev` only allows localhost. Any other host (e.g. tailscale serve at
-// https://<host>.ts.net) must be listed in TOKENHOP_DEV_ALLOWED_ORIGINS, comma-separated.
+// `next dev` only allows localhost plus the hosts in TOKENHOP_DEV_ALLOWED_ORIGINS
+// (comma-separated, e.g. tailscale serve at https://<host>.ts.net); `next dev` requires it.
 // Full URLs are accepted; only the hostname is kept.
 const devAllowedOriginsEnv = brand.readEnv("DEV_ALLOWED_ORIGINS") || "";
 const devAllowedOrigins = [
-  "localhost",
-  ...devAllowedOriginsEnv
-    .split(",")
-    .map((origin) =>
-      origin
-        .trim()
-        .replace(/^[a-z]+:\/\//i, "")
-        .replace(/[:/].*$/, ""),
-    )
-    .filter(Boolean),
+  ...new Set([
+    "localhost",
+    ...devAllowedOriginsEnv
+      .split(",")
+      .map((origin) =>
+        origin
+          .trim()
+          .replace(/^[a-z]+:\/\//i, "")
+          .replace(/[:/].*$/, ""),
+      )
+      .filter(Boolean),
+  ]),
 ];
 
 /** @type {import('next').NextConfig} */
@@ -141,31 +143,13 @@ const nextConfig = {
   },
 };
 
-// Host `next dev` binds to: --hostname/-H flag, else HOSTNAME env.
-function devBindHost() {
-  const args = process.argv;
-  const i = args.findIndex((arg) => arg === "--hostname" || arg === "-H");
-  if (i !== -1) return args[i + 1];
-  const flag = args.find((arg) => arg.startsWith("--hostname="));
-  return flag ? flag.slice("--hostname=".length) : process.env.HOSTNAME;
-}
-
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
-
 export default function config(phase) {
-  const bindHost = devBindHost();
-  // A dev server bound beyond loopback is meant to be reached from other hosts, which
-  // `next dev` blocks unless allow-listed: fail fast instead of a dashboard with dead HMR.
-  if (
-    phase === PHASE_DEVELOPMENT_SERVER &&
-    bindHost &&
-    !LOOPBACK_HOSTS.has(bindHost) &&
-    !devAllowedOriginsEnv.trim()
-  ) {
+  // Required for every `next dev`, so reaching it from another host can never silently
+  // fall back to a dashboard with blocked HMR. Local-only dev sets it to `localhost`.
+  if (phase === PHASE_DEVELOPMENT_SERVER && !devAllowedOriginsEnv.trim()) {
     throw new Error(
-      `next dev is bound to ${bindHost} but TOKENHOP_DEV_ALLOWED_ORIGINS is not set. ` +
-        "Set it to the hostname(s) you open the dashboard from (e.g. devbox.example.ts.net), " +
-        "or bind to localhost.",
+      "TOKENHOP_DEV_ALLOWED_ORIGINS is not set. Set it to the hostname(s) you open the dev " +
+        "dashboard from (e.g. devbox.example.ts.net), or to localhost for local-only dev.",
     );
   }
   return nextConfig;

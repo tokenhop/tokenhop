@@ -28,6 +28,7 @@ PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev   # dev (webp
 npm run build && PORT=20128 HOSTNAME=0.0.0.0 npm run start           # production
 ```
 
+- `next dev` refuses to start without `TOKENHOP_DEV_ALLOWED_ORIGINS` (`localhost` for local-only; add the hostname you open the dashboard from, e.g. a Tailscale `*.ts.net` host, or its HMR websocket is blocked). `.env.example` sets `localhost`.
 - Bun variants: `npm run dev:bun` / `build:bun` / `start:bun`.
 - Default runtime port is **20128** (dashboard at `/dashboard`, API at `/v1`).
 - Lint/format: `npm run lint` (Biome for JS/JSON/CSS, markdownlint + Prettier for Markdown/YAML, ShellCheck), `npm run lint:fix`, `npm run format`. Config: `biome.json`, `.markdownlint.json`, `.prettierrc`. Many legacy a11y/React rules are warnings, not errors — don't add new ones. Import sorting is off on purpose: translators self-register via import side effects, so import order matters.
