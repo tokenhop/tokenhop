@@ -1,6 +1,13 @@
 import { ACTIVE } from "@/shared/brand";
 
 export const PASSPHRASE_HEADER = "x-tokenhop-backup-passphrase";
+// Legacy raw password header: HTTP header values are Latin-1 and get
+// trimmed, so a raw password with other characters would make fetch throw or
+// change. Mirrors src/lib/auth/passwordHeader.js (server code, not
+// importable here).
+export const PASSWORD_HEADER = "x-9r-password";
+// base64url(UTF-8(password)): lossless for any password.
+export const PASSWORD_B64_HEADER = "x-tokenhop-password-b64";
 export const WORKSPACE_EXPORT_TYPE = "tokenhop.workspaceExport";
 export const WORKSPACE_EXPORT_VERSION = 1;
 export const MISMATCH_CODE = "IMPORT_USER_MISMATCH";
@@ -61,6 +68,20 @@ export function passphraseProblem(passphrase, confirm, { headerSafe }) {
   if (passphrase !== confirm) return "The passphrases do not match.";
   return "";
 }
+
+/** base64url of the UTF-8 bytes of `password` (lossless for any password). */
+export function encodePasswordB64(password) {
+  let binary = "";
+  for (const byte of new TextEncoder().encode(String(password ?? ""))) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** The password header for password-protected export/import requests. */
+export const passwordHeaders = (password) => ({
+  [PASSWORD_B64_HEADER]: encodePasswordB64(password),
+});
 
 /**
  * Instance restore request body. The backup file is untrusted: drop every

@@ -9,6 +9,7 @@ import Button from "@/shared/components/Button";
 import Callout from "@/shared/components/Callout";
 import Input from "@/shared/components/Input";
 import Modal from "@/shared/components/Modal";
+import { passwordHeaders } from "./backupShared";
 
 const STATUS_VARIANT = { changed: "warn", added: "info", unchanged: "neutral" };
 const GROUPS = [
@@ -132,7 +133,7 @@ export default function ConfigTransfer({ onSettingsChange }) {
     setBusy(true);
     try {
       const res = await fetch("/api/settings/config/export", {
-        headers: { "x-9r-password": password },
+        headers: passwordHeaders(password),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Export failed");
