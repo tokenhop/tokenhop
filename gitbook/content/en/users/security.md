@@ -206,6 +206,8 @@ Restore behavior:
 
 Deleting a workspace removes its data key from the live database. That does not remove copies of the wrapped key inside older backups. The Default workspace cannot be deleted.
 
+A deleted workspace's usage history (requests, request details, daily totals and budget spend) stays on the instance but belongs to no workspace. It never moves into Default, whether you restart tokenhop or turn users & teams off and on again, so no workspace member can read it. Only instance-wide views show it: the usage pages while users & teams is off or at most one user is active, and full instance exports, which the owner and admins can make and which include request details. There is no way to purge it on its own. The optional usage history retention setting removes only old request log rows; detached request details are kept up to the request-details record limit, and daily totals and budget spend are kept. Usage recorded while users & teams is switched off is attributed to the gateway key, or the local owner, that made the request. Unattributed usage is otherwise rare, for example a request still in flight when its workspace is deleted. Only usage from before users & teams was first turned on is moved into Default, once, when the owner is created.
+
 ### Re-authentication
 
 Every export and import proves **who is acting**, with exactly one of these:

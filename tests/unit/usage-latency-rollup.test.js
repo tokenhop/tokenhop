@@ -404,7 +404,7 @@ describe("bootstrap adoption merges latency columns", () => {
           [2, 1],
         ]),
       });
-      db.transaction(() => adoptOwnerlessRowsUnscoped(db));
+      db.transaction(() => adoptOwnerlessRowsUnscoped(db, { includeUsage: true }));
       const rows = db.all(`SELECT * FROM usageRollup`);
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({
