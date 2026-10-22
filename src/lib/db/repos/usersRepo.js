@@ -569,7 +569,9 @@ export async function bootstrapOwnerUnscoped({ passwordHash } = {}) {
         [uuidv4(), id, id, now],
       );
       setMetaSync(db, "defaultWorkspaceId", ids.Default);
-      adoptOwnerlessRowsUnscoped(db); // YAN-361: existing connections/nodes → Default
+      // YAN-361/370: existing connections, nodes and pre-users (migration 014)
+      // usage → Default and the owner. The only caller that adopts usage.
+      adoptOwnerlessRowsUnscoped(db, { includeUsage: true });
       dropSession(id);
       return {
         ...getRow(db, id),

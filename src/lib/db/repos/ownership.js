@@ -71,8 +71,16 @@ function seedComboStrategies(db, ws) {
  * Ownerless rows (written before the switch was first on) → Default workspace,
  * created by the owner: connections, nodes, combos, bare keys of the scoped
  * kv scopes, and blob combo strategies. Idempotent; 0 before bootstrap.
+ *
+ * YAN-1549: usage adoption is opt-in and only the first owner bootstrap
+ * (bootstrapOwnerUnscoped) opts in. Once an owner exists, ownerless usage is
+ * history detached on purpose (a deleted workspace, user or key: ON DELETE
+ * SET NULL), never pre-users data, so restarts, switch toggles and config
+ * imports must leave it detached. Scoped usage views never show it.
+ * @param {object} db adapter (inside the caller's transaction)
+ * @param {{ includeUsage?: boolean }} [opts]
  */
-export function adoptOwnerlessRowsUnscoped(db, { includeUsage = true } = {}) {
+export function adoptOwnerlessRowsUnscoped(db, { includeUsage = false } = {}) {
   const ws = defaultWorkspaceIdUnscoped(db);
   if (!ws) return 0;
   const owner = db.get(`SELECT id FROM users WHERE instanceRole = 'owner'`)?.id ?? null;
@@ -85,8 +93,6 @@ export function adoptOwnerlessRowsUnscoped(db, { includeUsage = true } = {}) {
   }
   n += adoptKvScopes(db, ws);
   n += seedComboStrategies(db, ws);
-  // Re-enabling the rollout must not reattach deleted teams' history to
-  // Default. Only first bootstrap/import may adopt legacy usage.
   if (includeUsage) n += adoptUsage(db, ws, owner);
   return n;
 }
@@ -145,13 +151,14 @@ export async function setMultiUserEnabledUnscoped(enabled, { adopt }) {
       [stringifyJson(next)],
     );
     if (!adopt || !db.get(`SELECT 1 AS x FROM users WHERE instanceRole = 'owner'`)) return 0;
-    return adoptOwnerlessRowsUnscoped(db, { includeUsage: false });
+    return adoptOwnerlessRowsUnscoped(db);
   });
 }
 
-export async function adoptOwnerlessUnscoped(options) {
+/** Existing-owner adoption in its own transaction; never adopts usage (YAN-1549). */
+export async function adoptOwnerlessUnscoped() {
   const db = await getAdapter();
-  return db.transaction(() => adoptOwnerlessRowsUnscoped(db, options));
+  return db.transaction(() => adoptOwnerlessRowsUnscoped(db));
 }
 
 /**
