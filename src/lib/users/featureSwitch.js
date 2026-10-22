@@ -48,6 +48,11 @@ export async function isMultiUserEnabled() {
   return stored && !pendingRestartFor(stored);
 }
 
+/** Effective switch state a stored value would yield (no DB read). */
+export function effectiveFor(stored) {
+  return ENV_OVERRIDE ?? (stored && !pendingRestartFor(stored));
+}
+
 /** Instance-control metadata; the raw stored value is never an effective gate. */
 export async function getMultiUserSwitchState() {
   const stored = await getMultiUserEnabledSettingRaw();

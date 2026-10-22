@@ -201,6 +201,8 @@ describe("multiUserEnabled setting", () => {
       "src/app/api/settings/validateSectionSettings.js",
       // Restore bookkeeping preserves the live value, never resolves mode.
       "src/lib/db/helpers/gatewayKeyTransfer.js",
+      // YAN-1547: the dedicated control's atomic write + off-period adoption.
+      "src/lib/db/repos/ownership.js",
       "src/lib/db/repos/settingsRepo.js",
       "src/lib/settingsConfigDoc.js",
       "src/lib/users/featureSwitch.js",

@@ -137,6 +137,30 @@ describe("dedicated multi-user switch control", () => {
     expect(row.workspaceId).toBe(await db.getMeta("defaultWorkspaceId"));
   });
 
+  it("rolls back the switch write when off→on adoption fails (one transaction)", async () => {
+    await db.updateSettings({ multiUserEnabled: true });
+    const { ensureOwnerBootstrap } = await import("@/lib/users/bootstrap.js");
+    await ensureOwnerBootstrap({ throwOnError: true });
+    expect((await patch(t.a, { multiUserEnabled: false })).status).toBe(200);
+    // Make adoption throw inside the transaction.
+    adapter.exec(
+      `CREATE TRIGGER fail_adopt BEFORE UPDATE OF workspaceId ON providerConnections
+       BEGIN SELECT RAISE(ABORT, 'adopt failed'); END`,
+    );
+    const now = new Date().toISOString();
+    adapter.run(
+      `INSERT INTO providerConnections(id, provider, authType, name, priority, isActive, data, createdAt, updatedAt)
+       VALUES('pc-atomic', 'anthropic', 'apikey', 'atomic', 1, 1, '{}', ?, ?)`,
+      [now, now],
+    );
+    try {
+      expect((await patch(t.a, { multiUserEnabled: true })).status).toBe(500);
+      expect(await stored()).toBe(false);
+    } finally {
+      adapter.exec("DROP TRIGGER fail_adopt");
+    }
+  });
+
   it("single-user session owner sees the control and can enable it while login is required", async () => {
     adapter.run("DELETE FROM users WHERE id = ?", [t.b.user.id]);
     const get = await as(t.a, route.GET);

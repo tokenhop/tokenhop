@@ -6,10 +6,13 @@ import { getPrincipal, cliTokenAccepted, singleUserMode } from "@/lib/users/sess
 import { isUserSecurityEnforced } from "@/lib/users/securityState.js";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
 import { can } from "@/lib/users/principal.js";
-import { getMultiUserSwitchState, isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
+import {
+  effectiveFor,
+  getMultiUserSwitchState,
+  isMultiUserEnabled,
+} from "@/lib/users/featureSwitch.js";
 import { isCrossSite } from "@/lib/auth/sameOrigin.js";
 import {
-  adoptOwnerlessUnscoped,
   countActiveUsersUnscoped,
   getMeta,
   getOwnerUnscoped,
@@ -17,7 +20,7 @@ import {
   getSessionForValidationUnscoped,
   getSettings,
   listWorkspacesUnscoped,
-  updateSettings,
+  setMultiUserEnabledUnscoped,
 } from "@/lib/db/index.js";
 import { audit } from "@/lib/users/audit.js";
 import { getClientIp } from "@/lib/auth/loginLimiter.js";
@@ -138,16 +141,13 @@ export async function handleMultiUserSwitchPatch(request, body) {
       { status: 409 },
     );
   }
-  await updateSettings({ multiUserEnabled: body.multiUserEnabled });
-  const after = await getMultiUserSwitchState();
-  // Off→on in one process: the owner bootstrap is memoised, so rows written
-  // while the switch was off would stay ownerless (invisible to every
-  // workspace). Adopt them into Default now. Transactional and idempotent;
-  // never runs before first startup activation (no owner row yet).
-  if (!before.effective && after.effective && (await getOwnerUnscoped())) {
-    const n = await adoptOwnerlessUnscoped({ includeUsage: false });
-    if (n) console.log(`[users] Moved ${n} ownerless row(s) into Default`);
-  }
+  // Switch write and off→on adoption commit together (one transaction):
+  // the owner bootstrap is memoised, so rows written while the switch was off
+  // would otherwise stay ownerless. Detached usage history is never adopted;
+  // nothing is adopted before first startup activation (no owner row yet).
+  const adopt = !before.effective && effectiveFor(body.multiUserEnabled);
+  const n = await setMultiUserEnabledUnscoped(body.multiUserEnabled, { adopt });
+  if (n) console.log(`[users] Moved ${n} ownerless row(s) into Default`);
   await audit(
     { principal, ip: getClientIp(request) },
     "settings.multi_user",
