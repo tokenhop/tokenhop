@@ -230,6 +230,99 @@ describe("switch on", () => {
     expect((await db.getSettings()).requireLogin).toBe(true);
   });
 
+  // YAN-1549: ownerless usage of every kind, as a deleted workspace leaves it.
+  const ownerlessUsage = (tag) => {
+    const now = new Date().toISOString();
+    adapter.run(`INSERT INTO usageHistory(timestamp, provider) VALUES(?, ?)`, [now, tag]);
+    adapter.run(`INSERT INTO requestDetails(id, timestamp, data) VALUES(?, ?, '{}')`, [tag, now]);
+    adapter.run(`INSERT INTO usageRollup(dateKey, provider, requests) VALUES('2026-10-01', ?, 1)`, [
+      tag,
+    ]);
+  };
+  const usageWorkspaces = (tag) => [
+    adapter.get(`SELECT workspaceId FROM usageHistory WHERE provider = ?`, [tag])?.workspaceId,
+    adapter.get(`SELECT workspaceId FROM requestDetails WHERE id = ?`, [tag])?.workspaceId,
+    adapter.get(`SELECT workspaceId FROM usageRollup WHERE provider = ?`, [tag])?.workspaceId,
+  ];
+  const clearUsage = () => {
+    for (const t of ["usageHistory", "requestDetails", "usageRollup"]) {
+      adapter.run(`DELETE FROM ${t}`);
+    }
+  };
+
+  it("first bootstrap attributes legacy (pre-users) usage to Default and the owner", async () => {
+    await legacy({});
+    clearUsage();
+    ownerlessUsage("legacy");
+    await b.ensureOwnerBootstrap();
+    const owner = await db.getOwnerUnscoped();
+    const defaultId = await db.getMeta("defaultWorkspaceId");
+    expect(usageWorkspaces("legacy")).toEqual([defaultId, defaultId, defaultId]);
+    expect(adapter.get(`SELECT userId FROM usageHistory WHERE provider = 'legacy'`).userId).toBe(
+      owner.id,
+    );
+    expect(adapter.get(`SELECT userId FROM usageRollup WHERE provider = 'legacy'`).userId).toBe(
+      owner.id,
+    );
+  });
+
+  it("keeps a deleted workspace's usage detached across restarts and switch toggles", async () => {
+    await legacy({});
+    clearUsage();
+    await b.ensureOwnerBootstrap();
+    const owner = await db.getOwnerUnscoped();
+    const team = await db.createSharedWorkspace({ userId: owner.id }, { name: "Team" });
+    const now = new Date().toISOString();
+    adapter.run(`INSERT INTO usageHistory(timestamp, provider, workspaceId) VALUES(?, 'team', ?)`, [
+      now,
+      team.id,
+    ]);
+    adapter.run(
+      `INSERT INTO requestDetails(id, timestamp, data, workspaceId) VALUES('team', ?, '{}', ?)`,
+      [now, team.id],
+    );
+    adapter.run(
+      `INSERT INTO usageRollup(dateKey, workspaceId, provider, requests) VALUES('2026-10-01', ?, 'team', 1)`,
+      [team.id],
+    );
+    // The real deletion: history SET NULL. The rollup has
+    // no FK and keeps the dead id, which no workspace scope can match.
+    const { deleteWorkspaceSyncUnscoped } = await import("@/lib/db/repos/workspacesRepo.js");
+    const { sessionVersion } = adapter.get(`SELECT sessionVersion FROM users WHERE id = ?`, [
+      owner.id,
+    ]);
+    adapter.transaction(() =>
+      deleteWorkspaceSyncUnscoped(adapter, team.id, { actorId: owner.id, sessionVersion }),
+    );
+    // Rollup rows of unknown attribution ('') arise the same way (no FK).
+    adapter.run(`UPDATE usageRollup SET workspaceId = '' WHERE workspaceId = ?`, [team.id]);
+    const detached = [null, null, ""];
+    expect(usageWorkspaces("team")).toEqual(detached);
+    // A connection written while the switch was off is still adopted.
+    const now2 = new Date().toISOString();
+    adapter.run(
+      `INSERT INTO providerConnections(id, provider, authType, name, priority, isActive, data, createdAt, updatedAt)
+       VALUES('pc-off', 'anthropic', 'apikey', 'off', 1, 1, '{}', ?, ?)`,
+      [now2, now2],
+    );
+
+    // Restart with the switch on: a fresh process re-runs the bootstrap.
+    await load("on");
+    await b.ensureOwnerBootstrap({ throwOnError: true });
+    expect(usageWorkspaces("team")).toEqual(detached);
+    expect(
+      adapter.get(`SELECT workspaceId FROM providerConnections WHERE id = 'pc-off'`).workspaceId,
+    ).toBe(await db.getMeta("defaultWorkspaceId"));
+    // Off, then on again (first request after the enable).
+    await load("off");
+    await b.ensureOwnerBootstrap();
+    await load("on");
+    await b.ensureOwnerBootstrap();
+    expect(usageWorkspaces("team")).toEqual(detached);
+    expect(await db.adoptOwnerlessUnscoped()).toBe(0);
+    expect(usageWorkspaces("team")).toEqual(detached);
+  });
+
   // YAN-768: shared workspaces no longer count towards the gate.
   it("one active user and two shared workspaces → multiUserActive false", async () => {
     await legacy({});
