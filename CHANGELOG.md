@@ -1,3 +1,18 @@
+# v1.1.1 (2026-10-22)
+
+First patch on the tokenhop 1.1 line: Codex OAuth refresh rebuilt around the token's real lifetime, reactive token refresh routed through the connection proxy, the native Gemini forward honouring disabled models, Gemini 4 Argon on Antigravity, and Users & teams fixes for member dashboards, workspace moves and deleted-workspace usage history.
+
+## Fixes
+
+- **OAuth (Codex)**: token expiry derived from the JWT `exp`, rows without `expiresAt` backfilled, refresh lead scaled to the token lifetime (#969); unrecoverable connections flagged for re-authentication, rotated refresh tokens adopted (#975).
+- **OAuth (proxy)**: reactive 401/403 token refresh routed through the connection proxy (#961).
+- **Gemini**: the native `/v1beta/models/{model}:generateContent` forward honours disabled models (#962).
+- **Antigravity**: Gemini 4 Argon exposed via the hub client identity, with tiered IDs and reasoning support (#909).
+- **Dashboard (members)**: Home requests gated, and key lists scoped on Home, Endpoint and MITM (#913). The remaining member Home reads are scoped, and members can list their own keys (#918).
+- **Workspace moves**: keyboard focus kept after a move, and connection identity matching aligned with connection creation (#922).
+- **Usage history**: rows left behind by a deleted workspace stay detached across restarts instead of being re-attributed to Default (#984).
+- **Settings**: config export/import send the dashboard password in the encoding-safe `x-tokenhop-password-b64` header (#985).
+
 # v1.1.0 (2026-10-12)
 
 Users & teams: the multi-user switch ships in v1.1.0. Accounts, workspaces and
