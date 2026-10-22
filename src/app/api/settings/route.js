@@ -24,6 +24,11 @@ import { handleEstablishedOwnerPassword } from "@/lib/auth/ownerPassword.js";
 import { applyComboStrategyPatch } from "./comboStrategyPatch.js";
 import { runSettingsSideEffects } from "./settingsSideEffects.js";
 import {
+  handleMultiUserSwitchPatch,
+  multiUserSwitchResponse,
+  multiUserSwitchVisible,
+} from "./multiUserSwitchPatch.js";
+import {
   KNOWN_SETTING_KEYS,
   hasSsoPolicyKeys,
   isPlainObject,
@@ -51,8 +56,12 @@ function omitSecrets(settings) {
   const safeSettings = Object.fromEntries(
     Object.entries(settings).filter(([key]) => !SECRET_SETTING_KEYS.has(key)),
   );
-  // YAN-351: the users & teams switch stays off the API until the v1.1.0 release.
+  // YAN-1547: expose only the dedicated instance-control metadata, never the
+  // raw switch. First activation is irreversible; imports/restores cannot flip it.
   delete safeSettings.multiUserEnabled;
+  // Derived metadata is rebuilt only after the direct capability check; a
+  // legacy stored unknown key must not spoof it or expose it to other roles.
+  delete safeSettings.multiUserSwitch;
   // Presence, never the value: metadata mode carries secretsConfigured; a raw
   // runtime/envelope object stays truthy for legacy plaintext too.
   delete safeSettings.secretsConfigured;
@@ -179,6 +188,9 @@ export async function GET() {
       GROK_CLI_VERSION,
       ZED_CLIENT_VERSION,
     };
+    if (await multiUserSwitchVisible()) {
+      payload.multiUserSwitch = await multiUserSwitchResponse();
+    }
     const visible = split ? instanceOnly(payload) : payload;
     return NextResponse.json((await ssoPolicyVisible()) ? visible : withoutSsoPolicy(visible), {
       headers: SETTINGS_RESPONSE_HEADERS,
@@ -194,6 +206,11 @@ export async function PATCH(request) {
     const body = await request.json();
     if (!isPlainObject(body)) {
       return NextResponse.json({ error: "Settings body must be an object" }, { status: 400 });
+    }
+
+    // Dedicated instance control: direct authorization even with the switch off.
+    if (Object.hasOwn(body, "multiUserEnabled")) {
+      return await handleMultiUserSwitchPatch(request, body);
     }
 
     // YAN-359: policy keys 404 while the rollout is off, before any write; on,

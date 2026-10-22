@@ -13,10 +13,16 @@ The **users & teams** switch is available from v1.1.0 and is **off by default**.
 To turn it on:
 
 1. **Back up your master key first.** Turning the switch on activates credential encryption and hashed API-key storage. Read [Security, keys and backups](/en/users/security).
-2. Set the environment variable `TOKENHOP_MULTI_USER=on`, or use the stored instance setting. The dashboard has no toggle for it, so the environment variable is the practical way.
-3. **Restart tokenhop.** Activation happens at startup only. There is no in-process switch.
+2. Turn it on in one of two ways:
+   - **Dashboard:** as the owner or an instance admin, open **Settings → Instance** and turn on **Users & teams**. tokenhop asks you to confirm and lists what changes.
+   - **Environment variable:** set `TOKENHOP_MULTI_USER=on`. The variable overrides the dashboard. While it is set, the dashboard toggle is locked and shows "Set by TOKENHOP_MULTI_USER".
+3. **Restart tokenhop the first time.** First activation backs up your data, hashes API keys and encrypts credentials, and that only happens at startup. Until you restart, the toggle shows that a restart is pending and tokenhop stays single-user.
 
-Valid values are `on` and `off`. Any other value stops tokenhop at startup.
+Valid values for the variable are `on` and `off`. Any other value stops tokenhop at startup.
+
+After the first activation, the dashboard toggle takes effect immediately, with no restart. Turning users & teams **off** never deletes anything. Users, workspaces and memberships are kept, and they come back when you turn it on again. While it is off, only the owner and instance admins can use the dashboard. Other users' sessions stop working, so the dashboard warns you when more than one user or a shared workspace exists. API keys stay hashed and credentials stay encrypted.
+
+Config export/import and backup restore never change the switch. It changes only through the dashboard toggle or the environment variable.
 
 On first activation tokenhop creates:
 

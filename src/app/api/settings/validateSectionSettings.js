@@ -33,7 +33,8 @@ const READ_ONLY_KEYS = new Set([
   "CODEX_CLI_VERSION",
   "GROK_CLI_VERSION",
   "ZED_CLIENT_VERSION",
-  // YAN-351: the users & teams switch has no UI until the v1.1.0 release.
+  // YAN-1547: instance-only control with irreversible first-activation effects.
+  // Only its dedicated PATCH branch may write it, never generic config/restore.
   "multiUserEnabled",
 ]);
 

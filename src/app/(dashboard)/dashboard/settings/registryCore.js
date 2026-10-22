@@ -46,6 +46,14 @@ export const CORE_SECTIONS = [
     statusPill: "Protected",
     rows: [
       {
+        key: "multiUserEnabled",
+        label: "Users & teams",
+        description:
+          "For households and small teams: each person gets their own account, workspaces, API keys and connections.",
+        keywords:
+          "users teams multi-user multi user accounts workspaces members household TOKENHOP_MULTI_USER",
+      },
+      {
         key: "requireLogin",
         label: "Require login",
         description: "Ask for the dashboard password first.",

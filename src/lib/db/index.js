@@ -47,7 +47,7 @@ export {
   updateConnection,
   deleteConnection,
 } from "./repos/connectionsRepo.js";
-export { adoptOwnerlessUnscoped } from "./repos/ownership.js";
+export { adoptOwnerlessUnscoped, setMultiUserEnabledUnscoped } from "./repos/ownership.js";
 
 // Provider nodes
 export {

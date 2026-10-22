@@ -258,8 +258,12 @@ function expected(cell, principal, local, mode) {
   const kind = category(cell);
   if (HIDDEN.has(cell.route) && !mode.on) return 404;
   const single = principal === "singleUser" && !mode.established;
+  // YAN-1547: with the switch off on an established install, only owner/admin
+  // sessions stay valid — other users lose access (no unscoped member view).
+  const offEstablished = mode.established && !mode.on;
   const session =
-    ["owner", "admin", "user", "manager", "member", "viewer"].includes(principal) ||
+    ["owner", "admin"].includes(principal) ||
+    (!offEstablished && ["user", "manager", "member", "viewer"].includes(principal)) ||
     (principal === "pending" && !mode.established);
   const cli = principal === "cli" && !NO_CLI.has(cell.route) && (local || !mode.established);
   const localOnly =

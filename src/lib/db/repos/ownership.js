@@ -72,7 +72,7 @@ function seedComboStrategies(db, ws) {
  * created by the owner: connections, nodes, combos, bare keys of the scoped
  * kv scopes, and blob combo strategies. Idempotent; 0 before bootstrap.
  */
-export function adoptOwnerlessRowsUnscoped(db) {
+export function adoptOwnerlessRowsUnscoped(db, { includeUsage = true } = {}) {
   const ws = defaultWorkspaceIdUnscoped(db);
   if (!ws) return 0;
   const owner = db.get(`SELECT id FROM users WHERE instanceRole = 'owner'`)?.id ?? null;
@@ -85,7 +85,9 @@ export function adoptOwnerlessRowsUnscoped(db) {
   }
   n += adoptKvScopes(db, ws);
   n += seedComboStrategies(db, ws);
-  n += adoptUsage(db, ws, owner);
+  // Re-enabling the rollout must not reattach deleted teams' history to
+  // Default. Only first bootstrap/import may adopt legacy usage.
+  if (includeUsage) n += adoptUsage(db, ws, owner);
   return n;
 }
 
@@ -124,9 +126,32 @@ function adoptUsage(db, ws, owner) {
   return n;
 }
 
-export async function adoptOwnerlessUnscoped() {
+/**
+ * YAN-1547: write the stored users & teams switch and, on an effective
+ * off→on transition with an owner present, adopt rows created while it was
+ * off — in ONE transaction, so a failed adoption never leaves the switch on
+ * with invisible ownerless rows. Detached usage history is never adopted.
+ * @param {boolean} enabled
+ * @param {{ adopt: boolean }} opts adopt = caller-determined off→on transition
+ * @returns {Promise<number>} rows adopted
+ */
+export async function setMultiUserEnabledUnscoped(enabled, { adopt }) {
   const db = await getAdapter();
-  return db.transaction(() => adoptOwnerlessRowsUnscoped(db));
+  return db.transaction(() => {
+    const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+    const next = { ...(row ? parseJson(row.data, {}) : {}), multiUserEnabled: enabled === true };
+    db.run(
+      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+      [stringifyJson(next)],
+    );
+    if (!adopt || !db.get(`SELECT 1 AS x FROM users WHERE instanceRole = 'owner'`)) return 0;
+    return adoptOwnerlessRowsUnscoped(db, { includeUsage: false });
+  });
+}
+
+export async function adoptOwnerlessUnscoped(options) {
+  const db = await getAdapter();
+  return db.transaction(() => adoptOwnerlessRowsUnscoped(db, options));
 }
 
 /**

@@ -52,8 +52,9 @@ async function defaultActivation(db) {
   }
 
   // 3. Raw switch read, resolved once per boot: env override else setting.
-  const { isMultiUserEnabled } = await import("../users/featureSwitch.js");
-  const enabled = await isMultiUserEnabled();
+  const { resolveMultiUserAtBoot } = await import("../users/featureSwitch.js");
+  const enabled = await resolveMultiUserAtBoot();
+  state.multiUserAtBoot = enabled;
   if (enabled) {
     // 4. Strict: creates/verifies the actual owner & Default workspace and
     //    throws on failure (permissive request callers keep the swallow).
@@ -132,4 +133,5 @@ export function resetGatewayKeyStartupForTests() {
   state.promise = null;
   state.ready = false;
   state.activation = null;
+  delete state.multiUserAtBoot;
 }

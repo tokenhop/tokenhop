@@ -2,7 +2,7 @@
 
 How tokenhop protects stored credentials when users & teams is on, what it does not protect against, and how to back up, rotate and restore safely.
 
-> This page applies once users & teams is on (`TOKENHOP_MULTI_USER=on`). It is available from v1.1.0 and off by default.
+> This page applies once users & teams is on (Settings → Instance, or `TOKENHOP_MULTI_USER=on`). It is available from v1.1.0 and off by default.
 
 Read [Concepts](/en/users/concepts) first for the vocabulary (workspaces, roles, keys). Sign-in setup is in [SSO](/en/users/sso); workspace administration is in [Teams](/en/users/teams).
 
@@ -38,7 +38,7 @@ master key (KEK)
 
 ### When it turns on
 
-- Encryption activates at startup, only when the switch is on. Turning users & teams on is restart-only: set `TOKENHOP_MULTI_USER=on` (or the stored setting) and restart. There is no in-process switch.
+- Encryption activates at startup, only when the switch is on. First activation is restart-only: turn on **Users & teams** in **Settings → Instance**, or set `TOKENHOP_MULTI_USER=on`, then restart. After that, the dashboard toggle switches users & teams on and off without a restart, and credentials stay encrypted either way.
 - Before the first activation, tokenhop writes a verified, private backup of the database (see [Backups made at activation](#backups-made-at-activation)).
 - After activation storage stays encrypted, even if the switch is later turned off.
 - An install that has never activated and keeps the switch off is unchanged: no master key, no data keys, nothing encrypted.

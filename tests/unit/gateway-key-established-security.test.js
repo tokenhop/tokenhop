@@ -148,7 +148,13 @@ describe("YAN-363 durable-established session security", () => {
 
   it("hashed/off denies a disabled user's session", async () => {
     await reseed({ marker: true });
-    const token = await tokenFor(t.b);
+    // YAN-1547: switch off admits only owner/admin sessions; use an admin so
+    // the disable (not the role gate) is what denies the session below.
+    await db.updateUserUnscoped(t.b.user.id, { instanceRole: "admin" });
+    const admin = (await adapter()).get("SELECT sessionVersion FROM users WHERE id = ?", [
+      t.b.user.id,
+    ]);
+    const token = await tokenFor({ ...t.b, user: { ...t.b.user, ...admin } });
     expect(await s.resolvePrincipal(cookieReq(token))).toMatchObject({ userId: t.b.user.id });
     await db.updateUserUnscoped(t.b.user.id, { status: "disabled" });
     expect(await s.resolvePrincipal(cookieReq(token))).toBeNull();
