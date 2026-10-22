@@ -715,7 +715,9 @@ describe("workspace move: v1.0.0 Default-workspace adoption", () => {
     const a2 = await adapter();
     a2.run(`INSERT INTO _meta(key, value) VALUES('defaultWorkspaceId', ?)`, [shared.id]);
     const legacy = await db.createProviderConnectionUnscoped(apiKeyConn("legacy-default"));
-    expect(await db.adoptOwnerlessUnscoped()).toBe(1);
+    // Created straight into Default: nothing left to adopt. Detached usage
+    // left by earlier cases is never adopted (YAN-1549).
+    expect(await db.adoptOwnerlessUnscoped()).toBe(0);
     expect(legacy.workspaceId).toBe(shared.id);
     const res = await moveAs(a, shared.id, {
       targetWorkspaceId: a.personal,
