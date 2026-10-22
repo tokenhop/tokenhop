@@ -71,6 +71,18 @@ describe("YAN-1248 config transfer password header", () => {
   });
 });
 
+describe("YAN-1248 CLI token", () => {
+  it("authenticates even when a malformed password header is present", async () => {
+    const { getCliToken } = await import("@/lib/auth/cliToken");
+    const token = await getCliToken();
+    const headers = { "x-9r-cli-token": token, "x-tokenhop-password-b64": "!!" };
+    const res = await exportWith(headers);
+    expect(res.status).toBe(200);
+    const doc = await res.json();
+    expect((await importWith(headers, { doc })).status).toBe(200);
+  });
+});
+
 describe("YAN-1248 leading U+FEFF", () => {
   it("is kept as part of the password, not stripped as a BOM", async () => {
     const { readPasswordHeader } = await import("@/lib/users/snapshotUpload.js");

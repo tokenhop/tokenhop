@@ -17,19 +17,19 @@ export const revalidate = 0;
  */
 export async function GET(request) {
   try {
-    // YAN-1248: x-tokenhop-password-b64 (lossless UTF-8) or legacy x-9r-password.
-    const headerPassword = readPasswordHeader(request.headers);
-    if (headerPassword.invalid) {
-      return NextResponse.json(
-        { error: "Invalid request", code: "invalid_request" },
-        { status: 400 },
-      );
-    }
-    if (
-      !(await hasValidCliToken(request)) &&
-      !(await verifyDashboardPassword(headerPassword.value))
-    ) {
-      return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+    // A valid CLI token authenticates on its own; otherwise the password comes
+    // from x-tokenhop-password-b64 (lossless UTF-8) or legacy x-9r-password (YAN-1248).
+    if (!(await hasValidCliToken(request))) {
+      const headerPassword = readPasswordHeader(request.headers);
+      if (headerPassword.invalid) {
+        return NextResponse.json(
+          { error: "Invalid request", code: "invalid_request" },
+          { status: 400 },
+        );
+      }
+      if (!(await verifyDashboardPassword(headerPassword.value))) {
+        return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+      }
     }
     const doc = await exportConfig();
     // YAN-367: password/CLI auth pre-dates principals — actor stays null.
