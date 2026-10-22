@@ -25,11 +25,10 @@ import {
 } from "@/lib/settingsConfigDoc.js";
 import { audit } from "@/lib/users/audit.js";
 import { getClientIp } from "@/lib/auth/loginLimiter.js";
+import { readPasswordHeader } from "@/lib/users/snapshotUpload.js";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-const PASSWORD_HEADER = "x-9r-password";
 
 function isPlainObject(value) {
   return (
@@ -77,11 +76,20 @@ export async function POST(request) {
   }
 
   try {
-    const password = typeof body.password === "string" ? body.password : null;
-    if (
-      !(await hasValidCliToken(request)) &&
-      !(await verifyDashboardPassword(password ?? request.headers.get(PASSWORD_HEADER)))
-    ) {
+    // The JSON body password wins; otherwise YAN-1248's encoding-safe
+    // x-tokenhop-password-b64 header, or the legacy x-9r-password header.
+    let password = typeof body.password === "string" ? body.password : null;
+    if (password === null) {
+      const headerPassword = readPasswordHeader(request.headers);
+      if (headerPassword.invalid) {
+        return NextResponse.json(
+          { error: "Invalid request", code: "invalid_request" },
+          { status: 400 },
+        );
+      }
+      password = headerPassword.value;
+    }
+    if (!(await hasValidCliToken(request)) && !(await verifyDashboardPassword(password))) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
 

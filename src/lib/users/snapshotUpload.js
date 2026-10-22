@@ -79,7 +79,10 @@ export function readPasswordHeader(headers) {
   if (!B64URL_RE.test(b64) || b64.length % 4 === 1) return { invalid: true };
   try {
     return {
-      value: new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(b64, "base64url")),
+      // ignoreBOM: a leading U+FEFF is part of the password, not a BOM.
+      value: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+        Buffer.from(b64, "base64url"),
+      ),
     };
   } catch {
     return { invalid: true };
