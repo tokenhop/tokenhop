@@ -72,7 +72,7 @@ function seedComboStrategies(db, ws) {
  * created by the owner: connections, nodes, combos, bare keys of the scoped
  * kv scopes, and blob combo strategies. Idempotent; 0 before bootstrap.
  */
-export function adoptOwnerlessRowsUnscoped(db) {
+export function adoptOwnerlessRowsUnscoped(db, { includeUsage = true } = {}) {
   const ws = defaultWorkspaceIdUnscoped(db);
   if (!ws) return 0;
   const owner = db.get(`SELECT id FROM users WHERE instanceRole = 'owner'`)?.id ?? null;
@@ -85,7 +85,9 @@ export function adoptOwnerlessRowsUnscoped(db) {
   }
   n += adoptKvScopes(db, ws);
   n += seedComboStrategies(db, ws);
-  n += adoptUsage(db, ws, owner);
+  // Re-enabling the rollout must not reattach deleted teams' history to
+  // Default. Only first bootstrap/import may adopt legacy usage.
+  if (includeUsage) n += adoptUsage(db, ws, owner);
   return n;
 }
 
@@ -124,9 +126,9 @@ function adoptUsage(db, ws, owner) {
   return n;
 }
 
-export async function adoptOwnerlessUnscoped() {
+export async function adoptOwnerlessUnscoped(options) {
   const db = await getAdapter();
-  return db.transaction(() => adoptOwnerlessRowsUnscoped(db));
+  return db.transaction(() => adoptOwnerlessRowsUnscoped(db, options));
 }
 
 /**

@@ -2,7 +2,7 @@
 
 Let people sign in to tokenhop with your identity provider (IdP), and map IdP groups to instance roles and workspaces. This page walks through authentik as a worked example, then lists the exact settings for generic OIDC and SAML.
 
-> **Group and workspace mapping needs users & teams on.** The mapping described here (allowed groups, admin groups, group → workspace, pending approval) only runs when the users & teams switch is on: `TOKENHOP_MULTI_USER=on` (available from v1.1.0 and off by default). With the switch off, SSO is plain sign-in for the single admin. See [Concepts](/en/users/concepts) for the vocabulary (instance roles, workspaces, memberships).
+> **Group and workspace mapping needs users & teams on.** The mapping described here (allowed groups, admin groups, group → workspace, pending approval) only runs when the users & teams switch is on: Settings → Instance → Users & teams, or `TOKENHOP_MULTI_USER=on` (available from v1.1.0 and off by default). With the switch off, SSO is plain sign-in for the single admin. See [Concepts](/en/users/concepts) for the vocabulary (instance roles, workspaces, memberships).
 
 ---
 

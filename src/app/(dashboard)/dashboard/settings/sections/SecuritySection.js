@@ -13,12 +13,14 @@ import { Skeleton } from "@/shared/components/Loading";
 import useAuthStatus from "@/shared/hooks/useAuthStatus";
 import { useSettingsField } from "../useSettingsField";
 import PersonalSharingSetting from "./PersonalSharingSetting";
+import UsersTeamsSetting from "./UsersTeamsSetting";
 
 // Mirrors server MIN_PASSWORD_LENGTH (src/lib/auth/userPassword.js); server stays authoritative.
 const MIN_PASSWORD_LENGTH = 8;
 
 /**
  * Security & access section:
+ * - Users & teams: instance multi-user switch (instance managers only)
  * - requireLogin: optimistic toggle with rollback
  * - password change: current/new/confirm with client & server validation
  * - requireApiKey: optimistic toggle
@@ -132,6 +134,8 @@ export default function SecuritySection({ settings, onSettingsChange }) {
         statusLabel="Protected"
       />
       <div className="rounded-2xl border border-line bg-panel p-5 shadow-card divide-y divide-line">
+        <UsersTeamsSetting settings={settings} onSaved={onSaved("multiUserSwitch")} />
+
         <SettingRow
           label="Require login"
           description="Ask for the dashboard password first."

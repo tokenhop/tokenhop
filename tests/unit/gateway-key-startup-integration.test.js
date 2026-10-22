@@ -166,6 +166,16 @@ describe("YAN-363 final startup integration (real pipeline)", () => {
     await expect(start()).resolves.toBeUndefined();
     expect(isGatewayKeyStartupReady()).toBe(true);
     expect(getGatewayKeyActivation()).toEqual({ status: "skipped-off", isReady: false });
+    expect(globalThis[Symbol.for("tokenhop.gatewayKeyStartup")].multiUserAtBoot).toBe(false);
+    const feature = await import("@/lib/users/featureSwitch.js");
+    await setSwitch(await getAdapter(), true);
+    expect(await feature.getMultiUserSwitchState()).toMatchObject({
+      stored: true,
+      effective: false,
+      pendingRestart: true,
+    });
+    expect(await feature.isMultiUserEnabled()).toBe(false);
+    await setSwitch(await getAdapter(), false);
     expect(await storageOf()).toBe("legacy");
     expect(fs.existsSync(MASTER_FILE)).toBe(false); // no key root
     expect(activationBackups()).toEqual([]); // no backup
@@ -226,6 +236,14 @@ describe("YAN-363 final startup integration (real pipeline)", () => {
     await setSwitch(db, false);
     await expect(start()).resolves.toBeUndefined();
     expect(getGatewayKeyActivation()).toMatchObject({ status: "already-hashed", isReady: true });
+    await setSwitch(db, true);
+    const feature = await import("@/lib/users/featureSwitch.js");
+    expect(await feature.getMultiUserSwitchState()).toMatchObject({
+      stored: true,
+      effective: true,
+      pendingRestart: false,
+    });
+    await setSwitch(db, false);
     expect(fs.readFileSync(MASTER_FILE).equals(master)).toBe(true); // root never regenerates
     const row = db.get(`SELECT keyHash FROM apiKeys WHERE id = 'key-1'`);
     expect(row.keyHash).toBe(digestOf(master)); // durable detection intact

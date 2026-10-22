@@ -121,8 +121,34 @@ beforeEach(async () => {
   vi.clearAllMocks();
 });
 
+// Full-DB restore must not act as a second switch-control surface. Assert the
+// raw stored value, not the mocked runtime feature switch used by these fixtures.
+function localSwitchRestoreCases(options = {}) {
+  it.each([
+    [true, undefined],
+    [true, {}],
+    [true, { multiUserEnabled: false }],
+    [false, { multiUserEnabled: true }],
+    [undefined, { multiUserEnabled: true }],
+  ])("keeps local switch %s when restoring settings %j", async (local, incoming) => {
+    db.run(
+      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+      [JSON.stringify(local === undefined ? {} : { multiUserEnabled: local })],
+    );
+    const snapshot = await dbApi.exportDb();
+    if (incoming === undefined) delete snapshot.settings;
+    else snapshot.settings = incoming;
+    await dbApi.importDb(snapshot, options);
+    const row = db.get("SELECT data FROM settings WHERE id = 1");
+    const restored = row ? JSON.parse(row.data) : {};
+    if (local === undefined) expect(restored).not.toHaveProperty("multiUserEnabled");
+    else expect(restored.multiUserEnabled).toBe(local);
+  });
+}
+
 describe("legacy instance transfer (existing shape intact)", () => {
   beforeEach(seedLegacyInstance);
+  localSwitchRestoreCases();
 
   it("exports the exact legacy snapshot shape and roundtrips raw keys", async () => {
     const snapshot = await dbApi.exportDb();
@@ -175,6 +201,7 @@ describe("legacy instance transfer (existing shape intact)", () => {
 
 describe("hashed instance transfer (format v2)", () => {
   beforeEach(seedHashedInstance);
+  localSwitchRestoreCases({ masterKey: MASTER });
 
   it("exports key metadata only — no raw key, no master material", async () => {
     const snapshot = await dbApi.exportDb();

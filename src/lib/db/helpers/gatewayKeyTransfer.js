@@ -114,8 +114,10 @@ const MITM_VERIFIER_SETTING = "mitmInternalVerifier";
  * `mitmInternalVerifier` is never trusted (the hash is host-bound to the
  * spawning parent's raw-credential custody), while the live local verifier
  * survives the destructive settings replacement so a running MITM child
- * keeps authenticating. Mutates `settings` in place and returns the object
- * to persist; touches nothing else.
+ * keeps authenticating. Also preserves the raw local multi-user boolean:
+ * restore is not a switch-control surface. This is transfer bookkeeping only,
+ * never an effective-mode read (featureSwitch remains that sole reader).
+ * Mutates `settings` in place and returns the object to persist.
  * @param {object} db Adapter (sync API).
  * @param {object|undefined} settings Payload settings section (mutated).
  * @returns {object|undefined} Settings to persist.
@@ -125,11 +127,15 @@ export function preserveLocalVerifierSettings(db, settings) {
   const live = row ? parseJson(row.data, {}) : {};
   const local = live[MITM_VERIFIER_SETTING];
   const hasLocal = typeof local === "string" && local.length > 0;
+  const hasLocalSwitch = typeof live.multiUserEnabled === "boolean";
   if (settings === undefined || settings === null) {
-    return hasLocal ? { [MITM_VERIFIER_SETTING]: local } : settings;
+    if (!hasLocal && !hasLocalSwitch) return settings;
+    settings = {};
   }
   if (hasLocal) settings[MITM_VERIFIER_SETTING] = local;
   else delete settings[MITM_VERIFIER_SETTING];
+  if (hasLocalSwitch) settings.multiUserEnabled = live.multiUserEnabled;
+  else delete settings.multiUserEnabled;
   return settings;
 }
 
@@ -1448,9 +1454,9 @@ export function insertLegacyKeysHashedSync(db, payload, plan) {
  * transaction rolls back.
  */
 export function applyGatewayKeySnapshot(db, payload, plan) {
-  // Host-local MITM verifier: read the live settings row BEFORE the
-  // destructive replace below so a running child's verifier survives and an
-  // imported one can never take its place.
+  // Preserve local-only settings inside the transaction, after any portable
+  // decryption and BEFORE the destructive replace. Imported values must not
+  // change the local switch or a running child's MITM verifier.
   const restoredSettings = preserveLocalVerifierSettings(
     db,
     payload.settings ? { ...payload.settings } : undefined,

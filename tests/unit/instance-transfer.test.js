@@ -302,6 +302,28 @@ describe("instance full-table sections (encrypted v3)", () => {
     ).toBeDefined();
   });
 
+  it.each([
+    [true, undefined],
+    [true, false],
+    [false, true],
+  ])("portable restore preserves local switch %s over imported %s", async (local, incoming) => {
+    const { makeInstancePortable } = await import("@/lib/db/helpers/instancePortable.js");
+    const source = await dbApi.exportDb();
+    if (incoming === undefined) delete source.settings;
+    else source.settings = { multiUserEnabled: incoming };
+    const portable = await makeInstancePortable(source, {
+      passphrase: "portable-switch",
+      masterKey: MASTER,
+    });
+    db.run(
+      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+      [JSON.stringify({ multiUserEnabled: local })],
+    );
+    await dbApi.importDb(portable, { masterKey: MASTER, passphrase: "portable-switch" });
+    const row = db.get("SELECT data FROM settings WHERE id = 1");
+    expect(row && JSON.parse(row.data).multiUserEnabled).toBe(local);
+  });
+
   it("restores a portable snapshot under a different KEK without changing client keys", async () => {
     const { makeInstancePortable } = await import("@/lib/db/helpers/instancePortable.js");
     const { encryptBytes, buildDekWrapAad, buildHashKeyWrapAad } = await import(

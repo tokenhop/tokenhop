@@ -4,6 +4,11 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("next/headers", () => ({
+  cookies: async () => ({ get: () => undefined }),
+  headers: async () => new Headers(),
+}));
+
 const ENV = "TOKENHOP_MULTI_USER";
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 let saved;
@@ -132,9 +137,10 @@ describe("requireMultiUser", () => {
 });
 
 describe("multiUserEnabled setting", () => {
-  it("is off in the defaults, hidden from GET and not writable through PATCH /api/settings", async () => {
+  it("is off in the defaults, raw value hidden from GET and unauthorized PATCH rejected", async () => {
     const { DEFAULT_SETTINGS } = await import("@/lib/db/repos/settingsRepo.js");
     expect(DEFAULT_SETTINGS.multiUserEnabled).toBe(false);
+    await (await import("@/lib/db/index.js")).updateSettings({ requireLogin: true });
     const { PATCH } = await import("@/app/api/settings/route.js");
     const res = await PATCH(
       new Request("http://localhost/api/settings", {
@@ -142,7 +148,7 @@ describe("multiUserEnabled setting", () => {
         body: JSON.stringify({ multiUserEnabled: true }),
       }),
     );
-    expect(res.status).toBe(400);
+    expect([401, 403]).toContain(res.status);
     expect(await (await load()).isMultiUserEnabled()).toBe(false);
     const { GET } = await import("@/app/api/settings/route.js");
     expect(await (await GET()).json()).not.toHaveProperty("multiUserEnabled");
@@ -174,16 +180,27 @@ describe("multiUserEnabled setting", () => {
       "open-sse",
       "cli",
     ]);
-    // Defaults and the denylists name the key to hide or reject it; they never read it.
+    // Only the switch module may consume the raw reader, even among files
+    // allowed to declare the control, submit its PATCH or deny config imports.
+    expect(gitGrep(["getMultiUserEnabledSettingRaw", "--", "src", "open-sse", "cli"])).toEqual([
+      "src/lib/db/repos/settingsRepo.js",
+      "src/lib/users/featureSwitch.js",
+    ]);
     expect(hits).toEqual([
       // CLI strings document required server mode; they never read the switch.
       "cli/README.md",
       "cli/src/cli/commands/_runApi.js",
       "cli/src/cli/commands/keys.js",
       "cli/src/cli/commands/users.js",
+      // UI declares/submits the control; only featureSwitch reads the raw store.
+      "src/app/(dashboard)/dashboard/settings/registryCore.js",
+      "src/app/(dashboard)/dashboard/settings/sections/UsersTeamsSetting.js",
       "src/app/api/settings/database/route.js",
+      "src/app/api/settings/multiUserSwitchPatch.js",
       "src/app/api/settings/route.js",
       "src/app/api/settings/validateSectionSettings.js",
+      // Restore bookkeeping preserves the live value, never resolves mode.
+      "src/lib/db/helpers/gatewayKeyTransfer.js",
       "src/lib/db/repos/settingsRepo.js",
       "src/lib/settingsConfigDoc.js",
       "src/lib/users/featureSwitch.js",

@@ -24,6 +24,7 @@ import {
 } from "@/lib/db/index.js";
 import { NextResponse } from "next/server";
 import { isUserSecurityEnforced } from "./securityState.js";
+import { isMultiUserEnabled } from "./featureSwitch.js";
 import { ensureOwnerBootstrap } from "./bootstrap.js";
 import { can } from "./principal.js";
 import { mintSessionCookie } from "./sessionMint.js";
@@ -116,6 +117,9 @@ async function validateSessionToken(token) {
   if (user?.status !== "active" || user.sessionVersion !== payload.sv) return null;
   // YAN-358: no full session for an unapproved user or a pending rotation.
   if (user.instanceRole === "pending" || user.mustChangePassword) return null;
+  // Rollout off restores unscoped handlers. Established security still checks
+  // sessions, but only instance owners/admins may enter that instance-wide view.
+  if (!(await isMultiUserEnabled()) && !["owner", "admin"].includes(user.instanceRole)) return null;
   // YAN-751: a token with a `sid` claim is bound to a revocable sessions row.
   // Sid-less tokens are untouched; a non-string, unknown or foreign sid fails closed.
   if (Object.hasOwn(payload, "sid")) {

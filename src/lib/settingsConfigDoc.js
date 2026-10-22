@@ -95,6 +95,9 @@ export const READ_ONLY_SETTING_KEYS = new Set([
   "CODEX_CLI_VERSION",
   "GROK_CLI_VERSION",
   "ZED_CLIENT_VERSION",
+  // YAN-1547: irreversible first activation is instance-level, not portable.
+  // Config imports / backup restores must never flip this switch; use only
+  // the dedicated Instance settings control (migrations still run at startup).
   "multiUserEnabled",
 ]);
 

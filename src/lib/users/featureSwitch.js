@@ -23,14 +23,42 @@ export function parseMultiUserEnv(raw) {
 // Fail fast: a bad value throws when the module loads (instrumentation imports it at startup).
 const ENV_OVERRIDE = parseMultiUserEnv(process.env[MULTI_USER_ENV]);
 
-/**
- * Env override, else the stored instance setting, else off.
- * @returns {Promise<boolean>}
- */
+/** Raw boot resolution only; startup must not consume the request-time gate. */
+export async function resolveMultiUserAtBoot() {
+  if (ENV_OVERRIDE !== undefined) return ENV_OVERRIDE;
+  return getMultiUserEnabledSettingRaw();
+}
+
+function pendingRestartFor(stored) {
+  // Read the shared startup record, not startupReadiness (no import cycle or
+  // extra hot-path DB read). No startup record in unit tests means no gate.
+  const boot = globalThis[Symbol.for("tokenhop.gatewayKeyStartup")];
+  return (
+    ENV_OVERRIDE === undefined &&
+    stored &&
+    boot?.multiUserAtBoot === false &&
+    boot?.activation?.status === "skipped-off"
+  );
+}
+
+/** Env override, else the live setting, gated until first startup activation. */
 export async function isMultiUserEnabled() {
   if (ENV_OVERRIDE !== undefined) return ENV_OVERRIDE;
-  // Raw boolean read: never the decrypting getSettings (no root, no cycle).
-  return getMultiUserEnabledSettingRaw();
+  const stored = await getMultiUserEnabledSettingRaw();
+  return stored && !pendingRestartFor(stored);
+}
+
+/** Instance-control metadata; the raw stored value is never an effective gate. */
+export async function getMultiUserSwitchState() {
+  const stored = await getMultiUserEnabledSettingRaw();
+  const pendingRestart = pendingRestartFor(stored);
+  return {
+    stored,
+    effective: ENV_OVERRIDE ?? (stored && !pendingRestart),
+    envLocked: ENV_OVERRIDE !== undefined,
+    envValue: ENV_OVERRIDE === undefined ? null : ENV_OVERRIDE ? "on" : "off",
+    pendingRestart,
+  };
 }
 
 /**

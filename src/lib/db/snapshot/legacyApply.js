@@ -18,7 +18,8 @@ export function applyLegacySnapshotSync(
   payload,
   { legacyEncrypted, resolvedMaster, plan, instance },
 ) {
-  // Host-local MITM verifier: read the live row BEFORE the wipe below.
+  // Preserve local-only switch and MITM verifier inside this transaction,
+  // BEFORE the wipe below (including snapshots without a settings section).
   const restoredSettings = preserveLocalVerifierSettings(
     db,
     payload.settings ? { ...payload.settings } : undefined,
@@ -37,10 +38,8 @@ export function applyLegacySnapshotSync(
     `DELETE FROM kv WHERE scope IN ('modelAliases', 'disabledModels', 'customModels', 'mitmAlias', 'cliToolSettings', 'cliToolPresets', 'pricing')`,
   );
 
-  // Settings: full destructive replace except the host-local MITM verifier
-  // hash — a live local verifier (running child custody) survives and any
-  // imported one is dropped, so no imported value can ever become the
-  // runtime verifier.
+  // Settings: full destructive replace except local switch/verifier custody.
+  // Neither imported value may become an alternative control surface.
   if (restoredSettings !== undefined) {
     db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
