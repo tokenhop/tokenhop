@@ -4,11 +4,10 @@ import { hasValidCliToken } from "@/lib/auth/cliToken";
 import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";
 import { audit } from "@/lib/users/audit.js";
 import { getClientIp } from "@/lib/auth/loginLimiter.js";
+import { readPasswordHeader } from "@/lib/auth/passwordHeader.js";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-const PASSWORD_HEADER = "x-9r-password";
 
 /**
  * GET /api/settings/config/export — password-confirmed download of the
@@ -18,11 +17,19 @@ const PASSWORD_HEADER = "x-9r-password";
  */
 export async function GET(request) {
   try {
-    if (
-      !(await hasValidCliToken(request)) &&
-      !(await verifyDashboardPassword(request.headers.get(PASSWORD_HEADER)))
-    ) {
-      return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+    // A valid CLI token authenticates on its own; otherwise the password comes
+    // from x-tokenhop-password-b64 (lossless UTF-8) or legacy x-9r-password (YAN-1248).
+    if (!(await hasValidCliToken(request))) {
+      const headerPassword = readPasswordHeader(request.headers);
+      if (headerPassword.invalid) {
+        return NextResponse.json(
+          { error: "Invalid request", code: "invalid_request" },
+          { status: 400 },
+        );
+      }
+      if (!(await verifyDashboardPassword(headerPassword.value))) {
+        return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+      }
     }
     const doc = await exportConfig();
     // YAN-367: password/CLI auth pre-dates principals — actor stays null.
