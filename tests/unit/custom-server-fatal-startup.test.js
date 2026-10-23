@@ -74,6 +74,10 @@ const TRACED_NEXT_FILES = [
   ["lib/interop-default.js"],
   ["lib/client-and-server-references.js"],
   ["trace/shared.js"],
+  // Next 16.4 instrumentation-globals.external loads the server tracer.
+  ["server/lib/trace/tracer.js"],
+  ["server/lib/trace/constants.js"],
+  ["shared/lib/is-thenable.js"],
 ];
 
 function copyTracedNextSubset(destNodeModules) {
