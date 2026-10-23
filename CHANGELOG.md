@@ -1,3 +1,27 @@
+# v1.1.2 (2026-10-23)
+
+Second patch on the tokenhop 1.1 line: the Node.js October 21, 2026 security releases, pinned to Node 22.23.4, plus the recent high and critical npm advisories in undici, Next.js, DOMPurify, markdown-it and sharp.
+
+## Fixes
+
+- **Security (Node)**: runtime pinned to 22.23.4 (`.nvmrc`, `node:22.23.4-alpine`, `node:22.23.4-bookworm`) and the server and test engines floor raised to `>=22.23.4` (#988).
+- **Security (dependencies)**: undici 7.30.1, Next.js 16.4.2, DOMPurify 3.4.17, markdown-it 14.3.3 and sharp 0.35.5 (#988).
+
+# v1.1.1 (2026-10-22)
+
+First patch on the tokenhop 1.1 line: Codex OAuth refresh rebuilt around the token's real lifetime, reactive token refresh routed through the connection proxy, the native Gemini forward honouring disabled models, Gemini 4 Argon on Antigravity, and Users & teams fixes for member dashboards, workspace moves and deleted-workspace usage history.
+
+## Fixes
+
+- **OAuth (Codex)**: token expiry derived from the JWT `exp`, rows without `expiresAt` backfilled, refresh lead scaled to the token lifetime (#969); unrecoverable connections flagged for re-authentication, rotated refresh tokens adopted (#975).
+- **OAuth (proxy)**: reactive 401/403 token refresh routed through the connection proxy (#961).
+- **Gemini**: the native `/v1beta/models/{model}:generateContent` forward honours disabled models (#962).
+- **Antigravity**: Gemini 4 Argon exposed via the hub client identity, with tiered IDs and reasoning support (#909).
+- **Dashboard (members)**: Home requests gated, and key lists scoped on Home, Endpoint and MITM (#913). The remaining member Home reads are scoped, and members can list their own keys (#918).
+- **Workspace moves**: keyboard focus kept after a move, and connection identity matching aligned with connection creation (#922).
+- **Usage history**: rows left behind by a deleted workspace stay detached across restarts instead of being re-attributed to Default (#984).
+- **Settings**: config export/import send the dashboard password in the encoding-safe `x-tokenhop-password-b64` header (#985).
+
 # v1.1.0 (2026-10-12)
 
 Users & teams: the multi-user switch ships in v1.1.0. Accounts, workspaces and
