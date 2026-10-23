@@ -1,3 +1,12 @@
+# v1.1.2 (2026-10-23)
+
+Second patch on the tokenhop 1.1 line: the Node.js October 21, 2026 security releases, pinned to Node 22.23.4, plus the recent high and critical npm advisories in undici, Next.js, DOMPurify, markdown-it and sharp.
+
+## Fixes
+
+- **Security (Node)**: runtime pinned to 22.23.4 (`.nvmrc`, `node:22.23.4-alpine`, `node:22.23.4-bookworm`) and the server and test engines floor raised to `>=22.23.4` (#988).
+- **Security (dependencies)**: undici 7.30.1, Next.js 16.4.2, DOMPurify 3.4.17, markdown-it 14.3.3 and sharp 0.35.5 (#988).
+
 # v1.1.1 (2026-10-22)
 
 First patch on the tokenhop 1.1 line: Codex OAuth refresh rebuilt around the token's real lifetime, reactive token refresh routed through the connection proxy, the native Gemini forward honouring disabled models, Gemini 4 Argon on Antigravity, and Users & teams fixes for member dashboards, workspace moves and deleted-workspace usage history.
