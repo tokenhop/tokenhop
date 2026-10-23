@@ -11,7 +11,11 @@
   "devDependencies": {
     "vitest": "^5.0.3"
   },
+  "comment_overrides": "vitest peers vite ^8, which resolved to 8.3.2. 8.3.5 patches GHSA-587h-7wmj-h5pm (Oct 2026).",
+  "overrides": {
+    "vite": "8.3.5"
+  },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.23.4"
   }
 }
