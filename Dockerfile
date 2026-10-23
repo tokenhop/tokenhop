@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.10
-ARG NODE_IMAGE=node:22-alpine
+ARG NODE_IMAGE=node:22.23.4-alpine
 FROM ${NODE_IMAGE} AS base
 WORKDIR /app
 # Package mirrors default to CN mirrors; CI overrides them with the upstream registries

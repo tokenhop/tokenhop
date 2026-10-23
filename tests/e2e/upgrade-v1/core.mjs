@@ -27,8 +27,11 @@ export function dockerQuiet(...args) {
 }
 export function preflight() {
   assert.equal(process.platform, "linux", "Linux host networking required");
-  const [major, minor] = process.versions.node.split(".").map(Number);
-  assert(major > 22 || (major === 22 && minor >= 5), "Node >=22.5 required");
+  const [major, minor, patch] = process.versions.node.split(".").map(Number);
+  assert(
+    major > 22 || (major === 22 && (minor > 23 || (minor === 23 && patch >= 4))),
+    "Node >=22.23.4 required",
+  );
   const context = JSON.parse(docker("context", "inspect"))[0];
   const endpoint = process.env.DOCKER_HOST || context.Endpoints.docker.Host;
   assert(endpoint.startsWith("unix://"), "Docker daemon must be local Unix socket");

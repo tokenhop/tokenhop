@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// YAN-378 manual Docker rehearsal. Node >=22.5, Linux host networking; no deps.
+// YAN-378 manual Docker rehearsal. Node >=22.23.4, Linux host networking; no deps.
 // node tests/e2e/upgrade-from-v1.0.mjs [--reuse-master]
 // Default pulls published 1.0.3 and builds this checkout as yan378-master
 // labeled with a fingerprint of HEAD + tracked diff + untracked contents;
