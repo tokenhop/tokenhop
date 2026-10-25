@@ -37,8 +37,8 @@ export const refreshAccessToken = (provider, refreshToken, credentials) =>
 export const refreshClaudeOAuthToken = (refreshToken) =>
   _refreshClaudeOAuthToken(refreshToken, log);
 
-export const refreshGoogleToken = (refreshToken, clientId, clientSecret) =>
-  _refreshGoogleToken(refreshToken, clientId, clientSecret, log);
+export const refreshGoogleToken = (refreshToken, clientId, clientSecret, proxyOptions = null) =>
+  _refreshGoogleToken(refreshToken, clientId, clientSecret, log, proxyOptions);
 
 export const refreshCodexToken = (refreshToken) => _refreshCodexToken(refreshToken, log);
 

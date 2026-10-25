@@ -34,7 +34,7 @@ function decodeJobId(id) {
   return OPERATION_NAME_RE.test(decoded) ? decoded : null;
 }
 
-async function resolveAuth(credentials, log) {
+async function resolveAuth(credentials, log, proxyOptions) {
   const saJson = parseVertexSaJson(credentials?.apiKey);
   const projectId =
     saJson?.project_id || credentials?.projectId || credentials?.providerSpecificData?.projectId;
@@ -49,7 +49,9 @@ async function resolveAuth(credentials, log) {
 
   let token = credentials?.accessToken;
   if (saJson) {
-    const minted = await refreshVertexToken(saJson, log);
+    const minted = await refreshVertexToken(saJson, log, proxyOptions);
+    if (minted?.transportError)
+      return { error: "Vertex video: token endpoint unreachable", status: 502 };
     if (!minted?.accessToken)
       return { error: "Vertex video: failed to mint access token from service account JSON" };
     token = minted.accessToken;
@@ -114,13 +116,22 @@ function fromVertexOperation(json) {
 }
 
 export default {
-  async buildRequest({ config, action, requestId, rawBody, contentType, credentials, log }) {
+  async buildRequest({
+    config,
+    action,
+    requestId,
+    rawBody,
+    contentType,
+    credentials,
+    log,
+    proxyOptions,
+  }) {
     if (contentType && !contentType.includes("application/json")) {
       return { error: "Vertex video requires an application/json body" };
     }
 
-    const auth = await resolveAuth(credentials, log);
-    if (auth.error) return { error: auth.error };
+    const auth = await resolveAuth(credentials, log, proxyOptions);
+    if (auth.error) return { error: auth.error, status: auth.status };
     const { token, projectId, location } = auth;
     const base = (config.baseUrl || "https://aiplatform.googleapis.com").replace(/\/$/, "");
     const headers = {

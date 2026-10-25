@@ -10,6 +10,14 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// Upstream calls go through proxyAwareFetch, which captures the real fetch at import.
+// Delegate to the per-test global fetch stub instead.
+vi.mock("../../open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
+
 import { handleImageGenerationCore } from "../../open-sse/handlers/imageGenerationCore.js";
 import { CODEX_CLI_VERSION } from "../../open-sse/config/codexCliFingerprint.js";
 
@@ -532,8 +540,8 @@ describe("handleImageGenerationCore", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(global.fetch).toHaveBeenNthCalledWith(1, "https://example.com/source.png");
-    expect(global.fetch).toHaveBeenNthCalledWith(2, "https://example.com/mask.png");
+    expect(global.fetch).toHaveBeenNthCalledWith(1, "https://example.com/source.png", {});
+    expect(global.fetch).toHaveBeenNthCalledWith(2, "https://example.com/mask.png", {});
 
     const providerCall = global.fetch.mock.calls[2];
     expect(providerCall[0]).toBe(
