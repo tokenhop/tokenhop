@@ -393,11 +393,12 @@ export function parseGlmModels(body, providerId = "glm") {
 // Ids only, no kind field. A static id keeps its registry kind (and name); the
 // other MiniMax provider's registry supplies names too. Unknown ids: `speech-*`
 // drops out (the TTS dispatcher can't route a bare unknown id, it reads it as a
-// voice), image ids are listed only where the provider serves image, and video /
-// music / Hailuo / embedding-style ids have no route here and drop out. Anything
-// else is chat. Static TTS/image rows the live list lacks are added back.
+// voice), image ids are listed only where the provider serves image, and video
+// (`MiniMax-H3*` Hailuo-style ids, `*2v-*`), music, ASR (`asr-*`) and embedding
+// ids have no route here and drop out. Anything else is chat (M-series). Static TTS/image rows the live list lacks are added back.
 const MINIMAX_IMAGE = /image/i;
-const MINIMAX_UNROUTED = /video|music|hailuo|embo|embed|(^|[-_])[a-z]2v([-_]|$)/i;
+const MINIMAX_UNROUTED =
+  /video|music|hailuo|embo|embed|^asr-|(^|[-_])h\d+([-_]|$)|(^|[-_])[a-z]2v([-_]|$)/i;
 export function parseMinimaxModels(body, providerId = "minimax") {
   const own = getModelsByProviderId(providerId);
   const other = getModelsByProviderId(providerId === "minimax" ? "minimax-cn" : "minimax");

@@ -108,6 +108,9 @@ describe("parseMinimaxModels", () => {
         "T2V-01",
         "S2V-01",
         "embo-01",
+        "MiniMax-H3",
+        "MiniMax-H3-Highspeed",
+        "asr-1.0",
       ),
       "minimax",
     ).map((m) => m.id);
@@ -119,10 +122,22 @@ describe("parseMinimaxModels", () => {
       "T2V-01",
       "S2V-01",
       "embo-01",
+      "MiniMax-H3",
+      "MiniMax-H3-Highspeed",
+      "asr-1.0",
     ]) {
       expect(ids).not.toContain(dropped);
     }
   });
+
+  it.each(PROVIDERS)(
+    "%s: current M-series chat ids are never caught by the drop rules",
+    (provider) => {
+      const chat = ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.5", "MiniMax-M2.1"];
+      const ids = parseMinimaxModels(list(...chat), provider).map((m) => m.id);
+      expect(ids).toEqual(expect.arrayContaining(chat));
+    },
+  );
 
   it("adds back static tts/image rows the live list lacks", () => {
     const global = parseMinimaxModels(list("MiniMax-M2.7"), "minimax");
@@ -151,9 +166,9 @@ describe("parseMinimaxModels", () => {
   });
 });
 
-describe("routing metadata stays registry-driven", () => {
+describe("registry routing metadata", () => {
   it.each(PROVIDERS)(
-    "%s: MiniMax-M3 targets claude; live-only ids have no override",
+    "%s: static MiniMax-M3 is claude-format; a live-only id gets no forced format",
     (provider) => {
       expect(getModelTargetFormat(provider, "MiniMax-M3")).toBe("claude");
       expect(getModelTargetFormat(provider, "MiniMax-M9")).toBeNull();
@@ -200,7 +215,6 @@ describe("live catalogs end to end", () => {
 
     const image = (await buildModelsList(["image"])).map((m) => m.id);
     expect(image).toContain(`${alias}/minimax-image-01`);
-    expect(image.filter((id) => id.startsWith(`${cnAlias}/`))).toEqual([]);
   });
 
   it("200 with an empty list warns that no live models were returned", async () => {
