@@ -15,6 +15,7 @@ export function parseDataUri(url) {
 import { lookup } from "node:dns/promises";
 import { Agent } from "undici";
 import { isIP, BlockList } from "node:net";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import {
   MAX_IMAGE_BYTES,
   FETCH_TIMEOUT_MS,
@@ -154,21 +155,26 @@ export function detectImageMime(buf) {
  * Returns null on any failure or rejection.
  *
  * @param {string} imageUrl - HTTP(S) URL of the image
- * @param {object} options - { signal, timeoutMs, maxBytes }
+ * @param {object} options - { signal, timeoutMs, maxBytes, proxyOptions }
+ *   proxyOptions: optional connection proxy settings forwarded to
+ *   proxyAwareFetch; without a proxy the request uses the pinned dispatcher.
  * @returns {Promise<{url: string, mimeType: string}|null>}
  */
 export async function fetchImageAsBase64(imageUrl, options = {}) {
-  const { signal, timeoutMs = FETCH_TIMEOUT_MS, maxBytes = MAX_IMAGE_BYTES } = options;
-  if (!imageUrl || (!imageUrl.startsWith("http://") && !imageUrl.startsWith("https://"))) {
-    return null;
-  }
-
+  const {
+    signal,
+    timeoutMs = FETCH_TIMEOUT_MS,
+    maxBytes = MAX_IMAGE_BYTES,
+    proxyOptions,
+  } = options;
   let url;
   try {
     url = new URL(imageUrl);
   } catch {
     return null;
   }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+
   const pinnedIps = await resolvePinnedIps(url.hostname);
   if (!pinnedIps) return null;
 
@@ -187,8 +193,17 @@ export async function fetchImageAsBase64(imageUrl, options = {}) {
 
   try {
     // redirect:"manual" prevents a public URL redirecting to a private one (SSRF bypass).
-    const response = await fetch(imageUrl, { signal: fetchSignal, redirect: "manual", dispatcher });
-    if (!response.ok || !response.body) return null;
+    // Direct connections are validated above and pinned to the resolved IP via
+    // the dispatcher; strict proxy errors surface as failure below.
+    const response = await proxyAwareFetch(
+      url.href,
+      { signal: fetchSignal, redirect: "manual", dispatcher },
+      proxyOptions ?? null,
+    );
+    if (!response.ok || !response.body) {
+      await response.body?.cancel().catch(() => {});
+      return null;
+    }
 
     // Stream-read with a hard byte cap to avoid loading huge payloads into memory.
     const reader = response.body.getReader();

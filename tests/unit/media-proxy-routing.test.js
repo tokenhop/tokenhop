@@ -4,6 +4,10 @@
 import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Cloudflare input image URLs are DNS-validated before fetching.
+const lookupMock = vi.hoisted(() => vi.fn());
+vi.mock("node:dns/promises", () => ({ lookup: (...a) => lookupMock(...a) }));
+
 const mocks = vi.hoisted(() => ({
   proxyAwareFetch: vi.fn(),
   resolveConnectionProxyConfig: vi.fn(),
@@ -75,6 +79,8 @@ beforeEach(() => {
       throw new Error("direct fetch bypassed the connection proxy");
     }),
   );
+  lookupMock.mockReset();
+  lookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
 });
 
 afterEach(() => {
@@ -175,10 +181,14 @@ describe("upstream media requests use the connection proxy", () => {
     }
   });
 
-  it("Cloudflare input image URL is downloaded through the proxy", async () => {
+  it("Cloudflare input image URL is validated and downloaded through the proxy", async () => {
+    const PNG_BYTES = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.alloc(16, 1),
+    ]);
     mocks.proxyAwareFetch.mockImplementation(async (url) =>
       url === "https://example.com/source.png"
-        ? new Response(new Uint8Array([1, 2, 3]), { status: 200 })
+        ? new Response(PNG_BYTES, { status: 200 })
         : json({ result: { image: "b64out" }, success: true }),
     );
 
