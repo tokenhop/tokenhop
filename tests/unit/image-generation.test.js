@@ -11,6 +11,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+// Cloudflare input image URLs are DNS-validated before fetching.
+const lookupMock = vi.hoisted(() => vi.fn());
+vi.mock("node:dns/promises", () => ({ lookup: (...a) => lookupMock(...a) }));
+
 // Upstream calls go through proxyAwareFetch, which captures the real fetch at import.
 // Delegate to the per-test global fetch stub instead.
 vi.mock("../../open-sse/utils/proxyFetch.js", async (importOriginal) => ({
@@ -26,6 +30,8 @@ const originalFetch = global.fetch;
 describe("handleImageGenerationCore", () => {
   beforeEach(() => {
     global.fetch = vi.fn();
+    lookupMock.mockReset();
+    lookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
   });
 
   afterEach(() => {
@@ -501,15 +507,23 @@ describe("handleImageGenerationCore", () => {
   });
 
   it("resolves Cloudflare img2img and inpainting URL inputs before sending", async () => {
+    const PNG_1 = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from([1, 2, 3]),
+    ]);
+    const PNG_2 = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from([4, 5, 6]),
+    ]);
     global.fetch
       .mockResolvedValueOnce(
-        new Response(new Uint8Array([1, 2, 3]), {
+        new Response(PNG_1, {
           status: 200,
           headers: { "Content-Type": "image/png" },
         }),
       )
       .mockResolvedValueOnce(
-        new Response(new Uint8Array([4, 5, 6]), {
+        new Response(PNG_2, {
           status: 200,
           headers: { "Content-Type": "image/png" },
         }),
@@ -540,19 +554,28 @@ describe("handleImageGenerationCore", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(global.fetch).toHaveBeenNthCalledWith(1, "https://example.com/source.png", {});
-    expect(global.fetch).toHaveBeenNthCalledWith(2, "https://example.com/mask.png", {});
+    // The hardened fetcher pins DNS via an undici dispatcher on the direct path.
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      1,
+      "https://example.com/source.png",
+      expect.objectContaining({ redirect: "manual" }),
+    );
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      2,
+      "https://example.com/mask.png",
+      expect.objectContaining({ redirect: "manual" }),
+    );
 
     const providerCall = global.fetch.mock.calls[2];
     expect(providerCall[0]).toBe(
       "https://api.cloudflare.com/client/v4/accounts/cf-account/ai/run/@cf/runwayml/stable-diffusion-v1-5-inpainting",
     );
     const requestBody = JSON.parse(providerCall[1].body);
-    expect(requestBody.image).toEqual([1, 2, 3]);
-    expect(requestBody.image_b64).toBe(Buffer.from([1, 2, 3]).toString("base64"));
-    expect(requestBody.mask).toEqual([4, 5, 6]);
-    expect(requestBody.mask_image).toEqual([4, 5, 6]);
-    expect(requestBody.mask_b64).toBe(Buffer.from([4, 5, 6]).toString("base64"));
+    expect(requestBody.image_b64).toBe(PNG_1.toString("base64"));
+    expect(requestBody.image).toEqual(Array.from(PNG_1));
+    expect(requestBody.mask_b64).toBe(PNG_2.toString("base64"));
+    expect(requestBody.mask).toEqual(Array.from(PNG_2));
+    expect(requestBody.mask_image).toEqual(Array.from(PNG_2));
   });
 
   it("handles provider error responses", async () => {
