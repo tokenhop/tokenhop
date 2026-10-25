@@ -25,9 +25,11 @@ vi.mock("../../open-sse/services/tokenRefresh.js", () => ({
   refreshWithRetry: vi.fn().mockResolvedValue(null),
 }));
 
-// Mock proxyFetch to avoid proxy-agent imports in test env
+// Mock proxyFetch to avoid proxy-agent imports in test env; upstream calls
+// delegate to the per-test global fetch stub.
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   default: vi.fn(),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
 }));
 
 import { handleEmbeddingsCore } from "../../open-sse/handlers/embeddingsCore.js";

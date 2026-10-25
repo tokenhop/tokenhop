@@ -3,6 +3,7 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { getActiveReliabilityPolicy } from "../config/reliabilityPolicy.js";
 import { getExecutor } from "../executors/index.js";
 import { proxyOptionsFromCredentials } from "../utils/connectionProxyOptions.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getEmbeddingAdapter } from "./embeddingProviders/index.js";
 
@@ -64,18 +65,23 @@ export async function handleEmbeddingsCore({
     `${provider.toUpperCase()} | ${model} | input_type=${Array.isArray(input) ? `array[${input.length}]` : "string"}`,
   );
 
+  const proxyOptions = proxyOptionsFromCredentials(credentials);
   let providerResponse;
   try {
-    providerResponse = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(requestBody),
-      ...(typeof AbortSignal?.timeout === "function"
-        ? {
-            signal: AbortSignal.timeout(getActiveReliabilityPolicy().streamTimeouts.connectMs),
-          }
-        : {}),
-    });
+    providerResponse = await proxyAwareFetch(
+      url,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(requestBody),
+        ...(typeof AbortSignal?.timeout === "function"
+          ? {
+              signal: AbortSignal.timeout(getActiveReliabilityPolicy().streamTimeouts.connectMs),
+            }
+          : {}),
+      },
+      proxyOptions,
+    );
   } catch (error) {
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     log?.debug?.("EMBEDDINGS", `Fetch error: ${errMsg}`);
@@ -94,7 +100,7 @@ export async function handleEmbeddingsCore({
       providerResponse.status === HTTP_STATUS.FORBIDDEN)
   ) {
     const newCredentials = await refreshWithRetry(
-      () => executor.refreshCredentials(credentials, log, proxyOptionsFromCredentials(credentials)),
+      () => executor.refreshCredentials(credentials, log, proxyOptions),
       3,
       log,
     );
@@ -107,11 +113,11 @@ export async function handleEmbeddingsCore({
       try {
         const retryHeaders = adapter.buildHeaders(credentials, ctx);
         const retryUrl = adapter.buildUrl(model, credentials, ctx);
-        providerResponse = await fetch(retryUrl, {
-          method: "POST",
-          headers: retryHeaders,
-          body: JSON.stringify(requestBody),
-        });
+        providerResponse = await proxyAwareFetch(
+          retryUrl,
+          { method: "POST", headers: retryHeaders, body: JSON.stringify(requestBody) },
+          proxyOptions,
+        );
       } catch {
         log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`);
       }

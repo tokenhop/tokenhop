@@ -3,6 +3,7 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getExecutor } from "../executors/index.js";
 import { proxyOptionsFromCredentials } from "../utils/connectionProxyOptions.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { getImageAdapter } from "./imageProviders/index.js";
 import { urlToBase64 } from "./imageProviders/_base.js";
 
@@ -51,6 +52,8 @@ export async function handleImageGenerationCore({
     );
   }
 
+  const proxyOptions = proxyOptionsFromCredentials(credentials);
+
   // Executor-delegating adapters: skip manual URL/headers/body, use the proven executor flow
   if (adapter.useExecutor && adapter.executeViaExecutor) {
     try {
@@ -58,7 +61,13 @@ export async function handleImageGenerationCore({
         "IMAGE",
         `${provider.toUpperCase()} | ${model} | prompt="${body.prompt.slice(0, 50)}..." (executor)`,
       );
-      const responseBody = await adapter.executeViaExecutor(model, body, credentials, log);
+      const responseBody = await adapter.executeViaExecutor(
+        model,
+        body,
+        credentials,
+        log,
+        proxyOptions,
+      );
       if (onRequestSuccess) await onRequestSuccess();
       const normalized = adapter.normalize(responseBody, body.prompt);
       const finalBody =
@@ -69,7 +78,7 @@ export async function handleImageGenerationCore({
         let b64 = first?.b64_json;
         if (!b64 && first?.url) {
           try {
-            b64 = await urlToBase64(first.url);
+            b64 = await urlToBase64(first.url, proxyOptions);
           } catch {}
         }
         if (b64) {
@@ -113,7 +122,7 @@ export async function handleImageGenerationCore({
 
   try {
     url = adapter.buildUrl(model, credentials);
-    requestBody = await adapter.buildBody(model, body);
+    requestBody = await adapter.buildBody(model, body, proxyOptions);
     headers = adapter.buildHeaders(credentials, requestBody, model, body);
   } catch (error) {
     return createErrorResult(
@@ -129,11 +138,11 @@ export async function handleImageGenerationCore({
 
   let providerResponse;
   try {
-    providerResponse = await fetch(url, {
-      method: "POST",
-      headers,
-      body: serializeRequestBody(requestBody),
-    });
+    providerResponse = await proxyAwareFetch(
+      url,
+      { method: "POST", headers, body: serializeRequestBody(requestBody) },
+      proxyOptions,
+    );
   } catch (error) {
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     log?.debug?.("IMAGE", `Fetch error: ${errMsg}`);
@@ -153,7 +162,7 @@ export async function handleImageGenerationCore({
       providerResponse.status === HTTP_STATUS.FORBIDDEN)
   ) {
     const newCredentials = await refreshWithRetry(
-      () => executor.refreshCredentials(credentials, log, proxyOptionsFromCredentials(credentials)),
+      () => executor.refreshCredentials(credentials, log, proxyOptions),
       3,
       log,
     );
@@ -164,14 +173,14 @@ export async function handleImageGenerationCore({
       if (onCredentialsRefreshed) await onCredentialsRefreshed(newCredentials);
 
       try {
-        const retryBody = await adapter.buildBody(model, body);
+        const retryBody = await adapter.buildBody(model, body, proxyOptions);
         const retryHeaders = adapter.buildHeaders(credentials, retryBody, model, body);
         const retryUrl = adapter.buildUrl(model, credentials);
-        providerResponse = await fetch(retryUrl, {
-          method: "POST",
-          headers: retryHeaders,
-          body: serializeRequestBody(retryBody),
-        });
+        providerResponse = await proxyAwareFetch(
+          retryUrl,
+          { method: "POST", headers: retryHeaders, body: serializeRequestBody(retryBody) },
+          proxyOptions,
+        );
       } catch {
         log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`);
       }
@@ -194,6 +203,7 @@ export async function handleImageGenerationCore({
       parsed = await adapter.parseResponse(providerResponse, {
         headers,
         log,
+        proxyOptions,
         streamToClient,
         onRequestSuccess,
         url,
@@ -229,7 +239,7 @@ export async function handleImageGenerationCore({
     let b64 = first?.b64_json;
     if (!b64 && first?.url) {
       try {
-        b64 = await urlToBase64(first.url);
+        b64 = await urlToBase64(first.url, proxyOptions);
       } catch {}
     }
     if (b64) {
