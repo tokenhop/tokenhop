@@ -113,8 +113,8 @@ async function runBootstrap() {
   if (existing) {
     // Installs bootstrapped before YAN-361, or rows written while the switch
     // was back off: adopt ownerless connections, nodes, combos and scoped
-    // model maps into Default. Usage is never adopted here (YAN-1549): ownerless usage on an install
-    // with an owner is detached history of a deleted workspace/user/key.
+    // model maps into Default. YAN-1553: the durable usageAdoptedAt marker
+    // guards usage adoption per install; existing-owner runs never adopt it.
     const n = await adoptOwnerlessUnscoped();
     if (n) console.log(`[users] Moved ${n} ownerless connection(s)/node(s) into Default`);
     // YAN-362: keep Default's settings row seeded and retire the legacy blob

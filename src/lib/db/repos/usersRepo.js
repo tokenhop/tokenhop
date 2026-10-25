@@ -9,9 +9,9 @@ import { TenancyError, assertCtx, mapConstraintErrors } from "@/lib/users/errors
 import { assertNotLastManager } from "./membershipsRepo.js";
 import { revokeUserApiKeysSync } from "./apiKeysRepo.js";
 import { getSettings } from "./settingsRepo.js";
-import { setMetaSync } from "../helpers/metaStore.js";
+import { getMetaSync, setMetaSync } from "../helpers/metaStore.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
-import { adoptOwnerlessRowsUnscoped } from "./ownership.js";
+import { adoptOwnerlessRowsUnscoped, USAGE_ADOPTED_AT } from "./ownership.js";
 import { detachBudgetCarryUnscoped } from "./usageBudgetCarryRepo.js";
 import { clearCredentialCache } from "../helpers/credentialStorage.js";
 import { audit } from "@/lib/users/audit.js";
@@ -569,9 +569,11 @@ export async function bootstrapOwnerUnscoped({ passwordHash } = {}) {
         [uuidv4(), id, id, now],
       );
       setMetaSync(db, "defaultWorkspaceId", ids.Default);
-      // YAN-361/370: existing connections, nodes and pre-users (migration 014)
-      // usage → Default and the owner. The only caller that adopts usage.
-      adoptOwnerlessRowsUnscoped(db, { includeUsage: true });
+      // YAN-1553: adopt legacy usage once per install, not once per owner.
+      // Restores retain this marker even if they replace the owner graph.
+      const usageAdoptedAt = getMetaSync(db, USAGE_ADOPTED_AT);
+      adoptOwnerlessRowsUnscoped(db, { includeUsage: usageAdoptedAt === null });
+      setMetaSync(db, USAGE_ADOPTED_AT, usageAdoptedAt ?? now);
       dropSession(id);
       return {
         ...getRow(db, id),
