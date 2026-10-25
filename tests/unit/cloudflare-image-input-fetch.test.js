@@ -1,7 +1,7 @@
-// YAN-1577: Cloudflare Workers AI caller-supplied image/mask URLs must go
-// through the hardened image fetcher (DNS pinning, private-IP rejection,
-// redirect:"manual", byte cap, magic-byte check) while still using the
-// connection proxy.
+// YAN-1577: Cloudflare Workers AI caller-supplied image/mask URLs go
+// through the hardened image fetcher (DNS pinning, non-public address
+// rejection, redirect:"manual", byte cap, magic-byte check) while still
+// using the connection proxy.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock DNS lookup so we control which host resolves to what IP.
@@ -55,6 +55,13 @@ const run = (body) =>
 const imageFetchCalls = () => mocks.proxyAwareFetch.mock.calls.filter(([url]) => url !== CF_URL);
 
 beforeEach(() => {
+  // A plain (proxy-bypassing) fetch is a failure, and must never reach the network.
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      throw new Error("direct fetch bypassed the hardened image fetcher");
+    }),
+  );
   mocks.proxyAwareFetch.mockReset();
   mocks.proxyAwareFetch.mockImplementation(async (url) => {
     if (url === CF_URL) return json({ result: { image: "b64out" }, success: true });
@@ -69,7 +76,7 @@ afterEach(() => {
 });
 
 describe("Cloudflare input image URLs use the hardened image fetcher", () => {
-  it("rejects a host resolving to the cloud metadata IP before any fetch", async () => {
+  it("rejects a host resolving to a link-local address before any fetch", async () => {
     lookupMock.mockResolvedValue([{ address: "169.254.169.254", family: 4 }]);
 
     const result = await run({ image: "http://metadata.example/x.png" });
@@ -136,7 +143,7 @@ describe("Cloudflare input image URLs use the hardened image fetcher", () => {
       url === "https://example.com/redir.png"
         ? new Response(null, {
             status: 302,
-            headers: { Location: "http://169.254.169.254/latest/meta-data" },
+            headers: { Location: "http://blocked.example/x.png" },
           })
         : url === CF_URL
           ? json({ result: { image: "b64out" }, success: true })
@@ -145,12 +152,21 @@ describe("Cloudflare input image URLs use the hardened image fetcher", () => {
             })(),
     );
 
+    // The page URL is public; the redirect target resolves to a non-public address.
+    lookupMock.mockImplementation(async (hostname) =>
+      hostname === "blocked.example" ? [{ address: "169.254.169.254", family: 4 }] : [PUBLIC_IP],
+    );
+
     const result = await run({ image: "https://example.com/redir.png" });
 
     expect(result.success).toBe(false);
     expect(result.status).toBe(400);
+    // The image fetch refused to follow redirects…
+    const [imageCall] = imageFetchCalls();
+    expect(imageCall[1]).toEqual(expect.objectContaining({ redirect: "manual" }));
+    // …and the redirect target was never fetched.
     const redirectTarget = mocks.proxyAwareFetch.mock.calls.find(([url]) =>
-      String(url).includes("169.254.169.254"),
+      String(url).includes("blocked.example"),
     );
     expect(redirectTarget).toBeUndefined();
   });

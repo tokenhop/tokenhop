@@ -17,7 +17,7 @@ vi.mock("node:dns/promises", () => ({
 
 // fetchImageAsBase64 routes through proxyAwareFetch; keep it a stub (not the
 // captured-at-import fetch) so per-test global.fetch mocks still intercept.
-// Individual tests override it via vi.spyOn below.
+// Individual tests override the mock implementation below.
 const mocks = vi.hoisted(() => ({ proxyAwareFetch: vi.fn() }));
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   default: vi.fn(),

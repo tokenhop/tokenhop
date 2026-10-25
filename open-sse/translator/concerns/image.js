@@ -200,7 +200,10 @@ export async function fetchImageAsBase64(imageUrl, options = {}) {
       { signal: fetchSignal, redirect: "manual", dispatcher },
       proxyOptions ?? null,
     );
-    if (!response.ok || !response.body) return null;
+    if (!response.ok || !response.body) {
+      await response.body?.cancel().catch(() => {});
+      return null;
+    }
 
     // Stream-read with a hard byte cap to avoid loading huge payloads into memory.
     const reader = response.body.getReader();

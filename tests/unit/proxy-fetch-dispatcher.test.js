@@ -4,7 +4,18 @@
 // lookalike hosts (api2.cursor.sh.other.example) as bypass hosts.
 // proxyFetch captures globalThis.fetch at import as its direct path, so stub
 // it before importing and keep the test offline.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Keep the MITM-bypass resolver offline if a regression reaches it.
+vi.mock("dns", () => {
+  class Resolver {
+    setServers() {}
+    resolve4(_hostname, cb) {
+      cb(new Error("offline test: DNS resolution disabled"), []);
+    }
+  }
+  return { default: { Resolver }, Resolver };
+});
 
 const fetchStub = vi.fn(async () => new Response("ok", { status: 200 }));
 globalThis.fetch = fetchStub;
@@ -32,9 +43,26 @@ function proxyDown() {
   });
 }
 
+const PROXY_ENV_VARS = [
+  "HTTP_PROXY",
+  "http_proxy",
+  "HTTPS_PROXY",
+  "https_proxy",
+  "ALL_PROXY",
+  "all_proxy",
+  "NO_PROXY",
+  "no_proxy",
+];
+
 beforeEach(() => {
   fetchStub.mockReset();
   fetchStub.mockImplementation(async () => new Response("ok", { status: 200 }));
+  // Env proxies must not leak into these tests from the developer machine.
+  for (const name of PROXY_ENV_VARS) vi.stubEnv(name, "");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("proxyAwareFetch dispatcher passthrough", () => {
