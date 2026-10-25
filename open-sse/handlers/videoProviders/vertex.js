@@ -50,6 +50,8 @@ async function resolveAuth(credentials, log, proxyOptions) {
   let token = credentials?.accessToken;
   if (saJson) {
     const minted = await refreshVertexToken(saJson, log, proxyOptions);
+    if (minted?.transportError)
+      return { error: "Vertex video: token endpoint unreachable", status: 502 };
     if (!minted?.accessToken)
       return { error: "Vertex video: failed to mint access token from service account JSON" };
     token = minted.accessToken;
@@ -129,7 +131,7 @@ export default {
     }
 
     const auth = await resolveAuth(credentials, log, proxyOptions);
-    if (auth.error) return { error: auth.error };
+    if (auth.error) return { error: auth.error, status: auth.status };
     const { token, projectId, location } = auth;
     const base = (config.baseUrl || "https://aiplatform.googleapis.com").replace(/\/$/, "");
     const headers = {

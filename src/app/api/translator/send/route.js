@@ -78,15 +78,7 @@ export async function POST(request) {
       copilotToken: connection.providerSpecificData?.copilotToken,
       copilotTokenExpiresAt: connection.providerSpecificData?.copilotTokenExpiresAt,
       projectId: connection.projectId,
-      providerSpecificData: {
-        ...(connection.providerSpecificData || {}),
-        connectionProxyEnabled: proxyOptions.connectionProxyEnabled,
-        connectionProxyUrl: proxyOptions.connectionProxyUrl,
-        connectionNoProxy: proxyOptions.connectionNoProxy,
-        connectionProxyPoolId: proxyOptions.connectionProxyPoolId,
-        vercelRelayUrl: proxyOptions.vercelRelayUrl,
-        strictProxy: proxyOptions.strictProxy,
-      },
+      providerSpecificData: connection.providerSpecificData,
     };
 
     const executor = getExecutor(provider);

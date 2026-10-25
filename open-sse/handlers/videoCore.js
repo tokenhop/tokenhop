@@ -104,11 +104,9 @@ export async function handleVideoProxyCore({
   const adapter = getVideoAdapter(provider);
   const fetchSignal = combineSignals(signal, timeoutMs);
   const proxyOptions = proxyOptionsFromCredentials(credentials);
-  // A creation POST is never re-sent directly after a proxy failure (see VIDEO_ACTIONS).
-  const creationProxyOptions =
-    proxyOptions.connectionProxyEnabled || proxyOptions.vercelRelayUrl
-      ? { ...proxyOptions, strictProxy: true }
-      : proxyOptions;
+  // A creation is never re-sent directly after a proxy failure (see VIDEO_ACTIONS);
+  // polls (requestId) keep the normal fallback.
+  const fetchProxyOptions = requestId ? proxyOptions : { ...proxyOptions, strictProxy: true };
 
   // Default (xAI shape) request plan; adapters override URL/method/headers/body.
   const defaultPlan = () => {
@@ -141,12 +139,12 @@ export async function handleVideoProxyCore({
           token: credentials?.accessToken || credentials?.apiKey,
         })
       : defaultPlan();
-    if (plan.error) return { planError: plan.error };
+    if (plan.error) return { planError: plan.error, planStatus: plan.status };
     return {
       response: await proxyAwareFetch(
         plan.url,
         { method: plan.method, headers: plan.headers, body: plan.body, signal: fetchSignal },
-        plan.method === "POST" ? creationProxyOptions : proxyOptions,
+        fetchProxyOptions,
       ),
     };
   };
@@ -156,7 +154,10 @@ export async function handleVideoProxyCore({
   try {
     const first = await doFetch();
     if (first.planError)
-      return createErrorResult(HTTP_STATUS.BAD_REQUEST, `[${provider}] ${first.planError}`);
+      return createErrorResult(
+        first.planStatus || HTTP_STATUS.BAD_REQUEST,
+        `[${provider}] ${first.planError}`,
+      );
     upstream = first.response;
   } catch (error) {
     if (error?.name === "AbortError" || error?.name === "TimeoutError") {
@@ -198,7 +199,10 @@ export async function handleVideoProxyCore({
       try {
         const retry = await doFetch();
         if (retry.planError)
-          return createErrorResult(HTTP_STATUS.BAD_REQUEST, `[${provider}] ${retry.planError}`);
+          return createErrorResult(
+            retry.planStatus || HTTP_STATUS.BAD_REQUEST,
+            `[${provider}] ${retry.planError}`,
+          );
         upstream = retry.response;
       } catch (error) {
         return createErrorResult(

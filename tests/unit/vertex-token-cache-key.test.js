@@ -1,5 +1,5 @@
 // YAN-1573: the Vertex service-account token cache is scoped to the full
-// credential (email and private key), not the email alone.
+// credential; distinct credentials get distinct cache entries.
 import { generateKeyPairSync } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -37,7 +37,7 @@ describe("refreshVertexToken cache is scoped to the full credential", () => {
     );
   });
 
-  it("does not share a token between credentials with the same email but different keys", async () => {
+  it("gives distinct credentials distinct cache entries", async () => {
     const email = `cache-scope-${Date.now()}@proj-1.iam.gserviceaccount.com`;
 
     const first = await refreshVertexToken(saJson(email, newKey()), null);

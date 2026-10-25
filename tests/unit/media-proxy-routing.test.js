@@ -28,11 +28,20 @@ vi.mock("@/sse/services/tokenRefresh", async (importOriginal) => ({
   refreshGoogleToken: mocks.refreshGoogleToken,
   updateProviderCredentials: vi.fn(async () => true),
 }));
+// Async image providers poll on a timer; poll immediately.
+vi.mock("../../open-sse/handlers/imageProviders/_base.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  sleep: async () => {},
+}));
 
 import { handleImageGenerationCore } from "../../open-sse/handlers/imageGenerationCore.js";
 import { handleEmbeddingsCore } from "../../open-sse/handlers/embeddingsCore.js";
 import { handleVideoProxyCore } from "../../open-sse/handlers/videoCore.js";
-import { resolveGemini, resolveGeminiCli } from "../../src/lib/providerModels/googleModels.js";
+import {
+  resolveAntigravity,
+  resolveGemini,
+  resolveGeminiCli,
+} from "../../src/lib/providerModels/googleModels.js";
 
 const PROXY_PSD = {
   connectionProxyEnabled: true,
@@ -140,6 +149,57 @@ describe("upstream media requests use the connection proxy", () => {
     );
   });
 
+  it("async image polling (Black Forest Labs) uses the proxy", async () => {
+    mocks.proxyAwareFetch.mockImplementation(async (url) =>
+      url === "https://poll.example/bfl"
+        ? json({ status: "Ready", result: { sample: "https://cdn.example/bfl.png" } })
+        : json({ polling_url: "https://poll.example/bfl" }),
+    );
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "a cat" },
+      modelInfo: { provider: "black-forest-labs", model: "flux-pro-1.1" },
+      credentials: { apiKey: "bfl-key", providerSpecificData: { ...PROXY_PSD } },
+      log: silentLog(),
+    });
+
+    expect(result.success).toBe(true);
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledTimes(2);
+    expect(mocks.proxyAwareFetch).toHaveBeenLastCalledWith(
+      "https://poll.example/bfl",
+      expect.any(Object),
+      EXPECTED_PROXY,
+    );
+    for (const call of mocks.proxyAwareFetch.mock.calls) {
+      expect(call[2]).toEqual(EXPECTED_PROXY);
+    }
+  });
+
+  it("Cloudflare input image URL is downloaded through the proxy", async () => {
+    mocks.proxyAwareFetch.mockImplementation(async (url) =>
+      url === "https://example.com/source.png"
+        ? new Response(new Uint8Array([1, 2, 3]), { status: 200 })
+        : json({ result: { image: "b64out" }, success: true }),
+    );
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "a lion", image: "https://example.com/source.png" },
+      modelInfo: { provider: "cloudflare-ai", model: "@cf/runwayml/stable-diffusion-v1-5-img2img" },
+      credentials: {
+        apiKey: "cf-token",
+        providerSpecificData: { ...PROXY_PSD, accountId: "cf-account" },
+      },
+      log: silentLog(),
+    });
+
+    expect(result.success).toBe(true);
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
+      "https://example.com/source.png",
+      expect.any(Object),
+      EXPECTED_PROXY,
+    );
+  });
+
   it("embeddings", async () => {
     mocks.proxyAwareFetch.mockResolvedValue(
       json({ object: "list", data: [{ object: "embedding", index: 0, embedding: [0.1] }] }),
@@ -160,19 +220,21 @@ describe("upstream media requests use the connection proxy", () => {
     );
   });
 
-  it("Vertex video: service-account token mint and the job request", async () => {
-    const { privateKey } = generateKeyPairSync("rsa", {
-      modulusLength: 2048,
-      privateKeyEncoding: { type: "pkcs8", format: "pem" },
-      publicKeyEncoding: { type: "spki", format: "pem" },
-    });
-    const saJson = JSON.stringify({
+  const vertexSaJson = () =>
+    JSON.stringify({
       type: "service_account",
-      // Fresh key per run, so the Vertex token cache never short-circuits the mint.
-      client_email: `yan1251-${Date.now()}@proj-1.iam.gserviceaccount.com`,
-      private_key: privateKey,
+      client_email: "video@proj-1.iam.gserviceaccount.com",
+      // Fresh key per call, so the Vertex token cache never short-circuits the mint.
+      private_key: generateKeyPairSync("rsa", {
+        modulusLength: 2048,
+        privateKeyEncoding: { type: "pkcs8", format: "pem" },
+        publicKeyEncoding: { type: "spki", format: "pem" },
+      }).privateKey,
       project_id: "proj-1",
     });
+
+  it("Vertex video: service-account token mint and the job request", async () => {
+    const saJson = vertexSaJson();
     mocks.proxyAwareFetch.mockImplementation(async (url) =>
       url === GOOGLE_TOKEN_URL
         ? json({ access_token: "vertex-tok", expires_in: 3600 })
@@ -201,6 +263,26 @@ describe("upstream media requests use the connection proxy", () => {
       expect.objectContaining({ method: "POST" }),
       EXPECTED_PROXY,
     );
+  });
+
+  it("Vertex video: an unreachable token endpoint is a 502, not a credential error", async () => {
+    mocks.proxyAwareFetch.mockRejectedValue(
+      new Error("[ProxyFetch] Proxy required but failed (strictProxy=true): ECONNREFUSED"),
+    );
+
+    const result = await handleVideoProxyCore({
+      provider: "vertex",
+      action: "generations",
+      rawBody: JSON.stringify({ model: "veo-3.1-generate-preview", prompt: "x" }),
+      contentType: "application/json",
+      credentials: { apiKey: vertexSaJson(), providerSpecificData: { ...PROXY_PSD } },
+      log: silentLog(),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledTimes(1);
+    expect(mocks.proxyAwareFetch.mock.calls[0][0]).toBe(GOOGLE_TOKEN_URL);
   });
 
   it("video 401 refresh and retry carry the proxy", async () => {
@@ -290,6 +372,26 @@ describe("dashboard Google model catalogs use the connection proxy", () => {
     expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
       expect.stringContaining("https://generativelanguage.googleapis.com/v1beta/models"),
       expect.any(Object),
+      EXPECTED_PROXY,
+    );
+  });
+
+  it("antigravity catalog fetch", async () => {
+    mocks.resolveConnectionProxyConfig.mockResolvedValue(POOL_CONFIG);
+    mocks.proxyAwareFetch.mockResolvedValue(
+      json({ models: { "claude-sonnet-4-6": { displayName: "Sonnet" } } }),
+    );
+
+    const result = await resolveAntigravity({
+      accessToken: "at",
+      projectId: "proj-1",
+      providerSpecificData: { proxyPoolId: "pool-1" },
+    });
+
+    expect(result.models.map((m) => m.id)).toContain("claude-sonnet-4-6");
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/v1internal:fetchAvailableModels"),
+      expect.objectContaining({ method: "POST" }),
       EXPECTED_PROXY,
     );
   });
@@ -398,6 +500,37 @@ describe("Strict Proxy fails closed for media requests", () => {
     expect(fetchStub).toHaveBeenCalledTimes(2);
     expect(fetchStub.mock.calls[0][1]?.dispatcher).toBeTruthy();
     expect(fetchStub.mock.calls[1][1]?.dispatcher).toBeUndefined();
+  });
+
+  describe("with only an environment proxy", () => {
+    beforeEach(() => {
+      vi.stubEnv("HTTPS_PROXY", "http://127.0.0.1:9");
+      vi.stubEnv("NO_PROXY", "");
+    });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+    const noConnectionProxy = { credentials: { accessToken: "tok", providerSpecificData: {} } };
+
+    it("video creation POST is never re-sent directly", async () => {
+      const result = await videoCall({
+        ...noConnectionProxy,
+        action: "generations",
+        rawBody: '{"prompt":"x"}',
+        contentType: "application/json",
+      });
+
+      expect(result.success).toBe(false);
+      expectProxiedOnly();
+    });
+
+    it("video polling keeps the direct fallback", async () => {
+      await videoCall({ ...noConnectionProxy, requestId: "req-1" });
+
+      expect(fetchStub).toHaveBeenCalledTimes(2);
+      expect(fetchStub.mock.calls[0][1]?.dispatcher).toBeTruthy();
+      expect(fetchStub.mock.calls[1][1]?.dispatcher).toBeUndefined();
+    });
   });
 
   it.each([

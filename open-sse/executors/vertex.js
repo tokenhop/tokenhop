@@ -131,7 +131,7 @@ export class VertexExecutor extends BaseExecutor {
     if (!saJson) return null;
 
     const result = await refreshVertexToken(saJson, log, proxyOptions);
-    if (!result) return null;
+    if (!result?.accessToken) return null;
 
     return { accessToken: result.accessToken, expiresAt: result.expiresAt };
   }
