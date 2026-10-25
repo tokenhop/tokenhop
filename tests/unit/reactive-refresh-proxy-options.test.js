@@ -86,16 +86,16 @@ describe("image and embeddings 401 handlers pass proxyOptions (YAN-1036)", () =>
     }));
     refreshCredentials = vi.fn(async () => null);
     executorState.executor = { noAuth: false, supportsRefresh: true, refreshCredentials };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 })),
+    // Upstream calls go through proxyAwareFetch (mocked above).
+    proxyAwareFetchMock.mockReset();
+    proxyAwareFetchMock.mockImplementation(
+      async () => new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }),
     );
   });
 
   afterEach(() => {
     vi.doUnmock("../../open-sse/executors/index.js");
     vi.doUnmock("../../open-sse/services/tokenRefresh.js");
-    vi.unstubAllGlobals();
   });
 
   const credentials = () => ({

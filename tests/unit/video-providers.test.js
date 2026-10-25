@@ -16,6 +16,13 @@ vi.mock("open-sse/services/tokenRefresh.js", async (importOriginal) => {
   return { ...actual, refreshTokenByProvider: vi.fn(), refreshVertexToken: vi.fn() };
 });
 
+// Upstream calls go through proxyAwareFetch, which captures the real fetch at import.
+// Delegate to the per-test global fetch stub instead.
+vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
+
 import { handleVideoProxyCore, getVideoConfig } from "open-sse/handlers/videoCore.js";
 import { refreshVertexToken } from "open-sse/services/tokenRefresh.js";
 import { PROVIDER_MEDIA, PROVIDER_MODELS } from "open-sse/providers/index.js";
