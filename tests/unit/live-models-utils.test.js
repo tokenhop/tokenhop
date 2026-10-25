@@ -35,6 +35,8 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "kimi",
       "kiro",
       "llm7",
+      "minimax",
+      "minimax-cn",
       "mistral",
       "nebius",
       "nvidia",

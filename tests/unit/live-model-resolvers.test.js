@@ -124,6 +124,8 @@ describe("resolver registry", () => {
       "alicode-intl",
       "glm",
       "glm-cn",
+      "minimax",
+      "minimax-cn",
     ]) {
       expect(hasLiveModelResolver(id)).toBe(true);
     }

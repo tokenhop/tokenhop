@@ -89,6 +89,7 @@ export default {
     pricingUrl: "https://www.minimaxi.com/document/price",
   },
   features: {
+    liveModels: true,
     usage: true,
     usageApikey: true,
   },
