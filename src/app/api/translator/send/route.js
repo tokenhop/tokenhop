@@ -1,4 +1,8 @@
 import { getProviderConnectionsUnscoped, updateProviderConnectionUnscoped } from "@/lib/localDb.js";
+import {
+  proxyOptionsFromConfig,
+  resolveConnectionProxyConfig,
+} from "@/lib/network/connectionProxy";
 import { getExecutor } from "open-sse/index.js";
 
 async function persistRefreshedCredentials(connection, newCredentials) {
@@ -54,6 +58,16 @@ export async function POST(request) {
       );
     }
 
+    // Same proxy policy as live traffic: strict pools fail closed, never direct.
+    const proxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+    if (proxy.source === "error") {
+      return Response.json(
+        { success: false, error: "Proxy resolution failed for this connection" },
+        { status: 503 },
+      );
+    }
+    const proxyOptions = proxyOptionsFromConfig(proxy);
+
     const credentials = {
       apiKey: connection.apiKey,
       accessToken: connection.accessToken,
@@ -64,21 +78,35 @@ export async function POST(request) {
       copilotToken: connection.providerSpecificData?.copilotToken,
       copilotTokenExpiresAt: connection.providerSpecificData?.copilotTokenExpiresAt,
       projectId: connection.projectId,
-      providerSpecificData: connection.providerSpecificData,
+      providerSpecificData: {
+        ...(connection.providerSpecificData || {}),
+        connectionProxyEnabled: proxyOptions.connectionProxyEnabled,
+        connectionProxyUrl: proxyOptions.connectionProxyUrl,
+        connectionNoProxy: proxyOptions.connectionNoProxy,
+        connectionProxyPoolId: proxyOptions.connectionProxyPoolId,
+        vercelRelayUrl: proxyOptions.vercelRelayUrl,
+        strictProxy: proxyOptions.strictProxy,
+      },
     };
 
     const executor = getExecutor(provider);
     const stream = body.stream !== false;
 
-    let { response } = await executor.execute({ model, body, stream, credentials });
+    let { response } = await executor.execute({ model, body, stream, credentials, proxyOptions });
 
     // Auto-refresh token on 401/403 and retry (same as chatCore.js)
     if (response.status === 401 || response.status === 403) {
-      const newCredentials = await executor.refreshCredentials(credentials, console);
+      const newCredentials = await executor.refreshCredentials(credentials, console, proxyOptions);
       if (newCredentials?.accessToken || newCredentials?.copilotToken) {
         Object.assign(credentials, newCredentials);
         await persistRefreshedCredentials(connection, newCredentials);
-        ({ response } = await executor.execute({ model, body, stream, credentials }));
+        ({ response } = await executor.execute({
+          model,
+          body,
+          stream,
+          credentials,
+          proxyOptions,
+        }));
       }
     }
 

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, REFRESH_LEAD_MS } from "../config/appConstants.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -85,11 +86,14 @@ export function parseVertexSaJson(apiKey) {
   }
 }
 
-// Cache Vertex tokens keyed by service account email { token, expiresAt }
+// Cache Vertex tokens { token, expiresAt }, scoped to the full credential
+// (email and private key).
 const vertexTokenCache = new Map();
 
 export async function refreshVertexToken(saJson, log, proxyOptions = null) {
-  const cacheKey = saJson.client_email;
+  const cacheKey = createHash("sha256")
+    .update(`${saJson.client_email}\0${saJson.private_key}`)
+    .digest("hex");
   const cached = vertexTokenCache.get(cacheKey);
 
   if (cached && cached.expiresAt - Date.now() > 5 * 60 * 1000) {
