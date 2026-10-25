@@ -4,6 +4,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const lookupMock = vi.fn();
 vi.mock("node:dns/promises", () => ({ lookup: (...a) => lookupMock(...a) }));
 
+// fetchImageAsBase64 routes through proxyAwareFetch; keep it a stub (not the
+// fetch captured at import) so per-test fetch mocks still intercept.
+vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
+  default: vi.fn(),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
+
 import { fetchImageAsBase64 } from "../../open-sse/translator/concerns/image.js";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -47,7 +54,9 @@ describe("fetchImageAsBase64 hardening", () => {
   });
 
   it("SSRF: rejects blocked hostname localhost", async () => {
+    globalThis.fetch = vi.fn();
     expect(await fetchImageAsBase64("http://localhost/x.png")).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it("SSRF: rejects IPv6 loopback", async () => {

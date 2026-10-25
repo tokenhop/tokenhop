@@ -143,7 +143,9 @@ async function resolveRealIP(hostname) {
 function shouldBypassMitmDns(url) {
   try {
     const hostname = new URL(url).hostname;
-    return MITM_BYPASS_HOSTS.some((host) => hostname.includes(host));
+    // Exact host or a dot-suffix subdomain — never a substring (so
+    // "api2.cursor.sh.other.example" does not match "api2.cursor.sh").
+    return MITM_BYPASS_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`));
   } catch {
     return false;
   }
@@ -353,7 +355,10 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       "x-relay-target": `${parsed.protocol}//${parsed.host}`,
       "x-relay-path": `${parsed.pathname}${parsed.search}`,
     };
-    return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+    // A caller-supplied dispatcher is pinned to the target host; it must not be
+    // used to reach the relay, which is a different origin.
+    const { dispatcher: _droppedDispatcher, ...relayOptions } = options;
+    return originalFetch(vercelRelayUrl, { ...relayOptions, headers: relayHeaders });
   }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
@@ -370,8 +375,9 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   }
   const fallbackCtx = ` (pool=${poolId}, target=${targetHost})`;
 
-  // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
-  if (shouldBypassMitmDns(targetUrl)) {
+  // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof.
+  // A caller-supplied dispatcher already controls connection DNS — respect it.
+  if (!options.dispatcher && shouldBypassMitmDns(targetUrl)) {
     if (proxyUrl) {
       // Proxy resolves DNS externally (not affected by /etc/hosts) — use proxy directly
       try {

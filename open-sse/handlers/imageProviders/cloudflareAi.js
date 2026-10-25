@@ -1,4 +1,5 @@
-import { nowSec, urlToBase64 } from "./_base.js";
+import { nowSec } from "./_base.js";
+import { fetchImageAsBase64 } from "../../translator/concerns/image.js";
 import { PROVIDER_MEDIA } from "../../providers/index.js";
 
 const BASE_URL = PROVIDER_MEDIA["cloudflare-ai"]?.imageConfig?.baseUrl;
@@ -35,8 +36,12 @@ async function resolveImageInput(value, proxyOptions) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  if (/^https?:\/\//i.test(trimmed)) {
-    const b64 = await urlToBase64(trimmed, proxyOptions);
+  if (trimmed.toLowerCase().startsWith("http://") || trimmed.toLowerCase().startsWith("https://")) {
+    // Validate and fetch through the hardened image fetcher (DNS pinning,
+    // private-IP rejection, no redirects, byte cap, magic-byte check).
+    const fetched = await fetchImageAsBase64(trimmed, { proxyOptions });
+    if (!fetched) throw new Error("Image input URL could not be fetched");
+    const b64 = fetched.url.slice(fetched.url.indexOf(",") + 1);
     return { bytes: base64ToBytes(b64), b64 };
   }
   const match = /^data:image\/[^;]+;base64,(.+)$/i.exec(trimmed);

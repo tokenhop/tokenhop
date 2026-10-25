@@ -15,8 +15,16 @@ vi.mock("node:dns/promises", () => ({
   lookup: async () => [{ address: "93.184.216.34", family: 4 }],
 }));
 
+// fetchImageAsBase64 routes through proxyAwareFetch; keep it a stub (not the
+// captured-at-import fetch) so per-test global.fetch mocks still intercept.
+// Individual tests override it via vi.spyOn below.
+const mocks = vi.hoisted(() => ({ proxyAwareFetch: vi.fn() }));
+vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
+  default: vi.fn(),
+  proxyAwareFetch: mocks.proxyAwareFetch,
+}));
+
 import { CodexExecutor } from "../../open-sse/executors/codex.js";
-import * as proxyFetchModule from "../../open-sse/utils/proxyFetch.js";
 
 const IMAGE_1MB_BYTES = 1024 * 1024;
 const REMOTE_URL = "https://example.com/big.jpg";
@@ -54,6 +62,8 @@ describe("CodexExecutor image handling", () => {
 
   beforeEach(() => {
     originalFetch = global.fetch;
+    mocks.proxyAwareFetch.mockReset();
+    mocks.proxyAwareFetch.mockImplementation((url, options) => globalThis.fetch(url, options));
   });
 
   afterEach(() => {
@@ -155,7 +165,9 @@ describe("CodexExecutor image handling", () => {
     global.fetch = vi.fn(async () => mockImageFetch(IMAGE_1MB_BYTES));
 
     let capturedBodyString = null;
-    vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockImplementation(async (url, init) => {
+    mocks.proxyAwareFetch.mockImplementation(async (url, init) => {
+      // Image prefetch goes to the per-test fetch stub; capture the upstream call.
+      if (String(url).includes("example.com")) return globalThis.fetch(url, init);
       capturedBodyString = init.body;
       return { ok: true, status: 200, headers: new Map() };
     });
