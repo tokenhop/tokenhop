@@ -773,6 +773,46 @@ describe("Schema migrations", () => {
     );
   });
 
+  // YAN-1553: an owner or a restored install's stale Default id prevents readoption.
+  it("migration 020 marks established installs once but leaves pre-users installs eligible", async () => {
+    const { createSqlJsAdapter } = await import("@/lib/db/adapters/sqljsAdapter.js");
+    const { runVersionedMigrations } = await import("@/lib/db/migrate.js");
+    const { MIGRATIONS } = await import("@/lib/db/migrations/index.js");
+    const { USAGE_ADOPTED_AT } = await import("@/lib/db/repos/ownership.js");
+    const m020 = (await import("@/lib/db/migrations/020-usage-adoption-guard.js")).default;
+    expect(MIGRATIONS.find((m) => m.version === 20)).toBe(m020);
+    const db = await createSqlJsAdapter(path.join(tempDir, "pre020.sqlite"));
+    try {
+      runVersionedMigrations(
+        db,
+        MIGRATIONS.filter((m) => m.version < 20),
+      );
+      const marker = () => db.get(`SELECT value FROM _meta WHERE key = ?`, [USAGE_ADOPTED_AT]);
+      m020.up(db);
+      expect(marker()).toBeUndefined();
+      const now = new Date().toISOString();
+      db.run(
+        `INSERT INTO users(id, instanceRole, createdAt, updatedAt) VALUES('owner', 'owner', ?, ?)`,
+        [now, now],
+      );
+      runVersionedMigrations(db);
+      expect(marker().value).toEqual(expect.any(String));
+      db.run(`UPDATE _meta SET value = 'original' WHERE key = ?`, [USAGE_ADOPTED_AT]);
+      m020.up(db);
+      expect(marker().value).toBe("original");
+      db.run(`DELETE FROM users`);
+      m020.up(db);
+      expect(marker().value).toBe("original");
+      db.run(`DELETE FROM _meta WHERE key = ?`, [USAGE_ADOPTED_AT]);
+      db.run(`INSERT INTO _meta(key, value) VALUES('defaultWorkspaceId', 'deleted-workspace')`);
+      expect(db.get(`SELECT COUNT(*) AS c FROM users`).c).toBe(0);
+      m020.up(db);
+      expect(marker().value).toEqual(expect.any(String));
+    } finally {
+      db.close();
+    }
+  });
+
   it("auto-sync re-creates missing index when DB lacks it", async () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();

@@ -8,6 +8,9 @@ import { LATENCY_COLUMNS, LATENCY_MERGE_SQL } from "../helpers/usageLatencyRollu
 
 const OWNED = ["providerConnections", "providerNodes", "combos"];
 
+// YAN-1553: install-local and retained across imports, even user-less restores.
+export const USAGE_ADOPTED_AT = "usageAdoptedAt";
+
 /** The Default workspace id once the owner bootstrap created it, else null. */
 export function defaultWorkspaceIdUnscoped(db) {
   return (
@@ -72,11 +75,11 @@ function seedComboStrategies(db, ws) {
  * created by the owner: connections, nodes, combos, bare keys of the scoped
  * kv scopes, and blob combo strategies. Idempotent; 0 before bootstrap.
  *
- * YAN-1549: usage adoption is opt-in and only the first owner bootstrap
- * (bootstrapOwnerUnscoped) opts in. Once an owner exists, ownerless usage is
- * history detached on purpose (a deleted workspace, user or key: ON DELETE
- * SET NULL), never pre-users data, so restarts, switch toggles and config
- * imports must leave it detached. Scoped usage views never show it.
+ * YAN-1553: usage adoption is opt-in; bootstrapOwnerUnscoped opts in only
+ * before the durable usageAdoptedAt marker exists. Later owner bootstraps
+ * (including after a user-less restore), restarts, switch toggles and config
+ * imports leave deliberately detached usage untouched. Scoped usage views
+ * never show it.
  * @param {object} db adapter (inside the caller's transaction)
  * @param {{ includeUsage?: boolean }} [opts]
  */

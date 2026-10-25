@@ -31,6 +31,7 @@ import m016 from "./016-budgets.js";
 import m017 from "./017-usage-latency-rollup.js";
 import m018 from "./018-device-sessions.js";
 import m019 from "./019-usage-budget-carry.js";
+import m020 from "./020-usage-adoption-guard.js";
 
 export const MIGRATIONS = [
   m001,
@@ -52,6 +53,7 @@ export const MIGRATIONS = [
   m017,
   m018,
   m019,
+  m020,
 ].sort((a, b) => a.version - b.version);
 
 for (let i = 1; i < MIGRATIONS.length; i++) {

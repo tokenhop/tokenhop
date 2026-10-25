@@ -28,7 +28,9 @@ async function legacy(settings) {
   for (const t of ["memberships", "identities", "workspaces", "users"]) {
     adapter.run(`DELETE FROM ${t}`);
   }
-  adapter.run(`DELETE FROM _meta WHERE key LIKE 'owner%' OR key = 'defaultWorkspaceId'`);
+  adapter.run(
+    `DELETE FROM _meta WHERE key LIKE 'owner%' OR key IN ('defaultWorkspaceId', 'usageAdoptedAt')`,
+  );
   await db.updateSettings({
     password: null,
     requireLogin: true,
@@ -86,6 +88,7 @@ describe("switch on", () => {
       ["Personal", "personal", "owner"],
     ]);
     expect(await db.getMeta("defaultWorkspaceId")).toBe(ws.find((w) => w.kind === "shared").id);
+    expect(await db.getMeta("usageAdoptedAt")).toEqual(expect.any(String));
     const backups = fs.readdirSync(path.join(process.env.DATA_DIR, "db", "backups"));
     expect(backups.some((d) => d.startsWith("users-bootstrap-"))).toBe(true);
     // No SSO configured: no setup token.
@@ -268,6 +271,29 @@ describe("switch on", () => {
     expect(adapter.get(`SELECT userId FROM usageRollup WHERE provider = 'legacy'`).userId).toBe(
       owner.id,
     );
+    expect(await db.getMeta("usageAdoptedAt")).toEqual(expect.any(String));
+  });
+
+  // YAN-1553: failed adoption cannot commit the owner or consume the marker.
+  it("rolls back usage adoption and its marker, then adopts on retry", async () => {
+    await legacy({});
+    clearUsage();
+    ownerlessUsage("rollback");
+    adapter.exec(
+      `CREATE TRIGGER fail_usage_adopt BEFORE UPDATE OF workspaceId ON usageHistory
+       BEGIN SELECT RAISE(ABORT, 'usage adopt failed'); END`,
+    );
+    try {
+      await expect(db.bootstrapOwnerUnscoped()).rejects.toThrow("usage adopt failed");
+      expect(count(`SELECT COUNT(*) AS c FROM users`)).toBe(0);
+      expect(await db.getMeta("usageAdoptedAt")).toBeNull();
+      expect(usageWorkspaces("rollback")).toEqual([null, null, "", ""]);
+    } finally {
+      adapter.exec(`DROP TRIGGER fail_usage_adopt`);
+    }
+    const owner = await db.bootstrapOwnerUnscoped();
+    expect(usageWorkspaces("rollback")).toEqual(Array(4).fill(owner.defaultWorkspaceId));
+    expect(await db.getMeta("usageAdoptedAt")).toEqual(expect.any(String));
   });
 
   it("keeps a deleted workspace's usage detached across restarts and switch toggles", async () => {
@@ -341,6 +367,97 @@ describe("switch on", () => {
     expect(count(`SELECT COUNT(*) AS c FROM users`)).toBe(1);
     expect(count(`SELECT COUNT(*) AS c FROM workspaces WHERE kind = 'shared'`)).toBe(3); // + Default
     expect(await b.multiUserActive()).toBe(false);
+  });
+
+  // YAN-1553: config import on the existing-owner path preserves adoption.
+  it("keeps detached usage and the install marker across config import and restart", async () => {
+    await legacy({});
+    clearUsage();
+    await b.ensureOwnerBootstrap({ throwOnError: true });
+    const marker = await db.getMeta("usageAdoptedAt");
+    ownerlessUsage("config");
+    const { applyConfig } = await import("@/lib/db/configExport.js");
+    await applyConfig({
+      settings: { requireLogin: true },
+      combos: [{ name: "Imported", kind: "fallback", models: ["openai/gpt-4o"] }],
+      pricingOverrides: {},
+    });
+    expect(usageWorkspaces("config")).toEqual([null, null, "", ""]);
+    expect(await db.getMeta("usageAdoptedAt")).toBe(marker);
+    await load("on");
+    await b.ensureOwnerBootstrap({ throwOnError: true });
+    expect(usageWorkspaces("config")).toEqual([null, null, "", ""]);
+    expect(await db.getMeta("usageAdoptedAt")).toBe(marker);
+  });
+
+  // YAN-1553: the install's usage adoption survives an owner-forced restore
+  // with no users; startup must not mistake retained telemetry for legacy data.
+  it("keeps detached usage after a forced user-less instance restore and bootstrap", async () => {
+    await legacy({});
+    clearUsage();
+    await b.ensureOwnerBootstrap({ throwOnError: true });
+    await db.setMeta("usageAdoptedAt", "2026-10-01T00:00:00.000Z");
+    ownerlessUsage("restored");
+    const owner = await db.getOwnerUnscoped();
+    const defaultId = await db.getMeta("defaultWorkspaceId");
+    // The older snapshot omits usage sections: live attribution is detached
+    // by the real restore path, rather than manually deleting the owner.
+    adapter.run(`UPDATE usageHistory SET workspaceId = ?, userId = ? WHERE provider = 'restored'`, [
+      defaultId,
+      owner.id,
+    ]);
+    const masterKey = Buffer.alloc(32, 7);
+    try {
+      const { hashGatewayKeysSync } = await import("@/lib/db/migrations/hashGatewayKeys.js");
+      hashGatewayKeysSync(adapter, {
+        masterKey,
+        defaultWorkspaceId: defaultId,
+        backup: { completed: true, db: adapter },
+      });
+      const { masterKeyId } = await import("@/lib/security/masterKey.js");
+      await db.importDb(
+        {
+          formatVersion: 2,
+          apiKeyStorage: { storage: "hashed", version: 1, hashKid: masterKeyId(masterKey) },
+          users: [],
+          identities: [],
+          workspaces: [],
+          memberships: [],
+          apiKeys: [],
+          workspaceSettings: [],
+          userPreferences: [],
+          connectionGrants: [],
+          budgets: [],
+          invitations: [],
+        },
+        { masterKey, force: true, actor: { instanceRole: "owner" } },
+      );
+      expect(await db.getOwnerUnscoped()).toBeNull();
+      expect(usageWorkspaces("restored")).toEqual([null, null, "", ""]);
+      expect(await db.getMeta("usageAdoptedAt")).toBe("2026-10-01T00:00:00.000Z");
+      // Config import also preserves the marker on the no-owner restore path.
+      const { applyConfig } = await import("@/lib/db/configExport.js");
+      await applyConfig({ settings: {}, combos: [], pricingOverrides: {} });
+      expect(usageWorkspaces("restored")).toEqual([null, null, "", ""]);
+      expect(await db.getMeta("usageAdoptedAt")).toBe("2026-10-01T00:00:00.000Z");
+
+      await load("on");
+      await b.ensureOwnerBootstrap({ throwOnError: true });
+      expect(usageWorkspaces("restored")).toEqual([null, null, "", ""]);
+      expect(await db.getMeta("usageAdoptedAt")).toBe("2026-10-01T00:00:00.000Z");
+      expect(
+        adapter.get(`SELECT userId FROM usageHistory WHERE provider = 'restored'`).userId,
+      ).toBeNull();
+      expect(adapter.get(`SELECT userId FROM usageRollup WHERE provider = 'restored'`).userId).toBe(
+        "",
+      );
+    } finally {
+      // Restore this file's pre-activation fixture for the switch-off cases.
+      const { TABLES, buildCreateTableSql } = await import("@/lib/db/schema.js");
+      adapter.exec(`DROP TABLE apiKeys`);
+      adapter.exec(buildCreateTableSql("apiKeys", TABLES.apiKeys));
+      adapter.run(`DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion', 'apiKeysHashKid')`);
+    }
   });
 });
 
