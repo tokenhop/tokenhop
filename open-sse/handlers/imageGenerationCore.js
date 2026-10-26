@@ -6,7 +6,8 @@ import { proxyOptionsFromCredentials } from "../utils/connectionProxyOptions.js"
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { getImageAdapter } from "./imageProviders/index.js";
 import { urlToBase64 } from "./imageProviders/_base.js";
-import { detectImageMime } from "../translator/concerns/image.js";
+import { detectImageMime, parseDataUri } from "../translator/concerns/image.js";
+import { MAX_IMAGE_BYTES } from "../config/mediaConfig.js";
 
 function serializeRequestBody(requestBody) {
   if (typeof FormData !== "undefined" && requestBody instanceof FormData) return requestBody;
@@ -22,21 +23,30 @@ function outputFormatMime(outputFormat) {
 }
 
 /**
- * Decode the first result (b64_json, or a provider URL fetched through the
- * hardened fetcher) into a raw-bytes Response. Content-Type comes from the
- * fetched/detected image type, falling back to the requested output_format.
+ * Decode the first result (b64_json, an inline data: URI, or a provider URL
+ * fetched through the hardened fetcher) into a raw-bytes Response.
+ * Content-Type comes from the fetched/detected image type, falling back to
+ * the requested output_format.
  * @returns {Promise<Response|null>} null when there is nothing to inline.
  */
 async function binaryImageResponse(first, body, proxyOptions) {
-  let b64 = first?.b64_json;
+  let buf = null;
   let mime = null;
-  if (!b64 && first?.url) {
+  const inline = parseDataUri(first?.url);
+  if (first?.b64_json) {
+    buf = Buffer.from(first.b64_json, "base64");
+  } else if (inline) {
+    // Decode locally (no network) with the same size cap and magic-byte check as the fetcher.
+    buf = Buffer.from(inline.base64, "base64");
+    mime = buf.length <= MAX_IMAGE_BYTES ? detectImageMime(buf) : null;
+    if (!mime) return null;
+  } else if (first?.url) {
     const fetched = await urlToBase64(first.url, proxyOptions);
     if (!fetched) return null;
-    ({ b64, mimeType: mime } = fetched);
+    buf = Buffer.from(fetched.b64, "base64");
+    mime = fetched.mimeType;
   }
-  if (!b64) return null;
-  const buf = Buffer.from(b64, "base64");
+  if (!buf) return null;
   mime = mime || detectImageMime(buf) || outputFormatMime(body.output_format);
   const subtype = mime.slice(mime.indexOf("/") + 1);
   const ext = subtype === "jpeg" ? "jpg" : subtype;

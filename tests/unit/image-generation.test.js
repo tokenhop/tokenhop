@@ -649,9 +649,9 @@ describe("binary output with a provider-returned URL", () => {
   const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
 
   // imageResponse: a Response for the image fetch, or an implementation for every later fetch.
-  const generate = (imageResponse) => {
+  const generate = (imageResponse, url = IMAGE_URL) => {
     global.fetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ created: 1, data: [{ url: IMAGE_URL }] }), {
+      new Response(JSON.stringify({ created: 1, data: [{ url }] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
@@ -667,11 +667,11 @@ describe("binary output with a provider-returned URL", () => {
     });
   };
 
-  const expectUrlFallback = async (result) => {
+  const expectUrlFallback = async (result, url = IMAGE_URL) => {
     expect(result.success).toBe(true);
     expect(result.response.headers.get("Content-Type")).toBe("application/json");
     const responseBody = await result.response.json();
-    expect(responseBody.data[0].url).toBe(IMAGE_URL);
+    expect(responseBody.data[0].url).toBe(url);
   };
 
   beforeEach(() => {
@@ -738,5 +738,22 @@ describe("binary output with a provider-returned URL", () => {
     expect(result.response.headers.get("Content-Type")).toBe("image/jpeg");
     expect(result.response.headers.get("Content-Disposition")).toBe('inline; filename="image.jpg"');
     expect(Buffer.from(await result.response.arrayBuffer())).toEqual(JPEG_BYTES);
+  });
+
+  it("inlines a data: image URI without any network fetch", async () => {
+    const result = await generate(null, `data:image/png;base64,${PNG_BYTES.toString("base64")}`);
+
+    expect(result.response.headers.get("Content-Type")).toBe("image/png");
+    expect(Buffer.from(await result.response.arrayBuffer())).toEqual(PNG_BYTES);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not inline a data: URI with a non-image payload", async () => {
+    const dataUri = `data:image/png;base64,${Buffer.from("<html>").toString("base64")}`;
+
+    const result = await generate(null, dataUri);
+
+    await expectUrlFallback(result, dataUri);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });
