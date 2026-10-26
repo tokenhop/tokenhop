@@ -12,7 +12,10 @@ import {
   readCredentialEncryptionState,
   readCredentialMarkerValues,
 } from "../credentialEncryptionState.js";
-import { matchesConnectionIdentity } from "../helpers/connectionIdentity.js";
+import {
+  matchesConnectionIdentity,
+  matchesFlaggedReplacement,
+} from "../helpers/connectionIdentity.js";
 import { loadMasterKey } from "../../security/masterKey.js";
 import { assertCredentialOperationAllowed } from "../credentialMaintenance.js";
 import { TABLE_NAMES } from "../../security/envelope.js";
@@ -45,6 +48,22 @@ const OPTIONAL_FIELDS = [
 
 const MODEL_LOCK_PREFIX = "modelLock_";
 const REAUTH_HEALTH_KEYS = ["testStatus", "lastError", "lastErrorAt", "lastErrorType", "errorCode"];
+
+/** F1/YAN-1287: ISO expiry from a JWT's exp claim, or null for opaque tokens. */
+function jwtExpIso(accessToken) {
+  if (typeof accessToken !== "string") return null;
+  const part = accessToken.split(".")[1];
+  if (!part) return null;
+  try {
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
+    const exp = Number(payload?.exp);
+    if (!Number.isFinite(exp) || exp <= 0) return null;
+    return new Date(exp * 1000).toISOString();
+  } catch {
+    return null;
+  }
+}
 
 function repoFail(code, message) {
   throw Object.assign(new Error(`[credential-repo] ${message}`), { code });
@@ -395,8 +414,18 @@ function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}, 
     .map((row) => rowToConn(db, row, ctx));
 
   // Identity rules live in matchesConnectionIdentity (shared with the move planner).
-  // access_token: never dedup — user manages duplicates manually.
-  const existing = all.find((c) => matchesConnectionIdentity(c, data));
+  // access_token: never dedup — user manages duplicates manually. YAN-1287: a
+  // flagged (dead) codex row is also replaceable by a fresh grant of the same
+  // account, so a reconnect/re-import leaves no stale flagged row behind.
+  // F2: the flagged fallback never crosses creators — B's import of the same
+  // account must not rewrite A's row (same guard shape as workspace scoping).
+  const sameCreator = (c) =>
+    !owner.createdByUserId || !c.createdByUserId || c.createdByUserId === owner.createdByUserId;
+  const existing =
+    all.find((c) => matchesConnectionIdentity(c, data)) ??
+    (data.provider === "codex"
+      ? all.find((c) => sameCreator(c) && matchesFlaggedReplacement(c, data))
+      : undefined);
   if (existing && rejectDuplicateName && data.authType === "apikey") {
     const err = new Error(`A connection named "${data.name}" already exists for this provider`);
     err.code = "DUPLICATE_CONNECTION_NAME";
@@ -404,11 +433,25 @@ function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}, 
   }
 
   if (existing) {
+    const viaFlaggedFallback = !matchesConnectionIdentity(existing, data);
     const normalized = clearReauthOnCredentialReplace(
       existing,
       resetHealthStateOnActivation(existing, data),
     );
     const merged = { ...existing, ...normalized, updatedAt: now };
+    if (viaFlaggedFallback) {
+      // F4: a reconnect/re-import shouldn't rename the row or wipe its email.
+      if (existing.name && !data.name) merged.name = existing.name;
+      if (!merged.email && existing.email) merged.email = existing.email;
+      // F1: a flagged access_token merge must not keep the dead row's expiry.
+      // Local JWT-exp read (same math as tokenLifetime.computeExpiresAt)
+      // because importing it here would pull the provider registry into this
+      // repo's cold-start path.
+      if (data.authType === "access_token" && data.expiresAt === undefined) {
+        merged.expiresAt = jwtExpIso(data.accessToken) ?? null;
+        merged.tokenExpiresAt = null;
+      }
+    }
     if (data.authType === "oauth") {
       const providerSpecificData = mergeReloginProviderData(
         existing.providerSpecificData,

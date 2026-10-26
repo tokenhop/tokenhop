@@ -4,6 +4,7 @@
 export const REAUTH_REASONS = Object.freeze({
   refreshTokenRejected: "refresh_token_rejected",
   accessTokenExpired: "access_token_expired",
+  accessTokenRejected: "access_token_rejected",
 });
 
 // Allowlist for reauthRequired.code; anything else is stored as "unknown".
@@ -14,6 +15,10 @@ export const REAUTH_CODES = Object.freeze([
   "refresh_token_invalidated",
   "invalid_grant",
   "token_expired",
+  "token_invalidated",
+  "token_revoked",
+  "invalid_token",
+  "invalid_api_key",
   "unknown",
 ]);
 
@@ -21,12 +26,14 @@ export const REAUTH_CODES = Object.freeze([
 export const REAUTH_LAST_ERROR = Object.freeze({
   refresh_token_rejected: "Token expired and refresh failed",
   access_token_expired: "Token expired",
+  access_token_rejected: "Token invalid or revoked",
 });
 
 // Read by getConnectionErrorTag / CombosPageClient errorTag -> "AUTH" / "Auth error".
 export const REAUTH_ERROR_TYPE = Object.freeze({
   refresh_token_rejected: "token_refresh_failed",
   access_token_expired: "token_expired",
+  access_token_rejected: "token_expired",
 });
 
 /** `error` value emitted by a refresher when the refresh token is permanently dead. */

@@ -28,6 +28,7 @@ describe("reauthConstants", () => {
     expect(consts.REAUTH_REASONS).toEqual({
       refreshTokenRejected: "refresh_token_rejected",
       accessTokenExpired: "access_token_expired",
+      accessTokenRejected: "access_token_rejected",
     });
     expect(consts.REAUTH_CODES).toEqual([
       "refresh_token_expired",
@@ -35,15 +36,21 @@ describe("reauthConstants", () => {
       "refresh_token_invalidated",
       "invalid_grant",
       "token_expired",
+      "token_invalidated",
+      "token_revoked",
+      "invalid_token",
+      "invalid_api_key",
       "unknown",
     ]);
     expect(consts.REAUTH_LAST_ERROR).toEqual({
       refresh_token_rejected: "Token expired and refresh failed",
       access_token_expired: "Token expired",
+      access_token_rejected: "Token invalid or revoked",
     });
     expect(consts.REAUTH_ERROR_TYPE).toEqual({
       refresh_token_rejected: "token_refresh_failed",
       access_token_expired: "token_expired",
+      access_token_rejected: "token_expired",
     });
     expect(consts.UNRECOVERABLE_REFRESH_ERROR).toBe("unrecoverable_refresh_error");
     expect(Object.isFrozen(consts.REAUTH_REASONS)).toBe(true);
@@ -56,6 +63,7 @@ describe("reauthConstants", () => {
     );
     expect(src).toContain(`"${consts.REAUTH_LAST_ERROR.refresh_token_rejected}"`);
     expect(src).toContain(`"${consts.REAUTH_LAST_ERROR.access_token_expired}"`);
+    expect(src).toContain(`"${consts.REAUTH_LAST_ERROR.access_token_rejected}"`);
   });
 });
 
@@ -222,6 +230,21 @@ describe("buildReauthPatch", () => {
       reauthRequired: flag,
       testStatus: "error",
       lastError: "Token expired",
+      lastErrorType: "token_expired",
+      errorCode: 401,
+    });
+  });
+
+  it("builds the access-token-rejected patch (YAN-1288)", () => {
+    const flag = mod.buildReauthRequired({
+      reason: "access_token_rejected",
+      code: "token_invalidated",
+      nowMs: NOW,
+    });
+    expect(mod.buildReauthPatch(flag, NOW)).toMatchObject({
+      reauthRequired: flag,
+      testStatus: "error",
+      lastError: "Token invalid or revoked",
       lastErrorType: "token_expired",
       errorCode: 401,
     });

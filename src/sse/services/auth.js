@@ -41,7 +41,11 @@ import {
   grantBudgetLimit,
   reserveGrantBudget,
 } from "./budgetGuard.js";
-import { getReauthRequired, needsReauthentication } from "open-sse/services/reauthState.js";
+import {
+  getReauthRequired,
+  needsReauthentication,
+  reauthLimitedResult,
+} from "open-sse/services/reauthState.js";
 import { resolveOpenAICompatibleConnectionApiType } from "./model.js";
 import { handleReauthOnFailure, scheduleFlagExpiredAccessToken } from "./reauthRequired.js";
 import * as log from "../utils/logger.js";
@@ -330,6 +334,16 @@ export async function getProviderCredentials(
       if (budgetLimits.length) {
         log.warn("AUTH", `${provider} | all candidates skipped by grant budget`);
         return budgetLimitedResult(budgetLimits[0]);
+      }
+      // YAN-1286: every remaining candidate is flagged for re-authentication.
+      // After the blocker/grant/budget checks so a mixed pool still reports its
+      // earliest unblock time; the message wording never matches the backoff
+      // text rules, so combos fall through immediately. Only on the first pass:
+      // a retry after an excluded account failed keeps returning null so the
+      // handler surfaces that account's real upstream error.
+      if (reauthSkipped > 0 && excludeSet.size === 0) {
+        log.warn("AUTH", `${provider} | all ${reauthSkipped} accounts need re-authentication`);
+        return reauthLimitedResult(providerId, reauthSkipped);
       }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
       return null;

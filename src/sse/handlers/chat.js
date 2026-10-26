@@ -42,6 +42,7 @@ import {
   releaseGrantReservation,
 } from "../services/grantRateLimiter.js";
 import { budgetResponse, inBudgetScope, withBudgetScope } from "../services/budgetGuard.js";
+import { reauthRequiredResponse } from "open-sse/services/reauthState.js";
 import { revokedKeyTarget } from "./chatRevocation.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
@@ -736,6 +737,8 @@ async function handleSingleModelChat(
       if (!credentials || credentials.allRateLimited) {
         if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
         if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
+        // YAN-1286: all-flagged provider → a clear 503 re-auth message instead of 404.
+        if (credentials?.reauthRequired) return reauthRequiredResponse(credentials.reauthRequired);
         if (credentials?.allRateLimited) {
           const errorMsg = lastError || credentials.lastError || "Unavailable";
           const status = HTTP_STATUS.SERVICE_UNAVAILABLE;

@@ -13,6 +13,32 @@ import {
 const TOKEN_EXPIRED_CODE = "token_expired";
 const TOKEN_EXPIRED_MESSAGE = "your authentication token has expired";
 
+// formatProviderError wraps upstream bodies as "[401]: {raw body}"; strip the
+// prefix before JSON.parse so classifiers see the structured payload.
+const STATUS_PREFIX = /^\[\d{3}\]:\s*/;
+
+/** Parse a 401 body that may carry the "[status]: " wrapper. Returns JSON or null. */
+export function parseErrorBody(text) {
+  if (typeof text !== "string" || !text) return null;
+  const stripped = STATUS_PREFIX.test(text) ? text.replace(STATUS_PREFIX, "") : text;
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    return null;
+  }
+}
+
+// YAN-1288: structured codes that conclusively mean the access token was
+// rejected (revoked/invalidated), not merely expired. Allowlist: raw upstream
+// text is never persisted.
+const REJECTION_CODES = new Set([
+  "token_invalidated",
+  "token_revoked",
+  "invalid_token",
+  "invalid_api_key",
+]);
+const REJECTION_MESSAGES = ["invalidated", "revoked", "invalid token", "incorrect api key"];
+
 /**
  * When the current access token was issued: its JWT `iat` when usable, else the
  * stored lastRefreshAt. `iat` stays right for imports, which stamp lastRefreshAt
@@ -26,18 +52,38 @@ function getTokenIssuedMs(credentials, nowMs) {
 
 /** True when an upstream 401 body says the access token expired. */
 export function isTokenExpiredBody(text) {
-  if (typeof text !== "string" || !text) return false;
-  let json = null;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = null;
-  }
+  const json = parseErrorBody(text);
   const err = json?.error;
   const code = typeof err === "string" ? err : (err?.code ?? json?.code);
   if (code === TOKEN_EXPIRED_CODE) return true;
   const message = err?.message ?? json?.message ?? (json ? "" : text);
   return typeof message === "string" && message.toLowerCase().includes(TOKEN_EXPIRED_MESSAGE);
+}
+
+/**
+ * YAN-1288: classify a 401 body as a conclusive access-token rejection.
+ * Structured codes: only the REJECTION_CODES allowlist flags; a known
+ * non-rejection code (`account_deactivated`) maps to "unknown"; every other
+ * structured code is inconclusive → null, so an unrecognized 401 keeps
+ * today's short lock and is never flagged. Message wording matches return
+ * "unknown" (no allowlisted code exists for them).
+ */
+export function classifyAccessTokenRejection(text) {
+  const json = parseErrorBody(text);
+  const err = json?.error;
+  const code = typeof err === "string" ? err : (err?.code ?? json?.code);
+  if (typeof code === "string" && code) {
+    if (code === TOKEN_EXPIRED_CODE) return null;
+    if (REJECTION_CODES.has(code)) return code;
+    return code === "account_deactivated" ? "unknown" : null;
+  }
+  const message = typeof err?.message === "string" ? err.message : (json?.message ?? null);
+  const haystack = typeof message === "string" ? message : json ? null : text;
+  if (typeof haystack === "string" && haystack) {
+    const lower = haystack.toLowerCase();
+    if (REJECTION_MESSAGES.some((w) => lower.includes(w))) return "unknown";
+  }
+  return null;
 }
 
 /**

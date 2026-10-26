@@ -2,6 +2,7 @@
 // Used by creation dedup (connectionsRepo createInTx) and the workspace-move
 // planner so both agree on identity. Pure: no I/O, no workspace comparison
 // (callers scope the candidate set). Intentionally NOT exported via the DB barrel.
+import { REAUTH_REASONS } from "open-sse/config/reauthConstants.js";
 
 /**
  * @param {object} existing stored connection (provider, authType, email, name, providerSpecificData)
@@ -45,5 +46,52 @@ export function matchesConnectionIdentity(existing, incoming) {
   }
 
   // access_token and everything else: never dedup — user manages duplicates manually.
+  return false;
+}
+
+// YAN-1287: codex reasons whose flag means the stored credential pair is dead.
+const REAUTH_REASON_VALUES = new Set(Object.values(REAUTH_REASONS));
+
+const sameAccountId = (a, b) => typeof a === "string" && typeof b === "string" && a === b;
+
+/**
+ * YAN-1287: may a fresh codex grant REPLACE this flagged row? Much looser than
+ * matchesConnectionIdentity — the move planner keeps the strict semantics above.
+ * A dead row only holds a dead token pair, so the YAN-1053 "don't collapse two
+ * live grants" concern does not apply; a reconnect/re-import of the same
+ * account must land on the flagged row instead of leaving it stale.
+ *
+ * - oauth: same non-empty email, and the ChatGPT account ID matches whenever
+ *   both sides have one (a legacy row may predate the field).
+ * - access_token: both sides carry the same chatgptAccountId (that is the
+ *   account identity an import encodes); emails must match when both exist.
+ */
+export function matchesFlaggedReplacement(existing, incoming) {
+  if (
+    !existing ||
+    !incoming ||
+    existing.provider !== "codex" ||
+    incoming.provider !== "codex" ||
+    existing.authType !== incoming.authType
+  ) {
+    return false;
+  }
+  const flag = existing.reauthRequired;
+  if (!flag || typeof flag !== "object" || !REAUTH_REASON_VALUES.has(flag.reason)) return false;
+
+  const existingAccountId = existing.providerSpecificData?.chatgptAccountId;
+  const incomingAccountId = incoming.providerSpecificData?.chatgptAccountId;
+
+  if (incoming.authType === "oauth") {
+    if (!incoming.email || existing.email !== incoming.email) return false;
+    if (existingAccountId === undefined || existingAccountId === null) return true;
+    return incomingAccountId === existingAccountId;
+  }
+  if (incoming.authType === "access_token") {
+    // F3: both emails must be present and equal — an import without an email
+    // must never replace an email-carrying row on account id alone.
+    if (!existing.email || existing.email !== incoming.email) return false;
+    return sameAccountId(existingAccountId, incomingAccountId);
+  }
   return false;
 }

@@ -23,6 +23,7 @@ import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
 import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
 import { budgetResponse, budgeted } from "../services/budgetGuard.js";
+import { reauthRequiredResponse } from "open-sse/services/reauthState.js";
 
 function recordSearch(request, gateway, apiKey, providerId, connectionId, data, grantId) {
   const usage = data?.usage;
@@ -258,6 +259,8 @@ async function handleSingleProviderSearch(body, providerInput, request, gateway,
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
       if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
+      // YAN-1286: all-flagged provider → clear 503 re-auth message, not a lockup.
+      if (credentials?.reauthRequired) return reauthRequiredResponse(credentials.reauthRequired);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status =

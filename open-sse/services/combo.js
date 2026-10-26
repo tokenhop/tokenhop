@@ -1020,8 +1020,13 @@ async function runMember({
     // through so a briefly-overloaded provider gets a chance to recover rather
     // than being skipped immediately (fixes: combo falls through on transient
     // 503). A hedged race already has the backup in flight: no wait.
+    // YAN-1286: a 503 reauth_required answer is a user action away, not a
+    // transient blip: advance immediately whatever the policy cooldown says.
+    const reauthRequired =
+      result.status === 503 && /"code"\s*:\s*"reauth_required"/.test(errorText);
     if (
       !signalCtrl &&
+      !reauthRequired &&
       cooldownMs &&
       cooldownMs > 0 &&
       cooldownMs <= 5000 &&
