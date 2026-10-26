@@ -200,7 +200,7 @@ function buildGooglePseRequest(config, params) {
     throw new Error("Google Programmable Search requires both apiKey and cx");
   }
   const qp = new URLSearchParams({
-    key: apiKey,
+    // Key goes in x-goog-api-key, not the URL: proxy relays log pathname+search.
     cx,
     q: params.query,
     num: String(Math.min(params.maxResults, 10)),
@@ -219,7 +219,7 @@ function buildGooglePseRequest(config, params) {
     url: `${resolveBaseUrl(config, params)}?${qp}`,
     init: {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", "x-goog-api-key": apiKey },
     },
   };
 }
@@ -272,7 +272,7 @@ function buildSearchApiRequest(config, params) {
   const qp = new URLSearchParams({
     engine: params.searchType === "news" ? "google_news" : "google",
     q: params.query,
-    api_key: apiKey,
+    // api_key goes in the Authorization header: proxy relays log pathname+search.
   });
   if (params.country) qp.set("gl", params.country.toLowerCase());
   if (params.language) qp.set("hl", params.language);
@@ -284,7 +284,7 @@ function buildSearchApiRequest(config, params) {
     url: `${resolveBaseUrl(config, params)}?${qp}`,
     init: {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
     },
   };
 }

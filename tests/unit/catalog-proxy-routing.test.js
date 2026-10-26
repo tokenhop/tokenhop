@@ -4,31 +4,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   proxyAwareFetch: vi.fn(),
-  resolveConnectionProxyConfig: vi.fn(),
+  getProxyPoolById: vi.fn(),
   getProviderConnectionByIdUnscoped: vi.fn(),
   fetchElevenLabsVoices: vi.fn(),
   refreshClaudeOAuthToken: vi.fn(),
   resolveGatewayAuth: vi.fn(),
   getGatewayConnections: vi.fn(),
+  resolveCursorModels: vi.fn(),
 }));
 
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   default: vi.fn(),
   proxyAwareFetch: mocks.proxyAwareFetch,
 }));
-vi.mock("@/lib/network/connectionProxy", async (importOriginal) => {
-  const actual = await importOriginal();
-  return {
-    ...actual,
-    connectionProxyOptions: async (connection) => {
-      const proxy = await mocks.resolveConnectionProxyConfig(connection.providerSpecificData || {});
-      return proxy.source === "error" ? null : actual.proxyOptionsFromConfig(proxy);
-    },
-  };
-});
 vi.mock("@/models", () => ({
-  getProxyPoolById: vi.fn(),
+  getProxyPoolById: mocks.getProxyPoolById,
   getProviderConnectionByIdUnscoped: mocks.getProviderConnectionByIdUnscoped,
+}));
+vi.mock("open-sse/services/cursorModels.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  resolveCursorModels: mocks.resolveCursorModels,
 }));
 vi.mock("@/lib/db/index.js", () => ({ getConnection: vi.fn() }));
 vi.mock("@/lib/users/workspaceScope.js", () => ({
@@ -64,13 +59,15 @@ import { GET } from "../../src/app/api/providers/[id]/models/route.js";
 import { GET as getElevenLabsVoices } from "../../src/app/api/media-providers/tts/elevenlabs/voices/route.js";
 import { scopedConnections } from "../../src/lib/users/workspaceScope.js";
 import { GET as getAudioVoices } from "../../src/app/api/v1/audio/voices/route.js";
+import { GET as getDeepgramVoices } from "../../src/app/api/media-providers/tts/deepgram/voices/route.js";
+import { GET as getInworldVoices } from "../../src/app/api/media-providers/tts/inworld/voices/route.js";
+import { GET as getMiniMaxVoices } from "../../src/app/api/media-providers/tts/minimax/voices/route.js";
 
-const POOL_CONFIG = {
-  source: "pool",
-  proxyPoolId: "pool-1",
-  connectionProxyEnabled: true,
-  connectionProxyUrl: "http://pool.example:8080",
-  connectionNoProxy: "",
+// Only the pool lookup is mocked; the real connectionProxyOptions runs.
+const POOL_ROW = {
+  isActive: true,
+  proxyUrl: "http://pool.example:8080",
+  noProxy: "",
   strictProxy: true,
 };
 const EXPECTED_PROXY = expect.objectContaining({
@@ -86,9 +83,10 @@ const proxiedConnection = (extra = {}) => ({
 
 beforeEach(() => {
   mocks.proxyAwareFetch.mockReset();
-  mocks.resolveConnectionProxyConfig.mockReset().mockResolvedValue(POOL_CONFIG);
+  mocks.getProxyPoolById.mockReset().mockResolvedValue(POOL_ROW);
   mocks.getProviderConnectionByIdUnscoped.mockReset();
   mocks.fetchElevenLabsVoices.mockReset();
+  mocks.resolveCursorModels.mockReset();
   mocks.refreshClaudeOAuthToken.mockReset();
   mocks.resolveGatewayAuth.mockReset().mockResolvedValue({ principal: {}, legacy: false });
   mocks.getGatewayConnections.mockReset().mockResolvedValue([]);
@@ -202,12 +200,15 @@ describe("dashboard catalog proxy routing", () => {
   });
 
   it("fails closed without fetching when proxy resolution fails", async () => {
-    mocks.resolveConnectionProxyConfig.mockResolvedValue({ source: "error" });
+    mocks.getProxyPoolById.mockRejectedValue(new Error("db down"));
     mocks.getProviderConnectionByIdUnscoped.mockResolvedValue(
       proxiedConnection({
         provider: "openai-compatible-test",
         apiKey: "sk-compatible-test",
-        providerSpecificData: { baseUrl: "https://compatible.example/v1" },
+        providerSpecificData: {
+          baseUrl: "https://compatible.example/v1",
+          proxyPoolId: "pool-1",
+        },
       }),
     );
 
@@ -241,7 +242,7 @@ describe("dashboard catalog proxy routing", () => {
   });
 
   it("returns a Cline fail-closed warning without fetching", async () => {
-    mocks.resolveConnectionProxyConfig.mockResolvedValue({ source: "error" });
+    mocks.getProxyPoolById.mockRejectedValue(new Error("db down"));
 
     const result = await resolveLiveModels(
       proxiedConnection({ provider: "cline", accessToken: "cline-token" }),
@@ -255,9 +256,10 @@ describe("dashboard catalog proxy routing", () => {
 describe("gateway voices proxy routing (principal path)", () => {
   const voicesUrl = (provider) => `http://localhost/v1/audio/voices?provider=${provider}`;
 
-  const principalVoices = (provider, { connection, proxyConfig } = {}) => {
-    mocks.resolveConnectionProxyConfig.mockReset();
-    mocks.resolveConnectionProxyConfig.mockResolvedValue(proxyConfig || POOL_CONFIG);
+  const principalVoices = (provider, { connection, proxyLookupFails = false } = {}) => {
+    mocks.getProxyPoolById.mockReset();
+    if (proxyLookupFails) mocks.getProxyPoolById.mockRejectedValue(new Error("db down"));
+    else mocks.getProxyPoolById.mockResolvedValue(POOL_ROW);
     mocks.getGatewayConnections.mockReset();
     mocks.getGatewayConnections.mockResolvedValue(connection ? [connection] : []);
     return getAudioVoices(new Request(voicesUrl(provider)));
@@ -313,11 +315,215 @@ describe("gateway voices proxy routing (principal path)", () => {
   it("fails closed with 500 and no upstream fetch when proxy resolution errors", async () => {
     const response = await principalVoices("deepgram", {
       connection: credentialedConnection("deepgram"),
-      proxyConfig: { source: "error" },
+      proxyLookupFails: true,
     });
 
     expect(response.status).toBe(500);
     expect((await response.json()).error.message).toMatch(/proxy resolution failed/);
     expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
+  });
+});
+
+// Each catalog below is reached through the real resolver and the real
+// connectionProxyOptions; only the pool lookup and the network are mocked.
+const byUrl = (routes) => async (url) => {
+  const match = Object.entries(routes).find(([fragment]) => String(url).includes(fragment));
+  return match ? Response.json(match[1]) : new Response("not found", { status: 404 });
+};
+
+describe("provider catalogs route through the connection proxy", () => {
+  const CATALOGS = [
+    {
+      provider: "github",
+      connection: { accessToken: "gh-token" },
+      upstream: "https://api.githubcopilot.com/models",
+      routes: { "githubcopilot.com/models": { data: [] } },
+    },
+    {
+      provider: "zed",
+      connection: {
+        accessToken: "zed-token",
+        providerSpecificData: { userId: "u1", organizationId: "org-1", proxyPoolId: "pool-1" },
+      },
+      upstream: "/models",
+      routes: {
+        "/client/llm_tokens": { token: "llm-token" },
+        "/models": { models: [] },
+      },
+    },
+    {
+      provider: "qoder",
+      connection: {
+        accessToken: "qoder-token",
+        providerSpecificData: { userId: "u1", proxyPoolId: "pool-1" },
+      },
+      upstream: "/algo/api/v2/model/list",
+      routes: { "/algo/api/v2/model/list": { chat: [] } },
+    },
+    {
+      provider: "grok-cli",
+      connection: { accessToken: "grok-token" },
+      upstream: "https://cli-chat-proxy.grok.com/v1/models",
+      routes: { "/v1/models": { data: [] } },
+    },
+    {
+      provider: "openrouter",
+      connection: { apiKey: "sk-or-test" },
+      upstream: "https://openrouter.ai/api/v1/models",
+      routes: { "openrouter.ai/api/v1/models": { data: [] } },
+    },
+  ];
+  const connectionFor = ({ provider, connection }) =>
+    proxiedConnection({
+      provider,
+      ...connection,
+      providerSpecificData: connection.providerSpecificData ?? { proxyPoolId: "pool-1" },
+    });
+
+  it.each(CATALOGS)("$provider catalog fetches only through the proxy", async (catalog) => {
+    mocks.proxyAwareFetch.mockImplementation(byUrl(catalog.routes));
+
+    await resolveLiveModels(connectionFor(catalog), { forceRefresh: true });
+
+    const calls = mocks.proxyAwareFetch.mock.calls;
+    expect(calls.some(([url]) => String(url).includes(catalog.upstream))).toBe(true);
+    for (const call of calls) expect(call[2]).toEqual(EXPECTED_PROXY);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(CATALOGS)(
+    "$provider catalog fails closed when the proxy lookup fails",
+    async (catalog) => {
+      mocks.getProxyPoolById.mockRejectedValue(new Error("db down"));
+
+      const result = await resolveLiveModels(connectionFor(catalog), { forceRefresh: true });
+
+      expect(result.models).toEqual([]);
+      expect(result.warning).toMatch(/proxy resolution failed/);
+      expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    },
+  );
+});
+
+// Cursor's catalog is raw HTTP/2 and cannot use a proxy; policy matches the executor.
+describe("Cursor catalog proxy guard", () => {
+  const cursorConnection = (providerSpecificData = {}) => ({
+    id: "conn-cursor",
+    provider: "cursor",
+    accessToken: "cursor-token",
+    providerSpecificData,
+  });
+  const resolved = { models: [{ id: "cursor-model", name: "Cursor Model" }] };
+
+  it("fetches directly when the connection has no proxy", async () => {
+    mocks.resolveCursorModels.mockResolvedValue(resolved);
+
+    const result = await resolveLiveModels(cursorConnection());
+
+    expect(result.models).toEqual(resolved.models);
+    expect(mocks.resolveCursorModels).toHaveBeenCalledTimes(1);
+  });
+
+  it("fetches directly for a non-strict pool, like the Cursor executor", async () => {
+    mocks.getProxyPoolById.mockResolvedValue({ ...POOL_ROW, strictProxy: false });
+    mocks.resolveCursorModels.mockResolvedValue(resolved);
+
+    const result = await resolveLiveModels(cursorConnection({ proxyPoolId: "pool-1" }));
+
+    expect(result.models).toEqual(resolved.models);
+    expect(mocks.resolveCursorModels).toHaveBeenCalledTimes(1);
+  });
+
+  it("is blocked under Strict Proxy without calling the resolver", async () => {
+    const result = await resolveLiveModels(cursorConnection({ proxyPoolId: "pool-1" }));
+
+    expect(result.models).toEqual([]);
+    expect(result.warning).toMatch(/requires a proxy/);
+    expect(mocks.resolveCursorModels).not.toHaveBeenCalled();
+  });
+
+  it("is blocked behind a relay even when the pool is non-strict", async () => {
+    mocks.getProxyPoolById.mockResolvedValue({
+      ...POOL_ROW,
+      type: "vercel",
+      proxyUrl: "https://relay.example.dev/proxy",
+      strictProxy: false,
+    });
+
+    const result = await resolveLiveModels(cursorConnection({ proxyPoolId: "pool-1" }));
+
+    expect(result.warning).toMatch(/requires a proxy/);
+    expect(mocks.resolveCursorModels).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the proxy lookup fails", async () => {
+    mocks.getProxyPoolById.mockRejectedValue(new Error("db down"));
+
+    const result = await resolveLiveModels(cursorConnection({ proxyPoolId: "pool-1" }));
+
+    expect(result.models).toEqual([]);
+    expect(result.warning).toMatch(/proxy resolution failed/);
+    expect(mocks.resolveCursorModels).not.toHaveBeenCalled();
+  });
+});
+
+describe("dashboard TTS voice routes use the connection proxy", () => {
+  const ROUTES = [
+    {
+      name: "deepgram",
+      GET: getDeepgramVoices,
+      provider: "deepgram",
+      upstream: "https://api.deepgram.com/v1/models",
+      body: { tts: [{ canonical_name: "aura-1", name: "Aura 1", languages: ["en"] }] },
+    },
+    {
+      name: "inworld",
+      GET: getInworldVoices,
+      provider: "inworld",
+      upstream: "https://api.inworld.ai/tts/v1/voices",
+      body: { voices: [{ voiceId: "wavenet-a", displayName: "Wave A", languages: ["en"] }] },
+    },
+    {
+      name: "minimax",
+      GET: getMiniMaxVoices,
+      provider: "minimax",
+      upstream: "https://api.minimax.io/v1/get_voice",
+      body: {
+        system_voice: [{ voice_id: "English_a", voice_name: "A" }],
+        base_resp: { status_code: 0 },
+      },
+    },
+  ];
+  const callRoute = ({ name, GET: handler, provider }) => {
+    vi.mocked(scopedConnections).mockResolvedValue({
+      connections: [proxiedConnection({ provider, apiKey: `sk-${provider}-test` })],
+    });
+    return handler(new Request(`http://localhost/api/media-providers/tts/${name}/voices`));
+  };
+
+  it.each(ROUTES)("$name voices fetch goes through the proxy", async (route) => {
+    mocks.proxyAwareFetch.mockResolvedValue(Response.json(route.body));
+
+    const response = await callRoute(route);
+
+    expect(response.status).toBe(200);
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
+      route.upstream,
+      expect.any(Object),
+      EXPECTED_PROXY,
+    );
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each(ROUTES)("$name voices fail closed when the proxy lookup fails", async (route) => {
+    mocks.getProxyPoolById.mockRejectedValue(new Error("db down"));
+
+    const response = await callRoute(route);
+
+    expect(response.status).toBe(500);
+    expect((await response.json()).error).toMatch(/proxy resolution failed/);
+    expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

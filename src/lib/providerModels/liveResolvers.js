@@ -350,17 +350,13 @@ export const LIVE_MODEL_RESOLVERS = {
   qoder: resolveQoder,
   "grok-cli": resolveGrokCli,
   // Cursor's catalog rides a raw HTTP/2 CONNECT stream (cursorModels.js), which
-  // cannot be routed through an HTTP(S) proxy. Fail closed when the connection
-  // demands one (proxy pool/relay or Strict Proxy); only a genuinely proxy-less
-  // connection may connect directly.
+  // cannot be routed through an HTTP(S) proxy. Same policy as the Cursor executor:
+  // block when Strict Proxy is on or a relay is configured (a direct call would
+  // leak the account); a non-strict pool goes direct, as chat does.
   cursor: passthrough("Cursor", async (conn, { forceRefresh }) => {
     const proxyOptions = await connectionProxyOptions(conn);
     if (!proxyOptions) return proxyFailure("Cursor");
-    if (
-      proxyOptions.strictProxy ||
-      proxyOptions.connectionProxyEnabled ||
-      proxyOptions.vercelRelayUrl
-    ) {
+    if (proxyOptions.strictProxy || proxyOptions.vercelRelayUrl) {
       return {
         models: [],
         warning:

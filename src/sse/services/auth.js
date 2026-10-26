@@ -191,6 +191,12 @@ export async function getProviderCredentials(
         pickedId = pickProxyPoolId(poolIds, strategy, poolKey);
       }
       const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pickedId || "" });
+      // A failed pool lookup must never become all-off proxy options: the call would
+      // go direct even for a Strict Proxy pool. Treat the public provider as unavailable.
+      if (resolvedProxy?.source === "error") {
+        log.warn("AUTH", `${provider} | proxy pool lookup failed, provider unavailable`);
+        return null;
+      }
       return {
         id: "noauth",
         connectionName: "Public",
@@ -234,7 +240,7 @@ export async function getProviderCredentials(
     // (zero cost) outside a budgeted request or when no grant budget exists.
     const budgetCtx = grantBudgetContext();
     let reauthSkipped = 0;
-    const availableConnections = connections.filter((c) => {
+    const eligibleConnections = connections.filter((c) => {
       if (excludeSet.has(c.id)) return false;
       // YAN-1041: connection-wide credit lock. Runs before the grant checks and
       // the preferred-connection bypass below, so no model, grant view or pin
@@ -296,6 +302,22 @@ export async function getProviderCredentials(
         return false;
       }
       return true;
+    });
+
+    // A failed proxy lookup resolves to all-off options, which would send the call
+    // direct even for a Strict Proxy pool. Skip such accounts like any unavailable one.
+    const proxyByConnection = new Map();
+    const proxyResults = await Promise.all(
+      eligibleConnections.map((c) => resolveConnectionProxyConfig(c.providerSpecificData || {})),
+    );
+    const availableConnections = [];
+    eligibleConnections.forEach((c, i) => {
+      if (proxyResults[i]?.source === "error") {
+        log.warn("AUTH", `${provider} | ${c.id?.slice(0, 8)} | PROXY_LOOKUP_FAILED skip account`);
+        return;
+      }
+      proxyByConnection.set(c.id, proxyResults[i]);
+      availableConnections.push(c);
     });
 
     if (reauthSkipped > 0) log.debug("AUTH", `${provider} | REAUTH_SKIP ${reauthSkipped}`);
@@ -554,7 +576,7 @@ export async function getProviderCredentials(
       }
     }
 
-    const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+    const resolvedProxy = proxyByConnection.get(connection.id);
     // YAN-1222: never pin at selection. A first turn claims a short provisional pin
     // (so concurrent first turns converge) and the caller commits it once the account
     // served; a failed or hedge-losing attempt releases it. Only after the grant and

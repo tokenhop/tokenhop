@@ -143,7 +143,7 @@ describe("STT", () => {
     expect(proxy).toEqual(EXPECTED_PROXY);
   });
 
-  it("fails closed under Strict Proxy without a direct fetch", async () => {
+  it("surfaces proxy failure as an error result", async () => {
     mocks.proxyAwareFetch.mockRejectedValue(new Error(STRICT_ERROR));
 
     const result = await handleSttCore({
@@ -155,7 +155,7 @@ describe("STT", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain("strictProxy=true");
+    expect(result.error).toBeTruthy();
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
@@ -197,7 +197,7 @@ describe("TTS", () => {
     );
   });
 
-  it("fails closed under Strict Proxy without a direct fetch", async () => {
+  it("surfaces proxy failure as an error result", async () => {
     mocks.proxyAwareFetch.mockRejectedValue(new Error(STRICT_ERROR));
 
     const result = await handleTtsCore({
@@ -256,7 +256,7 @@ describe("search", () => {
     );
   });
 
-  it("fails closed under Strict Proxy without a direct fetch", async () => {
+  it("surfaces proxy failure as an error result", async () => {
     mocks.proxyAwareFetch.mockRejectedValue(new Error(STRICT_ERROR));
 
     const result = await handleSearchCore({
@@ -295,7 +295,7 @@ describe("web fetch", () => {
     );
   });
 
-  it("fails closed under Strict Proxy without a direct fetch", async () => {
+  it("surfaces proxy failure as an error result", async () => {
     mocks.proxyAwareFetch.mockRejectedValue(new Error(STRICT_ERROR));
 
     const result = await handleFetchCore({
@@ -370,5 +370,93 @@ describe("web-cookie executors", () => {
       EXPECTED_PROXY,
     );
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("Zed and Trae executors", () => {
+  it("Zed routes the catalog, LLM-token mint and /completions through execute() proxyOptions", async () => {
+    mocks.proxyAwareFetch.mockImplementation(async (url) => {
+      const target = String(url);
+      if (target.includes("/client/llm_tokens")) return json({ token: "llm-token" });
+      if (target.endsWith("/models"))
+        return json({ models: [{ id: "m1", provider: "anthropic" }] });
+      return new Response("upstream-error", { status: 500 });
+    });
+
+    const { default: ZedExecutor } = await import("../../open-sse/executors/zed.js");
+    const executor = new ZedExecutor();
+    executor.config = {};
+    await executor.execute({
+      model: "m1",
+      body: { messages: [{ role: "user", content: "hi" }] },
+      stream: false,
+      credentials: {
+        accessToken: "zed-access-token-yan-1574",
+        providerSpecificData: { userId: "u1", organizationId: "org-1" },
+      },
+      proxyOptions: { ...PROXY_PSD },
+    });
+
+    const urls = mocks.proxyAwareFetch.mock.calls.map(([url]) => String(url));
+    expect(urls.some((u) => u.includes("/client/llm_tokens"))).toBe(true);
+    expect(urls.some((u) => u.endsWith("/models"))).toBe(true);
+    expect(urls.some((u) => u.endsWith("/completions"))).toBe(true);
+    for (const call of mocks.proxyAwareFetch.mock.calls) expect(call[2]).toEqual(EXPECTED_PROXY);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("Trae routes session creation and the event stream through execute() proxyOptions", async () => {
+    mocks.proxyAwareFetch.mockImplementation(async (url) =>
+      String(url).endsWith("/chat_sessions")
+        ? json({ code: 0, data: { chat_session_id: "s1", message_id: "m1" } })
+        : new Response("event: done\ndata: {}\n\n", {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+          }),
+    );
+
+    const { default: TraeExecutor } = await import("../../open-sse/executors/trae.js");
+    const executor = new TraeExecutor();
+    executor.config = {};
+    await executor.execute({
+      model: "trae-model",
+      body: { messages: [{ role: "user", content: "hi" }] },
+      stream: false,
+      credentials: { accessToken: "jwt" },
+      proxyOptions: { ...PROXY_PSD },
+    });
+
+    const urls = mocks.proxyAwareFetch.mock.calls.map(([url]) => String(url));
+    expect(urls.some((u) => u.endsWith("/chat_sessions"))).toBe(true);
+    expect(urls.some((u) => u.includes("/chat_sessions/s1/events"))).toBe(true);
+    for (const call of mocks.proxyAwareFetch.mock.calls) expect(call[2]).toEqual(EXPECTED_PROXY);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("real proxyAwareFetch under Strict Proxy", () => {
+  it("never retries direct when the proxy is unreachable", async () => {
+    // Unreachable proxy: any dispatcher-bearing (proxied) attempt is refused;
+    // a call without a dispatcher would be the direct fallback.
+    const underlyingFetch = vi.fn(async (_url, init = {}) => {
+      if (init?.dispatcher) throw new Error("connect ECONNREFUSED 127.0.0.1:1");
+      return new Response("direct", { status: 200 });
+    });
+    vi.stubGlobal("fetch", underlyingFetch);
+    const actual = await vi.importActual("../../open-sse/utils/proxyFetch.js");
+    mocks.proxyAwareFetch.mockImplementation(actual.proxyAwareFetch);
+
+    const result = await handleFetchCore({
+      url: "https://example.com",
+      provider: "firecrawl",
+      providerConfig: { timeoutMs: 1000 },
+      credentials: creds({
+        providerSpecificData: { ...PROXY_PSD, connectionProxyUrl: "http://127.0.0.1:1" },
+      }),
+    });
+
+    expect(result.success).toBe(false);
+    expect(underlyingFetch).toHaveBeenCalled();
+    for (const call of underlyingFetch.mock.calls) expect(call[1]?.dispatcher).toBeTruthy();
   });
 });

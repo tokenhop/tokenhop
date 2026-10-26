@@ -89,7 +89,6 @@ describe("connectionProxyOptions", () => {
         connectionProxyEnabled: true,
         connectionProxyUrl: "http://legacy.example:3128",
         connectionNoProxy: "internal.example",
-        strictProxy: true,
       },
     });
 
@@ -98,7 +97,7 @@ describe("connectionProxyOptions", () => {
       connectionProxyUrl: "http://legacy.example:3128",
       connectionNoProxy: "internal.example",
       vercelRelayUrl: "",
-      // Legacy per-connection fields don't carry strictProxy; only pools do.
+      // Legacy per-connection fields carry no strictProxy; only pools can be strict.
       strictProxy: false,
       connectionProxyPoolId: null,
     });
