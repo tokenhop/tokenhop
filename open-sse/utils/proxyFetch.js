@@ -1,4 +1,5 @@
 import { Readable } from "stream";
+import { isIPv6 } from "node:net";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 
@@ -252,6 +253,64 @@ async function getDispatcher(proxyUrl) {
   return proxyDispatchers.get(normalized);
 }
 
+// Dispatch options for a request whose connection must target an address the
+// caller already validated (SSRF pinning). The proxy is asked for the IP
+// literal, so it cannot resolve the hostname a second time; the Host header and
+// TLS SNI/certificate checks keep using the real hostname.
+function pinnedOriginOptions(opts, targetUrl, pinnedAddress) {
+  const ip = isIPv6(pinnedAddress.address) ? `[${pinnedAddress.address}]` : pinnedAddress.address;
+  const port = targetUrl.port ? `:${targetUrl.port}` : "";
+  const headers = {};
+  const source = opts.headers;
+  if (Array.isArray(source)) {
+    for (let i = 0; i < source.length; i += 2) headers[source[i]] = source[i + 1];
+  } else if (source) {
+    Object.assign(headers, source);
+  }
+  for (const name of Object.keys(headers)) if (name.toLowerCase() === "host") delete headers[name];
+  headers.host = targetUrl.host;
+  return {
+    ...opts,
+    origin: `${targetUrl.protocol}//${ip}${port}`,
+    headers,
+    ...(targetUrl.protocol === "https:" ? { servername: targetUrl.hostname } : {}),
+  };
+}
+
+// Fetch through proxyUrl with the connection pinned to pinnedAddress. Uses a
+// per-request ProxyAgent so requestTls.servername can carry the real hostname:
+// SOCKS5 tunnels take SNI from requestTls only, never from the request.
+async function pinnedProxyFetch(url, options, proxyUrl, pinnedAddress) {
+  const target = new URL(url);
+  const { ProxyAgent } = await import("undici");
+  const agent = new ProxyAgent({
+    uri: proxyUrl,
+    ...(target.protocol === "https:" ? { requestTls: { servername: target.hostname } } : {}),
+  });
+  const dispatcher = agent.compose((dispatch) => (opts, handler) => {
+    // Only the validated origin may be dispatched (no cross-origin redirect hops).
+    if (opts.origin && new URL(opts.origin).origin !== target.origin) {
+      throw new Error("[ProxyFetch] Pinned request cannot leave its validated origin");
+    }
+    return dispatch(pinnedOriginOptions(opts, target, pinnedAddress), handler);
+  });
+  try {
+    return await originalFetch(url, { ...options, dispatcher });
+  } finally {
+    // Graceful close: an in-flight response body keeps streaming to the end.
+    agent.close().catch(() => {});
+  }
+}
+
+// Fetch through proxyUrl: pinned when the caller validated the address,
+// otherwise through the shared cached dispatcher.
+async function fetchViaProxy(url, options, proxyUrl, pinnedAddress) {
+  if (pinnedAddress)
+    return pinnedProxyFetch(url, options, normalizeProxyUrl(proxyUrl), pinnedAddress);
+  const dispatcher = await getDispatcher(proxyUrl);
+  return originalFetch(url, { ...options, dispatcher });
+}
+
 // Statuses whose Response must not carry a body (WHATWG Response constructor throws).
 const NULL_BODY_STATUSES = new Set([204, 205, 304]);
 
@@ -343,8 +402,20 @@ async function createBypassRequest(parsedUrl, realIP, options) {
   });
 }
 
+/**
+ * fetch with connection-proxy, env-proxy and Vercel-relay support.
+ * options.pinnedAddress ({ address, family }) marks a request whose host was
+ * already validated: through an HTTP(S) or SOCKS proxy the connection targets
+ * that address instead of letting the proxy resolve the hostname again. Such a
+ * request must also pass options.dispatcher pinned to the same address for
+ * the direct path. Relay paths forward the hostname and are not pinned.
+ */
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
+  const pinnedAddress = options?.pinnedAddress ?? null;
+  if (pinnedAddress && !options.dispatcher) {
+    throw new TypeError("[ProxyFetch] pinnedAddress requires a pinned dispatcher");
+  }
 
   // Vercel relay: forward request via relay headers
   const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
@@ -381,8 +452,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     if (proxyUrl) {
       // Proxy resolves DNS externally (not affected by /etc/hosts) — use proxy directly
       try {
-        const dispatcher = await getDispatcher(proxyUrl);
-        return await originalFetch(url, { ...options, dispatcher });
+        return await fetchViaProxy(url, options, proxyUrl, null);
       } catch (proxyError) {
         // An aborted request keeps its own error and is never retried.
         if (options.signal?.aborted) throw proxyError;
@@ -410,8 +480,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
 
   if (proxyUrl) {
     try {
-      const dispatcher = await getDispatcher(proxyUrl);
-      return await originalFetch(url, { ...options, dispatcher });
+      return await fetchViaProxy(url, options, proxyUrl, pinnedAddress);
     } catch (proxyError) {
       // An aborted request keeps its own error and is never retried.
       if (options.signal?.aborted) throw proxyError;

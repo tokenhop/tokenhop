@@ -51,7 +51,7 @@ for (const subnet of [
 ])
   blockSubnet(subnet, "ipv4");
 for (const subnet of [
-  "::/128",
+  "::/96",
   "::1/128",
   "64:ff9b::/96",
   "100::/64",
@@ -157,7 +157,9 @@ export function detectImageMime(buf) {
  * @param {string} imageUrl - HTTP(S) URL of the image
  * @param {object} options - { signal, timeoutMs, maxBytes, proxyOptions }
  *   proxyOptions: optional connection proxy settings forwarded to
- *   proxyAwareFetch; without a proxy the request uses the pinned dispatcher.
+ *   proxyAwareFetch. Direct and HTTP(S)/SOCKS proxy connections target the
+ *   validated IP; a configured relay (Vercel/Deno/Cloudflare) resolves the
+ *   hostname itself and is not pinned.
  * @returns {Promise<{url: string, mimeType: string}|null>}
  */
 export async function fetchImageAsBase64(imageUrl, options = {}) {
@@ -183,21 +185,24 @@ export async function fetchImageAsBase64(imageUrl, options = {}) {
     ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
     : AbortSignal.timeout(timeoutMs);
 
-  // Pin connect to the validated IP so no second DNS resolution can rebind (TOCTOU fix).
+  // Pin every connection to the validated IP so no second DNS resolution can
+  // rebind (TOCTOU fix). Honour Node's lookup contract for both opts.all forms.
+  const pinned = { address: pinnedIps[0].address, family: pinnedIps[0].family };
   const dispatcher = new Agent({
     connect: {
-      lookup: (_h, _o, cb) =>
-        cb(null, [{ address: pinnedIps[0].address, family: pinnedIps[0].family }]),
+      lookup: (_h, opts, cb) =>
+        opts?.all ? cb(null, [pinned]) : cb(null, pinned.address, pinned.family),
     },
   });
 
   try {
     // redirect:"manual" prevents a public URL redirecting to a private one (SSRF bypass).
-    // Direct connections are validated above and pinned to the resolved IP via
-    // the dispatcher; strict proxy errors surface as failure below.
+    // pinnedAddress makes a connection or env proxy target the validated IP
+    // instead of resolving the hostname itself; strict proxy errors surface as
+    // failure below.
     const response = await proxyAwareFetch(
       url.href,
-      { signal: fetchSignal, redirect: "manual", dispatcher },
+      { signal: fetchSignal, redirect: "manual", dispatcher, pinnedAddress: pinned },
       proxyOptions ?? null,
     );
     if (!response.ok || !response.body) {
