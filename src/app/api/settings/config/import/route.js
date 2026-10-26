@@ -193,11 +193,14 @@ export async function POST(request) {
     } catch (err) {
       console.warn("[Settings][ConfigImport] Failed to re-apply outbound proxy env:", err);
     }
+    // Import can update instance defaults beneath workspace overrides. Portable
+    // config views mask that distinction, so conservatively reset every provider
+    // when any account-routing key is imported (never compare merged export views).
     resetComboRotation();
     if (
-      Object.hasOwn(checked.doc.settings, "fallbackStrategy") ||
-      Object.hasOwn(checked.doc.settings, "stickyRoundRobinLimit") ||
-      Object.hasOwn(checked.doc.settings, "providerStrategies")
+      ["fallbackStrategy", "stickyRoundRobinLimit", "providerStrategies"].some((key) =>
+        Object.hasOwn(checked.doc.settings, key),
+      )
     ) {
       import("@/sse/services/auth")
         .then(({ resetAccountSelection }) => resetAccountSelection?.())

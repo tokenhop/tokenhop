@@ -13,11 +13,12 @@ export function comboAffinityKey({
   conversationKey,
   comboStrategy,
   comboName,
+  workspaceId = null,
   onAttempt,
 }) {
   if (!cacheAffinity || !conversationKey || typeof onAttempt === "function") return null;
   if (!CACHE_AFFINITY_STRATEGIES.includes(comboStrategy)) return null;
-  return comboPinKey(comboName, conversationKey);
+  return comboPinKey(workspaceId, comboName, conversationKey);
 }
 
 /** The pinned member when it is still usable (in `models`; weight > 0 for weighted). */

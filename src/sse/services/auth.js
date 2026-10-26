@@ -25,7 +25,12 @@ import { extractClientApiKey } from "@/lib/auth/clientApiKey.js";
 import { getGatewayConnections, requireGatewayWorkspace } from "@/lib/auth/gatewayResources.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import * as selection from "./accountSelection.js";
-import { accountPinKey, accountPins, clearAccountPins } from "open-sse/services/cacheAffinity.js";
+import {
+  accountPinKey,
+  accountPins,
+  clearAccountPins,
+  pendingAccountPins,
+} from "open-sse/services/cacheAffinity.js";
 import { boundedMap } from "open-sse/utils/boundedMap.js";
 import {
   checkAndReserveGrant,
@@ -54,17 +59,26 @@ const selectionMutexes = new Map();
 // SWRR cursor, keyed by provider. Threshold/sticky counts live in the DB.
 const weightedStates = boundedMap(1000);
 
-export function resetAccountSelection(providerId) {
-  clearAccountPins(providerId ? (resolveProviderId(providerId) ?? providerId) : undefined);
-  if (providerId) {
-    const id = resolveProviderId(providerId) ?? providerId;
-    weightedStates.delete(id);
-    // Partitioned keys carry the principal workspace prefix (YAN-363).
-    for (const key of weightedStates.keys()) {
-      if (key.endsWith(`:${id}`)) weightedStates.delete(key);
-    }
-  } else {
-    weightedStates.clear();
+/**
+ * Reset in-memory account selection state (SWRR cursors + conversation pins).
+ * @param {string} [providerId] - Limit to one provider; omit for all.
+ * @param {{ workspaceId?: string|null }} [scope] - With a workspace id only that
+ *   workspace's cursors (`${workspaceId}:${provider}`) and pins are cleared;
+ *   without one every workspace (and the legacy path) is reset.
+ */
+export function resetAccountSelection(providerId, { workspaceId } = {}) {
+  const id = providerId ? (resolveProviderId(providerId) ?? providerId) : undefined;
+  const scoped = typeof workspaceId === "string" && workspaceId !== "";
+  clearAccountPins(id, scoped ? { workspaceId } : {});
+  if (!id && !scoped) return weightedStates.clear();
+  // Keys: `${provider}` (legacy) or `${workspaceId}:${provider}` (YAN-363).
+  for (const key of [...weightedStates.keys()]) {
+    const hit = scoped
+      ? id
+        ? key === `${workspaceId}:${id}`
+        : key.startsWith(`${workspaceId}:`)
+      : key === id || key.endsWith(`:${id}`);
+    if (hit) weightedStates.delete(key);
   }
 }
 
@@ -86,6 +100,36 @@ function githubMonthlyResetMs(status, errorText, provider) {
 // on them (in-memory SWRR cursor stays per workspace).
 const persistUse = (connection, patch) =>
   connection.grantId ? undefined : updateProviderConnectionUnscoped(connection.id, patch);
+
+// A pinned turn refreshes lastUsedAt (the dashboard "last used" and the rotation
+// recency order) at most this often per connection; it never touches the sticky counter.
+const PINNED_LAST_USED_THROTTLE_MS = 60 * 1000;
+
+function pinnedUseIsStale(connection) {
+  const last = Date.parse(connection.lastUsedAt);
+  return !Number.isFinite(last) || Date.now() - last > PINNED_LAST_USED_THROTTLE_MS;
+}
+
+/**
+ * Account-pin handle (YAN-1222): the pin is written only when the account served.
+ * `token` marks the provisional pin this selection wrote (if any) so releasing a
+ * failed attempt never drops another request's provisional pin.
+ */
+function createAffinityHandle(affinityKey, connectionId, token) {
+  return {
+    commit() {
+      accountPins.set(affinityKey, connectionId);
+      if (pendingAccountPins.peek(affinityKey)?.connectionId === connectionId) {
+        pendingAccountPins.delete(affinityKey);
+      }
+    },
+    release() {
+      if (token && pendingAccountPins.peek(affinityKey)?.token === token) {
+        pendingAccountPins.delete(affinityKey);
+      }
+    },
+  };
+}
 
 /**
  * Get provider credentials from localDb
@@ -371,18 +415,33 @@ export async function getProviderCredentials(
     const affinityKey = pinnable
       ? accountPinKey(workspaceId, providerId, options?.conversationKey)
       : null;
+    let pinKind = null; // "committed" | "pending" when the connection came from a pin
     if (!connection && affinityKey) {
-      connection = selection.pickPinnedConnection({
-        pinnedId: accountPins.get(affinityKey),
-        connections: availableConnections,
-        strategy,
-        provider: providerId,
-        model,
-      });
+      const pick = (pinnedId) =>
+        selection.pickPinnedConnection({
+          pinnedId,
+          connections: availableConnections,
+          strategy,
+          provider: providerId,
+          model,
+        });
+      // Committed pin first, else a concurrent first turn's provisional pin, so two
+      // simultaneous first turns of one conversation land on one account.
+      connection = pick(accountPins.get(affinityKey)); // get: renews the sliding TTL
+      if (connection) {
+        pinKind = "committed";
+      } else {
+        connection = pick(pendingAccountPins.peek(affinityKey)?.connectionId);
+        if (connection) pinKind = "pending";
+      }
       if (connection) log.info("AUTH", `${provider} | cache pin ${connection.id?.slice(0, 8)}`);
     }
     if (connection) {
-      // skip strategy
+      // Pinned (or explicit x-connection-id): skip the strategy and its sticky counter.
+      // A committed pin keeps lastUsedAt fresh, throttled, and never the counter.
+      if (pinKind === "committed" && pinnedUseIsStale(connection)) {
+        await persistUse(connection, { lastUsedAt: new Date().toISOString() });
+      }
     } else if (strategy === "weighted") {
       // Partition sticky state by workspace under gateway principals so two
       // workspaces never share rotation cursors on the same provider.
@@ -479,12 +538,22 @@ export async function getProviderCredentials(
       }
     }
 
-    // Pin only after grant/budget reservations succeeded.
-    if (affinityKey) accountPins.set(affinityKey, connection.id);
-
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+    // YAN-1222: never pin at selection. A first turn claims a short provisional pin
+    // (so concurrent first turns converge) and the caller commits it once the account
+    // served; a failed or hedge-losing attempt releases it. Only after the grant and
+    // budget reservations succeeded.
+    let affinity = null;
+    if (affinityKey) {
+      let token = null;
+      if (pinKind === null) {
+        token = Symbol("pendingAccountPin");
+        pendingAccountPins.set(affinityKey, { connectionId: connection.id, token });
+      }
+      affinity = createAffinityHandle(affinityKey, connection.id, token);
+    }
 
-    return {
+    const credentials = {
       grantId: connection.grantId ?? null,
       grantReservation,
       authType: connection.authType,
@@ -516,6 +585,9 @@ export async function getProviderCredentials(
       // Pass full connection for clearAccountError to read modelLock_* keys
       _connection: connection,
     };
+    // Non-enumerable: stays out of spreads/serialization of the credentials object.
+    if (affinity) Object.defineProperty(credentials, "affinity", { value: affinity });
+    return credentials;
   } finally {
     resolveMutex();
     if (selectionMutexes.get(mutexKey) === tail) selectionMutexes.delete(mutexKey);

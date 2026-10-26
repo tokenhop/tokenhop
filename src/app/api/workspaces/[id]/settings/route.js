@@ -5,7 +5,13 @@ import { NextResponse } from "next/server";
 import { requireMultiUser } from "@/lib/users/featureSwitch.js";
 import { getPrincipal } from "@/lib/users/session.js";
 import { can } from "@/lib/users/principal.js";
-import { MAP_KEYS, WORKSPACE_KEYS, classifyKey, pickKeys } from "@/lib/settings/settingsScope.js";
+import {
+  MAP_KEYS,
+  WORKSPACE_KEYS,
+  classifyKey,
+  mergeWorkspaceLayer,
+  pickKeys,
+} from "@/lib/settings/settingsScope.js";
 import { getEffectivePreferences, getSettings } from "@/lib/db/index.js";
 import {
   getWorkspaceSettings,
@@ -19,6 +25,7 @@ import {
   isValidComboName,
 } from "@/app/api/settings/comboStrategyPatch.js";
 import { runSettingsSideEffects } from "@/app/api/settings/settingsSideEffects.js";
+import { touchesRoutingState } from "@/app/api/settings/routingResetPlan.js";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -124,7 +131,15 @@ export async function PATCH(request, { params }) {
         { allowId: true },
       );
       if (result.response) return result.response;
-      runSettingsSideEffects({ comboStrategyPatch: true }, result);
+      // Resets only this workspace's rotation/pins, and nothing for a cacheAffinity-only patch.
+      runSettingsSideEffects(
+        { comboStrategyPatch: patchBody.comboStrategyPatch },
+        result.settings,
+        {
+          workspaceId: wsId,
+          previous: result.previous,
+        },
+      );
       const row = await getWorkspaceSettings(ctx, wsId);
       return json({ data: pickKeys(row.data, WORKSPACE_KEYS), updatedAt: row.updatedAt });
     }
@@ -134,8 +149,18 @@ export async function PATCH(request, { params }) {
     const invalid = validatePatch(body);
     if (invalid) return json({ error: invalid }, 400);
 
-    const data = await updateWorkspaceSettings(ctx, wsId, body);
-    runSettingsSideEffects(body, data);
+    const snapshot = touchesRoutingState(body) ? {} : undefined;
+    // Compare effective views: the provider UI may copy an inherited entry into
+    // the owned map while changing only cacheAffinity. That is not a routing change.
+    const inherited = snapshot ? await getSettings({ secretMode: "metadata" }) : {};
+    const data = snapshot
+      ? await updateWorkspaceSettings(ctx, wsId, body, snapshot)
+      : await updateWorkspaceSettings(ctx, wsId, body);
+    const previous = snapshot?.previous
+      ? mergeWorkspaceLayer({ ...inherited }, snapshot.previous)
+      : undefined;
+    const effective = mergeWorkspaceLayer({ ...inherited }, data);
+    runSettingsSideEffects(body, effective, { workspaceId: wsId, previous });
     const row = await getWorkspaceSettings(ctx, wsId);
     return json({ data: pickKeys(row.data, WORKSPACE_KEYS), updatedAt: row.updatedAt });
   } catch (error) {

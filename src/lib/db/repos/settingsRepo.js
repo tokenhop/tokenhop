@@ -325,8 +325,13 @@ export async function getSettings({ secretMode = "runtime" } = {}) {
   return mergeWithDefaults(await decryptSecrets(await getAdapter(), raw));
 }
 
-// Atomic read-merge-write inside transaction (prevents losing concurrent updates)
-export async function updateSettings(updates) {
+/**
+ * Atomic read-merge-write (prevents losing concurrent updates).
+ * @param {object} updates Settings patch.
+ * @param {object} [snapshot] Optional output: `previous` receives the metadata-only,
+ * default-merged settings read inside the write transaction (never stale or secret).
+ */
+export async function updateSettings(updates, snapshot) {
   const db = await getAdapter();
   const state = readCredentialEncryptionState(db);
   const root =
@@ -337,6 +342,7 @@ export async function updateSettings(updates) {
     // Raw merge: envelope values for untouched keys pass through byte-exact
     // (never decrypted here); touched secrets are encrypted above in encode.
     const current = row ? parseJson(row.data, {}) : {};
+    if (snapshot) snapshot.previous = metadataView(mergeWithDefaults(current));
     const encoded =
       state.storage === "encrypted" ? encodeSecretUpdates(db, updates, root, state) : updates;
     next = { ...current, ...encoded };

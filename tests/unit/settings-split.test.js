@@ -61,6 +61,28 @@ describe("switch on", () => {
     adapter.run(`DELETE FROM _meta WHERE key = 'defaultWorkspaceId'`);
   });
 
+  it("captures transaction-local previous settings without changing writer return values", async () => {
+    await db.updateSettings({ fallbackStrategy: "fill-first" });
+    const instanceSnapshot = {};
+    const nextInstance = await db.updateSettings(
+      { fallbackStrategy: "weighted" },
+      instanceSnapshot,
+    );
+    expect(instanceSnapshot.previous.fallbackStrategy).toBe("fill-first");
+    expect(nextInstance.fallbackStrategy).toBe("weighted");
+
+    await repo.updateWorkspaceSettings(t.a.ctx, t.a.personal, { fallbackStrategy: "weighted" });
+    const workspaceSnapshot = {};
+    const nextWorkspace = await repo.updateWorkspaceSettings(
+      t.a.ctx,
+      t.a.personal,
+      { fallbackStrategy: "round-robin" },
+      workspaceSnapshot,
+    );
+    expect(workspaceSnapshot.previous).toEqual({ fallbackStrategy: "weighted" });
+    expect(nextWorkspace).toEqual({ fallbackStrategy: "round-robin" });
+  });
+
   it("seeds Default from the legacy blob's workspace keys only, and never overwrites", async () => {
     await db.updateSettings({ comboStrategy: "round-robin", requireApiKey: true });
     adapter.run(`INSERT INTO _meta(key, value) VALUES('defaultWorkspaceId', ?)`, [t.shared.id]);
@@ -153,6 +175,27 @@ describe("API boundaries", () => {
     });
     expect(res.status).toBe(200);
     expect((await res.json()).data.fallbackStrategy).toBe("round-robin");
+  });
+
+  it("a workspace affinity-only save preserves pins when it copies an inherited strategy", async () => {
+    await load("on");
+    const inherited = { fallbackStrategy: "round-robin", stickyRoundRobinLimit: 3 };
+    await db.updateSettings({ requireLogin: true, providerStrategies: { openai: inherited } });
+    const t = await seedTenancy();
+    const workspace = await import("@/app/api/workspaces/[id]/settings/route.js");
+    const { accountPins, accountPinKey } = await import("open-sse/services/cacheAffinity.js");
+    const key = accountPinKey(t.a.personal, "openai", "s:kept");
+    accountPins.set(key, "kept-account");
+    const res = await as(t.a, workspace.PATCH, `/api/workspaces/${t.a.personal}/settings`, {
+      method: "PATCH",
+      params: { id: t.a.personal },
+      body: { providerStrategies: { openai: { ...inherited, cacheAffinity: false } } },
+    });
+    expect(res.status).toBe(200);
+    // Account invalidation is imported lazily: allow it to settle before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(accountPins.peek(key)).toBe("kept-account");
+    accountPins.delete(key);
   });
 
   it("GET exposes the instance layer of map keys only (YAN-770)", async () => {

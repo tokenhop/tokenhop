@@ -45,9 +45,19 @@ function envMs(name, def) {
   return Number.isFinite(n) && n > 0 ? n : def;
 }
 
-// Conversation cache affinity (YAN-1211/1213): sliding TTL + LRU cap per pin store.
+// Conversation cache affinity (YAN-1211/1213/1221/1224): sliding TTL + LRU cap per pin store.
+// MAX_PINS_PER_WORKSPACE bounds one workspace so it cannot evict another's pins; a prompt-hash
+// ("p:") pin also has an absolute lifetime (MAX_AGE) because identical prompts share one key.
 export const CACHE_AFFINITY_TTL_MS = envMs("CACHE_AFFINITY_TTL_MS", 60 * 60 * 1000);
 export const CACHE_AFFINITY_MAX_PINS = envMs("CACHE_AFFINITY_MAX_PINS", 10000);
+export const CACHE_AFFINITY_MAX_PINS_PER_WORKSPACE = envMs(
+  "CACHE_AFFINITY_MAX_PINS_PER_WORKSPACE",
+  2000,
+);
+export const CACHE_AFFINITY_PROMPT_PIN_MAX_AGE_MS = envMs(
+  "CACHE_AFFINITY_PROMPT_PIN_MAX_AGE_MS",
+  15 * 60 * 1000,
+);
 
 function envUrl(name, def) {
   const raw = process.env[name]?.trim();

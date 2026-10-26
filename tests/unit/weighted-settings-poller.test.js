@@ -106,7 +106,7 @@ describe("weighted settings validation", () => {
       },
     };
     expect((await patch(body)).status).toBe(200);
-    expect(updateSettings).toHaveBeenCalledWith(body);
+    expect(updateSettings).toHaveBeenCalledWith(body, expect.any(Object));
     await vi.waitFor(() => expect(resetAccountSelection).toHaveBeenCalledOnce());
   });
 });
