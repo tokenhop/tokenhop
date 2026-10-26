@@ -212,7 +212,10 @@ describe("upstream media requests use the connection proxy", () => {
 
     expect(result.success).toBe(false);
     expect(result.status).toBe(502);
-    expect(result.error).not.toContain("evil.example");
+    expect(result.error).toMatch(
+      /^BFL: (invalid polling URL|polling URL is not on the provider host)/,
+    );
+    expect(result.error).not.toContain(pollUrl);
     expect(mocks.proxyAwareFetch).toHaveBeenCalledTimes(1);
     expect(mocks.proxyAwareFetch.mock.calls[0][0]).toBe("https://api.bfl.ai/v1/flux-pro-1.1");
   });
@@ -244,24 +247,31 @@ describe("upstream media requests use the connection proxy", () => {
     expect(calls[2][1]).toMatchObject({ redirect: "error" });
   });
 
-  it("Fal.ai failure text from the provider is capped and must be a string", async () => {
-    const statusUrl = "https://queue.fal.run/fal-ai/flux/requests/r1/status";
-    mocks.proxyAwareFetch.mockImplementation(async (url) =>
-      url === statusUrl
-        ? json({ status: "FAILED", error: { detail: "x" } })
-        : json({ status_url: statusUrl, response_url: `${statusUrl}/r` }),
-    );
+  it.each([
+    [{ detail: "x" }, "Fal generation failed"],
+    ["   ", "Fal generation failed"],
+    ["x".repeat(400), "x".repeat(300)],
+  ])(
+    "Fal.ai failure text from the provider is limited to a short string",
+    async (error, expected) => {
+      const statusUrl = "https://queue.fal.run/fal-ai/flux/requests/r1/status";
+      mocks.proxyAwareFetch.mockImplementation(async (url) =>
+        url === statusUrl
+          ? json({ status: "FAILED", error })
+          : json({ status_url: statusUrl, response_url: `${statusUrl}/r` }),
+      );
 
-    const result = await handleImageGenerationCore({
-      body: { prompt: "a cat" },
-      modelInfo: { provider: "fal-ai", model: "fal-ai/flux" },
-      credentials: { apiKey: "fal-key", providerSpecificData: { ...PROXY_PSD } },
-      log: silentLog(),
-    });
+      const result = await handleImageGenerationCore({
+        body: { prompt: "a cat" },
+        modelInfo: { provider: "fal-ai", model: "fal-ai/flux" },
+        credentials: { apiKey: "fal-key", providerSpecificData: { ...PROXY_PSD } },
+        log: silentLog(),
+      });
 
-    expect(result.success).toBe(false);
-    expect(result.error).toBe("Fal generation failed");
-  });
+      expect(result.success).toBe(false);
+      expect(result.error).toBe(expected);
+    },
+  );
 
   it.each([
     ["status", "https://evil.example/status", "https://queue.fal.run/fal-ai/flux/requests/r1"],

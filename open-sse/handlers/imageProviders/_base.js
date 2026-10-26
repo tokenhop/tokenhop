@@ -51,8 +51,7 @@ export function assertProviderUrl(rawUrl, isAllowedHost, label) {
   return parsed.href;
 }
 
-// Credentialed follow-up requests must not follow redirects: a redirect could
-// carry a custom key header (e.g. x-key) to another origin.
+// Keyed follow-up requests do not follow redirects.
 export const NO_REDIRECT = Object.freeze({ redirect: "error" });
 
 // Provider-supplied failure text for the client: string only, length-capped.
