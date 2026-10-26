@@ -125,6 +125,21 @@ A failed or empty catalog preserves the built-in list with a warning. Partial
 publisher/page failures retain fetched models and show a partial-catalog warning;
 discovery has one 15-second deadline across authentication and all pages.
 
+**GLM live catalogs:** **Providers → GLM Coding / GLM (China) → Fetch models**
+refreshes the list the dashboard and `GET /v1/models` use. GLM Coding reads
+`https://api.z.ai/api/coding/paas/v4/models`. GLM (China) reads
+`https://open.bigmodel.cn/api/coding/paas/v4/models`. A failed or empty catalog
+keeps the built-in list and shows a warning. After a successful fetch, built-in
+chat models the provider omits are dropped, except `glm-4.6v`, which stays.
+
+**MiniMax live catalogs:** **Providers → Minimax Coding / Minimax (China) → Fetch models**
+refreshes the same list. Minimax Coding reads `https://api.minimax.io/v1/models`.
+Minimax (China) reads `https://api.minimaxi.com/v1/models`. Chat models from that
+list are kept. Unknown speech ids, and video, music, ASR and embedding ids, are
+dropped. Image ids are listed only for Minimax Coding. Built-in speech and image
+models are kept, including ones the live list omits. A failed or empty catalog
+keeps the built-in list and shows a warning.
+
 ## Configuration
 
 The full env contract is in [`.env.example`](.env.example). `.env` is not baked into the
@@ -258,6 +273,11 @@ are public; the values aren't confidential per Google's installed-app model abov
 but secret scanners may flag the `GOCSPX-` string in them — accepted.
 
 ## Development
+
+Node.js 22.23.4 or newer (`.nvmrc`). `npm run dev` refuses to start unless
+`TOKENHOP_DEV_ALLOWED_ORIGINS` is set. `.env.example` sets it to `localhost`.
+Add any other hostname you open the dashboard from, separated by commas.
+`localhost` is always allowed as well.
 
 ```bash
 cp .env.example .env

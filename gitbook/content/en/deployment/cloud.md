@@ -9,7 +9,7 @@ Deploy tokenhop on VPS or Docker for remote access and production use.
 ### Prerequisites
 
 - Ubuntu 20.04+ or similar Linux distribution
-- Node.js 20+
+- Node.js 22.23.4 or newer (a checkout of this repository; `.nvmrc`)
 - Git
 - Root or sudo access
 

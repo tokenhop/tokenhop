@@ -203,6 +203,8 @@ Restore behavior:
 - The `multiUserEnabled` setting inside a backup is ignored, so a restore never flips the users & teams switch.
 - Encrypted instances accept only format v3 exports. The one exception is an older, pre-encryption backup restored while users & teams is on, which is imported into the Default workspace. Other plaintext and older formats are rejected. Portable configuration export (settings only) never includes secrets.
 - Large restores stream. The accepted body size is the smaller of `TOKENHOP_INSTANCE_IMPORT_MAX_BODY_SIZE` and `TOKENHOP_PROXY_CLIENT_MAX_BODY_SIZE` (default `128mb`).
+- Export and import check free disk before writing. Not enough space returns HTTP 507 (`EXPORT_DISK_INSUFFICIENT` or `IMPORT_DISK_INSUFFICIENT`) and changes nothing. The message says how much space it needs.
+- A single snapshot row larger than 64 MiB is refused at export with HTTP 422 (`EXPORT_ROW_TOO_LARGE`). Delete or trim that row and export again.
 
 Deleting a workspace removes its data key from the live database. That does not remove copies of the wrapped key inside older backups. The Default workspace cannot be deleted.
 
