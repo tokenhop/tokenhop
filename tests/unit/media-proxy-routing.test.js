@@ -159,9 +159,9 @@ describe("upstream media requests use the connection proxy", () => {
 
   it("async image polling (Black Forest Labs) uses the proxy", async () => {
     mocks.proxyAwareFetch.mockImplementation(async (url) =>
-      url === "https://poll.example/bfl"
+      url === "https://api.us1.bfl.ai/v1/get_result?id=1"
         ? json({ status: "Ready", result: { sample: "https://cdn.example/bfl.png" } })
-        : json({ polling_url: "https://poll.example/bfl" }),
+        : json({ polling_url: "https://api.us1.bfl.ai/v1/get_result?id=1" }),
     );
 
     const result = await handleImageGenerationCore({
@@ -174,14 +174,125 @@ describe("upstream media requests use the connection proxy", () => {
     expect(result.success).toBe(true);
     expect(mocks.proxyAwareFetch).toHaveBeenCalledTimes(2);
     expect(mocks.proxyAwareFetch).toHaveBeenLastCalledWith(
-      "https://poll.example/bfl",
+      "https://api.us1.bfl.ai/v1/get_result?id=1",
       expect.any(Object),
       EXPECTED_PROXY,
     );
     for (const call of mocks.proxyAwareFetch.mock.calls) {
       expect(call[2]).toEqual(EXPECTED_PROXY);
     }
+    // The keyed poll must not follow a redirect to another origin.
+    expect(mocks.proxyAwareFetch.mock.calls[1][1]).toMatchObject({ redirect: "error" });
   });
+
+  it.each([
+    ["https://evil.example/poll", "foreign host"],
+    ["http://api.us1.bfl.ai/v1/get_result", "plain http"],
+    ["https://bfl.ai.evil.example/poll", "lookalike host"],
+    ["https://docs.bfl.ai/poll", "non-API bfl.ai host"],
+    ["https://api.bfl.ai:8443/poll", "non-default port"],
+    ["https://user@api.bfl.ai/poll", "credentials in URL"],
+    ["https://evil.example\\@api.bfl.ai/", "backslash userinfo"],
+    ["https://api.bfl.ai./poll", "trailing-dot host"],
+    ["https://[::1]/poll", "IP literal"],
+    ["not a url", "unparsable value"],
+  ])("Black Forest Labs polling URL %s is refused without the key (%s)", async (pollUrl) => {
+    mocks.proxyAwareFetch.mockImplementation(async (url) =>
+      url === pollUrl
+        ? json({ status: "Ready", result: { sample: "https://cdn.example/bfl.png" } })
+        : json({ polling_url: pollUrl }),
+    );
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "a cat" },
+      modelInfo: { provider: "black-forest-labs", model: "flux-pro-1.1" },
+      credentials: { apiKey: "bfl-key", providerSpecificData: { ...PROXY_PSD } },
+      log: silentLog(),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.error).not.toContain("evil.example");
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledTimes(1);
+    expect(mocks.proxyAwareFetch.mock.calls[0][0]).toBe("https://api.bfl.ai/v1/flux-pro-1.1");
+  });
+
+  it("async image polling (Fal.ai) follows queue URLs on the provider host", async () => {
+    const statusUrl = "https://queue.fal.run/fal-ai/flux/requests/r1/status";
+    const responseUrl = "https://queue.fal.run/fal-ai/flux/requests/r1";
+    mocks.proxyAwareFetch.mockImplementation(async (url) => {
+      if (url === statusUrl) return json({ status: "COMPLETED" });
+      if (url === responseUrl) return json({ images: [{ url: "https://cdn.example/fal.png" }] });
+      return json({ status_url: statusUrl, response_url: responseUrl });
+    });
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "a cat" },
+      modelInfo: { provider: "fal-ai", model: "fal-ai/flux" },
+      credentials: { apiKey: "fal-key", providerSpecificData: { ...PROXY_PSD } },
+      log: silentLog(),
+    });
+
+    expect(result.success).toBe(true);
+    const calls = mocks.proxyAwareFetch.mock.calls;
+    expect(calls.map((c) => c[0])).toEqual([
+      "https://queue.fal.run/fal-ai/flux",
+      statusUrl,
+      responseUrl,
+    ]);
+    expect(calls[1][1]).toMatchObject({ redirect: "error" });
+    expect(calls[2][1]).toMatchObject({ redirect: "error" });
+  });
+
+  it("Fal.ai failure text from the provider is capped and must be a string", async () => {
+    const statusUrl = "https://queue.fal.run/fal-ai/flux/requests/r1/status";
+    mocks.proxyAwareFetch.mockImplementation(async (url) =>
+      url === statusUrl
+        ? json({ status: "FAILED", error: { detail: "x" } })
+        : json({ status_url: statusUrl, response_url: `${statusUrl}/r` }),
+    );
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "a cat" },
+      modelInfo: { provider: "fal-ai", model: "fal-ai/flux" },
+      credentials: { apiKey: "fal-key", providerSpecificData: { ...PROXY_PSD } },
+      log: silentLog(),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Fal generation failed");
+  });
+
+  it.each([
+    ["status", "https://evil.example/status", "https://queue.fal.run/fal-ai/flux/requests/r1"],
+    ["status", "http://queue.fal.run/s", "https://queue.fal.run/fal-ai/flux/requests/r1"],
+    ["status", "https://other.fal.run/s", "https://queue.fal.run/fal-ai/flux/requests/r1"],
+    ["response", "https://queue.fal.run/fal-ai/flux/requests/r1/status", "https://evil.example/r"],
+    ["response", "https://queue.fal.run/s", "https://queue.fal.run:444/r"],
+  ])(
+    "Fal.ai %s URL off the queue host is refused without the key",
+    async (_which, statusUrl, responseUrl) => {
+      mocks.proxyAwareFetch.mockImplementation(async (url) => {
+        if (url === statusUrl) return json({ status: "COMPLETED" });
+        if (url === responseUrl) return json({ images: [{ url: "https://cdn.example/fal.png" }] });
+        return json({ status_url: statusUrl, response_url: responseUrl });
+      });
+
+      const result = await handleImageGenerationCore({
+        body: { prompt: "a cat" },
+        modelInfo: { provider: "fal-ai", model: "fal-ai/flux" },
+        credentials: { apiKey: "fal-key", providerSpecificData: { ...PROXY_PSD } },
+        log: silentLog(),
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.status).toBe(502);
+      // Both URLs are checked before polling starts, so only the submit request is sent.
+      expect(mocks.proxyAwareFetch.mock.calls.map((c) => c[0])).toEqual([
+        "https://queue.fal.run/fal-ai/flux",
+      ]);
+    },
+  );
 
   it("Cloudflare input image URL is validated and downloaded through the proxy", async () => {
     const PNG_BYTES = Buffer.concat([

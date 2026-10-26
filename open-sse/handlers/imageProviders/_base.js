@@ -28,6 +28,39 @@ export async function urlToBase64(url, proxyOptions = null) {
   return { b64: fetched.url.slice(fetched.url.indexOf(",") + 1), mimeType: fetched.mimeType };
 }
 
+// Polling/result URLs come from the provider's response and are fetched with the
+// API key. Follow them only over https, on the default port, with no userinfo,
+// and on a host `isAllowedHost` accepts; anything else is refused before any
+// request is sent. The URL is not echoed in the error.
+export function assertProviderUrl(rawUrl, isAllowedHost, label) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error(`${label}: invalid polling URL from provider`);
+  }
+  if (
+    parsed.protocol !== "https:" ||
+    parsed.port !== "" ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    !isAllowedHost(parsed.hostname)
+  ) {
+    throw new Error(`${label}: polling URL is not on the provider host`);
+  }
+  return parsed.href;
+}
+
+// Credentialed follow-up requests must not follow redirects: a redirect could
+// carry a custom key header (e.g. x-key) to another origin.
+export const NO_REDIRECT = Object.freeze({ redirect: "error" });
+
+// Provider-supplied failure text for the client: string only, length-capped.
+export function upstreamErrorText(value, fallback) {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text ? text.slice(0, 300) : fallback;
+}
+
 export function nowSec() {
   return Math.floor(Date.now() / 1000);
 }
