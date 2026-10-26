@@ -132,9 +132,11 @@ describe("upstream media requests use the connection proxy", () => {
   });
 
   it("binary image output downloads the result URL through the proxy", async () => {
+    // Real PNG signature: the hardened fetcher rejects non-image payloads.
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
     mocks.proxyAwareFetch.mockImplementation(async (url) =>
       url === "https://cdn.example/i.png"
-        ? new Response(Buffer.from("png-bytes"), { status: 200 })
+        ? new Response(pngBytes, { status: 200 })
         : json({ created: 1, data: [{ url: "https://cdn.example/i.png" }] }),
     );
 
@@ -147,7 +149,7 @@ describe("upstream media requests use the connection proxy", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(Buffer.from(await result.response.arrayBuffer()).toString()).toBe("png-bytes");
+    expect(Buffer.from(await result.response.arrayBuffer())).toEqual(pngBytes);
     expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
       "https://cdn.example/i.png",
       expect.any(Object),
