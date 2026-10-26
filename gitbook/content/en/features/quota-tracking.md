@@ -675,6 +675,20 @@ Response:
 }
 ```
 
+### Export usage history
+
+The Usage page's Export button (Overview tab) downloads the current period — including a custom range — with the active workspace/member/API-key filters applied. The same download is available directly:
+
+```bash
+GET http://localhost:20128/api/usage/export?period=7d&format=csv&granularity=day
+```
+
+- `period`: a named period (`today`, `24h`, `7d`, `30d`, `60d`, `90d`, `all`) or `custom` with `from`/`to` as inclusive local `YYYY-MM-DD` days (max 366 days).
+- `format`: `csv` (default, a JSON array when `json`). The response is streamed and sent as a file download (`tokenhop-usage-<range>-<granularity>.csv|json`).
+- `granularity`: `day` (default) gives one row per day × provider/model/account/API key/endpoint from the daily rollup (for `today`/`24h`, folded from per-request history so it matches the cards); `request` gives one row per request from the stored request history for any period or custom range. History retention is opt-in, so if you enabled it, request rows may be missing for pruned days — daily rows are unaffected because they come from the rollup.
+
+Columns: timestamp (or date), provider, model, account, account id, API key name, masked API key, endpoint, prompt/completion/cached tokens, cost, status (request rows), and the token-saver estimate (`saved_tokens_est`, request rows and sub-day daily totals; 0 in rollup rows, which carry no per-request savings). Raw API keys are never exported — only the key's name and masked prefix. Invalid `format`, `granularity`, `period` or date ranges return 400; the same sign-in and workspace scoping as the other usage endpoints applies.
+
 ---
 
 ## Troubleshooting

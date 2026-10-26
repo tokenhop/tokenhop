@@ -33,6 +33,7 @@ import UsageBreakdown from "./components/UsageBreakdown";
 import RequestLog from "./components/RequestLog";
 import BudgetsTab from "./components/BudgetsTab";
 import UsageFilters from "./components/UsageFilters";
+import UsageExportButton from "./components/UsageExportButton";
 
 const UsageTokensChart = dynamic(() => import("./components/UsageTokensChart"), {
   loading: () => <CardSkeleton />,
@@ -191,16 +192,19 @@ function UsageContent() {
             ]}
           />
           {activeTab === "overview" && (
-            <PeriodControl
-              aria-label="Stats period"
-              options={options}
-              value={period}
-              onChange={setPeriod}
-              range={range}
-              onRangeChange={setRange}
-              size="sm"
-              className="w-full sm:w-auto"
-            />
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              <UsageExportButton period={period} range={range} filters={usageFilters} />
+              <PeriodControl
+                aria-label="Stats period"
+                options={options}
+                value={period}
+                onChange={setPeriod}
+                range={range}
+                onRangeChange={setRange}
+                size="sm"
+                className="w-full sm:w-auto"
+              />
+            </div>
           )}
         </div>
       </div>

@@ -79,6 +79,7 @@ const ROUTES = {
   "models/custom": () => import("@/app/api/models/custom/route.js"),
   "models/disabled": () => import("@/app/api/models/disabled/route.js"),
   "usage/stats": () => import("@/app/api/usage/stats/route.js"),
+  "usage/export": () => import("@/app/api/usage/export/route.js"),
   "usage/logs": () => import("@/app/api/usage/logs/route.js"),
   "usage/request-details": () => import("@/app/api/usage/request-details/route.js"),
   "usage/[connectionId]": () => import("@/app/api/usage/[connectionId]/route.js"),
@@ -295,6 +296,7 @@ describe("dashboard IDOR denials", () => {
       ["models/custom", "GET"],
       ["models/disabled", "GET"],
       ["usage/stats", "GET"],
+      ["usage/export", "GET"],
       ["usage/logs", "GET"],
       ["usage/request-details", "GET"],
       ["audit", "GET"],
@@ -319,14 +321,16 @@ describe("dashboard IDOR denials", () => {
       });
       await sameDenial(route, method, spec(t.a.personal), spec("missing-workspace"));
     }
-    for (const [filter, id] of [
-      ["userId", t.a.user.id],
-      ["apiKeyId", "a-key"],
-    ]) {
-      const spec = (target) => ({
-        url: `/api/usage/stats?workspaceId=${t.b.personal}&${filter}=${target}`,
-      });
-      await sameDenial("usage/stats", "GET", spec(id), spec("missing-id"));
+    for (const route of ["usage/stats", "usage/export"]) {
+      for (const [filter, id] of [
+        ["userId", t.a.user.id],
+        ["apiKeyId", "a-key"],
+      ]) {
+        const spec = (target) => ({
+          url: `/api/${route}?workspaceId=${t.b.personal}&${filter}=${target}`,
+        });
+        await sameDenial(route, "GET", spec(id), spec("missing-id"));
+      }
     }
   }, 30_000);
 
@@ -463,6 +467,7 @@ describe("dashboard IDOR denials", () => {
       "models/custom",
       "models/disabled",
       "usage/stats",
+      "usage/export",
       "usage/logs",
       "audit",
       "grants",
@@ -470,7 +475,8 @@ describe("dashboard IDOR denials", () => {
       const { GET } = await ROUTES[route]();
       const response = await as(t.b, GET, `/api/${route}?workspaceId=${t.b.personal}`);
       expect(response.status).toBe(200);
-      const text = JSON.stringify(await response.json());
+      const text =
+        route === "usage/export" ? await response.text() : JSON.stringify(await response.json());
       expect(text).not.toMatch(/A-private|a-private-model|a-private-alias|a-key|a-grant/);
       expect(text).not.toContain(rows.aConn.id);
       if (route === "grants") expect(text).toBe('{"grants":[]}');
