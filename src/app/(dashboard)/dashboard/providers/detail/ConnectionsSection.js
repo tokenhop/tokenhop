@@ -27,6 +27,7 @@ import {
   StatusPill,
   ConfirmDialog,
 } from "@/shared/components";
+import Toggle from "@/shared/components/Toggle";
 import { ACCOUNT_STRATEGY_OPTIONS, OAUTH_STICKY_HINT } from "@/shared/constants/accountStrategies";
 import { dragMoveIndices } from "../detailUtils";
 import SortableConnectionRow from "./SortableConnectionRow";
@@ -282,6 +283,16 @@ export default function ConnectionsSection({
             <p className="w-full text-xs text-muted">
               Shares estimated from remaining quota; model-specific quotas may differ.
             </p>
+          ) : null}
+          {usesStickyLimit ? (
+            <Toggle
+              className="w-full max-w-xl"
+              checked={strategy.cacheAffinity !== false}
+              onChange={(next) => strategy.changeCacheAffinity?.(next)}
+              disabled={strategy.saving}
+              label="Keep each conversation on one account"
+              description="Each conversation stays on the account that answered it, so the provider's prompt cache stays warm. It moves only if that account is unavailable. New conversations are still spread by the strategy."
+            />
           ) : null}
         </div>
 

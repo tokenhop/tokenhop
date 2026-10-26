@@ -110,6 +110,34 @@ describe("PATCH /api/settings comboStrategyPatch after rename", () => {
   const stale = (name) =>
     settingsPatch({ comboStrategyPatch: { name, patch: { weights: { m: 1 } } } });
 
+  it("the editor's unchanged models PUT plus full strategy affinity toggle preserves pins", async () => {
+    const name = "affinityOnlyEditor";
+    const created = await (await comboPost(name)).json();
+    await settingsPatch({
+      comboStrategyPatch: { name, patch: { fallbackStrategy: "round-robin" } },
+    });
+    const { comboPins, comboPinKey } = await import("open-sse/services/cacheAffinity.js");
+    const key = comboPinKey(null, name, "s:editor");
+    comboPins.set(key, "p/a");
+    expect((await comboPut(created.id, { models: [] })).status).toBe(200);
+    expect(comboPins.peek(key)).toBe("p/a");
+    expect(
+      (
+        await settingsPatch({
+          comboStrategyPatch: {
+            name,
+            patch: {
+              fallbackStrategy: "round-robin",
+              cacheAffinity: false,
+            },
+          },
+        })
+      ).status,
+    ).toBe(200);
+    expect(comboPins.peek(key)).toBe("p/a");
+    comboPins.delete(key);
+  });
+
   it("stale weight patch after rename 409s with no strategy write", async () => {
     const created = await (await comboPost("staleRouteCombo")).json();
     const strat = await (

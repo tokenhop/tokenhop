@@ -2,33 +2,33 @@
 // Combo rotation/poller/autoping need the same invalidation on both paths;
 // only the stored object differs (instance blob vs merged workspace view).
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { planRoutingResets } from "./routingResetPlan.js";
 
 /**
  * Runtime invalidation after a settings write. Lazy imports keep the heavy
  * provider graphs out of the route's static graph.
  * @param {object} body The patched keys (drives which hooks fire).
  * @param {object} settings The stored result (drives autoping config).
+ * @param {object} [scope]
+ * @param {string} [scope.workspaceId] Workspace whose settings were written: rotation
+ *   and pin resets then touch that workspace only. Omit for the instance settings,
+ *   which every workspace may inherit (global reset).
+ * @param {object} [scope.previous] Settings before the write, same namespace as
+ *   `settings`. Lets a save that changed only `cacheAffinity` (or one provider)
+ *   keep the state it did not change; absent = reset everything in scope.
  */
-export function runSettingsSideEffects(body, settings) {
-  // Invalidate combo rotation state when strategy settings change
-  if (
-    Object.hasOwn(body, "comboStrategy") ||
-    Object.hasOwn(body, "comboStickyRoundRobinLimit") ||
-    Object.hasOwn(body, "comboStrategies") ||
-    Object.hasOwn(body, "comboStrategyPatch")
-  ) {
-    resetComboRotation();
-  }
+export function runSettingsSideEffects(body, settings, { workspaceId, previous } = {}) {
+  const plan = planRoutingResets(body, settings, previous);
+  if (plan.combos) resetComboRotation(undefined, { workspaceId });
 
-  if (
-    Object.hasOwn(body, "fallbackStrategy") ||
-    Object.hasOwn(body, "stickyRoundRobinLimit") ||
-    Object.hasOwn(body, "providerStrategies")
-  ) {
+  if (plan.accounts) {
     // Reset in-memory SWRR state when account strategy changes. Lazy import keeps
     // auth.js's DB imports out of the route's static graph.
+    const providers = plan.accounts === "all" ? [undefined] : [...plan.accounts];
     import("@/sse/services/auth")
-      .then(({ resetAccountSelection }) => resetAccountSelection?.())
+      .then(({ resetAccountSelection }) => {
+        for (const providerId of providers) resetAccountSelection?.(providerId, { workspaceId });
+      })
       .catch((error) => console.warn("[AccountSelection] reset failed:", error.message));
   }
 

@@ -422,18 +422,24 @@ export function getFastestModels(models, comboName, rng = Math.random) {
 
 /**
  * Reset in-memory rotation state when combo/settings change
- * @param {string} [comboName] - Combo name to reset; omit to clear all
+ * @param {string} [comboName] - Combo name (rotation key) to reset; omit to clear all
+ * @param {{ workspaceId?: string|null }} [scope] - With no `comboName`, clear only this
+ *   workspace's rotation/weighted/latency state and pins (keys `${workspaceId}:…`);
+ *   without a workspace id every workspace is reset.
  */
-export function resetComboRotation(comboName) {
+export function resetComboRotation(comboName, { workspaceId = null } = {}) {
+  const states = [comboRotationState, comboWeightedState, comboLatencyState];
   if (comboName) {
-    comboRotationState.delete(comboName);
-    comboWeightedState.delete(comboName);
-    comboLatencyState.delete(comboName);
+    for (const state of states) state.delete(comboName);
     clearComboPins(comboName);
+  } else if (workspaceId) {
+    const prefix = `${workspaceId}:`;
+    for (const state of states) {
+      for (const key of [...state.keys()]) if (key.startsWith(prefix)) state.delete(key);
+    }
+    clearComboPins(undefined, { workspaceId });
   } else {
-    comboRotationState.clear();
-    comboWeightedState.clear();
-    comboLatencyState.clear();
+    for (const state of states) state.clear();
     clearComboPins();
   }
 }
@@ -541,6 +547,10 @@ function createAttemptFeedback(startedAt, record, parent) {
     signal: parent?.signal ?? null,
     isHedged: parent?.isHedged === true,
     pendingSamples: [],
+    // YAN-1222: side effects (account pin writes) that must happen only when this
+    // attempt's member actually served. See commitOnServe()/win().
+    pendingCommits: [],
+    won: false,
     deferRecord(fn) {
       if (attempt.signal?.aborted) return;
       if (parent?.isHedged) parent.deferRecord(fn);
@@ -556,8 +566,38 @@ function createAttemptFeedback(startedAt, record, parent) {
     recordSample(ms, failed) {
       attempt.deferRecord(() => record(ms, failed));
     },
+    /**
+     * Run `fn` once this attempt served and (for nested/hedged attempts) every
+     * enclosing level did too. Dropped when the attempt is cancelled or never
+     * wins (a hedge loser, a member skipped after an empty stream).
+     */
+    commitOnServe(fn, release) {
+      if (attempt.signal?.aborted || attempt.closed) return release?.();
+      const pending = { fn, release };
+      if (attempt.won) attempt.flushCommit(pending);
+      else attempt.pendingCommits.push(pending);
+    },
+    flushCommit({ fn, release }) {
+      if (attempt.signal?.aborted) return release?.();
+      if (parent) {
+        parent.commitOnServe(fn, release);
+        return;
+      }
+      try {
+        fn();
+      } catch {
+        release?.();
+      }
+    },
+    /** This attempt's member was chosen to serve: release its queued commits. */
+    win() {
+      attempt.won = true;
+      for (const pending of attempt.pendingCommits.splice(0)) attempt.flushCommit(pending);
+    },
     close() {
       attempt.settled = true;
+      attempt.closed = true;
+      for (const pending of attempt.pendingCommits.splice(0)) pending.release?.();
     },
     /** @returns {((info: {firstTokenAt?: number|null, error?: any, cancelled?: boolean}) => void)|null} */
     registerStream() {
@@ -627,6 +667,10 @@ function createAttemptFeedback(startedAt, record, parent) {
  * @param {string|null} [options.conversationKey] - Conversation-stable key (resolveConversationKey); null ⇒ no pins
  * @param {boolean} [options.cacheAffinity=false] - Pin each conversation to the member that served it
  *   (round-robin/weighted/fastest only; off for probes). Pinned: no strategy advance, no hedging.
+ *   A first turn writes a provisional pin before any await so a concurrent first turn of the same
+ *   conversation converges on the same member; it is confirmed by the member that serves and
+ *   removed when nothing served.
+ * @param {string|null} [options.workspaceId=null] - Gateway workspace owning the pins (null = legacy)
  * @param {Iterable<string>} [options.pinExclude] - Capacity-adapter-added members; never pinned
  * @param {Function} [options.onFallback] - Awaited before trying the next model: ({ model, status }) => void
  * @param {Function} [options.onAttempt] - Attempt observer: (attempt) => void. Fail-open: any throw is swallowed.
@@ -656,6 +700,7 @@ export async function handleComboChat({
   parentAttempt = null,
   conversationKey = null,
   cacheAffinity = false,
+  workspaceId = null,
   pinExclude = [],
 }) {
   // Cache affinity: a valid pin skips the strategy call entirely (no state advance).
@@ -664,14 +709,19 @@ export async function handleComboChat({
     conversationKey,
     comboStrategy,
     comboName,
+    workspaceId,
     onAttempt,
   });
   const pin = validComboPin(affinityKey, models, { comboStrategy, comboWeights, headroomFn });
   const pinned = pin !== undefined;
   const pinExcludeSet = new Set(pinExclude);
+  let provisional;
+  let repinned = false;
   const repin = (model) => {
     // Capacity-adapter members are never pinned (spec §2): the old pin stays.
-    if (affinityKey && !pinExcludeSet.has(model)) comboPins.set(affinityKey, model);
+    if (!affinityKey || pinExcludeSet.has(model)) return;
+    repinned = true;
+    comboPins.set(affinityKey, model);
   };
 
   // Apply rotation strategy if enabled
@@ -708,6 +758,12 @@ export async function handleComboChat({
     }
   }
 
+  // First turn: claim the leading member now, synchronously, so a concurrent first
+  // turn of this conversation reads it as a pin instead of advancing the strategy.
+  if (affinityKey && !pinned && !pinExcludeSet.has(rotatedModels[0])) {
+    provisional = comboPins.set(affinityKey, rotatedModels[0]);
+  }
+
   // Fastest hedging (per-combo, no global opt-in): after model filters/ranking,
   // only when fastest, outermost, >=2 members and an explicit delay is set.
   // Probes keep their sequential timeline.
@@ -715,47 +771,56 @@ export async function handleComboChat({
   // hedging only with a request-wide fanout budget.
   const hedgeMs =
     comboStrategy === "fastest" &&
-    !parentAttempt &&
+    (!parentAttempt || parentAttempt.serveOnly) &&
     !pinned &&
     typeof onAttempt !== "function" &&
     rotatedModels.length >= 2
       ? hedgeDelayMs
       : 0;
-  if (Number.isInteger(hedgeMs) && hedgeMs > 0 && hedgeMs <= COMBO_HEDGE_DELAY_MAX_MS) {
-    return raceHedgedPair({
-      body,
-      models: rotatedModels,
-      handleSingleModel,
-      log,
-      comboStrategy,
-      onFallback,
-      recordLatency,
-      clientSignal,
-      delayMs: hedgeMs,
-      onServed: repin,
-    });
-  }
+  try {
+    if (Number.isInteger(hedgeMs) && hedgeMs > 0 && hedgeMs <= COMBO_HEDGE_DELAY_MAX_MS) {
+      return await raceHedgedPair({
+        body,
+        models: rotatedModels,
+        handleSingleModel,
+        log,
+        comboStrategy,
+        onFallback,
+        recordLatency,
+        clientSignal,
+        delayMs: hedgeMs,
+        onServed: repin,
+        parentAttempt,
+      });
+    }
 
-  const agg = createAggregator();
-  for (let i = 0; i < rotatedModels.length; i++) {
-    const step = await runMember({
-      body,
-      modelStr: rotatedModels[i],
-      index: i,
-      total: rotatedModels.length,
-      handleSingleModel,
-      log,
-      comboStrategy,
-      onAttempt,
-      onFallback,
-      recordLatency,
-      parentAttempt,
-    });
-    if (step.outcome === "served") repin(rotatedModels[i]);
-    if (step.outcome !== "next") return step.response;
-    agg.add(step);
+    const agg = createAggregator();
+    for (let i = 0; i < rotatedModels.length; i++) {
+      const step = await runMember({
+        body,
+        modelStr: rotatedModels[i],
+        index: i,
+        total: rotatedModels.length,
+        handleSingleModel,
+        log,
+        comboStrategy,
+        onAttempt,
+        onFallback,
+        recordLatency,
+        parentAttempt,
+        trackServe: Boolean(conversationKey),
+      });
+      if (step.outcome === "served") repin(rotatedModels[i]);
+      if (step.outcome !== "next") return step.response;
+      agg.add(step);
+    }
+    return agg.response(log);
+  } finally {
+    // Nothing confirmed the provisional pin: drop it unless a later turn replaced it.
+    if (provisional !== undefined && !repinned && comboPins.version(affinityKey) === provisional) {
+      comboPins.delete(affinityKey);
+    }
   }
-  return agg.response(log);
 }
 
 function cancelledResponse() {
@@ -830,6 +895,7 @@ async function runMember({
   parentAttempt = null,
   signalCtrl = null,
   cancelSignal = null,
+  trackServe = false,
 }) {
   log.info("COMBO", `Trying model ${index + 1}/${total}: ${modelStr}`);
   const attemptStartedAt = Date.now();
@@ -849,18 +915,26 @@ async function runMember({
   // Live "fastest" sampling, a nested-combo ancestor, or a hedged race needs
   // stream feedback.
   const attempt =
-    signalCtrl || parentAttempt || (comboStrategy === "fastest" && typeof onAttempt !== "function")
+    signalCtrl ||
+    parentAttempt ||
+    trackServe ||
+    (comboStrategy === "fastest" && typeof onAttempt !== "function")
       ? createAttemptFeedback(
           attemptStartedAt,
           (ms, failed) => recordLatency(modelStr, ms, failed),
           parentAttempt,
         )
       : null;
+  if (attempt)
+    attempt.serveOnly =
+      !signalCtrl && comboStrategy !== "fastest" && (!parentAttempt || parentAttempt.serveOnly);
   if (signalCtrl) {
     attempt.isHedged = true;
     attempt.signal = signalCtrl.signal;
   }
   if (cancelSignal && attempt) attempt.signal = cancelSignal;
+  attempt?.signal?.addEventListener("abort", () => attempt.close(), { once: true });
+  let served = false;
   // Raced requests mutate the body in place (RTK, prefetch, savers): clone.
   let detachAbort = () => {};
   try {
@@ -959,6 +1033,9 @@ async function runMember({
         outcome: "served",
       });
       log.info("COMBO", `Model ${modelStr} succeeded`);
+      served = true;
+      // A raced attempt wins only through raceHedgedPair (the loser's commits drop).
+      if (!signalCtrl) attempt?.win();
       return { outcome: "served", response: result, attempt };
     }
 
@@ -1092,6 +1169,8 @@ async function runMember({
       } catch {}
     }
     return { outcome: "next", attempt, lastError: error.message || String(error), lastStatus: 500 };
+  } finally {
+    if (!served) attempt?.close();
   }
 }
 
@@ -1114,6 +1193,7 @@ async function raceHedgedPair({
   clientSignal = null,
   delayMs,
   onServed,
+  parentAttempt = null,
 }) {
   log.info("COMBO", `Fastest hedge: ${models[0]} vs delayed ${models[1]} (${delayMs}ms)`);
   const slots = [0, 1].map(() => ({ ctrl: new AbortController(), result: null, started: false }));
@@ -1149,6 +1229,7 @@ async function raceHedgedPair({
       onFallback,
       recordLatency,
       signalCtrl: s.ctrl,
+      parentAttempt,
     })
       // A rejecting member must still settle its slot, or the race hangs.
       .catch((e) => ({
@@ -1201,7 +1282,10 @@ async function raceHedgedPair({
     const loser = slots[1 - winner];
     loser.ctrl.abort();
     slots[winner].result.attempt?.accept?.();
-    if (slots[winner].result.outcome === "served") onServed?.(models[winner]);
+    if (slots[winner].result.outcome === "served") {
+      slots[winner].result.attempt?.win();
+      onServed?.(models[winner]);
+    }
     if (loser.result && loser.result.outcome !== "next") cancelBody(loser.result.response);
     return slots[winner].result.response;
   }
@@ -1227,6 +1311,7 @@ async function raceHedgedPair({
       onAttempt: null,
       onFallback,
       recordLatency,
+      parentAttempt,
       cancelSignal: clientSignal,
     });
     if (step.outcome === "served") onServed?.(models[i]);

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isDeepStrictEqual } from "node:util";
 import { getCombos, getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
 import {
   getCombo,
@@ -110,9 +111,11 @@ export async function PUT(request, { params }) {
     // state still resets after successful write. Scoped combos key rotation
     // by workspace (YAN-364): same name in two workspaces rotates apart.
     const wsId = scope ? prev.workspaceId : null;
-    if (prev?.name) resetComboRotation(comboRotationKey(wsId, prev.name));
-    if (combo.name && combo.name !== prev?.name)
-      resetComboRotation(comboRotationKey(wsId, combo.name));
+    if (prev.name !== combo.name || !isDeepStrictEqual(prev.models, combo.models)) {
+      if (prev?.name) resetComboRotation(comboRotationKey(wsId, prev.name));
+      if (combo.name && combo.name !== prev?.name)
+        resetComboRotation(comboRotationKey(wsId, combo.name));
+    }
 
     import("@/shared/services/quotaSnapshotPoller")
       .then(({ syncQuotaSnapshotPoller }) => syncQuotaSnapshotPoller())

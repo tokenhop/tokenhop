@@ -2,7 +2,12 @@
 
 import { useCallback, useState } from "react";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
-import { loadSettings, loadOwnedMap, patchSettings } from "@/shared/utils/settingsApi";
+import {
+  loadSettings,
+  loadOwnedMap,
+  loadOwnedState,
+  patchSettings,
+} from "@/shared/utils/settingsApi";
 import { stickyLimitError } from "../detailUtils";
 
 /**
@@ -16,6 +21,7 @@ import { stickyLimitError } from "../detailUtils";
 export function useProviderStrategy({ providerId, notifyError }) {
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [globalStrategy, setGlobalStrategy] = useState(null);
+  const [cacheAffinity, setCacheAffinity] = useState(true);
   const [stickyDraft, setStickyDraft] = useState("");
   const [savedSticky, setSavedSticky] = useState("");
   const [globalSticky, setGlobalSticky] = useState(null);
@@ -30,6 +36,7 @@ export function useProviderStrategy({ providerId, notifyError }) {
       });
       const override = data.providerStrategies?.[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
+      setCacheAffinity(override.cacheAffinity !== false);
       setGlobalStrategy(data.fallbackStrategy || null);
       setGlobalSticky(data.stickyRoundRobinLimit ?? null);
       const stored =
@@ -147,17 +154,55 @@ export function useProviderStrategy({ providerId, notifyError }) {
     }
   }, [notifyError, providerId, scope]);
 
+  const changeCacheAffinity = useCallback(
+    async (next) => {
+      const previous = cacheAffinity;
+      setCacheAffinity(next);
+      setSaving(true);
+      setError("");
+      try {
+        const { owned: current, inherited } = await loadOwnedState("providerStrategies", scope, [
+          providerId,
+        ]).catch(() => {
+          throw new Error("Failed to load current provider strategy.");
+        });
+        const override = { ...(current[providerId] || {}) };
+        if (!next) override.cacheAffinity = false;
+        else if (inherited[providerId]?.cacheAffinity === false) override.cacheAffinity = true;
+        else delete override.cacheAffinity;
+        const updated = { ...current };
+        if (Object.keys(override).length === 0) delete updated[providerId];
+        else updated[providerId] = override;
+        if (JSON.stringify(updated) !== JSON.stringify(current)) {
+          await patchSettings({ providerStrategies: updated }, scope).catch((e) => {
+            throw new Error(scope ? e.message : "Failed to save provider strategy.");
+          });
+        }
+      } catch (err) {
+        setCacheAffinity(previous);
+        const message = err instanceof Error ? err.message : "Failed to save provider strategy.";
+        setError(message);
+        notifyError?.(message);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [cacheAffinity, notifyError, providerId, scope],
+  );
+
   return {
     providerStrategy,
     globalStrategy,
     stickyDraft,
     savedSticky,
     globalSticky,
+    cacheAffinity,
     error,
     saving,
     load,
     changeStrategy,
     commitSticky,
     clearStickyOverride,
+    changeCacheAffinity,
   };
 }

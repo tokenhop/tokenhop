@@ -23,6 +23,7 @@ import { principalScope } from "@/lib/users/workspaceScope.js";
 import { handleEstablishedOwnerPassword } from "@/lib/auth/ownerPassword.js";
 import { applyComboStrategyPatch } from "./comboStrategyPatch.js";
 import { runSettingsSideEffects } from "./settingsSideEffects.js";
+import { touchesRoutingState } from "./routingResetPlan.js";
 import {
   handleMultiUserSwitchPatch,
   multiUserSwitchResponse,
@@ -102,7 +103,9 @@ async function safeSettingsResponse(settings) {
 async function handleComboStrategyPatch(body) {
   const result = await applyComboStrategyPatch(body, updateComboStrategies);
   if (result.response) return result.response;
-  runSettingsSideEffects({ comboStrategyPatch: true }, result.settings);
+  runSettingsSideEffects({ comboStrategyPatch: body.comboStrategyPatch }, result.settings, {
+    previous: result.previous,
+  });
   return await safeSettingsResponse(result.settings);
 }
 
@@ -329,7 +332,11 @@ export async function PATCH(request) {
     // A password change signs the owner out everywhere else (ADR-0004). Owner
     // first: if that fails, the old password and sessions stay as they were.
     if (rawNewPassword) await revokeOwnerSessions(request, { passwordHash: body.password });
-    const settings = await updateSettings(body);
+    // Capture the actual transaction input, not a pre-write read that can race
+    // another settings save. Missing snapshot still keeps the fail-safe reset.
+    const snapshot = touchesRoutingState(body) ? {} : undefined;
+    const settings = snapshot ? await updateSettings(body, snapshot) : await updateSettings(body);
+    const previous = snapshot?.previous;
 
     // Full-object reliability edits (nested UI writes) re-resolve here; the
     // sync is additive and never touches other keys.
@@ -353,7 +360,7 @@ export async function PATCH(request) {
         .catch((error) => console.warn("[RequestLogger] settings update failed:", error.message));
     }
 
-    runSettingsSideEffects(body, settings);
+    runSettingsSideEffects(body, settings, { previous });
 
     // YAN-367: audit the change — key names only; secret VALUES never enter the
     // audit path (the helper's allow-list would drop them; names are the signal).
