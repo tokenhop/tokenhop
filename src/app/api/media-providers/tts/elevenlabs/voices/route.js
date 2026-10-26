@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { scopedConnections } from "@/lib/users/workspaceScope.js";
 import { fetchElevenLabsVoices } from "open-sse/handlers/ttsCore.js";
+import { connectionProxyOptions } from "@/lib/network/connectionProxy";
 
 const langNames = new Intl.DisplayNames(["en"], { type: "language" });
 
@@ -22,12 +23,20 @@ export async function GET(request) {
     });
     if (scoped instanceof Response) return scoped;
     const { connections } = scoped;
-    const apiKey = connections[0]?.apiKey;
+    const connection = connections[0];
+    const apiKey = connection?.apiKey;
     if (!apiKey) {
       return NextResponse.json({ error: "No ElevenLabs connection found" }, { status: 400 });
     }
+    const proxyOptions = await connectionProxyOptions(connection);
+    if (!proxyOptions) {
+      return NextResponse.json(
+        { error: "Failed to fetch voices: proxy resolution failed" },
+        { status: 500 },
+      );
+    }
 
-    const voices = await fetchElevenLabsVoices(apiKey);
+    const voices = await fetchElevenLabsVoices(apiKey, proxyOptions);
 
     // Group by all supported languages (verified_languages + labels.language)
     const byLang = {};

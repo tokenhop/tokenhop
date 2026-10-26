@@ -1,4 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// Upstream calls go through proxyAwareFetch, which captures the real fetch at import.
+// Delegate to the per-test global fetch stub instead.
+vi.mock("../../open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
 import { handleTtsCore } from "../../open-sse/handlers/ttsCore.js";
 import { buildTtsProviderModels } from "../../open-sse/config/ttsModels.js";
 
@@ -50,8 +57,11 @@ describe("Gemini TTS", () => {
 
     expect(result.success).toBe(true);
     expect(global.fetch.mock.calls[0][0]).toBe(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent?key=test-key",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent",
     );
+    // Key in a header, never ?key= (YAN-1574: relays log pathname+search).
+    expect(global.fetch.mock.calls[0][1].headers["x-goog-api-key"]).toBe("test-key");
+    expect(String(global.fetch.mock.calls[0][0])).not.toContain("key=");
 
     const sent = JSON.parse(global.fetch.mock.calls[0][1].body);
     expect(sent.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe(
@@ -75,8 +85,10 @@ describe("Gemini TTS", () => {
 
     expect(result.success).toBe(true);
     expect(global.fetch.mock.calls[0][0]).toBe(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=test-key",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent",
     );
+    expect(global.fetch.mock.calls[0][1].headers["x-goog-api-key"]).toBe("test-key");
+    expect(String(global.fetch.mock.calls[0][0])).not.toContain("key=");
 
     const sent = JSON.parse(global.fetch.mock.calls[0][1].body);
     expect(sent.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe(

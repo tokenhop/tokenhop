@@ -7,6 +7,11 @@
 // LIMITS: no timing benchmark; streaming release timing is budgets-gateway's.
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
+
 // featureSwitch reads TOKENHOP_MULTI_USER at module load: set before imports.
 const { executeMock, fetchCalls, savedEnv } = vi.hoisted(() => {
   const savedEnv = {

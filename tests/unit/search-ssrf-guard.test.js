@@ -1,4 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Upstream calls go through proxyAwareFetch, which captures the real fetch at import.
+// Delegate to the per-test global fetch stub instead.
+vi.mock("../../open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
 import { resolveBaseUrl } from "../../open-sse/handlers/search/callers.js";
 import { handleSearchCore } from "../../open-sse/handlers/search/index.js";
 import { SEARXNG_URL } from "../../open-sse/config/runtimeConfig.js";

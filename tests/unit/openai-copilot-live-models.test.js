@@ -154,7 +154,11 @@ describe("github copilot live catalog", () => {
     });
 
     const body = await dashboardModels(conn.id);
-    expect(copilot.refreshCopilotToken).toHaveBeenCalledWith("gh");
+    expect(copilot.refreshCopilotToken).toHaveBeenCalledWith(
+      "gh",
+      console,
+      expect.objectContaining({ connectionProxyEnabled: false }),
+    );
     expect(body.models[0]).toMatchObject({
       id: "gpt-9",
       contextLength: 128000,

@@ -186,3 +186,13 @@ export function proxyOptionsFromConfig(proxy) {
     connectionProxyPoolId: proxy?.proxyPoolId || null,
   };
 }
+
+/**
+ * Resolve a dashboard connection's proxy options; null means fail closed.
+ * @param {object} connection
+ * @returns {Promise<object|null>}
+ */
+export async function connectionProxyOptions(connection) {
+  const proxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+  return proxy.source === "error" ? null : proxyOptionsFromConfig(proxy);
+}

@@ -317,15 +317,19 @@ export async function zedLlmFetch(credentials, path, options = {}) {
   const url = zedUrl(config, "llmBaseUrl", path, ZED_LLM_BASE_URL);
   const buildRequest = async (forceRefresh) => {
     const token = await fetchZedLlmToken(credentials, { ...options, forceRefresh });
-    return proxyAwareFetch(url, {
-      ...options.fetchOptions,
-      headers: {
-        "User-Agent": ZED_CLIENT_USER_AGENT,
-        ...(options.fetchOptions?.headers || {}),
-        Authorization: `Bearer ${token}`,
+    return proxyAwareFetch(
+      url,
+      {
+        ...options.fetchOptions,
+        headers: {
+          "User-Agent": ZED_CLIENT_USER_AGENT,
+          ...(options.fetchOptions?.headers || {}),
+          Authorization: `Bearer ${token}`,
+        },
+        signal: options.signal ?? undefined,
       },
-      signal: options.signal ?? undefined,
-    });
+      options.proxyOptions ?? null,
+    );
   };
 
   let response = await buildRequest(false);

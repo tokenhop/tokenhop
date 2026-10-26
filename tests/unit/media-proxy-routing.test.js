@@ -10,7 +10,7 @@ vi.mock("node:dns/promises", () => ({ lookup: (...a) => lookupMock(...a) }));
 
 const mocks = vi.hoisted(() => ({
   proxyAwareFetch: vi.fn(),
-  resolveConnectionProxyConfig: vi.fn(),
+  getProxyPoolById: vi.fn(),
   refreshTokenByProvider: vi.fn(),
   refreshGoogleToken: vi.fn(),
 }));
@@ -23,10 +23,8 @@ vi.mock("../../open-sse/services/tokenRefresh.js", async (importOriginal) => ({
   ...(await importOriginal()),
   refreshTokenByProvider: mocks.refreshTokenByProvider,
 }));
-vi.mock("@/lib/network/connectionProxy", async (importOriginal) => ({
-  ...(await importOriginal()),
-  resolveConnectionProxyConfig: mocks.resolveConnectionProxyConfig,
-}));
+// Only the pool lookup is mocked; the real connectionProxyOptions runs.
+vi.mock("@/models", () => ({ getProxyPoolById: mocks.getProxyPoolById }));
 vi.mock("@/sse/services/tokenRefresh", async (importOriginal) => ({
   ...(await importOriginal()),
   refreshGoogleToken: mocks.refreshGoogleToken,
@@ -69,7 +67,7 @@ const silentLog = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: 
 
 beforeEach(() => {
   mocks.proxyAwareFetch.mockReset();
-  mocks.resolveConnectionProxyConfig.mockReset();
+  mocks.getProxyPoolById.mockReset();
   mocks.refreshTokenByProvider.mockReset();
   mocks.refreshGoogleToken.mockReset();
   // A plain (proxy-bypassing) fetch is a failure, and must never reach the network.
@@ -455,17 +453,15 @@ describe("upstream media requests use the connection proxy", () => {
 });
 
 describe("dashboard Google model catalogs use the connection proxy", () => {
-  const POOL_CONFIG = {
-    source: "pool",
-    proxyPoolId: "pool-1",
-    connectionProxyEnabled: true,
-    connectionProxyUrl: "http://pool.example:8080",
-    connectionNoProxy: "",
+  const POOL_ROW = {
+    isActive: true,
+    proxyUrl: "http://pool.example:8080",
+    noProxy: "",
     strictProxy: true,
   };
 
   it("gemini-cli catalog fetch and its 401 refresh", async () => {
-    mocks.resolveConnectionProxyConfig.mockResolvedValue(POOL_CONFIG);
+    mocks.getProxyPoolById.mockResolvedValue(POOL_ROW);
     mocks.refreshGoogleToken.mockResolvedValue({ accessToken: "at-new" });
     mocks.proxyAwareFetch
       .mockResolvedValueOnce(new Response("expired", { status: 401 }))
@@ -492,14 +488,17 @@ describe("dashboard Google model catalogs use the connection proxy", () => {
   });
 
   it("gemini (AI Studio) catalog fetch", async () => {
-    mocks.resolveConnectionProxyConfig.mockResolvedValue(POOL_CONFIG);
+    mocks.getProxyPoolById.mockResolvedValue(POOL_ROW);
     mocks.proxyAwareFetch.mockResolvedValue(
       json({
         models: [{ name: "models/gemini-9", supportedGenerationMethods: ["generateContent"] }],
       }),
     );
 
-    const result = await resolveGemini({ apiKey: "AIza-key", providerSpecificData: {} });
+    const result = await resolveGemini({
+      apiKey: "AIza-key",
+      providerSpecificData: { proxyPoolId: "pool-1" },
+    });
 
     expect(result.models.map((m) => m.id)).toContain("gemini-9");
     expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
@@ -510,7 +509,7 @@ describe("dashboard Google model catalogs use the connection proxy", () => {
   });
 
   it("antigravity catalog fetch", async () => {
-    mocks.resolveConnectionProxyConfig.mockResolvedValue(POOL_CONFIG);
+    mocks.getProxyPoolById.mockResolvedValue(POOL_ROW);
     mocks.proxyAwareFetch.mockResolvedValue(
       json({ models: { "claude-sonnet-4-6": { displayName: "Sonnet" } } }),
     );
@@ -530,10 +529,17 @@ describe("dashboard Google model catalogs use the connection proxy", () => {
   });
 
   it("fails closed when the proxy cannot be resolved", async () => {
-    mocks.resolveConnectionProxyConfig.mockResolvedValue({ source: "error" });
+    mocks.getProxyPoolById.mockRejectedValue(new Error("db down"));
 
-    const cli = await resolveGeminiCli({ accessToken: "at", projectId: "proj-1" });
-    const studio = await resolveGemini({ apiKey: "AIza-key" });
+    const cli = await resolveGeminiCli({
+      accessToken: "at",
+      projectId: "proj-1",
+      providerSpecificData: { proxyPoolId: "pool-1" },
+    });
+    const studio = await resolveGemini({
+      apiKey: "AIza-key",
+      providerSpecificData: { proxyPoolId: "pool-1" },
+    });
 
     expect(cli.models).toEqual([]);
     expect(cli.warning).toMatch(/proxy resolution failed/);

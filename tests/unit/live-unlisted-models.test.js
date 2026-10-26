@@ -2,6 +2,11 @@
 // after a non-empty live fetch (YAN-1244), not just GLM.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
+vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
+
 vi.mock("open-sse/config/providerModels.js", async (importOriginal) => {
   const original = await importOriginal();
   return {

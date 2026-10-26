@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+// Upstream calls go through proxyAwareFetch, which captures the real fetch at import.
+// Delegate to the per-test global fetch stub instead.
+vi.mock("../../open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options, proxyOptions) => globalThis.fetch(url, options, proxyOptions),
+}));
+
 // Regression coverage for #3714: the SSRF guard's literal-hostname/IP checks
 // matched specific textual representations rather than the underlying address,
 // so a different (but equivalent) representation slipped through. Each case
@@ -205,6 +212,31 @@ describe("fetchTrusted: operator-configured URLs (YAN-658)", () => {
     const res = await fetchTrusted("http://localhost:8888/search");
     expect(await res.text()).toBe("ok");
     expect(String(global.fetch.mock.calls[1][0])).toBe("http://localhost:8888/search?q=test");
+  });
+
+  it("keeps the same proxyOptions on every redirect hop", async () => {
+    const proxyOptions = {
+      connectionProxyEnabled: true,
+      connectionProxyUrl: "http://pool.example:8080",
+      connectionNoProxy: "",
+      vercelRelayUrl: "",
+      strictProxy: true,
+      connectionProxyPoolId: "pool-1",
+    };
+    const calls = [];
+    global.fetch = vi.fn(async (_url, _options, third) => {
+      calls.push(third);
+      return calls.length === 1
+        ? new Response(null, { status: 302, headers: { Location: "/search?q=hop2" } })
+        : new Response("ok", { status: 200 });
+    });
+
+    const res = await fetchTrusted("http://localhost:8888/search?q=hop1", {}, {}, proxyOptions);
+
+    expect(await res.text()).toBe("ok");
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(calls[0]).toEqual(proxyOptions);
+    expect(calls[1]).toEqual(proxyOptions);
   });
 
   it("blocks a redirect to a different origin", async () => {

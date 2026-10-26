@@ -3,6 +3,11 @@
 // live model list never loaded and new models had to be added by hand.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
+vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
+
 const tokenMocks = vi.hoisted(() => ({
   refreshClaudeOAuthToken: vi.fn(),
   updateProviderCredentials: vi.fn(async () => true),
@@ -151,7 +156,10 @@ describe("Claude live models", () => {
       "claude-opus-5-5",
       "claude-opus-5",
     ]);
-    expect(tokenMocks.refreshClaudeOAuthToken).toHaveBeenCalledWith("old-refresh");
+    expect(tokenMocks.refreshClaudeOAuthToken).toHaveBeenCalledWith(
+      "old-refresh",
+      expect.objectContaining({ connectionProxyEnabled: false }),
+    );
     expect(tokenMocks.updateProviderCredentials).toHaveBeenCalledWith(
       conn.id,
       expect.objectContaining({ accessToken: "fresh-token", refreshToken: "fresh-refresh" }),

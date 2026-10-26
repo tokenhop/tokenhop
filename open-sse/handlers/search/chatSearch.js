@@ -4,6 +4,8 @@
  * minimax, perplexity.
  */
 import { PROVIDER_MEDIA } from "../../providers/index.js";
+import { proxyOptionsFromCredentials } from "../../utils/connectionProxyOptions.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { ANTIGRAVITY_IDE_USER_AGENT } from "../../providers/shared.js";
 import { buildKimiHeaders } from "../../config/appConstants.js";
 
@@ -520,6 +522,8 @@ export async function handleChatSearch({ provider, query, maxResults, model, cre
   const body = cfg.buildBody(query, useModel, credentials);
   const headers = { ...cfg.buildHeaders(token), ...cfg.extraHeaders?.(credentials) };
 
+  const proxyOptions = proxyOptionsFromCredentials(credentials);
+
   // Covers direct + follow-up turns; cleared via fail() or the finally block.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -528,12 +532,16 @@ export async function handleChatSearch({ provider, query, maxResults, model, cre
   const doFetch = async (reqBody) => {
     const upstreamStart = Date.now();
     try {
-      const r = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(reqBody),
-        signal: controller.signal,
-      });
+      const r = await proxyAwareFetch(
+        url,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(reqBody),
+          signal: controller.signal,
+        },
+        proxyOptions,
+      );
       const d = await r.json().catch(() => null);
       return { resp: r, data: d, latency: Date.now() - upstreamStart };
     } catch (err) {

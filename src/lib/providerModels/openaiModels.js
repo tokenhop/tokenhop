@@ -3,6 +3,8 @@
 // the id, else from the id pattern. Ids no tokenhop route can serve are dropped.
 
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
+import { connectionProxyOptions } from "@/lib/network/connectionProxy";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 
 const OPENAI_MODELS_URL = "https://api.openai.com/v1/models";
 const FETCH_TIMEOUT_MS = 10_000;
@@ -53,11 +55,19 @@ export function parseOpenAIModels(body, staticModels = getModelsByProviderId("op
 
 export async function resolveOpenAI(connection) {
   if (!connection.apiKey) return { models: [], warning: "No valid token found" };
-  const response = await fetch(OPENAI_MODELS_URL, {
-    headers: { Authorization: `Bearer ${connection.apiKey}`, Accept: "application/json" },
-    // Failures aren't cached, so an unbounded hang would stall every /v1/models call.
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  const proxyOptions = await connectionProxyOptions(connection);
+  if (!proxyOptions) {
+    return { models: [], warning: "Failed to fetch OpenAI models: proxy resolution failed" };
+  }
+  const response = await proxyAwareFetch(
+    OPENAI_MODELS_URL,
+    {
+      headers: { Authorization: `Bearer ${connection.apiKey}`, Accept: "application/json" },
+      // Failures aren't cached, so an unbounded hang would stall every /v1/models call.
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    },
+    proxyOptions,
+  );
   if (!response.ok) {
     return {
       models: [],

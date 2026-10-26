@@ -5,6 +5,8 @@
 import { refreshTokenByProvider } from "@/sse/services/tokenRefresh";
 import { buildOAuthResolver } from "@/lib/providerModels/oauthResolver.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
+import { connectionProxyOptions } from "@/lib/network/connectionProxy";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 
 const XAI_API_BASE = "https://api.x.ai/v1";
 const XAI_LANGUAGE_MODELS_URL = `${XAI_API_BASE}/language-models`;
@@ -47,22 +49,28 @@ export function reconcileXaiAliases(liveModels, staticModels) {
   return result;
 }
 
-const fetchList = (url, token) =>
-  fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+const fetchList = (url, token, proxyOptions) =>
+  proxyAwareFetch(
+    url,
+    { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } },
+    proxyOptions,
+  );
 
 // The language list decides success (and drives the OAuth refresh); the media
 // lists are fetched with the token that worked.
-const fetchLanguageModels = (token) => fetchList(XAI_LANGUAGE_MODELS_URL, token);
+const fetchLanguageModels = (token, proxyOptions) =>
+  fetchList(XAI_LANGUAGE_MODELS_URL, token, proxyOptions);
 
-const resolveXaiOAuth = buildOAuthResolver({
-  refreshFn: (conn) => refreshTokenByProvider("xai", conn),
-  fetchFn: fetchLanguageModels,
-  parseFn: (body) => parseXaiModels(body),
-  errorLabel: "Failed to fetch xAI models",
-});
+const resolveXaiOAuth = (connection, proxyOptions) =>
+  buildOAuthResolver({
+    refreshFn: (conn) => refreshTokenByProvider("xai", conn, proxyOptions),
+    fetchFn: (token) => fetchLanguageModels(token, proxyOptions),
+    parseFn: (body) => parseXaiModels(body),
+    errorLabel: "Failed to fetch xAI models",
+  })(connection);
 
-async function resolveXaiApiKey(connection) {
-  const response = await fetchLanguageModels(connection.apiKey);
+async function resolveXaiApiKey(connection, proxyOptions) {
+  const response = await fetchLanguageModels(connection.apiKey, proxyOptions);
   if (!response.ok) {
     return {
       models: [],
@@ -72,11 +80,11 @@ async function resolveXaiApiKey(connection) {
   return { models: parseXaiModels(await response.json()) };
 }
 
-async function fetchOptionalLists(token, staticModels) {
+async function fetchOptionalLists(token, staticModels, proxyOptions) {
   const lists = await Promise.all(
     XAI_OPTIONAL_LISTS.map(async ({ kind, url }) => {
       try {
-        const response = await fetchList(url, token);
+        const response = await fetchList(url, token, proxyOptions);
         if (response.ok) return parseXaiModels(await response.json(), kind);
         console.log(`xAI ${kind} model list failed (${response.status}); keeping static entries`);
       } catch (error) {
@@ -93,10 +101,14 @@ export async function resolveXai(connection) {
     return { models: [], warning: "No valid token found" };
   }
 
+  const proxyOptions = await connectionProxyOptions(connection);
+  if (!proxyOptions) {
+    return { models: [], warning: "Failed to fetch xAI models: proxy resolution failed" };
+  }
   // Same precedence as chat requests (executors send apiKey || accessToken).
   const result = connection.apiKey
-    ? await resolveXaiApiKey(connection)
-    : await resolveXaiOAuth(connection);
+    ? await resolveXaiApiKey(connection, proxyOptions)
+    : await resolveXaiOAuth(connection, proxyOptions);
   const warning = result.error || result.warning;
   if (!result.models?.length) {
     return { models: [], warning: warning || "xAI returned no live models." };
@@ -104,6 +116,10 @@ export async function resolveXai(connection) {
 
   const staticModels = getModelsByProviderId("xai");
   // OAuth may have refreshed the token in place.
-  const media = await fetchOptionalLists(connection.apiKey || connection.accessToken, staticModels);
+  const media = await fetchOptionalLists(
+    connection.apiKey || connection.accessToken,
+    staticModels,
+    proxyOptions,
+  );
   return { models: reconcileXaiAliases([...result.models, ...media], staticModels) };
 }

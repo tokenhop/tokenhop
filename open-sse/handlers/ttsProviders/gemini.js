@@ -1,5 +1,7 @@
 // Gemini TTS — generateContent with AUDIO modality returns PCM L16, wrap as WAV
 import { Buffer } from "node:buffer";
+import { proxyOptionsFromCredentials } from "../../utils/connectionProxyOptions.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { PROVIDER_MEDIA, PROVIDER_MODELS } from "../../providers/index.js";
 
 const TTS_CFG = PROVIDER_MEDIA["gemini"]?.ttsConfig || {};
@@ -62,18 +64,24 @@ export default {
   async synthesize(text, model, credentials, _responseFormat, opts = {}) {
     if (!credentials?.apiKey) throw new Error("No Gemini API key configured");
     const { modelId, voiceId } = parseGeminiModelVoice(model);
-    const url = `${TTS_BASE}/${modelId}:generateContent?key=${credentials.apiKey}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: buildPrompt(text, opts.language) }] }],
-        generationConfig: {
-          responseModalities: ["AUDIO"],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceId } } },
-        },
-      }),
-    });
+    const proxyOptions = proxyOptionsFromCredentials(credentials);
+    // Key in a header, not ?key= — proxy relays log pathname+search (YAN-1574).
+    const url = `${TTS_BASE}/${modelId}:generateContent`;
+    const res = await proxyAwareFetch(
+      url,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": credentials.apiKey },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: buildPrompt(text, opts.language) }] }],
+          generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceId } } },
+          },
+        }),
+      },
+      proxyOptions,
+    );
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err?.error?.message || `Gemini TTS failed: ${res.status}`);

@@ -102,7 +102,7 @@ export default class TraeExecutor extends BaseExecutor {
   }
 
   // POST /chat_sessions — creates a session and submits the first turn.
-  async createSession(headers, query, model, psd, signal) {
+  async createSession(headers, query, model, psd, signal, proxyOptions = null) {
     const { mode, strategy, modelName } = this.resolveMode(model);
     const body = {
       mode,
@@ -128,7 +128,7 @@ export default class TraeExecutor extends BaseExecutor {
         body: JSON.stringify(body),
         signal,
       },
-      null,
+      proxyOptions,
     );
     const text = await res.text();
     if (!res.ok) throw new Error(`[${res.status}] ${text}`);
@@ -139,7 +139,7 @@ export default class TraeExecutor extends BaseExecutor {
 
   // GET /events SSE → invoke onEvent(eventType, dataObj) per frame.
   // Resolves when `done`/`error` arrives, the stream ends, or timeout fires.
-  async streamEvents(headers, sessionId, replyTo, onEvent, signal) {
+  async streamEvents(headers, sessionId, replyTo, onEvent, signal, proxyOptions = null) {
     const url = `${this.base()}/chat_sessions/${sessionId}/events?reply_to_message_id=${encodeURIComponent(replyTo)}`;
     const ctrl = new AbortController();
     if (signal?.aborted) ctrl.abort();
@@ -147,7 +147,11 @@ export default class TraeExecutor extends BaseExecutor {
     const onAbort = () => ctrl.abort();
     if (signal) signal.addEventListener("abort", onAbort, { once: true });
     try {
-      const res = await proxyAwareFetch(url, { method: "GET", headers, signal: ctrl.signal }, null);
+      const res = await proxyAwareFetch(
+        url,
+        { method: "GET", headers, signal: ctrl.signal },
+        proxyOptions,
+      );
       if (!res.ok || !res.body) throw new Error(`[${res.status}] events stream failed`);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -183,7 +187,7 @@ export default class TraeExecutor extends BaseExecutor {
     }
   }
 
-  async execute({ model, body, stream, credentials, signal }) {
+  async execute({ model, body, stream, credentials, signal, proxyOptions = null }) {
     const headers = this.buildHeaders(credentials, stream !== false);
     const psd = credentials?.providerSpecificData || {};
     const query = flattenQuery(body?.messages || []);
@@ -198,7 +202,7 @@ export default class TraeExecutor extends BaseExecutor {
 
     let session;
     try {
-      session = await this.createSession(headers, query, model, psd, signal);
+      session = await this.createSession(headers, query, model, psd, signal, proxyOptions);
     } catch (err) {
       return {
         response: errResponse(502, err?.message ? String(err.message) : String(err)),
@@ -264,6 +268,7 @@ export default class TraeExecutor extends BaseExecutor {
                 return ev === "done";
               },
               signal,
+              proxyOptions,
             );
             if (errorEvent) {
               emit({
@@ -338,6 +343,7 @@ export default class TraeExecutor extends BaseExecutor {
           return ev === "done";
         },
         signal,
+        proxyOptions,
       );
     } catch (err) {
       return {

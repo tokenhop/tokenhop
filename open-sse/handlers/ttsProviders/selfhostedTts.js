@@ -5,6 +5,8 @@
 // (`synthesizeViaConfig` reads `cfg.baseUrl`) and never looks at the connection,
 // which is exactly the limitation this provider exists to lift.
 import { Buffer } from "node:buffer";
+import { proxyOptionsFromCredentials } from "../../utils/connectionProxyOptions.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 
 const DEFAULT_BASE_URL = "http://localhost:8880";
 const DEFAULT_MODEL = "kokoro";
@@ -49,19 +51,24 @@ export default {
     }
 
     const format = options.format || "mp3";
-    const res = await fetch(`${base}/v1/audio/speech`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(credentials?.apiKey ? { Authorization: `Bearer ${credentials.apiKey}` } : {}),
+    const proxyOptions = proxyOptionsFromCredentials(credentials);
+    const res = await proxyAwareFetch(
+      `${base}/v1/audio/speech`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(credentials?.apiKey ? { Authorization: `Bearer ${credentials.apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model: ttsModel,
+          voice,
+          input: text,
+          response_format: format,
+        }),
       },
-      body: JSON.stringify({
-        model: ttsModel,
-        voice,
-        input: text,
-        response_format: format,
-      }),
-    });
+      proxyOptions,
+    );
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err?.error?.message || `Self-hosted TTS failed: ${res.status}`);

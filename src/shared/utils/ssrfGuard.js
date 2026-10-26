@@ -19,6 +19,7 @@
 // same address to hex form ("::ffff:7f00:1") — a mismatch, not an oversight.
 
 import dns from "node:dns";
+import { proxyAwareFetch } from "../../../open-sse/utils/proxyFetch.js";
 
 const BLOCKED_HOSTNAMES = new Set(["localhost", "ip6-localhost", "ip6-loopback"]);
 const BLOCKED_SUFFIXES = [".internal", ".local", ".localhost"];
@@ -224,11 +225,13 @@ export async function fetchPublic(url, init = {}, { maxRedirects = 5 } = {}) {
 // a private network — so there is no assert* call at all (YAN-658). Redirects
 // are still handled manually and only followed within the same origin, so a
 // redirect can't bounce request credentials (Authorization header, api key in
-// the query string) to a host the operator didn't configure.
-export async function fetchTrusted(url, init = {}, { maxRedirects = 5 } = {}) {
+// the query string) to a host the operator didn't configure. proxyOptions
+// routes every hop through the connection proxy (pool / relay / Strict Proxy);
+// null keeps the env-proxy behaviour.
+export async function fetchTrusted(url, init = {}, { maxRedirects = 5 } = {}, proxyOptions = null) {
   let currentUrl = url;
   for (let hop = 0; ; hop++) {
-    const res = await fetch(currentUrl, { ...init, redirect: "manual" });
+    const res = await proxyAwareFetch(currentUrl, { ...init, redirect: "manual" }, proxyOptions);
     const isRedirect = res.status >= 300 && res.status < 400;
     const location = isRedirect ? res.headers.get("location") : null;
     if (!location) return res;

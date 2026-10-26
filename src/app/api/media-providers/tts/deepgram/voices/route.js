@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { scopedConnections } from "@/lib/users/workspaceScope.js";
+import { connectionProxyOptions } from "@/lib/network/connectionProxy";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 
 const langNames = new Intl.DisplayNames(["en"], { type: "language" });
 
@@ -24,9 +26,19 @@ export async function GET(request) {
     if (!apiKey)
       return NextResponse.json({ error: "No Deepgram connection found" }, { status: 400 });
 
-    const res = await fetch("https://api.deepgram.com/v1/models", {
-      headers: { Authorization: `Token ${apiKey}` },
-    });
+    const proxyOptions = await connectionProxyOptions(connections[0]);
+    if (!proxyOptions) {
+      return NextResponse.json(
+        { error: "Failed to fetch voices: proxy resolution failed" },
+        { status: 500 },
+      );
+    }
+
+    const res = await proxyAwareFetch(
+      "https://api.deepgram.com/v1/models",
+      { headers: { Authorization: `Token ${apiKey}` } },
+      proxyOptions,
+    );
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       return NextResponse.json(

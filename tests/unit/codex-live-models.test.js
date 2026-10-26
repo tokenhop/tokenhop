@@ -2,6 +2,11 @@
 // the dashboard (GET /api/providers/[id]/models) and the gateway (/v1/models).
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
+vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
+
 const tokenMocks = vi.hoisted(() => ({
   updateProviderCredentials: vi.fn(async () => true),
 }));

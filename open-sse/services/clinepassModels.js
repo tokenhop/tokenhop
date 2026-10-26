@@ -1,4 +1,6 @@
 import { buildClineHeaders } from "../shared/clineAuth.js";
+import { proxyOptionsFromCredentials } from "../utils/connectionProxyOptions.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 const CLINEPASS_MODELS_ENDPOINT = "https://api.cline.bot/api/v1/models";
 const FETCH_TIMEOUT_MS = 5000;
@@ -22,10 +24,11 @@ function buildModelListHeaders(token, isApiKey) {
  * Internal: fetch the raw model list from Cline's /models endpoint.
  * Returns the parsed array or null on any failure.
  */
-async function fetchClineRawModels(credentials) {
+async function fetchClineRawModels(credentials, options = {}) {
   const isApiKey = Boolean(credentials?.apiKey);
   const token = isApiKey ? credentials.apiKey : credentials?.accessToken;
   if (!token) return null;
+  const proxyOptions = options.proxyOptions ?? proxyOptionsFromCredentials(credentials);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -33,11 +36,15 @@ async function fetchClineRawModels(credentials) {
   try {
     const headers = buildModelListHeaders(token, isApiKey);
 
-    const response = await fetch(CLINEPASS_MODELS_ENDPOINT, {
-      method: "GET",
-      headers,
-      signal: controller.signal,
-    });
+    const response = await proxyAwareFetch(
+      CLINEPASS_MODELS_ENDPOINT,
+      {
+        method: "GET",
+        headers,
+        signal: controller.signal,
+      },
+      proxyOptions,
+    );
 
     if (!response.ok) return null;
 
@@ -56,10 +63,11 @@ async function fetchClineRawModels(credentials) {
  * Returns only models with the cline-pass/ prefix.
  *
  * @param {object} credentials - Connection credentials ({ accessToken, apiKey })
+ * @param {object} [options] - Explicit proxy options.
  * @returns {Promise<{ models: { id: string, name: string }[] } | null>}
  */
-export async function resolveClinepassModels(credentials) {
-  const rawList = await fetchClineRawModels(credentials);
+export async function resolveClinepassModels(credentials, options = {}) {
+  const rawList = await fetchClineRawModels(credentials, options);
   if (!rawList) return null;
 
   const models = rawList
@@ -78,10 +86,11 @@ export async function resolveClinepassModels(credentials) {
  * free-tier models like z-ai/glm-5.3-flash) without the cline-pass/ prefix filter.
  *
  * @param {object} credentials - Connection credentials ({ accessToken, apiKey })
+ * @param {object} [options] - Explicit proxy options.
  * @returns {Promise<{ models: { id: string, name: string }[] } | null>}
  */
-export async function resolveClineModels(credentials) {
-  const rawList = await fetchClineRawModels(credentials);
+export async function resolveClineModels(credentials, options = {}) {
+  const rawList = await fetchClineRawModels(credentials, options);
   if (!rawList) return null;
 
   const models = rawList
