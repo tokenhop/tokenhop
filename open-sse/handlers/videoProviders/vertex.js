@@ -8,7 +8,11 @@
 //
 // The operation name is a resource path (contains "/"), so it is base64url-encoded
 // into the job id returned to the client — GET /v1/videos/{id} stays a flat path.
-import { parseVertexSaJson, refreshVertexToken } from "../../services/tokenRefresh.js";
+import {
+  canServeVertexVideo,
+  parseVertexSaJson,
+  refreshVertexToken,
+} from "../../services/tokenRefresh.js";
 
 const DEFAULT_LOCATION = "us-central1";
 
@@ -56,7 +60,7 @@ async function resolveAuth(credentials, log, proxyOptions) {
       return { error: "Vertex video: failed to mint access token from service account JSON" };
     token = minted.accessToken;
   }
-  if (!token)
+  if (!canServeVertexVideo({ ...credentials, accessToken: token }))
     return {
       error:
         "Vertex video requires Service Account JSON or an OAuth access token (raw API keys are not supported)",

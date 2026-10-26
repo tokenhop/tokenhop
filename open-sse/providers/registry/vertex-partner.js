@@ -17,6 +17,7 @@ export default {
   },
   category: "apikey",
   sharing: "shareable",
+  features: { liveModels: true },
   transport: {
     baseUrl: "https://aiplatform.googleapis.com",
   },
