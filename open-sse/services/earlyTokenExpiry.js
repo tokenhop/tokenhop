@@ -17,6 +17,9 @@ const TOKEN_EXPIRED_MESSAGE = "your authentication token has expired";
 // prefix before JSON.parse so classifiers see the structured payload.
 const STATUS_PREFIX = /^\[\d{3}\]:\s*/;
 
+// "token_revoked" is a code; "Token was revoked" is a sentence.
+const isCodeLike = (v) => /^[a-z0-9_.-]+$/i.test(v);
+
 /** Parse a 401 body that may carry the "[status]: " wrapper. Returns JSON or null. */
 export function parseErrorBody(text) {
   if (typeof text !== "string" || !text) return null;
@@ -36,6 +39,7 @@ const REJECTION_CODES = new Set([
   "token_revoked",
   "invalid_token",
   "invalid_api_key",
+  "account_deactivated",
 ]);
 const REJECTION_MESSAGES = ["invalidated", "revoked", "invalid token", "incorrect api key"];
 
@@ -62,25 +66,43 @@ export function isTokenExpiredBody(text) {
 
 /**
  * YAN-1288: classify a 401 body as a conclusive access-token rejection.
- * Structured codes: only the REJECTION_CODES allowlist flags; a known
- * non-rejection code (`account_deactivated`) maps to "unknown"; every other
- * structured code is inconclusive → null, so an unrecognized 401 keeps
- * today's short lock and is never flagged. Message wording matches return
- * "unknown" (no allowlisted code exists for them).
+ * A structured code (`error.code`, a string `error`, `code`, `detail.code`)
+ * flags only when it is in the REJECTION_CODES allowlist and is returned as
+ * is. A string `error` that is not a code is treated as a message. Message
+ * wording (`error.message`, `message`, `detail`, `detail.message`) returns
+ * "unknown". Any other structured code is inconclusive → null, so an
+ * unrecognized 401 keeps today's short lock and is never flagged. Wording is
+ * only ever scanned in message fields of a parsed body, never the raw JSON.
  */
 export function classifyAccessTokenRejection(text) {
   const json = parseErrorBody(text);
   const err = json?.error;
-  const code = typeof err === "string" ? err : (err?.code ?? json?.code);
-  if (typeof code === "string" && code) {
+  const detail = json?.detail;
+  const str = (v) => (typeof v === "string" && v ? v : null);
+
+  const stringError = str(err);
+  const code =
+    (stringError && isCodeLike(stringError) ? stringError : null) ??
+    str(err?.code) ??
+    str(json?.code) ??
+    str(detail?.code);
+  if (code) {
     if (code === TOKEN_EXPIRED_CODE) return null;
-    if (REJECTION_CODES.has(code)) return code;
-    return code === "account_deactivated" ? "unknown" : null;
+    return REJECTION_CODES.has(code) ? code : null;
   }
-  const message = typeof err?.message === "string" ? err.message : (json?.message ?? null);
-  const haystack = typeof message === "string" ? message : json ? null : text;
-  if (typeof haystack === "string" && haystack) {
-    const lower = haystack.toLowerCase();
+
+  const messages = [
+    stringError,
+    str(err?.message),
+    str(json?.message),
+    str(detail),
+    str(detail?.message),
+  ];
+  // Non-JSON text: the whole string is the message.
+  if (!json && typeof text === "string" && text) messages.push(text);
+  for (const m of messages) {
+    if (!m) continue;
+    const lower = m.toLowerCase();
     if (REJECTION_MESSAGES.some((w) => lower.includes(w))) return "unknown";
   }
   return null;

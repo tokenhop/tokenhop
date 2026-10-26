@@ -967,8 +967,10 @@ async function runMember({
 
     // Extract error info from response
     let errorText = result.statusText || "";
+    let errorCode = null;
     try {
       const errorBody = await result.clone().json();
+      errorCode = errorBody?.error?.code ?? null;
       errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
     } catch {
       // Ignore JSON parse errors
@@ -1022,8 +1024,7 @@ async function runMember({
     // 503). A hedged race already has the backup in flight: no wait.
     // YAN-1286: a 503 reauth_required answer is a user action away, not a
     // transient blip: advance immediately whatever the policy cooldown says.
-    const reauthRequired =
-      result.status === 503 && /"code"\s*:\s*"reauth_required"/.test(errorText);
+    const reauthRequired = result.status === 503 && errorCode === "reauth_required";
     if (
       !signalCtrl &&
       !reauthRequired &&

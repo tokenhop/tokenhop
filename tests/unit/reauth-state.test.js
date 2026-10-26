@@ -40,6 +40,7 @@ describe("reauthConstants", () => {
       "token_revoked",
       "invalid_token",
       "invalid_api_key",
+      "account_deactivated",
       "unknown",
     ]);
     expect(consts.REAUTH_LAST_ERROR).toEqual({
@@ -63,7 +64,18 @@ describe("reauthConstants", () => {
     );
     expect(src).toContain(`"${consts.REAUTH_LAST_ERROR.refresh_token_rejected}"`);
     expect(src).toContain(`"${consts.REAUTH_LAST_ERROR.access_token_expired}"`);
-    expect(src).toContain(`"${consts.REAUTH_LAST_ERROR.access_token_rejected}"`);
+  });
+
+  it("the rejected lastError is a credential failure the dashboard labels 'Token revoked'", async () => {
+    const { connectionHealth } = await import("../../src/shared/utils/providerHealth.js");
+    const health = connectionHealth({
+      provider: "codex",
+      authType: "oauth",
+      isActive: true,
+      testStatus: "error",
+      lastError: consts.REAUTH_LAST_ERROR.access_token_rejected,
+    });
+    expect(health.reason).toBe("Token revoked · reconnect");
   });
 });
 

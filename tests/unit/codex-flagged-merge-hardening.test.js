@@ -157,11 +157,11 @@ describe("F2: flagged-replacement respects the creator (security)", () => {
   });
 });
 
-describe("F4: flagged merge keeps the existing name and email", () => {
-  it("a reconnect without a name does not rename, and a null email does not wipe", async () => {
+describe("flagged merge keeps the existing name and email", () => {
+  it("a reconnect without a name does not rename the row or touch its email", async () => {
     const first = await freshOauthFlagged("f4@example.com", "acct-f4");
 
-    // Reconnect with new tokens but neither a new name nor an email payload.
+    // Reconnect with new tokens, same email, no name.
     await db.createProviderConnectionUnscoped({
       provider: "codex",
       authType: "oauth",
@@ -177,5 +177,76 @@ describe("F4: flagged merge keeps the existing name and email", () => {
     expect(row.name).toBe("row-f4@example.com");
     expect(row.email).toBe("f4@example.com");
     expect(row.reauthRequired ?? null).toBeNull();
+  });
+});
+
+describe("expired but unflagged access_token rows are replaced by a re-import", () => {
+  const jwt = (expOffsetMs) =>
+    `h.${Buffer.from(JSON.stringify({ exp: Math.floor((Date.now() + expOffsetMs) / 1000) })).toString("base64url")}.s`;
+
+  it("an expired unflagged row + re-import of the same account → one live row", async () => {
+    const first = await db.createProviderConnectionUnscoped({
+      provider: "codex",
+      authType: "access_token",
+      name: "stale",
+      email: "exp@example.com",
+      accessToken: jwt(-3600_000),
+      providerSpecificData: { authMethod: "access_token", chatgptAccountId: "acct-exp" },
+    });
+    expect(first.reauthRequired ?? null).toBeNull();
+
+    await db.createProviderConnectionUnscoped({
+      provider: "codex",
+      authType: "access_token",
+      email: "exp@example.com",
+      accessToken: jwt(3600_000),
+      testStatus: "active",
+      providerSpecificData: { authMethod: "access_token", chatgptAccountId: "acct-exp" },
+    });
+
+    const rows = await rowsFor("exp@example.com");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(first.id);
+    expect(reauth.needsReauthentication("codex", rows[0])).toBe(false);
+  });
+
+  it("a still-valid unflagged row is NOT replaced (two imports stay two rows)", async () => {
+    await db.createProviderConnectionUnscoped({
+      provider: "codex",
+      authType: "access_token",
+      name: "live-1",
+      email: "live@example.com",
+      accessToken: jwt(3600_000),
+      providerSpecificData: { authMethod: "access_token", chatgptAccountId: "acct-live" },
+    });
+    await db.createProviderConnectionUnscoped({
+      provider: "codex",
+      authType: "access_token",
+      email: "live@example.com",
+      accessToken: jwt(7200_000),
+      providerSpecificData: { authMethod: "access_token", chatgptAccountId: "acct-live" },
+    });
+    expect(await rowsFor("live@example.com")).toHaveLength(2);
+  });
+});
+
+describe("default names for new access_token rows", () => {
+  it("falls back to the email, then to 'ChatGPT Access token' when the caller gives no name", async () => {
+    const withEmail = await db.createProviderConnectionUnscoped({
+      provider: "codex",
+      authType: "access_token",
+      email: "name1@example.com",
+      accessToken: "opaque-1",
+      providerSpecificData: { authMethod: "access_token", chatgptAccountId: "acct-n1" },
+    });
+    expect(withEmail.name).toBe("name1@example.com");
+
+    const noEmail = await db.createProviderConnectionUnscoped({
+      provider: "codex",
+      authType: "access_token",
+      accessToken: "opaque-2",
+      providerSpecificData: { authMethod: "access_token", chatgptAccountId: "acct-n2" },
+    });
+    expect(noEmail.name).toBe("ChatGPT Access token");
   });
 });

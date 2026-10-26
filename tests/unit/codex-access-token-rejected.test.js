@@ -81,8 +81,10 @@ describe("classifyAccessTokenRejection (YAN-1288)", () => {
     expect(classifyAccessTokenRejection(structured("invalid_api_key"))).toBe("invalid_api_key");
   });
 
-  it("maps account_deactivated to unknown; other structured codes are inconclusive", () => {
-    expect(classifyAccessTokenRejection(structured("account_deactivated"))).toBe("unknown");
+  it("returns account_deactivated as its own code; other structured codes are inconclusive", () => {
+    expect(classifyAccessTokenRejection(structured("account_deactivated"))).toBe(
+      "account_deactivated",
+    );
     // An unknown structured code must NOT flag: only the allowlist is conclusive.
     expect(classifyAccessTokenRejection(structured("some_other_code"))).toBeNull();
     expect(classifyAccessTokenRejection(structured("never_heard_of_it"))).toBeNull();
@@ -112,7 +114,7 @@ describe("classifyAccessTokenRejection (YAN-1288)", () => {
       "token_invalidated",
     );
     expect(classifyAccessTokenRejection(wrapped({ error: { code: "account_deactivated" } }))).toBe(
-      "unknown",
+      "account_deactivated",
     );
     expect(
       classifyAccessTokenRejection(wrapped({ error: { code: "some_other_code" } })),
@@ -133,6 +135,27 @@ describe("classifyAccessTokenRejection (YAN-1288)", () => {
         }),
       ),
     ).toBeNull();
+  });
+
+  it("reads a string `error` and a `detail` field (both with the [401] prefix)", () => {
+    const wrapped = (body) => `[401]: ${JSON.stringify(body)}`;
+    // string error that is a known code
+    expect(classifyAccessTokenRejection(wrapped({ error: "token_revoked" }))).toBe("token_revoked");
+    // string error that is not a code: the wording check runs on it
+    expect(classifyAccessTokenRejection(wrapped({ error: "Token was revoked" }))).toBe("unknown");
+    expect(classifyAccessTokenRejection(wrapped({ error: "something else" }))).toBeNull();
+    // detail as message
+    expect(classifyAccessTokenRejection(wrapped({ detail: "token has been invalidated" }))).toBe(
+      "unknown",
+    );
+    expect(classifyAccessTokenRejection(wrapped({ detail: "Missing permissions" }))).toBeNull();
+    // detail object as code / message source
+    expect(classifyAccessTokenRejection(wrapped({ detail: { code: "invalid_token" } }))).toBe(
+      "invalid_token",
+    );
+    expect(classifyAccessTokenRejection(wrapped({ detail: { message: "Invalid token" } }))).toBe(
+      "unknown",
+    );
   });
 
   it("does not mistake an expired-token body for a rejection", () => {

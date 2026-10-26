@@ -71,7 +71,6 @@ const { getProviderCredentials } = await import("../../src/sse/services/auth.js"
 const { reauthRequiredResponse, REAUTH_ALL_MESSAGE } = await import(
   "../../open-sse/services/reauthState.js"
 );
-const { checkFallbackError } = await import("../../open-sse/services/accountFallback.js");
 
 const HOUR = 3600 * 1000;
 const iso = (offsetMs) => new Date(Date.now() + offsetMs).toISOString();
@@ -152,6 +151,16 @@ describe("reauthLimitedResult (YAN-1286)", () => {
   });
 });
 
+describe("reauth result only when every candidate was skipped for re-auth (YAN-1286)", () => {
+  it("one flagged + one grant-disallowed row → null, not a reauth message", async () => {
+    dbMocks.getProviderConnectionsUnscoped.mockResolvedValue([
+      oauth("c1", { reauthRequired: flag() }),
+      oauth("c2", { grantId: "g1", grantAllowedModels: ["codex/some-other-model"] }),
+    ]);
+    expect(await getProviderCredentials("codex", null, "gpt-5")).toBeNull();
+  });
+});
+
 describe("reauthRequiredResponse (YAN-1286)", () => {
   it("is a 503 authentication_error with the reauth_required code and no Retry-After", async () => {
     const res = reauthRequiredResponse({ provider: "codex", count: 2 });
@@ -166,29 +175,13 @@ describe("reauthRequiredResponse (YAN-1286)", () => {
     // F7: no account count leaks to the client.
     expect(body.error.count).toBeUndefined();
   });
-
-  it("carries no request-scoped flags (F8: nothing reads localError on this path)", () => {
-    const res = reauthRequiredResponse({ provider: "codex", count: 1 });
-    expect(res.localError).toBeUndefined();
-    // Combos advance via checkFallbackError on the 503 + message, not via a flag.
-  });
-
-  it("checkFallbackError falls through immediately (no transient wait)", () => {
-    const res = reauthRequiredResponse({ provider: "codex", count: 2 });
-    const { shouldFallback, cooldownMs } = checkFallbackError(
-      res.status,
-      REAUTH_ALL_MESSAGE("codex"),
-    );
-    expect(shouldFallback).toBe(true);
-    // The transient 503 wait only triggers for cooldownMs <= 5000; the default
-    // transient cooldown is 30s, so a combo advances with no wait.
-    expect(cooldownMs).toBeGreaterThan(5000);
-  });
 });
 
 describe("combo skips the transient-503 wait for a reauth_required body (F8)", () => {
-  it("does not wait before advancing when the body code is reauth_required", async () => {
+  it("does not wait before advancing even when the policy's transient cooldown is short", async () => {
     const { handleComboChat } = await import("../../open-sse/services/combo.js");
+    const { setReliabilityOverrides } = await import("../../open-sse/config/reliabilityPolicy.js");
+    setReliabilityOverrides({ cooldowns: { transientMs: 3000 } });
     const reauthRes = reauthRequiredResponse({ provider: "codex", count: 1 });
     const ok = new Response(JSON.stringify({ ok: true }), {
       status: 200,
@@ -204,18 +197,20 @@ describe("combo skips the transient-503 wait for a reauth_required body (F8)", (
     });
 
     const startedAt = Date.now();
-    const result = await handleComboChat({
-      body: {},
-      models: ["codex/gpt-5", "claude/sonnet"],
-      handleSingleModel,
-      log: { info: () => {}, warn: () => {} },
-    });
-
-    expect(result.ok).toBe(true);
-    expect(handleSingleModel).toHaveBeenCalledTimes(2);
-    // A policy with transientMs <= 5000 would otherwise wait; a reauth answer
-    // must advance immediately whatever the policy says.
-    expect(Date.now() - startedAt).toBeLessThan(4000);
+    try {
+      const result = await handleComboChat({
+        body: {},
+        models: ["codex/gpt-5", "claude/sonnet"],
+        handleSingleModel,
+        log: { info: () => {}, warn: () => {} },
+      });
+      expect(result.ok).toBe(true);
+      expect(handleSingleModel).toHaveBeenCalledTimes(2);
+      // transientMs 3000 would make a plain 503 wait 3s before the next member.
+      expect(Date.now() - startedAt).toBeLessThan(1500);
+    } finally {
+      setReliabilityOverrides(null);
+    }
   });
 });
 
@@ -241,4 +236,26 @@ describe("handleComboChat advances past an all-flagged member (YAN-1286)", () =>
     expect(result.ok).toBe(true);
     expect(handleSingleModel).toHaveBeenCalledTimes(2);
   });
+});
+
+describe("handleChat with every codex account flagged (YAN-1286)", () => {
+  it("answers 503 reauth_required with no Retry-After (not the old 404)", async () => {
+    dbMocks.getProviderConnectionsUnscoped.mockResolvedValue([
+      oauth("c1", { reauthRequired: flag() }),
+      oauth("c2", { reauthRequired: flag() }),
+    ]);
+    const { handleChat } = await import("../../src/sse/handlers/chat.js");
+    const res = await handleChat(
+      new Request("http://localhost/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "codex/gpt-5", messages: [{ role: "user", content: "hi" }] }),
+      }),
+    );
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Retry-After")).toBeNull();
+    const body = await res.json();
+    expect(body.error.code).toBe("reauth_required");
+    expect(body.error.message).toBe(REAUTH_ALL_MESSAGE("codex"));
+  }, 60000);
 });

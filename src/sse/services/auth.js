@@ -338,10 +338,12 @@ export async function getProviderCredentials(
       // YAN-1286: every remaining candidate is flagged for re-authentication.
       // After the blocker/grant/budget checks so a mixed pool still reports its
       // earliest unblock time; the message wording never matches the backoff
-      // text rules, so combos fall through immediately. Only on the first pass:
-      // a retry after an excluded account failed keeps returning null so the
-      // handler surfaces that account's real upstream error.
-      if (reauthSkipped > 0 && excludeSet.size === 0) {
+      // text rules, so combos fall through immediately.
+      // Only when EVERY candidate was skipped for re-auth: a pool that also
+      // holds grant-disallowed (or otherwise skipped) rows is not an "all
+      // accounts need re-authentication" situation, and after an excluded
+      // (just-failed) account the handler must surface that real error.
+      if (reauthSkipped > 0 && excludeSet.size === 0 && reauthSkipped === connections.length) {
         log.warn("AUTH", `${provider} | all ${reauthSkipped} accounts need re-authentication`);
         return reauthLimitedResult(providerId, reauthSkipped);
       }

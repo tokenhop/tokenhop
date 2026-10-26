@@ -19,6 +19,7 @@ export const REAUTH_CODES = Object.freeze([
   "token_revoked",
   "invalid_token",
   "invalid_api_key",
+  "account_deactivated",
   "unknown",
 ]);
 

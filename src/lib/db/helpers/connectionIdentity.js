@@ -3,6 +3,7 @@
 // planner so both agree on identity. Pure: no I/O, no workspace comparison
 // (callers scope the candidate set). Intentionally NOT exported via the DB barrel.
 import { REAUTH_REASONS } from "open-sse/config/reauthConstants.js";
+import { decodeJwtPayload } from "open-sse/utils/jwt.js";
 
 /**
  * @param {object} existing stored connection (provider, authType, email, name, providerSpecificData)
@@ -54,19 +55,44 @@ const REAUTH_REASON_VALUES = new Set(Object.values(REAUTH_REASONS));
 
 const sameAccountId = (a, b) => typeof a === "string" && typeof b === "string" && a === b;
 
+const parseMs = (v) => {
+  const t = typeof v === "string" || typeof v === "number" ? new Date(v).getTime() : NaN;
+  return Number.isFinite(t) ? t : null;
+};
+
 /**
- * YAN-1287: may a fresh codex grant REPLACE this flagged row? Much looser than
+ * An access-token-only row (no refresh token) whose known expiry has passed:
+ * the earlier of the stored expiresAt/tokenExpiresAt and the JWT exp. Mirrors
+ * reauthState.isAccessTokenOnlyExpired for codex without importing it
+ * (reauthState → tokenLifetime → the provider registry is too heavy for the
+ * DB layer's cold-start path).
+ */
+function isExpiredAccessTokenOnly(row, nowMs) {
+  if (row.refreshToken || !row.accessToken) return false;
+  const exp = decodeJwtPayload(row.accessToken)?.exp;
+  const candidates = [
+    parseMs(row.expiresAt),
+    parseMs(row.tokenExpiresAt),
+    Number.isFinite(Number(exp)) && Number(exp) > 0 ? Number(exp) * 1000 : null,
+  ].filter((t) => t !== null);
+  return candidates.length > 0 && Math.min(...candidates) <= nowMs;
+}
+
+/**
+ * YAN-1287: may a fresh codex grant REPLACE this dead row? Much looser than
  * matchesConnectionIdentity — the move planner keeps the strict semantics above.
  * A dead row only holds a dead token pair, so the YAN-1053 "don't collapse two
  * live grants" concern does not apply; a reconnect/re-import of the same
- * account must land on the flagged row instead of leaving it stale.
+ * account must land on it instead of leaving it stale. "Dead" means flagged
+ * for re-authentication, or (access_token only) already past its expiry even
+ * though no flag has been written yet.
  *
- * - oauth: same non-empty email, and the ChatGPT account ID matches whenever
- *   both sides have one (a legacy row may predate the field).
- * - access_token: both sides carry the same chatgptAccountId (that is the
- *   account identity an import encodes); emails must match when both exist.
+ * - oauth: flagged, same non-empty email, and the ChatGPT account ID matches
+ *   whenever both sides have one (a legacy row may predate the field).
+ * - access_token: flagged or expired, both emails present and equal, and the
+ *   same chatgptAccountId.
  */
-export function matchesFlaggedReplacement(existing, incoming) {
+export function matchesFlaggedReplacement(existing, incoming, nowMs = Date.now()) {
   if (
     !existing ||
     !incoming ||
@@ -77,19 +103,23 @@ export function matchesFlaggedReplacement(existing, incoming) {
     return false;
   }
   const flag = existing.reauthRequired;
-  if (!flag || typeof flag !== "object" || !REAUTH_REASON_VALUES.has(flag.reason)) return false;
+  const flagged = Boolean(
+    flag && typeof flag === "object" && REAUTH_REASON_VALUES.has(flag.reason),
+  );
 
   const existingAccountId = existing.providerSpecificData?.chatgptAccountId;
   const incomingAccountId = incoming.providerSpecificData?.chatgptAccountId;
 
   if (incoming.authType === "oauth") {
+    if (!flagged) return false;
     if (!incoming.email || existing.email !== incoming.email) return false;
     if (existingAccountId === undefined || existingAccountId === null) return true;
     return incomingAccountId === existingAccountId;
   }
   if (incoming.authType === "access_token") {
-    // F3: both emails must be present and equal — an import without an email
-    // must never replace an email-carrying row on account id alone.
+    if (!flagged && !isExpiredAccessTokenOnly(existing, nowMs)) return false;
+    // Both emails must be present and equal — an import without an email must
+    // never replace an email-carrying row on account id alone.
     if (!existing.email || existing.email !== incoming.email) return false;
     return sameAccountId(existingAccountId, incomingAccountId);
   }
