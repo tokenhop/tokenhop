@@ -316,6 +316,11 @@ async function fetchViaProxy(url, options, proxyUrl, pinnedAddress) {
   return originalFetch(url, { ...options, dispatcher });
 }
 
+// True when undici refused a redirect for a redirect: "error" request.
+function isRefusedRedirect(error) {
+  return error?.cause?.message === "unexpected redirect";
+}
+
 // Statuses whose Response must not carry a body (WHATWG Response constructor throws).
 const NULL_BODY_STATUSES = new Set([204, 205, 304]);
 
@@ -415,7 +420,9 @@ async function createBypassRequest(parsedUrl, realIP, options) {
  * hostname again. Such a request must also pass options.dispatcher pinned to
  * the same address for the direct path, and redirect:"manual" so no hop can
  * reach another origin. A relay resolves the hostname itself and cannot be
- * pinned, so a pinned request through a relay is refused.
+ * pinned, so a pinned request through a relay is refused. When relaying, the
+ * caller's redirect mode is forwarded to the relay in the x-relay-redirect
+ * header so the relay can honor it.
  */
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
@@ -437,15 +444,28 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       );
     }
     const parsed = new URL(targetUrl);
-    const relayHeaders = {
-      ...options.headers,
-      "x-relay-target": `${parsed.protocol}//${parsed.host}`,
-      "x-relay-path": `${parsed.pathname}${parsed.search}`,
-    };
+    // Caller headers may be a plain object, Headers or tuple array. Drop any
+    // x-relay-* header (any casing) so only the gateway sets relay control.
+    const relayHeaders = {};
+    for (const [name, value] of new Headers(options.headers ?? undefined)) {
+      if (!name.toLowerCase().startsWith("x-relay-")) relayHeaders[name] = value;
+    }
+    relayHeaders["x-relay-target"] = `${parsed.protocol}//${parsed.host}`;
+    relayHeaders["x-relay-path"] = `${parsed.pathname}${parsed.search}`;
+    if (typeof options.redirect === "string") relayHeaders["x-relay-redirect"] = options.redirect;
     // A caller-supplied dispatcher targets the original host; it must not be
     // used to reach the relay, which is a different origin.
     const { dispatcher: _droppedDispatcher, ...relayOptions } = options;
-    return originalFetch(vercelRelayUrl, { ...relayOptions, headers: relayHeaders });
+    try {
+      return await originalFetch(vercelRelayUrl, { ...relayOptions, headers: relayHeaders });
+    } catch (relayError) {
+      if (options.redirect === "error" && isRefusedRedirect(relayError)) {
+        throw new TypeError('[ProxyFetch] Redirect refused (redirect: "error")', {
+          cause: relayError,
+        });
+      }
+      throw relayError;
+    }
   }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
@@ -472,6 +492,11 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       } catch (proxyError) {
         // An aborted request keeps its own error and is never retried.
         if (options.signal?.aborted) throw proxyError;
+        if (options.redirect === "error" && isRefusedRedirect(proxyError)) {
+          throw new TypeError('[ProxyFetch] Redirect refused (redirect: "error")', {
+            cause: proxyError,
+          });
+        }
         if (proxyOptions?.strictProxy === true) {
           throw new Error(
             `[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`,
@@ -500,6 +525,11 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     } catch (proxyError) {
       // An aborted request keeps its own error and is never retried.
       if (options.signal?.aborted) throw proxyError;
+      if (options.redirect === "error" && isRefusedRedirect(proxyError)) {
+        throw new TypeError('[ProxyFetch] Redirect refused (redirect: "error")', {
+          cause: proxyError,
+        });
+      }
       // If strictProxy is enabled, fail hard instead of falling back to direct
       if (proxyOptions?.strictProxy === true) {
         throw new Error(

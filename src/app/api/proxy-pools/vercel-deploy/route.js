@@ -1,43 +1,8 @@
 import { NextResponse } from "next/server";
 import { createProxyPool } from "@/models";
+import { VERCEL_RELAY_CODE } from "@/lib/network/relayTemplates";
 
 const VERCEL_API = "https://api.vercel.com";
-
-// Relay function source code deployed to Vercel
-// Forwards requests to target URL specified in x-relay-target header
-const RELAY_FUNCTION_CODE = `
-export const config = { runtime: "edge" };
-
-export default async function handler(req) {
-  const target = req.headers.get("x-relay-target");
-  const relayPath = req.headers.get("x-relay-path") || "/";
-  if (!target) {
-    return new Response(JSON.stringify({ error: "Missing x-relay-target header" }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
-  }
-
-  const targetUrl = target.replace(/\\/$/, "") + relayPath;
-
-  const headers = new Headers(req.headers);
-  headers.delete("x-relay-target");
-  headers.delete("x-relay-path");
-  headers.delete("host");
-
-  const response = await fetch(targetUrl, {
-    method: req.method,
-    headers,
-    body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
-    duplex: "half",
-  });
-
-  return new Response(response.body, {
-    status: response.status,
-    headers: response.headers,
-  });
-}
-`;
 
 async function pollDeployment(deploymentId, token, maxMs = 120000) {
   const start = Date.now();
@@ -78,7 +43,7 @@ export async function POST(request) {
         files: [
           {
             file: "api/relay.js",
-            data: RELAY_FUNCTION_CODE,
+            data: VERCEL_RELAY_CODE,
           },
           {
             file: "package.json",
