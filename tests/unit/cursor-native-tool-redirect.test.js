@@ -315,6 +315,22 @@ describe("redirectNativeExec", () => {
     expect(result).toBeNull();
   });
 
+  it("returns null when the grep glob property cannot hold a string", () => {
+    const result = redirectNativeExec(
+      execRequestMap(5, grepArgs({ pattern: "TODO", glob: "*.js" })),
+      [fn("grep", { pattern: { type: "string" }, include: { type: "array" } })],
+    );
+    expect(result).toBeNull();
+  });
+
+  it("skips tools whose name is not a string", () => {
+    const result = redirectNativeExec(execRequestMap(7, readArgs({ path: "/tmp/a.ts" })), [
+      { type: "function", function: { name: 42, parameters: { properties: {} } } },
+      fn("read", { filePath: { type: "string" } }),
+    ]);
+    expect(result.toolCall.name).toBe("read");
+  });
+
   it("redirects ls onto list_dir including the ignore list", () => {
     const result = redirectNativeExec(
       execRequestMap(8, lsArgs({ path: "/repo", ignore: ["node_modules", ".git"] })),

@@ -81,7 +81,10 @@ const PATH_KEYS = {
   shell: [],
 };
 
-const nameOf = (tool) => tool?.function?.name || tool?.name || "";
+const nameOf = (tool) => {
+  const name = tool?.function?.name ?? tool?.name;
+  return typeof name === "string" ? name : "";
+};
 const schemaOf = (tool) =>
   tool?.function?.parameters || tool?.parameters || tool?.input_schema || null;
 
@@ -178,13 +181,10 @@ function buildToolCall(native, values, tools) {
     }
     if (native === "grep") {
       // Flags the schema cannot express must not be silently dropped.
-      if (values.multiline && !Object.hasOwn(properties, "multiline")) continue;
-      if (values.caseInsensitive && !pickProperty(properties, GREP_CASE_KEYS)) continue;
-      if (values.glob && !pickProperty(properties, GREP_GLOB_KEYS)) continue;
-      if (values.multiline) fill(["multiline"], true);
+      if (values.multiline && !fill(["multiline"], true)) continue;
       fill(PRIMARY_KEYS.grep, values.pattern);
-      fill(GREP_GLOB_KEYS, values.glob);
-      if (values.caseInsensitive) fill(GREP_CASE_KEYS, true);
+      if (values.glob && !fill(GREP_GLOB_KEYS, values.glob)) continue;
+      if (values.caseInsensitive && !fill(GREP_CASE_KEYS, true)) continue;
       fill(["output_mode"], values.outputMode);
       fill(["type"], values.type);
       fill(["-C", "context"], values.context);
