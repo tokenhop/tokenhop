@@ -12,6 +12,7 @@ import {
   concatArrays,
 } from "../utils/cursorProtobuf.js";
 import { AGENT_ENVIRONMENT_NOTE, EXEC_VARIANT, buildExecReply } from "../utils/cursorAgentExec.js";
+import { redirectNativeExec } from "../utils/cursorNativeToolRedirect.js";
 import { resolveCursorImages, CursorImageError } from "../utils/cursorImages.js";
 import { buildCursorHeaders } from "../utils/cursorChecksum.js";
 import { estimateUsage } from "../utils/usageTracking.js";
@@ -513,6 +514,11 @@ export class CursorExecutor extends BaseExecutor {
     };
 
     const consume = async (onEvent) => {
+      const emitToolCallAndEnd = (toolCall) => {
+        finished = true;
+        onEvent({ type: "tool_call", value: toolCall });
+        onEvent({ type: "done", finishReason: "tool_calls" });
+      };
       try {
         while (!finished) {
           const { done, value } = await session.read();
@@ -576,8 +582,11 @@ export class CursorExecutor extends BaseExecutor {
               }
 
               // ExecServerMessage: AgentService asks the "IDE" for context or to
-              // run a tool. Named MCP calls are the client's tool calls; every
-              // other exec is answered in-stream so the turn keeps going.
+              // run a tool. Named MCP calls are the client's tool calls; native
+              // built-ins (read/grep/ls/shell) become the client's tool call too
+              // when a declared tool's schema can be filled; every other exec is
+              // answered in-stream so the turn keeps going.
+
               if (serverMessage.has(2)) {
                 const execRequest = decodeMessage(serverMessage.get(2)[0].value);
                 const mcp = execRequest.has(EXEC_VARIANT.MCP)
@@ -586,16 +595,17 @@ export class CursorExecutor extends BaseExecutor {
                 const toolName = mcp?.toolName || mcp?.name;
                 if (toolName) {
                   log?.info?.("CURSOR", `AgentService MCP tool_call ${toolName}`);
-                  finished = true;
-                  onEvent({
-                    type: "tool_call",
-                    value: {
-                      id: mcp.toolCallId || `call_${crypto.randomUUID()}`,
-                      name: toolName,
-                      arguments: JSON.stringify(mcp.args || {}),
-                    },
+                  emitToolCallAndEnd({
+                    id: mcp.toolCallId || `call_${crypto.randomUUID()}`,
+                    name: toolName,
+                    arguments: JSON.stringify(mcp.args || {}),
                   });
-                  onEvent({ type: "done", finishReason: "tool_calls" });
+                  return;
+                }
+                const redirected = redirectNativeExec(execRequest, tools);
+                if (redirected) {
+                  log?.info?.("CURSOR", redirected.message);
+                  emitToolCallAndEnd(redirected.toolCall);
                   return;
                 }
                 const reply = buildExecReply(execRequest, { tools });
