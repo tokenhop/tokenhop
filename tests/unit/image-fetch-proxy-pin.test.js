@@ -243,6 +243,78 @@ describe("fetchImageAsBase64 through a proxy", () => {
   });
 });
 
+describe("fetchImageAsBase64 through a connection relay", () => {
+  // A relay resolves the target hostname itself, so the validated IP cannot be
+  // enforced there; the fetch must be refused before the relay is contacted.
+  const relayHits = [];
+  const relay = http.createServer((req, res) => {
+    relayHits.push(req.headers["x-relay-target"]);
+    res.writeHead(200, { "content-type": "image/png" });
+    res.end(PNG);
+  });
+  let relayUrl;
+
+  beforeAll(async () => {
+    await new Promise((resolve) => relay.listen(0, "127.0.0.1", resolve));
+    relayUrl = `http://127.0.0.1:${relay.address().port}`;
+  });
+  afterAll(async () => {
+    relay.closeAllConnections?.();
+    await new Promise((resolve) => relay.close(resolve));
+  });
+  beforeEach(() => {
+    relayHits.length = 0;
+  });
+
+  it("refuses the image instead of sending the hostname to the relay", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const result = await fetchImageAsBase64(`https://${HOST}/a.png`, {
+        proxyOptions: { vercelRelayUrl: relayUrl },
+      });
+
+      expect(result).toBeNull();
+      expect(relayHits).toHaveLength(0);
+      expect(seen).toHaveLength(0);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).not.toContain(HOST);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("rejects a pinned proxyAwareFetch request routed through a relay", async () => {
+    const directAgent = new Agent();
+    try {
+      await expect(
+        proxyAwareFetch(
+          `http://${HOST}/a.png`,
+          {
+            pinnedAddress: { address: VALIDATED_IP, family: 4 },
+            dispatcher: directAgent,
+            redirect: "manual",
+          },
+          { vercelRelayUrl: relayUrl },
+        ),
+      ).rejects.toMatchObject({ code: "ERR_PINNED_RELAY" });
+      expect(relayHits).toHaveLength(0);
+    } finally {
+      await directAgent.close();
+    }
+  });
+
+  it("still forwards unpinned requests through the relay", async () => {
+    const response = await proxyAwareFetch(
+      `https://${HOST}/a.png`,
+      {},
+      { vercelRelayUrl: relayUrl },
+    );
+
+    expect(response.status).toBe(200);
+    expect(relayHits).toEqual([`https://${HOST}`]);
+  });
+});
+
 describe("proxyAwareFetch pinned-request contract", () => {
   const pinnedAddress = { address: VALIDATED_IP, family: 4 };
 
