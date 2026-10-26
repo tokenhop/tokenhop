@@ -187,7 +187,9 @@ export async function fetchImageAsBase64(imageUrl, options = {}) {
 
   // Pin every connection to the validated IP so no second DNS resolution can
   // rebind (TOCTOU fix). Honour Node's lookup contract for both opts.all forms.
-  const pinned = { address: pinnedIps[0].address, family: pinnedIps[0].family };
+  // Prefer IPv4: IPv4-only proxies and SOCKS tunnels cannot reach an IPv6 pin.
+  const first = pinnedIps.find((r) => r.family === 4) ?? pinnedIps[0];
+  const pinned = { address: first.address, family: first.family };
   const dispatcher = new Agent({
     connect: {
       lookup: (_h, opts, cb) =>

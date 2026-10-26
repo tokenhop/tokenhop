@@ -6,6 +6,7 @@ import http from "node:http";
 import net from "node:net";
 import tls from "node:tls";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { Agent, MockAgent } from "undici";
 
 const lookupMock = vi.fn();
 vi.mock("node:dns/promises", () => ({ lookup: (...a) => lookupMock(...a) }));
@@ -13,6 +14,7 @@ vi.mock("node:dns/promises", () => ({ lookup: (...a) => lookupMock(...a) }));
 const { fetchImageAsBase64, isPrivateIp } = await import(
   "../../open-sse/translator/concerns/image.js"
 );
+const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 const VALIDATED_IP = "93.184.216.34";
@@ -21,10 +23,11 @@ const HOST = "img.rebind.example";
 // Loopback proxies record what they were asked to reach and serve the image
 // themselves (plain HTTP) or terminate TLS locally, so nothing leaves the host.
 const seen = [];
+let originBody = PNG;
 const origin = http.createServer((req, res) => {
   seen.push({ kind: "origin", host: req.headers.host });
   res.writeHead(200, { "content-type": "image/png" });
-  res.end(PNG);
+  res.end(originBody);
 });
 // TLS endpoint without a certificate: records the ClientHello SNI, then fails
 // the handshake. The fetch returns null; the recorded SNI is what matters.
@@ -44,7 +47,7 @@ function handOff(socket, port) {
 const httpProxy = http.createServer((req, res) => {
   seen.push({ kind: "absolute", target: req.url });
   res.writeHead(200, { "content-type": "image/png" });
-  res.end(PNG);
+  res.end(originBody);
 });
 httpProxy.on("connect", (req, socket, head) => {
   seen.push({ kind: "connect", target: req.url });
@@ -177,6 +180,33 @@ describe("fetchImageAsBase64 through a proxy", () => {
     expectOnlyPinnedTargets("[2606:2800:220:1::1]:80");
   });
 
+  it("prefers a validated IPv4 record over an IPv6 one listed first", async () => {
+    lookupMock.mockResolvedValue([
+      { address: "2606:2800:220:1::1", family: 6 },
+      { address: VALIDATED_IP, family: 4 },
+    ]);
+
+    const result = await fetchImageAsBase64(
+      `http://${HOST}/a.png`,
+      viaConnectionProxy(socksProxyUrl),
+    );
+
+    expect(result?.mimeType).toBe("image/png");
+    expectOnlyPinnedTargets(`${VALIDATED_IP}:80`);
+  });
+
+  it("refuses an IPv6-only pin through SOCKS5 instead of sending the hostname", async () => {
+    lookupMock.mockResolvedValue([{ address: "2606:2800:220:1::1", family: 6 }]);
+
+    const result = await fetchImageAsBase64(
+      `http://${HOST}/a.png`,
+      viaConnectionProxy(socksProxyUrl),
+    );
+
+    expect(result).toBeNull();
+    expect(seen).toHaveLength(0);
+  });
+
   it("sends a SOCKS5 proxy the validated IP, not the hostname", async () => {
     const result = await fetchImageAsBase64(
       `http://${HOST}/a.png`,
@@ -210,6 +240,60 @@ describe("fetchImageAsBase64 through a proxy", () => {
 
     expect(result).toBeNull();
     expect(seen).toHaveLength(0);
+  });
+});
+
+describe("proxyAwareFetch pinned-request contract", () => {
+  const pinnedAddress = { address: VALIDATED_IP, family: 4 };
+
+  it("rejects pinnedAddress without a dispatcher or without redirect: manual", async () => {
+    await expect(
+      proxyAwareFetch(`http://${HOST}/a.png`, { pinnedAddress, redirect: "manual" }),
+    ).rejects.toThrow(TypeError);
+    await expect(
+      proxyAwareFetch(`http://${HOST}/a.png`, { pinnedAddress, dispatcher: {} }),
+    ).rejects.toThrow(TypeError);
+    expect(seen).toHaveLength(0);
+  });
+
+  it("falls back to the caller's pinned dispatcher when a non-strict proxy fails", async () => {
+    // The mock stands in for the caller's pinned direct Agent; a reply proves
+    // the fallback reused it rather than a fresh, unpinned dispatcher.
+    const pinnedDispatcher = new MockAgent();
+    pinnedDispatcher.disableNetConnect();
+    pinnedDispatcher.get(`http://${HOST}`).intercept({ path: "/a.png" }).reply(200, "direct");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const response = await proxyAwareFetch(
+        `http://${HOST}/a.png`,
+        { pinnedAddress, dispatcher: pinnedDispatcher, redirect: "manual" },
+        { connectionProxyEnabled: true, connectionProxyUrl: "http://127.0.0.1:9" },
+      );
+
+      expect(await response.text()).toBe("direct");
+      pinnedDispatcher.assertNoPendingInterceptors();
+    } finally {
+      await pinnedDispatcher.close();
+    }
+  });
+
+  it("streams a large body fully after the per-request proxy agent is closed", async () => {
+    const directAgent = new Agent();
+    originBody = Buffer.concat([PNG, Buffer.alloc(4 * 1024 * 1024, 7)]);
+    try {
+      const response = await proxyAwareFetch(
+        `http://${HOST}:8080/big.png`,
+        { pinnedAddress, dispatcher: directAgent, redirect: "manual" },
+        { connectionProxyEnabled: true, connectionProxyUrl: httpProxyUrl, strictProxy: true },
+      );
+      const body = Buffer.from(await response.arrayBuffer());
+      expect(body.length).toBe(originBody.length);
+      expectOnlyPinnedTargets(`${VALIDATED_IP}:8080`);
+    } finally {
+      originBody = PNG;
+      await directAgent.close();
+    }
   });
 });
 

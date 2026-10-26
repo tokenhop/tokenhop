@@ -282,6 +282,11 @@ function pinnedOriginOptions(opts, targetUrl, pinnedAddress) {
 // SOCKS5 tunnels take SNI from requestTls only, never from the request.
 async function pinnedProxyFetch(url, options, proxyUrl, pinnedAddress) {
   const target = new URL(url);
+  // undici's SOCKS5 agent sends a bracketed IPv6 origin as a domain name, so an
+  // IPv6 pin cannot be honoured through SOCKS; refuse instead of going unpinned.
+  if (/^socks/i.test(new URL(proxyUrl).protocol) && isIPv6(pinnedAddress.address)) {
+    throw new Error("[ProxyFetch] SOCKS proxy cannot target a pinned IPv6 address");
+  }
   const { ProxyAgent } = await import("undici");
   const agent = new ProxyAgent({
     uri: proxyUrl,
@@ -405,16 +410,19 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 /**
  * fetch with connection-proxy, env-proxy and Vercel-relay support.
  * options.pinnedAddress ({ address, family }) marks a request whose host was
- * already validated: through an HTTP(S) or SOCKS proxy the connection targets
- * that address instead of letting the proxy resolve the hostname again. Such a
- * request must also pass options.dispatcher pinned to the same address for
- * the direct path. Relay paths forward the hostname and are not pinned.
+ * already validated: through an HTTP(S) proxy, or a SOCKS proxy for IPv4, the
+ * connection targets that address instead of letting the proxy resolve the
+ * hostname again. Such a request must also pass options.dispatcher pinned to
+ * the same address for the direct path, and redirect:"manual" so no hop can
+ * reach another origin. Relay paths forward the hostname and are not pinned.
  */
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
   const pinnedAddress = options?.pinnedAddress ?? null;
-  if (pinnedAddress && !options.dispatcher) {
-    throw new TypeError("[ProxyFetch] pinnedAddress requires a pinned dispatcher");
+  if (pinnedAddress && (!options.dispatcher || options.redirect !== "manual")) {
+    throw new TypeError(
+      '[ProxyFetch] pinnedAddress requires a pinned dispatcher and redirect: "manual"',
+    );
   }
 
   // Vercel relay: forward request via relay headers
