@@ -3,7 +3,7 @@
 // 302s to a recording target. No fetch stub: proxyAwareFetch uses the real
 // global fetch, so undici's own redirect handling is exercised.
 import { createServer } from "node:http";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { VERCEL_RELAY_CODE } from "@/lib/network/relayTemplates";
 import { proxyAwareFetch } from "../../open-sse/utils/proxyFetch.js";
 
@@ -60,7 +60,28 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await Promise.all([close(relay), close(upstream), close(target)]);
+  const servers = [relay, upstream, target].filter((s) => s?.listening);
+  for (const s of servers) s.closeAllConnections?.();
+  await Promise.all(servers.map(close));
+});
+
+// The relay's own fetch goes through the patched global fetch; keep a
+// developer's proxy env from routing the loopback hops.
+const PROXY_ENV_VARS = [
+  "HTTP_PROXY",
+  "http_proxy",
+  "HTTPS_PROXY",
+  "https_proxy",
+  "ALL_PROXY",
+  "all_proxy",
+  "NO_PROXY",
+  "no_proxy",
+];
+beforeEach(() => {
+  for (const name of PROXY_ENV_VARS) vi.stubEnv(name, "");
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("redirect mode through a relay, end to end (YAN-1598)", () => {

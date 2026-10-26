@@ -447,7 +447,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     // Caller headers may be a plain object, Headers or tuple array. Drop any
     // x-relay-* header (any casing) so only the gateway sets relay control.
     const relayHeaders = {};
-    for (const [name, value] of new Headers(options.headers)) {
+    for (const [name, value] of new Headers(options.headers ?? undefined)) {
       if (!name.toLowerCase().startsWith("x-relay-")) relayHeaders[name] = value;
     }
     relayHeaders["x-relay-target"] = `${parsed.protocol}//${parsed.host}`;

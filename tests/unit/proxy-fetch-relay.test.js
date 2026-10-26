@@ -88,10 +88,10 @@ describe("proxyAwareFetch Vercel relay", () => {
     );
     await proxyAwareFetch(
       url,
-      { redirect: "error", headers: new Headers({ "X-Relay-Target": "https://evil.test" }) },
+      { redirect: "error", headers: new Headers({ "X-Relay-Target": "https://other.test" }) },
       relay,
     );
-    await proxyAwareFetch(url, { redirect: "error", headers: [["X-RELAY-PATH", "/evil"]] }, relay);
+    await proxyAwareFetch(url, { redirect: "error", headers: [["X-RELAY-PATH", "/other"]] }, relay);
 
     for (const [, options] of fetchStub.mock.calls) {
       const names = Object.keys(options.headers).filter((n) => n.startsWith("x-relay-"));

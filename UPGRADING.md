@@ -372,3 +372,6 @@ it), so replace it instead:
    runs the current relay code.
 2. Move the connections that used the old relay onto the new relay.
 3. Delete the old pool.
+
+Until a relay is replaced, it also passes the gateway's new `x-relay-redirect`
+header on to the provider. The header is harmless.
