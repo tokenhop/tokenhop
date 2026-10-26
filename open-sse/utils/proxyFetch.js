@@ -414,7 +414,8 @@ async function createBypassRequest(parsedUrl, realIP, options) {
  * connection targets that address instead of letting the proxy resolve the
  * hostname again. Such a request must also pass options.dispatcher pinned to
  * the same address for the direct path, and redirect:"manual" so no hop can
- * reach another origin. Relay paths forward the hostname and are not pinned.
+ * reach another origin. A relay resolves the hostname itself and cannot be
+ * pinned, so a pinned request through a relay is refused.
  */
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
@@ -428,13 +429,20 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   // Vercel relay: forward request via relay headers
   const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
   if (vercelRelayUrl) {
+    // The relay would resolve the hostname again, defeating the validation.
+    if (pinnedAddress) {
+      throw Object.assign(
+        new Error("[ProxyFetch] A pinned request cannot be sent through a connection relay"),
+        { code: "ERR_PINNED_RELAY" },
+      );
+    }
     const parsed = new URL(targetUrl);
     const relayHeaders = {
       ...options.headers,
       "x-relay-target": `${parsed.protocol}//${parsed.host}`,
       "x-relay-path": `${parsed.pathname}${parsed.search}`,
     };
-    // A caller-supplied dispatcher is pinned to the target host; it must not be
+    // A caller-supplied dispatcher targets the original host; it must not be
     // used to reach the relay, which is a different origin.
     const { dispatcher: _droppedDispatcher, ...relayOptions } = options;
     return originalFetch(vercelRelayUrl, { ...relayOptions, headers: relayHeaders });

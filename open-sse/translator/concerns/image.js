@@ -158,8 +158,8 @@ export function detectImageMime(buf) {
  * @param {object} options - { signal, timeoutMs, maxBytes, proxyOptions }
  *   proxyOptions: optional connection proxy settings forwarded to
  *   proxyAwareFetch. Direct and HTTP(S)/SOCKS proxy connections target the
- *   validated IP; a configured relay (Vercel/Deno/Cloudflare) resolves the
- *   hostname itself and is not pinned.
+ *   validated IP; a configured relay (Vercel/Deno/Cloudflare) would resolve
+ *   the hostname itself, so the fetch is refused (returns null).
  * @returns {Promise<{url: string, mimeType: string}|null>}
  */
 export async function fetchImageAsBase64(imageUrl, options = {}) {
@@ -200,8 +200,8 @@ export async function fetchImageAsBase64(imageUrl, options = {}) {
   try {
     // redirect:"manual" prevents a public URL redirecting to a private one (SSRF bypass).
     // pinnedAddress makes a connection or env proxy target the validated IP
-    // instead of resolving the hostname itself; strict proxy errors surface as
-    // failure below.
+    // instead of resolving the hostname itself, and refuses relay routing;
+    // strict proxy and relay refusals surface as failure below.
     const response = await proxyAwareFetch(
       url.href,
       { signal: fetchSignal, redirect: "manual", dispatcher, pinnedAddress: pinned },
@@ -236,7 +236,10 @@ export async function fetchImageAsBase64(imageUrl, options = {}) {
     if (!mimeType) return null; // not a recognized image — reject disguised payloads
 
     return { url: `data:${mimeType};base64,${buf.toString("base64")}`, mimeType };
-  } catch {
+  } catch (error) {
+    if (error?.code === "ERR_PINNED_RELAY") {
+      console.warn("[image] Remote image URL refused: connection relays cannot fetch images");
+    }
     return null;
   } finally {
     dispatcher.close().catch(() => {});
