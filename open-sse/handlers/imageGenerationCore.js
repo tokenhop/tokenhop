@@ -6,11 +6,47 @@ import { proxyOptionsFromCredentials } from "../utils/connectionProxyOptions.js"
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { getImageAdapter } from "./imageProviders/index.js";
 import { urlToBase64 } from "./imageProviders/_base.js";
+import { detectImageMime } from "../translator/concerns/image.js";
 
 function serializeRequestBody(requestBody) {
   if (typeof FormData !== "undefined" && requestBody instanceof FormData) return requestBody;
   if (typeof requestBody === "string") return requestBody;
   return JSON.stringify(requestBody);
+}
+
+function outputFormatMime(outputFormat) {
+  const fmt = (outputFormat || "png").toLowerCase();
+  if (fmt === "jpeg" || fmt === "jpg") return "image/jpeg";
+  if (fmt === "webp") return "image/webp";
+  return "image/png";
+}
+
+/**
+ * Decode the first result (b64_json, or a provider URL fetched through the
+ * hardened fetcher) into a raw-bytes Response. Content-Type comes from the
+ * fetched/detected image type, falling back to the requested output_format.
+ * @returns {Promise<Response|null>} null when there is nothing to inline.
+ */
+async function binaryImageResponse(first, body, proxyOptions) {
+  let b64 = first?.b64_json;
+  let mime = null;
+  if (!b64 && first?.url) {
+    const fetched = await urlToBase64(first.url, proxyOptions);
+    if (!fetched) return null;
+    ({ b64, mimeType: mime } = fetched);
+  }
+  if (!b64) return null;
+  const buf = Buffer.from(b64, "base64");
+  mime = mime || detectImageMime(buf) || outputFormatMime(body.output_format);
+  const subtype = mime.slice(mime.indexOf("/") + 1);
+  const ext = subtype === "jpeg" ? "jpg" : subtype;
+  return new Response(buf, {
+    headers: {
+      "Content-Type": mime,
+      "Content-Disposition": `inline; filename="image.${ext}"`,
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
 }
 
 /**
@@ -74,33 +110,8 @@ export async function handleImageGenerationCore({
         normalized.created && Array.isArray(normalized.data) ? normalized : responseBody;
 
       if (binaryOutput) {
-        const first = finalBody.data?.[0];
-        let b64 = first?.b64_json;
-        if (!b64 && first?.url) {
-          try {
-            b64 = await urlToBase64(first.url, proxyOptions);
-          } catch {}
-        }
-        if (b64) {
-          const buf = Buffer.from(b64, "base64");
-          const fmt = (body.output_format || "png").toLowerCase();
-          const mime =
-            fmt === "jpeg" || fmt === "jpg"
-              ? "image/jpeg"
-              : fmt === "webp"
-                ? "image/webp"
-                : "image/png";
-          return {
-            success: true,
-            response: new Response(buf, {
-              headers: {
-                "Content-Type": mime,
-                "Content-Disposition": `inline; filename="image.${fmt === "jpeg" ? "jpg" : fmt}"`,
-                "Access-Control-Allow-Origin": "*",
-              },
-            }),
-          };
-        }
+        const response = await binaryImageResponse(finalBody.data?.[0], body, proxyOptions);
+        if (response) return { success: true, response };
       }
 
       return {
@@ -235,33 +246,8 @@ export async function handleImageGenerationCore({
 
   // Binary output: decode first b64_json (or fetch url) into raw bytes
   if (binaryOutput) {
-    const first = finalBody.data?.[0];
-    let b64 = first?.b64_json;
-    if (!b64 && first?.url) {
-      try {
-        b64 = await urlToBase64(first.url, proxyOptions);
-      } catch {}
-    }
-    if (b64) {
-      const buf = Buffer.from(b64, "base64");
-      const fmt = (body.output_format || "png").toLowerCase();
-      const mime =
-        fmt === "jpeg" || fmt === "jpg"
-          ? "image/jpeg"
-          : fmt === "webp"
-            ? "image/webp"
-            : "image/png";
-      return {
-        success: true,
-        response: new Response(buf, {
-          headers: {
-            "Content-Type": mime,
-            "Content-Disposition": `inline; filename="image.${fmt === "jpeg" ? "jpg" : fmt}"`,
-            "Access-Control-Allow-Origin": "*",
-          },
-        }),
-      };
-    }
+    const response = await binaryImageResponse(finalBody.data?.[0], body, proxyOptions);
+    if (response) return { success: true, response };
   }
 
   return {

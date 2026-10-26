@@ -1,5 +1,5 @@
 // Shared helpers for image provider adapters
-import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { fetchImageAsBase64 } from "../../translator/concerns/image.js";
 
 export const POLL_INTERVAL_MS = 1500;
 export const POLL_TIMEOUT_MS = 120000;
@@ -19,12 +19,13 @@ export function sizeToAspectRatio(size) {
   return map[size] || "1:1";
 }
 
-// Fetch URL → base64 (for providers returning image URLs)
+// Fetch a provider-returned image URL → { b64, mimeType } via the hardened fetcher
+// (private-IP rejection, no redirects, byte cap, magic-byte check, relay refused).
+// Returns null when the fetch is refused or fails.
 export async function urlToBase64(url, proxyOptions = null) {
-  const res = await proxyAwareFetch(url, {}, proxyOptions);
-  if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
-  const buf = await res.arrayBuffer();
-  return Buffer.from(buf).toString("base64");
+  const fetched = await fetchImageAsBase64(url, { proxyOptions });
+  if (!fetched) return null;
+  return { b64: fetched.url.slice(fetched.url.indexOf(",") + 1), mimeType: fetched.mimeType };
 }
 
 export function nowSec() {
