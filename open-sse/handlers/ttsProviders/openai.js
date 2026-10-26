@@ -1,5 +1,7 @@
 // OpenAI TTS — model format: "tts-model/voice", a bare TTS model id, or a bare voice
 import { Buffer } from "node:buffer";
+import { proxyOptionsFromCredentials } from "../../utils/connectionProxyOptions.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { PROVIDER_MEDIA, PROVIDER_MODELS } from "../../providers/index.js";
 
 const DEFAULT_TTS_MODEL = PROVIDER_MEDIA["openai"]?.ttsConfig?.defaultModel;
@@ -25,15 +27,20 @@ export default {
     voice = voice || options.voice || "alloy";
     const format = options.format || "mp3";
 
+    const proxyOptions = proxyOptionsFromCredentials(credentials);
     const baseUrl = (credentials.baseUrl || "https://api.openai.com").replace(/\/+$/, "");
-    const res = await fetch(`${baseUrl}/v1/audio/speech`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${credentials.apiKey}`,
+    const res = await proxyAwareFetch(
+      `${baseUrl}/v1/audio/speech`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${credentials.apiKey}`,
+        },
+        body: JSON.stringify({ model: ttsModel, voice, input: text, response_format: format }),
       },
-      body: JSON.stringify({ model: ttsModel, voice, input: text, response_format: format }),
-    });
+      proxyOptions,
+    );
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err?.error?.message || `OpenAI TTS failed: ${res.status}`);

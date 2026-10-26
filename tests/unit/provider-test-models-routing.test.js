@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
+vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
+
 const mocks = vi.hoisted(() => ({
   getProviderConnectionByIdUnscoped: vi.fn(),
   getApiKeys: vi.fn(),

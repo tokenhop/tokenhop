@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 
 function hexToBase64(audioHex) {
   const clean = typeof audioHex === "string" ? audioHex.trim() : "";
@@ -10,30 +11,41 @@ function hexToBase64(audioHex) {
 }
 
 // MiniMax T2A HTTP: returns hex-encoded audio in non-streaming mode.
-export default async function minimaxTts({ baseUrl, apiKey, text, modelId, voiceId }) {
-  const res = await fetch(baseUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: modelId || "speech-2.8-hd",
-      text,
-      stream: false,
-      language_boost: "auto",
-      output_format: "hex",
-      voice_setting: {
-        voice_id: voiceId || "English_expressive_narrator",
-        speed: 1,
-        vol: 1,
-        pitch: 0,
-      },
-      audio_setting: {
-        sample_rate: 32000,
-        bitrate: 128000,
-        format: "mp3",
-        channel: 1,
-      },
-    }),
-  });
+export default async function minimaxTts({
+  baseUrl,
+  apiKey,
+  text,
+  modelId,
+  voiceId,
+  proxyOptions,
+}) {
+  const res = await proxyAwareFetch(
+    baseUrl,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: modelId || "speech-2.8-hd",
+        text,
+        stream: false,
+        language_boost: "auto",
+        output_format: "hex",
+        voice_setting: {
+          voice_id: voiceId || "English_expressive_narrator",
+          speed: 1,
+          vol: 1,
+          pitch: 0,
+        },
+        audio_setting: {
+          sample_rate: 32000,
+          bitrate: 128000,
+          format: "mp3",
+          channel: 1,
+        },
+      }),
+    },
+    proxyOptions,
+  );
 
   const rawText = await res.text();
   let data = {};

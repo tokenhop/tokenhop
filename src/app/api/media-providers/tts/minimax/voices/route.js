@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { scopedConnections } from "@/lib/users/workspaceScope.js";
+import { connectionProxyOptions } from "@/lib/network/connectionProxy";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 
 const MINIMAX_VOICE_ENDPOINTS = {
   minimax: "https://api.minimax.io/v1/get_voice",
@@ -81,14 +83,26 @@ export async function GET(request) {
       return NextResponse.json({ error: `No ${provider} connection found` }, { status: 400 });
     }
 
-    const res = await fetch(MINIMAX_VOICE_ENDPOINTS[provider], {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const proxyOptions = await connectionProxyOptions(connections[0]);
+    if (!proxyOptions) {
+      return NextResponse.json(
+        { error: "Failed to fetch voices: proxy resolution failed" },
+        { status: 500 },
+      );
+    }
+
+    const res = await proxyAwareFetch(
+      MINIMAX_VOICE_ENDPOINTS[provider],
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ voice_type: voiceType }),
       },
-      body: JSON.stringify({ voice_type: voiceType }),
-    });
+      proxyOptions,
+    );
 
     const rawText = await res.text();
     let data = {};

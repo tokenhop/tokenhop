@@ -23,10 +23,16 @@ vi.mock("../../open-sse/services/tokenRefresh.js", async (importOriginal) => ({
   ...(await importOriginal()),
   refreshTokenByProvider: mocks.refreshTokenByProvider,
 }));
-vi.mock("@/lib/network/connectionProxy", async (importOriginal) => ({
-  ...(await importOriginal()),
-  resolveConnectionProxyConfig: mocks.resolveConnectionProxyConfig,
-}));
+vi.mock("@/lib/network/connectionProxy", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    connectionProxyOptions: async (connection) => {
+      const proxy = await mocks.resolveConnectionProxyConfig(connection.providerSpecificData || {});
+      return proxy.source === "error" ? null : actual.proxyOptionsFromConfig(proxy);
+    },
+  };
+});
 vi.mock("@/sse/services/tokenRefresh", async (importOriginal) => ({
   ...(await importOriginal()),
   refreshGoogleToken: mocks.refreshGoogleToken,

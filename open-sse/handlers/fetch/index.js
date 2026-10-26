@@ -1,6 +1,9 @@
 // Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, ollama
 // Returns normalized shape across all providers
 
+import { proxyOptionsFromCredentials } from "../../utils/connectionProxyOptions.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_FORMAT = "markdown";
 
@@ -29,15 +32,19 @@ function sanitizeHeaders(headers) {
   return out;
 }
 
-async function tryFetch(url, init, timeoutMs) {
+async function tryFetch(url, init, timeoutMs, proxyOptions) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
-      ...init,
-      headers: sanitizeHeaders(init.headers),
-      signal: ctrl.signal,
-    });
+    const res = await proxyAwareFetch(
+      url,
+      {
+        ...init,
+        headers: sanitizeHeaders(init.headers),
+        signal: ctrl.signal,
+      },
+      proxyOptions,
+    );
     return { ok: true, res };
   } catch (err) {
     const isAbort = err?.name === "AbortError";
@@ -120,6 +127,7 @@ export async function handleFetchCore({
   const apiKey = credentials?.apiKey || credentials?.key || credentials?.token || "";
   const costPerQuery = providerConfig?.costPerQuery ?? null;
   const startedAt = Date.now();
+  const proxyOptions = proxyOptionsFromCredentials(credentials);
 
   try {
     if (provider === "firecrawl") {
@@ -131,10 +139,20 @@ export async function handleFetchCore({
         maxCharacters,
         costPerQuery,
         startedAt,
+        proxyOptions,
       });
     }
     if (provider === "jina-reader") {
-      return await runJina({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt });
+      return await runJina({
+        url,
+        fmt,
+        timeoutMs,
+        apiKey,
+        maxCharacters,
+        costPerQuery,
+        startedAt,
+        proxyOptions,
+      });
     }
     if (provider === "tavily") {
       return await runTavily({
@@ -145,10 +163,20 @@ export async function handleFetchCore({
         maxCharacters,
         costPerQuery,
         startedAt,
+        proxyOptions,
       });
     }
     if (provider === "exa") {
-      return await runExa({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt });
+      return await runExa({
+        url,
+        fmt,
+        timeoutMs,
+        apiKey,
+        maxCharacters,
+        costPerQuery,
+        startedAt,
+        proxyOptions,
+      });
     }
     if (provider === "ollama") {
       return await runOllama({
@@ -160,6 +188,7 @@ export async function handleFetchCore({
         costPerQuery,
         startedAt,
         baseUrl: providerConfig?.baseUrl,
+        proxyOptions,
       });
     }
     return { success: false, status: 400, error: `Unsupported provider: ${provider}` };
@@ -177,6 +206,7 @@ async function runFirecrawl({
   maxCharacters,
   costPerQuery,
   startedAt,
+  proxyOptions,
 }) {
   const upstreamStart = Date.now();
   const r = await tryFetch(
@@ -190,6 +220,7 @@ async function runFirecrawl({
       body: JSON.stringify({ url, formats: [fmt] }),
     },
     timeoutMs,
+    proxyOptions,
   );
 
   if (!r.ok) {
@@ -222,7 +253,16 @@ async function runFirecrawl({
   };
 }
 
-async function runJina({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt }) {
+async function runJina({
+  url,
+  fmt,
+  timeoutMs,
+  apiKey,
+  maxCharacters,
+  costPerQuery,
+  startedAt,
+  proxyOptions,
+}) {
   const upstreamStart = Date.now();
   const r = await tryFetch(
     "https://r.jina.ai/",
@@ -235,6 +275,7 @@ async function runJina({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuer
       body: JSON.stringify({ url }),
     },
     timeoutMs,
+    proxyOptions,
   );
 
   if (!r.ok) {
@@ -265,7 +306,16 @@ async function runJina({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuer
   };
 }
 
-async function runTavily({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt }) {
+async function runTavily({
+  url,
+  fmt,
+  timeoutMs,
+  apiKey,
+  maxCharacters,
+  costPerQuery,
+  startedAt,
+  proxyOptions,
+}) {
   const upstreamStart = Date.now();
   const r = await tryFetch(
     "https://api.tavily.com/extract",
@@ -278,6 +328,7 @@ async function runTavily({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQu
       body: JSON.stringify({ urls: [url], extract_depth: "basic" }),
     },
     timeoutMs,
+    proxyOptions,
   );
 
   if (!r.ok) {
@@ -309,7 +360,16 @@ async function runTavily({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQu
   };
 }
 
-async function runExa({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt }) {
+async function runExa({
+  url,
+  fmt,
+  timeoutMs,
+  apiKey,
+  maxCharacters,
+  costPerQuery,
+  startedAt,
+  proxyOptions,
+}) {
   const upstreamStart = Date.now();
   const r = await tryFetch(
     "https://api.exa.ai/contents",
@@ -322,6 +382,7 @@ async function runExa({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery
       body: JSON.stringify({ ids: [url], text: true }),
     },
     timeoutMs,
+    proxyOptions,
   );
 
   if (!r.ok) {
@@ -362,6 +423,7 @@ async function runOllama({
   costPerQuery,
   startedAt,
   baseUrl,
+  proxyOptions,
 }) {
   const upstreamStart = Date.now();
   const r = await tryFetch(
@@ -375,6 +437,7 @@ async function runOllama({
       body: JSON.stringify({ url }),
     },
     timeoutMs,
+    proxyOptions,
   );
 
   if (!r.ok) {

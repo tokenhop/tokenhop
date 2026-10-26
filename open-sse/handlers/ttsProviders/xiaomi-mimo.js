@@ -3,6 +3,8 @@
 // Message contract: target text in `role: assistant` content, style/voice
 // instructions in `role: user` content. Voice is selected via the top-level
 // `audio.voice` field (NOT embedded in the model name).
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { proxyOptionsFromCredentials } from "../../utils/connectionProxyOptions.js";
 import { parseModelVoice } from "./_base.js";
 
 const DEFAULT_MODEL = "mimo-v2.5-tts";
@@ -11,11 +13,18 @@ const DEFAULT_VOICE = "mimo_default";
 export default {
   synthesize(text, model, credentials, responseFormat, { style, language } = {}) {
     if (!credentials?.apiKey) throw new Error("xiaomi-mimo API key required");
-    return synthesizeMiMo(text, model, credentials.apiKey, style, language);
+    return synthesizeMiMo(
+      text,
+      model,
+      credentials.apiKey,
+      style,
+      language,
+      proxyOptionsFromCredentials(credentials),
+    );
   },
 };
 
-export async function synthesizeMiMo(text, model, apiKey, style, language) {
+export async function synthesizeMiMo(text, model, apiKey, style, language, proxyOptions = null) {
   const { modelId, voiceId } = parseModelVoice(model, DEFAULT_MODEL, DEFAULT_VOICE, [
     DEFAULT_MODEL,
   ]);
@@ -30,22 +39,26 @@ export async function synthesizeMiMo(text, model, apiKey, style, language) {
   const messages = [{ role: "assistant", content: text }];
   if (instructions.length) messages.unshift({ role: "user", content: instructions.join(" ") });
 
-  const res = await fetch("https://api.xiaomimimo.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: modelId,
-      stream: false,
-      messages,
-      audio: {
-        format: "wav",
-        voice: voiceId || DEFAULT_VOICE,
+  const res = await proxyAwareFetch(
+    "https://api.xiaomimimo.com/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
       },
-    }),
-  });
+      body: JSON.stringify({
+        model: modelId,
+        stream: false,
+        messages,
+        audio: {
+          format: "wav",
+          voice: voiceId || DEFAULT_VOICE,
+        },
+      }),
+    },
+    proxyOptions,
+  );
 
   const rawText = await res.text();
   let data = {};

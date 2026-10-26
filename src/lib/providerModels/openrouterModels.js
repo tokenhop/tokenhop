@@ -3,6 +3,8 @@
 // output_modalities=all returns every kind, not only text models.
 
 import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
+import { connectionProxyOptions } from "@/lib/network/connectionProxy";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 
 const MODELS_URL = "https://openrouter.ai/api/v1/models";
 const QUERY = "?output_modalities=all";
@@ -48,25 +50,33 @@ export function parseOpenRouterModels(body) {
   return models;
 }
 
-async function fetchList(url, apiKey) {
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+async function fetchList(url, apiKey, proxyOptions) {
+  const response = await proxyAwareFetch(
+    url,
+    {
+      headers: {
+        Accept: "application/json",
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+    proxyOptions,
+  );
   // Error pages can be large HTML; the warning only needs the start.
   if (!response.ok) throw new Error(`${response.status} ${(await response.text()).slice(0, 300)}`);
   return parseOpenRouterModels(await response.json());
 }
 
 export async function resolveOpenRouter(connection) {
+  const proxyOptions = await connectionProxyOptions(connection);
+  if (!proxyOptions) {
+    return { models: [], warning: "Failed to fetch OpenRouter models: proxy resolution failed" };
+  }
   let models = null;
   let error;
   if (connection.apiKey) {
     try {
-      models = await fetchList(`${MODELS_URL}/user${QUERY}`, connection.apiKey);
+      models = await fetchList(`${MODELS_URL}/user${QUERY}`, connection.apiKey, proxyOptions);
     } catch (e) {
       error = e;
     }
@@ -75,7 +85,7 @@ export async function resolveOpenRouter(connection) {
   // filters allow nothing, and the public list would hide that.
   if (models === null) {
     try {
-      models = await fetchList(`${MODELS_URL}${QUERY}`);
+      models = await fetchList(`${MODELS_URL}${QUERY}`, null, proxyOptions);
     } catch (e) {
       error = e;
     }

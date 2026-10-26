@@ -1,4 +1,6 @@
 // OpenRouter TTS — via chat completions + audio modality (SSE stream)
+import { proxyOptionsFromCredentials } from "../../utils/connectionProxyOptions.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { PROVIDER_MEDIA } from "../../providers/index.js";
 
 const TTS_CFG = PROVIDER_MEDIA["openrouter"]?.ttsConfig || {};
@@ -25,21 +27,26 @@ export default {
     // A voice in the model id wins; the OpenAI-style body `voice` fills the gap.
     voice = voice || options.voice || "alloy";
 
-    const res = await fetch(TTS_CFG.baseUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${credentials.apiKey}`,
-        ...(TTS_CFG.headers || {}),
+    const proxyOptions = proxyOptionsFromCredentials(credentials);
+    const res = await proxyAwareFetch(
+      TTS_CFG.baseUrl,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${credentials.apiKey}`,
+          ...(TTS_CFG.headers || {}),
+        },
+        body: JSON.stringify({
+          model: ttsModel,
+          modalities: ["text", "audio"],
+          audio: { voice, format: "wav" },
+          stream: true,
+          messages: [{ role: "user", content: text }],
+        }),
       },
-      body: JSON.stringify({
-        model: ttsModel,
-        modalities: ["text", "audio"],
-        audio: { voice, format: "wav" },
-        stream: true,
-        messages: [{ role: "user", content: text }],
-      }),
-    });
+      proxyOptions,
+    );
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

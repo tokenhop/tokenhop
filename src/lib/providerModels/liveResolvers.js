@@ -6,7 +6,7 @@
 
 import { ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshClaudeOAuthToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { connectionProxyOptions } from "@/lib/network/connectionProxy";
 import { buildOAuthResolver } from "@/lib/providerModels/oauthResolver.js";
 import { resolveCodex } from "@/lib/providerModels/codexModels.js";
 import {
@@ -51,6 +51,7 @@ import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
 import { normalizeLiveModelId } from "@/shared/utils/liveModels.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { ANTHROPIC_API_VERSION } from "open-sse/providers/shared.js";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels, routableQoderModels } from "open-sse/services/qoderModels.js";
@@ -66,6 +67,10 @@ import { explainEmptyZedCatalog } from "open-sse/shared/zedModelDiagnostics.js";
 export const LIVE_MODELS_TTL_MS = 60 * 1000;
 
 const noModels = (label) => ({ models: [], warning: `${label} returned no live models.` });
+const proxyFailure = (label) => ({
+  models: [],
+  warning: `Failed to fetch ${label} models: proxy resolution failed`,
+});
 const persistRefreshed = (connection) => async (refreshed) => {
   await updateProviderCredentials(connection.id, {
     ...refreshed,
@@ -83,7 +88,7 @@ const ANTHROPIC_MAX_PAGES = 10;
 
 // Fetches every page and returns a Response over { data: [...all] }, so the
 // OAuth resolver can treat it like a single upstream response (refresh on 401).
-async function fetchAllAnthropicModels(authHeaders) {
+async function fetchAllAnthropicModels(authHeaders, proxyOptions) {
   const headers = {
     "Anthropic-Version": ANTHROPIC_API_VERSION,
     "Content-Type": "application/json",
@@ -93,7 +98,7 @@ async function fetchAllAnthropicModels(authHeaders) {
   let afterId = null;
   for (let page = 0; page < ANTHROPIC_MAX_PAGES; page++) {
     const url = `${ANTHROPIC_MODELS_URL}?limit=${ANTHROPIC_PAGE_LIMIT}${afterId ? `&after_id=${encodeURIComponent(afterId)}` : ""}`;
-    const response = await fetch(url, { method: "GET", headers });
+    const response = await proxyAwareFetch(url, { method: "GET", headers }, proxyOptions);
     if (!response.ok) return response;
     const body = await response.json();
     data.push(...(body?.data || []));
@@ -110,20 +115,26 @@ const parseAnthropicModels = (body) =>
 
 // Subscription (OAuth) tokens are rejected as `x-api-key`; Anthropic accepts them
 // only as a Bearer token with the OAuth beta.
-const resolveClaudeOAuthModels = buildOAuthResolver({
-  refreshFn: (conn) => refreshClaudeOAuthToken(conn.refreshToken),
-  fetchFn: (token) =>
-    fetchAllAnthropicModels({
-      Authorization: `Bearer ${token}`,
-      "Anthropic-Beta": ANTHROPIC_OAUTH_BETA,
-    }),
-  parseFn: parseAnthropicModels,
-  errorLabel: "Failed to fetch Claude models",
-});
+const resolveClaudeOAuthModels = (connection, proxyOptions) =>
+  buildOAuthResolver({
+    refreshFn: (conn) => refreshClaudeOAuthToken(conn.refreshToken, proxyOptions),
+    fetchFn: (token) =>
+      fetchAllAnthropicModels(
+        {
+          Authorization: `Bearer ${token}`,
+          "Anthropic-Beta": ANTHROPIC_OAUTH_BETA,
+        },
+        proxyOptions,
+      ),
+    parseFn: parseAnthropicModels,
+    errorLabel: "Failed to fetch Claude models",
+  })(connection);
 
 async function resolveAnthropicApiKey(connection, label) {
   if (!connection.apiKey) return { models: [], warning: "No valid token found" };
-  const response = await fetchAllAnthropicModels({ "x-api-key": connection.apiKey });
+  const proxyOptions = await connectionProxyOptions(connection);
+  if (!proxyOptions) return proxyFailure(label);
+  const response = await fetchAllAnthropicModels({ "x-api-key": connection.apiKey }, proxyOptions);
   if (!response.ok) {
     return {
       models: [],
@@ -136,7 +147,9 @@ async function resolveAnthropicApiKey(connection, label) {
 
 async function resolveClaude(connection) {
   if (connection.accessToken) {
-    const result = await resolveClaudeOAuthModels(connection);
+    const proxyOptions = await connectionProxyOptions(connection);
+    if (!proxyOptions) return proxyFailure("Claude");
+    const result = await resolveClaudeOAuthModels(connection, proxyOptions);
     if (result.error) return { models: [], warning: result.error };
     return result.models.length
       ? result
@@ -149,11 +162,17 @@ async function resolveClaude(connection) {
 // No static catalog by design. Credentials never reach the browser; disabled
 // entries are dropped and an empty catalog is explained, never a silent zero.
 async function resolveZed(connection, { forceRefresh }) {
+  const proxyOptions = await connectionProxyOptions(connection);
+  if (!proxyOptions) return proxyFailure("Zed");
   const credentials = {
     accessToken: connection.accessToken,
     providerSpecificData: connection.providerSpecificData || {},
   };
-  const result = await resolveZedModels(credentials, { config: ZED_HOSTED_CONFIG, forceRefresh });
+  const result = await resolveZedModels(credentials, {
+    config: ZED_HOSTED_CONFIG,
+    forceRefresh,
+    proxyOptions,
+  });
   const models = (result?.models || [])
     .filter((m) => m && !m.isDisabled)
     .map((m) => ({
@@ -176,12 +195,17 @@ async function resolveZed(connection, { forceRefresh }) {
   if (models.length > 0) return { models };
   return {
     models: [],
-    warning: await explainEmptyZedCatalog(credentials, result, { config: ZED_HOSTED_CONFIG }),
+    warning: await explainEmptyZedCatalog(credentials, result, {
+      config: ZED_HOSTED_CONFIG,
+      proxyOptions,
+    }),
   };
 }
 
 // ── Kiro ──────────────────────────────────────────────────────────────────
 async function resolveKiro(connection, { forceRefresh }) {
+  const proxyOptions = await connectionProxyOptions(connection);
+  if (!proxyOptions) return proxyFailure("Kiro");
   const result = await resolveKiroModels(
     {
       accessToken: connection.accessToken,
@@ -189,6 +213,7 @@ async function resolveKiro(connection, { forceRefresh }) {
       providerSpecificData: connection.providerSpecificData || {},
     },
     {
+      proxyOptions,
       forceRefresh,
       log: console,
       onCredentialsRefreshed: async (refreshed) => {
@@ -222,6 +247,8 @@ async function resolveKiro(connection, { forceRefresh }) {
 // (enable:false) catalog keys are routable too, so they are included flagged
 // `hidden` — /v1/models lists them, the dashboard does not.
 async function resolveQoder(connection, { forceRefresh }) {
+  const proxyOptions = await connectionProxyOptions(connection);
+  if (!proxyOptions) return proxyFailure("Qoder");
   const result = await resolveQoderModels(
     {
       accessToken: connection.accessToken,
@@ -232,7 +259,7 @@ async function resolveQoder(connection, { forceRefresh }) {
       displayName: connection.displayName,
       providerSpecificData: connection.providerSpecificData || {},
     },
-    { forceRefresh },
+    { forceRefresh, proxyOptions },
   );
   const details = new Map((result?.models || []).map((m) => [m.id, m]));
   const models = routableQoderModels(result).map((m) => {
@@ -257,18 +284,13 @@ async function resolveQoder(connection, { forceRefresh }) {
 
 // ── Grok CLI ──────────────────────────────────────────────────────────────
 async function resolveGrokCli(connection) {
-  const proxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+  const proxyOptions = await connectionProxyOptions(connection);
+  if (!proxyOptions) return proxyFailure("Grok CLI");
   const result = await resolveGrokCliModels(
     { ...connection, connectionId: connection.id },
     {
       log: console,
-      proxyOptions: {
-        connectionProxyEnabled: proxy.connectionProxyEnabled === true,
-        connectionProxyUrl: proxy.connectionProxyUrl || "",
-        connectionNoProxy: proxy.connectionNoProxy || "",
-        vercelRelayUrl: proxy.vercelRelayUrl || "",
-        strictProxy: proxy.strictProxy === true,
-      },
+      proxyOptions,
       onCredentialsRefreshed: persistRefreshed(connection),
     },
   );
@@ -279,7 +301,8 @@ async function resolveGrokCli(connection) {
 // Resolvers whose service already returns { models } | null and need no mapping.
 const passthrough = (label, resolve) => async (connection, options) => {
   const result = await resolve(connection, options);
-  return result?.models?.length ? { models: result.models } : noModels(label);
+  if (result?.models?.length) return { models: result.models };
+  return { models: [], warning: result?.warning || noModels(label).warning };
 };
 
 export const LIVE_MODEL_RESOLVERS = {
@@ -326,27 +349,48 @@ export const LIVE_MODEL_RESOLVERS = {
   kimi: resolveKimi,
   qoder: resolveQoder,
   "grok-cli": resolveGrokCli,
-  cursor: passthrough("Cursor", (conn, { forceRefresh }) =>
-    resolveCursorModels(
+  // Cursor's catalog rides a raw HTTP/2 CONNECT stream (cursorModels.js), which
+  // cannot be routed through an HTTP(S) proxy. Fail closed when the connection
+  // demands one (proxy pool/relay or Strict Proxy); only a genuinely proxy-less
+  // connection may connect directly.
+  cursor: passthrough("Cursor", async (conn, { forceRefresh }) => {
+    const proxyOptions = await connectionProxyOptions(conn);
+    if (!proxyOptions) return proxyFailure("Cursor");
+    if (
+      proxyOptions.strictProxy ||
+      proxyOptions.connectionProxyEnabled ||
+      proxyOptions.vercelRelayUrl
+    ) {
+      return {
+        models: [],
+        warning:
+          "Failed to fetch Cursor models: connection requires a proxy, which the Cursor HTTP/2 transport does not support",
+      };
+    }
+    return resolveCursorModels(
       {
         accessToken: conn.accessToken,
         providerSpecificData: conn.providerSpecificData || {},
       },
       { forceRefresh, log: console },
-    ),
-  ),
-  kimchi: passthrough("Kimchi", (conn, { forceRefresh }) =>
-    resolveKimchiModels(
+    );
+  }),
+  kimchi: passthrough("Kimchi", async (conn, { forceRefresh }) => {
+    const proxyOptions = await connectionProxyOptions(conn);
+    if (!proxyOptions) return proxyFailure("Kimchi");
+    return resolveKimchiModels(
       {
         accessToken: conn.accessToken,
         apiKey: conn.apiKey,
         providerSpecificData: conn.providerSpecificData || {},
       },
-      { forceRefresh, log: console },
-    ),
-  ),
+      { forceRefresh, log: console, proxyOptions },
+    );
+  }),
   // Copilot's catalog is chat-only; embeddings (models.github.ai) stay static.
   github: passthrough("GitHub Copilot", async (conn, { forceRefresh }) => {
+    const proxyOptions = await connectionProxyOptions(conn);
+    if (!proxyOptions) return proxyFailure("GitHub Copilot");
     const result = await resolveCopilotModels(
       {
         accessToken: conn.accessToken,
@@ -356,6 +400,7 @@ export const LIVE_MODEL_RESOLVERS = {
       {
         forceRefresh,
         log: console,
+        proxyOptions,
         onCredentialsRefreshed: async (refreshed) => {
           await updateProviderCredentials(conn.id, {
             copilotToken: refreshed.copilotToken,
@@ -371,12 +416,22 @@ export const LIVE_MODEL_RESOLVERS = {
   }),
   // Cline and ClinePass share api.cline.bot/api/v1/models; the service handles
   // Bearer-vs-`workos:` auth and swallows failures into null.
-  cline: passthrough("Cline", (conn) =>
-    resolveClineModels({ accessToken: conn.accessToken, apiKey: conn.apiKey }),
-  ),
-  clinepass: passthrough("ClinePass", (conn) =>
-    resolveClinepassModels({ accessToken: conn.accessToken, apiKey: conn.apiKey }),
-  ),
+  cline: passthrough("Cline", async (conn) => {
+    const proxyOptions = await connectionProxyOptions(conn);
+    if (!proxyOptions) return proxyFailure("Cline");
+    return resolveClineModels(
+      { accessToken: conn.accessToken, apiKey: conn.apiKey },
+      { proxyOptions },
+    );
+  }),
+  clinepass: passthrough("ClinePass", async (conn) => {
+    const proxyOptions = await connectionProxyOptions(conn);
+    if (!proxyOptions) return proxyFailure("ClinePass");
+    return resolveClinepassModels(
+      { accessToken: conn.accessToken, apiKey: conn.apiKey },
+      { proxyOptions },
+    );
+  }),
 };
 
 export function hasLiveModelResolver(providerId) {

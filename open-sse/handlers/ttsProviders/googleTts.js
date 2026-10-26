@@ -1,14 +1,20 @@
 // Google Translate TTS (no auth) — scrape token + batchexecute RPC
+import { proxyOptionsFromCredentials } from "../../utils/connectionProxyOptions.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { UA } from "./_base.js";
 
 const REFRESH_MS = 11 * 60 * 1000;
 const cache = { token: null, tokenTime: 0 };
 let _idx = 0;
 
-async function getToken() {
+async function getToken(proxyOptions) {
   const now = Date.now();
   if (cache.token && now - cache.tokenTime < REFRESH_MS) return cache.token;
-  const res = await fetch("https://translate.google.com/", { headers: { "User-Agent": UA } });
+  const res = await proxyAwareFetch(
+    "https://translate.google.com/",
+    { headers: { "User-Agent": UA } },
+    proxyOptions,
+  );
   if (!res.ok) throw new Error(`Google translate fetch failed: ${res.status}`);
   const html = await res.text();
   const fSid = html.match(/"FdrFJe":"(.*?)"/)?.[1];
@@ -21,9 +27,10 @@ async function getToken() {
 
 export default {
   noAuth: true,
-  async synthesize(text, model) {
+  async synthesize(text, model, credentials) {
     const lang = model || "en";
-    const token = await getToken();
+    const proxyOptions = proxyOptionsFromCredentials(credentials);
+    const token = await getToken(proxyOptions);
     const cleanText = text
       .replace(/[@^*()\\/\-_+=><"'\u201c\u201d\u3010\u3011]/g, " ")
       .replaceAll(", ", ". ");
@@ -43,7 +50,7 @@ export default {
     const payload = [cleanText, lang, null, "undefined", [0]];
     const body = new URLSearchParams();
     body.append("f.req", JSON.stringify([[[rpcId, JSON.stringify(payload), null, "generic"]]]));
-    const res = await fetch(
+    const res = await proxyAwareFetch(
       `https://translate.google.com/_/TranslateWebserverUi/data/batchexecute?${query}`,
       {
         method: "POST",
@@ -53,6 +60,7 @@ export default {
         },
         body: body.toString(),
       },
+      proxyOptions,
     );
     if (!res.ok) throw new Error(`Google TTS failed: ${res.status}`);
     const data = await res.text();

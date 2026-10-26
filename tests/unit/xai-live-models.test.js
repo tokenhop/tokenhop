@@ -1,6 +1,11 @@
 // Live xAI catalog (API key + OAuth) seen by the dashboard and /v1/models.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
+vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
+
 const tokenMocks = vi.hoisted(() => ({
   refreshTokenByProvider: vi.fn(),
   updateProviderCredentials: vi.fn(async () => true),

@@ -1,6 +1,11 @@
 // Live GLM Coding (z.ai) and GLM (China, bigmodel.cn) API-key catalogs seen by
 // the dashboard and /v1/models.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
 import { GET } from "@/app/api/providers/[id]/models/route.js";
 import { buildModelsList } from "@/app/api/v1/models/route.js";
 import {

@@ -3,6 +3,11 @@
 // the gateway's GET /v1/models.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
+vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
+
 // Qoder's live catalog: one visible model plus one catalog key flagged
 // enable:false, which chat still routes (see routableQoderModels).
 const qoder = vi.hoisted(() => ({ resolveQoderModels: null }));

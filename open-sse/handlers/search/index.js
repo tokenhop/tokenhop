@@ -12,6 +12,7 @@ import { normalizeSearchResponse } from "./normalizers.js";
 import { handleChatSearch } from "./chatSearch.js";
 import { runGlmMcpSearch } from "./glmMcp.js";
 import { fetchTrusted } from "../../../src/shared/utils/ssrfGuard.js";
+import { proxyOptionsFromCredentials } from "../../utils/connectionProxyOptions.js";
 
 // Providers whose built request needs more than one fetch + resp.json().
 // A runner returns the parsed body or throws an Error with `status`.
@@ -133,11 +134,16 @@ async function tryDedicatedProvider({
     let data;
     const runner = RUNNERS[provider.id];
     if (runner) {
-      data = await runner(url, requestInit);
+      data = await runner(url, requestInit, proxyOptionsFromCredentials(credentials));
     } else {
       // Operator-configured URL (registry/env/connection) — trusted, may be
       // internal (YAN-658); redirects are confined to the same origin.
-      const resp = await fetchTrusted(url, requestInit);
+      const resp = await fetchTrusted(
+        url,
+        requestInit,
+        undefined,
+        proxyOptionsFromCredentials(credentials),
+      );
       if (!resp.ok) {
         clearTimeout(timer);
         const errText = await resp.text().catch(() => "");

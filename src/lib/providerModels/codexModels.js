@@ -12,6 +12,8 @@ import { buildOAuthResolver } from "@/lib/providerModels/oauthResolver.js";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { CODEX_REVIEW_SUFFIX, withCodexReviewModels } from "open-sse/providers/models/helpers.js";
+import { connectionProxyOptions } from "@/lib/network/connectionProxy";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 
 export const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLI_VERSION}`;
 
@@ -78,37 +80,47 @@ export function missingStaticCodexIds(liveModels, staticModels) {
     .map((m) => m.id);
 }
 
-const resolveCodexOAuthModels = buildOAuthResolver({
-  refreshFn: async (conn) => {
-    // A flagged row's refresh token is dead: never redeem it (YAN-1038).
-    if (needsReauthentication("codex", conn)) return null;
-    // Same lock / store re-read / reauth flag as the request path (YAN-1037): a direct
-    // refreshCodexToken here would redeem a stale rotated token.
-    const refreshed = await refreshProviderCredentials(
-      "codex",
-      { ...conn, connectionId: conn.id },
-      log,
-    );
-    if (!refreshed?.accessToken || isUnrecoverableRefreshError(refreshed)) return null;
-    // Stamp the refresh so lastRefreshAt-based lifetime tracking (YAN-1034/1035) stays accurate.
-    return { ...refreshed, lastRefreshAt: new Date().toISOString() };
-  },
-  fetchFn: (token) =>
-    fetch(CODEX_MODELS_URL, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: `Bearer ${token}`,
-        originator: "codex_cli_rs",
-      },
-    }),
-  parseFn: parseCodexModels,
-  errorLabel: "Failed to fetch Codex models",
-});
+const resolveCodexOAuthModels = (connection, proxyOptions) =>
+  buildOAuthResolver({
+    refreshFn: async (conn) => {
+      // A flagged row's refresh token is dead: never redeem it (YAN-1038).
+      if (needsReauthentication("codex", conn)) return null;
+      // Same lock / store re-read / reauth flag as the request path (YAN-1037): a direct
+      // refreshCodexToken here would redeem a stale rotated token.
+      const refreshed = await refreshProviderCredentials(
+        "codex",
+        { ...conn, connectionId: conn.id },
+        log,
+        proxyOptions,
+      );
+      if (!refreshed?.accessToken || isUnrecoverableRefreshError(refreshed)) return null;
+      // Stamp the refresh so lastRefreshAt-based lifetime tracking (YAN-1034/1035) stays accurate.
+      return { ...refreshed, lastRefreshAt: new Date().toISOString() };
+    },
+    fetchFn: (token) =>
+      proxyAwareFetch(
+        CODEX_MODELS_URL,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            Authorization: `Bearer ${token}`,
+            originator: "codex_cli_rs",
+          },
+        },
+        proxyOptions,
+      ),
+    parseFn: parseCodexModels,
+    errorLabel: "Failed to fetch Codex models",
+  })(connection);
 
 export async function resolveCodex(connection) {
-  const result = await resolveCodexOAuthModels(connection);
+  const proxyOptions = await connectionProxyOptions(connection);
+  if (!proxyOptions) {
+    return { models: [], warning: "Failed to fetch Codex models: proxy resolution failed" };
+  }
+  const result = await resolveCodexOAuthModels(connection, proxyOptions);
   if (result.error) return { models: [], warning: result.error };
   if (!result.models.length) {
     return { models: [], warning: result.warning || "Codex returned no live models." };

@@ -17,12 +17,20 @@ vi.mock("open-sse/services/clinepassModels.js", () => ({
 vi.mock("open-sse/services/kimchiModels.js", () => ({
   resolveKimchiModels: (...args) => m.kimchi(...args),
 }));
-vi.mock("@/lib/network/connectionProxy", () => ({
-  resolveConnectionProxyConfig: async () => ({
-    connectionProxyEnabled: true,
-    connectionProxyUrl: "http://proxy.test:8080",
-  }),
-}));
+vi.mock("@/lib/network/connectionProxy", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    resolveConnectionProxyConfig: async () => ({
+      connectionProxyEnabled: true,
+      connectionProxyUrl: "http://proxy.test:8080",
+    }),
+    connectionProxyOptions: async () => ({
+      connectionProxyEnabled: true,
+      connectionProxyUrl: "http://proxy.test:8080",
+    }),
+  };
+});
 vi.mock("@/sse/services/tokenRefresh", async (importOriginal) => ({
   ...(await importOriginal()),
   updateProviderCredentials: (...args) => m.persist(...args),

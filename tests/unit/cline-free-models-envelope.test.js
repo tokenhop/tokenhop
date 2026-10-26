@@ -8,6 +8,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
+
 // Mock the heavy Next.js-dependent imports BEFORE importing ping.js
 // (same pattern as tests/unit/ping-reasoning-models-3010.test.js).
 vi.mock("@/lib/localDb", () => ({

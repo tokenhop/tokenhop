@@ -45,6 +45,7 @@ import { budgetResponse, inBudgetScope, withBudgetScope } from "../services/budg
 import { reauthRequiredResponse } from "open-sse/services/reauthState.js";
 import { revokedKeyTarget } from "./chatRevocation.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { proxyOptionsFromCredentials } from "open-sse/utils/connectionProxyOptions.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { resolveConversationKey } from "open-sse/utils/sessionManager.js";
 import { notifyRequestLogsEnabled } from "open-sse/utils/requestLogger.js";
@@ -788,6 +789,7 @@ async function handleSingleModelChat(
             credentials.connectionId,
             refreshedCredentials.accessToken,
             provider,
+            proxyOptionsFromCredentials(refreshedCredentials),
           );
           if (pid) {
             refreshedCredentials.projectId = pid;

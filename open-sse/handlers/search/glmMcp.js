@@ -52,8 +52,13 @@ export function parseMcpBody(text) {
   return null;
 }
 
-async function rpc(url, init, payload) {
-  const resp = await fetchTrusted(url, { ...init, method: "POST", body: JSON.stringify(payload) });
+async function rpc(url, init, payload, proxyOptions) {
+  const resp = await fetchTrusted(
+    url,
+    { ...init, method: "POST", body: JSON.stringify(payload) },
+    undefined,
+    proxyOptions,
+  );
   const text = await resp.text();
   if (!resp.ok) throw searchError(resp.status, summarizeErrorBody(text));
   if (payload.id === undefined) return { resp };
@@ -70,23 +75,29 @@ async function rpc(url, init, payload) {
   return { resp, result: message.result };
 }
 
-async function openSession(url, init) {
-  const { resp } = await rpc(url, init, {
-    jsonrpc: "2.0",
-    id: "init",
-    method: "initialize",
-    params: {
-      protocolVersion: PROTOCOL_VERSION,
-      capabilities: {},
-      clientInfo: { name: UPSTREAM_CLIENT_IDS.glmMcpClientName, version: "1" },
+async function openSession(url, init, proxyOptions) {
+  const { resp } = await rpc(
+    url,
+    init,
+    {
+      jsonrpc: "2.0",
+      id: "init",
+      method: "initialize",
+      params: {
+        protocolVersion: PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: UPSTREAM_CLIENT_IDS.glmMcpClientName, version: "1" },
+      },
     },
-  });
+    proxyOptions,
+  );
   const sessionId = resp.headers.get("mcp-session-id");
   if (!sessionId) throw searchError(502, "MCP server returned no session id");
   await rpc(
     url,
     { ...init, headers: { ...init.headers, "Mcp-Session-Id": sessionId } },
     { jsonrpc: "2.0", method: "notifications/initialized" },
+    proxyOptions,
   );
   return sessionId;
 }
@@ -102,9 +113,10 @@ function cacheSession(key, id) {
  * A cached session is reused; if it fails, the call is retried once on a fresh session.
  * @param {string} url
  * @param {RequestInit} init  headers (incl. Authorization), JSON-RPC body, signal
+ * @param {object|null} [proxyOptions]  connection proxy options for every hop
  * @returns {Promise<{result: object}>} the JSON-RPC message, as `normalizeGlmSearch` expects
  */
-export async function runGlmMcpSearch(url, init) {
+export async function runGlmMcpSearch(url, init, proxyOptions = null) {
   const key = `${url}\n${init.headers?.Authorization ?? ""}`;
   const cached = sessions.get(key);
   let sessionId = cached && cached.expiresAt > Date.now() ? cached.id : null;
@@ -114,13 +126,14 @@ export async function runGlmMcpSearch(url, init) {
   for (let attempt = 0; ; attempt++) {
     try {
       if (!sessionId) {
-        sessionId = await openSession(url, init);
+        sessionId = await openSession(url, init, proxyOptions);
         cacheSession(key, sessionId);
       }
       const { result } = await rpc(
         url,
         { ...init, headers: { ...init.headers, "Mcp-Session-Id": sessionId } },
         payload,
+        proxyOptions,
       );
       if (result.isError) {
         const text = String(result.content?.[0]?.text || "MCP tool error");

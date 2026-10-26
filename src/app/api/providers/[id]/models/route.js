@@ -12,7 +12,11 @@ import {
   noAuthConnection,
   resolveLiveModels,
 } from "@/lib/providerModels/liveResolvers.js";
+import { connectionProxyOptions } from "@/lib/network/connectionProxy";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 
+const proxyResolutionFailure = () =>
+  NextResponse.json({ error: "Failed to fetch models: proxy resolution failed" }, { status: 500 });
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
   return data?.data || data?.models || data?.results || [];
@@ -83,13 +87,19 @@ export async function GET(request, { params }) {
         );
       }
       const url = `${baseUrl.replace(/\/$/, "")}/models`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${connection.apiKey}`,
+      const proxyOptions = await connectionProxyOptions(connection);
+      if (!proxyOptions) return proxyResolutionFailure();
+      const response = await proxyAwareFetch(
+        url,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${connection.apiKey}`,
+          },
         },
-      });
+        proxyOptions,
+      );
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -125,15 +135,21 @@ export async function GET(request, { params }) {
       }
 
       const url = `${baseUrl}/models`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": connection.apiKey,
-          "anthropic-version": "2023-06-01",
-          Authorization: `Bearer ${connection.apiKey}`,
+      const proxyOptions = await connectionProxyOptions(connection);
+      if (!proxyOptions) return proxyResolutionFailure();
+      const response = await proxyAwareFetch(
+        url,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": connection.apiKey,
+            "anthropic-version": "2023-06-01",
+            Authorization: `Bearer ${connection.apiKey}`,
+          },
         },
-      });
+        proxyOptions,
+      );
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -203,8 +219,14 @@ export async function GET(request, { params }) {
     if (config.authHeader) {
       headers[config.authHeader] = (config.authPrefix || "") + token;
     }
+    const proxyOptions = await connectionProxyOptions(connection);
+    if (!proxyOptions) return proxyResolutionFailure();
 
-    const response = await fetch(config.url, { method: config.method, headers });
+    const response = await proxyAwareFetch(
+      config.url,
+      { method: config.method, headers },
+      proxyOptions,
+    );
 
     if (!response.ok) {
       const errorText = await response.text();

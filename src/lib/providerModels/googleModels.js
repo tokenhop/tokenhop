@@ -5,10 +5,7 @@ import { ANTIGRAVITY_CONFIG, GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken } from "@/sse/services/tokenRefresh";
 import { buildOAuthResolver } from "@/lib/providerModels/oauthResolver.js";
 import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
-import {
-  proxyOptionsFromConfig,
-  resolveConnectionProxyConfig,
-} from "@/lib/network/connectionProxy";
+import { connectionProxyOptions } from "@/lib/network/connectionProxy";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import {
@@ -21,12 +18,6 @@ const kindOf = (model) => model?.kind || model?.type || "llm";
 const positive = (value) => (Number(value) > 0 ? Number(value) : undefined);
 const projectIdOf = (conn) => conn.projectId || conn.providerSpecificData?.projectId || null;
 
-// Strict/pool/relay proxy policy for the connection; null when it cannot be resolved,
-// in which case the caller fails closed rather than going direct.
-async function connectionProxyOptions(connection) {
-  const proxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
-  return proxy.source === "error" ? null : proxyOptionsFromConfig(proxy);
-}
 const proxyFailure = (label) => ({
   models: [],
   warning: `Failed to fetch ${label} models: proxy resolution failed`,

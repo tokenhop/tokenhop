@@ -14,6 +14,8 @@ import { OPENCODE_PUBLIC_HEADERS } from "open-sse/executors/opencode.js";
 import { PROVIDER_MEDIA, PROVIDERS } from "open-sse/providers/index.js";
 import { FILTERS } from "@/app/api/providers/suggested-models/filters.js";
 import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
+import { connectionProxyOptions } from "@/lib/network/connectionProxy";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 
 const FETCH_TIMEOUT_MS = 10_000;
 const positive = (value) => (Number.isFinite(value) && value > 0 ? value : undefined);
@@ -454,15 +456,21 @@ export async function resolveOpencode() {
     : { models: [], warning: "OpenCode Free returned no live models." };
 }
 
-// ponytail: ignores the per-connection proxy the connection test uses; route
-// through resolveConnectionProxyConfig if a proxied connection can't list.
 const resolver = (label, url, parse) => async (connection) => {
   if (!connection.apiKey) return { models: [], warning: "No valid token found" };
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${connection.apiKey}`, Accept: "application/json" },
-    // Failures aren't cached, so an unbounded hang would stall every /v1/models call.
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  const proxyOptions = await connectionProxyOptions(connection);
+  if (!proxyOptions) {
+    return { models: [], warning: `Failed to fetch ${label} models: proxy resolution failed` };
+  }
+  const response = await proxyAwareFetch(
+    url,
+    {
+      headers: { Authorization: `Bearer ${connection.apiKey}`, Accept: "application/json" },
+      // Failures aren't cached, so an unbounded hang would stall every /v1/models call.
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    },
+    proxyOptions,
+  );
   if (!response.ok) {
     // The warning reaches the dashboard: never echo the key back.
     const text = (await response.text()).replaceAll(connection.apiKey, "***").slice(0, 300);

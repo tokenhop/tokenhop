@@ -6,6 +6,8 @@ import { GET as getGenericVoices } from "@/app/api/media-providers/tts/voices/ro
 import { GET as getElevenLabsVoices } from "@/app/api/media-providers/tts/elevenlabs/voices/route.js";
 import { GET as getDeepgramVoices } from "@/app/api/media-providers/tts/deepgram/voices/route.js";
 import { GET as getInworldVoices } from "@/app/api/media-providers/tts/inworld/voices/route.js";
+import { connectionProxyOptions } from "@/lib/network/connectionProxy";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 
 // Provider → internal voices handler, called in-process: an HTTP self-fetch
 // would hit the login-gated /api/media-providers path without credentials.
@@ -55,8 +57,8 @@ function addToLang(byLang, code, voice) {
   if (!group.voices.find((v) => v.id === voice.id)) group.voices.push(voice);
 }
 
-async function fetchUpstream(url, headers, label) {
-  const res = await fetch(url, { headers });
+async function fetchUpstream(url, headers, label, proxyOptions) {
+  const res = await proxyAwareFetch(url, { headers }, proxyOptions);
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`${label} API ${res.status}: ${text || "Failed"}`);
@@ -66,10 +68,10 @@ async function fetchUpstream(url, headers, label) {
 
 // Per-provider raw fetch → byLang groups (same shapes as the dashboard
 // handlers, minus the session-scoped connection lookup).
-async function principalVoicesByLang(provider, apiKey) {
+async function principalVoicesByLang(provider, apiKey, proxyOptions) {
   const byLang = {};
   if (provider === "elevenlabs") {
-    const voices = await fetchElevenLabsVoices(apiKey);
+    const voices = await fetchElevenLabsVoices(apiKey, proxyOptions);
     for (const v of voices) {
       const voice = (code) => ({
         id: v.voice_id,
@@ -94,6 +96,7 @@ async function principalVoicesByLang(provider, apiKey) {
         Authorization: `Token ${apiKey}`,
       },
       "Deepgram",
+      proxyOptions,
     );
     for (const m of data.tts || []) {
       const langs =
@@ -119,6 +122,7 @@ async function principalVoicesByLang(provider, apiKey) {
         Authorization: `Basic ${apiKey}`,
       },
       "Inworld",
+      proxyOptions,
     );
     for (const v of data.voices || []) {
       const langs = Array.isArray(v.languages) && v.languages.length ? v.languages : ["en"];
@@ -218,7 +222,8 @@ export async function GET(request) {
         provider,
         isActive: true,
       });
-      const apiKey = connections.find((c) => c.apiKey)?.apiKey;
+      const connection = connections.find((c) => c.apiKey);
+      const apiKey = connection?.apiKey;
       if (CREDENTIALED_PROVIDERS.has(provider) && !apiKey) {
         return Response.json(
           {
@@ -230,7 +235,22 @@ export async function GET(request) {
           { status: 400, headers: { "Access-Control-Allow-Origin": "*" } },
         );
       }
-      const byLang = await principalVoicesByLang(provider, apiKey);
+      let proxyOptions = null;
+      if (CREDENTIALED_PROVIDERS.has(provider)) {
+        proxyOptions = await connectionProxyOptions(connection);
+        if (!proxyOptions) {
+          return Response.json(
+            {
+              error: {
+                message: "Failed to fetch voices: proxy resolution failed",
+                type: "server_error",
+              },
+            },
+            { status: 500, headers: { "Access-Control-Allow-Origin": "*" } },
+          );
+        }
+      }
+      const byLang = await principalVoicesByLang(provider, apiKey, proxyOptions);
       rawVoices = lang
         ? byLang[lang]?.voices || []
         : Object.values(byLang).flatMap((l) => l.voices);

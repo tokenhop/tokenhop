@@ -15,6 +15,10 @@ const { fetchVoicesMock, dashboardVoicesMock, fetchMock } = vi.hoisted(() => ({
 // Upstream fetch seam for credentialed voices (no live network).
 // deepgram/inworld use the route's own fetchUpstream; stub global fetch.
 vi.stubGlobal("fetch", fetchMock);
+vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
 vi.mock("../../open-sse/handlers/ttsCore.js", () => ({
   fetchElevenLabsVoices: fetchVoicesMock,
   VOICE_FETCHERS: {
@@ -193,7 +197,10 @@ describe("voices under hashed principals", () => {
     const res = await getVoices(bearer(url, TOKEN));
     expect(res.status).toBe(200);
     expect(fetchVoicesMock).toHaveBeenCalledTimes(1);
-    expect(fetchVoicesMock).toHaveBeenCalledWith("sk-conn-w1");
+    expect(fetchVoicesMock).toHaveBeenCalledWith(
+      "sk-conn-w1",
+      expect.objectContaining({ connectionProxyEnabled: false }),
+    );
     const data = await res.json();
     expect(data.object).toBe("list");
     expect(data.data).toHaveLength(1);
@@ -246,7 +253,10 @@ describe("voices under hashed principals", () => {
     ]);
     const res = await getVoices(bearer(url, TOKEN));
     expect(res.status).toBe(200);
-    expect(fetchVoicesMock).toHaveBeenCalledWith("sk-conn-w1");
+    expect(fetchVoicesMock).toHaveBeenCalledWith(
+      "sk-conn-w1",
+      expect.objectContaining({ connectionProxyEnabled: false }),
+    );
     expect((await res.json()).data.map((v) => v.id)).toEqual(["v1"]);
   });
 
