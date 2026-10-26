@@ -52,3 +52,51 @@ export function buildReauthPatch(reauthRequired, nowMs = Date.now()) {
     errorCode: 401,
   };
 }
+
+/** YAN-1286: caller-facing message when every account of a provider is flagged. */
+export function REAUTH_ALL_MESSAGE(provider) {
+  return `All ${provider} accounts need re-authentication. Reconnect them on the Providers page.`;
+}
+
+/**
+ * YAN-1286: all-candidates-skipped-by-reauth result for getProviderCredentials.
+ * Rides the allRateLimited shape (like grantLimitedResult) so handlers that
+ * don't know it answer gracefully; the deliberate wording never matches the
+ * backoff text rules, so combos advance instead of waiting out a cooldown.
+ */
+export function reauthLimitedResult(provider, count, nowMs = Date.now()) {
+  return {
+    allRateLimited: true,
+    retryAfter: new Date(nowMs + 60_000).toISOString(),
+    retryAfterHuman: "reconnect required",
+    lastError: REAUTH_ALL_MESSAGE(provider),
+    lastErrorCode: 503,
+    reauthRequired: { provider, count },
+  };
+}
+
+/**
+ * YAN-1286: HTTP 503 for an all-flagged provider. Not 401 — gateway clients
+ * (Claude Code et al.) read 401 as "your gateway API key is invalid, /login".
+ * No Retry-After: reconnecting is a user action, not a timed wait.
+ */
+export function reauthRequiredResponse({ provider }) {
+  // F7: no account count in the client-facing body (it stays in the AUTH logs).
+  return new Response(
+    JSON.stringify({
+      error: {
+        message: REAUTH_ALL_MESSAGE(provider),
+        type: "authentication_error",
+        param: null,
+        code: "reauth_required",
+      },
+    }),
+    {
+      status: 503,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    },
+  );
+}

@@ -22,6 +22,7 @@ import {
   releaseGrantReservation,
 } from "../services/grantRateLimiter.js";
 import { budgetResponse, withBudgetScope } from "../services/budgetGuard.js";
+import { reauthRequiredResponse } from "open-sse/services/reauthState.js";
 
 function exactEmbeddingUsage(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || raw.estimated === true) return null;
@@ -123,6 +124,8 @@ async function embeddingsLoop({ body, provider, model, gateway, apiKey, url }) {
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
       if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
+      // YAN-1286: all-flagged provider → clear 503 re-auth message, not a lockup.
+      if (credentials?.reauthRequired) return reauthRequiredResponse(credentials.reauthRequired);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status =

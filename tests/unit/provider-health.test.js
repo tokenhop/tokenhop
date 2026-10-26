@@ -308,6 +308,19 @@ describe("re-authentication required (YAN-1038)", () => {
     });
   });
 
+  it("labels a rejected (revoked) access token 'Token revoked' (YAN-1288)", () => {
+    const row = connection("codex", {
+      authType: "access_token",
+      reauthRequired: flag("access_token_rejected"),
+    });
+    expect(connectionHealth(row, NOW)).toMatchObject({
+      status: "err",
+      state: "reauth_required",
+      reason: "Token revoked · open provider",
+      action: "open",
+    });
+  });
+
   it("treats an unflagged access_token row past its expiry the same way", () => {
     const row = connection("codex", {
       authType: "access_token",

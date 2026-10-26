@@ -68,7 +68,6 @@ export async function POST(request) {
     }
 
     const expiresAt = computeExpiresAt({ accessToken: token });
-    const connectionName = name || email || "ChatGPT Access token";
 
     // Save to database as access_token authType (no refresh token)
     const connection = await createIn(scope, {
@@ -77,7 +76,9 @@ export async function POST(request) {
       accessToken: token,
       // YAN-1033: also expose the JWT exp as expiresAt so scheduling/UI see it.
       ...(expiresAt ? { expiresAt } : {}),
-      name: connectionName,
+      // Only a caller-supplied name: createInTx derives the default for NEW rows
+      // (email, else "ChatGPT Access token") and a flagged-row merge keeps its own.
+      ...(name ? { name } : {}),
       email: email,
       providerSpecificData,
       testStatus: "active",
