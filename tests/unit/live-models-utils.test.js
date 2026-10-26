@@ -53,6 +53,8 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "together",
       "venice",
       "vercel-ai-gateway",
+      "vertex",
+      "vertex-partner",
       "xai",
       "zed",
     ]);

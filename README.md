@@ -108,6 +108,23 @@ Editor inline completions (Zed, minuet, lsp-ai, llama.vim): see
 
 `GET /v1/models` lists every model and combo available to the key.
 
+**Vertex live catalogs:** **Providers → Vertex AI / Vertex Partner → Fetch Models**
+refreshes the same catalog used by `/v1/models`. Use Service Account JSON, Google
+ADC `authorized_user` JSON, or a stored access token; raw API-key (express mode)
+connections keep the built-in list and show an explanation without a catalog
+request. Both providers require a project ID (from the credentials or
+`providerSpecificData.projectId`). Vertex AI lists Gemini chat and Veo video
+models, not embeddings, image generation, TTS or Live API variants. ADC-only
+connections omit Veo because the video adapter needs Service Account JSON or an
+existing access token plus an explicit project ID. Vertex Partner lists MaaS
+chat models from `deepseek-ai`, `qwen` and `zai-org` using `publisher/model` ids. Discovery
+lists the publisher's Model Garden catalog, **not** models enabled in your
+project; enable models and check their regional/global availability in Google
+Cloud before use. Successful catalogs keep built-in entries missing from discovery.
+A failed or empty catalog preserves the built-in list with a warning. Partial
+publisher/page failures retain fetched models and show a partial-catalog warning;
+discovery has one 15-second deadline across authentication and all pages.
+
 ## Configuration
 
 The full env contract is in [`.env.example`](.env.example). `.env` is not baked into the

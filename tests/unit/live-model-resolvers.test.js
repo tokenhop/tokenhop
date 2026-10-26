@@ -126,6 +126,8 @@ describe("resolver registry", () => {
       "glm-cn",
       "minimax",
       "minimax-cn",
+      "vertex",
+      "vertex-partner",
     ]) {
       expect(hasLiveModelResolver(id)).toBe(true);
     }

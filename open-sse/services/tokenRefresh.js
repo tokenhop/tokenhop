@@ -86,6 +86,39 @@ export function parseVertexSaJson(apiKey) {
   }
 }
 
+/** Parse the authorized_user JSON emitted by gcloud ADC login. */
+export function parseVertexAdcJson(apiKey) {
+  if (typeof apiKey !== "string") return null;
+  try {
+    const parsed = JSON.parse(apiKey);
+    return parsed?.type === "authorized_user" &&
+      parsed.client_id &&
+      parsed.client_secret &&
+      parsed.refresh_token
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Project selection used by the Vertex chat executor. */
+export function vertexProjectId(
+  credentials,
+  sa = parseVertexSaJson(credentials?.apiKey),
+  adc = parseVertexAdcJson(credentials?.apiKey),
+) {
+  return sa?.project_id || adc?.quota_project_id || credentials?.providerSpecificData?.projectId;
+}
+
+/** Whether the existing Veo adapter can acquire auth for these credentials. */
+export function canServeVertexVideo(credentials) {
+  const sa = parseVertexSaJson(credentials?.apiKey);
+  const projectId =
+    sa?.project_id || credentials?.projectId || credentials?.providerSpecificData?.projectId;
+  return !!(projectId && (sa || credentials?.accessToken));
+}
+
 // Cache Vertex tokens { token, expiresAt }, scoped to the full credential.
 const vertexTokenCache = new Map();
 
