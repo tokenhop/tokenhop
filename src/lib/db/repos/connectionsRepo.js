@@ -9,8 +9,12 @@ import {
   prepareCredentialContext,
 } from "../helpers/credentialStorage.js";
 import { readCredentialEncryptionState } from "../credentialEncryptionState.js";
-import { matchesConnectionIdentity } from "../helpers/connectionIdentity.js";
+import {
+  matchesConnectionIdentity,
+  matchesFlaggedReplacement,
+} from "../helpers/connectionIdentity.js";
 import { loadMasterKey } from "../../security/masterKey.js";
+import { decodeJwtPayload } from "open-sse/utils/jwt.js";
 import { TABLE_NAMES } from "../../security/envelope.js";
 
 const TABLE = TABLE_NAMES.providerConnections;
@@ -373,8 +377,18 @@ function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}, 
     .map((row) => rowToConn(db, row, ctx));
 
   // Identity rules live in matchesConnectionIdentity (shared with the move planner).
-  // access_token: never dedup — user manages duplicates manually.
-  const existing = all.find((c) => matchesConnectionIdentity(c, data));
+  // access_token: never dedup — user manages duplicates manually. YAN-1287: a
+  // flagged (dead) codex row is also replaceable by a fresh grant of the same
+  // account, so a reconnect/re-import leaves no stale flagged row behind.
+  // F2: the flagged fallback never crosses creators — B's import of the same
+  // account must not rewrite A's row (same guard shape as workspace scoping).
+  const sameCreator = (c) =>
+    !owner.createdByUserId || !c.createdByUserId || c.createdByUserId === owner.createdByUserId;
+  const existing =
+    all.find((c) => matchesConnectionIdentity(c, data)) ??
+    (data.provider === "codex"
+      ? all.find((c) => sameCreator(c) && matchesFlaggedReplacement(c, data))
+      : undefined);
   if (existing && rejectDuplicateName && data.authType === "apikey") {
     const err = new Error(`A connection named "${data.name}" already exists for this provider`);
     err.code = "DUPLICATE_CONNECTION_NAME";
@@ -382,11 +396,25 @@ function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}, 
   }
 
   if (existing) {
+    const viaFlaggedFallback = !matchesConnectionIdentity(existing, data);
     const normalized = clearReauthOnCredentialReplace(
       existing,
       resetHealthStateOnActivation(existing, data),
     );
     const merged = { ...existing, ...normalized, updatedAt: now };
+    if (viaFlaggedFallback) {
+      // A reconnect/re-import shouldn't rename the row.
+      if (existing.name && !data.name) merged.name = existing.name;
+      // A replaced access_token must not keep the old row's expiry. Reads the
+      // JWT exp via the dependency-free jwt helper (tokenLifetime would pull
+      // the provider registry into this repo's cold-start path).
+      if (data.authType === "access_token" && data.expiresAt === undefined) {
+        const exp = Number(decodeJwtPayload(data.accessToken)?.exp);
+        merged.expiresAt =
+          Number.isFinite(exp) && exp > 0 ? new Date(exp * 1000).toISOString() : null;
+        merged.tokenExpiresAt = null;
+      }
+    }
     if (data.authType === "oauth") {
       const providerSpecificData = mergeReloginProviderData(
         existing.providerSpecificData,
@@ -403,7 +431,12 @@ function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}, 
 
   let connectionName = data.name || null;
   if (!connectionName && (data.authType === "oauth" || data.authType === "access_token")) {
-    connectionName = deriveConnectionName(data, data.email || `Account ${all.length + 1}`);
+    const fallback =
+      data.email ||
+      (data.authType === "access_token" && data.provider === "codex"
+        ? "ChatGPT Access token"
+        : `Account ${all.length + 1}`);
+    connectionName = deriveConnectionName(data, fallback);
   }
   let connectionPriority = data.priority;
   if (!connectionPriority) {

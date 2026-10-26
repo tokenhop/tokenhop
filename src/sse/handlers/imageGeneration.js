@@ -22,6 +22,7 @@ import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
 import * as log from "../utils/logger.js";
 import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
 import { budgetResponse, budgeted } from "../services/budgetGuard.js";
+import { reauthRequiredResponse } from "open-sse/services/reauthState.js";
 
 // Providers that don't require credentials (noAuth)
 const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui"]);
@@ -177,6 +178,8 @@ async function handleSingleModelImage(
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
       if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
+      // YAN-1286: all-flagged provider → clear 503 re-auth message, not a lockup.
+      if (credentials?.reauthRequired) return reauthRequiredResponse(credentials.reauthRequired);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status =

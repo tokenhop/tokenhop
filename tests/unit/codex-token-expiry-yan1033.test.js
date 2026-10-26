@@ -236,6 +236,8 @@ describe("access-token import route", () => {
     const data = createIn.mock.calls[0][1];
     expect(data.providerSpecificData.jwtExp).toBe(Math.floor((NOW + 6 * HOUR) / 1000));
     expect(data.expiresAt).toBe(new Date(NOW + 6 * HOUR).toISOString());
+    // YAN-1287: no body name → no name sent, so a flagged-row merge keeps its own.
+    expect(data.name).toBeUndefined();
     vi.doUnmock("@/lib/oauth/scope");
     vi.doUnmock("@/lib/oauth/providers");
   });

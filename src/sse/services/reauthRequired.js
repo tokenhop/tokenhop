@@ -1,7 +1,10 @@
 // YAN-1038: flag access-token-only codex connections that can never refresh.
 // Kept out of auth.js (already large).
 import { mutateProviderConnectionUnscoped } from "@/lib/db/index.js";
-import { isTokenExpiredBody } from "open-sse/services/earlyTokenExpiry.js";
+import {
+  classifyAccessTokenRejection,
+  isTokenExpiredBody,
+} from "open-sse/services/earlyTokenExpiry.js";
 import {
   buildReauthPatch,
   buildReauthRequired,
@@ -29,11 +32,12 @@ function inFailureCooldown(id, nowMs) {
 }
 
 function isAccessTokenOnly(conn, providerId) {
-  return (
-    isLifetimeAware(providerId) &&
-    conn.authType === "access_token" &&
-    !conn.refreshToken &&
-    Boolean(conn.accessToken)
+  return Boolean(
+    conn &&
+      isLifetimeAware(providerId) &&
+      conn.authType === "access_token" &&
+      conn.accessToken &&
+      !conn.refreshToken,
   );
 }
 
@@ -44,22 +48,21 @@ function displayName(conn, connectionId) {
 /**
  * Conditional, transactional flag write: only while the live access token is still the
  * failed one and the row is not flagged (a re-import / re-auth wins). Throws on storage errors.
+ * @param {{ reason: string, code: string }} rejection YAN-1288: which flag to write.
  * @returns {Promise<boolean>} true when the flag was written
  */
-async function writeAccessTokenFlag(conn, connectionId) {
+async function writeAccessTokenFlag(conn, connectionId, rejection) {
   const failedAccessToken = conn.accessToken;
   const { applied } = await mutateProviderConnectionUnscoped(connectionId, (live) => {
     if (getReauthRequired(live) || live.refreshToken || live.accessToken !== failedAccessToken) {
       return null;
     }
-    return buildReauthPatch(
-      buildReauthRequired({ reason: REAUTH_REASONS.accessTokenExpired, code: "token_expired" }),
-    );
+    return buildReauthPatch(buildReauthRequired(rejection));
   });
   if (applied) {
     log.warn(
       "AUTH",
-      `${displayName(conn, connectionId)} needs re-authentication (access token expired)`,
+      `${displayName(conn, connectionId)} needs re-authentication (${rejection.reason === REAUTH_REASONS.accessTokenRejected ? "access token rejected" : "access token expired"})`,
     );
   }
   return applied;
@@ -76,7 +79,10 @@ export async function flagExpiredAccessTokenRow(conn, providerId = conn?.provide
   if (flagsInFlight.has(id) || inFailureCooldown(id, Date.now())) return false;
   flagsInFlight.add(id);
   try {
-    const applied = await writeAccessTokenFlag(conn, id);
+    const applied = await writeAccessTokenFlag(conn, id, {
+      reason: REAUTH_REASONS.accessTokenExpired,
+      code: "token_expired",
+    });
     flagFailureUntil.delete(id);
     return applied;
   } catch (error) {
@@ -102,10 +108,23 @@ export async function handleReauthOnFailure({ conn, connectionId, status, errorT
   if (!conn) return null;
   if (getReauthRequired(conn)) return { ...FALLBACK };
   if (status !== 401 || !isAccessTokenOnly(conn, providerId)) return null;
-  if (!isTokenExpiredBody(errorText) && !isAccessTokenOnlyExpired(providerId, conn)) return null;
+
+  // YAN-1288: a conclusive rejection (revoked/invalidated token) is flagged like
+  // an expiry — the row can never serve again until re-imported. Unrecognized
+  // 401 bodies keep today's 2-minute lock (no flag on bare 401s).
+  const rejectionCode = classifyAccessTokenRejection(errorText);
+  const rejection = rejectionCode
+    ? { reason: REAUTH_REASONS.accessTokenRejected, code: rejectionCode }
+    : null;
+  if (!isTokenExpiredBody(errorText) && !rejection && !isAccessTokenOnlyExpired(providerId, conn))
+    return null;
 
   try {
-    await writeAccessTokenFlag(conn, connectionId);
+    await writeAccessTokenFlag(
+      conn,
+      connectionId,
+      rejection ?? { reason: REAUTH_REASONS.accessTokenExpired, code: "token_expired" },
+    );
   } catch (error) {
     log.warn("AUTH", `Could not persist re-authentication state: ${error?.message || error}`);
     return null;
