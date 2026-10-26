@@ -122,7 +122,7 @@ const GROUPS = {
   keyCollection: `keys`,
   keyCreate: `keys/context`,
   keyManage: `keys/[id]`,
-  usage: `usage/[connectionId] usage/chart usage/history usage/last-activity usage/logs
+  usage: `usage/[connectionId] usage/chart usage/export usage/history usage/last-activity usage/logs
     usage/providers usage/request-details usage/request-logs usage/savings usage/stats usage/stream
     home/live-routes home/quota home/summary shell/summary shell/savings-milestone`,
   usageReadWrite: `usage/[connectionId]/codex-reset-credits`,

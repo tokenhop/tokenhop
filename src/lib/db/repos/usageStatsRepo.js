@@ -247,18 +247,25 @@ function addCompletionsLatency(stats, db, scope, period, ctx, range = null) {
   );
 }
 
-const historyRow = (r) => {
+/** Token counts for one usageHistory row: prompt/completion from the
+ * columns only, cached from the tokens JSON (both cache aliases). Shared by
+ * the stats aggregator and the usage export so their totals always match. */
+export function historyTokens(r) {
   const t = parseJson(r.tokens, {}) || {};
   return {
-    ...r,
-    requests: 1,
     tokensIn: r.promptTokens || 0,
     tokensOut: r.completionTokens || 0,
     tokensCached: t.cached_tokens || t.cache_read_input_tokens || 0,
-    cost: r.cost || 0,
-    lastUsed: r.timestamp,
   };
-};
+}
+
+const historyRow = (r) => ({
+  ...r,
+  requests: 1,
+  ...historyTokens(r),
+  cost: r.cost || 0,
+  lastUsed: r.timestamp,
+});
 
 /**
  * Custom ranges (YAN-426) arrive pre-validated by the route as inclusive local
@@ -506,3 +513,155 @@ export async function getChartData(ctx, period = "7d", range = null) {
     };
   });
 }
+
+// --- Usage export (YAN-425) -------------------------------------------------
+// Streaming readers for GET /api/usage/export. Daily rows follow the
+// on-screen totals: sub-day periods (today, 24h) fold usageHistory from
+// periodStart; day-grain periods (7d..90d), `all` and custom ranges read
+// usageRollup by local day key. Request rows always read usageHistory:
+// named periods use the same local-day cutoff converted to ms (periodStart
+// for day-grain periods is local midnight of the first rollup day; today/24h
+// use their exact periodStart), custom ranges use the local-day bounds of
+// from..to inclusive, and `all` has no lower bound. History retention is
+// opt-in (default keeps forever), so pruned days simply have no request
+// rows; daily rollup rows are unaffected by pruning.
+
+const EXPORT_PAGE_SIZE = 500;
+
+/**
+ * Page through usageHistory rows in `[window.startMs, window.nowMs]` within
+ * scope (startMs null = no lower bound), oldest first, keyset-paginated on
+ * the row id. Each yielded row is shaped for the export: connection id
+ * resolved to its display name, apiKeyId to the key's display name + masked
+ * prefix (never a raw key), token counts via historyTokens (the same
+ * normalization getUsageStats uses), and `saved_tokens_est` summed from
+ * meta.savings (0 when the row has none). `api_key_id` rides along for the
+ * daily fold's group key; it is not an export column.
+ * @param {object|null} ctx usage scope
+ * @param {{startMs: number|null, nowMs: number}} window
+ */
+export async function* streamRequestRows(ctx, { startMs, nowMs }) {
+  const db = await getAdapter();
+  const scope = scopeSql(ctx);
+  const [maps, keyNames] = [await nameMaps(), await apiKeyNames(db)];
+  const startIso = startMs == null ? null : new Date(startMs).toISOString();
+  const endIso = new Date(nowMs).toISOString();
+  let lastId = 0;
+  for (;;) {
+    const rows = db.all(
+      `SELECT id, timestamp, provider, model, connectionId, apiKeyId, endpoint, promptTokens, completionTokens, cost, status, tokens, meta
+       FROM usageHistory ${whereAll(scope.sql, startIso ? "timestamp >= ?" : "", "timestamp <= ?", "id > ?")}
+       ORDER BY id ASC LIMIT ?`,
+      [...scope.params, ...(startIso ? [startIso] : []), endIso, lastId, EXPORT_PAGE_SIZE],
+    );
+    if (!rows.length) return;
+    for (const r of rows) {
+      const key = apiKeyIdentity(r.apiKeyId, keyNames);
+      const tokens = historyTokens(r);
+      yield {
+        timestamp: r.timestamp,
+        provider: r.provider || "",
+        model: r.model || "",
+        account: r.connectionId
+          ? maps.connections[r.connectionId] || `Account ${r.connectionId.slice(0, 8)}...`
+          : "",
+        account_id: r.connectionId || "",
+        api_key: key.keyName,
+        api_key_id: r.apiKeyId || "",
+        api_key_masked: key.apiKeyMasked || "",
+        endpoint: r.endpoint || "",
+        prompt_tokens: tokens.tokensIn,
+        completion_tokens: tokens.tokensOut,
+        cached_tokens: tokens.tokensCached,
+        cost: r.cost || 0,
+        status: r.status || "",
+        saved_tokens_est: savedTokensOf(r.meta),
+      };
+    }
+    lastId = rows[rows.length - 1].id;
+  }
+}
+
+function savedTokensOf(meta) {
+  const savings = parseJson(meta, {})?.savings;
+  if (!savings || typeof savings !== "object") return 0;
+  const methods = savings.byMethod;
+  if (!methods || typeof methods !== "object") return 0;
+  let saved = 0;
+  for (const method of Object.values(methods)) {
+    const value = Number(method?.tokensSavedEst) || 0;
+    if (value > 0) saved += value;
+  }
+  return saved;
+}
+
+/**
+ * Page through usageRollup rows in `[fromKey, toKey]` (either bound null =
+ * open) within scope, keyset-paginated on the rollup's dimension key. Rows
+ * are export-shaped; `saved_tokens_est` is 0 because the rollup carries no
+ * per-request savings (that estimate only exists on usageHistory meta).
+ * @param {object|null} ctx usage scope
+ * @param {{fromKey: string|null, toKey: string|null}} window inclusive day keys
+ */
+export async function* streamDailyRows(ctx, { fromKey, toKey }) {
+  const db = await getAdapter();
+  const scope = scopeSql(ctx);
+  const [maps, keyNames] = [await nameMaps(), await apiKeyNames(db)];
+  const cursorCols = ["dateKey", ...DIMS_EXPORT];
+  let cursor = null;
+  for (;;) {
+    const params = [...scope.params];
+    if (fromKey) params.push(fromKey);
+    if (toKey) params.push(toKey);
+    if (cursor) params.push(...cursor);
+    const proj = DIMS_EXPORT.map((k) => (k === "apiKeyId" ? k : `NULLIF(${k}, '') AS ${k}`)).join(
+      ", ",
+    );
+    const rows = db.all(
+      `SELECT dateKey, ${proj}, requests, tokensIn, tokensOut, tokensCached, cost FROM usageRollup
+       ${whereAll(
+         scope.sql,
+         fromKey ? "dateKey >= ?" : "",
+         toKey ? "dateKey <= ?" : "",
+         cursor ? `(${cursorCols.join(", ")}) > (${cursorCols.map(() => "?").join(", ")})` : "",
+       )}
+       ORDER BY ${cursorCols.join(", ")} LIMIT ?`,
+      [...params, EXPORT_PAGE_SIZE],
+    );
+    if (!rows.length) return;
+    for (const r of rows) {
+      const key = apiKeyIdentity(r.apiKeyId, keyNames);
+      yield {
+        date: r.dateKey,
+        provider: r.provider || "",
+        model: r.model || "",
+        account: r.connectionId
+          ? maps.connections[r.connectionId] || `Account ${r.connectionId.slice(0, 8)}...`
+          : "",
+        account_id: r.connectionId || "",
+        api_key: key.keyName,
+        api_key_id: r.apiKeyId || "",
+        api_key_masked: key.apiKeyMasked || "",
+        endpoint: r.endpoint || "",
+        requests: r.requests || 0,
+        prompt_tokens: r.tokensIn || 0,
+        completion_tokens: r.tokensOut || 0,
+        cached_tokens: r.tokensCached || 0,
+        cost: Number((r.cost || 0).toFixed(9)),
+        saved_tokens_est: 0,
+      };
+    }
+    const last = rows[rows.length - 1];
+    cursor = cursorCols.map((c) => last[c] ?? "");
+  }
+}
+
+const DIMS_EXPORT = [
+  "workspaceId",
+  "userId",
+  "apiKeyId",
+  "provider",
+  "model",
+  "connectionId",
+  "endpoint",
+];
