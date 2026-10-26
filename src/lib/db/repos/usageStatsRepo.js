@@ -546,13 +546,32 @@ export async function* streamRequestRows(ctx, { startMs, nowMs }) {
   const [maps, keyNames] = [await nameMaps(), await apiKeyNames(db)];
   const startIso = startMs == null ? null : new Date(startMs).toISOString();
   const endIso = new Date(nowMs).toISOString();
+  // Keyset on (timestamp, id) over the existing `(.., timestamp DESC)`
+  // indexes: SQLite scans those indexes backward, yielding rows in
+  // `timestamp ASC, rowid(id) DESC` order with no temp B-tree, so a scoped
+  // page seeks to the cursor instead of temp-sorting by id. The lower bound
+  // stays a separate `timestamp >= startIso` term. Row-value
+  // `(timestamp, id)` comparison is avoided for adapter safety
+  // (sql.js/node:sqlite); the expanded OR form plans identically.
+  let lastTs = null;
   let lastId = 0;
   for (;;) {
     const rows = db.all(
       `SELECT id, timestamp, provider, model, connectionId, apiKeyId, endpoint, promptTokens, completionTokens, cost, status, tokens, meta
-       FROM usageHistory ${whereAll(scope.sql, startIso ? "timestamp >= ?" : "", "timestamp <= ?", "id > ?")}
-       ORDER BY id ASC LIMIT ?`,
-      [...scope.params, ...(startIso ? [startIso] : []), endIso, lastId, EXPORT_PAGE_SIZE],
+       FROM usageHistory ${whereAll(
+         scope.sql,
+         startIso ? "timestamp >= ?" : "",
+         "timestamp <= ?",
+         lastTs ? "(timestamp > ? OR (timestamp = ? AND id < ?))" : "",
+       )}
+       ORDER BY timestamp ASC, id DESC LIMIT ?`,
+      [
+        ...scope.params,
+        ...(startIso ? [startIso] : []),
+        endIso,
+        ...(lastTs ? [lastTs, lastTs, lastId] : []),
+        EXPORT_PAGE_SIZE,
+      ],
     );
     if (!rows.length) return;
     for (const r of rows) {
@@ -578,6 +597,7 @@ export async function* streamRequestRows(ctx, { startMs, nowMs }) {
         saved_tokens_est: savedTokensOf(r.meta),
       };
     }
+    lastTs = rows[rows.length - 1].timestamp;
     lastId = rows[rows.length - 1].id;
   }
 }
@@ -613,19 +633,24 @@ export async function* streamDailyRows(ctx, { fromKey, toKey }) {
     const params = [...scope.params];
     if (fromKey) params.push(fromKey);
     if (toKey) params.push(toKey);
-    if (cursor) params.push(...cursor);
+    if (cursor) params.push(cursor[0], ...cursor);
     const proj = DIMS_EXPORT.map((k) => (k === "apiKeyId" ? k : `NULLIF(${k}, '') AS ${k}`)).join(
       ", ",
     );
+    // ORDER BY the table columns (usageRollup.<col>), not the NULLIF output
+    // aliases — alias ordering forces a temp sort. The extra
+    // `dateKey >= cursorDate` term lets the PK seek to the cursor's day.
+    const orderBy = cursorCols.map((c) => `usageRollup.${c}`).join(", ");
     const rows = db.all(
       `SELECT dateKey, ${proj}, requests, tokensIn, tokensOut, tokensCached, cost FROM usageRollup
        ${whereAll(
          scope.sql,
          fromKey ? "dateKey >= ?" : "",
          toKey ? "dateKey <= ?" : "",
+         cursor ? "dateKey >= ?" : "",
          cursor ? `(${cursorCols.join(", ")}) > (${cursorCols.map(() => "?").join(", ")})` : "",
        )}
-       ORDER BY ${cursorCols.join(", ")} LIMIT ?`,
+       ORDER BY ${orderBy} LIMIT ?`,
       [...params, EXPORT_PAGE_SIZE],
     );
     if (!rows.length) return;

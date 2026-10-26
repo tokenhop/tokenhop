@@ -28,7 +28,7 @@ function exportDayWindow(period, now = Date.now()) {
   if (period === "today" || period === "24h") return { fromKey: todayKey, toKey: todayKey };
   const days = PERIOD_DAYS[period];
   if (!days) throw new Error(`Invalid period: ${period}`);
-  return { fromKey: cutoffDateKey(days), toKey: todayKey };
+  return { fromKey: cutoffDateKey(days, now), toKey: todayKey };
 }
 
 /**
@@ -41,13 +41,12 @@ function exportDayWindow(period, now = Date.now()) {
 export function exportWindow(period, range = null, now = Date.now()) {
   if (isCustomPeriod(period)) {
     if (!range?.from || !range?.to) throw new Error("custom period requires a {from, to} range");
-    const customRange = range;
     return {
       history: {
-        startMs: localDayStartMs(customRange.from),
-        nowMs: nextLocalDayStartMs(customRange.to) - 1,
+        startMs: localDayStartMs(range.from),
+        nowMs: nextLocalDayStartMs(range.to) - 1,
       },
-      rollup: { fromKey: customRange.from, toKey: customRange.to },
+      rollup: { fromKey: range.from, toKey: range.to },
     };
   }
   const history =

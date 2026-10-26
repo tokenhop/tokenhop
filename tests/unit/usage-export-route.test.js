@@ -24,6 +24,7 @@ vi.mock("next/headers", () => ({
 
 let t;
 let GET;
+let makeStream;
 let parseExportParams;
 
 const NOW = "2026-10-09T00:00:00.000Z";
@@ -40,7 +41,7 @@ async function load(state) {
   jar.cookie = "";
   vi.resetModules();
   process.env[ENV] = state;
-  ({ GET, parseExportParams } = await import("@/app/api/usage/export/route.js"));
+  ({ GET, makeStream, parseExportParams } = await import("@/app/api/usage/export/route.js"));
 }
 
 async function as(seeded, path) {
@@ -294,11 +295,9 @@ describe("GET /api/usage/export", () => {
   });
 
   it("request export for 7d and custom ranges streams history; nosniff is set", async () => {
-    for (const q of [
-      "period=7d",
-      `period=custom&from=${new Date().toISOString().slice(0, 10)}&to=${new Date().toISOString().slice(0, 10)}`,
-      "period=all",
-    ]) {
+    const { localDateKey } = await import("@/lib/db/repos/usageRollupRepo.js");
+    const todayKey = localDateKey(new Date().toISOString());
+    for (const q of ["period=7d", `period=custom&from=${todayKey}&to=${todayKey}`, "period=all"]) {
       const res = await as(
         t.a,
         `/api/usage/export?${q}&granularity=request&format=json&workspaceId=${t.shared.id}`,
@@ -307,6 +306,48 @@ describe("GET /api/usage/export", () => {
       expect(res.headers.get("x-content-type-options")).toBe("nosniff");
       expect(JSON.parse(await res.text())).toHaveLength(3);
     }
+  });
+
+  it("neutralizes a formula-leading model in CSV at route level", async () => {
+    const a = await adapter();
+    const ts = new Date();
+    ts.setHours(7, 0, 0, 0);
+    a.run(
+      `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta, workspaceId, userId, apiKeyId)
+       VALUES (?, 'openai', '=cmd', NULL, NULL, '/v1/chat', 1, 1, 0, 'ok', '{}', '{}', ?, ?, 'k-a')`,
+      [ts.toISOString(), t.shared.id, t.a.user.id],
+    );
+    const body = await (
+      await as(
+        t.a,
+        `/api/usage/export?period=today&granularity=request&format=csv&workspaceId=${t.shared.id}`,
+      )
+    ).text();
+    expect(body).toContain("'=cmd");
+    expect(body).not.toContain(",=cmd,");
+  });
+
+  it("cancelling the stream calls iterator return without logging a stream failure", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let returned = false;
+    async function* rows() {
+      try {
+        yield { timestamp: "2026-01-01T00:00:00.000Z" };
+        yield { timestamp: "2026-01-01T00:01:00.000Z" };
+      } finally {
+        returned = true;
+      }
+    }
+    const it = rows();
+    const first = await it.next();
+    const stream = makeStream(it, first, { format: "csv", columns: ["timestamp"] });
+    const reader = stream.getReader();
+    await reader.read();
+    await reader.cancel();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(returned).toBe(true);
+    expect(errorSpy.mock.calls.flat().join(" ")).not.toContain("Usage export stream failed");
+    errorSpy.mockRestore();
   });
 
   it("token parity: promptTokens=0 columns ignore JSON fallbacks, matching getUsageStats", async () => {
@@ -352,8 +393,11 @@ describe("GET /api/usage/export", () => {
       values.push(
         "(?, 'openai', ?, NULL, NULL, '/v1/chat', 1, 1, 0.001, 'ok', '{}', '{}', ?, ?, 'k-a')",
       );
+      // Rows 497..504 share one timestamp, spanning the 500-row page edge so
+      // the (timestamp, id) cursor must split a tie without dupes or misses.
+      const tie = i >= 497 && i <= 506 ? 497 : i;
       params.push(
-        new Date(base.getTime() + i * 1000).toISOString(),
+        new Date(base.getTime() + tie * 1000).toISOString(),
         `m-${String(i).padStart(3, "0")}`,
         t.shared.id,
         t.a.user.id,

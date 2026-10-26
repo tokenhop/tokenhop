@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Menu, MenuItem } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
@@ -24,6 +25,7 @@ import { periodQuery } from "../lib/periodRequest";
  */
 export default function UsageExportButton({ period, range, filters }) {
   const notifyError = useNotificationStore((s) => s.error);
+  const [exporting, setExporting] = useState(false);
   if (!period) return null;
   const url = (format, granularity) =>
     appendUsageFilters(
@@ -32,45 +34,55 @@ export default function UsageExportButton({ period, range, filters }) {
     );
 
   const download = async (format, granularity) => {
-    const target = url(format, granularity);
-    let res;
+    if (exporting) return;
+    setExporting(true);
     try {
-      res = await fetch(target, { cache: "no-store" });
-    } catch {
-      notifyError("Export failed. Check your connection and try again.", {
-        title: "Usage export",
-      });
-      return;
-    }
-    if (!res.ok) {
-      let message = `Export failed (${res.status}).`;
+      const target = url(format, granularity);
+      let res;
       try {
-        const body = await res.json();
-        if (typeof body?.error === "string" && body.error) message = body.error;
+        res = await fetch(target, { cache: "no-store" });
       } catch {
-        // Non-JSON error body: keep the status message.
+        notifyError("Export failed. Check your connection and try again.", {
+          title: "Usage export",
+        });
+        return;
       }
-      notifyError(message, { title: "Usage export" });
-      return;
+      if (!res.ok) {
+        let message = `Export failed (${res.status}).`;
+        try {
+          const body = await res.json();
+          if (typeof body?.error === "string" && body.error) message = body.error;
+        } catch {}
+        notifyError(message, { title: "Usage export" });
+        return;
+      }
+      // Success: discard the preflight body — anchor download streams.
+      try {
+        await res.body?.cancel();
+      } catch {}
+      const a = document.createElement("a");
+      a.href = target;
+      a.download = "";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } finally {
+      setExporting(false);
     }
-    // Success: discard the preflight body — the anchor download re-requests
-    // and streams to disk without holding the export in memory.
-    try {
-      await res.body?.cancel();
-    } catch {}
-    const a = document.createElement("a");
-    a.href = target;
-    a.download = "";
-    a.rel = "noopener";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
   };
 
   return (
     <Menu
       trigger={
-        <Button variant="secondary" size="sm" icon="download" iconRight="expand_more">
+        <Button
+          variant="secondary"
+          size="sm"
+          icon="download"
+          iconRight="expand_more"
+          disabled={exporting}
+          loading={exporting}
+        >
           Export
         </Button>
       }
@@ -78,6 +90,7 @@ export default function UsageExportButton({ period, range, filters }) {
       <MenuItem
         icon="table_rows"
         label="CSV, daily totals"
+        disabled={exporting}
         onSelect={() => void download("csv", "day")}
       >
         CSV, daily totals
@@ -85,6 +98,7 @@ export default function UsageExportButton({ period, range, filters }) {
       <MenuItem
         icon="data_object"
         label="JSON, daily totals"
+        disabled={exporting}
         onSelect={() => void download("json", "day")}
       >
         JSON, daily totals
@@ -92,6 +106,7 @@ export default function UsageExportButton({ period, range, filters }) {
       <MenuItem
         icon="table_rows"
         label="CSV, per request"
+        disabled={exporting}
         onSelect={() => void download("csv", "request")}
       >
         CSV, per request
@@ -99,6 +114,7 @@ export default function UsageExportButton({ period, range, filters }) {
       <MenuItem
         icon="data_object"
         label="JSON, per request"
+        disabled={exporting}
         onSelect={() => void download("json", "request")}
       >
         JSON, per request

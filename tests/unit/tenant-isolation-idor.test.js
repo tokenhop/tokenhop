@@ -298,6 +298,7 @@ describe("dashboard IDOR denials", () => {
       ["usage/stats", "GET"],
       ["usage/export", "GET"],
       ["usage/logs", "GET"],
+      ["usage/request-details", "GET"],
       ["audit", "GET"],
       ["models/alias", "PUT", { model: "openai/x", alias: "a-private-alias" }],
       ["models", "PUT", { model: "openai/gpt-4o", alias: "hijacked" }],

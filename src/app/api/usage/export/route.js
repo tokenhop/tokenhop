@@ -79,7 +79,7 @@ function rowStream(scope, { period, granularity, window }) {
   return streamDailyRows(scope, window.rollup);
 }
 
-function makeStream(iterator, first, { format, columns }) {
+export function makeStream(iterator, first, { format, columns }) {
   const encoder = new TextEncoder();
   let pending = first;
   let started = false;
@@ -106,9 +106,10 @@ function makeStream(iterator, first, { format, columns }) {
             out += format === "json" ? "[" : csvHeader(columns);
           }
           while (out.length < BATCH_BYTES) {
+            if (closed) return;
             if (pending.done) {
               if (format === "json") out += "]";
-              controller.enqueue(encoder.encode(out));
+              if (!closed) controller.enqueue(encoder.encode(out));
               closed = true;
               controller.close();
               return;
@@ -116,13 +117,17 @@ function makeStream(iterator, first, { format, columns }) {
             out += serialize(pending.value);
             pending = await iterator.next();
           }
-          controller.enqueue(encoder.encode(out));
+          if (!closed) controller.enqueue(encoder.encode(out));
         } catch (error) {
+          if (closed) return;
           console.error("[API] Usage export stream failed:", error);
-          controller.error(error);
+          try {
+            controller.error(error);
+          } catch {}
         }
       },
       cancel() {
+        closed = true;
         return iterator.return?.();
       },
     },
