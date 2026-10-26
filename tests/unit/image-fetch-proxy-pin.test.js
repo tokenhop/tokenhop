@@ -268,16 +268,19 @@ describe("fetchImageAsBase64 through a connection relay", () => {
 
   it("refuses the image instead of sending the hostname to the relay", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const result = await fetchImageAsBase64(`https://${HOST}/a.png`, {
-      proxyOptions: { vercelRelayUrl: relayUrl },
-    });
+    try {
+      const result = await fetchImageAsBase64(`https://${HOST}/a.png`, {
+        proxyOptions: { vercelRelayUrl: relayUrl },
+      });
 
-    expect(result).toBeNull();
-    expect(relayHits).toHaveLength(0);
-    expect(seen).toHaveLength(0);
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0][0])).not.toContain(HOST);
-    warn.mockRestore();
+      expect(result).toBeNull();
+      expect(relayHits).toHaveLength(0);
+      expect(seen).toHaveLength(0);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).not.toContain(HOST);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("rejects a pinned proxyAwareFetch request routed through a relay", async () => {
