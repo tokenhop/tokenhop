@@ -10,6 +10,12 @@ vi.mock("@/sse/services/tokenRefresh", async (importOriginal) => ({
   ...(await importOriginal()),
   ...tokenMocks,
 }));
+// Catalog fetches go through proxyAwareFetch, which captures the real fetch at import.
+// Delegate to the per-test global fetch stub instead.
+vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
 
 import { GET } from "@/app/api/providers/[id]/models/route.js";
 import { buildModelsList } from "@/app/api/v1/models/route.js";

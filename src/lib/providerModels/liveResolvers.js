@@ -14,6 +14,7 @@ import {
   resolveGemini,
   resolveGeminiCli,
 } from "@/lib/providerModels/googleModels.js";
+import { resolveVertex, resolveVertexPartner } from "@/lib/providerModels/vertexModels.js";
 import { resolveXai } from "@/lib/providerModels/xaiModels.js";
 import { resolveKimi } from "@/lib/providerModels/kimiModels.js";
 import { resolveOpenAI } from "@/lib/providerModels/openaiModels.js";
@@ -31,6 +32,8 @@ import {
   resolveGroq,
   resolveHyperbolic,
   resolveLlm7,
+  resolveMinimax,
+  resolveMinimaxCn,
   resolveMistral,
   resolveNebius,
   resolveNvidia,
@@ -285,6 +288,8 @@ export const LIVE_MODEL_RESOLVERS = {
   gemini: resolveGemini,
   "gemini-cli": resolveGeminiCli,
   antigravity: resolveAntigravity,
+  vertex: resolveVertex,
+  "vertex-partner": resolveVertexPartner,
   xai: resolveXai,
   openai: resolveOpenAI,
   openrouter: resolveOpenRouter,
@@ -311,6 +316,8 @@ export const LIVE_MODEL_RESOLVERS = {
   "alicode-intl": resolveAlicodeIntl,
   glm: resolveGlm,
   "glm-cn": resolveGlmCn,
+  minimax: resolveMinimax,
+  "minimax-cn": resolveMinimaxCn,
   ollama: resolveOllama,
   "ollama-local": resolveOllamaLocal,
   codex: resolveCodex,

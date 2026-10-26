@@ -50,7 +50,9 @@ vi.mock("@/sse/services/budgetGuard.js", () => ({
 }));
 vi.mock("@/sse/utils/logger.js", () => ({ debug: vi.fn(), info: mocks.info, warn: vi.fn() }));
 
-const { accountPins } = await import("open-sse/services/cacheAffinity.js");
+const { accountPins, accountPinKey, pendingAccountPins } = await import(
+  "open-sse/services/cacheAffinity.js"
+);
 const { getProviderCredentials, resetAccountSelection } = await import("@/sse/services/auth.js");
 
 const RR = { fallbackStrategy: "round-robin", stickyRoundRobinLimit: 1 };
@@ -72,8 +74,11 @@ mocks.update.mockImplementation(async (id, patch) => {
   );
 });
 
-async function turn(conversationKey, { exclude = null, ...opts } = {}) {
+// A served turn commits its pin (chat.js does this once the account answered);
+// `commit: false` models a selection that never served.
+async function turn(conversationKey, { exclude = null, commit = true, ...opts } = {}) {
   const res = await getProviderCredentials("p", exclude, "m", { conversationKey, ...opts });
+  if (commit) res?.affinity?.commit();
   return res?.connectionId ?? res;
 }
 
@@ -89,6 +94,7 @@ beforeEach(() => {
   mocks.rows = [row("c1", 1), row("c2", 2), row("c3", 3)];
   mocks.settings = { providerStrategies: { p: RR } };
   resetAccountSelection();
+  pendingAccountPins.clear();
 });
 
 describe.each([
@@ -216,6 +222,113 @@ describe("workspace isolation", () => {
   });
 });
 
+describe("commit on serve (YAN-1222)", () => {
+  const select = (conversationKey = "conv1", opts = {}) =>
+    getProviderCredentials("p", null, "m", { conversationKey, ...opts });
+
+  it("selection alone writes no committed pin; commit does", async () => {
+    const creds = await select();
+    expect(accountPins.size).toBe(0);
+    expect(pendingAccountPins.size).toBe(1);
+    creds.affinity.commit();
+    expect(accountPins.size).toBe(1);
+    expect(pendingAccountPins.size).toBe(0);
+    expect(await turn("conv1", { commit: false })).toBe(creds.connectionId);
+  });
+
+  it("a released selection leaves no pin and the strategy picks again", async () => {
+    const first = await select();
+    first.affinity.release();
+    expect(accountPins.size).toBe(0);
+    expect(pendingAccountPins.size).toBe(0);
+    const second = await select("conv1", {});
+    expect(second.connectionId).not.toBe(first.connectionId); // round-robin advanced
+  });
+
+  it("concurrent first turns of one conversation converge on one account", async () => {
+    const [a, b] = await Promise.all([select(), select()]);
+    expect(b.connectionId).toBe(a.connectionId);
+    expect(mocks.update).toHaveBeenCalledTimes(1); // the strategy ran once
+    expect(accountPins.size).toBe(0);
+  });
+
+  it("a proxy resolution throw never writes a provisional pin", async () => {
+    const { resolveConnectionProxyConfig } = await import("@/lib/network/connectionProxy");
+    resolveConnectionProxyConfig.mockRejectedValueOnce(new Error("proxy unavailable"));
+    await expect(select()).rejects.toThrow("proxy unavailable");
+    expect(pendingAccountPins.size).toBe(0);
+    expect(accountPins.size).toBe(0);
+  });
+
+  it("releasing the follower never drops the leader's provisional pin", async () => {
+    const [leader, follower] = await Promise.all([select(), select()]);
+    follower.affinity.release();
+    expect(pendingAccountPins.size).toBe(1);
+    expect((await select()).connectionId).toBe(leader.connectionId);
+    leader.affinity.release();
+    expect(pendingAccountPins.size).toBe(0);
+  });
+
+  it("another conversation or workspace is not affected by a pending pin", async () => {
+    mocks.rows = [
+      row("a1", 1, { workspaceId: "wsA" }),
+      row("a2", 2, { workspaceId: "wsA" }),
+      row("b1", 1, { workspaceId: "wsB" }),
+    ];
+    const a = await select("conv1", { principal: { workspaceId: "wsA" } });
+    const other = await select("conv2", { principal: { workspaceId: "wsA" } });
+    const b = await select("conv1", { principal: { workspaceId: "wsB" } });
+    expect(other.connectionId).not.toBe(a.connectionId);
+    expect(b.connectionId).toBe("b1");
+  });
+
+  it("returns no affinity handle without a conversation, when disabled, or for fill-first", async () => {
+    expect((await select(null)).affinity).toBeUndefined();
+    mocks.settings = { providerStrategies: { p: { ...RR, cacheAffinity: false } } };
+    expect((await select()).affinity).toBeUndefined();
+    mocks.settings = {};
+    expect((await select()).affinity).toBeUndefined();
+    expect(pendingAccountPins.size).toBe(0);
+  });
+
+  it("an explicit x-connection-id selection has no handle and writes nothing", async () => {
+    const creds = await select("conv1", { preferredConnectionId: "c2" });
+    expect(creds.connectionId).toBe("c2");
+    expect(creds.affinity).toBeUndefined();
+    expect(pendingAccountPins.size).toBe(0);
+  });
+});
+
+describe("pinned lastUsedAt throttle (YAN-1224)", () => {
+  it("writes lastUsedAt at most once per minute and never the sticky counter", async () => {
+    const first = await turn("conv1");
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 3; i++) await turn("conv1");
+    expect(mocks.update).toHaveBeenCalledTimes(1); // fresh lastUsedAt: no write
+
+    const pinned = mocks.rows.find((r) => r.id === first);
+    pinned.lastUsedAt = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    pinned.consecutiveUseCount = 7;
+    await turn("conv1");
+    expect(mocks.update).toHaveBeenCalledTimes(2);
+    const [id, patch] = mocks.update.mock.calls[1];
+    expect(id).toBe(first);
+    expect(Object.keys(patch)).toEqual(["lastUsedAt"]);
+    expect(pinned.consecutiveUseCount).toBe(7);
+    await turn("conv1");
+    expect(mocks.update).toHaveBeenCalledTimes(2); // refreshed: throttled again
+  });
+
+  it("a pinned connection that never had lastUsedAt gets one write", async () => {
+    mocks.rows = [row("c1", 1)];
+    const first = await turn("conv1");
+    delete mocks.rows.find((r) => r.id === first).lastUsedAt;
+    mocks.update.mockClear();
+    await turn("conv1");
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("gating", () => {
   it("fill-first has no pin effect", async () => {
     mocks.settings = {};
@@ -240,6 +353,18 @@ describe("expiry, reset and logging", () => {
     const first = await turn("conv1");
     await new Promise((r) => setTimeout(r, 260));
     expect(await turn("conv1")).not.toBe(first);
+  });
+
+  it("resetAccountSelection({ workspaceId }) clears only that workspace", async () => {
+    mocks.rows = [row("a1", 1, { workspaceId: "wsA" }), row("b1", 1, { workspaceId: "wsB" })];
+    await turn("conv1", { principal: { workspaceId: "wsA" } });
+    await turn("conv1", { principal: { workspaceId: "wsB" } });
+    expect(accountPins.size).toBe(2);
+    resetAccountSelection(undefined, { workspaceId: "wsA" });
+    expect(accountPins.size).toBe(1);
+    expect(accountPins.get(accountPinKey("wsB", "p", "conv1"))).toBe("b1");
+    resetAccountSelection("p", { workspaceId: "wsB" });
+    expect(accountPins.size).toBe(0);
   });
 
   it("resetAccountSelection('p') clears that provider's pins", async () => {

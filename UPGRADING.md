@@ -359,3 +359,19 @@ before v2.0.0:
 - The `9router.` browser storage keys (dashboard endpoint/API-key presets are
   copied forward automatically).
 - The `9router-data` volume-name pin in `compose.yml` (move the volume, §10).
+
+## 14. Connection relays (v1.2.0)
+
+Relays deployed before v1.2.0 always follow redirects on the requests they
+forward. Requests that ask not to follow redirects are only fully honored
+after redeploying the relay. A relay pool that is in use cannot be deleted
+(`DELETE /api/proxy-pools/[id]` returns 409 when connections are bound to
+it), so replace it instead:
+
+1. In **Dashboard → Proxy pools**, add a new relay of the same kind so it
+   runs the current relay code.
+2. Move the connections that used the old relay onto the new relay.
+3. Delete the old pool.
+
+Until a relay is replaced, it also passes the gateway's new `x-relay-redirect`
+header on to the provider. The header is harmless.

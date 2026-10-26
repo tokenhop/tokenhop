@@ -269,6 +269,6 @@ describe("conversation cache affinity end-to-end", () => {
     expect(res.status).toBe(200);
     // The real key is derived from the body (first user message), never the forged value.
     expect(comboPins.size).toBe(1);
-    expect(comboPins.get(comboPinKey(combo, "p:forged"))).toBeUndefined();
+    expect(comboPins.get(comboPinKey(null, combo, "p:forged"))).toBeUndefined();
   });
 });

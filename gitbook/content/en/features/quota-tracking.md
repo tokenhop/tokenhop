@@ -578,6 +578,16 @@ Custom sits beside those choices. Choose From and To, then Apply. The range is i
 
 Example: `/dashboard/usage?period=custom&from=2026-09-01&to=2026-09-30`
 
+Home (Today, 24h, 7d, 30d, 60d) shows a change on Requests, Tokens in/out, Est. cost, and Saved by token saver when that period has requests. The line is a signed percent plus a caption: "vs same time yesterday", "vs prior 24h", "vs prior 7d", "vs prior 30d", or "vs prior 60d". Tokens in/out reads `In +12% · Out -3%` plus that caption. A side with no usable previous total is omitted. When the previous total is missing or zero, the line says "No prior data".
+
+Token saver shows the same line on the saved-tokens total for the period you selected, and only when that period itself has savings. When the page stands in a larger period, it does not show the change.
+
+## Request history retention
+
+**Settings → Data & backup → Request history** controls how long each request's details are kept. The default is **Keep forever**. The menu also offers 7, 30, 60, 90, 180 and 365 days. The stored value may be `0` (keep forever) or an integer from 2 to 3650. A value that is not a preset still appears in the menu. Choosing a shorter limit asks you to confirm. With Users & teams on, this section is under **Instance**, and only an owner or instance admin can open it.
+
+Charts, long periods and budgets use daily totals, which are not deleted. With a limit set, older request details are removed in the background about 10 minutes after startup, then once a day. A settings change applies on the next sweep. Only whole local days older than the limit are removed, so a request is kept for at least that many days. Days that are not fully in the daily rollup are kept. The newest request for each workspace, each membership and each API key is kept. Savings, top combos and period comparisons count only requests still in history. An API key with no recent requests can show an older last-used time. The database file may not shrink.
+
 ## API Access
 
 ### Get Quota Status
@@ -664,6 +674,20 @@ Response:
   ]
 }
 ```
+
+### Export usage history
+
+The Usage page's Export button (Overview tab) downloads the current period — including a custom range — with the active workspace/member/API-key filters applied. The same download is available directly:
+
+```bash
+GET http://localhost:20128/api/usage/export?period=7d&format=csv&granularity=day
+```
+
+- `period`: a named period (`today`, `24h`, `7d`, `30d`, `60d`, `90d`, `all`) or `custom` with `from`/`to` as inclusive local `YYYY-MM-DD` days (max 366 days).
+- `format`: `csv` (default, a JSON array when `json`). The response is streamed and sent as a file download (`tokenhop-usage-<range>-<granularity>.csv|json`).
+- `granularity`: `day` (default) gives one row per day × provider/model/account/API key/endpoint from the daily rollup (for `today`/`24h`, folded from per-request history so it matches the cards); `request` gives one row per request from the stored request history for any period or custom range. History retention is opt-in, so if you enabled it, request rows may be missing for pruned days — daily rows are unaffected because they come from the rollup.
+
+Columns: timestamp (or date), provider, model, account, account id, API key name, masked API key, endpoint, prompt/completion/cached tokens, cost, status (request rows), and the token-saver estimate (`saved_tokens_est`, request rows and sub-day daily totals; 0 in rollup rows, which carry no per-request savings). Raw API keys are never exported — only the key's name and masked prefix. Invalid `format`, `granularity`, `period` or date ranges return 400; the same sign-in and workspace scoping as the other usage endpoints applies.
 
 ---
 

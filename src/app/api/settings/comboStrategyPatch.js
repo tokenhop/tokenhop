@@ -29,8 +29,9 @@ export function isValidComboName(name) {
  *   Store writer: `updateComboStrategies` or a workspace-bound wrapper. `key`
  *   is the map key (combo name, or combo id with `allowId`).
  * @param {{ allowId?: boolean }} [options]
- * @returns {Promise<{ response: Response } | { settings: object }>}
- *   `response` is an error to return as-is; `settings` is the stored result.
+ * @returns {Promise<{ response: Response } | { settings: object, previous: object }>}
+ *   `response` is an error to return as-is; `settings` is the stored result and
+ *   `previous.comboStrategies` is the strategy map read inside its transaction.
  */
 export async function applyComboStrategyPatch(body, update, { allowId = false } = {}) {
   const fail = (error, status) => ({ response: NextResponse.json({ error }, { status }) });
@@ -63,9 +64,11 @@ export async function applyComboStrategyPatch(body, update, { allowId = false } 
   let missingWeightedEntry = false;
   let missingStrategyEntry = false;
   let settings;
+  let previous;
   try {
     settings = await update((strategies) => {
       const base = Object.hasOwn(strategies, key) ? strategies[key] : {};
+      previous = { comboStrategies: { ...strategies } };
       if (
         Object.hasOwn(patch, "weights") &&
         !Object.hasOwn(patch, "fallbackStrategy") &&
@@ -101,5 +104,5 @@ export async function applyComboStrategyPatch(body, update, { allowId = false } 
     return fail("cacheAffinity requires a fallbackStrategy for this combo", 400);
   }
   if (mergedError) return fail(mergedError, 400);
-  return { settings };
+  return { settings, previous };
 }

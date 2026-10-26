@@ -172,7 +172,7 @@ When a provider has several accounts and uses the round robin or weighted accoun
 
 - A pin never overrides a quota, rate-limit or billing lock. A locked account is skipped and the conversation moves to the next account.
 - An `x-connection-id` header still picks the account.
-- To turn it off for one provider, set `providerStrategies.<provider>.cacheAffinity` to `false` through the settings API. There is no dashboard switch for this yet.
+- To turn it off for one provider, open that provider's page in the dashboard and turn off **Keep each conversation on one account** under the account strategy. The toggle is shown only for the round robin and weighted strategies. You can also set `providerStrategies.<provider>.cacheAffinity` to `false` through the settings API when scripting it.
 
 See [Combos → Conversation Cache Affinity](combos.md#conversation-cache-affinity) for how conversations are recognised and how long pins last.
 

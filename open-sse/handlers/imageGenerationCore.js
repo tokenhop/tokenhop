@@ -3,13 +3,60 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getExecutor } from "../executors/index.js";
 import { proxyOptionsFromCredentials } from "../utils/connectionProxyOptions.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { getImageAdapter } from "./imageProviders/index.js";
 import { urlToBase64 } from "./imageProviders/_base.js";
+import { detectImageMime, parseDataUri } from "../translator/concerns/image.js";
+import { MAX_IMAGE_BYTES } from "../config/mediaConfig.js";
 
 function serializeRequestBody(requestBody) {
   if (typeof FormData !== "undefined" && requestBody instanceof FormData) return requestBody;
   if (typeof requestBody === "string") return requestBody;
   return JSON.stringify(requestBody);
+}
+
+function outputFormatMime(outputFormat) {
+  const fmt = (outputFormat || "png").toLowerCase();
+  if (fmt === "jpeg" || fmt === "jpg") return "image/jpeg";
+  if (fmt === "webp") return "image/webp";
+  return "image/png";
+}
+
+/**
+ * Decode the first result (b64_json, an inline data: URI, or a provider URL
+ * fetched through the hardened fetcher) into a raw-bytes Response.
+ * Content-Type comes from the fetched/detected image type, falling back to
+ * the requested output_format.
+ * @returns {Promise<Response|null>} null when there is nothing to inline.
+ */
+async function binaryImageResponse(first, body, proxyOptions) {
+  let buf = null;
+  let mime = null;
+  const inline = parseDataUri(first?.url);
+  if (first?.b64_json) {
+    buf = Buffer.from(first.b64_json, "base64");
+  } else if (inline) {
+    // Decode locally (no network) with the same size cap and magic-byte check as the fetcher.
+    buf = Buffer.from(inline.base64, "base64");
+    mime = buf.length <= MAX_IMAGE_BYTES ? detectImageMime(buf) : null;
+    if (!mime) return null;
+  } else if (first?.url) {
+    const fetched = await urlToBase64(first.url, proxyOptions);
+    if (!fetched) return null;
+    buf = Buffer.from(fetched.b64, "base64");
+    mime = fetched.mimeType;
+  }
+  if (!buf) return null;
+  mime = mime || detectImageMime(buf) || outputFormatMime(body.output_format);
+  const subtype = mime.slice(mime.indexOf("/") + 1);
+  const ext = subtype === "jpeg" ? "jpg" : subtype;
+  return new Response(buf, {
+    headers: {
+      "Content-Type": mime,
+      "Content-Disposition": `inline; filename="image.${ext}"`,
+      "Access-Control-Allow-Origin": "*",
+    },
+  });
 }
 
 /**
@@ -51,6 +98,8 @@ export async function handleImageGenerationCore({
     );
   }
 
+  const proxyOptions = proxyOptionsFromCredentials(credentials);
+
   // Executor-delegating adapters: skip manual URL/headers/body, use the proven executor flow
   if (adapter.useExecutor && adapter.executeViaExecutor) {
     try {
@@ -58,40 +107,21 @@ export async function handleImageGenerationCore({
         "IMAGE",
         `${provider.toUpperCase()} | ${model} | prompt="${body.prompt.slice(0, 50)}..." (executor)`,
       );
-      const responseBody = await adapter.executeViaExecutor(model, body, credentials, log);
+      const responseBody = await adapter.executeViaExecutor(
+        model,
+        body,
+        credentials,
+        log,
+        proxyOptions,
+      );
       if (onRequestSuccess) await onRequestSuccess();
       const normalized = adapter.normalize(responseBody, body.prompt);
       const finalBody =
         normalized.created && Array.isArray(normalized.data) ? normalized : responseBody;
 
       if (binaryOutput) {
-        const first = finalBody.data?.[0];
-        let b64 = first?.b64_json;
-        if (!b64 && first?.url) {
-          try {
-            b64 = await urlToBase64(first.url);
-          } catch {}
-        }
-        if (b64) {
-          const buf = Buffer.from(b64, "base64");
-          const fmt = (body.output_format || "png").toLowerCase();
-          const mime =
-            fmt === "jpeg" || fmt === "jpg"
-              ? "image/jpeg"
-              : fmt === "webp"
-                ? "image/webp"
-                : "image/png";
-          return {
-            success: true,
-            response: new Response(buf, {
-              headers: {
-                "Content-Type": mime,
-                "Content-Disposition": `inline; filename="image.${fmt === "jpeg" ? "jpg" : fmt}"`,
-                "Access-Control-Allow-Origin": "*",
-              },
-            }),
-          };
-        }
+        const response = await binaryImageResponse(finalBody.data?.[0], body, proxyOptions);
+        if (response) return { success: true, response };
       }
 
       return {
@@ -113,7 +143,7 @@ export async function handleImageGenerationCore({
 
   try {
     url = adapter.buildUrl(model, credentials);
-    requestBody = await adapter.buildBody(model, body);
+    requestBody = await adapter.buildBody(model, body, proxyOptions);
     headers = adapter.buildHeaders(credentials, requestBody, model, body);
   } catch (error) {
     return createErrorResult(
@@ -129,11 +159,11 @@ export async function handleImageGenerationCore({
 
   let providerResponse;
   try {
-    providerResponse = await fetch(url, {
-      method: "POST",
-      headers,
-      body: serializeRequestBody(requestBody),
-    });
+    providerResponse = await proxyAwareFetch(
+      url,
+      { method: "POST", headers, body: serializeRequestBody(requestBody) },
+      proxyOptions,
+    );
   } catch (error) {
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     log?.debug?.("IMAGE", `Fetch error: ${errMsg}`);
@@ -153,7 +183,7 @@ export async function handleImageGenerationCore({
       providerResponse.status === HTTP_STATUS.FORBIDDEN)
   ) {
     const newCredentials = await refreshWithRetry(
-      () => executor.refreshCredentials(credentials, log, proxyOptionsFromCredentials(credentials)),
+      () => executor.refreshCredentials(credentials, log, proxyOptions),
       3,
       log,
     );
@@ -164,14 +194,14 @@ export async function handleImageGenerationCore({
       if (onCredentialsRefreshed) await onCredentialsRefreshed(newCredentials);
 
       try {
-        const retryBody = await adapter.buildBody(model, body);
+        const retryBody = await adapter.buildBody(model, body, proxyOptions);
         const retryHeaders = adapter.buildHeaders(credentials, retryBody, model, body);
         const retryUrl = adapter.buildUrl(model, credentials);
-        providerResponse = await fetch(retryUrl, {
-          method: "POST",
-          headers: retryHeaders,
-          body: serializeRequestBody(retryBody),
-        });
+        providerResponse = await proxyAwareFetch(
+          retryUrl,
+          { method: "POST", headers: retryHeaders, body: serializeRequestBody(retryBody) },
+          proxyOptions,
+        );
       } catch {
         log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`);
       }
@@ -194,6 +224,7 @@ export async function handleImageGenerationCore({
       parsed = await adapter.parseResponse(providerResponse, {
         headers,
         log,
+        proxyOptions,
         streamToClient,
         onRequestSuccess,
         url,
@@ -225,33 +256,8 @@ export async function handleImageGenerationCore({
 
   // Binary output: decode first b64_json (or fetch url) into raw bytes
   if (binaryOutput) {
-    const first = finalBody.data?.[0];
-    let b64 = first?.b64_json;
-    if (!b64 && first?.url) {
-      try {
-        b64 = await urlToBase64(first.url);
-      } catch {}
-    }
-    if (b64) {
-      const buf = Buffer.from(b64, "base64");
-      const fmt = (body.output_format || "png").toLowerCase();
-      const mime =
-        fmt === "jpeg" || fmt === "jpg"
-          ? "image/jpeg"
-          : fmt === "webp"
-            ? "image/webp"
-            : "image/png";
-      return {
-        success: true,
-        response: new Response(buf, {
-          headers: {
-            "Content-Type": mime,
-            "Content-Disposition": `inline; filename="image.${fmt === "jpeg" ? "jpg" : fmt}"`,
-            "Access-Control-Allow-Origin": "*",
-          },
-        }),
-      };
-    }
+    const response = await binaryImageResponse(finalBody.data?.[0], body, proxyOptions);
+    if (response) return { success: true, response };
   }
 
   return {

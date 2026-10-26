@@ -37,8 +37,8 @@ export function localDateKey(timestamp) {
 }
 
 /** Local date key of the first day of an inclusive `days`-day window ending today. */
-export function cutoffDateKey(days) {
-  const t = new Date();
+export function cutoffDateKey(days, now) {
+  const t = now == null ? new Date() : new Date(now);
   return localDateKey(new Date(t.getFullYear(), t.getMonth(), t.getDate() - days + 1));
 }
 

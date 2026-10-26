@@ -2,15 +2,16 @@
 // DeepSeek, Mistral, Groq, Together AI, Fireworks AI, Cerebras, Perplexity
 // Agent, Vercel AI Gateway, Chutes, NVIDIA NIM, Nebius, SiliconFlow,
 // Hyperbolic, OpenCode Go, Venice, Bazaarlink, LLM7, SambaNova, Alibaba Coding
-// (CN), Alibaba Coding Intl, GLM Coding and GLM (China). Each list carries
-// every kind the provider serves, so it is authoritative: no static extras are
-// added back (except NIM's speech models). Registry models flagged
+// (CN), Alibaba Coding Intl, GLM Coding, GLM (China), MiniMax Coding and MiniMax
+// (China). Each list carries every kind the provider serves, so it is
+// authoritative: no static extras are added back (except NIM's speech models
+// and MiniMax's static TTS/image rows). Registry models flagged
 // `liveUnlisted` are appended for every provider in resolveLiveModels.
 // OpenCode Free is the keyless exception: its Zen catalog is public.
 
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { OPENCODE_PUBLIC_HEADERS } from "open-sse/executors/opencode.js";
-import { PROVIDERS } from "open-sse/providers/index.js";
+import { PROVIDER_MEDIA, PROVIDERS } from "open-sse/providers/index.js";
 import { FILTERS } from "@/app/api/providers/suggested-models/filters.js";
 import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
 
@@ -388,10 +389,42 @@ export function parseGlmModels(body, providerId = "glm") {
   return ids.map((id) => ({ id, name: names.get(id) || id }));
 }
 
+// ── MiniMax Coding / MiniMax (China) ──────────────────────────────────────
+// Ids only, no kind field. A static id keeps its registry kind (and name); the
+// other MiniMax provider's registry supplies names too. Unknown ids: `speech-*`
+// drops out (the TTS dispatcher can't route a bare unknown id, it reads it as a
+// voice), image ids are listed only where the provider serves image, and video
+// (`MiniMax-H3*` Hailuo-style ids, `*2v-*`), music, ASR (`asr-*`) and embedding
+// ids have no route here and drop out. Anything else is chat (M-series). Static TTS/image rows the live list lacks are added back.
+const MINIMAX_IMAGE = /image/i;
+const MINIMAX_UNROUTED =
+  /video|music|hailuo|embo|embed|^asr-|(^|[-_])h\d+([-_]|$)|(^|[-_])[a-z]2v([-_]|$)/i;
+export function parseMinimaxModels(body, providerId = "minimax") {
+  const own = getModelsByProviderId(providerId);
+  const other = getModelsByProviderId(providerId === "minimax" ? "minimax-cn" : "minimax");
+  const names = new Map([...other, ...own].map((m) => [m.id, m.name]));
+  const staticKinds = new Map(own.map((m) => [m.id, m.kind || m.type || "llm"]));
+  const servesImage = PROVIDER_MEDIA[providerId]?.serviceKinds?.includes("image") === true;
+  const ids = [...new Set(entries(body).map(idOf).filter(Boolean))];
+  const models = [];
+  for (const id of ids) {
+    const known = staticKinds.get(id);
+    let kind;
+    if (known) kind = known === "llm" ? undefined : known;
+    else if (/^speech-/i.test(id)) continue;
+    else if (MINIMAX_IMAGE.test(id)) {
+      if (!servesImage) continue;
+      kind = "image";
+    } else if (MINIMAX_UNROUTED.test(id)) continue;
+    models.push({ id, name: names.get(id) || id, ...(kind ? { kind } : {}) });
+  }
+  return models.length ? withStaticNonChatModels(providerId, models) : models;
+}
+
 // The models endpoint sits beside the registry's OpenAI chat transport.
-const glmModelsUrl = (chatUrl) => {
+const modelsUrlBeside = (label, chatUrl) => {
   if (typeof chatUrl !== "string" || !chatUrl.endsWith("/chat/completions")) {
-    throw new Error(`GLM registry chat URL must end in /chat/completions, got: ${chatUrl}`);
+    throw new Error(`${label} registry chat URL must end in /chat/completions, got: ${chatUrl}`);
   }
   return chatUrl.replace(/\/chat\/completions$/, "/models");
 };
@@ -537,11 +570,27 @@ export const resolveAlicodeIntl = resolver(
 );
 export const resolveGlm = resolver(
   "GLM Coding",
-  glmModelsUrl(PROVIDERS.glm?.transports?.find((t) => t.format === "openai")?.baseUrl),
+  modelsUrlBeside("GLM", PROVIDERS.glm?.transports?.find((t) => t.format === "openai")?.baseUrl),
   (body) => parseGlmModels(body, "glm"),
 );
 export const resolveGlmCn = resolver(
   "GLM (China)",
-  glmModelsUrl(PROVIDERS["glm-cn"]?.baseUrl),
+  modelsUrlBeside("GLM", PROVIDERS["glm-cn"]?.baseUrl),
   (body) => parseGlmModels(body, "glm-cn"),
+);
+export const resolveMinimax = resolver(
+  "MiniMax Coding",
+  modelsUrlBeside(
+    "MiniMax",
+    PROVIDERS.minimax?.transports?.find((t) => t.format === "openai")?.baseUrl,
+  ),
+  (body) => parseMinimaxModels(body, "minimax"),
+);
+export const resolveMinimaxCn = resolver(
+  "MiniMax (China)",
+  modelsUrlBeside(
+    "MiniMax",
+    PROVIDERS["minimax-cn"]?.transports?.find((t) => t.format === "openai")?.baseUrl,
+  ),
+  (body) => parseMinimaxModels(body, "minimax-cn"),
 );

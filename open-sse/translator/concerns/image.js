@@ -15,6 +15,7 @@ export function parseDataUri(url) {
 import { lookup } from "node:dns/promises";
 import { Agent } from "undici";
 import { isIP, BlockList } from "node:net";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import {
   MAX_IMAGE_BYTES,
   FETCH_TIMEOUT_MS,
@@ -50,7 +51,7 @@ for (const subnet of [
 ])
   blockSubnet(subnet, "ipv4");
 for (const subnet of [
-  "::/128",
+  "::/96",
   "::1/128",
   "64:ff9b::/96",
   "100::/64",
@@ -154,21 +155,28 @@ export function detectImageMime(buf) {
  * Returns null on any failure or rejection.
  *
  * @param {string} imageUrl - HTTP(S) URL of the image
- * @param {object} options - { signal, timeoutMs, maxBytes }
+ * @param {object} options - { signal, timeoutMs, maxBytes, proxyOptions }
+ *   proxyOptions: optional connection proxy settings forwarded to
+ *   proxyAwareFetch. Direct and HTTP(S)/SOCKS proxy connections target the
+ *   validated IP; a configured relay (Vercel/Deno/Cloudflare) would resolve
+ *   the hostname itself, so the fetch is refused (returns null).
  * @returns {Promise<{url: string, mimeType: string}|null>}
  */
 export async function fetchImageAsBase64(imageUrl, options = {}) {
-  const { signal, timeoutMs = FETCH_TIMEOUT_MS, maxBytes = MAX_IMAGE_BYTES } = options;
-  if (!imageUrl || (!imageUrl.startsWith("http://") && !imageUrl.startsWith("https://"))) {
-    return null;
-  }
-
+  const {
+    signal,
+    timeoutMs = FETCH_TIMEOUT_MS,
+    maxBytes = MAX_IMAGE_BYTES,
+    proxyOptions,
+  } = options;
   let url;
   try {
     url = new URL(imageUrl);
   } catch {
     return null;
   }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+
   const pinnedIps = await resolvePinnedIps(url.hostname);
   if (!pinnedIps) return null;
 
@@ -177,18 +185,32 @@ export async function fetchImageAsBase64(imageUrl, options = {}) {
     ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
     : AbortSignal.timeout(timeoutMs);
 
-  // Pin connect to the validated IP so no second DNS resolution can rebind (TOCTOU fix).
+  // Pin every connection to the validated IP so no second DNS resolution can
+  // rebind (TOCTOU fix). Honour Node's lookup contract for both opts.all forms.
+  // Prefer IPv4: IPv4-only proxies and SOCKS tunnels cannot reach an IPv6 pin.
+  const first = pinnedIps.find((r) => r.family === 4) ?? pinnedIps[0];
+  const pinned = { address: first.address, family: first.family };
   const dispatcher = new Agent({
     connect: {
-      lookup: (_h, _o, cb) =>
-        cb(null, [{ address: pinnedIps[0].address, family: pinnedIps[0].family }]),
+      lookup: (_h, opts, cb) =>
+        opts?.all ? cb(null, [pinned]) : cb(null, pinned.address, pinned.family),
     },
   });
 
   try {
     // redirect:"manual" prevents a public URL redirecting to a private one (SSRF bypass).
-    const response = await fetch(imageUrl, { signal: fetchSignal, redirect: "manual", dispatcher });
-    if (!response.ok || !response.body) return null;
+    // pinnedAddress makes a connection or env proxy target the validated IP
+    // instead of resolving the hostname itself, and refuses relay routing;
+    // strict proxy and relay refusals surface as failure below.
+    const response = await proxyAwareFetch(
+      url.href,
+      { signal: fetchSignal, redirect: "manual", dispatcher, pinnedAddress: pinned },
+      proxyOptions ?? null,
+    );
+    if (!response.ok || !response.body) {
+      await response.body?.cancel().catch(() => {});
+      return null;
+    }
 
     // Stream-read with a hard byte cap to avoid loading huge payloads into memory.
     const reader = response.body.getReader();
@@ -214,7 +236,10 @@ export async function fetchImageAsBase64(imageUrl, options = {}) {
     if (!mimeType) return null; // not a recognized image — reject disguised payloads
 
     return { url: `data:${mimeType};base64,${buf.toString("base64")}`, mimeType };
-  } catch {
+  } catch (error) {
+    if (error?.code === "ERR_PINNED_RELAY") {
+      console.warn("[image] Remote image URL refused: connection relays cannot fetch images");
+    }
     return null;
   } finally {
     dispatcher.close().catch(() => {});

@@ -8,7 +8,7 @@
 services:
   tokenhop-dev:
     # Full (non-slim) image ships python3/make/g++ so better-sqlite3's node-gyp build succeeds.
-    image: node:22-bookworm
+    image: node:22.23.4-bookworm
     container_name: tokenhop-dev
     working_dir: /app
     ports:

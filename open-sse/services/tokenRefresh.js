@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, REFRESH_LEAD_MS } from "../config/appConstants.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -85,11 +86,46 @@ export function parseVertexSaJson(apiKey) {
   }
 }
 
-// Cache Vertex tokens keyed by service account email { token, expiresAt }
+/** Parse the authorized_user JSON emitted by gcloud ADC login. */
+export function parseVertexAdcJson(apiKey) {
+  if (typeof apiKey !== "string") return null;
+  try {
+    const parsed = JSON.parse(apiKey);
+    return parsed?.type === "authorized_user" &&
+      parsed.client_id &&
+      parsed.client_secret &&
+      parsed.refresh_token
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Project selection used by the Vertex chat executor. */
+export function vertexProjectId(
+  credentials,
+  sa = parseVertexSaJson(credentials?.apiKey),
+  adc = parseVertexAdcJson(credentials?.apiKey),
+) {
+  return sa?.project_id || adc?.quota_project_id || credentials?.providerSpecificData?.projectId;
+}
+
+/** Whether the existing Veo adapter can acquire auth for these credentials. */
+export function canServeVertexVideo(credentials) {
+  const sa = parseVertexSaJson(credentials?.apiKey);
+  const projectId =
+    sa?.project_id || credentials?.projectId || credentials?.providerSpecificData?.projectId;
+  return !!(projectId && (sa || credentials?.accessToken));
+}
+
+// Cache Vertex tokens { token, expiresAt }, scoped to the full credential.
 const vertexTokenCache = new Map();
 
 export async function refreshVertexToken(saJson, log, proxyOptions = null) {
-  const cacheKey = saJson.client_email;
+  const cacheKey = createHash("sha256")
+    .update(`${saJson.client_email}\0${saJson.private_key}`)
+    .digest("hex");
   const cached = vertexTokenCache.get(cacheKey);
 
   if (cached && cached.expiresAt - Date.now() > 5 * 60 * 1000) {
@@ -110,18 +146,25 @@ export async function refreshVertexToken(saJson, log, proxyOptions = null) {
       .setExpirationTime(now + 3600)
       .sign(privateKey);
 
-    const res = await proxyAwareFetch(
-      OAUTH_ENDPOINTS.google.token,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-          assertion: jwt,
-        }),
-      },
-      proxyOptions,
-    );
+    let res;
+    try {
+      res = await proxyAwareFetch(
+        OAUTH_ENDPOINTS.google.token,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            assertion: jwt,
+          }),
+        },
+        proxyOptions,
+      );
+    } catch (error) {
+      // Token endpoint unreachable (network or proxy): not a credential problem.
+      log?.error?.("TOKEN_REFRESH", `Vertex token request failed: ${error.message}`);
+      return { transportError: true };
+    }
 
     if (!res.ok) {
       const err = await res.text();
@@ -142,10 +185,11 @@ export async function refreshVertexToken(saJson, log, proxyOptions = null) {
   }
 }
 
-function vertexRefreshHandler(c, log, proxyOptions) {
+async function vertexRefreshHandler(c, log, proxyOptions) {
   const saJson = parseVertexSaJson(c.apiKey);
   if (!saJson) return null;
-  return refreshVertexToken(saJson, log, proxyOptions);
+  const result = await refreshVertexToken(saJson, log, proxyOptions);
+  return result?.accessToken ? result : null;
 }
 
 const REFRESH_HANDLERS = {

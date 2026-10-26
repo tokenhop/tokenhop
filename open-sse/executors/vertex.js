@@ -2,6 +2,8 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import {
   parseVertexSaJson,
+  parseVertexAdcJson,
+  vertexProjectId,
   refreshVertexToken,
   refreshGoogleToken,
 } from "../services/tokenRefresh.js";
@@ -9,28 +11,6 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 // Cache project IDs resolved from raw API keys { apiKey → projectId }
 const projectIdCache = new Map();
-
-/**
- * Parse Google ADC user credential JSON from apiKey string.
- * This is the format produced by `gcloud auth application-default login`.
- */
-function parseVertexAdcJson(apiKey) {
-  if (typeof apiKey !== "string") return null;
-  try {
-    const parsed = JSON.parse(apiKey);
-    if (
-      parsed.type === "authorized_user" &&
-      parsed.client_id &&
-      parsed.client_secret &&
-      parsed.refresh_token
-    ) {
-      return parsed;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Resolve GCP project ID from a raw Vertex API key.
@@ -73,10 +53,7 @@ export class VertexExecutor extends BaseExecutor {
     const adcJson = parseVertexAdcJson(credentials?.apiKey);
     const usesOAuth = !!saJson || !!adcJson || !!credentials?.accessToken;
     const rawKey = !usesOAuth ? credentials?.apiKey : null;
-    const projectId =
-      saJson?.project_id ||
-      adcJson?.quota_project_id ||
-      credentials?.providerSpecificData?.projectId;
+    const projectId = vertexProjectId(credentials, saJson, adcJson);
 
     if (this.provider === "vertex-partner") {
       // Partner models require project_id in path regardless of auth method
@@ -131,7 +108,7 @@ export class VertexExecutor extends BaseExecutor {
     if (!saJson) return null;
 
     const result = await refreshVertexToken(saJson, log, proxyOptions);
-    if (!result) return null;
+    if (!result?.accessToken) return null;
 
     return { accessToken: result.accessToken, expiresAt: result.expiresAt };
   }

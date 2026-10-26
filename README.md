@@ -108,6 +108,38 @@ Editor inline completions (Zed, minuet, lsp-ai, llama.vim): see
 
 `GET /v1/models` lists every model and combo available to the key.
 
+**Vertex live catalogs:** **Providers → Vertex AI / Vertex Partner → Fetch Models**
+refreshes the same catalog used by `/v1/models`. Use Service Account JSON, Google
+ADC `authorized_user` JSON, or a stored access token; raw API-key (express mode)
+connections keep the built-in list and show an explanation without a catalog
+request. Both providers require a project ID (from the credentials or
+`providerSpecificData.projectId`). Vertex AI lists Gemini chat and Veo video
+models, not embeddings, image generation, TTS or Live API variants. ADC-only
+connections omit Veo because the video adapter needs Service Account JSON or an
+existing access token plus an explicit project ID. Vertex Partner lists MaaS
+chat models from `deepseek-ai`, `qwen` and `zai-org` using `publisher/model` ids. Discovery
+lists the publisher's Model Garden catalog, **not** models enabled in your
+project; enable models and check their regional/global availability in Google
+Cloud before use. Successful catalogs keep built-in entries missing from discovery.
+A failed or empty catalog preserves the built-in list with a warning. Partial
+publisher/page failures retain fetched models and show a partial-catalog warning;
+discovery has one 15-second deadline across authentication and all pages.
+
+**GLM live catalogs:** **Providers → GLM Coding / GLM (China) → Fetch models**
+refreshes the list the dashboard and `GET /v1/models` use. GLM Coding reads
+`https://api.z.ai/api/coding/paas/v4/models`. GLM (China) reads
+`https://open.bigmodel.cn/api/coding/paas/v4/models`. A failed or empty catalog
+keeps the built-in list and shows a warning. After a successful fetch, built-in
+chat models the provider omits are dropped, except `glm-4.6v`, which stays.
+
+**MiniMax live catalogs:** **Providers → Minimax Coding / Minimax (China) → Fetch models**
+refreshes the same list. Minimax Coding reads `https://api.minimax.io/v1/models`.
+Minimax (China) reads `https://api.minimaxi.com/v1/models`. Chat models from that
+list are kept. Unknown speech ids, and video, music, ASR and embedding ids, are
+dropped. Image ids are listed only for Minimax Coding. Built-in speech and image
+models are kept, including ones the live list omits. A failed or empty catalog
+keeps the built-in list and shows a warning.
+
 ## Configuration
 
 The full env contract is in [`.env.example`](.env.example). `.env` is not baked into the
@@ -241,6 +273,11 @@ are public; the values aren't confidential per Google's installed-app model abov
 but secret scanners may flag the `GOCSPX-` string in them — accepted.
 
 ## Development
+
+Node.js 22.23.4 or newer (`.nvmrc`). `npm run dev` refuses to start unless
+`TOKENHOP_DEV_ALLOWED_ORIGINS` is set. `.env.example` sets it to `localhost`.
+Add any other hostname you open the dashboard from, separated by commas.
+`localhost` is always allowed as well.
 
 ```bash
 cp .env.example .env

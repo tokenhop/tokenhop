@@ -7,6 +7,8 @@ export {
   getUsageHistory,
   getUsageStats,
   getChartData,
+  streamRequestRows,
+  streamDailyRows,
   getRollupUsageTotals,
   getRollupRangeTotals,
   getSavingsTotals,

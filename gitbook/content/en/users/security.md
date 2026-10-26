@@ -203,10 +203,14 @@ Restore behavior:
 - The `multiUserEnabled` setting inside a backup is ignored, so a restore never flips the users & teams switch.
 - Encrypted instances accept only format v3 exports. The one exception is an older, pre-encryption backup restored while users & teams is on, which is imported into the Default workspace. Other plaintext and older formats are rejected. Portable configuration export (settings only) never includes secrets.
 - Large restores stream. The accepted body size is the smaller of `TOKENHOP_INSTANCE_IMPORT_MAX_BODY_SIZE` and `TOKENHOP_PROXY_CLIENT_MAX_BODY_SIZE` (default `128mb`).
+- Export and import check free disk before writing. Not enough space returns HTTP 507 (`EXPORT_DISK_INSUFFICIENT` or `IMPORT_DISK_INSUFFICIENT`) and changes nothing. The message says how much space it needs.
+- A single snapshot row larger than 64 MiB is refused at export with HTTP 422 (`EXPORT_ROW_TOO_LARGE`). Delete or trim that row and export again.
 
 Deleting a workspace removes its data key from the live database. That does not remove copies of the wrapped key inside older backups. The Default workspace cannot be deleted.
 
 A deleted workspace's usage history (requests, request details, daily totals and budget spend) stays on the instance but belongs to no workspace. It never moves into Default, whether you restart tokenhop or turn users & teams off and on again, so no workspace member can read it. Only instance-wide views show it: the usage pages while users & teams is off or at most one user is active, and full instance exports, which the owner and admins can make and which include request details. There is no way to purge it on its own. The optional usage history retention setting removes only old request log rows; detached request details are kept up to the request-details record limit, and daily totals and budget spend are kept. Usage recorded while users & teams is switched off is attributed to the gateway key, or the local owner, that made the request. Unattributed usage is otherwise rare, for example a request still in flight when its workspace is deleted. Only usage from before users & teams was first turned on is moved into Default, once, when the owner is created.
+
+Legacy usage is adopted into Default only once per install; a durable local marker survives configuration imports and instance restores, even a forced restore with no users, so later owner bootstrap leaves detached usage detached.
 
 ### Re-authentication
 

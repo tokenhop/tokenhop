@@ -165,7 +165,12 @@ export {
   trackPendingRequest,
   getLiveSnapshot,
 } from "./repos/usageLiveFeed.js";
-export { getUsageStats, getChartData } from "./repos/usageStatsRepo.js";
+export {
+  getUsageStats,
+  getChartData,
+  streamRequestRows,
+  streamDailyRows,
+} from "./repos/usageStatsRepo.js";
 export { getRollupUsageTotals, getRollupRangeTotals } from "./repos/usageRollupTotals.js";
 export { getSavingsTotals } from "./repos/usageSavingsTotals.js";
 export {

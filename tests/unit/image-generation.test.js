@@ -10,14 +10,29 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// Cloudflare input image URLs are DNS-validated before fetching.
+const lookupMock = vi.hoisted(() => vi.fn());
+vi.mock("node:dns/promises", () => ({ lookup: (...a) => lookupMock(...a) }));
+
+// Upstream calls go through proxyAwareFetch, which captures the real fetch at import.
+// Delegate to the per-test global fetch stub instead.
+vi.mock("../../open-sse/utils/proxyFetch.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
+}));
+
 import { handleImageGenerationCore } from "../../open-sse/handlers/imageGenerationCore.js";
 import { CODEX_CLI_VERSION } from "../../open-sse/config/codexCliFingerprint.js";
+import { MAX_IMAGE_BYTES } from "../../open-sse/config/mediaConfig.js";
 
 const originalFetch = global.fetch;
 
 describe("handleImageGenerationCore", () => {
   beforeEach(() => {
     global.fetch = vi.fn();
+    lookupMock.mockReset();
+    lookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
   });
 
   afterEach(() => {
@@ -493,15 +508,23 @@ describe("handleImageGenerationCore", () => {
   });
 
   it("resolves Cloudflare img2img and inpainting URL inputs before sending", async () => {
+    const PNG_1 = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from([1, 2, 3]),
+    ]);
+    const PNG_2 = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from([4, 5, 6]),
+    ]);
     global.fetch
       .mockResolvedValueOnce(
-        new Response(new Uint8Array([1, 2, 3]), {
+        new Response(PNG_1, {
           status: 200,
           headers: { "Content-Type": "image/png" },
         }),
       )
       .mockResolvedValueOnce(
-        new Response(new Uint8Array([4, 5, 6]), {
+        new Response(PNG_2, {
           status: 200,
           headers: { "Content-Type": "image/png" },
         }),
@@ -532,19 +555,28 @@ describe("handleImageGenerationCore", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(global.fetch).toHaveBeenNthCalledWith(1, "https://example.com/source.png");
-    expect(global.fetch).toHaveBeenNthCalledWith(2, "https://example.com/mask.png");
+    // The hardened fetcher pins DNS via an undici dispatcher on the direct path.
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      1,
+      "https://example.com/source.png",
+      expect.objectContaining({ redirect: "manual" }),
+    );
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      2,
+      "https://example.com/mask.png",
+      expect.objectContaining({ redirect: "manual" }),
+    );
 
     const providerCall = global.fetch.mock.calls[2];
     expect(providerCall[0]).toBe(
       "https://api.cloudflare.com/client/v4/accounts/cf-account/ai/run/@cf/runwayml/stable-diffusion-v1-5-inpainting",
     );
     const requestBody = JSON.parse(providerCall[1].body);
-    expect(requestBody.image).toEqual([1, 2, 3]);
-    expect(requestBody.image_b64).toBe(Buffer.from([1, 2, 3]).toString("base64"));
-    expect(requestBody.mask).toEqual([4, 5, 6]);
-    expect(requestBody.mask_image).toEqual([4, 5, 6]);
-    expect(requestBody.mask_b64).toBe(Buffer.from([4, 5, 6]).toString("base64"));
+    expect(requestBody.image_b64).toBe(PNG_1.toString("base64"));
+    expect(requestBody.image).toEqual(Array.from(PNG_1));
+    expect(requestBody.mask_b64).toBe(PNG_2.toString("base64"));
+    expect(requestBody.mask).toEqual(Array.from(PNG_2));
+    expect(requestBody.mask_image).toEqual(Array.from(PNG_2));
   });
 
   it("handles provider error responses", async () => {
@@ -605,5 +637,123 @@ describe("handleImageGenerationCore", () => {
 
     expect(result.success).toBe(true);
     expect(onRequestSuccess).toHaveBeenCalledTimes(1);
+  });
+});
+
+// YAN-1595: provider-returned image URLs are fetched through the hardened
+// fetcher before inlining; any refusal falls back to returning the URL.
+describe("binary output with a provider-returned URL", () => {
+  const IMAGE_URL = "https://cdn.example/i.png";
+  const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  const PNG_BYTES = Buffer.from([...PNG_SIG, 1, 2, 3, 4]);
+  const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+
+  // imageResponse: a Response for the image fetch, or an implementation for every later fetch.
+  const generate = (imageResponse, url = IMAGE_URL) => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ created: 1, data: [{ url }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    if (typeof imageResponse === "function") global.fetch.mockImplementation(imageResponse);
+    else if (imageResponse) global.fetch.mockResolvedValueOnce(imageResponse);
+    return handleImageGenerationCore({
+      body: { prompt: "a cat" },
+      modelInfo: { provider: "openai", model: "dall-e-3" },
+      credentials: { apiKey: "sk-x" },
+      log: null,
+      binaryOutput: true,
+    });
+  };
+
+  const expectUrlFallback = async (result, url = IMAGE_URL) => {
+    expect(result.success).toBe(true);
+    expect(result.response.headers.get("Content-Type")).toBe("application/json");
+    const responseBody = await result.response.json();
+    expect(responseBody.data[0].url).toBe(url);
+  };
+
+  beforeEach(() => {
+    global.fetch = vi.fn();
+    lookupMock.mockReset();
+    lookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("never fetches a URL resolving to a private address", async () => {
+    lookupMock.mockResolvedValue([{ address: "10.0.0.5", family: 4 }]);
+
+    const result = await generate(new Response(PNG_BYTES, { status: 200 }));
+
+    await expectUrlFallback(result);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not follow redirects", async () => {
+    const metadataUrl = "http://169.254.169.254/x.png";
+    // Behaves like real fetch: follows Location unless redirect is "manual".
+    const result = await generate(async (url, options) => {
+      if (url === metadataUrl) return new Response(PNG_BYTES, { status: 200 });
+      if (options?.redirect !== "manual") return global.fetch(metadataUrl, options);
+      return new Response(null, { status: 302, headers: { Location: metadataUrl } });
+    });
+
+    await expectUrlFallback(result);
+    expect(global.fetch).toHaveBeenCalledWith(
+      IMAGE_URL,
+      expect.objectContaining({ redirect: "manual" }),
+    );
+    expect(global.fetch).not.toHaveBeenCalledWith(metadataUrl, expect.anything());
+  });
+
+  it("does not inline a non-image payload", async () => {
+    const result = await generate(new Response(Buffer.from("<html>"), { status: 200 }));
+
+    await expectUrlFallback(result);
+  });
+
+  it("does not inline an oversize image", async () => {
+    const oversize = Buffer.concat([Buffer.from(PNG_SIG), Buffer.alloc(MAX_IMAGE_BYTES)]);
+
+    const result = await generate(new Response(oversize, { status: 200 }));
+
+    await expectUrlFallback(result);
+  });
+
+  it("inlines a verified image", async () => {
+    const result = await generate(new Response(PNG_BYTES, { status: 200 }));
+
+    expect(result.success).toBe(true);
+    expect(result.response.headers.get("Content-Type")).toBe("image/png");
+    expect(Buffer.from(await result.response.arrayBuffer())).toEqual(PNG_BYTES);
+  });
+
+  it("labels the response from the detected image type", async () => {
+    const result = await generate(new Response(JPEG_BYTES, { status: 200 }));
+
+    expect(result.response.headers.get("Content-Type")).toBe("image/jpeg");
+    expect(result.response.headers.get("Content-Disposition")).toBe('inline; filename="image.jpg"');
+    expect(Buffer.from(await result.response.arrayBuffer())).toEqual(JPEG_BYTES);
+  });
+
+  it("inlines a data: image URI without any network fetch", async () => {
+    const result = await generate(null, `data:image/png;base64,${PNG_BYTES.toString("base64")}`);
+
+    expect(result.response.headers.get("Content-Type")).toBe("image/png");
+    expect(Buffer.from(await result.response.arrayBuffer())).toEqual(PNG_BYTES);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not inline a data: URI with a non-image payload", async () => {
+    const dataUri = `data:image/png;base64,${Buffer.from("<html>").toString("base64")}`;
+
+    const result = await generate(null, dataUri);
+
+    await expectUrlFallback(result, dataUri);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });

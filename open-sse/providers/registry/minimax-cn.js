@@ -77,6 +77,7 @@ export default {
     format: "minimax-tts",
   },
   features: {
+    liveModels: true,
     usage: true,
     usageApikey: true,
   },

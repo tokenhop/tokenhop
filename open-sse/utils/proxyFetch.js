@@ -1,4 +1,5 @@
 import { Readable } from "stream";
+import { isIPv6 } from "node:net";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 
@@ -143,7 +144,9 @@ async function resolveRealIP(hostname) {
 function shouldBypassMitmDns(url) {
   try {
     const hostname = new URL(url).hostname;
-    return MITM_BYPASS_HOSTS.some((host) => hostname.includes(host));
+    // Exact host or a dot-suffix subdomain — never a substring (so
+    // "api2.cursor.sh.other.example" does not match "api2.cursor.sh").
+    return MITM_BYPASS_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`));
   } catch {
     return false;
   }
@@ -250,6 +253,74 @@ async function getDispatcher(proxyUrl) {
   return proxyDispatchers.get(normalized);
 }
 
+// Dispatch options for a request whose connection must target an address the
+// caller already validated (SSRF pinning). The proxy is asked for the IP
+// literal, so it cannot resolve the hostname a second time; the Host header and
+// TLS SNI/certificate checks keep using the real hostname.
+function pinnedOriginOptions(opts, targetUrl, pinnedAddress) {
+  const ip = isIPv6(pinnedAddress.address) ? `[${pinnedAddress.address}]` : pinnedAddress.address;
+  const port = targetUrl.port ? `:${targetUrl.port}` : "";
+  const headers = {};
+  const source = opts.headers;
+  if (Array.isArray(source)) {
+    for (let i = 0; i < source.length; i += 2) headers[source[i]] = source[i + 1];
+  } else if (source) {
+    Object.assign(headers, source);
+  }
+  for (const name of Object.keys(headers)) if (name.toLowerCase() === "host") delete headers[name];
+  headers.host = targetUrl.host;
+  return {
+    ...opts,
+    origin: `${targetUrl.protocol}//${ip}${port}`,
+    headers,
+    ...(targetUrl.protocol === "https:" ? { servername: targetUrl.hostname } : {}),
+  };
+}
+
+// Fetch through proxyUrl with the connection pinned to pinnedAddress. Uses a
+// per-request ProxyAgent so requestTls.servername can carry the real hostname:
+// SOCKS5 tunnels take SNI from requestTls only, never from the request.
+async function pinnedProxyFetch(url, options, proxyUrl, pinnedAddress) {
+  const target = new URL(url);
+  // undici's SOCKS5 agent sends a bracketed IPv6 origin as a domain name, so an
+  // IPv6 pin cannot be honoured through SOCKS; refuse instead of going unpinned.
+  if (/^socks/i.test(new URL(proxyUrl).protocol) && isIPv6(pinnedAddress.address)) {
+    throw new Error("[ProxyFetch] SOCKS proxy cannot target a pinned IPv6 address");
+  }
+  const { ProxyAgent } = await import("undici");
+  const agent = new ProxyAgent({
+    uri: proxyUrl,
+    ...(target.protocol === "https:" ? { requestTls: { servername: target.hostname } } : {}),
+  });
+  const dispatcher = agent.compose((dispatch) => (opts, handler) => {
+    // Only the validated origin may be dispatched (no cross-origin redirect hops).
+    if (opts.origin && new URL(opts.origin).origin !== target.origin) {
+      throw new Error("[ProxyFetch] Pinned request cannot leave its validated origin");
+    }
+    return dispatch(pinnedOriginOptions(opts, target, pinnedAddress), handler);
+  });
+  try {
+    return await originalFetch(url, { ...options, dispatcher });
+  } finally {
+    // Graceful close: an in-flight response body keeps streaming to the end.
+    agent.close().catch(() => {});
+  }
+}
+
+// Fetch through proxyUrl: pinned when the caller validated the address,
+// otherwise through the shared cached dispatcher.
+async function fetchViaProxy(url, options, proxyUrl, pinnedAddress) {
+  if (pinnedAddress)
+    return pinnedProxyFetch(url, options, normalizeProxyUrl(proxyUrl), pinnedAddress);
+  const dispatcher = await getDispatcher(proxyUrl);
+  return originalFetch(url, { ...options, dispatcher });
+}
+
+// True when undici refused a redirect for a redirect: "error" request.
+function isRefusedRedirect(error) {
+  return error?.cause?.message === "unexpected redirect";
+}
+
 // Statuses whose Response must not carry a body (WHATWG Response constructor throws).
 const NULL_BODY_STATUSES = new Set([204, 205, 304]);
 
@@ -341,19 +412,60 @@ async function createBypassRequest(parsedUrl, realIP, options) {
   });
 }
 
+/**
+ * fetch with connection-proxy, env-proxy and Vercel-relay support.
+ * options.pinnedAddress ({ address, family }) marks a request whose host was
+ * already validated: through an HTTP(S) proxy, or a SOCKS proxy for IPv4, the
+ * connection targets that address instead of letting the proxy resolve the
+ * hostname again. Such a request must also pass options.dispatcher pinned to
+ * the same address for the direct path, and redirect:"manual" so no hop can
+ * reach another origin. A relay resolves the hostname itself and cannot be
+ * pinned, so a pinned request through a relay is refused. When relaying, the
+ * caller's redirect mode is forwarded to the relay in the x-relay-redirect
+ * header so the relay can honor it.
+ */
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
+  const pinnedAddress = options?.pinnedAddress ?? null;
+  if (pinnedAddress && (!options.dispatcher || options.redirect !== "manual")) {
+    throw new TypeError(
+      '[ProxyFetch] pinnedAddress requires a pinned dispatcher and redirect: "manual"',
+    );
+  }
 
   // Vercel relay: forward request via relay headers
   const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
   if (vercelRelayUrl) {
+    // The relay would resolve the hostname again, defeating the validation.
+    if (pinnedAddress) {
+      throw Object.assign(
+        new Error("[ProxyFetch] A pinned request cannot be sent through a connection relay"),
+        { code: "ERR_PINNED_RELAY" },
+      );
+    }
     const parsed = new URL(targetUrl);
-    const relayHeaders = {
-      ...options.headers,
-      "x-relay-target": `${parsed.protocol}//${parsed.host}`,
-      "x-relay-path": `${parsed.pathname}${parsed.search}`,
-    };
-    return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+    // Caller headers may be a plain object, Headers or tuple array. Drop any
+    // x-relay-* header (any casing) so only the gateway sets relay control.
+    const relayHeaders = {};
+    for (const [name, value] of new Headers(options.headers ?? undefined)) {
+      if (!name.toLowerCase().startsWith("x-relay-")) relayHeaders[name] = value;
+    }
+    relayHeaders["x-relay-target"] = `${parsed.protocol}//${parsed.host}`;
+    relayHeaders["x-relay-path"] = `${parsed.pathname}${parsed.search}`;
+    if (typeof options.redirect === "string") relayHeaders["x-relay-redirect"] = options.redirect;
+    // A caller-supplied dispatcher targets the original host; it must not be
+    // used to reach the relay, which is a different origin.
+    const { dispatcher: _droppedDispatcher, ...relayOptions } = options;
+    try {
+      return await originalFetch(vercelRelayUrl, { ...relayOptions, headers: relayHeaders });
+    } catch (relayError) {
+      if (options.redirect === "error" && isRefusedRedirect(relayError)) {
+        throw new TypeError('[ProxyFetch] Redirect refused (redirect: "error")', {
+          cause: relayError,
+        });
+      }
+      throw relayError;
+    }
   }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
@@ -370,14 +482,21 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   }
   const fallbackCtx = ` (pool=${poolId}, target=${targetHost})`;
 
-  // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
-  if (shouldBypassMitmDns(targetUrl)) {
+  // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof.
+  // A caller-supplied dispatcher already controls connection DNS — respect it.
+  if (!options.dispatcher && shouldBypassMitmDns(targetUrl)) {
     if (proxyUrl) {
       // Proxy resolves DNS externally (not affected by /etc/hosts) — use proxy directly
       try {
-        const dispatcher = await getDispatcher(proxyUrl);
-        return await originalFetch(url, { ...options, dispatcher });
+        return await fetchViaProxy(url, options, proxyUrl, null);
       } catch (proxyError) {
+        // An aborted request keeps its own error and is never retried.
+        if (options.signal?.aborted) throw proxyError;
+        if (options.redirect === "error" && isRefusedRedirect(proxyError)) {
+          throw new TypeError('[ProxyFetch] Redirect refused (redirect: "error")', {
+            cause: proxyError,
+          });
+        }
         if (proxyOptions?.strictProxy === true) {
           throw new Error(
             `[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`,
@@ -402,9 +521,15 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
 
   if (proxyUrl) {
     try {
-      const dispatcher = await getDispatcher(proxyUrl);
-      return await originalFetch(url, { ...options, dispatcher });
+      return await fetchViaProxy(url, options, proxyUrl, pinnedAddress);
     } catch (proxyError) {
+      // An aborted request keeps its own error and is never retried.
+      if (options.signal?.aborted) throw proxyError;
+      if (options.redirect === "error" && isRefusedRedirect(proxyError)) {
+        throw new TypeError('[ProxyFetch] Redirect refused (redirect: "error")', {
+          cause: proxyError,
+        });
+      }
       // If strictProxy is enabled, fail hard instead of falling back to direct
       if (proxyOptions?.strictProxy === true) {
         throw new Error(

@@ -35,6 +35,8 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "kimi",
       "kiro",
       "llm7",
+      "minimax",
+      "minimax-cn",
       "mistral",
       "nebius",
       "nvidia",
@@ -51,6 +53,8 @@ describe("LIVE_MODEL_PROVIDERS", () => {
       "together",
       "venice",
       "vercel-ai-gateway",
+      "vertex",
+      "vertex-partner",
       "xai",
       "zed",
     ]);

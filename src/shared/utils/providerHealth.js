@@ -199,10 +199,13 @@ export function connectionHealth(connection, nowMs = Date.now()) {
   // It outranks cooldowns and "unavailable" overwrites; repair reuses the existing flow.
   const reauth = reauthRequiredOf(connection);
   if (reauth || isImportedTokenExpired(connection, nowMs)) {
+    // YAN-1288: a rejected (revoked/invalidated) token is stronger copy than "expired".
     const label =
       reauth?.reason === REAUTH_REASONS.refreshTokenRejected
         ? "Token refresh failed"
-        : "Token expired";
+        : reauth?.reason === REAUTH_REASONS.accessTokenRejected
+          ? "Token revoked"
+          : "Token expired";
     const action = repairAction(connection);
     return {
       status: "err",

@@ -390,6 +390,7 @@ export const ROUTE_POLICY = {
   "/api/usage/[connectionId]": scoped({ cap: USAGE }),
   "/api/usage/[connectionId]/codex-reset-credits": scoped(read(USAGE, CONN)),
   "/api/usage/chart": scoped({ cap: USAGE }),
+  "/api/usage/export": scoped({ cap: USAGE }),
   "/api/usage/history": scoped({ cap: USAGE }),
   "/api/usage/last-activity": scoped({ cap: USAGE }),
   "/api/usage/logs": scoped({ cap: USAGE }),

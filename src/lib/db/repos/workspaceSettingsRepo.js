@@ -36,15 +36,19 @@ export async function getWorkspaceSettings(ctx, workspaceId) {
 /**
  * Merge `patch` (workspace keys only; others are dropped defensively) into the
  * row's overrides. @returns {Promise<object>} the merged row data.
+ * @param {object} [snapshot] Optional output: `previous` receives the raw workspace
+ * overrides read inside the write transaction.
  */
-export async function updateWorkspaceSettings(ctx, workspaceId, patch) {
+export async function updateWorkspaceSettings(ctx, workspaceId, patch, snapshot) {
   assertCtx(ctx);
   const db = await getAdapter();
   const ws = memberWorkspaceId(ctx, db, workspaceId);
   const picked = pickKeys(patch, WORKSPACE_KEYS);
   let next;
   db.transaction(() => {
-    next = { ...readWsData(db, ws), ...picked };
+    const previous = readWsData(db, ws);
+    if (snapshot) snapshot.previous = previous;
+    next = { ...previous, ...picked };
     db.run(WS_UPSERT, [ws, stringifyJson(next), now()]);
   });
   return next;
