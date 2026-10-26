@@ -514,6 +514,11 @@ export class CursorExecutor extends BaseExecutor {
     };
 
     const consume = async (onEvent) => {
+      const emitToolCallAndEnd = (toolCall) => {
+        finished = true;
+        onEvent({ type: "tool_call", value: toolCall });
+        onEvent({ type: "done", finishReason: "tool_calls" });
+      };
       try {
         while (!finished) {
           const { done, value } = await session.read();
@@ -581,11 +586,7 @@ export class CursorExecutor extends BaseExecutor {
               // built-ins (read/grep/ls/shell) become the client's tool call too
               // when a declared tool's schema can be filled; every other exec is
               // answered in-stream so the turn keeps going.
-              const emitToolCallAndEnd = (toolCall) => {
-                finished = true;
-                onEvent({ type: "tool_call", value: toolCall });
-                onEvent({ type: "done", finishReason: "tool_calls" });
-              };
+
               if (serverMessage.has(2)) {
                 const execRequest = decodeMessage(serverMessage.get(2)[0].value);
                 const mcp = execRequest.has(EXEC_VARIANT.MCP)

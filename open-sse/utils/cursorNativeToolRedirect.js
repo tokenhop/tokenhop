@@ -135,6 +135,13 @@ const accepts = (declared, value) => {
   return !declared || listed.some((type) => kinds.includes(type));
 };
 
+/** True only when the schema names "array", as a string or inside a type union. */
+const declaresArray = (declared) =>
+  declared === "array" || (Array.isArray(declared) && declared.includes("array"));
+
+const GREP_CASE_KEYS = ["-i", "case_insensitive", "ignore_case"];
+const GREP_GLOB_KEYS = ["include", "glob"];
+
 /**
  * Map the native request onto a declared tool. Returns null when no candidate
  * is declared with a usable schema; a candidate only wins when its primary
@@ -170,12 +177,14 @@ function buildToolCall(native, values, tools) {
       if (values.limit !== null) fill(["limit"], values.limit);
     }
     if (native === "grep") {
-      // A multiline grep cannot be expressed without a multiline flag.
+      // Flags the schema cannot express must not be silently dropped.
       if (values.multiline && !Object.hasOwn(properties, "multiline")) continue;
+      if (values.caseInsensitive && !pickProperty(properties, GREP_CASE_KEYS)) continue;
+      if (values.glob && !pickProperty(properties, GREP_GLOB_KEYS)) continue;
       if (values.multiline) fill(["multiline"], true);
       fill(PRIMARY_KEYS.grep, values.pattern);
-      fill(["include", "glob"], values.glob);
-      if (values.caseInsensitive) fill(["-i", "case_insensitive", "ignore_case"], true);
+      fill(GREP_GLOB_KEYS, values.glob);
+      if (values.caseInsensitive) fill(GREP_CASE_KEYS, true);
       fill(["output_mode"], values.outputMode);
       fill(["type"], values.type);
       fill(["-C", "context"], values.context);
@@ -185,13 +194,14 @@ function buildToolCall(native, values, tools) {
     }
     if (native === "ls") fill(["ignore"], values.ignore);
     if (native === "shell") {
-      // Codex-style shells take the command as a string array.
+      // Only an explicit array schema (Codex-style) gets ["bash","-lc",command].
+      // An untyped command stays a string.
       const commandProperty = pickProperty(properties, PRIMARY_KEYS.shell);
-      if (commandProperty !== null && accepts(properties[commandProperty]?.type, [])) {
-        fill(PRIMARY_KEYS.shell, ["bash", "-lc", values.command]);
-      } else {
-        fill(PRIMARY_KEYS.shell, values.command);
-      }
+      const commandType = commandProperty ? properties[commandProperty]?.type : undefined;
+      fill(
+        PRIMARY_KEYS.shell,
+        declaresArray(commandType) ? ["bash", "-lc", values.command] : values.command,
+      );
       if (values.timeout !== null) fill(["timeout"], values.timeout);
       fill(["workdir", "cwd", "working_directory", "directory"], values.workingDirectory);
       fill(["description"], values.description || values.command.slice(0, 120));

@@ -291,6 +291,110 @@ describe("redirectNativeExec", () => {
     ]);
     expect(result).toBeNull();
   });
+
+  it("keeps an untyped shell command as a string", () => {
+    const result = redirectNativeExec(execRequestMap(2, shellArgs({ command: "ls -la" })), [
+      fn("bash", { command: { description: "x" } }),
+    ]);
+    expect(JSON.parse(result.toolCall.arguments)).toEqual({ command: "ls -la" });
+  });
+
+  it("returns null for a case-insensitive grep the schema cannot express", () => {
+    const result = redirectNativeExec(
+      execRequestMap(5, grepArgs({ pattern: "TODO", caseInsensitive: true })),
+      [fn("grep", { pattern: { type: "string" }, path: { type: "string" } })],
+    );
+    expect(result).toBeNull();
+  });
+
+  it("returns null when a grep glob has no include or glob property", () => {
+    const result = redirectNativeExec(
+      execRequestMap(5, grepArgs({ pattern: "TODO", glob: "*.js" })),
+      [fn("grep", { pattern: { type: "string" }, path: { type: "string" } })],
+    );
+    expect(result).toBeNull();
+  });
+
+  it("redirects ls onto list_dir including the ignore list", () => {
+    const result = redirectNativeExec(
+      execRequestMap(8, lsArgs({ path: "/repo", ignore: ["node_modules", ".git"] })),
+      [
+        fn("list_dir", {
+          path: { type: "string" },
+          ignore: { type: "array", items: { type: "string" } },
+        }),
+      ],
+    );
+    expect(result.toolCall.name).toBe("list_dir");
+    expect(JSON.parse(result.toolCall.arguments)).toEqual({
+      path: "/repo",
+      ignore: ["node_modules", ".git"],
+    });
+  });
+
+  it("drops an offset whose schema type is not a number", () => {
+    const result = redirectNativeExec(
+      execRequestMap(7, readArgs({ path: "/tmp/a.ts", offset: 40 })),
+      [fn("read", { filePath: { type: "string" }, offset: { type: "string" } })],
+    );
+    expect(JSON.parse(result.toolCall.arguments)).toEqual({ filePath: "/tmp/a.ts" });
+  });
+
+  it("returns null when the shell command property cannot hold a string", () => {
+    const result = redirectNativeExec(execRequestMap(2, shellArgs({ command: "ls" })), [
+      fn("bash", { command: { type: "integer" } }),
+    ]);
+    expect(result).toBeNull();
+  });
+
+  it("drops a negative read offset", () => {
+    const args = Buffer.concat([
+      readArgs({ path: "/tmp/a.ts" }),
+      Buffer.from(encodeField(4, VARINT, 0x80000000)),
+    ]);
+    const result = redirectNativeExec(execRequestMap(7, args), [
+      fn("read", { filePath: { type: "string" }, offset: { type: "integer" } }),
+    ]);
+    expect(JSON.parse(result.toolCall.arguments)).toEqual({ filePath: "/tmp/a.ts" });
+  });
+
+  it("returns null for an empty grep pattern", () => {
+    const result = redirectNativeExec(execRequestMap(5, grepArgs({ pattern: "" })), [
+      fn("grep", { pattern: { type: "string" } }, ["pattern"]),
+    ]);
+    expect(result).toBeNull();
+  });
+
+  it("returns null for an empty shell command", () => {
+    const result = redirectNativeExec(execRequestMap(2, shellArgs({ command: "" })), [
+      fn("bash", { command: { type: "string" } }),
+    ]);
+    expect(result).toBeNull();
+  });
+
+  it("maps a grep glob onto the glob property and a shell command onto cmd", () => {
+    const grep = redirectNativeExec(
+      execRequestMap(5, grepArgs({ pattern: "TODO", glob: "*.ts" })),
+      [fn("grep", { pattern: { type: "string" }, glob: { type: "string" } })],
+    );
+    expect(JSON.parse(grep.toolCall.arguments)).toEqual({ pattern: "TODO", glob: "*.ts" });
+
+    const shell = redirectNativeExec(execRequestMap(2, shellArgs({ command: "pwd" })), [
+      fn("bash", { cmd: { type: "string" } }),
+    ]);
+    expect(JSON.parse(shell.toolCall.arguments)).toEqual({ cmd: "pwd" });
+  });
+
+  it("keeps multiline when the grep schema declares it", () => {
+    const result = redirectNativeExec(
+      execRequestMap(5, grepArgs({ pattern: "TODO", multiline: true })),
+      [fn("grep", { pattern: { type: "string" }, multiline: { type: "boolean" } })],
+    );
+    expect(JSON.parse(result.toolCall.arguments)).toEqual({
+      pattern: "TODO",
+      multiline: true,
+    });
+  });
 });
 
 // --- executor-level end to end ---------------------------------------------
@@ -397,6 +501,31 @@ describe("CursorExecutor native exec redirect", () => {
     const reply = decodeReply(written[1]);
     expect(reply.has(20)).toBe(true);
     expect(str(sub(reply, 20), 2).length).toBeGreaterThan(0);
+  });
+
+  it("lets a named MCP call win over a native read in the same exec", async () => {
+    const mcpArgs = Buffer.concat([
+      Buffer.from(encodeField(3, LEN, "mcp-9")),
+      Buffer.from(encodeField(5, LEN, "client_search")),
+    ]);
+    const execServerMessage = Buffer.concat([
+      Buffer.from(encodeField(1, VARINT, 7)),
+      Buffer.from(encodeField(7, LEN, readArgs({ path: "/tmp/secret.ts", callId: "native-42" }))),
+      Buffer.from(encodeField(11, LEN, mcpArgs)),
+      Buffer.from(encodeField(15, LEN, "exec-1")),
+    ]);
+    const frame = Buffer.from(wrapConnectRPCFrame(encodeField(2, LEN, execServerMessage)));
+    const { result, written } = await runAgent({
+      frames: [frame],
+      tools: [fn("read", { filePath: { type: "string" } }, ["filePath"])],
+    });
+
+    const events = parseSSE(await result.response.text());
+    const toolCall = events.find((e) => e.choices?.[0]?.delta?.tool_calls?.[0]);
+    expect(toolCall.choices[0].delta.tool_calls[0].function.name).toBe("client_search");
+    expect(toolCall.choices[0].delta.tool_calls[0].id).toBe("mcp-9");
+    expect(events.at(-1).choices[0].finish_reason).toBe("tool_calls");
+    expect(written.length).toBe(1);
   });
 
   it("does not redirect when the request declares no tools", async () => {
