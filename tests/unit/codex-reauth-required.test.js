@@ -76,12 +76,17 @@ describe("account selection skips connections that need re-authentication", () =
     expect(idOf(await getProviderCredentials("codex", null, "gpt-5"))).toBe("c2");
   });
 
-  it("returns null when every row is flagged (chat.js 404, combo falls through)", async () => {
+  it("returns a reauthRequired result when every row is flagged (YAN-1286)", async () => {
     dbMocks.getProviderConnectionsUnscoped.mockResolvedValue([
       oauth("c1", { reauthRequired: flag() }),
       oauth("c2", { reauthRequired: flag() }),
     ]);
-    expect(await getProviderCredentials("codex", null, "gpt-5")).toBeNull();
+    const r = await getProviderCredentials("codex", null, "gpt-5");
+    expect(r).toMatchObject({
+      allRateLimited: true,
+      reauthRequired: { provider: "codex", count: 2 },
+      lastErrorCode: 503,
+    });
   });
 
   it("skips a flagged row even as preferredConnectionId", async () => {

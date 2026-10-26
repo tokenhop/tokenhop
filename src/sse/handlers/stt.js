@@ -13,6 +13,7 @@ import { AI_PROVIDERS } from "@/shared/constants/providers";
 import * as log from "../utils/logger.js";
 import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
 import { budgetResponse, withBudgetScope } from "../services/budgetGuard.js";
+import { reauthRequiredResponse } from "open-sse/services/reauthState.js";
 
 // Providers requiring credentials for STT
 const CREDENTIALED_PROVIDERS = new Set(
@@ -114,6 +115,8 @@ async function sttRoute({ formData, provider, model, gateway, gatewayCreds, apiK
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.grantRateLimit) return grantRateLimitResponse(credentials.grantRateLimit);
       if (credentials?.budgetLimit) return budgetResponse(credentials.budgetLimit);
+      // YAN-1286: all-flagged provider → clear 503 re-auth message, not a lockup.
+      if (credentials?.reauthRequired) return reauthRequiredResponse(credentials.reauthRequired);
       if (credentials?.allRateLimited) {
         const msg = lastError || credentials.lastError || "Unavailable";
         const status =
