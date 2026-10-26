@@ -93,7 +93,10 @@ function withStaticVertexModels(providerId, models) {
   ];
 }
 
-async function fetchPublisher(publisher, token, projectId, proxyOptions, signal) {
+// quotaProject: user credentials (ADC, stored user tokens) must name a billing
+// project; SA tokens bill their own project, and the header would demand
+// serviceusage.services.use on top of Vertex AI User, so it is omitted for them.
+async function fetchPublisher(publisher, token, quotaProject, proxyOptions, signal) {
   const publisherModels = [];
   const seenTokens = new Set();
   let pageToken;
@@ -106,7 +109,10 @@ async function fetchPublisher(publisher, token, projectId, proxyOptions, signal)
         proxyAwareFetch(
           url,
           {
-            headers: { Authorization: `Bearer ${token}`, "x-goog-user-project": projectId },
+            headers: {
+              Authorization: `Bearer ${token}`,
+              ...(quotaProject ? { "x-goog-user-project": quotaProject } : {}),
+            },
             signal,
           },
           proxyOptions,
@@ -180,7 +186,7 @@ async function resolveCatalog(connection, partner) {
   if (!token) return failure("could not acquire an access token");
   const publishers = partner ? VERTEX_PARTNER_PUBLISHERS : ["google"];
   const results = await Promise.all(
-    publishers.map((p) => fetchPublisher(p, token, projectId, proxyOptions, signal)),
+    publishers.map((p) => fetchPublisher(p, token, sa ? null : projectId, proxyOptions, signal)),
   );
   const models = new Map();
   for (let i = 0; i < results.length; i++) {

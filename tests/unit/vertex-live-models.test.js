@@ -186,7 +186,7 @@ describe("Vertex catalog authentication and transport", () => {
     expect(mocks.fetch).toHaveBeenCalledWith(
       "https://aiplatform.googleapis.com/v1beta1/publishers/google/models?pageSize=1000",
       expect.objectContaining({
-        headers: { Authorization: "Bearer minted-token", "x-goog-user-project": "test-project" },
+        headers: { Authorization: "Bearer minted-token" },
         signal: expect.any(AbortSignal),
       }),
       proxyOptions,
@@ -306,9 +306,7 @@ describe("Vertex pagination and failure handling", () => {
     ]);
     expect(mocks.fetch.mock.calls[1][0]).toMatch(/pageToken=next%20%2B%2F$/);
     expect(
-      mocks.fetch.mock.calls.every(
-        ([, init]) => init.headers["x-goog-user-project"] === "test-project",
-      ),
+      mocks.fetch.mock.calls.every(([, init]) => !("x-goog-user-project" in init.headers)),
     ).toBe(true);
   });
 
@@ -316,7 +314,9 @@ describe("Vertex pagination and failure handling", () => {
     mocks.fetch.mockImplementation(async () =>
       Response.json({ ...list(entry("gemini-one")), nextPageToken: "same" }),
     );
-    expect((await resolveVertex(connection())).models[0].id).toBe("gemini-one");
+    const result = await resolveVertex(connection());
+    expect(result.models[0].id).toBe("gemini-one");
+    expect(result.warning).toMatch(/Partial Vertex AI catalog:.*repeated page token/);
     expect(mocks.fetch).toHaveBeenCalledTimes(2);
   });
 
