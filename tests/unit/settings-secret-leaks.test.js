@@ -243,7 +243,7 @@ describe("encrypted settings secrets (YAN-365)", () => {
     const { claimSavingsMilestone } = await import("@/lib/savingsMilestones.js");
     const { SAVINGS_MILESTONES } = await import("@/shared/constants/savingsMilestones.js");
     adapter.run(`INSERT OR REPLACE INTO _meta(key, value) VALUES(?, ?)`, [
-      (await import("@/lib/db/repos/usageRepo.js")).SAVINGS_LIFETIME_KEY,
+      (await import("@/lib/db/repos/usageSavingsRepo.js")).SAVINGS_LIFETIME_KEY,
       String(SAVINGS_MILESTONES.at(-1) * 2),
     ]);
     await claimSavingsMilestone(SAVINGS_MILESTONES[0]); // savings acknowledgement

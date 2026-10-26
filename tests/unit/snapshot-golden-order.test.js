@@ -5,7 +5,7 @@
 //  1. Golden order: top-level key arrays for the legacy / hashed-switch-off /
 //     v2 / v3 export shapes and the first-row key order of every array, taken
 //     from the pre-change exportDb (commit 0a4c1919) and hardcoded here.
-//  2. Bind fidelity: the 10 instance sections written by the staged import
+//  2. Bind fidelity: the 11 instance sections written by the staged import
 //     (importDb, importDbStream, and the absent-section retain path) must land
 //     with byte-identical SQLite storage classes and values as the original
 //     bind path `insertInstanceTableSections` (still exported, unchanged).
@@ -224,7 +224,15 @@ describe("bind fidelity vs the original insertInstanceTableSections", () => {
     expect(absent.latencySumMs).toBe("real:0.0");
     expect(absent.latencyCount).toBe("integer:0");
     expect(absent.latencyHistogram).toBe("text:'[0,0,0,0,0,0,0,0,0,0,0,0]'");
+    // Absent savings columns take their schema defaults too (YAN-1226).
+    expect(absent.savingsSavedEst).toBe("real:0.0");
+    expect(absent.savingsRequests).toBe("integer:0");
+    expect(absent.lastUsedAt).toBe("text:''");
     expect(rows("usageRollup")[2].latencySumMs).toBe("real:7.0");
+    expect(rows("usageRollup")[0].savingsBeforeEst).toBe("real:-7.25");
+    expect(rows("usageRollup")[0].rtkSavedEst).toBe("real:100.5");
+    expect(rows("usageRollup")[0].lastUsedAt).toBe("text:'2026-10-09T00:00:00.000Z'");
+    expect(rows("usageComboRollup")[0].comboName).toBe("text:'combo ''🙂'' \"quoted\"'");
     expect(rows("usageRollup")[1].cost).toBe("real:5.0");
     for (const table of SECTION_TABLES) expect(rows(table).length).toBeGreaterThan(0);
   });

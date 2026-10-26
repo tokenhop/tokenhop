@@ -3,7 +3,7 @@
 import PropTypes from "prop-types";
 import { Button, Callout, Card, CountUp, EmptyState, Skeleton } from "@/shared/components";
 import PeriodControl from "@/shared/components/PeriodControl";
-import { HISTORY_PERIOD_VALUES, periodOptions } from "@/shared/utils/period";
+import { PERIOD_VALUES, periodOptions } from "@/shared/utils/period";
 import { formatCompact, formatMoney } from "../home/format";
 import TrendLine from "../usage/components/TrendLine";
 import { savingsTrendInput } from "../usage/lib/tileTrends";
@@ -15,8 +15,8 @@ import {
 } from "./tokenSaverUtils";
 
 /**
- * Page toolbar: shared period control (Today/24h/7d/30d/60d). Shell Header owns the title. Renders
- * with no selection while the shared period resolves after mount.
+ * Page toolbar: shared period control (Today/24h/7d/30d/60d/90d/All time).
+ * Shell Header owns the title. No selection while the shared period resolves after mount.
  * @param {object} props
  * @param {string|null} props.period
  * @param {(period: string) => void} props.onPeriodChange
@@ -25,7 +25,7 @@ import {
 export function TokenSaverHeader({
   period,
   onPeriodChange,
-  options = periodOptions(HISTORY_PERIOD_VALUES),
+  options = periodOptions(PERIOD_VALUES),
 }) {
   return (
     <div className="flex min-w-0 justify-end">
@@ -60,6 +60,8 @@ const SAVED_COPY = {
   "7d": { eyebrow: "Saved last 7d" },
   "30d": { eyebrow: "Saved last 30d" },
   "60d": { eyebrow: "Saved last 60d" },
+  "90d": { eyebrow: "Saved last 90d" },
+  all: { eyebrow: "Saved all time" },
   default: { eyebrow: "Saved in this period" },
 };
 const FALLBACK_COPY = {
@@ -67,6 +69,8 @@ const FALLBACK_COPY = {
   "7d": { eyebrow: "Saved in the last 7d" },
   "30d": { eyebrow: "Saved in the last 30d" },
   "60d": { eyebrow: "Saved in the last 60d" },
+  "90d": { eyebrow: "Saved in the last 90d" },
+  all: { eyebrow: "Saved all time" },
   default: { eyebrow: "Saved in this period" },
 };
 const EMPTY_COPY = {
@@ -78,6 +82,8 @@ const QUIET_NOTES = {
   "24h": { caption: "None in the last 24h" },
   "7d": { caption: "None in the last 7d" },
   "30d": { caption: "None in the last 30d" },
+  "60d": { caption: "None in the last 60d" },
+  "90d": { caption: "None in the last 90d" },
 };
 
 /**

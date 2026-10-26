@@ -1,10 +1,16 @@
-import { isHistoryPeriod, periodStart, previousPeriodRange } from "@/shared/utils/period";
+import {
+  isPeriod,
+  isRollupOnlyPeriod,
+  periodStart,
+  previousPeriodRange,
+} from "@/shared/utils/period";
 
 /**
- * Return [startMs, endMs] for a period, plus previous period range for delta math.
+ * Return [startMs, endMs] plus a previous range for this test-only history helper.
+ * The production readers support longer rollup-backed periods separately.
  */
 export function resolvePeriodRange(period, now = Date.now()) {
-  if (!isHistoryPeriod(period)) {
+  if (!isPeriod(period) || isRollupOnlyPeriod(period)) {
     throw new Error(`Invalid period: ${period}`);
   }
   const { start, end } = previousPeriodRange(period, now);

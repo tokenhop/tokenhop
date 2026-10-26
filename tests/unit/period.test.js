@@ -4,10 +4,10 @@ import { describe, expect, it } from "vitest";
 import {
   coercePeriod,
   formatRelativeFromNow,
-  isHistoryPeriod,
   isPeriod,
   loadStoredPeriod,
   PERIOD_STORAGE_KEY,
+  PERIOD_VALUES,
   periodOptions,
   periodStart,
   previousPeriodRange,
@@ -31,11 +31,11 @@ describe("period selection", () => {
     expect(isPeriod(null)).toBe(false);
   });
 
-  it("limits history-backed periods to today..60d", () => {
-    expect(["today", "24h", "7d", "30d", "60d"].every(isHistoryPeriod)).toBe(true);
-    expect(isHistoryPeriod("90d")).toBe(false);
-    expect(isHistoryPeriod("all")).toBe(false);
-    expect(coercePeriod("all", ["today", "24h", "7d", "30d", "60d"])).toBe("60d");
+  it("offers the full shared period set", () => {
+    expect(PERIOD_VALUES).toEqual(["today", "24h", "7d", "30d", "60d", "90d", "all"]);
+    expect(PERIOD_VALUES.every(isPeriod)).toBe(true);
+    expect(coercePeriod("90d")).toBe("90d");
+    expect(coercePeriod("all")).toBe("all");
   });
 
   it("coerces to the next allowed rank or the largest allowed period", () => {

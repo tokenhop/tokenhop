@@ -54,6 +54,7 @@ const fullDump = () =>
     invitations: dump("SELECT * FROM invitations ORDER BY id"),
     usageHistory: dump("SELECT * FROM usageHistory ORDER BY id"),
     usageRollup: dump("SELECT * FROM usageRollup ORDER BY dateKey, apiKeyId"),
+    usageComboRollup: dump("SELECT * FROM usageComboRollup ORDER BY dateKey, comboName"),
     usageBudgetCarry: dump("SELECT * FROM usageBudgetCarry ORDER BY day, apiKeyId"),
     requestDetails: dump("SELECT * FROM requestDetails ORDER BY id"),
   });
@@ -71,6 +72,7 @@ function rebuildApiKeysHashed() {
 }
 
 function seedHashedInstanceFull() {
+  db.exec(`DELETE FROM usageComboRollup`);
   db.exec(`DELETE FROM usageRollup`);
   db.exec(`DELETE FROM usageBudgetCarry`);
   db.exec(`DELETE FROM requestDetails`);
@@ -169,11 +171,28 @@ function seedHashedInstanceFull() {
   db.run(
     `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta, workspaceId, userId, apiKeyId, grantId)
      VALUES(?, 'openai', 'gpt-4o', 'conn-1', NULL, '/v1/chat', 10, 20, 0.01, 'ok', ?, ?, ?, 'owner', 'hk-1', 'grant-1')`,
-    [NOW, JSON.stringify({}), JSON.stringify({}), WS],
+    [
+      NOW,
+      JSON.stringify({}),
+      JSON.stringify({
+        comboName: "team combo",
+        savings: {
+          tokensSavedEst: 42,
+          tokensBeforeEst: 100,
+          byMethod: { rtk: { tokensSavedEst: 42, tokensBeforeEst: 100 } },
+        },
+      }),
+      WS,
+    ],
   );
   db.run(
     `INSERT INTO usageRollup(dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost)
      VALUES('2026-10-09', ?, 'owner', 'hk-1', 'openai', 'gpt-4o', 'conn-1', '/v1/chat', 1, 10, 20, 0, 0.01)`,
+    [WS],
+  );
+  db.run(
+    `INSERT INTO usageComboRollup(dateKey, workspaceId, userId, apiKeyId, comboName, requests)
+     VALUES('2026-10-09', ?, 'owner', 'hk-1', 'team combo', 3)`,
     [WS],
   );
   db.run(
@@ -238,6 +257,7 @@ describe("instance full-table sections (encrypted v3)", () => {
       "invitations",
       "usageHistory",
       "usageRollup",
+      "usageComboRollup",
       "usageBudgetCarry",
       "requestDetails",
     ]) {
@@ -252,6 +272,7 @@ describe("instance full-table sections (encrypted v3)", () => {
 
     // Wipe everything the apply deletes, then restore.
     db.run(`DELETE FROM usageRollup`);
+    db.run(`DELETE FROM usageComboRollup`);
     db.run(`DELETE FROM usageBudgetCarry`);
     db.run(`DELETE FROM requestDetails`);
     db.run(`DELETE FROM usageHistory`);
@@ -279,6 +300,7 @@ describe("instance full-table sections (encrypted v3)", () => {
       "invitations",
       "usageHistory",
       "usageRollup",
+      "usageComboRollup",
       "usageBudgetCarry",
       "requestDetails",
     ]) {
@@ -608,6 +630,45 @@ describe("instance full-table sections (encrypted v3)", () => {
     );
     expect(fullDump()).toBe(before);
   });
+
+  it("schema-20 snapshot restore recomputes savings/lastUsedAt/combo from restored history", async () => {
+    const snapshot = await dbApi.exportDb();
+    snapshot.schemaVersion = 20;
+    for (const row of snapshot.usageRollup) {
+      for (const c of [
+        "savingsSavedEst",
+        "savingsBeforeEst",
+        "savingsRequests",
+        "rtkSavedEst",
+        "rtkBeforeEst",
+        "rtkRequests",
+        "headroomSavedEst",
+        "headroomBeforeEst",
+        "headroomRequests",
+        "pxpipeSavedEst",
+        "pxpipeBeforeEst",
+        "pxpipeRequests",
+        "lastUsedAt",
+      ])
+        delete row[c];
+    }
+    delete snapshot.usageComboRollup;
+    // A stale live combo from the instance being replaced must not survive.
+    db.run(
+      `INSERT INTO usageComboRollup(dateKey, workspaceId, userId, apiKeyId, comboName, requests) VALUES('2026-10-09', ?, 'owner', 'hk-1', 'stale combo', 9) ON CONFLICT DO UPDATE SET requests = excluded.requests`,
+      [WS],
+    );
+    await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    const rollup = db.get(
+      "SELECT savingsSavedEst, rtkSavedEst, lastUsedAt FROM usageRollup WHERE apiKeyId = 'hk-1'",
+    );
+    expect(rollup.savingsSavedEst).toBe(42);
+    expect(rollup.rtkSavedEst).toBe(42);
+    expect(rollup.lastUsedAt).toBe(NOW);
+    expect(db.all("SELECT comboName, requests FROM usageComboRollup")).toEqual([
+      { comboName: "team combo", requests: 1 },
+    ]);
+  });
 });
 
 describe("instance full-table sections (plain hashed v2)", () => {
@@ -624,6 +685,7 @@ describe("instance full-table sections (plain hashed v2)", () => {
       "invitations",
       "usageHistory",
       "usageRollup",
+      "usageComboRollup",
       "usageBudgetCarry",
       "requestDetails",
     ]) {
@@ -631,6 +693,7 @@ describe("instance full-table sections (plain hashed v2)", () => {
       expect(snapshot[section].length).toBeGreaterThan(0);
     }
     db.run(`DELETE FROM usageRollup`);
+    db.run(`DELETE FROM usageComboRollup`);
     db.run(`DELETE FROM usageBudgetCarry`);
     db.run(`DELETE FROM requestDetails`);
     db.run(`DELETE FROM usageHistory`);
@@ -653,6 +716,7 @@ describe("instance full-table sections (plain hashed v2)", () => {
       "invitations",
       "usageHistory",
       "usageRollup",
+      "usageComboRollup",
       "usageBudgetCarry",
       "requestDetails",
     ]) {

@@ -1,6 +1,6 @@
 import { getAdapter } from "@/lib/db/driver.js";
 import { parseJson, stringifyJson } from "@/lib/db/helpers/jsonCol.js";
-import { SAVINGS_LIFETIME_KEY } from "@/lib/db/repos/usageRepo.js";
+import { SAVINGS_LIFETIME_KEY } from "@/lib/db/repos/usageSavingsRepo.js";
 import { SAVINGS_MILESTONES } from "@/shared/constants/savingsMilestones.js";
 
 /** Largest valid acknowledged milestone, or 0 for an older install. */

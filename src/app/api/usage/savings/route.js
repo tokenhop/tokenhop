@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
-import { getSavingsTotals, getUsageSavings } from "@/lib/db/index.js";
-import { isHistoryPeriod, periodStart, previousPeriodRange } from "@/shared/utils/period";
+import { getRollupSavingsTotals, getSavingsTotals, getUsageSavings } from "@/lib/db/index.js";
+import {
+  isPeriod,
+  localTodayKey,
+  PERIOD_DAYS,
+  periodStart,
+  previousPeriodRange,
+} from "@/shared/utils/period";
 import { usageScope } from "@/lib/usage/scope.js";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +15,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request) {
   const params = new URL(request.url).searchParams;
   const period = params.get("period") || "7d";
-  if (!isHistoryPeriod(period)) {
+  if (!isPeriod(period)) {
     return NextResponse.json({ error: "Invalid period" }, { status: 400 });
   }
   // Validated before scope resolution, like the stats route.
@@ -22,8 +28,20 @@ export async function GET(request) {
     if (scope instanceof Response) return scope;
     if (compare !== "previous") return NextResponse.json(await getUsageSavings(scope, period));
 
-    // One instant and one scope for all three reads.
+    // One instant and one scope for every compare read.
     const now = Date.now();
+    if (period === "all" || Object.hasOwn(PERIOD_DAYS, period)) {
+      // Whole calendar-day baselines match the rollup and survive history pruning.
+      const range =
+        period === "all"
+          ? { from: null, to: null }
+          : { from: localTodayKey(periodStart(period, now)), to: localTodayKey(now) };
+      const [savings, totals] = await Promise.all([
+        getUsageSavings(scope, period, now),
+        getRollupSavingsTotals(scope, range),
+      ]);
+      return NextResponse.json({ ...savings, ...totals });
+    }
     const [savings, currentTotals, previous] = await Promise.all([
       getUsageSavings(scope, period, now),
       // getSavingsTotals is half-open; +1ms makes the current window inclusive of

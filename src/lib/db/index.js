@@ -86,10 +86,10 @@ export {
 export { getApiKeyUsage } from "./repos/apiKeyUsageRepo.js";
 
 export {
-  rowSavedFromSavings,
   backfillSavingsLifetimeUnscoped,
   SAVINGS_LIFETIME_KEY,
-} from "./repos/usageRepo.js";
+} from "./repos/usageSavingsRepo.js";
+export { rowSavedFromSavings } from "./repos/usageRepo.js";
 
 // Combos (YAN-364: scoped + Unscoped APIs)
 export {
@@ -171,22 +171,20 @@ export {
   streamRequestRows,
   streamDailyRows,
 } from "./repos/usageStatsRepo.js";
-export { getRollupUsageTotals, getRollupRangeTotals } from "./repos/usageRollupTotals.js";
-export { getSavingsTotals } from "./repos/usageSavingsTotals.js";
+export { getRollupPeriodTotals, getRollupRangeTotals } from "./repos/usageRollupTotals.js";
+export { getSavingsTotals, getRollupSavingsTotals } from "./repos/usageSavingsTotals.js";
 export {
   saveRequestUsageUnscoped,
   getUsageHistory,
-  getUsageSavings,
   getUsageTotals,
   getLastActivity,
-  getHomeSummary,
   getLiveRoutesFeed,
   getRequestRateSeries,
-  getSavingsLifetime,
   recordFallbackHop,
   appendRequestLog,
   getRecentLogs,
 } from "./repos/usageRepo.js";
+export { getUsageSavings, getHomeSummary, getSavingsLifetime } from "./repos/usageSavingsRepo.js";
 
 // Request details
 export {

@@ -264,10 +264,12 @@ describe("recorded savings (saveRequestUsageUnscoped -> getUsageSavings)", () =>
     expect(pack.requests).toBe(1);
   });
 
-  it("getUsageSavings rejects invalid period", async () => {
-    await expect(db.getUsageSavings(null, "90d")).rejects.toThrow(/Invalid period/);
-    await expect(db.getUsageSavings(null, "all")).rejects.toThrow(/Invalid period/);
-    await expect(db.getHomeSummary(null, "all")).rejects.toThrow(/Invalid period/);
+  it("getUsageSavings/getHomeSummary serve 90d and all; unknown periods still throw", async () => {
+    await expect(db.getUsageSavings(null, "90d")).resolves.toMatchObject({ period: "90d" });
+    await expect(db.getUsageSavings(null, "all")).resolves.toMatchObject({ period: "all" });
+    await expect(db.getHomeSummary(null, "all")).resolves.toMatchObject({ period: "all" });
+    await expect(db.getUsageSavings(null, "bogus")).rejects.toThrow(/Invalid period/);
+    await expect(db.getHomeSummary(null, "bogus")).rejects.toThrow(/Invalid period/);
   });
 });
 
@@ -295,23 +297,29 @@ describe("savings and summary windows", () => {
   it("savings and summary use calendar windows and the shared previous window", async () => {
     const now = new Date(2026, 8, 29, 12).getTime();
     const start = new Date(2026, 8, 23).getTime(); // 7d = local midnight of today - 6
-    const meta = JSON.stringify({
+    const meta = {
       savings: {
         tokensSavedEst: 10,
         tokensBeforeEst: 40,
         byMethod: { rtk: { tokensSavedEst: 10 } },
       },
-    });
+    };
     // Rolling 7×24h would include start - 1h; the calendar window does not.
+    // Seeded through the real writer so the rollup carries the same rows.
     for (const t of [start, now - H, start - H, start - 2 * DAY]) {
-      adapter.run(`INSERT INTO usageHistory(timestamp, meta) VALUES(?, ?)`, [
-        new Date(t).toISOString(),
+      await db.saveRequestUsageUnscoped({
+        provider: "openai",
+        model: "gpt-5",
+        timestamp: new Date(t).toISOString(),
+        tokens: { prompt_tokens: 10, completion_tokens: 5 },
+        endpoint: "/v1/chat/completions",
         meta,
-      ]);
+      });
     }
     expect((await db.getUsageSavings(null, "7d", now)).requestsWithSavings).toBe(2);
     const summary = await db.getHomeSummary(null, "7d", now);
     expect(summary.requests).toBe(2);
+    // Previous window is the 7 whole calendar days before the current one.
     expect(summary.previousRequests).toBe(2);
     expect((await db.getUsageSavings(null, "24h", now)).requestsWithSavings).toBe(1);
     expect((await db.getHomeSummary(null, "60d", now)).requests).toBe(4);
@@ -337,7 +345,7 @@ describe("savings route validation", () => {
     }
   });
 
-  it.each(["90d", "all"])("savings and home summary routes reject %s with 400", async (period) => {
+  it.each(["90d", "all"])("savings and home summary routes accept %s", async (period) => {
     const savings = await import("../../src/app/api/usage/savings/route.js");
     const home = await import("../../src/app/api/home/summary/route.js");
     for (const [GET, path] of [
@@ -345,7 +353,7 @@ describe("savings route validation", () => {
       [home.GET, "home/summary"],
     ]) {
       const res = await GET(new Request(`http://localhost/api/${path}?period=${period}`));
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(200);
     }
   });
 

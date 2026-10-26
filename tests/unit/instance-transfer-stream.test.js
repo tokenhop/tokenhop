@@ -95,6 +95,7 @@ describe("hashed v2 shape", () => {
       "usageHistory",
       "requestDetails",
       "usageRollup",
+      "usageComboRollup",
       "budgets",
       "auditEvents",
     ]) {

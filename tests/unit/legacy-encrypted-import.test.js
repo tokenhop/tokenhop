@@ -39,6 +39,7 @@ function rebuildApiKeysHashed() {
 
 function seedHashedInstanceFull() {
   db.exec(`DELETE FROM usageRollup`);
+  db.exec(`DELETE FROM usageComboRollup`);
   db.exec(`DELETE FROM requestDetails`);
   db.exec(`DELETE FROM usageHistory`);
   db.exec(`DELETE FROM auditEvents`);
@@ -140,6 +141,11 @@ function seedHashedInstanceFull() {
   db.run(
     `INSERT INTO usageRollup(dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost)
      VALUES('2026-10-09', ?, 'owner', 'hk-1', 'openai', 'gpt-4o', 'conn-1', '/v1/chat', 1, 10, 20, 0, 0.01)`,
+    [WS],
+  );
+  db.run(
+    `INSERT INTO usageComboRollup(dateKey, workspaceId, userId, apiKeyId, comboName, requests)
+     VALUES('2026-10-09', ?, 'owner', 'hk-1', 'team combo', 3)`,
     [WS],
   );
   db.run(

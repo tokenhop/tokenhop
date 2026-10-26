@@ -45,5 +45,7 @@ it("legacy usage.json import: ids not raws, residual kept", async () => {
     apiKeyId: "k1",
   });
   expect(db.get("SELECT SUM(requests) AS n FROM usageRollup").n).toBe(5);
+  const rollup = db.get("SELECT lastUsedAt FROM usageRollup ORDER BY lastUsedAt DESC LIMIT 1");
+  expect(rollup.lastUsedAt).toBe("2026-01-02T12:00:00Z");
   expect(db.get("SELECT 1 AS x FROM sqlite_master WHERE name='usageDaily'")).toBeUndefined();
 });

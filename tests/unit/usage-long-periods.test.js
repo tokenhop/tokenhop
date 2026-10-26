@@ -4,7 +4,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getAdapter } from "@/lib/db/driver.js";
 import { getChartData, getUsageStats } from "@/lib/db/repos/usageStatsRepo.js";
-import { getRollupUsageTotals } from "@/lib/db/repos/usageRollupTotals.js";
+import { getRollupPeriodTotals } from "@/lib/db/repos/usageRollupTotals.js";
 import { saveRequestUsageUnscoped } from "@/lib/db/repos/usageRepo.js";
 import { buildAllTimeBuckets } from "@/lib/usage/allTimeBuckets.js";
 
@@ -233,14 +233,14 @@ describe("90d / all read usageRollup only", () => {
   it("compare totals: 90d current/previous and all with previous null", async () => {
     vi.spyOn(db, "all");
     vi.spyOn(db, "get");
-    const d90 = await getRollupUsageTotals(null, "90d");
+    const d90 = await getRollupPeriodTotals(null, "90d");
     expect(d90.currentTotals).toMatchObject({ requests: 3, promptTokens: 60, cost: 3 });
     expect(d90.previous).toMatchObject({ requests: 1, promptTokens: 40 });
-    const all = await getRollupUsageTotals(null, "all");
+    const all = await getRollupPeriodTotals(null, "all");
     expect(all.currentTotals).toMatchObject({ requests: 5, promptTokens: 150 });
     expect(all.previous).toBeNull();
     expect(historySql()).toEqual([]);
-    await expect(getRollupUsageTotals(null, "30d")).rejects.toThrow(/unsupported/);
+    await expect(getRollupPeriodTotals(null, "today")).rejects.toThrow(/unsupported/);
   });
 });
 
@@ -299,10 +299,10 @@ describe("90d / all respect usage scope", () => {
   ];
 
   it.each(CASES)("%j counts only scoped rows", async (ctx, r90, p90, rPrev, rAll, pAll) => {
-    const t90 = await getRollupUsageTotals(ctx, "90d");
+    const t90 = await getRollupPeriodTotals(ctx, "90d");
     expect(t90.currentTotals).toMatchObject({ requests: r90, promptTokens: p90 });
     expect(t90.previous.requests).toBe(rPrev);
-    const tAll = await getRollupUsageTotals(ctx, "all");
+    const tAll = await getRollupPeriodTotals(ctx, "all");
     expect(tAll.currentTotals).toMatchObject({ requests: rAll, promptTokens: pAll });
     expect(tAll.previous).toBeNull();
 

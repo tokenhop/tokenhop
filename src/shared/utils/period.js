@@ -21,12 +21,6 @@ export const PERIODS = [
 export const PERIOD_VALUES = PERIODS.map((p) => p.value);
 
 /**
- * Periods whose data only lives in usageHistory (savings, Home summary): no
- * rollup source exists, so 90d/all are not offered there.
- */
-export const HISTORY_PERIOD_VALUES = ["today", "24h", "7d", "30d", "60d"];
-
-/**
  * Periods served from usageRollup only (never usageHistory): usage stats,
  * chart and compare totals for these must not scan history.
  */
@@ -45,15 +39,6 @@ export const DEFAULT_PERIOD = "today";
  */
 export function isPeriod(value) {
   return PERIOD_VALUES.includes(value);
-}
-
-/**
- * True when `value` is a period backed by usageHistory (see HISTORY_PERIOD_VALUES).
- * @param {unknown} value
- * @returns {boolean}
- */
-export function isHistoryPeriod(value) {
-  return HISTORY_PERIOD_VALUES.includes(value);
 }
 
 /**

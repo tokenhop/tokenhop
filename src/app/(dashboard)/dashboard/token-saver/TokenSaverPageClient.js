@@ -13,7 +13,7 @@ import {
 } from "@/shared/components";
 import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
 import usePeriod from "@/shared/hooks/usePeriod";
-import { HISTORY_PERIOD_VALUES } from "@/shared/utils/period";
+import { PERIOD_VALUES } from "@/shared/utils/period";
 import { WENYAN_LOCALES, CAVEMAN_LEVELS, PONYTAIL_LEVELS } from "../endpoint/endpointConstants";
 import { TokenSaverHeader, SavingsHero, MethodFooter } from "./SavingsHero";
 import {
@@ -43,7 +43,7 @@ const RTK_CHIPS = ["git log", "git diff", "grep / rg", "ls / tree", "test output
  * same store the Settings page uses.
  */
 export default function TokenSaverPageClient() {
-  const { period, setPeriod, options } = usePeriod(HISTORY_PERIOD_VALUES);
+  const { period, setPeriod, options } = usePeriod(PERIOD_VALUES);
   const [refreshKey, setRefreshKey] = useState(0);
   const bump = useCallback(() => setRefreshKey((value) => value + 1), []);
   const { ready, scope, canManageInstance } = useSettingsScope();

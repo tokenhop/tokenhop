@@ -3,6 +3,7 @@
 // see that file for the contract. No driver/barrel imports.
 
 import { LATENCY_COLUMNS, LATENCY_DEFAULTS, validateLatencyColumns } from "./usageLatencyRollup.js";
+import { SAVINGS_COLUMNS, SAVINGS_DEFAULTS, validateSavingsColumns } from "./usageSavingsRollup.js";
 
 export function fail(code, message) {
   const error = new Error(message);
@@ -419,10 +420,13 @@ export const SECTIONS = [
       "tokensCached",
       "cost",
       ...LATENCY_COLUMNS,
+      ...SAVINGS_COLUMNS,
+      "lastUsedAt",
     ],
-    // Older snapshots lack the YAN-771 latency columns; their rows import with
-    // defaults (NOT NULL columns can't take an explicit NULL).
-    defaults: LATENCY_DEFAULTS,
+    // Older snapshots lack the YAN-771 latency columns and the YAN-1226
+    // savings/lastUsedAt columns; their rows import with defaults (NOT NULL
+    // columns can't take an explicit NULL).
+    defaults: { ...LATENCY_DEFAULTS, ...SAVINGS_DEFAULTS, lastUsedAt: "" },
     validate(row, _refs, seen) {
       const dims = [];
       for (const field of [
@@ -453,8 +457,41 @@ export const SECTIONS = [
         fail("TRANSFER_STATE_INVALID", "usageRollup cost must be a number");
       }
       validateLatencyColumns(row, fail);
+      validateSavingsColumns(row, fail);
       const key = JSON.stringify(dims);
       if (seen.has(key)) fail("TRANSFER_STATE_INVALID", "duplicate usageRollup row");
+      seen.add(key);
+    },
+  },
+  {
+    // YAN-1226: daily combo counts; attribution dims like usageRollup ('' =
+    // unknown, apiKeyId 'local-no-key' sentinel), comboName truncated to 128.
+    name: "usageComboRollup",
+    columns: ["dateKey", "workspaceId", "userId", "apiKeyId", "comboName", "requests"],
+    validate(row, _refs, seen) {
+      const dims = [];
+      const dateKey = reqStr(row, "dateKey", "usageComboRollup");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+        fail("TRANSFER_STATE_INVALID", "usageComboRollup dateKey must be YYYY-MM-DD");
+      }
+      dims.push(dateKey);
+      for (const field of ["workspaceId", "userId", "apiKeyId", "comboName"]) {
+        // '' is the schema default for unknown attribution; null is not allowed.
+        const value = optStr(row, field, "usageComboRollup");
+        if (value === null) {
+          fail("TRANSFER_STATE_INVALID", `usageComboRollup ${field} must be a string`);
+        }
+        dims.push(value);
+      }
+      if (!dims[4]) fail("TRANSFER_STATE_INVALID", "usageComboRollup comboName must be non-empty");
+      if (dims[4].length > 128) {
+        fail("TRANSFER_STATE_INVALID", "usageComboRollup comboName must be <= 128 chars");
+      }
+      if (!Number.isInteger(row.requests) || row.requests < 1) {
+        fail("TRANSFER_STATE_INVALID", "usageComboRollup requests must be an integer >= 1");
+      }
+      const key = JSON.stringify(dims);
+      if (seen.has(key)) fail("TRANSFER_STATE_INVALID", "duplicate usageComboRollup row");
       seen.add(key);
     },
   },

@@ -38,6 +38,7 @@ export const TABLE_CLASSES = {
   // Writers are `*Unscoped`: their attribution is the resolved principal.
   usageHistory: { class: "scoped", scopeColumn: "workspaceId" },
   usageRollup: { class: "scoped", scopeColumn: "workspaceId", note: "'' until bootstrap" },
+  usageComboRollup: { class: "scoped", scopeColumn: "workspaceId", note: "'' until bootstrap" },
   // YAN-424: pruned-history spend for budgets; written only by the retention job.
   usageBudgetCarry: { class: "scoped", scopeColumn: "workspaceId", note: "'' until bootstrap" },
   requestDetails: { class: "scoped", scopeColumn: "workspaceId" },

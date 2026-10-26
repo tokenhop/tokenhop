@@ -6,8 +6,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getAdapter } from "@/lib/db/driver.js";
 import { getChartData, getUsageStats } from "@/lib/db/repos/usageStatsRepo.js";
-import { getRollupUsageTotals } from "@/lib/db/repos/usageRollupTotals.js";
+import { getRollupPeriodTotals } from "@/lib/db/repos/usageRollupTotals.js";
 import { saveRequestUsageUnscoped } from "@/lib/db/repos/usageRepo.js";
+import {
+  getUsageSavings,
+  getSavingsLifetime,
+  getHomeSummary,
+} from "@/lib/db/repos/usageSavingsRepo.js";
+import { getApiKeyUsage } from "@/lib/db/repos/apiKeyUsageRepo.js";
+import { createApiKey } from "@/lib/db/repos/apiKeysRepo.js";
 import { localDateKey } from "@/lib/db/repos/usageRollupRepo.js";
 import { pruneUsageHistoryUnscoped } from "@/lib/db/repos/usageRetentionRepo.js";
 import { spentFor } from "@/sse/services/budgetGuard.js";
@@ -74,8 +81,8 @@ beforeEach(async () => {
 });
 
 const rollupView = async () => ({
-  d90: await getRollupUsageTotals(null, "90d"),
-  all: await getRollupUsageTotals(null, "all"),
+  d90: await getRollupPeriodTotals(null, "90d"),
+  all: await getRollupPeriodTotals(null, "all"),
   chart30: (await getChartData(null, "30d")).map((b) => [b.requests, b.cost]),
   chartAll: (await getChartData(null, "all")).map((b) => [b.requests, b.cost]),
 });
@@ -137,6 +144,74 @@ describe("usageHistory retention", () => {
     expect(
       db.get(`SELECT COUNT(*) AS n FROM usageHistory WHERE timestamp = ?`, [ago(120, 12)]).n,
     ).toBe(0);
+  });
+});
+
+describe("post-prune invariance of savings/combo/api-key readers (YAN-1242)", () => {
+  it("keeps savings, scoped lifetime, api-key usage, compare totals and home identical", async () => {
+    const ws = t.shared.id;
+    const user = t.a.user.id;
+    const kOld = await createApiKey("k-old", "machine-bench");
+    const kEven = await createApiKey("k-even", "machine-bench");
+    const kToday = await createApiKey("k-today", "machine-bench");
+    const savingsEntry = (saved) => ({
+      savings: {
+        byMethod: { rtk: { tokensSavedEst: saved, tokensBeforeEst: saved * 10 } },
+        tokensBeforeEst: saved * 10,
+      },
+    });
+    const seedRow = (days, over = {}) =>
+      save(ago(days, 12), { workspaceId: ws, userId: user, meta: savingsEntry(3), ...over });
+    // Savings/combo-bearing rows across 0–120 days, split over two api keys.
+    for (const n of [0, 1, 2, 3, 5, 9, 14, 20, 35, 70, 120]) {
+      await seedRow(n, { apiKey: n % 2 ? kOld.key : kEven.key });
+    }
+    // Distinct workspace spread so scoped lifetime sums differ from unscoped.
+    await save(ago(50, 12), {
+      workspaceId: t.a.personal,
+      userId: t.a.user.id,
+      meta: savingsEntry(7),
+    });
+    // today-count rows for both keys, plus combo names inside the 30d window.
+    await save(ago(0, 12), { apiKey: kOld.key, comboName: "alpha", workspaceId: ws, userId: user });
+    // getApiKeyUsage's `today` window follows the real clock (localDateKey()),
+    // so seed one row on the real today for a third key.
+    await save(new Date().toISOString(), { apiKey: kToday.key, workspaceId: ws, userId: user });
+    await save(ago(4, 12), {
+      apiKey: kEven.key,
+      comboName: "alpha",
+      workspaceId: ws,
+      userId: user,
+    });
+    await save(ago(6, 12), { comboName: "beta", workspaceId: ws, userId: user });
+
+    const capture = async () => ({
+      savings30: await getUsageSavings(null, "30d", NOW),
+      savingsScoped: await getUsageSavings({ workspaceId: ws }, "30d", NOW),
+      lifetimeScoped: await getSavingsLifetime({ workspaceId: ws }),
+      lifetimeUser: await getSavingsLifetime({ workspaceId: ws, userId: user }),
+      apiKeyUsage: await getApiKeyUsage(null),
+      compare30: await getRollupPeriodTotals(null, "30d", NOW),
+      compareScoped: await getRollupPeriodTotals({ workspaceId: ws }, "30d", NOW),
+      home30: await getHomeSummary(null, "30d", NOW),
+    });
+
+    const before = await capture();
+    // Sanity: the seeded values are non-trivial (not vacuously equal).
+    expect(before.savings30.tokensSavedEst).toBe(24); // 8 savings rows inside the 30d window
+    expect(before.savings30.requestsWithSavings).toBe(8);
+    expect(Object.keys(before.apiKeyUsage.today).sort()).toEqual([kToday.id]);
+    expect(before.apiKeyUsage.today[kToday.id]).toBe(1);
+    expect(before.apiKeyUsage.lastUsed[kOld.id]).toBe(ago(0, 12));
+    expect(before.apiKeyUsage.lastUsed[kToday.id]).toBe(
+      db.get(`SELECT timestamp FROM usageHistory WHERE apiKeyId = ?`, [kToday.id]).timestamp,
+    );
+    expect(before.home30.topCombos.map((c) => c.name)).toContain("alpha");
+    expect(before.compare30.currentTotals.requests).toBeGreaterThanOrEqual(10);
+
+    const r = await pruneUsageHistoryUnscoped(7, { now: NOW, batchSize: 3 });
+    expect(r.deleted).toBeGreaterThan(0);
+    expect(await capture()).toEqual(before);
   });
 });
 

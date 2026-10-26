@@ -6,7 +6,7 @@ import Card from "@/shared/components/Card";
 import CountUp from "@/shared/components/CountUp";
 import QuietPeriod from "@/shared/components/QuietPeriod";
 import StatTile from "@/shared/components/StatTile";
-import { HISTORY_PERIOD_VALUES } from "@/shared/utils/period";
+import { PERIOD_VALUES } from "@/shared/utils/period";
 import TrendLine, { PairTrendLine } from "../usage/components/TrendLine";
 import { savingsTrendInput } from "../usage/lib/tileTrends";
 import { cachedShare, formatCompact, formatInt, formatMoney } from "./format";
@@ -53,7 +53,7 @@ export function costSparkline(buckets) {
  * @param {boolean} props.loading
  * @param {string|null} props.error
  * @param {() => void} props.onRetry
- * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} props.period selected period for the quiet state
+ * @param {"today"|"24h"|"7d"|"30d"|"60d"|"90d"|"all"|null} props.period selected period for the quiet state
  * @param {string|null|undefined} props.lastRequestAt ISO time of the last request (undefined until loaded)
  * @param {boolean} [props.lastActivityLoading] true while last-activity loads
  * @param {string|null} [props.lastActivityError] last-activity fetch error
@@ -95,7 +95,7 @@ export default function HomeStats({
         <QuietPeriod
           compact
           period={period}
-          allowed={HISTORY_PERIOD_VALUES}
+          allowed={PERIOD_VALUES}
           lastRequestAt={lastRequestAt}
           loading={lastActivityLoading}
           error={lastActivityError}
@@ -216,7 +216,7 @@ HomeStats.propTypes = {
   loading: PropTypes.bool,
   error: PropTypes.string,
   onRetry: PropTypes.func.isRequired,
-  period: PropTypes.oneOf(HISTORY_PERIOD_VALUES),
+  period: PropTypes.oneOf(PERIOD_VALUES),
   lastRequestAt: PropTypes.string,
   lastActivityLoading: PropTypes.bool,
   lastActivityError: PropTypes.string,

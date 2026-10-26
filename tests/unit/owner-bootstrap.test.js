@@ -252,7 +252,13 @@ describe("switch on", () => {
     adapter.get(`SELECT workspaceId FROM usageBudgetCarry WHERE apiKeyId = ?`, [tag])?.workspaceId,
   ];
   const clearUsage = () => {
-    for (const t of ["usageHistory", "requestDetails", "usageRollup", "usageBudgetCarry"]) {
+    for (const t of [
+      "usageHistory",
+      "requestDetails",
+      "usageRollup",
+      "usageComboRollup",
+      "usageBudgetCarry",
+    ]) {
       adapter.run(`DELETE FROM ${t}`);
     }
   };

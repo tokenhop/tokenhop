@@ -618,8 +618,8 @@ function savedTokensOf(meta) {
 /**
  * Page through usageRollup rows in `[fromKey, toKey]` (either bound null =
  * open) within scope, keyset-paginated on the rollup's dimension key. Rows
- * are export-shaped; `saved_tokens_est` is 0 because the rollup carries no
- * per-request savings (that estimate only exists on usageHistory meta).
+ * are export-shaped; `saved_tokens_est` carries the rollup's per-day savings
+ * estimate (YAN-1226), so daily exports agree with request-level totals.
  * @param {object|null} ctx usage scope
  * @param {{fromKey: string|null, toKey: string|null}} window inclusive day keys
  */
@@ -642,9 +642,10 @@ export async function* streamDailyRows(ctx, { fromKey, toKey }) {
     // `dateKey >= cursorDate` term lets the PK seek to the cursor's day.
     const orderBy = cursorCols.map((c) => `usageRollup.${c}`).join(", ");
     const rows = db.all(
-      `SELECT dateKey, ${proj}, requests, tokensIn, tokensOut, tokensCached, cost FROM usageRollup
+      `SELECT dateKey, ${proj}, requests, tokensIn, tokensOut, tokensCached, cost, savingsSavedEst FROM usageRollup
        ${whereAll(
          scope.sql,
+         "requests > 0",
          fromKey ? "dateKey >= ?" : "",
          toKey ? "dateKey <= ?" : "",
          cursor ? "dateKey >= ?" : "",
@@ -673,7 +674,7 @@ export async function* streamDailyRows(ctx, { fromKey, toKey }) {
         completion_tokens: r.tokensOut || 0,
         cached_tokens: r.tokensCached || 0,
         cost: Number((r.cost || 0).toFixed(9)),
-        saved_tokens_est: 0,
+        saved_tokens_est: r.savingsSavedEst || 0,
       };
     }
     const last = rows[rows.length - 1];

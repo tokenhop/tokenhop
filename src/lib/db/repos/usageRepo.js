@@ -1,8 +1,9 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { latencyDeltas } from "../helpers/usageLatencyRollup.js";
+import { savingsDeltas } from "../helpers/usageSavingsRollup.js";
+import { SAVINGS_LIFETIME_KEY } from "./usageSavingsRepo.js";
 import { getMetaSync, setMetaSync } from "../helpers/metaStore.js";
-import { isHistoryPeriod, periodStart, previousPeriodRange } from "@/shared/utils/period";
 import { readApiKeyStorageState } from "../apiKeyState.js";
 import { normalizeUsageKeyEntry } from "../helpers/usageKeyIdentity.js";
 import { apiKeysHasKeyHash } from "../helpers/apiKeysSchema.js";
@@ -15,64 +16,10 @@ import {
   legacyKeyId,
   localDateKey,
   scopeSql,
+  upsertComboRollupRowUnscoped,
   upsertRollupRowUnscoped,
   whereAll,
 } from "./usageRollupRepo.js";
-
-/** _meta keys for the YAN-408 lifetime savings counter. */
-export const SAVINGS_LIFETIME_KEY = "savingsTokensLifetime";
-
-/**
- * Sum the saved tokens of every usageHistory row (YAN-408). One SQL aggregate
- * using JSON1 (`json_each`/`json_extract` ship with every supported driver —
- * `getUsageTotals` already relies on them), so JS never sees the rows. Sums
- * only positive per-method `tokensSavedEst`, matching rowSavedFromSavings.
- * Runs at most once per install, before any incremental counter write.
- * @param {object} adapter sync DB adapter (inside a transaction)
- * @returns {number} lifetime saved tokens across all recorded rows
- */
-export function backfillSavingsLifetimeUnscoped(adapter) {
-  const row = adapter.get(
-    `SELECT COALESCE(SUM(CAST(json_extract(j.value, '$.tokensSavedEst') AS REAL)), 0) AS lifetime
-     FROM usageHistory u, json_each(u.meta, '$.savings.byMethod') j
-     WHERE u.meta IS NOT NULL AND json_valid(u.meta)
-       AND CAST(json_extract(j.value, '$.tokensSavedEst') AS REAL) > 0`,
-  );
-  return Number(row?.lifetime) || 0;
-}
-
-/**
- * Total tokens saved by the token savers across all recorded requests (YAN-408
- * milestone toast). On first read the counter is backfilled from history
- * exactly once; after that it is a point lookup.
- * @returns {Promise<number>}
- */
-export async function getSavingsLifetime(ctx) {
-  const db = await getAdapter();
-  // Scoped (YAN-370): the caller's own rows, summed on read. The _meta
-  // counter is the instance-wide (single-user) total.
-  if (ctx) return scopedSavedTokens(db, ctx);
-  const stored = getMetaSync(db, SAVINGS_LIFETIME_KEY, null);
-  if (stored !== null) return Number(stored) || 0;
-  let lifetime = 0;
-  db.transaction(() => {
-    lifetime = backfillSavingsLifetimeUnscoped(db);
-    setMetaSync(db, SAVINGS_LIFETIME_KEY, lifetime);
-  });
-  return lifetime;
-}
-
-function scopedSavedTokens(db, ctx) {
-  const scope = scopeSql(ctx, "u.");
-  const row = db.get(
-    `SELECT COALESCE(SUM(CAST(json_extract(j.value, '$.tokensSavedEst') AS REAL)), 0) AS saved
-     FROM usageHistory u, json_each(u.meta, '$.savings.byMethod') j
-     WHERE ${scope.sql} AND u.meta IS NOT NULL AND json_valid(u.meta)
-       AND CAST(json_extract(j.value, '$.tokensSavedEst') AS REAL) > 0`,
-    scope.params,
-  );
-  return Number(row?.saved) || 0;
-}
 
 /**
  * Requests per minute over the last 15 minutes as 15 integer buckets (YAN-408
@@ -266,8 +213,10 @@ export async function saveRequestUsageUnscoped(entry) {
       }
     }
 
-    // YAN-408: lifetime saved-tokens counter feeds the savings milestone toast.
-    const savedTokens = rowSavedFromSavings(metaObj.savings);
+    // One savings fold: the headline total feeds the YAN-408 lifetime
+    // counter and the same object merges into the rollup upsert below.
+    const savingsDelta = savingsDeltas(metaObj);
+    const savedTokens = savingsDelta.savingsSavedEst;
 
     // History insert, rollup upsert and lifetime counters in ONE transaction.
     let stored = null;
@@ -296,26 +245,28 @@ export async function saveRequestUsageUnscoped(entry) {
       stored = db.get(
         `SELECT workspaceId, userId FROM usageHistory WHERE id = last_insert_rowid()`,
       );
-      upsertRollupRowUnscoped(
-        db,
-        {
-          dateKey: localDateKey(entry.timestamp),
-          workspaceId: stored?.workspaceId,
-          userId: stored?.userId,
-          apiKeyId,
-          provider: entry.provider,
-          model: entry.model,
-          connectionId: entry.connectionId,
-          endpoint: entry.endpoint,
-        },
-        {
-          tokensIn: promptTokens,
-          tokensOut: completionTokens,
-          tokensCached: cachedTokens,
-          cost: entry.cost || 0,
-          ...latencyDeltas(entry.endpoint, metaObj),
-        },
-      );
+      const dims = {
+        dateKey: localDateKey(entry.timestamp),
+        workspaceId: stored?.workspaceId,
+        userId: stored?.userId,
+        apiKeyId,
+        provider: entry.provider,
+        model: entry.model,
+        connectionId: entry.connectionId,
+        endpoint: entry.endpoint,
+      };
+      upsertRollupRowUnscoped(db, dims, {
+        tokensIn: promptTokens,
+        tokensOut: completionTokens,
+        tokensCached: cachedTokens,
+        cost: entry.cost || 0,
+        ...latencyDeltas(entry.endpoint, metaObj),
+        ...savingsDelta,
+        lastUsedAt: entry.timestamp,
+      });
+      if (typeof metaObj.comboName === "string" && metaObj.comboName) {
+        upsertComboRollupRowUnscoped(db, dims, metaObj.comboName);
+      }
 
       const cur = db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
       const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
@@ -512,117 +463,6 @@ export async function getRecentLogs(ctx, limit = 200) {
 }
 
 /**
- * Period savings from recorded per-request meta (usageHistory.meta.savings).
- * Estimated only — RTK bytes/4, real Headroom tokens, PXPIPE estimates.
- * PXPIPE uses the same meta source (recorded once per successful request),
- * never the JSONL events file, so there is no double counting.
- */
-export async function getUsageSavings(ctx, period = "7d", now = Date.now()) {
-  if (!isHistoryPeriod(period)) throw new Error(`Invalid period: ${period}`);
-  const db = await getAdapter();
-  const scope = scopeSql(ctx);
-
-  const rows = db.all(
-    `SELECT timestamp, provider, model, meta FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?", "timestamp <= ?")}`,
-    [
-      ...scope.params,
-      new Date(periodStart(period, now)).toISOString(),
-      new Date(now).toISOString(),
-    ],
-  );
-
-  const byMethod = {};
-  let tokensSavedEst = 0;
-  let tokensBeforeEst = 0;
-  let requestsWithSavings = 0;
-  let costSavedEst = 0;
-  let pricedRequests = 0;
-  const pricingCache = new Map();
-
-  for (const row of rows) {
-    const meta = parseJson(row.meta, {});
-    const savings = meta?.savings;
-    if (!savings || typeof savings !== "object") continue;
-    // Guard against partially-shaped legacy rows
-    const methods =
-      savings.byMethod && typeof savings.byMethod === "object" ? savings.byMethod : {};
-    if (Object.keys(methods).length === 0) continue;
-
-    let rowSaved = 0;
-    for (const [method, m] of Object.entries(methods)) {
-      if (typeof m !== "object" || !m) continue;
-      const saved = Number(m.tokensSavedEst) || 0;
-      const before = Number(m.tokensBeforeEst) || 0;
-      if (saved <= 0) continue;
-      if (!byMethod[method])
-        byMethod[method] = { tokensSavedEst: 0, tokensBeforeEst: 0, requests: 0 };
-      byMethod[method].tokensSavedEst += saved;
-      byMethod[method].tokensBeforeEst += before;
-      byMethod[method].requests += 1;
-      rowSaved += saved;
-    }
-    if (rowSaved <= 0) continue;
-    tokensSavedEst += rowSaved;
-    tokensBeforeEst += Number(savings.tokensBeforeEst) || 0;
-    requestsWithSavings += 1;
-
-    const rowCost = await savedTokensCost(row.provider, row.model, rowSaved, pricingCache);
-    if (rowCost > 0) {
-      costSavedEst += rowCost;
-      pricedRequests += 1;
-    }
-  }
-
-  const methods = Object.keys(byMethod);
-  const percentage =
-    tokensBeforeEst > 0 ? +((tokensSavedEst / tokensBeforeEst) * 100).toFixed(2) : 0;
-
-  return {
-    period,
-    estimated: true,
-    tokensSavedEst,
-    tokensBeforeEst,
-    percentage,
-    requestsWithSavings,
-    // $ at list prices: each request's saved tokens priced with its own model.
-    // null when no request in the period had resolvable pricing.
-    costSavedEst: pricedRequests > 0 ? +costSavedEst.toFixed(6) : null,
-    pricedRequests,
-    methods,
-    byMethod,
-  };
-}
-
-/**
- * List-price value of a request's saved tokens. Every counted saver (RTK,
- * Headroom, PXPIPE) shrinks the prompt, so saved tokens are priced as
- * uncached input for the request's own provider/model — the same pricing
- * tables and math as usage cost. Unknown pricing returns 0 (never a guess).
- * @param {string|null} provider
- * @param {string|null} model
- * @param {number} savedTokens
- * @param {Map<string, Promise<object|null>>} [cache] per-call pricing lookups by provider/model
- * @returns {Promise<number>} dollars
- */
-async function savedTokensCost(provider, model, savedTokens, cache = new Map()) {
-  if (!model || !(savedTokens > 0)) return 0;
-  try {
-    const key = `${provider}\u0000${model}`;
-    if (!cache.has(key)) {
-      const { getPricingForModel } = await import("./pricingRepo.js");
-      cache.set(key, getPricingForModel(provider, model));
-    }
-    const pricing = await cache.get(key);
-    if (!pricing || !(Number(pricing.input) > 0)) return 0;
-    const { calculateCostFromTokens } = await import("open-sse/providers/pricing.js");
-    return calculateCostFromTokens({ prompt_tokens: savedTokens }, pricing);
-  } catch (e) {
-    console.error("[usageRepo] savings pricing failed:", e.message);
-    return 0;
-  }
-}
-
-/**
  * Previous-period request counts + period buckets + top combo usage for the
  * Home command center. Combos come from meta.comboName recorded at save time.
  */
@@ -722,48 +562,5 @@ export async function getLiveRoutesFeed(ctx, { windowMs = 5 * 60 * 1000, limit =
     fallbackHops: global._fallbackHops.filter(
       (hop) => hop.timestamp > since && (!ctx || hop.workspaceId === ctx.workspaceId),
     ),
-  };
-}
-
-export async function getHomeSummary(ctx, period = "7d", now = Date.now()) {
-  if (!isHistoryPeriod(period)) throw new Error(`Invalid period: ${period}`);
-  const db = await getAdapter();
-  const scope = scopeSql(ctx);
-
-  const current = { start: periodStart(period, now), end: now };
-  const prev = previousPeriodRange(period, now);
-
-  const countIn = (start, end, endOp) => {
-    const row = db.get(
-      `SELECT COUNT(*) AS n FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?", `timestamp ${endOp} ?`)}`,
-      [...scope.params, new Date(start).toISOString(), new Date(end).toISOString()],
-    );
-    return row?.n || 0;
-  };
-
-  const requests = countIn(current.start, current.end, "<=");
-  // Half-open like /api/usage/stats?compare=previous, so a row at the current start counts once.
-  const previousRequests = countIn(prev.start, prev.end, "<");
-
-  const rows = db.all(
-    `SELECT timestamp, meta FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?", "timestamp <= ?")}`,
-    [...scope.params, new Date(current.start).toISOString(), new Date(current.end).toISOString()],
-  );
-  const comboCounts = {};
-  for (const row of rows) {
-    const meta = parseJson(row.meta, {});
-    const name = typeof meta?.comboName === "string" && meta.comboName ? meta.comboName : null;
-    if (name) comboCounts[name] = (comboCounts[name] || 0) + 1;
-  }
-  const topCombos = Object.entries(comboCounts)
-    .map(([name, count]) => ({ name, requests: count }))
-    .sort((a, b) => b.requests - a.requests)
-    .slice(0, 5);
-
-  return {
-    period,
-    requests,
-    previousRequests,
-    topCombos,
   };
 }

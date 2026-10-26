@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { HISTORY_PERIOD_VALUES } from "@/shared/utils/period";
+import { PERIOD_VALUES } from "@/shared/utils/period";
 import { fetchJson } from "./tokenSaverApi";
 
 const hasSavings = (data) => Number(data?.tokensSavedEst) > 0;
@@ -57,10 +57,11 @@ export function useSavingsWithFallback(period, refreshKey = 0) {
         setState((s) => ({ ...s, savings, loading: false }));
         return;
       }
-      const candidates = HISTORY_PERIOD_VALUES.slice(HISTORY_PERIOD_VALUES.indexOf(period) + 1);
+      const candidates = PERIOD_VALUES.slice(PERIOD_VALUES.indexOf(period) + 1);
       const done = (patch) => setState((s) => ({ ...s, savings, loading: false, ...patch }));
-      // The selected period is the largest: nothing to fall back to, and no proof it never saved.
-      if (candidates.length === 0) return done({});
+      // The selected period is the largest: an empty `all` proves nothing was
+      // ever saved; any other empty largest period does not.
+      if (candidates.length === 0) return done({ neverSaved: period === "all" });
       // Windows are nested, so probe the largest first: when it is empty, so is every smaller one.
       const largest = candidates.at(-1);
       let widest;

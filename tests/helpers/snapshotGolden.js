@@ -51,6 +51,7 @@ export const GOLDEN_V2_TOP = [
   "usageHistory",
   "requestDetails",
   "usageRollup",
+  "usageComboRollup",
   "usageBudgetCarry",
   "gatewayVideoJobs",
 ];
@@ -77,11 +78,12 @@ export const GOLDEN_V3_TOP = [
   "usageHistory",
   "requestDetails",
   "usageRollup",
+  "usageComboRollup",
   "usageBudgetCarry",
   "gatewayVideoJobs",
 ];
 
-// Column / key order of one row of each of the 10 sections.
+// Column / key order of one row of each of the 11 sections.
 export const GOLDEN_SECTION_COLUMNS = {
   workspaceSettings: ["workspaceId", "data", "updatedAt"],
   userPreferences: ["userId", "data", "updatedAt"],
@@ -192,7 +194,21 @@ export const GOLDEN_SECTION_COLUMNS = {
     "emptyCount",
     "latencyRequests",
     "latencyHistogram",
+    "savingsSavedEst",
+    "savingsBeforeEst",
+    "savingsRequests",
+    "rtkSavedEst",
+    "rtkBeforeEst",
+    "rtkRequests",
+    "headroomSavedEst",
+    "headroomBeforeEst",
+    "headroomRequests",
+    "pxpipeSavedEst",
+    "pxpipeBeforeEst",
+    "pxpipeRequests",
+    "lastUsedAt",
   ],
+  usageComboRollup: ["dateKey", "workspaceId", "userId", "apiKeyId", "comboName", "requests"],
   usageBudgetCarry: [
     "day",
     "workspaceId",
@@ -364,13 +380,33 @@ export const LATENCY_DEFAULTS = {
   latencyHistogram: "[0,0,0,0,0,0,0,0,0,0,0,0]",
 };
 
+export const SAVINGS_DEFAULTS = {
+  savingsSavedEst: 0,
+  savingsBeforeEst: 0,
+  savingsRequests: 0,
+  rtkSavedEst: 0,
+  rtkBeforeEst: 0,
+  rtkRequests: 0,
+  headroomSavedEst: 0,
+  headroomBeforeEst: 0,
+  headroomRequests: 0,
+  pxpipeSavedEst: 0,
+  pxpipeBeforeEst: 0,
+  pxpipeRequests: 0,
+  lastUsedAt: "",
+};
+
 /** What the original bind path stores for each tricky input row, per the schema. */
 export function expectedSectionRows(section, rows) {
   return rows.map((row) =>
     Object.fromEntries(
       GOLDEN_SECTION_COLUMNS[section].map((c) => [
         c,
-        row[c] ?? (section === "usageRollup" ? LATENCY_DEFAULTS[c] : undefined) ?? null,
+        row[c] ??
+          (section === "usageRollup"
+            ? { ...LATENCY_DEFAULTS, ...SAVINGS_DEFAULTS }[c]
+            : undefined) ??
+          null,
       ]),
     ),
   );

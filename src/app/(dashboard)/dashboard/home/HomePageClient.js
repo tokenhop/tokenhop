@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import useLastActivity from "@/shared/hooks/useLastActivity";
 import useLiveRoutes from "@/shared/hooks/useLiveRoutes";
 import usePeriod from "@/shared/hooks/usePeriod";
-import { HISTORY_PERIOD_VALUES } from "@/shared/utils/period";
+import { PERIOD_VALUES } from "@/shared/utils/period";
 import { isIdle as routesAreIdle, mergeRoutes } from "@/shared/utils/routesMap";
 import HomeHeader from "./HomeHeader";
 import { EndpointHeroCard } from "./EndpointHero";
@@ -34,7 +34,7 @@ import {
  * recent requests, quota watch, top combos, provider health.
  */
 export default function HomePageClient() {
-  const { period, setPeriod, options } = usePeriod(HISTORY_PERIOD_VALUES);
+  const { period, setPeriod, options } = usePeriod(PERIOD_VALUES);
   const [origin, setOrigin] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
 

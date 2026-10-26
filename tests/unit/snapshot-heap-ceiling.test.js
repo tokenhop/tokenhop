@@ -78,7 +78,7 @@ const retainedHeap = () => {
 };
 
 function seedBaseInstance() {
-  db.exec(`DELETE FROM usageRollup; DELETE FROM requestDetails; DELETE FROM usageHistory;
+  db.exec(`DELETE FROM usageRollup; DELETE FROM usageComboRollup; DELETE FROM requestDetails; DELETE FROM usageHistory;
     DELETE FROM auditEvents; DELETE FROM invitations; DELETE FROM budgets;
     DELETE FROM connectionGrants; DELETE FROM userPreferences; DELETE FROM workspaceSettings;
     DELETE FROM providerNodes; DELETE FROM providerConnections`);

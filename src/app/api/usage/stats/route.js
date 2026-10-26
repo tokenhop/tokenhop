@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
+  getRollupPeriodTotals,
   getRollupRangeTotals,
-  getRollupUsageTotals,
   getUsageStats,
   getUsageTotals,
 } from "@/lib/usageDb";
@@ -11,6 +11,7 @@ import {
   isRollupOnlyPeriod,
   localTodayKey,
   parseDateRange,
+  PERIOD_DAYS,
   periodStart,
   previousPeriodRange,
 } from "@/shared/utils/period";
@@ -44,9 +45,9 @@ export async function GET(request) {
     } else if (!isPeriod(period)) {
       return NextResponse.json({ error: "Invalid period" }, { status: 400 });
     }
-    // Optional compare=previous adds `currentTotals` + `previous` computed
-    // from the same windows, so both sides of a delta match: usageHistory for
-    // today..60d, usageRollup for 90d/all ("all" has `previous: null`).
+    // Optional compare=previous adds totals from history for today/24h and
+    // calendar-aligned rollup windows for day-grain periods/custom ranges.
+    // All time has no previous window.
     if (compare !== null && compare !== "previous") {
       return NextResponse.json({ error: "Invalid compare" }, { status: 400 });
     }
@@ -61,11 +62,14 @@ export async function GET(request) {
     }
 
     const stats = await getUsageStats(scope, period);
-    if (compare === "previous" && isRollupOnlyPeriod(period)) {
-      return NextResponse.json({ ...stats, ...(await getRollupUsageTotals(scope, period)) });
-    }
     if (compare === "previous") {
       const now = Date.now();
+      if (isRollupOnlyPeriod(period) || Object.hasOwn(PERIOD_DAYS, period)) {
+        return NextResponse.json({
+          ...stats,
+          ...(await getRollupPeriodTotals(scope, period, now)),
+        });
+      }
       const currentRange = { start: periodStart(period, now), end: now };
       const previousRange = previousPeriodRange(period, now);
       const [currentTotals, previous] = await Promise.all([

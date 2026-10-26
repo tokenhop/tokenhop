@@ -25,6 +25,7 @@ import {
   STREAMED_SECTION,
   validateInstanceTableSections,
 } from "./instanceSnapshotTables.js";
+import { backfillSavingsComboFromHistory } from "./usageSavingsRollup.js";
 import { getMetaSync, setMetaSync } from "./metaStore.js";
 import { parseJson, stringifyJson } from "./jsonCol.js";
 import { parseCredentialBlob } from "./credentialStorage.js";
@@ -1301,12 +1302,18 @@ export function preflightGatewayKeyImport(
     validateSnapshotPresets(payload);
     // YAN-375: the payload rows to write, with absent sections retaining the
     // live rows (validated against the incoming graph; explicit [] clears).
+    let needsSavingsRecompute = payload.schemaVersion === undefined || payload.schemaVersion < 21;
     let instanceSections = null;
     if (multiUserTransfer && stage) {
       instanceSections = stage.prepare(db, payload, refs);
+      needsSavingsRecompute ||= stage.hasSavingsGaps();
+      if (needsSavingsRecompute) stage.clearStaged("usageComboRollup");
     } else if (multiUserTransfer) {
       instanceSections = readInstanceTableSections(db, payload, refs);
       validateInstanceTableSections(instanceSections, refs);
+      needsSavingsRecompute ||= !(payload.usageRollup ?? []).some(
+        (r) => r.savingsSavedEst !== undefined,
+      );
       for (const name of INSTANCE_SNAPSHOT_SECTION_NAMES) {
         instanceSections[name] = Object.freeze(
           (instanceSections[name] ?? []).map((row) => Object.freeze({ ...row })),
@@ -1358,6 +1365,7 @@ export function preflightGatewayKeyImport(
       keyIdByHash: new Map(snapshotKeys.map((r) => [r.keyHash, r.id])),
       videoJobs,
       instanceSections,
+      needsSavingsRecompute,
     };
   }
   // Legacy payload.
@@ -1733,6 +1741,7 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
     if (typeof plan.instanceSections.apply === "function") plan.instanceSections.apply(db);
     else insertInstanceTableSections(db, plan.instanceSections);
   }
+  if (plan.needsSavingsRecompute) backfillSavingsComboFromHistory(db);
   if (credential) {
     // Marker pair + wrapped derived hash key, exactly as proven in preflight.
     // The destination was already encrypted under this root; cleanup/rotation
