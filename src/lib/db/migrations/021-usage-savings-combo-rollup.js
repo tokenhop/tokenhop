@@ -146,10 +146,11 @@ export default {
         try {
           meta = JSON.parse(r.meta);
         } catch {}
-        const s =
-          sums.get(key) ||
-          (sums.set(key, { dims: JSON.parse(key), ...zeroSavings(), lastUsedAt: "" }),
-          sums.get(key));
+        let s = sums.get(key);
+        if (!s) {
+          s = { dims: JSON.parse(key), ...zeroSavings(), lastUsedAt: "" };
+          sums.set(key, s);
+        }
         savingsAccumulate(s, meta);
         // Combo counting is independent of savings: every row with a
         // non-empty meta.comboName counts, truncated to 128 chars.

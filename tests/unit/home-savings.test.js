@@ -277,7 +277,6 @@ describe("savings and summary windows", () => {
   const originalDataDir = process.env.DATA_DIR;
   let tempDir;
   let db;
-  let adapter;
 
   beforeAll(async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-savings-windows-"));
@@ -285,7 +284,6 @@ describe("savings and summary windows", () => {
     vi.resetModules();
     db = await import("@/lib/db/index.js");
     await db.initDb();
-    adapter = await (await import("@/lib/db/driver.js")).getAdapter();
   });
 
   afterAll(() => {

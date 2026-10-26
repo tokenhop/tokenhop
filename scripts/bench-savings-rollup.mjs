@@ -354,6 +354,7 @@ function runReadArm(db, name) {
       for (const row of rows) {
         saved += savingsDeltas(row.meta)[0];
       }
+      if (!(saved >= 0)) throw new Error("history arm folded no savings");
       if (!checked)
         checked = { groups: rows.length, rowsScanned: `${historyRows} history rows parsed in JS` };
     }

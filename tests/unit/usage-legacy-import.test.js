@@ -1,7 +1,6 @@
 // YAN-370: the lowdb usage.json import resolves raw keys to ids (never stored)
 // and keeps dailySummary totals beyond the trimmed history as rollup residuals.
 import fs from "node:fs";
-import path from "node:path";
 import { expect, it } from "vitest";
 it("legacy usage.json import: ids not raws, residual kept", async () => {
   const { DATA_DIR } = await import("@/lib/dataDir.js");
