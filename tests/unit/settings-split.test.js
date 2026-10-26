@@ -184,6 +184,8 @@ describe("API boundaries", () => {
     const t = await seedTenancy();
     const workspace = await import("@/app/api/workspaces/[id]/settings/route.js");
     const { accountPins, accountPinKey } = await import("open-sse/services/cacheAffinity.js");
+    // Preload the lazily imported reset target so a wrong reset lands before the assertion.
+    await import("@/sse/services/auth");
     const key = accountPinKey(t.a.personal, "openai", "s:kept");
     accountPins.set(key, "kept-account");
     const res = await as(t.a, workspace.PATCH, `/api/workspaces/${t.a.personal}/settings`, {
