@@ -4,8 +4,11 @@
  * AgentService is trained for the Cursor IDE and asks the client to run built-in
  * tools (shell, read, grep, …) even when the request declares MCP tools. tokenhop
  * has no IDE, so every built-in gets a typed rejection and the model falls back
- * to the declared MCP tools or a text answer. Unknown variants get an empty
- * result instead of aborting the turn.
+ * to the declared MCP tools or a text answer. The executor first tries
+ * cursorNativeToolRedirect.js, which turns read/grep/ls/shell execs into a
+ * declared client tool call when the schema can be filled; whatever it leaves
+ * lands here. Unknown variants get an empty result instead of aborting the
+ * turn.
  *
  * Field numbers come from agent.proto (can1357/oh-my-pi, mirrored by
  * enderzcx/cursor-agent2api, 2026-09).
