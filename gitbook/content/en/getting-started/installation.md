@@ -8,7 +8,7 @@ Detailed installation guide for tokenhop with troubleshooting tips.
 
 ### System Requirements
 
-- **Node.js**: Version 20.0.0 or higher
+- **Node.js**: Version 20.0.0 or higher for the published `tokenhop` package (`npm install -g tokenhop`). A checkout of this repository needs **22.23.4 or newer** (`.nvmrc`; `engines.node` is `>=22.23.4`).
 - **npm**: Version 10.0.0 or higher (comes with Node.js)
 - **OS**: macOS, Linux, Windows (WSL recommended)
 - **Disk Space**: ~200MB for installation
@@ -17,7 +17,8 @@ Detailed installation guide for tokenhop with troubleshooting tips.
 
 ```bash
 node --version
-# Should show v20.x.x or higher
+# Published package: v20 or newer
+# This repository: v22.23.4 or newer
 
 npm --version
 # Should show 10.x.x or higher
@@ -73,7 +74,7 @@ npx tokenhop
 
 ### Method 3: From Source (Development)
 
-Clone and build from GitHub:
+Clone and build from GitHub. This path needs Node.js 22.23.4 or newer.
 
 ```bash
 git clone https://github.com/tokenhop/tokenhop.git
@@ -309,12 +310,14 @@ Error: The engine "node" is incompatible with this module
 **Solution: Update Node.js**
 
 ```bash
-# Using nvm (recommended)
-nvm install 20
-nvm use 20
+# This repository (engines require 22.23.4 or newer)
+nvm install 22.23.4
+nvm use 22.23.4
 
 # Or download from nodejs.org
 ```
+
+The published `tokenhop` package accepts Node.js 18.3.0 or newer. Node.js 20 satisfies that. The engine error on a checkout is the 22.23.4 floor.
 
 ### Dashboard Not Opening
 

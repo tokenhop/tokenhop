@@ -578,6 +578,16 @@ Custom sits beside those choices. Choose From and To, then Apply. The range is i
 
 Example: `/dashboard/usage?period=custom&from=2026-09-01&to=2026-09-30`
 
+Home (Today, 24h, 7d, 30d, 60d) shows a change on Requests, Tokens in/out, Est. cost, and Saved by token saver when that period has requests. The line is a signed percent plus a caption: "vs same time yesterday", "vs prior 24h", "vs prior 7d", "vs prior 30d", or "vs prior 60d". Tokens in/out reads `In +12% · Out -3%` plus that caption. A side with no usable previous total is omitted. When the previous total is missing or zero, the line says "No prior data".
+
+Token saver shows the same line on the saved-tokens total for the period you selected, and only when that period itself has savings. When the page stands in a larger period, it does not show the change.
+
+## Request history retention
+
+**Settings → Data & backup → Request history** controls how long each request's details are kept. The default is **Keep forever**. The menu also offers 7, 30, 60, 90, 180 and 365 days. The stored value may be `0` (keep forever) or an integer from 2 to 3650. A value that is not a preset still appears in the menu. Choosing a shorter limit asks you to confirm. With Users & teams on, this section is under **Instance**, and only an owner or instance admin can open it.
+
+Charts, long periods and budgets use daily totals, which are not deleted. With a limit set, older request details are removed in the background about 10 minutes after startup, then once a day. A settings change applies on the next sweep. Only whole local days older than the limit are removed, so a request is kept for at least that many days. Days that are not fully in the daily rollup are kept. The newest request for each workspace, each membership and each API key is kept. Savings, top combos and period comparisons count only requests still in history. An API key with no recent requests can show an older last-used time. The database file may not shrink.
+
 ## API Access
 
 ### Get Quota Status
