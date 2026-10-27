@@ -219,7 +219,7 @@ export async function probeVertexKey(apiKey, fetchImpl = fetch) {
   if (saJson) return true; // parseVertexSaJson already requires the SA fields
   if (parseVertexAdcJson(apiKey)) return true; // authorized_user ADC: field check, like SA
   // Any other JSON object (incomplete SA/ADC, arbitrary) is not an API key —
-  // don't probe it as one. Scalars ("123", "null") and non-JSON still probe.
+  // don't probe it as one. JSON scalars and non-JSON strings still probe.
   try {
     const parsed = JSON.parse(apiKey);
     if (parsed && typeof parsed === "object") return false;
