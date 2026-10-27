@@ -1702,9 +1702,11 @@ export async function handleFusionChat({
       );
     }
     if (answers.length === 1) {
-      // The direct answer is a new served call that pins for itself; the panel call's pins drop.
+      // The direct answer is a new served call that pins for itself. Await it so the
+      // panel's provisional pins stay visible while it picks a member/account: it
+      // re-asks the member and account that just answered, then its own pins win.
       log.info("FUSION", `Only ${answers[0].model} succeeded — answering directly (no fusion)`);
-      return handleSingleModel(body, answers[0].model, undefined, parentAttempt);
+      return await handleSingleModel(body, answers[0].model, undefined, parentAttempt);
     }
 
     // 4. Judge analyzes + writes one final answer (streams to client if requested).

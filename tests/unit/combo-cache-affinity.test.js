@@ -636,7 +636,7 @@ describe("fusion panel pins (YAN-1673)", () => {
 
   // Panel member "inner" is an affinity combo; "p/x" a plain model; "p/judge" the judge.
   const fusion =
-    ({ judge = () => answer("fused") } = {}) =>
+    ({ judge = () => answer("fused"), failing = new Set(), served = [] } = {}) =>
     (body, _model, parentAttempt) =>
       handleFusionChat({
         body,
@@ -645,15 +645,20 @@ describe("fusion panel pins (YAN-1673)", () => {
         tuning,
         log,
         parentAttempt,
-        handleSingleModel: (b, m, _isPanel, attempt) => {
+        handleSingleModel: async (b, m, _isPanel, attempt) => {
           if (m === "p/judge") return judge();
+          if (failing.has(m)) return fail();
           if (m !== "inner") return answer(`from ${m}`);
+          await sleep(1); // async lookups before a real call picks its member
           return handleComboChat({
             body: b,
             models: ["inner/a", "inner/b"],
             comboName: "inner",
             comboStrategy: "round-robin",
-            handleSingleModel: async (_bb, leaf) => answer(`from ${leaf}`),
+            handleSingleModel: async (_bb, leaf) => {
+              served.push(leaf);
+              return answer(`from ${leaf}`);
+            },
             log,
             conversationKey: "conv1",
             cacheAffinity: true,
@@ -694,6 +699,14 @@ describe("fusion panel pins (YAN-1673)", () => {
   it("a served fusion keeps the pin of the panel combo whose answer it used", async () => {
     const res = await outer(["fusion"], { fusion: fusion() });
     expect(res.ok).toBe(true);
+    expect(comboPins.peek("\ninner\nconv1")).toBe("inner/a");
+  });
+
+  it("a single-answer fusion re-asks the panel member that answered, then keeps its pin", async () => {
+    const served = [];
+    const res = await outer(["fusion"], { fusion: fusion({ failing: new Set(["p/x"]), served }) });
+    expect(res.ok).toBe(true);
+    expect(served).toEqual(["inner/a", "inner/a"]);
     expect(comboPins.peek("\ninner\nconv1")).toBe("inner/a");
   });
 });

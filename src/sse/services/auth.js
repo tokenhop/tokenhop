@@ -120,12 +120,25 @@ function pinnedUseIsStale(connection) {
  * failed attempt never drops another request's provisional pin.
  */
 function createAffinityHandle(affinityKey, connectionId, token) {
-  return {
+  const handle = {
     commit() {
       accountPins.set(affinityKey, connectionId);
       if (pendingAccountPins.peek(affinityKey)?.connectionId === connectionId) {
         pendingAccountPins.delete(affinityKey);
       }
+    },
+    /**
+     * Commit for a write deferred until an enclosing combo/fusion serves
+     * (YAN-1673): a pin some other call wrote in the meantime (e.g. a fusion judge
+     * that failed over to another account) wins over this late write.
+     */
+    deferredCommit() {
+      const seen = accountPins.version(affinityKey);
+      return () => {
+        const now = accountPins.version(affinityKey);
+        if (now === undefined || now === seen) handle.commit();
+        else handle.release();
+      };
     },
     release() {
       if (token && pendingAccountPins.peek(affinityKey)?.token === token) {
@@ -133,6 +146,7 @@ function createAffinityHandle(affinityKey, connectionId, token) {
       }
     },
   };
+  return handle;
 }
 
 /**

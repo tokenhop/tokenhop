@@ -858,11 +858,13 @@ async function handleSingleModelChat(
         attempt?.signal?.removeEventListener("abort", releaseOnAbort);
         if (result.success) {
           // YAN-1222: pin the account only now that it served. Under a hedged combo
-          // the write waits for the race winner, so a loser never pins.
-          const commit = credentials.affinity?.commit;
-          if (commit) {
-            if (attempt?.commitOnServe) attempt.commitOnServe(commit, credentials.affinity.release);
-            else commit();
+          // the write waits for the race winner, so a loser never pins; a deferred
+          // write never replaces a pin written meanwhile (YAN-1673).
+          const affinity = credentials.affinity;
+          if (affinity?.commit) {
+            if (attempt?.commitOnServe)
+              attempt.commitOnServe(affinity.deferredCommit(), affinity.release);
+            else affinity.commit();
           }
           affinityHandedOff = true;
           return result.response;
