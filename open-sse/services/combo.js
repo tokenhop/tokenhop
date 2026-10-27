@@ -669,7 +669,8 @@ function createAttemptFeedback(startedAt, record, parent) {
  *   (round-robin/weighted/fastest only; off for probes). Pinned: no strategy advance, no hedging.
  *   A first turn writes a provisional pin before any await so a concurrent first turn of the same
  *   conversation converges on the same member; it is confirmed by the member that serves and
- *   removed when nothing served.
+ *   removed when nothing served. Under a parentAttempt (nested combo) the confirm waits until
+ *   every enclosing level served too, and is dropped with the provisional pin otherwise (YAN-1624).
  * @param {string|null} [options.workspaceId=null] - Gateway workspace owning the pins (null = legacy)
  * @param {Iterable<string>} [options.pinExclude] - Capacity-adapter-added members; never pinned
  * @param {Function} [options.onFallback] - Awaited before trying the next model: ({ model, status }) => void
@@ -717,11 +718,30 @@ export async function handleComboChat({
   const pinExcludeSet = new Set(pinExclude);
   let provisional;
   let repinned = false;
+  // Drop the provisional first-turn pin unless a later turn replaced it.
+  const dropProvisional = () => {
+    if (provisional !== undefined && comboPins.version(affinityKey) === provisional) {
+      comboPins.delete(affinityKey);
+    }
+  };
   const repin = (model) => {
     // Capacity-adapter members are never pinned (spec §2): the old pin stays.
     if (!affinityKey || pinExcludeSet.has(model)) return;
     repinned = true;
-    comboPins.set(affinityKey, model);
+    // YAN-1624: a nested combo serving says nothing about the outer level. Its pin
+    // waits until every enclosing member wins; a hedge loser or a member the outer
+    // empty-stream probe skips releases it (and its provisional pin) instead.
+    if (!parentAttempt?.commitOnServe) {
+      comboPins.set(affinityKey, model);
+      return;
+    }
+    // A deferred write must not replace a pin a later turn wrote meanwhile.
+    const seen = comboPins.version(affinityKey);
+    const commit = () => {
+      const now = comboPins.version(affinityKey);
+      if (now === undefined || now === seen) comboPins.set(affinityKey, model);
+    };
+    parentAttempt.commitOnServe(commit, dropProvisional);
   };
 
   // Apply rotation strategy if enabled
@@ -816,10 +836,8 @@ export async function handleComboChat({
     }
     return agg.response(log);
   } finally {
-    // Nothing confirmed the provisional pin: drop it unless a later turn replaced it.
-    if (provisional !== undefined && !repinned && comboPins.version(affinityKey) === provisional) {
-      comboPins.delete(affinityKey);
-    }
+    // Nothing confirmed (or queued) the provisional pin: drop it.
+    if (!repinned) dropProvisional();
   }
 }
 
