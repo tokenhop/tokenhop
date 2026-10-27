@@ -37,6 +37,7 @@ function rebuildApiKeysHashed() {
 
 export function seedHashedInstanceFull() {
   db.exec(`DELETE FROM usageRollup`);
+  db.exec(`DELETE FROM usageComboRollup`);
   db.exec(`DELETE FROM requestDetails`);
   db.exec(`DELETE FROM usageHistory`);
   db.exec(`DELETE FROM auditEvents`);
@@ -136,8 +137,13 @@ export function seedHashedInstanceFull() {
     [NOW, JSON.stringify({}), JSON.stringify({}), WS],
   );
   db.run(
-    `INSERT INTO usageRollup(dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost)
-     VALUES('2026-10-09', ?, 'owner', 'hk-1', 'openai', 'gpt-4o', 'conn-1', '/v1/chat', 1, 10, 20, 0, 0.01)`,
+    `INSERT INTO usageRollup(dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost, savingsSavedEst, savingsBeforeEst, savingsRequests, rtkSavedEst, rtkBeforeEst, rtkRequests, lastUsedAt)
+     VALUES('2026-10-09', ?, 'owner', 'hk-1', 'openai', 'gpt-4o', 'conn-1', '/v1/chat', 1, 10, 20, 0, 0.01, 120.5, 200, 1, 120.5, 200, 1, ?)`,
+    [WS, NOW],
+  );
+  db.run(
+    `INSERT INTO usageComboRollup(dateKey, workspaceId, userId, apiKeyId, comboName, requests)
+     VALUES('2026-10-09', ?, 'owner', 'hk-1', 'team combo', 3)`,
     [WS],
   );
   db.run(
@@ -201,12 +207,14 @@ export const fullDump = () =>
     invitations: dump("SELECT * FROM invitations ORDER BY id"),
     usageHistory: dump("SELECT * FROM usageHistory ORDER BY id"),
     usageRollup: dump("SELECT * FROM usageRollup ORDER BY dateKey, apiKeyId"),
+    usageComboRollup: dump("SELECT * FROM usageComboRollup ORDER BY dateKey, comboName"),
     requestDetails: dump("SELECT * FROM requestDetails ORDER BY id"),
   });
 
 export function clearSections() {
   for (const t of [
     "usageRollup",
+    "usageComboRollup",
     "requestDetails",
     "usageHistory",
     "auditEvents",

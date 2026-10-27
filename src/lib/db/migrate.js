@@ -13,6 +13,7 @@ import { sweepStagingDir } from "./stagingFiles.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
 import { legacyKeyId, rebuildRollupFromHistoryUnscoped } from "./repos/usageRollupRepo.js";
 import m014 from "./migrations/014-usage-attribution.js";
+import { backfillSavingsComboFromHistory } from "./helpers/usageSavingsRollup.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -404,6 +405,8 @@ function importLegacyUsage(adapter, data) {
       ]);
     }
     m014.up(adapter);
+    // YAN-1226: m014's frozen rebuild never carries savings/lastUsedAt/combo.
+    backfillSavingsComboFromHistory(adapter);
   } else {
     rebuildRollupFromHistoryUnscoped(adapter);
   }

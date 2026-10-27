@@ -1,7 +1,6 @@
 // YAN-370: the lowdb usage.json import resolves raw keys to ids (never stored)
 // and keeps dailySummary totals beyond the trimmed history as rollup residuals.
 import fs from "node:fs";
-import path from "node:path";
 import { expect, it } from "vitest";
 it("legacy usage.json import: ids not raws, residual kept", async () => {
   const { DATA_DIR } = await import("@/lib/dataDir.js");
@@ -45,5 +44,7 @@ it("legacy usage.json import: ids not raws, residual kept", async () => {
     apiKeyId: "k1",
   });
   expect(db.get("SELECT SUM(requests) AS n FROM usageRollup").n).toBe(5);
+  const rollup = db.get("SELECT lastUsedAt FROM usageRollup ORDER BY lastUsedAt DESC LIMIT 1");
+  expect(rollup.lastUsedAt).toBe("2026-01-02T12:00:00Z");
   expect(db.get("SELECT 1 AS x FROM sqlite_master WHERE name='usageDaily'")).toBeUndefined();
 });

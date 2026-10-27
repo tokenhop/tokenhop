@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { periodStart, previousPeriodRange } from "@/shared/utils/period.js";
+import { rebuildRollupFromHistoryUnscoped } from "@/lib/db/repos/usageRollupRepo.js";
 
 const scopeHolder = vi.hoisted(() => ({ scope: null }));
 vi.mock("@/lib/usage/scope.js", () => ({ usageScope: async () => scopeHolder.scope }));
@@ -28,7 +29,11 @@ afterAll(() => {
   else process.env.DATA_DIR = originalDataDir;
 });
 
-beforeEach(() => adapter.run("DELETE FROM usageHistory"));
+beforeEach(() => {
+  adapter.run("DELETE FROM usageHistory");
+  adapter.run("DELETE FROM usageRollup");
+  adapter.run("DELETE FROM usageComboRollup");
+});
 
 const saved = (...tokens) => ({
   savings: {
@@ -43,6 +48,9 @@ function seed(timestamp, meta, { workspaceId = null, userId = null } = {}) {
     userId,
     typeof meta === "string" || meta === null ? meta : JSON.stringify(meta),
   ]);
+  // Raw history inserts simulate retained legacy rows; production writes fold
+  // these measures transactionally. Rebuild keeps both sources in sync here.
+  rebuildRollupFromHistoryUnscoped(adapter);
 }
 
 describe("getSavingsTotals", () => {
@@ -176,8 +184,14 @@ describe("savings route compare", () => {
     expect(await res.json()).toEqual({ error: "Invalid compare" });
   });
 
-  it("keeps 90d unsupported", async () => {
-    expect((await call("period=90d&compare=previous")).status).toBe(400);
+  it("supports 90d from the daily rollup", async () => {
+    seed(Date.now() - 1000, saved(50));
+    const res = await call("period=90d&compare=previous");
+    expect(res.status).toBe(200);
+    expect((await res.json()).currentTotals).toEqual({
+      tokensSavedEst: 50,
+      requestsWithSavings: 1,
+    });
   });
 
   it("keeps headline, currentTotals and previous inside the Users & teams scope", async () => {

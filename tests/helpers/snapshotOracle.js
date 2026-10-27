@@ -14,7 +14,7 @@ export const WS = "ws-default";
 export const WS2 = "ws-other";
 const RAW_KEY = "th_ORACLEGATEWAYTOKENxxxxxxxxxxxxxxxx";
 
-/** The 10 complete-table sections, parents first (FK-safe insert order). */
+/** The 11 complete-table sections, parents first (FK-safe insert order). */
 export const SECTION_TABLES = [
   "workspaceSettings",
   "userPreferences",
@@ -25,12 +25,14 @@ export const SECTION_TABLES = [
   "usageHistory",
   "requestDetails",
   "usageRollup",
+  "usageComboRollup",
   "usageBudgetCarry",
 ];
 
 export function clearSections(db) {
   for (const table of [
     "usageBudgetCarry",
+    "usageComboRollup",
     "usageRollup",
     "requestDetails",
     "usageHistory",
@@ -121,7 +123,7 @@ const HIST_ZERO = "[0,0,0,0,0,0,0,0,0,0,0,0]";
 const UNICODE_JSON = '{"名前":"値","emoji":"🙂","q":"it\'s \\"x\\" \\\\ \\n","é":"e\\u0301"}';
 
 /**
- * Snapshot rows for all 10 sections with the awkward values a bind path can get
+ * Snapshot rows for all 11 sections with the awkward values a bind path can get
  * wrong: integer-valued REALs (5.0), fractions (0.1), 2^53-1, empty strings,
  * NULLs, numeric-looking TEXT ("007", "1e3", "5.0", "0x10"), unicode, quotes,
  * and keys deliberately ABSENT (NULL / schema default at insert). Every row is
@@ -327,6 +329,13 @@ export function trickySections() {
         emptyCount: 1,
         latencyRequests: 3,
         latencyHistogram: HIST_OK,
+        savingsSavedEst: 120.5,
+        savingsBeforeEst: -7.25,
+        savingsRequests: 2,
+        rtkSavedEst: 100.5,
+        rtkBeforeEst: 150,
+        rtkRequests: 2,
+        lastUsedAt: NOW,
       },
       // All five latency columns ABSENT: the insert must apply schema defaults.
       {
@@ -381,6 +390,25 @@ export function trickySections() {
         latencyHistogram: HIST_ZERO,
       },
     ],
+    // YAN-1226: every column is required by the validator (no absent keys).
+    usageComboRollup: [
+      {
+        dateKey: "2026-10-09",
+        workspaceId: WS,
+        userId: "owner",
+        apiKeyId: "hk-1",
+        comboName: "combo '🙂' \"quoted\"",
+        requests: 4,
+      },
+      {
+        dateKey: "2026-10-10",
+        workspaceId: "",
+        userId: "",
+        apiKeyId: "local-no-key",
+        comboName: "x".repeat(128),
+        requests: 1,
+      },
+    ],
     // YAN-424: every column is required by the validator (no absent keys).
     usageBudgetCarry: [
       {
@@ -410,7 +438,7 @@ export function trickySections() {
 }
 
 /**
- * Exact stored-value dump of the 10 section tables: for every live column the
+ * Exact stored-value dump of the 11 section tables: for every live column the
  * SQLite storage class and `quote()` text, in rowid order. `typeof/quote`
  * distinguishes 5 from 5.0 and '5' from 5, which JS equality cannot.
  */

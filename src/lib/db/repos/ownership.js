@@ -5,6 +5,7 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { TenancyError, assertCtx } from "@/lib/users/errors.js";
 import { LATENCY_COLUMNS, LATENCY_MERGE_SQL } from "../helpers/usageLatencyRollup.js";
+import { SAVINGS_COLUMNS, SAVINGS_MERGE_SQL } from "../helpers/usageSavingsRollup.js";
 
 const OWNED = ["providerConnections", "providerNodes", "combos"];
 
@@ -111,16 +112,26 @@ function adoptUsage(db, ws, owner) {
     ).changes;
   }
   n += db.run(
-    `INSERT INTO usageRollup (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost, ${LATENCY_COLUMNS.join(", ")})
-     SELECT dateKey, ?, CASE WHEN userId = '' THEN ? ELSE userId END, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost, ${LATENCY_COLUMNS.join(", ")}
+    `INSERT INTO usageRollup (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost, ${LATENCY_COLUMNS.join(", ")}, ${SAVINGS_COLUMNS.join(", ")}, lastUsedAt)
+     SELECT dateKey, ?, CASE WHEN userId = '' THEN ? ELSE userId END, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost, ${LATENCY_COLUMNS.join(", ")}, ${SAVINGS_COLUMNS.join(", ")}, lastUsedAt
      FROM usageRollup WHERE workspaceId = ''
      ON CONFLICT (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint) DO UPDATE SET
        requests = requests + excluded.requests, tokensIn = tokensIn + excluded.tokensIn,
        tokensOut = tokensOut + excluded.tokensOut, tokensCached = tokensCached + excluded.tokensCached,
-       cost = cost + excluded.cost, ${LATENCY_MERGE_SQL}`,
+       cost = cost + excluded.cost, ${LATENCY_MERGE_SQL}, ${SAVINGS_MERGE_SQL},
+       lastUsedAt = MAX(lastUsedAt, excluded.lastUsedAt)`,
     [ws, owner ?? ""],
   ).changes;
   db.run(`DELETE FROM usageRollup WHERE workspaceId = ''`);
+  n += db.run(
+    `INSERT INTO usageComboRollup (dateKey, workspaceId, userId, apiKeyId, comboName, requests)
+     SELECT dateKey, ?, CASE WHEN userId = '' THEN ? ELSE userId END, apiKeyId, comboName, requests
+     FROM usageComboRollup WHERE workspaceId = ''
+     ON CONFLICT (dateKey, workspaceId, userId, apiKeyId, comboName) DO UPDATE SET
+       requests = requests + excluded.requests`,
+    [ws, owner ?? ""],
+  ).changes;
+  db.run(`DELETE FROM usageComboRollup WHERE workspaceId = ''`);
   // YAN-424: pruned-history budget carry follows its (formerly ownerless) rows.
   n += db.run(
     `INSERT INTO usageBudgetCarry (day, workspaceId, userId, apiKeyId, grantId, usd, tokens, requests, notionalUsd)

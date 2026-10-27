@@ -2,16 +2,14 @@
 // db.export() reopens the DB and drops attachments), so the stage is a SEPARATE
 // in-memory SQL.Database and rows are copied through JS. This is the
 // documented exception: bounded memory is NOT guaranteed on sql.js.
-import initSqlJs from "sql.js";
+import { loadSqlJs } from "../sqljsLoader.js";
 import { SECTIONS } from "../helpers/instanceSnapshotSchema.js";
 import { remapBudgetCarry } from "../helpers/instanceSnapshotTables.js";
 import { SET_NULL_SECTIONS, STAGE_PAGE, q, stageDdl } from "./importStage.js";
 import { forEachBoundedPage, forEachBoundedSectionPage } from "./pagedRows.js";
 
-let SQL = null;
-
 export async function sqlJsBackend() {
-  SQL ??= await initSqlJs();
+  const SQL = await loadSqlJs();
   const stage = new SQL.Database();
   let refs = { users: new Set(), workspaces: new Set() };
 

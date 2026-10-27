@@ -174,6 +174,22 @@ export const TABLES = {
       emptyCount: "INTEGER NOT NULL DEFAULT 0",
       latencyRequests: "INTEGER NOT NULL DEFAULT 0",
       latencyHistogram: "TEXT NOT NULL DEFAULT '[0,0,0,0,0,0,0,0,0,0,0,0]'",
+      // YAN-1226 (migration 021): token savings and last-use timestamp, see
+      // usageSavingsRollup.js. Headline sums follow the history counting
+      // rules; *BeforeEst may be negative on legacy rows.
+      savingsSavedEst: "REAL NOT NULL DEFAULT 0",
+      savingsBeforeEst: "REAL NOT NULL DEFAULT 0",
+      savingsRequests: "INTEGER NOT NULL DEFAULT 0",
+      rtkSavedEst: "REAL NOT NULL DEFAULT 0",
+      rtkBeforeEst: "REAL NOT NULL DEFAULT 0",
+      rtkRequests: "INTEGER NOT NULL DEFAULT 0",
+      headroomSavedEst: "REAL NOT NULL DEFAULT 0",
+      headroomBeforeEst: "REAL NOT NULL DEFAULT 0",
+      headroomRequests: "INTEGER NOT NULL DEFAULT 0",
+      pxpipeSavedEst: "REAL NOT NULL DEFAULT 0",
+      pxpipeBeforeEst: "REAL NOT NULL DEFAULT 0",
+      pxpipeRequests: "INTEGER NOT NULL DEFAULT 0",
+      lastUsedAt: "TEXT NOT NULL DEFAULT ''",
     },
     primaryKey:
       "PRIMARY KEY (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint)",
@@ -181,6 +197,25 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_ur_ws_date ON usageRollup(workspaceId, dateKey)",
       // YAN-424 (migration 019): usage retention walks distinct apiKeyId values.
       "CREATE INDEX IF NOT EXISTS idx_ur_key ON usageRollup(apiKeyId)",
+    ],
+  },
+  // YAN-1226 (migration 021): daily combo counts. Separate table: a request
+  // carries both a provider/model grain and a combo name, so a comboName
+  // column on usageRollup would split every measure row. Dims are exactly the
+  // scopeSql dims; counting is independent of savings (every request with a
+  // non-empty meta.comboName counts, truncated to 128 chars).
+  usageComboRollup: {
+    columns: {
+      dateKey: "TEXT NOT NULL",
+      workspaceId: "TEXT NOT NULL DEFAULT ''",
+      userId: "TEXT NOT NULL DEFAULT ''",
+      apiKeyId: "TEXT NOT NULL DEFAULT 'local-no-key'",
+      comboName: "TEXT NOT NULL DEFAULT ''",
+      requests: "INTEGER NOT NULL DEFAULT 0",
+    },
+    primaryKey: "PRIMARY KEY (dateKey, workspaceId, userId, apiKeyId, comboName)",
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ucr_ws_date ON usageComboRollup(workspaceId, dateKey)",
     ],
   },
   // YAN-424 (migration 019): settled spend of usageHistory rows pruned by the

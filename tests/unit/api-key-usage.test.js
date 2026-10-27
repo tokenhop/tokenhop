@@ -1,5 +1,5 @@
-// getApiKeyUsage: per-key lastUsed + requests-today from usageHistory,
-// feeding the Endpoint & keys table (GET /api/keys).
+// getApiKeyUsage: per-key lastUsed + requests-today from usageRollup
+// (lastUsedAt fold + today's requests), feeding GET /api/keys.
 import { describe, it, expect, beforeAll } from "vitest";
 
 let db;

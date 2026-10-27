@@ -19,9 +19,9 @@ const periodUrl = (path, period, query = "") =>
   period ? `${path}?period=${period}${query}` : null;
 
 /**
- * Usage stats for a Home period (today/24h/7d/30d/60d). A null period (URL and
+ * Usage stats for a Home period (today/24h/7d/30d/60d/90d/all). A null period (URL and
  * storage not resolved yet) keeps the tiles on skeletons without fetching.
- * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} period
+ * @param {"today"|"24h"|"7d"|"30d"|"60d"|"90d"|"all"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ current: object|null, currentPeriod: string|null, loading: boolean, error: string|null }}
  *   `current` also carries `currentTotals`/`previous` ({requests, promptTokens, completionTokens, cachedTokens, cost})
@@ -41,7 +41,7 @@ export function useHomeUsage(period, refreshKey = 0) {
 
 /**
  * Chart buckets for the cost and requests sparklines.
- * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} period
+ * @param {"today"|"24h"|"7d"|"30d"|"60d"|"90d"|"all"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ buckets: Array<{ tokens: number, cost: number, requests?: number }>|null, loading: boolean, error: string|null }}
  */
@@ -57,7 +57,7 @@ export function useHomeChart(period, refreshKey = 0) {
  * Token-saver savings for a period. Only recorded aggregation is shown:
  * an endpoint failure or malformed payload surfaces `savingsUnavailable`
  * so the tile can say "Savings data unavailable" instead of inventing numbers.
- * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} period
+ * @param {"today"|"24h"|"7d"|"30d"|"60d"|"90d"|"all"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ savings: object|null, loading: boolean, error: null, savingsUnavailable: boolean }}
  *   `savings` also carries `currentTotals`/`previous` ({tokensSavedEst, requestsWithSavings}) for the trend.
@@ -84,7 +84,7 @@ export function useHomeSavings(period, refreshKey = 0) {
  * /api/usage/stats and /api/usage/savings with compare=previous instead).
  * Failures degrade gracefully: combo counts fall back to values derived
  * from /api/usage/stats instead of erroring.
- * @param {"today"|"24h"|"7d"|"30d"|"60d"|null} period
+ * @param {"today"|"24h"|"7d"|"30d"|"60d"|"90d"|"all"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ summary: object|null, loading: boolean, error: null }}
  */

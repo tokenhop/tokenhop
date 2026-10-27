@@ -1,9 +1,10 @@
 // YAN-375 complete-table snapshot parity: the raw-row instance sections a
 // hashed/encrypted snapshot must carry beyond the identity graph —
 // workspaceSettings, userPreferences, connectionGrants, budgets, auditEvents,
-// invitations, usageHistory, usageRollup, usageBudgetCarry, requestDetails. Rows travel as the
-// exact stored SQL values (JSON blobs and ciphertext envelopes stay verbatim
-// strings; nothing here decrypts or re-encodes). Sync + adapter-passed, no
+// invitations, usageHistory, usageRollup, usageComboRollup, usageBudgetCarry,
+// requestDetails. Rows travel as the exact stored SQL values (JSON blobs and
+// ciphertext envelopes stay verbatim strings; nothing here decrypts or
+// re-encodes). Sync + adapter-passed, no
 // barrel/driver imports (cycle-free), same contract as gatewayKeyTransfer.
 //
 // Column sets mirror TABLES in ../schema.js (kept local so the schema stays
@@ -91,6 +92,18 @@ export function sectionDedupKeys(section, row) {
         "connectionId",
         "endpoint",
       ]) {
+        if (typeof row[field] !== "string") return [null, null];
+        dims.push(row[field]);
+      }
+      return [JSON.stringify(dims), null];
+    }
+    case "usageComboRollup": {
+      // validate(): YYYY-MM-DD dateKey + four string dims (comboName non-empty,
+      // <= 128 chars), keyed on JSON.stringify(dims).
+      if (typeof row.dateKey !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(row.dateKey))
+        return [null, null];
+      const dims = [row.dateKey];
+      for (const field of ["workspaceId", "userId", "apiKeyId", "comboName"]) {
         if (typeof row[field] !== "string") return [null, null];
         dims.push(row[field]);
       }
@@ -190,6 +203,12 @@ export function readInstanceTableSections(db, payload, refs = null) {
     // snapshot replaces moves to the unknown ('') attribution like the SET NULL
     // history rows above; rows that now share a primary key are summed.
     if (refs && section.name === "usageBudgetCarry") rows = remapBudgetCarry(rows, refs);
+    // YAN-1226: combo counts are derived from history. When the snapshot
+    // replaces usageRollup it must never inherit the live instance's combos.
+    if (section.name === "usageComboRollup" && Object.hasOwn(payload, "usageRollup")) {
+      sections[section.name] = [];
+      continue;
+    }
     sections[section.name] = rows;
   }
   return sections;

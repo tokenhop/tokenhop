@@ -12,9 +12,34 @@ import {
   LATENCY_MERGE_SQL,
   latencyDeltas,
 } from "../helpers/usageLatencyRollup.js";
+import {
+  SAVINGS_COLUMNS,
+  SAVINGS_DEFAULTS,
+  SAVINGS_MERGE_SQL,
+  SAVINGS_METHODS,
+  savingsDeltas,
+} from "../helpers/usageSavingsRollup.js";
 
 export const NO_KEY = "local-no-key";
 const DIMS = ["workspaceId", "userId", "apiKeyId", "provider", "model", "connectionId", "endpoint"];
+const COMBO_DIMS = ["workspaceId", "userId", "apiKeyId"];
+const MEASURE_COLUMNS = [...LATENCY_COLUMNS, ...SAVINGS_COLUMNS];
+const MEASURE_DEFAULTS = { ...LATENCY_DEFAULTS, ...SAVINGS_DEFAULTS };
+const UPSERT_SQL = `INSERT INTO usageRollup (dateKey, ${DIMS.join(", ")}, requests, tokensIn, tokensOut, tokensCached, cost, ${MEASURE_COLUMNS.join(", ")}, lastUsedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${MEASURE_COLUMNS.map(() => ", ?").join("")}, ?)
+     ON CONFLICT (dateKey, ${DIMS.join(", ")}) DO UPDATE SET
+       requests = requests + excluded.requests,
+       tokensIn = tokensIn + excluded.tokensIn,
+       tokensOut = tokensOut + excluded.tokensOut,
+       tokensCached = tokensCached + excluded.tokensCached,
+       cost = cost + excluded.cost,
+       ${LATENCY_MERGE_SQL},
+       ${SAVINGS_MERGE_SQL},
+       lastUsedAt = MAX(lastUsedAt, excluded.lastUsedAt)`;
+const COMBO_UPSERT_SQL = `INSERT INTO usageComboRollup (dateKey, ${COMBO_DIMS.join(", ")}, comboName, requests)
+     VALUES (?, ?, ?, ?, ?, 1)
+     ON CONFLICT (dateKey, ${COMBO_DIMS.join(", ")}, comboName)
+     DO UPDATE SET requests = requests + 1`;
 
 /**
  * Legacy storage: raw → keys-table id; a raw that matches no key becomes a
@@ -88,29 +113,28 @@ function dimValues(dims) {
  * @param {{requests?: number, tokensIn?: number, tokensOut?: number, tokensCached?: number, cost?: number}} deltas
  */
 export function upsertRollupRowUnscoped(db, dims, deltas = {}) {
-  const { requests = 1, tokensIn = 0, tokensOut = 0, tokensCached = 0, cost = 0, ...lat } = deltas;
-  const latency = { ...LATENCY_DEFAULTS, ...lat };
-  db.run(
-    `INSERT INTO usageRollup (dateKey, ${DIMS.join(", ")}, requests, tokensIn, tokensOut, tokensCached, cost, ${LATENCY_COLUMNS.join(", ")})
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${LATENCY_COLUMNS.map(() => ", ?").join("")})
-     ON CONFLICT (dateKey, ${DIMS.join(", ")}) DO UPDATE SET
-       requests = requests + excluded.requests,
-       tokensIn = tokensIn + excluded.tokensIn,
-       tokensOut = tokensOut + excluded.tokensOut,
-       tokensCached = tokensCached + excluded.tokensCached,
-       cost = cost + excluded.cost,
-       ${LATENCY_MERGE_SQL}`,
-    [
-      dims.dateKey,
-      ...dimValues(dims),
-      requests,
-      tokensIn,
-      tokensOut,
-      tokensCached,
-      cost,
-      ...LATENCY_COLUMNS.map((c) => latency[c]),
-    ],
-  );
+  const { requests = 1, tokensIn = 0, tokensOut = 0, tokensCached = 0, cost = 0 } = deltas;
+  db.run(UPSERT_SQL, [
+    dims.dateKey,
+    ...dimValues(dims),
+    requests,
+    tokensIn,
+    tokensOut,
+    tokensCached,
+    cost,
+    ...MEASURE_COLUMNS.map((c) => deltas[c] ?? MEASURE_DEFAULTS[c]),
+    Number.isFinite(Date.parse(deltas.lastUsedAt)) ? deltas.lastUsedAt : "",
+  ]);
+}
+
+/** A combo counts independently of savings; non-combo requests add no statement. */
+export function upsertComboRollupRowUnscoped(db, dims, comboName) {
+  if (typeof comboName !== "string" || !comboName) return;
+  db.run(COMBO_UPSERT_SQL, [
+    dims.dateKey,
+    ...COMBO_DIMS.map((k) => dims[k] || (k === "apiKeyId" ? NO_KEY : "")),
+    comboName.slice(0, 128),
+  ]);
 }
 
 /**
@@ -126,7 +150,7 @@ export function readRollup(ctx, db, startDateKey = null, endDateKey = null) {
   const proj = DIMS.map((k) => (k === "apiKeyId" ? k : `NULLIF(${k}, '') AS ${k}`)).join(", ");
   return db.all(
     `SELECT dateKey, ${proj}, requests, tokensIn, tokensOut, tokensCached, cost FROM usageRollup
-     ${whereAll(scope.sql, startDateKey ? "dateKey >= ?" : "", endDateKey ? "dateKey <= ?" : "")} ORDER BY dateKey`,
+     ${whereAll(scope.sql, "requests > 0", startDateKey ? "dateKey >= ?" : "", endDateKey ? "dateKey <= ?" : "")} ORDER BY dateKey`,
     params,
   );
 }
@@ -154,6 +178,88 @@ export function readRollupTotals(ctx, db, startDateKey = null, endDateKeyExclusi
     completionTokens: Number(row?.completionTokens) || 0,
     cachedTokens: Number(row?.cachedTokens) || 0,
     cost: Number(row?.cost) || 0,
+  };
+}
+
+/** Savings grouped by provider/model for bounded read-time list-price calculation. */
+export function readSavingsTotals(ctx, db, startDateKey = null, endDateKeyExclusive = null) {
+  const scope = scopeSql(ctx);
+  const params = [...scope.params];
+  if (startDateKey) params.push(startDateKey);
+  if (endDateKeyExclusive) params.push(endDateKeyExclusive);
+  const rows = db.all(
+    `SELECT provider, model, ${SAVINGS_COLUMNS.map((c) => `SUM(${c}) AS ${c}`).join(", ")}
+     FROM usageRollup
+     ${whereAll(scope.sql, startDateKey ? "dateKey >= ?" : "", endDateKeyExclusive ? "dateKey < ?" : "")}
+     GROUP BY provider, model`,
+    params,
+  );
+  const byMethod = Object.fromEntries(
+    SAVINGS_METHODS.map((method) => [
+      method,
+      { tokensSavedEst: 0, tokensBeforeEst: 0, requests: 0 },
+    ]),
+  );
+  const totals = {
+    tokensSavedEst: 0,
+    tokensBeforeEst: 0,
+    requestsWithSavings: 0,
+    byMethod,
+    byProviderModel: [],
+  };
+  for (const row of rows) {
+    totals.tokensSavedEst += Number(row.savingsSavedEst) || 0;
+    totals.tokensBeforeEst += Number(row.savingsBeforeEst) || 0;
+    totals.requestsWithSavings += Number(row.savingsRequests) || 0;
+    for (const method of SAVINGS_METHODS) {
+      byMethod[method].tokensSavedEst += Number(row[`${method}SavedEst`]) || 0;
+      byMethod[method].tokensBeforeEst += Number(row[`${method}BeforeEst`]) || 0;
+      byMethod[method].requests += Number(row[`${method}Requests`]) || 0;
+    }
+    if (row.savingsSavedEst > 0) {
+      totals.byProviderModel.push({
+        provider: row.provider || null,
+        model: row.model || null,
+        tokensSavedEst: Number(row.savingsSavedEst),
+        savingsRequests: Number(row.savingsRequests) || 0,
+      });
+    }
+  }
+  return totals;
+}
+
+/** Deterministic top combos; ties sort by name rather than history encounter order. */
+export function readComboTop(ctx, db, startDateKey = null, endDateKeyExclusive = null, limit = 5) {
+  const scope = scopeSql(ctx);
+  const params = [...scope.params];
+  if (startDateKey) params.push(startDateKey);
+  if (endDateKeyExclusive) params.push(endDateKeyExclusive);
+  return db.all(
+    `SELECT comboName AS name, SUM(requests) AS requests FROM usageComboRollup
+     ${whereAll(scope.sql, startDateKey ? "dateKey >= ?" : "", endDateKeyExclusive ? "dateKey < ?" : "")}
+     GROUP BY comboName ORDER BY requests DESC, comboName ASC LIMIT ?`,
+    [...params, limit],
+  );
+}
+
+/** Exact last-use timestamps and today's request counts, independent of retention. */
+export function readApiKeyActivity(ctx, db, todayKey) {
+  const scope = scopeSql(ctx);
+  const rows = db.all(
+    `SELECT apiKeyId, MAX(lastUsedAt) AS lastUsed,
+       SUM(CASE WHEN dateKey = ? THEN requests ELSE 0 END) AS today
+     FROM usageRollup
+     ${whereAll(scope.sql, "apiKeyId != 'local-no-key'", "apiKeyId != ''")}
+     GROUP BY apiKeyId`,
+    [todayKey, ...scope.params],
+  );
+  return {
+    lastUsed: Object.fromEntries(
+      rows.filter((r) => r.lastUsed).map((r) => [r.apiKeyId, r.lastUsed]),
+    ),
+    today: Object.fromEntries(
+      rows.filter((r) => r.today > 0).map((r) => [r.apiKeyId, Number(r.today)]),
+    ),
   };
 }
 
@@ -196,6 +302,7 @@ export function readLatencyRollup(ctx, db, endpoint, startDateKey = null, endDat
 /** Rebuild every rollup row from usageHistory (legacy JSON import; 014 inlines its own copy). */
 export function rebuildRollupFromHistoryUnscoped(db) {
   db.run(`DELETE FROM usageRollup`);
+  db.run(`DELETE FROM usageComboRollup`);
   for (const r of db.all(
     `SELECT timestamp, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint,
             promptTokens, completionTokens, cost, tokens, meta FROM usageHistory`,
@@ -218,7 +325,10 @@ export function rebuildRollupFromHistoryUnscoped(db) {
         tokensCached: cached,
         cost: r.cost || 0,
         ...latencyDeltas(r.endpoint, meta),
+        ...savingsDeltas(meta),
+        lastUsedAt: r.timestamp,
       },
     );
+    upsertComboRollupRowUnscoped(db, { ...r, dateKey: localDateKey(r.timestamp) }, meta?.comboName);
   }
 }

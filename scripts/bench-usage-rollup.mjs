@@ -7,6 +7,38 @@
 //
 // Exits 1 when the new p50 exceeds 1.2x the old p50 (issue gate). Not wired
 // into CI. ponytail: both paths are inlined SQL copies of the repo code (no
+import assert from "node:assert/strict";
+import fs from "node:fs";
+
+// Source-drift guard (bench-prediction-rollup pattern): the inlined upsert
+// below must match the live writer. usageRollupRepo.js builds UPSERT_SQL at
+// module scope; assert its exact template fragments so any change to the
+// column list, conflict target or additive merges fails here loudly.
+{
+  const repo = fs.readFileSync(
+    new URL("../src/lib/db/repos/usageRollupRepo.js", import.meta.url),
+    "utf8",
+  );
+  const match = repo.match(/^const UPSERT_SQL = `([\s\S]*?)`;\n/m);
+  assert(match, "UPSERT_SQL not found in usageRollupRepo.js; re-sync bench");
+  for (const fragment of [
+    'INSERT INTO usageRollup (dateKey, ${DIMS.join(", ")}, requests, tokensIn, tokensOut, tokensCached, cost, ${MEASURE_COLUMNS.join(", ")}, lastUsedAt)',
+    'ON CONFLICT (dateKey, ${DIMS.join(", ")}) DO UPDATE SET',
+    "requests = requests + excluded.requests,",
+    "tokensIn = tokensIn + excluded.tokensIn,",
+    "tokensOut = tokensOut + excluded.tokensOut,",
+    "tokensCached = tokensCached + excluded.tokensCached,",
+    "cost = cost + excluded.cost,",
+    "${LATENCY_MERGE_SQL},",
+    "${SAVINGS_MERGE_SQL},",
+    "lastUsedAt = MAX(lastUsedAt, excluded.lastUsedAt)",
+  ]) {
+    assert(
+      match[1].includes(fragment),
+      `usageRollupRepo UPSERT_SQL drifted (missing ${JSON.stringify(fragment)}); re-sync bench-usage-rollup.mjs`,
+    );
+  }
+}
 // app imports, so plain node runs it); re-sync if the write path changes.
 import { DatabaseSync } from "node:sqlite";
 

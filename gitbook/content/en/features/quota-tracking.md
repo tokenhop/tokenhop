@@ -570,15 +570,15 @@ Optimization:
 
 ## Usage page periods
 
-The Usage page Overview tab has a period control. The choices are Today, 24h, 7d, 30d, 60d, 90d, and All time. Home and Token saver stop at 60d. They do not offer 90d, All time, or a custom range.
+The Usage page Overview tab, Home, and Token saver share a period control. The choices are Today, 24h, 7d, 30d, 60d, 90d, and All time. Only Usage offers a custom range.
 
-90d is the last 90 local calendar days, including today. All time totals every day in the daily usage rollup. Both of those periods, and a custom range, are totaled from that rollup. They do not scan each stored request. All time has no previous period. Its tiles say "All recorded usage". 90d compares with the 90 days before the current window.
+90d is the last 90 local calendar days, including today. All time totals every day in the daily usage rollup. On all three pages, 7d through 90d and All time are totaled from daily rollups, including savings and top-combo counts; they do not scan each stored request. Today and 24h use request history. Custom ranges on Usage also use the rollup. Day-grain periods compare with the same number of whole local calendar days before the current window. All time has no previous period; its tiles say "All recorded usage".
 
 Custom sits beside those choices. Choose From and To, then Apply. The range is inclusive. Dates are local calendar days in `YYYY-MM-DD`. The start must be on or before the end. The end cannot be in the future. The range cannot be longer than 366 days. A valid range stays in the page URL as `period=custom&from=YYYY-MM-DD&to=YYYY-MM-DD`, so a reload or a shared link keeps it. It is not saved as the remembered period. The next visit without those query parameters uses the last named period. An invalid custom URL does the same. The tiles compare the range with the same number of days immediately before it.
 
 Example: `/dashboard/usage?period=custom&from=2026-09-01&to=2026-09-30`
 
-Home (Today, 24h, 7d, 30d, 60d) shows a change on Requests, Tokens in/out, Est. cost, and Saved by token saver when that period has requests. The line is a signed percent plus a caption: "vs same time yesterday", "vs prior 24h", "vs prior 7d", "vs prior 30d", or "vs prior 60d". Tokens in/out reads `In +12% · Out -3%` plus that caption. A side with no usable previous total is omitted. When the previous total is missing or zero, the line says "No prior data".
+Home shows a change on Requests, Tokens in/out, Est. cost, and Saved by token saver when the selected period has requests. The line is a signed percent plus a caption: "vs same time yesterday", "vs prior 24h", "vs prior 7d", "vs prior 30d", "vs prior 60d", or "vs prior 90d". Tokens in/out reads `In +12% · Out -3%` plus that caption. A side with no usable previous total is omitted. When the previous total is missing or zero, the line says "No prior data". All time shows "All recorded usage" instead of a change.
 
 Token saver shows the same line on the saved-tokens total for the period you selected, and only when that period itself has savings. When the page stands in a larger period, it does not show the change.
 
@@ -586,7 +586,7 @@ Token saver shows the same line on the saved-tokens total for the period you sel
 
 **Settings → Data & backup → Request history** controls how long each request's details are kept. The default is **Keep forever**. The menu also offers 7, 30, 60, 90, 180 and 365 days. The stored value may be `0` (keep forever) or an integer from 2 to 3650. A value that is not a preset still appears in the menu. Choosing a shorter limit asks you to confirm. With Users & teams on, this section is under **Instance**, and only an owner or instance admin can open it.
 
-Charts, long periods and budgets use daily totals, which are not deleted. With a limit set, older request details are removed in the background about 10 minutes after startup, then once a day. A settings change applies on the next sweep. Only whole local days older than the limit are removed, so a request is kept for at least that many days. Days that are not fully in the daily rollup are kept. The newest request for each workspace, each membership and each API key is kept. Savings, top combos and period comparisons count only requests still in history. An API key with no recent requests can show an older last-used time. The database file may not shrink.
+Charts, long periods and budgets use daily totals, which are not deleted. With a limit set, older request details are removed in the background about 10 minutes after startup, then once a day. A settings change applies on the next sweep. Only whole local days older than the limit are removed, so a request is kept for at least that many days. Days that are not fully in the daily rollup are kept. The newest request for each workspace, each membership and each API key is kept. Savings, top combos and day-grain period comparisons use retained daily totals, so pruning request details does not reduce them. API-key last-used times and today's request counts also come from the rollup. Savings and combo history pruned before the savings rollup was introduced cannot be recovered. The database file may not shrink.
 
 ## API Access
 
@@ -687,7 +687,7 @@ GET http://localhost:20128/api/usage/export?period=7d&format=csv&granularity=day
 - `format`: `csv` (default, a JSON array when `json`). The response is streamed and sent as a file download (`tokenhop-usage-<range>-<granularity>.csv|json`).
 - `granularity`: `day` (default) gives one row per day × provider/model/account/API key/endpoint from the daily rollup (for `today`/`24h`, folded from per-request history so it matches the cards); `request` gives one row per request from the stored request history for any period or custom range. History retention is opt-in, so if you enabled it, request rows may be missing for pruned days — daily rows are unaffected because they come from the rollup.
 
-Columns: timestamp (or date), provider, model, account, account id, API key name, masked API key, endpoint, prompt/completion/cached tokens, cost, status (request rows), and the token-saver estimate (`saved_tokens_est`, request rows and sub-day daily totals; 0 in rollup rows, which carry no per-request savings). Raw API keys are never exported — only the key's name and masked prefix. Invalid `format`, `granularity`, `period` or date ranges return 400; the same sign-in and workspace scoping as the other usage endpoints applies.
+Columns: timestamp (or date), provider, model, account, account id, API key name, masked API key, endpoint, prompt/completion/cached tokens, cost, status (request rows), and the token-saver estimate (`saved_tokens_est`: per request on request rows; on daily rows it is the day's rolled-up savings for that group, so it survives request-history pruning). Raw API keys are never exported — only the key's name and masked prefix. Invalid `format`, `granularity`, `period` or date ranges return 400; the same sign-in and workspace scoping as the other usage endpoints applies.
 
 ---
 

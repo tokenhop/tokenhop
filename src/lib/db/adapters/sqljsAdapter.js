@@ -1,19 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import initSqlJs from "sql.js";
 import { PRAGMA_SQL } from "../schema.js";
 import { runShutdownFlushers } from "../shutdownFlushers.js";
-
-let SQL = null;
-
-async function loadSql() {
-  if (SQL) return SQL;
-  SQL = await initSqlJs();
-  return SQL;
-}
+import { loadSqlJs } from "../sqljsLoader.js";
 
 export async function createSqlJsAdapter(filePath) {
-  const SQLLib = await loadSql();
+  const SQLLib = await loadSqlJs();
   const buf = fs.existsSync(filePath) ? fs.readFileSync(filePath) : null;
   const db = new SQLLib.Database(buf);
   db.exec(PRAGMA_SQL);

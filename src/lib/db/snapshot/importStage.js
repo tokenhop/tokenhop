@@ -26,6 +26,7 @@ import { forEachBoundedPage, sizeExpr } from "./pagedRows.js";
 const PAGE = 500;
 const SMALL_PAGE = 200; // requestDetails rows carry large `data`
 const SET_NULL_SECTIONS = new Set(["usageHistory", "requestDetails"]);
+const DERIVED_SECTIONS = new Set(["usageComboRollup"]);
 
 export const q = (id) => `"${id}"`;
 
@@ -309,7 +310,7 @@ function createStage(db, backend) {
      * row. Returns this handle (the preflight plan's `instanceSections`).
      */
     prepare(_db, head, refs) {
-      const absent = [];
+      let absent = [];
       for (const section of SECTIONS) {
         if (present.has(section.name)) continue;
         if (Object.hasOwn(head, section.name)) {
@@ -319,6 +320,14 @@ function createStage(db, backend) {
           present.add(section.name); // explicit clear
         } else absent.push(section);
       }
+      // YAN-1226: derived combo rows are never retained when the snapshot
+      // replaces usageRollup; apply recomputes them from restored history.
+      if (present.has("usageRollup")) {
+        for (const section of absent.filter((s) => DERIVED_SECTIONS.has(s.name))) {
+          present.add(section.name);
+        }
+      }
+      absent = absent.filter((s) => !present.has(s.name));
       if (absent.length) {
         // Retained live rows are copied into the stage: the disk may have
         // filled since the upload-time check. Fail coded, before copying.
@@ -333,6 +342,28 @@ function createStage(db, backend) {
       }
       validateStaged(refs);
       return handle;
+    },
+
+    /** Drop staged rows of one section (derived data recomputed at apply). */
+    clearStaged(name) {
+      backend.run(`DELETE FROM ${backend.table(name)}`);
+    },
+
+    /**
+     * True when staged usageRollup rows predate the savings columns. A staged
+     * row's `absent` list records the columns its source row never carried,
+     * so post-021 rows that merely defaulted a column at bind time (absent =
+     * NULL) are not mistaken for pre-021 rows.
+     */
+    hasSavingsGaps() {
+      if (!present.has("usageRollup")) return false;
+      const t = backend.table("usageRollup");
+      // One bounded aggregate: no staged row may reach the JS heap.
+      const r = backend.get(
+        `SELECT EXISTS(SELECT 1 FROM ${t}) AS anyRow,
+                EXISTS(SELECT 1 FROM ${t} WHERE absent IS NULL OR instr(absent, '"savingsSavedEst"') = 0) AS hasFull`,
+      );
+      return !!r?.anyRow && !r.hasFull;
     },
 
     /** Insert every section into the live tables (inside the caller's transaction). */

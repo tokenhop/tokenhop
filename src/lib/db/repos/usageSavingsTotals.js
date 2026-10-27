@@ -2,7 +2,8 @@
 // rows reach JS. Mirrors the getUsageSavings counting rules (positive
 // per-method tokensSavedEst, a row counts once) without per-row pricing.
 import { getAdapter } from "../driver.js";
-import { scopeSql, whereAll } from "./usageRollupRepo.js";
+import { daysBetweenDateKeys, shiftDateKey } from "@/shared/utils/period";
+import { readSavingsTotals, scopeSql, whereAll } from "./usageRollupRepo.js";
 
 /**
  * Tokens saved and requests with savings in the half-open window
@@ -41,5 +42,29 @@ export async function getSavingsTotals(ctx, { start, end } = {}) {
   return {
     tokensSavedEst: Number(row?.saved) || 0,
     requestsWithSavings: Number(row?.requests) || 0,
+  };
+}
+
+/**
+ * Savings compare over inclusive local day keys, independent of history
+ * retention. Null bounds mean all time, for which no previous window exists.
+ * @param {object|null} ctx usage scope
+ * @param {{from: string|null, to: string|null}} range
+ * @returns {Promise<{currentTotals: object, previous: object|null}>}
+ */
+export async function getRollupSavingsTotals(ctx, { from, to }) {
+  const db = await getAdapter();
+  const totalsIn = (start = null, end = null) => {
+    const totals = readSavingsTotals(ctx, db, start, end);
+    return {
+      tokensSavedEst: totals.tokensSavedEst,
+      requestsWithSavings: totals.requestsWithSavings,
+    };
+  };
+  if (from == null && to == null) return { currentTotals: totalsIn(), previous: null };
+  const days = daysBetweenDateKeys(from, to) + 1;
+  return {
+    currentTotals: totalsIn(from, shiftDateKey(to, 1)),
+    previous: totalsIn(shiftDateKey(from, -days), from),
   };
 }
