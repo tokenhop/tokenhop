@@ -670,7 +670,8 @@ function createAttemptFeedback(startedAt, record, parent) {
  *   A first turn writes a provisional pin before any await so a concurrent first turn of the same
  *   conversation converges on the same member; it is confirmed by the member that serves and
  *   removed when nothing served. Under a parentAttempt (nested combo) the confirm waits until
- *   every enclosing level served too, and is dropped with the provisional pin otherwise (YAN-1624).
+ *   every enclosing level served too, and is dropped with the provisional pin otherwise (YAN-1624),
+ *   or when a bulk pin reset removed the entry in between (YAN-1676).
  * @param {string|null} [options.workspaceId=null] - Gateway workspace owning the pins (null = legacy)
  * @param {Iterable<string>} [options.pinExclude] - Capacity-adapter-added members; never pinned
  * @param {Function} [options.onFallback] - Awaited before trying the next model: ({ model, status }) => void
@@ -735,11 +736,15 @@ export async function handleComboChat({
       comboPins.set(affinityKey, model);
       return;
     }
-    // A deferred write must not replace a pin a later turn wrote meanwhile.
+    // A deferred write must not replace a pin a later turn wrote meanwhile. A
+    // missing entry only counts as "free" when no bulk reset (generation) ran
+    // since serve; an entry that survived a reset untouched was not its target.
     const seen = comboPins.version(affinityKey);
+    const seenGen = comboPins.generation();
     const commit = () => {
       const now = comboPins.version(affinityKey);
-      if (now === undefined || now === seen) comboPins.set(affinityKey, model);
+      if (now !== undefined ? now === seen : comboPins.generation() === seenGen)
+        comboPins.set(affinityKey, model);
     };
     parentAttempt.commitOnServe(commit, dropProvisional);
   };

@@ -859,7 +859,8 @@ async function handleSingleModelChat(
         if (result.success) {
           // YAN-1222: pin the account only now that it served. Under a hedged combo
           // the write waits for the race winner, so a loser never pins; a deferred
-          // write never replaces a pin written meanwhile (YAN-1673).
+          // write never replaces a pin written meanwhile (YAN-1673) nor re-creates
+          // one a bulk reset removed (YAN-1676).
           const affinity = credentials.affinity;
           if (affinity?.commit) {
             if (attempt?.commitOnServe)
