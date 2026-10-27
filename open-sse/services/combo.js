@@ -728,12 +728,20 @@ export async function handleComboChat({
     // Capacity-adapter members are never pinned (spec §2): the old pin stays.
     if (!affinityKey || pinExcludeSet.has(model)) return;
     repinned = true;
-    const commit = () => comboPins.set(affinityKey, model);
     // YAN-1624: a nested combo serving says nothing about the outer level. Its pin
     // waits until every enclosing member wins; a hedge loser or a member the outer
     // empty-stream probe skips releases it (and its provisional pin) instead.
-    if (parentAttempt?.commitOnServe) parentAttempt.commitOnServe(commit, dropProvisional);
-    else commit();
+    if (!parentAttempt?.commitOnServe) {
+      comboPins.set(affinityKey, model);
+      return;
+    }
+    // A deferred write must not replace a pin a later turn wrote meanwhile.
+    const seen = comboPins.version(affinityKey);
+    const commit = () => {
+      const now = comboPins.version(affinityKey);
+      if (now === undefined || now === seen) comboPins.set(affinityKey, model);
+    };
+    parentAttempt.commitOnServe(commit, dropProvisional);
   };
 
   // Apply rotation strategy if enabled

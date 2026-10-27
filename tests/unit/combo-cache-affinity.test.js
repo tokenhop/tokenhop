@@ -603,4 +603,22 @@ describe("serve-only attempts and cleanup review regressions", () => {
     expect(res.ok).toBe(true);
     expect(comboPins.peek("\ninner\nconv1")).toBeUndefined();
   });
+
+  it("a deferred nested pin never replaces a pin a later turn confirmed meanwhile (YAN-1624)", async () => {
+    // Turn 1's outer level is still deciding: its queued commit is held here.
+    const held = [];
+    const parentAttempt = { commitOnServe: (fn, release) => held.push({ fn, release }) };
+    const innerTurn = (failing, extra = {}) =>
+      run(async (_b, model) => (failing.has(model) ? fail() : ok()), {
+        comboName: "inner",
+        models: ["inner/a", "inner/b"],
+        comboStrategy: "round-robin",
+        cacheAffinity: true,
+        ...extra,
+      });
+    await innerTurn(new Set(), { parentAttempt }); // turn 1 serves inner/a, pin queued
+    comboPins.set("\ninner\nconv1", "inner/b"); // turn 2 failed over and confirmed b
+    held[0].fn(); // turn 1's outer level wins late
+    expect(comboPins.peek("\ninner\nconv1")).toBe("inner/b");
+  });
 });
