@@ -29,6 +29,12 @@ describe("configured canonical origin", () => {
     expect(isCrossSite(request(origin))).toBe(denied);
   });
 
+  it("a loopback base URL accepts only its own form (YAN-1020)", () => {
+    vi.stubEnv("BASE_URL", "http://localhost:20128");
+    expect(isCrossSite(request("http://localhost:20128", "127.0.0.1:20128"))).toBe(false);
+    expect(isCrossSite(request("http://127.0.0.1:20128", "127.0.0.1:20128"))).toBe(true);
+  });
+
   it.each(["https://pub.example", "https://pub.example/app"])(
     "projects %s to normalized origin",
     (canonical) => {
@@ -121,6 +127,36 @@ describe("unconfigured Host comparison", () => {
     "denies malformed Host %s",
     (host) => expect(isCrossSite(request("http://a", host))).toBe(true),
   );
+});
+
+// YAN-1020: Next's NextURL folds 127.x and [::1] to `localhost`, so with
+// HOSTNAME=127.0.0.1 a route sees nextUrl `localhost:P` while the browser sent
+// Origin `http://127.0.0.1:P`. The Host header decides; each loopback form only
+// matches itself. Rows pass the request-URL host; NextRequest applies the fold.
+describe("standalone loopback: Host header decides, never nextUrl", () => {
+  // Same-origin fetch metadata on every row: it is never an allow signal.
+  const standalone = (urlHost, origin, host) =>
+    new NextRequest(`http://${urlHost}/api/workspaces/w1/budgets`, {
+      method: "POST",
+      headers: { host, origin, "sec-fetch-site": "same-origin" },
+    });
+
+  it.each([
+    ["127.0.0.1:20991", "http://127.0.0.1:20991", "127.0.0.1:20991", false],
+    ["[::1]:20991", "http://[::1]:20991", "[::1]:20991", false],
+    ["0.0.0.0:20991", "http://127.0.0.1:20991", "127.0.0.1:20991", false],
+    ["0.0.0.0:20991", "http://localhost:20991", "localhost:20991", false],
+    ["127.0.0.1:20991", "http://localhost:20991", "127.0.0.1:20991", true],
+    ["[::1]:20991", "http://localhost:20991", "[::1]:20991", true],
+    ["0.0.0.0:20991", "http://[::1]:20991", "127.0.0.1:20991", true],
+    ["localhost:20991", "http://127.0.0.1:20991", "localhost:20991", true],
+    ["127.0.0.1:20991", "http://127.0.0.1:20992", "127.0.0.1:20991", true],
+  ])("request URL %s, Origin %s, Host %s denied=%s", (urlHost, origin, host, denied) => {
+    const req = standalone(urlHost, origin, host);
+    // Allowed rows must differ from nextUrl, or they would not test the fix.
+    if (!denied) expect(req.nextUrl.host).not.toBe(new URL(origin).host);
+    expect(isCrossSite(req)).toBe(denied);
+  });
 });
 
 describe("test environment setup (isolateDataDir.js)", () => {

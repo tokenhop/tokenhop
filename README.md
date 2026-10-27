@@ -282,7 +282,7 @@ Add any other hostname you open the dashboard from, separated by commas.
 ```bash
 cp .env.example .env
 npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+npm run dev   # http://localhost:20127
 ```
 
 Production build: `npm run build && PORT=20128 HOSTNAME=0.0.0.0 npm run start`.
