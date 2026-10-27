@@ -83,80 +83,112 @@ const hasText = (v) => typeof v === "string" && v !== "";
 const isProductiveToolCall = (tc) =>
   !!tc && (hasText(tc.function?.name) || hasText(tc.function?.arguments) || hasText(tc.name));
 
+// Responses events whose string `delta` is reasoning (not an answer) (YAN-1031).
+const RESPONSES_REASONING_EVENTS = new Set([
+  "response.reasoning_text.delta",
+  "response.reasoning_summary_text.delta",
+]);
+
 // Responses events whose string `delta` is user-visible text/reasoning/tool input.
 const RESPONSES_TOKEN_EVENTS = new Set([
   "response.output_text.delta",
   "response.refusal.delta",
-  "response.reasoning_text.delta",
-  "response.reasoning_summary_text.delta",
+  ...RESPONSES_REASONING_EVENTS,
   "response.function_call_arguments.delta",
   "response.custom_tool_call_input.delta",
 ]);
 
-export function hasMeaningfulToken(item) {
+// Classify a frame as an answer token, a reasoning-only token, or neither.
+// Reasoning counts for TTFT (hasMeaningfulToken) but is not a healthy answer (YAN-1031).
+function tokenKind(item) {
   if (item && typeof item === "object" && item.event && item.data) item = item.data; // formatSSE envelope
-  if (!item || typeof item !== "object") return false;
+  if (!item || typeof item !== "object") return null;
 
   // OpenAI chat / legacy completions / FIM
   if (Array.isArray(item.choices)) {
     const choice = item.choices[0];
-    if (!choice) return false; // usage-only frame
+    if (!choice) return null; // usage-only frame
     const delta = choice.delta || choice.message || null;
-    if (hasText(delta?.content) || hasText(choice.text) || hasText(delta?.refusal)) return true;
-    if (delta && extractReasoningText(delta) !== "") return true;
-    // Audio / image output modalities (YAN-1023)
-    if (hasText(delta?.audio?.data) || hasText(delta?.audio?.transcript)) return true;
-    if (Array.isArray(delta?.images) && delta.images.length > 0) return true;
-    return Array.isArray(delta?.tool_calls) && delta.tool_calls.some(isProductiveToolCall);
+    if (hasText(delta?.content) || hasText(choice.text) || hasText(delta?.refusal)) return "answer";
+    // Answer kinds before reasoning (YAN-1030): a delta that carries reasoning next
+    // to audio/images/tool_calls (Ollama merge, DeepSeek/Qwen passthrough) is an
+    // answer — classifying it as reasoning-only would skip health-clear + fallback.
+    if (hasText(delta?.audio?.data) || hasText(delta?.audio?.transcript)) return "answer";
+    if (Array.isArray(delta?.images) && delta.images.length > 0) return "answer";
+    if (Array.isArray(delta?.tool_calls) && delta.tool_calls.some(isProductiveToolCall))
+      return "answer";
+    return delta && extractReasoningText(delta) !== "" ? "reasoning" : null;
   }
 
   if (typeof item.type === "string") {
     const d = item.delta;
     // Claude. input_json_delta partial_json is tool-arg streaming noise, not a
     // visible token (YAN-764).
-    if (item.type === "content_block_delta" && d && typeof d === "object")
-      return hasText(d.text) || hasText(d.thinking);
+    if (item.type === "content_block_delta" && d && typeof d === "object") {
+      if (hasText(d.text)) return "answer";
+      return hasText(d.thinking) ? "reasoning" : null;
+    }
     if (item.type === "content_block_start" && item.content_block) {
       const blk = item.content_block;
       if (blk.type === CLAUDE_BLOCK.TOOL_USE || blk.type === CLAUDE_BLOCK.SERVER_TOOL_USE)
-        return hasText(blk.name);
-      return hasText(blk.text) || hasText(blk.thinking);
+        return hasText(blk.name) ? "answer" : null;
+      if (hasText(blk.text)) return "answer";
+      return hasText(blk.thinking) ? "reasoning" : null;
     }
     // Responses
-    if (RESPONSES_TOKEN_EVENTS.has(item.type)) return hasText(d);
+    if (RESPONSES_REASONING_EVENTS.has(item.type)) return hasText(d) ? "reasoning" : null;
+    if (RESPONSES_TOKEN_EVENTS.has(item.type)) return hasText(d) ? "answer" : null;
     // Audio / image-generation deltas (response.audio.delta, …partial_image)
     if (/audio|image/.test(item.type) && /delta|partial/.test(item.type))
-      return hasText(d) || hasText(item.partial_image_b64);
+      return hasText(d) || hasText(item.partial_image_b64) ? "answer" : null;
     if (item.type === "response.output_item.added" && item.item) {
       const it = item.item;
-      return (
-        (it.type === RESPONSES_ITEM.FUNCTION_CALL || it.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL) &&
+      return (it.type === RESPONSES_ITEM.FUNCTION_CALL ||
+        it.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL) &&
         hasText(it.name)
-      );
+        ? "answer"
+        : null;
     }
-    return false; // message_start / message_delta / ping / terminal / lifecycle
+    return null; // message_start / message_delta / ping / terminal / lifecycle
   }
 
-  // Ollama NDJSON
+  // Ollama NDJSON (`message.thinking`, or reasoning_content/reasoning via extractReasoningText)
   if (item.message && typeof item.message === "object") {
     const m = item.message;
-    return (
+    if (
       hasText(m.content) ||
-      extractReasoningText(m) !== "" ||
       (Array.isArray(m.tool_calls) && m.tool_calls.some(isProductiveToolCall))
-    );
+    )
+      return "answer";
+    return extractReasoningText(m) !== "" || hasText(m.thinking) ? "reasoning" : null;
   }
   // llama.cpp /infill chunk
-  if (hasText(item.content)) return true;
+  if (hasText(item.content)) return "answer";
 
-  // Gemini-family
+  // Gemini-family: thought parts are reasoning, other text/calls/media are answers.
   const parts =
     item.candidates?.[0]?.content?.parts ?? item.response?.candidates?.[0]?.content?.parts;
-  if (Array.isArray(parts))
-    return parts.some(
-      (p) => hasText(p?.text) || hasText(p?.functionCall?.name) || hasText(p?.inlineData?.data),
-    );
-  return false;
+  if (Array.isArray(parts)) {
+    let sawReasoning = false;
+    for (const p of parts) {
+      if (hasText(p?.functionCall?.name) || hasText(p?.inlineData?.data)) return "answer";
+      if (hasText(p?.text)) {
+        if (p.thought === true) sawReasoning = true;
+        else return "answer";
+      }
+    }
+    return sawReasoning ? "reasoning" : null;
+  }
+  return null;
+}
+
+export function hasMeaningfulToken(item) {
+  return tokenKind(item) !== null;
+}
+
+// Like hasMeaningfulToken, but reasoning alone does not count (YAN-1031).
+export function hasAnswerToken(item) {
+  return tokenKind(item) === "answer";
 }
 
 // Fix invalid id (generic or too short)

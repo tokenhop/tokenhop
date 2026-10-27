@@ -290,6 +290,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
         judgeModel,
         tuning: fusionTuning,
         onAttempt: options?.onAttempt,
+        clientSignal: request?.signal ?? null,
       });
     }
 
@@ -630,6 +631,7 @@ async function handleSingleModelChat(
           tuning: fusionTuning,
           onAttempt: nestedObserver,
           parentAttempt: attempt,
+          clientSignal: request?.signal ?? null,
         });
       }
 

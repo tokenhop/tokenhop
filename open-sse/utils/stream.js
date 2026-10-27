@@ -15,6 +15,7 @@ import {
   parseSSELine,
   hasValuableContent,
   hasMeaningfulToken,
+  hasAnswerToken,
   fixInvalidId,
   formatSSE,
 } from "./streamHelpers.js";
@@ -81,6 +82,7 @@ export function createSSEStream(options = {}) {
     onStreamResult = null,
     keyContext = {},
     onFirstToken = null,
+    onFirstAnswerToken = null,
   } = options;
 
   let buffer = "";
@@ -142,15 +144,20 @@ export function createSSEStream(options = {}) {
   // Routing-only observation (YAN-764): first meaningful payload actually emitted to
   // the client. Separate from raw ttftAt/usage/output; never alters them.
   let firstTokenAt = null;
+  let firstAnswerAt = null; // first answer token (reasoning does not count) (YAN-1031)
   let resultNotified = false;
   const observeEmitted = (item) => {
-    if (firstTokenAt !== null) return;
+    if (firstTokenAt !== null && firstAnswerAt !== null) return;
     try {
       const payload =
         item && typeof item === "object" && item.event && item.data ? item.data : item;
-      if (hasMeaningfulToken(payload)) {
+      if (firstTokenAt === null && hasMeaningfulToken(payload)) {
         firstTokenAt = Date.now();
         onFirstToken?.();
+      }
+      if (firstAnswerAt === null && hasAnswerToken(payload)) {
+        firstAnswerAt = Date.now();
+        onFirstAnswerToken?.();
       }
     } catch {
       // fail-open
@@ -158,7 +165,7 @@ export function createSSEStream(options = {}) {
   };
   // Observe a raw SSE line ("data: {...}") about to be enqueued as-is (passthrough).
   const observeEmittedLine = (line) => {
-    if (firstTokenAt !== null || !line.startsWith("data:")) return;
+    if ((firstTokenAt !== null && firstAnswerAt !== null) || !line.startsWith("data:")) return;
     try {
       observeEmitted(JSON.parse(line.slice(5).trim()));
     } catch {
@@ -242,10 +249,12 @@ export function createSSEStream(options = {}) {
         provider,
         connectionId,
         tokens: null,
-        // A clean 200 that never emitted a token is not a success (YAN-1023).
+        // A clean 200 that never emitted an answer token is not a success:
+        // reasoning-only counts as EMPTY too (YAN-1023, YAN-1031).
+        // accumulatedContent holds answer text only (thinking goes to accumulatedThinking).
         status: streamError
           ? "FAILED stream"
-          : firstTokenAt === null && totalContentLength === 0
+          : firstAnswerAt === null && !accumulatedContent
             ? "200 EMPTY"
             : "200 OK",
       }).catch(() => {});
@@ -259,7 +268,7 @@ export function createSSEStream(options = {}) {
         },
         finalUsage,
         ttftAt,
-        { error: streamError, firstTokenAt, cancelled },
+        { error: streamError, firstTokenAt, firstAnswerAt, cancelled },
       );
     }
   };
@@ -796,6 +805,7 @@ export function createSSETransformStreamWithLogger(
   onStreamResult = null,
   keyContext = {},
   onFirstToken = null,
+  onFirstAnswerToken = null,
 ) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
@@ -814,6 +824,7 @@ export function createSSETransformStreamWithLogger(
     onStreamResult,
     keyContext,
     onFirstToken,
+    onFirstAnswerToken,
   });
 }
 
@@ -828,6 +839,7 @@ export function createPassthroughStreamWithLogger(
   onStreamResult = null,
   keyContext = {},
   onFirstToken = null,
+  onFirstAnswerToken = null,
 ) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
@@ -841,5 +853,6 @@ export function createPassthroughStreamWithLogger(
     onStreamResult,
     keyContext,
     onFirstToken,
+    onFirstAnswerToken,
   });
 }

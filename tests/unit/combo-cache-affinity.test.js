@@ -689,7 +689,7 @@ describe("fusion panel pins (YAN-1673)", () => {
 
   // Panel member "inner" is an affinity combo; "p/x" a plain model; "p/judge" the judge.
   const fusion =
-    ({ judge = () => answer("fused"), failing = new Set(), served = [] } = {}) =>
+    ({ judge = () => answer("fused"), failing = new Set(), served = [], direct = null } = {}) =>
     (body, _model, parentAttempt) =>
       handleFusionChat({
         body,
@@ -698,8 +698,9 @@ describe("fusion panel pins (YAN-1673)", () => {
         tuning,
         log,
         parentAttempt,
-        handleSingleModel: async (b, m, _isPanel, attempt) => {
-          if (m === "p/judge") return judge();
+        handleSingleModel: async (b, m, isPanel, attempt) => {
+          if (m === "p/judge") return judge(b, attempt);
+          if (direct && !isPanel) return direct(m, attempt);
           if (failing.has(m)) return fail();
           if (m !== "inner") return answer(`from ${m}`);
           await sleep(1); // async lookups before a real call picks its member
@@ -730,10 +731,20 @@ describe("fusion panel pins (YAN-1673)", () => {
       conversationKey: "conv1",
     });
 
-  it("an outer combo that skips the fusion member leaves no pin from its panel", async () => {
-    // The judge streams nothing: the outer probe skips the fusion and serves p/b.
+  it("an empty judge falls back to the first source and keeps its panel pin (YAN-1030)", async () => {
     const res = await outer(["fusion", "p/b"], {
       fusion: fusion({ judge: emptyStream }),
+      "p/b": async () => ok(),
+    });
+    expect(res.ok).toBe(true);
+    expect(await res.json()).toMatchObject({ choices: [{ message: { content: "from inner/a" } }] });
+    expect(comboPins.peek("\ninner\nconv1")).toBe("inner/a");
+  });
+
+  it("an outer combo that skips the fusion member leaves no pin from its panel", async () => {
+    // Judge and fallback both stream nothing: the fusion 502s and the outer serves p/b.
+    const res = await outer(["fusion", "p/b"], {
+      fusion: fusion({ judge: emptyStream, direct: emptyStream }),
       "p/b": async () => ok(),
     });
     expect(res.ok).toBe(true);
@@ -761,5 +772,90 @@ describe("fusion panel pins (YAN-1673)", () => {
     expect(res.ok).toBe(true);
     expect(served).toEqual(["inner/a", "inner/a"]);
     expect(comboPins.peek("\ninner\nconv1")).toBe("inner/a");
+  });
+
+  // YAN-1030 findings 3+6: a rejected empty served call (judge) leaves no pin and
+  // no sample on the enclosing attempt; the accepted fallback's pins/feedback stay.
+  const pinningJudge = (released) => (_b, attempt) => {
+    attempt.commitOnServe(
+      () => comboPins.set("\njudge\nconv1", "judge-acct"),
+      () => released.push("judge"),
+    );
+    return emptyStream();
+  };
+
+  it("an empty judge leaves no pin of its own while the fallback's pin is kept (nested)", async () => {
+    const released = [];
+    const res = await outer(["fusion", "p/b"], {
+      fusion: fusion({ judge: pinningJudge(released) }),
+      "p/b": async () => ok(),
+    });
+    expect(res.ok).toBe(true);
+    expect(comboPins.peek("\njudge\nconv1")).toBeUndefined();
+    expect(released).toEqual(["judge"]);
+    expect(comboPins.peek("\ninner\nconv1")).toBe("inner/a");
+  });
+
+  it("an empty top-level judge leaves no pin either; an accepted one commits", async () => {
+    const released = [];
+    const run = (judge) =>
+      fusion({ judge })({ messages: [{ role: "user", content: "x" }] }, "fusion", null);
+    const res = await run(pinningJudge(released));
+    expect(res.ok).toBe(true);
+    expect(comboPins.peek("\njudge\nconv1")).toBeUndefined();
+    expect(released).toEqual(["judge"]);
+
+    const accepted = await run((_b, attempt) => {
+      attempt.commitOnServe(() => comboPins.set("\njudge\nconv1", "judge-acct"));
+      return answer("fused");
+    });
+    expect(accepted.ok).toBe(true);
+    expect(comboPins.peek("\njudge\nconv1")).toBe("judge-acct");
+  });
+
+  it("a rejected judge stream records nothing on the parent; the accepted fallback registers and feeds it", async () => {
+    const parentSettles = [];
+    const parentAttempt = {
+      registerStream: vi.fn(() => (info) => parentSettles.push(info)),
+      commitOnServe: (fn) => fn(),
+    };
+    let fallbackSettle;
+    const judgeSettle = (_b, attempt) => {
+      // streamingHandler registers when the stream is built, before the emptiness check.
+      attempt.registerStream()?.({ error: new Error("empty-stream") });
+      return emptyStream();
+    };
+    const res = await fusion({
+      judge: judgeSettle,
+      direct: (_m, attempt) => {
+        fallbackSettle = attempt.registerStream();
+        return answer("fb");
+      },
+    })({ messages: [{ role: "user", content: "x" }] }, "fusion", parentAttempt);
+    expect(res.ok).toBe(true);
+    // Rejected judge never reached the parent; only the accepted fallback did.
+    expect(parentAttempt.registerStream).toHaveBeenCalledTimes(1);
+    expect(parentSettles).toEqual([]);
+    fallbackSettle({ firstTokenAt: 42 });
+    expect(parentSettles).toEqual([{ firstTokenAt: 42 }]);
+  });
+
+  // YAN-1030: a served call that throws closes its scope; its queued pin is released.
+  it("a judge that pins and then throws commits no pin and the error propagates", async () => {
+    const released = [];
+    const boom = new Error("judge exploded");
+    await expect(
+      fusion({
+        judge: (_b, attempt) => {
+          attempt.commitOnServe(
+            () => comboPins.set("\njudge\nconv1", "judge-acct"),
+            () => released.push("judge"),
+          );
+          throw boom;
+        },
+      })({ messages: [{ role: "user", content: "x" }] }, "fusion", null),
+    ).rejects.toBe(boom);
+    expect(comboPins.peek("\njudge\nconv1")).toBeUndefined();
+    expect(released).toEqual(["judge"]);
   });
 });

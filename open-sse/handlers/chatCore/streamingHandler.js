@@ -52,6 +52,7 @@ function buildTransformStream({
   onStreamResult,
   keyContext = {},
   onFirstToken = null,
+  onFirstAnswerToken = null,
 }) {
   const isDroidCLI =
     userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
@@ -78,6 +79,7 @@ function buildTransformStream({
       onStreamResult,
       keyContext,
       onFirstToken,
+      onFirstAnswerToken,
     );
   }
 
@@ -98,6 +100,7 @@ function buildTransformStream({
       onStreamResult,
       keyContext,
       onFirstToken,
+      onFirstAnswerToken,
     );
   }
 
@@ -112,6 +115,7 @@ function buildTransformStream({
     onStreamResult,
     keyContext,
     onFirstToken,
+    onFirstAnswerToken,
   );
 }
 
@@ -149,8 +153,8 @@ export async function handleStreamingResponse({
   comboAttempt = null,
   onHedgeCancel = null,
 }) {
-  // Account health clears on the first real token, not on the 200 headers: a
-  // tokenless stream is a failed generation (YAN-1023).
+  // Account health clears on the first ANSWER token, not on reasoning or the
+  // 200 headers: a reasoning-only stream is a failed generation (YAN-1023, YAN-1031).
   let successNotified = false;
   const notifySuccess = () => {
     if (successNotified || !onRequestSuccess || comboAttempt?.signal?.aborted) return;
@@ -245,20 +249,21 @@ export async function handleStreamingResponse({
     model,
     connectionId,
     body,
-    // Content the token check didn't recognize still proves a healthy account.
+    // Answer content the token check didn't recognize still proves a healthy account.
+    // Thinking alone does not (YAN-1031).
     onStreamComplete: onStreamComplete
       ? (content, ...rest) => {
-          if (content?.content || content?.thinking) notifySuccess();
+          if (content?.content) notifySuccess();
           return onStreamComplete(content, ...rest);
         }
       : (content) => {
-          if (content?.content || content?.thinking) notifySuccess();
+          if (content?.content) notifySuccess();
         },
     apiKey,
     credentials,
     onStreamResult: (info) => settleOnce(info),
     keyContext,
-    onFirstToken: notifySuccess,
+    onFirstAnswerToken: notifySuccess,
   });
 
   // Terminal bytes when the stream aborts after HTTP 200 was already sent, so the
@@ -376,7 +381,7 @@ export function buildOnStreamComplete({
     contentObj,
     usage,
     ttftAt,
-    { error = null, firstTokenAt, cancelled = false } = {},
+    { error = null, firstTokenAt, firstAnswerAt, cancelled = false } = {},
   ) => {
     // A clean 200 that never emitted text, reasoning or a tool call is a failed
     // generation, not a success (YAN-1023). `undefined` = caller didn't track it.
@@ -389,6 +394,17 @@ export function buildOnStreamComplete({
       !contentObj?.thinking
     )
       error = { message: "empty streaming response" };
+    // Reasoning-only is also a failed generation (YAN-1031). `undefined`
+    // firstAnswerAt = caller didn't track it, so keep the old behaviour.
+    else if (
+      !cancelled &&
+      !error &&
+      firstAnswerAt !== undefined &&
+      firstAnswerAt === null &&
+      !contentObj?.content &&
+      (contentObj?.thinking || firstTokenAt !== null)
+    )
+      error = { message: "no answer content (reasoning only)" };
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime,
