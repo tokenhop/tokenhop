@@ -130,19 +130,17 @@ function createAffinityHandle(affinityKey, connectionId, token) {
     /**
      * Commit for a write deferred until an enclosing combo/fusion serves
      * (YAN-1673): a pin some other call wrote in the meantime (e.g. a fusion judge
-     * that failed over to another account) wins over this late write, and so does
-     * a routing-settings reset that cleared pins in between (generation check).
+     * that failed over to another account) wins over this late write, and a pin
+     * removed by a bulk reset of the account pin store since serve stays removed
+     * (generation check; YAN-1676).
      */
     deferredCommit() {
       const seen = accountPins.version(affinityKey);
       const seenGen = accountPins.generation();
       return () => {
-        if (accountPins.generation() !== seenGen) {
-          handle.release();
-          return;
-        }
         const now = accountPins.version(affinityKey);
-        if (now === undefined || now === seen) handle.commit();
+        if (now !== undefined ? now === seen : accountPins.generation() === seenGen)
+          handle.commit();
         else handle.release();
       };
     },

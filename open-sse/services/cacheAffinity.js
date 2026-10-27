@@ -51,10 +51,11 @@ export function createPinStore({
   const scopes = new Map(); // scope -> keys, insertion order = per-scope LRU order
 
   // Bumped by every bulk delete (clear/deleteWhere/deleteScope), even when it
-  // matched nothing: a deferred first-turn commit (whose entry may not exist yet)
-  // must still be stopped by a reset. Store-wide, not per-scope, because pred-based
-  // deletes cannot name scopes; the cost is that any reset, even of another combo,
-  // provider or workspace, drops in-flight deferred writes (the next turn re-pins).
+  // matched nothing: a deferred commit whose entry is gone (first turn, or removed
+  // by a reset) must not re-create it once a reset ran. Store-wide, not per-scope,
+  // because pred-based deletes cannot name scopes; the cost is that any reset drops
+  // in-flight deferred writes that have no entry yet (e.g. first-turn account pins,
+  // whose provisional pin lives in pendingAccountPins); the next turn pins again.
   let generation = 0;
   function remove(key) {
     const entry = map.get(key);
