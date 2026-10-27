@@ -669,7 +669,8 @@ function createAttemptFeedback(startedAt, record, parent) {
  *   (round-robin/weighted/fastest only; off for probes). Pinned: no strategy advance, no hedging.
  *   A first turn writes a provisional pin before any await so a concurrent first turn of the same
  *   conversation converges on the same member; it is confirmed by the member that serves and
- *   removed when nothing served.
+ *   removed when nothing served. Under a parentAttempt (nested combo) the confirm waits until
+ *   every enclosing level served too, and is dropped with the provisional pin otherwise (YAN-1624).
  * @param {string|null} [options.workspaceId=null] - Gateway workspace owning the pins (null = legacy)
  * @param {Iterable<string>} [options.pinExclude] - Capacity-adapter-added members; never pinned
  * @param {Function} [options.onFallback] - Awaited before trying the next model: ({ model, status }) => void

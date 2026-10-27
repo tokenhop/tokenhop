@@ -556,22 +556,29 @@ describe("serve-only attempts and cleanup review regressions", () => {
     expect(comboPins.peek("\nc\nconv1")).toBe("p/a");
   });
 
-  it("a nested combo that loses the outer hedge writes no pin; the winner's nested pin commits (YAN-1624)", async () => {
-    // Each outer hedge member is a nested affinity combo whose leaf serves at once.
-    // `outerDelay` holds the outer level's decision after the inner combo served
-    // (the window where the outer probe is still reading or the race is open).
-    const nested = (name, outerDelay) => async (_body, _model, parentAttempt) => {
-      const res = await run(async () => ok(), {
+  // YAN-1624: a nested affinity combo whose leaf serves at once; `outer` then
+  // shapes what the outer level sees after the inner combo served.
+  const nested =
+    (name, outer, failing = new Set()) =>
+    async (_body, _model, parentAttempt) => {
+      const res = await run(async (_b, model) => (failing.has(model) ? fail() : ok()), {
         comboName: name,
         models: [`${name}/a`, `${name}/b`],
         comboStrategy: "round-robin",
         cacheAffinity: true,
         parentAttempt,
       });
-      await sleep(outerDelay);
-      return res;
+      return outer ? outer(res, parentAttempt) : res;
     };
-    const members = { slow: nested("slow", 60), fast: nested("fast", 0) };
+
+  it("a nested combo that loses the outer hedge writes no pin; the winner's nested pin commits (YAN-1624)", async () => {
+    // The leader's inner combo served but the outer race is still open: it only
+    // returns once the backup won and the race aborted it.
+    const waitForAbort = (res, attempt) =>
+      new Promise((resolve) =>
+        attempt.signal.addEventListener("abort", () => resolve(res), { once: true }),
+      );
+    const members = { slow: nested("slow", waitForAbort), fast: nested("fast") };
     const res = await run((body, model, attempt) => members[model](body, model, attempt), {
       comboName: "outer",
       models: ["slow", "fast"],
@@ -579,8 +586,21 @@ describe("serve-only attempts and cleanup review regressions", () => {
       hedgeDelayMs: 10,
     });
     expect(res.ok).toBe(true);
-    await sleep(80); // let the aborted leader finish
     expect(comboPins.peek("\nslow\nconv1")).toBeUndefined();
     expect(comboPins.peek("\nfast\nconv1")).toBe("fast/a");
+  });
+
+  it("a nested combo the outer probe skips leaves neither its pin nor its provisional pin (YAN-1624)", async () => {
+    // inner/a fails (provisional pin on a), inner/b serves, then the outer probe
+    // finds an empty stream and moves on to p/b.
+    const emptyStream = () =>
+      new Response("data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } });
+    const inner = nested("inner", emptyStream, new Set(["inner/a"]));
+    const res = await run(
+      (body, model, attempt) => (model === "inner" ? inner(body, model, attempt) : ok()),
+      { models: ["inner", "p/b"] },
+    );
+    expect(res.ok).toBe(true);
+    expect(comboPins.peek("\ninner\nconv1")).toBeUndefined();
   });
 });
