@@ -22,6 +22,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { BACKUPS_DIR, ensureDirs } from "./paths.js";
+import { loadSqlJs } from "./sqljsLoader.js";
 import { timestampSlug, getAppVersion } from "./version.js";
 
 const KEEP_BACKUPS = 3;
@@ -64,7 +65,8 @@ export function makeProtectedBackupDir(prefix) {
 }
 
 // sql.js WASM init is async; the returned verifier is sync so snapshot → check
-// → destructive txn never yields. Cached: one init per process.
+// → destructive txn never yields. The WASM module is the process-wide one from
+// sqljsLoader.js (never a second init).
 let verifierPromise = null;
 
 const invalidBackup = (message, cause) =>
@@ -86,11 +88,13 @@ const invalidBackup = (message, cause) =>
 export function prepareProtectedBackupVerifier(db = null) {
   if (db && typeof db.exec === "function" && db.driver && db.driver !== "sql.js")
     return Promise.resolve((dir, file) => verifyProtectedBackupNativeSync(db, dir, file));
-  verifierPromise ??= (async () => {
-    const { default: initSqlJs } = await import("sql.js");
-    const SQL = await initSqlJs();
-    return (dir, file) => verifyProtectedBackupSync(SQL, dir, file);
-  })();
+  verifierPromise ??= loadSqlJs().then(
+    (SQL) => (dir, file) => verifyProtectedBackupSync(SQL, dir, file),
+    (err) => {
+      verifierPromise = null;
+      throw err;
+    },
+  );
   return verifierPromise;
 }
 
