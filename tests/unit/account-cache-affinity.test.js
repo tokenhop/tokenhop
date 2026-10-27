@@ -401,4 +401,13 @@ describe("deferred commit (YAN-1673)", () => {
     panel.affinity.deferredCommit()();
     expect(accountPins.peek(key())).toBe(panel.connectionId);
   });
+
+  it("a reset between serve and the deferred commit leaves no pin (YAN-1676)", async () => {
+    accountPins.clear();
+    const panel = await getProviderCredentials("p", null, "m", { conversationKey: "conv1" });
+    const commitLater = panel.affinity.deferredCommit();
+    resetAccountSelection("p"); // routing-settings reset lands before the outer level commits
+    commitLater();
+    expect(accountPins.peek(key())).toBeUndefined();
+  });
 });

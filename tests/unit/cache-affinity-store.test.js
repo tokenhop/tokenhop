@@ -68,6 +68,24 @@ describe("createPinStore", () => {
     store.clear();
     expect(store.size).toBe(0);
   });
+
+  it("generation bumps on bulk deletes, even matching nothing; not on set/delete", () => {
+    const { store } = makeStore();
+    expect(store.generation()).toBe(0);
+    store.set("x1", 1);
+    store.delete("x1");
+    expect(store.generation()).toBe(0); // single-key delete and set never bump
+    store.deleteWhere((k) => k.startsWith("nope"));
+    expect(store.generation()).toBe(1); // a no-match delete still bumps
+    store.deleteScope("missing");
+    expect(store.generation()).toBe(2);
+    store.set("x1", 1); // scope = first segment "x1"
+    store.deleteScope("x1");
+    expect(store.generation()).toBe(3);
+    store.clear();
+    expect(store.generation()).toBe(4);
+    expect(store.size).toBe(0);
+  });
 });
 
 describe("createPinStore scopes and max age (YAN-1221, YAN-1224)", () => {

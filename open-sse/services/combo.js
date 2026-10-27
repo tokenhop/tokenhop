@@ -735,9 +735,12 @@ export async function handleComboChat({
       comboPins.set(affinityKey, model);
       return;
     }
-    // A deferred write must not replace a pin a later turn wrote meanwhile.
+    // A deferred write must not replace a pin a later turn wrote meanwhile, nor
+    // outlive a reset (generation) that ran between serve and this commit.
     const seen = comboPins.version(affinityKey);
+    const seenGen = comboPins.generation();
     const commit = () => {
+      if (comboPins.generation() !== seenGen) return;
       const now = comboPins.version(affinityKey);
       if (now === undefined || now === seen) comboPins.set(affinityKey, model);
     };

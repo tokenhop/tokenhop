@@ -622,6 +622,31 @@ describe("serve-only attempts and cleanup review regressions", () => {
     held[0].fn(); // turn 1's outer level wins late
     expect(comboPins.peek("\ninner\nconv1")).toBe("inner/b");
   });
+
+  it("a reset between serve and a deferred pin commit leaves no pin (YAN-1676)", async () => {
+    // Turn 1's outer level is still deciding: its queued commit is held here.
+    const held = [];
+    const parentAttempt = { commitOnServe: (fn, release) => held.push({ fn, release }) };
+    const run = (handleSingleModel, extra = {}) =>
+      handleComboChat({
+        body: { messages: [] },
+        models: ["p/a", "p/b"],
+        comboStrategy: "round-robin",
+        comboName: "inner",
+        conversationKey: "conv1",
+        handleSingleModel,
+        log,
+        parentAttempt,
+        cacheAffinity: true,
+        ...extra,
+      });
+    const res = await run(async () => ok());
+    expect(res.ok).toBe(true);
+    expect(comboPins.peek("\ninner\nconv1")).toBe("p/a"); // provisional pin until the outer level decides
+    resetComboRotation(); // routing-settings reset lands before the outer level commits
+    held[0].fn();
+    expect(comboPins.peek("\ninner\nconv1")).toBeUndefined();
+  });
 });
 
 describe("fusion panel pins (YAN-1673)", () => {
