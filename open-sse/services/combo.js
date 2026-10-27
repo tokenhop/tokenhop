@@ -1551,7 +1551,9 @@ function providerOfModel(modelStr) {
  * @param {string} [options.judgeModel] - Judge model; falls back to panel[0]
  * @param {Object} [options.tuning] - Override FUSION_DEFAULTS (minPanel, grace, timeout)
  * @param {object} [options.parentAttempt] - Trusted ancestor attempt (see handleComboChat); forwarded to
- *   served calls (judge / direct answer) only, never to panel calls.
+ *   served calls (judge / direct answer). Each panel call gets its own serve-only scope under it:
+ *   the panel's pins (nested combo, account) commit only when a 2xx judge answer used that panel's
+ *   answer and every enclosing level served, and are released otherwise (YAN-1673).
  * @param {Function} [options.onAttempt] - Fail-open attempt observer, called once per panel/judge
  *   call with { model, status, latencyMs, errorType, outcome, role }. Absent for normal traffic.
  * @returns {Promise<Response>}
@@ -1581,9 +1583,9 @@ export async function handleFusionChat({
             }
           };
           try {
-            // Panels are forced non-streaming probes; only served calls
-            // (judge / direct answer) carry the ancestor attempt.
-            const res = await rawHandleSingleModel(b, m, isPanel, isPanel ? null : attempt);
+            // Panels are forced non-streaming and carry their own pin scope;
+            // served calls (judge / direct answer) carry the ancestor attempt.
+            const res = await rawHandleSingleModel(b, m, isPanel, attempt);
             let errorText = "";
             try {
               const errJson = await res?.clone().json();
@@ -1643,66 +1645,97 @@ export async function handleFusionChat({
     panelBody.input = flattenToolHistory(panelBody.input);
   }
 
-  const t0 = Date.now();
-  const calls = panel.map((m) =>
-    withTimeout(handleSingleModel(panelBody, m, true), cfg.panelHardTimeoutMs),
-  );
-  const settled = await collectPanel(calls, { ...cfg, minPanel });
-  log.info("FUSION", `fan-out collected in ${Date.now() - t0}ms`);
+  // Panel pins wait in a per-panel scope until the fusion knows which answers it served.
+  const scopes = panel.map(() => createPanelScope(parentAttempt));
+  let usedPanels = [];
+  try {
+    const t0 = Date.now();
+    const calls = panel.map((m, i) =>
+      withTimeout(handleSingleModel(panelBody, m, true, scopes[i]), cfg.panelHardTimeoutMs),
+    );
+    const settled = await collectPanel(calls, { ...cfg, minPanel });
+    log.info("FUSION", `fan-out collected in ${Date.now() - t0}ms`);
 
-  // 2. Collect successful answers.
-  const answers = [];
-  for (let i = 0; i < settled.length; i++) {
-    const res = settled[i];
-    const model = panel[i];
-    if (!res) {
-      log.warn("FUSION", `Panel ${model} dropped (straggler/timeout)`);
-      continue;
-    }
-    if (res.__timeout) {
-      log.warn("FUSION", `Panel ${model} timed out`);
-      continue;
-    }
-    if (res.__error) {
-      log.warn("FUSION", `Panel ${model} threw`, {
-        error: res.__error?.message || String(res.__error),
-      });
-      continue;
-    }
-    if (!res.ok) {
-      log.warn("FUSION", `Panel ${model} failed`, { status: res.status });
-      continue;
-    }
-    try {
-      const json = await res.clone().json();
-      const text = extractPanelText(json);
-      if (text) {
-        answers.push({ model, text });
-        log.info("FUSION", `Panel ${model} ok (${text.length} chars)`);
-      } else {
-        log.warn("FUSION", `Panel ${model} returned empty content`);
+    // 2. Collect successful answers.
+    const answers = [];
+    for (let i = 0; i < settled.length; i++) {
+      const res = settled[i];
+      const model = panel[i];
+      if (!res) {
+        log.warn("FUSION", `Panel ${model} dropped (straggler/timeout)`);
+        continue;
       }
-    } catch (e) {
-      log.warn("FUSION", `Panel ${model} unparseable`, { error: e.message || String(e) });
+      if (res.__timeout) {
+        log.warn("FUSION", `Panel ${model} timed out`);
+        continue;
+      }
+      if (res.__error) {
+        log.warn("FUSION", `Panel ${model} threw`, {
+          error: res.__error?.message || String(res.__error),
+        });
+        continue;
+      }
+      if (!res.ok) {
+        log.warn("FUSION", `Panel ${model} failed`, { status: res.status });
+        continue;
+      }
+      try {
+        const json = await res.clone().json();
+        const text = extractPanelText(json);
+        if (text) {
+          answers.push({ model, text, index: i });
+          log.info("FUSION", `Panel ${model} ok (${text.length} chars)`);
+        } else {
+          log.warn("FUSION", `Panel ${model} returned empty content`);
+        }
+      } catch (e) {
+        log.warn("FUSION", `Panel ${model} unparseable`, { error: e.message || String(e) });
+      }
+    }
+
+    // 3. Degrade gracefully when the panel is too thin to fuse.
+    if (answers.length === 0) {
+      log.warn("FUSION", "All panel models failed");
+      return new Response(
+        JSON.stringify({ error: { message: "All fusion panel models failed" } }),
+        { status: 503, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (answers.length === 1) {
+      // The direct answer is a new served call that pins for itself; the panel call's pins drop.
+      log.info("FUSION", `Only ${answers[0].model} succeeded — answering directly (no fusion)`);
+      return handleSingleModel(body, answers[0].model, undefined, parentAttempt);
+    }
+
+    // 4. Judge analyzes + writes one final answer (streams to client if requested).
+    const judgeBody = appendUserTurn(body, buildJudgePrompt(answers));
+    log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
+    // Only served calls (judge / direct answer) forward the ancestor attempt.
+    const judged = await handleSingleModel(judgeBody, judge, undefined, parentAttempt);
+    if (judged?.ok) usedPanels = answers.map((a) => a.index);
+    return judged;
+  } finally {
+    // Panels whose answer the served response used confirm their pins (through every
+    // enclosing level); failed, straggling or unused panels release them.
+    const used = new Set(usedPanels);
+    for (let i = 0; i < scopes.length; i++) {
+      if (used.has(i)) scopes[i].win();
+      else scopes[i].close();
     }
   }
+}
 
-  // 3. Degrade gracefully when the panel is too thin to fuse.
-  if (answers.length === 0) {
-    log.warn("FUSION", "All panel models failed");
-    return new Response(JSON.stringify({ error: { message: "All fusion panel models failed" } }), {
-      status: 503,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-  if (answers.length === 1) {
-    log.info("FUSION", `Only ${answers[0].model} succeeded — answering directly (no fusion)`);
-    return handleSingleModel(body, answers[0].model, undefined, parentAttempt);
-  }
-
-  // 4. Judge analyzes + writes one final answer (streams to client if requested).
-  const judgeBody = appendUserTurn(body, buildJudgePrompt(answers));
-  log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
-  // Only served calls (judge / direct answer) forward the ancestor attempt; panels never do.
-  return handleSingleModel(judgeBody, judge, undefined, parentAttempt);
+/**
+ * Pin scope for one fusion panel call (YAN-1673): a serve-only child attempt whose
+ * only job is to hold commitOnServe() writes until the fusion decides. No abort
+ * signal, no hedging, no latency samples: panel calls behave as before otherwise.
+ * @param {object|null} parentAttempt
+ */
+function createPanelScope(parentAttempt) {
+  const scope = createAttemptFeedback(Date.now(), () => {}, parentAttempt);
+  scope.signal = null;
+  scope.isHedged = false;
+  scope.serveOnly = true;
+  scope.registerStream = () => null;
+  return scope;
 }
