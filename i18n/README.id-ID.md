@@ -96,14 +96,14 @@ Paket repo ini bersifat privat (`tokenhop-app`), jadi menjalankan dari source/Do
 ```bash
 cp .env.example .env
 npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+npm run dev -- --port 20128
 ```
 
 Mode produksi:
 
 ```bash
 npm run build
-PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
+npm run start -- --port 20128
 ```
 
 URL default:

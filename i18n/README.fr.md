@@ -101,14 +101,14 @@ Le paquet de ce dépôt est privé (`tokenhop-app`), donc l'exécution depuis le
 ```bash
 cp .env.example .env
 npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+npm run dev -- --port 20128
 ```
 
 Mode production :
 
 ```bash
 npm run build
-PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
+npm run start -- --port 20128
 ```
 
 URL par défaut :
@@ -1040,17 +1040,16 @@ export DATA_DIR="/var/lib/tokenhop"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
-export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
 # export NEXT_PUBLIC_CLOUD_URL=  # optionnel : uniquement pour un endpoint de synchronisation auto-hébergé (pas de cloud par défaut)
 export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
 # Démarrage
-npm run start
+npm run start -- --port 20128
 
 # Ou utilisez PM2
 npm install -g pm2
-pm2 start npm --name tokenhop -- start
+pm2 start npm --name tokenhop -- start -- --port 20128
 pm2 save
 pm2 startup
 ```
@@ -1242,7 +1241,7 @@ Remarques :
 
 **Le tableau de bord s'ouvre sur le mauvais port**
 
-- Définissez `PORT=20128` et `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
+- Vérifiez que vous exécutez depuis les sources avec `npm run start -- --port 20128` (Docker utilise déjà 20128). Pour un accès local, ne définissez pas `NEXT_PUBLIC_BASE_URL` ni `BASE_URL` : une fois définies, seule cette origine peut modifier les données du tableau de bord, et l'ouverture depuis une autre adresse (par exemple `127.0.0.1`) renvoie 403 `forbidden_origin`
 
 **La première connexion ne fonctionne pas**
 

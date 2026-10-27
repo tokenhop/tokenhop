@@ -99,14 +99,14 @@ Claude Code/Codex/Gemini CLI/OpenClaw/Cursor/Cline 设置:
 ```bash
 cp .env.example .env
 npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+npm run dev -- --port 20128
 ```
 
 生产模式：
 
 ```bash
 npm run build
-PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
+npm run start -- --port 20128
 ```
 
 默认 URL：
@@ -965,17 +965,16 @@ export DATA_DIR="/var/lib/tokenhop"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
-export NEXT_PUBLIC_BASE_URLhttp://localhost:20128"
 # export NEXT_PUBLIC_CLOUD_URL=  # 可选：仅用于自托管的云端同步端点（默认没有云端服务）
 export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
 # Start
-npm run start
+npm run start -- --port 20128
 
 # Or use PM2
 npm install -g pm2
-pm2 start npm --name tokenhop -- start
+pm2 start npm --name tokenhop -- start -- --port 20128
 pm2 save
 pm2 startup
 ```
@@ -1136,7 +1135,7 @@ docker stop tokenhop && docker rm tokenhop
 
 **仪表板在错误的端口打开**
 
-- 设置 `PORT=20128` 和 `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
+- 请确认是从源码运行，并使用 `npm run start -- --port 20128`（Docker 已经是 20128）。本地访问不要设置 `NEXT_PUBLIC_BASE_URL` 或 `BASE_URL`：设置后，只有该 origin 能修改仪表板数据，从其他地址（如 `127.0.0.1`）打开会返回 403 `forbidden_origin`
 
 **云端同步错误**
 

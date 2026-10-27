@@ -97,14 +97,14 @@ Gói kho lưu trữ này là riêng tư (`tokenhop-app`), vì vậy việc chạ
 ```bash
 cp .env.example .env
 npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+npm run dev -- --port 20128
 ```
 
 Chế độ Production:
 
 ```bash
 npm run build
-PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
+npm run start -- --port 20128
 ```
 
 URL mặc định:
@@ -951,17 +951,16 @@ export DATA_DIR="/var/lib/tokenhop"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
-export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
 # export NEXT_PUBLIC_CLOUD_URL=  # để trống theo mặc định: tokenhop không có endpoint đám mây mặc định (chỉ dùng cho endpoint đồng bộ tự lưu trữ)
 export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
 # Khởi động
-npm run start
+npm run start -- --port 20128
 
 # Hoặc sử dụng PM2
 npm install -g pm2
-pm2 start --name tokenhop -- start
+pm2 start --name tokenhop -- start -- --port 20128
 pm2 save
 pm2 startup
 ```
@@ -1123,7 +1122,7 @@ Ghi chú:
 
 **Bảng điều khiển mở sai cổng**
 
-- Đặt `PORT=20128` và `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
+- Kiểm tra bạn đang chạy từ mã nguồn với `npm run start -- --port 20128` (Docker đã dùng 20128). Khi truy cập cục bộ, đừng đặt `NEXT_PUBLIC_BASE_URL` hay `BASE_URL`: nếu đặt, chỉ origin đó mới có thể sửa dữ liệu bảng điều khiển và mở từ địa chỉ khác (ví dụ `127.0.0.1`) sẽ trả về 403 `forbidden_origin`
 
 **Lỗi đồng bộ đám mây**
 

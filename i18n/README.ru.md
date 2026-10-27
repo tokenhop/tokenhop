@@ -98,14 +98,14 @@ tokenhop
 ```bash
 cp .env.example .env
 npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+npm run dev -- --port 20128
 ```
 
 Режим Production:
 
 ```bash
 npm run build
-PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
+npm run start -- --port 20128
 ```
 
 URL по умолчанию:
@@ -955,16 +955,15 @@ export DATA_DIR="/var/lib/tokenhop"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
-export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
 export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
 # Start
-npm run start
+npm run start -- --port 20128
 
 # Or use PM2
 npm install -g pm2
-pm2 start --name tokenhop -- start
+pm2 start --name tokenhop -- start -- --port 20128
 pm2 save
 pm2 startup
 ```
@@ -1128,7 +1127,7 @@ docker stop tokenhop && docker rm tokenhop
 
 **Панель открывается на неверном порту**
 
-- Установите `PORT=20128` и `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
+- Убедитесь, что запускаете из исходников с `npm run start -- --port 20128` (в Docker уже используется 20128). Для локального доступа не задавайте `NEXT_PUBLIC_BASE_URL` и `BASE_URL`: если они заданы, только этот origin может изменять данные панели, а открытие с другого адреса (например `127.0.0.1`) возвращает 403 `forbidden_origin`
 
 **Ошибки облачной синхронизации**
 
