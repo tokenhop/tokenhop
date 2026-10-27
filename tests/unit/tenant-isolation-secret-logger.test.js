@@ -287,14 +287,9 @@ describe("deep request logger file output", () => {
     expect(legacyLogger.sessionPath).toBeTruthy();
   });
 
-  it("redacts the raw Vertex ?key= URL produced by VertexExecutor.buildUrl", async () => {
-    const { VertexExecutor } = await import("open-sse/executors/vertex.js");
-    const url = new VertexExecutor("vertex").buildUrl("gemini-2.5-pro", true, 0, {
-      apiKey: SENT.connectionApiKey,
-    });
-    expect(url, "positive control: executor puts the key in the URL").toContain(
-      SENT.connectionApiKey,
-    );
+  it("redacts a ?key= URL from a logged upstream request", async () => {
+    const url = `https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-2.5-pro:streamGenerateContent?alt=sse&key=${SENT.connectionApiKey}`;
+    expect(url, "positive control: literal URL carries the key").toContain(SENT.connectionApiKey);
     const logger = await freshLogger("vertex");
     logger.logTargetRequest(url, {}, { model: "m" });
     expect(leakSummary(logLeaks()), `vertex URL: ${NO_LEAKS}`).toBe("");

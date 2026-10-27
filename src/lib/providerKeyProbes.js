@@ -64,7 +64,9 @@ export async function probeWebProvider(provider, apiKey, fetchImpl = fetch) {
       headers["x-subscription-token"] = apiKey;
       break;
     case "key":
-      url += `?key=${encodeURIComponent(apiKey)}&q=ping&cx=test`;
+      // Key in a header, not ?key= — proxy relays log pathname+search (YAN-1629).
+      headers["x-goog-api-key"] = apiKey;
+      url += `?q=ping&cx=test`;
       break; // google-pse
     case "api_key":
       url += `?api_key=${encodeURIComponent(apiKey)}&q=ping&engine=google`;
@@ -206,11 +208,12 @@ export async function probeVertexKey(apiKey, fetchImpl = fetch) {
   }
   // Raw key: probe a nonexistent model — 404 means the key was accepted
   // (never 401 for an unknown model), 401/403 means the key is bad.
+  // Key in a header, not ?key= — proxy relays log pathname+search (YAN-1629).
   const probeRes = await fetchImpl(
-    `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent?key=${encodeURIComponent(apiKey)}`,
+    `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: "{}",
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     },

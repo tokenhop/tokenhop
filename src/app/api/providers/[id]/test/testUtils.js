@@ -710,9 +710,10 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "gemini": {
+        // Key in a header, not ?key= — proxy relays log pathname+search (YAN-1629).
         const res = await fetchWithConnectionProxy(
-          `https://generativelanguage.googleapis.com/v1/models?key=${connection.apiKey}`,
-          {},
+          `https://generativelanguage.googleapis.com/v1/models`,
+          { headers: { "x-goog-api-key": connection.apiKey } },
           effectiveProxy,
         );
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };

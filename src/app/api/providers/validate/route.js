@@ -20,6 +20,7 @@ import { normalizeProviderId } from "@/lib/providerNormalization";
 import {
   probeMediaProvider,
   probeRegistryProvider,
+  probeVertexKey,
   probeWebProvider,
 } from "@/lib/providerKeyProbes";
 
@@ -237,9 +238,10 @@ export async function POST(request) {
         }
 
         case "gemini": {
-          const geminiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`,
-          );
+          // Key in a header, not ?key= — proxy relays log pathname+search (YAN-1629).
+          const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1/models`, {
+            headers: { "x-goog-api-key": apiKey },
+          });
           isValid = geminiRes.ok;
           break;
         }
@@ -439,49 +441,10 @@ export async function POST(request) {
           break;
         }
 
-        case "vertex": {
-          // Raw key: probe global endpoint (always 404 for unknown model, never 401)
-          // SA JSON: attempt token mint via JWT assertion
-          const saJson = (() => {
-            try {
-              const p = JSON.parse(apiKey);
-              return p.type === "service_account" ? p : null;
-            } catch {
-              return null;
-            }
-          })();
-          if (saJson) {
-            // Validate SA JSON has required fields
-            isValid = !!(saJson.client_email && saJson.private_key && saJson.project_id);
-          } else {
-            // Raw key: probe Vertex — 404 means key is valid (model just doesn't exist), 401 means invalid key
-            const probeRes = await fetch(
-              `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent?key=${apiKey}`,
-              { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
-            );
-            isValid = probeRes.status !== 401 && probeRes.status !== 403;
-          }
-          break;
-        }
-
+        case "vertex":
         case "vertex-partner": {
-          const saJson = (() => {
-            try {
-              const p = JSON.parse(apiKey);
-              return p.type === "service_account" ? p : null;
-            } catch {
-              return null;
-            }
-          })();
-          if (saJson) {
-            isValid = !!(saJson.client_email && saJson.private_key && saJson.project_id);
-          } else {
-            const probeRes = await fetch(
-              `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent?key=${apiKey}`,
-              { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
-            );
-            isValid = probeRes.status !== 401 && probeRes.status !== 403;
-          }
+          // SA JSON: field check; raw key: header-auth probe (YAN-1629).
+          isValid = await probeVertexKey(apiKey);
           break;
         }
 
