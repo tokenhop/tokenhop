@@ -473,10 +473,14 @@ describe("backfilled lastUsedAt is the exact per-local-day max", () => {
     };
   };
   const insert = (dbLike) => {
-    for (const t of fixture().rows) {
+    for (const [index, t] of fixture().rows.toReversed().entries()) {
+      // Sparse ids cross the 50,000-id boundary without allocating 50,000 rows.
+      // Reverse timestamp order also proves that the merge keeps the maximum,
+      // rather than simply the last chunk's value for a local day.
+      const id = index < 2 ? index + 1 : 50_001 + index;
       dbLike.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, endpoint, status, tokens) VALUES(?, 'p', 'm', 'c1', '/v1/chat', 'ok', '{}')`,
-        [t],
+        `INSERT INTO usageHistory(id, timestamp, provider, model, connectionId, endpoint, status, tokens) VALUES(?, ?, 'p', 'm', 'c1', '/v1/chat', 'ok', '{}')`,
+        [id, t],
       );
     }
   };

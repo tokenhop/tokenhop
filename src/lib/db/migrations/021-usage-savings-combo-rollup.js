@@ -112,39 +112,42 @@ export default {
       ]);
     const sums = new Map();
     const combos = new Map();
-    // lastUsedAt per group via one SQL MAX/GROUP BY; only rows whose meta can
-    // carry savings or a combo name are fetched and parsed below. The rollup day
-    // is the JS local day (dayOf), but SQLite 'localtime' can disagree with Node
-    // when TZ is set without tzdata (musl/alpine), so rows are bucketed by UTC
-    // day + 15-minute slot instead: every real-world UTC offset is a multiple of
-    // 15 minutes, so a bucket lies wholly inside one local day and dayOf(MAX)
-    // gives the exact per-local-day max.
-    for (const r of db.all(
-      `SELECT date(timestamp) AS utcDay, strftime('%H', timestamp) AS utcHour,
-              CAST(strftime('%M', timestamp) AS INTEGER) / 15 AS slot,
-              workspaceId, userId, apiKeyId, provider, model,
-              connectionId, endpoint, MAX(timestamp) AS lastUsedAt
-       FROM usageHistory GROUP BY utcDay, utcHour, slot, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint`,
-    )) {
-      if (!r.utcDay || !Number.isFinite(Date.parse(r.lastUsedAt))) continue;
-      const dims = [
-        dayOf(r.lastUsedAt),
-        r.workspaceId || "",
-        r.userId || "",
-        r.apiKeyId || "local-no-key",
-        r.provider || "",
-        r.model || "",
-        r.connectionId || "",
-        r.endpoint || "",
-      ];
-      // Normalised NULL/'' dims can merge two SQL groups into one key: keep the
-      // newest lastUsedAt (same max-merge as the live helper).
-      const key = JSON.stringify(dims);
-      const prev = sums.get(key);
-      if (prev) {
-        if (r.lastUsedAt > prev.lastUsedAt) prev.lastUsedAt = r.lastUsedAt;
-      } else {
-        sums.set(key, { dims, ...zeroSavings(), lastUsedAt: r.lastUsedAt });
+    // SQLite 'localtime' can disagree with the JS rollup day when TZ is set
+    // without tzdata (musl/alpine). A 900-second (15-minute) UTC bucket lies in
+    // one local day for every real-world offset (multiples of 15 minutes).
+    // Fold bounded id windows with MAX: max-merge is associative. Only rows
+    // whose meta can carry savings or a combo are fetched and parsed below.
+    const bounds = db.get(`SELECT MIN(id) AS firstId, MAX(id) AS lastId FROM usageHistory`);
+    for (let start = bounds.firstId; start != null && start <= bounds.lastId; start += 50_000) {
+      const rows = db.all(
+        `SELECT CAST(strftime('%s', timestamp) AS INTEGER) / 900 AS bucket,
+                workspaceId, userId, apiKeyId, provider, model,
+                connectionId, endpoint, MAX(timestamp) AS lastUsedAt
+         FROM usageHistory WHERE id >= ? AND id < ?
+         GROUP BY bucket, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint`,
+        [start, start + 50_000],
+      );
+      for (const r of rows) {
+        if (r.bucket == null || !Number.isFinite(Date.parse(r.lastUsedAt))) continue;
+        const dims = [
+          dayOf(r.lastUsedAt),
+          r.workspaceId || "",
+          r.userId || "",
+          r.apiKeyId || "local-no-key",
+          r.provider || "",
+          r.model || "",
+          r.connectionId || "",
+          r.endpoint || "",
+        ];
+        // Normalised NULL/'' dims and separate id windows can merge groups:
+        // keep the newest lastUsedAt (same max-merge as the live helper).
+        const key = JSON.stringify(dims);
+        const prev = sums.get(key);
+        if (prev) {
+          if (r.lastUsedAt > prev.lastUsedAt) prev.lastUsedAt = r.lastUsedAt;
+        } else {
+          sums.set(key, { dims, ...zeroSavings(), lastUsedAt: r.lastUsedAt });
+        }
       }
     }
     let id = 0;

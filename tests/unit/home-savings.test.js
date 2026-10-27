@@ -3,7 +3,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildSavingsEntry } from "../../src/lib/home/savings.js";
-import { seedTenancy } from "../setup/tenancyHarness.js";
 
 const H = 3600_000;
 const DAY = 24 * H;
@@ -315,8 +314,12 @@ describe("home summary today/24h top combos", () => {
   });
 
   it("scopes by workspace", async () => {
-    const t = await seedTenancy();
-    const ws = t.a.personal;
+    // A bare workspace row: seeding users would put later route tests into multi-user mode.
+    const ws = "ws-home-scope";
+    adapter.run(
+      `INSERT OR IGNORE INTO workspaces(id, name, kind, createdAt, updatedAt) VALUES(?, 'Scope', 'shared', ?, ?)`,
+      [ws, new Date(NOW).toISOString(), new Date(NOW).toISOString()],
+    );
     adapter.run(
       `INSERT INTO usageHistory(timestamp, provider, model, meta, workspaceId) VALUES(?, 'openai', 'gpt-5', ?, ?)`,
       [new Date(NOW - H).toISOString(), combo("mine"), ws],
