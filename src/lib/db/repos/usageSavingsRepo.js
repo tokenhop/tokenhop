@@ -29,7 +29,7 @@ export const SAVINGS_LIFETIME_KEY = "savingsTokensLifetime";
  * Sum the saved tokens of every usageHistory row (YAN-408). One SQL aggregate
  * using JSON1 (`json_each`/`json_extract` ship with every supported driver —
  * `getUsageTotals` already relies on them), so JS never sees the rows. Sums
- * only positive per-method `tokensSavedEst`, matching rowSavedFromSavings.
+ * only positive per-method `tokensSavedEst`, matching savingsDeltas.
  * Runs at most once per install, before any incremental counter write.
  * @param {object} adapter sync DB adapter (inside a transaction)
  * @returns {number} lifetime saved tokens across all recorded rows

@@ -13,7 +13,7 @@ vi.mock("next/server", () => ({
   NextResponse: { json: (body, init) => ({ status: init?.status || 200, body, init }) },
 }));
 
-const { rowSavedFromSavings } = await import("@/lib/db/repos/usageRepo.js");
+const { savingsDeltas } = await import("@/lib/db/helpers/usageSavingsRollup.js");
 
 describe("SAVINGS_MILESTONES", () => {
   it("is the 100k / 1M / 10M ladder", () => {
@@ -61,24 +61,21 @@ describe("normalizeAckedMilestone", () => {
   });
 });
 
-describe("rowSavedFromSavings", () => {
+describe("savingsDeltas headline (lifetime counter source)", () => {
+  const saved = (savings) => savingsDeltas({ savings }).savingsSavedEst;
   it("sums only positive per-method savings", () => {
     expect(
-      rowSavedFromSavings({
-        byMethod: { rtk: { tokensSavedEst: 100 }, headroom: { tokensSavedEst: 50 } },
-      }),
+      saved({ byMethod: { rtk: { tokensSavedEst: 100 }, headroom: { tokensSavedEst: 50 } } }),
     ).toBe(150);
     expect(
-      rowSavedFromSavings({
-        byMethod: { rtk: { tokensSavedEst: 100 }, headroom: { tokensSavedEst: -3 } },
-      }),
+      saved({ byMethod: { rtk: { tokensSavedEst: 100 }, headroom: { tokensSavedEst: -3 } } }),
     ).toBe(100);
   });
 
   it("returns 0 for missing or empty savings", () => {
-    expect(rowSavedFromSavings(null)).toBe(0);
-    expect(rowSavedFromSavings({ byMethod: {} })).toBe(0);
-    expect(rowSavedFromSavings({ tokensSavedEst: 999 })).toBe(0);
+    expect(savingsDeltas(null).savingsSavedEst).toBe(0);
+    expect(saved({ byMethod: {} })).toBe(0);
+    expect(saved({ tokensSavedEst: 999 })).toBe(0);
   });
 });
 

@@ -357,8 +357,13 @@ function createStage(db, backend) {
      */
     hasSavingsGaps() {
       if (!present.has("usageRollup")) return false;
-      const rows = backend.all(`SELECT absent FROM ${backend.table("usageRollup")}`);
-      return rows.length > 0 && rows.every((r) => (r.absent || "").includes("savingsSavedEst"));
+      const t = backend.table("usageRollup");
+      // One bounded aggregate: no staged row may reach the JS heap.
+      const r = backend.get(
+        `SELECT EXISTS(SELECT 1 FROM ${t}) AS anyRow,
+                EXISTS(SELECT 1 FROM ${t} WHERE absent IS NULL OR instr(absent, '"savingsSavedEst"') = 0) AS hasFull`,
+      );
+      return !!r?.anyRow && !r.hasFull;
     },
 
     /** Insert every section into the live tables (inside the caller's transaction). */

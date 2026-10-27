@@ -11,6 +11,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getAdapter } from "@/lib/db/driver.js";
 import * as dbApi from "@/lib/db/index.js";
+import { INSTANCE_SNAPSHOT_SECTION_NAMES } from "@/lib/db/helpers/instanceSnapshotTables.js";
 import { deriveApiKeyHashKey, hashApiKey, masterKeyId } from "@/lib/security/masterKey.js";
 import { apiKeyPrefix } from "@/shared/utils/apiKey.js";
 import { assertIsolatedHome } from "../helpers/isolatedHome.js";
@@ -669,10 +670,77 @@ describe("instance full-table sections (encrypted v3)", () => {
       { comboName: "team combo", requests: 1 },
     ]);
   });
+
+  it("pre-021 snapshot WITHOUT a usageRollup section keeps live rollup savings/combos untouched", async () => {
+    // Live rollup holds rolled-up savings for pruned days that no history can reproduce.
+    db.run(
+      "UPDATE usageRollup SET savingsSavedEst = 77, rtkSavedEst = 77, lastUsedAt = ? WHERE apiKeyId = 'hk-1'",
+      ["2026-10-09T12:00:00.000Z"],
+    );
+    const before = {
+      rollup: dump("SELECT * FROM usageRollup ORDER BY dateKey, apiKeyId"),
+      combos: dump("SELECT * FROM usageComboRollup ORDER BY dateKey, comboName"),
+    };
+    const snapshot = await dbApi.exportDb();
+    snapshot.schemaVersion = 20;
+    delete snapshot.usageRollup;
+    delete snapshot.usageComboRollup;
+    await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    expect(dump("SELECT * FROM usageRollup ORDER BY dateKey, apiKeyId")).toEqual(before.rollup);
+    expect(dump("SELECT * FROM usageComboRollup ORDER BY dateKey, comboName")).toEqual(
+      before.combos,
+    );
+  });
+
+  it("current-schema snapshot with usageRollup but no usageComboRollup rebuilds combos from history, keeps rollup savings", async () => {
+    db.run("UPDATE usageRollup SET savingsSavedEst = 77, rtkSavedEst = 77 WHERE apiKeyId = 'hk-1'");
+    const snapshot = await dbApi.exportDb();
+    delete snapshot.usageComboRollup;
+    db.run(
+      `INSERT INTO usageComboRollup(dateKey, workspaceId, userId, apiKeyId, comboName, requests) VALUES('2026-10-09', ?, 'owner', 'hk-1', 'stale combo', 9) ON CONFLICT DO UPDATE SET requests = excluded.requests`,
+      [WS],
+    );
+    await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    // Savings are the snapshot's own values (current schema): not recomputed.
+    expect(
+      db.get("SELECT savingsSavedEst, rtkSavedEst FROM usageRollup WHERE apiKeyId = 'hk-1'"),
+    ).toMatchObject({ savingsSavedEst: 77, rtkSavedEst: 77 });
+    // Combos: never empty and never the replaced instance's stale rows.
+    expect(db.all("SELECT comboName, requests FROM usageComboRollup")).toEqual([
+      { comboName: "team combo", requests: 1 },
+    ]);
+  });
 });
 
 describe("instance full-table sections (plain hashed v2)", () => {
   beforeEach(seedHashedInstanceFull);
+
+  it("Users & teams off: a schema-20 import never touches telemetry rollups", async () => {
+    db.run("UPDATE usageRollup SET savingsSavedEst = 77, lastUsedAt = ? WHERE apiKeyId = 'hk-1'", [
+      "2026-10-09T12:00:00.000Z",
+    ]);
+    const snapshot = await dbApi.exportDb();
+    snapshot.schemaVersion = 20;
+    // A Users & teams OFF import carries no instance/telemetry sections at all.
+    for (const name of ["kv", "metadataCounters", ...INSTANCE_SNAPSHOT_SECTION_NAMES]) {
+      delete snapshot[name];
+    }
+    const before = {
+      rollup: dump("SELECT * FROM usageRollup ORDER BY dateKey, apiKeyId"),
+      combos: dump("SELECT * FROM usageComboRollup ORDER BY dateKey, comboName"),
+    };
+    const { isMultiUserEnabled } = await import("@/lib/users/featureSwitch.js");
+    isMultiUserEnabled.mockResolvedValue(false);
+    try {
+      await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    } finally {
+      isMultiUserEnabled.mockResolvedValue(true);
+    }
+    expect(dump("SELECT * FROM usageRollup ORDER BY dateKey, apiKeyId")).toEqual(before.rollup);
+    expect(dump("SELECT * FROM usageComboRollup ORDER BY dateKey, comboName")).toEqual(
+      before.combos,
+    );
+  });
 
   it("round-trips preferences, grants, budgets, usage, audit, invitations and requestDetails", async () => {
     const snapshot = await dbApi.exportDb();

@@ -39,7 +39,7 @@ function methodSaved(m) {
 
 /**
  * One request's savings deltas, frozen copy of the counting rules
- * (getUsageSavings in usageSavingsRepo.js / rowSavedFromSavings in usageRepo.js). Returns the shared frozen
+ * (getUsageSavings in usageSavingsRepo.js). Returns the shared frozen
  * SAVINGS_DEFAULTS when the row contributes nothing — no per-request
  * allocation in the common case (latencyDeltas precedent).
  */
@@ -79,19 +79,25 @@ const ROLLUP_DIMS = [
 const COMBO_DIMS = ["workspaceId", "userId", "apiKeyId"];
 
 /**
- * Reset and recompute the savings/combo/lastUsedAt measures from retained
- * usageHistory (live copy of migration 021's frozen backfill). Used after
- * restoring a pre-021 snapshot and after the legacy JSON import, where the
- * migration marker must not suppress re-derivation. `lastUsedAt` per group
- * comes from one SQL MAX/GROUP BY; only history rows whose meta can carry
- * savings or a combo name are fetched and parsed. Caller owns the transaction.
+ * Recompute derived rollup measures from retained usageHistory (live copy of
+ * migration 021's frozen backfill). Used after restoring a snapshot that
+ * replaces usageRollup without savings columns, after the legacy JSON import,
+ * and — combos only — when a snapshot replaces usageRollup but carries no
+ * usageComboRollup section. `lastUsedAt` per group comes from one SQL
+ * MAX/GROUP BY; only history rows whose meta can carry savings or a combo
+ * name are fetched and parsed. History already pruned is unrecoverable, so
+ * callers must only run this for data they are replacing. Caller owns the
+ * transaction.
  * @param {object} db sync adapter
+ * @param {{ savings?: boolean, combos?: boolean }} [parts] defaults to both
  */
-export function backfillSavingsComboFromHistory(db) {
-  db.exec(
-    `UPDATE usageRollup SET ${[...SAVINGS_COLUMNS, "lastUsedAt"].map((c) => `${c} = ${c === "lastUsedAt" ? "''" : "0"}`).join(", ")}`,
-  );
-  db.exec(`DELETE FROM usageComboRollup`);
+export function backfillSavingsComboFromHistory(db, { savings = true, combos = true } = {}) {
+  if (savings) {
+    db.exec(
+      `UPDATE usageRollup SET ${[...SAVINGS_COLUMNS, "lastUsedAt"].map((c) => `${c} = ${c === "lastUsedAt" ? "''" : "0"}`).join(", ")}`,
+    );
+  }
+  if (combos) db.exec(`DELETE FROM usageComboRollup`);
   const dayOf = (ts) => {
     const d = new Date(ts);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -109,20 +115,23 @@ export function backfillSavingsComboFromHistory(db) {
   };
   // date(..., 'localtime'): history timestamps are ISO instants; the rollup
   // day is server-local, exactly like localDateKey().
-  for (const r of db.all(
-    `SELECT date(timestamp, 'localtime') AS dateKey, ${ROLLUP_DIMS.join(", ")}, MAX(timestamp) AS lastUsedAt
-     FROM usageHistory GROUP BY dateKey, ${ROLLUP_DIMS.join(", ")}`,
-  )) {
+  for (const r of savings
+    ? db.all(
+        `SELECT date(timestamp, 'localtime') AS dateKey, ${ROLLUP_DIMS.join(", ")}, MAX(timestamp) AS lastUsedAt
+         FROM usageHistory GROUP BY dateKey, ${ROLLUP_DIMS.join(", ")}`,
+      )
+    : []) {
     if (!r.dateKey || !Number.isFinite(Date.parse(r.lastUsedAt))) continue;
     const g = groupFor([r.dateKey, ...dimsOf(r, ROLLUP_DIMS)]);
     if (r.lastUsedAt > g.lastUsedAt) g.lastUsedAt = r.lastUsedAt;
   }
-  const combos = new Map();
+  const comboCounts = new Map();
   let id = 0;
   for (;;) {
     const rows = db.all(
       `SELECT id, timestamp, ${ROLLUP_DIMS.join(", ")}, meta FROM usageHistory
-       WHERE id > ? AND (meta LIKE '%"savings"%' OR meta LIKE '%"comboName"%') ORDER BY id LIMIT 1000`,
+       WHERE id > ? AND (${[savings && `meta LIKE '%"savings"%'`, combos && `meta LIKE '%"comboName"%'`].filter(Boolean).join(" OR ")})
+       ORDER BY id LIMIT 1000`,
       [id],
     );
     if (!rows.length) break;
@@ -131,23 +140,25 @@ export function backfillSavingsComboFromHistory(db) {
       try {
         meta = JSON.parse(r.meta);
       } catch {}
-      const d = savingsDeltas(meta);
-      if (d !== SAVINGS_DEFAULTS) {
-        const g = groupFor([dayOf(r.timestamp), ...dimsOf(r, ROLLUP_DIMS)]);
-        for (const c of SAVINGS_COLUMNS) g[c] += d[c];
+      if (savings) {
+        const d = savingsDeltas(meta);
+        if (d !== SAVINGS_DEFAULTS) {
+          const g = groupFor([dayOf(r.timestamp), ...dimsOf(r, ROLLUP_DIMS)]);
+          for (const c of SAVINGS_COLUMNS) g[c] += d[c];
+        }
       }
       const rawCombo = meta?.comboName;
-      if (typeof rawCombo === "string" && rawCombo !== "") {
+      if (combos && typeof rawCombo === "string" && rawCombo !== "") {
         const dims = [dayOf(r.timestamp), ...dimsOf(r, COMBO_DIMS), rawCombo.slice(0, 128)];
         const key = JSON.stringify(dims);
-        const c = combos.get(key) || { dims, requests: 0 };
+        const c = comboCounts.get(key) || { dims, requests: 0 };
         c.requests += 1;
-        combos.set(key, c);
+        comboCounts.set(key, c);
       }
     }
     id = rows[rows.length - 1].id;
   }
-  for (const g of groups.values()) {
+  for (const g of savings ? groups.values() : []) {
     const res = db.run(
       `UPDATE usageRollup SET ${[...SAVINGS_COLUMNS, "lastUsedAt"].map((c) => `${c} = ?`).join(", ")}
        WHERE dateKey = ? AND ${ROLLUP_DIMS.map((c) => `${c} = ?`).join(" AND ")}`,
@@ -162,17 +173,19 @@ export function backfillSavingsComboFromHistory(db) {
       );
     }
   }
-  for (const c of combos.values()) {
+  for (const c of comboCounts.values()) {
     db.run(
       `INSERT INTO usageComboRollup (dateKey, ${COMBO_DIMS.join(", ")}, comboName, requests)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [...c.dims, c.requests],
     );
   }
-  db.run(
-    `INSERT INTO _meta(key, value) VALUES('usageSavingsComboBackfilled', '1')
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-  );
+  if (savings && combos) {
+    db.run(
+      `INSERT INTO _meta(key, value) VALUES('usageSavingsComboBackfilled', '1')
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    );
+  }
 }
 
 /** Snapshot-row check of the savings columns (all optional: older snapshots lack them). */

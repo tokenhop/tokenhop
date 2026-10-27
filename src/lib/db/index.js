@@ -89,7 +89,6 @@ export {
   backfillSavingsLifetimeUnscoped,
   SAVINGS_LIFETIME_KEY,
 } from "./repos/usageSavingsRepo.js";
-export { rowSavedFromSavings } from "./repos/usageRepo.js";
 
 // Combos (YAN-364: scoped + Unscoped APIs)
 export {

@@ -130,7 +130,15 @@ export default {
         r.connectionId || "",
         r.endpoint || "",
       ];
-      sums.set(JSON.stringify(dims), { dims, ...zeroSavings(), lastUsedAt: r.lastUsedAt });
+      // Normalised NULL/'' dims can merge two SQL groups into one key: keep the
+      // newest lastUsedAt (same max-merge as the live helper).
+      const key = JSON.stringify(dims);
+      const prev = sums.get(key);
+      if (prev) {
+        if (r.lastUsedAt > prev.lastUsedAt) prev.lastUsedAt = r.lastUsedAt;
+      } else {
+        sums.set(key, { dims, ...zeroSavings(), lastUsedAt: r.lastUsedAt });
+      }
     }
     let id = 0;
     for (;;) {

@@ -1302,24 +1302,43 @@ export function preflightGatewayKeyImport(
     validateSnapshotPresets(payload);
     // YAN-375: the payload rows to write, with absent sections retaining the
     // live rows (validated against the incoming graph; explicit [] clears).
-    let needsSavingsRecompute = payload.schemaVersion === undefined || payload.schemaVersion < 21;
+    // YAN-1226: savings/lastUsedAt/combo measures are rebuilt from the restored
+    // history ONLY when the snapshot itself replaces usageRollup (otherwise the
+    // live rollup is retained and holds data for pruned days that no history
+    // can reproduce). Safe option for a replaced rollup: a pre-021 snapshot, or
+    // one whose rows never carried savings columns, recomputes everything; a
+    // current-schema snapshot that omits usageComboRollup recomputes only the
+    // combo counts (a replaced rollup must not leave empty combos behind).
+    const preSavings = payload.schemaVersion === undefined || payload.schemaVersion < 21;
+    let replacesRollup = false;
+    let comboSectionAbsent = false;
+    let rollupLacksSavings = false;
     let instanceSections = null;
     if (multiUserTransfer && stage) {
+      replacesRollup = stage.present.has("usageRollup") || Object.hasOwn(payload, "usageRollup");
+      comboSectionAbsent =
+        !stage.present.has("usageComboRollup") && !Object.hasOwn(payload, "usageComboRollup");
       instanceSections = stage.prepare(db, payload, refs);
-      needsSavingsRecompute ||= stage.hasSavingsGaps();
-      if (needsSavingsRecompute) stage.clearStaged("usageComboRollup");
+      rollupLacksSavings = replacesRollup && stage.hasSavingsGaps();
     } else if (multiUserTransfer) {
+      replacesRollup = Object.hasOwn(payload, "usageRollup");
+      comboSectionAbsent = !Object.hasOwn(payload, "usageComboRollup");
       instanceSections = readInstanceTableSections(db, payload, refs);
       validateInstanceTableSections(instanceSections, refs);
-      needsSavingsRecompute ||= !(payload.usageRollup ?? []).some(
-        (r) => r.savingsSavedEst !== undefined,
-      );
+      rollupLacksSavings =
+        replacesRollup &&
+        Array.isArray(payload.usageRollup) &&
+        payload.usageRollup.length > 0 &&
+        !payload.usageRollup.some((r) => r.savingsSavedEst !== undefined);
       for (const name of INSTANCE_SNAPSHOT_SECTION_NAMES) {
         instanceSections[name] = Object.freeze(
           (instanceSections[name] ?? []).map((row) => Object.freeze({ ...row })),
         );
       }
     }
+    const needsSavingsRecompute = replacesRollup && (preSavings || rollupLacksSavings);
+    const needsComboRecompute = replacesRollup && (needsSavingsRecompute || comboSectionAbsent);
+    if (stage && needsComboRecompute) stage.clearStaged("usageComboRollup");
     if (payload.tenancy !== undefined && !isPlainObject(payload.tenancy)) {
       fail("TRANSFER_STATE_INVALID", "tenancy must be an object");
     }
@@ -1366,6 +1385,7 @@ export function preflightGatewayKeyImport(
       videoJobs,
       instanceSections,
       needsSavingsRecompute,
+      needsComboRecompute,
     };
   }
   // Legacy payload.
@@ -1742,6 +1762,7 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
     else insertInstanceTableSections(db, plan.instanceSections);
   }
   if (plan.needsSavingsRecompute) backfillSavingsComboFromHistory(db);
+  else if (plan.needsComboRecompute) backfillSavingsComboFromHistory(db, { savings: false });
   if (credential) {
     // Marker pair + wrapped derived hash key, exactly as proven in preflight.
     // The destination was already encrypted under this root; cleanup/rotation

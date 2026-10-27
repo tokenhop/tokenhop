@@ -11,10 +11,11 @@ const hasSavings = (data) => Number(data?.tokensSavedEst) > 0;
  * `/api/usage/savings?period=` for `period`; when it holds no savings the
  * largest period is fetched first (windows are nested), and only when it has
  * savings are the periods in between fetched in parallel so the smallest
- * non-empty one wins. `neverSaved` is true only when the largest period loads
- * empty; the largest period itself has nothing larger to check, so it never
- * claims `neverSaved`. A failed fallback fetch is not fatal: it leaves
- * `neverSaved` false (the selected period is still known empty). No fetch runs while `period` is
+ * non-empty one wins. `neverSaved` is true when the largest period loads
+ * empty; the selected period being `all` is the same check (nothing larger
+ * exists), so an empty `all` claims `neverSaved` directly. A failed fallback
+ * fetch is not fatal: it leaves `neverSaved` false (the selected period is
+ * still known empty). No fetch runs while `period` is
  * null (loading stays true). In-flight requests abort on unmount or change.
  *
  * @param {string|null} period Current summary period.

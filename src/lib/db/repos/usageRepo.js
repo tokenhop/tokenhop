@@ -85,26 +85,6 @@ async function calculateCost(provider, model, tokens) {
 }
 
 /**
- * Saved tokens in one recorded request row. Sums only positive per-method
- * deltas (a method entry is never negative by construction, but legacy rows
- * can't be trusted), so a phantom/partial row can't inflate the lifetime
- * counter or push savings over a milestone.
- * @param {{ byMethod?: Record<string, { tokensSavedEst?: number }> }|null|undefined} savings
- * @returns {number}
- */
-export function rowSavedFromSavings(savings) {
-  if (!savings || typeof savings !== "object") return 0;
-  const methods = savings.byMethod;
-  if (!methods || typeof methods !== "object") return 0;
-  let saved = 0;
-  for (const method of Object.values(methods)) {
-    const value = Number(method?.tokensSavedEst) || 0;
-    if (value > 0) saved += value;
-  }
-  return saved;
-}
-
-/**
  * Carrier contract for the gateway writer (open-sse / handlers layer).
  *
  * Legacy storage: `{ apiKey: <raw> }` — today's behavior, byte-identical.
