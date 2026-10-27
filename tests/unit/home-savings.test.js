@@ -1,43 +1,12 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {
-  buildSavingsEntry,
-  aggregateSavings,
-  resolvePeriodRange,
-} from "../../src/lib/home/savings.js";
+import { buildSavingsEntry } from "../../src/lib/home/savings.js";
+import { seedTenancy } from "../setup/tenancyHarness.js";
 
 const H = 3600_000;
 const DAY = 24 * H;
-
-describe("resolvePeriodRange", () => {
-  it("today spans local midnight to now", () => {
-    const now = new Date("2026-09-26T12:00:00Z").getTime();
-    const { startMs, endMs } = resolvePeriodRange("today", now);
-    const start = new Date(startMs);
-    expect(start.getHours()).toBe(0);
-    expect(endMs).toBe(now);
-    expect(startMs).toBeLessThan(now);
-  });
-
-  it("uses the shared calendar windows for every period", () => {
-    const now = new Date(2026, 8, 29, 12).getTime();
-    expect(resolvePeriodRange("24h", now).startMs).toBe(now - DAY);
-    expect(resolvePeriodRange("7d", now).startMs).toBe(new Date(2026, 8, 23).getTime());
-    expect(resolvePeriodRange("30d", now).startMs).toBe(new Date(2026, 7, 31).getTime());
-    const { startMs, prevStartMs, prevEndMs } = resolvePeriodRange("60d", now);
-    expect(startMs).toBe(new Date(2026, 7, 1).getTime());
-    expect(prevEndMs).toBe(startMs);
-    expect(prevEndMs - prevStartMs).toBe(now - startMs);
-  });
-
-  it("rejects unknown periods", () => {
-    expect(() => resolvePeriodRange("bogus")).toThrow(/period/);
-    expect(() => resolvePeriodRange("90d")).toThrow(/period/);
-    expect(() => resolvePeriodRange("all")).toThrow(/period/);
-  });
-});
 
 describe("buildSavingsEntry", () => {
   it("records RTK bytes delta as tokens/4", () => {
@@ -91,67 +60,6 @@ describe("buildSavingsEntry", () => {
 
   it("returns null when nothing measurable", () => {
     expect(buildSavingsEntry({})).toBeNull();
-  });
-});
-
-describe("aggregateSavings", () => {
-  // Noon-local fixture: "now - 1h" must always fall inside "today"
-  // regardless of the runner's timezone (midnight-UTC flake guard).
-  const noonLocal = () => {
-    const d = new Date();
-    d.setHours(12, 0, 0, 0);
-    return d.getTime();
-  };
-  const rows = (now) => [
-    {
-      timestamp: new Date(now - 1 * H).toISOString(),
-      savings: {
-        tokensSavedEst: 1000,
-        tokensBeforeEst: 4000,
-        byMethod: { rtk: { tokensSavedEst: 1000, tokensBeforeEst: 4000 } },
-      },
-    },
-    {
-      timestamp: new Date(now - 2 * DAY).toISOString(),
-      savings: {
-        tokensSavedEst: 500,
-        tokensBeforeEst: 2000,
-        byMethod: { headroom: { tokensSavedEst: 500, tokensBeforeEst: 2000 } },
-      },
-    },
-    {
-      timestamp: new Date(now - 40 * DAY).toISOString(),
-      savings: { tokensSavedEst: 9999, tokensBeforeEst: 9999, byMethod: {} },
-    },
-  ];
-
-  it("today only counts in-window rows", () => {
-    const now = noonLocal();
-    const out = aggregateSavings(rows(now), "today", now);
-    expect(out.tokensSavedEst).toBe(1000);
-    expect(out.requestsWithSavings).toBe(1);
-  });
-
-  it("7d includes both recent rows, excludes 40d row", () => {
-    const now = Date.now();
-    const out = aggregateSavings(rows(now), "7d", now);
-    expect(out.tokensSavedEst).toBe(1500);
-    expect(out.byMethod.rtk.tokensSavedEst).toBe(1000);
-    expect(out.byMethod.headroom.tokensSavedEst).toBe(500);
-  });
-
-  it("30d still excludes 40d row; percentage bounded", () => {
-    const now = Date.now();
-    const out = aggregateSavings(rows(now), "30d", now);
-    expect(out.tokensSavedEst).toBe(1500);
-    expect(out.percentage).toBeGreaterThanOrEqual(0);
-    expect(out.percentage).toBeLessThanOrEqual(100);
-  });
-
-  it("skips rows without savings", () => {
-    const out = aggregateSavings([{ timestamp: new Date().toISOString(), savings: null }], "today");
-    expect(out.tokensSavedEst).toBe(0);
-    expect(out.requestsWithSavings).toBe(0);
   });
 });
 
@@ -255,10 +163,10 @@ describe("recorded savings (saveRequestUsageUnscoped -> getUsageSavings)", () =>
     expect(after.costSavedEst).toBe(out.costSavedEst);
     expect(after.pricedRequests).toBe(out.pricedRequests);
   });
-  it("home summary: previous-period delta + top combos from recorded names", async () => {
+  it("home summary: request count + top combos from recorded names", async () => {
     const summary = await db.getHomeSummary(null, "7d");
     expect(summary.requests).toBeGreaterThanOrEqual(3);
-    expect(summary.previousRequests).toBe(0);
+    expect(summary).not.toHaveProperty("previousRequests");
     const pack = summary.topCombos.find((c) => c.name === "research-pack");
     expect(pack).toBeDefined();
     expect(pack.requests).toBe(1);
@@ -292,7 +200,7 @@ describe("savings and summary windows", () => {
     else process.env.DATA_DIR = originalDataDir;
   });
 
-  it("savings and summary use calendar windows and the shared previous window", async () => {
+  it("savings and summary use calendar windows", async () => {
     const now = new Date(2026, 8, 29, 12).getTime();
     const start = new Date(2026, 8, 23).getTime(); // 7d = local midnight of today - 6
     const meta = {
@@ -317,10 +225,106 @@ describe("savings and summary windows", () => {
     expect((await db.getUsageSavings(null, "7d", now)).requestsWithSavings).toBe(2);
     const summary = await db.getHomeSummary(null, "7d", now);
     expect(summary.requests).toBe(2);
-    // Previous window is the 7 whole calendar days before the current one.
-    expect(summary.previousRequests).toBe(2);
+    expect(summary).not.toHaveProperty("previousRequests");
     expect((await db.getUsageSavings(null, "24h", now)).requestsWithSavings).toBe(1);
     expect((await db.getHomeSummary(null, "60d", now)).requests).toBe(4);
+  });
+});
+
+describe("home summary today/24h top combos", () => {
+  const originalDataDir = process.env.DATA_DIR;
+  let tempDir;
+  let db;
+  let adapter;
+
+  beforeAll(async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-home-combos-"));
+    process.env.DATA_DIR = tempDir;
+    vi.resetModules();
+    db = await import("@/lib/db/index.js");
+    await db.initDb();
+    adapter = await (await import("@/lib/db/driver.js")).getAdapter();
+  });
+
+  afterAll(() => {
+    if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+    if (originalDataDir === undefined) delete process.env.DATA_DIR;
+    else process.env.DATA_DIR = originalDataDir;
+  });
+
+  beforeEach(() => {
+    adapter.run("DELETE FROM usageHistory");
+  });
+
+  const NOW = new Date(2026, 8, 29, 12).getTime();
+  const seed = (offsetMs, meta) =>
+    adapter.run(
+      `INSERT INTO usageHistory(timestamp, provider, model, meta) VALUES(?, 'openai', 'gpt-5', ?)`,
+      [new Date(NOW - offsetMs).toISOString(), meta],
+    );
+  const combo = (name) => JSON.stringify({ comboName: name });
+
+  it("counts per combo, orders by requests then name, and caps at five", async () => {
+    for (const name of ["beta", "alpha", "alpha", "gamma", "zeta", "eta", "theta", "beta"]) {
+      seed(H, combo(name));
+    }
+    const summary = await db.getHomeSummary(null, "today", NOW);
+    expect(summary).toEqual({
+      period: "today",
+      requests: 8,
+      topCombos: [
+        { name: "alpha", requests: 2 },
+        { name: "beta", requests: 2 },
+        { name: "eta", requests: 1 },
+        { name: "gamma", requests: 1 },
+        { name: "theta", requests: 1 },
+      ],
+    });
+  });
+
+  it("ignores missing, empty, non-string and malformed comboName meta but counts the requests", async () => {
+    seed(H, combo("real"));
+    seed(H, null);
+    seed(H, "");
+    seed(H, "{not json");
+    seed(H, JSON.stringify({ other: 1 }));
+    seed(H, combo(""));
+    seed(H, JSON.stringify({ comboName: 42 }));
+    seed(H, JSON.stringify({ comboName: ["real"] }));
+    seed(H, JSON.stringify({ comboName: null }));
+    const summary = await db.getHomeSummary(null, "24h", NOW);
+    expect(summary.requests).toBe(9);
+    expect(summary.topCombos).toEqual([{ name: "real", requests: 1 }]);
+  });
+
+  it("respects the window: rows older than the period or in the future are excluded", async () => {
+    seed(H, combo("in"));
+    seed(30 * H, combo("old"));
+    seed(-H, combo("future"));
+    const summary = await db.getHomeSummary(null, "24h", NOW);
+    expect(summary.requests).toBe(1);
+    expect(summary.topCombos).toEqual([{ name: "in", requests: 1 }]);
+  });
+
+  it("truncates long names to 128 chars like the rollup path", async () => {
+    const long = "x".repeat(200);
+    seed(H, combo(long));
+    seed(H, combo(long));
+    const summary = await db.getHomeSummary(null, "24h", NOW);
+    expect(summary.topCombos).toEqual([{ name: "x".repeat(128), requests: 2 }]);
+  });
+
+  it("scopes by workspace", async () => {
+    const t = await seedTenancy();
+    const ws = t.a.personal;
+    adapter.run(
+      `INSERT INTO usageHistory(timestamp, provider, model, meta, workspaceId) VALUES(?, 'openai', 'gpt-5', ?, ?)`,
+      [new Date(NOW - H).toISOString(), combo("mine"), ws],
+    );
+    seed(H, combo("other"));
+    const summary = await db.getHomeSummary({ workspaceId: ws }, "24h", NOW);
+    expect(summary.requests).toBe(1);
+    expect(summary.topCombos).toEqual([{ name: "mine", requests: 1 }]);
   });
 });
 

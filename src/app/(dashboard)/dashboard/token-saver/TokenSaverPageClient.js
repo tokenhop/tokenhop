@@ -54,6 +54,7 @@ export default function TokenSaverPageClient() {
     error: savingsError,
     fallback,
     neverSaved,
+    prunedBeforeTracking,
   } = useSavingsWithFallback(period, refreshKey);
 
   const [settings, setSettings] = useState(null);
@@ -193,6 +194,7 @@ export default function TokenSaverPageClient() {
         onRetry={bump}
         fallback={fallback}
         neverSaved={neverSaved}
+        prunedBeforeTracking={prunedBeforeTracking}
       />
 
       <div className="grid min-w-0 grid-cols-1 gap-5 md:grid-cols-2">

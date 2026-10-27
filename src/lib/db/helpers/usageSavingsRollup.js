@@ -84,7 +84,7 @@ const COMBO_DIMS = ["workspaceId", "userId", "apiKeyId"];
  * replaces usageRollup without savings columns, after the legacy JSON import,
  * and — combos only — when a snapshot replaces usageRollup but carries no
  * usageComboRollup section. `lastUsedAt` per group comes from one SQL
- * MAX/GROUP BY; only history rows whose meta can carry savings or a combo
+ * MAX/GROUP BY over UTC 15-minute buckets; only history rows whose meta can carry savings or a combo
  * name are fetched and parsed. History already pruned is unrecoverable, so
  * callers must only run this for data they are replacing. Caller owns the
  * transaction.
@@ -113,16 +113,21 @@ export function backfillSavingsComboFromHistory(db, { savings = true, combos = t
     }
     return g;
   };
-  // date(..., 'localtime'): history timestamps are ISO instants; the rollup
-  // day is server-local, exactly like localDateKey().
+  // History timestamps are ISO instants; the rollup day is the JS local day
+  // (like localDateKey()). SQLite 'localtime' can disagree with Node when TZ is
+  // set without tzdata (musl/alpine), so rows are bucketed by UTC day + 15-minute
+  // slot: every real-world UTC offset is a multiple of 15 minutes, so a bucket
+  // lies wholly inside one local day and dayOf(MAX) is the exact per-day max.
   for (const r of savings
     ? db.all(
-        `SELECT date(timestamp, 'localtime') AS dateKey, ${ROLLUP_DIMS.join(", ")}, MAX(timestamp) AS lastUsedAt
-         FROM usageHistory GROUP BY dateKey, ${ROLLUP_DIMS.join(", ")}`,
+        `SELECT date(timestamp) AS utcDay, strftime('%H', timestamp) AS utcHour,
+                CAST(strftime('%M', timestamp) AS INTEGER) / 15 AS slot,
+                ${ROLLUP_DIMS.join(", ")}, MAX(timestamp) AS lastUsedAt
+         FROM usageHistory GROUP BY utcDay, utcHour, slot, ${ROLLUP_DIMS.join(", ")}`,
       )
     : []) {
-    if (!r.dateKey || !Number.isFinite(Date.parse(r.lastUsedAt))) continue;
-    const g = groupFor([r.dateKey, ...dimsOf(r, ROLLUP_DIMS)]);
+    if (!r.utcDay || !Number.isFinite(Date.parse(r.lastUsedAt))) continue;
+    const g = groupFor([dayOf(r.lastUsedAt), ...dimsOf(r, ROLLUP_DIMS)]);
     if (r.lastUsedAt > g.lastUsedAt) g.lastUsedAt = r.lastUsedAt;
   }
   const comboCounts = new Map();

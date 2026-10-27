@@ -113,15 +113,22 @@ export default {
     const sums = new Map();
     const combos = new Map();
     // lastUsedAt per group via one SQL MAX/GROUP BY; only rows whose meta can
-    // carry savings or a combo name are fetched and parsed below.
+    // carry savings or a combo name are fetched and parsed below. The rollup day
+    // is the JS local day (dayOf), but SQLite 'localtime' can disagree with Node
+    // when TZ is set without tzdata (musl/alpine), so rows are bucketed by UTC
+    // day + 15-minute slot instead: every real-world UTC offset is a multiple of
+    // 15 minutes, so a bucket lies wholly inside one local day and dayOf(MAX)
+    // gives the exact per-local-day max.
     for (const r of db.all(
-      `SELECT date(timestamp, 'localtime') AS dateKey, workspaceId, userId, apiKeyId, provider, model,
+      `SELECT date(timestamp) AS utcDay, strftime('%H', timestamp) AS utcHour,
+              CAST(strftime('%M', timestamp) AS INTEGER) / 15 AS slot,
+              workspaceId, userId, apiKeyId, provider, model,
               connectionId, endpoint, MAX(timestamp) AS lastUsedAt
-       FROM usageHistory GROUP BY dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint`,
+       FROM usageHistory GROUP BY utcDay, utcHour, slot, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint`,
     )) {
-      if (!r.dateKey || !Number.isFinite(Date.parse(r.lastUsedAt))) continue;
+      if (!r.utcDay || !Number.isFinite(Date.parse(r.lastUsedAt))) continue;
       const dims = [
-        r.dateKey,
+        dayOf(r.lastUsedAt),
         r.workspaceId || "",
         r.userId || "",
         r.apiKeyId || "local-no-key",

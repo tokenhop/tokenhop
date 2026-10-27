@@ -3,7 +3,12 @@
 // per-method tokensSavedEst, a row counts once) without per-row pricing.
 import { getAdapter } from "../driver.js";
 import { daysBetweenDateKeys, shiftDateKey } from "@/shared/utils/period";
-import { readSavingsTotals, scopeSql, whereAll } from "./usageRollupRepo.js";
+import {
+  hasUntrackedRollupDays,
+  readSavingsTotals,
+  scopeSql,
+  whereAll,
+} from "./usageRollupRepo.js";
 
 /**
  * Tokens saved and requests with savings in the half-open window
@@ -48,6 +53,9 @@ export async function getSavingsTotals(ctx, { start, end } = {}) {
 /**
  * Savings compare over inclusive local day keys, independent of history
  * retention. Null bounds mean all time, for which no previous window exists.
+ * `previous` is also null when the previous window holds rollup days whose
+ * history was pruned before savings tracking: its totals would be understated
+ * and the trend would show an inflated delta, so it reports no prior data.
  * @param {object|null} ctx usage scope
  * @param {{from: string|null, to: string|null}} range
  * @returns {Promise<{currentTotals: object, previous: object|null}>}
@@ -63,8 +71,11 @@ export async function getRollupSavingsTotals(ctx, { from, to }) {
   };
   if (from == null && to == null) return { currentTotals: totalsIn(), previous: null };
   const days = daysBetweenDateKeys(from, to) + 1;
+  const previousStart = shiftDateKey(from, -days);
   return {
     currentTotals: totalsIn(from, shiftDateKey(to, 1)),
-    previous: totalsIn(shiftDateKey(from, -days), from),
+    previous: hasUntrackedRollupDays(ctx, db, previousStart, from)
+      ? null
+      : totalsIn(previousStart, from),
   };
 }

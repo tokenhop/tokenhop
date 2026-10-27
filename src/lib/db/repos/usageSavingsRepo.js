@@ -10,11 +10,11 @@ import {
   isPeriod,
   localTodayKey,
   periodStart,
-  previousPeriodRange,
   shiftDateKey,
 } from "@/shared/utils/period";
 import {
   cutoffDateKey,
+  hasUntrackedRollupDays,
   readComboTop,
   readRollupTotals,
   readSavingsTotals,
@@ -134,6 +134,9 @@ export async function getUsageSavings(ctx, period = "7d", now = Date.now()) {
       // methods still contribute to headline totals, but not the breakdown.
       methods: Object.keys(byMethod),
       byMethod,
+      // True when the window holds rollup days whose history was pruned before
+      // savings tracking (migration 021), so the totals are incomplete.
+      prunedBeforeTracking: hasUntrackedRollupDays(ctx, db, start, end),
     };
   }
   const scope = scopeSql(ctx);
@@ -206,6 +209,8 @@ export async function getUsageSavings(ctx, period = "7d", now = Date.now()) {
     pricedRequests,
     methods,
     byMethod,
+    // History-backed window: nothing is pruned inside it.
+    prunedBeforeTracking: false,
   };
 }
 
@@ -244,52 +249,33 @@ export async function getHomeSummary(ctx, period = "7d", now = Date.now()) {
   if (period !== "today" && period !== "24h") {
     const start = period === "all" ? null : cutoffDateKey(PERIOD_DAYS[period], now);
     const end = period === "all" ? null : shiftDateKey(localTodayKey(now), 1);
-    // Previous windows use whole calendar days, matching rollup stats/compare.
-    const previousStart = period === "all" ? null : cutoffDateKey(2 * PERIOD_DAYS[period], now);
     return {
       period,
       requests: readRollupTotals(ctx, db, start, end).requests,
-      previousRequests:
-        period === "all" ? 0 : readRollupTotals(ctx, db, previousStart, start).requests,
       topCombos: readComboTop(ctx, db, start, end),
     };
   }
   const scope = scopeSql(ctx);
+  const window = [new Date(periodStart(period, now)).toISOString(), new Date(now).toISOString()];
+  const where = whereAll(scope.sql, "timestamp >= ?", "timestamp <= ?");
 
-  const current = { start: periodStart(period, now), end: now };
-  const prev = previousPeriodRange(period, now);
+  const requests =
+    db.get(`SELECT COUNT(*) AS n FROM usageHistory ${where}`, [...scope.params, ...window])?.n || 0;
 
-  const countIn = (start, end, endOp) => {
-    const row = db.get(
-      `SELECT COUNT(*) AS n FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?", `timestamp ${endOp} ?`)}`,
-      [...scope.params, new Date(start).toISOString(), new Date(end).toISOString()],
-    );
-    return row?.n || 0;
-  };
-
-  const requests = countIn(current.start, current.end, "<=");
-  // Half-open like /api/usage/stats?compare=previous, so a row at the current start counts once.
-  const previousRequests = countIn(prev.start, prev.end, "<");
-
-  const rows = db.all(
-    `SELECT timestamp, meta FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?", "timestamp <= ?")}`,
-    [...scope.params, new Date(current.start).toISOString(), new Date(current.end).toISOString()],
+  // Names are extracted only from json_valid rows (CASE guarantees the order, so
+  // malformed meta never reaches json_type/json_extract) and truncated to 128
+  // chars like the rollup path, so both windows group identically.
+  const topCombos = db.all(
+    `SELECT name, COUNT(*) AS requests FROM (
+       SELECT CASE WHEN json_valid(meta) THEN
+                CASE WHEN json_type(meta, '$.comboName') = 'text'
+                  THEN substr(json_extract(meta, '$.comboName'), 1, 128) END
+              END AS name
+       FROM usageHistory ${where}
+     ) WHERE name IS NOT NULL AND name != ''
+     GROUP BY name ORDER BY requests DESC, name ASC LIMIT 5`,
+    [...scope.params, ...window],
   );
-  const comboCounts = {};
-  for (const row of rows) {
-    const meta = parseJson(row.meta, {});
-    const name = typeof meta?.comboName === "string" && meta.comboName ? meta.comboName : null;
-    if (name) comboCounts[name] = (comboCounts[name] || 0) + 1;
-  }
-  const topCombos = Object.entries(comboCounts)
-    .map(([name, count]) => ({ name, requests: count }))
-    .sort((a, b) => b.requests - a.requests)
-    .slice(0, 5);
 
-  return {
-    period,
-    requests,
-    previousRequests,
-    topCombos,
-  };
+  return { period, requests, topCombos };
 }

@@ -231,3 +231,37 @@ describe("savings route compare", () => {
     }
   });
 });
+
+describe("getRollupSavingsTotals with days pruned before tracking", () => {
+  const range = { from: "2026-09-23", to: "2026-09-29" }; // previous = 09-16..09-22
+  const untracked = (dateKey) =>
+    adapter.run(
+      `INSERT INTO usageRollup (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint, requests, lastUsedAt)
+       VALUES (?, '', '', 'local-no-key', 'p', 'm', 'c', '/e', 5, '')`,
+      [dateKey],
+    );
+
+  it("returns the previous window when every rollup day is tracked", async () => {
+    seed(new Date(2026, 8, 20, 12).getTime(), saved(7));
+    seed(new Date(2026, 8, 25, 12).getTime(), saved(3));
+    const out = await db.getRollupSavingsTotals(null, range);
+    expect(out.currentTotals.tokensSavedEst).toBe(3);
+    expect(out.previous).toEqual({ tokensSavedEst: 7, requestsWithSavings: 1 });
+  });
+
+  it("returns previous: null when the previous window has an untracked day", async () => {
+    seed(new Date(2026, 8, 25, 12).getTime(), saved(3));
+    untracked("2026-09-18");
+    const out = await db.getRollupSavingsTotals(null, range);
+    expect(out.currentTotals.tokensSavedEst).toBe(3);
+    expect(out.previous).toBeNull();
+  });
+
+  it("keeps previous when the untracked day is outside the previous window", async () => {
+    seed(new Date(2026, 8, 20, 12).getTime(), saved(7));
+    untracked("2026-09-25"); // current window, not previous
+    untracked("2026-09-15"); // before previous window
+    const out = await db.getRollupSavingsTotals(null, range);
+    expect(out.previous).toEqual({ tokensSavedEst: 7, requestsWithSavings: 1 });
+  });
+});
