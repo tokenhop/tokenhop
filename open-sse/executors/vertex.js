@@ -8,6 +8,7 @@ import {
   refreshGoogleToken,
 } from "../services/tokenRefresh.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { googleKeyHeader } from "../utils/googleKeyHeader.js";
 
 // Cache project IDs resolved from raw API keys { apiKey → projectId }
 const projectIdCache = new Map();
@@ -19,9 +20,14 @@ const projectIdCache = new Map();
 async function resolveProjectId(apiKey, proxyOptions = null) {
   if (projectIdCache.has(apiKey)) return projectIdCache.get(apiKey);
 
+  // Key in a header, not ?key= — proxy relays log pathname+search (YAN-1629).
   const res = await proxyAwareFetch(
-    `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent?key=${apiKey}`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+    `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...googleKeyHeader(apiKey) },
+      body: "{}",
+    },
     proxyOptions,
   );
   const json = await res.json().catch(() => null);
@@ -52,7 +58,6 @@ export class VertexExecutor extends BaseExecutor {
     const saJson = parseVertexSaJson(credentials?.apiKey);
     const adcJson = parseVertexAdcJson(credentials?.apiKey);
     const usesOAuth = !!saJson || !!adcJson || !!credentials?.accessToken;
-    const rawKey = !usesOAuth ? credentials?.apiKey : null;
     const projectId = vertexProjectId(credentials, saJson, adcJson);
 
     if (this.provider === "vertex-partner") {
@@ -61,8 +66,8 @@ export class VertexExecutor extends BaseExecutor {
         throw new Error(
           "Vertex partner models require a project_id. Add it in providerSpecificData or use Service Account JSON.",
         );
-      const url = `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/endpoints/openapi/chat/completions`;
-      return rawKey ? `${url}?key=${rawKey}` : url;
+      // Key in a header, not ?key= — proxy relays log pathname+search (YAN-1629).
+      return `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/endpoints/openapi/chat/completions`;
     }
 
     // Gemini on Vertex
@@ -82,20 +87,25 @@ export class VertexExecutor extends BaseExecutor {
       return url;
     }
 
-    // Raw API key: use global publishers endpoint with ?key= param
+    // Raw API key: use global publishers endpoint; key goes in header (buildHeaders).
     // ?alt=sse is required for proper SSE streaming (matches every other Gemini executor)
     let url = `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:${action}`;
     if (stream) url += "?alt=sse";
-    if (rawKey) url += stream ? `&key=${rawKey}` : `?key=${rawKey}`;
     return url;
   }
 
   buildHeaders(credentials, stream = true) {
     const headers = { "Content-Type": "application/json" };
 
-    // Only set Bearer token if using SA JSON flow (raw key goes in URL ?key=)
     if (credentials.accessToken) {
       headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+    } else if (
+      credentials?.apiKey &&
+      !parseVertexSaJson(credentials.apiKey) &&
+      !parseVertexAdcJson(credentials.apiKey)
+    ) {
+      // Key in a header, not ?key= — proxy relays log pathname+search (YAN-1629).
+      Object.assign(headers, googleKeyHeader(credentials.apiKey));
     }
 
     if (stream) headers["Accept"] = "text/event-stream";

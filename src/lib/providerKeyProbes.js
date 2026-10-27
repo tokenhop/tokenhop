@@ -8,6 +8,7 @@
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { PROVIDERS } from "open-sse/config/providers.js";
+import { googleKeyHeader } from "open-sse/utils/googleKeyHeader.js";
 
 const PROBE_TIMEOUT_MS = 8000;
 const CHAT_PROBE_TIMEOUT_MS = 10000;
@@ -24,6 +25,22 @@ function parseVertexSaJson(apiKey) {
       parsed.client_email &&
       parsed.private_key &&
       parsed.project_id
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+// Vertex ADC (authorized_user) JSON — mirrors parseVertexAdcJson in tokenRefresh.js.
+function parseVertexAdcJson(apiKey) {
+  if (typeof apiKey !== "string") return null;
+  try {
+    const parsed = JSON.parse(apiKey);
+    return parsed?.type === "authorized_user" &&
+      parsed.client_id &&
+      parsed.client_secret &&
+      parsed.refresh_token
       ? parsed
       : null;
   } catch {
@@ -64,7 +81,9 @@ export async function probeWebProvider(provider, apiKey, fetchImpl = fetch) {
       headers["x-subscription-token"] = apiKey;
       break;
     case "key":
-      url += `?key=${encodeURIComponent(apiKey)}&q=ping&cx=test`;
+      // Key in a header, not ?key= — proxy relays log pathname+search (YAN-1629).
+      Object.assign(headers, googleKeyHeader(apiKey));
+      url += `?q=ping&cx=test`;
       break; // google-pse
     case "api_key":
       url += `?api_key=${encodeURIComponent(apiKey)}&q=ping&engine=google`;
@@ -198,19 +217,23 @@ export async function probeRegistryProvider(provider, apiKey, fetchImpl = fetch)
 export async function probeVertexKey(apiKey, fetchImpl = fetch) {
   const saJson = parseVertexSaJson(apiKey);
   if (saJson) return true; // parseVertexSaJson already requires the SA fields
-  // SA-looking JSON missing required fields is invalid — don't probe it as a raw key
+  if (parseVertexAdcJson(apiKey)) return true; // authorized_user ADC: field check, like SA
+  // Any other JSON object (incomplete SA/ADC, arbitrary) is not an API key —
+  // don't probe it as one. JSON scalars and non-JSON strings still probe.
   try {
-    if (JSON.parse(apiKey)?.type === "service_account") return false;
+    const parsed = JSON.parse(apiKey);
+    if (parsed && typeof parsed === "object") return false;
   } catch {
     /* raw key — probe below */
   }
   // Raw key: probe a nonexistent model — 404 means the key was accepted
   // (never 401 for an unknown model), 401/403 means the key is bad.
+  // Key in a header, not ?key= — proxy relays log pathname+search (YAN-1629).
   const probeRes = await fetchImpl(
-    `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent?key=${encodeURIComponent(apiKey)}`,
+    `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...googleKeyHeader(apiKey) },
       body: "{}",
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     },

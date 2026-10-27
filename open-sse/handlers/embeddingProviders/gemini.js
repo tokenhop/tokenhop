@@ -1,4 +1,6 @@
 // Google Gemini embeddings — embedContent / batchEmbedContents
+import { googleKeyHeader } from "../../utils/googleKeyHeader.js";
+
 const BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 function modelPath(model) {
@@ -6,13 +8,16 @@ function modelPath(model) {
 }
 
 export default {
-  buildUrl: (model, creds, { input } = {}) => {
-    const apiKey = creds.apiKey || creds.accessToken;
+  // Key in a header, not ?key= — proxy relays log pathname+search (YAN-1629).
+  buildUrl: (model, _creds, { input } = {}) => {
     const path = modelPath(model);
     const op = Array.isArray(input) ? "batchEmbedContents" : "embedContent";
-    return `${BASE}/${path}:${op}?key=${encodeURIComponent(apiKey)}`;
+    return `${BASE}/${path}:${op}`;
   },
-  buildHeaders: () => ({ "Content-Type": "application/json" }),
+  buildHeaders: (creds) => ({
+    "Content-Type": "application/json",
+    ...googleKeyHeader(creds.apiKey || creds.accessToken),
+  }),
   buildBody: (model, { input, dimensions }) => {
     const m = modelPath(model);
     const outputDimensionality = Number(dimensions);
