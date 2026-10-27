@@ -23,6 +23,7 @@ import geminiEmbedding from "../../open-sse/handlers/embeddingProviders/gemini.j
 import geminiImage from "../../open-sse/handlers/imageProviders/gemini.js";
 import { VertexExecutor } from "../../open-sse/executors/vertex.js";
 import { probeVertexKey, probeWebProvider } from "@/lib/providerKeyProbes.js";
+import { googleKeyHeader } from "../../open-sse/utils/googleKeyHeader.js";
 
 const KEY = "secret-google-key-yan-1629";
 const SA = JSON.stringify({
@@ -195,5 +196,20 @@ describe("providerKeyProbes", () => {
     expect(parsed.searchParams.get("q")).toBe("ping");
     expect(parsed.searchParams.get("cx")).toBe("test");
     expect(calls[0].init.headers["x-goog-api-key"]).toBe(KEY);
+  });
+});
+
+describe("googleKeyHeader", () => {
+  it("returns the x-goog-api-key header for a valid key", () => {
+    expect(googleKeyHeader(KEY)).toEqual({ "x-goog-api-key": KEY });
+  });
+
+  it.each([["a\rb"], ["a\nb"], ["a\0b"]])("rejects %j without echoing the key", (bad) => {
+    expect(() => googleKeyHeader(bad)).toThrow(/invalid characters/);
+    try {
+      googleKeyHeader(bad);
+    } catch (err) {
+      expect(err.message).not.toContain(bad);
+    }
   });
 });

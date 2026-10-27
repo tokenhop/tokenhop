@@ -10,6 +10,7 @@ import {
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
+import { googleKeyHeader } from "open-sse/utils/googleKeyHeader.js";
 import { OPENCODE_PUBLIC_HEADERS } from "open-sse/executors/opencode.js";
 import {
   refreshProviderCredentials,
@@ -713,7 +714,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         // Key in a header, not ?key= — proxy relays log pathname+search (YAN-1629).
         const res = await fetchWithConnectionProxy(
           `https://generativelanguage.googleapis.com/v1/models`,
-          { headers: { "x-goog-api-key": connection.apiKey } },
+          { headers: googleKeyHeader(connection.apiKey) },
           effectiveProxy,
         );
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };

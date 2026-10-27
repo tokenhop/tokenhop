@@ -8,6 +8,7 @@ import {
   refreshGoogleToken,
 } from "../services/tokenRefresh.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { googleKeyHeader } from "../utils/googleKeyHeader.js";
 
 // Cache project IDs resolved from raw API keys { apiKey → projectId }
 const projectIdCache = new Map();
@@ -24,7 +25,7 @@ async function resolveProjectId(apiKey, proxyOptions = null) {
     `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+      headers: { "Content-Type": "application/json", ...googleKeyHeader(apiKey) },
       body: "{}",
     },
     proxyOptions,
@@ -104,7 +105,7 @@ export class VertexExecutor extends BaseExecutor {
       !parseVertexAdcJson(credentials.apiKey)
     ) {
       // Key in a header, not ?key= — proxy relays log pathname+search (YAN-1629).
-      headers["x-goog-api-key"] = credentials.apiKey;
+      Object.assign(headers, googleKeyHeader(credentials.apiKey));
     }
 
     if (stream) headers["Accept"] = "text/event-stream";

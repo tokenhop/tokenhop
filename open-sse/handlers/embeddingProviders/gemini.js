@@ -1,4 +1,6 @@
 // Google Gemini embeddings — embedContent / batchEmbedContents
+import { googleKeyHeader } from "../../utils/googleKeyHeader.js";
+
 const BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 function modelPath(model) {
@@ -14,7 +16,7 @@ export default {
   },
   buildHeaders: (creds) => ({
     "Content-Type": "application/json",
-    "x-goog-api-key": creds.apiKey || creds.accessToken,
+    ...googleKeyHeader(creds.apiKey || creds.accessToken),
   }),
   buildBody: (model, { input, dimensions }) => {
     const m = modelPath(model);

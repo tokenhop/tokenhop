@@ -3,6 +3,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const KEY = "secret-google-key-yan-1629-route";
+const SA = JSON.stringify({
+  type: "service_account",
+  client_email: "svc@sa-proj.iam.gserviceaccount.com",
+  private_key: "-----BEGIN PRIVATE KEY-----\nfake\n-----END PRIVATE KEY-----\n",
+  project_id: "sa-proj",
+});
+const ADC = JSON.stringify({
+  type: "authorized_user",
+  client_id: "adc-client",
+  client_secret: "adc-secret",
+  refresh_token: "adc-refresh",
+});
 
 const mocks = vi.hoisted(() => ({
   json: vi.fn((body, init) => ({ status: init?.status || 200, body })),
@@ -38,15 +50,19 @@ describe("POST /api/providers/validate", () => {
     vi.unstubAllGlobals();
   });
 
-  function validate(provider, status) {
-    fetchMock.mockResolvedValue(new Response("{}", { status }));
+  function post(provider, apiKey) {
     return POST(
       new Request("https://tokenhop.local/api/providers/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey: KEY }),
+        body: JSON.stringify({ provider, apiKey }),
       }),
     );
+  }
+
+  function validate(provider, status, apiKey = KEY) {
+    fetchMock.mockResolvedValue(new Response("{}", { status }));
+    return post(provider, apiKey);
   }
 
   it("gemini: key in header and a 200 is valid", async () => {
@@ -56,16 +72,64 @@ describe("POST /api/providers/validate", () => {
     expect(response.body.valid).toBe(true);
   });
 
-  it.each(["vertex", "vertex-partner"])("%s raw key: key in header; 404 valid", async (p) => {
-    const response = await validate(p, 404);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expectKeyInHeaderOnly(...fetchMock.mock.calls[0]);
-    expect(response.body.valid).toBe(true);
+  it("gemini: key with a line break is rejected without echoing the key", async () => {
+    const response = await validate("gemini", 200, "abc\ndef-gemini-secret");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.body.valid).toBe(false);
+    expect(response.body.error).not.toContain("abc");
+    expect(response.body.error).not.toContain("def-gemini-secret");
   });
 
-  it.each(["vertex", "vertex-partner"])("%s raw key: 401 is invalid", async (p) => {
-    const response = await validate(p, 401);
-    expect(response.body.valid).toBe(false);
+  describe.each(["vertex", "vertex-partner"])("%s", (p) => {
+    it("raw key: key in header; 404 valid", async () => {
+      const response = await validate(p, 404);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expectKeyInHeaderOnly(...fetchMock.mock.calls[0]);
+      expect(response.body.valid).toBe(true);
+    });
+
+    it("raw key: 401 is invalid", async () => {
+      const response = await validate(p, 401);
+      expect(response.body.valid).toBe(false);
+    });
+
+    it("raw key: 403 is invalid", async () => {
+      const response = await validate(p, 403);
+      expect(response.body.valid).toBe(false);
+    });
+
+    it("complete service-account JSON is valid without a probe", async () => {
+      const response = await validate(p, 200, SA);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(response.body.valid).toBe(true);
+    });
+
+    it("service-account JSON missing private_key is invalid without a probe", async () => {
+      const { private_key: _omit, ...partial } = JSON.parse(SA);
+      const response = await validate(p, 200, JSON.stringify(partial));
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(response.body.valid).toBe(false);
+    });
+
+    it("complete ADC JSON is valid without a probe", async () => {
+      const response = await validate(p, 200, ADC);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(response.body.valid).toBe(true);
+    });
+
+    it("arbitrary JSON object is invalid without a probe", async () => {
+      const response = await validate(p, 200, '{"foo":1}');
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(response.body.valid).toBe(false);
+    });
+
+    it("key with a line break is rejected without echoing the key", async () => {
+      const response = await validate(p, 200, "abc\ndef-vertex-secret");
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(response.body.valid).toBe(false);
+      expect(response.body.error).not.toContain("abc");
+      expect(response.body.error).not.toContain("def-vertex-secret");
+    });
   });
 });
 
@@ -80,18 +144,19 @@ describe("saved gemini connection test", () => {
   it.each([
     ["direct", {}],
     ["relay", { vercelRelayUrl: "https://relay.example" }],
-  ])("%s: key in header, not URL", async (_label, proxy) => {
+  ])("%s: key in header, not URL", async (label, proxy) => {
     vi.resetModules();
-    const fetchMock = vi.fn(async () => ({ ok: true, status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
+    const globalFetch = vi.fn(async () => ({ ok: true, status: 200 }));
+    const proxyFetch = vi.fn(async () => ({ ok: true, status: 200 }));
+    vi.stubGlobal("fetch", globalFetch);
     const connection = { id: "g-1", provider: "gemini", authType: "apikey", apiKey: KEY };
     vi.doMock("@/lib/localDb", () => ({
       getProviderConnectionByIdUnscoped: vi.fn(async () => connection),
       updateProviderConnectionUnscoped: vi.fn(async () => {}),
     }));
     vi.doMock("open-sse/utils/proxyFetch.js", () => ({
-      proxyAwareFetch: (url, opts) => fetchMock(url, opts),
-      default: fetchMock,
+      proxyAwareFetch: (url, opts, proxyOptions) => proxyFetch(url, opts, proxyOptions),
+      default: globalFetch,
     }));
     vi.doMock("@/lib/network/connectionProxy", () => ({
       resolveConnectionProxyConfig: vi.fn(async () => proxy),
@@ -101,8 +166,16 @@ describe("saved gemini connection test", () => {
     );
     const result = await testSingleConnection(connection.id);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expectKeyInHeaderOnly(...fetchMock.mock.calls[0]);
     expect(result.valid).toBe(true);
+    if (label === "relay") {
+      expect(globalFetch).not.toHaveBeenCalled();
+      expect(proxyFetch).toHaveBeenCalledTimes(1);
+      expectKeyInHeaderOnly(...proxyFetch.mock.calls[0]);
+      expect(proxyFetch.mock.calls[0][2]).toEqual({ vercelRelayUrl: "https://relay.example" });
+    } else {
+      expect(proxyFetch).not.toHaveBeenCalled();
+      expect(globalFetch).toHaveBeenCalledTimes(1);
+      expectKeyInHeaderOnly(...globalFetch.mock.calls[0]);
+    }
   });
 });

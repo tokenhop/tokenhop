@@ -9,6 +9,7 @@ import {
   AI_PROVIDERS,
 } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
+import { googleKeyHeader } from "open-sse/utils/googleKeyHeader.js";
 import {
   resolveOllamaLocalHost,
   resolveXiaomiTokenplanBaseUrl,
@@ -240,7 +241,7 @@ export async function POST(request) {
         case "gemini": {
           // Key in a header, not ?key= — proxy relays log pathname+search (YAN-1629).
           const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1/models`, {
-            headers: { "x-goog-api-key": apiKey },
+            headers: googleKeyHeader(apiKey),
           });
           isValid = geminiRes.ok;
           break;
