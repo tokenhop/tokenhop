@@ -271,4 +271,75 @@ describe("conversation cache affinity end-to-end", () => {
     expect(comboPins.size).toBe(1);
     expect(comboPins.get(comboPinKey(null, combo, "p:forged"))).toBeUndefined();
   });
+
+  describe("fusion panel account pins (YAN-1673)", () => {
+    // Two openai accounts, round robin; a fusion panel of two models on openai.
+    async function makeFusion() {
+      await resetConnections();
+      for (const n of ["1", "2"]) {
+        await db.createProviderConnectionUnscoped({
+          provider: "openai",
+          name: `aff-${n}`,
+          apiKey: `sk-aff-${n}`,
+          isActive: true,
+        });
+      }
+      const stamp = unique();
+      const combo = `fus-${stamp}`;
+      const judge = `j-${stamp}`;
+      await db.createComboUnscoped({
+        name: combo,
+        models: [`openai/a-${stamp}`, `openai/b-${stamp}`],
+      });
+      await db.updateSettings({
+        fallbackStrategy: "round-robin",
+        stickyRoundRobinLimit: 1,
+        providerStrategies: {},
+        comboStrategies: {
+          [combo]: {
+            fallbackStrategy: "fusion",
+            judgeModel: `openai/${judge}`,
+            fusionTuning: { stragglerGraceMs: 50 },
+          },
+        },
+      });
+      return { combo, judge };
+    }
+    // Panels run non-streaming; streamed calls (if any) get a one-token SSE answer.
+    const sse = () =>
+      new Response(
+        `data: ${JSON.stringify({ id: "c1", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: "ok" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      );
+    const respond = (judge, judgeFor) =>
+      executeMock.mockImplementation(async (args) => ({
+        response: args.body?.model === judge ? judgeFor() : args.stream ? sse() : okResponse(),
+        url: "https://fake.local/v1/chat/completions",
+        headers: {},
+        transformedBody: null,
+      }));
+
+    it("a failed judge leaves no account pin from the panel", async () => {
+      const { combo, judge } = await makeFusion();
+      respond(
+        judge,
+        () =>
+          new Response(JSON.stringify({ error: { message: "bad request" } }), {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          }),
+      );
+      const res = await turn(combo, "s1");
+      expect(res.status).toBe(400);
+      expect(accountPins.size).toBe(0);
+    });
+
+    it("a served fusion pins the account that served it", async () => {
+      const { combo, judge } = await makeFusion();
+      respond(judge, () => okResponse());
+      const res = await turn(combo, "s1");
+      expect(res.status).toBe(200);
+      expect(accountPins.size).toBe(1);
+    });
+  });
 });

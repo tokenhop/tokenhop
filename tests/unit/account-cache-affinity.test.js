@@ -381,3 +381,24 @@ describe("expiry, reset and logging", () => {
     expect(mocks.info.mock.calls.some(([, msg]) => msg.includes("cache pin"))).toBe(true);
   });
 });
+
+describe("deferred commit (YAN-1673)", () => {
+  const key = () => accountPinKey(null, "p", "conv1");
+
+  it("a late deferred commit never replaces a pin written meanwhile", async () => {
+    accountPins.clear();
+    const panel = await getProviderCredentials("p", null, "m", { conversationKey: "conv1" });
+    const commitLater = panel.affinity.deferredCommit(); // panel served; its outer level decides later
+    accountPins.set(key(), "c3"); // the judge failed over to c3 and served
+    commitLater();
+    expect(accountPins.peek(key())).toBe("c3");
+    expect(pendingAccountPins.peek(key())).toBeUndefined(); // the panel's pending pin is released
+  });
+
+  it("commits when nothing else pinned the conversation meanwhile", async () => {
+    accountPins.clear();
+    const panel = await getProviderCredentials("p", null, "m", { conversationKey: "conv1" });
+    panel.affinity.deferredCommit()();
+    expect(accountPins.peek(key())).toBe(panel.connectionId);
+  });
+});
