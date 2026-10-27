@@ -53,8 +53,8 @@ export function createPinStore({
   // Bumped by every bulk delete (clear/deleteWhere/deleteScope), even when it
   // matched nothing: a deferred first-turn commit (whose entry may not exist yet)
   // must still be stopped by a reset. Store-wide, not per-scope, because pred-based
-  // deletes cannot name scopes; the cost is an unrelated reset drops one in-flight
-  // deferred write (the next turn re-pins).
+  // deletes cannot name scopes; the cost is that any reset, even of another combo,
+  // provider or workspace, drops in-flight deferred writes (the next turn re-pins).
   let generation = 0;
   function remove(key) {
     const entry = map.get(key);

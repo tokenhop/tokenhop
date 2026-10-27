@@ -647,6 +647,27 @@ describe("serve-only attempts and cleanup review regressions", () => {
     held[0].fn();
     expect(comboPins.peek("\ninner\nconv1")).toBeUndefined();
   });
+
+  it("an unrelated reset skips the deferred commit and drops its provisional pin (YAN-1676)", async () => {
+    const held = [];
+    const parentAttempt = { commitOnServe: (fn, release) => held.push({ fn, release }) };
+    const failing = new Set(["p/a"]);
+    const res = await handleComboChat({
+      body: { messages: [] },
+      models: ["p/a", "p/b"],
+      comboStrategy: "round-robin",
+      comboName: "inner",
+      conversationKey: "conv1",
+      handleSingleModel: async (_b, model) => (failing.has(model) ? fail() : ok()),
+      log,
+      parentAttempt,
+      cacheAffinity: true,
+    });
+    expect(res.ok).toBe(true); // p/a (provisional) failed, p/b served
+    resetComboRotation("other"); // another combo saved before the outer level commits
+    held[0].fn();
+    expect(comboPins.peek("\ninner\nconv1")).toBeUndefined(); // never the failed p/a
+  });
 });
 
 describe("fusion panel pins (YAN-1673)", () => {

@@ -736,11 +736,12 @@ export async function handleComboChat({
       return;
     }
     // A deferred write must not replace a pin a later turn wrote meanwhile, nor
-    // outlive a reset (generation) that ran between serve and this commit.
+    // outlive a reset (generation) that ran between serve and this commit. A
+    // skipped commit still drops this turn's provisional pin.
     const seen = comboPins.version(affinityKey);
     const seenGen = comboPins.generation();
     const commit = () => {
-      if (comboPins.generation() !== seenGen) return;
+      if (comboPins.generation() !== seenGen) return dropProvisional();
       const now = comboPins.version(affinityKey);
       if (now === undefined || now === seen) comboPins.set(affinityKey, model);
     };
