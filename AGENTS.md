@@ -9,8 +9,8 @@ agent-runtime-specific notes.
 
 ```bash
 cp .env.example .env && npm install
-PORT=20128 npm run dev                      # dashboard + gateway, port 20127 by default
-npm run build && PORT=20128 npm run start   # production
+npm run dev                        # dashboard + gateway on port 20127 (`-- --port N` to change)
+npm run build && npm run start     # production, port 20127
 npm run lint        # Biome via scripts/style.sh
 npm run lint:fix    # auto-fix
 npm run format      # format everything

@@ -106,7 +106,7 @@ npm run dev   # http://localhost:20127
 
 ```bash
 npm run build
-PORT=20128 HOSTNAME=0.0.0.0 npm run start
+npm run start -- --port 20128
 ```
 
 默认 URL：
@@ -995,11 +995,11 @@ export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
 # 启动
-npm run start
+npm run start -- --port 20128
 
 # 或使用 PM2
 npm install -g pm2
-pm2 start npm --name tokenhop -- start
+pm2 start npm --name tokenhop -- start -- --port 20128
 pm2 save
 pm2 startup
 ```
@@ -1189,7 +1189,7 @@ docker stop tokenhop && docker rm tokenhop
 
 **控制面板在错误端口打开**
 
-- 设置 `PORT=20128`。不要为本地访问设置 `NEXT_PUBLIC_BASE_URL` 或 `BASE_URL`：设置后，只有该 origin 能修改控制面板数据，从 `127.0.0.1` 打开会返回 403 `forbidden_origin`
+- 使用 `npm run start -- --port 20128` 运行（Docker 已经是 20128）。本地访问不要设置 `NEXT_PUBLIC_BASE_URL` 或 `BASE_URL`：设置后，只有该 origin 能修改控制面板数据，从其他地址（如 `127.0.0.1`）打开会返回 403 `forbidden_origin`
 
 **首次登录不工作**
 

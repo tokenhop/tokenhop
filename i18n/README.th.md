@@ -102,14 +102,14 @@ Repo นี้เป็น private package (`tokenhop-app`) ดังนั้�
 ```bash
 cp .env.example .env
 npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+npm run dev -- --port 20128
 ```
 
 โหมด Production:
 
 ```bash
 npm run build
-PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
+npm run start -- --port 20128
 ```
 
 URL ค่าเริ่มต้น:
@@ -662,7 +662,7 @@ tokenhop แค่เลือกเส้นทางคำขอของค�
 
 **แดชบอร์ดเปิดผิดพอร์ต**
 
-- ตั้ง `PORT=20128` และ `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
+- ตรวจสอบว่ารันจากซอร์สด้วย `npm run start -- --port 20128` (Docker ใช้ 20128 อยู่แล้ว) สำหรับการเข้าถึงแบบท้องถิ่น อย่าตั้งค่า `NEXT_PUBLIC_BASE_URL` หรือ `BASE_URL`: ถ้าตั้งค่าไว้ มีเพียง origin นั้นเท่านั้นที่แก้ไขข้อมูลแดชบอร์ดได้ และการเปิดจากที่อยู่อื่น (เช่น `127.0.0.1`) จะได้รับ 403 `forbidden_origin`
 
 **ล็อกอินครั้งแรกไม่ทำงาน**
 

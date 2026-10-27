@@ -101,14 +101,14 @@ tokenhop
 ```bash
 cp .env.example .env
 npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+npm run dev -- --port 20128
 ```
 
 حالت تولید:
 
 ```bash
 npm run build
-PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
+npm run start -- --port 20128
 ```
 
 آدرس‌های پیش‌فرض:
@@ -1040,17 +1040,16 @@ export DATA_DIR="/var/lib/tokenhop"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
-export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
 # export NEXT_PUBLIC_CLOUD_URL=  # اختیاری: فقط برای نقطه پایانی همگام‌سازی خودمیزبان (نشانی ابری پیش‌فرضی وجود ندارد)
 export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
 # شروع
-npm run start
+npm run start -- --port 20128
 
 # یا استفاده از PM2
 npm install -g pm2
-pm2 start npm --name tokenhop -- start
+pm2 start npm --name tokenhop -- start -- --port 20128
 pm2 save
 pm2 startup
 ```
@@ -1242,7 +1241,7 @@ docker pull ghcr.io/tokenhop/tokenhop:latest   # به‌روزرسانی به آ
 
 **داشبورد در پورت اشتباه باز می‌شود**
 
-- `PORT=20128` و `NEXT_PUBLIC_BASE_URL=http://localhost:20128` را تنظیم کنید
+- مطمئن شوید که از سورس اجرا می‌کنید و `npm run start -- --port 20128` را اجرا کرده‌اید (Docker از قبل 20128 را استفاده می‌کند). برای دسترسی محلی، `NEXT_PUBLIC_BASE_URL` یا `BASE_URL` را تنظیم نکنید: اگر تنظیم شوند، فقط آن origin می‌تواند داده‌های داشبورد را تغییر دهد و باز کردن از نشانی دیگر (مثلاً `127.0.0.1`) خطای 403 `forbidden_origin` برمی‌گرداند
 
 **اولین ورود کار نمی‌کند**
 

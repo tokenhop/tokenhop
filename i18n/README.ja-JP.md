@@ -96,14 +96,14 @@ Claude Code/Codex/Gemini CLI/OpenClaw/Cursor/Clineの設定:
 ```bash
 cp .env.example .env
 npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+npm run dev -- --port 20128
 ```
 
 本番モード：
 
 ```bash
 npm run build
-PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
+npm run start -- --port 20128
 ```
 
 デフォルトURL：
@@ -952,18 +952,17 @@ export DATA_DIR="/var/lib/tokenhop"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
-export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
 # クラウド同期（オプション）: 自己ホストの同期エンドポイントのみ。デフォルトは未設定で、何も送信されません
 # export CLOUD_URL="https://your-selfhosted-sync.example"
 export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
 # 起動
-npm run start
+npm run start -- --port 20128
 
 # またはPM2を使用
 npm install -g pm2
-pm2 start npm --name tokenhop -- start
+pm2 start npm --name tokenhop -- start -- --port 20128
 pm2 save
 pm2 startup
 ```
@@ -1126,7 +1125,7 @@ docker stop tokenhop && docker rm tokenhop
 
 **ダッシュボードが違うポートで開く**
 
-- `PORT=20128` と `NEXT_PUBLIC_BASE_URL=http://localhost:20128` を設定
+- ソースから実行していることを確認し、`npm run start -- --port 20128` を使ってください（Docker は既に 20128 を使用）。ローカルアクセスでは `NEXT_PUBLIC_BASE_URL` や `BASE_URL` を設定しないでください: 設定するとその origin からのみダッシュボードのデータを変更でき、別のアドレス（例: `127.0.0.1`）から開くと 403 `forbidden_origin` が返されます
 
 **初回ログインできない**
 

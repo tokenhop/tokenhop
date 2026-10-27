@@ -24,8 +24,8 @@ Dashboard/gateway (run from repo root):
 ```bash
 cp .env.example .env
 npm install
-npm run dev                                                # dev (webpack, http://localhost:20127)
-npm run build && PORT=20128 HOSTNAME=0.0.0.0 npm run start  # production
+npm run dev                        # dev (Turbopack, http://localhost:20127)
+npm run build && npm run start     # production, port 20127; `npm run start -- --port 20128` to change it
 ```
 
 - `next dev` refuses to start without `TOKENHOP_DEV_ALLOWED_ORIGINS` (`localhost` for local-only; add the hostname you open the dashboard from, e.g. a Tailscale `*.ts.net` host, or its HMR websocket is blocked). `.env.example` sets `localhost`.

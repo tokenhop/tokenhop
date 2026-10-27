@@ -285,7 +285,7 @@ npm install
 npm run dev   # http://localhost:20127
 ```
 
-Production build: `npm run build && PORT=20128 HOSTNAME=0.0.0.0 npm run start`.
+Production build: `npm run build && npm run start` (`http://localhost:20127`; add `-- --port 20128` for another port).
 Local image: `docker build -t tokenhop-local .` (pass `--build-arg APK_MIRROR=dl-cdn.alpinelinux.org
 --build-arg NPM_REGISTRY=https://registry.npmjs.org` to skip the default CN mirrors).
 To bake the Google OAuth clients into a local image, pass them as BuildKit secrets
