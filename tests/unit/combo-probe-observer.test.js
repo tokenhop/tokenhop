@@ -224,4 +224,34 @@ describe("combo attempt observer (YAN-299 probe hook)", () => {
     expect(attempts).toHaveLength(2);
     expect(attempts.every((a) => a.outcome === "skipped")).toBe(true);
   });
+
+  // YAN-1030: if the emptiness check itself throws, the observer still hears about it.
+  it("reports the judge as skipped/exception when the answer check throws", async () => {
+    const attempts = [];
+    const lockedStream = () => {
+      const res = new Response(new ReadableStream({ start() {} }), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+      res.body.getReader(); // lock the body: probeStreamHead's getReader() throws
+      return res;
+    };
+    await expect(
+      handleFusionChat({
+        body,
+        models: ["p/a", "p/b"],
+        handleSingleModel: async (_b, m, isPanel) =>
+          isPanel ? okResponse(`ans-${m}`) : lockedStream(),
+        log,
+        comboName: "probe-check-throws",
+        judgeModel: "p/judge",
+        onAttempt: (a) => attempts.push(a),
+      }),
+    ).rejects.toThrow();
+    expect(attempts.find((a) => a.role === "judge")).toMatchObject({
+      model: "p/judge",
+      outcome: "skipped",
+      errorType: "exception",
+    });
+  });
 });

@@ -839,4 +839,23 @@ describe("fusion panel pins (YAN-1673)", () => {
     fallbackSettle({ firstTokenAt: 42 });
     expect(parentSettles).toEqual([{ firstTokenAt: 42 }]);
   });
+
+  // YAN-1030: a served call that throws closes its scope; its queued pin is released.
+  it("a judge that pins and then throws commits no pin and the error propagates", async () => {
+    const released = [];
+    const boom = new Error("judge exploded");
+    await expect(
+      fusion({
+        judge: (_b, attempt) => {
+          attempt.commitOnServe(
+            () => comboPins.set("\njudge\nconv1", "judge-acct"),
+            () => released.push("judge"),
+          );
+          throw boom;
+        },
+      })({ messages: [{ role: "user", content: "x" }] }, "fusion", null),
+    ).rejects.toBe(boom);
+    expect(comboPins.peek("\njudge\nconv1")).toBeUndefined();
+    expect(released).toEqual(["judge"]);
+  });
 });

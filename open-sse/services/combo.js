@@ -12,7 +12,6 @@ import { coerceResponsesOutput } from "../translator/formats/responsesApi.js";
 import { pickSmoothWeighted } from "./weightedRoundRobin.js";
 import { effectiveComboWeight } from "./comboWeights.js";
 import { boundedMap } from "../utils/boundedMap.js";
-import { hasAnswerToken } from "../utils/streamHelpers.js";
 import { probeStreamHead } from "../utils/streamProbe.js";
 import { COMBO_HEDGE_DELAY_DEFAULT_MS, COMBO_HEDGE_DELAY_MAX_MS } from "./comboStrategy.js";
 import { clearComboPins, comboPins, orderAroundPin } from "./cacheAffinity.js";
@@ -1374,17 +1373,22 @@ function extractPanelText(json) {
   const claudeText = extractTextContent(json.content);
   if (claudeText.trim()) return claudeText;
 
-  // Gemini (parts carry .text without a type discriminator)
+  // Gemini (parts carry .text without a type discriminator); thought parts are
+  // reasoning, not answer text (YAN-1030).
   const parts = json.candidates?.[0]?.content?.parts;
   if (Array.isArray(parts)) {
-    const t = parts.map((p) => p?.text || "").join("");
+    const t = parts.map((p) => (p?.thought === true ? "" : p?.text || "")).join("");
     if (t.trim()) return t;
   }
 
-  // OpenAI Responses API
+  // OpenAI Responses API; reasoning items are not answer text (YAN-1030).
   if (Array.isArray(json.output)) {
     const t = json.output
-      .flatMap((o) => (Array.isArray(o.content) ? o.content.map((c) => c?.text || "") : []))
+      .flatMap((o) =>
+        o?.type !== "reasoning" && Array.isArray(o?.content)
+          ? o.content.map((c) => c?.text || "")
+          : [],
+      )
       .join("");
     if (t.trim()) return t;
   }
@@ -1439,18 +1443,17 @@ function hasNonTextOutput(json) {
 // inspect a JSON clone so the original body remains untouched. Unknown JSON
 // shapes and parse failures fail open. Non-2xx answers pass through as-is
 // (`empty: false`): callers still check `response.ok` before committing pins.
+// Trade-off: the stream probe releases on the first meaningful token, reasoning
+// included (same as runMember), so a reasoning model's first byte is never held
+// back. A reasoning-only judge stream is therefore served; YAN-1031 records it.
 async function checkServedAnswer(res, { signal = null } = {}) {
   if (!res?.ok || !res.body) return { empty: false, response: res };
   const contentType = res.headers?.get?.("content-type") || "";
   if (/text\/event-stream|ndjson/i.test(contentType)) {
-    // Reasoning-only streams are empty for serve purposes (YAN-1030): the probe
-    // waits for an ANSWER token (hasAnswerToken, fail-open inside the probe);
-    // the byte/time caps still release long reasoning preambles to the client.
     const probe = await probeStreamHead(res, {
       maxBytes: COMBO_STREAM_PROBE_MAX_BYTES,
       maxMs: COMBO_STREAM_PROBE_MAX_MS,
       signal,
-      isToken: hasAnswerToken,
     });
     return probe.outcome === "release"
       ? { empty: false, response: probe.response }
@@ -1630,6 +1633,9 @@ function providerOfModel(modelStr) {
  * @param {string} [options.comboName] - Combo name (logging)
  * @param {string} [options.judgeModel] - Judge model; falls back to panel[0]
  * @param {Object} [options.tuning] - Override FUSION_DEFAULTS (minPanel, grace, timeout)
+ * @param {AbortSignal|null} [options.clientSignal] - The incoming request's signal. Served calls probe
+ *   with `parentAttempt?.signal ?? clientSignal`; a client that left mid-check gets a 499 and no
+ *   fallback call (YAN-1030).
  * @param {object} [options.parentAttempt] - Trusted ancestor attempt (see handleComboChat); forwarded to
  *   served calls (judge / direct answer). Each panel call gets its own serve-only scope under it:
  *   the panel's pins (nested combo, account) commit only when a 2xx judge answer used that panel's
@@ -1648,6 +1654,7 @@ export async function handleFusionChat({
   tuning,
   onAttempt,
   parentAttempt = null,
+  clientSignal = null,
 }) {
   // Observer: records each leaf call, never alters its result.
   const observe = (model, role, startedAt, info) => {
@@ -1717,13 +1724,29 @@ export async function handleFusionChat({
   const serveServedCall = async (callBody, model, role) => {
     const scope = createServedScope(parentAttempt);
     const startedAt = Date.now();
+    // Nested fusion inherits the attempt signal; top-level fusion only has the
+    // client's request signal (YAN-1030).
+    const signal = parentAttempt?.signal ?? clientSignal;
     let raw;
     let checked;
     try {
       raw = await handleSingleModel(callBody, model, undefined, scope, role);
-      checked = await checkServedAnswer(raw, { signal: parentAttempt?.signal ?? null });
+    } catch (error) {
+      // The observer wrapper already reported the exception.
+      scope.close();
+      throw error;
+    }
+    try {
+      checked = await checkServedAnswer(raw, { signal });
     } catch (error) {
       scope.close();
+      if (raw?.ok) {
+        observe(model, role, startedAt, {
+          status: raw.status ?? null,
+          errorType: "exception",
+          outcome: "skipped",
+        });
+      }
       throw error;
     }
     // Non-2xx calls were already reported by the observer wrapper.
@@ -1735,7 +1758,7 @@ export async function handleFusionChat({
       });
     }
     // Client gone mid-check: hand back what we have, no fallback call.
-    if (parentAttempt?.signal?.aborted) {
+    if (signal?.aborted) {
       scope.close();
       return { aborted: true, response: checked.response ?? clientClosedResponse() };
     }
@@ -1925,6 +1948,8 @@ function createServedScope(parentAttempt) {
   // Served calls still see the client abort (chat.js 499 path), as when they
   // received the ancestor attempt directly; panel scopes never carried a signal.
   scope.signal = parentAttempt?.signal ?? null;
+  // Inherit the parent's no-nested-hedge rule (panel scopes stay serve-only).
+  scope.serveOnly = parentAttempt ? parentAttempt.serveOnly !== false : true;
   let accepted = false;
   let registered = false;
   let held = null;

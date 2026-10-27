@@ -16,9 +16,7 @@ import { hasMeaningfulToken } from "./streamHelpers.js";
 const DEFAULT_MAX_BYTES = 262144;
 const DEFAULT_MAX_MS = 10 * 1000;
 
-// Fail-open wrapper: a throwing classifier means "not meaningful here", never
-// a probe error. Callers may swap in a stricter classifier (YAN-1030/1031).
-function defaultIsToken(parsed) {
+function isMeaningful(parsed) {
   try {
     return hasMeaningfulToken(parsed);
   } catch {
@@ -124,19 +122,8 @@ function replayResponse(response, buffered, reader, pending = null) {
  */
 export async function probeStreamHead(
   response,
-  { maxBytes = DEFAULT_MAX_BYTES, maxMs = DEFAULT_MAX_MS, signal = null, isToken = null } = {},
+  { maxBytes = DEFAULT_MAX_BYTES, maxMs = DEFAULT_MAX_MS, signal = null } = {},
 ) {
-  // Optional stricter token classifier (e.g. hasAnswerToken so a reasoning-only
-  // stream counts as empty, YAN-1030/1031). Wrapped fail-open like the default.
-  const isMeaningful = isToken
-    ? (parsed) => {
-        try {
-          return !!isToken(parsed);
-        } catch {
-          return false;
-        }
-      }
-    : defaultIsToken;
   if (!response.body) return { outcome: "release", response };
 
   const contentType = (response.headers?.get?.("content-type") || "").toLowerCase();

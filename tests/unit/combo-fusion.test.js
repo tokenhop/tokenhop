@@ -537,18 +537,46 @@ describe("fusion combo", () => {
     expect(handleSingleModel).toHaveBeenCalledTimes(3);
   });
 
-  // YAN-1030 finding 4: a reasoning-only judge stream is empty for serve purposes.
-  it("falls back when the judge streams only reasoning frames and [DONE]", async () => {
+  // YAN-1030: the served-stream probe releases on the first meaningful token
+  // (reasoning included), so a reasoning-only judge is served, not held or retried.
+  it("serves a judge stream with only reasoning frames (no fallback call)", async () => {
+    const raw =
+      sseFrame({ reasoning_content: "let me think" }) +
+      sseFrame({ reasoning_content: " more" }) +
+      "data: [DONE]\n\n";
     const handleSingleModel = vi.fn(async (_body, model, isPanel) => {
       if (isPanel) return okResponse(`ans-${model}`);
-      if (model === "p/judge") {
-        return sseResponse(
-          sseFrame({ reasoning_content: "let me think" }) +
-            sseFrame({ reasoning_content: " more" }) +
-            "data: [DONE]\n\n",
-        );
-      }
-      return okResponse("FALLBACK");
+      return sseResponse(raw);
+    });
+
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "Q" }] },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge",
+    });
+
+    expect(await res.text()).toBe(raw);
+    expect(handleSingleModel).toHaveBeenCalledTimes(3);
+  });
+
+  // YAN-1030: reasoning is not answer text.
+  it.each([
+    [
+      "Gemini thought-only",
+      { candidates: [{ content: { parts: [{ text: "thinking", thought: true }] } }] },
+    ],
+    [
+      "Responses reasoning-only",
+      {
+        output: [{ type: "reasoning", content: [{ type: "reasoning_text", text: "thinking" }] }],
+      },
+    ],
+  ])("%s judge JSON is empty, so the fallback runs", async (_label, emptyJson) => {
+    const handleSingleModel = vi.fn(async (_body, model, isPanel) => {
+      if (isPanel) return okResponse(`ans-${model}`);
+      return model === "p/judge" ? jsonResponse(emptyJson) : okResponse("FALLBACK");
     });
 
     const res = await handleFusionChat({
@@ -561,6 +589,65 @@ describe("fusion combo", () => {
 
     expect((await res.json()).choices[0].message.content).toBe("FALLBACK");
     expect(handleSingleModel).toHaveBeenCalledTimes(4);
+  });
+
+  it("returns 502 when the single-model direct answer is Gemini thought-only", async () => {
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "Q" }] },
+      models: ["p/only"],
+      handleSingleModel: vi.fn(async () =>
+        jsonResponse({ candidates: [{ content: { parts: [{ text: "t", thought: true }] } }] }),
+      ),
+      log,
+    });
+    expect(res.status).toBe(502);
+  });
+
+  // YAN-1030: client abort while the judge stream probe is pending.
+  it("returns 499 and makes no fallback call when the client aborts mid-probe", async () => {
+    const ctrl = new AbortController();
+    const handleSingleModel = vi.fn(async (_body, model, isPanel) => {
+      if (isPanel) return okResponse(`ans-${model}`);
+      // Judge stream that never produces a frame, so the probe stays pending.
+      return new Response(new ReadableStream({ start() {} }), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    });
+
+    const pending = handleFusionChat({
+      body: { messages: [{ role: "user", content: "Q" }] },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge",
+      clientSignal: ctrl.signal,
+    });
+    setTimeout(() => ctrl.abort(), 20);
+    const res = await pending;
+
+    expect(res.status).toBe(499);
+    // 2 panel calls + the judge; no fallback.
+    expect(handleSingleModel).toHaveBeenCalledTimes(3);
+  });
+
+  it("closes the scope and propagates when a served call throws", async () => {
+    const boom = new Error("judge exploded");
+    const handleSingleModel = vi.fn(async (_body, model, isPanel) => {
+      if (isPanel) return okResponse(`ans-${model}`);
+      throw boom;
+    });
+
+    await expect(
+      handleFusionChat({
+        body: { messages: [{ role: "user", content: "Q" }] },
+        models: ["p/a", "p/b"],
+        handleSingleModel,
+        log,
+        judgeModel: "p/judge",
+      }),
+    ).rejects.toBe(boom);
+    expect(handleSingleModel).toHaveBeenCalledTimes(3);
   });
 
   it("serves a judge stream that reasons first then answers, byte-identical", async () => {
