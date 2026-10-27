@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 import { handleComboChat, resetComboRotation } from "../../open-sse/services/combo.js";
 import { probeStreamHead } from "../../open-sse/utils/streamProbe.js";
+import { hasAnswerToken } from "../../open-sse/utils/streamHelpers.js";
 
 const log = { info: () => {}, warn: () => {}, debug: () => {} };
 const SSE = { "Content-Type": "text/event-stream" };
@@ -183,6 +184,31 @@ describe("combo empty-stream fallback", () => {
     expect((await probeStreamHead(multi)).outcome).toBe("empty");
     const multiText = stream(`data: {"choices":[{"delta":\ndata: {"content":"x"}}]}\n\n`);
     expect((await probeStreamHead(multiText)).outcome).toBe("release");
+  });
+
+  // YAN-1030: a stricter classifier makes reasoning-only streams empty; the
+  // default (hasMeaningfulToken) still releases them, and a throwing one fails closed.
+  it("isToken option: reasoning-only is empty with hasAnswerToken, released by default", async () => {
+    const reasoningOnly = () =>
+      stream(
+        chunk("r", { reasoning_content: "hm" }) + chunk("r", {}, { finish_reason: "stop" }) + DONE,
+      );
+    expect((await probeStreamHead(reasoningOnly())).outcome).toBe("release");
+    expect((await probeStreamHead(reasoningOnly(), { isToken: hasAnswerToken })).outcome).toBe(
+      "empty",
+    );
+
+    const thenText = stream(chunk("r", { reasoning_content: "hm" }) + TEXT_STREAM_RAW);
+    const out = await probeStreamHead(thenText, { isToken: hasAnswerToken });
+    expect(out.outcome).toBe("release");
+    expect(await out.response.text()).toContain('"content":"hi"');
+
+    const throwing = await probeStreamHead(TEXT_STREAM.clone(), {
+      isToken: () => {
+        throw new Error("boom");
+      },
+    });
+    expect(throwing.outcome).toBe("empty");
   });
 
   it("byte cap releases fail-open with byte-exact replay", async () => {

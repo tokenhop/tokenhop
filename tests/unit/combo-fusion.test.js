@@ -22,7 +22,35 @@ function errResponse(status = 500) {
   return make();
 }
 
+// YAN-1030: a 2xx fusion answer must still contain something the client can use.
+function jsonResponse(json) {
+  return new Response(JSON.stringify(json), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+const sseFrame = (delta, extra = {}) =>
+  `data: ${JSON.stringify({ choices: [{ index: 0, delta, ...extra }] })}\n\n`;
+
+function sseResponse(raw) {
+  return new Response(raw, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+}
+
 describe("fusion combo", () => {
+  it("returns 502 when a single-model panel answers with empty content", async () => {
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "Q" }] },
+      models: ["p/only"],
+      handleSingleModel: vi.fn(async () =>
+        jsonResponse({ choices: [{ message: { content: "" } }] }),
+      ),
+      log,
+    });
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: { message: "Fusion answer was empty" } });
+  });
+
   it("answers directly with a single-model panel (nothing to fuse)", async () => {
     const handleSingleModel = vi.fn(async () => okResponse("solo"));
     await handleFusionChat({
@@ -290,5 +318,265 @@ describe("fusion combo", () => {
 
     // Flattened tool_result
     expect(panelBody.messages[2].content).toBe("[Tool result: done]");
+  });
+  it("falls back to the first panel model when the judge JSON is empty", async () => {
+    const body = { messages: [{ role: "user", content: "Q" }], stream: true };
+    const handleSingleModel = vi.fn(async (requestBody, model, isPanel) => {
+      if (isPanel) return okResponse(`ans-${model}`);
+      if (model === "p/judge") return jsonResponse({ choices: [{ message: { content: "" } }] });
+      expect(model).toBe("p/a");
+      // YAN-1030: the fallback gets a structuredClone of the body (chatCore mutates
+      // bodies in place), so assert content equality, not identity.
+      expect(requestBody).toEqual(body);
+      return okResponse("FALLBACK");
+    });
+
+    const res = await handleFusionChat({
+      body,
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge",
+    });
+
+    expect(await res.json()).toEqual({
+      choices: [{ message: { role: "assistant", content: "FALLBACK" } }],
+    });
+    expect(handleSingleModel.mock.calls.map(([, model]) => model)).toEqual([
+      "p/a",
+      "p/b",
+      "p/judge",
+      "p/a",
+    ]);
+  });
+
+  it("falls back when the judge stream has only role, finish, and DONE frames", async () => {
+    const handleSingleModel = vi.fn(async (_body, model, isPanel) => {
+      if (isPanel) return okResponse(`ans-${model}`);
+      if (model === "p/judge") {
+        return sseResponse(
+          sseFrame({ role: "assistant" }) +
+            sseFrame({}, { finish_reason: "stop" }) +
+            "data: [DONE]\n\n",
+        );
+      }
+      return okResponse("FALLBACK");
+    });
+
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "Q" }] },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge",
+    });
+
+    expect((await res.json()).choices[0].message.content).toBe("FALLBACK");
+    expect(handleSingleModel).toHaveBeenCalledTimes(4);
+  });
+
+  it("returns 502 when the judge and direct fallback are both empty", async () => {
+    const handleSingleModel = vi.fn(async (_body, model, isPanel) => {
+      if (isPanel) return okResponse(`ans-${model}`);
+      return jsonResponse({ choices: [{ message: { content: "" } }] });
+    });
+
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "Q" }] },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge",
+    });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({
+      error: { message: "Fusion judge and fallback returned an empty response" },
+    });
+    expect(handleSingleModel).toHaveBeenCalledTimes(4);
+  });
+
+  it("returns 502 when the single-survivor direct answer is empty", async () => {
+    const handleSingleModel = vi.fn(async (_body, model, isPanel) => {
+      if (isPanel) return model === "p/a" ? okResponse("ans") : errResponse(500);
+      return jsonResponse({ choices: [{ message: { content: "" } }] });
+    });
+
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "Q" }] },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+    });
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: { message: "Fusion answer was empty" } });
+  });
+
+  it("serves a tool-call-only judge JSON answer as-is", async () => {
+    const toolCall = {
+      id: "call_1",
+      type: "function",
+      function: { name: "lookup", arguments: "{}" },
+    };
+    const handleSingleModel = vi.fn(async (_body, model, isPanel) => {
+      if (isPanel) return okResponse(`ans-${model}`);
+      return jsonResponse({ choices: [{ message: { content: "", tool_calls: [toolCall] } }] });
+    });
+
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "Q" }] },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge",
+    });
+
+    expect((await res.json()).choices[0].message.tool_calls).toEqual([toolCall]);
+    expect(handleSingleModel).toHaveBeenCalledTimes(3);
+  });
+
+  it("replays a non-empty judge stream byte-for-byte", async () => {
+    const raw =
+      sseFrame({ role: "assistant" }) + sseFrame({ content: "FINAL" }) + "data: [DONE]\n\n";
+    const handleSingleModel = vi.fn(async (_body, _model, isPanel) => {
+      return isPanel ? okResponse("panel answer") : sseResponse(raw);
+    });
+
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "Q" }] },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+    });
+
+    expect(await res.text()).toBe(raw);
+  });
+
+  // YAN-1030 finding 2: non-text JSON outputs are answers, not "empty".
+  it("serves an image-only judge answer instead of falling back to a 502", async () => {
+    const images = [{ type: "image_url", image_url: { url: "data:image/png;base64,AA==" } }];
+    const handleSingleModel = vi.fn(async (_body, model, isPanel) => {
+      if (isPanel) return okResponse(`ans-${model}`);
+      return jsonResponse({ choices: [{ message: { content: "", images } }] });
+    });
+
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "draw" }] },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge",
+    });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).choices[0].message.images).toEqual(images);
+    // panel + judge only: no fallback call.
+    expect(handleSingleModel).toHaveBeenCalledTimes(3);
+  });
+
+  it("serves an audio-only judge answer instead of falling back to a 502", async () => {
+    const audio = { id: "a1", data: "UklGRg==", transcript: "" };
+    const handleSingleModel = vi.fn(async (_body, model, isPanel) => {
+      if (isPanel) return okResponse(`ans-${model}`);
+      return jsonResponse({ choices: [{ message: { content: null, audio } }] });
+    });
+
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "say hi" }] },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge",
+    });
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).choices[0].message.audio).toEqual(audio);
+    expect(handleSingleModel).toHaveBeenCalledTimes(3);
+  });
+
+  it("serves a Responses image_generation_call judge answer", async () => {
+    const handleSingleModel = vi.fn(async (_body, model, isPanel) => {
+      if (isPanel) return okResponse(`ans-${model}`);
+      return jsonResponse({
+        output: [{ type: "reasoning" }, { type: "image_generation_call", result: "b64" }],
+      });
+    });
+
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "draw" }] },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge",
+    });
+
+    expect(res.status).toBe(200);
+    expect(handleSingleModel).toHaveBeenCalledTimes(3);
+  });
+
+  it("serves a Claude server_tool_use-only judge answer", async () => {
+    const content = [
+      { type: "thinking", thinking: "hm" },
+      { type: "server_tool_use", id: "srv_1", name: "web_search", input: { q: "x" } },
+    ];
+    const handleSingleModel = vi.fn(async (_body, model, isPanel) => {
+      if (isPanel) return okResponse(`ans-${model}`);
+      return jsonResponse({ content });
+    });
+
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "Q" }] },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge",
+    });
+
+    expect(res.status).toBe(200);
+    expect(handleSingleModel).toHaveBeenCalledTimes(3);
+  });
+
+  // YAN-1030 finding 4: a reasoning-only judge stream is empty for serve purposes.
+  it("falls back when the judge streams only reasoning frames and [DONE]", async () => {
+    const handleSingleModel = vi.fn(async (_body, model, isPanel) => {
+      if (isPanel) return okResponse(`ans-${model}`);
+      if (model === "p/judge") {
+        return sseResponse(
+          sseFrame({ reasoning_content: "let me think" }) +
+            sseFrame({ reasoning_content: " more" }) +
+            "data: [DONE]\n\n",
+        );
+      }
+      return okResponse("FALLBACK");
+    });
+
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "Q" }] },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge",
+    });
+
+    expect((await res.json()).choices[0].message.content).toBe("FALLBACK");
+    expect(handleSingleModel).toHaveBeenCalledTimes(4);
+  });
+
+  it("serves a judge stream that reasons first then answers, byte-identical", async () => {
+    const raw =
+      sseFrame({ reasoning_content: "hmm" }) + sseFrame({ content: "FINAL" }) + "data: [DONE]\n\n";
+    const handleSingleModel = vi.fn(async (_body, _model, isPanel) => {
+      return isPanel ? okResponse("panel answer") : sseResponse(raw);
+    });
+
+    const res = await handleFusionChat({
+      body: { messages: [{ role: "user", content: "Q" }] },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+    });
+
+    expect(await res.text()).toBe(raw);
   });
 });

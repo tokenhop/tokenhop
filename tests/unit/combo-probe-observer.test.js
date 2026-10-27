@@ -181,6 +181,35 @@ describe("combo attempt observer (YAN-299 probe hook)", () => {
     expect(seen[2]).toBe("p/judge");
   });
 
+  // YAN-1030: a rejected empty judge is "skipped/empty"; the fallback is its own role.
+  it("empty judge is skipped (empty) and the fallback call is reported as role fallback", async () => {
+    const attempts = [];
+    const emptyJson = () => {
+      const json = { choices: [{ message: { role: "assistant", content: "" } }] };
+      const make = () => ({ ok: true, status: 200, body: {}, clone: make, json: async () => json });
+      return make();
+    };
+    const handleSingleModel = async (_b, m, isPanel) => {
+      if (isPanel) return okResponse(`ans-${m}`);
+      return m === "p/judge" ? emptyJson() : okResponse("FALLBACK");
+    };
+    const res = await handleFusionChat({
+      body,
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      comboName: "probe-fusion-empty",
+      judgeModel: "p/judge",
+      onAttempt: (a) => attempts.push(a),
+    });
+    expect(res.ok).toBe(true);
+    const judge = attempts.find((a) => a.role === "judge");
+    expect(judge).toMatchObject({ model: "p/judge", outcome: "skipped", errorType: "empty" });
+    const fb = attempts.find((a) => a.role === "fallback");
+    expect(fb).toMatchObject({ model: "p/a", outcome: "served", errorType: null });
+    expect(attempts.filter((a) => a.outcome === "served")).toHaveLength(1);
+  });
+
   it("all-fail surfaces 503 with every attempt recorded", async () => {
     const attempts = [];
     const res = await handleComboChat({

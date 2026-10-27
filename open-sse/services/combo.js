@@ -12,6 +12,7 @@ import { coerceResponsesOutput } from "../translator/formats/responsesApi.js";
 import { pickSmoothWeighted } from "./weightedRoundRobin.js";
 import { effectiveComboWeight } from "./comboWeights.js";
 import { boundedMap } from "../utils/boundedMap.js";
+import { hasAnswerToken } from "../utils/streamHelpers.js";
 import { probeStreamHead } from "../utils/streamProbe.js";
 import { COMBO_HEDGE_DELAY_DEFAULT_MS, COMBO_HEDGE_DELAY_MAX_MS } from "./comboStrategy.js";
 import { clearComboPins, comboPins, orderAroundPin } from "./cacheAffinity.js";
@@ -1390,6 +1391,79 @@ function extractPanelText(json) {
 
   return "";
 }
+// YAN-1030: a non-stream 2xx is an answer when it carries text OR any other
+// usable output — a refusal, a tool call, audio/image media, or any
+// non-text/reasoning output item. Only blank prose-plus-nothing is "empty".
+function hasNonTextOutput(json) {
+  const message = json?.choices?.[0]?.message;
+  if (message?.tool_calls?.length > 0) return true;
+  if (typeof message?.refusal === "string" && message.refusal.trim()) return true;
+  // OpenAI chat audio / image output modalities.
+  if (typeof message?.audio?.data === "string" && message.audio.data) return true;
+  if (typeof message?.audio?.transcript === "string" && message.audio.transcript) return true;
+  if (Array.isArray(message?.images) && message.images.length > 0) return true;
+
+  // Claude: any block that is not text/thinking (tool_use, server_tool_use, image, …).
+  if (
+    Array.isArray(json?.content) &&
+    json.content.some(
+      (block) =>
+        block &&
+        block.type !== "text" &&
+        block.type !== "thinking" &&
+        block.type !== "redacted_thinking",
+    )
+  )
+    return true;
+
+  // Gemini: a part carrying a call or binary payload (inlineData, fileData, …).
+  if (
+    json?.candidates?.[0]?.content?.parts?.some?.(
+      (part) => part?.functionCall || part?.inlineData || part?.executableCode || part?.fileData,
+    )
+  )
+    return true;
+
+  // Responses API: any output item that is not a plain message/reasoning carries
+  // output (function_call, image_generation_call, computer_call, mcp_call, …);
+  // message items count via refusal content.
+  return (
+    json?.output?.some?.(
+      (item) =>
+        (item && item.type !== "message" && item.type !== "reasoning") ||
+        item?.content?.some?.((content) => content?.type === "refusal" && content.refusal?.trim()),
+    ) || false
+  );
+}
+// YAN-1030: a blank 2xx answer is not servable. Probe streams for replay;
+// inspect a JSON clone so the original body remains untouched. Unknown JSON
+// shapes and parse failures fail open. Non-2xx answers pass through as-is
+// (`empty: false`): callers still check `response.ok` before committing pins.
+async function checkServedAnswer(res, { signal = null } = {}) {
+  if (!res?.ok || !res.body) return { empty: false, response: res };
+  const contentType = res.headers?.get?.("content-type") || "";
+  if (/text\/event-stream|ndjson/i.test(contentType)) {
+    // Reasoning-only streams are empty for serve purposes (YAN-1030): the probe
+    // waits for an ANSWER token (hasAnswerToken, fail-open inside the probe);
+    // the byte/time caps still release long reasoning preambles to the client.
+    const probe = await probeStreamHead(res, {
+      maxBytes: COMBO_STREAM_PROBE_MAX_BYTES,
+      maxMs: COMBO_STREAM_PROBE_MAX_MS,
+      signal,
+      isToken: hasAnswerToken,
+    });
+    return probe.outcome === "release"
+      ? { empty: false, response: probe.response }
+      : { empty: true, response: null };
+  }
+  try {
+    const json = await res.clone().json();
+    const empty = !extractPanelText(json) && !hasNonTextOutput(json);
+    return { empty, response: empty ? null : res };
+  } catch {
+    return { empty: false, response: res };
+  }
+}
 
 /**
  * Append a synthesized user turn to whichever message array the request format uses.
@@ -1545,6 +1619,7 @@ function providerOfModel(modelStr) {
  * Speed: quorum-grace collection caps the straggler penalty. Quality: the judge
  * runs the consensus/contradiction/blind-spot analysis before writing.
  *
+ * Empty 2xx judge/direct answers fall back once or become a 502 (YAN-1030).
  * Degrades gracefully: 0 panel answers -> 503, exactly 1 -> return it directly.
  *
  * @param {Object} options
@@ -1574,23 +1649,27 @@ export async function handleFusionChat({
   onAttempt,
   parentAttempt = null,
 }) {
-  // Observer wrapper: records each leaf call, never alters its result.
+  // Observer: records each leaf call, never alters its result.
+  const observe = (model, role, startedAt, info) => {
+    if (typeof onAttempt !== "function") return;
+    try {
+      onAttempt({ model, role, latencyMs: Date.now() - startedAt, ...info });
+    } catch {
+      // observer must never break routing
+    }
+  };
   const handleSingleModel =
     typeof onAttempt === "function"
-      ? async (b, m, isPanel, attempt) => {
+      ? async (b, m, isPanel, attempt, role = "judge") => {
           const startedAt = Date.now();
-          const role = isPanel ? "panel" : "judge";
-          const notify = (info) => {
-            try {
-              onAttempt({ model: m, role, latencyMs: Date.now() - startedAt, ...info });
-            } catch {
-              // observer must never break routing
-            }
-          };
+          if (isPanel) role = "panel";
           try {
             // Panels are forced non-streaming and carry their own pin scope;
-            // served calls (judge / direct answer) carry the ancestor attempt.
+            // served calls (judge / direct answer) carry a per-call scope.
             const res = await rawHandleSingleModel(b, m, isPanel, attempt);
+            // YAN-1030: a served call's 2xx is reported by serveServedCall after
+            // the emptiness check ("served" vs "skipped"/"empty"), not here.
+            if (!isPanel && res?.ok) return res;
             let errorText = "";
             try {
               const errJson = await res?.clone().json();
@@ -1603,14 +1682,18 @@ export async function handleFusionChat({
             } catch {
               errorText = res?.statusText || "";
             }
-            notify({
+            observe(m, role, startedAt, {
               status: res?.status ?? null,
               errorType: res?.ok ? null : classifyProbeError(res?.status, errorText),
-              outcome: res?.ok ? (isPanel ? "answered" : "served") : "skipped",
+              outcome: res?.ok ? "answered" : "skipped",
             });
             return res;
           } catch (error) {
-            notify({ status: null, errorType: "exception", outcome: "skipped" });
+            observe(m, role, startedAt, {
+              status: null,
+              errorType: "exception",
+              outcome: "skipped",
+            });
             throw error;
           }
         }
@@ -1623,9 +1706,58 @@ export async function handleFusionChat({
     });
   }
 
+  /**
+   * One served call (single-model direct, single survivor, judge, fallback) inside
+   * a served scope (YAN-1030): its account/combo pins and its stream's latency
+   * feedback reach the ancestor only once the answer is accepted and ok; a rejected
+   * empty answer releases its pins and leaves no failure/cancelled sample on the
+   * parent (which would block the fallback's own registration). The observer also
+   * hears "served" only for accepted answers, "skipped"/"empty" otherwise.
+   */
+  const serveServedCall = async (callBody, model, role) => {
+    const scope = createServedScope(parentAttempt);
+    const startedAt = Date.now();
+    let raw;
+    let checked;
+    try {
+      raw = await handleSingleModel(callBody, model, undefined, scope, role);
+      checked = await checkServedAnswer(raw, { signal: parentAttempt?.signal ?? null });
+    } catch (error) {
+      scope.close();
+      throw error;
+    }
+    // Non-2xx calls were already reported by the observer wrapper.
+    if (raw?.ok) {
+      observe(model, role, startedAt, {
+        status: raw.status ?? null,
+        errorType: checked.empty ? "empty" : null,
+        outcome: checked.empty ? "skipped" : "served",
+      });
+    }
+    // Client gone mid-check: hand back what we have, no fallback call.
+    if (parentAttempt?.signal?.aborted) {
+      scope.close();
+      return { aborted: true, response: checked.response ?? clientClosedResponse() };
+    }
+    if (checked.empty) {
+      scope.close();
+      return { empty: true, response: null };
+    }
+    if (checked.response?.ok) scope.win();
+    else scope.close();
+    return { empty: false, response: checked.response };
+  };
+
   // A single-model fusion has nothing to fuse — just answer directly.
   if (panel.length === 1) {
-    return handleSingleModel(body, panel[0], undefined, parentAttempt);
+    const direct = await serveServedCall(body, panel[0], "judge");
+    if (direct.aborted) return direct.response;
+    if (!direct.empty) return direct.response;
+    log.warn("FUSION", `Model ${panel[0]} returned an empty response`);
+    return new Response(JSON.stringify({ error: { message: "Fusion answer was empty" } }), {
+      status: 502,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const cfg = { ...FUSION_DEFAULTS, ...(tuning || {}) };
@@ -1711,16 +1843,48 @@ export async function handleFusionChat({
       // panel's provisional pins stay visible while it picks a member/account: it
       // re-asks the member and account that just answered, then its own pins win.
       log.info("FUSION", `Only ${answers[0].model} succeeded — answering directly (no fusion)`);
-      return await handleSingleModel(body, answers[0].model, undefined, parentAttempt);
+      const direct = await serveServedCall(body, answers[0].model, "judge");
+      if (direct.aborted) return direct.response;
+      if (!direct.empty) return direct.response;
+      log.warn("FUSION", `Model ${answers[0].model} returned an empty response`);
+      return new Response(JSON.stringify({ error: { message: "Fusion answer was empty" } }), {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     // 4. Judge analyzes + writes one final answer (streams to client if requested).
     const judgeBody = appendUserTurn(body, buildJudgePrompt(answers));
     log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
-    // Only served calls (judge / direct answer) forward the ancestor attempt.
-    const judged = await handleSingleModel(judgeBody, judge, undefined, parentAttempt);
-    if (judged?.ok) usedPanels = answers.map((a) => a.index);
-    return judged;
+    const judged = await serveServedCall(judgeBody, judge, "judge");
+    if (judged.aborted) return judged.response;
+    if (!judged.empty) {
+      if (judged.response?.ok) usedPanels = answers.map((a) => a.index);
+      return judged.response;
+    }
+
+    // Empty judge: retry the original request once against the first source.
+    log.warn("FUSION", `Judge ${judge} returned an empty response; trying ${answers[0].model}`);
+    // chatCore mutates the request body in place (RTK, systemInject), so the
+    // fallback gets its own clone — like raced members in runMember (YAN-1030).
+    let fallbackBody = body;
+    try {
+      fallbackBody = structuredClone(body);
+    } catch {
+      // not cloneable: reuse the original body
+    }
+    const fallback = await serveServedCall(fallbackBody, answers[0].model, "fallback");
+    if (fallback.aborted) return fallback.response;
+    if (!fallback.empty) {
+      if (fallback.response?.ok) usedPanels = [answers[0].index];
+      return fallback.response;
+    }
+    return new Response(
+      JSON.stringify({
+        error: { message: "Fusion judge and fallback returned an empty response" },
+      }),
+      { status: 502, headers: { "Content-Type": "application/json" } },
+    );
   } finally {
     // Panels whose answer the served response used confirm their pins (through every
     // enclosing level); failed, straggling or unused panels release them.
@@ -1744,5 +1908,54 @@ function createPanelScope(parentAttempt) {
   scope.isHedged = false;
   scope.serveOnly = true;
   scope.registerStream = () => null;
+  return scope;
+}
+
+/**
+ * Scope for one served fusion call (judge / fallback / direct answer, YAN-1030).
+ * Pins wait like a panel scope's. The stream's latency feedback is buffered and
+ * forwarded to the enclosing attempt only on win(): the stream registers while the
+ * response is built, before the emptiness check, so a rejected answer must neither
+ * record a failure/cancelled sample on the parent nor take its single registration
+ * slot away from the accepted fallback. close() drops the buffered feedback.
+ * @param {object|null} parentAttempt
+ */
+function createServedScope(parentAttempt) {
+  const scope = createPanelScope(parentAttempt);
+  // Served calls still see the client abort (chat.js 499 path), as when they
+  // received the ancestor attempt directly; panel scopes never carried a signal.
+  scope.signal = parentAttempt?.signal ?? null;
+  let accepted = false;
+  let registered = false;
+  let held = null;
+  let parentSettle = null;
+  const forward = (info) => {
+    try {
+      parentSettle?.(info);
+    } catch {
+      // feedback must never break streaming
+    }
+  };
+  scope.registerStream = () => {
+    if (scope.closed || !parentAttempt?.registerStream) return null;
+    registered = true;
+    return (info) => {
+      if (accepted) forward(info);
+      else if (!held && !scope.closed) held = { info };
+    };
+  };
+  const baseWin = scope.win;
+  scope.win = () => {
+    baseWin();
+    accepted = true;
+    if (!registered) return;
+    try {
+      parentSettle = parentAttempt.registerStream() ?? null;
+    } catch {
+      parentSettle = null;
+    }
+    if (held) forward(held.info);
+    held = null;
+  };
   return scope;
 }
