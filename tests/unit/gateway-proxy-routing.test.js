@@ -155,7 +155,11 @@ describe("STT", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toBeTruthy();
+    expect(result.status).toBe(502);
+    expect(result.error).toBe("Upstream proxy unavailable");
+    expect(result.error).not.toContain("[ProxyFetch]");
+    expect(result.error).not.toContain("strictProxy");
+    expect(result.error).not.toContain("refused");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
@@ -208,6 +212,11 @@ describe("TTS", () => {
     });
 
     expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.error).toBe("Upstream proxy unavailable");
+    expect(result.error).not.toContain("[ProxyFetch]");
+    expect(result.error).not.toContain("strictProxy");
+    expect(result.error).not.toContain("refused");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
@@ -272,6 +281,11 @@ describe("search", () => {
     });
 
     expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.error).toBe("Upstream proxy unavailable");
+    expect(result.error).not.toContain("[ProxyFetch]");
+    expect(result.error).not.toContain("strictProxy");
+    expect(result.error).not.toContain("refused");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
@@ -306,6 +320,11 @@ describe("web fetch", () => {
     });
 
     expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.error).toBe("Upstream proxy unavailable");
+    expect(result.error).not.toContain("[ProxyFetch]");
+    expect(result.error).not.toContain("strictProxy");
+    expect(result.error).not.toContain("refused");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
@@ -370,6 +389,43 @@ describe("web-cookie executors", () => {
       EXPECTED_PROXY,
     );
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+  it("Grok web returns a generic proxy error to the client", async () => {
+    mocks.proxyAwareFetch.mockRejectedValue(new Error(STRICT_ERROR));
+
+    const result = await new GrokWebExecutor().execute({
+      model: "grok-4",
+      body: { messages: [{ role: "user", content: "hi" }] },
+      stream: false,
+      credentials: { apiKey: "sso-cookie" },
+      proxyOptions: { ...PROXY_PSD },
+    });
+
+    expect(result.response.status).toBe(502);
+    const body = await result.response.text();
+    expect(body).toContain("Upstream proxy unavailable");
+    expect(body).not.toContain("[ProxyFetch]");
+    expect(body).not.toContain("strictProxy");
+    expect(body).not.toContain("refused");
+  });
+
+  it("Perplexity web returns a generic proxy error to the client", async () => {
+    mocks.proxyAwareFetch.mockRejectedValue(new Error(STRICT_ERROR));
+
+    const result = await new PerplexityWebExecutor().execute({
+      model: "sonar",
+      body: { messages: [{ role: "user", content: "hi" }] },
+      stream: false,
+      credentials: { apiKey: "session-token" },
+      proxyOptions: { ...PROXY_PSD },
+    });
+
+    expect(result.response.status).toBe(502);
+    const body = await result.response.text();
+    expect(body).toContain("Upstream proxy unavailable");
+    expect(body).not.toContain("[ProxyFetch]");
+    expect(body).not.toContain("strictProxy");
+    expect(body).not.toContain("refused");
   });
 });
 

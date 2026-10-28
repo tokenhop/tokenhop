@@ -8,6 +8,7 @@ import { getImageAdapter } from "./imageProviders/index.js";
 import { urlToBase64 } from "./imageProviders/_base.js";
 import { detectImageMime, parseDataUri } from "../translator/concerns/image.js";
 import { MAX_IMAGE_BYTES } from "../config/mediaConfig.js";
+import { mapProxyFetchError } from "../utils/proxyError.js";
 
 function serializeRequestBody(requestBody) {
   if (typeof FormData !== "undefined" && requestBody instanceof FormData) return requestBody;
@@ -240,6 +241,8 @@ export async function handleImageGenerationCore({
       parsed = await providerResponse.json();
     }
   } catch (parseError) {
+    const proxyError = mapProxyFetchError(parseError, "IMAGE");
+    if (proxyError) return createErrorResult(proxyError.status, proxyError.message);
     return createErrorResult(
       HTTP_STATUS.BAD_GATEWAY,
       parseError.message || `Invalid response from ${provider}`,

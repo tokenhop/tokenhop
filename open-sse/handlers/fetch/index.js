@@ -3,6 +3,7 @@
 
 import { proxyOptionsFromCredentials } from "../../utils/connectionProxyOptions.js";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { mapProxyFetchError } from "../../utils/proxyError.js";
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_FORMAT = "markdown";
@@ -48,6 +49,8 @@ async function tryFetch(url, init, timeoutMs, proxyOptions) {
     return { ok: true, res };
   } catch (err) {
     const isAbort = err?.name === "AbortError";
+    const proxyError = mapProxyFetchError(err, "FETCH");
+    if (proxyError) return { ok: false, timeout: false, error: proxyError.message };
     return { ok: false, timeout: isAbort, error: err?.message || String(err) };
   } finally {
     clearTimeout(timer);
@@ -194,6 +197,8 @@ export async function handleFetchCore({
     return { success: false, status: 400, error: `Unsupported provider: ${provider}` };
   } catch (err) {
     log?.("fetch handler error:", err?.message || err);
+    const proxyError = mapProxyFetchError(err, "FETCH");
+    if (proxyError) return { success: false, ...proxyError, error: proxyError.message };
     return { success: false, status: 502, error: err?.message || "Internal fetch error" };
   }
 }

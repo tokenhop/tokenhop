@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createErrorResult } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { clientErrorMessage } from "../utils/proxyError.js";
 import { getTtsAdapter, synthesizeViaConfig } from "./ttsProviders/index.js";
 
 // Re-export voice fetchers + voices APIs for backward compat with existing routes
@@ -87,6 +88,9 @@ export async function handleTtsCore({
       `Provider '${provider}' does not support TTS via this route.`,
     );
   } catch (err) {
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, err.message || "TTS synthesis failed");
+    return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      clientErrorMessage(err, "TTS synthesis failed", "TTS"),
+    );
   }
 }

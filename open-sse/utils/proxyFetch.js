@@ -5,6 +5,69 @@ import { dbg } from "./debugLog.js";
 
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
+// Mirror src/lib/network/relayTemplates.js: open-sse must not depend on src/.
+export const RELAY_TEMPLATE_VERSION = 2;
+export const RELAY_TEMPLATE_VERSION_HEADER = "x-relay-version";
+const RELAY_PROBE_SUCCESS_TTL_MS = 10 * 60 * 1000;
+const RELAY_PROBE_FAILURE_TTL_MS = 60 * 1000;
+const outdatedRelayWarnings = new Set();
+const relayVersionCache = new Map();
+
+function relayVersion(response) {
+  const raw = response.headers.get(RELAY_TEMPLATE_VERSION_HEADER);
+  if (raw === null) return 0;
+  const version = Number(raw);
+  return Number.isFinite(version) ? version : 0;
+}
+
+function warnOutdatedRelay(relayUrl) {
+  if (outdatedRelayWarnings.has(relayUrl)) return;
+  outdatedRelayWarnings.add(relayUrl);
+  // Never print the configured URL: it may contain credentials or query tokens.
+  console.warn("[ProxyFetch] Relay template is outdated and must be redeployed");
+}
+
+function outdatedRelayError() {
+  return Object.assign(
+    new Error("[ProxyFetch] Relay template is outdated and must be redeployed"),
+    {
+      code: "ERR_RELAY_OUTDATED",
+    },
+  );
+}
+
+function wrapRelayRequestError(error, options) {
+  if (options.signal?.aborted || error?.name === "AbortError") return error;
+  if (options.redirect === "error" && isRefusedRedirect(error)) return error;
+  return new Error("[ProxyFetch] Relay request failed", { cause: error });
+}
+
+/**
+ * Probe a deployed relay without forwarding any caller data. The versioned
+ * templates answer this missing-target probe with 400 plus x-relay-version.
+ * @param {string} relayUrl
+ * @param {{ signal?: AbortSignal }} [options]
+ * @returns {Promise<number>}
+ */
+export async function probeRelayVersion(relayUrl, { signal } = {}) {
+  const cached = relayVersionCache.get(relayUrl);
+  if (cached && cached.expiresAt > Date.now()) return cached.version;
+  let version = 0;
+  try {
+    const response = await originalFetch(relayUrl, { method: "GET", headers: {}, signal });
+    version = relayVersion(response);
+    await response.body?.cancel().catch(() => {});
+  } catch {
+    version = 0;
+  }
+  relayVersionCache.set(relayUrl, {
+    version,
+    expiresAt:
+      Date.now() +
+      (version >= RELAY_TEMPLATE_VERSION ? RELAY_PROBE_SUCCESS_TTL_MS : RELAY_PROBE_FAILURE_TTL_MS),
+  });
+  return version;
+}
 
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
 // Disabled: not in use. Kept commented for future re-enable.
@@ -428,8 +491,11 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
   const pinnedAddress = options?.pinnedAddress ?? null;
   if (pinnedAddress && (!options.dispatcher || options.redirect !== "manual")) {
-    throw new TypeError(
-      '[ProxyFetch] pinnedAddress requires a pinned dispatcher and redirect: "manual"',
+    throw Object.assign(
+      new TypeError(
+        '[ProxyFetch] pinnedAddress requires a pinned dispatcher and redirect: "manual"',
+      ),
+      { code: "ERR_PINNED_MISUSE" },
     );
   }
 
@@ -456,13 +522,32 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     // A caller-supplied dispatcher targets the original host; it must not be
     // used to reach the relay, which is a different origin.
     const { dispatcher: _droppedDispatcher, ...relayOptions } = options;
+    if (options.redirect === "error" || options.redirect === "manual") {
+      if (
+        (await probeRelayVersion(vercelRelayUrl, { signal: options.signal })) <
+        RELAY_TEMPLATE_VERSION
+      ) {
+        warnOutdatedRelay(vercelRelayUrl);
+        throw outdatedRelayError();
+      }
+    }
     try {
-      return await originalFetch(vercelRelayUrl, { ...relayOptions, headers: relayHeaders });
+      const response = await originalFetch(vercelRelayUrl, {
+        ...relayOptions,
+        headers: relayHeaders,
+      });
+      if (relayVersion(response) < RELAY_TEMPLATE_VERSION) warnOutdatedRelay(vercelRelayUrl);
+      return response;
     } catch (relayError) {
+      const wrapped = wrapRelayRequestError(relayError, options);
+      if (wrapped !== relayError) throw wrapped;
       if (options.redirect === "error" && isRefusedRedirect(relayError)) {
-        throw new TypeError('[ProxyFetch] Redirect refused (redirect: "error")', {
-          cause: relayError,
-        });
+        throw Object.assign(
+          new TypeError('[ProxyFetch] Redirect refused (redirect: "error")', {
+            cause: relayError,
+          }),
+          { code: "ERR_REDIRECT_REFUSED" },
+        );
       }
       throw relayError;
     }

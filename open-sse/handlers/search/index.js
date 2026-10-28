@@ -13,6 +13,7 @@ import { handleChatSearch } from "./chatSearch.js";
 import { runGlmMcpSearch } from "./glmMcp.js";
 import { fetchTrusted } from "../../../src/shared/utils/ssrfGuard.js";
 import { proxyOptionsFromCredentials } from "../../utils/connectionProxyOptions.js";
+import { mapProxyFetchError } from "../../utils/proxyError.js";
 
 // Providers whose built request needs more than one fetch + resp.json().
 // A runner returns the parsed body or throws an Error with `status`.
@@ -187,6 +188,8 @@ async function tryDedicatedProvider({
     };
   } catch (err) {
     clearTimeout(timer);
+    const proxyError = mapProxyFetchError(err, "SEARCH");
+    if (proxyError) return { success: false, ...proxyError, error: proxyError.message };
     if (err.status) {
       log?.error?.("SEARCH", `${provider.id} ${err.status}: ${err.message}`);
       return {

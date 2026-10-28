@@ -4,6 +4,7 @@ import {
   UPSTREAM_CODE_MARKER,
   BILLING_RULES,
 } from "../config/errorConfig.js";
+import { mapProxyFetchError } from "./proxyError.js";
 
 /**
  * Build OpenAI-compatible error response body
@@ -200,6 +201,8 @@ export function unavailableResponse(statusCode, message, retryAfter, retryAfterH
  * @returns {string} Formatted error message
  */
 export function formatProviderError(error, provider, model, statusCode) {
+  const proxyError = mapProxyFetchError(error, "CHAT");
+  if (proxyError) return proxyError.message;
   const code = statusCode || error.code || "FETCH_FAILED";
   const message = error.message || "Unknown error";
   // Expose low-level cause (e.g. UND_ERR_SOCKET, ECONNRESET, ETIMEDOUT) for diagnosing fetch failures

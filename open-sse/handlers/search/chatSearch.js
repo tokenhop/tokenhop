@@ -8,6 +8,7 @@ import { proxyOptionsFromCredentials } from "../../utils/connectionProxyOptions.
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { ANTIGRAVITY_IDE_USER_AGENT } from "../../providers/shared.js";
 import { buildKimiHeaders } from "../../config/appConstants.js";
+import { mapProxyFetchError } from "../../utils/proxyError.js";
 
 // Default search model + endpoint derive from registry searchViaChat (single source)
 const searchModel = (id) => PROVIDER_MEDIA[id]?.searchViaChat?.defaultModel;
@@ -551,6 +552,8 @@ export async function handleChatSearch({ provider, query, maxResults, model, cre
 
   const fail = (err) => {
     clearTimeout(timer);
+    const proxyError = mapProxyFetchError(err, "SEARCH");
+    if (proxyError) return { success: false, ...proxyError, error: proxyError.message };
     if (err?.name === "AbortError") {
       log?.warn?.(`[chatSearch] timeout provider=${provider}`);
       return { success: false, status: 504, error: "Upstream timeout" };

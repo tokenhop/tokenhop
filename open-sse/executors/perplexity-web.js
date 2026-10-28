@@ -3,6 +3,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";
 import { sseChunk } from "../utils/sse.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { mapProxyFetchError } from "../utils/proxyError.js";
 
 const PPLX_SSE_ENDPOINT = PROVIDERS["perplexity-web"].baseUrl;
 const PPLX_API_VERSION = "2.18";
@@ -444,7 +445,11 @@ function buildStreamingResponse(
               choices: [
                 {
                   index: 0,
-                  delta: { content: `[Stream error: ${err.message || String(err)}]` },
+                  delta: {
+                    content:
+                      mapProxyFetchError(err, "PPLX-WEB")?.message ||
+                      `[Stream error: ${err.message || String(err)}]`,
+                  },
                   finish_reason: "stop",
                   logprobs: null,
                 },
@@ -604,11 +609,13 @@ export class PerplexityWebExecutor extends BaseExecutor {
     try {
       response = await proxyAwareFetch(PPLX_SSE_ENDPOINT, fetchOptions, proxyOptions);
     } catch (err) {
+      const proxyError = mapProxyFetchError(err, "PPLX-WEB");
       log?.error?.("PPLX-WEB", `Fetch failed: ${err.message || String(err)}`);
       const errResp = new Response(
         JSON.stringify({
           error: {
-            message: `Perplexity connection failed: ${err.message || String(err)}`,
+            message:
+              proxyError?.message || `Perplexity connection failed: ${err.message || String(err)}`,
             type: "upstream_error",
           },
         }),
