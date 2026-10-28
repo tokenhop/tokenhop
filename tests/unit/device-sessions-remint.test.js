@@ -270,6 +270,20 @@ describe("YAN-751 re-mint keeps sid and exp", () => {
     expect(authToken()).toBeUndefined();
   });
 
+  it("mintSessionCookie: a re-mint whose row sv moved since the cookie fails closed (YAN-1220)", async () => {
+    const session = await signIn(t.a);
+    const from = await jwt.getDashboardAuthSession(session.token);
+    // The row was rewritten under the cookie (e.g. a concurrent re-mint).
+    adapter.run(`UPDATE sessions SET sv = sv + 5 WHERE id = ?`, [session.sid]);
+    const stale = row(session.sid).sv;
+    const user = await db.getUserUnscoped(t.a.user.id);
+    const claims = { sub: user.id, sv: user.sessionVersion, wid: t.a.personal, amr: ["pwd"] };
+    const cookieStore = await (await import("next/headers")).cookies();
+    expect(await mint.mintSessionCookie(cookieStore, post("/x", {}), claims, { from })).toBe(false);
+    expect(authToken()).toBeUndefined();
+    expect(row(session.sid).sv).toBe(stale); // never rebound
+  });
+
   it("workspace switch: a failed pref write after a concurrent sv bump leaves no live cookie", async () => {
     const session = await signIn(t.a);
     const realTx = adapter.transaction.bind(adapter);
@@ -312,6 +326,104 @@ describe("YAN-751 re-mint keeps sid and exp", () => {
     expect(authToken()).toBeUndefined();
     expect(await s.isLiveSession(session.token)).toBe(false);
     expect(row(session.sid).sv).toBe(sv); // never rebound to the bumped sv
+  });
+
+  // A concurrent sign-out-everywhere lands right after this flow's own bump: the
+  // re-mint must not absorb it by reading the fresher sv (YAN-1220).
+  function bumpAgainAfterNextBump() {
+    const realRun = adapter.run.bind(adapter);
+    let done = false;
+    return vi.spyOn(adapter, "run").mockImplementation((sql, params) => {
+      const result = realRun(sql, params);
+      if (!done && /sessionVersion = sessionVersion \+ 1/.test(sql)) {
+        done = true;
+        realRun(`UPDATE users SET sessionVersion = sessionVersion + 1 WHERE id = ?`, [t.a.user.id]);
+      }
+      return result;
+    });
+  }
+
+  async function expectNoLiveCookie(session) {
+    const token = authToken();
+    expect(token === undefined || (await s.isLiveSession(token)) === false).toBe(true);
+    expect(await s.isLiveSession(session.token)).toBe(false);
+  }
+
+  it("identity unlink: a sign-out-everywhere racing the bump leaves no live cookie (YAN-1220)", async () => {
+    const ida = await db.linkIdentityUnscoped(t.a.user.id, {
+      provider: "oidc",
+      issuer: "https://idp",
+      subject: "sub-a",
+    });
+    const session = await signIn(t.a);
+    const spy = bumpAgainAfterNextBump();
+    let res;
+    try {
+      res = await identityDELETE(
+        new NextRequest(`http://localhost/api/me/identities/${ida.id}`, { method: "DELETE" }),
+        { params: Promise.resolve({ id: ida.id }) },
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    expect(res.status).toBe(200); // the unlink itself committed
+    await expectNoLiveCookie(session);
+  });
+
+  it("change-password: a sign-out-everywhere before the write never commits the password (YAN-1220)", async () => {
+    const session = await signIn(t.a);
+    const { sv } = await jwt.getDashboardAuthSession(session.token);
+    // Call 1 is the liveness check; call 2 is the route reading the cookie it
+    // just validated. Land the bump between that read and the user read.
+    const realGet = jwt.getDashboardAuthSession;
+    let calls = 0;
+    const spy = vi.spyOn(jwt, "getDashboardAuthSession").mockImplementation(async (token) => {
+      const claims = await realGet(token);
+      if (++calls === 2) await db.bumpSessionVersion(t.a.user.id);
+      return claims;
+    });
+    let res;
+    try {
+      res = await changePOST(
+        post("/api/auth/change-password", { currentPassword: PW_A, newPassword: PW_NEW }),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    expect(calls).toBeGreaterThanOrEqual(2);
+    expect(res.status).toBe(401);
+    await expectNoLiveCookie(session);
+    // The signed-out session must not have changed the password.
+    expect(await bcrypt.compare(PW_A, await db.getUserPasswordHashUnscoped(t.a.user.id))).toBe(
+      true,
+    );
+    expect(row(session.sid).sv).toBe(sv);
+  });
+
+  it("change-password: a sign-out-everywhere right after the write leaves no live cookie (YAN-1220)", async () => {
+    const session = await signIn(t.a);
+    const spy = bumpAgainAfterNextBump();
+    let res;
+    try {
+      res = await changePOST(
+        post("/api/auth/change-password", { currentPassword: PW_A, newPassword: PW_NEW }),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    expect(res.status).toBe(401);
+    await expectNoLiveCookie(session);
+  });
+
+  it("revokeOwnerSessions: a sign-out-everywhere racing the bump leaves no live cookie (YAN-1220)", async () => {
+    const session = await signIn(t.a);
+    const spy = bumpAgainAfterNextBump();
+    try {
+      await s.revokeOwnerSessions(post("/api/settings", {}));
+    } finally {
+      spy.mockRestore();
+    }
+    await expectNoLiveCookie(session);
   });
 
   it("mintSessionCookie: a sub-less re-mint of a user-bound session fails and clears", async () => {

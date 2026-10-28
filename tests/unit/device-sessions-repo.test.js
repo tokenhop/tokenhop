@@ -132,18 +132,34 @@ describe("device sessions repo", () => {
     await repo.revokeSession(s.a.ctx, revoked);
     const sv = (await db.getUserUnscoped(s.a.user.id)).sessionVersion;
 
-    expect(await repo.rebindSessionUnscoped(live, s.a.user.id, sv + 7)).toBe(true);
+    expect(await repo.rebindSessionUnscoped(live, s.a.user.id, sv, sv + 7)).toBe(true);
     expect((await repo.getSessionForValidationUnscoped(live)).sv).toBe(sv + 7);
 
-    expect(await repo.rebindSessionUnscoped(live, s.b.user.id, sv + 9)).toBe(false);
-    expect(await repo.rebindSessionUnscoped(revoked, s.a.user.id, sv + 7)).toBe(false);
-    expect(await repo.rebindSessionUnscoped(expired, s.a.user.id, sv + 7)).toBe(false);
-    expect(await repo.rebindSessionUnscoped("no-such-sid", s.a.user.id, sv + 7)).toBe(false);
+    expect(await repo.rebindSessionUnscoped(live, s.b.user.id, sv + 7, sv + 9)).toBe(false);
+    expect(await repo.rebindSessionUnscoped(revoked, s.a.user.id, sv, sv + 7)).toBe(false);
+    expect(await repo.rebindSessionUnscoped(expired, s.a.user.id, sv, sv + 7)).toBe(false);
+    expect(await repo.rebindSessionUnscoped("no-such-sid", s.a.user.id, sv, sv + 7)).toBe(false);
 
     expect(rowOf(live).sv).toBe(sv + 7);
     expect(rowOf(revoked).sv).toBe(sv);
     expect(rowOf(revoked).revokedAt).toBeTruthy();
     expect(rowOf(expired).sv).toBe(sv);
+  });
+
+  it("rebindSessionUnscoped is a compare-and-set on the expected old sv (YAN-1220)", async () => {
+    const live = await mk(s.a);
+    const sv = (await db.getUserUnscoped(s.a.user.id)).sessionVersion;
+
+    expect(await repo.rebindSessionUnscoped(live, s.a.user.id, sv + 1, sv + 2)).toBe(false);
+    expect(rowOf(live).sv).toBe(sv);
+    expect(await repo.rebindSessionUnscoped(live, s.a.user.id, undefined, sv + 2)).toBe(false);
+    expect(rowOf(live).sv).toBe(sv);
+
+    expect(await repo.rebindSessionUnscoped(live, s.a.user.id, sv, sv + 2)).toBe(true);
+    expect(rowOf(live).sv).toBe(sv + 2);
+    // The row moved on: a second rebind from the old sv is stale.
+    expect(await repo.rebindSessionUnscoped(live, s.a.user.id, sv, sv + 3)).toBe(false);
+    expect(rowOf(live).sv).toBe(sv + 2);
   });
 
   it("revokeSessionUnscoped returns a boolean and never throws on a missing row", async () => {
