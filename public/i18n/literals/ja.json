@@ -345,6 +345,8 @@
   "CLI tools": "CLIツール",
   "CLI tools require local access": "CLI ツールにはローカルアクセスが必要です",
   "CLIProxyAPI auth JSON": "CLIProxyAPI Auth JSON",
+  "CSV for Excel, daily totals": "Excel用CSV、日別合計",
+  "CSV for Excel, per request": "Excel用CSV、リクエスト別",
   "CSV, daily totals": "CSV、日次合計",
   "CSV, per request": "CSV、リクエスト別",
   "Cache TTL": "キャッシュTTL",

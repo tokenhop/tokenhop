@@ -345,6 +345,8 @@
   "CLI tools": "Nástroje CLI",
   "CLI tools require local access": "Nástroje CLI vyžadují místní přístup",
   "CLIProxyAPI auth JSON": "CLIProxyAPI Auth JSON",
+  "CSV for Excel, daily totals": "CSV pro Excel, denní součty",
+  "CSV for Excel, per request": "CSV pro Excel, na požadavek",
   "CSV, daily totals": "CSV, denní součty",
   "CSV, per request": "CSV, za požadavek",
   "Cache TTL": "TTL mezipaměti",

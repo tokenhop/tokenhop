@@ -345,6 +345,8 @@
   "CLI tools": "CLI-työkalut",
   "CLI tools require local access": "CLI-työkalut vaativat paikallisen pääsyn",
   "CLIProxyAPI auth JSON": "CLIProxyAPI Auth JSON",
+  "CSV for Excel, daily totals": "CSV Excelille, päiväkohtaiset summat",
+  "CSV for Excel, per request": "CSV Excelille, pyyntökohtaisesti",
   "CSV, daily totals": "CSV, päivittäiset summat",
   "CSV, per request": "CSV, pyyntökohtaisesti",
   "Cache TTL": "Välimuistin TTL",

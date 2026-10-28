@@ -345,6 +345,8 @@
   "CLI tools": "CLI टूल्स",
   "CLI tools require local access": "CLI टूल्स के लिए लोकल एक्सेस ज़रूरी है",
   "CLIProxyAPI auth JSON": "CLIProxyAPI Auth JSON",
+  "CSV for Excel, daily totals": "Excel के लिए CSV, दैनिक योग",
+  "CSV for Excel, per request": "Excel के लिए CSV, प्रति अनुरोध",
   "CSV, daily totals": "CSV, दैनिक कुल योग",
   "CSV, per request": "CSV, प्रति अनुरोध",
   "Cache TTL": "कैश TTL",

@@ -345,6 +345,8 @@
   "CLI tools": "CLI eszközök",
   "CLI tools require local access": "A CLI-eszközök helyi hozzáférést igényelnek",
   "CLIProxyAPI auth JSON": "CLIProxyAPI Auth JSON",
+  "CSV for Excel, daily totals": "CSV Excelhez, napi összesítések",
+  "CSV for Excel, per request": "CSV Excelhez, kérésenként",
   "CSV, daily totals": "CSV, napi összesítés",
   "CSV, per request": "CSV, kérésenként",
   "Cache TTL": "Gyorsítótár TTL",

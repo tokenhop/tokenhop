@@ -364,6 +364,8 @@
   "CLI tools": "Alat CLI",
   "CLI tools require local access": "Alat CLI memerlukan akses lokal",
   "CLIProxyAPI auth JSON": "JSON Autentikasi CLIProxyAPI",
+  "CSV for Excel, daily totals": "CSV untuk Excel, total harian",
+  "CSV for Excel, per request": "CSV untuk Excel, per permintaan",
   "CSV, daily totals": "CSV, total harian",
   "CSV, per request": "CSV, per permintaan",
   "Cache TTL": "Tembolok TTL",

@@ -345,6 +345,8 @@
   "CLI tools": "أدوات CLI",
   "CLI tools require local access": "تتطلب أدوات CLI وصولاً محلياً",
   "CLIProxyAPI auth JSON": "CLIProxyAPI Auth JSON",
+  "CSV for Excel, daily totals": "CSV لإكسل، الإجماليات اليومية",
+  "CSV for Excel, per request": "CSV لإكسل، لكل طلب",
   "CSV, daily totals": "CSV, الإجماليات اليومية",
   "CSV, per request": "CSV, لكل طلب",
   "Cache TTL": "مدة صلاحية التخزين المؤقت",

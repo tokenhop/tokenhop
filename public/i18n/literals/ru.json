@@ -345,6 +345,8 @@
   "CLI tools": "Инструменты CLI",
   "CLI tools require local access": "Инструментам CLI нужен локальный доступ",
   "CLIProxyAPI auth JSON": "CLIProxyAPI Auth JSON",
+  "CSV for Excel, daily totals": "CSV для Excel, ежедневные итоги",
+  "CSV for Excel, per request": "CSV для Excel, по запросам",
   "CSV, daily totals": "CSV, по дням",
   "CSV, per request": "CSV, по запросам",
   "Cache TTL": "TTL кэша",

@@ -345,6 +345,8 @@
   "CLI tools": "CLI 工具",
   "CLI tools require local access": "CLI 工具需要本機存取",
   "CLIProxyAPI auth JSON": "CLIProxyAPI Auth JSON",
+  "CSV for Excel, daily totals": "適用於 Excel 的 CSV，每日總計",
+  "CSV for Excel, per request": "適用於 Excel 的 CSV，按請求",
   "CSV, daily totals": "CSV，每日總計",
   "CSV, per request": "CSV，每次請求",
   "Cache TTL": "快取 TTL",

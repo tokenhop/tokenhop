@@ -362,6 +362,8 @@
   "CLI tools": "ឧបករណ៍ CLI",
   "CLI tools require local access": "ឧបករណ៍ CLI ត្រូវការការចូលប្រើក្នុងម៉ាស៊ីន",
   "CLIProxyAPI auth JSON": "CLIProxyAPI Auth JSON",
+  "CSV for Excel, daily totals": "CSV សម្រាប់ អិចសែល, សរុបប្រចាំថ្ងៃ",
+  "CSV for Excel, per request": "CSV សម្រាប់ អិចសែល, តាមសំណើ",
   "CSV, daily totals": "CSV, សរុបប្រចាំថ្ងៃ",
   "CSV, per request": "CSV, តាមសំណើ",
   "Cache TTL": "ឃ្លាំងសម្ងាត់ TTL",
