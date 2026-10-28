@@ -345,6 +345,8 @@
   "CLI tools": "CLI araçları",
   "CLI tools require local access": "CLI araçları yerel erişim gerektirir",
   "CLIProxyAPI auth JSON": "CLIProxyAPI Auth JSON",
+  "CSV for Excel, daily totals": "Excel için CSV, günlük toplamlar",
+  "CSV for Excel, per request": "Excel için CSV, istek başına",
   "CSV, daily totals": "CSV, günlük toplamlar",
   "CSV, per request": "CSV, istek başına",
   "Cache TTL": "Önbellek TTL",

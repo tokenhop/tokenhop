@@ -345,6 +345,8 @@
   "CLI tools": "Công cụ CLI",
   "CLI tools require local access": "Công cụ CLI yêu cầu truy cập cục bộ",
   "CLIProxyAPI auth JSON": "CLIProxyAPI Auth JSON",
+  "CSV for Excel, daily totals": "CSV cho Excel, tổng theo ngày",
+  "CSV for Excel, per request": "CSV cho Excel, theo yêu cầu",
   "CSV, daily totals": "CSV, tổng theo ngày",
   "CSV, per request": "CSV, theo từng yêu cầu",
   "Cache TTL": "TTL bộ nhớ đệm",

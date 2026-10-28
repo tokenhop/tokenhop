@@ -364,6 +364,8 @@
   "CLI tools": "เครื่องมือ CLI",
   "CLI tools require local access": "เครื่องมือ CLI ต้องเข้าถึงจากเครื่องโฮสต์",
   "CLIProxyAPI auth JSON": "CLIProxyAPI Auth JSON",
+  "CSV for Excel, daily totals": "CSV Excel, ยอดรวมรายวัน",
+  "CSV for Excel, per request": "CSV Excel, ต่อคำขอ",
   "CSV, daily totals": "CSV, ยอดรวมรายวัน",
   "CSV, per request": "CSV, ต่อคำขอ",
   "Cache TTL": "TTL ของแคช",

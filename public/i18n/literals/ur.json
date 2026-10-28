@@ -345,6 +345,8 @@
   "CLI tools": "CLI ٹولز",
   "CLI tools require local access": "CLI ٹولز کے لیے مقامی رسائی درکار ہے",
   "CLIProxyAPI auth JSON": "CLIProxyAPI Auth JSON",
+  "CSV for Excel, daily totals": "ایکسل کے لیے CSV، روزانہ کل",
+  "CSV for Excel, per request": "ایکسل کے لیے CSV، فی درخواست",
   "CSV, daily totals": "CSV, یومیہ مجموعے",
   "CSV, per request": "CSV, فی درخواست",
   "Cache TTL": "کیش TTL",

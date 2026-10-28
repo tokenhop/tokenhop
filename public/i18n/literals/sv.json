@@ -345,6 +345,8 @@
   "CLI tools": "CLI-verktyg",
   "CLI tools require local access": "CLI-verktyg kräver lokal åtkomst",
   "CLIProxyAPI auth JSON": "CLIProxyAPI Auth JSON",
+  "CSV for Excel, daily totals": "CSV Excel, dagliga summor",
+  "CSV for Excel, per request": "CSV Excel, per begäran",
   "CSV, daily totals": "CSV, dagliga totaler",
   "CSV, per request": "CSV, per förfrågan",
   "Cache TTL": "Cache-TTL",
