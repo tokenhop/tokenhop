@@ -712,7 +712,7 @@ describe("migration 022 (YAN-1702 untracked-day partial indexes)", () => {
     expect(indexNames(db22)).not.toContain("idx_ur_untracked_ws");
 
     runVersionedMigrations(db22);
-    for (const name of ["idx_ur_ws_date", "idx_ur_key"]) {
+    for (const name of ["idx_ur_untracked", "idx_ur_untracked_ws"]) {
       expect(indexNames(db22)).toContain(name);
     }
 
@@ -761,8 +761,8 @@ describe("migration 022 (YAN-1702 untracked-day partial indexes)", () => {
         .join(" | ");
 
     // Unscoped window and all-time probes use the dateKey partial index.
-    expect(planOf(capture(null, "2026-01-01", "2026-02-01"))).toContain("idx_ur_untracked");
-    expect(planOf(capture(null))).toContain("idx_ur_untracked");
+    expect(planOf(capture(null, "2026-01-01", "2026-02-01"))).toMatch(/idx_ur_untracked\b(?!_ws)/);
+    expect(planOf(capture(null))).toMatch(/idx_ur_untracked\b(?!_ws)/);
     // Workspace-scoped probes use the workspace-leading partial index.
     expect(planOf(capture({ workspaceId: "ws-b" }, "2026-01-01", "2026-02-01"))).toContain(
       "idx_ur_untracked_ws",
