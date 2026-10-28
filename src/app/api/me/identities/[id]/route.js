@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 import { requireMultiUser } from "@/lib/users/featureSwitch.js";
 import { getPrincipal, remintClaims } from "@/lib/users/session.js";
 import { mintSessionCookie } from "@/lib/users/sessionMint.js";
-import { getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
+import { clearDashboardAuthCookie, getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
 import { isCrossSite } from "@/lib/auth/sameOrigin.js";
 import { bumpSessionVersion, unlinkSsoIdentityGuarded } from "@/lib/db/index.js";
 import { audit } from "@/lib/users/audit.js";
@@ -55,9 +55,15 @@ export async function DELETE(request, { params }) {
 
     await bumpSessionVersion(principal.userId);
     const claims = await remintClaims(session, session.wid, { dropProvider: provider });
-    if (claims?.sub) {
-      // The unlink already committed: a revoked session just ends with a cleared cookie.
+    // The unlink already committed. A sign-out-everywhere landing around our own
+    // bump leaves claims.sv past session.sv + 1: that session must end, never
+    // be re-minted onto the newer sv (YAN-1220).
+    const raced = Number.isInteger(session.sv) && claims?.sv !== session.sv + 1;
+    if (claims?.sub && !raced) {
+      // A revoked session just ends with a cleared cookie.
       await mintSessionCookie(cookieStore, request, claims, { from: session });
+    } else if (raced) {
+      clearDashboardAuthCookie(cookieStore);
     }
     await audit({ principal, request }, "identity.unlink", { type: "identity", id });
     return json({ success: true });

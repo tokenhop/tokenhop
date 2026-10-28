@@ -124,11 +124,16 @@ export async function POST(request) {
     });
     if (invalid) return json(invalid, 400);
 
+    // Full session: pin the write to the session's own sv, so a sign-out-everywhere
+    // since it was minted is never absorbed by the bump below (YAN-1220).
+    const expectedSessionVersion = Number.isInteger(subject.session?.sv)
+      ? subject.session.sv
+      : user.sessionVersion;
     try {
       await setUserPasswordUnscoped(user.id, {
         passwordHash: await hashPassword(body.newPassword),
         mustChangePassword: false,
-        expectedSessionVersion: user.sessionVersion,
+        expectedSessionVersion,
       });
     } catch (err) {
       if (err?.code === "STALE") return expired(cookieStore);
@@ -138,6 +143,11 @@ export async function POST(request) {
     // Fresh claims from the post-commit row: never reuse the old token's sv.
     const claims = await passwordSessionClaims(user.id, subject.wid);
     if (!claims?.sub) return expired(cookieStore);
+    // Our write bumped sv once: anything past session.sv + 1 means a concurrent
+    // sign-out-everywhere, which must end this session, not be re-minted over.
+    if (Number.isInteger(subject.session?.sv) && claims.sv !== subject.session.sv + 1) {
+      return expired(cookieStore);
+    }
     // Full session: keep its sid and original exp (D3). Restricted forced
     // change: fresh session row (D7).
     const minted = subject.session

@@ -6,7 +6,11 @@
 // YAN-356: lazy owner bootstrap on the multi-user paths, sessionClaims(method,
 // identity) for SSO owner linking, singleUserMode + owner password hash sync.
 import { cookies, headers } from "next/headers";
-import { getDashboardAuthSession, verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import {
+  clearDashboardAuthCookie,
+  getDashboardAuthSession,
+  verifyDashboardAuthToken,
+} from "@/lib/auth/dashboardSession";
 import { cliTokenAcceptedWith } from "@/lib/auth/cliTokenPolicy.js";
 import {
   bumpSessionVersion,
@@ -429,6 +433,12 @@ export async function revokeOwnerSessions(request, { passwordHash } = {}) {
   if (!ownSession) return;
   const claims = await sessionClaims("pwd");
   if (!claims) return; // refused (e.g. owner owes a rotation): never re-mint
+  // A sub session's re-mint must land on exactly our own bump; a concurrent
+  // sign-out-everywhere in the window ends the session instead (YAN-1220).
+  if (session?.sub && Number.isInteger(session.sv) && claims.sv !== session.sv + 1) {
+    clearDashboardAuthCookie(cookieStore);
+    return;
+  }
   claims.amr = Array.isArray(session.amr) ? session.amr : ["pwd"];
   // Keep the caller's active workspace if it is still one of the owner's.
   const ownWorkspaces = (await listWorkspaces({ userId: owner.id })).map((w) => w.id);

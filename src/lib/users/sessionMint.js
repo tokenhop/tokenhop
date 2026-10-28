@@ -54,7 +54,8 @@ export async function mintSessionCookie(cookieStore, request, claims, { from } =
       clearDashboardAuthCookie(cookieStore);
       return false;
     }
-    if (!(await rebindSessionUnscoped(from.sid, claims.sub, claims.sv))) {
+    // Compare-and-set from the replaced cookie's sv (YAN-1220).
+    if (!(await rebindSessionUnscoped(from.sid, claims.sub, from.sv, claims.sv))) {
       clearDashboardAuthCookie(cookieStore);
       return false;
     }

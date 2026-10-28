@@ -100,13 +100,18 @@ export async function touchSessionUnscoped(id) {
   );
 }
 
-/** Re-mint path: move a live row to the new `sv`. False when revoked/expired/foreign. */
-export async function rebindSessionUnscoped(id, userId, sv) {
+/**
+ * Re-mint path: move a live row from `expectedSv` (the sv on the cookie being
+ * replaced) to the new `sv`. Compare-and-set: false when revoked/expired/foreign
+ * or the row's sv no longer matches, so a concurrent rewrite fails closed.
+ */
+export async function rebindSessionUnscoped(id, userId, expectedSv, sv) {
+  if (!Number.isInteger(expectedSv)) return false;
   const db = await getAdapter();
   const { changes } = db.run(
     `UPDATE sessions SET sv = ?
-     WHERE id = ? AND userId = ? AND revokedAt IS NULL AND expiresAt > ?`,
-    [sv, id, userId, new Date().toISOString()],
+     WHERE id = ? AND userId = ? AND sv = ? AND revokedAt IS NULL AND expiresAt > ?`,
+    [sv, id, userId, expectedSv, new Date().toISOString()],
   );
   dropCache(id);
   return changes > 0;
