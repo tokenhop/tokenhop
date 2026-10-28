@@ -56,10 +56,10 @@ describe("relay pool test version status", () => {
         lastError: "Relay template is outdated — redeploy it",
       }),
     );
-    expect(mocks.probeRelayVersion).toHaveBeenCalledWith(
-      "https://relay.example.com/forward",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
+    expect(mocks.probeRelayVersion).toHaveBeenCalledWith("https://relay.example.com/forward", {
+      fresh: true,
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("flags an old probe version", async () => {

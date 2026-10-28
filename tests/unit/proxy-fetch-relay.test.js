@@ -5,6 +5,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
 afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -18,6 +20,84 @@ describe("proxyAwareFetch Vercel relay", () => {
         : new Response("probe", { status: 400, headers: { "x-relay-version": "2" } }),
     );
 
+  it("rethrows a caller abort during the probe without caching a version", async () => {
+    const pendingFetches = [];
+    const fetchStub = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          pendingFetches.push(resolve);
+        }),
+    );
+    vi.stubGlobal("fetch", fetchStub);
+    vi.resetModules();
+    const { probeRelayVersion } = await import("../../open-sse/utils/proxyFetch.js");
+    const controller = new AbortController();
+
+    const first = probeRelayVersion("https://relay.example.com/forward", {
+      signal: controller.signal,
+    });
+    controller.abort(new Error("caller stopped"));
+    await expect(first).rejects.toThrow("caller stopped");
+    const second = probeRelayVersion("https://relay.example.com/forward", { fresh: true });
+    await vi.waitFor(() => expect(fetchStub).toHaveBeenCalledTimes(2));
+    pendingFetches[0](new Response("probe", { status: 400 }));
+    pendingFetches[1](new Response("probe", { status: 400 }));
+    await expect(second).resolves.toBe(0);
+  });
+
+  it("reports a probe network failure without treating it as outdated", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("fetch failed", { cause: new Error("relay host refused") });
+      }),
+    );
+    vi.resetModules();
+    const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
+
+    const err = await proxyAwareFetch(
+      "https://example.com/x",
+      { redirect: "manual" },
+      { vercelRelayUrl: "https://relay.example.com/forward" },
+    ).catch((e) => e);
+
+    expect(err.message).toBe("[ProxyFetch] Relay request failed");
+    expect(err.code).not.toBe("ERR_RELAY_OUTDATED");
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("outdated"));
+  });
+
+  it("bounds an unresponsive probe with an internal timeout", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url, options) => options.signal.reason),
+    );
+    vi.resetModules();
+    const { probeRelayVersion } = await import("../../open-sse/utils/proxyFetch.js");
+
+    await expect(probeRelayVersion("https://relay.example.com/forward")).rejects.toMatchObject({
+      message: "[ProxyFetch] Relay request failed",
+    });
+  });
+
+  it("deduplicates concurrent cold-cache probes", async () => {
+    let resolveProbe;
+    const fetchStub = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveProbe = resolve;
+        }),
+    );
+    vi.stubGlobal("fetch", fetchStub);
+    vi.resetModules();
+    const { probeRelayVersion } = await import("../../open-sse/utils/proxyFetch.js");
+
+    const first = probeRelayVersion("https://relay.example.com/forward");
+    const second = probeRelayVersion("https://relay.example.com/forward");
+    expect(fetchStub).toHaveBeenCalledTimes(1);
+    resolveProbe(new Response("probe", { status: 400, headers: { "x-relay-version": "2" } }));
+    await expect(Promise.all([first, second])).resolves.toEqual([2, 2]);
+  });
   it("refuses an old relay before sending the redirect-sensitive request", async () => {
     const fetchStub = vi.fn(async (_url, options = {}) => {
       if (!options.headers?.["x-relay-target"]) {

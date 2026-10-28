@@ -18,7 +18,7 @@ async function testVercelRelay(relayUrl, timeoutMs = 10000) {
       },
       signal: controller.signal,
     });
-    const version = await probeRelayVersion(relayUrl, { signal: controller.signal });
+    const version = await probeRelayVersion(relayUrl, { signal: controller.signal, fresh: true });
     const relayOutdated = version < RELAY_TEMPLATE_VERSION;
     await res.body?.cancel().catch(() => {});
     return {

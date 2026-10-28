@@ -15,6 +15,25 @@ export const UPSTREAM_REDIRECT_REFUSED_ERROR = Object.freeze({
   message: "Upstream redirect refused",
 });
 
+function scrubSensitiveUrlText(text) {
+  return String(text)
+    .replace(/\/\/[^/@\s]+@/g, "//")
+    .replace(/(https?:\/\/[^\s?#]+)[?#][^\s)]*/g, "$1");
+}
+
+function proxyErrorDetail(error) {
+  const parts = [];
+  const seen = new Set();
+  let current = error;
+  for (let depth = 0; current && depth < 4 && !seen.has(current); depth += 1) {
+    seen.add(current);
+    const message = scrubSensitiveUrlText(current.message || String(current));
+    parts.push(current.code ? `${current.code}: ${message}` : message);
+    current = current.cause;
+  }
+  return parts.join(" | caused by: ");
+}
+
 /**
  * Identify failures raised by the outbound proxy layer rather than a provider.
  * @param {unknown} error
@@ -36,7 +55,7 @@ export function isProxyFetchError(error) {
  */
 export function mapProxyFetchError(error, context = "Gateway") {
   if (!isProxyFetchError(error)) return null;
-  const detail = error instanceof Error ? error.stack || error.message : String(error);
+  const detail = proxyErrorDetail(error);
   console.warn(`[${context}] Upstream proxy request failed: ${detail}`);
   if (error.code === "ERR_REDIRECT_REFUSED") return { ...UPSTREAM_REDIRECT_REFUSED_ERROR };
   return { ...UPSTREAM_PROXY_ERROR };

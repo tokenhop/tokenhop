@@ -12,6 +12,8 @@ const RELAY_PROBE_SUCCESS_TTL_MS = 10 * 60 * 1000;
 const RELAY_PROBE_FAILURE_TTL_MS = 60 * 1000;
 const outdatedRelayWarnings = new Set();
 const relayVersionCache = new Map();
+const relayProbePending = new Map();
+const RELAY_PROBE_TIMEOUT_MS = 5000;
 
 function relayVersion(response) {
   const raw = response.headers.get(RELAY_TEMPLATE_VERSION_HEADER);
@@ -36,37 +38,79 @@ function outdatedRelayError() {
   );
 }
 
+function relayRequestFailed(cause) {
+  return new Error("[ProxyFetch] Relay request failed", { cause });
+}
+
 function wrapRelayRequestError(error, options) {
   if (options.signal?.aborted || error?.name === "AbortError") return error;
   if (options.redirect === "error" && isRefusedRedirect(error)) return error;
-  return new Error("[ProxyFetch] Relay request failed", { cause: error });
+  return relayRequestFailed(error);
+}
+
+function throwIfProbeAborted(signal) {
+  if (!signal?.aborted) return;
+  if (signal.reason instanceof Error) throw signal.reason;
+  throw new DOMException("The operation was aborted", "AbortError");
+}
+
+function raceProbeCaller(pending, signal) {
+  throwIfProbeAborted(signal);
+  if (!signal) return pending;
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      try {
+        throwIfProbeAborted(signal);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+async function fetchRelayVersion(relayUrl) {
+  const signal = AbortSignal.timeout(RELAY_PROBE_TIMEOUT_MS);
+  try {
+    const response = await originalFetch(relayUrl, { method: "GET", headers: {}, signal });
+    const version = relayVersion(response);
+    await response.body?.cancel().catch(() => {});
+    relayVersionCache.set(relayUrl, {
+      version,
+      expiresAt:
+        Date.now() +
+        (version >= RELAY_TEMPLATE_VERSION
+          ? RELAY_PROBE_SUCCESS_TTL_MS
+          : RELAY_PROBE_FAILURE_TTL_MS),
+    });
+    return version;
+  } catch (error) {
+    relayVersionCache.delete(relayUrl);
+    throw relayRequestFailed(error);
+  }
 }
 
 /**
  * Probe a deployed relay without forwarding any caller data. The versioned
  * templates answer this missing-target probe with 400 plus x-relay-version.
+ * Only an answered probe is cached; caller aborts and transport failures are not.
  * @param {string} relayUrl
- * @param {{ signal?: AbortSignal }} [options]
+ * @param {{ signal?: AbortSignal, fresh?: boolean }} [options]
  * @returns {Promise<number>}
  */
-export async function probeRelayVersion(relayUrl, { signal } = {}) {
+export async function probeRelayVersion(relayUrl, { signal, fresh = false } = {}) {
+  throwIfProbeAborted(signal);
   const cached = relayVersionCache.get(relayUrl);
-  if (cached && cached.expiresAt > Date.now()) return cached.version;
-  let version = 0;
-  try {
-    const response = await originalFetch(relayUrl, { method: "GET", headers: {}, signal });
-    version = relayVersion(response);
-    await response.body?.cancel().catch(() => {});
-  } catch {
-    version = 0;
+  if (!fresh && cached && cached.expiresAt > Date.now()) return cached.version;
+  let pending = fresh ? null : relayProbePending.get(relayUrl);
+  if (!pending) {
+    pending = fetchRelayVersion(relayUrl).finally(() => {
+      if (relayProbePending.get(relayUrl) === pending) relayProbePending.delete(relayUrl);
+    });
+    if (!fresh) relayProbePending.set(relayUrl, pending);
   }
-  relayVersionCache.set(relayUrl, {
-    version,
-    expiresAt:
-      Date.now() +
-      (version >= RELAY_TEMPLATE_VERSION ? RELAY_PROBE_SUCCESS_TTL_MS : RELAY_PROBE_FAILURE_TTL_MS),
-  });
-  return version;
+  return raceProbeCaller(pending, signal);
 }
 
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
@@ -383,6 +427,14 @@ async function fetchViaProxy(url, options, proxyUrl, pinnedAddress) {
 function isRefusedRedirect(error) {
   return error?.cause?.message === "unexpected redirect";
 }
+function refusedRedirectError(cause) {
+  return Object.assign(
+    new TypeError('[ProxyFetch] Redirect refused (redirect: "error")', { cause }),
+    {
+      code: "ERR_REDIRECT_REFUSED",
+    },
+  );
+}
 
 // Statuses whose Response must not carry a body (WHATWG Response constructor throws).
 const NULL_BODY_STATUSES = new Set([204, 205, 304]);
@@ -542,12 +594,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       const wrapped = wrapRelayRequestError(relayError, options);
       if (wrapped !== relayError) throw wrapped;
       if (options.redirect === "error" && isRefusedRedirect(relayError)) {
-        throw Object.assign(
-          new TypeError('[ProxyFetch] Redirect refused (redirect: "error")', {
-            cause: relayError,
-          }),
-          { code: "ERR_REDIRECT_REFUSED" },
-        );
+        throw refusedRedirectError(relayError);
       }
       throw relayError;
     }
@@ -578,9 +625,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
         // An aborted request keeps its own error and is never retried.
         if (options.signal?.aborted) throw proxyError;
         if (options.redirect === "error" && isRefusedRedirect(proxyError)) {
-          throw new TypeError('[ProxyFetch] Redirect refused (redirect: "error")', {
-            cause: proxyError,
-          });
+          throw refusedRedirectError(proxyError);
         }
         if (proxyOptions?.strictProxy === true) {
           throw new Error(
@@ -611,9 +656,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       // An aborted request keeps its own error and is never retried.
       if (options.signal?.aborted) throw proxyError;
       if (options.redirect === "error" && isRefusedRedirect(proxyError)) {
-        throw new TypeError('[ProxyFetch] Redirect refused (redirect: "error")', {
-          cause: proxyError,
-        });
+        throw refusedRedirectError(proxyError);
       }
       // If strictProxy is enabled, fail hard instead of falling back to direct
       if (proxyOptions?.strictProxy === true) {

@@ -34,6 +34,11 @@ const EXPECTED_PROXY = expect.objectContaining({
   connectionProxyPoolId: "pool-1",
 });
 const STRICT_ERROR = "[ProxyFetch] Proxy required but failed (strictProxy=true): refused";
+const PROXY_CAUSE_ERROR = new Error("[ProxyFetch] Relay request failed", {
+  cause: new TypeError("connect https://user:pass@relay.example/forward?token=secret failed", {
+    cause: Object.assign(new Error("socket refused"), { code: "ECONNREFUSED" }),
+  }),
+});
 
 const creds = (extra = {}) => ({
   apiKey: "sk-x",
@@ -426,6 +431,24 @@ describe("web-cookie executors", () => {
     expect(body).not.toContain("[ProxyFetch]");
     expect(body).not.toContain("strictProxy");
     expect(body).not.toContain("refused");
+  });
+});
+
+describe("proxy error diagnostics", () => {
+  it("logs bounded cause detail without URL credentials or query values", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { mapProxyFetchError } = await import("../../open-sse/utils/proxyError.js");
+
+    expect(mapProxyFetchError(PROXY_CAUSE_ERROR, "TEST")).toEqual({
+      status: 502,
+      message: "Upstream proxy unavailable",
+    });
+    const log = String(warn.mock.calls[0][0]);
+    expect(log).toContain("ECONNREFUSED: socket refused");
+    expect(log).toContain("relay.example/forward");
+    expect(log).not.toContain("user:pass");
+    expect(log).not.toContain("token=secret");
+    expect(log).not.toContain("stack");
   });
 });
 
