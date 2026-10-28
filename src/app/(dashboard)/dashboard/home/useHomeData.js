@@ -60,7 +60,7 @@ export function useHomeChart(period, refreshKey = 0) {
  * @param {"today"|"24h"|"7d"|"30d"|"60d"|"90d"|"all"|null} period
  * @param {number} [refreshKey] bump to re-read
  * @returns {{ savings: object|null, loading: boolean, error: null, savingsUnavailable: boolean }}
- *   `savings` also carries `currentTotals`/`previous` ({tokensSavedEst, requestsWithSavings}) for the trend.
+ *   `savings` also carries `currentTotals`/`previous` ({tokensSavedEst, requestsWithSavings, costSavedEst}) for the trend.
  */
 export function useHomeSavings(period, refreshKey = 0) {
   const { data, loading } = useHomeResource(

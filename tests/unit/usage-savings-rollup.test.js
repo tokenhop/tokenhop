@@ -8,7 +8,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { periodStart } from "@/shared/utils/period.js";
-import { rebuildRollupFromHistoryUnscoped } from "@/lib/db/repos/usageRollupRepo.js";
+import {
+  hasUntrackedRollupDays,
+  rebuildRollupFromHistoryUnscoped,
+} from "@/lib/db/repos/usageRollupRepo.js";
 import { getPricingForModel } from "@/lib/db/repos/pricingRepo.js";
 import { calculateCostFromTokens } from "open-sse/providers/pricing.js";
 import { seedTenancy } from "../setup/tenancyHarness.js";
@@ -621,5 +624,155 @@ describe("prunedBeforeTracking (rollup days without lastUsedAt)", () => {
     expect(await flag({ workspaceId: t.a.personal }, "90d")).toBe(true);
     expect(await flag({ workspaceId: t.b.personal }, "90d")).toBe(false);
     expect(await flag({ workspaceId: t.b.personal }, "all")).toBe(false);
+  });
+});
+
+describe("getHomeSummary prunedBeforeTracking (YAN-1701)", () => {
+  let t;
+
+  beforeEach(async () => {
+    t = await seedTenancy();
+  });
+
+  // A pre-migration-021 day whose history was pruned: requests, no lastUsedAt.
+  function seedUntrackedHome(dateKey, workspaceId = "") {
+    adapter.run(
+      `INSERT INTO usageRollup (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost, lastUsedAt)
+       VALUES (?, ?, '', 'local-no-key', 'p', 'm', 'c1', '/v1/chat', 4, 40, 0, 0, 0.1, '')`,
+      [dateKey, workspaceId],
+    );
+  }
+
+  const summaryFlag = async (ctx, period) =>
+    (await db.getHomeSummary(ctx, period, NOW)).prunedBeforeTracking;
+
+  it("is true for a rollup window holding an untracked day", async () => {
+    seedUntrackedHome("2026-09-25"); // inside 7d (2026-09-23..29)
+    expect(await summaryFlag(null, "7d")).toBe(true);
+    expect(await summaryFlag(null, "90d")).toBe(true);
+    expect(await summaryFlag(null, "all")).toBe(true);
+  });
+
+  it("is false for a window without an untracked day", async () => {
+    seedUntrackedHome("2026-08-01"); // 59 days out: inside 90d/all, outside 30d/7d
+    expect(await summaryFlag(null, "7d")).toBe(false);
+    expect(await summaryFlag(null, "30d")).toBe(false);
+    expect(await summaryFlag(null, "90d")).toBe(true);
+    // A normally written row never flags.
+    await save({ timestamp: NOW - 2 * 86_400_000, meta: savings({ rtk: method(10, 100) }, 120) });
+    expect(await summaryFlag(null, "30d")).toBe(false);
+  });
+
+  it("is false for the history-backed today/24h windows", async () => {
+    seedUntrackedHome("2026-09-29");
+    expect(await summaryFlag(null, "today")).toBe(false);
+    expect(await summaryFlag(null, "24h")).toBe(false);
+  });
+
+  it("is scoped to the caller's workspace", async () => {
+    seedUntrackedHome("2026-09-20", t.a.personal);
+    expect(await summaryFlag({ workspaceId: t.a.personal }, "90d")).toBe(true);
+    expect(await summaryFlag({ workspaceId: t.b.personal }, "90d")).toBe(false);
+    expect(await summaryFlag(null, "90d")).toBe(true); // unscoped sees every workspace
+  });
+});
+
+describe("migration 022 (YAN-1702 untracked-day partial indexes)", () => {
+  let dir;
+  let db22;
+
+  beforeEach(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-022-"));
+    const { createSqlJsAdapter } = await import("@/lib/db/adapters/sqljsAdapter.js");
+    db22 = await createSqlJsAdapter(path.join(dir, "pre022.sqlite"));
+  });
+
+  afterEach(() => {
+    db22.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const indexNames = (target) =>
+    target
+      .all(`PRAGMA index_list(usageRollup)`)
+      .map((i) => i.name)
+      .filter((n) => !n.startsWith("sqlite_"));
+
+  it("applies on an existing DB and is idempotent", async () => {
+    const { runVersionedMigrations } = await import("@/lib/db/migrate.js");
+    const { MIGRATIONS } = await import("@/lib/db/migrations/index.js");
+    const m022 = (await import("@/lib/db/migrations/022-usage-untracked-index.js")).default;
+    expect(MIGRATIONS.find((m) => m.version === 22)).toBe(m022);
+
+    runVersionedMigrations(
+      db22,
+      MIGRATIONS.filter((m) => m.version < 22),
+    );
+    expect(indexNames(db22)).not.toContain("idx_ur_untracked");
+    expect(indexNames(db22)).not.toContain("idx_ur_untracked_ws");
+
+    runVersionedMigrations(db22);
+    for (const name of ["idx_ur_untracked", "idx_ur_untracked_ws"]) {
+      expect(indexNames(db22)).toContain(name);
+    }
+
+    // Idempotent: rerunning the migration directly changes nothing.
+    const before = [...indexNames(db22)].sort();
+    m022.up(db22);
+    m022.up(db22);
+    expect([...indexNames(db22)].sort()).toEqual(before);
+  });
+
+  it("plans the flag probe through idx_ur_untracked* (unscoped and scoped)", async () => {
+    const { runVersionedMigrations } = await import("@/lib/db/migrate.js");
+    runVersionedMigrations(db22);
+    // A spread of tracked rows plus one untracked day; sqlite picks a partial
+    // index only when the WHERE matches its predicate.
+    for (let d = 1; d <= 14; d++) {
+      const day = `2026-01-${String(d).padStart(2, "0")}`;
+      for (const ws of ["ws-a", "ws-b"]) {
+        db22.run(
+          "INSERT INTO usageRollup (dateKey, workspaceId, requests, lastUsedAt) VALUES (?, ?, 5, '2026-01-01T00:00:00Z')",
+          [day, ws],
+        );
+      }
+    }
+    db22.run(
+      "INSERT INTO usageRollup (dateKey, workspaceId, requests, lastUsedAt) VALUES ('2025-12-01', 'ws-b', 7, '')",
+    );
+
+    // Capture the real SQL+params hasUntrackedRollupDays emits (no hand copy),
+    // then ask sqlite how it would plan that exact statement on the real DB.
+    const capture = (ctx, startKey = null, endKey = null) => {
+      let captured;
+      const spyDb = {
+        get(sql, params) {
+          captured = [sql, params];
+          return undefined;
+        },
+      };
+      hasUntrackedRollupDays(ctx, spyDb, startKey, endKey);
+      return captured;
+    };
+    const planOf = ([sql, params]) =>
+      db22
+        .all(`EXPLAIN QUERY PLAN ${sql}`, params)
+        .map((r) => r.detail)
+        .join(" | ");
+
+    // Unscoped window and all-time probes use the dateKey partial index.
+    expect(planOf(capture(null, "2026-01-01", "2026-02-01"))).toMatch(/idx_ur_untracked\b(?!_ws)/);
+    expect(planOf(capture(null))).toMatch(/idx_ur_untracked\b(?!_ws)/);
+    // Workspace-scoped probes use the workspace-leading partial index.
+    expect(planOf(capture({ workspaceId: "ws-b" }, "2026-01-01", "2026-02-01"))).toContain(
+      "idx_ur_untracked_ws",
+    );
+    expect(planOf(capture({ workspaceId: "ws-b" }))).toContain("idx_ur_untracked_ws");
+
+    // Sanity: the real probe on the real DB finds only the untracked day.
+    expect(hasUntrackedRollupDays(null, db22, "2025-11-01", null)).toBe(true);
+    expect(hasUntrackedRollupDays(null, db22, "2025-12-02", null)).toBe(false);
+    expect(hasUntrackedRollupDays({ workspaceId: "ws-a" }, db22, "2025-11-01", null)).toBe(false);
+    expect(hasUntrackedRollupDays({ workspaceId: "ws-b" }, db22, "2025-11-01", null)).toBe(true);
   });
 });

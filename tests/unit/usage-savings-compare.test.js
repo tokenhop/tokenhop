@@ -41,13 +41,22 @@ const saved = (...tokens) => ({
   },
 });
 
-function seed(timestamp, meta, { workspaceId = null, userId = null } = {}) {
-  adapter.run(`INSERT INTO usageHistory(timestamp, workspaceId, userId, meta) VALUES(?, ?, ?, ?)`, [
-    new Date(timestamp).toISOString(),
-    workspaceId,
-    userId,
-    typeof meta === "string" || meta === null ? meta : JSON.stringify(meta),
-  ]);
+function seed(
+  timestamp,
+  meta,
+  { workspaceId = null, userId = null, provider = null, model = null } = {},
+) {
+  adapter.run(
+    `INSERT INTO usageHistory(timestamp, workspaceId, userId, provider, model, meta) VALUES(?, ?, ?, ?, ?, ?)`,
+    [
+      new Date(timestamp).toISOString(),
+      workspaceId,
+      userId,
+      provider,
+      model,
+      typeof meta === "string" || meta === null ? meta : JSON.stringify(meta),
+    ],
+  );
   // Raw history inserts simulate retained legacy rows; production writes fold
   // these measures transactionally. Rebuild keeps both sources in sync here.
   rebuildRollupFromHistoryUnscoped(adapter);
@@ -63,6 +72,7 @@ describe("getSavingsTotals", () => {
     expect(await db.getSavingsTotals(null, { start, end: NOW })).toEqual({
       tokensSavedEst: 110,
       requestsWithSavings: 2,
+      costSavedEst: null,
     });
   });
 
@@ -72,6 +82,7 @@ describe("getSavingsTotals", () => {
     expect(await db.getSavingsTotals(null, { start: NOW - 100, end: NOW })).toEqual({
       tokensSavedEst: 12,
       requestsWithSavings: 1,
+      costSavedEst: null,
     });
   });
 
@@ -85,6 +96,7 @@ describe("getSavingsTotals", () => {
     expect(await db.getSavingsTotals(null, { start: NOW - 100, end: NOW })).toEqual({
       tokensSavedEst: 9,
       requestsWithSavings: 1,
+      costSavedEst: null,
     });
   });
 
@@ -113,8 +125,8 @@ describe("getSavingsTotals", () => {
     if (prev.end < start) seed(prev.end, saved(2000));
     const current = await db.getSavingsTotals(null, { start, end: NOW });
     const previous = await db.getSavingsTotals(null, prev);
-    expect(current).toEqual({ tokensSavedEst: 3, requestsWithSavings: 2 });
-    expect(previous).toEqual({ tokensSavedEst: 30, requestsWithSavings: 2 });
+    expect(current).toEqual({ tokensSavedEst: 3, requestsWithSavings: 2, costSavedEst: null });
+    expect(previous).toEqual({ tokensSavedEst: 30, requestsWithSavings: 2, costSavedEst: null });
   });
 
   it("isolates by workspace and user", async () => {
@@ -140,6 +152,7 @@ describe("getSavingsTotals", () => {
     expect(await db.getSavingsTotals({ workspaceId: "ws-a", userId: "u1" }, range)).toEqual({
       tokensSavedEst: 1,
       requestsWithSavings: 1,
+      costSavedEst: null,
     });
     await expect(db.getSavingsTotals({}, range)).rejects.toThrow();
   });
@@ -167,8 +180,16 @@ describe("savings route compare", () => {
     const res = await call("period=7d&compare=previous");
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.currentTotals).toEqual({ tokensSavedEst: 50, requestsWithSavings: 1 });
-    expect(body.previous).toEqual({ tokensSavedEst: 0, requestsWithSavings: 0 });
+    expect(body.currentTotals).toEqual({
+      tokensSavedEst: 50,
+      requestsWithSavings: 1,
+      costSavedEst: null,
+    });
+    expect(body.previous).toEqual({
+      tokensSavedEst: 0,
+      requestsWithSavings: 0,
+      costSavedEst: null,
+    });
     expect(body.tokensSavedEst).toBe(50);
   });
 
@@ -191,6 +212,7 @@ describe("savings route compare", () => {
     expect((await res.json()).currentTotals).toEqual({
       tokensSavedEst: 50,
       requestsWithSavings: 1,
+      costSavedEst: null,
     });
   });
 
@@ -223,8 +245,16 @@ describe("savings route compare", () => {
     try {
       const body = await (await call("period=7d&compare=previous")).json();
       expect(body.tokensSavedEst).toBe(1);
-      expect(body.currentTotals).toEqual({ tokensSavedEst: 1, requestsWithSavings: 1 });
-      expect(body.previous).toEqual({ tokensSavedEst: 2, requestsWithSavings: 1 });
+      expect(body.currentTotals).toEqual({
+        tokensSavedEst: 1,
+        requestsWithSavings: 1,
+        costSavedEst: null,
+      });
+      expect(body.previous).toEqual({
+        tokensSavedEst: 2,
+        requestsWithSavings: 1,
+        costSavedEst: null,
+      });
     } finally {
       nowSpy.mockRestore();
       scopeHolder.scope = null;
@@ -246,7 +276,7 @@ describe("getRollupSavingsTotals with days pruned before tracking", () => {
     seed(new Date(2026, 8, 25, 12).getTime(), saved(3));
     const out = await db.getRollupSavingsTotals(null, range);
     expect(out.currentTotals.tokensSavedEst).toBe(3);
-    expect(out.previous).toEqual({ tokensSavedEst: 7, requestsWithSavings: 1 });
+    expect(out.previous).toEqual({ tokensSavedEst: 7, requestsWithSavings: 1, costSavedEst: null });
   });
 
   it("returns previous: null when the previous window has an untracked day", async () => {
@@ -262,6 +292,63 @@ describe("getRollupSavingsTotals with days pruned before tracking", () => {
     untracked("2026-09-25"); // current window, not previous
     untracked("2026-09-15"); // before previous window
     const out = await db.getRollupSavingsTotals(null, range);
-    expect(out.previous).toEqual({ tokensSavedEst: 7, requestsWithSavings: 1 });
+    expect(out.previous).toEqual({ tokensSavedEst: 7, requestsWithSavings: 1, costSavedEst: null });
+  });
+});
+
+describe("compare totals costSavedEst (YAN-1237)", () => {
+  const priced = { provider: "openai", model: "gpt-4o-mini" };
+
+  it("history path (24h): currentTotals/previous price like getUsageSavings", async () => {
+    const start = periodStart("24h", NOW);
+    const prev = previousPeriodRange("24h", NOW);
+    seed(start, saved(1000), priced);
+    seed(NOW - 1000, saved(2000), priced);
+    seed(prev.start, saved(4000), { provider: "nope", model: "nope" }); // unpriced
+    seed(prev.end - 1, saved(500), { provider: "nope", model: "nope" }); // unpriced
+
+    const [headline, current, previous] = await Promise.all([
+      db.getUsageSavings(null, "24h", NOW),
+      db.getSavingsTotals(null, { start, end: NOW + 1 }),
+      db.getSavingsTotals(null, prev),
+    ]);
+    expect(headline.costSavedEst).toBeGreaterThan(0);
+    expect(current.costSavedEst).toBe(headline.costSavedEst);
+    // Previous window: both rows are on unknown pricing, so tokens count but
+    // no dollars are invented.
+    expect(previous.costSavedEst).toBeNull();
+    expect(previous.tokensSavedEst).toBe(4500);
+  });
+
+  it("rollup path (7d): currentTotals/previous price like getUsageSavings", async () => {
+    const range = { from: "2026-09-23", to: "2026-09-29" }; // previous = 09-16..09-22
+    seed(new Date(2026, 8, 20, 12).getTime(), saved(3000), priced); // previous
+    seed(new Date(2026, 8, 21, 12).getTime(), saved(600), { provider: "nope", model: "nope" });
+    seed(new Date(2026, 8, 25, 12).getTime(), saved(1000), priced); // current
+
+    const headline = await db.getUsageSavings(null, "7d", NOW);
+    expect(headline.costSavedEst).toBeGreaterThan(0);
+    const out = await db.getRollupSavingsTotals(null, range);
+    expect(out.currentTotals.costSavedEst).toBe(headline.costSavedEst);
+    expect(out.previous.tokensSavedEst).toBe(3600);
+    // gpt-4o-mini input is 0.15 $/1M tokens.
+    expect(out.currentTotals.costSavedEst).toBeCloseTo(1000 * 0.15e-6, 9);
+    expect(out.previous.costSavedEst).toBeCloseTo(3000 * 0.15e-6, 9);
+  });
+
+  it("is null when no group in the window had resolvable pricing", async () => {
+    seed(new Date(2026, 8, 25, 12).getTime(), saved(1000), {
+      provider: "nope",
+      model: "nope",
+    });
+    const out = await db.getRollupSavingsTotals(null, { from: "2026-09-23", to: "2026-09-29" });
+    expect(out.currentTotals.costSavedEst).toBeNull();
+    expect(out.previous.costSavedEst).toBeNull();
+    // History path, same rule: an unpriced row inside the window counts
+    // tokens but contributes no dollars.
+    seed(NOW - 500, saved(700), { provider: "nope", model: "nope" });
+    const hist = await db.getSavingsTotals(null, { start: NOW - 1000, end: NOW + 1 });
+    expect(hist.tokensSavedEst).toBeGreaterThan(0);
+    expect(hist.costSavedEst).toBeNull();
   });
 });

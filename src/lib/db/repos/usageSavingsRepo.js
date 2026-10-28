@@ -21,6 +21,7 @@ import {
   scopeSql,
   whereAll,
 } from "./usageRollupRepo.js";
+import { priceSavedGroups, savedTokensCost } from "./usageSavingsPricing.js";
 
 /** _meta keys for the YAN-408 lifetime savings counter. */
 export const SAVINGS_LIFETIME_KEY = "savingsTokensLifetime";
@@ -101,23 +102,9 @@ export async function getUsageSavings(ctx, period = "7d", now = Date.now()) {
           },
         ]),
     );
-    let costSavedEst = 0;
-    let pricedRequests = 0;
-    const pricingCache = new Map();
     // Saved-token input pricing is linear: pricing grouped tokens equals
     // pricing each request, without retaining or parsing the request history.
-    for (const group of totals.byProviderModel) {
-      const cost = await savedTokensCost(
-        group.provider,
-        group.model,
-        group.tokensSavedEst,
-        pricingCache,
-      );
-      if (cost > 0) {
-        costSavedEst += cost;
-        pricedRequests += group.savingsRequests;
-      }
-    }
+    const { costSavedEst, pricedRequests } = await priceSavedGroups(totals.byProviderModel);
     return {
       period,
       estimated: true,
@@ -128,7 +115,9 @@ export async function getUsageSavings(ctx, period = "7d", now = Date.now()) {
           ? +((totals.tokensSavedEst / totals.tokensBeforeEst) * 100).toFixed(2)
           : 0,
       requestsWithSavings: totals.requestsWithSavings,
-      costSavedEst: pricedRequests > 0 ? +costSavedEst.toFixed(6) : null,
+      // $ at list prices: each request's saved tokens priced with its own
+      // model; null when no request in the period had resolvable pricing.
+      costSavedEst,
       pricedRequests,
       // Fixed columns use canonical rtk/headroom/pxpipe order; unknown legacy
       // methods still contribute to headline totals, but not the breakdown.
@@ -214,35 +203,6 @@ export async function getUsageSavings(ctx, period = "7d", now = Date.now()) {
   };
 }
 
-/**
- * List-price value of a request's saved tokens. Every counted saver (RTK,
- * Headroom, PXPIPE) shrinks the prompt, so saved tokens are priced as
- * uncached input for the request's own provider/model — the same pricing
- * tables and math as usage cost. Unknown pricing returns 0 (never a guess).
- * @param {string|null} provider
- * @param {string|null} model
- * @param {number} savedTokens
- * @param {Map<string, Promise<object|null>>} [cache] per-call pricing lookups by provider/model
- * @returns {Promise<number>} dollars
- */
-async function savedTokensCost(provider, model, savedTokens, cache = new Map()) {
-  if (!model || !(savedTokens > 0)) return 0;
-  try {
-    const key = `${provider}\u0000${model}`;
-    if (!cache.has(key)) {
-      const { getPricingForModel } = await import("./pricingRepo.js");
-      cache.set(key, getPricingForModel(provider, model));
-    }
-    const pricing = await cache.get(key);
-    if (!pricing || !(Number(pricing.input) > 0)) return 0;
-    const { calculateCostFromTokens } = await import("open-sse/providers/pricing.js");
-    return calculateCostFromTokens({ prompt_tokens: savedTokens }, pricing);
-  } catch (e) {
-    console.error("[usageSavingsRepo] savings pricing failed:", e.message);
-    return 0;
-  }
-}
-
 export async function getHomeSummary(ctx, period = "7d", now = Date.now()) {
   if (!isPeriod(period)) throw new Error(`Invalid period: ${period}`);
   const db = await getAdapter();
@@ -253,6 +213,9 @@ export async function getHomeSummary(ctx, period = "7d", now = Date.now()) {
       period,
       requests: readRollupTotals(ctx, db, start, end).requests,
       topCombos: readComboTop(ctx, db, start, end),
+      // Same flag and [start, end) bounds as getUsageSavings: history pruned
+      // before savings/combo tracking means topCombos may be understated.
+      prunedBeforeTracking: hasUntrackedRollupDays(ctx, db, start, end),
     };
   }
   const scope = scopeSql(ctx);
@@ -277,5 +240,5 @@ export async function getHomeSummary(ctx, period = "7d", now = Date.now()) {
     [...scope.params, ...window],
   );
 
-  return { period, requests, topCombos };
+  return { period, requests, topCombos, prunedBeforeTracking: false };
 }

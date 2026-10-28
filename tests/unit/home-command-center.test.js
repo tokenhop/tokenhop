@@ -1,4 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { afterAll, beforeAll, describe, it, expect } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { createSsr } from "../helpers/renderSsr.js";
 import {
   deriveCommandCenterStatus,
   pickLowestQuotaAccounts,
@@ -91,5 +94,51 @@ describe("periodDelta", () => {
 
   it("returns null percent when there is no previous data", () => {
     expect(periodDelta(100, 0)).toEqual({ delta: 100, pct: null });
+  });
+});
+
+describe("CombosTop pruned-before-tracking note (YAN-1701)", () => {
+  const note =
+    "May not include combo requests from history pruned before this version tracked them.";
+  let ssr;
+  let CombosTop;
+  beforeAll(async () => {
+    ssr = await createSsr();
+    ({ default: CombosTop } = await ssr.load("/src/app/(dashboard)/dashboard/home/CombosTop.js"));
+  });
+  afterAll(async () => {
+    await ssr.close();
+  });
+
+  const render = (props) =>
+    renderToStaticMarkup(
+      createElement(CombosTop, {
+        combos: [{ name: "alpha", models: ["openai/gpt-5"] }],
+        strategies: {},
+        globalStrategy: "fallback",
+        usageByCombo: new Map([["alpha", 3]]),
+        loading: false,
+        error: null,
+        onRetry: () => {},
+        ...props,
+      }),
+    );
+
+  it("shows the note when combos render and the flag is on", () => {
+    const html = render({ prunedBeforeTracking: true });
+    expect(html).toContain("alpha");
+    expect(html).toContain(note);
+  });
+
+  it("hides the note when the flag is off", () => {
+    const html = render({ prunedBeforeTracking: false });
+    expect(html).toContain("alpha");
+    expect(html).not.toContain(note);
+  });
+
+  it("hides the note when there are no combos, even with the flag on", () => {
+    const html = render({ combos: [], prunedBeforeTracking: true });
+    expect(html).toContain("No combos yet");
+    expect(html).not.toContain(note);
   });
 });

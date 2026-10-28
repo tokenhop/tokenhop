@@ -73,6 +73,8 @@ export function comboUsageFromByEndpoint(byEndpoint) {
  * @param {boolean} props.loading
  * @param {string|null} props.error
  * @param {() => void} props.onRetry
+ * @param {boolean} [props.prunedBeforeTracking] the period's combo counts may miss
+ *   requests whose history was pruned before combo tracking (migration 021)
  */
 export default function CombosTop({
   combos,
@@ -82,6 +84,7 @@ export default function CombosTop({
   loading,
   error,
   onRetry,
+  prunedBeforeTracking = false,
 }) {
   if (loading) return <WidgetSkeleton lines={3} label="Loading combos" />;
   if (error) return <WidgetError message={error} onRetry={onRetry} />;
@@ -110,46 +113,55 @@ export default function CombosTop({
   const top = pickTopCombos(withUsage);
 
   return (
-    <ul className="flex min-w-0 flex-col gap-3" aria-label="Most used combos">
-      {top.map((combo) => {
-        const rawStrategy = strategies?.[combo.name]?.fallbackStrategy || globalStrategy;
-        const strategy = KNOWN_FALLBACK_STRATEGIES.has(rawStrategy) ? rawStrategy : "fallback";
-        const models = Array.isArray(combo.models) ? combo.models : [];
-        return (
-          <li key={`combo-${combo.name}`} className="min-w-0 rounded-xl bg-raised p-3.5">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="truncate font-mono text-[15px] font-semibold text-text">
-                {combo.name}
-              </span>
-              <StatusPill variant={strategyVariant(strategy)}>{strategyLabel(strategy)}</StatusPill>
-              <span className="ms-auto shrink-0 text-xs text-muted">
-                {combo.requests > 0
-                  ? `${formatCompact(combo.requests)} in period`
-                  : "unused in period"}
-              </span>
-            </div>
-            {models.length > 0 ? (
-              <p className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                {models.map((model, position) => (
-                  <span
-                    // biome-ignore lint/suspicious/noArrayIndexKey: duplicate model ids repeat across combos; position disambiguates.
-                    key={`${combo.name}-${position}-${model}`}
-                    className="flex items-center gap-1.5"
-                  >
-                    {position > 0 ? (
-                      <span aria-hidden="true" className="text-muted">
-                        {strategy === "round-robin" ? "⇄" : "→"}
-                      </span>
-                    ) : null}
-                    <ModelChip model={model} />
-                  </span>
-                ))}
-              </p>
-            ) : null}
-          </li>
-        );
-      })}
-    </ul>
+    <>
+      <ul className="flex min-w-0 flex-col gap-3" aria-label="Most used combos">
+        {top.map((combo) => {
+          const rawStrategy = strategies?.[combo.name]?.fallbackStrategy || globalStrategy;
+          const strategy = KNOWN_FALLBACK_STRATEGIES.has(rawStrategy) ? rawStrategy : "fallback";
+          const models = Array.isArray(combo.models) ? combo.models : [];
+          return (
+            <li key={`combo-${combo.name}`} className="min-w-0 rounded-xl bg-raised p-3.5">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="truncate font-mono text-[15px] font-semibold text-text">
+                  {combo.name}
+                </span>
+                <StatusPill variant={strategyVariant(strategy)}>
+                  {strategyLabel(strategy)}
+                </StatusPill>
+                <span className="ms-auto shrink-0 text-xs text-muted">
+                  {combo.requests > 0
+                    ? `${formatCompact(combo.requests)} in period`
+                    : "unused in period"}
+                </span>
+              </div>
+              {models.length > 0 ? (
+                <p className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                  {models.map((model, position) => (
+                    <span
+                      // biome-ignore lint/suspicious/noArrayIndexKey: duplicate model ids repeat across combos; position disambiguates.
+                      key={`${combo.name}-${position}-${model}`}
+                      className="flex items-center gap-1.5"
+                    >
+                      {position > 0 ? (
+                        <span aria-hidden="true" className="text-muted">
+                          {strategy === "round-robin" ? "⇄" : "→"}
+                        </span>
+                      ) : null}
+                      <ModelChip model={model} />
+                    </span>
+                  ))}
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+      {prunedBeforeTracking && (
+        <p className="mt-3 text-xs text-muted">
+          May not include combo requests from history pruned before this version tracked them.
+        </p>
+      )}
+    </>
   );
 }
 
@@ -161,6 +173,7 @@ CombosTop.propTypes = {
   loading: PropTypes.bool,
   error: PropTypes.string,
   onRetry: PropTypes.func.isRequired,
+  prunedBeforeTracking: PropTypes.bool,
 };
 
 /** Card wrapper so the page grid stays dumb. */
