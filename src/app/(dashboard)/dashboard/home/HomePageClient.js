@@ -180,6 +180,7 @@ export default function HomePageClient() {
           strategies={combos.strategies}
           globalStrategy={combos.globalStrategy}
           usageByCombo={usageByCombo}
+          prunedBeforeTracking={summary.summary?.prunedBeforeTracking === true}
           loading={combos.loading || usage.loading || summary.loading}
           error={combos.error || usage.error || summary.error}
           onRetry={bump}

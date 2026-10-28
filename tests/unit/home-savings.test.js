@@ -271,6 +271,8 @@ describe("home summary today/24h top combos", () => {
     expect(summary).toEqual({
       period: "today",
       requests: 8,
+      // History-backed window: nothing is pruned inside it.
+      prunedBeforeTracking: false,
       topCombos: [
         { name: "alpha", requests: 2 },
         { name: "beta", requests: 2 },

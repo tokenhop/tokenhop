@@ -23,7 +23,8 @@ const hasSavings = (data) => Number(data?.tokensSavedEst) > 0;
  *
  * @param {string|null} period Current summary period.
  * @param {number} [refreshKey] Bump to re-read.
- * The selected period's `savings` also carries `currentTotals`/`previous` (compare=previous);
+ * The selected period's `savings` also carries `currentTotals`/`previous`
+ * ({tokensSavedEst, requestsWithSavings, costSavedEst}, compare=previous);
  * fallback probes never request them.
  * @returns {{ savings: object|null, loading: boolean, error: string|null, fallback: { period: string, savings: object }|null, neverSaved: boolean, prunedBeforeTracking: boolean }}
  */

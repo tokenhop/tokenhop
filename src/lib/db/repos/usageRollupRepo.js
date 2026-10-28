@@ -255,7 +255,8 @@ export function readComboTop(ctx, db, startDateKey = null, endDateKeyExclusive =
  * Known limitation: retention keeps the newest row per workspace / API key, so
  * a partially pruned day keeps a non-empty `lastUsedAt` and is not flagged
  * (accepted; unscoped and workspace views are normally flagged through other
- * rows of that day).
+ * rows of that day). YAN-1702 also decided against a per-group history-vs-
+ * rollup count backfill for it: retention intentionally keeps that newest row.
  */
 export function hasUntrackedRollupDays(ctx, db, startDateKey = null, endDateKeyExclusive = null) {
   const scope = scopeSql(ctx);

@@ -204,6 +204,7 @@ describe("savings compare parity (7d–60d)", () => {
         expect(body.previous).toEqual({
           tokensSavedEst: 150,
           requestsWithSavings: 3,
+          costSavedEst: null,
         });
         // The old elapsed-length previous window provably saw fewer of them.
         expect(
@@ -242,13 +243,29 @@ describe("savings compare parity (7d–60d)", () => {
     try {
       scopeHolder.scope = { workspaceId: "ws-a" };
       const wsBody = await (await call("period=7d&compare=previous")).json();
-      expect(wsBody.currentTotals).toEqual({ tokensSavedEst: 11, requestsWithSavings: 2 });
-      expect(wsBody.previous).toEqual({ tokensSavedEst: 2, requestsWithSavings: 1 });
+      expect(wsBody.currentTotals).toEqual({
+        tokensSavedEst: 11,
+        requestsWithSavings: 2,
+        costSavedEst: null,
+      });
+      expect(wsBody.previous).toEqual({
+        tokensSavedEst: 2,
+        requestsWithSavings: 1,
+        costSavedEst: null,
+      });
 
       scopeHolder.scope = { workspaceId: "ws-a", userId: "u1" };
       const userBody = await (await call("period=7d&compare=previous")).json();
-      expect(userBody.currentTotals).toEqual({ tokensSavedEst: 1, requestsWithSavings: 1 });
-      expect(userBody.previous).toEqual({ tokensSavedEst: 2, requestsWithSavings: 1 });
+      expect(userBody.currentTotals).toEqual({
+        tokensSavedEst: 1,
+        requestsWithSavings: 1,
+        costSavedEst: null,
+      });
+      expect(userBody.previous).toEqual({
+        tokensSavedEst: 2,
+        requestsWithSavings: 1,
+        costSavedEst: null,
+      });
     } finally {
       nowSpy.mockRestore();
       scopeHolder.scope = null;

@@ -197,6 +197,10 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_ur_ws_date ON usageRollup(workspaceId, dateKey)",
       // YAN-424 (migration 019): usage retention walks distinct apiKeyId values.
       "CREATE INDEX IF NOT EXISTS idx_ur_key ON usageRollup(apiKeyId)",
+      // YAN-1702 (migration 022): pruned-before-tracking probes only match
+      // untracked rows; partial indexes keep the check out of the window scan.
+      "CREATE INDEX IF NOT EXISTS idx_ur_untracked ON usageRollup(dateKey) WHERE requests > 0 AND lastUsedAt = ''",
+      "CREATE INDEX IF NOT EXISTS idx_ur_untracked_ws ON usageRollup(workspaceId, dateKey) WHERE requests > 0 AND lastUsedAt = ''",
     ],
   },
   // YAN-1226 (migration 021): daily combo counts. Separate table: a request
