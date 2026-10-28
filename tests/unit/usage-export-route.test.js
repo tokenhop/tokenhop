@@ -182,6 +182,14 @@ describe("parseExportParams validation", () => {
     expect(params("period=24h&granularity=request").error).toBeUndefined();
     expect(params("period=today&granularity=request").error).toBeUndefined();
   });
+
+  it("bom: off by default, 1 enables it for CSV, rejected for JSON and bad values", () => {
+    expect(params("").bom).toBe(false);
+    expect(params("bom=0").bom).toBe(false);
+    expect(params("bom=1").bom).toBe(true);
+    expect(params("bom=1&format=json").error).toMatch(/csv/i);
+    expect(params("bom=yes").error).toMatch(/bom/i);
+  });
 });
 
 describe("GET /api/usage/export", () => {
@@ -216,6 +224,17 @@ describe("GET /api/usage/export", () => {
       const res = await GET(new Request(new URL(path, "http://localhost")));
       expect(res.status, path).toBe(400);
     }
+  });
+
+  // res.text() strips a leading BOM (TextDecoder default), so compare bytes.
+  it("CSV with bom=1 starts with the UTF-8 BOM; the default export does not", async () => {
+    const base = `/api/usage/export?period=today&granularity=request&format=csv&workspaceId=${t.shared.id}`;
+    const bytes = async (path) => new Uint8Array(await (await as(t.a, path)).arrayBuffer());
+    const plain = await bytes(base);
+    const withBom = await bytes(`${base}&bom=1`);
+    expect([...withBom.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    expect([...plain.slice(0, 3)]).not.toEqual([0xef, 0xbb, 0xbf]);
+    expect(withBom.slice(3)).toEqual(plain);
   });
 
   it("requires auth when the multi-user switch is on (401 from usageScope)", async () => {

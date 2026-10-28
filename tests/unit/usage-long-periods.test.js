@@ -40,7 +40,17 @@ describe("buildAllTimeBuckets", () => {
   it("returns one zero bucket for the current week when empty", () => {
     const out = buildAllTimeBuckets([], today);
     expect(out).toEqual([
-      { label: "Sep 28", input: 0, cached: 0, output: 0, tokens: 0, cost: 0, requests: 0 },
+      {
+        label: "Sep 28",
+        grain: "week",
+        start: "2026-09-28",
+        input: 0,
+        cached: 0,
+        output: 0,
+        tokens: 0,
+        cost: 0,
+        requests: 0,
+      },
     ]);
   });
 
@@ -55,6 +65,11 @@ describe("buildAllTimeBuckets", () => {
       today,
     );
     expect(out.map((b) => b.label)).toEqual(["Sep 14", "Sep 21", "Sep 28"]);
+    expect(out.map((b) => [b.grain, b.start])).toEqual([
+      ["week", "2026-09-14"],
+      ["week", "2026-09-21"],
+      ["week", "2026-09-28"],
+    ]);
     expect(out[0]).toMatchObject({ input: 8, cached: 8, output: 5, tokens: 13, requests: 1 });
     expect(out[1]).toMatchObject({ requests: 2, tokens: 30, cost: 1 });
     expect(out[2].requests).toBe(1);
@@ -70,6 +85,7 @@ describe("buildAllTimeBuckets", () => {
     const out = buildAllTimeBuckets([row("2024-01-15"), row("2026-09-02")], today);
     expect(out[0].label).toBe("Jan 2024");
     expect(out.at(-1).label).toBe("Sep 2026");
+    expect(out[0]).toMatchObject({ grain: "month", start: "2024-01" });
     expect(out).toHaveLength(33);
     expect(out[0].requests).toBe(1);
     expect(out.at(-1).requests).toBe(1);

@@ -8,7 +8,11 @@
 // no request rows; daily rollup rows are unaffected).
 //
 // Query: period (named or custom, default 7d), from/to (custom only),
-// format=csv|json (default csv), granularity=request|day (default day).
+// format=csv|json (default csv), granularity=request|day (default day),
+// bom=1 (CSV only, YAN-1616): prefix a UTF-8 byte order mark so Excel reads
+// non-ASCII model/key names correctly. Default output has no BOM. Column
+// headers are a stable machine-readable contract (English snake_case, see
+// exportFormat.js) and are never localized.
 //
 // Responses stream with pull-based backpressure: rows are keyset-paginated
 // and a pull drains only ~64KB before returning. The first iterator step is
@@ -42,6 +46,10 @@ export function parseExportParams(searchParams) {
   const format = searchParams.get("format") || "csv";
   const granularity = searchParams.get("granularity") || "day";
   if (format !== "csv" && format !== "json") return { error: "Invalid format" };
+  const bomParam = searchParams.get("bom");
+  if (bomParam !== null && bomParam !== "0" && bomParam !== "1") return { error: "Invalid bom" };
+  if (bomParam === "1" && format !== "csv") return { error: "bom applies to CSV only" };
+  const bom = bomParam === "1";
   if (granularity !== "request" && granularity !== "day") {
     return { error: "Invalid granularity" };
   }
@@ -61,7 +69,7 @@ export function parseExportParams(searchParams) {
   } else if (!isPeriod(period)) {
     return { error: "Invalid period" };
   }
-  return { period, format, granularity, range, window: exportWindow(period, range) };
+  return { period, format, granularity, bom, range, window: exportWindow(period, range) };
 }
 
 function exportFilename({ period, range, granularity, format }) {
@@ -79,7 +87,7 @@ function rowStream(scope, { period, granularity, window }) {
   return streamDailyRows(scope, window.rollup);
 }
 
-export function makeStream(iterator, first, { format, columns }) {
+export function makeStream(iterator, first, { format, columns, bom = false }) {
   const encoder = new TextEncoder();
   let pending = first;
   let started = false;
@@ -103,7 +111,8 @@ export function makeStream(iterator, first, { format, columns }) {
           let out = "";
           if (!started) {
             started = true;
-            out += format === "json" ? "[" : csvHeader(columns);
+            // U+FEFF encodes as the UTF-8 BOM (EF BB BF).
+            out += format === "json" ? "[" : `${bom ? "\uFEFF" : ""}${csvHeader(columns)}`;
           }
           while (out.length < BATCH_BYTES) {
             if (closed) return;
@@ -149,7 +158,7 @@ export async function GET(request) {
     const scope = await usageScope(request);
     if (scope instanceof Response) return scope;
 
-    const { granularity, format } = params;
+    const { granularity, format, bom } = params;
     const columns = granularity === "day" ? DAILY_COLUMNS : REQUEST_COLUMNS;
     const rows = rowStream(scope, params);
     const iterator = rows[Symbol.asyncIterator]();
@@ -162,7 +171,7 @@ export async function GET(request) {
       return jsonError("Failed to export usage", 500);
     }
 
-    return new Response(makeStream(iterator, first, { format, columns }), {
+    return new Response(makeStream(iterator, first, { format, columns, bom }), {
       headers: {
         "Content-Type": format === "json" ? "application/json" : "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="${exportFilename(params)}"`,

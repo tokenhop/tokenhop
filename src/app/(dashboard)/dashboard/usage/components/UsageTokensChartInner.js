@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import {
   Area,
@@ -17,6 +17,8 @@ import SegmentedControl from "@/shared/components/SegmentedControl";
 import EmptyState from "@/shared/components/EmptyState";
 import { ErrorState, LoadingState } from "@/shared/components/StateViews";
 import { useReducedMotion } from "@/shared/hooks/useOverlay";
+import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
+import { localizeBucketLabels } from "@/shared/utils/chartBucketLabels";
 
 const fmtTokens = (n) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n || 0);
@@ -28,6 +30,8 @@ const BUCKETS_PROP = PropTypes.arrayOf(
   PropTypes.shape({
     label: PropTypes.string,
     input: PropTypes.number,
+    grain: PropTypes.string,
+    start: PropTypes.string,
     cached: PropTypes.number,
     output: PropTypes.number,
     tokens: PropTypes.number,
@@ -54,13 +58,22 @@ function cssVar(name, fallback) {
  * @param {() => void} [props.onRetry]
  */
 export default function UsageTokensChartInner({
-  buckets = [],
+  buckets: rawBuckets = [],
   loading = false,
   error = null,
   onRetry,
 }) {
   const [viewMode, setViewMode] = useState("tokens");
   const reducedMotion = useReducedMotion();
+  const [locale, setLocale] = useState(() => getCurrentLocale());
+
+  // Client-only (ssr: false), so the locale can seed the first render.
+  useEffect(() => {
+    setLocale(getCurrentLocale());
+    return onLocaleChange(() => setLocale(getCurrentLocale()));
+  }, []);
+  // Labels follow the dashboard locale (YAN-1233), not the server's en-US.
+  const buckets = useMemo(() => localizeBucketLabels(rawBuckets, locale), [rawBuckets, locale]);
 
   const hasData = buckets.some((d) => (d.tokens || 0) > 0 || (d.cost || 0) > 0);
   const sky = cssVar("--signal-sky", "#72b7ff");

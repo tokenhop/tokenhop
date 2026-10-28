@@ -10,7 +10,8 @@ import { periodQuery } from "../lib/periodRequest";
 /**
  * Export control for the Usage Overview (YAN-425): downloads the current
  * period (including a custom range) and the active usage filters as CSV or
- * JSON, at daily or per-request granularity.
+ * JSON, at daily or per-request granularity. The "CSV for Excel" items
+ * (YAN-1616) add `bom=1` so Excel reads non-ASCII names as UTF-8.
  *
  * Download approach — the page must never be replaced by a raw error body,
  * and a large export must not be buffered whole in the browser: first a
@@ -27,17 +28,17 @@ export default function UsageExportButton({ period, range, filters }) {
   const notifyError = useNotificationStore((s) => s.error);
   const [exporting, setExporting] = useState(false);
   if (!period) return null;
-  const url = (format, granularity) =>
+  const url = (format, granularity, bom) =>
     appendUsageFilters(
-      `/api/usage/export?${periodQuery(period, range)}&format=${format}&granularity=${granularity}`,
+      `/api/usage/export?${periodQuery(period, range)}&format=${format}&granularity=${granularity}${bom ? "&bom=1" : ""}`,
       filters,
     );
 
-  const download = async (format, granularity) => {
+  const download = async (format, granularity, bom = false) => {
     if (exporting) return;
     setExporting(true);
     try {
-      const target = url(format, granularity);
+      const target = url(format, granularity, bom);
       let res;
       try {
         res = await fetch(target, { cache: "no-store" });
@@ -96,6 +97,14 @@ export default function UsageExportButton({ period, range, filters }) {
         CSV, daily totals
       </MenuItem>
       <MenuItem
+        icon="table_rows"
+        label="CSV for Excel, daily totals"
+        disabled={exporting}
+        onSelect={() => void download("csv", "day", true)}
+      >
+        CSV for Excel, daily totals
+      </MenuItem>
+      <MenuItem
         icon="data_object"
         label="JSON, daily totals"
         disabled={exporting}
@@ -110,6 +119,14 @@ export default function UsageExportButton({ period, range, filters }) {
         onSelect={() => void download("csv", "request")}
       >
         CSV, per request
+      </MenuItem>
+      <MenuItem
+        icon="table_rows"
+        label="CSV for Excel, per request"
+        disabled={exporting}
+        onSelect={() => void download("csv", "request", true)}
+      >
+        CSV for Excel, per request
       </MenuItem>
       <MenuItem
         icon="data_object"

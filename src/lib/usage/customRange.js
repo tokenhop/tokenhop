@@ -3,8 +3,10 @@ import { buildAllTimeBuckets } from "./allTimeBuckets.js";
 import { daysBetweenDateKeys, shiftDateKey } from "@/shared/utils/period";
 
 const DAILY_CUSTOM_BUCKET_DAYS = 92;
-const emptyDayBucket = (label) => ({
+const emptyDayBucket = (label, start) => ({
   label,
+  grain: "day",
+  start,
   input: 0,
   cached: 0,
   output: 0,
@@ -31,6 +33,7 @@ export function customChartBuckets(rows, { from, to }) {
     const [y, m, d] = key.split("-").map(Number);
     const bucket = emptyDayBucket(
       new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      key,
     );
     const day = byDay.get(key);
     if (!day) return bucket;

@@ -67,6 +67,9 @@ const COPY_TONE_ALLOWLIST = new Map([
   ["文 Full", "RTK level name"],
   ["文 Lite", "RTK level name"],
   ["文 Ultra", "RTK level name"],
+  // Usage export menu (YAN-1616): Microsoft Excel is a product name.
+  ["CSV for Excel, daily totals", "Microsoft Excel product name"],
+  ["CSV for Excel, per request", "Microsoft Excel product name"],
 ]);
 
 describe("design-system §9 copy tone (YAN-414 guard)", () => {
