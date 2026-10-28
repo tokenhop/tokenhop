@@ -83,9 +83,9 @@ const COMBO_DIMS = ["workspaceId", "userId", "apiKeyId"];
  * migration 021's frozen backfill). Used after restoring a snapshot that
  * replaces usageRollup without savings columns, after the legacy JSON import,
  * and — combos only — when a snapshot replaces usageRollup but carries no
- * usageComboRollup section. `lastUsedAt` per group comes from one SQL
- * MAX/GROUP BY; only history rows whose meta can carry savings or a combo
- * name are fetched and parsed. History already pruned is unrecoverable, so
+ * usageComboRollup section. `lastUsedAt` per group comes from SQL MAX/GROUP BY
+ * over UTC 15-minute buckets in bounded id windows; only history rows whose meta
+ * can carry savings or a combo name are fetched and parsed. History already pruned is unrecoverable, so
  * callers must only run this for data they are replacing. Caller owns the
  * transaction.
  * @param {object} db sync adapter
@@ -113,17 +113,26 @@ export function backfillSavingsComboFromHistory(db, { savings = true, combos = t
     }
     return g;
   };
-  // date(..., 'localtime'): history timestamps are ISO instants; the rollup
-  // day is server-local, exactly like localDateKey().
-  for (const r of savings
-    ? db.all(
-        `SELECT date(timestamp, 'localtime') AS dateKey, ${ROLLUP_DIMS.join(", ")}, MAX(timestamp) AS lastUsedAt
-         FROM usageHistory GROUP BY dateKey, ${ROLLUP_DIMS.join(", ")}`,
-      )
-    : []) {
-    if (!r.dateKey || !Number.isFinite(Date.parse(r.lastUsedAt))) continue;
-    const g = groupFor([r.dateKey, ...dimsOf(r, ROLLUP_DIMS)]);
-    if (r.lastUsedAt > g.lastUsedAt) g.lastUsedAt = r.lastUsedAt;
+  // The rollup uses the JS local day; SQLite 'localtime' can disagree with Node
+  // when TZ is set without tzdata (musl/alpine). A 900-second (15-minute) UTC
+  // bucket lies in one local day for every real-world offset (multiples of 15
+  // minutes). Fold bounded id windows with MAX: max-merge is associative.
+  if (savings) {
+    const bounds = db.get(`SELECT MIN(id) AS firstId, MAX(id) AS lastId FROM usageHistory`);
+    for (let start = bounds.firstId; start != null && start <= bounds.lastId; start += 50_000) {
+      const rows = db.all(
+        `SELECT CAST(strftime('%s', timestamp) AS INTEGER) / 900 AS bucket,
+                ${ROLLUP_DIMS.join(", ")}, MAX(timestamp) AS lastUsedAt
+         FROM usageHistory WHERE id >= ? AND id < ?
+         GROUP BY bucket, ${ROLLUP_DIMS.join(", ")}`,
+        [start, start + 50_000],
+      );
+      for (const r of rows) {
+        if (r.bucket == null || !Number.isFinite(Date.parse(r.lastUsedAt))) continue;
+        const g = groupFor([dayOf(r.lastUsedAt), ...dimsOf(r, ROLLUP_DIMS)]);
+        if (r.lastUsedAt > g.lastUsedAt) g.lastUsedAt = r.lastUsedAt;
+      }
+    }
   }
   const comboCounts = new Map();
   let id = 0;

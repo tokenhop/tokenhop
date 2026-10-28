@@ -13,7 +13,10 @@ const hasSavings = (data) => Number(data?.tokensSavedEst) > 0;
  * savings are the periods in between fetched in parallel so the smallest
  * non-empty one wins. `neverSaved` is true when the largest period loads
  * empty; the selected period being `all` is the same check (nothing larger
- * exists), so an empty `all` claims `neverSaved` directly. A failed fallback
+ * exists), so an empty `all` claims `neverSaved` directly, unless that probe
+ * reports `prunedBeforeTracking` (history pruned before savings were tracked
+ * may have held savings): then `neverSaved` stays false and `prunedBeforeTracking`
+ * is set so the hero can say so. A failed fallback
  * fetch is not fatal: it leaves `neverSaved` false (the selected period is
  * still known empty). No fetch runs while `period` is
  * null (loading stays true). In-flight requests abort on unmount or change.
@@ -22,7 +25,7 @@ const hasSavings = (data) => Number(data?.tokensSavedEst) > 0;
  * @param {number} [refreshKey] Bump to re-read.
  * The selected period's `savings` also carries `currentTotals`/`previous` (compare=previous);
  * fallback probes never request them.
- * @returns {{ savings: object|null, loading: boolean, error: string|null, fallback: { period: string, savings: object }|null, neverSaved: boolean }}
+ * @returns {{ savings: object|null, loading: boolean, error: string|null, fallback: { period: string, savings: object }|null, neverSaved: boolean, prunedBeforeTracking: boolean }}
  */
 export function useSavingsWithFallback(period, refreshKey = 0) {
   const [state, setState] = useState({
@@ -31,11 +34,19 @@ export function useSavingsWithFallback(period, refreshKey = 0) {
     error: null,
     fallback: null,
     neverSaved: false,
+    prunedBeforeTracking: false,
   });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshKey intentionally re-fetches on Retry/settings save.
   useEffect(() => {
-    setState({ savings: null, loading: true, error: null, fallback: null, neverSaved: false });
+    setState({
+      savings: null,
+      loading: true,
+      error: null,
+      fallback: null,
+      neverSaved: false,
+      prunedBeforeTracking: false,
+    });
     if (!period) return;
     const controller = new AbortController();
     const get = (value, compare = false) =>
@@ -62,7 +73,13 @@ export function useSavingsWithFallback(period, refreshKey = 0) {
       const done = (patch) => setState((s) => ({ ...s, savings, loading: false, ...patch }));
       // The selected period is the largest: an empty `all` proves nothing was
       // ever saved; any other empty largest period does not.
-      if (candidates.length === 0) return done({ neverSaved: period === "all" });
+      const emptyVerdict = (probe) => ({
+        neverSaved: probe.prunedBeforeTracking !== true,
+        prunedBeforeTracking: probe.prunedBeforeTracking === true,
+      });
+      if (candidates.length === 0) {
+        return done(period === "all" ? emptyVerdict(savings) : {});
+      }
       // Windows are nested, so probe the largest first: when it is empty, so is every smaller one.
       const largest = candidates.at(-1);
       let widest;
@@ -73,7 +90,7 @@ export function useSavingsWithFallback(period, refreshKey = 0) {
         return;
       }
       if (controller.signal.aborted) return;
-      if (!hasSavings(widest)) return done({ neverSaved: true });
+      if (!hasSavings(widest)) return done(emptyVerdict(widest));
       const smaller = candidates.slice(0, -1);
       const results = await Promise.allSettled(smaller.map((value) => get(value)));
       if (controller.signal.aborted) return;

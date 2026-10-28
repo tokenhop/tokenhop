@@ -242,6 +242,40 @@ export function readComboTop(ctx, db, startDateKey = null, endDateKeyExclusive =
   );
 }
 
+/**
+ * True when the scoped window `[startDateKey, endDateKeyExclusive)` (either bound
+ * null = open) holds a rollup row with requests but no `lastUsedAt`.
+ *
+ * Invariant: every live rollup upsert and every migration-021 / snapshot-restore
+ * backfill sets `lastUsedAt` for rows whose history is still retained. So an
+ * empty `lastUsedAt` on a row with `requests > 0` marks a day/dimension whose
+ * history was pruned before savings/combo tracking existed (migration 021); its
+ * savings and combo columns are therefore incomplete.
+ *
+ * Known limitation: retention keeps the newest row per workspace / API key, so
+ * a partially pruned day keeps a non-empty `lastUsedAt` and is not flagged
+ * (accepted; unscoped and workspace views are normally flagged through other
+ * rows of that day).
+ */
+export function hasUntrackedRollupDays(ctx, db, startDateKey = null, endDateKeyExclusive = null) {
+  const scope = scopeSql(ctx);
+  const params = [...scope.params];
+  if (startDateKey) params.push(startDateKey);
+  if (endDateKeyExclusive) params.push(endDateKeyExclusive);
+  const row = db.get(
+    `SELECT 1 AS found FROM usageRollup
+     ${whereAll(
+       scope.sql,
+       "requests > 0",
+       "lastUsedAt = ''",
+       startDateKey ? "dateKey >= ?" : "",
+       endDateKeyExclusive ? "dateKey < ?" : "",
+     )} LIMIT 1`,
+    params,
+  );
+  return Boolean(row);
+}
+
 /** Exact last-use timestamps and today's request counts, independent of retention. */
 export function readApiKeyActivity(ctx, db, todayKey) {
   const scope = scopeSql(ctx);

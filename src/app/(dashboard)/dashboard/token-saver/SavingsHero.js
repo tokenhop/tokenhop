@@ -77,6 +77,7 @@ const EMPTY_COPY = {
   never: { title: "No savings recorded yet" },
   period: { title: "No savings in this period" },
 };
+const PRUNED_NOTE = "May not include savings from history pruned before this version tracked them.";
 const QUIET_NOTES = {
   today: { caption: "None today" },
   "24h": { caption: "None in the last 24h" },
@@ -91,7 +92,8 @@ const QUIET_NOTES = {
  * stacked bar by method. The heading and caption arrive as full static
  * phrases so the runtime i18n can translate them.
  * @param {object} props
- * @param {object} props.savings YAN-292 aggregation
+ * @param {object} props.savings YAN-292 aggregation; `prunedBeforeTracking: true` adds a
+ *   quiet line that the totals miss savings from history pruned before tracking began.
  * @param {string} props.eyebrow
  * @param {string|null} [props.note] Quiet note about the empty selected period.
  * @param {React.ReactNode} [props.trend] Previous-period trend (selected-period state only).
@@ -117,6 +119,9 @@ function FilledHero({ savings, eyebrow, note = null, trend = null }) {
         </span>
         {trend && <span className="text-sm font-medium">{trend}</span>}
         {note && <span className="text-xs font-semibold text-on-lime/80">{note}</span>}
+        {savings.prunedBeforeTracking === true && (
+          <span className="text-xs font-semibold text-on-lime/80">{PRUNED_NOTE}</span>
+        )}
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
         <div
@@ -179,6 +184,8 @@ FilledHero.propTypes = {
  * @param {{ period: string, savings: object }|null} [props.fallback] Best
  *   larger period with savings when the current period is empty.
  * @param {boolean} [props.neverSaved] Every larger period loaded empty too.
+ * @param {boolean} [props.prunedBeforeTracking] The empty probe that decided the
+ *   empty state covers history pruned before tracking, so "nothing saved" is not proven.
  */
 export function SavingsHero({
   savings,
@@ -188,6 +195,7 @@ export function SavingsHero({
   onRetry,
   fallback = null,
   neverSaved = false,
+  prunedBeforeTracking = false,
 }) {
   if (loading) {
     return (
@@ -233,6 +241,7 @@ export function SavingsHero({
   }
   // neverSaved: every larger period loaded empty. Otherwise a fallback fetch
   // failed, so only the selected period is known to be empty.
+  const showPrunedNote = prunedBeforeTracking || savings.prunedBeforeTracking === true;
   return (
     <section aria-label="Savings summary">
       <Card>
@@ -240,7 +249,15 @@ export function SavingsHero({
           compact
           icon="bolt"
           title={EMPTY_COPY[neverSaved ? "never" : "period"].title}
-          body="Send traffic with a saver enabled — tool-output compression, Headroom, or prompts-as-images — and the totals land here."
+          body={
+            <>
+              Send traffic with a saver enabled — tool-output compression, Headroom, or
+              prompts-as-images — and the totals land here.
+              {showPrunedNote && (
+                <span className="mt-1 block text-xs font-semibold">{PRUNED_NOTE}</span>
+              )}
+            </>
+          }
           action={
             <Button variant="secondary" size="sm" href="/dashboard/usage">
               View Usage
@@ -263,6 +280,7 @@ SavingsHero.propTypes = {
     savings: PropTypes.object.isRequired,
   }),
   neverSaved: PropTypes.bool,
+  prunedBeforeTracking: PropTypes.bool,
 };
 
 /**

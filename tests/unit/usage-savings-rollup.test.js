@@ -452,6 +452,76 @@ describe("migration 021", () => {
   });
 });
 
+describe("backfilled lastUsedAt is the exact per-local-day max", () => {
+  // TZ is America/New_York (UTC-4 in September, UTC-5 in January). Rows sit on
+  // both sides of local midnight (same UTC day, different local days) and on
+  // both sides of UTC midnight (different UTC days, same local day).
+  // Built lazily: TZ is only pinned in beforeAll, after describe-time collection.
+  const fixture = () => {
+    const at = (day, h, min) => new Date(2026, 8, day, h, min).toISOString();
+    const rows = [
+      at(28, 23, 30), // local 09-28, UTC 09-29 03:30
+      at(28, 23, 59), // local 09-28 max
+      at(29, 0, 5), // local 09-29, same UTC day as the rows above
+      at(29, 19, 50), // local 09-29, UTC 23:50
+      at(29, 20, 10), // local 09-29 max, UTC 09-30 00:10 (other UTC day)
+      at(30, 0, 1), // local 09-30, UTC 09-30 04:01
+    ];
+    return {
+      rows,
+      expected: { "2026-09-28": rows[1], "2026-09-29": rows[4], "2026-09-30": rows[5] },
+    };
+  };
+  const insert = (dbLike) => {
+    for (const [index, t] of fixture().rows.toReversed().entries()) {
+      // Sparse ids cross the 50,000-id boundary without allocating 50,000 rows.
+      // Reverse timestamp order also proves that the merge keeps the maximum,
+      // rather than simply the last chunk's value for a local day.
+      const id = index < 2 ? index + 1 : 50_001 + index;
+      dbLike.run(
+        `INSERT INTO usageHistory(id, timestamp, provider, model, connectionId, endpoint, status, tokens) VALUES(?, ?, 'p', 'm', 'c1', '/v1/chat', 'ok', '{}')`,
+        [id, t],
+      );
+    }
+  };
+  const lastUsedByDay = (dbLike) =>
+    Object.fromEntries(
+      dbLike
+        .all(`SELECT dateKey, lastUsedAt FROM usageRollup ORDER BY dateKey`)
+        .map((r) => [r.dateKey, r.lastUsedAt]),
+    );
+
+  it("backfillSavingsComboFromHistory matches the JS local day of each row", async () => {
+    const { backfillSavingsComboFromHistory } = await import(
+      "@/lib/db/helpers/usageSavingsRollup.js"
+    );
+    insert(adapter);
+    adapter.run("DELETE FROM usageRollup");
+    backfillSavingsComboFromHistory(adapter);
+    expect(lastUsedByDay(adapter)).toEqual(fixture().expected);
+  });
+
+  it("migration 021 backfill matches the JS local day of each row", async () => {
+    const { createSqlJsAdapter } = await import("@/lib/db/adapters/sqljsAdapter.js");
+    const { runVersionedMigrations } = await import("@/lib/db/migrate.js");
+    const { MIGRATIONS } = await import("@/lib/db/migrations/index.js");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tokenhop-021-tz-"));
+    try {
+      const old = await createSqlJsAdapter(path.join(dir, "pre021.sqlite"));
+      runVersionedMigrations(
+        old,
+        MIGRATIONS.filter((m) => m.version < 21),
+      );
+      insert(old);
+      runVersionedMigrations(old);
+      expect(lastUsedByDay(old)).toEqual(fixture().expected);
+      old.close();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("90d / all read only the rollup", () => {
   it("survives DELETE FROM usageHistory with identical output", async () => {
     const day = (n) => {
@@ -496,5 +566,60 @@ describe("90d / all read only the rollup", () => {
       "omega",
       "zeta",
     ]);
+  });
+});
+
+describe("prunedBeforeTracking (rollup days without lastUsedAt)", () => {
+  let t;
+
+  beforeEach(async () => {
+    t = await seedTenancy();
+  });
+
+  // A pre-migration-021 day whose history was pruned: requests, no lastUsedAt.
+  function seedUntracked(dateKey, workspaceId = "") {
+    adapter.run(
+      `INSERT INTO usageRollup (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost, lastUsedAt)
+       VALUES (?, ?, '', 'local-no-key', 'p', 'm', 'c1', '/v1/chat', 4, 40, 0, 0, 0.1, '')`,
+      [dateKey, workspaceId],
+    );
+  }
+
+  const flag = async (ctx, period) =>
+    (await db.getUsageSavings(ctx, period, NOW)).prunedBeforeTracking;
+
+  it("is true for 90d and all when an untracked day falls inside the window", async () => {
+    seedUntracked("2026-09-20");
+    expect(await flag(null, "30d")).toBe(true);
+    expect(await flag(null, "90d")).toBe(true);
+    expect(await flag(null, "all")).toBe(true);
+  });
+
+  it("is false for a window that excludes the untracked day", async () => {
+    seedUntracked("2026-08-01"); // 59 days before 2026-09-29: outside 30d, inside 90d
+    expect(await flag(null, "30d")).toBe(false);
+    expect(await flag(null, "90d")).toBe(true);
+    expect(await flag(null, "all")).toBe(true);
+  });
+
+  it("is false for rows written through the normal save path", async () => {
+    await save({ timestamp: NOW - 2 * 86_400_000, meta: savings({ rtk: method(10, 100) }, 120) });
+    await save({ timestamp: NOW - 40 * 86_400_000, comboName: "alpha" });
+    for (const period of ["today", "24h", "7d", "30d", "60d", "90d", "all"]) {
+      expect(await flag(null, period)).toBe(false);
+    }
+  });
+
+  it("is false for history-backed periods even with untracked rollup days", async () => {
+    seedUntracked("2026-09-29");
+    expect(await flag(null, "today")).toBe(false);
+    expect(await flag(null, "24h")).toBe(false);
+  });
+
+  it("is scoped to the caller's workspace", async () => {
+    seedUntracked("2026-09-20", t.a.personal);
+    expect(await flag({ workspaceId: t.a.personal }, "90d")).toBe(true);
+    expect(await flag({ workspaceId: t.b.personal }, "90d")).toBe(false);
+    expect(await flag({ workspaceId: t.b.personal }, "all")).toBe(false);
   });
 });
