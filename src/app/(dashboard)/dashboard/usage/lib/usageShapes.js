@@ -114,16 +114,20 @@ export function sharePct(value, total) {
 // Extended bucket {label,input,cached,output,tokens,cost,requests}
 // (from getChartData): input is cache-inclusive, cached is a subset of input,
 // tokens = input + output. cost passes through unchanged; requests passes
-// through in both branches (default 0).
+// through in both branches (default 0). Bucket bounds grain/start
+// (YAN-1233) pass through when present so the chart can localize labels.
 export function shapeChartSeries(buckets) {
   return (buckets || []).map((b) => {
     const bucket = b || {};
+    const bounds =
+      bucket.grain && bucket.start ? { grain: bucket.grain, start: bucket.start } : null;
     if (bucket.input !== undefined || bucket.cached !== undefined || bucket.output !== undefined) {
       const input = bucket.input || 0;
       const cached = bucket.cached || 0;
       const output = bucket.output || 0;
       return {
         label: bucket.label,
+        ...bounds,
         input,
         cached,
         output,
@@ -134,6 +138,7 @@ export function shapeChartSeries(buckets) {
     }
     return {
       label: bucket.label,
+      ...bounds,
       input: bucket.tokens || 0,
       cached: 0,
       output: 0,

@@ -451,8 +451,12 @@ export async function getChartData(ctx, period = "7d", range = null) {
     const bucketMs = 3600000;
     const startTime = periodStart(period, now);
     const endTime = period === "today" ? startTime + 24 * bucketMs : now;
+    // grain + start (an ISO instant for hours) let the client localize
+    // the label (YAN-1233); `label` stays the English server-time form.
     const buckets = Array.from({ length: 24 }, (_, i) => ({
       label: hourLabel(startTime + i * bucketMs),
+      grain: "hour",
+      start: new Date(startTime + i * bucketMs).toISOString(),
       input: 0,
       cached: 0,
       output: 0,
@@ -499,11 +503,14 @@ export async function getChartData(ctx, period = "7d", range = null) {
   return Array.from({ length: bucketCount }, (_, i) => {
     const d = new Date(today);
     d.setDate(d.getDate() - (bucketCount - 1 - i));
-    const day = days[localDateKey(d)];
+    const key = localDateKey(d);
+    const day = days[key];
     const input = day ? Math.max(day.prompt, day.cached) : 0;
     const output = day ? day.output : 0;
     return {
       label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      grain: "day",
+      start: key,
       input,
       cached: day ? day.cached : 0,
       output,

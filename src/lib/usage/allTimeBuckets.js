@@ -23,8 +23,13 @@ function weekStart(d) {
   return r;
 }
 
-const emptyBucket = (label) => ({
+// grain + start are the machine-readable bucket bounds (YAN-1233): the
+// client formats localized labels from them; `label` stays English for
+// compatibility with older consumers.
+const emptyBucket = (label, grain, start) => ({
   label,
+  grain,
+  start,
   input: 0,
   cached: 0,
   output: 0,
@@ -39,7 +44,8 @@ const emptyBucket = (label) => ({
  * @param {Date} [todayArg] "today" for the series end (ignored when `range` is set)
  * @param {{from: string, to: string}|null} [range] inclusive local day keys; the
  *   series spans exactly from..to (rows outside are clamped into the edge buckets)
- * @returns {Array<{label:string,input:number,cached:number,output:number,tokens:number,cost:number,requests:number}>}
+ * @returns {Array<{label:string,grain:"week"|"month"|"year",start:string,input:number,cached:number,output:number,tokens:number,cost:number,requests:number}>}
+ *   `start` is the bucket's first local day key (week), `YYYY-MM` (month) or `YYYY` (year)
  */
 export function buildAllTimeBuckets(rows, todayArg = new Date(), range = null) {
   const valid = rows.filter((r) => r?.dateKey);
@@ -47,7 +53,11 @@ export function buildAllTimeBuckets(rows, todayArg = new Date(), range = null) {
   const currentWeek = weekStart(today);
   if (!valid.length && !range) {
     return [
-      emptyBucket(currentWeek.toLocaleDateString("en-US", { month: "short", day: "numeric" })),
+      emptyBucket(
+        currentWeek.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        "week",
+        dayKey(currentWeek),
+      ),
     ];
   }
   const minDay = parseDateKey(
@@ -84,7 +94,7 @@ export function buildAllTimeBuckets(rows, todayArg = new Date(), range = null) {
       skeleton.push([String(y), String(y)]);
     }
   }
-  const byKey = new Map(skeleton.map(([key, label]) => [key, emptyBucket(label)]));
+  const byKey = new Map(skeleton.map(([key, label]) => [key, emptyBucket(label, grain, key)]));
   const firstKey = skeleton[0][0];
   const lastKey = skeleton.at(-1)[0];
 
