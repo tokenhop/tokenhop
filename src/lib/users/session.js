@@ -434,8 +434,9 @@ export async function revokeOwnerSessions(request, { passwordHash } = {}) {
   const claims = await sessionClaims("pwd");
   if (!claims) return; // refused (e.g. owner owes a rotation): never re-mint
   // A sub session's re-mint must land on exactly our own bump; a concurrent
-  // sign-out-everywhere in the window ends the session instead (YAN-1220).
-  if (session?.sub && Number.isInteger(session.sv) && claims.sv !== session.sv + 1) {
+  // sign-out-everywhere in the window (or a sub token without an sv) ends the
+  // session instead (YAN-1220).
+  if (session?.sub && (!Number.isInteger(session.sv) || claims.sv !== session.sv + 1)) {
     clearDashboardAuthCookie(cookieStore);
     return;
   }

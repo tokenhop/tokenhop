@@ -55,14 +55,13 @@ export async function DELETE(request, { params }) {
 
     await bumpSessionVersion(principal.userId);
     const claims = await remintClaims(session, session.wid, { dropProvider: provider });
-    // The unlink already committed. A sign-out-everywhere landing around our own
-    // bump leaves claims.sv past session.sv + 1: that session must end, never
-    // be re-minted onto the newer sv (YAN-1220).
-    const raced = Number.isInteger(session.sv) && claims?.sv !== session.sv + 1;
-    if (claims?.sub && !raced) {
+    // The unlink already committed. Re-mint only onto exactly our own bump: a
+    // sign-out-everywhere landing around it (claims.sv past session.sv + 1), or
+    // no re-mintable claims, ends the session instead (YAN-1220).
+    if (claims?.sub && claims.sv === session.sv + 1) {
       // A revoked session just ends with a cleared cookie.
       await mintSessionCookie(cookieStore, request, claims, { from: session });
-    } else if (raced) {
+    } else {
       clearDashboardAuthCookie(cookieStore);
     }
     await audit({ principal, request }, "identity.unlink", { type: "identity", id });

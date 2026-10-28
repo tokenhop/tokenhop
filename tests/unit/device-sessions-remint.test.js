@@ -370,17 +370,16 @@ describe("YAN-751 re-mint keeps sid and exp", () => {
     await expectNoLiveCookie(session);
   });
 
-  it("change-password: a sign-out-everywhere before the write leaves no live cookie (YAN-1220)", async () => {
+  it("change-password: a sign-out-everywhere before the write never commits the password (YAN-1220)", async () => {
     const session = await signIn(t.a);
-    // Land the bump after the cookie is read, before the fresh user read.
+    const { sv } = await jwt.getDashboardAuthSession(session.token);
+    // Call 1 is the liveness check; call 2 is the route reading the cookie it
+    // just validated. Land the bump between that read and the user read.
     const realGet = jwt.getDashboardAuthSession;
-    let bumped = false;
+    let calls = 0;
     const spy = vi.spyOn(jwt, "getDashboardAuthSession").mockImplementation(async (token) => {
       const claims = await realGet(token);
-      if (!bumped) {
-        bumped = true;
-        await db.bumpSessionVersion(t.a.user.id);
-      }
+      if (++calls === 2) await db.bumpSessionVersion(t.a.user.id);
       return claims;
     });
     let res;
@@ -391,9 +390,14 @@ describe("YAN-751 re-mint keeps sid and exp", () => {
     } finally {
       spy.mockRestore();
     }
-    expect(bumped).toBe(true);
+    expect(calls).toBeGreaterThanOrEqual(2);
     expect(res.status).toBe(401);
     await expectNoLiveCookie(session);
+    // The signed-out session must not have changed the password.
+    expect(await bcrypt.compare(PW_A, await db.getUserPasswordHashUnscoped(t.a.user.id))).toBe(
+      true,
+    );
+    expect(row(session.sid).sv).toBe(sv);
   });
 
   it("change-password: a sign-out-everywhere right after the write leaves no live cookie (YAN-1220)", async () => {
