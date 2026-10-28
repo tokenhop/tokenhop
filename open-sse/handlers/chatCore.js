@@ -749,9 +749,15 @@ export async function handleChatCore({
   if (proxyOptions.vercelRelayUrl) {
     const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";
     const poolId = credentials?.providerSpecificData?.connectionProxyPoolId || "none";
+    let relayOrigin = proxyOptions.vercelRelayUrl;
+    try {
+      relayOrigin = new URL(proxyOptions.vercelRelayUrl).origin;
+    } catch {
+      // Keep raw only when URL parsing fails.
+    }
     log?.info?.(
       "PROXY",
-      `${provider.toUpperCase()} | ${model} | conn=${connectionName} | pool=${poolId} | vercel-relay=${proxyOptions.vercelRelayUrl}`,
+      `${provider.toUpperCase()} | ${model} | conn=${connectionName} | pool=${poolId} | vercel-relay=${relayOrigin}`,
     );
   } else if (proxyOptions.connectionProxyEnabled && proxyOptions.connectionProxyUrl) {
     let maskedProxyUrl = proxyOptions.connectionProxyUrl;

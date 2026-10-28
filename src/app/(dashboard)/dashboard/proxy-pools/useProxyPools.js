@@ -184,6 +184,8 @@ export default function useProxyPools() {
         });
         await fetchPools();
         if (!res.ok) notifyError(data?.error || "Proxy test failed");
+        else if (data?.ok && data?.relayOutdated)
+          notifyWarning("Proxy reachable — redeploy needed");
         else notifySuccess(data?.ok ? "Proxy test passed" : "Proxy test failed");
       } catch {
         notifyError("Proxy test failed");
@@ -191,7 +193,7 @@ export default function useProxyPools() {
         setTestingId(null);
       }
     },
-    [fetchPools, notifySuccess, notifyError],
+    [fetchPools, notifySuccess, notifyWarning, notifyError],
   );
 
   const handleToggleActive = useCallback(

@@ -3,6 +3,7 @@ import { createErrorResult } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { proxyOptionsFromCredentials } from "../utils/connectionProxyOptions.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { clientErrorMessage } from "../utils/proxyError.js";
 
 // Build auth headers from sttConfig + token
 function buildAuthHeaders(cfg, token) {
@@ -290,6 +291,9 @@ export async function handleSttCore({ provider, model, formData, credentials, st
         return await transcribeOpenAICompatible(cfg, file, model, token, formData, proxyOptions);
     }
   } catch (err) {
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, err.message || "STT request failed");
+    return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      clientErrorMessage(err, "STT request failed", "STT"),
+    );
   }
 }

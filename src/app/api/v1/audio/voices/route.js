@@ -8,6 +8,7 @@ import { GET as getDeepgramVoices } from "@/app/api/media-providers/tts/deepgram
 import { GET as getInworldVoices } from "@/app/api/media-providers/tts/inworld/voices/route.js";
 import { connectionProxyOptions } from "@/lib/network/connectionProxy";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
+import { clientErrorMessage } from "open-sse/utils/proxyError.js";
 
 // Provider → internal voices handler, called in-process: an HTTP self-fetch
 // would hit the login-gated /api/media-providers path without credentials.
@@ -280,7 +281,7 @@ export async function GET(request) {
     );
   } catch (err) {
     return Response.json(
-      { error: { message: err.message || "Failed", type: "server_error" } },
+      { error: { message: clientErrorMessage(err, "Failed", "VOICES"), type: "server_error" } },
       { status: 502, headers: { "Access-Control-Allow-Origin": "*" } },
     );
   }

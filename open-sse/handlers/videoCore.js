@@ -3,6 +3,7 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshTokenByProvider } from "../services/tokenRefresh.js";
 import { proxyOptionsFromCredentials } from "../utils/connectionProxyOptions.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { clientErrorMessage } from "../utils/proxyError.js";
 import { PROVIDER_MEDIA } from "../providers/index.js";
 import { getVideoAdapter } from "./videoProviders/index.js";
 
@@ -169,7 +170,10 @@ export async function handleVideoProxyCore({
     // Never re-send a creation POST on network error — the job may already exist upstream.
     return createErrorResult(
       HTTP_STATUS.BAD_GATEWAY,
-      sanitizeSecrets(`[${provider}] video upstream fetch failed: ${error.message}`, credentials),
+      sanitizeSecrets(
+        `[${provider}] ${clientErrorMessage(error, "video upstream fetch failed", "VIDEO")}`,
+        credentials,
+      ),
     );
   }
 
@@ -208,7 +212,7 @@ export async function handleVideoProxyCore({
         return createErrorResult(
           HTTP_STATUS.BAD_GATEWAY,
           sanitizeSecrets(
-            `[${provider}] video retry after refresh failed: ${error.message}`,
+            `[${provider}] ${clientErrorMessage(error, "video retry after refresh failed", "VIDEO")}`,
             credentials,
           ),
         );

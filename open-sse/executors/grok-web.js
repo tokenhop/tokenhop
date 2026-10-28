@@ -3,6 +3,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";
 import { sseChunk } from "../utils/sse.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { mapProxyFetchError } from "../utils/proxyError.js";
 
 const GROK_CHAT_API = PROVIDERS["grok-web"].baseUrl;
 const GROK_USER_AGENT =
@@ -290,7 +291,11 @@ function buildStreamingResponse(eventStream, model, cid, created, signal) {
               choices: [
                 {
                   index: 0,
-                  delta: { content: `[Stream error: ${err.message || String(err)}]` },
+                  delta: {
+                    content:
+                      mapProxyFetchError(err, "GROK-WEB")?.message ||
+                      `[Stream error: ${err.message || String(err)}]`,
+                  },
                   finish_reason: "stop",
                   logprobs: null,
                 },
@@ -469,11 +474,12 @@ export class GrokWebExecutor extends BaseExecutor {
         proxyOptions,
       );
     } catch (err) {
+      const proxyError = mapProxyFetchError(err, "GROK-WEB");
       log?.error?.("GROK-WEB", `Fetch failed: ${err.message || String(err)}`);
       const errResp = new Response(
         JSON.stringify({
           error: {
-            message: `Grok connection failed: ${err.message || String(err)}`,
+            message: proxyError?.message || `Grok connection failed: ${err.message || String(err)}`,
             type: "upstream_error",
           },
         }),

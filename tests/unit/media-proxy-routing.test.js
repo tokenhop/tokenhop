@@ -244,6 +244,30 @@ describe("upstream media requests use the connection proxy", () => {
     expect(calls[1][1]).toMatchObject({ redirect: "error" });
     expect(calls[2][1]).toMatchObject({ redirect: "error" });
   });
+  it("async image polling returns a generic proxy error to the client", async () => {
+    const statusUrl = "https://queue.fal.run/fal-ai/flux/requests/r1/status";
+    const responseUrl = "https://queue.fal.run/fal-ai/flux/requests/r1";
+    mocks.proxyAwareFetch.mockImplementation(async (url) => {
+      if (url === statusUrl) {
+        throw new Error("[ProxyFetch] Proxy required but failed (strictProxy=true): refused");
+      }
+      return json({ status_url: statusUrl, response_url: responseUrl });
+    });
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "a cat" },
+      modelInfo: { provider: "fal-ai", model: "fal-ai/flux" },
+      credentials: { apiKey: "fal-key", providerSpecificData: { ...PROXY_PSD } },
+      log: silentLog(),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.error).toBe("Upstream proxy unavailable");
+    expect(result.error).not.toContain("[ProxyFetch]");
+    expect(result.error).not.toContain("strictProxy");
+    expect(result.error).not.toContain("refused");
+  });
 
   it.each([
     [{ detail: "x" }, "Fal generation failed"],
@@ -593,6 +617,10 @@ describe("Strict Proxy fails closed for media requests", () => {
     });
 
     expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.error).toBe("Upstream proxy unavailable");
+    expect(result.error).not.toContain("[ProxyFetch]");
+    expect(result.error).not.toContain("strictProxy");
     expectProxiedOnly();
   });
 
@@ -608,6 +636,10 @@ describe("Strict Proxy fails closed for media requests", () => {
     });
 
     expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.error).toBe("Upstream proxy unavailable");
+    expect(result.error).not.toContain("[ProxyFetch]");
+    expect(result.error).not.toContain("strictProxy");
     expectProxiedOnly();
   });
 

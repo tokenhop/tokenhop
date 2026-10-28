@@ -28,6 +28,7 @@ import { createHash } from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { mapProxyFetchError } from "../utils/proxyError.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
 import { getActiveReliabilityPolicy } from "../config/reliabilityPolicy.js";
 import {
@@ -642,9 +643,15 @@ export class QoderExecutor extends BaseExecutor {
         credentials = await resolveQoderCredentials(credentials, proxyOptions, signal);
       } catch (err) {
         log?.error?.("QODER", `PAT exchange failed: ${err.message}`);
+        const proxyError = mapProxyFetchError(err, "QODER");
         const fakeResp = new Response(
-          JSON.stringify({ error: { message: `qoder PAT exchange failed: ${err.message}` } }),
-          { status: 401, headers: { "Content-Type": "application/json" } },
+          JSON.stringify({
+            error: { message: proxyError?.message || `qoder PAT exchange failed: ${err.message}` },
+          }),
+          {
+            status: proxyError?.status || 401,
+            headers: { "Content-Type": "application/json" },
+          },
         );
         return {
           response: fakeResp,
@@ -692,10 +699,16 @@ export class QoderExecutor extends BaseExecutor {
         signal,
       }));
     } catch (err) {
-      const fakeResp = new Response(JSON.stringify({ error: { message: err.message } }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+      const proxyError = mapProxyFetchError(err, "QODER");
+      const fakeResp = new Response(
+        JSON.stringify({
+          error: { message: proxyError?.message || `qoder request failed: ${err.message}` },
+        }),
+        {
+          status: proxyError?.status || 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
       return { response: fakeResp, url, headers: {}, transformedBody: body };
     }
 

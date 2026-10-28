@@ -12,15 +12,23 @@ import Callout from "@/shared/components/Callout";
 import EmptyState from "@/shared/components/EmptyState";
 import { Skeleton } from "@/shared/components/Loading";
 import { maskProxyUrl } from "@/shared/utils/proxyPools";
+import { RELAY_OUTDATED_MESSAGE, RELAY_REDEPLOY_GUIDANCE } from "@/shared/constants/proxyPools.js";
 
 const RELAY_TYPES = new Set(["vercel", "cloudflare", "deno"]);
 
 function healthPill(pool) {
   if (pool.testStatus === "active") {
     return (
-      <StatusPill variant="ok" size="sm" dot>
-        {pool.elapsedMs ? `Healthy · ${pool.elapsedMs}ms` : "Healthy"}
-      </StatusPill>
+      <div className="flex max-w-64 flex-wrap items-center gap-1.5">
+        <StatusPill variant="ok" size="sm" dot>
+          {pool.elapsedMs ? `Healthy · ${pool.elapsedMs}ms` : "Healthy"}
+        </StatusPill>
+        {pool.lastError === RELAY_OUTDATED_MESSAGE ? (
+          <StatusPill variant="warn" size="sm">
+            <span title={RELAY_REDEPLOY_GUIDANCE}>Redeploy needed</span>
+          </StatusPill>
+        ) : null}
+      </div>
     );
   }
   if (pool.testStatus === "error") {

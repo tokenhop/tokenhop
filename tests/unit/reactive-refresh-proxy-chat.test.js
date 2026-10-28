@@ -101,4 +101,29 @@ describe("handleChatCore reactive refresh proxy options (YAN-1036)", () => {
       expect.objectContaining(PROXY_PSD),
     );
   });
+  it("returns a generic proxy error without internal details", async () => {
+    executeMock.mockRejectedValue(
+      new Error("[ProxyFetch] Proxy required but failed (strictProxy=true): refused"),
+    );
+
+    const result = await handleChatCore({
+      body: { model: "gpt-5", stream: false, messages: [{ role: "user", content: "hi" }] },
+      modelInfo: { provider: "codex", model: "gpt-5" },
+      credentials: { accessToken: "at", providerSpecificData: { ...PROXY_PSD } },
+      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      connectionId: "test-conn",
+      rtkEnabled: false,
+      headroomEnabled: false,
+      cavemanEnabled: false,
+      ponytailEnabled: false,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.error).toBe("Upstream proxy unavailable");
+    expect(result.error).not.toContain("[ProxyFetch]");
+    expect(result.error).not.toContain("strictProxy");
+    expect(result.error).not.toContain("refused");
+    expect(await result.response.text()).toContain("Upstream proxy unavailable");
+  });
 });

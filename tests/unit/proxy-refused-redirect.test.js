@@ -28,6 +28,7 @@ const POOL = {
 // The refusal is identified by its error chain, not its wording.
 function expectRefusedRedirect(err) {
   expect(err).toBeInstanceOf(TypeError);
+  expect(err.code).toBe("ERR_REDIRECT_REFUSED");
   expect(err.cause).toBeInstanceOf(TypeError);
   expect(err.cause.cause.message).toBe("unexpected redirect");
 }

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getProxyPoolById, updateProxyPool } from "@/models";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { fetch as undiciFetch } from "undici";
+import { probeRelayVersion, RELAY_TEMPLATE_VERSION } from "open-sse/utils/proxyFetch.js";
+import { RELAY_OUTDATED_MESSAGE } from "@/shared/constants/proxyPools.js";
 
 async function testVercelRelay(relayUrl, timeoutMs = 10000) {
   const controller = new AbortController();
@@ -16,11 +18,16 @@ async function testVercelRelay(relayUrl, timeoutMs = 10000) {
       },
       signal: controller.signal,
     });
+    const version = await probeRelayVersion(relayUrl, { signal: controller.signal, fresh: true });
+    const relayOutdated = version < RELAY_TEMPLATE_VERSION;
+    await res.body?.cancel().catch(() => {});
     return {
       ok: res.ok,
       status: res.status,
       statusText: res.statusText,
       elapsedMs: Date.now() - startedAt,
+      relayOutdated,
+      ...(res.ok && relayOutdated ? { error: RELAY_OUTDATED_MESSAGE } : {}),
     };
   } catch (err) {
     return {
@@ -53,7 +60,9 @@ export async function POST(request, { params }) {
       testStatus: result.ok ? "active" : "error",
       lastTestedAt: now,
       lastError: result.ok
-        ? null
+        ? result.relayOutdated
+          ? RELAY_OUTDATED_MESSAGE
+          : null
         : result.error || `Proxy test failed with status ${result.status}`,
       isActive: result.ok,
     });
@@ -65,6 +74,7 @@ export async function POST(request, { params }) {
       error: result.error || null,
       elapsedMs: result.elapsedMs || 0,
       testedAt: now,
+      relayOutdated: result.relayOutdated === true,
     });
   } catch (error) {
     console.log("Error testing proxy pool:", error);

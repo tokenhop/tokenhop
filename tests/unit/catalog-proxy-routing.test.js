@@ -311,6 +311,22 @@ describe("gateway voices proxy routing (principal path)", () => {
       EXPECTED_PROXY,
     );
   });
+  it("returns a generic proxy error from the voices route", async () => {
+    mocks.proxyAwareFetch.mockRejectedValue(
+      new Error("[ProxyFetch] Proxy required but failed (strictProxy=true): refused"),
+    );
+
+    const response = await principalVoices("deepgram", {
+      connection: credentialedConnection("deepgram"),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.error.message).toBe("Upstream proxy unavailable");
+    expect(body.error.message).not.toContain("[ProxyFetch]");
+    expect(body.error.message).not.toContain("strictProxy");
+    expect(body.error.message).not.toContain("refused");
+  });
 
   it("fails closed with 500 and no upstream fetch when proxy resolution errors", async () => {
     const response = await principalVoices("deepgram", {

@@ -1,5 +1,6 @@
 import { BaseExecutor } from "./base.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { clientErrorMessage } from "../utils/proxyError.js";
 import { PROVIDERS } from "../config/providers.js";
 
 // Trae executor — SOLO remote agent API.
@@ -205,7 +206,7 @@ export default class TraeExecutor extends BaseExecutor {
       session = await this.createSession(headers, query, model, psd, signal, proxyOptions);
     } catch (err) {
       return {
-        response: errResponse(502, err?.message ? String(err.message) : String(err)),
+        response: errResponse(502, clientErrorMessage(err, String(err), "TRAE")),
         url: this.base(),
         headers,
         transformedBody: body,
@@ -347,7 +348,7 @@ export default class TraeExecutor extends BaseExecutor {
       );
     } catch (err) {
       return {
-        response: errResponse(502, err?.message ? String(err.message) : String(err)),
+        response: errResponse(502, clientErrorMessage(err, String(err), "TRAE")),
         url: this.base(),
         headers,
         transformedBody: body,

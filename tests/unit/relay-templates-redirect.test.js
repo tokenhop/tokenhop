@@ -9,6 +9,7 @@ import {
   CLOUDFLARE_RELAY_CODE,
   DENO_RELAY_CODE,
   VERCEL_RELAY_CODE,
+  RELAY_TEMPLATE_VERSION_HEADER,
 } from "@/lib/network/relayTemplates";
 
 let targetHits = 0;
@@ -72,6 +73,62 @@ async function loadHandlers() {
   ];
 }
 
+describe("relay templates identify their deployed version", () => {
+  it("adds the current version to success, redirect and local error responses", async () => {
+    for (const [name, handler] of await loadHandlers()) {
+      const missingTarget = await handler(relayRequest());
+      expect(missingTarget.status, name).toBe(400);
+      expect(missingTarget.headers.get(RELAY_TEMPLATE_VERSION_HEADER), name).toBe("2");
+
+      for (const redirect of ["error", "follow"]) {
+        const res = await handler(
+          relayRequest({
+            "x-relay-target": upstreamOrigin,
+            "x-relay-path": "/poll",
+            ...(redirect === "error" ? { "x-relay-redirect": redirect } : {}),
+          }),
+        );
+        expect(res.headers.get(RELAY_TEMPLATE_VERSION_HEADER), `${name}/${redirect}`).toBe("2");
+        await res.text().catch(() => "");
+      }
+    }
+  });
+});
+describe("relay templates preserve upstream headers", () => {
+  it("keeps multiple Set-Cookie values while adding the version header", async () => {
+    const cookieServer = createServer((_req, res) => {
+      res.writeHead(200, {
+        "content-type": "text/plain",
+        "set-cookie": ["a=1; Path=/", "b=2; Path=/"],
+      });
+      res.end("ok");
+    });
+    await new Promise((r) => cookieServer.listen(0, "127.0.0.1", r));
+    try {
+      const origin = `http://127.0.0.1:${cookieServer.address().port}`;
+      for (const [name, handler] of await loadHandlers()) {
+        const res = await handler(
+          relayRequest({ "x-relay-target": origin, "x-relay-path": "/poll" }),
+        );
+        expect(res.status, name).toBe(200);
+        expect(res.headers.getSetCookie(), name).toHaveLength(2);
+        expect(res.headers.get(RELAY_TEMPLATE_VERSION_HEADER), name).toBe("2");
+      }
+    } finally {
+      await new Promise((r) => cookieServer.close(r));
+    }
+  });
+
+  it("vercel converts an upstream fetch failure to a versioned 502", async () => {
+    const [, vercel] = (await loadHandlers()).find(([name]) => name === "vercel");
+    const res = await vercel(
+      relayRequest({ "x-relay-target": "http://127.0.0.1:9", "x-relay-path": "/poll" }),
+    );
+    expect(res.status).toBe(502);
+    expect(res.headers.get(RELAY_TEMPLATE_VERSION_HEADER)).toBe("2");
+    expect(res.headers.get("content-type")).toContain("application/json");
+  });
+});
 describe("relay templates honor x-relay-redirect (YAN-1598)", () => {
   it("returns the 302 unfollowed when the mode is error or manual", async () => {
     for (const [name, handler] of await loadHandlers()) {
