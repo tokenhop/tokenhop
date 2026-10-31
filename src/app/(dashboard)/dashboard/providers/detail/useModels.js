@@ -39,7 +39,6 @@ export function useModels({
   const [modelAliases, setModelAliases] = useState({});
   const [customModels, setCustomModels] = useState([]);
   const [suggestedModels, setSuggestedModels] = useState([]);
-  const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [testResults, setTestResults] = useState({});
@@ -123,16 +122,6 @@ export function useModels({
     }
     return success;
   }, [fetchAliases, fetchCustomModels, fetchDisabledModels, report]);
-
-  useEffect(() => {
-    if (providerId !== "kilocode") return;
-    request("/api/providers/kilo/free-models", undefined, "Failed to fetch free models")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.models?.length) setKiloFreeModels(data.models);
-      })
-      .catch((error) => report(error, "Failed to fetch free models"));
-  }, [providerId, report, request]);
 
   useEffect(() => {
     if (kind !== "llm") return;
@@ -428,10 +417,7 @@ export function useModels({
     [disableModels],
   );
 
-  const allModels = [
-    ...catalogModels,
-    ...kiloFreeModels.filter((free) => !catalogModels.some((model) => model.id === free.id)),
-  ].filter((model) => {
+  const allModels = catalogModels.filter((model) => {
     if (kind && kind !== "llm") {
       // Media kind filter, mirroring the legacy media-detail branching exactly.
       if (model.kinds) return model.kinds.includes(kind);
@@ -456,7 +442,6 @@ export function useModels({
     customModels,
     customModelRows,
     suggestedModels,
-    kiloFreeModels,
     disabledModelIds,
     enabledModels,
     disabledModels,

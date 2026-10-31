@@ -3,7 +3,8 @@
 // Agent, Vercel AI Gateway, Chutes, NVIDIA NIM, Nebius, SiliconFlow,
 // Hyperbolic, OpenCode Go, Venice, Bazaarlink, LLM7, SambaNova, Alibaba Coding
 // (CN), Alibaba Coding Intl, GLM Coding, GLM (China), MiniMax Coding and MiniMax
-// (China), Cohere, TokenRouter, Kilo Gateway and API.airforce. Each list
+// (China), Cohere, TokenRouter, Kilo Gateway, Kilo Code, Featherless and
+// API.airforce. Each list
 // carries every kind the provider serves, so it is
 // authoritative: no static extras are added back (except NIM's speech models
 // and MiniMax's static TTS/image rows). Registry models flagged
@@ -523,6 +524,28 @@ export function parseKiloModels(body, now = Date.now()) {
   return models;
 }
 
+// ── Featherless ───────────────────────────────────────────────────────────
+// Thousands of Hugging Face text models, all chat; registry names kept.
+// Gated rows stay listed: a key whose account has the Hugging Face access can
+// call them, and the list can't tell which keys do.
+export function parseFeatherlessModels(body, statics = getModelsByProviderId("featherless")) {
+  const names = new Map(statics.map((m) => [m.id, m.name]));
+  const seen = new Set();
+  const models = [];
+  for (const entry of entries(body)) {
+    const id = idOf(entry);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    models.push({
+      id,
+      name: names.get(id) || id,
+      contextLength: positive(entry.context_length),
+      maxOutputTokens: positive(entry.max_completion_tokens),
+    });
+  }
+  return models;
+}
+
 // ── API.airforce ──────────────────────────────────────────────────────────
 // Chat rows only (image, audio and rerank have no route here). `isFree` uses
 // the same rule as the "airforce-free" suggested-models filter.
@@ -581,29 +604,32 @@ export async function resolveOpencode() {
 
 // One authenticated GET. Returns { body } or { warning }; the warning reaches
 // the dashboard, so the key is never echoed back.
-async function fetchList(label, url, connection, proxyOptions) {
+async function fetchList(label, url, token, extraHeaders, proxyOptions) {
   const response = await proxyAwareFetch(
     url,
     {
-      headers: { Authorization: `Bearer ${connection.apiKey}`, Accept: "application/json" },
+      headers: { ...extraHeaders, Authorization: `Bearer ${token}`, Accept: "application/json" },
       // Failures aren't cached, so an unbounded hang would stall every /v1/models call.
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     },
     proxyOptions,
   );
   if (!response.ok) {
-    const text = (await response.text()).replaceAll(connection.apiKey, "***").slice(0, 300);
+    const text = (await response.text()).replaceAll(token, "***").slice(0, 300);
     return { warning: `Failed to fetch ${label} models: ${response.status} ${text}` };
   }
   return { body: await response.json() };
 }
 
-// `nextUrl(body)` follows a paginated list; it returns a URL or nothing.
+// `nextUrl(body, url)` follows a paginated list; it returns a URL or nothing.
+// `token` picks the credential (default: the API key); `headers` adds any
+// provider headers the list needs.
 const MAX_PAGES = 10;
 const resolver =
-  (label, url, parse, { nextUrl } = {}) =>
+  (label, url, parse, { nextUrl, token: pickToken = (c) => c.apiKey, headers } = {}) =>
   async (connection) => {
-    if (!connection.apiKey) return { models: [], warning: "No valid token found" };
+    const token = pickToken(connection);
+    if (!token) return { models: [], warning: "No valid token found" };
     const proxyOptions = await connectionProxyOptions(connection);
     if (!proxyOptions) {
       return { models: [], warning: `Failed to fetch ${label} models: proxy resolution failed` };
@@ -611,10 +637,23 @@ const resolver =
     const models = [];
     let pageUrl = url;
     for (let page = 0; pageUrl && page < MAX_PAGES; page++) {
-      const { body, warning } = await fetchList(label, pageUrl, connection, proxyOptions);
+      const { body, warning } = await fetchList(
+        label,
+        pageUrl,
+        token,
+        headers?.(connection) || {},
+        proxyOptions,
+      );
       if (warning) return { models: [], warning };
       models.push(...parse(body));
-      pageUrl = nextUrl?.(body);
+      pageUrl = nextUrl?.(body, pageUrl);
+    }
+    // Still a page to go: say so rather than pass a partial list off as whole.
+    if (pageUrl && models.length) {
+      return {
+        models,
+        warning: `${label} listed more than ${MAX_PAGES} pages; showing the first ${MAX_PAGES}.`,
+      };
     }
     return models.length
       ? { models }
@@ -759,6 +798,36 @@ export const resolveKiloGateway = resolver(
   "Kilo Gateway",
   "https://api.kilo.ai/api/gateway/models",
   (body) => parseKiloModels(body),
+);
+// Kilo Code (OAuth) lists the same gateway catalog its chat route serves; the
+// token and the organization header match the chat executor's.
+export const resolveKilocode = resolver(
+  "Kilo Code",
+  "https://api.kilo.ai/api/gateway/models",
+  (body) => parseKiloModels(body),
+  {
+    token: (c) => c.apiKey || c.accessToken,
+    headers: (c) =>
+      c.providerSpecificData?.orgId
+        ? { "X-Kilocode-OrganizationID": c.providerSpecificData.orgId }
+        : {},
+  },
+);
+// Paged by `page`/`per_page` (max 1000) with no next-page field: a full page
+// means there may be another.
+const FEATHERLESS_PAGE_SIZE = 1000;
+const featherlessPage = (page) =>
+  `https://api.featherless.ai/v1/models?per_page=${FEATHERLESS_PAGE_SIZE}&page=${page}`;
+export const resolveFeatherless = resolver(
+  "Featherless",
+  featherlessPage(1),
+  (body) => parseFeatherlessModels(body),
+  {
+    nextUrl: (body, url) =>
+      entries(body).length >= FEATHERLESS_PAGE_SIZE
+        ? featherlessPage(Number(new URL(url).searchParams.get("page")) + 1)
+        : undefined,
+  },
 );
 export const resolveAirforce = resolver(
   "API.airforce",

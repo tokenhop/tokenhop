@@ -11,6 +11,9 @@ import ModelRow from "../[id]/ModelRow";
 import FetchModelsButton from "../[id]/FetchModelsButton";
 
 const FILTER_THRESHOLD = 30;
+// Catalogs can list thousands of models (Featherless); render them in pages so
+// the card stays responsive. Search and filters still cover the whole list.
+const RENDER_PAGE = 200;
 const INPUT_FILTERS = [
   { value: "", label: "Any input" },
   { value: "image", label: "Image input" },
@@ -56,6 +59,7 @@ export default function ModelsSection({
   const [query, setQuery] = useState("");
   const [freeOnly, setFreeOnly] = useState(false);
   const [inputModality, setInputModality] = useState("");
+  const [renderLimit, setRenderLimit] = useState(RENDER_PAGE);
 
   const hasActiveConnection = connections.some((entry) => entry.isActive !== false);
   // Legacy media card always showed Test; Signal gates on connections. Keep
@@ -216,7 +220,10 @@ export default function ModelsSection({
                     placeholder="Search models"
                     icon="search"
                     value={query}
-                    onChange={(event) => setQuery(event.target.value)}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setRenderLimit(RENDER_PAGE);
+                    }}
                     className="min-w-[200px] flex-1"
                     inputClassName="py-1.5 text-xs sm:text-xs"
                   />
@@ -276,7 +283,7 @@ export default function ModelsSection({
                     thinkingSuffix={resolveThinkingSuffix(row.id)}
                   />
                 ))}
-                {visibleModels.map((model) => {
+                {visibleModels.slice(0, renderLimit).map((model) => {
                   const fullModel = `${storageAlias}/${model.id}`;
                   const oldFormatModel = `${providerId}/${model.id}`;
                   const existingAlias = Object.entries(models.modelAliases).find(
@@ -313,6 +320,16 @@ export default function ModelsSection({
                   );
                 })}
               </ul>
+              {visibleModels.length > renderLimit ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="expand_more"
+                  onClick={() => setRenderLimit((limit) => limit + RENDER_PAGE)}
+                >
+                  {`Show ${Math.min(RENDER_PAGE, visibleModels.length - renderLimit)} more`}
+                </Button>
+              ) : null}
             </>
           )}
           <div className="flex flex-wrap items-center gap-2">
