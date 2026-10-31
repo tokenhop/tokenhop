@@ -21,6 +21,7 @@ export default {
     baseUrl: "https://api.featherless.ai/v1/chat/completions",
     validateUrl: "https://api.featherless.ai/v1/models",
   },
+  features: { liveModels: true },
   models: [
     { id: "deepseek-ai/DeepSeek-V4-Pro", name: "DeepSeek V4 Pro" },
     { id: "deepseek-ai/DeepSeek-V4-Flash", name: "DeepSeek V4 Flash" },

@@ -25,6 +25,7 @@ export default {
       hooks: ["kilocodeOrg"],
     },
   },
+  features: { liveModels: true },
   models: [
     { id: "anthropic/claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
     { id: "anthropic/claude-opus-4-20250514", name: "Claude Opus 4" },
@@ -35,11 +36,10 @@ export default {
     { id: "deepseek/deepseek-chat", name: "DeepSeek Chat" },
     { id: "deepseek/deepseek-reasoner", name: "DeepSeek Reasoner" },
   ],
-  // Kilo Code proxies the OpenRouter catalog (334 models at time of writing),
-  // so the hardcoded list above is only a fallback. Surfacing the full catalog
-  // requires a fetcher + passthroughModels, matching how openrouter.js is set up.
-  // Without these, only the 8 hardcoded models appear in the combo model picker,
-  // hiding dynamic models like cohere/north-mini-code:free and poolside/laguna-m.1:free.
+  // Kilo Code proxies the OpenRouter catalog, so the hardcoded list above is
+  // only a fallback: connections list the live gateway catalog
+  // (features.liveModels), the side panel suggests free models from
+  // modelsFetcher, and any other id passes through.
   modelsFetcher: { url: "https://api.kilo.ai/api/gateway/models", type: "openrouter-free" },
   passthroughModels: true,
   oauth: {

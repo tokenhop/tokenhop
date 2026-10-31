@@ -127,6 +127,8 @@ describe("resolver registry", () => {
       "tokenrouter",
       "kilo-gateway",
       "api-airforce",
+      "kilocode",
+      "featherless",
       "llm7",
       "sambanova",
       "alicode",
