@@ -123,6 +123,10 @@ describe("resolver registry", () => {
       "ollama-local",
       "venice",
       "bazaarlink",
+      "cohere",
+      "tokenrouter",
+      "kilo-gateway",
+      "api-airforce",
       "llm7",
       "sambanova",
       "alicode",
@@ -136,7 +140,7 @@ describe("resolver registry", () => {
     ]) {
       expect(hasLiveModelResolver(id)).toBe(true);
     }
-    expect(hasLiveModelResolver("cohere")).toBe(false);
+    expect(hasLiveModelResolver("poolside")).toBe(false);
     expect(hasLiveModelResolver("toString")).toBe(false);
   });
 

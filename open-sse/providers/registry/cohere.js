@@ -18,6 +18,7 @@ export default {
     baseUrl: "https://api.cohere.ai/v1/chat/completions",
     validateUrl: "https://api.cohere.ai/v1/models",
   },
+  features: { liveModels: true },
   models: [
     { id: "command-r-plus-08-2024", name: "Command R+ (Aug 2024)" },
     { id: "command-r-08-2024", name: "Command R (Aug 2024)" },

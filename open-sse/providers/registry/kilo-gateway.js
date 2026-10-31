@@ -21,6 +21,7 @@ export default {
     baseUrl: "https://api.kilo.ai/api/gateway/chat/completions",
     validateUrl: "https://api.kilo.ai/api/gateway/models",
   },
+  features: { liveModels: true },
   models: [
     { id: "kilo-auto/free", name: "Kilo Auto Free", contextLength: 256000 },
     {

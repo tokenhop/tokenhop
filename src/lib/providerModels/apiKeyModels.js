@@ -3,7 +3,8 @@
 // Agent, Vercel AI Gateway, Chutes, NVIDIA NIM, Nebius, SiliconFlow,
 // Hyperbolic, OpenCode Go, Venice, Bazaarlink, LLM7, SambaNova, Alibaba Coding
 // (CN), Alibaba Coding Intl, GLM Coding, GLM (China), MiniMax Coding and MiniMax
-// (China). Each list carries every kind the provider serves, so it is
+// (China), Cohere, TokenRouter, Kilo Gateway and API.airforce. Each list
+// carries every kind the provider serves, so it is
 // authoritative: no static extras are added back (except NIM's speech models
 // and MiniMax's static TTS/image rows). Registry models flagged
 // `liveUnlisted` are appended for every provider in resolveLiveModels.
@@ -14,6 +15,7 @@ import { OPENCODE_PUBLIC_HEADERS } from "open-sse/executors/opencode.js";
 import { PROVIDER_MEDIA, PROVIDERS } from "open-sse/providers/index.js";
 import { FILTERS } from "@/app/api/providers/suggested-models/filters.js";
 import { withStaticNonChatModels } from "@/lib/providerModels/staticExtras.js";
+import { classifyOpenAIModel } from "@/lib/providerModels/openaiModels.js";
 import { connectionProxyOptions } from "@/lib/network/connectionProxy";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 
@@ -423,6 +425,127 @@ export function parseMinimaxModels(body, providerId = "minimax") {
   return models.length ? withStaticNonChatModels(providerId, models) : models;
 }
 
+// ── Cohere ────────────────────────────────────────────────────────────────
+// Native list: `name` is the id and there is no `id`. Fetched with
+// endpoint=chat, so embed/rerank-only models never reach the chat list; rows
+// whose endpoints still lack chat, and deprecated ones, are dropped too.
+export function parseCohereModels(body) {
+  const seen = new Set();
+  const models = [];
+  for (const entry of Array.isArray(body?.models) ? body.models : []) {
+    const id = typeof entry?.name === "string" ? entry.name.trim() : "";
+    if (!id || seen.has(id) || entry.is_deprecated === true) continue;
+    if (Array.isArray(entry.endpoints) && !entry.endpoints.includes("chat")) continue;
+    seen.add(id);
+    models.push({
+      id,
+      name: id,
+      contextLength: positive(entry.context_length),
+      ...(Array.isArray(entry.features) && entry.features.includes("vision")
+        ? { inputModalities: ["text", "image"] }
+        : {}),
+    });
+  }
+  return models;
+}
+
+// ── TokenRouter ───────────────────────────────────────────────────────────
+// OpenAI-style list of vendor-prefixed ids (`openai/gpt-5.5`). A registry id
+// keeps its kind; otherwise an output-modality field decides when present,
+// else the bare id goes through the OpenAI classifier. Only the kinds the
+// registry routes (chat, embedding, image) are kept.
+const TOKENROUTER_KINDS = new Set(["llm", "embedding", "image"]);
+const TOKENROUTER_OUTPUT_KINDS = { text: "llm", embeddings: "embedding", image: "image" };
+const isFreeId = (id) => /[-:]free$/i.test(id);
+function tokenrouterKind(entry, id) {
+  if (/embed/i.test(id)) return "embedding";
+  const outputs = entry?.architecture?.output_modalities;
+  if (Array.isArray(outputs) && outputs.length) {
+    if (outputs.includes("text")) return "llm";
+    for (const out of outputs)
+      if (TOKENROUTER_OUTPUT_KINDS[out]) return TOKENROUTER_OUTPUT_KINDS[out];
+    return null;
+  }
+  const bare = id.split("/").pop();
+  if (/(^|[-_])(flux|imagen|seedream|dall-e)|image-gen|(^|-)image$/i.test(bare)) return "image";
+  return classifyOpenAIModel(bare);
+}
+export function parseTokenrouterModels(body, statics = getModelsByProviderId("tokenrouter")) {
+  const staticById = new Map(statics.map((m) => [m.id, m]));
+  const seen = new Set();
+  const models = [];
+  for (const entry of entries(body)) {
+    const id = idOf(entry);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const known = staticById.get(id);
+    const kind = known ? known.kind || known.type || "llm" : tokenrouterKind(entry, id);
+    if (!TOKENROUTER_KINDS.has(kind)) continue;
+    models.push({
+      id,
+      name: known?.name || entry.name || id,
+      contextLength: positive(entry.context_length),
+      isFree: isFreeId(id),
+      ...(kind !== "llm" ? { kind } : {}),
+    });
+  }
+  return models;
+}
+
+// ── Kilo Gateway ──────────────────────────────────────────────────────────
+// OpenRouter-shaped. Kilo flags free rows itself (`isFree`); its auto routers
+// price at "-1", so pricing alone can't tell. Only text-output rows are
+// routed (the registry serves chat only); expired rows are dropped.
+export function parseKiloModels(body, now = Date.now()) {
+  const seen = new Set();
+  const models = [];
+  for (const entry of entries(body)) {
+    const id = idOf(entry);
+    if (!id || seen.has(id)) continue;
+    if (Date.parse(entry.expiration_date) <= now) continue;
+    const outputs = entry.architecture?.output_modalities;
+    if (Array.isArray(outputs) && !outputs.includes("text")) continue;
+    seen.add(id);
+    const { prompt, completion } = entry.pricing || {};
+    const inputs = entry.architecture?.input_modalities;
+    models.push({
+      id,
+      name: entry.name || id,
+      contextLength: positive(entry.context_length),
+      maxOutputTokens: positive(entry.top_provider?.max_completion_tokens),
+      isFree:
+        typeof entry.isFree === "boolean"
+          ? entry.isFree
+          : Number(prompt) === 0 && Number(completion) === 0 && prompt != null,
+      ...(Array.isArray(inputs) ? { inputModalities: inputs } : {}),
+    });
+  }
+  return models;
+}
+
+// ── API.airforce ──────────────────────────────────────────────────────────
+// Chat rows only (image, audio and rerank have no route here). `isFree` uses
+// the same rule as the "airforce-free" suggested-models filter.
+export function parseAirforceModels(body) {
+  const seen = new Set();
+  const models = [];
+  for (const entry of entries(body)) {
+    const id = idOf(entry);
+    if (!id || seen.has(id) || entry.supports_chat !== true) continue;
+    if (entry.media_type && entry.media_type !== "chat" && entry.media_type !== "text") continue;
+    seen.add(id);
+    models.push({
+      id,
+      name: entry.name || id,
+      contextLength: positive(entry.context_length),
+      maxOutputTokens: positive(entry.max_output_tokens),
+      isFree: entry.tier === "free" || id.endsWith(":free"),
+      ...(entry.supports_images === true ? { inputModalities: ["text", "image"] } : {}),
+    });
+  }
+  return models;
+}
+
 // The models endpoint sits beside the registry's OpenAI chat transport.
 const modelsUrlBeside = (label, chatUrl) => {
   if (typeof chatUrl !== "string" || !chatUrl.endsWith("/chat/completions")) {
@@ -456,12 +579,9 @@ export async function resolveOpencode() {
     : { models: [], warning: "OpenCode Free returned no live models." };
 }
 
-const resolver = (label, url, parse) => async (connection) => {
-  if (!connection.apiKey) return { models: [], warning: "No valid token found" };
-  const proxyOptions = await connectionProxyOptions(connection);
-  if (!proxyOptions) {
-    return { models: [], warning: `Failed to fetch ${label} models: proxy resolution failed` };
-  }
+// One authenticated GET. Returns { body } or { warning }; the warning reaches
+// the dashboard, so the key is never echoed back.
+async function fetchList(label, url, connection, proxyOptions) {
   const response = await proxyAwareFetch(
     url,
     {
@@ -472,13 +592,34 @@ const resolver = (label, url, parse) => async (connection) => {
     proxyOptions,
   );
   if (!response.ok) {
-    // The warning reaches the dashboard: never echo the key back.
     const text = (await response.text()).replaceAll(connection.apiKey, "***").slice(0, 300);
-    return { models: [], warning: `Failed to fetch ${label} models: ${response.status} ${text}` };
+    return { warning: `Failed to fetch ${label} models: ${response.status} ${text}` };
   }
-  const models = parse(await response.json());
-  return models.length ? { models } : { models: [], warning: `${label} returned no live models.` };
-};
+  return { body: await response.json() };
+}
+
+// `nextUrl(body)` follows a paginated list; it returns a URL or nothing.
+const MAX_PAGES = 10;
+const resolver =
+  (label, url, parse, { nextUrl } = {}) =>
+  async (connection) => {
+    if (!connection.apiKey) return { models: [], warning: "No valid token found" };
+    const proxyOptions = await connectionProxyOptions(connection);
+    if (!proxyOptions) {
+      return { models: [], warning: `Failed to fetch ${label} models: proxy resolution failed` };
+    }
+    const models = [];
+    let pageUrl = url;
+    for (let page = 0; pageUrl && page < MAX_PAGES; page++) {
+      const { body, warning } = await fetchList(label, pageUrl, connection, proxyOptions);
+      if (warning) return { models: [], warning };
+      models.push(...parse(body));
+      pageUrl = nextUrl?.(body);
+    }
+    return models.length
+      ? { models }
+      : { models: [], warning: `${label} returned no live models.` };
+  };
 
 export const resolveDeepSeek = resolver(
   "DeepSeek",
@@ -601,4 +742,26 @@ export const resolveMinimaxCn = resolver(
     PROVIDERS["minimax-cn"]?.transports?.find((t) => t.format === "openai")?.baseUrl,
   ),
   (body) => parseMinimaxModels(body, "minimax-cn"),
+);
+const COHERE_MODELS_URL = "https://api.cohere.com/v1/models?endpoint=chat&page_size=1000";
+export const resolveCohere = resolver("Cohere", COHERE_MODELS_URL, parseCohereModels, {
+  nextUrl: (body) =>
+    typeof body?.next_page_token === "string" && body.next_page_token
+      ? `${COHERE_MODELS_URL}&page_token=${encodeURIComponent(body.next_page_token)}`
+      : undefined,
+});
+export const resolveTokenrouter = resolver(
+  "TokenRouter",
+  "https://api.tokenrouter.com/v1/models",
+  (body) => parseTokenrouterModels(body),
+);
+export const resolveKiloGateway = resolver(
+  "Kilo Gateway",
+  "https://api.kilo.ai/api/gateway/models",
+  (body) => parseKiloModels(body),
+);
+export const resolveAirforce = resolver(
+  "API.airforce",
+  "https://api.airforce/v1/models",
+  parseAirforceModels,
 );

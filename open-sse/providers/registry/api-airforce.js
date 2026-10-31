@@ -17,6 +17,7 @@ export default {
   sharing: "shareable",
   authType: "apikey",
   authModes: ["apikey"],
+  features: { liveModels: true },
   passthroughModels: true,
   modelsFetcher: { url: "https://api.airforce/v1/models", type: "airforce-free" },
   transport: {
