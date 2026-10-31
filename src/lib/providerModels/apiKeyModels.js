@@ -621,7 +621,7 @@ async function fetchList(label, url, token, extraHeaders, proxyOptions) {
   return { body: await response.json() };
 }
 
-// `nextUrl(body)` follows a paginated list; it returns a URL or nothing.
+// `nextUrl(body, url)` follows a paginated list; it returns a URL or nothing.
 // `token` picks the credential (default: the API key); `headers` adds any
 // provider headers the list needs.
 const MAX_PAGES = 10;
@@ -646,7 +646,14 @@ const resolver =
       );
       if (warning) return { models: [], warning };
       models.push(...parse(body));
-      pageUrl = nextUrl?.(body);
+      pageUrl = nextUrl?.(body, pageUrl);
+    }
+    // Still a page to go: say so rather than pass a partial list off as whole.
+    if (pageUrl && models.length) {
+      return {
+        models,
+        warning: `${label} listed more than ${MAX_PAGES} pages; showing the first ${MAX_PAGES}.`,
+      };
     }
     return models.length
       ? { models }
@@ -806,10 +813,21 @@ export const resolveKilocode = resolver(
         : {},
   },
 );
+// Paged by `page`/`per_page` (max 1000) with no next-page field: a full page
+// means there may be another.
+const FEATHERLESS_PAGE_SIZE = 1000;
+const featherlessPage = (page) =>
+  `https://api.featherless.ai/v1/models?per_page=${FEATHERLESS_PAGE_SIZE}&page=${page}`;
 export const resolveFeatherless = resolver(
   "Featherless",
-  "https://api.featherless.ai/v1/models",
+  featherlessPage(1),
   (body) => parseFeatherlessModels(body),
+  {
+    nextUrl: (body, url) =>
+      entries(body).length >= FEATHERLESS_PAGE_SIZE
+        ? featherlessPage(Number(new URL(url).searchParams.get("page")) + 1)
+        : undefined,
+  },
 );
 export const resolveAirforce = resolver(
   "API.airforce",

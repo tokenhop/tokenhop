@@ -117,9 +117,53 @@ describe("live catalogs end to end", () => {
     });
 
     const body = await dashboardModels(conn.id);
-    expect(calls[0].url).toBe("https://api.featherless.ai/v1/models");
+    expect(calls[0].url).toBe("https://api.featherless.ai/v1/models?per_page=1000&page=1");
     expect(body.models).toEqual([]);
     expect(body.warning).toMatch(/401/);
     expect(body.warning).not.toContain("sk-secret");
+  });
+
+  it("featherless follows full pages until a short one", async () => {
+    const page = (n, count) =>
+      Array.from({ length: count }, (_, i) => ({ id: `org/model-${n}-${i}` }));
+    respond = (url) => {
+      const n = Number(new URL(url).searchParams.get("page"));
+      return Response.json({ data: n === 1 ? page(1, 1000) : page(2, 3) });
+    };
+    const conn = await createProviderConnectionUnscoped({
+      provider: "featherless",
+      authType: "apikey",
+      apiKey: "fl-test",
+      testStatus: "active",
+    });
+
+    const body = await dashboardModels(conn.id);
+    expect(body.warning).toBeUndefined();
+    expect(body.models).toHaveLength(1003);
+    expect(calls.map((c) => c.url)).toEqual([
+      "https://api.featherless.ai/v1/models?per_page=1000&page=1",
+      "https://api.featherless.ai/v1/models?per_page=1000&page=2",
+    ]);
+  });
+
+  it("featherless warns when the page cap cuts the catalog short", async () => {
+    let n = 0;
+    respond = () => {
+      n += 1;
+      return Response.json({
+        data: Array.from({ length: 1000 }, (_, i) => ({ id: `org/m-${n}-${i}` })),
+      });
+    };
+    const conn = await createProviderConnectionUnscoped({
+      provider: "featherless",
+      authType: "apikey",
+      apiKey: "fl-test",
+      testStatus: "active",
+    });
+
+    const body = await dashboardModels(conn.id);
+    expect(calls).toHaveLength(10);
+    expect(body.models).toHaveLength(10000);
+    expect(body.warning).toMatch(/more than 10 pages/);
   });
 });
