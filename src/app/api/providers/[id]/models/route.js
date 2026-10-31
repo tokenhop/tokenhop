@@ -50,7 +50,6 @@ const PROVIDER_MODELS_CONFIG = {
 
   // OpenAI-compatible API key providers
   perplexity: createOpenAIModelsConfig("https://api.perplexity.ai/v1/models"),
-  cohere: createOpenAIModelsConfig("https://api.cohere.ai/v1/models"),
   nanobanana: createOpenAIModelsConfig("https://api.nanobananaapi.ai/v1/models"),
   assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models"),
 };

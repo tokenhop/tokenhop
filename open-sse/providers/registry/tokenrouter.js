@@ -25,8 +25,9 @@ export default {
     validateUrl: "https://api.tokenrouter.com/v1/models",
     thinkingFormat: "tokenrouter",
   },
-  // Seed snapshot from live /v1/models. Latest catalogue is
-  // fetched via modelsFetcher; other ids still accepted via passthroughModels.
+  // Seed snapshot from live /v1/models. Connections list the live catalogue
+  // (features.liveModels), the side panel suggests from modelsFetcher, and any
+  // other id passes through.
   models: [
     { id: "anthropic/claude-haiku-4.5", name: "Claude Haiku 4.5" },
     { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
@@ -60,6 +61,7 @@ export default {
   imageConfig: {
     baseUrl: "https://api.tokenrouter.com/v1/images/generations",
   },
+  features: { liveModels: true },
   modelsFetcher: { url: "https://api.tokenrouter.com/v1/models", type: "openai" },
   passthroughModels: true,
 };
