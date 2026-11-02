@@ -140,6 +140,38 @@ dropped. Image ids are listed only for Minimax Coding. Built-in speech and image
 models are kept, including ones the live list omits. A failed or empty catalog
 keeps the built-in list and shows a warning.
 
+**Cohere, TokenRouter, Kilo Gateway, API.airforce, Kilo Code, and Featherless
+live catalogs:** **Providers → that provider → Fetch models** refreshes the list
+the dashboard and `GET /v1/models` use. A failed or empty catalog keeps the
+built-in list and shows a warning. A successful fetch replaces the built-in
+list. The provider page shows 200 models at a time. The button reads **Show 200
+more**, or fewer when that is all that remains. When the list has more than 30
+models, search and **Free only** cover every model, including ones still hidden
+behind that button.
+
+- **Cohere** reads `https://api.cohere.com/v1/models?endpoint=chat&page_size=1000`
+  and follows `next_page_token`. Deprecated rows are dropped. A row that lists
+  endpoints and leaves out chat is dropped. A `vision` feature marks image input.
+- **TokenRouter** reads `https://api.tokenrouter.com/v1/models`. Chat, embedding,
+  and image rows are kept. An id already in the built-in list keeps that name
+  and kind. Ids ending in `-free` or `:free` are marked free.
+- **Kilo Gateway** and **Kilo Code** read `https://api.kilo.ai/api/gateway/models`.
+  Rows with an expiration date in the past are dropped. Rows that list output
+  types and omit text are dropped. Kilo's `isFree` marks **Free only**. When
+  that field is absent, a row priced at zero for prompt and completion is marked
+  free. Kilo Code sends the connection token, and
+  `X-Kilocode-OrganizationID` when sign-in stored an organization id.
+- **API.airforce** reads `https://api.airforce/v1/models`. Rows with
+  `supports_chat` and no media type, or media type `chat` or `text`, are kept.
+  A `tier` of `free`, or an id ending in `:free`, is marked free.
+- **Featherless** reads `https://api.featherless.ai/v1/models` in pages of 1000.
+  Every row is listed as chat. A built-in name is kept when the id matches.
+  Gated models stay in the list.
+
+Cohere and Featherless stop after 10 pages. The warning then reads "Cohere
+listed more than 10 pages; showing the first 10." or the same sentence with
+"Featherless". Those fetched models stay on the page.
+
 ## Configuration
 
 The full env contract is in [`.env.example`](.env.example). `.env` is not baked into the
