@@ -100,7 +100,7 @@ Common issues and solutions when using tokenhop.
 3. **Check provider status:**
    Verify provider service is online (Claude Code, Codex, etc.)
 
-**Codex that needs re-authentication:** a Codex connection whose refresh token is rejected, or an imported Codex access token that is past its expiry and has no refresh token, is marked and then skipped. Later requests do not keep refreshing it. The Providers page shows "Token refresh failed · reconnect" or "Token expired · open provider". Sign in again, or replace the imported token. A passing Test does not clear the mark. Storing a new access token or refresh token does.
+**Codex that needs re-authentication:** a Codex connection whose refresh token is rejected, or an imported Codex access token that is past its expiry and has no refresh token, is marked and then skipped. An imported access token that Codex rejects as revoked or invalid is marked the same way. Later requests do not keep refreshing it. The Providers page shows "Token refresh failed · reconnect", "Token expired · open provider", or "Token revoked · open provider". Sign in again, or replace the imported token. A passing Test does not clear the mark. Storing a new access token or refresh token does. Signing in again, or importing a token for the same Codex account, updates that flagged connection. When every Codex account is marked, the gateway returns HTTP 503 with `error.code` `reauth_required` and the message "All codex accounts need re-authentication. Reconnect them on the Providers page." A combo tries its next model immediately.
 
 ---
 

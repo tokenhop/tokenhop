@@ -2,7 +2,9 @@
 
 This guide explains what happens when an existing 9router install upgrades to
 **tokenhop v1.0.0**. tokenhop is this project's new name — same code, same data,
-new name everywhere a user sees it. Everything below describes v1.0.0 behavior.
+new name everywhere a user sees it. The sections through
+[§12](#12-removed-in-v200) describe v1.0.0.
+[§13 Connection relays](#13-connection-relays-v120) describes the current server.
 
 ## 1. TL;DR
 
@@ -272,3 +274,19 @@ before v2.0.0:
 - The `9router.` browser storage keys (dashboard endpoint/API-key presets are
   copied forward automatically).
 - The `9router-data` volume-name pin in `compose.yml` (move the volume, §9).
+
+## 13. Connection relays (v1.2.0)
+
+Relays deployed before v1.2.0 always follow redirects on the requests they
+forward. Requests that ask not to follow redirects are only fully honored
+after redeploying the relay. A relay pool that is in use cannot be deleted
+(`DELETE /api/proxy-pools/[id]` returns 409 when connections are bound to
+it), so replace it instead:
+
+1. In **Dashboard → Proxy pools**, add a new relay of the same kind so it
+   runs the current relay code.
+2. Move the connections that used the old relay onto the new relay.
+3. Delete the old pool.
+
+The pool test marks an older relay as "Redeploy needed". Redirect-sensitive
+requests are refused until it is replaced; other requests keep working.
