@@ -5,7 +5,7 @@
 import { cookies } from "next/headers";
 import { requireMultiUser } from "@/lib/users/featureSwitch.js";
 import { getPrincipal, remintClaims } from "@/lib/users/session.js";
-import { mintReboundSessionCookie } from "@/lib/users/sessionMint.js";
+import { dropReboundSession, mintReboundSessionCookie } from "@/lib/users/sessionMint.js";
 import { clearDashboardAuthCookie, getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
 import { isCrossSite } from "@/lib/auth/sameOrigin.js";
 import { bumpSessionVersionAndRebindUnscoped, unlinkSsoIdentityGuarded } from "@/lib/db/index.js";
@@ -55,14 +55,20 @@ export async function DELETE(request, { params }) {
 
     // The unlink already committed: the bump always ends other sessions. This
     // browser keeps its sid only if the same transaction moved its row (YAN-1708);
-    // refused claims then clear the cookie and drop the moved row.
+    // refused claims then clear the cookie and drop the moved row, as does a
+    // throw before the cookie write (YAN-1813).
     const { rebound, sv } = await bumpSessionVersionAndRebindUnscoped(principal.userId, {
       sid: session.sid,
       expectedSv: session.sv,
     });
     if (rebound) {
-      const claims = await remintClaims(session, session.wid, { dropProvider: provider });
-      await mintReboundSessionCookie(cookieStore, request, claims, { from: session, sv });
+      try {
+        const claims = await remintClaims(session, session.wid, { dropProvider: provider });
+        await mintReboundSessionCookie(cookieStore, request, claims, { from: session, sv });
+      } catch (err) {
+        await dropReboundSession(cookieStore, session);
+        throw err;
+      }
     } else {
       clearDashboardAuthCookie(cookieStore);
     }
