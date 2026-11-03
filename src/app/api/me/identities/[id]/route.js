@@ -8,7 +8,7 @@ import { getPrincipal, remintClaims } from "@/lib/users/session.js";
 import { mintReboundSessionCookie } from "@/lib/users/sessionMint.js";
 import { clearDashboardAuthCookie, getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
 import { isCrossSite } from "@/lib/auth/sameOrigin.js";
-import { bumpSessionVersionAndRebind, unlinkSsoIdentityGuarded } from "@/lib/db/index.js";
+import { bumpSessionVersionAndRebindUnscoped, unlinkSsoIdentityGuarded } from "@/lib/db/index.js";
 import { audit } from "@/lib/users/audit.js";
 import { json, usableMethods } from "../usable.js";
 
@@ -56,7 +56,7 @@ export async function DELETE(request, { params }) {
     // The unlink already committed: the bump always ends other sessions. This
     // browser keeps its sid only if the same transaction moved its row (YAN-1708);
     // refused claims then clear the cookie and drop the moved row.
-    const { rebound, sv } = await bumpSessionVersionAndRebind(principal.userId, {
+    const { rebound, sv } = await bumpSessionVersionAndRebindUnscoped(principal.userId, {
       sid: session.sid,
       expectedSv: session.sv,
     });

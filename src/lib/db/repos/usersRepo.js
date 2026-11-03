@@ -8,7 +8,7 @@ import { getAdapter } from "../driver.js";
 import { TenancyError, assertCtx, mapConstraintErrors } from "@/lib/users/errors.js";
 import { assertNotLastManager } from "./membershipsRepo.js";
 import { revokeUserApiKeysSync } from "./apiKeysRepo.js";
-import { rebindBumpedSessionSync } from "./sessionsRepo.js";
+import { rebindBumpedSessionSyncUnscoped } from "./sessionsRepo.js";
 import { getSettings } from "./settingsRepo.js";
 import { getMetaSync, setMetaSync } from "../helpers/metaStore.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
@@ -227,7 +227,7 @@ export async function bumpSessionVersion(id) {
 
 /**
  * YAN-1708: bump sessionVersion and move the caller's own session row onto the
- * new sv in one transaction (rebindBumpedSessionSync). The bump is
+ * new sv in one transaction (rebindBumpedSessionSyncUnscoped). The bump is
  * unconditional: the caller's change (unlink, owner reset) already committed,
  * so every other session ends even when this cookie is stale. Only the rebind
  * is conditional, and it fails closed. A given `passwordHash` (string, or null
@@ -236,7 +236,10 @@ export async function bumpSessionVersion(id) {
  * @param {{ sid?: string, expectedSv?: number, passwordHash?: string|null }} [opts]
  * @returns {Promise<{ rebound: boolean, sv: number|null }>}
  */
-export async function bumpSessionVersionAndRebind(id, { sid, expectedSv, passwordHash } = {}) {
+export async function bumpSessionVersionAndRebindUnscoped(
+  id,
+  { sid, expectedSv, passwordHash } = {},
+) {
   const db = await getAdapter();
   try {
     return db.transaction(() => {
@@ -248,7 +251,7 @@ export async function bumpSessionVersionAndRebind(id, { sid, expectedSv, passwor
         `UPDATE users SET ${setsHash ? "passwordHash = ?, " : ""}sessionVersion = sessionVersion + 1, updatedAt = ? WHERE id = ?`,
         setsHash ? [passwordHash, now, id] : [now, id],
       );
-      return rebindBumpedSessionSync(db, {
+      return rebindBumpedSessionSyncUnscoped(db, {
         userId: id,
         sid,
         expectedSv,
@@ -326,7 +329,7 @@ export async function setUserPasswordUnscoped(
           );
         }
         const { rebound, sv } = rebind
-          ? rebindBumpedSessionSync(db, {
+          ? rebindBumpedSessionSyncUnscoped(db, {
               userId: id,
               sid: rebind.sid,
               expectedSv: rebind.expectedSv,

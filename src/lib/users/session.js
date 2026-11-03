@@ -13,7 +13,7 @@ import {
 } from "@/lib/auth/dashboardSession";
 import { cliTokenAcceptedWith } from "@/lib/auth/cliTokenPolicy.js";
 import {
-  bumpSessionVersionAndRebind,
+  bumpSessionVersionAndRebindUnscoped,
   countActiveUsersUnscoped,
   findIdentityUnscoped,
   getMeta,
@@ -430,7 +430,10 @@ export async function revokeOwnerSessions(request, { passwordHash } = {}) {
     ? session.sub === owner.id
     : request && (await isLiveSession(token));
   const rebind = ownSession && subSession ? { sid: session.sid, expectedSv: session.sv } : {};
-  const { rebound, sv } = await bumpSessionVersionAndRebind(owner.id, { ...rebind, passwordHash });
+  const { rebound, sv } = await bumpSessionVersionAndRebindUnscoped(owner.id, {
+    ...rebind,
+    passwordHash,
+  });
   if (!ownSession) return;
   if (subSession && !rebound) {
     clearDashboardAuthCookie(cookieStore);

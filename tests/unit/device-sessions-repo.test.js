@@ -174,7 +174,7 @@ describe("device sessions repo", () => {
     });
   }
 
-  it("bumpSessionVersionAndRebind bumps once and moves this row in one step (YAN-1708)", async () => {
+  it("bumpSessionVersionAndRebindUnscoped bumps once and moves this row in one step (YAN-1708)", async () => {
     const live = await mk(s.a);
     const other = await mk(s.a);
     const sv = await svOf(s.a);
@@ -182,7 +182,7 @@ describe("device sessions repo", () => {
     expect((await repo.getSessionForValidationUnscoped(live)).sv).toBe(sv);
 
     expect(
-      await db.bumpSessionVersionAndRebind(s.a.user.id, { sid: live, expectedSv: sv }),
+      await db.bumpSessionVersionAndRebindUnscoped(s.a.user.id, { sid: live, expectedSv: sv }),
     ).toEqual({ rebound: true, sv: sv + 1 });
     expect(await svOf(s.a)).toBe(sv + 1);
     expect(rowOf(live).sv).toBe(sv + 1);
@@ -191,28 +191,28 @@ describe("device sessions repo", () => {
     expect(ids(await repo.listSessions(s.a.ctx))).toEqual([live]);
   });
 
-  it("bumpSessionVersionAndRebind: a sid-less token on the current sv is rebound (adopted later)", async () => {
+  it("bumpSessionVersionAndRebindUnscoped: a sid-less token on the current sv is rebound (adopted later)", async () => {
     const sv = await svOf(s.a);
-    expect(await db.bumpSessionVersionAndRebind(s.a.user.id, { expectedSv: sv })).toEqual({
+    expect(await db.bumpSessionVersionAndRebindUnscoped(s.a.user.id, { expectedSv: sv })).toEqual({
       rebound: true,
       sv: sv + 1,
     });
     expect(await svOf(s.a)).toBe(sv + 1);
   });
 
-  it("bumpSessionVersionAndRebind: a stale cookie sv still bumps but never moves the row", async () => {
+  it("bumpSessionVersionAndRebindUnscoped: a stale cookie sv still bumps but never moves the row", async () => {
     const live = await mk(s.a);
     const sv = await svOf(s.a);
     // A sign-out-everywhere since the cookie was minted.
     await db.bumpSessionVersion(s.a.user.id);
 
     expect(
-      await db.bumpSessionVersionAndRebind(s.a.user.id, { sid: live, expectedSv: sv }),
+      await db.bumpSessionVersionAndRebindUnscoped(s.a.user.id, { sid: live, expectedSv: sv }),
     ).toEqual({ rebound: false, sv: sv + 2 });
     expect(await svOf(s.a)).toBe(sv + 2);
     expect(rowOf(live).sv).toBe(sv);
 
-    expect(await db.bumpSessionVersionAndRebind(s.a.user.id, { sid: live })).toEqual({
+    expect(await db.bumpSessionVersionAndRebindUnscoped(s.a.user.id, { sid: live })).toEqual({
       rebound: false,
       sv: sv + 3,
     });
@@ -221,7 +221,7 @@ describe("device sessions repo", () => {
     expect(await repo.listSessions(s.a.ctx)).toEqual([]);
   });
 
-  it("bumpSessionVersionAndRebind: revoked, expired, foreign, unknown and malformed sids bump only", async () => {
+  it("bumpSessionVersionAndRebindUnscoped: revoked, expired, foreign, unknown and malformed sids bump only", async () => {
     const revoked = await mk(s.a);
     await repo.revokeSession(s.a.ctx, revoked);
     const expired = await mk(s.a, { expiresAt: past() });
@@ -230,7 +230,9 @@ describe("device sessions repo", () => {
 
     for (const sid of [revoked, expired, foreign, "no-such-sid", "", {}]) {
       const sv = await svOf(s.a);
-      expect(await db.bumpSessionVersionAndRebind(s.a.user.id, { sid, expectedSv: sv })).toEqual({
+      expect(
+        await db.bumpSessionVersionAndRebindUnscoped(s.a.user.id, { sid, expectedSv: sv }),
+      ).toEqual({
         rebound: false,
         sv: sv + 1,
       });
@@ -243,13 +245,13 @@ describe("device sessions repo", () => {
     expect(await svOf(s.b)).toBe(bSv);
   });
 
-  it("bumpSessionVersionAndRebind: a failed rebind rolls the bump back", async () => {
+  it("bumpSessionVersionAndRebindUnscoped: a failed rebind rolls the bump back", async () => {
     const live = await mk(s.a);
     const sv = await svOf(s.a);
     const spy = failNextRebind();
     try {
       await expect(
-        db.bumpSessionVersionAndRebind(s.a.user.id, { sid: live, expectedSv: sv }),
+        db.bumpSessionVersionAndRebindUnscoped(s.a.user.id, { sid: live, expectedSv: sv }),
       ).rejects.toThrow("rebind failed");
     } finally {
       spy.mockRestore();

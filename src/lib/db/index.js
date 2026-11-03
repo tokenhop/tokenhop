@@ -203,7 +203,7 @@ export {
   countActiveUsersUnscoped,
   getSessionUserUnscoped,
   bumpSessionVersion,
-  bumpSessionVersionAndRebind,
+  bumpSessionVersionAndRebindUnscoped,
   getUserPasswordHashUnscoped,
   findUsersByLoginUnscoped,
   setUserPasswordUnscoped,

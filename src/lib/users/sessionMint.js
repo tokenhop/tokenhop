@@ -116,7 +116,7 @@ export async function mintSessionCookie(cookieStore, request, claims, { from } =
 
 /**
  * Re-mint onto a row the caller's own transaction already moved to `sv`
- * (bumpSessionVersionAndRebind / setUserPasswordUnscoped `rebind`, YAN-1708):
+ * (bumpSessionVersionAndRebindUnscoped / setUserPasswordUnscoped `rebind`, YAN-1708):
  * keeps `from.sid` and `from.exp` and never rebinds a second time. A sid-less
  * `from` (legacy token) takes mintSessionCookie's adopt path at `sv`.
  * Returns false (cookie cleared) when `claims` are refused (no `sub`) or `from`

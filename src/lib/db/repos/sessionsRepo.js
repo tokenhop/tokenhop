@@ -128,7 +128,7 @@ export async function rebindSessionUnscoped(id, userId, expectedSv, sv) {
  * adopts one at the returned sv.
  * @returns {{ rebound: boolean, sv: number }}
  */
-export function rebindBumpedSessionSync(db, { userId, sid, expectedSv, priorSv, now }) {
+export function rebindBumpedSessionSyncUnscoped(db, { userId, sid, expectedSv, priorSv, now }) {
   const sv = priorSv + 1;
   if (!Number.isInteger(expectedSv) || priorSv !== expectedSv) return { rebound: false, sv };
   // Defensive: a single connection's sync transaction can't interleave, so this
