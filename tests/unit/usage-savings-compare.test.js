@@ -470,6 +470,8 @@ describe("free-model pricing coverage (YAN-1812)", () => {
     "rate-null": { input: null },
     "rate-abc": { input: "abc" },
     "rate-zero": { input: 0 },
+    "rate-str": { input: "0.15" }, // numeric string resolves like gpt-4o-mini
+    "rate-blank": { input: "  " },
   };
 
   beforeAll(async () => {
@@ -506,7 +508,7 @@ describe("free-model pricing coverage (YAN-1812)", () => {
       },
     },
     "rollup (7d)": {
-      currentAt: (i) => new Date(2026, 8, 24 + i, 12).getTime(), // 09-24..09-28
+      currentAt: (i) => new Date(2026, 8, 24 + i, 12).getTime(), // 09-24 onward, inside 7d
       previousAt: (i) => new Date(2026, 8, 17 + i, 12).getTime(), // 09-17..09-21
       async read() {
         const headline = await db.getUsageSavings(null, "7d", NOW);
@@ -597,7 +599,7 @@ describe("free-model pricing coverage (YAN-1812)", () => {
       }
     });
 
-    it("treats non-numeric or negative input rates as unresolved, 0 as free", async () => {
+    it("treats non-numeric, blank or negative input rates as unresolved, 0 as free", async () => {
       seedWindow(
         path.currentAt,
         Object.keys(rawRates).map((model) => [1000, { provider: "raw", model }]),
@@ -605,9 +607,9 @@ describe("free-model pricing coverage (YAN-1812)", () => {
       const { currents } = await path.read();
       for (const totals of currents) {
         expect(totals).toMatchObject({
-          requestsWithSavings: 4,
-          pricedRequests: 1,
-          costSavedEst: null,
+          requestsWithSavings: 6,
+          pricedRequests: 2, // rate-zero (free) + rate-str
+          costSavedEst: paidCost,
         });
       }
     });
