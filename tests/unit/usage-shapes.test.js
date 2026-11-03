@@ -120,6 +120,18 @@ describe("shapeChartSeries", () => {
     expect(ext[0].requests).toBe(9);
     expect(shapeChartSeries([{ label: "z", tokens: 1, cost: 0 }])[0].requests).toBe(0);
   });
+
+  it("passes previous.tokens through as prevTokens only for compare buckets", () => {
+    const rows = shapeChartSeries([
+      { label: "a", input: 10, output: 5, previous: { tokens: 12, requests: 1 } },
+      { label: "b", input: 1, output: 1, previous: null },
+      { label: "c", tokens: 3, previous: { tokens: 0 } },
+      { label: "d", input: 1, output: 1 },
+    ]);
+    expect(rows.map((r) => r.prevTokens)).toEqual([12, null, 0, undefined]);
+    expect(rows[3]).not.toHaveProperty("prevTokens");
+    expect(rows[0].tokens).toBe(15);
+  });
 });
 
 describe("buildCurl", () => {

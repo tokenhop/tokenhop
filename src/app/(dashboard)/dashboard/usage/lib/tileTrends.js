@@ -67,6 +67,22 @@ export function savingsTrendInput(savings) {
 }
 
 /**
+ * Trend inputs for the Token saver hero's $ line from a /api/usage/savings
+ * payload fetched with `compare=previous`. `costSavedEst` is null when the
+ * window is unpriced; a side is undefined unless it is a finite number (null is
+ * never coerced to 0), so an unpriced or missing side makes `trendDelta` "none".
+ * @param {object|null|undefined} savings
+ * @returns {{ current: number|undefined, previous: number|undefined }}
+ */
+export function savingsCostTrendInput(savings) {
+  const finite = (value) => (Number.isFinite(value) ? value : undefined);
+  return {
+    current: finite(savings?.currentTotals?.costSavedEst),
+    previous: finite(savings?.previous?.costSavedEst),
+  };
+}
+
+/**
  * Values of one field across shaped chart buckets, for a StatTile sparkline.
  * @param {Array<object>|null|undefined} buckets shaped by shapeChartSeries
  * @param {"requests"|"input"|"cached"|"output"|"cost"} field

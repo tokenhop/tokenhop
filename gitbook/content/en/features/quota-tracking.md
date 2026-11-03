@@ -580,7 +580,11 @@ Example: `/dashboard/usage?period=custom&from=2026-09-01&to=2026-09-30`
 
 Home shows a change on Requests, Tokens in/out, Est. cost, and Saved by token saver when the selected period has requests. The line is a signed percent plus a caption: "vs same time yesterday", "vs prior 24h", "vs prior 7d", "vs prior 30d", "vs prior 60d", or "vs prior 90d". Tokens in/out reads `In +12% · Out -3%` plus that caption. A side with no usable previous total is omitted. When the previous total is missing or zero, the line says "No prior data". All time shows "All recorded usage" instead of a change.
 
+On Usage, the Tokens over time chart can overlay the previous period. In the Tokens view, a dashed "Previous period" line shows the previous window's total tokens (input plus output), and a solid "Total" line shows the current total. Each point is the same position in its own window, such as the same day of a 7d window or the same hour of Today. The "Previous period" switch beside the Tokens/Cost control turns both lines off. It is on by default. The Data table adds Total and Previous period columns. The overlay is not shown for All time, or when the previous window has no usage. Today compares only the hours elapsed so far with the same hours yesterday, so later hours have no previous value.
+
 Token saver shows the same line on the saved-tokens total for the period you selected, and only when that period itself has savings. When the page stands in a larger period, it does not show the change.
+
+Under that line, Token saver shows "Cost saved" with a signed percent and the same caption, for example "Cost saved +50% vs prior 7d". It appears only when both windows have savings priced at list prices, and never for All time.
 
 ## Request history retention
 

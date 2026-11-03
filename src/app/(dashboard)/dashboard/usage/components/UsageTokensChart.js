@@ -17,6 +17,7 @@ const BUCKETS_PROP = PropTypes.arrayOf(
     tokens: PropTypes.number,
     cost: PropTypes.number,
     requests: PropTypes.number,
+    prevTokens: PropTypes.number,
   }),
 );
 

@@ -5,8 +5,13 @@ import { Button, Callout, Card, CountUp, EmptyState, Skeleton } from "@/shared/c
 import PeriodControl from "@/shared/components/PeriodControl";
 import { PERIOD_VALUES, periodOptions } from "@/shared/utils/period";
 import { formatCompact, formatMoney } from "../home/format";
-import TrendLine from "../usage/components/TrendLine";
-import { savingsTrendInput } from "../usage/lib/tileTrends";
+import TrendLine, { TrendPct } from "../usage/components/TrendLine";
+import {
+  PRIOR_LABELS,
+  savingsCostTrendInput,
+  savingsTrendInput,
+  trendDelta,
+} from "../usage/lib/tileTrends";
 import {
   SAVINGS_METHOD_LABELS,
   SAVINGS_SEGMENT_ORDER,
@@ -88,6 +93,33 @@ const QUIET_NOTES = {
 };
 
 /**
+ * Cost-saved trend vs the previous equal window, under the token trend. Renders
+ * nothing (no "No prior data") for `all` or when either side is unpriced or
+ * missing. Label, percentage and caption are separate spans for i18n; hero
+ * styling keeps the lime tile's text color.
+ * @param {object} props
+ * @param {object} props.savings /api/usage/savings payload with `compare=previous`
+ * @param {string|null} props.period
+ * @returns {React.ReactNode}
+ */
+function CostTrendLine({ savings, period }) {
+  const { current, previous } = savingsCostTrendInput(savings);
+  if (period === "all" || trendDelta(current, previous).kind === "none") return null;
+  const caption = (PRIOR_LABELS[period] || PRIOR_LABELS.default).caption;
+  return (
+    <span className="text-sm font-medium">
+      <span>Cost saved</span> <TrendPct hero current={current} previous={previous} />{" "}
+      <span>{caption}</span>
+    </span>
+  );
+}
+
+CostTrendLine.propTypes = {
+  savings: PropTypes.object.isRequired,
+  period: PropTypes.string,
+};
+
+/**
  * Filled lime hero: total saved, % lighter, $ estimate at list prices and a
  * stacked bar by method. The heading and caption arrive as full static
  * phrases so the runtime i18n can translate them.
@@ -97,8 +129,9 @@ const QUIET_NOTES = {
  * @param {string} props.eyebrow
  * @param {string|null} [props.note] Quiet note about the empty selected period.
  * @param {React.ReactNode} [props.trend] Previous-period trend (selected-period state only).
+ * @param {React.ReactNode} [props.costTrend] Previous-period $ trend (selected-period state only).
  */
-function FilledHero({ savings, eyebrow, note = null, trend = null }) {
+function FilledHero({ savings, eyebrow, note = null, trend = null, costTrend = null }) {
   const saved = Number(savings.tokensSavedEst) || 0;
   const share = savingsShare(savings);
   const segments = SAVINGS_SEGMENT_ORDER.filter((method) => (share[method] || 0) > 0);
@@ -118,6 +151,7 @@ function FilledHero({ savings, eyebrow, note = null, trend = null }) {
           {savingsDollarLine(savings, formatMoney)}
         </span>
         {trend && <span className="text-sm font-medium">{trend}</span>}
+        {costTrend}
         {note && <span className="text-xs font-semibold text-on-lime/80">{note}</span>}
         {savings.prunedBeforeTracking === true && (
           <span className="text-xs font-semibold text-on-lime/80">{PRUNED_NOTE}</span>
@@ -165,6 +199,7 @@ FilledHero.propTypes = {
   eyebrow: PropTypes.string.isRequired,
   note: PropTypes.string,
   trend: PropTypes.node,
+  costTrend: PropTypes.node,
 };
 
 /**
@@ -227,6 +262,7 @@ export function SavingsHero({
         savings={savings}
         eyebrow={(SAVED_COPY[period] ?? SAVED_COPY.default).eyebrow}
         trend={<TrendLine hero {...savingsTrendInput(savings)} period={period} />}
+        costTrend={<CostTrendLine savings={savings} period={period} />}
       />
     );
   }
