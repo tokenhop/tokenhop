@@ -30,7 +30,7 @@ import { isUserSecurityEnforced } from "./securityState.js";
 import { isMultiUserEnabled } from "./featureSwitch.js";
 import { ensureOwnerBootstrap } from "./bootstrap.js";
 import { can } from "./principal.js";
-import { mintReboundSessionCookie, mintSessionCookie } from "./sessionMint.js";
+import { dropReboundSession, mintReboundSessionCookie, mintSessionCookie } from "./sessionMint.js";
 import { audit } from "./audit.js";
 import { getUserPreferences } from "@/lib/db/index.js";
 
@@ -439,22 +439,28 @@ export async function revokeOwnerSessions(request, { passwordHash } = {}) {
     clearDashboardAuthCookie(cookieStore);
     return;
   }
-  // Keep how they signed in (amr).
-  const claims = await sessionClaims("pwd");
-  if (subSession && !claims?.sub) {
-    // Refused after the rebind: clear the cookie and drop the moved row.
-    await mintReboundSessionCookie(cookieStore, request, null, { from: session, sv });
-    return;
-  }
-  if (!claims) return; // refused (e.g. owner owes a rotation): never re-mint
-  claims.amr = Array.isArray(session.amr) ? session.amr : ["pwd"];
-  // Keep the caller's active workspace if it is still one of the owner's.
-  const ownWorkspaces = (await listWorkspaces({ userId: owner.id })).map((w) => w.id);
-  if (ownWorkspaces.includes(session.wid)) claims.wid = session.wid;
-  if (subSession) {
-    await mintReboundSessionCookie(cookieStore, request, claims, { from: session, sv });
-  } else {
-    await mintSessionCookie(cookieStore, request, claims, { from: session });
+  try {
+    // Keep how they signed in (amr).
+    const claims = await sessionClaims("pwd");
+    if (subSession && !claims?.sub) {
+      // Refused after the rebind: clear the cookie and drop the moved row.
+      await mintReboundSessionCookie(cookieStore, request, null, { from: session, sv });
+      return;
+    }
+    if (!claims) return; // refused (e.g. owner owes a rotation): never re-mint
+    claims.amr = Array.isArray(session.amr) ? session.amr : ["pwd"];
+    // Keep the caller's active workspace if it is still one of the owner's.
+    const ownWorkspaces = (await listWorkspaces({ userId: owner.id })).map((w) => w.id);
+    if (ownWorkspaces.includes(session.wid)) claims.wid = session.wid;
+    if (subSession) {
+      await mintReboundSessionCookie(cookieStore, request, claims, { from: session, sv });
+    } else {
+      await mintSessionCookie(cookieStore, request, claims, { from: session });
+    }
+  } catch (err) {
+    // Rebound row: a throw before its cookie is written must not leave it live (YAN-1813).
+    if (subSession) await dropReboundSession(cookieStore, session);
+    throw err;
   }
 }
 

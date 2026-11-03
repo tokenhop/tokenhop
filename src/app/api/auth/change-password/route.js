@@ -5,7 +5,11 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { isUserSecurityEnforced } from "@/lib/users/securityState.js";
 import { isLiveSession, passwordSessionClaims } from "@/lib/users/session";
-import { mintReboundSessionCookie, mintSessionCookie } from "@/lib/users/sessionMint.js";
+import {
+  dropReboundSession,
+  mintReboundSessionCookie,
+  mintSessionCookie,
+} from "@/lib/users/sessionMint.js";
 import { clearDashboardAuthCookie, getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import {
   PASSWORD_CHANGE_COOKIE,
@@ -146,19 +150,26 @@ export async function POST(request) {
     }
     if (subject.session && !written.rebound) return expired(cookieStore);
 
-    // Fresh claims from the post-commit row: never reuse the old token's sv.
-    const claims = await passwordSessionClaims(user.id, subject.wid);
     // Full session: keep its sid and original exp (D3) on the row the write
     // already moved; refused claims drop that row. Restricted forced change:
     // fresh session row (D7).
+    let claims;
     let minted = false;
-    if (subject.session) {
-      minted = await mintReboundSessionCookie(cookieStore, request, claims, {
-        from: subject.session,
-        sv: written.sv,
-      });
-    } else if (claims?.sub) {
-      minted = await mintSessionCookie(cookieStore, request, claims);
+    try {
+      // Fresh claims from the post-commit row: never reuse the old token's sv.
+      claims = await passwordSessionClaims(user.id, subject.wid);
+      if (subject.session) {
+        minted = await mintReboundSessionCookie(cookieStore, request, claims, {
+          from: subject.session,
+          sv: written.sv,
+        });
+      } else if (claims?.sub) {
+        minted = await mintSessionCookie(cookieStore, request, claims);
+      }
+    } catch (err) {
+      // Rebound row: a throw before its cookie is written must not leave it live (YAN-1813).
+      if (subject.session) await dropReboundSession(cookieStore, subject.session);
+      throw err;
     }
     if (!minted) return expired(cookieStore);
     clearPasswordChangeCookie(cookieStore);
