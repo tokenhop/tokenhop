@@ -19,6 +19,7 @@ import {
   buildQuotaLockMeta,
   QUOTA_KEY_WINDOW_PREFIX,
   getModelLockMetaKey,
+  isQuotaLockMeta,
   getModelLockUntil,
 } from "open-sse/services/accountFallback.js";
 import { getActiveReliabilityPolicy } from "open-sse/config/reliabilityPolicy.js";
@@ -829,32 +830,48 @@ export async function clearAccountError(connectionId, currentConnection, model =
 
   if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError) return;
 
-  // Check if any active locks remain after clearing
-  const remainingActiveLocks = allLockKeys.filter((k) => {
-    if (keysToClear.includes(k)) return false;
-    const expiry = conn[k];
-    return expiry && new Date(expiry).getTime() > now;
+  // Captured snapshot of what this success may clear: each lock's value and,
+  // for quota-owned locks, its metadata generation.
+  const captured = keysToClear.map((k) => {
+    const meta = conn[getModelLockMetaKey(k)];
+    return { key: k, value: conn[k], generation: isQuotaLockMeta(meta) ? meta.generation : null };
   });
 
-  const clearObj = Object.fromEntries(keysToClear.map((k) => [k, null]));
-  // YAN-1049: a cleared lock takes its quota ownership metadata with it.
-  for (const k of keysToClear) {
-    const metaKey = getModelLockMetaKey(k);
-    if (conn[metaKey]) clearObj[metaKey] = null;
-  }
-
-  // Only reset error state if no active locks remain
-  if (remainingActiveLocks.length === 0) {
-    Object.assign(clearObj, {
-      testStatus: "active",
-      lastError: null,
-      errorCode: null,
-      lastErrorAt: null,
-      backoffLevel: 0,
-    });
-  }
-
-  await updateProviderConnectionUnscoped(connectionId, clearObj);
+  // Decide against the live row inside the transaction: a lock written on the
+  // same key after the snapshot (newer value or newer quota generation) survives.
+  await mutateProviderConnectionUnscoped(connectionId, (live) => {
+    const patch = {};
+    const cleared = [];
+    for (const { key, value, generation } of captured) {
+      if (live[key] !== value) continue;
+      const metaKey = getModelLockMetaKey(key);
+      const liveMeta = live[metaKey];
+      const liveGeneration = isQuotaLockMeta(liveMeta) ? liveMeta.generation : null;
+      if (liveGeneration !== generation) continue;
+      if (live[key] !== undefined && live[key] !== null) patch[key] = null;
+      if (liveMeta) patch[metaKey] = null;
+      cleared.push(key);
+    }
+    const liveNow = Date.now();
+    const remainingActive = Object.keys(live).some(
+      (k) =>
+        k.startsWith("modelLock_") &&
+        !cleared.includes(k) &&
+        live[k] &&
+        new Date(live[k]).getTime() > liveNow,
+    );
+    // Only reset error state if no active locks remain on the live row.
+    if (!remainingActive) {
+      Object.assign(patch, {
+        testStatus: "active",
+        lastError: null,
+        errorCode: null,
+        lastErrorAt: null,
+        backoffLevel: 0,
+      });
+    }
+    return Object.keys(patch).length > 0 ? patch : null;
+  });
 }
 
 /**

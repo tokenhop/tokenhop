@@ -355,6 +355,47 @@ describe("quota lock release on a positive poll", () => {
     expect(after[META_ALL] ?? null).toBeNull();
   });
 
+  it("a stale clearAccountError never clears a newer lock written on the same key", async () => {
+    const conn = await codexConn();
+    await auth.markAccountUnavailable(conn.id, 503, "Service unavailable", "codex", "gpt-5");
+    const snapshot = await row(conn.id); // success path's connection, read before the re-lock
+
+    // A quota lock lands on the same key after that snapshot.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await auth.markAccountUnavailable(
+      conn.id,
+      429,
+      "usage limit reached",
+      "codex",
+      "gpt-5",
+      Date.now() + 5 * 3_600_000,
+    );
+    const relocked = await row(conn.id);
+    expect(relocked["modelLock_gpt-5"]).not.toBe(snapshot["modelLock_gpt-5"]);
+
+    await auth.clearAccountError(conn.id, snapshot, "gpt-5");
+    const after = await row(conn.id);
+    expect(after["modelLock_gpt-5"]).toBe(relocked["modelLock_gpt-5"]);
+    expect(after["modelLockMeta_gpt-5"]).toEqual(relocked["modelLockMeta_gpt-5"]);
+    expect(after.testStatus).toBe("unavailable");
+    expect(after.lastError).toBe(relocked.lastError);
+  });
+
+  it("a stale clearAccountError keeps a quota lock whose generation moved on", async () => {
+    const conn = await githubConn();
+    const locked = await lockGithubMonthly(conn.id);
+    // Re-lock in the same month: same expiry value, newer generation.
+    await auth.markAccountUnavailable(conn.id, 402, GITHUB_MONTHLY, "github", "claude-x");
+    const relocked = await row(conn.id);
+    expect(relocked.modelLock___all).toBe(locked.modelLock___all);
+    expect(relocked[META_ALL].generation).toBeGreaterThan(locked[META_ALL].generation);
+
+    await auth.clearAccountError(conn.id, locked, "claude-x");
+    const after = await row(conn.id);
+    expect(after.modelLock___all).toBe(relocked.modelLock___all);
+    expect(after[META_ALL]).toEqual(relocked[META_ALL]);
+  });
+
   it("the activation reset (testStatus active) drops the metadata", async () => {
     const conn = await githubConn();
     await lockGithubMonthly(conn.id);
@@ -424,6 +465,60 @@ describe("quota lock release on a positive poll", () => {
     const after = await row(conn.id);
     expect(after["modelLock_gpt-5"]).toBe(locked["modelLock_gpt-5"]);
     expect(after["modelLockMeta_gpt-5"]).toEqual(locked["modelLockMeta_gpt-5"]);
+  });
+
+  it("keeps a null-window Codex lock when the poll is missing the weekly window", async () => {
+    const conn = await codexConn();
+    await auth.markAccountUnavailable(
+      conn.id,
+      429,
+      "usage limit reached",
+      "codex",
+      "gpt-5",
+      Date.now() + 5 * 3_600_000,
+    );
+    const locked = await row(conn.id);
+    await sync.recordUsageSnapshot({
+      connectionId: conn.id,
+      provider: "codex",
+      usage: { quotas: { session: { remainingPercentage: 90, windowMinutes: 300 } } },
+      probeStartedAt: locked["modelLockMeta_gpt-5"].lockedAt + 1,
+    });
+    expect((await row(conn.id))["modelLock_gpt-5"]).toBe(locked["modelLock_gpt-5"]);
+  });
+
+  it("keeps a review-model lock when the poll has no review window", async () => {
+    const conn = await codexConn();
+    await auth.markAccountUnavailable(
+      conn.id,
+      429,
+      "usage limit reached",
+      "codex",
+      "codex-review",
+      Date.now() + 5 * 3_600_000,
+    );
+    const locked = await row(conn.id);
+    const quotas = {
+      session: { remainingPercentage: 90, windowMinutes: 300 },
+      weekly: { remainingPercentage: 90, windowMinutes: 10080 },
+    };
+    const probeStartedAt = locked["modelLockMeta_codex-review"].lockedAt + 1;
+    await sync.recordUsageSnapshot({
+      connectionId: conn.id,
+      provider: "codex",
+      usage: { quotas },
+      probeStartedAt,
+    });
+    expect((await row(conn.id))["modelLock_codex-review"]).toBe(locked["modelLock_codex-review"]);
+
+    // With a positive review window present, it releases.
+    await sync.recordUsageSnapshot({
+      connectionId: conn.id,
+      provider: "codex",
+      usage: { quotas: { ...quotas, review_session: { remainingPercentage: 50 } } },
+      probeStartedAt,
+    });
+    expect((await row(conn.id))["modelLock_codex-review"] ?? null).toBeNull();
   });
 });
 

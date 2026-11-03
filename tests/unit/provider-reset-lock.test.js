@@ -180,4 +180,15 @@ describe("Codex usage_limit_reached reset parsing", () => {
     // ms sent as seconds: absurdly far out.
     expect(parse({ resets_in_seconds: NOW }).resetsAtMs).toBe(NOW + cap);
   });
+
+  it("ignores a past or now resets_at like before (normal backoff, no 30-min cap)", () => {
+    // Host clock slightly ahead of upstream: resets_at already reached locally.
+    expect(parse({ resets_at: (NOW - 2000) / 1000 }).resetsAtMs).toBeUndefined();
+    expect(parse({ resets_at: NOW / 1000 }).resetsAtMs).toBeUndefined();
+    expect(parse({ resets_in_seconds: 0 }).resetsAtMs).toBeUndefined();
+    // A past resets_at still lets a valid resets_in_seconds through.
+    expect(parse({ resets_at: (NOW - 2000) / 1000, resets_in_seconds: 60 }).resetsAtMs).toBe(
+      NOW + 60_000,
+    );
+  });
 });

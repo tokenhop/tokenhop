@@ -491,7 +491,8 @@ export class CodexExecutor extends BaseExecutor {
 
   // Parse Codex usage_limit_reached to extract precise resetsAtMs; fallback to default otherwise.
   // A reset further out than MAX_PROVIDER_RESET_HORIZON_MS (weekly window + slack) is
-  // untrusted upstream data (unit slip, garbage): fall back to the rate-limit cap.
+  // untrusted upstream data (unit slip, garbage): fall back to the rate-limit cap. A
+  // reset at/before now (clock skew) is ignored as before, so the 429 backs off normally.
   parseError(response, bodyText) {
     if (response.status === 429 && bodyText) {
       try {
@@ -499,24 +500,24 @@ export class CodexExecutor extends BaseExecutor {
         const err = json?.error;
         if (err?.type === "usage_limit_reached") {
           const now = Date.now();
-          const plausible = (ms) => ms > now && ms - now <= MAX_PROVIDER_RESET_HORIZON_MS;
           let resetsAtMs = null;
-          let reported = false;
+          let beyondHorizon = false;
+          const consider = (ms) => {
+            if (!(ms > now)) return;
+            if (ms - now <= MAX_PROVIDER_RESET_HORIZON_MS) resetsAtMs = ms;
+            else beyondHorizon = true;
+          };
           if (typeof err.resets_at === "number" && err.resets_at > 0) {
-            reported = true;
-            const ms = err.resets_at * 1000;
-            if (plausible(ms)) resetsAtMs = ms;
+            consider(err.resets_at * 1000);
           }
           if (
             !resetsAtMs &&
             typeof err.resets_in_seconds === "number" &&
             err.resets_in_seconds > 0
           ) {
-            reported = true;
-            const ms = now + err.resets_in_seconds * 1000;
-            if (plausible(ms)) resetsAtMs = ms;
+            consider(now + err.resets_in_seconds * 1000);
           }
-          if (!resetsAtMs && reported) {
+          if (!resetsAtMs && beyondHorizon) {
             resetsAtMs = now + getActiveReliabilityPolicy().cooldowns.rateLimitCapMs;
           }
           if (resetsAtMs) {

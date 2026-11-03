@@ -36,15 +36,52 @@ function lockIsSet(connection, lockKey) {
   return typeof connection?.[lockKey] === "string" && connection[lockKey] !== "";
 }
 
+// No-window (provider-reset) locks: raw usage keys every poll must carry below
+// 100% before the lock may release. Codex usage_limit_reached does not say which
+// window ran out, so both the primary session and the secondary weekly window
+// must be present and positive; a poll missing one proves nothing (fail safe).
+const REQUIRED_RAW_KEYS = { codex: ["session", "weekly"] };
+// Model-scoped window families: when the locked model belongs to one, the poll
+// must carry a window of that family (kindForName: review_* → model:review,
+// spark_* → model:spark-<rest>).
+const MODEL_WINDOW_FAMILIES = {
+  codex: [
+    { token: "review", matches: (kind) => kind === "model:review" },
+    { token: "spark", matches: (kind) => kind.startsWith("model:spark-") },
+  ],
+};
+
+function modelTokens(model) {
+  return model
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/** Every window the provider defines for this model is present in the poll. */
+function pollCoversModel(provider, model, windows, readings) {
+  for (const key of REQUIRED_RAW_KEYS[provider] ?? []) {
+    const used = readings?.get(key);
+    if (!Number.isFinite(used) || !(used < 1)) return false;
+  }
+  const tokens = modelTokens(model);
+  for (const family of MODEL_WINDOW_FAMILIES[provider] ?? []) {
+    if (!tokens.includes(family.token)) continue;
+    const present = windows.some((w) => family.matches(sanitizedWindowKind(w.kind)?.toLowerCase()));
+    if (!present) return false;
+  }
+  return true;
+}
+
 /**
  * Does the poll show headroom for this lock?
  * - `quota:<key>` window: that raw usage key must be present with a usable
  *   reading below 100% (a merged window shared with other keys proves nothing);
  * - snapshot window kind: the poll must carry that kind below 100%;
- * - no window: every window applicable to the locked model must be below 100%
- *   (and at least one must apply).
+ * - no window: every window the provider defines for the locked model must be
+ *   present (pollCoversModel), and every applicable window below 100%.
  */
-function pollShowsHeadroom(meta, lockKey, windows, readings) {
+function pollShowsHeadroom(meta, lockKey, windows, readings, provider) {
   if (meta.window?.startsWith(QUOTA_KEY_WINDOW_PREFIX)) {
     const used = readings?.get(meta.window.slice(QUOTA_KEY_WINDOW_PREFIX.length));
     return Number.isFinite(used) && used < 1;
@@ -55,7 +92,9 @@ function pollShowsHeadroom(meta, lockKey, windows, readings) {
       (w) => sanitizedWindowKind(w.kind)?.toLowerCase() === kind && w.usedFraction < 1,
     );
   }
-  const binding = getHeadroom(null, { windows }, lockModel(lockKey));
+  const model = lockModel(lockKey);
+  if (!pollCoversModel(provider, model, windows, readings)) return false;
+  const binding = getHeadroom(null, { windows }, model);
   return binding.source !== "static" && binding.headroom > 0;
 }
 
@@ -76,7 +115,7 @@ export function planQuotaLockRelease(connection, windows, probeStartedAt, readin
     if (!lockIsSet(connection, lockKey)) continue;
     // A poll already in flight when the lock was written proves nothing.
     if (!(probeStartedAt > meta.lockedAt)) continue;
-    if (!pollShowsHeadroom(meta, lockKey, windows, readings)) continue;
+    if (!pollShowsHeadroom(meta, lockKey, windows, readings, connection.provider)) continue;
     plan.push({ lockKey, metaKey, generation: meta.generation });
   }
   return plan;
@@ -145,7 +184,8 @@ export async function releaseQuotaLocksFromPoll({
     if (!connectionId || !QUOTA_LOCK_PROVIDERS.has(provider) || limitReached) return [];
     if (!Number.isFinite(probeStartedAt) || !Array.isArray(windows)) return [];
     const headroom =
-      windows.some((w) => w.usedFraction < 1) || [...readings.values()].some((u) => u < 1);
+      windows.some((w) => w.usedFraction < 1) ||
+      [...readings.values()].some((u) => Number.isFinite(u) && u < 1);
     if (!headroom) return [];
     // Pre-read outside the write transaction: the common no-op path never locks the row.
     const connection = await getProviderConnectionByIdUnscoped(connectionId);

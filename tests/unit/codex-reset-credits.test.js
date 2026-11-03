@@ -277,11 +277,11 @@ describe("Codex reset credits", () => {
       accessToken: "token",
       providerSpecificData: {},
     });
-    mocks.consumeCodexRateLimitResetCredit.mockResolvedValue({
-      ok: true,
-      status: 200,
-      code: "reset",
-      windowsReset: 2,
+    let consumeStartedAt;
+    mocks.consumeCodexRateLimitResetCredit.mockImplementation(async () => {
+      consumeStartedAt = Date.now();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { ok: true, status: 200, code: "reset", windowsReset: 2 };
     });
 
     const { POST } = await import(
@@ -298,6 +298,8 @@ describe("Codex reset credits", () => {
     const [id, opts] = mocks.clearQuotaOwnedLocks.mock.calls[0];
     expect(id).toBe("conn_1");
     expect(opts.before).toBeGreaterThanOrEqual(before);
+    // Captured before the spend: a lock written during/after the spend survives.
+    expect(opts.before).toBeLessThanOrEqual(consumeStartedAt);
   });
 
   it("POST leaves locks alone when no credit was spent", async () => {
