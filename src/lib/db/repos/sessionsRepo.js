@@ -117,6 +117,35 @@ export async function rebindSessionUnscoped(id, userId, expectedSv, sv) {
   return changes > 0;
 }
 
+/**
+ * YAN-1708: the one place a self-bumping re-mint (identity unlink, password
+ * change, owner reset) moves its own row. Sync: call it inside the users-table
+ * transaction right after that transaction's `sessionVersion + 1` write, with
+ * `priorSv` read before it. The row moves from `expectedSv` (the cookie's sv)
+ * to `priorSv + 1` only when the cookie was current and this bump is the
+ * user's latest sv; otherwise `rebound` is false and the caller must end the
+ * session. A sid-less token (legacy sub token) has no row yet: the caller
+ * adopts one at the returned sv.
+ * @returns {{ rebound: boolean, sv: number }}
+ */
+export function rebindBumpedSessionSync(db, { userId, sid, expectedSv, priorSv, now }) {
+  const sv = priorSv + 1;
+  if (!Number.isInteger(expectedSv) || priorSv !== expectedSv) return { rebound: false, sv };
+  // Defensive: a single connection's sync transaction can't interleave, so this
+  // re-read only refuses if something in this same transaction bumped again.
+  const current = db.get(`SELECT sessionVersion FROM users WHERE id = ?`, [userId]);
+  if (current?.sessionVersion !== sv) return { rebound: false, sv };
+  if (sid === undefined || sid === null) return { rebound: true, sv };
+  if (typeof sid !== "string" || !sid) return { rebound: false, sv };
+  const { changes } = db.run(
+    `UPDATE sessions SET sv = ?
+     WHERE id = ? AND userId = ? AND sv = ? AND revokedAt IS NULL AND expiresAt > ?`,
+    [sv, sid, userId, expectedSv, now],
+  );
+  dropCache(sid);
+  return { rebound: changes > 0, sv };
+}
+
 export async function listSessions(ctx) {
   assertCtx(ctx);
   const db = await getAdapter();

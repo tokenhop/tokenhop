@@ -14,6 +14,7 @@ let db; // @/lib/db/index.js
 let jwt; // @/lib/auth/dashboardSession
 let sessionsGET; // GET /api/me/sessions
 let workspacePOST; // POST /api/me/workspace
+let identityDELETE; // DELETE /api/me/identities/:id
 let adapter;
 let t;
 
@@ -35,6 +36,7 @@ async function load() {
   jwt = await import("@/lib/auth/dashboardSession");
   sessionsGET = (await import("@/app/api/me/sessions/route.js")).GET;
   workspacePOST = (await import("@/app/api/me/workspace/route.js")).POST;
+  identityDELETE = (await import("@/app/api/me/identities/[id]/route.js")).DELETE;
   adapter = await (await import("@/lib/db/driver.js")).getAdapter();
 }
 
@@ -139,6 +141,77 @@ describe("legacy sid-less token (D1)", () => {
 
     await db.revokeSession(t.b.ctx, sid);
     expect(await s.isLiveSession(token)).toBe(false);
+  });
+});
+
+describe("legacy tokens through the self-bumping re-mints (YAN-1708)", () => {
+  beforeEach(async () => {
+    jar.cookies.clear();
+    jar.headers = new Headers();
+    await load();
+    await db.updateSettings({ requireLogin: true, authMode: "both", ssoType: "oidc" });
+    t = await seedTenancy();
+    globalThis.__tokenhopDeviceSessionCache?.clear();
+    globalThis.__tokenhopSessionCache?.clear();
+  });
+
+  it("identity unlink adopts a sid-less sub token at the new sv with its original exp", async () => {
+    await db.updateUserUnscoped(t.b.user.id, { passwordHash: "x".repeat(60) });
+    t.b.user = await db.getUserUnscoped(t.b.user.id);
+    const ida = await db.linkIdentityUnscoped(t.b.user.id, {
+      provider: "oidc",
+      issuer: "https://idp",
+      subject: "sub-b",
+    });
+    const other = await signIn(t.b, undefined, { wid: t.shared.id });
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    await signIn(t.b, exp);
+
+    const res = await identityDELETE(
+      new NextRequest(`http://localhost/api/me/identities/${ida.id}`, { method: "DELETE" }),
+      { params: Promise.resolve({ id: ida.id }) },
+    );
+    expect(res.status).toBe(200);
+
+    const { sessionVersion } = await db.getUserUnscoped(t.b.user.id);
+    expect(sessionVersion).toBe(t.b.user.sessionVersion + 1);
+    const token = jar.cookies.get("auth_token");
+    const fresh = await jwt.getDashboardAuthSession(token);
+    expect(fresh).toMatchObject({ sid: expect.any(String), exp, sv: sessionVersion });
+    expect(rowsFor(t.b.user.id)).toEqual([
+      expect.objectContaining({ id: fresh.sid, sv: sessionVersion, revokedAt: null }),
+    ]);
+    expect(await s.isLiveSession(token)).toBe(true);
+    expect(await s.isLiveSession(other)).toBe(false);
+  });
+
+  it("revokeOwnerSessions adopts a legacy no-sub owner token and kills the owner's sub sessions", async () => {
+    // A pre-users token stands for the owner only while one user is active.
+    await db.updateUserUnscoped(t.b.user.id, { status: "disabled" });
+    const owner = await db.getUserUnscoped(t.a.user.id);
+    const subToken = await signIn(t.a);
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    const legacy = await jwt.createDashboardAuthToken({}, exp);
+    jar.cookies.set("auth_token", legacy);
+    expect(await s.isLiveSession(legacy)).toBe(true);
+
+    await s.revokeOwnerSessions(new NextRequest("http://localhost/api/settings"));
+
+    const { sessionVersion } = await db.getUserUnscoped(owner.id);
+    expect(sessionVersion).toBe(owner.sessionVersion + 1);
+    const token = jar.cookies.get("auth_token");
+    const fresh = await jwt.getDashboardAuthSession(token);
+    expect(fresh).toMatchObject({
+      sub: owner.id,
+      sid: expect.any(String),
+      exp,
+      sv: sessionVersion,
+    });
+    expect(rowsFor(owner.id)).toEqual([
+      expect.objectContaining({ id: fresh.sid, sv: sessionVersion, revokedAt: null }),
+    ]);
+    expect(await s.isLiveSession(token)).toBe(true);
+    expect(await s.isLiveSession(subToken)).toBe(false);
   });
 });
 

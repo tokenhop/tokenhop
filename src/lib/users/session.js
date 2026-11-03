@@ -13,7 +13,7 @@ import {
 } from "@/lib/auth/dashboardSession";
 import { cliTokenAcceptedWith } from "@/lib/auth/cliTokenPolicy.js";
 import {
-  bumpSessionVersion,
+  bumpSessionVersionAndRebind,
   countActiveUsersUnscoped,
   findIdentityUnscoped,
   getMeta,
@@ -24,14 +24,13 @@ import {
   getUserUnscoped,
   listWorkspaces,
   touchSessionUnscoped,
-  updateUserUnscoped,
 } from "@/lib/db/index.js";
 import { NextResponse } from "next/server";
 import { isUserSecurityEnforced } from "./securityState.js";
 import { isMultiUserEnabled } from "./featureSwitch.js";
 import { ensureOwnerBootstrap } from "./bootstrap.js";
 import { can } from "./principal.js";
-import { mintSessionCookie } from "./sessionMint.js";
+import { mintReboundSessionCookie, mintSessionCookie } from "./sessionMint.js";
 import { audit } from "./audit.js";
 import { getUserPreferences } from "@/lib/db/index.js";
 
@@ -408,11 +407,12 @@ export async function remintClaims(session, wid = session?.wid, { dropProvider }
 
 /**
  * Revoke every session of the owner (password change or reset). A given
- * `passwordHash` (or null, the reset case) is copied to the owner first via
- * updateUserUnscoped, which bumps sv itself (ADR-0004) — no double bump.
- * When `request` carries the owner's own session, re-mint its cookie so only
- * other devices are signed out. No-op while the switch is off or before an
- * owner exists.
+ * `passwordHash` (or null, the reset case) is written with the single sv bump
+ * (ADR-0004). When `request` carries the owner's own sub session, the same
+ * transaction moves its row onto the new sv (YAN-1708) and its cookie is
+ * re-minted, so only other devices are signed out; a stale cookie ends instead.
+ * A legacy pre-users session is adopted onto the new sv. No-op while the
+ * switch is off or before an owner exists.
  * @param {Request|null} request
  * @param {{ passwordHash?: string|null }} [opts] new owner hash (YAN-356)
  */
@@ -421,30 +421,38 @@ export async function revokeOwnerSessions(request, { passwordHash } = {}) {
   await ensureOwnerBootstrap();
   const owner = await getOwnerUnscoped();
   if (!owner) return;
-  if (passwordHash !== undefined) await updateUserUnscoped(owner.id, { passwordHash });
-  else await bumpSessionVersion(owner.id);
-  if (!request) return;
-  const cookieStore = await cookies();
-  const token = cookieStore.get(AUTH_COOKIE)?.value;
-  const session = await getDashboardAuthSession(token);
-  // Re-mint the owner's own cookie: a sub session, or a legacy one still accepted
-  // (it carries no sv, so this upgrades it). Keep how they signed in (amr).
-  const ownSession = session?.sub ? session.sub === owner.id : await isLiveSession(token);
+  // Read the caller's cookie before the write: a sub session is rebound in it.
+  const cookieStore = request ? await cookies() : null;
+  const token = cookieStore?.get(AUTH_COOKIE)?.value;
+  const session = request ? await getDashboardAuthSession(token) : null;
+  const subSession = Boolean(session?.sub);
+  const ownSession = subSession
+    ? session.sub === owner.id
+    : request && (await isLiveSession(token));
+  const rebind = ownSession && subSession ? { sid: session.sid, expectedSv: session.sv } : {};
+  const { rebound, sv } = await bumpSessionVersionAndRebind(owner.id, { ...rebind, passwordHash });
   if (!ownSession) return;
-  const claims = await sessionClaims("pwd");
-  if (!claims) return; // refused (e.g. owner owes a rotation): never re-mint
-  // A sub session's re-mint must land on exactly our own bump; a concurrent
-  // sign-out-everywhere in the window (or a sub token without an sv) ends the
-  // session instead (YAN-1220).
-  if (session?.sub && (!Number.isInteger(session.sv) || claims.sv !== session.sv + 1)) {
+  if (subSession && !rebound) {
     clearDashboardAuthCookie(cookieStore);
     return;
   }
+  // Keep how they signed in (amr).
+  const claims = await sessionClaims("pwd");
+  if (subSession && !claims?.sub) {
+    // Refused after the rebind: clear the cookie and drop the moved row.
+    await mintReboundSessionCookie(cookieStore, request, null, { from: session, sv });
+    return;
+  }
+  if (!claims) return; // refused (e.g. owner owes a rotation): never re-mint
   claims.amr = Array.isArray(session.amr) ? session.amr : ["pwd"];
   // Keep the caller's active workspace if it is still one of the owner's.
   const ownWorkspaces = (await listWorkspaces({ userId: owner.id })).map((w) => w.id);
   if (ownWorkspaces.includes(session.wid)) claims.wid = session.wid;
-  await mintSessionCookie(cookieStore, request, claims, { from: session });
+  if (subSession) {
+    await mintReboundSessionCookie(cookieStore, request, claims, { from: session, sv });
+  } else {
+    await mintSessionCookie(cookieStore, request, claims, { from: session });
+  }
 }
 
 /** Public view of a principal for /api/auth/status: no secrets, no hashes. */

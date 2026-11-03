@@ -9,7 +9,11 @@ import {
   setDashboardAuthCookie,
 } from "@/lib/auth/dashboardSession";
 import { getClientIp } from "@/lib/auth/loginLimiter";
-import { createSessionUnscoped, rebindSessionUnscoped } from "@/lib/db/index.js";
+import {
+  createSessionUnscoped,
+  rebindSessionUnscoped,
+  revokeSessionUnscoped,
+} from "@/lib/db/index.js";
 import { coarseIp, describeDevice } from "./deviceLabel.js";
 import { isUserSecurityEnforced } from "./securityState.js";
 
@@ -107,5 +111,35 @@ export async function mintSessionCookie(cookieStore, request, claims, { from } =
     replacesId,
   });
   await setDashboardAuthCookie(cookieStore, request, { ...base, sid }, { exp });
+  return true;
+}
+
+/**
+ * Re-mint onto a row the caller's own transaction already moved to `sv`
+ * (bumpSessionVersionAndRebind / setUserPasswordUnscoped `rebind`, YAN-1708):
+ * keeps `from.sid` and `from.exp` and never rebinds a second time. A sid-less
+ * `from` (legacy token) takes mintSessionCookie's adopt path at `sv`.
+ * Returns false (cookie cleared) when `claims` are refused (no `sub`) or `from`
+ * is expired or has no valid exp; the moved row is then revoked best-effort so
+ * it is not listed as a live device without a cookie.
+ */
+export async function mintReboundSessionCookie(cookieStore, request, claims, { from, sv }) {
+  const next = claims?.sub ? { ...claims, sv } : claims;
+  const sid = typeof from?.sid === "string" && from.sid ? from.sid : null;
+  if (!sid || !(await isUserSecurityEnforced())) {
+    return mintSessionCookie(cookieStore, request, next, { from });
+  }
+  const fromExp = Number.isInteger(from.exp) ? from.exp : undefined;
+  if (!next?.sub || fromExp === undefined || fromExp <= Math.floor(Date.now() / 1000)) {
+    clearDashboardAuthCookie(cookieStore);
+    try {
+      await revokeSessionUnscoped(sid, from.sub);
+    } catch {
+      // Cleanup only: the cookie is already gone.
+    }
+    return false;
+  }
+  const { sid: _sid, exp: _exp, iat: _iat, ...base } = next;
+  await setDashboardAuthCookie(cookieStore, request, { ...base, sid }, { exp: fromExp });
   return true;
 }

@@ -8,6 +8,7 @@ import { getAdapter } from "../driver.js";
 import { TenancyError, assertCtx, mapConstraintErrors } from "@/lib/users/errors.js";
 import { assertNotLastManager } from "./membershipsRepo.js";
 import { revokeUserApiKeysSync } from "./apiKeysRepo.js";
+import { rebindBumpedSessionSync } from "./sessionsRepo.js";
 import { getSettings } from "./settingsRepo.js";
 import { getMetaSync, setMetaSync } from "../helpers/metaStore.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
@@ -224,6 +225,42 @@ export async function bumpSessionVersion(id) {
   return changed > 0;
 }
 
+/**
+ * YAN-1708: bump sessionVersion and move the caller's own session row onto the
+ * new sv in one transaction (rebindBumpedSessionSync). The bump is
+ * unconditional: the caller's change (unlink, owner reset) already committed,
+ * so every other session ends even when this cookie is stale. Only the rebind
+ * is conditional, and it fails closed. A given `passwordHash` (string, or null
+ * for the reset) is written in the same UPDATE, like updateUserUnscoped.
+ * @param {string} id
+ * @param {{ sid?: string, expectedSv?: number, passwordHash?: string|null }} [opts]
+ * @returns {Promise<{ rebound: boolean, sv: number|null }>}
+ */
+export async function bumpSessionVersionAndRebind(id, { sid, expectedSv, passwordHash } = {}) {
+  const db = await getAdapter();
+  try {
+    return db.transaction(() => {
+      const row = getRow(db, id);
+      if (!row) return { rebound: false, sv: null };
+      const now = new Date().toISOString();
+      const setsHash = passwordHash !== undefined;
+      db.run(
+        `UPDATE users SET ${setsHash ? "passwordHash = ?, " : ""}sessionVersion = sessionVersion + 1, updatedAt = ? WHERE id = ?`,
+        setsHash ? [passwordHash, now, id] : [now, id],
+      );
+      return rebindBumpedSessionSync(db, {
+        userId: id,
+        sid,
+        expectedSv,
+        priorSv: row.sessionVersion,
+        now,
+      });
+    });
+  } finally {
+    dropSession(id);
+  }
+}
+
 export async function getUserPasswordHashUnscoped(id) {
   const db = await getAdapter();
   return db.get(`SELECT passwordHash FROM users WHERE id = ?`, [id])?.passwordHash ?? null;
@@ -249,12 +286,17 @@ export async function findUsersByLoginUnscoped(login) {
  * (STALE on mismatch, nothing written), set hash + mustChangePassword, bump
  * sessionVersion once, and mirror the owner's `settings.password` so the two
  * stores never split. Caller hashes first (async) — this part is sync.
+ * `rebind: { sid, expectedSv }` (self-service change, YAN-1708) moves that
+ * session row from the cookie's own `expectedSv` onto the new sv in the same
+ * transaction; `rebound` is false without a rebind, for a non-integer
+ * `expectedSv`, or when the row is revoked, expired, foreign or moved on.
  * @param {string} id
- * @param {{ passwordHash: string, mustChangePassword?: boolean, expectedSessionVersion?: number }} p
+ * @param {{ passwordHash: string, mustChangePassword?: boolean, expectedSessionVersion?: number, rebind?: { sid?: string, expectedSv?: number } }} p
+ * @returns {Promise<{ user: object, rebound: boolean, sv: number }>}
  */
 export async function setUserPasswordUnscoped(
   id,
-  { passwordHash, mustChangePassword = false, expectedSessionVersion } = {},
+  { passwordHash, mustChangePassword = false, expectedSessionVersion, rebind } = {},
 ) {
   // null only for the owner reset (CLI): clears the hash, login falls back to
   // INITIAL_PASSWORD/default and the flag forces a new password.
@@ -283,7 +325,16 @@ export async function setUserPasswordUnscoped(
             [stringifyJson(next)],
           );
         }
-        return getRow(db, id);
+        const { rebound, sv } = rebind
+          ? rebindBumpedSessionSync(db, {
+              userId: id,
+              sid: rebind.sid,
+              expectedSv: rebind.expectedSv,
+              priorSv: row.sessionVersion,
+              now,
+            })
+          : { rebound: false, sv: row.sessionVersion + 1 };
+        return { user: getRow(db, id), rebound, sv };
       }),
     );
   } finally {

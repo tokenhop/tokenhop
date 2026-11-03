@@ -426,6 +426,146 @@ describe("YAN-751 re-mint keeps sid and exp", () => {
     await expectNoLiveCookie(session);
   });
 
+  // A sign-out-everywhere landing after this flow's own transaction committed
+  // and before its cookie is written: the first users-row read after that
+  // commit (the claims rebuild) bumps sv and drops the cache, as
+  // bumpSessionVersion does (YAN-1708).
+  function bumpAfterCommit() {
+    const realRun = adapter.run.bind(adapter);
+    const realGet = adapter.get.bind(adapter);
+    const realTx = adapter.transaction.bind(adapter);
+    let depth = 0;
+    let bumpedInTx = false;
+    let state = "idle"; // "armed" once a bumping tx committed, then "done"
+    const spies = [
+      vi.spyOn(adapter, "transaction").mockImplementation((fn) => {
+        depth++;
+        try {
+          const result = realTx(fn);
+          if (depth === 1 && bumpedInTx && state === "idle") state = "armed";
+          return result;
+        } finally {
+          depth--;
+          if (depth === 0) bumpedInTx = false;
+        }
+      }),
+      vi.spyOn(adapter, "run").mockImplementation((sql, params) => {
+        if (depth > 0 && /sessionVersion = sessionVersion \+ 1/.test(sql)) bumpedInTx = true;
+        return realRun(sql, params);
+      }),
+      vi.spyOn(adapter, "get").mockImplementation((sql, params) => {
+        if (state === "armed" && depth === 0 && /FROM users WHERE/.test(sql)) {
+          state = "done";
+          realRun(`UPDATE users SET sessionVersion = sessionVersion + 1 WHERE id = ?`, [
+            t.a.user.id,
+          ]);
+          globalThis.__tokenhopSessionCache?.clear();
+        }
+        return realGet(sql, params);
+      }),
+    ];
+    return {
+      fired: () => state === "done",
+      restore: () => {
+        for (const spy of spies) spy.mockRestore();
+      },
+    };
+  }
+
+  /** The issued cookie carries the row's sv, never the later bump: it is dead. */
+  async function expectDeadReboundCookie(session) {
+    const token = authToken();
+    expect(token).toBeDefined();
+    const claims = await jwt.getDashboardAuthSession(token);
+    expect(claims.sid).toBe(session.sid);
+    expect(claims.sv).toBe(row(session.sid).sv);
+    await expectNoLiveCookie(session);
+  }
+
+  it.each([
+    [
+      "identity unlink",
+      async () => {
+        const ida = await db.linkIdentityUnscoped(t.a.user.id, {
+          provider: "oidc",
+          issuer: "https://idp",
+          subject: "sub-a",
+        });
+        return () =>
+          identityDELETE(
+            new NextRequest(`http://localhost/api/me/identities/${ida.id}`, { method: "DELETE" }),
+            { params: Promise.resolve({ id: ida.id }) },
+          );
+      },
+    ],
+    [
+      "change-password",
+      async () => () =>
+        changePOST(
+          post("/api/auth/change-password", { currentPassword: PW_A, newPassword: PW_NEW }),
+        ),
+    ],
+    ["revokeOwnerSessions", async () => () => s.revokeOwnerSessions(post("/api/settings", {}))],
+  ])(
+    "%s: a sign-out-everywhere after the commit leaves no live cookie (YAN-1708)",
+    async (_l, setup) => {
+      const run = await setup();
+      const session = await signIn(t.a);
+      const hook = bumpAfterCommit();
+      try {
+        await run();
+      } finally {
+        hook.restore();
+      }
+      expect(hook.fired()).toBe(true);
+      await expectDeadReboundCookie(session);
+    },
+  );
+
+  it("mintReboundSessionCookie writes the given sv, never the claims' sv (YAN-1708)", async () => {
+    const session = await signIn(t.a);
+    const from = await jwt.getDashboardAuthSession(session.token);
+    const { sessionVersion: sv } = await db.getUserUnscoped(t.a.user.id);
+    const claims = { sub: t.a.user.id, sv: sv + 5, wid: t.a.personal, amr: ["pwd"] };
+    const cookieStore = await (await import("next/headers")).cookies();
+    expect(
+      await mint.mintReboundSessionCookie(cookieStore, post("/x", {}), claims, { from, sv }),
+    ).toBe(true);
+    const next = await jwt.getDashboardAuthSession(authToken());
+    expect(next).toMatchObject({ sid: session.sid, exp: session.exp, sv });
+    expect(row(session.sid).sv).toBe(sv); // no second rebind
+  });
+
+  it.each([
+    ["a missing exp", (from) => ({ ...from, exp: undefined }), (claims) => claims],
+    ["an expired exp", (from) => ({ ...from, exp: nowSec() - 10 }), (claims) => claims],
+    ["refused claims", (from) => from, () => null],
+  ])(
+    "mintReboundSessionCookie with %s clears the cookie and revokes the row",
+    async (_l, mkFrom, mkClaims) => {
+      const session = await signIn(t.a);
+      const from = mkFrom(await jwt.getDashboardAuthSession(session.token));
+      const { sessionVersion: sv } = await db.getUserUnscoped(t.a.user.id);
+      const claims = mkClaims({ sub: t.a.user.id, sv, wid: t.a.personal, amr: ["pwd"] });
+      const cookieStore = await (await import("next/headers")).cookies();
+      expect(
+        await mint.mintReboundSessionCookie(cookieStore, post("/x", {}), claims, { from, sv }),
+      ).toBe(false);
+      expect(authToken()).toBeUndefined();
+      expect(row(session.sid).revokedAt).toBeTruthy();
+    },
+  );
+
+  it("revokeOwnerSessions: claims refused after the rebind clear the cookie and revoke the row", async () => {
+    const session = await signIn(t.a);
+    // Rotation owed without a bump: the rebind matches, then sessionClaims refuses.
+    adapter.run(`UPDATE users SET mustChangePassword = 1 WHERE id = ?`, [t.a.user.id]);
+    globalThis.__tokenhopSessionCache?.clear();
+    await s.revokeOwnerSessions(post("/api/settings", {}));
+    expect(authToken()).toBeUndefined();
+    expect(row(session.sid).revokedAt).toBeTruthy();
+  });
+
   it("mintSessionCookie: a sub-less re-mint of a user-bound session fails and clears", async () => {
     const session = await signIn(t.a);
     const from = await jwt.getDashboardAuthSession(session.token);

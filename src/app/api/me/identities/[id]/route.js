@@ -5,10 +5,10 @@
 import { cookies } from "next/headers";
 import { requireMultiUser } from "@/lib/users/featureSwitch.js";
 import { getPrincipal, remintClaims } from "@/lib/users/session.js";
-import { mintSessionCookie } from "@/lib/users/sessionMint.js";
+import { mintReboundSessionCookie } from "@/lib/users/sessionMint.js";
 import { clearDashboardAuthCookie, getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
 import { isCrossSite } from "@/lib/auth/sameOrigin.js";
-import { bumpSessionVersion, unlinkSsoIdentityGuarded } from "@/lib/db/index.js";
+import { bumpSessionVersionAndRebind, unlinkSsoIdentityGuarded } from "@/lib/db/index.js";
 import { audit } from "@/lib/users/audit.js";
 import { json, usableMethods } from "../usable.js";
 
@@ -53,14 +53,16 @@ export async function DELETE(request, { params }) {
       throw err;
     }
 
-    await bumpSessionVersion(principal.userId);
-    const claims = await remintClaims(session, session.wid, { dropProvider: provider });
-    // The unlink already committed. Re-mint only onto exactly our own bump: a
-    // sign-out-everywhere landing around it (claims.sv past session.sv + 1), or
-    // no re-mintable claims, ends the session instead (YAN-1220).
-    if (claims?.sub && claims.sv === session.sv + 1) {
-      // A revoked session just ends with a cleared cookie.
-      await mintSessionCookie(cookieStore, request, claims, { from: session });
+    // The unlink already committed: the bump always ends other sessions. This
+    // browser keeps its sid only if the same transaction moved its row (YAN-1708);
+    // refused claims then clear the cookie and drop the moved row.
+    const { rebound, sv } = await bumpSessionVersionAndRebind(principal.userId, {
+      sid: session.sid,
+      expectedSv: session.sv,
+    });
+    if (rebound) {
+      const claims = await remintClaims(session, session.wid, { dropProvider: provider });
+      await mintReboundSessionCookie(cookieStore, request, claims, { from: session, sv });
     } else {
       clearDashboardAuthCookie(cookieStore);
     }
