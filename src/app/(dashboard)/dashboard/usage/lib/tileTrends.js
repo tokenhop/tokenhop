@@ -67,15 +67,48 @@ export function savingsTrendInput(savings) {
 }
 
 /**
+ * Largest allowed absolute difference between the two windows' priced shares
+ * (pricedRequests / requestsWithSavings) for the Token saver cost trend:
+ * 0.2 = 20 percentage points (YAN-1788). Beyond it the dollar totals price
+ * different slices of the requests (2 of 100 vs 50 of 50 priced), so their
+ * percentage change would mostly measure pricing coverage, not savings.
+ */
+export const PRICED_SHARE_TOLERANCE = 0.2;
+
+/**
+ * Share of a window's requests with savings whose model had list pricing.
+ * @param {{pricedRequests?: number, requestsWithSavings?: number}|null|undefined} totals
+ * @returns {number|undefined} undefined when either count is not finite or there are no requests
+ */
+export function pricedShare(totals) {
+  const priced = totals?.pricedRequests;
+  const requests = totals?.requestsWithSavings;
+  if (!Number.isFinite(priced) || !Number.isFinite(requests) || requests <= 0) return undefined;
+  return priced / requests;
+}
+
+/**
  * Trend inputs for the Token saver hero's $ line from a /api/usage/savings
  * payload fetched with `compare=previous`. `costSavedEst` is null when the
  * window is unpriced; a side is undefined unless it is a finite number (null is
  * never coerced to 0), so an unpriced or missing side makes `trendDelta` "none".
+ * Both sides are undefined (trend hidden) when either window's pricedShare is
+ * unknown or the shares differ by more than PRICED_SHARE_TOLERANCE.
  * @param {object|null|undefined} savings
  * @returns {{ current: number|undefined, previous: number|undefined }}
  */
 export function savingsCostTrendInput(savings) {
   const finite = (value) => (Number.isFinite(value) ? value : undefined);
+  const cur = pricedShare(savings?.currentTotals);
+  const prev = pricedShare(savings?.previous);
+  // The epsilon keeps an exact 20-point gap (0.9 - 0.7 = 0.20000000000000007) comparable.
+  if (
+    cur === undefined ||
+    prev === undefined ||
+    Math.abs(cur - prev) > PRICED_SHARE_TOLERANCE + Number.EPSILON * 4
+  ) {
+    return { current: undefined, previous: undefined };
+  }
   return {
     current: finite(savings?.currentTotals?.costSavedEst),
     previous: finite(savings?.previous?.costSavedEst),

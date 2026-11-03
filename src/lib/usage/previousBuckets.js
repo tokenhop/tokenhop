@@ -3,6 +3,8 @@
 // the equal-length window right before the current one, shift it forward by
 // the window length and fold it into the CURRENT bucket skeleton, so each
 // bucket's `previous` covers exactly the same relative slice of its window.
+// Exception (YAN-1787): today's partial day bucket compares with the same
+// elapsed slice of the matching previous day (previousDaySlice), not a whole day.
 import { customChartBuckets } from "./customRange.js";
 import { daysBetweenDateKeys, previousPeriodRange, shiftDateKey } from "@/shared/utils/period";
 
@@ -79,6 +81,20 @@ export function previousHourWindow(period, now) {
 }
 
 /**
+ * Add one normalized history point into a bucket-shaped totals object.
+ * @param {object} slot bucketTotals-shaped (mutated)
+ * @param {{input:number,cached:number,output:number,cost:number}} p
+ */
+function addPoint(slot, p) {
+  slot.input += p.input;
+  slot.cached += p.cached;
+  slot.output += p.output;
+  slot.tokens += p.input + p.output;
+  slot.cost += p.cost;
+  slot.requests += 1;
+}
+
+/**
  * Add normalized history points into 24 hour slots (mutates `slots`): a point
  * lands in slot floor((t - start) / 1h), capped at the last slot. Points
  * failing `inWindow` or hitting a null slot are skipped. Shared by the current
@@ -93,15 +109,58 @@ export function foldHourPoints(slots, points, start, inWindow) {
   for (const p of points) {
     if (!inWindow(p.t)) continue;
     const slot = slots[Math.min(Math.floor((p.t - start) / HOUR_MS), HOUR_BUCKETS - 1)];
-    if (!slot) continue;
-    slot.input += p.input;
-    slot.cached += p.cached;
-    slot.output += p.output;
-    slot.tokens += p.input + p.output;
-    slot.cost += p.cost;
-    slot.requests += 1;
+    if (slot) addPoint(slot, p);
   }
   return slots;
+}
+
+/**
+ * Elapsed slice of a previous day matching today's partial day bucket
+ * (YAN-1787). Today's day bucket only holds the hours elapsed since local
+ * midnight, so its `previous` is clipped to the same elapsed time from the
+ * previous day's local midnight — the rule `previousPeriodRange("today")`
+ * uses — never past that day's next local midnight (setDate, DST-safe: a
+ * 23-hour previous day ends early, a 25-hour one keeps its extra hour).
+ * Half-open `[start, end)`; `dayEnd` bounds the whole previous day.
+ * @param {string} previousDayKey local `YYYY-MM-DD` of the matching previous day
+ * @param {number} now ms instant (today's elapsed time is measured from its local midnight)
+ * @returns {{start: number, end: number, dayEnd: number}}
+ */
+export function previousDaySlice(previousDayKey, now) {
+  const [y, m, d] = previousDayKey.split("-").map(Number);
+  const day = new Date(y, m - 1, d);
+  const start = day.getTime();
+  day.setDate(day.getDate() + 1);
+  const dayEnd = day.getTime();
+  const todayMidnight = new Date(now);
+  todayMidnight.setHours(0, 0, 0, 0);
+  return { start, end: Math.min(start + (now - todayMidnight.getTime()), dayEnd), dayEnd };
+}
+
+/**
+ * Retention guard for today's previous slice (YAN-1787): the previous day's
+ * history is complete enough to clip when it holds at least the rollup's
+ * requests for that day. Fewer means history retention pruned it — no clip
+ * is possible and a whole day would overstate the baseline, so the caller
+ * reports null without reading the slice. More (legacy rows never rolled
+ * up) or no rollup row at all still clips from history.
+ * @param {{historyRequests: number, rollupRequests: number}} counts whole-day request counts
+ * @returns {boolean}
+ */
+export function historyCoversRollup({ historyRequests, rollupRequests }) {
+  return historyRequests >= rollupRequests;
+}
+
+/**
+ * `previous` for today's partial day bucket (YAN-1787): the normalized
+ * history points of the previousDaySlice summed like the hour buckets.
+ * @param {Array<{t:number,input:number,cached:number,output:number,cost:number}>} points history points inside the slice
+ * @returns {{input:number,cached:number,output:number,tokens:number,cost:number,requests:number}}
+ */
+export function pointTotals(points) {
+  const totals = zeroTotals();
+  for (const p of points) addPoint(totals, p);
+  return totals;
 }
 
 /**

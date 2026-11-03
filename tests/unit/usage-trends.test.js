@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PERIOD_VALUES, periodStart, previousPeriodRange } from "@/shared/utils/period.js";
 import {
+  PRICED_SHARE_TOLERANCE,
   bucketSeries,
+  pricedShare,
   savingsCostTrendInput,
   savingsTrendInput,
   trendDelta,
@@ -204,10 +206,17 @@ describe("tile trends", () => {
     }
   });
 
+  // Fully priced window totals; `priced` = pricedRequests of `requests` (YAN-1788).
+  const costTotals = (costSavedEst, priced = 10, requests = 10) => ({
+    costSavedEst,
+    pricedRequests: priced,
+    requestsWithSavings: requests,
+  });
+
   it("maps priced savings cost to trend inputs", () => {
     const input = savingsCostTrendInput({
-      currentTotals: { tokensSavedEst: 5000, costSavedEst: 1.5 },
-      previous: { tokensSavedEst: 4000, costSavedEst: 1 },
+      currentTotals: { tokensSavedEst: 5000, ...costTotals(1.5) },
+      previous: { tokensSavedEst: 4000, ...costTotals(1) },
     });
     expect(input).toEqual({ current: 1.5, previous: 1 });
     expect(trendDelta(input.current, input.previous)).toEqual({ kind: "up", pct: 50 });
@@ -216,29 +225,54 @@ describe("tile trends", () => {
   it("hides the cost trend when unpriced, previous missing or previous is zero", () => {
     // null costSavedEst means unpriced — never coerced to 0.
     expect(
-      savingsCostTrendInput({
-        currentTotals: { costSavedEst: null },
-        previous: { costSavedEst: 2 },
-      }),
+      savingsCostTrendInput({ currentTotals: costTotals(null), previous: costTotals(2) }),
     ).toEqual({ current: undefined, previous: 2 });
     expect(
-      savingsCostTrendInput({
-        currentTotals: { costSavedEst: 2 },
-        previous: { costSavedEst: null },
-      }),
+      savingsCostTrendInput({ currentTotals: costTotals(2), previous: costTotals(null) }),
     ).toEqual({ current: 2, previous: undefined });
-    expect(savingsCostTrendInput({ currentTotals: { costSavedEst: 2 } })).toEqual({
-      current: 2,
+    expect(savingsCostTrendInput({ currentTotals: costTotals(2) })).toEqual({
+      current: undefined,
       previous: undefined,
     });
     for (const savings of [null, undefined, { costSavedEst: 3 }]) {
       expect(savingsCostTrendInput(savings)).toEqual({ current: undefined, previous: undefined });
     }
     const zeroPrev = savingsCostTrendInput({
-      currentTotals: { costSavedEst: 2 },
-      previous: { costSavedEst: 0 },
+      currentTotals: costTotals(2),
+      previous: costTotals(0),
     });
     expect(trendDelta(zeroPrev.current, zeroPrev.previous)).toEqual({ kind: "none" });
+  });
+
+  it("hides the cost trend when the priced share differs by more than the tolerance", () => {
+    expect(PRICED_SHARE_TOLERANCE).toBe(0.2);
+    const input = (cur, prev) => savingsCostTrendInput({ currentTotals: cur, previous: prev });
+    const hidden = { current: undefined, previous: undefined };
+    // Equal shares (both half priced) keep the trend.
+    expect(input(costTotals(2, 5, 10), costTotals(1, 50, 100))).toEqual({
+      current: 2,
+      previous: 1,
+    });
+    // 2 of 100 priced vs 50 of 50 priced: different slices, hidden.
+    expect(input(costTotals(2, 2, 100), costTotals(1, 50, 50))).toEqual(hidden);
+    // Exactly 20 points apart is still shown; just over is hidden.
+    expect(input(costTotals(2, 9, 10), costTotals(1, 7, 10))).toEqual({ current: 2, previous: 1 });
+    expect(input(costTotals(2, 70, 100), costTotals(1, 90, 100))).toEqual({
+      current: 2,
+      previous: 1,
+    });
+    expect(input(costTotals(2, 70, 100), costTotals(1, 91, 100))).toEqual(hidden);
+    expect(input(costTotals(2, 100, 100), costTotals(1, 79, 100))).toEqual(hidden);
+    // No requests with savings, or no pricedRequests field: share unknown, hidden.
+    expect(input(costTotals(2, 0, 0), costTotals(1))).toEqual(hidden);
+    expect(input({ costSavedEst: 2, requestsWithSavings: 10 }, costTotals(1))).toEqual(hidden);
+  });
+
+  it("pricedShare is priced / requests with savings, undefined without requests", () => {
+    expect(pricedShare({ pricedRequests: 1, requestsWithSavings: 4 })).toBe(0.25);
+    expect(pricedShare({ pricedRequests: 0, requestsWithSavings: 0 })).toBeUndefined();
+    expect(pricedShare({ requestsWithSavings: 4 })).toBeUndefined();
+    expect(pricedShare(null)).toBeUndefined();
   });
 
   it("computes deltas over the Home stats field mappings", () => {
