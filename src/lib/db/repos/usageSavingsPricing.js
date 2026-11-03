@@ -16,35 +16,56 @@ function parseRate(value) {
   return Number.NaN;
 }
 
+// Cached in place of a failed pricing lookup so it is logged once per cache.
+const FAILED = Symbol("savings pricing failed");
+
+function logFailure(e) {
+  console.error("[usageSavingsPricing] savings pricing failed:", e?.message);
+}
+
 /**
  * List-price value of a request's saved tokens. Every counted saver (RTK,
  * Headroom, PXPIPE) shrinks the prompt, so saved tokens are priced as
  * uncached input for the request's own provider/model — the same pricing
  * tables and math as usage cost. Resolved pricing with a zero input rate (a
  * free model) returns 0; unresolved pricing returns null (never a guess).
+ * A failing lookup or cost calculation is logged once per `cache` per
+ * provider/model (one getUsageSavings, getSavingsTotals or
+ * getRollupSavingsTotals call); later requests for that provider/model
+ * return null silently (YAN-1818).
  * @param {string|null} provider
  * @param {string|null} model
  * @param {number} savedTokens
- * @param {Map<string, Promise<object|null>>} [cache] per-call pricing lookups by provider/model
+ * @param {Map<string, Promise<object|null|symbol>>} [cache] per-call pricing lookups by provider/model
  * @returns {Promise<number|null>} dollars; null when there is no model, no
  *   saved tokens, no resolvable input rate, or the lookup failed
  */
 export async function savedTokensCost(provider, model, savedTokens, cache = new Map()) {
   if (!model || !(savedTokens > 0)) return null;
+  const key = `${provider}\u0000${model}`;
   try {
-    const key = `${provider}\u0000${model}`;
     if (!cache.has(key)) {
-      const { getPricingForModel } = await import("./pricingRepo.js");
-      cache.set(key, getPricingForModel(provider, model));
+      // Set before any await so concurrent callers share one lookup (and one log).
+      cache.set(
+        key,
+        import("./pricingRepo.js")
+          .then(({ getPricingForModel }) => getPricingForModel(provider, model))
+          .catch((e) => {
+            logFailure(e);
+            return FAILED;
+          }),
+      );
     }
     const pricing = await cache.get(key);
+    if (pricing === FAILED) return null;
     const inputRate = pricing ? parseRate(pricing.input) : Number.NaN;
     if (!Number.isFinite(inputRate) || inputRate < 0) return null;
     if (inputRate === 0) return 0;
     const { calculateCostFromTokens } = await import("open-sse/providers/pricing.js");
     return calculateCostFromTokens({ prompt_tokens: savedTokens }, pricing);
   } catch (e) {
-    console.error("[usageSavingsPricing] savings pricing failed:", e.message);
+    logFailure(e);
+    cache.set(key, Promise.resolve(FAILED));
     return null;
   }
 }

@@ -22,6 +22,8 @@ import {
 
 export const NO_KEY = "local-no-key";
 const DIMS = ["workspaceId", "userId", "apiKeyId", "provider", "model", "connectionId", "endpoint"];
+// Dims usage stats key on (readRollupGrouped): GROUP BY and projection share it.
+const STAT_DIMS = ["provider", "model", "connectionId", "apiKeyId", "endpoint"];
 const COMBO_DIMS = ["workspaceId", "userId", "apiKeyId"];
 const MEASURE_COLUMNS = [...LATENCY_COLUMNS, ...SAVINGS_COLUMNS];
 const MEASURE_DEFAULTS = { ...LATENCY_DEFAULTS, ...SAVINGS_DEFAULTS };
@@ -138,21 +140,39 @@ export function upsertComboRollupRowUnscoped(db, dims, comboName) {
 }
 
 /**
- * Rollup rows from `startDateKey` (inclusive; null = all time) through the
- * optional `endDateKey` (inclusive; null = open) within the usage scope `ctx`.
- * Empty dims come back as null; apiKeyId keeps its 'local-no-key' sentinel.
+ * Rollup measures from `startDateKey` (inclusive; null = all time) through the
+ * optional `endDateKey` (inclusive; null = open) within the usage scope `ctx`,
+ * summed per (provider, model, connectionId, apiKeyId, endpoint) in SQL so the
+ * result is bounded by distinct dims, not days (YAN-1227). `lastUsed` is the
+ * latest dateKey. workspaceId/userId are not grouped: stats never key on them.
+ * Rows come in first-seen-day order. Empty dims come back as null; apiKeyId
+ * keeps its 'local-no-key' sentinel.
  */
-export function readRollup(ctx, db, startDateKey = null, endDateKey = null) {
+export function readRollupGrouped(ctx, db, startDateKey = null, endDateKey = null) {
   const scope = scopeSql(ctx);
   const params = [...scope.params];
   if (startDateKey) params.push(startDateKey);
   if (endDateKey) params.push(endDateKey);
-  const proj = DIMS.map((k) => (k === "apiKeyId" ? k : `NULLIF(${k}, '') AS ${k}`)).join(", ");
-  return db.all(
-    `SELECT dateKey, ${proj}, requests, tokensIn, tokensOut, tokensCached, cost FROM usageRollup
-     ${whereAll(scope.sql, "requests > 0", startDateKey ? "dateKey >= ?" : "", endDateKey ? "dateKey <= ?" : "")} ORDER BY dateKey`,
-    params,
-  );
+  const group = STAT_DIMS.join(", ");
+  const proj = STAT_DIMS.map((k) => (k === "apiKeyId" ? k : `NULLIF(${k}, '') AS ${k}`)).join(", ");
+  return db
+    .all(
+      `SELECT ${proj}, SUM(requests) AS requests, SUM(tokensIn) AS tokensIn,
+         SUM(tokensOut) AS tokensOut, SUM(tokensCached) AS tokensCached, SUM(cost) AS cost,
+         MAX(dateKey) AS lastUsed
+       FROM usageRollup
+       ${whereAll(scope.sql, "requests > 0", startDateKey ? "dateKey >= ?" : "", endDateKey ? "dateKey <= ?" : "")}
+       GROUP BY ${group} ORDER BY MIN(dateKey), ${group}`,
+      params,
+    )
+    .map((r) => ({
+      ...r,
+      requests: Number(r.requests) || 0,
+      tokensIn: Number(r.tokensIn) || 0,
+      tokensOut: Number(r.tokensOut) || 0,
+      tokensCached: Number(r.tokensCached) || 0,
+      cost: Number(r.cost) || 0,
+    }));
 }
 
 /**

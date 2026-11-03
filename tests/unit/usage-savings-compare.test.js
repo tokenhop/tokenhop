@@ -22,6 +22,22 @@ vi.mock("@/lib/db/repos/pricingRepo.js", async (importOriginal) => {
     },
   };
 });
+// Pricing with this exact input rate makes the cost calculator throw (the
+// outer-catch path, YAN-1818); every other rate uses the real calculator.
+const calc = vi.hoisted(() => ({ throwRate: 7.77, calls: 0 }));
+vi.mock("open-sse/providers/pricing.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    calculateCostFromTokens: (tokens, pricing) => {
+      if (pricing?.input === calc.throwRate) {
+        calc.calls++;
+        throw new Error("cost calc failed");
+      }
+      return actual.calculateCostFromTokens(tokens, pricing);
+    },
+  };
+});
 
 const NOW = new Date(2026, 8, 29, 12, 30).getTime();
 const originalDataDir = process.env.DATA_DIR;
@@ -612,6 +628,158 @@ describe("free-model pricing coverage (YAN-1812)", () => {
           costSavedEst: paidCost,
         });
       }
+    });
+  });
+});
+
+describe("failing pricing lookup logs once per call (YAN-1818)", () => {
+  const paid = { provider: "openai", model: "gpt-4o-mini" }; // input 0.15 $/1M
+  const failed = { provider: "boom", model: "boom" }; // lookup rejects (mock above)
+  const failureLogs = (spy) =>
+    spy.mock.calls.filter(([msg]) => msg === "[usageSavingsPricing] savings pricing failed:");
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("history (24h): many failing rows log once; only resolvable rows are priced", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    for (let i = 1; i <= 4; i++) seed(NOW - i * 1000, saved(100 * i), failed);
+    seed(NOW - 5000, saved(1000), paid);
+    seed(NOW - 6000, saved(500), paid);
+
+    const out = await db.getUsageSavings(null, "24h", NOW);
+
+    expect(out).toMatchObject({
+      requestsWithSavings: 6,
+      pricedRequests: 2,
+      costSavedEst: +(1500 * 0.15e-6).toFixed(6),
+    });
+    expect(failureLogs(errorSpy)).toEqual([
+      ["[usageSavingsPricing] savings pricing failed:", "pricing lookup failed"],
+    ]);
+  });
+
+  it("history (24h): an all-failing window logs once and prices nothing", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    for (let i = 1; i <= 3; i++) seed(NOW - i * 1000, saved(100), failed);
+
+    const out = await db.getUsageSavings(null, "24h", NOW);
+
+    expect(out).toMatchObject({ requestsWithSavings: 3, pricedRequests: 0, costSavedEst: null });
+    expect(failureLogs(errorSpy)).toHaveLength(1);
+  });
+
+  it("rollup compare: current and previous share one cache, so one log", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    seed(new Date(2026, 8, 25, 12).getTime(), saved(300), failed); // current 7d
+    seed(new Date(2026, 8, 26, 12).getTime(), saved(1000), paid); // current 7d
+    seed(new Date(2026, 8, 18, 12).getTime(), saved(200), failed); // previous 7d
+
+    const out = await db.getRollupSavingsTotals(null, { from: "2026-09-23", to: "2026-09-29" });
+
+    expect(out.currentTotals).toMatchObject({
+      requestsWithSavings: 2,
+      pricedRequests: 1,
+      costSavedEst: +(1000 * 0.15e-6).toFixed(6),
+    });
+    expect(out.previous).toMatchObject({
+      requestsWithSavings: 1,
+      pricedRequests: 0,
+      costSavedEst: null,
+    });
+    expect(failureLogs(errorSpy)).toHaveLength(1);
+  });
+
+  it("concurrent lookups on one cache share a single failing lookup and log", async () => {
+    // boom/boom gets a real user price, so a caller that misses the shared
+    // failed lookup either prices it or logs again; both fail this test.
+    await db.updatePricing({ boom: { boom: { input: 1, output: 0 } } });
+    try {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { savedTokensCost } = await import("@/lib/db/repos/usageSavingsPricing.js");
+      const cache = new Map();
+
+      const costs = await Promise.all(
+        [100, 200, 300].map((t) => savedTokensCost(failed.provider, failed.model, t, cache)),
+      );
+
+      expect(costs).toEqual([null, null, null]);
+      expect(cache.size).toBe(1);
+      expect(failureLogs(errorSpy)).toHaveLength(1);
+    } finally {
+      adapter.run(`DELETE FROM kv WHERE scope = 'pricing' AND key = 'boom'`);
+      db.invalidatePricingCache();
+    }
+  });
+
+  it("history (24h): two failing models log once each", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const bust = { provider: "boom", model: "bust" }; // second rejecting provider/model
+    for (let i = 1; i <= 3; i++) {
+      seed(NOW - i * 1000, saved(100), failed);
+      seed(NOW - i * 1000 - 500, saved(100), bust);
+    }
+    seed(NOW - 9000, saved(1000), paid);
+
+    const out = await db.getUsageSavings(null, "24h", NOW);
+
+    expect(out).toMatchObject({
+      requestsWithSavings: 7,
+      pricedRequests: 1,
+      costSavedEst: +(1000 * 0.15e-6).toFixed(6),
+    });
+    expect(failureLogs(errorSpy)).toEqual([
+      ["[usageSavingsPricing] savings pricing failed:", "pricing lookup failed"],
+      ["[usageSavingsPricing] savings pricing failed:", "pricing lookup failed"],
+    ]);
+  });
+
+  describe("cost calculator throws for a resolvable model (outer catch)", () => {
+    const throwing = { provider: "calc", model: "calc-model" };
+
+    beforeAll(async () => {
+      await db.updatePricing({ calc: { "calc-model": { input: calc.throwRate, output: 0 } } });
+    });
+    afterAll(() => {
+      adapter.run(`DELETE FROM kv WHERE scope = 'pricing' AND key = 'calc'`);
+      db.invalidatePricingCache();
+    });
+    beforeEach(() => {
+      calc.calls = 0;
+    });
+
+    it("history (24h): logs once, leaves those rows unpriced, never re-calculates", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      for (let i = 1; i <= 4; i++) seed(NOW - i * 1000, saved(100 * i), throwing);
+      seed(NOW - 9000, saved(1000), paid);
+
+      const out = await db.getUsageSavings(null, "24h", NOW);
+
+      expect(out).toMatchObject({
+        requestsWithSavings: 5,
+        pricedRequests: 1,
+        costSavedEst: +(1000 * 0.15e-6).toFixed(6),
+      });
+      expect(failureLogs(errorSpy)).toEqual([
+        ["[usageSavingsPricing] savings pricing failed:", "cost calc failed"],
+      ]);
+      // Later rows hit the cached failure, not the calculator.
+      expect(calc.calls).toBe(1);
+    });
+
+    it("replaces the cache entry with the failure sentinel", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { savedTokensCost } = await import("@/lib/db/repos/usageSavingsPricing.js");
+      const cache = new Map();
+
+      expect(await savedTokensCost(throwing.provider, throwing.model, 100, cache)).toBeNull();
+      expect(typeof (await cache.get(`${throwing.provider}\u0000${throwing.model}`))).toBe(
+        "symbol",
+      );
+      expect(await savedTokensCost(throwing.provider, throwing.model, 200, cache)).toBeNull();
+      expect(calc.calls).toBe(1);
+      expect(failureLogs(errorSpy)).toHaveLength(1);
     });
   });
 });

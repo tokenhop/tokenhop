@@ -1,8 +1,9 @@
 // Usage stats and chart readers (YAN-370). Day-grain periods read the
-// usageRollup table, sub-day periods read usageHistory; both feed one
-// aggregator so the response shape is identical either way. `ctx` is a usage
-// scope: null is the unscoped view (switch off / one user), otherwise
-// `{ workspaceId, userId? }` (see usageRollupRepo.scopeSql).
+// usageRollup table pre-summed per attribution dims in SQL (YAN-1227),
+// sub-day periods read usageHistory; both feed one aggregator so the response
+// shape is identical either way. `ctx` is a usage scope: null is the unscoped
+// view (switch off / one user), otherwise `{ workspaceId, userId? }` (see
+// usageRollupRepo.scopeSql).
 import { createHash } from "node:crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson } from "../helpers/jsonCol.js";
@@ -29,7 +30,7 @@ import {
   NO_KEY,
   cutoffDateKey,
   localDateKey,
-  readRollup,
+  readRollupGrouped,
   readRollupDaily,
   readLatencyRollup,
   scopeSql,
@@ -381,13 +382,7 @@ export async function getUsageStats(ctx, period = "all", range = null) {
   const HIST_COLS = `timestamp, provider, model, connectionId, apiKeyId, endpoint, promptTokens, completionTokens, cost, tokens`;
   if (customRange) {
     // Rollup only, never usageHistory: lastUsed is the rollup dateKey (like 90d/all).
-    const rows = readRollup(ctx, db, customRange.from, customRange.to);
-    aggregate(
-      stats,
-      rows.map((r) => ({ ...r, lastUsed: r.dateKey })),
-      maps,
-      keyNames,
-    );
+    aggregate(stats, readRollupGrouped(ctx, db, customRange.from, customRange.to), maps, keyNames);
   } else if (period === "24h" || period === "today") {
     const rows = db.all(
       `SELECT ${HIST_COLS} FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?")}`,
@@ -396,10 +391,9 @@ export async function getUsageStats(ctx, period = "all", range = null) {
     aggregate(stats, rows.map(historyRow), maps, keyNames);
   } else {
     const maxDays = PERIOD_DAYS[period] || null;
-    const rows = readRollup(ctx, db, maxDays ? cutoffDateKey(maxDays) : null);
     aggregate(
       stats,
-      rows.map((r) => ({ ...r, lastUsed: r.dateKey })),
+      readRollupGrouped(ctx, db, maxDays ? cutoffDateKey(maxDays) : null),
       maps,
       keyNames,
     );
