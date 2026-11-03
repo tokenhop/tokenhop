@@ -13,6 +13,8 @@ import { recordQuotaSample } from "@/lib/quota/forecastStore.js";
 import { fetchClaudePlanTier } from "open-sse/services/usage/claude.js";
 import { cursorPlanTier } from "open-sse/services/usage/cursor.js";
 import { getProviderConnectionByIdUnscoped, updateProviderConnectionUnscoped } from "@/lib/localDb";
+import { releaseExactQuotaBlocks } from "./antigravityQuota.js";
+import { releaseQuotaLocksFromPoll } from "./quotaLockRelease.js";
 
 export { getSnapshot };
 
@@ -212,7 +214,10 @@ async function persistPlanTier(connectionId, rawTier, { markChecked = false } = 
  * Record a USAGE_HANDLERS result into the snapshot store and persist a detected
  * plan tier. `source: "header"` records as header windows (no tier). `fallbackTier`
  * (already-known tier, e.g. persisted planTier / chatgptPlanType) fills the snapshot
- * when the payload carries none; it is never re-persisted. Never throws.
+ * when the payload carries none; it is never re-persisted. `probeStartedAt` (epoch
+ * ms, captured before the usage fetch) lets a positive probe release quota-reset
+ * locks written before it started (YAN-1049/1050); absent → nothing is released.
+ * Never throws.
  */
 export async function recordUsageSnapshot({
   connectionId,
@@ -220,6 +225,7 @@ export async function recordUsageSnapshot({
   usage,
   source = "probe",
   fallbackTier,
+  probeStartedAt,
 } = {}) {
   try {
     if (!connectionId || !provider || !usage || typeof usage !== "object") return null;
@@ -275,11 +281,42 @@ export async function recordUsageSnapshot({
       (provider === "codex" ? codexTier(fallbackTier) : sanitizePlanTier(fallbackTier));
 
     const snapshot = recordProbeWindows(connectionId, provider, windows, { planTier });
+    // Own try (inside), before the tier persist: a persist failure never skips it.
+    await releaseQuotaLocks(connectionId, provider, usage, windows, probeStartedAt);
     if (detectedTier) await persistPlanTier(connectionId, detectedTier);
     return snapshot;
   } catch (error) {
     console.warn(`[QuotaSnapshot] record failed for ${provider}: ${error?.message}`);
     return null;
+  }
+}
+
+/** Raw usage quota key → used fraction (null when unknown/unlimited). */
+function quotaReadings(usage) {
+  const readings = new Map();
+  for (const [quotaKey, quota] of Object.entries(usage.quotas || {})) {
+    readings.set(quotaKey, usedFractionFor(quota));
+  }
+  return readings;
+}
+
+/** Probe-only: free quota-reset locks / Antigravity cache blocks this poll disproves. Never throws. */
+async function releaseQuotaLocks(connectionId, provider, usage, windows, probeStartedAt) {
+  try {
+    if (!Number.isFinite(probeStartedAt)) return;
+    if (provider === "antigravity") releaseExactQuotaBlocks(connectionId, windows, probeStartedAt);
+    await releaseQuotaLocksFromPoll({
+      connectionId,
+      provider,
+      windows,
+      readings: quotaReadings(usage),
+      probeStartedAt,
+      // Codex reports the binding limit explicitly; a rounded used_percent below
+      // 100 must not release while it still says the limit is reached.
+      limitReached: provider === "codex" && usage.limitReached === true,
+    });
+  } catch (error) {
+    console.warn(`[QuotaSnapshot] lock release failed for ${provider}: ${error?.message}`);
   }
 }
 

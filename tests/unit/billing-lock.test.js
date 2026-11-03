@@ -1,10 +1,20 @@
 // YAN-1041: credit-exhaustion classifier, account-wide skip, probe outcomes.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const dbMocks = vi.hoisted(() => ({
-  getProviderConnectionsUnscoped: vi.fn(),
-  updateProviderConnectionUnscoped: vi.fn(),
-}));
+const dbMocks = vi.hoisted(() => {
+  const m = {
+    getProviderConnectionsUnscoped: vi.fn(),
+    updateProviderConnectionUnscoped: vi.fn(),
+  };
+  // Lock writes run decide() on the live row inside a transaction; forward the
+  // patch so the plain-write assertions below still see it.
+  m.mutateProviderConnectionUnscoped = vi.fn(async (id, decide) => {
+    const patch = decide({});
+    if (patch) await m.updateProviderConnectionUnscoped(id, patch);
+    return { applied: !!patch, missing: false };
+  });
+  return m;
+});
 
 vi.mock("@/lib/localDb", () => dbMocks);
 vi.mock("@/lib/db/index.js", () => ({

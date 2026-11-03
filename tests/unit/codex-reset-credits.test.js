@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   refreshAndUpdateCredentials: vi.fn(),
   getCodexRateLimitResetCredits: vi.fn(),
   consumeCodexRateLimitResetCredit: vi.fn(),
+  clearQuotaOwnedLocks: vi.fn(),
 }));
 
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
@@ -30,6 +31,10 @@ vi.mock("@/app/api/usage/[connectionId]/route.js", () => ({
 vi.mock("open-sse/services/usage.js", () => ({
   getCodexRateLimitResetCredits: mocks.getCodexRateLimitResetCredits,
   consumeCodexRateLimitResetCredit: mocks.consumeCodexRateLimitResetCredit,
+}));
+
+vi.mock("@/sse/services/quotaLockRelease.js", () => ({
+  clearQuotaOwnedLocks: mocks.clearQuotaOwnedLocks,
 }));
 
 describe("Codex reset credits", () => {
@@ -262,5 +267,61 @@ describe("Codex reset credits", () => {
       expect.any(String),
       expect.objectContaining({ strictProxy: false }),
     );
+  });
+
+  it("POST clears quota-owned locks after a successful reset-credit spend", async () => {
+    mocks.getProviderConnectionByIdUnscoped.mockResolvedValue({
+      id: "conn_1",
+      provider: "codex",
+      authType: "access_token",
+      accessToken: "token",
+      providerSpecificData: {},
+    });
+    mocks.consumeCodexRateLimitResetCredit.mockResolvedValue({
+      ok: true,
+      status: 200,
+      code: "reset",
+      windowsReset: 2,
+    });
+
+    const { POST } = await import(
+      "../../src/app/api/usage/[connectionId]/codex-reset-credits/route.js"
+    );
+    const before = Date.now();
+    const response = await POST(
+      new Request("http://localhost/api/usage/conn_1/codex-reset-credits", { method: "POST" }),
+      { params: Promise.resolve({ connectionId: "conn_1" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.clearQuotaOwnedLocks).toHaveBeenCalledTimes(1);
+    const [id, opts] = mocks.clearQuotaOwnedLocks.mock.calls[0];
+    expect(id).toBe("conn_1");
+    expect(opts.before).toBeGreaterThanOrEqual(before);
+  });
+
+  it("POST leaves locks alone when no credit was spent", async () => {
+    mocks.getProviderConnectionByIdUnscoped.mockResolvedValue({
+      id: "conn_1",
+      provider: "codex",
+      authType: "access_token",
+      accessToken: "token",
+      providerSpecificData: {},
+    });
+    mocks.consumeCodexRateLimitResetCredit.mockResolvedValue({
+      ok: false,
+      noCredit: true,
+      status: 200,
+      code: "no_credit",
+      windowsReset: 0,
+    });
+    const { POST } = await import(
+      "../../src/app/api/usage/[connectionId]/codex-reset-credits/route.js"
+    );
+    await POST(
+      new Request("http://localhost/api/usage/conn_1/codex-reset-credits", { method: "POST" }),
+      { params: Promise.resolve({ connectionId: "conn_1" }) },
+    );
+    expect(mocks.clearQuotaOwnedLocks).not.toHaveBeenCalled();
   });
 });

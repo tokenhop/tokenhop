@@ -351,6 +351,59 @@ export function buildModelLockUpdate(model, cooldownMs) {
   return { [key]: new Date(Date.now() + cooldownMs).toISOString() };
 }
 
+/** Prefix for quota-lock ownership metadata stored next to a model lock. */
+export const MODEL_LOCK_META_PREFIX = "modelLockMeta_";
+
+/** Metadata reason for locks set from a provider-reported quota reset (YAN-1049). */
+export const QUOTA_LOCK_REASON = "quota_reset";
+
+/**
+ * Metadata window prefix naming one raw usage quota key instead of a snapshot
+ * window kind (e.g. `quota:premium_interactions`): only that key's reading
+ * may release the lock, never a merged window it shares with other keys.
+ */
+export const QUOTA_KEY_WINDOW_PREFIX = "quota:";
+
+/** Metadata field key for a `modelLock_*` key (`modelLock_x` → `modelLockMeta_x`). */
+export function getModelLockMetaKey(lockKey) {
+  return `${MODEL_LOCK_META_PREFIX}${lockKey.slice(MODEL_LOCK_PREFIX.length)}`;
+}
+
+/** Lock field key for a `modelLockMeta_*` key (inverse of getModelLockMetaKey). */
+export function getModelLockKeyForMeta(metaKey) {
+  return `${MODEL_LOCK_PREFIX}${metaKey.slice(MODEL_LOCK_META_PREFIX.length)}`;
+}
+
+/** True for well-formed quota-reset lock metadata (only these locks are released by polls). */
+export function isQuotaLockMeta(meta) {
+  return (
+    !!meta &&
+    typeof meta === "object" &&
+    meta.reason === QUOTA_LOCK_REASON &&
+    Number.isFinite(meta.lockedAt) &&
+    Number.isFinite(meta.generation)
+  );
+}
+
+/**
+ * Ownership metadata for a quota-reset lock. The generation strictly increases
+ * over the previous metadata on the same key, so a release planned against an
+ * older lock never clears a newer one.
+ * @param {string|null} window snapshot window kind, `quota:<raw key>`, or null (every applicable window)
+ * @param {object|null} [previous] metadata currently stored on the key (read inside the write transaction)
+ * @returns {{ reason: string, window: string|null, lockedAt: number, generation: number }}
+ */
+export function buildQuotaLockMeta(window, previous = null) {
+  const lockedAt = Date.now();
+  const prevGeneration = Number.isFinite(previous?.generation) ? previous.generation : 0;
+  return {
+    reason: QUOTA_LOCK_REASON,
+    window: window ?? null,
+    lockedAt,
+    generation: Math.max(lockedAt, prevGeneration + 1),
+  };
+}
+
 /**
  * Build update object to clear all model locks on a connection.
  */

@@ -14,6 +14,7 @@ import { getModelUpstreamId } from "../config/providerModels.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { getActiveReliabilityPolicy, resolveRetryForStatus } from "../config/reliabilityPolicy.js";
+import { MAX_PROVIDER_RESET_HORIZON_MS } from "../config/errorConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { stripCodexUnsupportedPatterns } from "../utils/codexToolSchema.js";
@@ -488,7 +489,9 @@ export class CodexExecutor extends BaseExecutor {
     return { matched: null, message: null, accountFallback: false, replacementBody };
   }
 
-  // Parse Codex usage_limit_reached to extract precise resetsAtMs; fallback to default otherwise
+  // Parse Codex usage_limit_reached to extract precise resetsAtMs; fallback to default otherwise.
+  // A reset further out than MAX_PROVIDER_RESET_HORIZON_MS (weekly window + slack) is
+  // untrusted upstream data (unit slip, garbage): fall back to the rate-limit cap.
   parseError(response, bodyText) {
     if (response.status === 429 && bodyText) {
       try {
@@ -496,17 +499,25 @@ export class CodexExecutor extends BaseExecutor {
         const err = json?.error;
         if (err?.type === "usage_limit_reached") {
           const now = Date.now();
+          const plausible = (ms) => ms > now && ms - now <= MAX_PROVIDER_RESET_HORIZON_MS;
           let resetsAtMs = null;
+          let reported = false;
           if (typeof err.resets_at === "number" && err.resets_at > 0) {
+            reported = true;
             const ms = err.resets_at * 1000;
-            if (ms > now) resetsAtMs = ms;
+            if (plausible(ms)) resetsAtMs = ms;
           }
           if (
             !resetsAtMs &&
             typeof err.resets_in_seconds === "number" &&
             err.resets_in_seconds > 0
           ) {
-            resetsAtMs = now + err.resets_in_seconds * 1000;
+            reported = true;
+            const ms = now + err.resets_in_seconds * 1000;
+            if (plausible(ms)) resetsAtMs = ms;
+          }
+          if (!resetsAtMs && reported) {
+            resetsAtMs = now + getActiveReliabilityPolicy().cooldowns.rateLimitCapMs;
           }
           if (resetsAtMs) {
             return { status: 429, message: err.message || bodyText, resetsAtMs };

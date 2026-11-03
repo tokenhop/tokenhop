@@ -2,6 +2,7 @@ import {
   getProviderConnectionsUnscoped,
   validateApiKey,
   updateProviderConnectionUnscoped,
+  mutateProviderConnectionUnscoped,
   getProxyPools,
 } from "@/lib/localDb";
 import { getEffectivePreferences, mutateBillingLockUnscoped } from "@/lib/db/index.js";
@@ -15,6 +16,9 @@ import {
   isBillingExhausted,
   isModelLockActive,
   buildModelLockUpdate,
+  buildQuotaLockMeta,
+  QUOTA_KEY_WINDOW_PREFIX,
+  getModelLockMetaKey,
   getModelLockUntil,
 } from "open-sse/services/accountFallback.js";
 import { getActiveReliabilityPolicy } from "open-sse/config/reliabilityPolicy.js";
@@ -723,19 +727,30 @@ export async function markAccountUnavailable(
 
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
   let shouldFallback, cooldownMs, newBackoffLevel;
+  // YAN-1049: quota-reset locks carry ownership metadata so a positive usage
+  // poll can release them early; other locks (401/404/5xx/...) get none.
+  let quotaWindow;
+  let quotaOwned = false;
   if (githubResetAtMs) {
     shouldFallback = true;
     cooldownMs = githubResetAtMs - Date.now();
     newBackoffLevel = 0;
+    quotaOwned = true;
+    // Premium requests only: chat/completions readings never release this lock.
+    quotaWindow = `${QUOTA_KEY_WINDOW_PREFIX}premium_interactions`;
   } else if (resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;
+    // YAN-1048: honour the provider-reported reset (Codex weekly windows are
+    // days out) up to providerResetCapMs; a positive poll releases it sooner.
     // Antigravity quota API provides exact per-model resetAt. Do not truncate it.
-    const capMs = getActiveReliabilityPolicy().cooldowns.rateLimitCapMs;
+    const capMs = getActiveReliabilityPolicy().cooldowns.providerResetCapMs;
     cooldownMs =
       resolveProviderId(provider) === "antigravity"
         ? resetsAtMs - Date.now()
         : Math.min(resetsAtMs - Date.now(), capMs);
     newBackoffLevel = 0;
+    quotaOwned = true;
+    quotaWindow = null;
   } else {
     ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(
       status,
@@ -749,17 +764,29 @@ export async function markAccountUnavailable(
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 200) : "Provider error";
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
-
-  await updateProviderConnectionUnscoped(connectionId, {
-    ...lockUpdate,
+  const lockKey = Object.keys(lockUpdate)[0];
+  const metaKey = getModelLockMetaKey(lockKey);
+  const healthPatch = {
     testStatus: "unavailable",
     lastError: reason,
     errorCode: status,
     lastErrorAt: new Date().toISOString(),
     backoffLevel: newBackoffLevel ?? backoffLevel,
+  };
+
+  // Decide the ownership metadata against the LIVE row inside the transaction:
+  // a non-quota lock written over a quota lock must drop its metadata even when
+  // `conn` (read earlier, outside any transaction) is stale or missing, and a
+  // quota lock takes its generation from the live previous one.
+  await mutateProviderConnectionUnscoped(connectionId, (live) => {
+    const meta = quotaOwned
+      ? { [metaKey]: buildQuotaLockMeta(quotaWindow, live[metaKey]) }
+      : live[metaKey]
+        ? { [metaKey]: null }
+        : {};
+    return { ...lockUpdate, ...meta, ...healthPatch };
   });
 
-  const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
   log.warn(
     "AUTH",
@@ -810,6 +837,11 @@ export async function clearAccountError(connectionId, currentConnection, model =
   });
 
   const clearObj = Object.fromEntries(keysToClear.map((k) => [k, null]));
+  // YAN-1049: a cleared lock takes its quota ownership metadata with it.
+  for (const k of keysToClear) {
+    const metaKey = getModelLockMetaKey(k);
+    if (conn[metaKey]) clearObj[metaKey] = null;
+  }
 
   // Only reset error state if no active locks remain
   if (remainingActiveLocks.length === 0) {

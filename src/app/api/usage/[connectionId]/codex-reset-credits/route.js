@@ -10,6 +10,7 @@ import {
 } from "open-sse/services/usage.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials } from "../route.js";
+import { clearQuotaOwnedLocks } from "@/sse/services/quotaLockRelease.js";
 
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
 
@@ -176,6 +177,7 @@ export async function POST(request, { params }) {
 
     // Server-generated redeem id prevents client-controlled replay
     const redeemRequestId = crypto.randomUUID();
+    const spendStartedAt = Date.now();
     let consumeResult = await consumeCodexRateLimitResetCredit(
       connection.accessToken,
       redeemRequestId,
@@ -193,6 +195,16 @@ export async function POST(request, { params }) {
         );
       } catch (retryError) {
         console.warn(`[Codex Reset Credits] force refresh failed: ${retryError.message}`);
+      }
+    }
+
+    // YAN-1048: a spent credit resets the windows, so quota-reset locks written
+    // before the spend are stale. Never fails the response.
+    if (consumeResult?.ok) {
+      try {
+        await clearQuotaOwnedLocks(connection.id, { before: spendStartedAt });
+      } catch (clearError) {
+        console.warn(`[Codex Reset Credits] lock clear failed: ${clearError.message}`);
       }
     }
 
