@@ -330,6 +330,14 @@ export async function handleNonStreamingResponse({
         "Invalid SSE response for non-streaming request",
       );
     }
+    // A terminal SSE error frame is an upstream failure, not a 200 body.
+    if (parsed.error) {
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(
+        HTTP_STATUS.BAD_GATEWAY,
+        parsed.error.message || "Upstream SSE stream failed",
+      );
+    }
     responseBody = parsed;
     bodyFormat = FORMATS.OPENAI;
   } else {

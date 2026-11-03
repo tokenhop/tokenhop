@@ -12,6 +12,11 @@ import {
 import { openAICompletionToClientFormat } from "./completionToClient.js";
 import { fimContextFor } from "../../translator/concerns/fim.js";
 import { initState, translateResponse } from "../../translator/index.js";
+import {
+  OPENAI_FINISH,
+  RESPONSES_INCOMPLETE,
+  RESPONSES_ITEM,
+} from "../../translator/schema/index.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -42,20 +47,65 @@ function pickAssistantMessageForChatCompletion(output) {
   return { msgItem: last, textContent: textFromResponsesMessageItem(last) };
 }
 
+// Refusal content parts across all message items → chat message.refusal text.
+function refusalFromResponsesOutput(output) {
+  if (!Array.isArray(output)) return "";
+  return output
+    .filter((item) => item?.type === RESPONSES_ITEM.MESSAGE && Array.isArray(item.content))
+    .flatMap((item) => item.content)
+    .filter((part) => part?.type === RESPONSES_ITEM.REFUSAL && typeof part.refusal === "string")
+    .map((part) => part.refusal)
+    .join("");
+}
+
+// Responses terminal status → chat finish_reason. "incomplete" is not a chat
+// finish_reason: map its reason (content_filter / max_output_tokens). Tool
+// calls win; other statuses keep their previous mapping.
+function chatFinishFromResponses(jsonResponse, hasToolCalls) {
+  if (hasToolCalls) return OPENAI_FINISH.TOOL_CALLS;
+  const status = jsonResponse.status;
+  if (status === "incomplete") {
+    return jsonResponse.incomplete_details?.reason === RESPONSES_INCOMPLETE.CONTENT_FILTER
+      ? OPENAI_FINISH.CONTENT_FILTER
+      : OPENAI_FINISH.LENGTH;
+  }
+  if (status === "completed" || status === "done") return OPENAI_FINISH.STOP;
+  return status || OPENAI_FINISH.STOP;
+}
+
+// Upstream formats whose response translator only reads its own event shape
+// and drops OpenAI chat chunks. Some providers answer in OpenAI chat shape
+// despite such a target format (see translateNonStreamingResponse's `choices`
+// guard), so those chunks bypass the translator. Others (Kiro restores tool
+// names, FIM/Ollama normalize) understand `choices` and always translate.
+const CHOICE_BLIND_FORMATS = new Set([
+  FORMATS.CLAUDE,
+  FORMATS.GEMINI,
+  FORMATS.GEMINI_CLI,
+  FORMATS.VERTEX,
+  FORMATS.ANTIGRAVITY,
+  FORMATS.OPENAI_RESPONSES,
+]);
+
+// An OpenAI chat chunk: has `choices`, or is a usage-only frame without any of
+// the Claude/Responses (`type`) or Gemini (`candidates`/`response`) markers.
+const isOpenAIChatChunk = (chunk) =>
+  Array.isArray(chunk?.choices) ||
+  (!!chunk?.usage && !chunk.type && !chunk.candidates && !chunk.response);
+
 // Raw upstream events in a non-OpenAI format (Claude message_start /
 // content_block_delta, Gemini candidates, Responses events…) carry no `choices`.
 // Run them through the registered format → OpenAI response translator, the
 // same one the streaming path uses, so the aggregator only sees chat chunks.
-// Some providers answer in OpenAI chat shape despite a Claude/Gemini target
-// format (see translateNonStreamingResponse's `choices` guard): those chunks
-// pass through untranslated. The requested model seeds the state so an
-// upstream that never names its model still reports one.
+// The requested model seeds the state so an upstream that never names its
+// model still reports one.
 function toOpenAIChunks(chunks, format, toolNameMap, model) {
   if (!format || format === FORMATS.OPENAI) return chunks;
+  const passOpenAI = CHOICE_BLIND_FORMATS.has(format);
   const state = { ...initState(FORMATS.OPENAI), toolNameMap, model };
   const out = [];
   for (const chunk of [...chunks, null]) {
-    if (Array.isArray(chunk?.choices)) {
+    if (passOpenAI && isOpenAIChatChunk(chunk)) {
       out.push(chunk);
       continue;
     }
@@ -337,12 +387,9 @@ export async function handleForcedSSEToJson({
       } else {
         const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
         if (hasToolCalls) message.tool_calls = toolCalls;
-        const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
-        const finishReason = hasToolCalls
-          ? "tool_calls"
-          : responseDone
-            ? "stop"
-            : jsonResponse.status || "stop";
+        const refusal = refusalFromResponsesOutput(jsonResponse.output);
+        if (refusal) message.refusal = refusal;
+        const finishReason = chatFinishFromResponses(jsonResponse, hasToolCalls);
         finalResp = {
           id: jsonResponse.id || `chatcmpl-${Date.now()}`,
           object: "chat.completion",

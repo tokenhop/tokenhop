@@ -1,12 +1,11 @@
 import { FORMATS } from "../../translator/formats.js";
-import { claudeRefusalDetails, fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import { claudeStopFromOpenAI } from "../../translator/concerns/finishReason.js";
 import { toResponsesUsage } from "../../translator/concerns/usage.js";
 import {
   ROLE,
   RESPONSES_ITEM,
   RESPONSES_INCOMPLETE,
   OPENAI_FINISH,
-  CLAUDE_STOP,
 } from "../../translator/schema/index.js";
 import { cleanFimOutput, toCompletionId } from "../../translator/concerns/fim.js";
 
@@ -62,9 +61,8 @@ function openAICompletionToClaudeMessage(responseBody) {
   }
   if (content.length === 0) content.push({ type: "text", text: "" });
 
-  const stopReason = fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE);
   // Claude carries refusal text in stop_details.explanation (YAN-1028).
-  const stopDetails = stopReason === CLAUDE_STOP.REFUSAL && claudeRefusalDetails(message.refusal);
+  const { stopReason, stopDetails } = claudeStopFromOpenAI(choice.finish_reason, message.refusal);
 
   return {
     id: String(responseBody.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
@@ -110,19 +108,24 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 
   // Assistant text and refusal → one message item: output_text part, then a
   // refusal part (same order the streaming path emits them). A content_filter
-  // finish leaves the message incomplete, matching the streaming path.
+  // or length finish leaves the message incomplete, matching the streaming path.
   const text = typeof message.content === "string" ? message.content : "";
   const content = [];
   if (text.length > 0) content.push({ type: RESPONSES_ITEM.OUTPUT_TEXT, text, annotations: [] });
   if (typeof message.refusal === "string" && message.refusal.length > 0) {
     content.push({ type: RESPONSES_ITEM.REFUSAL, refusal: message.refusal });
   }
-  const contentFiltered = choice.finish_reason === OPENAI_FINISH.CONTENT_FILTER;
+  const incompleteReason =
+    choice.finish_reason === OPENAI_FINISH.LENGTH
+      ? RESPONSES_INCOMPLETE.MAX_OUTPUT_TOKENS
+      : choice.finish_reason === OPENAI_FINISH.CONTENT_FILTER
+        ? RESPONSES_INCOMPLETE.CONTENT_FILTER
+        : null;
   if (content.length > 0) {
     output.push({
       type: RESPONSES_ITEM.MESSAGE,
       role: ROLE.ASSISTANT,
-      ...(contentFiltered ? { status: "incomplete" } : {}),
+      ...(incompleteReason ? { status: "incomplete" } : {}),
       content,
     });
   }
@@ -144,13 +147,6 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
           }),
     });
   }
-
-  const incompleteReason =
-    choice.finish_reason === OPENAI_FINISH.LENGTH
-      ? RESPONSES_INCOMPLETE.MAX_OUTPUT_TOKENS
-      : contentFiltered
-        ? RESPONSES_INCOMPLETE.CONTENT_FILTER
-        : null;
 
   return {
     id: `resp_${responseBody.id || ""}`.replace(/^resp_chatcmpl-/, "resp_"),

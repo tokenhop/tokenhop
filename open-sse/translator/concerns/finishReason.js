@@ -106,3 +106,16 @@ export function claudeRefusalDetails(refusalText) {
     ? { type: CLAUDE_STOP.REFUSAL, explanation: refusalText }
     : null;
 }
+
+// OpenAI finish_reason + refusal text → Claude { stop_reason, stop_details }.
+// A native OpenAI refusal ends with finish_reason "stop" plus refusal text, so
+// end_turn with a refusal is a refusal too. tool_use / max_tokens are kept.
+export function claudeStopFromOpenAI(finishReason, refusalText) {
+  let stopReason = fromOpenAIFinish(finishReason, "claude");
+  const details = claudeRefusalDetails(refusalText);
+  if (details && stopReason === CLAUDE_STOP.END_TURN) stopReason = CLAUDE_STOP.REFUSAL;
+  return {
+    stopReason,
+    stopDetails: stopReason === CLAUDE_STOP.REFUSAL ? details : null,
+  };
+}

@@ -136,12 +136,12 @@ describe("Chat stream → Responses: refusal (YAN-1027)", () => {
     expect(done.response.output[0].status).toBe("completed");
   });
 
-  it("length keeps today's response.completed terminal", () => {
+  it("length ends with response.incomplete / max_output_tokens (matches non-streaming)", () => {
     const events = run([chunk({ role: "assistant", content: "cut" }), chunk({}, "length")]);
     const done = terminal(events).data;
-    expect(done.type).toBe("response.completed");
-    expect(done.response.status).toBe("completed");
-    expect(done.response).not.toHaveProperty("incomplete_details");
+    expect(done.type).toBe("response.incomplete");
+    expect(done.response.status).toBe("incomplete");
+    expect(done.response.incomplete_details).toEqual({ reason: "max_output_tokens" });
   });
 });
 

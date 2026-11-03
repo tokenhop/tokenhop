@@ -17,6 +17,12 @@ import {
   MODEL_FALLBACK,
 } from "../schema/index.js";
 
+// Chat finish_reason → Responses incomplete_details.reason (absent = completed).
+const INCOMPLETE_BY_FINISH = {
+  [OPENAI_FINISH.LENGTH]: RESPONSES_INCOMPLETE.MAX_OUTPUT_TOKENS,
+  [OPENAI_FINISH.CONTENT_FILTER]: RESPONSES_INCOMPLETE.CONTENT_FILTER,
+};
+
 /**
  * Translate OpenAI chunk to Responses API events
  * @returns {Array} Array of events with { event, data } structure
@@ -133,7 +139,7 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   // to flushEvents() so a trailing usage-only chunk (sent after finish_reason)
   // lands in state.usage before the payload is built.
   if (choice.finish_reason) {
-    if (choice.finish_reason === OPENAI_FINISH.CONTENT_FILTER) state.contentFiltered = true;
+    state.responsesIncomplete ??= INCOMPLETE_BY_FINISH[choice.finish_reason];
     for (const i in state.msgItemAdded) closeMessage(state, emit, i);
     closeReasoning(state, emit);
     for (const i in state.funcCallIds) closeToolCall(state, emit, i);
@@ -363,13 +369,13 @@ function closeMessage(state, emit, idx) {
   state.msgItemDone[idx] = true;
   closeContentPart(state, emit, idx);
   const outIdx = state.msgOutIdx[idx];
-  // A message cut off by a content_filter finish is incomplete, like the response.
+  // A message cut off by a content_filter / length finish is incomplete, like the response.
   const item = {
     id: messageId(state, idx),
     type: RESPONSES_ITEM.MESSAGE,
     content: state.msgParts[idx] || [],
     role: ROLE.ASSISTANT,
-    status: state.contentFiltered ? "incomplete" : "completed",
+    status: state.responsesIncomplete ? "incomplete" : "completed",
   };
   emit("response.output_item.done", {
     type: "response.output_item.done",
@@ -503,13 +509,13 @@ function closeToolCall(state, emit, idx) {
   }
 }
 
-// A content_filter finish is not a completed answer: report it as OpenAI does,
-// with response.incomplete and incomplete_details.reason.
+// A content_filter or length finish is not a completed answer: report it as
+// OpenAI does, with response.incomplete and incomplete_details.reason.
 function sendCompleted(state, emit) {
   if (state.completedSent) return;
   state.completedSent = true;
-  const incomplete = state.contentFiltered === true;
-  const type = incomplete ? "response.incomplete" : "response.completed";
+  const reason = state.responsesIncomplete;
+  const type = reason ? "response.incomplete" : "response.completed";
   emit(type, {
     type,
     response: {
@@ -517,10 +523,8 @@ function sendCompleted(state, emit) {
       object: "response",
       created_at: state.created,
       model: state.model || MODEL_FALLBACK,
-      status: incomplete ? "incomplete" : "completed",
-      ...(incomplete
-        ? { incomplete_details: { reason: RESPONSES_INCOMPLETE.CONTENT_FILTER } }
-        : {}),
+      status: reason ? "incomplete" : "completed",
+      ...(reason ? { incomplete_details: { reason } } : {}),
       background: false,
       error: null,
       output: (state.outputItems || []).filter(Boolean),
