@@ -116,7 +116,9 @@ export async function getUsageSavings(ctx, period = "7d", now = Date.now()) {
           : 0,
       requestsWithSavings: totals.requestsWithSavings,
       // $ at list prices: each request's saved tokens priced with its own
-      // model; null when no request in the period had resolvable pricing.
+      // model; null unless the priced sum is positive (no request resolved,
+      // or every resolved request ran on a free model). pricedRequests counts
+      // every request whose pricing resolved, free ($0) models included.
       costSavedEst,
       pricedRequests,
       // Fixed columns use canonical rtk/headroom/pxpipe order; unknown legacy
@@ -175,7 +177,7 @@ export async function getUsageSavings(ctx, period = "7d", now = Date.now()) {
     requestsWithSavings += 1;
 
     const rowCost = await savedTokensCost(row.provider, row.model, rowSaved, pricingCache);
-    if (rowCost > 0) {
+    if (rowCost !== null) {
       costSavedEst += rowCost;
       pricedRequests += 1;
     }
@@ -184,6 +186,7 @@ export async function getUsageSavings(ctx, period = "7d", now = Date.now()) {
   const methods = Object.keys(byMethod);
   const percentage =
     tokensBeforeEst > 0 ? +((tokensSavedEst / tokensBeforeEst) * 100).toFixed(2) : 0;
+  const roundedCost = +costSavedEst.toFixed(6);
 
   return {
     period,
@@ -193,8 +196,10 @@ export async function getUsageSavings(ctx, period = "7d", now = Date.now()) {
     percentage,
     requestsWithSavings,
     // $ at list prices: each request's saved tokens priced with its own model.
-    // null when no request in the period had resolvable pricing.
-    costSavedEst: pricedRequests > 0 ? +costSavedEst.toFixed(6) : null,
+    // null unless the 6dp-rounded sum is positive (no request resolved, or
+    // every resolved request ran on a free model): an all-free window has no
+    // list-price dollars saved, and 0 would read as a -100% trend.
+    costSavedEst: roundedCost > 0 ? roundedCost : null,
     pricedRequests,
     methods,
     byMethod,

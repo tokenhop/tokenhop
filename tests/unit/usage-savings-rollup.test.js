@@ -220,18 +220,25 @@ describe("parity 7d/30d/60d vs the history algorithm", () => {
       tokensSavedEst += rowSaved;
       tokensBeforeEst += Number(parseMeta(row.meta).savings.tokensBeforeEst) || 0;
       requestsWithSavings += 1;
-      // Old per-row pricing: saved tokens priced as uncached input.
+      // Per-row pricing: saved tokens priced as uncached input; any resolved
+      // rate (free $0 included, YAN-1812) counts as priced.
       const pricing = row.model ? await getPricingForModel(row.provider, row.model) : null;
-      if (pricing && Number(pricing.input) > 0) {
-        costSavedEst += calculateCostFromTokens({ prompt_tokens: rowSaved }, pricing);
+      const input = pricing?.input;
+      const rate =
+        typeof input === "number" || (typeof input === "string" && input.trim() !== "")
+          ? Number(input)
+          : Number.NaN;
+      if (Number.isFinite(rate) && rate >= 0) {
+        if (rate > 0) costSavedEst += calculateCostFromTokens({ prompt_tokens: rowSaved }, pricing);
         pricedRequests += 1;
       }
     }
+    const roundedCost = +costSavedEst.toFixed(6);
     return {
       tokensSavedEst,
       tokensBeforeEst,
       requestsWithSavings,
-      costSavedEst: pricedRequests > 0 ? +costSavedEst.toFixed(6) : null,
+      costSavedEst: roundedCost > 0 ? roundedCost : null,
       pricedRequests,
     };
   }

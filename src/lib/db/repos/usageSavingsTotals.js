@@ -21,7 +21,9 @@ import { priceSavedGroups } from "./usageSavingsPricing.js";
  * @param {object|null} ctx usage scope
  * @param {{start: number, end: number}} range ms timestamps
  * @returns {Promise<{tokensSavedEst: number, requestsWithSavings: number, costSavedEst: number|null, pricedRequests: number}>}
- *   `pricedRequests` counts the requests with savings whose model had list pricing.
+ *   `pricedRequests` counts the requests with savings whose model pricing
+ *   resolved, free ($0) models included; `costSavedEst` is null unless the
+ *   priced dollar sum is positive (YAN-1812).
  */
 export async function getSavingsTotals(ctx, { start, end } = {}) {
   if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) {
@@ -77,8 +79,9 @@ export async function getSavingsTotals(ctx, { start, end } = {}) {
  * history was pruned before savings tracking: its totals would be understated
  * and the trend would show an inflated delta, so it reports no prior data.
  * `costSavedEst` matches getUsageSavings: rollup rows are grouped and priced
- * the same way (null when no group had resolvable pricing); `pricedRequests`
- * counts the requests with savings whose group was priced (YAN-1788).
+ * the same way (null unless the priced dollar sum is positive); `pricedRequests`
+ * counts the requests with savings whose group's pricing resolved, free ($0)
+ * models included (YAN-1788, YAN-1812).
  * @param {object|null} ctx usage scope
  * @param {{from: string|null, to: string|null}} range
  * @returns {Promise<{currentTotals: object, previous: object|null}>} totals are
