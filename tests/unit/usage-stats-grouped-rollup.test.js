@@ -218,11 +218,14 @@ function bucketsFor(r) {
   return out;
 }
 
-function referenceStats({ workspaceId = null, from = null, to = null } = {}) {
+/** Old per-row fold over raw rollup rows; `scope` filters like scopeSql. */
+function referenceStats({ scope = null, from = null, to = null } = {}) {
   const rows = adapter
     .all("SELECT * FROM usageRollup ORDER BY dateKey")
     .filter((r) => r.requests > 0)
-    .filter((r) => !workspaceId || r.workspaceId === workspaceId)
+    .filter((r) => !scope || r.workspaceId === scope.workspaceId)
+    .filter((r) => !scope?.userId || r.userId === scope.userId)
+    .filter((r) => !scope?.apiKeyId || r.apiKeyId === scope.apiKeyId)
     .filter((r) => (!from || r.dateKey >= from) && (!to || r.dateKey <= to));
   const ref = {
     totalPromptTokens: 0,
@@ -315,13 +318,32 @@ describe("getUsageStats day-grain parity with the per-row fold", () => {
     ["all", null],
   ])("workspace-scoped %s excludes the other workspace", async (period, from) => {
     seedRollup();
-    const ref = referenceStats({ workspaceId: "ws-a", from });
+    const ref = referenceStats({ scope: { workspaceId: "ws-a" }, from });
     const stats = await db.getUsageStats({ workspaceId: "ws-a" }, period);
     expectParity(stats, ref);
     expect(stats.byProvider).not.toHaveProperty("mistral");
     // Control: unscoped sees ws-b's rows.
     const all = await db.getUsageStats(null, period);
     expect(all.byProvider).toHaveProperty("mistral");
+  });
+
+  // Narrowed scopes (members, YAN-376 key scope): `@key` resolves at run time.
+  it.each([
+    ["user", "30d", windowStart(30), { workspaceId: "ws-a", userId: "u1" }],
+    ["user", "all", null, { workspaceId: "ws-a", userId: "u1" }],
+    ["key", "30d", windowStart(30), { workspaceId: "ws-a", apiKeyId: "@key" }],
+    ["key", "all", null, { workspaceId: "ws-a", apiKeyId: "@key" }],
+  ])("%s-scoped %s matches the filtered fold", async (_kind, period, from, rawScope) => {
+    seedRollup();
+    const scope = resolve(rawScope);
+    const ref = referenceStats({ scope, from });
+    const wsOnly = referenceStats({ scope: { workspaceId: "ws-a" }, from });
+    // Non-vacuous: the narrower scope drops rows the workspace scope keeps.
+    const requests = (r) => Object.values(r.byProvider).reduce((s, p) => s + p.requests, 0);
+    expect(requests(ref)).toBeGreaterThan(0);
+    expect(requests(ref)).toBeLessThan(requests(wsOnly));
+    expect(Object.keys(ref.byModel).length).toBeLessThan(Object.keys(wsOnly.byModel).length);
+    expectParity(await db.getUsageStats(scope, period), ref);
   });
 
   it("7d overlays history timestamps onto the grouped buckets", async () => {
