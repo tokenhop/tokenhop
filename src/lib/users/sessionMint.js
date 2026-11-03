@@ -127,10 +127,10 @@ async function setNewRowCookie(cookieStore, request, claims, exp) {
 }
 
 /**
- * Best-effort teardown of a row the caller's transaction already moved to a new
- * sv when no cookie will carry it (refused claims, or a throw before the cookie
- * write, YAN-1813): clears the auth cookie and revokes `from.sid` for `from.sub`
- * so it is not listed as a live device. Never throws.
+ * Best-effort teardown of a session row no cookie will carry: one the caller's
+ * transaction moved to a new sv, or one just inserted (refused claims, or a
+ * throw before the cookie write, YAN-1813). Clears the auth cookie and revokes
+ * `from.sid` for `from.sub` so it is not listed as a live device. Never throws.
  */
 export async function dropReboundSession(cookieStore, from) {
   try {
