@@ -27,10 +27,15 @@ export async function GET(request) {
     } else if (!isPeriod(period)) {
       return NextResponse.json({ error: "Invalid period" }, { status: 400 });
     }
+    // Opt-in previous-window overlay (YAN-1235); validated before scope resolution.
+    const compare = searchParams.get("compare");
+    if (compare !== null && compare !== "previous") {
+      return NextResponse.json({ error: "Invalid compare" }, { status: 400 });
+    }
 
     const scope = await usageScope(request);
     if (scope instanceof Response) return scope;
-    const data = await getChartData(scope, period, range);
+    const data = await getChartData(scope, period, range, { compare });
     return NextResponse.json(data);
   } catch (error) {
     console.error("[API] Failed to get chart data:", error);

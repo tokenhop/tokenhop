@@ -113,4 +113,26 @@ describe("savings coverage note rendering", () => {
     expect(html.includes(note)).toBe(pruned);
     expect(html).toContain("Saved all time");
   });
+
+  const costSavings = (current, previous) => ({
+    tokensSavedEst: 100,
+    currentTotals: { tokensSavedEst: 100, costSavedEst: current, pricedRequests: 2 },
+    previous: { tokensSavedEst: 80, costSavedEst: previous, pricedRequests: 2 },
+  });
+
+  it("renders the cost-saved trend when both windows are priced", () => {
+    const html = render({ period: "7d", savings: costSavings(1.5, 1) });
+    expect(html).toContain("Cost saved");
+    expect(html).toContain("+50%");
+    expect(html).toContain("vs prior 7d");
+  });
+
+  it.each([
+    ["all", 1.5, 1],
+    ["7d", null, 1],
+    ["7d", 1.5, null],
+    ["7d", 1.5, 0],
+  ])("hides the cost-saved trend for period=%s current=%s previous=%s", (period, cur, prev) => {
+    expect(render({ period, savings: costSavings(cur, prev) })).not.toContain("Cost saved");
+  });
 });

@@ -7,7 +7,9 @@ import { shapeChartSeries } from "./usageShapes";
 
 /**
  * Shared /api/usage/chart fetch for the Usage page: one request feeds both
- * the stat-tile sparklines and the tokens chart.
+ * the stat-tile sparklines and the tokens chart. Always asks for the
+ * previous-period overlay (`compare=previous`, YAN-1235); the server omits it
+ * for `all`.
  * @param {string|null} period selected period ("custom" for a date range); null disables the fetch
  * @param {boolean} enabled false keeps the fetch off (quiet state / logs tab)
  * @param {number} [refreshKey] re-runs the fetch as a background refresh
@@ -57,7 +59,8 @@ export function useChartBuckets(period, enabled, refreshKey, filters = null, ran
     // refreshes keep the current buckets on screen.
     if (bucketsPeriod !== windowKey) setLoading(true);
     setError(null);
-    fetch(appendUsageFilters(`/api/usage/chart?${periodQuery(period, range)}`, filters), {
+    const url = `/api/usage/chart?${periodQuery(period, range)}&compare=previous`;
+    fetch(appendUsageFilters(url, filters), {
       signal: controller.signal,
     })
       // A 400 (invalid custom range) surfaces the server's `error` message.

@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PERIOD_VALUES, periodStart, previousPeriodRange } from "@/shared/utils/period.js";
 import {
   bucketSeries,
+  savingsCostTrendInput,
   savingsTrendInput,
   trendDelta,
 } from "../../src/app/(dashboard)/dashboard/usage/lib/tileTrends.js";
@@ -200,6 +201,53 @@ describe("tile trends", () => {
     for (const savings of [null, undefined, { tokensSavedEst: 9 }]) {
       const input = savingsTrendInput(savings);
       expect(trendDelta(input.current, input.previous)).toEqual({ kind: "none" });
+    }
+  });
+
+  it("maps priced savings cost to trend inputs", () => {
+    const input = savingsCostTrendInput({
+      currentTotals: { tokensSavedEst: 5000, costSavedEst: 1.5, pricedRequests: 3 },
+      previous: { tokensSavedEst: 4000, costSavedEst: 1, pricedRequests: 2 },
+    });
+    expect(input).toEqual({ current: 1.5, previous: 1 });
+    expect(trendDelta(input.current, input.previous)).toEqual({ kind: "up", pct: 50 });
+  });
+
+  it("hides the cost trend when unpriced, previous missing or previous is zero", () => {
+    // null costSavedEst means unpriced — never coerced to 0.
+    expect(
+      savingsCostTrendInput({
+        currentTotals: { costSavedEst: null },
+        previous: { costSavedEst: 2 },
+      }),
+    ).toEqual({ current: undefined, previous: 2 });
+    expect(
+      savingsCostTrendInput({
+        currentTotals: { costSavedEst: 2 },
+        previous: { costSavedEst: null },
+      }),
+    ).toEqual({ current: 2, previous: undefined });
+    expect(savingsCostTrendInput({ currentTotals: { costSavedEst: 2 } })).toEqual({
+      current: 2,
+      previous: undefined,
+    });
+    for (const savings of [null, undefined, { costSavedEst: 3 }]) {
+      expect(savingsCostTrendInput(savings)).toEqual({ current: undefined, previous: undefined });
+    }
+    const zeroPrev = savingsCostTrendInput({
+      currentTotals: { costSavedEst: 2 },
+      previous: { costSavedEst: 0 },
+    });
+    expect(trendDelta(zeroPrev.current, zeroPrev.previous)).toEqual({ kind: "none" });
+    for (const [cur, prev] of [
+      [0, 2],
+      [3, 0],
+    ]) {
+      const zeroPriced = savingsCostTrendInput({
+        currentTotals: { costSavedEst: 2, pricedRequests: cur },
+        previous: { costSavedEst: 1, pricedRequests: prev },
+      });
+      expect(zeroPriced).toEqual({ current: undefined, previous: undefined });
     }
   });
 

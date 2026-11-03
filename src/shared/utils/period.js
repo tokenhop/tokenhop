@@ -143,7 +143,9 @@ export function periodStart(period, now = Date.now()) {
  *
  * `today` compares the same elapsed time slice of yesterday (midnight
  * shifted back one calendar day via setDate, so DST days stay at local
- * midnight); `24h` is the preceding rolling 24h; `7d/30d/60d` end at the
+ * midnight), ending no later than today's midnight: on a 25-hour fall-back
+ * day the elapsed slice can outlast a 24-hour yesterday, and the windows must
+ * never overlap. `24h` is the preceding rolling 24h; `7d/30d/60d` end at the
  * current start. `all` has no previous window and yields null.
  * @param {string} period
  * @param {number} [now]
@@ -155,7 +157,8 @@ export function previousPeriodRange(period, now = Date.now()) {
   if (period === "today") {
     const yesterday = new Date(currentStart);
     yesterday.setDate(yesterday.getDate() - 1);
-    return { start: yesterday.getTime(), end: yesterday.getTime() + (now - currentStart) };
+    const end = Math.min(yesterday.getTime() + (now - currentStart), currentStart);
+    return { start: yesterday.getTime(), end };
   }
   return { start: currentStart - (now - currentStart), end: currentStart };
 }

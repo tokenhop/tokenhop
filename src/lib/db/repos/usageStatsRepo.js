@@ -17,6 +17,14 @@ import { apiKeysHasKeyHash } from "../helpers/apiKeysSchema.js";
 import { lastErrorFor, pendingView } from "./usageLiveFeed.js";
 import { buildAllTimeBuckets } from "@/lib/usage/allTimeBuckets.js";
 import { customChartBuckets } from "@/lib/usage/customRange.js";
+import {
+  foldHourPoints,
+  previousDayRange,
+  previousDaySeries,
+  previousHourSeries,
+  previousHourWindow,
+  withPrevious,
+} from "@/lib/usage/previousBuckets.js";
 import { rollupLatencySummary } from "../helpers/usageLatencyRollup.js";
 import {
   NO_KEY,
@@ -436,14 +444,53 @@ export async function getUsageStats(ctx, period = "all", range = null) {
 const hourLabel = (ts) =>
   new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
 
-export async function getChartData(ctx, period = "7d", range = null) {
+/** usageHistory rows with `startIso <= timestamp` (and `< endIso` when set), normalized for hour buckets. */
+function readHourPoints(db, scope, startIso, endIso = null) {
+  const rows = db.all(
+    `SELECT timestamp, promptTokens, completionTokens, cost, tokens FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?", endIso ? "timestamp < ?" : "")}`,
+    [...scope.params, startIso, ...(endIso ? [endIso] : [])],
+  );
+  return rows.map((r) => {
+    const tk = parseJson(r.tokens, {}) || {};
+    const cached = tk.cached_tokens || tk.cache_read_input_tokens || 0;
+    return {
+      t: new Date(r.timestamp).getTime(),
+      input: Math.max(tk.prompt_tokens || tk.input_tokens || r.promptTokens || 0, cached),
+      cached,
+      output: tk.completion_tokens || tk.output_tokens || r.completionTokens || 0,
+      cost: r.cost || 0,
+    };
+  });
+}
+
+/**
+ * Chart buckets for `period` (or a custom `range`). With `compare:
+ * "previous"` every bucket also carries `previous` — the previous
+ * equal-length window's totals aligned to the same bucket (see
+ * src/lib/usage/previousBuckets.js); `all` has no previous window and never
+ * gets the field. The extra rollup/history read happens only when asked.
+ * @param {object|null} ctx usage scope
+ * @param {string} [period]
+ * @param {{from: string, to: string}|null} [range] inclusive day range for "custom"
+ * @param {{compare?: "previous"|null}} [options]
+ * @returns {Promise<Array<object>>}
+ */
+export async function getChartData(ctx, period = "7d", range = null, { compare = null } = {}) {
   const customRange = requireRange(period, range);
+  const withCompare = compare === "previous";
   const db = await getAdapter();
-  if (customRange)
-    return customChartBuckets(
+  if (customRange) {
+    const buckets = customChartBuckets(
       readRollupDaily(ctx, db, customRange.from, customRange.to),
       customRange,
     );
+    if (!withCompare) return buckets;
+    const prev = previousDayRange(customRange);
+    return withPrevious(
+      buckets,
+      previousDaySeries(readRollupDaily(ctx, db, prev.from, prev.to), customRange),
+    );
+  }
   const scope = scopeSql(ctx);
   const now = Date.now();
 
@@ -464,33 +511,29 @@ export async function getChartData(ctx, period = "7d", range = null) {
       cost: 0,
       requests: 0,
     }));
-    for (const r of db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost, tokens FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?")}`,
-      [...scope.params, new Date(startTime).toISOString()],
-    )) {
-      const t = new Date(r.timestamp).getTime();
-      if (t < startTime || (period === "today" ? t >= endTime : t > endTime)) continue;
-      const idx = Math.min(Math.floor((t - startTime) / bucketMs), 23);
-      const tk = parseJson(r.tokens, {}) || {};
-      const cached = tk.cached_tokens || tk.cache_read_input_tokens || 0;
-      const input = Math.max(tk.prompt_tokens || tk.input_tokens || r.promptTokens || 0, cached);
-      const output = tk.completion_tokens || tk.output_tokens || r.completionTokens || 0;
-      const b = buckets[idx];
-      b.input += input;
-      b.cached += cached;
-      b.output += output;
-      b.tokens += input + output;
-      b.cost += r.cost || 0;
-      b.requests += 1;
-    }
-    return buckets;
+    const inWindow = (t) => t >= startTime && (period === "today" ? t < endTime : t <= endTime);
+    foldHourPoints(
+      buckets,
+      readHourPoints(db, scope, new Date(startTime).toISOString()),
+      startTime,
+      inWindow,
+    );
+    if (!withCompare) return buckets;
+    const prev = previousHourWindow(period, now);
+    const points = readHourPoints(
+      db,
+      scope,
+      new Date(prev.start).toISOString(),
+      new Date(prev.end).toISOString(),
+    );
+    return withPrevious(buckets, previousHourSeries(points, prev));
   }
 
   if (period === "all") return buildAllTimeBuckets(readRollupDaily(ctx, db, null));
 
   const bucketCount = PERIOD_DAYS[period];
   const days = {};
-  for (const r of readRollupDaily(ctx, db, cutoffDateKey(bucketCount))) {
+  for (const r of readRollupDaily(ctx, db, cutoffDateKey(bucketCount, now))) {
     days[r.dateKey] ||= { requests: 0, prompt: 0, cached: 0, output: 0, cost: 0 };
     const d = days[r.dateKey];
     d.requests += r.requests;
@@ -499,8 +542,8 @@ export async function getChartData(ctx, period = "7d", range = null) {
     d.output += r.tokensOut;
     d.cost += r.cost;
   }
-  const today = new Date();
-  return Array.from({ length: bucketCount }, (_, i) => {
+  const today = new Date(now);
+  const buckets = Array.from({ length: bucketCount }, (_, i) => {
     const d = new Date(today);
     d.setDate(d.getDate() - (bucketCount - 1 - i));
     const key = localDateKey(d);
@@ -519,6 +562,14 @@ export async function getChartData(ctx, period = "7d", range = null) {
       requests: day ? day.requests : 0,
     };
   });
+  if (!withCompare) return buckets;
+  // Same day keys as the buckets above (bucketCount <= 92, so day grain).
+  const currentRange = { from: buckets[0].start, to: buckets.at(-1).start };
+  const prev = previousDayRange(currentRange);
+  return withPrevious(
+    buckets,
+    previousDaySeries(readRollupDaily(ctx, db, prev.from, prev.to), currentRange),
+  );
 }
 
 // --- Usage export (YAN-425) -------------------------------------------------

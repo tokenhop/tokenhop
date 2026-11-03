@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import Card from "@/shared/components/Card";
 import SegmentedControl from "@/shared/components/SegmentedControl";
+import Toggle from "@/shared/components/Toggle";
 import EmptyState from "@/shared/components/EmptyState";
 import { ErrorState, LoadingState } from "@/shared/components/StateViews";
 import { useReducedMotion } from "@/shared/hooks/useOverlay";
@@ -37,6 +38,8 @@ const BUCKETS_PROP = PropTypes.arrayOf(
     tokens: PropTypes.number,
     cost: PropTypes.number,
     requests: PropTypes.number,
+    // Previous-period total tokens (YAN-1235); null = no comparable slice.
+    prevTokens: PropTypes.number,
   }),
 );
 
@@ -47,7 +50,8 @@ function cssVar(name, fallback) {
 
 /**
  * Chart body: recharts AreaChart with input (sky solid), cached (lime
- * dashed), output (coral solid). Colors read from CSS vars at runtime so
+ * dashed), output (coral solid), plus an optional dashed "Previous period"
+ * line (YAN-1235) with a toggle. Colors read from CSS vars at runtime so
  * both themes work. Accessible <table> fallback inside <details>.
  * Buckets arrive already shaped by the page's shared chart fetch.
  *
@@ -64,6 +68,7 @@ export default function UsageTokensChartInner({
   onRetry,
 }) {
   const [viewMode, setViewMode] = useState("tokens");
+  const [showPrevious, setShowPrevious] = useState(true);
   const reducedMotion = useReducedMotion();
   const [locale, setLocale] = useState(() => getCurrentLocale());
 
@@ -76,24 +81,40 @@ export default function UsageTokensChartInner({
   const buckets = useMemo(() => localizeBucketLabels(rawBuckets, locale), [rawBuckets, locale]);
 
   const hasData = buckets.some((d) => (d.tokens || 0) > 0 || (d.cost || 0) > 0);
+  // No prior usage in any bucket (or no previous window, e.g. `all`): hide
+  // toggle, lines and columns. Never over the skeleton, error or empty state.
+  const hasPrevious = !loading && !error && hasData && buckets.some((d) => (d.prevTokens || 0) > 0);
+  const previousVisible = hasPrevious && showPrevious && viewMode === "tokens";
   const sky = cssVar("--signal-sky", "#72b7ff");
   const lime = cssVar("--signal-lime-ink", "#d5f84b");
   const coral = cssVar("--signal-coral-ink", "#ff8b70");
+  const muted = cssVar("--signal-muted", "#a3a8b5");
+  const subtle = cssVar("--signal-subtle", "#838898");
 
   return (
     <Card
       title="Tokens over time"
       action={
-        <SegmentedControl
-          aria-label="Chart metric"
-          size="sm"
-          value={viewMode}
-          onChange={setViewMode}
-          options={[
-            { value: "tokens", label: "Tokens" },
-            { value: "cost", label: "Cost" },
-          ]}
-        />
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {hasPrevious && viewMode === "tokens" && (
+            <Toggle
+              size="sm"
+              label="Previous period"
+              checked={showPrevious}
+              onChange={setShowPrevious}
+            />
+          )}
+          <SegmentedControl
+            aria-label="Chart metric"
+            size="sm"
+            value={viewMode}
+            onChange={setViewMode}
+            options={[
+              { value: "tokens", label: "Tokens" },
+              { value: "cost", label: "Cost" },
+            ]}
+          />
+        </div>
       }
     >
       {loading ? (
@@ -146,6 +167,8 @@ export default function UsageTokensChartInner({
                   if (name === "Input") return [fmtTokens(value), "Input"];
                   if (name === "Cached") return [fmtTokens(value), "Cached"];
                   if (name === "Output") return [fmtTokens(value), "Output"];
+                  if (name === "Total") return [fmtTokens(value), "Total"];
+                  if (name === "Previous period") return [fmtTokens(value), "Previous period"];
                   return [fmtCost(value), "Cost"];
                 }}
               />
@@ -186,6 +209,38 @@ export default function UsageTokensChartInner({
                     activeDot={{ r: 4 }}
                     isAnimationActive={!reducedMotion}
                   />
+                  {/* The areas are NOT stacked (each is drawn from 0), so no
+                      area is the current total. While the overlay is on, a
+                      solid "Total" line (tokens = input + output) is drawn so
+                      the dashed previous total tokens line has a like-for-like
+                      current counterpart. Areas with no fill render as lines. */}
+                  {previousVisible && (
+                    <Area
+                      type="monotone"
+                      dataKey="tokens"
+                      name="Total"
+                      stroke={muted}
+                      strokeWidth={2}
+                      fill="none"
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                      isAnimationActive={!reducedMotion}
+                    />
+                  )}
+                  {previousVisible && (
+                    <Area
+                      type="monotone"
+                      dataKey="prevTokens"
+                      name="Previous period"
+                      stroke={subtle}
+                      strokeWidth={2}
+                      strokeDasharray="4 4"
+                      fill="none"
+                      dot={false}
+                      activeDot={{ r: 4 }}
+                      isAnimationActive={!reducedMotion}
+                    />
+                  )}
                 </>
               ) : (
                 <Area
@@ -214,16 +269,23 @@ export default function UsageTokensChartInner({
                     <th scope="col">Cached</th>
                     <th scope="col">Output</th>
                     <th scope="col">Cost</th>
+                    {hasPrevious && <th scope="col">Total</th>}
+                    {hasPrevious && <th scope="col">Previous period</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {buckets.map((d, i) => (
-                    <tr key={`${d.label}-${i}`}>
+                  {/* `start` is the unique bucket bound; legacy buckets fall back to their label. */}
+                  {buckets.map((d) => (
+                    <tr key={d.start || d.label}>
                       <th scope="row">{d.label}</th>
                       <td>{fmtTokens(d.input)}</td>
                       <td>{fmtTokens(d.cached)}</td>
                       <td>{fmtTokens(d.output)}</td>
                       <td>{fmtCost(d.cost)}</td>
+                      {hasPrevious && <td>{fmtTokens(d.tokens)}</td>}
+                      {hasPrevious && (
+                        <td>{d.prevTokens == null ? "—" : fmtTokens(d.prevTokens)}</td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

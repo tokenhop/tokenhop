@@ -116,11 +116,16 @@ export function sharePct(value, total) {
 // tokens = input + output. cost passes through unchanged; requests passes
 // through in both branches (default 0). Bucket bounds grain/start
 // (YAN-1233) pass through when present so the chart can localize labels.
+// A compare=previous bucket (YAN-1235) adds a flat `prevTokens` (its
+// `previous.tokens`, null when the bucket has no comparable previous slice);
+// buckets without a `previous` field keep the exact legacy shape.
 export function shapeChartSeries(buckets) {
   return (buckets || []).map((b) => {
     const bucket = b || {};
     const bounds =
       bucket.grain && bucket.start ? { grain: bucket.grain, start: bucket.start } : null;
+    const prev =
+      bucket.previous === undefined ? null : { prevTokens: bucket.previous?.tokens ?? null };
     if (bucket.input !== undefined || bucket.cached !== undefined || bucket.output !== undefined) {
       const input = bucket.input || 0;
       const cached = bucket.cached || 0;
@@ -134,6 +139,7 @@ export function shapeChartSeries(buckets) {
         cost: bucket.cost || 0,
         tokens: input + output,
         requests: bucket.requests || 0,
+        ...prev,
       };
     }
     return {
@@ -145,6 +151,7 @@ export function shapeChartSeries(buckets) {
       cost: bucket.cost || 0,
       tokens: bucket.tokens || 0,
       requests: bucket.requests || 0,
+      ...prev,
     };
   });
 }
