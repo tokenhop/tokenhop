@@ -11,6 +11,7 @@ import {
 } from "./requestDetail.js";
 import { openAICompletionToClientFormat } from "./completionToClient.js";
 import { fimContextFor } from "../../translator/concerns/fim.js";
+import { initState, translateResponse } from "../../translator/index.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -41,12 +42,39 @@ function pickAssistantMessageForChatCompletion(output) {
   return { msgItem: last, textContent: textFromResponsesMessageItem(last) };
 }
 
+// Raw upstream events in a non-OpenAI format (Claude message_start /
+// content_block_delta, Gemini candidates, Responses events…) carry no `choices`.
+// Run them through the registered format → OpenAI response translator, the
+// same one the streaming path uses, so the aggregator only sees chat chunks.
+// Some providers answer in OpenAI chat shape despite a Claude/Gemini target
+// format (see translateNonStreamingResponse's `choices` guard): those chunks
+// pass through untranslated. The requested model seeds the state so an
+// upstream that never names its model still reports one.
+function toOpenAIChunks(chunks, format, toolNameMap, model) {
+  if (!format || format === FORMATS.OPENAI) return chunks;
+  const state = { ...initState(FORMATS.OPENAI), toolNameMap, model };
+  const out = [];
+  for (const chunk of [...chunks, null]) {
+    if (Array.isArray(chunk?.choices)) {
+      out.push(chunk);
+      continue;
+    }
+    for (const item of translateResponse(format, FORMATS.OPENAI, chunk, state) || []) {
+      if (item && typeof item === "object") out.push(item);
+    }
+  }
+  return out;
+}
+
 /**
- * Parse OpenAI-style SSE text into a single chat completion JSON.
+ * Parse upstream SSE text into a single OpenAI chat completion JSON.
  * Used when provider forces streaming but client wants non-streaming.
+ * `format` is the upstream (provider response) format; anything other than
+ * OpenAI chat is translated to chat chunks first. The result is always an
+ * OpenAI chat.completion body.
  */
-export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
-  const chunks = [];
+export function parseSSEToOpenAIResponse(rawSSE, fallbackModel, { format, toolNameMap } = {}) {
+  const rawChunks = [];
   let streamError = null;
 
   for (const line of String(rawSSE || "").split("\n")) {
@@ -57,18 +85,20 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     try {
       const chunk = JSON.parse(payload);
       if (chunk?.error) streamError = chunk.error;
-      else chunks.push(chunk);
+      else rawChunks.push(chunk);
     } catch {
       /* ignore malformed lines */
     }
   }
 
   if (streamError) return { error: streamError };
+  const chunks = toOpenAIChunks(rawChunks, format, toolNameMap, fallbackModel);
   if (chunks.length === 0) return null;
 
   const first = chunks[0];
   const contentParts = [];
   const reasoningParts = [];
+  const refusalParts = [];
   const toolCallMap = new Map(); // index -> { id, type, function: { name, arguments } }
   let finishReason = "stop";
   let usage = null;
@@ -80,6 +110,8 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
       contentParts.push(delta.content);
     if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0)
       reasoningParts.push(delta.reasoning_content);
+    if (typeof delta.refusal === "string" && delta.refusal.length > 0)
+      refusalParts.push(delta.refusal);
     if (choice?.finish_reason) finishReason = choice.finish_reason;
     if (chunk?.usage && typeof chunk.usage === "object") usage = chunk.usage;
 
@@ -107,6 +139,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     content: contentParts.join("") || (toolCallMap.size > 0 ? null : ""),
   };
   if (reasoningParts.length > 0) message.reasoning_content = reasoningParts.join("");
+  if (refusalParts.length > 0) message.refusal = refusalParts.join("");
   if (toolCallMap.size > 0) {
     message.tool_calls = [...toolCallMap.entries()].sort((a, b) => a[0] - b[0]).map(([, tc]) => tc);
   }
@@ -146,6 +179,7 @@ export async function handleForcedSSEToJson({
   abortSignal = null,
   readResponse = (read) => read(),
   customToolNames,
+  toolNameMap = null,
   trackDone,
   appendLog,
   savings,
@@ -355,7 +389,7 @@ export async function handleForcedSSEToJson({
   // Standard Chat Completions SSE path
   try {
     const sseText = await readResponse(() => providerResponse.text());
-    const parsed = parseSSEToOpenAIResponse(sseText, model);
+    const parsed = parseSSEToOpenAIResponse(sseText, model, { format: targetFormat, toolNameMap });
     if (!parsed)
       return createErrorResult(
         HTTP_STATUS.BAD_GATEWAY,

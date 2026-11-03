@@ -1,7 +1,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
-import { fromOpenAIFinish } from "../concerns/finishReason.js";
+import { ROLE, CLAUDE_BLOCK, CLAUDE_STOP, MODEL_FALLBACK } from "../schema/index.js";
+import { claudeRefusalDetails, fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
@@ -183,6 +183,11 @@ export function openaiToClaudeResponse(chunk, state) {
     });
   }
 
+  // Refusal text has no Claude content block; it rides on stop_details.
+  if (typeof delta?.refusal === "string" && delta.refusal) {
+    state.refusalText = (state.refusalText || "") + delta.refusal;
+  }
+
   // Tool calls
   if (delta?.tool_calls) {
     for (const tc of delta.tool_calls) {
@@ -279,9 +284,12 @@ export function openaiToClaudeResponse(chunk, state) {
 
     // Use tracked usage (will be estimated in stream.js if not valid)
     const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+    const stopReason = convertFinishReason(choice.finish_reason);
+    const stopDetails =
+      stopReason === CLAUDE_STOP.REFUSAL && claudeRefusalDetails(state.refusalText);
     results.push({
       type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+      delta: { stop_reason: stopReason, ...(stopDetails ? { stop_details: stopDetails } : {}) },
       usage: finalUsage,
     });
     results.push({ type: "message_stop" });

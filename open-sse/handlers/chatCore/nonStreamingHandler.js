@@ -315,10 +315,14 @@ export async function handleNonStreamingResponse({
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
+  // Format of responseBody. An SSE body is translated and aggregated into an
+  // OpenAI chat.completion here, so it must not be translated from
+  // targetFormat a second time below.
+  let bodyFormat = targetFormat;
 
   if (contentType.includes("text/event-stream")) {
     const sseText = await readResponse(() => providerResponse.text());
-    const parsed = parseSSEToOpenAIResponse(sseText, model);
+    const parsed = parseSSEToOpenAIResponse(sseText, model, { format: targetFormat, toolNameMap });
     if (!parsed) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       return createErrorResult(
@@ -327,6 +331,7 @@ export async function handleNonStreamingResponse({
       );
     }
     responseBody = parsed;
+    bodyFormat = FORMATS.OPENAI;
   } else {
     try {
       responseBody = await readResponse(() => providerResponse.json());
@@ -383,10 +388,10 @@ export async function handleNonStreamingResponse({
       formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }),
     );
 
-  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
+  const translatedResponse = needsTranslation(bodyFormat, sourceFormat)
     ? translateNonStreamingResponse(
         responseBody,
-        targetFormat,
+        bodyFormat,
         sourceFormat,
         customToolNames,
         isFimFormat(sourceFormat) ? fimContextFor(body, sourceFormat) : null,

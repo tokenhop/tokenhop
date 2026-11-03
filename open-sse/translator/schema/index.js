@@ -7,5 +7,10 @@ export {
   VALID_OPENAI_CONTENT_TYPES,
   VALID_OPENAI_MESSAGE_TYPES,
 } from "./blocks.js";
-export { OPENAI_FINISH, CLAUDE_STOP, GEMINI_FINISH } from "./finishReasons.js";
+export {
+  OPENAI_FINISH,
+  CLAUDE_STOP,
+  GEMINI_FINISH,
+  RESPONSES_INCOMPLETE,
+} from "./finishReasons.js";
 export { MODEL_FALLBACK, DEFAULT_IMAGE_MIME, DEFAULT_DOCUMENT_FILENAME } from "./defaults.js";

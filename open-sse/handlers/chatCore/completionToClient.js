@@ -1,7 +1,13 @@
 import { FORMATS } from "../../translator/formats.js";
-import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import { claudeRefusalDetails, fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { toResponsesUsage } from "../../translator/concerns/usage.js";
-import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import {
+  ROLE,
+  RESPONSES_ITEM,
+  RESPONSES_INCOMPLETE,
+  OPENAI_FINISH,
+  CLAUDE_STOP,
+} from "../../translator/schema/index.js";
 import { cleanFimOutput, toCompletionId } from "../../translator/concerns/fim.js";
 
 // Non-streaming bodies pivot through OpenAI `chat.completion`. This module turns that
@@ -56,13 +62,18 @@ function openAICompletionToClaudeMessage(responseBody) {
   }
   if (content.length === 0) content.push({ type: "text", text: "" });
 
+  const stopReason = fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE);
+  // Claude carries refusal text in stop_details.explanation (YAN-1028).
+  const stopDetails = stopReason === CLAUDE_STOP.REFUSAL && claudeRefusalDetails(message.refusal);
+
   return {
     id: String(responseBody.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
     type: "message",
     role: "assistant",
     model: responseBody.model || "unknown",
     content,
-    stop_reason: fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE),
+    stop_reason: stopReason,
+    ...(stopDetails ? { stop_details: stopDetails } : {}),
     stop_sequence: null,
     usage: claudeUsage(responseBody.usage),
   };
@@ -97,13 +108,22 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
     });
   }
 
-  // Assistant text → a message item with output_text content.
+  // Assistant text and refusal → one message item: output_text part, then a
+  // refusal part (same order the streaming path emits them). A content_filter
+  // finish leaves the message incomplete, matching the streaming path.
   const text = typeof message.content === "string" ? message.content : "";
-  if (text.length > 0) {
+  const content = [];
+  if (text.length > 0) content.push({ type: RESPONSES_ITEM.OUTPUT_TEXT, text, annotations: [] });
+  if (typeof message.refusal === "string" && message.refusal.length > 0) {
+    content.push({ type: RESPONSES_ITEM.REFUSAL, refusal: message.refusal });
+  }
+  const contentFiltered = choice.finish_reason === OPENAI_FINISH.CONTENT_FILTER;
+  if (content.length > 0) {
     output.push({
       type: RESPONSES_ITEM.MESSAGE,
       role: ROLE.ASSISTANT,
-      content: [{ type: RESPONSES_ITEM.OUTPUT_TEXT, text, annotations: [] }],
+      ...(contentFiltered ? { status: "incomplete" } : {}),
+      content,
     });
   }
 
@@ -125,15 +145,20 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
     });
   }
 
-  const truncated = choice.finish_reason === "length";
+  const incompleteReason =
+    choice.finish_reason === OPENAI_FINISH.LENGTH
+      ? RESPONSES_INCOMPLETE.MAX_OUTPUT_TOKENS
+      : contentFiltered
+        ? RESPONSES_INCOMPLETE.CONTENT_FILTER
+        : null;
 
   return {
     id: `resp_${responseBody.id || ""}`.replace(/^resp_chatcmpl-/, "resp_"),
     object: "response",
     created_at: responseBody.created || Math.floor(Date.now() / 1000),
     model: responseBody.model || "unknown",
-    status: truncated ? "incomplete" : "completed",
-    ...(truncated ? { incomplete_details: { reason: "max_output_tokens" } } : {}),
+    status: incompleteReason ? "incomplete" : "completed",
+    ...(incompleteReason ? { incomplete_details: { reason: incompleteReason } } : {}),
     background: false,
     error: null,
     output,

@@ -64,14 +64,21 @@ export function extractUsageFromResponse(responseBody) {
     };
   }
 
-  // OpenAI format
+  // OpenAI format. prompt_tokens is cache-inclusive. Cache writes only appear
+  // here when a Claude upstream was pivoted to OpenAI (buildUsage puts them in
+  // prompt_tokens_details.cache_creation_tokens); real OpenAI never sets it.
+  // cached_tokens must then be a number, even 0, so canonicalizeUsage() takes
+  // its pass-through branch instead of folding the cache into the prompt again.
   if (responseBody.usage?.prompt_tokens !== undefined) {
     const usage = responseBody.usage;
+    const cacheCreation = usage.prompt_tokens_details?.cache_creation_tokens;
+    const cached = usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens;
     return {
       prompt_tokens: usage.prompt_tokens || 0,
       completion_tokens: reasoningInclusiveCompletion(usage),
-      cached_tokens: usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens,
+      cached_tokens: cacheCreation !== undefined ? (cached ?? 0) : cached,
       reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens,
+      ...(cacheCreation !== undefined ? { cache_creation_input_tokens: cacheCreation } : {}),
     };
   }
 

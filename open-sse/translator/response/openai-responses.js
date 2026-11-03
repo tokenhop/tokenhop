@@ -12,6 +12,7 @@ import {
   ROLE,
   OPENAI_BLOCK,
   RESPONSES_ITEM,
+  RESPONSES_INCOMPLETE,
   OPENAI_FINISH,
   MODEL_FALLBACK,
 } from "../schema/index.js";
@@ -108,8 +109,15 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
 
     if (content) {
       closeReasoning(state, emit);
-      emitTextContent(state, emit, idx, content);
+      emitMessageDelta(state, emit, idx, RESPONSES_ITEM.OUTPUT_TEXT, content);
     }
+  }
+
+  // Refusal text (OpenAI-native, or a pivoted upstream refusal) is its own
+  // `refusal` content part on the message item, after any text part.
+  if (typeof delta.refusal === "string" && delta.refusal) {
+    closeReasoning(state, emit);
+    emitMessageDelta(state, emit, idx, RESPONSES_ITEM.REFUSAL, delta.refusal);
   }
 
   // Handle tool_calls (empty array is truthy; require a real call)
@@ -125,6 +133,7 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   // to flushEvents() so a trailing usage-only chunk (sent after finish_reason)
   // lands in state.usage before the payload is built.
   if (choice.finish_reason) {
+    if (choice.finish_reason === OPENAI_FINISH.CONTENT_FILTER) state.contentFiltered = true;
     for (const i in state.msgItemAdded) closeMessage(state, emit, i);
     closeReasoning(state, emit);
     for (const i in state.funcCallIds) closeToolCall(state, emit, i);
@@ -251,101 +260,123 @@ function messageId(state, idx) {
   return state.msgIds?.[idx] ?? `msg_${state.responseId}_${idx}`;
 }
 
-function emitTextContent(state, emit, idx, content) {
-  // Text after the message was closed (e.g. by a reasoning segment) opens a new
-  // message item with its own output_index instead of writing into a done item.
+// Open choice idx's message item. Content after the message was closed (e.g.
+// by a reasoning segment) opens a new message item with its own output_index
+// instead of writing into a done item.
+function ensureMessage(state, emit, idx) {
   if (state.msgItemDone[idx]) {
     delete state.msgItemAdded[idx];
-    delete state.msgContentAdded[idx];
     delete state.msgItemDone[idx];
-    delete state.msgTextBuf[idx];
+    delete state.msgPart[idx];
+    delete state.msgParts[idx];
     delete state.msgOutIdx[idx];
     (state.msgIds ??= {})[idx] = `msg_${state.responseId}_${idx}_${state.nextOutputIndex}`;
   }
-  if (!state.msgItemAdded[idx]) {
-    state.msgItemAdded[idx] = true;
-    const msgId = messageId(state, idx);
+  if (state.msgItemAdded[idx]) return;
+  state.msgItemAdded[idx] = true;
+  emit("response.output_item.added", {
+    type: "response.output_item.added",
+    output_index: messageOutputIndex(state, idx),
+    item: {
+      id: messageId(state, idx),
+      type: RESPONSES_ITEM.MESSAGE,
+      content: [],
+      role: ROLE.ASSISTANT,
+      status: "in_progress",
+    },
+  });
+}
 
-    emit("response.output_item.added", {
-      type: "response.output_item.added",
-      output_index: messageOutputIndex(state, idx),
-      item: {
-        id: msgId,
-        type: RESPONSES_ITEM.MESSAGE,
-        content: [],
-        role: ROLE.ASSISTANT,
-        status: "in_progress",
-      },
-    });
-  }
+// A message content part: output_text or refusal.
+function contentPart(kind, text) {
+  return kind === RESPONSES_ITEM.REFUSAL
+    ? { type: RESPONSES_ITEM.REFUSAL, refusal: text }
+    : { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text };
+}
 
-  const outIdx = state.msgOutIdx[idx];
-
-  if (!state.msgContentAdded[idx]) {
-    state.msgContentAdded[idx] = true;
-
+// Content parts are opened in arrival order, each with its own content_index;
+// a delta of the other kind closes the open part first.
+function emitMessageDelta(state, emit, idx, kind, text) {
+  ensureMessage(state, emit, idx);
+  let part = state.msgPart[idx];
+  if (part?.kind !== kind) {
+    closeContentPart(state, emit, idx);
+    state.msgParts[idx] ??= [];
+    part = { kind, index: state.msgParts[idx].length, buf: "" };
+    state.msgPart[idx] = part;
     emit("response.content_part.added", {
       type: "response.content_part.added",
       item_id: messageId(state, idx),
-      output_index: outIdx,
-      content_index: 0,
-      part: { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: "" },
+      output_index: state.msgOutIdx[idx],
+      content_index: part.index,
+      part: contentPart(kind, ""),
     });
   }
 
-  emit("response.output_text.delta", {
-    type: "response.output_text.delta",
+  const ids = {
     item_id: messageId(state, idx),
-    output_index: outIdx,
-    content_index: 0,
-    delta: content,
-    logprobs: [],
-  });
+    output_index: state.msgOutIdx[idx],
+    content_index: part.index,
+  };
+  if (kind === RESPONSES_ITEM.REFUSAL) {
+    emit("response.refusal.delta", { type: "response.refusal.delta", ...ids, delta: text });
+  } else {
+    emit("response.output_text.delta", {
+      type: "response.output_text.delta",
+      ...ids,
+      delta: text,
+      logprobs: [],
+    });
+  }
+  part.buf += text;
+}
 
-  if (!state.msgTextBuf[idx]) state.msgTextBuf[idx] = "";
-  state.msgTextBuf[idx] += content;
+function closeContentPart(state, emit, idx) {
+  const part = state.msgPart[idx];
+  if (!part) return;
+  delete state.msgPart[idx];
+  const ids = {
+    item_id: messageId(state, idx),
+    output_index: state.msgOutIdx[idx],
+    content_index: part.index,
+  };
+  if (part.kind === RESPONSES_ITEM.REFUSAL) {
+    emit("response.refusal.done", { type: "response.refusal.done", ...ids, refusal: part.buf });
+  } else {
+    emit("response.output_text.done", {
+      type: "response.output_text.done",
+      ...ids,
+      text: part.buf,
+      logprobs: [],
+    });
+  }
+  emit("response.content_part.done", {
+    type: "response.content_part.done",
+    ...ids,
+    part: contentPart(part.kind, part.buf),
+  });
+  state.msgParts[idx].push(contentPart(part.kind, part.buf));
 }
 
 function closeMessage(state, emit, idx) {
-  if (state.msgItemAdded[idx] && !state.msgItemDone[idx]) {
-    state.msgItemDone[idx] = true;
-    const fullText = state.msgTextBuf[idx] || "";
-    const msgId = messageId(state, idx);
-    const outIdx = state.msgOutIdx[idx];
-
-    emit("response.output_text.done", {
-      type: "response.output_text.done",
-      item_id: msgId,
-      output_index: outIdx,
-      content_index: 0,
-      text: fullText,
-      logprobs: [],
-    });
-
-    emit("response.content_part.done", {
-      type: "response.content_part.done",
-      item_id: msgId,
-      output_index: outIdx,
-      content_index: 0,
-      part: { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText },
-    });
-
-    const item = {
-      id: msgId,
-      type: RESPONSES_ITEM.MESSAGE,
-      content: [
-        { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText },
-      ],
-      role: ROLE.ASSISTANT,
-      status: "completed",
-    };
-    emit("response.output_item.done", {
-      type: "response.output_item.done",
-      output_index: outIdx,
-      item,
-    });
-    recordOutputItem(state, outIdx, item);
-  }
+  if (!state.msgItemAdded[idx] || state.msgItemDone[idx]) return;
+  state.msgItemDone[idx] = true;
+  closeContentPart(state, emit, idx);
+  const outIdx = state.msgOutIdx[idx];
+  // A message cut off by a content_filter finish is incomplete, like the response.
+  const item = {
+    id: messageId(state, idx),
+    type: RESPONSES_ITEM.MESSAGE,
+    content: state.msgParts[idx] || [],
+    role: ROLE.ASSISTANT,
+    status: state.contentFiltered ? "incomplete" : "completed",
+  };
+  emit("response.output_item.done", {
+    type: "response.output_item.done",
+    output_index: outIdx,
+    item,
+  });
+  recordOutputItem(state, outIdx, item);
 }
 
 function isCustomTool(state, name) {
@@ -472,24 +503,30 @@ function closeToolCall(state, emit, idx) {
   }
 }
 
+// A content_filter finish is not a completed answer: report it as OpenAI does,
+// with response.incomplete and incomplete_details.reason.
 function sendCompleted(state, emit) {
-  if (!state.completedSent) {
-    state.completedSent = true;
-    emit("response.completed", {
-      type: "response.completed",
-      response: {
-        id: state.responseId,
-        object: "response",
-        created_at: state.created,
-        model: state.model || MODEL_FALLBACK,
-        status: "completed",
-        background: false,
-        error: null,
-        output: (state.outputItems || []).filter(Boolean),
-        ...(state.usage ? { usage: toResponsesUsage(state.usage) } : {}),
-      },
-    });
-  }
+  if (state.completedSent) return;
+  state.completedSent = true;
+  const incomplete = state.contentFiltered === true;
+  const type = incomplete ? "response.incomplete" : "response.completed";
+  emit(type, {
+    type,
+    response: {
+      id: state.responseId,
+      object: "response",
+      created_at: state.created,
+      model: state.model || MODEL_FALLBACK,
+      status: incomplete ? "incomplete" : "completed",
+      ...(incomplete
+        ? { incomplete_details: { reason: RESPONSES_INCOMPLETE.CONTENT_FILTER } }
+        : {}),
+      background: false,
+      error: null,
+      output: (state.outputItems || []).filter(Boolean),
+      ...(state.usage ? { usage: toResponsesUsage(state.usage) } : {}),
+    },
+  });
 }
 
 function flushEvents(state) {
@@ -514,7 +551,7 @@ function flushEvents(state) {
 // can still finalize as tool_calls even if the tool call was emitted before stream end.
 function computeFinishReason(state) {
   if (state.incompleteReason) {
-    return state.incompleteReason === "content_filter"
+    return state.incompleteReason === RESPONSES_INCOMPLETE.CONTENT_FILTER
       ? OPENAI_FINISH.CONTENT_FILTER
       : OPENAI_FINISH.LENGTH;
   }
@@ -574,6 +611,12 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     state.respToolArgsEmitted ??= new Set();
   }
 
+  // The upstream's own model id (response.created / in_progress / terminal)
+  // wins over the requested one, as in the other upstream → OpenAI translators.
+  if (typeof data.response?.model === "string" && data.response.model) {
+    state.model = data.response.model;
+  }
+
   // Text content delta
   if (eventType === "response.output_text.delta") {
     const delta = data.delta || "";
@@ -585,8 +628,20 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     );
   }
 
-  // Text content done (ignore, we handle via delta)
-  if (eventType === "response.output_text.done") {
+  // Refusal content part delta → chat delta.refusal. The terminal
+  // response.incomplete (reason content_filter) maps the finish below.
+  if (eventType === "response.refusal.delta") {
+    const delta = data.delta || "";
+    if (!delta) return null;
+
+    return buildChunk(
+      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+      { refusal: delta },
+    );
+  }
+
+  // Text/refusal done (ignore, we handle via delta)
+  if (eventType === "response.output_text.done" || eventType === "response.refusal.done") {
     return null;
   }
 

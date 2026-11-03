@@ -303,10 +303,11 @@ export function initState(sourceFormat) {
       responseId: `resp_${Date.now()}`,
       created: Math.floor(Date.now() / 1000),
       started: false,
-      msgTextBuf: {},
       msgItemAdded: {},
-      msgContentAdded: {},
       msgItemDone: {},
+      // Open content part per choice ({ kind, index, buf }) and its closed parts.
+      msgPart: {},
+      msgParts: {},
       reasoningId: "",
       reasoningIndex: -1,
       reasoningBuf: "",

@@ -98,3 +98,11 @@ export function claudeRefusalText(stopDetails) {
   }
   return "Request refused by upstream provider.";
 }
+
+// OpenAI refusal text → Claude stop_details for stop_reason "refusal". The
+// pivot keeps only the text, so the upstream category cannot be restored.
+export function claudeRefusalDetails(refusalText) {
+  return typeof refusalText === "string" && refusalText
+    ? { type: CLAUDE_STOP.REFUSAL, explanation: refusalText }
+    : null;
+}
