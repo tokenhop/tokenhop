@@ -114,10 +114,20 @@ describe("savings coverage note rendering", () => {
     expect(html).toContain("Saved all time");
   });
 
-  const costSavings = (current, previous) => ({
+  const costSavings = (current, previous, previousPriced = 4) => ({
     tokensSavedEst: 100,
-    currentTotals: { tokensSavedEst: 100, costSavedEst: current },
-    previous: { tokensSavedEst: 80, costSavedEst: previous },
+    currentTotals: {
+      tokensSavedEst: 100,
+      costSavedEst: current,
+      requestsWithSavings: 5,
+      pricedRequests: 5,
+    },
+    previous: {
+      tokensSavedEst: 80,
+      costSavedEst: previous,
+      requestsWithSavings: 4,
+      pricedRequests: previousPriced,
+    },
   });
 
   it("renders the cost-saved trend when both windows are priced", () => {
@@ -134,5 +144,10 @@ describe("savings coverage note rendering", () => {
     ["7d", 1.5, 0],
   ])("hides the cost-saved trend for period=%s current=%s previous=%s", (period, cur, prev) => {
     expect(render({ period, savings: costSavings(cur, prev) })).not.toContain("Cost saved");
+  });
+
+  it("hides the cost-saved trend when the windows' priced shares differ (YAN-1788)", () => {
+    // Current fully priced, previous 1 of 4 priced: 75 points apart.
+    expect(render({ period: "7d", savings: costSavings(1.5, 1, 1) })).not.toContain("Cost saved");
   });
 });

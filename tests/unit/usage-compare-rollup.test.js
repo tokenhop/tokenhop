@@ -205,6 +205,7 @@ describe("savings compare parity (7d–60d)", () => {
           tokensSavedEst: 150,
           requestsWithSavings: 3,
           costSavedEst: null,
+          pricedRequests: 0,
         });
         // The old elapsed-length previous window provably saw fewer of them.
         expect(
@@ -247,11 +248,13 @@ describe("savings compare parity (7d–60d)", () => {
         tokensSavedEst: 11,
         requestsWithSavings: 2,
         costSavedEst: null,
+        pricedRequests: 0,
       });
       expect(wsBody.previous).toEqual({
         tokensSavedEst: 2,
         requestsWithSavings: 1,
         costSavedEst: null,
+        pricedRequests: 0,
       });
 
       scopeHolder.scope = { workspaceId: "ws-a", userId: "u1" };
@@ -260,11 +263,13 @@ describe("savings compare parity (7d–60d)", () => {
         tokensSavedEst: 1,
         requestsWithSavings: 1,
         costSavedEst: null,
+        pricedRequests: 0,
       });
       expect(userBody.previous).toEqual({
         tokensSavedEst: 2,
         requestsWithSavings: 1,
         costSavedEst: null,
+        pricedRequests: 0,
       });
     } finally {
       nowSpy.mockRestore();

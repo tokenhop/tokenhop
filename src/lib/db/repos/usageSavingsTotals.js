@@ -20,7 +20,8 @@ import { priceSavedGroups } from "./usageSavingsPricing.js";
  * sum of per-group distinct counts is the exact distinct count overall.
  * @param {object|null} ctx usage scope
  * @param {{start: number, end: number}} range ms timestamps
- * @returns {Promise<{tokensSavedEst: number, requestsWithSavings: number, costSavedEst: number|null}>}
+ * @returns {Promise<{tokensSavedEst: number, requestsWithSavings: number, costSavedEst: number|null, pricedRequests: number}>}
+ *   `pricedRequests` counts the requests with savings whose model had list pricing.
  */
 export async function getSavingsTotals(ctx, { start, end } = {}) {
   if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) {
@@ -65,8 +66,8 @@ export async function getSavingsTotals(ctx, { start, end } = {}) {
       savingsRequests: groupRequests,
     });
   }
-  const { costSavedEst } = await priceSavedGroups(groups);
-  return { tokensSavedEst, requestsWithSavings, costSavedEst };
+  const { costSavedEst, pricedRequests } = await priceSavedGroups(groups);
+  return { tokensSavedEst, requestsWithSavings, costSavedEst, pricedRequests };
 }
 
 /**
@@ -76,21 +77,27 @@ export async function getSavingsTotals(ctx, { start, end } = {}) {
  * history was pruned before savings tracking: its totals would be understated
  * and the trend would show an inflated delta, so it reports no prior data.
  * `costSavedEst` matches getUsageSavings: rollup rows are grouped and priced
- * the same way (null when no group had resolvable pricing).
+ * the same way (null when no group had resolvable pricing); `pricedRequests`
+ * counts the requests with savings whose group was priced (YAN-1788).
  * @param {object|null} ctx usage scope
  * @param {{from: string|null, to: string|null}} range
- * @returns {Promise<{currentTotals: object, previous: object|null}>}
+ * @returns {Promise<{currentTotals: object, previous: object|null}>} totals are
+ *   `{tokensSavedEst, requestsWithSavings, costSavedEst, pricedRequests}`
  */
 export async function getRollupSavingsTotals(ctx, { from, to }) {
   const db = await getAdapter();
   const pricingCache = new Map(); // shared so both windows price each model once
   const totalsIn = async (start = null, end = null) => {
     const totals = readSavingsTotals(ctx, db, start, end);
-    const { costSavedEst } = await priceSavedGroups(totals.byProviderModel, pricingCache);
+    const { costSavedEst, pricedRequests } = await priceSavedGroups(
+      totals.byProviderModel,
+      pricingCache,
+    );
     return {
       tokensSavedEst: totals.tokensSavedEst,
       requestsWithSavings: totals.requestsWithSavings,
       costSavedEst,
+      pricedRequests,
     };
   };
   if (from == null && to == null) return { currentTotals: await totalsIn(), previous: null };

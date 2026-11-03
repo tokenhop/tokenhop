@@ -10,8 +10,11 @@ import { saveRequestUsageUnscoped } from "@/lib/db/repos/usageRepo.js";
 import { getChartData } from "@/lib/db/repos/usageStatsRepo.js";
 import { customChartBuckets } from "@/lib/usage/customRange.js";
 import {
+  historyCoversRollup,
+  sliceTotals,
   previousDayRange,
   previousDaySeries,
+  previousDaySlice,
   previousHourSeries,
   previousHourWindow,
 } from "@/lib/usage/previousBuckets.js";
@@ -76,6 +79,51 @@ describe("day-window alignment", () => {
     expect(current[1].start).toBe("2026-01-05");
     expect(prev[1].requests).toBe(8);
     expect(prev.reduce((s, p) => s + p.requests, 0)).toBe(11);
+  });
+});
+
+describe("today's day-bucket slice (YAN-1787)", () => {
+  it("clips to the elapsed time since today's midnight", () => {
+    const now = new Date(2026, 8, 30, 10, 30).getTime();
+    const slice = previousDaySlice("2026-09-23", now);
+    expect(slice.start).toBe(new Date(2026, 8, 23).getTime());
+    expect(slice.end).toBe(new Date(2026, 8, 23, 10, 30).getTime());
+    expect(slice.dayEnd).toBe(new Date(2026, 8, 24).getTime());
+  });
+
+  it("never runs past a 23-hour previous day's next midnight", () => {
+    // 2026-03-08 springs forward (23h); today 03-15 is 23h30m in.
+    const slice = previousDaySlice("2026-03-08", new Date(2026, 2, 15, 23, 30).getTime());
+    expect(slice.dayEnd - slice.start).toBe(23 * HOUR);
+    expect(slice.end).toBe(slice.dayEnd);
+  });
+
+  it("measures elapsed real time on a 25-hour today, capped by a 24-hour previous day", () => {
+    // Today 2026-11-01 falls back (25h); 23:30 local is 24h30m after midnight.
+    const slice = previousDaySlice("2026-10-31", new Date(2026, 10, 1, 23, 30).getTime());
+    expect(slice.dayEnd - slice.start).toBe(24 * HOUR);
+    expect(slice.end).toBe(slice.dayEnd);
+    // A 25-hour previous day keeps the extra hour available.
+    const fall = previousDaySlice("2026-11-01", new Date(2026, 10, 8, 23, 30).getTime());
+    expect(fall.dayEnd - fall.start).toBe(25 * HOUR);
+    expect(fall.end - fall.start).toBe(23.5 * HOUR);
+  });
+
+  it("normalizes slice sums like a rollup day; the guard needs history >= rollup", () => {
+    const sums = { requests: 2, prompt: 110, cached: 80, output: 10, cost: 0.75 };
+    expect(sliceTotals(sums)).toEqual({
+      input: 110,
+      cached: 80,
+      output: 10,
+      tokens: 120,
+      cost: 0.75,
+      requests: 2,
+    });
+    expect(sliceTotals({ ...sums, prompt: 30 })).toMatchObject({ input: 80, tokens: 90 });
+    expect(historyCoversRollup({ historyRequests: 3, rollupRequests: 3 })).toBe(true);
+    expect(historyCoversRollup({ historyRequests: 4, rollupRequests: 3 })).toBe(true);
+    expect(historyCoversRollup({ historyRequests: 2, rollupRequests: 0 })).toBe(true);
+    expect(historyCoversRollup({ historyRequests: 2, rollupRequests: 3 })).toBe(false);
   });
 });
 
@@ -217,15 +265,18 @@ describe("chart route compare=previous", () => {
   it("7d: previous days align index for index", async () => {
     const buckets = await (await get("period=7d&compare=previous")).json();
     expect(buckets).toHaveLength(7);
-    expect(buckets.map((b) => b.previous.requests)).toEqual([4, 0, 0, 0, 0, 0, 2]);
-    expect(buckets[6].previous).toEqual({
-      input: 20,
+    // Today's previous day (09-23) has rollup requests but no history rows
+    // (as if pruned by retention), so no elapsed slice exists: null (YAN-1787).
+    expect(buckets.map((b) => b.previous?.requests ?? null)).toEqual([4, 0, 0, 0, 0, 0, null]);
+    expect(buckets[0].previous).toEqual({
+      input: 40,
       cached: 0,
-      output: 2,
-      tokens: 22,
-      cost: 2,
-      requests: 2,
+      output: 4,
+      tokens: 44,
+      cost: 4,
+      requests: 4,
     });
+    expect(buckets[6].previous).toBeNull();
     expect(buckets[6].requests).toBe(1);
   });
 
@@ -234,7 +285,267 @@ describe("chart route compare=previous", () => {
     const buckets = await (
       await get(`period=custom&from=${from}&to=${today}&compare=previous`)
     ).json();
-    expect(buckets.map((b) => b.previous.requests)).toEqual([4, 0, 0, 0, 0, 0, 2]);
+    expect(buckets.map((b) => b.previous?.requests ?? null)).toEqual([4, 0, 0, 0, 0, 0, null]);
+    // A custom range not ending today keeps whole-day previous totals.
+    const past = await (
+      await get(
+        `period=custom&from=${shiftDateKey(today, -7)}&to=${shiftDateKey(today, -1)}&compare=previous`,
+      )
+    ).json();
+    // 09-23..09-29 vs 09-16..09-22: 09-16 (64) and 09-17 (4), whole days.
+    expect(past.map((b) => b.previous.requests)).toEqual([64, 4, 0, 0, 0, 0, 0]);
+  });
+
+  describe("today's day bucket compares the same elapsed slice (YAN-1787)", () => {
+    const save = (date) =>
+      saveRequestUsageUnscoped({
+        provider: "openai",
+        model: "gpt-x",
+        tokens: { prompt_tokens: 100, completion_tokens: 50 },
+        endpoint: "/v1/chat/completions",
+        status: "ok",
+        timestamp: date.toISOString(),
+      });
+
+    beforeEach(async () => {
+      db.exec("DELETE FROM usageHistory; DELETE FROM usageRollup");
+      await save(new Date(2026, 8, 23, 9, 0)); // previous day of today, before 10:30
+      await save(new Date(2026, 8, 23, 10, 29)); // before 10:30
+      await save(new Date(2026, 8, 23, 10, 30)); // exactly the elapsed mark: excluded
+      await save(new Date(2026, 8, 23, 18, 0)); // after 10:30
+      await save(new Date(2026, 8, 18, 15, 0)); // previous of bucket 1: whole day counts
+      await save(new Date(2026, 8, 30, 8, 0)); // today
+    });
+
+    it("7d: last bucket counts only rows before the elapsed time; others whole-day", async () => {
+      const buckets = await getChartData(null, "7d", null, { compare: "previous" });
+      expect(buckets.at(-1).start).toBe(today);
+      expect(buckets.at(-1).previous).toEqual({
+        input: 200,
+        cached: 0,
+        output: 100,
+        tokens: 300,
+        cost: 0,
+        requests: 2,
+      });
+      expect(buckets.map((b) => b.previous.requests)).toEqual([0, 1, 0, 0, 0, 0, 2]);
+    });
+
+    it("custom day range ending today clips the same way", async () => {
+      const buckets = await getChartData(
+        null,
+        "custom",
+        { from: shiftDateKey(today, -6), to: today },
+        { compare: "previous" },
+      );
+      expect(buckets.map((b) => b.previous.requests)).toEqual([0, 1, 0, 0, 0, 0, 2]);
+    });
+
+    it("previous is null when that day's history was pruned below its rollup", async () => {
+      db.run("DELETE FROM usageHistory WHERE timestamp >= ? AND timestamp < ?", [
+        new Date(2026, 8, 23, 12).toISOString(),
+        new Date(2026, 8, 24).toISOString(),
+      ]);
+      const buckets = await getChartData(null, "7d", null, { compare: "previous" });
+      expect(buckets.at(-1).previous).toBeNull();
+      expect(buckets[1].previous.requests).toBe(1);
+    });
+
+    it("finds today by day key when a custom range ends on the server's tomorrow", async () => {
+      // 09-25..10-01 vs 09-18..09-24: today (09-30) is bucket 5, its previous day 09-23.
+      const from = shiftDateKey(today, -5);
+      const res = await get(
+        `period=custom&from=${from}&to=${shiftDateKey(today, 1)}&compare=previous`,
+      );
+      expect(res.status).toBe(200);
+      const buckets = await res.json();
+      expect(buckets.map((b) => b.start)[5]).toBe(today);
+      expect(buckets.map((b) => b.previous.requests)).toEqual([1, 0, 0, 0, 0, 2, 0]);
+    });
+
+    it("still clips when history holds more rows than the rollup", async () => {
+      // A legacy history row never folded into the rollup (history 5 > rollup 4).
+      db.run(
+        "INSERT INTO usageHistory(timestamp, provider, model, promptTokens, completionTokens) VALUES (?, 'openai', 'gpt-x', 7, 3)",
+        [new Date(2026, 8, 23, 8, 0).toISOString()],
+      );
+      const buckets = await getChartData(null, "7d", null, { compare: "previous" });
+      expect(buckets.at(-1).previous).toMatchObject({ requests: 3, tokens: 310 });
+    });
+
+    it("uses history totals when the previous day has no rollup row", async () => {
+      db.run("DELETE FROM usageRollup WHERE dateKey = ?", ["2026-09-23"]);
+      const buckets = await getChartData(null, "7d", null, { compare: "previous" });
+      expect(buckets.at(-1).previous).toMatchObject({ requests: 2, tokens: 300 });
+    });
+  });
+
+  describe("today's slice reads (YAN-1787): bounded and scoped", () => {
+    const at = new Date(2026, 8, 30).toISOString();
+    const save = (date, scope) =>
+      saveRequestUsageUnscoped({
+        ...scope,
+        provider: "openai",
+        model: "gpt-x",
+        tokens: { prompt_tokens: 10, completion_tokens: 5 },
+        endpoint: "/v1/chat/completions",
+        status: "ok",
+        timestamp: date.toISOString(),
+      });
+    const before = new Date(2026, 8, 23, 9, 0); // previous day of today, before 10:30
+    const after = new Date(2026, 8, 23, 18, 0);
+    const lastPrevious = async (ctx) =>
+      (await getChartData(ctx, "7d", null, { compare: "previous" })).at(-1).previous;
+    const prune = (scope) =>
+      db.run(
+        `DELETE FROM usageHistory WHERE workspaceId = ?${scope.userId ? " AND userId = ?" : ""}`,
+        [scope.workspaceId, ...(scope.userId ? [scope.userId] : [])],
+      );
+
+    beforeEach(() => {
+      db.exec("DELETE FROM usageHistory; DELETE FROM usageRollup");
+      for (const u of ["u1", "u2"]) {
+        db.run(
+          "INSERT OR IGNORE INTO users(id, instanceRole, status, createdAt, updatedAt) VALUES (?, 'user', 'active', ?, ?)",
+          [u, at, at],
+        );
+      }
+      for (const w of ["ws-a", "ws-b"]) {
+        db.run(
+          "INSERT OR IGNORE INTO workspaces(id, name, kind, createdAt, updatedAt) VALUES (?, ?, 'shared', ?, ?)",
+          [w, w, at, at],
+        );
+      }
+    });
+
+    it("counts and sums only the workspace's own rows", async () => {
+      const a = { workspaceId: "ws-a" };
+      const b = { workspaceId: "ws-b" };
+      await save(before, a);
+      for (let i = 0; i < 5; i++) await save(before, b);
+      await save(after, b);
+      expect((await lastPrevious(a)).requests).toBe(1);
+      expect((await lastPrevious(b)).requests).toBe(5);
+      // ws-a pruned, ws-b intact: an unscoped COUNT would pass ws-a's guard.
+      prune(a);
+      expect(await lastPrevious(a)).toBeNull();
+      expect((await lastPrevious(b)).requests).toBe(5);
+    });
+
+    it("counts and sums only the member's own rows", async () => {
+      const mine = { workspaceId: "ws-a", userId: "u1" };
+      const peer = { workspaceId: "ws-a", userId: "u2" };
+      await save(before, mine);
+      for (let i = 0; i < 5; i++) await save(before, peer);
+      await save(after, peer);
+      expect((await lastPrevious(mine)).requests).toBe(1);
+      expect((await lastPrevious({ workspaceId: "ws-a" })).requests).toBe(6);
+      prune(mine);
+      expect(await lastPrevious(mine)).toBeNull();
+      expect((await lastPrevious(peer)).requests).toBe(5);
+    });
+
+    it("90d reads history only through one aggregate bounded to that previous day", async () => {
+      const prevDay = shiftDateKey(today, -90);
+      const [y, m, d] = prevDay.split("-").map(Number);
+      await save(new Date(y, m - 1, d, 9, 0), {});
+      const historySql = [];
+      const spies = ["all", "get"].map((method) => {
+        const original = db[method].bind(db);
+        return vi.spyOn(db, method).mockImplementation((sql, params) => {
+          if (sql.includes("usageHistory")) historySql.push({ sql, params });
+          return original(sql, params);
+        });
+      });
+      try {
+        const buckets = await getChartData(null, "90d", null, { compare: "previous" });
+        expect(buckets.at(-1).previous.requests).toBe(1);
+        expect(historySql).toHaveLength(1);
+        const [{ sql, params }] = historySql;
+        expect(sql).toContain("COUNT(*)");
+        expect(sql).toContain("timestamp >= ?");
+        expect(sql).toContain("timestamp < ?");
+        // Params: slice end, then the whole-day bounds [dayStart, dayEnd).
+        const [sliceEnd, lo, hi] = params.map((iso) => new Date(iso).getTime());
+        const dayStart = new Date(y, m - 1, d).getTime();
+        const dayEnd = new Date(y, m - 1, d + 1).getTime();
+        expect(lo).toBe(dayStart);
+        expect(hi).toBe(dayEnd);
+        expect(sliceEnd).toBeGreaterThan(dayStart);
+        expect(sliceEnd).toBeLessThanOrEqual(dayEnd);
+        // Pruned previous day: the same single query, and the guard yields null.
+        db.run("DELETE FROM usageHistory");
+        historySql.length = 0;
+        const pruned = await getChartData(null, "90d", null, { compare: "previous" });
+        expect(pruned.at(-1).previous).toBeNull();
+        expect(historySql).toHaveLength(1);
+      } finally {
+        for (const spy of spies) spy.mockRestore();
+      }
+    });
+  });
+
+  describe("today's clipped previous is normalized like the day bucket (YAN-1787)", () => {
+    const save = (date, tokens, cost = 0) =>
+      saveRequestUsageUnscoped({
+        provider: "openai",
+        model: "gpt-x",
+        tokens,
+        cost,
+        endpoint: "/v1/chat/completions",
+        status: "ok",
+        timestamp: date.toISOString(),
+      });
+    const traffic = async (y, mo, d) => {
+      // Mixed traffic: day-level max(sum prompt, sum cached) = max(110, 80) = 110,
+      // not the per-row max sum 100 + 80 = 180.
+      await save(new Date(y, mo, d, 7), { prompt_tokens: 100, completion_tokens: 5 }, 0.25);
+      await save(
+        new Date(y, mo, d, 8),
+        { prompt_tokens: 10, completion_tokens: 5, cached_tokens: 80 },
+        0.5,
+      );
+    };
+
+    beforeEach(() => db.exec("DELETE FROM usageHistory; DELETE FROM usageRollup"));
+
+    it("same traffic on both sides gives identical current and previous values", async () => {
+      await traffic(2026, 8, 30); // today, before 10:30
+      await traffic(2026, 8, 23); // previous day, before 10:30
+      const last = (await getChartData(null, "7d", null, { compare: "previous" })).at(-1);
+      const { label, grain, start, previous, ...current } = last;
+      expect(current).toEqual({
+        input: 110,
+        cached: 80,
+        output: 10,
+        tokens: 120,
+        cost: 0.75,
+        requests: 2,
+      });
+      expect(previous).toEqual(current);
+    });
+
+    it("reads cached like the rollup: 0 falls through, malformed JSON counts as 0", async () => {
+      await save(new Date(2026, 8, 23, 7), {
+        prompt_tokens: 10,
+        completion_tokens: 1,
+        cached_tokens: 0,
+        cache_read_input_tokens: 40,
+      });
+      db.run(
+        "INSERT INTO usageHistory(timestamp, provider, model, promptTokens, completionTokens, tokens) VALUES (?, 'openai', 'gpt-x', 3, 2, '{bad')",
+        [new Date(2026, 8, 23, 8).toISOString()],
+      );
+      const { previous } = (await getChartData(null, "7d", null, { compare: "previous" })).at(-1);
+      expect(previous).toEqual({
+        input: 40,
+        cached: 40,
+        output: 3,
+        tokens: 43,
+        cost: 0,
+        requests: 2,
+      });
+    });
   });
 
   it("all: no previous window, no previous field", async () => {

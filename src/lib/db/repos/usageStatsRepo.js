@@ -15,12 +15,11 @@ import {
 import { readApiKeyStorageState } from "../apiKeyState.js";
 import { apiKeysHasKeyHash } from "../helpers/apiKeysSchema.js";
 import { lastErrorFor, pendingView } from "./usageLiveFeed.js";
+import { previousDayBuckets } from "./usageChartPrevious.js";
 import { buildAllTimeBuckets } from "@/lib/usage/allTimeBuckets.js";
 import { customChartBuckets } from "@/lib/usage/customRange.js";
 import {
   foldHourPoints,
-  previousDayRange,
-  previousDaySeries,
   previousHourSeries,
   previousHourWindow,
   withPrevious,
@@ -501,10 +500,8 @@ export async function getChartData(ctx, period = "7d", range = null, { compare =
       customRange,
     );
     if (!withCompare) return buckets;
-    return attachPrevious(buckets, () => {
-      const prev = previousDayRange(customRange);
-      return previousDaySeries(readRollupDaily(ctx, db, prev.from, prev.to), customRange);
-    });
+    const now = Date.now();
+    return attachPrevious(buckets, () => previousDayBuckets(ctx, db, buckets, customRange, now));
   }
   const scope = scopeSql(ctx);
   const now = Date.now();
@@ -584,12 +581,10 @@ export async function getChartData(ctx, period = "7d", range = null, { compare =
     };
   });
   if (!withCompare) return buckets;
-  return attachPrevious(buckets, () => {
+  return attachPrevious(buckets, () =>
     // Same day keys as the buckets above (bucketCount <= 92, so day grain).
-    const currentRange = { from: buckets[0].start, to: buckets.at(-1).start };
-    const prev = previousDayRange(currentRange);
-    return previousDaySeries(readRollupDaily(ctx, db, prev.from, prev.to), currentRange);
-  });
+    previousDayBuckets(ctx, db, buckets, { from: buckets[0].start, to: buckets.at(-1).start }, now),
+  );
 }
 
 // --- Usage export (YAN-425) -------------------------------------------------

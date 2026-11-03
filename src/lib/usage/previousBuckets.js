@@ -3,6 +3,8 @@
 // the equal-length window right before the current one, shift it forward by
 // the window length and fold it into the CURRENT bucket skeleton, so each
 // bucket's `previous` covers exactly the same relative slice of its window.
+// Exception (YAN-1787): today's partial day bucket compares with the same
+// elapsed slice of the matching previous day (previousDaySlice), not a whole day.
 import { customChartBuckets } from "./customRange.js";
 import { daysBetweenDateKeys, previousPeriodRange, shiftDateKey } from "@/shared/utils/period";
 
@@ -102,6 +104,56 @@ export function foldHourPoints(slots, points, start, inWindow) {
     slot.requests += 1;
   }
   return slots;
+}
+
+/**
+ * Elapsed slice of a previous day matching today's partial day bucket
+ * (YAN-1787). Today's day bucket only holds the hours elapsed since local
+ * midnight, so its `previous` is clipped to the same elapsed time from the
+ * previous day's local midnight — the rule `previousPeriodRange("today")`
+ * uses — never past that day's next local midnight (setDate, DST-safe: a
+ * 23-hour previous day ends early, a 25-hour one keeps its extra hour).
+ * Half-open `[start, end)`; `dayEnd` bounds the whole previous day.
+ * @param {string} previousDayKey local `YYYY-MM-DD` of the matching previous day
+ * @param {number} now ms instant (today's elapsed time is measured from its local midnight)
+ * @returns {{start: number, end: number, dayEnd: number}}
+ */
+export function previousDaySlice(previousDayKey, now) {
+  const [y, m, d] = previousDayKey.split("-").map(Number);
+  const day = new Date(y, m - 1, d);
+  const start = day.getTime();
+  day.setDate(day.getDate() + 1);
+  const dayEnd = day.getTime();
+  const todayMidnight = new Date(now);
+  todayMidnight.setHours(0, 0, 0, 0);
+  return { start, end: Math.min(start + (now - todayMidnight.getTime()), dayEnd), dayEnd };
+}
+
+/**
+ * Retention guard for today's previous slice (YAN-1787): the previous day's
+ * history is complete enough to clip when it holds at least the rollup's
+ * requests for that day. Fewer means it is incomplete (e.g. history
+ * retention pruned it) — no clip is possible and a whole day would overstate
+ * the baseline, so the caller reports null. More (legacy rows never rolled
+ * up) or no rollup row at all still clips from history.
+ * @param {{historyRequests: number, rollupRequests: number}} counts whole-day request counts
+ * @returns {boolean}
+ */
+export function historyCoversRollup({ historyRequests, rollupRequests }) {
+  return historyRequests >= rollupRequests;
+}
+
+/**
+ * `previous` for today's partial day bucket (YAN-1787) from the previous
+ * day's elapsed-slice sums, normalized exactly like a rollup day bucket
+ * (day-level `input = max(sum prompt, sum cached)`, `tokens = input +
+ * output`), so today's current and previous values use one rule.
+ * @param {{requests:number,prompt:number,cached:number,output:number,cost:number}} sums
+ * @returns {{input:number,cached:number,output:number,tokens:number,cost:number,requests:number}}
+ */
+export function sliceTotals({ requests, prompt, cached, output, cost }) {
+  const input = Math.max(prompt, cached);
+  return { input, cached, output, tokens: input + output, cost, requests };
 }
 
 /**
