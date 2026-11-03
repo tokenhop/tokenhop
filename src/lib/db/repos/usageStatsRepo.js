@@ -10,22 +10,16 @@ import {
   PERIOD_DAYS,
   isCustomPeriod,
   isRollupOnlyPeriod,
-  localTodayKey,
   periodStart,
-  shiftDateKey,
 } from "@/shared/utils/period";
 import { readApiKeyStorageState } from "../apiKeyState.js";
 import { apiKeysHasKeyHash } from "../helpers/apiKeysSchema.js";
 import { lastErrorFor, pendingView } from "./usageLiveFeed.js";
+import { previousDayBuckets } from "./usageChartPrevious.js";
 import { buildAllTimeBuckets } from "@/lib/usage/allTimeBuckets.js";
 import { customChartBuckets } from "@/lib/usage/customRange.js";
 import {
   foldHourPoints,
-  historyCoversRollup,
-  pointTotals,
-  previousDayRange,
-  previousDaySeries,
-  previousDaySlice,
   previousHourSeries,
   previousHourWindow,
   withPrevious,
@@ -482,54 +476,6 @@ function attachPrevious(buckets, readPrevious) {
     console.error("[usage] previous-period chart read failed:", error);
     return buckets;
   }
-}
-
-/**
- * Previous-window totals for day-range buckets (named 7d–90d and custom
- * ranges). Today's day bucket holds only the elapsed hours, so its
- * `previous` is clipped to the same elapsed slice of the matching previous
- * day, read from usageHistory (YAN-1787; decision: clip rather than flag it
- * in the tooltip, so the dashed line never dips at today's point). Today is
- * found by day key, not position: a custom range may end on the server's
- * tomorrow (futureToleranceDays). This is the one bounded history read on
- * otherwise rollup-only periods: one COUNT and one slice read, both within
- * that single previous day. When that day's history holds fewer requests
- * than its rollup (pruned by history retention) the slice cannot be read,
- * and a whole day would overstate the baseline, so it is null. Week/month/
- * year grains keep whole-day previous totals.
- * @param {object|null} ctx usage scope
- * @param {object} db adapter
- * @param {Array<object>} buckets current chart buckets of `range`
- * @param {{from: string, to: string}} range current inclusive day range
- * @param {number} now ms instant the buckets were built for
- * @returns {Array<object|null>} previous totals per bucket
- */
-function previousDayBuckets(ctx, db, buckets, range, now) {
-  const prev = previousDayRange(range);
-  const rows = readRollupDaily(ctx, db, prev.from, prev.to);
-  const series = previousDaySeries(rows, range);
-  const todayKey = localTodayKey(now);
-  const index = buckets.findIndex((b) => b.grain === "day" && b.start === todayKey);
-  if (index < 0) return series;
-  const dayKey = shiftDateKey(todayKey, -prev.shiftDays);
-  const slice = previousDaySlice(dayKey, now);
-  const scope = scopeSql(ctx);
-  const startIso = new Date(slice.start).toISOString();
-  const history = db.get(
-    `SELECT COUNT(*) AS n FROM usageHistory ${whereAll(scope.sql, "timestamp >= ?", "timestamp < ?")}`,
-    [...scope.params, startIso, new Date(slice.dayEnd).toISOString()],
-  );
-  const rollupRequests = rows
-    .filter((r) => r.dateKey === dayKey)
-    .reduce((sum, r) => sum + (Number(r.requests) || 0), 0);
-  const complete = historyCoversRollup({
-    historyRequests: Number(history?.n) || 0,
-    rollupRequests,
-  });
-  const clipped = complete
-    ? pointTotals(readHourPoints(db, scope, startIso, new Date(slice.end).toISOString()))
-    : null;
-  return series.map((s, i) => (i === index ? clipped : s));
 }
 
 /**

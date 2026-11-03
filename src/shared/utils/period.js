@@ -24,8 +24,8 @@ export const PERIOD_VALUES = PERIODS.map((p) => p.value);
  * Periods served from usageRollup only (never usageHistory): usage stats,
  * chart and compare totals for these must not scan history. One bounded
  * exception (YAN-1787): the chart's compare=previous overlay clips today's
- * day bucket with one COUNT and one slice read of usageHistory, both within
- * the single matching previous day (see usageStatsRepo previousDayBuckets).
+ * day bucket with one aggregate read of usageHistory bounded to the single
+ * matching previous day (see usageChartPrevious previousDayBuckets).
  */
 export const ROLLUP_ONLY_PERIODS = ["90d", "all"];
 

@@ -415,4 +415,30 @@ describe("compare totals pricedRequests (YAN-1788)", () => {
     expect(out.previous.pricedRequests).toBe(1);
     expect(out.previous.requestsWithSavings).toBe(2);
   });
+
+  it("counts priced requests inside a workspace scope on both paths", async () => {
+    const at = new Date(NOW).toISOString();
+    for (const w of ["ws-a", "ws-b"]) {
+      adapter.run(
+        "INSERT OR IGNORE INTO workspaces(id, name, kind, createdAt, updatedAt) VALUES (?, ?, 'shared', ?, ?)",
+        [w, w, at, at],
+      );
+    }
+    const a = { workspaceId: "ws-a" };
+    seed(NOW - 2000, saved(1000), { ...a, ...priced });
+    seed(NOW - 1000, saved(300), { ...a, ...unpriced });
+    seed(NOW - 1500, saved(5000), { workspaceId: "ws-b", ...priced }); // other workspace
+    seed(new Date(2026, 8, 20, 12).getTime(), saved(3000), { ...a, ...priced }); // previous 7d
+
+    const hist = await db.getSavingsTotals(a, { start: periodStart("24h", NOW), end: NOW + 1 });
+    expect(hist).toMatchObject({ requestsWithSavings: 2, pricedRequests: 1 });
+    expect(hist.costSavedEst).toBeGreaterThan(0);
+
+    const out = await db.getRollupSavingsTotals(a, { from: "2026-09-23", to: "2026-09-29" });
+    expect(out.currentTotals).toMatchObject({ requestsWithSavings: 2, pricedRequests: 1 });
+    expect(out.previous).toMatchObject({ requestsWithSavings: 1, pricedRequests: 1 });
+    // Control: unscoped also sees ws-b's priced row.
+    const all = await db.getSavingsTotals(null, { start: periodStart("24h", NOW), end: NOW + 1 });
+    expect(all.pricedRequests).toBe(2);
+  });
 });
