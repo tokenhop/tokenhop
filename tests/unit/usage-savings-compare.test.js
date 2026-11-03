@@ -674,4 +674,26 @@ describe("failing pricing lookup logs once per call (YAN-1818)", () => {
     });
     expect(failureLogs(errorSpy)).toHaveLength(1);
   });
+
+  it("concurrent lookups on one cache share a single failing lookup and log", async () => {
+    // boom/boom gets a real user price, so a caller that misses the shared
+    // failed lookup either prices it or logs again; both fail this test.
+    await db.updatePricing({ boom: { boom: { input: 1, output: 0 } } });
+    try {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { savedTokensCost } = await import("@/lib/db/repos/usageSavingsPricing.js");
+      const cache = new Map();
+
+      const costs = await Promise.all(
+        [100, 200, 300].map((t) => savedTokensCost(failed.provider, failed.model, t, cache)),
+      );
+
+      expect(costs).toEqual([null, null, null]);
+      expect(cache.size).toBe(1);
+      expect(failureLogs(errorSpy)).toHaveLength(1);
+    } finally {
+      adapter.run(`DELETE FROM kv WHERE scope = 'pricing' AND key = 'boom'`);
+      db.invalidatePricingCache();
+    }
+  });
 });

@@ -22,6 +22,8 @@ import {
 
 export const NO_KEY = "local-no-key";
 const DIMS = ["workspaceId", "userId", "apiKeyId", "provider", "model", "connectionId", "endpoint"];
+// Dims usage stats key on (readRollupGrouped): GROUP BY and projection share it.
+const STAT_DIMS = ["provider", "model", "connectionId", "apiKeyId", "endpoint"];
 const COMBO_DIMS = ["workspaceId", "userId", "apiKeyId"];
 const MEASURE_COLUMNS = [...LATENCY_COLUMNS, ...SAVINGS_COLUMNS];
 const MEASURE_DEFAULTS = { ...LATENCY_DEFAULTS, ...SAVINGS_DEFAULTS };
@@ -151,10 +153,8 @@ export function readRollupGrouped(ctx, db, startDateKey = null, endDateKey = nul
   const params = [...scope.params];
   if (startDateKey) params.push(startDateKey);
   if (endDateKey) params.push(endDateKey);
-  const group = "provider, model, connectionId, apiKeyId, endpoint";
-  const proj = ["provider", "model", "connectionId", "apiKeyId", "endpoint"]
-    .map((k) => (k === "apiKeyId" ? k : `NULLIF(${k}, '') AS ${k}`))
-    .join(", ");
+  const group = STAT_DIMS.join(", ");
+  const proj = STAT_DIMS.map((k) => (k === "apiKeyId" ? k : `NULLIF(${k}, '') AS ${k}`)).join(", ");
   return db
     .all(
       `SELECT ${proj}, SUM(requests) AS requests, SUM(tokensIn) AS tokensIn,

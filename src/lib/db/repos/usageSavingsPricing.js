@@ -29,9 +29,10 @@ function logFailure(e) {
  * uncached input for the request's own provider/model — the same pricing
  * tables and math as usage cost. Resolved pricing with a zero input rate (a
  * free model) returns 0; unresolved pricing returns null (never a guess).
- * A failing lookup or cost calculation is logged once per `cache` (= once per
- * getUsageSavings/priceSavedGroups call) per provider/model; later requests
- * for that provider/model return null silently (YAN-1818).
+ * A failing lookup or cost calculation is logged once per `cache` per
+ * provider/model (one getUsageSavings, getSavingsTotals or
+ * getRollupSavingsTotals call); later requests for that provider/model
+ * return null silently (YAN-1818).
  * @param {string|null} provider
  * @param {string|null} model
  * @param {number} savedTokens

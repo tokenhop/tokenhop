@@ -122,6 +122,15 @@ const COMBOS = [
     apiKeyId: "key-3",
     endpoint: "/v1/chat/completions",
   },
+  // One-dim variants of SHARED: dropping any STAT_DIMS column from the GROUP BY
+  // would merge one of these into SHARED's group and break parity.
+  ...[
+    { provider: "azure" },
+    { model: "gpt-4o-2024" },
+    { connectionId: "conn-ffffffff6" },
+    { apiKeyId: "key-2" },
+    { endpoint: "/v1/responses" },
+  ].map((diff) => ({ workspaceId: "ws-a", userId: "u1", ...SHARED, ...diff })),
 ];
 
 // Deterministic LCG so the seed is identical on every run.
