@@ -615,3 +615,63 @@ describe("free-model pricing coverage (YAN-1812)", () => {
     });
   });
 });
+
+describe("failing pricing lookup logs once per call (YAN-1818)", () => {
+  const paid = { provider: "openai", model: "gpt-4o-mini" }; // input 0.15 $/1M
+  const failed = { provider: "boom", model: "boom" }; // lookup rejects (mock above)
+  const failureLogs = (spy) =>
+    spy.mock.calls.filter(([msg]) => msg === "[usageSavingsPricing] savings pricing failed:");
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("history (24h): many failing rows log once; only resolvable rows are priced", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    for (let i = 1; i <= 4; i++) seed(NOW - i * 1000, saved(100 * i), failed);
+    seed(NOW - 5000, saved(1000), paid);
+    seed(NOW - 6000, saved(500), paid);
+
+    const out = await db.getUsageSavings(null, "24h", NOW);
+
+    expect(out).toMatchObject({
+      requestsWithSavings: 6,
+      pricedRequests: 2,
+      costSavedEst: +(1500 * 0.15e-6).toFixed(6),
+    });
+    expect(failureLogs(errorSpy)).toEqual([
+      ["[usageSavingsPricing] savings pricing failed:", "pricing lookup failed"],
+    ]);
+  });
+
+  it("history (24h): an all-failing window logs once and prices nothing", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    for (let i = 1; i <= 3; i++) seed(NOW - i * 1000, saved(100), failed);
+
+    const out = await db.getUsageSavings(null, "24h", NOW);
+
+    expect(out).toMatchObject({ requestsWithSavings: 3, pricedRequests: 0, costSavedEst: null });
+    expect(failureLogs(errorSpy)).toHaveLength(1);
+  });
+
+  it("rollup compare: current and previous share one cache, so one log", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    seed(new Date(2026, 8, 25, 12).getTime(), saved(300), failed); // current 7d
+    seed(new Date(2026, 8, 26, 12).getTime(), saved(1000), paid); // current 7d
+    seed(new Date(2026, 8, 18, 12).getTime(), saved(200), failed); // previous 7d
+
+    const out = await db.getRollupSavingsTotals(null, { from: "2026-09-23", to: "2026-09-29" });
+
+    expect(out.currentTotals).toMatchObject({
+      requestsWithSavings: 2,
+      pricedRequests: 1,
+      costSavedEst: +(1000 * 0.15e-6).toFixed(6),
+    });
+    expect(out.previous).toMatchObject({
+      requestsWithSavings: 1,
+      pricedRequests: 0,
+      costSavedEst: null,
+    });
+    expect(failureLogs(errorSpy)).toHaveLength(1);
+  });
+});
