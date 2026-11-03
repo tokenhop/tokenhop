@@ -244,6 +244,17 @@ describe("tile trends", () => {
     expect(trendDelta(zeroPrev.current, zeroPrev.previous)).toEqual({ kind: "none" });
   });
 
+  it("shows a falling cost trend for a mostly-free window vs a paid previous (YAN-1812)", () => {
+    // Free requests count as priced, so coverage matches and the list-price
+    // drop is real: moving traffic to free models lowers Cost saved.
+    const input = savingsCostTrendInput({
+      currentTotals: costTotals(0.00001),
+      previous: costTotals(1),
+    });
+    expect(input).toEqual({ current: 0.00001, previous: 1 });
+    expect(trendDelta(input.current, input.previous).kind).toBe("down");
+  });
+
   it("hides the cost trend when the priced share differs by more than the tolerance", () => {
     expect(PRICED_SHARE_TOLERANCE).toBe(0.2);
     const input = (cur, prev) => savingsCostTrendInput({ currentTotals: cur, previous: prev });

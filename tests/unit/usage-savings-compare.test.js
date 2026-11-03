@@ -1,12 +1,27 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { periodStart, previousPeriodRange } from "@/shared/utils/period.js";
 import { rebuildRollupFromHistoryUnscoped } from "@/lib/db/repos/usageRollupRepo.js";
+import {
+  savingsCostTrendInput,
+  trendDelta,
+} from "../../src/app/(dashboard)/dashboard/usage/lib/tileTrends.js";
 
 const scopeHolder = vi.hoisted(() => ({ scope: null }));
 vi.mock("@/lib/usage/scope.js", () => ({ usageScope: async () => scopeHolder.scope }));
+// Provider "boom" makes the pricing lookup reject (YAN-1812 failed-pricing case).
+vi.mock("@/lib/db/repos/pricingRepo.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getPricingForModel: async (provider, model) => {
+      if (provider === "boom") throw new Error("pricing lookup failed");
+      return actual.getPricingForModel(provider, model);
+    },
+  };
+});
 
 const NOW = new Date(2026, 8, 29, 12, 30).getTime();
 const originalDataDir = process.env.DATA_DIR;
@@ -440,5 +455,163 @@ describe("compare totals pricedRequests (YAN-1788)", () => {
     // Control: unscoped also sees ws-b's priced row.
     const all = await db.getSavingsTotals(null, { start: periodStart("24h", NOW), end: NOW + 1 });
     expect(all.pricedRequests).toBe(2);
+  });
+});
+
+describe("free-model pricing coverage (YAN-1812)", () => {
+  const paid = { provider: "openai", model: "gpt-4o-mini" }; // input 0.15 $/1M
+  const free = { provider: "test", model: "free-model" }; // user pricing, input 0
+  const missing = { provider: "nope", model: "nope" };
+  const failed = { provider: "boom", model: "boom" }; // lookup rejects (mock above)
+  const paidCost = +(1000 * 0.15e-6).toFixed(6);
+  // Raw kv overrides bypass PATCH validation, like a hand-edited or legacy row.
+  const rawRates = {
+    "rate-neg": { input: -1 },
+    "rate-null": { input: null },
+    "rate-abc": { input: "abc" },
+    "rate-zero": { input: 0 },
+    "rate-str": { input: "0.15" }, // numeric string resolves like gpt-4o-mini
+    "rate-blank": { input: "  " },
+  };
+
+  beforeAll(async () => {
+    await db.updatePricing({ test: { "free-model": { input: 0, output: 0 } } });
+    adapter.run(`INSERT INTO kv(scope, key, value) VALUES('pricing', 'raw', ?)`, [
+      JSON.stringify(rawRates),
+    ]);
+    db.invalidatePricingCache();
+  });
+
+  afterAll(() => {
+    adapter.run(`DELETE FROM kv WHERE scope = 'pricing' AND key IN ('test', 'raw')`);
+    db.invalidatePricingCache();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // Each path seeds up to 5 current-window and 5 previous-window rows and reads
+  // [getUsageSavings headline, compare currentTotals] plus compare previous.
+  const paths = {
+    "history (24h)": {
+      currentAt: (i) => (i === 0 ? periodStart("24h", NOW) : NOW - i * 1000),
+      previousAt: (i) => previousPeriodRange("24h", NOW).start + i * 1000,
+      async read() {
+        const prev = previousPeriodRange("24h", NOW);
+        const [headline, current, previous] = await Promise.all([
+          db.getUsageSavings(null, "24h", NOW),
+          db.getSavingsTotals(null, { start: periodStart("24h", NOW), end: NOW + 1 }),
+          db.getSavingsTotals(null, prev),
+        ]);
+        return { currents: [headline, current], current, previous };
+      },
+    },
+    "rollup (7d)": {
+      currentAt: (i) => new Date(2026, 8, 24 + i, 12).getTime(), // 09-24 onward, inside 7d
+      previousAt: (i) => new Date(2026, 8, 17 + i, 12).getTime(), // 09-17..09-21
+      async read() {
+        const headline = await db.getUsageSavings(null, "7d", NOW);
+        const out = await db.getRollupSavingsTotals(null, { from: "2026-09-23", to: "2026-09-29" });
+        return {
+          currents: [headline, out.currentTotals],
+          current: out.currentTotals,
+          previous: out.previous,
+        };
+      },
+    },
+  };
+
+  describe.each(Object.entries(paths))("%s", (_name, path) => {
+    const seedWindow = (at, rows) => {
+      for (const [i, [tokens, model]] of rows.entries()) seed(at(i), saved(tokens), model);
+    };
+
+    it("counts free as priced, never missing/failed; $ is the paid part only", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      seedWindow(path.currentAt, [
+        [500, free],
+        [700, free],
+        [1000, paid],
+        [300, missing],
+        [200, failed],
+      ]);
+      seedWindow(path.previousAt, [
+        [400, free],
+        [600, free],
+      ]);
+      const { currents, previous } = await path.read();
+      for (const totals of currents) {
+        expect(totals).toMatchObject({
+          requestsWithSavings: 5,
+          pricedRequests: 3,
+          costSavedEst: paidCost,
+        });
+      }
+      // All-free window: fully covered, but no list-price dollars.
+      expect(previous).toEqual({
+        tokensSavedEst: 1000,
+        requestsWithSavings: 2,
+        costSavedEst: null,
+        pricedRequests: 2,
+      });
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[usageSavingsPricing] savings pricing failed:",
+        "pricing lookup failed",
+      );
+    });
+
+    it("an all-free current window vs a priced previous shows no cost trend", async () => {
+      seedWindow(path.currentAt, [
+        [500, free],
+        [700, free],
+      ]);
+      seedWindow(path.previousAt, [
+        [1000, paid],
+        [2000, paid],
+      ]);
+      const { current, previous } = await path.read();
+      expect(current).toMatchObject({
+        requestsWithSavings: 2,
+        pricedRequests: 2,
+        costSavedEst: null,
+      });
+      expect(previous).toMatchObject({ requestsWithSavings: 2, pricedRequests: 2 });
+      expect(previous.costSavedEst).toBeGreaterThan(0);
+      const input = savingsCostTrendInput({ currentTotals: current, previous });
+      expect(input.current).toBeUndefined();
+      expect(trendDelta(input.current, input.previous)).toEqual({ kind: "none" });
+    });
+
+    it("is null when the priced sum rounds to $0 at 6dp", async () => {
+      // 3 tokens × 0.15 $/1M = 4.5e-7, below the 6dp resolution.
+      seedWindow(path.currentAt, [
+        [500, free],
+        [3, paid],
+      ]);
+      const { currents } = await path.read();
+      for (const totals of currents) {
+        expect(totals).toMatchObject({
+          requestsWithSavings: 2,
+          pricedRequests: 2,
+          costSavedEst: null,
+        });
+      }
+    });
+
+    it("treats non-numeric, blank or negative input rates as unresolved, 0 as free", async () => {
+      seedWindow(
+        path.currentAt,
+        Object.keys(rawRates).map((model) => [1000, { provider: "raw", model }]),
+      );
+      const { currents } = await path.read();
+      for (const totals of currents) {
+        expect(totals).toMatchObject({
+          requestsWithSavings: 6,
+          pricedRequests: 2, // rate-zero (free) + rate-str
+          costSavedEst: paidCost,
+        });
+      }
+    });
   });
 });

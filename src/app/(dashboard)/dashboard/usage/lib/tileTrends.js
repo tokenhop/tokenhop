@@ -76,7 +76,8 @@ export function savingsTrendInput(savings) {
 export const PRICED_SHARE_TOLERANCE = 0.2;
 
 /**
- * Share of a window's requests with savings whose model had list pricing.
+ * Share of a window's requests with savings whose model pricing resolved,
+ * free ($0) models included (YAN-1812).
  * @param {{pricedRequests?: number, requestsWithSavings?: number}|null|undefined} totals
  * @returns {number|undefined} undefined when either count is not finite or there are no requests
  */
@@ -90,8 +91,9 @@ export function pricedShare(totals) {
 /**
  * Trend inputs for the Token saver hero's $ line from a /api/usage/savings
  * payload fetched with `compare=previous`. `costSavedEst` is null when the
- * window is unpriced; a side is undefined unless it is a finite number (null is
- * never coerced to 0), so an unpriced or missing side makes `trendDelta` "none".
+ * window has no positive priced dollars (unpriced, or only free models); a side
+ * is undefined unless it is a finite number (null is never coerced to 0), so an
+ * unpriced or all-free side makes `trendDelta` "none".
  * Both sides are undefined (trend hidden) when either window's pricedShare is
  * unknown or the shares differ by more than PRICED_SHARE_TOLERANCE.
  * @param {object|null|undefined} savings

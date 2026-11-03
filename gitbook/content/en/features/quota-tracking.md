@@ -584,7 +584,7 @@ On Usage, the Tokens over time chart can overlay the previous period. In the Tok
 
 Token saver shows the same line on the saved-tokens total for the period you selected, and only when that period itself has savings. When the page stands in a larger period, it does not show the change.
 
-Under that line, Token saver shows "Cost saved" with a signed percent and the same caption, for example "Cost saved +50% vs prior 7d". It appears only when both windows have savings priced at list prices, and never for All time. It is also hidden when the share of priced requests differs between the two windows by more than 20 percentage points, because the two dollar totals would then cover different parts of your requests.
+Under that line, Token saver shows "Cost saved" with a signed percent and the same caption, for example "Cost saved +50% vs prior 7d". It appears only when both windows have savings priced at list prices, and never for All time. It is also hidden when the share of priced requests differs between the two windows by more than 20 percentage points, because the two dollar totals would then cover different parts of your requests. Requests on free (zero-price) models count as priced. A window that ran only on free models has no dollar figure, so it shows no cost trend. Moving requests to free models lowers Cost saved, because their saved tokens are worth $0 at list prices.
 
 ## Request history retention
 

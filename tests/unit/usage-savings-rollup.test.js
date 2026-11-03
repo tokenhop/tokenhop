@@ -12,7 +12,6 @@ import {
   hasUntrackedRollupDays,
   rebuildRollupFromHistoryUnscoped,
 } from "@/lib/db/repos/usageRollupRepo.js";
-import { getPricingForModel } from "@/lib/db/repos/pricingRepo.js";
 import { calculateCostFromTokens } from "open-sse/providers/pricing.js";
 import { seedTenancy } from "../setup/tenancyHarness.js";
 
@@ -169,6 +168,11 @@ describe("parity 7d/30d/60d vs the history algorithm", () => {
     t = await seedTenancy();
   });
 
+  afterEach(() => {
+    adapter.run(`DELETE FROM kv WHERE scope = 'pricing' AND key = 'test'`);
+    db.invalidatePricingCache();
+  });
+
   const scopedConds = (ctx, startIso, endIso) => {
     const conds = ["timestamp >= ?", "timestamp <= ?"];
     const params = [startIso, endIso];
@@ -220,18 +224,25 @@ describe("parity 7d/30d/60d vs the history algorithm", () => {
       tokensSavedEst += rowSaved;
       tokensBeforeEst += Number(parseMeta(row.meta).savings.tokensBeforeEst) || 0;
       requestsWithSavings += 1;
-      // Old per-row pricing: saved tokens priced as uncached input.
-      const pricing = row.model ? await getPricingForModel(row.provider, row.model) : null;
-      if (pricing && Number(pricing.input) > 0) {
-        costSavedEst += calculateCostFromTokens({ prompt_tokens: rowSaved }, pricing);
+      // Per-row pricing: saved tokens priced as uncached input; any resolved
+      // rate (free $0 included, YAN-1812) counts as priced.
+      const pricing = row.model ? await db.getPricingForModel(row.provider, row.model) : null;
+      const input = pricing?.input;
+      const rate =
+        typeof input === "number" || (typeof input === "string" && input.trim() !== "")
+          ? Number(input)
+          : Number.NaN;
+      if (Number.isFinite(rate) && rate >= 0) {
+        if (rate > 0) costSavedEst += calculateCostFromTokens({ prompt_tokens: rowSaved }, pricing);
         pricedRequests += 1;
       }
     }
+    const roundedCost = +costSavedEst.toFixed(6);
     return {
       tokensSavedEst,
       tokensBeforeEst,
       requestsWithSavings,
-      costSavedEst: pricedRequests > 0 ? +costSavedEst.toFixed(6) : null,
+      costSavedEst: roundedCost > 0 ? roundedCost : null,
       pricedRequests,
     };
   }
@@ -281,6 +292,24 @@ describe("parity 7d/30d/60d vs the history algorithm", () => {
       timestamp: NOW - 2000,
       meta: savings({ legacy: method(7, 70) }, 70),
     });
+    // Free (resolved $0) and missing pricing: both paths must agree on coverage.
+    await db.updatePricing({ test: { "free-model": { input: 0, output: 0 } } });
+    await save({
+      timestamp: NOW - 2500,
+      meta: savings({ rtk: method(30, 90) }, 90),
+      provider: "test",
+      model: "free-model",
+      workspaceId: ws,
+      userId: user,
+    });
+    await save({
+      timestamp: NOW - 2600,
+      meta: savings({ headroom: method(20, 80) }, 80),
+      provider: "nope",
+      model: "nope",
+      workspaceId: ws,
+      userId: user,
+    });
     // Malformed / NULL meta (retained legacy rows) must count nowhere.
     seedRaw(NOW - 3000, "{bad json");
     seedRaw(NOW - 4000, null);
@@ -297,6 +326,8 @@ describe("parity 7d/30d/60d vs the history algorithm", () => {
     }
     const unscoped = await db.getUsageSavings(null, period, NOW);
     expect(unscoped.tokensSavedEst).toBeGreaterThan(0);
+    // Only the "nope" row is unpriced; the free row counts as priced.
+    expect(unscoped.pricedRequests).toBe(unscoped.requestsWithSavings - 1);
     // Canonical method order, breakdown filtered to the known methods.
     expect(unscoped.methods).toEqual(["rtk", "headroom", "pxpipe"]);
   });
