@@ -44,6 +44,8 @@ const OPTIONAL_FIELDS = [
 ];
 
 const MODEL_LOCK_PREFIX = "modelLock_";
+// YAN-1049 quota-lock ownership metadata (`modelLockMeta_<key>`), cleared with its lock.
+const MODEL_LOCK_META_PREFIX = "modelLockMeta_";
 const REAUTH_HEALTH_KEYS = ["testStatus", "lastError", "lastErrorAt", "lastErrorType", "errorCode"];
 
 function repoFail(code, message) {
@@ -94,7 +96,9 @@ function resetHealthStateOnActivation(existing, patch) {
   };
 
   for (const key of Object.keys(existing || {})) {
-    if (key.startsWith(MODEL_LOCK_PREFIX)) normalized[key] = null;
+    if (key.startsWith(MODEL_LOCK_PREFIX) || key.startsWith(MODEL_LOCK_META_PREFIX)) {
+      normalized[key] = null;
+    }
   }
 
   return normalized;

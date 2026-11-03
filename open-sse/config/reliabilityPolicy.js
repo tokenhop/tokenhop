@@ -16,7 +16,7 @@ function envMs(name, def) {
  * Built-in defaults — MUST equal today's hardcoded values:
  * retryPolicy: open-sse/config/runtimeConfig.js DEFAULT_RETRY_CONFIG
  * cooldowns: open-sse/config/errorConfig.js (MAX_RATE_LIMIT_COOLDOWN_MS,
- *   COOLDOWN long/short, TRANSIENT_COOLDOWN_MS)
+ *   MAX_PROVIDER_RESET_COOLDOWN_MS, COOLDOWN long/short, TRANSIENT_COOLDOWN_MS)
  * backoff: errorConfig.js BACKOFF_CONFIG
  * streamTimeouts: runtimeConfig.js env defaults (200s/360s/60s)
  */
@@ -28,6 +28,8 @@ export const RELIABILITY_DEFAULTS = {
   },
   cooldowns: {
     rateLimitCapMs: 30 * 60 * 1000,
+    // YAN-1048: ceiling for a provider-reported quota reset (Codex resets_at); a positive usage poll or a reset-credit spend releases it early.
+    providerResetCapMs: 7 * 24 * 60 * 60 * 1000,
     longMs: 2 * 60 * 1000,
     shortMs: 5 * 1000,
     transientMs: 30 * 1000,
