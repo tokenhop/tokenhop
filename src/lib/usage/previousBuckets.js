@@ -4,12 +4,7 @@
 // the window length and fold it into the CURRENT bucket skeleton, so each
 // bucket's `previous` covers exactly the same relative slice of its window.
 import { customChartBuckets } from "./customRange.js";
-import {
-  daysBetweenDateKeys,
-  periodStart,
-  previousPeriodRange,
-  shiftDateKey,
-} from "@/shared/utils/period";
+import { daysBetweenDateKeys, previousPeriodRange, shiftDateKey } from "@/shared/utils/period";
 
 const HOUR_MS = 3600000;
 const HOUR_BUCKETS = 24;
@@ -71,17 +66,16 @@ export function previousDaySeries(previousRows, range) {
  * rolling 24h, fully comparable. `today` is yesterday from local midnight
  * (one calendar day back, DST-safe) clipped to the elapsed slice — the tile
  * trend's "vs same time yesterday", never past today's midnight — so only
- * `comparable` leading hour buckets get a previous value. Hour index of a
- * previous instant is its offset from `start`.
+ * the leading hour buckets the window actually spans (`comparable`) get a
+ * previous value; a 23-hour spring-forward yesterday leaves slot 23 null.
+ * Hour index of a previous instant is its offset from `start`.
  * @param {"today"|"24h"} period
  * @param {number} now
  * @returns {{start: number, end: number, comparable: number}}
  */
 export function previousHourWindow(period, now) {
   const { start, end } = previousPeriodRange(period, now);
-  if (period === "24h") return { start, end, comparable: HOUR_BUCKETS };
-  const elapsed = now - periodStart(period, now);
-  return { start, end, comparable: Math.min(Math.ceil(elapsed / HOUR_MS), HOUR_BUCKETS) };
+  return { start, end, comparable: Math.min(Math.ceil((end - start) / HOUR_MS), HOUR_BUCKETS) };
 }
 
 /**

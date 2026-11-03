@@ -143,10 +143,12 @@ export function periodStart(period, now = Date.now()) {
  *
  * `today` compares the same elapsed time slice of yesterday (midnight
  * shifted back one calendar day via setDate, so DST days stay at local
- * midnight), ending no later than today's midnight: on a 25-hour fall-back
- * day the elapsed slice can outlast a 24-hour yesterday, and the windows must
- * never overlap. `24h` is the preceding rolling 24h; `7d/30d/60d` end at the
- * current start. `all` has no previous window and yields null.
+ * midnight), ending no later than today's midnight. The elapsed slice can
+ * outlast yesterday whenever today is longer than yesterday — a 25-hour
+ * fall-back today, or the day after a 23-hour spring-forward yesterday — and
+ * the windows must never overlap. `24h` is the preceding rolling 24h;
+ * `7d/30d/60d` end at the current start. `all` has no previous window and
+ * yields null.
  * @param {string} period
  * @param {number} [now]
  * @returns {{start: number, end: number}|null}

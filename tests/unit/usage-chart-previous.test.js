@@ -151,6 +151,19 @@ describe("hour-window alignment", () => {
     expect(slots.reduce((s, p) => s + p.requests, 0)).toBe(1);
     expect(slots[23].requests).toBe(1);
   });
+
+  it("today after a 23-hour spring-forward yesterday: slot 23 has no previous", () => {
+    // Mar 8 2026 (spring forward) is 23 hours long; Mar 9 23:30 is 23.5h after midnight.
+    const now = new Date(2026, 2, 9, 23, 30).getTime();
+    const win = previousHourWindow("today", now);
+    expect(win.start).toBe(new Date(2026, 2, 8).getTime());
+    expect(win.end).toBe(periodStart("today", now));
+    expect(win.end - win.start).toBe(23 * HOUR);
+    expect(win.comparable).toBe(23);
+    const slots = previousHourSeries([point(win.end - 1)], win);
+    expect(slots[22].requests).toBe(1);
+    expect(slots[23]).toBeNull();
+  });
 });
 
 describe("chart route compare=previous", () => {
@@ -269,6 +282,48 @@ describe("chart route compare=previous", () => {
     const rolling = await (await get("period=24h&compare=previous")).json();
     expect(rolling.reduce((s, b) => s + b.previous.requests, 0)).toBe(1);
     expect(rolling[22].previous.requests).toBe(1);
+  });
+
+  it("today on a 25-hour fall-back day keeps the 25th hour in slot 23", async () => {
+    vi.setSystemTime(new Date(2026, 10, 1, 23, 45));
+    try {
+      await saveRequestUsageUnscoped({
+        provider: "openai",
+        model: "gpt-x",
+        tokens: { prompt_tokens: 100, completion_tokens: 50 },
+        endpoint: "/v1/chat/completions",
+        status: "ok",
+        timestamp: new Date(2026, 10, 1, 23, 15).toISOString(), // 24h15m after midnight
+      });
+      const buckets = await getChartData(null, "today", null, { compare: "previous" });
+      expect(buckets).toHaveLength(24);
+      expect(buckets[23].requests).toBe(1);
+      expect(buckets.reduce((s, b) => s + b.requests, 0)).toBe(1);
+      // The whole of 24-hour yesterday (Oct 31) is comparable.
+      expect(buckets.every((b) => b.previous !== null)).toBe(true);
+    } finally {
+      vi.setSystemTime(new Date(2026, 8, 30, 10, 30));
+    }
+  });
+
+  it("a failed previous read returns the current buckets without `previous`", async () => {
+    const original = db.all.bind(db);
+    // Only the previous-window rollup read is bounded on both ends (`dateKey <= ?`).
+    const spy = vi.spyOn(db, "all").mockImplementation((sql, params) => {
+      if (sql.includes("dateKey <= ?")) throw new Error("boom");
+      return original(sql, params);
+    });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const buckets = await getChartData(null, "7d", null, { compare: "previous" });
+      expect(buckets).toHaveLength(7);
+      expect(buckets.at(-1).requests).toBe(1);
+      expect(buckets.some((b) => "previous" in b)).toBe(false);
+      expect(errors).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+      errors.mockRestore();
+    }
   });
 
   it("previous counts only rows inside the usage scope (7d rollup, 24h history)", async () => {

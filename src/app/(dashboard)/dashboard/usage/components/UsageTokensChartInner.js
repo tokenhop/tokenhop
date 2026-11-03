@@ -213,12 +213,15 @@ export default function UsageTokensChartInner({
                       area is the current total. While the overlay is on, a
                       solid "Total" line (tokens = input + output) is drawn so
                       the dashed previous total tokens line has a like-for-like
-                      current counterpart. Areas with no fill render as lines. */}
+                      current counterpart. Previous differs from Total by dash,
+                      a lighter token, lower opacity and a thinner stroke, not
+                      colour alone. Areas with no fill render as lines. */}
                   {previousVisible && (
                     <Area
                       type="monotone"
                       dataKey="tokens"
                       name="Total"
+                      legendType="plainline"
                       stroke={muted}
                       strokeWidth={2}
                       fill="none"
@@ -232,12 +235,14 @@ export default function UsageTokensChartInner({
                       type="monotone"
                       dataKey="prevTokens"
                       name="Previous period"
+                      legendType="plainline"
                       stroke={subtle}
-                      strokeWidth={2}
+                      strokeOpacity={0.7}
+                      strokeWidth={1.5}
                       strokeDasharray="4 4"
                       fill="none"
                       dot={false}
-                      activeDot={{ r: 4 }}
+                      activeDot={{ r: 3 }}
                       isAnimationActive={!reducedMotion}
                     />
                   )}

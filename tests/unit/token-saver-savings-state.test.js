@@ -116,8 +116,8 @@ describe("savings coverage note rendering", () => {
 
   const costSavings = (current, previous) => ({
     tokensSavedEst: 100,
-    currentTotals: { tokensSavedEst: 100, costSavedEst: current, pricedRequests: 2 },
-    previous: { tokensSavedEst: 80, costSavedEst: previous, pricedRequests: 2 },
+    currentTotals: { tokensSavedEst: 100, costSavedEst: current },
+    previous: { tokensSavedEst: 80, costSavedEst: previous },
   });
 
   it("renders the cost-saved trend when both windows are priced", () => {

@@ -71,21 +71,14 @@ export function savingsTrendInput(savings) {
  * payload fetched with `compare=previous`. `costSavedEst` is null when the
  * window is unpriced; a side is undefined unless it is a finite number (null is
  * never coerced to 0), so an unpriced or missing side makes `trendDelta` "none".
- * When either window reports `pricedRequests: 0` both sides are undefined: a $
- * delta against a window with no priced requests is meaningless.
  * @param {object|null|undefined} savings
  * @returns {{ current: number|undefined, previous: number|undefined }}
  */
 export function savingsCostTrendInput(savings) {
-  const currentTotals = savings?.currentTotals;
-  const previous = savings?.previous;
-  if (currentTotals?.pricedRequests === 0 || previous?.pricedRequests === 0) {
-    return { current: undefined, previous: undefined };
-  }
   const finite = (value) => (Number.isFinite(value) ? value : undefined);
   return {
-    current: finite(currentTotals?.costSavedEst),
-    previous: finite(previous?.costSavedEst),
+    current: finite(savings?.currentTotals?.costSavedEst),
+    previous: finite(savings?.previous?.costSavedEst),
   };
 }
 

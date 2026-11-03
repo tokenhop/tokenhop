@@ -206,8 +206,8 @@ describe("tile trends", () => {
 
   it("maps priced savings cost to trend inputs", () => {
     const input = savingsCostTrendInput({
-      currentTotals: { tokensSavedEst: 5000, costSavedEst: 1.5, pricedRequests: 3 },
-      previous: { tokensSavedEst: 4000, costSavedEst: 1, pricedRequests: 2 },
+      currentTotals: { tokensSavedEst: 5000, costSavedEst: 1.5 },
+      previous: { tokensSavedEst: 4000, costSavedEst: 1 },
     });
     expect(input).toEqual({ current: 1.5, previous: 1 });
     expect(trendDelta(input.current, input.previous)).toEqual({ kind: "up", pct: 50 });
@@ -239,16 +239,6 @@ describe("tile trends", () => {
       previous: { costSavedEst: 0 },
     });
     expect(trendDelta(zeroPrev.current, zeroPrev.previous)).toEqual({ kind: "none" });
-    for (const [cur, prev] of [
-      [0, 2],
-      [3, 0],
-    ]) {
-      const zeroPriced = savingsCostTrendInput({
-        currentTotals: { costSavedEst: 2, pricedRequests: cur },
-        previous: { costSavedEst: 1, pricedRequests: prev },
-      });
-      expect(zeroPriced).toEqual({ current: undefined, previous: undefined });
-    }
   });
 
   it("computes deltas over the Home stats field mappings", () => {

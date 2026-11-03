@@ -20,7 +20,7 @@ import { priceSavedGroups } from "./usageSavingsPricing.js";
  * sum of per-group distinct counts is the exact distinct count overall.
  * @param {object|null} ctx usage scope
  * @param {{start: number, end: number}} range ms timestamps
- * @returns {Promise<{tokensSavedEst: number, requestsWithSavings: number, costSavedEst: number|null, pricedRequests: number}>}
+ * @returns {Promise<{tokensSavedEst: number, requestsWithSavings: number, costSavedEst: number|null}>}
  */
 export async function getSavingsTotals(ctx, { start, end } = {}) {
   if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) {
@@ -65,8 +65,8 @@ export async function getSavingsTotals(ctx, { start, end } = {}) {
       savingsRequests: groupRequests,
     });
   }
-  const { costSavedEst, pricedRequests } = await priceSavedGroups(groups);
-  return { tokensSavedEst, requestsWithSavings, costSavedEst, pricedRequests };
+  const { costSavedEst } = await priceSavedGroups(groups);
+  return { tokensSavedEst, requestsWithSavings, costSavedEst };
 }
 
 /**
@@ -86,15 +86,11 @@ export async function getRollupSavingsTotals(ctx, { from, to }) {
   const pricingCache = new Map(); // shared so both windows price each model once
   const totalsIn = async (start = null, end = null) => {
     const totals = readSavingsTotals(ctx, db, start, end);
-    const { costSavedEst, pricedRequests } = await priceSavedGroups(
-      totals.byProviderModel,
-      pricingCache,
-    );
+    const { costSavedEst } = await priceSavedGroups(totals.byProviderModel, pricingCache);
     return {
       tokensSavedEst: totals.tokensSavedEst,
       requestsWithSavings: totals.requestsWithSavings,
       costSavedEst,
-      pricedRequests,
     };
   };
   if (from == null && to == null) return { currentTotals: await totalsIn(), previous: null };

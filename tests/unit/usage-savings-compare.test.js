@@ -73,7 +73,6 @@ describe("getSavingsTotals", () => {
       tokensSavedEst: 110,
       requestsWithSavings: 2,
       costSavedEst: null,
-      pricedRequests: 0,
     });
   });
 
@@ -84,7 +83,6 @@ describe("getSavingsTotals", () => {
       tokensSavedEst: 12,
       requestsWithSavings: 1,
       costSavedEst: null,
-      pricedRequests: 0,
     });
   });
 
@@ -99,7 +97,6 @@ describe("getSavingsTotals", () => {
       tokensSavedEst: 9,
       requestsWithSavings: 1,
       costSavedEst: null,
-      pricedRequests: 0,
     });
   });
 
@@ -128,18 +125,8 @@ describe("getSavingsTotals", () => {
     if (prev.end < start) seed(prev.end, saved(2000));
     const current = await db.getSavingsTotals(null, { start, end: NOW });
     const previous = await db.getSavingsTotals(null, prev);
-    expect(current).toEqual({
-      tokensSavedEst: 3,
-      requestsWithSavings: 2,
-      costSavedEst: null,
-      pricedRequests: 0,
-    });
-    expect(previous).toEqual({
-      tokensSavedEst: 30,
-      requestsWithSavings: 2,
-      costSavedEst: null,
-      pricedRequests: 0,
-    });
+    expect(current).toEqual({ tokensSavedEst: 3, requestsWithSavings: 2, costSavedEst: null });
+    expect(previous).toEqual({ tokensSavedEst: 30, requestsWithSavings: 2, costSavedEst: null });
   });
 
   it("isolates by workspace and user", async () => {
@@ -166,7 +153,6 @@ describe("getSavingsTotals", () => {
       tokensSavedEst: 1,
       requestsWithSavings: 1,
       costSavedEst: null,
-      pricedRequests: 0,
     });
     await expect(db.getSavingsTotals({}, range)).rejects.toThrow();
   });
@@ -198,13 +184,11 @@ describe("savings route compare", () => {
       tokensSavedEst: 50,
       requestsWithSavings: 1,
       costSavedEst: null,
-      pricedRequests: 0,
     });
     expect(body.previous).toEqual({
       tokensSavedEst: 0,
       requestsWithSavings: 0,
       costSavedEst: null,
-      pricedRequests: 0,
     });
     expect(body.tokensSavedEst).toBe(50);
   });
@@ -229,7 +213,6 @@ describe("savings route compare", () => {
       tokensSavedEst: 50,
       requestsWithSavings: 1,
       costSavedEst: null,
-      pricedRequests: 0,
     });
   });
 
@@ -266,13 +249,11 @@ describe("savings route compare", () => {
         tokensSavedEst: 1,
         requestsWithSavings: 1,
         costSavedEst: null,
-        pricedRequests: 0,
       });
       expect(body.previous).toEqual({
         tokensSavedEst: 2,
         requestsWithSavings: 1,
         costSavedEst: null,
-        pricedRequests: 0,
       });
     } finally {
       nowSpy.mockRestore();
@@ -295,12 +276,7 @@ describe("getRollupSavingsTotals with days pruned before tracking", () => {
     seed(new Date(2026, 8, 25, 12).getTime(), saved(3));
     const out = await db.getRollupSavingsTotals(null, range);
     expect(out.currentTotals.tokensSavedEst).toBe(3);
-    expect(out.previous).toEqual({
-      tokensSavedEst: 7,
-      requestsWithSavings: 1,
-      costSavedEst: null,
-      pricedRequests: 0,
-    });
+    expect(out.previous).toEqual({ tokensSavedEst: 7, requestsWithSavings: 1, costSavedEst: null });
   });
 
   it("returns previous: null when the previous window has an untracked day", async () => {
@@ -316,12 +292,7 @@ describe("getRollupSavingsTotals with days pruned before tracking", () => {
     untracked("2026-09-25"); // current window, not previous
     untracked("2026-09-15"); // before previous window
     const out = await db.getRollupSavingsTotals(null, range);
-    expect(out.previous).toEqual({
-      tokensSavedEst: 7,
-      requestsWithSavings: 1,
-      costSavedEst: null,
-      pricedRequests: 0,
-    });
+    expect(out.previous).toEqual({ tokensSavedEst: 7, requestsWithSavings: 1, costSavedEst: null });
   });
 });
 

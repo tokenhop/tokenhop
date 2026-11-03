@@ -464,6 +464,22 @@ function readHourPoints(db, scope, startIso, endIso = null) {
 }
 
 /**
+ * Attach the previous-window overlay; a failed previous read never breaks the
+ * chart: it is logged once and the current buckets return without `previous`
+ * (the client then hides the overlay).
+ * @param {Array<object>} buckets current chart buckets
+ * @param {() => Array<object|null>} readPrevious previous totals per bucket
+ */
+function attachPrevious(buckets, readPrevious) {
+  try {
+    return withPrevious(buckets, readPrevious());
+  } catch (error) {
+    console.error("[usage] previous-period chart read failed:", error);
+    return buckets;
+  }
+}
+
+/**
  * Chart buckets for `period` (or a custom `range`). With `compare:
  * "previous"` every bucket also carries `previous` — the previous
  * equal-length window's totals aligned to the same bucket (see
@@ -485,11 +501,10 @@ export async function getChartData(ctx, period = "7d", range = null, { compare =
       customRange,
     );
     if (!withCompare) return buckets;
-    const prev = previousDayRange(customRange);
-    return withPrevious(
-      buckets,
-      previousDaySeries(readRollupDaily(ctx, db, prev.from, prev.to), customRange),
-    );
+    return attachPrevious(buckets, () => {
+      const prev = previousDayRange(customRange);
+      return previousDaySeries(readRollupDaily(ctx, db, prev.from, prev.to), customRange);
+    });
   }
   const scope = scopeSql(ctx);
   const now = Date.now();
@@ -497,7 +512,11 @@ export async function getChartData(ctx, period = "7d", range = null, { compare =
   if (period === "today" || period === "24h") {
     const bucketMs = 3600000;
     const startTime = periodStart(period, now);
-    const endTime = period === "today" ? startTime + 24 * bucketMs : now;
+    // Next local midnight (setDate, DST-safe): a 25-hour fall-back day keeps
+    // its last hour (the fold clamps it into slot 23); a 23-hour day ends early.
+    const nextMidnight = new Date(startTime);
+    nextMidnight.setDate(nextMidnight.getDate() + 1);
+    const endTime = period === "today" ? nextMidnight.getTime() : now;
     // grain + start (an ISO instant for hours) let the client localize
     // the label (YAN-1233); `label` stays the English server-time form.
     const buckets = Array.from({ length: 24 }, (_, i) => ({
@@ -519,14 +538,16 @@ export async function getChartData(ctx, period = "7d", range = null, { compare =
       inWindow,
     );
     if (!withCompare) return buckets;
-    const prev = previousHourWindow(period, now);
-    const points = readHourPoints(
-      db,
-      scope,
-      new Date(prev.start).toISOString(),
-      new Date(prev.end).toISOString(),
-    );
-    return withPrevious(buckets, previousHourSeries(points, prev));
+    return attachPrevious(buckets, () => {
+      const prev = previousHourWindow(period, now);
+      const points = readHourPoints(
+        db,
+        scope,
+        new Date(prev.start).toISOString(),
+        new Date(prev.end).toISOString(),
+      );
+      return previousHourSeries(points, prev);
+    });
   }
 
   if (period === "all") return buildAllTimeBuckets(readRollupDaily(ctx, db, null));
@@ -563,13 +584,12 @@ export async function getChartData(ctx, period = "7d", range = null, { compare =
     };
   });
   if (!withCompare) return buckets;
-  // Same day keys as the buckets above (bucketCount <= 92, so day grain).
-  const currentRange = { from: buckets[0].start, to: buckets.at(-1).start };
-  const prev = previousDayRange(currentRange);
-  return withPrevious(
-    buckets,
-    previousDaySeries(readRollupDaily(ctx, db, prev.from, prev.to), currentRange),
-  );
+  return attachPrevious(buckets, () => {
+    // Same day keys as the buckets above (bucketCount <= 92, so day grain).
+    const currentRange = { from: buckets[0].start, to: buckets.at(-1).start };
+    const prev = previousDayRange(currentRange);
+    return previousDaySeries(readRollupDaily(ctx, db, prev.from, prev.to), currentRange);
+  });
 }
 
 // --- Usage export (YAN-425) -------------------------------------------------
