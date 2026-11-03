@@ -92,6 +92,15 @@ describe("YAN-311 reliability validation", () => {
     await expect400({ cooldowns: null });
   });
 
+  it("bounds providerResetCapMs to 30min-30d", async () => {
+    await expect400({ cooldowns: { providerResetCapMs: 1799999 } });
+    await expect400({ cooldowns: { providerResetCapMs: 2592000001 } });
+    await expect200({ cooldowns: { providerResetCapMs: 1800000 } });
+    await expect200({ cooldowns: { providerResetCapMs: 2592000000 } });
+    // The widened ceiling is providerResetCapMs-only.
+    await expect400({ cooldowns: { rateLimitCapMs: 86400001 } });
+  });
+
   it("merges partial patches over current values and restores defaults", async () => {
     const { RELIABILITY_DEFAULTS } = await import("../../open-sse/config/reliabilityPolicy.js");
     const { mergeReliabilityPatch } = await import(

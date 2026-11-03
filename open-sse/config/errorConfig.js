@@ -38,8 +38,16 @@ export const BACKOFF_CONFIG = {
 // Default cooldown for transient/unknown errors
 export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 
-// Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
+// Hard cap for a rate-limit cooldown without a provider-reported reset
 export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
+
+// Ceiling for a provider-reported quota reset (e.g. codex resets_at 5h-7d away).
+// A positive usage poll or a Codex reset-credit spend releases the lock early.
+export const MAX_PROVIDER_RESET_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Furthest provider-reported reset trusted at all (weekly window + 1 day slack);
+// anything later is treated as bad upstream data and capped like a plain 429.
+export const MAX_PROVIDER_RESET_HORIZON_MS = 8 * 24 * 60 * 60 * 1000;
 
 // Anthropic subscription 400 when a feature billed only to extra usage (e.g. fast
 // mode) finds no credits left. No leading "You're" so either apostrophe matches.

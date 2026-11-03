@@ -109,6 +109,7 @@ export const DEFAULT_SETTINGS = {
   },
   cooldowns: {
     rateLimitCapMs: 1800000,
+    providerResetCapMs: 604800000,
     longMs: 120000,
     shortMs: 5000,
     transientMs: 30000,
@@ -264,7 +265,7 @@ function encodeSecretUpdates(db, updates, root, state) {
 // validation, so crafted stored JSON can't pollute prototypes or persist junk.
 const RELIABILITY_LEAF_KEYS = {
   retryPolicy: ["502", "503", "504"],
-  cooldowns: ["rateLimitCapMs", "longMs", "shortMs", "transientMs"],
+  cooldowns: ["rateLimitCapMs", "providerResetCapMs", "longMs", "shortMs", "transientMs"],
   backoff: ["startMs", "maxMs", "levels"],
   streamTimeouts: ["firstChunkMs", "stallMs", "connectMs"],
 };

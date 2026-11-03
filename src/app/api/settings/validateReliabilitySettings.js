@@ -13,7 +13,11 @@
  * - delays 0-60000ms: 60s matches the connect-timeout ceiling; longer would
  *   look like a hang to CLI clients.
  * - cooldowns 1000ms-86400000ms (1s-24h): below 1s is a busy loop, above 24h
- *   locks accounts past any real upstream reset window.
+ *   locks accounts past any real upstream reset window. Exception:
+ *   providerResetCapMs 1800000ms-2592000000ms (30min-30d) bounds a
+ *   provider-reported quota reset (Codex weekly windows reset up to 7d out); a
+ *   positive usage poll releases those locks early. Below 30min (the default
+ *   rateLimitCapMs) a reset 429 would cool down less than a plain one.
  * - backoff start 100-60000ms, max 1000ms-3600000ms (1s-1h), levels 1-30:
  *   2^30 × start already overflows any sane cap, so maxMs clamps it.
  * - timeouts 1000ms-1800000ms (1s-30min): below 1s aborts healthy slow
@@ -40,7 +44,14 @@ export function mergeReliabilityPatch(current, patch) {
   return next;
 }
 const RETRY_STATUSES = new Set(["502", "503", "504"]);
-const COOLDOWN_KEYS = new Set(["rateLimitCapMs", "longMs", "shortMs", "transientMs"]);
+const COOLDOWN_KEYS = new Set([
+  "rateLimitCapMs",
+  "providerResetCapMs",
+  "longMs",
+  "shortMs",
+  "transientMs",
+]);
+const COOLDOWN_RANGE_MS = { providerResetCapMs: [1800000, 2592000000] };
 const BACKOFF_KEYS = new Set(["startMs", "maxMs", "levels"]);
 const TIMEOUT_KEYS = new Set(["firstChunkMs", "stallMs", "connectMs"]);
 
@@ -76,7 +87,8 @@ function validCooldowns(value) {
   if (!isPlainObject(value)) return false;
   for (const [key, ms] of Object.entries(value)) {
     if (UNSAFE_KEYS.has(key) || !COOLDOWN_KEYS.has(key)) return false;
-    if (!intInRange(ms, 1000, 86400000)) return false;
+    const [min, max] = COOLDOWN_RANGE_MS[key] ?? [1000, 86400000];
+    if (!intInRange(ms, min, max)) return false;
   }
   return true;
 }
@@ -133,7 +145,7 @@ export function validateReliabilitySettings(body, stored = null) {
     return "Invalid retryPolicy: statuses 502/503/504 with tries 0-10 and delayMs 0-60000";
   }
   if (Object.hasOwn(body, "cooldowns") && !validCooldowns(body.cooldowns)) {
-    return "Invalid cooldowns: rateLimitCapMs/longMs/shortMs/transientMs between 1000 and 86400000";
+    return "Invalid cooldowns: rateLimitCapMs/longMs/shortMs/transientMs between 1000 and 86400000, providerResetCapMs between 1800000 and 2592000000";
   }
   if (Object.hasOwn(body, "backoff") && !validBackoff(body.backoff)) {
     return "Invalid backoff: startMs 100-60000, maxMs 1000-3600000 (>= startMs), levels 1-30";

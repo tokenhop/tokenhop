@@ -88,7 +88,61 @@ function _writeQuotas(connectionId, quotas, { merge = false } = {}) {
     ? Object.assign(_safeQuotaCopy(quotaCache.get(connectionId)), _safeQuotaCopy(quotas))
     : _safeQuotaCopy(quotas);
   quotaCache.set(connectionId, applyActiveStrikeBlocks(connectionId, entry));
+  _stampWrites(connectionId, Object.keys(quotas || {}), merge);
   return quotaCache.get(connectionId);
+}
+
+// YAN-1050: write time per cached entry (connectionId → { model → ms }). Kept
+// beside the cache so entry objects keep their upstream shape.
+const quotaWrittenAt = new Map();
+
+function _stampWrites(connectionId, models, merge) {
+  const now = Date.now();
+  const stamps = merge ? { ...(quotaWrittenAt.get(connectionId) || {}) } : {};
+  for (const model of Object.keys(quotaCache.get(connectionId) || {})) {
+    if (!merge || models.includes(model) || stamps[model] === undefined) stamps[model] = now;
+  }
+  quotaWrittenAt.set(connectionId, stamps);
+}
+
+function _isStrikeEntry(connectionId, model, entry) {
+  const until = strikeBlocks.get(`${connectionId}|${model}`);
+  return until !== undefined && entry?.resetAt === new Date(until).toISOString();
+}
+
+/**
+ * YAN-1050: drop exhausted CACHE_BLOCK entries a newer probe disproves. While a
+ * block is active the account is never selected, so the error path (the only
+ * other writer) can't refresh it. RAM-only. An entry goes only when it is an
+ * exhausted upstream reading (not a strike block), the probe carries that exact
+ * `model:<id>` window below 100% (family overlays map to `model:gemini` /
+ * `model:claude`, never a model's exact kind), and the probe started after the
+ * entry was written.
+ * @param {string} connectionId
+ * @param {Array<{ kind: string, usedFraction: number }>} windows probe windows
+ * @param {number} probeStartedAt epoch ms when the probe's fetch started
+ * @returns {string[]} released model ids
+ */
+export function releaseExactQuotaBlocks(connectionId, windows, probeStartedAt) {
+  const cached = quotaCache.get(connectionId);
+  if (!cached || !Number.isFinite(probeStartedAt) || !Array.isArray(windows)) return [];
+  const stamps = quotaWrittenAt.get(connectionId) || {};
+  const released = [];
+  for (const [model, entry] of Object.entries(cached)) {
+    if (!(entry?.remainingPercentage <= 0) || _isStrikeEntry(connectionId, model, entry)) continue;
+    if (!(probeStartedAt > (stamps[model] ?? Number.POSITIVE_INFINITY))) continue;
+    if (!windows.some((w) => w?.kind === `model:${model}` && w.usedFraction < 1)) continue;
+    delete cached[model];
+    delete stamps[model];
+    released.push(model);
+  }
+  if (released.length > 0) {
+    log.info(
+      "AG_QUOTA",
+      `${connectionId.slice(0, 8)} | CACHE_RELEASE ${released.join(",")} — probe shows quota`,
+    );
+  }
+  return released;
 }
 
 /**
@@ -126,6 +180,7 @@ export function clearAntigravityStrikes(connectionId, model) {
   const cached = quotaCache.get(connectionId);
   if (cached?.[model]?.resetAt === new Date(until).toISOString()) {
     delete cached[model];
+    delete quotaWrittenAt.get(connectionId)?.[model];
     quotaCache.set(connectionId, cached);
   }
 }

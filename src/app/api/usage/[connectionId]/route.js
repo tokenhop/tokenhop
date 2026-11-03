@@ -196,7 +196,9 @@ export async function GET(request, { params }) {
       }
     }
 
-    // Fetch usage from provider API
+    // Fetch usage from provider API. The start time gates quota-lock release:
+    // only a probe that started after a lock was written may release it (YAN-1049).
+    let probeStartedAt = Date.now();
     let usage = await getUsageForProvider(connection, proxyOptions, { force });
 
     // If provider returned an auth-expired message instead of throwing,
@@ -205,6 +207,7 @@ export async function GET(request, { params }) {
       try {
         const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
         connection = retryResult.connection;
+        probeStartedAt = Date.now();
         usage = await getUsageForProvider(connection, proxyOptions, { force });
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
@@ -217,6 +220,7 @@ export async function GET(request, { params }) {
         connectionId: connection.id,
         provider: connection.provider,
         usage,
+        probeStartedAt,
         fallbackTier:
           connection.providerSpecificData?.planTierManual === true
             ? connection.providerSpecificData?.chatgptPlanType

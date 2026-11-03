@@ -12,6 +12,7 @@ export const RELIABILITY_UI_DEFAULTS = {
   },
   cooldowns: {
     rateLimitCapMs: 1800000,
+    providerResetCapMs: 604800000,
     longMs: 120000,
     shortMs: 5000,
     transientMs: 30000,
@@ -32,6 +33,7 @@ export const RELIABILITY_KEYS = ["retryPolicy", "cooldowns", "backoff", "streamT
 /** Cooldown fields in board order. */
 export const COOLDOWN_FIELDS = [
   { key: "rateLimitCapMs", label: "Rate-limit cap" },
+  { key: "providerResetCapMs", label: "Provider reset cap" },
   { key: "transientMs", label: "Transient error" },
   { key: "longMs", label: "Long" },
   { key: "shortMs", label: "Short" },
@@ -45,7 +47,7 @@ export const TIMEOUT_FIELDS = [
 ];
 
 /**
- * Format milliseconds as a compact duration (3s, 2min, 30min, 24h).
+ * Format milliseconds as a compact duration (3s, 2min, 30min, 24h, 7d).
  * @param {number} ms
  * @returns {string}
  */
@@ -57,7 +59,9 @@ export function formatMs(ms) {
   const m = s / 60;
   if (m < 60) return `${Number.isInteger(m) ? m : m.toFixed(1)}min`;
   const h = m / 60;
-  return `${Number.isInteger(h) ? h : h.toFixed(1)}h`;
+  if (h <= 24) return `${Number.isInteger(h) ? h : h.toFixed(1)}h`;
+  const d = h / 24;
+  return `${Number.isInteger(d) ? d : d.toFixed(1)}d`;
 }
 
 /**

@@ -43,11 +43,13 @@ describe("YAN-311 reliability defaults parity", () => {
   it("cooldowns equal today's constants", () => {
     expect(RELIABILITY_DEFAULTS.cooldowns).toEqual({
       rateLimitCapMs: 1800000,
+      providerResetCapMs: 604800000,
       longMs: 120000,
       shortMs: 5000,
       transientMs: 30000,
     });
     expect(errorConfig.MAX_RATE_LIMIT_COOLDOWN_MS).toBe(1800000);
+    expect(errorConfig.MAX_PROVIDER_RESET_COOLDOWN_MS).toBe(604800000);
     expect(errorConfig.TRANSIENT_COOLDOWN_MS).toBe(30000);
     expect(errorConfig.COOLDOWN_MS).toEqual({
       unauthorized: 120000,

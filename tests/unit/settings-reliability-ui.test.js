@@ -38,5 +38,7 @@ describe("YAN-311 reliability UI helpers", () => {
     expect(formatMs(120000)).toBe("2min");
     expect(formatMs(1800000)).toBe("30min");
     expect(formatMs(86400000)).toBe("24h");
+    expect(formatMs(604800000)).toBe("7d");
+    expect(formatMs(2592000000)).toBe("30d");
   });
 });

@@ -4,6 +4,7 @@ import { updateConnection } from "@/lib/db/index.js";
 import { scopedConnections } from "@/lib/users/workspaceScope.js";
 
 const MODEL_LOCK_PREFIX = "modelLock_";
+const MODEL_LOCK_META_PREFIX = "modelLockMeta_";
 
 function getActiveModelLocks(connection) {
   const now = Date.now();
@@ -77,6 +78,8 @@ export async function POST(request) {
       ? (id, data) => updateConnection(scope.ctx, id, data)
       : updateProviderConnectionUnscoped;
     const lockKey = `${MODEL_LOCK_PREFIX}${model}`;
+    // YAN-1049: the lock's quota ownership metadata goes with it.
+    const metaKey = `${MODEL_LOCK_META_PREFIX}${model}`;
 
     await Promise.all(
       connections
@@ -84,6 +87,7 @@ export async function POST(request) {
         .map((connection) =>
           update(connection.id, {
             [lockKey]: null,
+            ...(connection[metaKey] ? { [metaKey]: null } : {}),
             ...(connection.testStatus === "unavailable"
               ? {
                   testStatus: "active",
