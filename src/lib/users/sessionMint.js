@@ -119,9 +119,10 @@ export async function mintSessionCookie(cookieStore, request, claims, { from } =
  * (bumpSessionVersionAndRebindUnscoped / setUserPasswordUnscoped `rebind`, YAN-1708):
  * keeps `from.sid` and `from.exp` and never rebinds a second time. A sid-less
  * `from` (legacy token) takes mintSessionCookie's adopt path at `sv`.
- * Returns false (cookie cleared) when `claims` are refused (no `sub`) or `from`
- * is expired or has no valid exp; the moved row is then revoked best-effort so
- * it is not listed as a live device without a cookie.
+ * Returns false (cookie cleared) when `claims` are refused (no `sub`, or a
+ * different user than `from.sub`) or `from` is expired or has no valid exp; the
+ * moved row is then revoked best-effort so it is not listed as a live device
+ * without a cookie.
  */
 export async function mintReboundSessionCookie(cookieStore, request, claims, { from, sv }) {
   const next = claims?.sub ? { ...claims, sv } : claims;
@@ -130,7 +131,13 @@ export async function mintReboundSessionCookie(cookieStore, request, claims, { f
     return mintSessionCookie(cookieStore, request, next, { from });
   }
   const fromExp = Number.isInteger(from.exp) ? from.exp : undefined;
-  if (!next?.sub || fromExp === undefined || fromExp <= Math.floor(Date.now() / 1000)) {
+  const otherUser = Boolean(from.sub) && next?.sub !== from.sub;
+  if (
+    !next?.sub ||
+    otherUser ||
+    fromExp === undefined ||
+    fromExp <= Math.floor(Date.now() / 1000)
+  ) {
     clearDashboardAuthCookie(cookieStore);
     try {
       await revokeSessionUnscoped(sid, from.sub);

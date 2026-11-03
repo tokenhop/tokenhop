@@ -4,6 +4,7 @@
 // rejected at validation.
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import bcrypt from "bcryptjs";
 import { seedTenancy } from "../setup/tenancyHarness.js";
 
 const ENV = "TOKENHOP_MULTI_USER";
@@ -15,6 +16,7 @@ let jwt; // @/lib/auth/dashboardSession
 let sessionsGET; // GET /api/me/sessions
 let workspacePOST; // POST /api/me/workspace
 let identityDELETE; // DELETE /api/me/identities/:id
+let changePOST; // POST /api/auth/change-password
 let adapter;
 let t;
 
@@ -37,6 +39,7 @@ async function load() {
   sessionsGET = (await import("@/app/api/me/sessions/route.js")).GET;
   workspacePOST = (await import("@/app/api/me/workspace/route.js")).POST;
   identityDELETE = (await import("@/app/api/me/identities/[id]/route.js")).DELETE;
+  changePOST = (await import("@/app/api/auth/change-password/route.js")).POST;
   adapter = await (await import("@/lib/db/driver.js")).getAdapter();
 }
 
@@ -183,6 +186,54 @@ describe("legacy tokens through the self-bumping re-mints (YAN-1708)", () => {
     ]);
     expect(await s.isLiveSession(token)).toBe(true);
     expect(await s.isLiveSession(other)).toBe(false);
+  });
+
+  /** The cookie is a sid-bound adoption at the new sv; the other token is dead. */
+  async function expectAdopted(seeded, before, exp, other) {
+    const { sessionVersion } = await db.getUserUnscoped(seeded.user.id);
+    expect(sessionVersion).toBe(before + 1);
+    const token = jar.cookies.get("auth_token");
+    const fresh = await jwt.getDashboardAuthSession(token);
+    expect(fresh).toMatchObject({
+      sub: seeded.user.id,
+      sid: expect.any(String),
+      exp,
+      sv: sessionVersion,
+    });
+    expect(rowsFor(seeded.user.id)).toEqual([
+      expect.objectContaining({ id: fresh.sid, sv: sessionVersion, revokedAt: null }),
+    ]);
+    expect(await s.isLiveSession(token)).toBe(true);
+    expect(await s.isLiveSession(other)).toBe(false);
+  }
+
+  it("change-password adopts a sid-less sub token at the new sv with its original exp", async () => {
+    const current = "current-secret-15+";
+    await db.updateUserUnscoped(t.b.user.id, { passwordHash: await bcrypt.hash(current, 4) });
+    t.b.user = await db.getUserUnscoped(t.b.user.id);
+    const other = await signIn(t.b, undefined, { wid: t.shared.id });
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    await signIn(t.b, exp);
+
+    const res = await changePOST(
+      new NextRequest("http://localhost/api/auth/change-password", {
+        method: "POST",
+        headers: new Headers({ "content-type": "application/json" }),
+        body: JSON.stringify({ currentPassword: current, newPassword: "fresh-secret-15+" }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    await expectAdopted(t.b, t.b.user.sessionVersion, exp, other);
+  });
+
+  it("revokeOwnerSessions adopts a sid-less owner sub token at the new sv with its original exp", async () => {
+    t.a.user = await db.getUserUnscoped(t.a.user.id);
+    const other = await signIn(t.a, undefined, { wid: t.shared.id });
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    await signIn(t.a, exp);
+
+    await s.revokeOwnerSessions(new NextRequest("http://localhost/api/settings"));
+    await expectAdopted(t.a, t.a.user.sessionVersion, exp, other);
   });
 
   it("revokeOwnerSessions adopts a legacy no-sub owner token and kills the owner's sub sessions", async () => {

@@ -556,6 +556,19 @@ describe("YAN-751 re-mint keeps sid and exp", () => {
     },
   );
 
+  it("mintReboundSessionCookie refuses claims for another user: cookie cleared, row revoked", async () => {
+    const session = await signIn(t.a);
+    const from = await jwt.getDashboardAuthSession(session.token);
+    const { sessionVersion: sv } = await db.getUserUnscoped(t.b.user.id);
+    const claims = { sub: t.b.user.id, sv, wid: t.b.personal, amr: ["pwd"] };
+    const cookieStore = await (await import("next/headers")).cookies();
+    expect(
+      await mint.mintReboundSessionCookie(cookieStore, post("/x", {}), claims, { from, sv }),
+    ).toBe(false);
+    expect(authToken()).toBeUndefined();
+    expect(row(session.sid).revokedAt).toBeTruthy();
+  });
+
   it("revokeOwnerSessions: claims refused after the rebind clear the cookie and revoke the row", async () => {
     const session = await signIn(t.a);
     // Rotation owed without a bump: the rebind matches, then sessionClaims refuses.
