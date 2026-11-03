@@ -1,6 +1,7 @@
 // YAN-751: device-session repo lifecycle and repo-level IDOR. Pins: per-row
 // revoke, uniform NOT_FOUND, list DTO shape, sv-bump hiding, rebind, the
-// 50-row cap, replacesId scoping, prune, the touch window and FK cascade.
+// atomic bump + rebind (YAN-1708), the 50-row cap, replacesId scoping, prune,
+// the touch window and FK cascade.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { seedTenancy } from "../setup/tenancyHarness.js";
 
@@ -160,6 +161,177 @@ describe("device sessions repo", () => {
     // The row moved on: a second rebind from the old sv is stale.
     expect(await repo.rebindSessionUnscoped(live, s.a.user.id, sv, sv + 3)).toBe(false);
     expect(rowOf(live).sv).toBe(sv + 2);
+  });
+
+  const svOf = async (seeded) => (await db.getUserUnscoped(seeded.user.id)).sessionVersion;
+
+  /** Make the next `UPDATE sessions SET sv` inside a transaction throw. */
+  function failNextRebind() {
+    const realRun = adapter.run.bind(adapter);
+    return vi.spyOn(adapter, "run").mockImplementation((sql, params) => {
+      if (/UPDATE sessions SET sv/.test(sql)) throw new Error("rebind failed");
+      return realRun(sql, params);
+    });
+  }
+
+  it("bumpSessionVersionAndRebindUnscoped bumps once and moves this row in one step (YAN-1708)", async () => {
+    const live = await mk(s.a);
+    const other = await mk(s.a);
+    const sv = await svOf(s.a);
+    // Warm the sid cache: the helper must drop it.
+    expect((await repo.getSessionForValidationUnscoped(live)).sv).toBe(sv);
+
+    expect(
+      await db.bumpSessionVersionAndRebindUnscoped(s.a.user.id, { sid: live, expectedSv: sv }),
+    ).toEqual({ rebound: true, sv: sv + 1 });
+    expect(await svOf(s.a)).toBe(sv + 1);
+    expect(rowOf(live).sv).toBe(sv + 1);
+    expect((await repo.getSessionForValidationUnscoped(live)).sv).toBe(sv + 1);
+    expect(rowOf(other).sv).toBe(sv); // every other session ends
+    expect(ids(await repo.listSessions(s.a.ctx))).toEqual([live]);
+  });
+
+  it("bumpSessionVersionAndRebindUnscoped: a sid-less token on the current sv is rebound (adopted later)", async () => {
+    const sv = await svOf(s.a);
+    expect(await db.bumpSessionVersionAndRebindUnscoped(s.a.user.id, { expectedSv: sv })).toEqual({
+      rebound: true,
+      sv: sv + 1,
+    });
+    expect(await svOf(s.a)).toBe(sv + 1);
+  });
+
+  it("bumpSessionVersionAndRebindUnscoped: a stale cookie sv still bumps but never moves the row", async () => {
+    const live = await mk(s.a);
+    const sv = await svOf(s.a);
+    // A sign-out-everywhere since the cookie was minted.
+    await db.bumpSessionVersion(s.a.user.id);
+
+    expect(
+      await db.bumpSessionVersionAndRebindUnscoped(s.a.user.id, { sid: live, expectedSv: sv }),
+    ).toEqual({ rebound: false, sv: sv + 2 });
+    expect(await svOf(s.a)).toBe(sv + 2);
+    expect(rowOf(live).sv).toBe(sv);
+
+    expect(await db.bumpSessionVersionAndRebindUnscoped(s.a.user.id, { sid: live })).toEqual({
+      rebound: false,
+      sv: sv + 3,
+    });
+    expect(await svOf(s.a)).toBe(sv + 3);
+    expect(rowOf(live).sv).toBe(sv);
+    expect(await repo.listSessions(s.a.ctx)).toEqual([]);
+  });
+
+  it("bumpSessionVersionAndRebindUnscoped: revoked, expired, foreign, unknown and malformed sids bump only", async () => {
+    const revoked = await mk(s.a);
+    await repo.revokeSession(s.a.ctx, revoked);
+    const expired = await mk(s.a, { expiresAt: past() });
+    const foreign = await mk(s.b);
+    const bSv = await svOf(s.b);
+
+    for (const sid of [revoked, expired, foreign, "no-such-sid", "", {}]) {
+      const sv = await svOf(s.a);
+      expect(
+        await db.bumpSessionVersionAndRebindUnscoped(s.a.user.id, { sid, expectedSv: sv }),
+      ).toEqual({
+        rebound: false,
+        sv: sv + 1,
+      });
+      expect(await svOf(s.a)).toBe(sv + 1);
+    }
+    const first = rowOf(expired).sv;
+    expect(rowOf(revoked)).toMatchObject({ sv: first });
+    expect(rowOf(revoked).revokedAt).toBeTruthy();
+    expect(rowOf(foreign).sv).toBe(bSv);
+    expect(await svOf(s.b)).toBe(bSv);
+  });
+
+  it("bumpSessionVersionAndRebindUnscoped: a failed rebind rolls the bump back", async () => {
+    const live = await mk(s.a);
+    const sv = await svOf(s.a);
+    const spy = failNextRebind();
+    try {
+      await expect(
+        db.bumpSessionVersionAndRebindUnscoped(s.a.user.id, { sid: live, expectedSv: sv }),
+      ).rejects.toThrow("rebind failed");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await svOf(s.a)).toBe(sv);
+    expect(rowOf(live).sv).toBe(sv);
+    expect(ids(await repo.listSessions(s.a.ctx))).toEqual([live]);
+  });
+
+  it("setUserPasswordUnscoped with a rebind: STALE writes nothing, a match rebinds in the same tx", async () => {
+    const live = await mk(s.a);
+    const sv = await svOf(s.a);
+    const before = await db.getUserPasswordHashUnscoped(s.a.user.id);
+
+    await expect(
+      db.setUserPasswordUnscoped(s.a.user.id, {
+        passwordHash: "stale-hash",
+        expectedSessionVersion: sv - 1,
+        rebind: { sid: live, expectedSv: sv - 1 },
+      }),
+    ).rejects.toMatchObject({ code: "STALE" });
+    expect(await svOf(s.a)).toBe(sv);
+    expect(rowOf(live).sv).toBe(sv);
+    expect(await db.getUserPasswordHashUnscoped(s.a.user.id)).toBe(before);
+
+    const spy = failNextRebind();
+    try {
+      await expect(
+        db.setUserPasswordUnscoped(s.a.user.id, {
+          passwordHash: "rolled-back-hash",
+          expectedSessionVersion: sv,
+          rebind: { sid: live, expectedSv: sv },
+        }),
+      ).rejects.toThrow("rebind failed");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await svOf(s.a)).toBe(sv);
+    expect(await db.getUserPasswordHashUnscoped(s.a.user.id)).toBe(before);
+
+    const written = await db.setUserPasswordUnscoped(s.a.user.id, {
+      passwordHash: "new-hash",
+      expectedSessionVersion: sv,
+      rebind: { sid: live, expectedSv: sv },
+    });
+    expect(written).toMatchObject({ rebound: true, sv: sv + 1, user: { sessionVersion: sv + 1 } });
+    expect(rowOf(live).sv).toBe(sv + 1);
+    expect(await db.getUserPasswordHashUnscoped(s.a.user.id)).toBe("new-hash");
+  });
+
+  it("setUserPasswordUnscoped with a rebind of a revoked row commits the password, rebound false", async () => {
+    const gone = await mk(s.a);
+    await repo.revokeSession(s.a.ctx, gone);
+    const sv = await svOf(s.a);
+    expect(
+      await db.setUserPasswordUnscoped(s.a.user.id, {
+        passwordHash: "next-hash",
+        expectedSessionVersion: sv,
+        rebind: { sid: gone, expectedSv: sv },
+      }),
+    ).toMatchObject({ rebound: false, sv: sv + 1 });
+    expect(await svOf(s.a)).toBe(sv + 1);
+    expect(rowOf(gone).sv).toBe(sv);
+    expect(await db.getUserPasswordHashUnscoped(s.a.user.id)).toBe("next-hash");
+  });
+
+  it("setUserPasswordUnscoped: a rebind without the cookie's own integer sv fails closed", async () => {
+    const live = await mk(s.a);
+    const sv = await svOf(s.a);
+    for (const expectedSv of [undefined, null, String(sv)]) {
+      const current = await svOf(s.a);
+      expect(
+        await db.setUserPasswordUnscoped(s.a.user.id, {
+          passwordHash: "h",
+          expectedSessionVersion: current,
+          rebind: { sid: live, expectedSv },
+        }),
+      ).toMatchObject({ rebound: false, sv: current + 1 });
+    }
+    expect(rowOf(live).sv).toBe(sv);
   });
 
   it("revokeSessionUnscoped returns a boolean and never throws on a missing row", async () => {

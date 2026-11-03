@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { isUserSecurityEnforced } from "@/lib/users/securityState.js";
 import { isLiveSession, passwordSessionClaims } from "@/lib/users/session";
-import { mintSessionCookie } from "@/lib/users/sessionMint.js";
+import { mintReboundSessionCookie, mintSessionCookie } from "@/lib/users/sessionMint.js";
 import { clearDashboardAuthCookie, getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import {
   PASSWORD_CHANGE_COOKIE,
@@ -125,34 +125,41 @@ export async function POST(request) {
     if (invalid) return json(invalid, 400);
 
     // Full session: pin the write to the session's own sv, so a sign-out-everywhere
-    // since it was minted is never absorbed by the bump below (YAN-1220).
+    // since it was minted is never absorbed by the bump below (YAN-1220), and
+    // move its row onto the new sv in the same transaction (YAN-1708).
     const expectedSessionVersion = Number.isInteger(subject.session?.sv)
       ? subject.session.sv
       : user.sessionVersion;
+    let written;
     try {
-      await setUserPasswordUnscoped(user.id, {
+      written = await setUserPasswordUnscoped(user.id, {
         passwordHash: await hashPassword(body.newPassword),
         mustChangePassword: false,
         expectedSessionVersion,
+        rebind: subject.session
+          ? { sid: subject.session.sid, expectedSv: subject.session.sv }
+          : undefined,
       });
     } catch (err) {
       if (err?.code === "STALE") return expired(cookieStore);
       throw err;
     }
+    if (subject.session && !written.rebound) return expired(cookieStore);
 
     // Fresh claims from the post-commit row: never reuse the old token's sv.
     const claims = await passwordSessionClaims(user.id, subject.wid);
-    if (!claims?.sub) return expired(cookieStore);
-    // Our write bumped sv once: anything past session.sv + 1 means a concurrent
-    // sign-out-everywhere, which must end this session, not be re-minted over.
-    if (Number.isInteger(subject.session?.sv) && claims.sv !== subject.session.sv + 1) {
-      return expired(cookieStore);
+    // Full session: keep its sid and original exp (D3) on the row the write
+    // already moved; refused claims drop that row. Restricted forced change:
+    // fresh session row (D7).
+    let minted = false;
+    if (subject.session) {
+      minted = await mintReboundSessionCookie(cookieStore, request, claims, {
+        from: subject.session,
+        sv: written.sv,
+      });
+    } else if (claims?.sub) {
+      minted = await mintSessionCookie(cookieStore, request, claims);
     }
-    // Full session: keep its sid and original exp (D3). Restricted forced
-    // change: fresh session row (D7).
-    const minted = subject.session
-      ? await mintSessionCookie(cookieStore, request, claims, { from: subject.session })
-      : await mintSessionCookie(cookieStore, request, claims);
     if (!minted) return expired(cookieStore);
     clearPasswordChangeCookie(cookieStore);
     // YAN-362: the user's effective startPage (instance ⊕ user preference);
