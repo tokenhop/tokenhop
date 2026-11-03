@@ -33,7 +33,15 @@ vi.mock("@/sse/services/accountSelection", () => ({ effectiveWeightFor: vi.fn() 
 vi.mock("@/shared/services/weightedTargets", () => ({ isWeightedProvider: vi.fn() }));
 vi.mock("@/lib/quota/forecastStore.js", () => ({ getQuotaForecasts: vi.fn() }));
 
-const { refreshAndUpdateCredentials } = await import("@/app/api/usage/[connectionId]/route.js");
+const { refreshAndUpdateCredentials, GET } = await import(
+  "@/app/api/usage/[connectionId]/route.js"
+);
+const { loadScoped } = await import("@/lib/users/workspaceScope.js");
+const { getUsageForProvider } = await import("open-sse/services/usage.js");
+const { resolveConnectionProxyConfig } = await import("@/lib/network/connectionProxy");
+const { recordUsageSnapshot, buildQuotaSnapshotView } = await import(
+  "@/sse/services/quotaSnapshotSync"
+);
 
 const conn = (extra = {}) => ({
   id: "c1",
@@ -81,5 +89,30 @@ describe("refreshAndUpdateCredentials", () => {
       "c1",
       expect.objectContaining({ accessToken: "at-2" }),
     );
+  });
+});
+
+describe("GET /api/usage/[connectionId] probe start (YAN-1049)", () => {
+  it("passes a probeStartedAt captured before the usage fetch", async () => {
+    const apikey = { id: "g1", provider: "glm", authType: "apikey", apiKey: "k" };
+    loadScoped.mockResolvedValue({ scope: null, row: apikey });
+    resolveConnectionProxyConfig.mockResolvedValue({});
+    buildQuotaSnapshotView.mockReturnValue({ windows: [] });
+    let fetchStartedAt;
+    getUsageForProvider.mockImplementation(async () => {
+      fetchStartedAt = Date.now();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { quotas: { "Session (5h)": { remainingPercentage: 50 } } };
+    });
+
+    const res = await GET(new Request("http://localhost/api/usage/g1"), {
+      params: Promise.resolve({ connectionId: "g1" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(recordUsageSnapshot).toHaveBeenCalledTimes(1);
+    const { probeStartedAt } = recordUsageSnapshot.mock.calls[0][0];
+    expect(Number.isFinite(probeStartedAt)).toBe(true);
+    expect(probeStartedAt).toBeLessThanOrEqual(fetchStartedAt);
   });
 });

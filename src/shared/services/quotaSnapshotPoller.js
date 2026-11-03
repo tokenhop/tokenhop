@@ -102,6 +102,9 @@ async function pollConnection(connection, deps, state) {
       connection.authType === "oauth"
         ? (await deps.refreshAndUpdateCredentials(connection, false, proxyOptions)).connection
         : connection;
+    // Captured before the fetch: only a probe that started after a quota lock
+    // was written may release it (YAN-1049).
+    const probeStartedAt = Date.now();
     const usage = await deps.getUsageForProvider(freshConnection, proxyOptions, { force: false });
     if (!usage || typeof usage.message === "string") {
       state.failureCache[key] = Date.now();
@@ -111,6 +114,7 @@ async function pollConnection(connection, deps, state) {
       connectionId: freshConnection.id,
       provider: freshConnection.provider,
       usage,
+      probeStartedAt,
       fallbackTier:
         freshConnection.providerSpecificData?.planTierManual === true
           ? freshConnection.providerSpecificData?.chatgptPlanType
