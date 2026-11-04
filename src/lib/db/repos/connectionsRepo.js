@@ -14,6 +14,7 @@ import {
 } from "../credentialEncryptionState.js";
 import {
   codexAccountIdOf,
+  isDeadCodexRow,
   matchesConnectionIdentity,
   matchesFlaggedDuplicate,
   matchesFlaggedReplacement,
@@ -395,16 +396,23 @@ export async function createProviderConnectionUnscoped(data, opts = {}) {
 // YAN-1623: repoint one removed duplicate's references onto the kept row,
 // then delete it (inside the caller's transaction; the caller reorders).
 // Grant ids survive so budget/usage grantId links stay valid. When the keeper
-// already holds ANY grant (active or revoked) for the same grantee, the
-// keeper's state wins: the duplicate's active grant is revoked (this also
-// keeps the one-active-grant-per-grantee indexes). Returns the revoked and
-// moved grants so the scoped caller can audit them.
-function absorbDuplicateInTx(db, loserId, keeperId, nowMs) {
+// holds, for the same grantee, an active grant or any of its ORIGINAL grants
+// (`keeperGrantIds`, snapshotted before any loser was absorbed — active or
+// revoked), the keeper's state wins: the duplicate's active grant is revoked
+// (this also keeps the one-active-grant-per-grantee indexes). Revoked grants
+// moved over from an earlier loser never suppress a later loser's active
+// grant, so the outcome does not depend on loser order. Returns the revoked
+// and moved grants so the scoped caller can audit them.
+function absorbDuplicateInTx(db, loserId, keeperId, nowMs, keeperGrantIds) {
+  const ids = keeperGrantIds.length ? keeperGrantIds : [""];
+  const marks = ids.map(() => "?").join(",");
   const revoked = db.all(
-    `SELECT id FROM connectionGrants WHERE connectionId = ? AND revokedAt IS NULL AND (
-       workspaceId IN (SELECT workspaceId FROM connectionGrants WHERE connectionId = ? AND workspaceId IS NOT NULL)
-       OR userId IN (SELECT userId FROM connectionGrants WHERE connectionId = ? AND userId IS NOT NULL))`,
-    [loserId, keeperId, keeperId],
+    `SELECT l.id FROM connectionGrants l WHERE l.connectionId = ? AND l.revokedAt IS NULL AND EXISTS (
+       SELECT 1 FROM connectionGrants k WHERE k.connectionId = ?
+         AND (k.revokedAt IS NULL OR k.id IN (${marks}))
+         AND ((l.workspaceId IS NOT NULL AND k.workspaceId = l.workspaceId)
+           OR (l.userId IS NOT NULL AND k.userId = l.userId)))`,
+    [loserId, keeperId, ...ids],
   );
   for (const g of revoked) {
     db.run(`UPDATE connectionGrants SET revokedAt = ? WHERE id = ?`, [nowMs, g.id]);
@@ -475,17 +483,26 @@ function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}, 
   // account must not rewrite or remove A's row (same guard shape as workspace scoping).
   const sameCreator = (c) =>
     !owner.createdByUserId || !c.createdByUserId || c.createdByUserId === owner.createdByUserId;
-  const replaceable = (c) => sameCreator(c) && matchesFlaggedReplacement(c, data, nowMs);
-  // Prefer the flagged row proven to be the incoming account, then the newest.
   const incomingAccountId = data.provider === "codex" ? codexAccountIdOf(data) : null;
+  const replaceable = (c) =>
+    sameCreator(c) &&
+    matchesFlaggedReplacement(c, data, nowMs) &&
+    // Never replace a row proven to belong to another ChatGPT account.
+    (!incomingAccountId || !codexAccountIdOf(c) || codexAccountIdOf(c) === incomingAccountId);
+  // Prefer the flagged row proven to be the incoming account, then the newest.
   const pickReplaceable = () => {
     const rank = (c) => (incomingAccountId && codexAccountIdOf(c) === incomingAccountId ? 1 : 0);
     const updated = (c) => new Date(c.updatedAt ?? 0).getTime() || 0;
     return all.filter(replaceable).sort((a, b) => rank(b) - rank(a) || updated(b) - updated(a))[0];
   };
-  const existing =
-    all.find((c) => matchesConnectionIdentity(c, data)) ??
-    (data.provider === "codex" ? pickReplaceable() : undefined);
+  // Codex: prefer a live identity match over a dead one; the dead same-account
+  // row then becomes a loser and is absorbed below.
+  const identityMatches = all.filter((c) => matchesConnectionIdentity(c, data));
+  const identityMatch =
+    data.provider === "codex"
+      ? (identityMatches.find((c) => !isDeadCodexRow(c, nowMs)) ?? identityMatches[0])
+      : identityMatches[0];
+  const existing = identityMatch ?? (data.provider === "codex" ? pickReplaceable() : undefined);
   if (existing && rejectDuplicateName && data.authType === "apikey") {
     const err = new Error(`A connection named "${data.name}" already exists for this provider`);
     err.code = "DUPLICATE_CONNECTION_NAME";
@@ -537,8 +554,13 @@ function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}, 
           keeperCreator(c) &&
           matchesFlaggedDuplicate(c, data, nowMs),
       );
+      const keeperGrantIds = losers.length
+        ? db
+            .all(`SELECT id FROM connectionGrants WHERE connectionId = ?`, [existing.id])
+            .map((g) => g.id)
+        : [];
       for (const loser of losers) {
-        const grants = absorbDuplicateInTx(db, loser.id, existing.id, nowMs);
+        const grants = absorbDuplicateInTx(db, loser.id, existing.id, nowMs, keeperGrantIds);
         removed?.push({ conn: loser, ...grants });
       }
       if (losers.length) reorderInTx(db, data.provider, workspaceId);

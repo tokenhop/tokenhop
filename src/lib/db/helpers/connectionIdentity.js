@@ -84,15 +84,31 @@ const accountIdFromJwt = (token) => {
 
 /**
  * YAN-1623: the ChatGPT account id a codex row/grant provably belongs to —
- * providerSpecificData.chatgptAccountId, else the auth claim of the idToken,
- * then the accessToken (same claims as oauth extractCodexAccountInfo). Null
- * when none is derivable.
+ * providerSpecificData.chatgptAccountId, the auth claim of the idToken and of
+ * the accessToken (same claims as oauth extractCodexAccountInfo). Null when
+ * none is derivable, or when the derivable ids disagree (bulk import can store
+ * an unchecked chatgptAccountId), since then the account is unprovable.
  */
 export function codexAccountIdOf(row) {
   if (!row) return null;
   const stored = row.providerSpecificData?.chatgptAccountId;
-  if (typeof stored === "string" && stored) return stored;
-  return accountIdFromJwt(row.idToken) ?? accountIdFromJwt(row.accessToken);
+  const ids = [
+    typeof stored === "string" && stored ? stored : null,
+    accountIdFromJwt(row.idToken),
+    accountIdFromJwt(row.accessToken),
+  ].filter(Boolean);
+  if (!ids.length || ids.some((id) => id !== ids[0])) return null;
+  return ids[0];
+}
+
+/**
+ * YAN-1623: is this codex row's stored credential pair dead (flagged for
+ * re-authentication, or an access-token-only row past its expiry)?
+ */
+export function isDeadCodexRow(row, nowMs = Date.now()) {
+  const flag = row?.reauthRequired;
+  if (flag && typeof flag === "object" && REAUTH_REASON_VALUES.has(flag.reason)) return true;
+  return row?.authType === "access_token" && isExpiredAccessTokenOnly(row, nowMs);
 }
 
 /**

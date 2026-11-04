@@ -116,6 +116,10 @@ const insertGrant = (
 const activeFor = async (workspaceId) =>
   (await grantsRepo()).listActiveGrantsForPrincipal(adapter, { workspaceId });
 
+// Set a stored account id after creation (a create with it would dedup).
+const setAccount = (id, chatgptAccountId) =>
+  db.updateProviderConnectionUnscoped(id, { providerSpecificData: { chatgptAccountId } });
+
 describe("YAN-1623: reconnect removes flagged duplicates of the same account", () => {
   it("flagged legacy row beside a live row → one healthy row, the live row's id", async () => {
     const email = "dup-basic@example.com";
@@ -455,4 +459,82 @@ describe("YAN-1623: reconnect removes flagged duplicates of the same account", (
     const grants = await (await grantsRepo()).listGrantsForConnection(ctx, live.id);
     expect(grants.map((g) => g.id).sort()).toEqual(["au-keep", "au-move", "au-revoke"]);
   });
+
+  it("a flagged row whose stored id disagrees with its idToken claim is not removed", async () => {
+    const email = "dup-mismatch@example.com";
+    const bad = await db.createProviderConnectionUnscoped(
+      oauth(email, "acct-tmp-mm", { idToken: idTokenFor("acct-mm-b"), name: "bad" }),
+    );
+    await setAccount(bad.id, "acct-mm-a");
+    await flagRow(bad.id);
+    const live = await db.createProviderConnectionUnscoped(oauth(email, "acct-tmp-mm2"));
+    await setAccount(live.id, "acct-mm-a");
+
+    await db.createProviderConnectionUnscoped(reconnect(email, "acct-mm-a"));
+
+    const kept = await db.getProviderConnectionByIdUnscoped(bad.id);
+    expect(kept).not.toBeNull();
+    expect(kept.reauthRequired).toBeTruthy();
+    expect((await rowsFor(email)).map((r) => r.id).sort()).toEqual([bad.id, live.id].sort());
+  });
+
+  it("never replaces a flagged legacy row proven to be another account", async () => {
+    const email = "dup-other-acct-replace@example.com";
+    const other = await db.createProviderConnectionUnscoped(legacyRow(email, "acct-oy"));
+    await flagRow(other.id);
+    const before = await db.getProviderConnectionByIdUnscoped(other.id);
+
+    const created = await db.createProviderConnectionUnscoped(reconnect(email, "acct-ox"));
+
+    expect(created.id).not.toBe(other.id);
+    const after = await db.getProviderConnectionByIdUnscoped(other.id);
+    expect(after.reauthRequired).toBeTruthy();
+    expect(after.refreshToken).toBe(before.refreshToken);
+    expect(after.accessToken).toBe(before.accessToken);
+    expect(after.idToken).toBe(before.idToken);
+    expect(await rowsFor(email)).toHaveLength(2);
+  });
+
+  it("prefers the live identity match over a flagged one of the same account", async () => {
+    const email = "dup-prefer-live@example.com";
+    const flagged = await db.createProviderConnectionUnscoped(oauth(email, "acct-pl"));
+    await flagRow(flagged.id);
+    const live = await db.createProviderConnectionUnscoped(oauth(email, "acct-tmp-pl"));
+    await setAccount(live.id, "acct-pl");
+
+    await db.createProviderConnectionUnscoped(reconnect(email, "acct-pl"));
+
+    const rows = await rowsFor(email);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(live.id);
+    expect(rows[0].reauthRequired ?? null).toBeNull();
+  });
+
+  for (const revokedFirst of [true, false]) {
+    it(`a moved revoked loser grant never suppresses another loser's active grant (revoked ${revokedFirst ? "first" : "second"})`, async () => {
+      const tag = revokedFirst ? "rf" : "rs";
+      const email = `dup-order-${tag}@example.com`;
+      const ws = `dup-ws-order-${tag}`;
+      seedWorkspace(ws);
+      const live = await db.createProviderConnectionUnscoped(oauth(email, `acct-${tag}`));
+      const a = await db.createProviderConnectionUnscoped(
+        legacyRow(email, `acct-${tag}`, { name: "a" }),
+      );
+      const b = await db.createProviderConnectionUnscoped(
+        legacyRow(email, `acct-${tag}`, { name: "b" }),
+      );
+      await flagRow(a.id);
+      await flagRow(b.id);
+      const [revokedOn, activeOn] = revokedFirst ? [a, b] : [b, a];
+      insertGrant(`${tag}-rev`, revokedOn.id, { workspaceId: ws, revokedAt: Date.now() - 1000 });
+      insertGrant(`${tag}-act`, activeOn.id, { workspaceId: ws });
+
+      await db.createProviderConnectionUnscoped(reconnect(email, `acct-${tag}`));
+
+      const active = await activeFor(ws);
+      expect(active).toHaveLength(1);
+      expect(active[0].grantId).toBe(`${tag}-act`);
+      expect(active[0].connectionId).toBe(live.id);
+    });
+  }
 });
