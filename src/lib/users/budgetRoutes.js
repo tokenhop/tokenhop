@@ -13,6 +13,9 @@ import { getPrincipal, pristineAdminPrincipal } from "@/lib/users/session.js";
 import { isUserSecurityEnforced } from "@/lib/users/securityState.js";
 import { isCrossSite, isJson } from "@/lib/auth/sameOrigin.js";
 import { getAdapter } from "@/lib/db/driver.js";
+import { listBudgetNoticesUnscoped } from "@/lib/db/repos/budgetNoticesRepo.js";
+import { windowStart } from "@/lib/users/budgets.js";
+import { noticeSignature } from "@/shared/utils/budgetNotice.js";
 import { spentFor } from "@/sse/services/budgetGuard.js";
 
 export const MAX_BODY = 2048;
@@ -78,11 +81,44 @@ export async function readBody(request, keys) {
 
 export const badRequest = () => json({ error: "Invalid request", code: "invalid_request" }, 400);
 
-/** Public rows plus settled `spent` for each budget's current window (GET only). */
+// YAN-1830: which notices were sent for the current window. A claim counts
+// only for this window and the budget's current limits (signature), matching
+// the guard: a changed limit re-arms the notice and clears the marker.
+function noticesFor(budget, claims, now) {
+  const start = new Date(windowStart(budget.window, now)).toISOString();
+  const sent = (kind) =>
+    claims.some(
+      (c) =>
+        c.budgetId === budget.id &&
+        c.kind === kind &&
+        c.windowStart === start &&
+        c.signature === noticeSignature(budget, kind),
+    );
+  return { soft: sent("soft"), hard: sent("hard") };
+}
+
+/**
+ * Public rows plus settled `spent` and the current window's sent `notices`
+ * ({ soft, hard }) for each budget (GET only). Rows are already authorized
+ * by the repo list; a failed claim read shows no markers.
+ */
 export async function withSpent(rows) {
   const db = await getAdapter();
   const now = Date.now();
-  return rows.map((b) => ({ ...publicBudget(b), spent: spentFor(db, b, now) }));
+  let claims = [];
+  try {
+    claims = listBudgetNoticesUnscoped(
+      db,
+      rows.map((b) => b.id),
+    );
+  } catch (e) {
+    console.warn("[budgets] notice read failed:", e?.message);
+  }
+  return rows.map((b) => ({
+    ...publicBudget(b),
+    spent: spentFor(db, b, now),
+    notices: noticesFor(b, claims, now),
+  }));
 }
 
 export const publicBudget = (b) => ({

@@ -366,4 +366,37 @@ describe("budget routes, switch on", () => {
       vi.useRealTimers();
     }
   });
+
+  it("GET marks notices sent in the current window and limits only (YAN-1830)", async () => {
+    await load("on");
+    const ws = t.shared.id;
+    adapter.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, limitTokens, limitRequests, softLimitPct, resetAt, createdByUserId, createdAt)
+       VALUES('bn', ?, 'workspace', ?, 'day', NULL, 100, NULL, 20, NULL, NULL, '2026-01-01T00:00:00.000Z')`,
+      [ws, ws],
+    );
+    const claim = (kind, windowStart, signature) =>
+      adapter.run(
+        `INSERT OR REPLACE INTO budgetNotices(budgetId, kind, windowStart, signature, notifiedAt) VALUES('bn', ?, ?, ?, ?)`,
+        [kind, windowStart, signature, windowStart],
+      );
+    const get = async () =>
+      (
+        await (
+          await as(t.b, routes.ws.GET, `/api/workspaces/${ws}/budgets`, { params: { id: ws } })
+        ).json()
+      ).budgets[0].notices;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-01-09T12:00:00Z"));
+      expect(await get()).toEqual({ soft: false, hard: false });
+      claim("soft", "2026-01-09T00:00:00.000Z", "|100||20");
+      claim("hard", "2026-01-08T00:00:00.000Z", "|100|"); // previous window
+      expect(await get()).toEqual({ soft: true, hard: false });
+      adapter.run("UPDATE budgets SET softLimitPct = 30 WHERE id = 'bn'"); // re-armed
+      expect(await get()).toEqual({ soft: false, hard: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

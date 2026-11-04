@@ -12,6 +12,7 @@ import {
   Select,
   StatusPill,
 } from "@/shared/components";
+import { SCOPE_LABELS, WINDOW_LABELS } from "../lib/budgetLabels";
 import BudgetDialog from "./BudgetDialog";
 
 // Budgets tab (YAN-376): read-only list over GET /api/workspaces/:id/budgets.
@@ -19,18 +20,12 @@ import BudgetDialog from "./BudgetDialog";
 // Meter value is percentage LEFT so the shared level colors stay meaningful
 // (≤20% left = err). Notional USD is an estimate, never billing. Create/edit
 // uses BudgetDialog; `canManage` gates create and edit (server enforces).
+// YAN-1830: rows also carry notices{soft,hard} — the notices sent in the
+// current window — shown as pills, so they survive reloads without the stream.
+// `refreshKey` (bumped by the page when a live notice arrives) refetches them.
 // Switch off (YAN-1829): `workspaceId` is the "default" alias and
 // `scopeTypes` is [workspace, key]; the GET's resolved `workspaceId` (null
 // until the first budget creates the Default row) scopes the key picker.
-
-const WINDOW_LABELS = { day: "Daily", week: "Weekly", month: "Monthly", total: "Total" };
-const SCOPE_LABELS = {
-  workspace: "Workspace",
-  key: "API key",
-  membership: "Member",
-  grant: "Grant",
-  user: "User",
-};
 
 const money = (n) =>
   n == null ? "—" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -68,7 +63,7 @@ LimitRow.propTypes = {
 };
 
 function BudgetRow({ budget, onEdit }) {
-  const { spent = {}, scopeType, scopeId, window: win, softLimitPct, resetAt } = budget;
+  const { spent = {}, scopeType, scopeId, window: win, softLimitPct, resetAt, notices } = budget;
   const limits = [
     { label: "Cost", spent: spent.usd, limit: budget.limitUsd, format: money },
     { label: "Tokens", spent: spent.tokens, limit: budget.limitTokens, format: count },
@@ -93,6 +88,15 @@ function BudgetRow({ budget, onEdit }) {
             Soft at {softLimitPct}%
           </StatusPill>
         )}
+        {notices?.hard ? (
+          <StatusPill variant="err" size="sm">
+            Limit hit
+          </StatusPill>
+        ) : notices?.soft ? (
+          <StatusPill variant="warn" size="sm">
+            Soft limit reached
+          </StatusPill>
+        ) : null}
         {onEdit && (
           <Button variant="ghost" size="sm" onClick={() => onEdit(budget)}>
             Edit
@@ -127,6 +131,7 @@ export default function BudgetsTab({
   canManage = false,
   canManageUsers = false,
   scopeTypes,
+  refreshKey = 0,
 }) {
   const [state, setState] = useState({ budgets: null, error: null, loading: true });
   const [resolvedWorkspaceId, setResolvedWorkspaceId] = useState(null);
@@ -190,6 +195,22 @@ export default function BudgetsTab({
       });
     return () => controller.abort();
   }, [workspaceId, userTarget, userId, listUrl, reload]);
+
+  // A live budget notice arrived (YAN-1830): refresh rows and their notice
+  // pills in the background, keeping the current list on screen meanwhile.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshKey is the trigger; listUrl/workspaceId are read at that moment.
+  useEffect(() => {
+    if (!refreshKey || !workspaceId || (userTarget && !userId)) return undefined;
+    const controller = new AbortController();
+    fetch(listUrl, { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (controller.signal.aborted || !Array.isArray(data?.budgets)) return;
+        setState({ budgets: data.budgets, error: null, loading: false });
+      })
+      .catch(() => {}); // keep the shown list; the next notice or reload retries
+    return () => controller.abort();
+  }, [refreshKey]);
 
   return (
     <Card
@@ -301,4 +322,6 @@ BudgetsTab.propTypes = {
   canManageUsers: PropTypes.bool,
   /** Scope types the create dialog offers; defaults to the dialog's full list. */
   scopeTypes: PropTypes.arrayOf(PropTypes.string),
+  /** Bumped when a live budget notice arrives; refetches in the background. */
+  refreshKey: PropTypes.number,
 };

@@ -35,9 +35,10 @@ const sameLive = (a, b) =>
  * @param {string|null} period "today"|"24h"|"7d"|"30d"|"60d"|"90d"|"all"|"custom";
  *   null until usePeriod resolves after hydration — no fetch happens and
  *   `loading` stays true so callers keep their skeletons.
- * @param {{tab?: "overview"|"logs", range?: {from: string, to: string}|null}} [options]
- *   active page tab (the stream only runs on "overview") and, for "custom",
- *   the inclusive day range sent as `from`/`to`.
+ * @param {{tab?: "overview"|"logs", range?: {from: string, to: string}|null, onNotice?: (e: MessageEvent) => void}} [options]
+ *   active page tab (the stream only runs on "overview"), for "custom" the
+ *   inclusive day range sent as `from`/`to`, and the `budgetNotice` SSE event
+ *   handler (YAN-1830, see useBudgetNotices).
  * @param {{workspaceId?: string, view?: string, userId?: string, apiKeyId?: string}|null} [filters]
  *   optional scope appended to the stats and stream URLs (YAN-376); a change
  *   resets `stats` and reconnects the stream so old-scope data never flashes.
@@ -51,7 +52,7 @@ const sameLive = (a, b) =>
  */
 export default function useUsageStats(
   period,
-  { tab = "overview", range = null } = {},
+  { tab = "overview", range = null, onNotice = null } = {},
   filters = null,
 ) {
   // Fetch identity: a new custom range is a new window even though period stays "custom".
@@ -191,13 +192,14 @@ export default function useUsageStats(
         console.error("[SSE CLIENT] parse error:", err);
       }
     };
+    if (onNotice) es.addEventListener("budgetNotice", onNotice);
     return () => {
       es.close();
       // A closed stream must not keep lighting the routes map: drop the
       // in-flight overlay so the window model speaks alone (YAN-412).
       setLive((current) => (sameLive(current, EMPTY_LIVE) ? current : EMPTY_LIVE));
     };
-  }, [stream.open, scopeKey]);
+  }, [stream.open, scopeKey, onNotice]);
 
   return { stats, statsPeriod, live, loading, fetching, error, catchUpKey, retry };
 }

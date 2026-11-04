@@ -57,6 +57,8 @@ const ALLOWED = new Set([
   "spentUsd",
   "spentTokens",
   "spentRequests",
+  // YAN-1830: start of the budget window a soft/hard notice was sent for.
+  "windowStart",
 ]);
 
 const TRUNCATE = 4096;
