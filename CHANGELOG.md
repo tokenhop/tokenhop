@@ -37,7 +37,7 @@ The second tokenhop minor. The Usage page and Token saver get custom ranges, per
 
 - **Back up the database before upgrading.** On first start, migrations 018–022 add device sessions, budget carry, the usage adoption guard, the daily savings/combo rollup (with an idempotent batched backfill) and untracked-usage indexes. Downgrading to v1.1.x afterwards is not supported.
 - **Redeploy connection relays.** Relay templates now send `x-relay-version: 2`, and tokenhop refuses outdated relays for non-follow redirect requests. The proxy pool test shows a "Redeploy needed" badge for each relay you need to update (#1069).
-- **Single-user installs need no action.** The Users & teams switch stays off unless `TOKENHOP_MULTI_USER` or the Instance settings toggle turns it on.
+- **Users & teams stays off.** The switch stays off unless `TOKENHOP_MULTI_USER` or the Instance settings toggle turns it on; single-user installs need no change for it.
 - **Contributors only:** `next dev` (`npm run dev*`) now requires `TOKENHOP_DEV_ALLOWED_ORIGINS` (use `localhost` for local-only dev). Production images are unaffected.
 
 # v1.1.3 (2026-11-03)
