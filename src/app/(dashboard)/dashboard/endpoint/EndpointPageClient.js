@@ -15,6 +15,7 @@ import {
 } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import useAuthStatus from "@/shared/hooks/useAuthStatus";
+import useShellStatus from "@/shared/hooks/useShellStatus";
 import { TUNNEL_BENEFITS } from "./endpointConstants";
 import { deriveSecurityState } from "./endpointLogic";
 import WaysInGrid from "./components/WaysInGrid";
@@ -36,7 +37,8 @@ import { useRemoteHost, useLocalBaseUrl } from "@/shared/hooks/useEndpointShell"
  */
 export default function EndpointPageClient({ machineId: _machineId }) {
   const tunnel = useTunnelControls();
-  const apiKeys = useApiKeys();
+  const { multiUser } = useShellStatus();
+  const apiKeys = useApiKeys({ multiUser });
   const authStatus = useAuthStatus();
   const currentUserId =
     authStatus?.multiUserActive === true ? authStatus.principal?.user?.id : null;
@@ -310,6 +312,7 @@ export default function EndpointPageClient({ machineId: _machineId }) {
         onSetCreateModels={apiKeys.setCreateModels}
         createCombos={apiKeys.createCombos}
         onSetCreateCombos={apiKeys.setCreateCombos}
+        budgetsAvailable={apiKeys.budgetsAvailable}
         createBudgetUsd={apiKeys.createBudgetUsd}
         onSetCreateBudgetUsd={apiKeys.setCreateBudgetUsd}
         createBudgetWindow={apiKeys.createBudgetWindow}

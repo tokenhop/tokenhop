@@ -19,6 +19,9 @@ import BudgetDialog from "./BudgetDialog";
 // Meter value is percentage LEFT so the shared level colors stay meaningful
 // (≤20% left = err). Notional USD is an estimate, never billing. Create/edit
 // uses BudgetDialog; `canManage` gates create and edit (server enforces).
+// Switch off (YAN-1829): `workspaceId` is the "default" alias and
+// `scopeTypes` is [workspace, key]; the GET's resolved `workspaceId` (null
+// until the first budget creates the Default row) scopes the key picker.
 
 const WINDOW_LABELS = { day: "Daily", week: "Weekly", month: "Monthly", total: "Total" };
 const SCOPE_LABELS = {
@@ -119,8 +122,15 @@ function BudgetRow({ budget, onEdit }) {
 
 BudgetRow.propTypes = { budget: PropTypes.object.isRequired, onEdit: PropTypes.func };
 
-export default function BudgetsTab({ workspaceId, canManage = false, canManageUsers = false }) {
+export default function BudgetsTab({
+  workspaceId,
+  canManage = false,
+  canManageUsers = false,
+  scopeTypes,
+}) {
   const [state, setState] = useState({ budgets: null, error: null, loading: true });
+  const [resolvedWorkspaceId, setResolvedWorkspaceId] = useState(null);
+  const workspaceOnly = Array.isArray(scopeTypes) && !scopeTypes.includes("membership");
   const [reload, setReload] = useState(0);
   const retry = useCallback(() => setReload((value) => value + 1), []);
   const [dialog, setDialog] = useState(null); // null | { budget: object|null }
@@ -166,15 +176,15 @@ export default function BudgetsTab({ workspaceId, canManage = false, canManageUs
       signal: controller.signal,
     })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`budgets ${r.status}`))))
-      .then(
-        (data) =>
-          controller.signal.aborted ||
-          setState({
-            budgets: Array.isArray(data.budgets) ? data.budgets : [],
-            error: null,
-            loading: false,
-          }),
-      )
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setResolvedWorkspaceId(typeof data.workspaceId === "string" ? data.workspaceId : null);
+        setState({
+          budgets: Array.isArray(data.budgets) ? data.budgets : [],
+          error: null,
+          loading: false,
+        });
+      })
       .catch((error) => {
         if (!controller.signal.aborted) setState({ budgets: null, error, loading: false });
       });
@@ -195,6 +205,8 @@ export default function BudgetsTab({ workspaceId, canManage = false, canManageUs
             variant="secondary"
             size="sm"
             icon="add"
+            // Until the list resolves the off-mode key workspace is unknown.
+            disabled={state.budgets === null}
             onClick={() => setDialog({ budget: null })}
           >
             Add budget
@@ -251,7 +263,9 @@ export default function BudgetsTab({ workspaceId, canManage = false, canManageUs
               ? userId
                 ? "Budgets cap cost, tokens or requests per window for this account."
                 : "Choose a user above to see their budgets."
-              : "Budgets cap cost, tokens or requests per window for this workspace, its keys, members and grants."
+              : workspaceOnly
+                ? "Budgets cap cost, tokens or requests per window for this workspace and its keys."
+                : "Budgets cap cost, tokens or requests per window for this workspace, its keys, members and grants."
           }
         />
       ) : (
@@ -270,6 +284,8 @@ export default function BudgetsTab({ workspaceId, canManage = false, canManageUs
           isOpen
           onClose={() => setDialog(null)}
           workspaceId={workspaceId}
+          keysWorkspaceId={workspaceOnly ? resolvedWorkspaceId : workspaceId}
+          scopeTypes={scopeTypes}
           userId={userTarget ? userId : undefined}
           budget={dialog.budget}
           onSaved={retry}
@@ -283,4 +299,6 @@ BudgetsTab.propTypes = {
   workspaceId: PropTypes.string,
   canManage: PropTypes.bool,
   canManageUsers: PropTypes.bool,
+  /** Scope types the create dialog offers; defaults to the dialog's full list. */
+  scopeTypes: PropTypes.arrayOf(PropTypes.string),
 };

@@ -125,14 +125,17 @@ async function handleSingleModelImage(
   if (denied) return denied;
 
   // YAN-372: budgets on the principal's path (non-token: 1 request + fallback USD).
-  const held = await budgeted(gateway, { provider, model, nonToken: true }, () =>
-    handleSingleModelImage(body, modelStr, {
-      wantsStream,
-      binaryOutput,
-      preferredConnectionId,
-      gateway,
-      usageCtx,
-    }),
+  const held = await budgeted(
+    gateway,
+    { provider, model, nonToken: true, apiKey: usageCtx.apiKey },
+    () =>
+      handleSingleModelImage(body, modelStr, {
+        wantsStream,
+        binaryOutput,
+        preferredConnectionId,
+        gateway,
+        usageCtx,
+      }),
   );
   if (held) return held;
 

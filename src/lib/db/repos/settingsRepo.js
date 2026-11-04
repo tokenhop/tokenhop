@@ -143,19 +143,27 @@ export const GRANT_POLICY_KEYS = Object.freeze(["allowPersonalConnectionGrants"]
 // Raw read: stored JSON exactly as persisted. NEVER decrypts: envelope values
 // pass through byte-exact (export, raw writers, featureSwitch all rely on it).
 async function readRaw(db) {
-  db ??= await getAdapter();
+  return readRawSync(db ?? (await getAdapter()));
+}
+
+function readRawSync(db) {
   const row = db.get(`SELECT data FROM settings WHERE id = 1`);
   return row ? parseJson(row.data, {}) : {};
 }
 
 /**
  * Narrow raw multi-user boolean for featureSwitch. Goes straight to the
- * stored row (never through decrypting getSettings), so the switch can be
+ * stored row (never through the decrypting getSettings), so the switch can be
  * resolved at startup with no root and no cycle.
  * @returns {Promise<boolean>}
  */
 export async function getMultiUserEnabledSettingRaw() {
   return (await readRaw()).multiUserEnabled === true;
+}
+
+/** Same as getMultiUserEnabledSettingRaw, synchronous on `db` (inside a transaction). */
+export function getMultiUserEnabledSettingRawSync(db) {
+  return readRawSync(db).multiUserEnabled === true;
 }
 
 /**

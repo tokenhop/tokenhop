@@ -101,7 +101,7 @@ export async function handleEmbeddings(request) {
   }
 
   // YAN-372: budgets on the principal's path; the loop runs inside the scope.
-  return withBudgetScope(gateway, { provider, model, body, noOutput: true }, () =>
+  return withBudgetScope(gateway, { provider, model, body, noOutput: true, apiKey }, () =>
     embeddingsLoop({ body, provider, model, gateway, apiKey, url }),
   );
 }

@@ -16,6 +16,7 @@ import useLastActivity from "@/shared/hooks/useLastActivity";
 import useLiveRoutes from "@/shared/hooks/useLiveRoutes";
 import usePeriod from "@/shared/hooks/usePeriod";
 import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
+import useShellStatus, { refreshShellStatus } from "@/shared/hooks/useShellStatus";
 import { accountView } from "@/shared/utils/account";
 import { PERIOD_VALUES } from "@/shared/utils/period";
 import {
@@ -39,6 +40,11 @@ const UsageTokensChart = dynamic(() => import("./components/UsageTokensChart"), 
   loading: () => <CardSkeleton />,
 });
 
+/** Budget scopes that work with the Users & teams switch off (YAN-1829). */
+const OFF_SCOPE_TYPES = ["workspace", "key"];
+// Login-off local access on an established install: key management (the key
+// picker's GET /api/keys) takes a session or the CLI, never `local`.
+const LOCAL_SCOPE_TYPES = ["workspace"];
 // The "Request log" tab is now RequestLog. Sorting is local state inside
 // UsageBreakdown (old ?sortBy= URL sync removed — it fought the tab router).
 
@@ -90,11 +96,24 @@ function UsageContent() {
       workspaceId &&
       (view.can("workspace.budgets.lower", workspaceId) || view.can("instance.budgets.raise")),
   );
+  // Budgets with the Users & teams switch off (YAN-1829): workspace and key
+  // budgets on the Default workspace, for the dashboard admin only. `null`
+  // while the switch is unknown (summary loading or failed): the tab stays
+  // listed but renders a placeholder, since either mode's requests would fail
+  // on the other kind of install; a successful summary applies at once.
+  const { multiUser, loading: shellLoading } = useShellStatus();
+  const budgetsOff = multiUser === null ? null : multiUser === false;
+  const showBudgets =
+    budgetsOff === null
+      ? true
+      : budgetsOff
+        ? !view.active || instanceRole === "owner" || instanceRole === "admin"
+        : view.active;
   const tabFromUrl = searchParams.get("tab");
   const activeTab =
     tabFromUrl === "details" || tabFromUrl === "logs"
       ? "logs"
-      : tabFromUrl === "budgets" && view.active
+      : tabFromUrl === "budgets" && showBudgets
         ? "budgets"
         : tabFromUrl === "overview"
           ? "overview"
@@ -188,7 +207,7 @@ function UsageContent() {
             tabs={[
               { value: "overview", label: "Overview" },
               { value: "logs", label: "Request log" },
-              ...(view.active ? [{ value: "budgets", label: "Budgets" }] : []),
+              ...(showBudgets ? [{ value: "budgets", label: "Budgets" }] : []),
             ]}
           />
           {activeTab === "overview" && (
@@ -279,11 +298,29 @@ function UsageContent() {
             ))}
         </div>
       ) : activeTab === "budgets" ? (
-        <BudgetsTab
-          workspaceId={workspaceId}
-          canManage={canManage}
-          canManageUsers={view.can("instance.budgets.raise")}
-        />
+        budgetsOff === null ? (
+          shellLoading ? (
+            <CardSkeleton />
+          ) : (
+            <ErrorState
+              title="Couldn't load budgets"
+              message="The instance status could not be read. Retry in a moment."
+              onRetry={refreshShellStatus}
+            />
+          )
+        ) : budgetsOff ? (
+          <BudgetsTab
+            workspaceId="default"
+            canManage
+            scopeTypes={status?.principal?.via === "local" ? LOCAL_SCOPE_TYPES : OFF_SCOPE_TYPES}
+          />
+        ) : (
+          <BudgetsTab
+            workspaceId={workspaceId}
+            canManage={canManage}
+            canManageUsers={view.can("instance.budgets.raise")}
+          />
+        )
       ) : (
         <RequestLog usageFilters={usageFilters} />
       )}

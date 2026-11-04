@@ -1,6 +1,8 @@
-// YAN-372 budget routes on the YAN-354 harness: switch-off 404, manager may
-// create/lower but not raise or delete (ADR-0007), admin may, cross-workspace
-// 404, duplicate scope+window 409, user-level budgets admin only, audit rows.
+// YAN-372 budget routes on the YAN-354 harness: switch-off scope (YAN-1829:
+// user routes 404, workspace/key budgets on Default), manager may create/lower
+// but not raise or delete (ADR-0007), admin may, cross-workspace 404,
+// duplicate scope+window 409, user-level budgets admin only, audit rows.
+// Pristine switch-off installs: budgets-switch-off-routes.test.js.
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { callRoute, seedTenancy } from "../setup/tenancyHarness.js";
 
@@ -88,16 +90,129 @@ afterAll(() => {
 });
 
 describe("budget routes, switch off", () => {
-  it("hides every route (404)", async () => {
+  it("user routes stay hidden (404)", async () => {
     await load("off");
     const params = { id: "x", budgetId: "b" };
     for (const [h, url] of [
-      [routes.ws.GET, "/api/workspaces/x/budgets"],
-      [routes.wsOne.DELETE, "/api/workspaces/x/budgets/b"],
       [routes.user.GET, "/api/users/x/budgets"],
+      [routes.user.POST, "/api/users/x/budgets"],
     ]) {
-      expect((await callRoute(h, url, { params })).status).toBe(404);
+      expect((await callRoute(h, url, { params, method: "POST", body: {} })).status).toBe(404);
     }
+  });
+
+  it("owner manages workspace and key budgets on Default; other scopes 400", async () => {
+    await load("off");
+    const { setMeta } = await import("@/lib/db/index.js");
+    await setMeta("defaultWorkspaceId", t.shared.id);
+    adapter.run(`DELETE FROM apiKeys`);
+    adapter.run(
+      `INSERT INTO apiKeys(id, key, name, isActive, createdAt) VALUES('k-off', 'sk-off-raw-0123456789', 'k', 1, ?)`,
+      [new Date().toISOString()],
+    );
+    const ws = await create(t.a, "default", wsBudget("default"));
+    expect(ws.status).toBe(201);
+    expect((await ws.json()).budget).toMatchObject({
+      scopeType: "workspace",
+      scopeId: t.shared.id,
+    });
+    const key = await create(t.a, t.shared.id, {
+      scopeType: "key",
+      scopeId: "k-off",
+      window: "month",
+      limitUsd: 10,
+    });
+    expect(key.status).toBe(201);
+    const scoped = await create(t.a, "default", {
+      scopeType: "membership",
+      scopeId: `${t.shared.id}:${t.b.user.id}`,
+      window: "day",
+      limitUsd: 1,
+    });
+    expect(scoped.status).toBe(400);
+    expect(await scoped.json()).toEqual({
+      error: "This budget scope needs Users & teams",
+      code: "scope_unavailable",
+    });
+    // Non-Default ids are invisible; the list holds only off-mode scopes.
+    expect((await create(t.a, t.a.personal, wsBudget(t.a.personal))).status).toBe(404);
+    adapter.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, createdAt) VALUES('stale', ?, 'membership', ?, 'week', 1, ?)`,
+      [t.shared.id, `${t.shared.id}:${t.b.user.id}`, new Date().toISOString()],
+    );
+    const list = await as(t.a, routes.ws.GET, "/api/workspaces/default/budgets", {
+      params: { id: "default" },
+    });
+    const body = await list.json();
+    expect(body.workspaceId).toBe(t.shared.id);
+    expect(body.budgets.map((b) => b.scopeType).sort()).toEqual(["key", "workspace"]);
+    // Stale on-era rows stay untouched while off.
+    expect((await patch(t.a, "default", "stale", { limitUsd: 0.5 })).status).toBe(400);
+    expect((await del(t.a, "default", "stale")).status).toBe(400);
+    expect(adapter.get(`SELECT limitUsd FROM budgets WHERE id = 'stale'`).limitUsd).toBe(1);
+  });
+
+  it("established, login off: the local owner manages Default budgets", async () => {
+    await load("off");
+    const { setMeta, updateSettings } = await import("@/lib/db/index.js");
+    await setMeta("defaultWorkspaceId", t.shared.id);
+    // Established: hashed marker; single active user so login-off resolves `local`.
+    adapter.run(
+      `INSERT OR REPLACE INTO _meta(key, value) VALUES('apiKeysHashedVersion', '1'), ('apiKeysHashKid', '0123456789abcdef')`,
+    );
+    adapter.run(`UPDATE users SET status = 'disabled' WHERE id != ?`, [t.a.user.id]);
+    await updateSettings({ requireLogin: false });
+    try {
+      const res = await callRoute(routes.ws.POST, "/api/workspaces/default/budgets", {
+        method: "POST",
+        body: wsBudget("default"),
+        params: { id: "default" },
+      });
+      expect(res.status).toBe(201);
+      expect((await res.json()).budget).toMatchObject({ scopeId: t.shared.id });
+      const list = await callRoute(routes.ws.GET, "/api/workspaces/default/budgets", {
+        params: { id: "default" },
+      });
+      expect(list.status).toBe(200);
+      expect((await list.json()).budgets).toHaveLength(1);
+      expect(
+        adapter.get(`SELECT actorUserId, via FROM auditEvents WHERE action = 'budget.create'`),
+      ).toEqual({ actorUserId: t.a.user.id, via: "local" });
+      // Gateway credentials never authorize, even where login-off local would.
+      for (const apiKey of ["sk-off-raw-0123456789", "th_anything"]) {
+        const bearer = await callRoute(routes.ws.POST, "/api/workspaces/default/budgets", {
+          method: "POST",
+          apiKey,
+          body: { ...wsBudget("default"), window: "day" },
+          params: { id: "default" },
+        });
+        expect(bearer.status).toBe(401);
+      }
+      expect(adapter.get(`SELECT COUNT(*) AS c FROM budgets`).c).toBe(1);
+    } finally {
+      await updateSettings({ requireLogin: true });
+      adapter.run(`DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion', 'apiKeysHashKid')`);
+    }
+  });
+
+  it("an instance admin outside Default gets 404 (keys there are not theirs to list)", async () => {
+    await load("off");
+    const db = await import("@/lib/db/index.js");
+    await db.setMeta("defaultWorkspaceId", t.shared.id);
+    const admin = await db.createUserUnscoped({ email: "adm@tenancy.test", instanceRole: "admin" });
+    const seeded = {
+      user: admin,
+      ctx: { ...t.b.ctx, userId: admin.id, activeWorkspaceId: admin.personalWorkspaceId },
+    };
+    expect((await create(seeded, "default", wsBudget("default"))).status).toBe(404);
+    const list = await as(seeded, routes.ws.GET, "/api/workspaces/default/budgets", {
+      params: { id: "default" },
+    });
+    expect(list.status).toBe(404);
+    expect(adapter.get(`SELECT COUNT(*) AS c FROM budgets`).c).toBe(0);
+    // Once a member of Default, the same admin manages its budgets.
+    await db.addMembership(t.a.ctx, t.shared.id, { userId: admin.id, role: "member" });
+    expect((await create(seeded, "default", wsBudget("default"))).status).toBe(201);
   });
 });
 

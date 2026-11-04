@@ -189,7 +189,7 @@ async function handleSingleProviderSearch(body, providerInput, request, gateway,
   if (denied) return denied;
 
   // YAN-372: budgets on the principal's path (non-token request).
-  const held = await budgeted(gateway, { provider: providerId, nonToken: true }, () =>
+  const held = await budgeted(gateway, { provider: providerId, nonToken: true, apiKey }, () =>
     handleSingleProviderSearch(body, providerInput, request, gateway, apiKey),
   );
   if (held) return held;

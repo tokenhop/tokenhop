@@ -327,8 +327,9 @@ export async function handleVideoCreate(request, action) {
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const idempotencyKey = request.headers.get("idempotency-key") || null;
 
+  const apiKey = auth.legacy ? extractApiKey(request) : null;
   // YAN-372: budgets on the principal's path (job creation is non-token).
-  return withBudgetScope(gateway, { provider, model, nonToken: true }, async () => {
+  return withBudgetScope(gateway, { provider, model, nonToken: true, apiKey }, async () => {
     const excludeConnectionIds = new Set();
     let lastError = null;
     let lastStatus = null;
@@ -402,7 +403,7 @@ export async function handleVideoCreate(request, action) {
           model,
           endpoint: new URL(request.url).pathname,
           connectionId: credentials.connectionId,
-          apiKey: auth.legacy ? extractApiKey(request) : null,
+          apiKey,
           ...gatewayKeyContext(gateway),
           grantId: credentials.grantId ?? undefined,
           units: { jobs: 1 },

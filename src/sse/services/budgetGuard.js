@@ -15,6 +15,7 @@ import { statsEmitter } from "@/lib/db/repos/usageLiveFeed.js";
 import { audit } from "@/lib/users/audit.js";
 import {
   budgetsGeneration,
+  budgetSwitchEpoch,
   membershipScopeId,
   windowEnd,
   windowStart,
@@ -30,6 +31,11 @@ import {
 import { maxOutputFor } from "./modelOutputCap.js";
 import { calculateCostFromTokens } from "open-sse/providers/pricing.js";
 import { estimateBodyTokens } from "./grantRateLimiter.js";
+import { legacySubject, OFF_LEVELS, offScoped } from "./budgetSubject.js";
+import {
+  defaultWorkspaceIdUnscoped,
+  pendingDefaultWorkspaceIdUnscoped,
+} from "@/lib/db/repos/ownership.js";
 
 const FIELDS = { usd: "limitUsd", tokens: "limitTokens", requests: "limitRequests" };
 const UNITS = Object.keys(FIELDS);
@@ -41,11 +47,15 @@ const successful = (status) => status == null || status === "ok" || status === "
 const requestHolds = new AsyncLocalStorage();
 const counters = new Map(); // `${budgetId}:${windowStart}` → state
 let rows = [];
+let offRows = []; // switch off: see offBudgets (YAN-1829)
+let offGeneration = -1;
 let generation = -1;
 let loading = null;
 let enabled = false;
 let switchExpires = 0;
+let switchEpoch = -1; // budgetSwitchEpoch() the cached `enabled` was read in
 let db = null;
+let offWs = null; // switch-off budget workspace: Default, else the pending Default
 
 // Trusted gateway reader: compares scopes against resolved attribution only.
 function listBudgetRowsUnscoped(adapter) {
@@ -53,16 +63,20 @@ function listBudgetRowsUnscoped(adapter) {
 }
 
 /**
- * Fast gate: false for legacy (no principal), switch off, or no budget rows —
- * one cached boolean per request on the no-budget path (no DB query).
+ * Fast gate: false for legacy (no principal) with the switch on, or no
+ * applicable budget rows — one cached boolean per request on the no-budget
+ * path (no DB query). Switch off (YAN-1829): workspace and key budgets apply,
+ * also to legacy requests.
  */
 export async function hasBudgets(principal) {
-  if (!principal) return false;
-  if (Date.now() >= switchExpires) {
+  // Zero rows: false in every mode, no clock or switch read.
+  if (rows.length === 0 && generation === budgetsGeneration()) return false;
+  if (Date.now() >= switchExpires || switchEpoch !== budgetSwitchEpoch()) {
+    switchEpoch = budgetSwitchEpoch();
     enabled = await isMultiUserEnabled();
     switchExpires = Date.now() + SWITCH_TTL_MS;
   }
-  if (!enabled) return false;
+  if (enabled && !principal) return false;
   if (generation !== budgetsGeneration()) {
     loading ??= getAdapter()
       .then((adapter) => {
@@ -86,7 +100,33 @@ export async function hasBudgets(principal) {
       return false;
     }
   }
-  return rows.length > 0;
+  return (enabled ? rows : offBudgets()).length > 0;
+}
+
+// Switch off enforces exactly what the off-mode surface manages: workspace and
+// key budgets of Default, else of the pending Default (pristine installs).
+// Resolved once per generation, only while off (switch-on reloads unchanged).
+// A failed read enforces nothing (fail open, retried next request).
+function offBudgets() {
+  if (offGeneration === generation) return offRows;
+  const scoped = rows.filter(offScoped);
+  try {
+    const def = scoped.length ? defaultWorkspaceIdUnscoped(db) : null;
+    offWs = def ?? (scoped.length ? pendingDefaultWorkspaceIdUnscoped(db) : null);
+    offRows = offWs ? scoped.filter((b) => b.workspaceId === offWs) : [];
+  } catch (e) {
+    console.warn("[budgetGuard] budget workspace read failed, not enforcing:", e?.message);
+    return [];
+  }
+  offGeneration = generation;
+  return offRows;
+}
+
+// Switch-off legacy subject: the off workspace offBudgets selected (Default,
+// else the pending Default) and the raw key's id when off-mode key budgets
+// exist. Runs after offBudgets in the same request.
+function offSubject(apiKey) {
+  return legacySubject(db, offRows.some((b) => b.scopeType === "key") ? apiKey : null, offWs);
 }
 
 function scopeIdOf(level, who) {
@@ -269,10 +309,13 @@ function reserve(budgets, estimate) {
 const grantBudgets = (grantId) =>
   rows.filter((b) => b.scopeType === "grant" && b.scopeId === grantId);
 
-/** Selection-time context for grant budgets; null (zero cost) when none apply. */
+/**
+ * Selection-time context for grant budgets; null (zero cost) when none apply.
+ * Grant budgets need the switch on (YAN-1829).
+ */
 export function grantBudgetContext() {
   const store = requestHolds.getStore();
-  if (!store || !rows.some((b) => b.scopeType === "grant")) return null;
+  if (!enabled || !store || !rows.some((b) => b.scopeType === "grant")) return null;
   return store;
 }
 
@@ -362,13 +405,15 @@ function releaseWhenDone(res, release, held, signal = null) {
 
 /**
  * Leaf-handler hook. Returns null when the caller should just continue: no
- * principal, switch off, no budgets, or already inside this request's budget
- * scope. Otherwise reserves on the principal's path (429 when over) and
- * re-invokes `self` inside the scope, releasing when its response ends.
+ * principal with the switch on, no budgets, or already inside this request's
+ * budget scope. Otherwise reserves on the principal's path (429 when over)
+ * and re-invokes `self` inside the scope, releasing when its response ends.
+ * Switch off (YAN-1829): only key and workspace levels; a null principal
+ * (legacy storage) is budgeted as `opts.apiKey` on the pending Default.
  * Usage: `const held = await budgeted(gateway, { provider, model, body }, () => fn(...args));
  * if (held) return held;`
  * @param {object|null} principal
- * @param {{ provider?: string, model?: string, body?: object, nonToken?: boolean, noOutput?: boolean }} opts
+ * @param {{ provider?: string, model?: string, body?: object, nonToken?: boolean, noOutput?: boolean, apiKey?: string|null }} opts
  * @param {() => Promise<Response>} self
  * @returns {Promise<Response|null>}
  */
@@ -401,8 +446,11 @@ async function withBudget(principal, opts, run) {
     return res;
   }
   const estimate = await estimateUsage(opts);
-  const path = PATH_LEVELS.flatMap((lvl) =>
-    rows.filter((b) => b.scopeType === lvl && matches(b, principal)),
+  const levels = enabled ? PATH_LEVELS : OFF_LEVELS;
+  const candidates = enabled ? rows : offBudgets();
+  const who = principal ?? offSubject(opts.apiKey);
+  const path = levels.flatMap((lvl) =>
+    candidates.filter((b) => b.scopeType === lvl && matches(b, who)),
   );
   const store = { estimate, releases: [] };
   if (path.length) {

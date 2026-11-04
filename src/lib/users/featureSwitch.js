@@ -2,7 +2,10 @@
 // and of the `multiUserEnabled` setting: everything else asks this module.
 // Off means exactly today's single-user install.
 import { NextResponse } from "next/server";
-import { getMultiUserEnabledSettingRaw } from "@/lib/db/repos/settingsRepo.js";
+import {
+  getMultiUserEnabledSettingRaw,
+  getMultiUserEnabledSettingRawSync,
+} from "@/lib/db/repos/settingsRepo.js";
 
 export const MULTI_USER_ENV = "TOKENHOP_MULTI_USER";
 
@@ -51,6 +54,12 @@ export async function isMultiUserEnabled() {
 /** Effective switch state a stored value would yield (no DB read). */
 export function effectiveFor(stored) {
   return ENV_OVERRIDE ?? (stored && !pendingRestartFor(stored));
+}
+
+/** isMultiUserEnabled, synchronous on `db` (re-check inside a transaction). */
+export function isMultiUserEnabledSync(db) {
+  if (ENV_OVERRIDE !== undefined) return ENV_OVERRIDE;
+  return effectiveFor(getMultiUserEnabledSettingRawSync(db));
 }
 
 /** Instance-control metadata; the raw stored value is never an effective gate. */

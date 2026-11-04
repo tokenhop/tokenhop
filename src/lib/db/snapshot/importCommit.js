@@ -82,11 +82,14 @@ export async function prepareTransferCacheInvalidation(db) {
   const { invalidatePricingCache } = await import("../repos/pricingRepo.js");
   const { clearCredentialCache } = await import("../helpers/credentialStorage.js");
   const { clearApiKeyHashKeyStateCache } = await import("@/lib/security/apiKeyHashKey.js");
+  const { bumpBudgetsGeneration } = await import("@/lib/users/budgets.js");
   const mitm = await import("@/mitm/manager.js").catch(() => null);
   // CJS module: named export or default.* depending on interop.
   const setter = mitm?.default?.setCachedPassword ?? mitm?.setCachedPassword;
   return () => {
     try {
+      // YAN-1829: imported budget rows reach the gateway guard without a restart.
+      bumpBudgetsGeneration();
       clearApiKeysSchemaCache(db);
       clearApiKeyPrincipalCache();
       clearCredentialCache(db);

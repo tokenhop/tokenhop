@@ -150,12 +150,12 @@ const set = (routes) =>
 // Independently declared: routes whose edge answers per exact URL workspace.
 const MEMBERS_ROUTES = set(`workspaces/[id]/members workspaces/[id]/members/[userId]
   workspaces/[id]/invitations workspaces/[id]/invitations/[inviteId]`);
+// YAN-1829: workspace budget routes stay reachable with the switch off.
 const HIDDEN = set(`auth/reset-mode users users/[id] users/[id]/password users/[id]/logout-all
   users/ownership-transfer users/ownership-transfer/sso users/[id]/budgets users/[id]/budgets/[budgetId]
   workspaces workspaces/[id] workspaces/[id]/reauth auth/sso/preview
   workspaces/[id]/members workspaces/[id]/members/[userId] workspaces/[id]/invitations
-  workspaces/[id]/invitations/[inviteId] workspaces/[id]/move workspaces/[id]/budgets
-  workspaces/[id]/budgets/[budgetId] invitations/accept providers/[id]/grants
+  workspaces/[id]/invitations/[inviteId] workspaces/[id]/move invitations/accept providers/[id]/grants
   providers/[id]/grants/[grantId] grants me/workspace me/identities me/identities/[id]
   me/sessions me/sessions/[id] me/reauth audit settings/keys/rotate workspaces/[id]/keys/rotate workspaces/[id]/export workspaces/[id]/import`);
 const ALWAYS = set(`shutdown version/shutdown settings/database oauth/cursor/auto-import

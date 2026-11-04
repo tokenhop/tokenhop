@@ -14,7 +14,9 @@ const INITIAL_STATE = {
   badges: { providers: null, combos: null, quota: null },
   providerAttention: { count: 0, status: null },
   enableTranslator: false,
-  multiUser: false,
+  // Unknown (null) until a 2xx body carries the boolean; a failed summary
+  // never reads as "switch off" (YAN-1829 budgets mode).
+  multiUser: null,
   // YAN-408: heartbeat sparkline series and pending savings milestone toast.
   traffic: null,
   savingsMilestone: null,
@@ -176,7 +178,7 @@ function stop() {
  *   badges: { providers: number|null, combos: number|null, quota: number|null },
  *   providerAttention: { count: number, status: "warn"|"err"|null },
  *   enableTranslator: boolean,
- *   multiUser: boolean,
+ *   multiUser: boolean|null,
  *   traffic: { series: number[], total: number }|null,
  *   savingsMilestone: number|null,
  * }}

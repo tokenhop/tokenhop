@@ -793,6 +793,18 @@ describe("instance full-table sections (plain hashed v2)", () => {
     expect(dump("SELECT keyHash FROM apiKeys WHERE id = 'hk-1'")[0].keyHash).toBe(digest(RAW_H));
   });
 
+  it("imported budgets reach the gateway guard without a restart", async () => {
+    const snapshot = await dbApi.exportDb();
+    db.run(`DELETE FROM budgets`);
+    const { bumpBudgetsGeneration } = await import("@/lib/users/budgets.js");
+    bumpBudgetsGeneration();
+    const guard = await import("@/sse/services/budgetGuard.js");
+    const principal = Object.freeze({ via: "session", workspaceId: WS, userId: "owner" });
+    expect(await guard.hasBudgets(principal)).toBe(false); // caches the empty set
+    await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    expect(await guard.hasBudgets(principal)).toBe(true);
+  });
+
   it("wrong master fails preflight on a full snapshot with zero mutation", async () => {
     const snapshot = await dbApi.exportDb();
     const before = fullDump();

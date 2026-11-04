@@ -10,6 +10,8 @@ import { Button, Callout, Input, Modal, Select } from "@/shared/components";
 // so those fields render disabled. Validation mirrors budgetsRepo: at least
 // one limit, nonnegative numbers, tokens/requests/soft% integers (soft 1–100).
 // Server errors render inline; the dialog never closes optimistically.
+// Switch off (YAN-1829): `scopeTypes` narrows to [workspace, key] and
+// `keysWorkspaceId` null lists keys from the legacy GET /api/keys.
 
 const SCOPE_TYPES = ["workspace", "key", "membership", "grant"];
 const WINDOWS = ["day", "week", "month", "total"];
@@ -63,6 +65,8 @@ export default function BudgetDialog({
   isOpen,
   onClose,
   workspaceId,
+  keysWorkspaceId,
+  scopeTypes = SCOPE_TYPES,
   userId = null,
   budget,
   onSaved,
@@ -114,9 +118,12 @@ export default function BudgetDialog({
       return res.json();
     };
     const ws = encodeURIComponent(workspaceId);
+    const keysWs = keysWorkspaceId === undefined ? workspaceId : keysWorkspaceId;
     const load = async () => {
       if (form.scopeType === "key") {
-        const data = await get(`/api/keys?workspaceId=${ws}`);
+        const data = await get(
+          keysWs ? `/api/keys?workspaceId=${encodeURIComponent(keysWs)}` : "/api/keys",
+        );
         return (data.keys ?? []).map((k) => ({ value: k.id, label: k.name || k.prefix || k.id }));
       }
       if (form.scopeType === "membership") {
@@ -153,7 +160,7 @@ export default function BudgetDialog({
         if (!controller.signal.aborted) setLoadingOptions(false);
       });
     return () => controller.abort();
-  }, [isOpen, editing, form?.scopeType, workspaceId]);
+  }, [isOpen, editing, form?.scopeType, workspaceId, keysWorkspaceId]);
 
   const canSubmit = useMemo(() => form && validate(form, editing).payload, [form, editing]);
 
@@ -232,7 +239,7 @@ export default function BudgetDialog({
           onChange={set("scopeType")}
           disabled={editing || Boolean(userId)}
           hint={editing ? "Scope can't change after creation" : undefined}
-          options={(userId ? ["user"] : SCOPE_TYPES).map((value) => ({ value, label: value }))}
+          options={(userId ? ["user"] : scopeTypes).map((value) => ({ value, label: value }))}
         />
         {!editing && form.scopeType !== "workspace" && (
           <>
@@ -327,6 +334,9 @@ BudgetDialog.propTypes = {
   isOpen: PropTypes.bool,
   onClose: PropTypes.func,
   workspaceId: PropTypes.string.isRequired,
+  /** Workspace for the key picker; null = legacy list. Defaults to workspaceId. */
+  keysWorkspaceId: PropTypes.string,
+  scopeTypes: PropTypes.arrayOf(PropTypes.string),
   userId: PropTypes.string,
   budget: PropTypes.object,
   onSaved: PropTypes.func,

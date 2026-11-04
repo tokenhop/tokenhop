@@ -293,7 +293,13 @@ async function forwardGeminiNativeRequest(request, body, model, action, gateway)
   );
   if (blocked) return blocked;
   // YAN-372: budgets on the principal's path (Gemini-native body: contents).
-  const held = await budgeted(gateway, { provider: "gemini", model: modelId, body }, () =>
+  const budgetOpts = {
+    provider: "gemini",
+    model: modelId,
+    body,
+    apiKey: gateway ? null : extractClientApiKey(request),
+  };
+  const held = await budgeted(gateway, budgetOpts, () =>
     forwardGeminiNativeRequest(request, body, model, action, gateway),
   );
   if (held) return held;

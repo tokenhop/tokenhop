@@ -927,5 +927,9 @@ async function handleSingleModelChat(
       }
     }
   };
-  return withBudgetScope(gateway, { provider, model, body, signal: attempt?.signal }, dispatch);
+  return withBudgetScope(
+    gateway,
+    { provider, model, body, signal: attempt?.signal, apiKey },
+    dispatch,
+  );
 }

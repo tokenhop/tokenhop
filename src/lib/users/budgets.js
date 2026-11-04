@@ -68,6 +68,15 @@ export const bumpBudgetsGeneration = () => {
   global.__budgetsGeneration += 1;
 };
 
+// Switch-cache epoch (YAN-1829): the switch writer bumps it after the stored
+// switch commits, so the gateway guard drops its cached switch value at once
+// instead of after its TTL. Process-wide like the generation above.
+if (global.__budgetSwitchEpoch === undefined) global.__budgetSwitchEpoch = 0;
+export const budgetSwitchEpoch = () => global.__budgetSwitchEpoch;
+export const expireBudgetSwitchCache = () => {
+  global.__budgetSwitchEpoch += 1;
+};
+
 // Self-check: UTC boundaries (run: node src/lib/users/budgets.js).
 if (process.argv[1]?.endsWith("lib/users/budgets.js")) {
   const assert = (await import("node:assert")).strict;

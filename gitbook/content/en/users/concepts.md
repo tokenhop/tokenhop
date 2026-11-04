@@ -8,7 +8,7 @@ Next steps: [Households](/en/users/households), [Teams](/en/users/teams), [Secur
 
 ## Enabling Users & Teams
 
-The **users & teams** switch is available from v1.1.0 and is **off by default**. While it is off, tokenhop behaves like a single-user install and none of the pages or APIs described in this section exist (they answer 404).
+The **users & teams** switch is available from v1.1.0 and is **off by default**. While it is off, tokenhop behaves like a single-user install and none of the pages or APIs described in this section exist (they answer 404). Exception: **Usage → Budgets** works without it, for workspace and API-key budgets (see [Budgets](#budgets)).
 
 To turn it on:
 
@@ -159,6 +159,7 @@ A **budget** caps cost, tokens or requests for a time window. You manage them in
 - **Every level counts.** A request must pass the key, user, member and workspace budgets, plus the grant budget when it is routed through a grant. If any level is over, the request is rejected.
 - **Reservation before the call.** Before sending anything upstream, tokenhop estimates the request's cost and reserves it at every level. If the reservation does not fit, the client gets an HTTP `429` with an OpenAI-style error: `code: "budget_exceeded"`, plus the `level` and `window` that tripped. After the response, the reservation is replaced with recorded usage; if the request ends without recorded usage, the hold is released. The estimate uses input plus `max_tokens`, or a small fixed amount for models without pricing and non-token requests, so actual spend can exceed a limit. Budgets are tokenhop's own accounting, a guardrail, not a billing guarantee: for a hard cap, also set a spending limit at the provider.
 - **Who can change what:** managers can add budgets and lower them. **Raising or removing** a limit needs an instance owner or admin. A key budget cannot exceed the workspace budget for the same window.
+- **Without Users & teams:** the dashboard admin can set **Workspace** and **API key** budgets on the Default workspace. Enforcement and the 429 are the same. User, member and grant budgets need Users & teams. Turning it on later keeps these budgets. Once accounts exist, an owner or admin needs a membership in Default to manage them. With login turned off, only workspace budgets can be added from the dashboard (API key budgets need a signed-in session).
 - Subscription traffic has no per-token bill. Its spend is shown as an estimate ("Notional spend … estimate, not billing").
 
 ---
