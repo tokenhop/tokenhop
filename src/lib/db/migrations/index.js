@@ -34,6 +34,7 @@ import m019 from "./019-usage-budget-carry.js";
 import m020 from "./020-usage-adoption-guard.js";
 import m021 from "./021-usage-savings-combo-rollup.js";
 import m022 from "./022-usage-untracked-index.js";
+import m023 from "./023-budget-notices.js";
 
 export const MIGRATIONS = [
   m001,
@@ -58,6 +59,7 @@ export const MIGRATIONS = [
   m020,
   m021,
   m022,
+  m023,
 ].sort((a, b) => a.version - b.version);
 
 for (let i = 1; i < MIGRATIONS.length; i++) {

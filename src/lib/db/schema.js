@@ -454,6 +454,22 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_budgets_ws ON budgets(workspaceId)",
     ],
   },
+  // Budget notice claims (migration 023, YAN-1832): the last window a soft or
+  // hard notice was sent for, per budget and kind. The signature column holds
+  // the budget's limits (+ softLimitPct for soft) when claimed: a mismatch
+  // re-arms the notice. Deleted with the budget, including by a snapshot
+  // restore that replaces the budgets section (claims are not exported), so a
+  // restore may repeat each budget's notice once in the current window.
+  budgetNotices: {
+    columns: {
+      budgetId: "TEXT NOT NULL REFERENCES budgets(id) ON DELETE CASCADE",
+      kind: "TEXT NOT NULL CHECK (kind IN ('soft', 'hard'))",
+      windowStart: "TEXT NOT NULL",
+      signature: "TEXT NOT NULL",
+      notifiedAt: "TEXT NOT NULL",
+    },
+    primaryKey: "PRIMARY KEY (budgetId, kind)",
+  },
   // YAN-751: one row per signed-in device, keyed by the non-secret `sid` JWT
   // claim. userAgent/ip hold derived labels only (never the raw UA or full IP).
   // Soft revoke (revokedAt) stays as a tombstone until expiresAt.

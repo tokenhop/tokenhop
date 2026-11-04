@@ -241,24 +241,193 @@ describe("cancelled observed spend", () => {
   });
 });
 
-describe("soft limit", () => {
-  it("audits once per window when settled or rebuilt spend crosses softLimitPct", async () => {
-    db.run("DELETE FROM auditEvents");
-    budget("workspace", t.shared.id, { tokens: 100, soft: 20 });
-    await call(who()); // window state built (spent 0)
-    await usage(who()); // 15 tokens: below 20%
-    await usage(who()); // 30 tokens: crosses
-    await usage(who()); // still over: no second event
-    await new Promise((r) => setTimeout(r, 20)); // audit() is fire-and-forget
-    const rows = () => db.all(`SELECT after FROM auditEvents WHERE action = 'budget.softLimit'`);
-    expect(rows()).toHaveLength(1);
-    expect(JSON.parse(rows()[0].after)).toMatchObject({ level: "workspace", spentTokens: 30 });
-    // Restart: spend rebuilt from history is already past the threshold.
-    db.run("DELETE FROM auditEvents");
-    await load("on", { wipe: false });
-    await call(who());
-    await new Promise((r) => setTimeout(r, 20));
-    expect(rows()).toHaveLength(1);
+describe("budget notices (YAN-1830, YAN-1832)", () => {
+  const audits = (action) =>
+    db.all(`SELECT targetId, after FROM auditEvents WHERE action = ? ORDER BY id`, [action]);
+  const settle = () => new Promise((r) => setTimeout(r, 20)); // audit() is fire-and-forget
+  let notices;
+  const listen = () => {
+    notices = [];
+    const on = (n) => notices.push(n);
+    feedEmitter().on("budgetNotice", on);
+    return () => feedEmitter().off("budgetNotice", on);
+  };
+  const feedEmitter = () => global._statsEmitter;
+
+  it("soft: once per window, survives a restart, fires again in the next window", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const stop = listen();
+    try {
+      vi.setSystemTime(new Date("2026-03-10T12:00:00Z"));
+      db.run("DELETE FROM auditEvents");
+      const id = budget("workspace", t.shared.id, { tokens: 100, soft: 20 });
+      await call(who()); // window state built (spent 0)
+      await usage(who()); // 15 tokens: below 20%
+      await usage(who()); // 30 tokens: crosses
+      await usage(who()); // still over: no second notice
+      await settle();
+      expect(audits("budget.softLimit")).toHaveLength(1);
+      expect(JSON.parse(audits("budget.softLimit")[0].after)).toMatchObject({
+        level: "workspace",
+        spentTokens: 30,
+        windowStart: "2026-03-10T00:00:00.000Z",
+      });
+      expect(notices.map((n) => n.id)).toEqual([`${id}:soft:2026-03-10T00:00:00.000Z`]);
+
+      // Restart: spend rebuilt from history is past the threshold, the durable
+      // claim keeps the notice from firing again in this window.
+      await load("on", { wipe: false });
+      await call(who());
+      await usage(who());
+      await settle();
+      expect(audits("budget.softLimit")).toHaveLength(1);
+      expect(notices).toHaveLength(1);
+
+      // Next UTC window: eligible again.
+      vi.setSystemTime(new Date("2026-03-11T00:00:05Z"));
+      await usage(who(), { timestamp: "2026-03-11T00:00:01.000Z" });
+      await usage(who(), { timestamp: "2026-03-11T00:00:02.000Z" });
+      await call(who());
+      await settle();
+      expect(notices.map((n) => n.id)).toEqual([
+        `${id}:soft:2026-03-10T00:00:00.000Z`,
+        `${id}:soft:2026-03-11T00:00:00.000Z`,
+      ]);
+      expect(audits("budget.softLimit")).toHaveLength(2);
+    } finally {
+      stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it("hard: first budget_exceeded 429 per window notifies once, also after a restart", async () => {
+    const stop = listen();
+    try {
+      db.run("DELETE FROM auditEvents");
+      const id = budget("workspace", t.shared.id, { requests: 1 });
+      await usage(who());
+      expect((await call(who())).status).toBe(429);
+      expect((await call(who())).status).toBe(429);
+      await load("on", { wipe: false });
+      expect((await call(who())).status).toBe(429);
+      await settle();
+      expect(notices.map((n) => [n.budgetId, n.kind])).toEqual([[id, "hard"]]);
+      expect(audits("budget.hardStop")).toHaveLength(1);
+      expect(audits("budget.hardStop")[0].targetId).toBe(id);
+    } finally {
+      stop();
+    }
+  });
+
+  it("changing a limit or softLimitPct in-window re-arms the notice", async () => {
+    const stop = listen();
+    try {
+      const id = budget("workspace", t.shared.id, { tokens: 100, soft: 20 });
+      await usage(who());
+      await usage(who()); // 30 tokens
+      await call(who());
+      expect(notices).toHaveLength(1);
+      // Same limits after a restart: still claimed.
+      await load("on", { wipe: false });
+      await call(who());
+      expect(notices).toHaveLength(1);
+      // Raise the soft % above the spend: nothing to send yet (not crossed).
+      db.run("UPDATE budgets SET softLimitPct = 50 WHERE id = ?", [id]);
+      budgets.bumpBudgetsGeneration();
+      await call(who());
+      expect(notices).toHaveLength(1);
+      // Lower the limit so 30 tokens is past 50%: re-armed, sends again.
+      db.run("UPDATE budgets SET limitTokens = 50 WHERE id = ?", [id]);
+      budgets.bumpBudgetsGeneration();
+      await call(who());
+      expect(notices.map((n) => [n.kind, n.limitTokens, n.softLimitPct])).toEqual([
+        ["soft", 100, 20],
+        ["soft", 50, 50],
+      ]);
+      // Restart again with those limits: no repeat.
+      await load("on", { wipe: false });
+      await call(who());
+      expect(notices).toHaveLength(2);
+    } finally {
+      stop();
+    }
+  });
+
+  it("a claim write failure fails open: the request passes and the notice still goes out", async () => {
+    const stop = listen();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      budget("workspace", t.shared.id, { requests: 0 });
+      const run = db.run.bind(db);
+      const spy = vi.spyOn(db, "run").mockImplementation((sql, params) => {
+        if (/INTO budgetNotices/.test(sql)) throw new Error("database is locked");
+        return run(sql, params);
+      });
+      const r = await call(who());
+      spy.mockRestore();
+      expect(r.status).toBe(429); // enforcement unaffected
+      expect(notices.map((n) => n.kind)).toEqual(["hard"]);
+    } finally {
+      warn.mockRestore();
+      stop();
+    }
+  });
+
+  it("deleting a budget deletes its claims", async () => {
+    const id = budget("workspace", t.shared.id, { requests: 0 });
+    expect((await call(who())).status).toBe(429);
+    expect(db.get("SELECT COUNT(*) AS c FROM budgetNotices WHERE budgetId = ?", [id]).c).toBe(1);
+    db.run("DELETE FROM budgets WHERE id = ?", [id]);
+    expect(db.get("SELECT COUNT(*) AS c FROM budgetNotices WHERE budgetId = ?", [id]).c).toBe(0);
+  });
+
+  it("a budget deleted mid-request (claim FK fails) sends no notice", async () => {
+    const stop = listen();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const id = budget("workspace", t.shared.id, { requests: 1 });
+      expect((await call(who())).status).toBe(200); // window cached; its hold stays reserved
+      // Deleted without a generation bump: the guard still holds the old row,
+      // as in a request racing the delete; the real FK rejects the claim.
+      db.run("DELETE FROM budgets WHERE id = ?", [id]);
+      const claims = vi.spyOn(db, "run");
+      expect((await call(who())).status).toBe(429);
+      const claim = claims.mock.calls.findIndex(([sql]) => /INTO budgetNotices/.test(sql));
+      expect(claim).toBeGreaterThanOrEqual(0); // the claim was attempted…
+      expect(claims.mock.results[claim]).toMatchObject({
+        type: "throw",
+        value: expect.objectContaining({
+          message: expect.stringContaining("FOREIGN KEY constraint failed"),
+        }),
+      }); // …and rejected by the real FK
+      claims.mockRestore();
+      expect(notices).toEqual([]);
+      expect(db.get("SELECT COUNT(*) AS c FROM budgetNotices").c).toBe(0);
+      expect(warn).not.toHaveBeenCalledWith(
+        expect.stringContaining("notice claim failed"),
+        expect.anything(),
+      );
+    } finally {
+      warn.mockRestore();
+      stop();
+    }
+  });
+
+  it("switch off: Default workspace notices persist across a restart too", async () => {
+    await load("off");
+    db.run(`INSERT OR REPLACE INTO _meta(key, value) VALUES('defaultWorkspaceId', ?)`, [
+      t.shared.id,
+    ]);
+    const stop = listen();
+    try {
+      budget("workspace", t.shared.id, { requests: 0 });
+      expect((await call(who())).status).toBe(429);
+      await load("off", { wipe: false });
+      expect((await call(who())).status).toBe(429);
+      expect(notices.map((n) => [n.kind, n.workspaceId])).toEqual([["hard", t.shared.id]]);
+    } finally {
+      stop();
+    }
   });
 });
 

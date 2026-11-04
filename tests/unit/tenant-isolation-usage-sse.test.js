@@ -44,14 +44,17 @@ async function open(
   as,
   workspaceId = as.personal,
   query = "",
-  { sv = as.user.sessionVersion, signal } = {},
+  { sv = as.user.sessionVersion, signal, headers = {} } = {},
 ) {
   const { createDashboardAuthToken } = await import("@/lib/auth/dashboardSession.js");
   const token = await createDashboardAuthToken({ sub: as.user.id, sv, wid: as.personal });
   jar.cookie = token;
   try {
     const url = new URL(`/api/usage/stream?workspaceId=${workspaceId}${query}`, "http://localhost");
-    const request = new NextRequest(url, { headers: { cookie: `auth_token=${token}` }, signal });
+    const request = new NextRequest(url, {
+      headers: { cookie: `auth_token=${token}`, ...headers },
+      signal,
+    });
     const response = await GET(request, { params: Promise.resolve({}) });
     if (response.status !== 200) return { response };
     const reader = response.body.getReader();
@@ -401,5 +404,256 @@ describe("stream lifecycle", () => {
     readers.splice(readers.indexOf(b.reader), 1);
     expect((await frame(a.reader)).lastProvider).toBe("a-private-sentinel");
     expect(counts()).toEqual({ update: 1, pending: 1 });
+  });
+});
+
+// YAN-1830: budget notices ride the same stream as a named event, filtered
+// per viewer, live only.
+describe("budget notices on the usage stream", () => {
+  const NOTICE_KEYS = [
+    "at",
+    "budgetId",
+    "id",
+    "kind",
+    "limitRequests",
+    "limitTokens",
+    "limitUsd",
+    "resetAt",
+    "scopeId",
+    "scopeType",
+    "softLimitPct",
+    "spent",
+    "window",
+    "windowStart",
+  ];
+
+  // Collect every chunk a reader yields until afterEach cancels it. The
+  // returned function lists notices; `.raw()` every chunk.
+  function tap(reader) {
+    const chunks = [];
+    (async () => {
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) return;
+          chunks.push(new TextDecoder().decode(value));
+        }
+      } catch {}
+    })();
+    const notices = () =>
+      chunks
+        .filter((c) => c.startsWith("event: budgetNotice\n"))
+        .map((c) => JSON.parse(c.split("\ndata: ")[1]));
+    notices.raw = () => chunks;
+    return notices;
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 300));
+
+  // A soft-limit budget (100 tokens, 20%) whose window state the guard has
+  // built; `spend` settles 30 tokens for B in Shared, `reject` is a 429.
+  async function crossSoftLimit({ scopeType = "workspace", scopeId = t.shared.id } = {}) {
+    const { bumpBudgetsGeneration } = await import("@/lib/users/budgets.js");
+    const guard = await import("@/sse/services/budgetGuard.js");
+    adapter.run("DELETE FROM budgets");
+    adapter.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, limitTokens, limitRequests, softLimitPct, resetAt, createdByUserId, createdAt)
+       VALUES('bn-1', ?, ?, ?, 'day', NULL, 100, NULL, 20, NULL, NULL, ?)`,
+      [scopeType === "user" ? null : t.shared.id, scopeType, scopeId, new Date().toISOString()],
+    );
+    bumpBudgetsGeneration();
+    const p = Object.freeze({
+      via: "apiKey",
+      workspaceId: t.shared.id,
+      userId: t.b.user.id,
+      apiKeyId: "k-b",
+    });
+    // The settle hook saveRequestUsageUnscoped fires after its commit (this
+    // file's hashed-key fixture has no hashed marker, so rows can't be saved).
+    const { emitUsageCommitted } = await import("@/lib/usage/usageCommitted.js");
+    const spend = async () =>
+      emitUsageCommitted({
+        cost: 0,
+        promptTokens: 20,
+        completionTokens: 10,
+        status: "success",
+        workspaceId: t.shared.id,
+        userId: t.b.user.id,
+        apiKeyId: "k-b",
+        grantId: null,
+        timestamp: new Date().toISOString(),
+      });
+    const held = await guard.budgeted(p, { nonToken: true }, async () => new Response("ok"));
+    await held.body.cancel();
+    // A request that no longer fits: the first 429 of the window (hard notice).
+    const reject = async () => {
+      const r = await guard.budgeted(
+        p,
+        { provider: "openai", model: "gpt-x", body: { max_tokens: 1000 } },
+        async () => new Response("ok"),
+      );
+      expect(r.status).toBe(429);
+    };
+    return { spend, reject };
+  }
+
+  it("a soft-limit crossing reaches permitted viewers once, other workspaces nothing", async () => {
+    const outsider = seeded(
+      await db.createUserUnscoped({ email: "c@tenancy.test", instanceRole: "user" }),
+    );
+    const { spend } = await crossSoftLimit();
+    const owner = await open(t.a, t.shared.id); // workspace owner
+    const member = await open(t.b, t.shared.id); // member: workspace.budgets.read
+    const memberElsewhere = await open(t.b, t.b.personal); // same user, other workspace
+    const other = await open(outsider, outsider.personal); // no access to Shared
+    for (const s of [owner, member, memberElsewhere, other]) expect(s.response.status).toBe(200);
+    // Subscribed once the connect frame arrived; then collect the rest.
+    for (const s of [owner, member, memberElsewhere, other]) await frame(s.reader);
+    const seen = [owner, member, memberElsewhere, other].map((s) => tap(s.reader));
+
+    await spend(); // 30 of 100 tokens: crosses 20%
+    await spend(); // still over: no second notice
+    await settle();
+
+    const [ownerSeen, memberSeen, elsewhereSeen, otherSeen] = seen.map((f) => f());
+    expect(ownerSeen).toHaveLength(1);
+    expect(memberSeen).toHaveLength(1);
+    expect(elsewhereSeen).toEqual([]);
+    expect(otherSeen).toEqual([]);
+    const notice = memberSeen[0];
+    expect(Object.keys(notice).sort()).toEqual(NOTICE_KEYS); // strict allow-list
+    expect(Object.keys(notice.spent).sort()).toEqual(["requests", "tokens", "usd"]);
+    expect(notice).toMatchObject({
+      kind: "soft",
+      budgetId: "bn-1",
+      scopeType: "workspace",
+      limitTokens: 100,
+      softLimitPct: 20,
+    });
+    expect(notice.id).toBe(`bn-1:soft:${notice.windowStart}`);
+    expect(JSON.stringify(notice)).not.toMatch(/hash-k-b|keyHash|workspaceId|sk-/);
+  });
+
+  it("a reconnect gets no replay: only live notices, and a claimed notice never repeats", async () => {
+    const { spend, reject } = await crossSoftLimit();
+    const first = await open(t.b, t.shared.id);
+    await frame(first.reader);
+    const firstSeen = tap(first.reader);
+    await spend();
+    await spend();
+    await settle();
+    expect(firstSeen()).toHaveLength(1);
+
+    await first.reader.cancel();
+    readers.splice(readers.indexOf(first.reader), 1);
+    const again = await open(t.b, t.shared.id);
+    await frame(again.reader);
+    const againSeen = tap(again.reader);
+    await spend(); // still over the soft limit in the same window
+    await settle();
+    expect(againSeen()).toEqual([]); // the soft notice is not replayed
+    await reject(); // a new live notice still arrives on the reconnected stream
+    await settle();
+    expect(againSeen().map((n) => n.kind)).toEqual(["hard"]);
+  });
+
+  /** Open a stream, wait for its connect frame (subscribed), then collect notices. */
+  async function listen(as, workspaceId, opts) {
+    const s = await open(as, workspaceId, "", opts);
+    expect(s.response.status).toBe(200);
+    await frame(s.reader);
+    return { ...s, seen: tap(s.reader) };
+  }
+
+  it("events=notices: notices only, no data frames and no live subscriptions", async () => {
+    const { spend } = await crossSoftLimit();
+    sentinel(t.b, t.shared.id, "b-live-sentinel");
+    const s = await open(t.b, t.shared.id, "&events=notices");
+    expect(s.response.status).toBe(200);
+    const first = await s.reader.read();
+    expect(new TextDecoder().decode(first.value)).toBe(": connected\n\n"); // comment, not data
+    expect(counts()).toEqual({ update: 0, pending: 0 });
+    const seen = tap(s.reader);
+    feed.statsEmitter.emit("update");
+    feed.statsEmitter.emit("pending");
+    await spend();
+    await settle();
+    expect(seen().map((n) => n.kind)).toEqual(["soft"]);
+    expect(seen.raw().filter((c) => /^data: /m.test(c) && !c.startsWith("event: "))).toEqual([]);
+  });
+
+  it("events=notices stops delivery once the session is revoked", async () => {
+    const { spend, reject } = await crossSoftLimit();
+    const s = await open(t.b, t.shared.id, "&events=notices");
+    await s.reader.read(); // connect comment
+    const seen = tap(s.reader);
+    await spend();
+    await settle();
+    await db.bumpSessionVersion(t.b.user.id);
+    await reject();
+    await settle();
+    expect(seen().map((n) => n.kind)).toEqual(["soft"]);
+    expect(feed.statsEmitter.listenerCount("budgetNotice")).toBe(0);
+  });
+
+  it("a request carrying gateway credentials never receives notices", async () => {
+    const { spend } = await crossSoftLimit();
+    const control = await listen(t.a, t.shared.id);
+    const keyed = await listen(t.a, t.shared.id, { headers: { authorization: "Bearer sk-x" } });
+    await spend();
+    await settle();
+    expect(control.seen()).toHaveLength(1);
+    expect(keyed.seen()).toEqual([]);
+  });
+
+  it("user-level budget notices reach instance admins only", async () => {
+    const { spend } = await crossSoftLimit({ scopeType: "user", scopeId: t.b.user.id });
+    const admin = await listen(t.a, t.a.personal); // instance owner, any workspace
+    const self = await listen(t.b, t.shared.id); // the budget's own user, not an admin
+    await spend();
+    await settle();
+    expect(admin.seen().map((n) => [n.kind, n.scopeType])).toEqual([["soft", "user"]]);
+    expect(self.seen()).toEqual([]);
+  });
+
+  for (const kind of ["membership removed", "session revoked"])
+    it(`stops delivery once the viewer's ${kind} between notices`, async () => {
+      const { spend, reject } = await crossSoftLimit();
+      const control = await listen(t.a, t.shared.id);
+      const b = await listen(t.b, t.shared.id);
+      await spend();
+      await settle();
+      expect(b.seen().map((n) => n.kind)).toEqual(["soft"]);
+
+      if (kind === "membership removed")
+        await db.removeMembership(t.a.ctx, t.shared.id, t.b.user.id);
+      else await db.bumpSessionVersion(t.b.user.id);
+      await reject();
+      await settle();
+      expect(control.seen().map((n) => n.kind)).toEqual(["soft", "hard"]);
+      expect(b.seen().map((n) => n.kind)).toEqual(["soft"]); // no hard notice
+      expect(feed.statsEmitter.listenerCount("budgetNotice")).toBe(1); // B's stream closed
+    });
+
+  it("switch off: the dashboard admin receives Default notices, a non-admin nothing", async () => {
+    process.env.TOKENHOP_MULTI_USER = "off";
+    vi.resetModules();
+    db = await import("@/lib/db/index.js");
+    adapter = await (await import("@/lib/db/driver.js")).getAdapter();
+    adapter.run(`INSERT OR REPLACE INTO _meta(key, value) VALUES('defaultWorkspaceId', ?)`, [
+      t.shared.id,
+    ]);
+    feed = await import("@/lib/db/repos/usageLiveFeed.js");
+    ({ GET } = await import("@/app/api/usage/stream/route.js"));
+    try {
+      const { spend } = await crossSoftLimit();
+      const admin = await listen(t.a, t.shared.id); // owner session
+      const user = await listen(t.b, t.shared.id); // plain user session
+      await spend();
+      await settle();
+      expect(admin.seen().map((n) => [n.kind, n.budgetId])).toEqual([["soft", "bn-1"]]);
+      expect(user.seen()).toEqual([]);
+    } finally {
+      adapter.run(`DELETE FROM _meta WHERE key = 'defaultWorkspaceId'`);
+    }
   });
 });

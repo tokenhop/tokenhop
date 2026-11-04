@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import {
   Button,
@@ -12,6 +12,7 @@ import {
   Select,
   StatusPill,
 } from "@/shared/components";
+import { SCOPE_LABELS, WINDOW_LABELS } from "../lib/budgetLabels";
 import BudgetDialog from "./BudgetDialog";
 
 // Budgets tab (YAN-376): read-only list over GET /api/workspaces/:id/budgets.
@@ -19,18 +20,12 @@ import BudgetDialog from "./BudgetDialog";
 // Meter value is percentage LEFT so the shared level colors stay meaningful
 // (≤20% left = err). Notional USD is an estimate, never billing. Create/edit
 // uses BudgetDialog; `canManage` gates create and edit (server enforces).
+// YAN-1830: rows also carry notices{soft,hard} — the notices sent in the
+// current window — shown as pills, so they survive reloads without the stream.
+// `refreshKey` (bumped by the page when a live notice arrives) refetches them.
 // Switch off (YAN-1829): `workspaceId` is the "default" alias and
 // `scopeTypes` is [workspace, key]; the GET's resolved `workspaceId` (null
 // until the first budget creates the Default row) scopes the key picker.
-
-const WINDOW_LABELS = { day: "Daily", week: "Weekly", month: "Monthly", total: "Total" };
-const SCOPE_LABELS = {
-  workspace: "Workspace",
-  key: "API key",
-  membership: "Member",
-  grant: "Grant",
-  user: "User",
-};
 
 const money = (n) =>
   n == null ? "—" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -68,7 +63,7 @@ LimitRow.propTypes = {
 };
 
 function BudgetRow({ budget, onEdit }) {
-  const { spent = {}, scopeType, scopeId, window: win, softLimitPct, resetAt } = budget;
+  const { spent = {}, scopeType, scopeId, window: win, softLimitPct, resetAt, notices } = budget;
   const limits = [
     { label: "Cost", spent: spent.usd, limit: budget.limitUsd, format: money },
     { label: "Tokens", spent: spent.tokens, limit: budget.limitTokens, format: count },
@@ -93,6 +88,15 @@ function BudgetRow({ budget, onEdit }) {
             Soft at {softLimitPct}%
           </StatusPill>
         )}
+        {notices?.hard ? (
+          <StatusPill variant="err" size="sm">
+            Limit hit
+          </StatusPill>
+        ) : notices?.soft ? (
+          <StatusPill variant="warn" size="sm">
+            Soft limit reached
+          </StatusPill>
+        ) : null}
         {onEdit && (
           <Button variant="ghost" size="sm" onClick={() => onEdit(budget)}>
             Edit
@@ -127,6 +131,7 @@ export default function BudgetsTab({
   canManage = false,
   canManageUsers = false,
   scopeTypes,
+  refreshKey = 0,
 }) {
   const [state, setState] = useState({ budgets: null, error: null, loading: true });
   const [resolvedWorkspaceId, setResolvedWorkspaceId] = useState(null);
@@ -163,15 +168,24 @@ export default function BudgetsTab({
       ? `/api/users/${encodeURIComponent(userId)}/budgets`
       : `/api/workspaces/${encodeURIComponent(workspaceId)}/budgets`;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `reload` re-fetches after a save
+  // One effect owns the list, so a newer request always aborts the older one.
+  // A URL change or `reload` shows the loading state; a `refreshKey` bump (a
+  // live budget notice, YAN-1830) refreshes in the background and keeps the
+  // current rows on screen. `shown` is the URL+reload the rows belong to.
+  const shown = useRef(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `reload` re-fetches after a save; `refreshKey` after a live notice
   useEffect(() => {
     if (!workspaceId) return undefined;
     if (userTarget && !userId) {
+      shown.current = null;
       setState({ budgets: [], error: null, loading: false });
       return undefined;
     }
+    const view = `${listUrl}#${reload}`;
+    const background = shown.current === view;
+    shown.current = view;
     const controller = new AbortController();
-    setState({ budgets: null, error: null, loading: true });
+    if (!background) setState({ budgets: null, error: null, loading: true });
     fetch(listUrl, {
       signal: controller.signal,
     })
@@ -186,10 +200,12 @@ export default function BudgetsTab({
         });
       })
       .catch((error) => {
-        if (!controller.signal.aborted) setState({ budgets: null, error, loading: false });
+        if (controller.signal.aborted) return;
+        // A failed background refresh keeps rows already on screen.
+        setState((s) => (background && s.budgets ? s : { budgets: null, error, loading: false }));
       });
     return () => controller.abort();
-  }, [workspaceId, userTarget, userId, listUrl, reload]);
+  }, [workspaceId, userTarget, userId, listUrl, reload, refreshKey]);
 
   return (
     <Card
@@ -301,4 +317,6 @@ BudgetsTab.propTypes = {
   canManageUsers: PropTypes.bool,
   /** Scope types the create dialog offers; defaults to the dialog's full list. */
   scopeTypes: PropTypes.arrayOf(PropTypes.string),
+  /** Bumped when a live budget notice arrives; refetches in the background. */
+  refreshKey: PropTypes.number,
 };

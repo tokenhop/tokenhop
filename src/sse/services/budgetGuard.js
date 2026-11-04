@@ -11,8 +11,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { getAdapter } from "@/lib/db/driver.js";
 import { getPricingForModel } from "@/lib/db/repos/pricingRepo.js";
-import { statsEmitter } from "@/lib/db/repos/usageLiveFeed.js";
-import { audit } from "@/lib/users/audit.js";
+import { notifyOnce, notifySoftLimit } from "./budgetNotify.js";
 import {
   budgetsGeneration,
   budgetSwitchEpoch,
@@ -187,34 +186,35 @@ export function spentFor(db, budget, now = Date.now()) {
 
 // Spent for the current UTC window: rebuilt from settled usageHistory rows the
 // first time a window is seen (also the crash-recovery path after a restart),
-// then kept current by the usage-commit hook. Synchronous.
+// then kept current by the usage-commit hook. Synchronous. `notices` caches
+// the notice signatures this process already claimed (see budgetNotify.js;
+// the durable claim makes a restart inside the window send nothing again).
 function stateFor(budget, now = Date.now()) {
   const start = windowStart(budget.window, now);
   const key = `${budget.id}:${start}`;
   let state = counters.get(key);
   if (!state) {
     const { usd, tokens, requests } = spentFor(db, budget, now);
-    state = {
-      start,
-      budget,
-      spent: { usd, tokens, requests },
-      reserved: zero(),
-      softEmitted: false,
-    };
+    state = { start, budget, spent: { usd, tokens, requests }, reserved: zero(), notices: {} };
     for (const [k, old] of counters) if (old.budget.id === budget.id) counters.delete(k);
     counters.set(key, state);
+    notifySoftLimit(db, state); // history may already be past the threshold
+  } else if (state.budget !== budget) {
+    // New generation: a lowered limit or soft % may already be crossed, and a
+    // changed signature re-arms the notice.
     state.budget = budget;
-    notifySoftLimit(state); // history may already be past the threshold
+    notifySoftLimit(db, state);
   }
-  state.budget = budget; // limits may have changed (new generation)
   return state;
 }
 
+// Limit descriptor of the first exceeded unit, else null. `state` is the live
+// window the check ran against (budgetResponse claims its hard notice on it).
 function exceeded(state, estimate) {
   for (const unit of UNITS) {
     const limit = state.budget[FIELDS[unit]];
     if (limit != null && state.spent[unit] + state.reserved[unit] + estimate[unit] > limit) {
-      return { budget: state.budget, unit, spent: state.spent[unit] };
+      return { budget: state.budget, unit, spent: state.spent[unit], state };
     }
   }
   return null;
@@ -222,8 +222,15 @@ function exceeded(state, estimate) {
 
 const fmt = (unit, n) => (unit === "usd" ? `$${Number(n).toFixed(2)}` : `${n} ${unit}`);
 
-/** ADR-0007 429: OpenAI-shaped, names the level and window. */
-export function budgetResponse({ budget, unit, spent }, now = Date.now()) {
+/**
+ * ADR-0007 429: OpenAI-shaped, names the level and window. Every
+ * budget_exceeded rejection goes through here, so it also sends the
+ * once-per-window `hard` notice (YAN-1830) on the hit's window state. The
+ * notice means "first rejection", not "spent in full": the check counts the
+ * request's estimate and in-flight holds, so spend may still be under the limit.
+ */
+export function budgetResponse({ budget, unit, spent, state }, now = Date.now()) {
+  if (state && db) notifyOnce(db, state, "hard", now);
   const headers = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" };
   const end = windowEnd(budget.window, now);
   if (end != null) headers["Retry-After"] = String(Math.max(1, Math.ceil((end - now) / 1000)));
@@ -481,35 +488,7 @@ async function withBudget(principal, opts, run) {
   return releaseWhenDone(res, releaseAll, store.releases.length > 0, opts.signal);
 }
 
-function notifySoftLimit(state) {
-  const b = state.budget;
-  if (state.softEmitted || b.softLimitPct == null) return;
-  const crossed = UNITS.some(
-    (u) => b[FIELDS[u]] != null && state.spent[u] >= (b[FIELDS[u]] * b.softLimitPct) / 100,
-  );
-  if (!crossed) return;
-  state.softEmitted = true;
-  const after = {
-    scopeType: b.scopeType,
-    scopeId: b.scopeId,
-    window: b.window,
-    level: b.scopeType,
-    limitUsd: b.limitUsd,
-    limitTokens: b.limitTokens,
-    limitRequests: b.limitRequests,
-    softLimitPct: b.softLimitPct,
-    spentUsd: state.spent.usd,
-    spentTokens: state.spent.tokens,
-    spentRequests: state.spent.requests,
-  };
-  void audit(
-    { workspaceId: b.workspaceId },
-    "budget.softLimit",
-    { type: "budget", id: b.id },
-    { after },
-  );
-  statsEmitter.emit("budgetSoftLimit", { budgetId: b.id, workspaceId: b.workspaceId, ...after });
-}
+// (soft and hard notices: ./budgetNotify.js)
 
 // Settle: a committed usage row adds its actuals to every live window it
 // belongs to. Windows built later read the row from usageHistory instead.
@@ -525,6 +504,6 @@ globalThis.__budgetGuardUnsubscribe = onUsageCommitted((entry) => {
     state.spent.usd += Number(entry.cost) || 0;
     state.spent.tokens += (Number(entry.promptTokens) || 0) + (Number(entry.completionTokens) || 0);
     state.spent.requests += 1;
-    notifySoftLimit(state);
+    notifySoftLimit(db, state);
   }
 });

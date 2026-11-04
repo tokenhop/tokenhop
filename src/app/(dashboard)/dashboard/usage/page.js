@@ -26,6 +26,7 @@ import {
   updateActiveSince,
 } from "@/shared/utils/routesMap";
 import useUsageStats from "./lib/useUsageStats";
+import useBudgetNotices from "./lib/useBudgetNotices";
 import { useChartBuckets } from "./lib/useChartBuckets";
 import useProviders from "./lib/useProviders";
 import { periodKey } from "./lib/periodRequest";
@@ -139,9 +140,12 @@ function UsageContent() {
     }
     router.replace(`/dashboard/usage?${params}`, { scroll: false });
   };
+  // YAN-1830: budget notices on every tab — via the Overview live stream
+  // there, a notice-only stream (events=notices) on the other tabs.
+  const notices = useBudgetNotices(usageFilters, { listen: activeTab !== "overview" });
   const { stats, statsPeriod, live, loading, error, retry, catchUpKey } = useUsageStats(
     loaded ? period : null,
-    { tab: activeTab, range },
+    { tab: activeTab, range, onNotice: notices.onNotice },
     usageFilters,
   );
   const providers = useProviders();
@@ -313,12 +317,14 @@ function UsageContent() {
             workspaceId="default"
             canManage
             scopeTypes={status?.principal?.via === "local" ? LOCAL_SCOPE_TYPES : OFF_SCOPE_TYPES}
+            refreshKey={notices.noticeKey}
           />
         ) : (
           <BudgetsTab
             workspaceId={workspaceId}
             canManage={canManage}
             canManageUsers={view.can("instance.budgets.raise")}
+            refreshKey={notices.noticeKey}
           />
         )
       ) : (

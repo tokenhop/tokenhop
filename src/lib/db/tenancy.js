@@ -68,6 +68,13 @@ export const TABLE_CLASSES = {
     scopeColumn: "workspaceId",
     note: "NULL workspaceId = user-level budget, instance admin only",
   },
+  // YAN-1832: notice claims follow their budget (FK cascade) and are read only
+  // alongside budget rows the caller was already allowed to list.
+  budgetNotices: {
+    class: "scoped",
+    scopeColumn: "budgetId",
+    note: "visible through the budget it belongs to",
+  },
 };
 
 // Workspace kv scopes take the `ws:<workspaceId>/` key prefix when scoped.

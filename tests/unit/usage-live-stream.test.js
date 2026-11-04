@@ -197,6 +197,99 @@ describe("streamReducer", () => {
   });
 });
 
+describe("budget notice toast dedupe (YAN-1830)", () => {
+  const memory = () => {
+    const m = new Map();
+    return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), m };
+  };
+  const notice = (patch = {}) => ({
+    id: "b1:soft:2026-03-10T00:00:00.000Z",
+    kind: "soft",
+    limitUsd: null,
+    limitTokens: 100,
+    limitRequests: null,
+    softLimitPct: 20,
+    resetAt: "2026-03-11T00:00:00.000Z",
+    ...patch,
+  });
+  const NOW = Date.parse("2026-03-10T12:00:00Z");
+
+  it("shows a notice once across reconnects and tabs sharing storage", async () => {
+    const { claimNoticeToast } = await import(
+      "../../src/app/(dashboard)/dashboard/usage/lib/budgetNoticeToasts.js"
+    );
+    const storage = memory();
+    expect(claimNoticeToast(notice(), storage, NOW)).toBe(true);
+    expect(claimNoticeToast(notice(), storage, NOW)).toBe(false); // replayed frame
+    expect(
+      claimNoticeToast(
+        notice({ kind: "hard", id: "b1:hard:2026-03-10T00:00:00.000Z" }),
+        storage,
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it("a re-armed notice (changed limits) shows again; past windows are pruned", async () => {
+    const { claimNoticeToast, SHOWN_KEY } = await import(
+      "../../src/app/(dashboard)/dashboard/usage/lib/budgetNoticeToasts.js"
+    );
+    const storage = memory();
+    claimNoticeToast(notice(), storage, NOW);
+    expect(claimNoticeToast(notice({ limitTokens: 50 }), storage, NOW)).toBe(true);
+    const next = Date.parse("2026-03-11T00:00:01Z");
+    claimNoticeToast(
+      notice({ id: "b1:soft:2026-03-11T00:00:00.000Z", resetAt: "2026-03-12T00:00:00.000Z" }),
+      storage,
+      next,
+    );
+    expect(Object.keys(JSON.parse(storage.getItem(SHOWN_KEY)))).toEqual([
+      "b1:soft:2026-03-11T00:00:00.000Z",
+    ]);
+  });
+
+  it("blocked storage (SecurityError on access or write) still shows the toast", async () => {
+    const { claimNoticeToast } = await import(
+      "../../src/app/(dashboard)/dashboard/usage/lib/budgetNoticeToasts.js"
+    );
+    const blocked = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      get() {
+        throw new DOMException("denied", "SecurityError");
+      },
+    });
+    try {
+      expect(claimNoticeToast(notice())).toBe(true); // default storage access throws
+    } finally {
+      if (blocked) Object.defineProperty(globalThis, "localStorage", blocked);
+      else delete globalThis.localStorage;
+    }
+    const throwing = {
+      getItem() {
+        throw new DOMException("denied", "SecurityError");
+      },
+      setItem() {
+        throw new DOMException("quota", "QuotaExceededError");
+      },
+    };
+    expect(claimNoticeToast(notice(), throwing, NOW)).toBe(true);
+  });
+
+  it("hard toast says a request was rejected, never that the budget is used up", async () => {
+    const { noticeToast } = await import(
+      "../../src/app/(dashboard)/dashboard/usage/lib/budgetNoticeToasts.js"
+    );
+    const hard = noticeToast(notice({ kind: "hard", scopeType: "key" }));
+    expect(hard).toMatchObject({ type: "error", title: "Budget limit hit" });
+    expect(hard.message).toContain("A request was rejected");
+    expect(hard.message).not.toMatch(/used up/i);
+    expect(noticeToast(notice({ scopeType: "membership" })).message).toBe(
+      "A member budget passed its soft limit.",
+    );
+  });
+});
+
 describe("/api/usage/stream", () => {
   it("sends slim frames built from getLiveSnapshot", async () => {
     vi.resetModules();

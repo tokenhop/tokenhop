@@ -3,9 +3,11 @@ import { countActiveUsersUnscoped } from "@/lib/db/index.js";
 import { getAdapter } from "@/lib/db/driver.js";
 import { buildLivePayload } from "@/lib/usage/livePayload";
 import { historicalKey, liveMember, usageScope } from "@/lib/usage/scope.js";
+import { canReceiveNotice, publicNotice } from "@/lib/users/budgetNotices.js";
 import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
 import { can } from "@/lib/users/principal.js";
 import { resolvePrincipal } from "@/lib/users/session.js";
+import { BUDGET_NOTICE_EVENT } from "@/sse/services/budgetNotify.js";
 
 export const dynamic = "force-dynamic";
 
@@ -21,12 +23,19 @@ const widens = (ctx, workspaceId) =>
 // YAN-378: the connect-time scope is re-validated against the live session and
 // membership before every data frame (and on every keepalive tick), so a
 // revoked session, removed member or downgraded role stops the stream.
+// YAN-1830: budget soft/hard notices go out as a named `budgetNotice` event,
+// live only (no backlog, no event ids: a reconnect never replays), to viewers
+// who may read that budget (canReceiveNotice), as the publicNotice projection.
 export async function GET(request) {
   const scope = await usageScope(request);
   if (scope instanceof Response) return scope;
   const liveScope = scope
     ? { workspaceId: scope.workspaceId, userId: scope.userId, apiKeyId: scope.apiKeyId }
     : null;
+  // `events=notices` (YAN-1830): budget notices only, for Usage tabs without
+  // live frames. No connect snapshot and no update/pending subscriptions; the
+  // notice path, keepalive and revocation checks are the same as the full stream.
+  const noticesOnly = new URL(request.url).searchParams.get("events") === "notices";
 
   // Emitter and timer callbacks run outside the request context, so re-resolve
   // from the captured request (cookies/headers), never from next/headers.
@@ -60,8 +69,8 @@ export async function GET(request) {
   const state = {
     closed: false,
     clientCancelled: false,
-    keepalive: null,
     send: null,
+    notice: null,
     stalled: 0,
     controller: null,
   };
@@ -73,6 +82,7 @@ export async function GET(request) {
       statsEmitter.off("update", state.send);
       statsEmitter.off("pending", state.send);
     }
+    if (state.notice) statsEmitter.off(BUDGET_NOTICE_EVENT, state.notice);
     clearInterval(state.keepalive);
     request.signal.removeEventListener("abort", cleanup);
     try {
@@ -109,12 +119,35 @@ export async function GET(request) {
         }
       };
 
-      // One frame on connect so a fresh client paints live fields immediately.
-      await state.send();
-      if (state.closed) return;
+      if (noticesOnly) {
+        // Connect marker (an SSE comment, not a data frame), sent only while
+        // the viewer still passes the scope check.
+        if (!(await stillAllowed())) return cleanup();
+        if (state.closed) return;
+        controller.enqueue(encoder.encode(": connected\n\n"));
+      } else {
+        // One frame on connect so a fresh client paints live fields immediately.
+        await state.send();
+        if (state.closed) return;
+        statsEmitter.on("update", state.send);
+        statsEmitter.on("pending", state.send);
+      }
 
-      statsEmitter.on("update", state.send);
-      statsEmitter.on("pending", state.send);
+      state.notice = async (notice) => {
+        if (state.closed) return;
+        try {
+          const allowed = await stillAllowed();
+          if (state.closed) return;
+          if (!allowed) return cleanup();
+          if (!(await canReceiveNotice(request, notice, liveScope))) return;
+          if (state.closed) return;
+          const frame = `event: budgetNotice\ndata: ${JSON.stringify(publicNotice(notice))}\n\n`;
+          controller.enqueue(encoder.encode(frame));
+        } catch {
+          cleanup();
+        }
+      };
+      statsEmitter.on(BUDGET_NOTICE_EVENT, state.notice);
 
       state.keepalive = setInterval(async () => {
         if (state.closed) return clearInterval(state.keepalive);
