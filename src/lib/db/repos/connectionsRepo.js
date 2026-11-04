@@ -13,9 +13,13 @@ import {
   readCredentialMarkerValues,
 } from "../credentialEncryptionState.js";
 import {
+  codexAccountIdOf,
+  isDeadCodexRow,
   matchesConnectionIdentity,
+  matchesFlaggedDuplicate,
   matchesFlaggedReplacement,
 } from "../helpers/connectionIdentity.js";
+import { foldUsageRollupSql } from "../helpers/usageRollupFold.js";
 import { loadMasterKey } from "../../security/masterKey.js";
 import { decodeJwtPayload } from "open-sse/utils/jwt.js";
 import { assertCredentialOperationAllowed } from "../credentialMaintenance.js";
@@ -389,10 +393,76 @@ export async function createProviderConnectionUnscoped(data, opts = {}) {
   );
 }
 
+// YAN-1623: repoint one removed duplicate's references onto the kept row,
+// then delete it (inside the caller's transaction; the caller reorders).
+// Grant ids survive so budget/usage grantId links stay valid. When the keeper
+// holds, for the same grantee, an active grant or any of its ORIGINAL grants
+// (`keeperGrantIds`, snapshotted before any loser was absorbed — active or
+// revoked), the keeper's state wins: the duplicate's active grant is revoked
+// (this also keeps the one-active-grant-per-grantee indexes). Revoked grants
+// moved over from an earlier loser never suppress a later loser's active
+// grant, so the outcome does not depend on loser order. Returns the revoked
+// and moved grants so the scoped caller can audit them.
+function absorbDuplicateInTx(db, loserId, keeperId, nowMs, keeperGrantIds) {
+  const ids = keeperGrantIds.length ? keeperGrantIds : [""];
+  const marks = ids.map(() => "?").join(",");
+  const revoked = db.all(
+    `SELECT l.id FROM connectionGrants l WHERE l.connectionId = ? AND l.revokedAt IS NULL AND EXISTS (
+       SELECT 1 FROM connectionGrants k WHERE k.connectionId = ?
+         AND (k.revokedAt IS NULL OR k.id IN (${marks}))
+         AND ((l.workspaceId IS NOT NULL AND k.workspaceId = l.workspaceId)
+           OR (l.userId IS NOT NULL AND k.userId = l.userId)))`,
+    [loserId, keeperId, ...ids],
+  );
+  for (const g of revoked) {
+    db.run(`UPDATE connectionGrants SET revokedAt = ? WHERE id = ?`, [nowMs, g.id]);
+  }
+  const moved = db.all(`SELECT id, revokedAt FROM connectionGrants WHERE connectionId = ?`, [
+    loserId,
+  ]);
+  db.run(`UPDATE connectionGrants SET connectionId = ? WHERE connectionId = ?`, [
+    keeperId,
+    loserId,
+  ]);
+  db.run(`UPDATE usageHistory SET connectionId = ? WHERE connectionId = ?`, [keeperId, loserId]);
+  // connectionId is part of the rollup key: rows sum into a keeper row of the same key.
+  db.run(foldUsageRollupSql("connectionId = ?", { connectionId: "?" }), [keeperId, loserId]);
+  db.run(`DELETE FROM usageRollup WHERE connectionId = ?`, [loserId]);
+  // Nested CASE: json_extract must never see an invalid (truncated) data blob.
+  db.run(
+    `UPDATE requestDetails SET connectionId = ?,
+       data = CASE WHEN json_valid(data) THEN
+         CASE WHEN json_extract(data, '$.connectionId') = ? THEN json_set(data, '$.connectionId', ?) ELSE data END
+       ELSE data END
+     WHERE connectionId = ?`,
+    [keeperId, loserId, keeperId, loserId],
+  );
+  // Installed only by hashed-key activation (gatewayVideoJobsRepo.js).
+  if (db.get(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'gatewayVideoJobs'`)) {
+    db.run(`UPDATE gatewayVideoJobs SET connectionId = ? WHERE connectionId = ?`, [
+      keeperId,
+      loserId,
+    ]);
+  }
+  db.run(`DELETE FROM providerConnections WHERE id = ?`, [loserId]);
+  return {
+    revokedGrants: revoked.map((g) => ({ id: g.id, connectionId: loserId, revokedAt: nowMs })),
+    movedGrants: moved.map((g) => ({
+      id: g.id,
+      from: loserId,
+      to: keeperId,
+      revokedAt: g.revokedAt ?? null,
+    })),
+  };
+}
+
 // Dedup and priority partition by workspace: the same account in two
 // workspaces is two rows, never a merge (YAN-361).
-function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}, ctx) {
+// `removed` (optional) collects the flagged duplicates a codex merge deleted
+// (YAN-1623), so the scoped caller can audit them after the transaction.
+function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}, ctx, removed) {
   const now = new Date().toISOString();
+  const nowMs = Date.now();
   const workspaceId = owner.workspaceId ?? null;
   // Dedup sees decrypted identity metadata (email, username, account ids).
   const all = db
@@ -406,15 +476,33 @@ function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}, 
   // access_token: never dedup — user manages duplicates manually. YAN-1287: a
   // flagged (dead) codex row is also replaceable by a fresh grant of the same
   // account, so a reconnect/re-import leaves no stale flagged row behind.
+  // YAN-1623: installs hit by the pre-YAN-1287 bug can hold several such rows
+  // (or one beside the live row); the merge below keeps one and removes the
+  // other flagged matches, so the reconnect leaves exactly one row.
   // F2: the flagged fallback never crosses creators — B's import of the same
-  // account must not rewrite A's row (same guard shape as workspace scoping).
+  // account must not rewrite or remove A's row (same guard shape as workspace scoping).
   const sameCreator = (c) =>
     !owner.createdByUserId || !c.createdByUserId || c.createdByUserId === owner.createdByUserId;
-  const existing =
-    all.find((c) => matchesConnectionIdentity(c, data)) ??
-    (data.provider === "codex"
-      ? all.find((c) => sameCreator(c) && matchesFlaggedReplacement(c, data))
-      : undefined);
+  const incomingAccountId = data.provider === "codex" ? codexAccountIdOf(data) : null;
+  const replaceable = (c) =>
+    sameCreator(c) &&
+    matchesFlaggedReplacement(c, data, nowMs) &&
+    // Never replace a row proven to belong to another ChatGPT account.
+    (!incomingAccountId || !codexAccountIdOf(c) || codexAccountIdOf(c) === incomingAccountId);
+  // Prefer the flagged row proven to be the incoming account, then the newest.
+  const pickReplaceable = () => {
+    const rank = (c) => (incomingAccountId && codexAccountIdOf(c) === incomingAccountId ? 1 : 0);
+    const updated = (c) => new Date(c.updatedAt ?? 0).getTime() || 0;
+    return all.filter(replaceable).sort((a, b) => rank(b) - rank(a) || updated(b) - updated(a))[0];
+  };
+  // Codex: prefer a live identity match over a dead one; the dead same-account
+  // row then becomes a loser and is absorbed below.
+  const identityMatches = all.filter((c) => matchesConnectionIdentity(c, data));
+  const identityMatch =
+    data.provider === "codex"
+      ? (identityMatches.find((c) => !isDeadCodexRow(c, nowMs)) ?? identityMatches[0])
+      : identityMatches[0];
+  const existing = identityMatch ?? (data.provider === "codex" ? pickReplaceable() : undefined);
   if (existing && rejectDuplicateName && data.authType === "apikey") {
     const err = new Error(`A connection named "${data.name}" already exists for this provider`);
     err.code = "DUPLICATE_CONNECTION_NAME";
@@ -452,6 +540,31 @@ function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}, 
       applyPsdDelta(merged, existing, normalized);
     }
     upsert(db, merged, ctx);
+    if (data.provider === "codex") {
+      // Only dead rows with a proven matching account id qualify
+      // (matchesFlaggedDuplicate), from the caller's and the keeper's creator.
+      const keeperCreator = (c) =>
+        !existing.createdByUserId ||
+        !c.createdByUserId ||
+        c.createdByUserId === existing.createdByUserId;
+      const losers = all.filter(
+        (c) =>
+          c.id !== existing.id &&
+          sameCreator(c) &&
+          keeperCreator(c) &&
+          matchesFlaggedDuplicate(c, data, nowMs),
+      );
+      const keeperGrantIds = losers.length
+        ? db
+            .all(`SELECT id FROM connectionGrants WHERE connectionId = ?`, [existing.id])
+            .map((g) => g.id)
+        : [];
+      for (const loser of losers) {
+        const grants = absorbDuplicateInTx(db, loser.id, existing.id, nowMs, keeperGrantIds);
+        removed?.push({ conn: loser, ...grants });
+      }
+      if (losers.length) reorderInTx(db, data.provider, workspaceId);
+    }
     return merged;
   }
 
@@ -729,9 +842,17 @@ export async function getConnection(ctx, id) {
 export async function createConnection(ctx, workspaceId, data, opts = {}) {
   const db = await getAdapter();
   const credCtx = await prepareCredentialCtx(db);
+  const removed = [];
   const conn = await db.transaction(() => {
     memberWorkspaceId(ctx, db, workspaceId);
-    return createInTx(db, data, opts, { workspaceId, createdByUserId: ctx.userId }, credCtx);
+    return createInTx(
+      db,
+      data,
+      opts,
+      { workspaceId, createdByUserId: ctx.userId },
+      credCtx,
+      removed,
+    );
   });
   // YAN-367: never audit credential fields — only the allow-listed identity fields.
   await audit(
@@ -748,6 +869,46 @@ export async function createConnection(ctx, workspaceId, data, opts = {}) {
       },
     },
   );
+  // YAN-1623: flagged duplicates the merge removed, same shape as deleteConnection.
+  for (const { conn: c, revokedGrants, movedGrants } of removed) {
+    // Same shape as revokeGrant.
+    for (const g of revokedGrants) {
+      await audit(
+        { principal: ctx, workspaceId },
+        "connectionGrant.revoke",
+        { type: "connectionGrant", id: g.id },
+        {
+          before: { id: g.id, connectionId: g.connectionId },
+          after: { id: g.id, connectionId: g.connectionId, revokedAt: g.revokedAt },
+        },
+      );
+    }
+    for (const g of movedGrants) {
+      await audit(
+        { principal: ctx, workspaceId },
+        "connectionGrant.update",
+        { type: "connectionGrant", id: g.id },
+        {
+          before: { id: g.id, connectionId: g.from },
+          after: { id: g.id, connectionId: g.to },
+        },
+      );
+    }
+    await audit(
+      { principal: ctx, workspaceId },
+      "connection.delete",
+      { type: "connection", id: c.id },
+      {
+        before: {
+          id: c.id,
+          provider: c.provider,
+          name: c.name,
+          email: c.email,
+          workspaceId: c.workspaceId ?? null,
+        },
+      },
+    );
+  }
   return conn;
 }
 
