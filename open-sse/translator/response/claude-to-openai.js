@@ -182,8 +182,9 @@ export function claudeToOpenAIResponse(chunk, state) {
 
       if (chunk.delta?.stop_reason) {
         state.finishReason = convertStopReason(chunk.delta.stop_reason);
-        // Refusal: surface explanation text on delta.refusal so it survives
-        // hasValuableContent filtering (finish_reason alone doesn't).
+        // Refusal: put the explanation on delta.refusal. finish_reason alone
+        // passes hasValuableContent, but it carries no text — without this the
+        // client would see content_filter with no reason given.
         const delta =
           chunk.delta.stop_reason === CLAUDE_STOP.REFUSAL
             ? { refusal: claudeRefusalText(chunk.delta.stop_details) }

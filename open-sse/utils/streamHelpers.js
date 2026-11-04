@@ -48,6 +48,8 @@ export function hasValuableContent(chunk, format) {
     const delta = chunk.choices[0].delta;
     return (
       (delta.content && delta.content !== "") ||
+      // A refusal-only delta (OpenAI-native, or a pivoted upstream refusal)
+      (typeof delta.refusal === "string" && delta.refusal !== "") ||
       // reasoning_content, `reasoning`, or MiniMax-style reasoning_details (YAN-672)
       extractReasoningText(delta) !== "" ||
       (delta.tool_calls && delta.tool_calls.length > 0) ||

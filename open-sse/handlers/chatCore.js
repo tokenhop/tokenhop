@@ -1139,6 +1139,7 @@ export async function handleChatCore({
         sourceFormat,
         targetFormat: providerResponseFormat,
         customToolNames,
+        toolNameMap,
         trackDone,
         appendLog,
       }),

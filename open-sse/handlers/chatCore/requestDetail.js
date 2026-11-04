@@ -64,14 +64,24 @@ export function extractUsageFromResponse(responseBody) {
     };
   }
 
-  // OpenAI format
+  // OpenAI format. prompt_tokens is cache-inclusive. Cache writes appear as
+  // prompt_tokens_details.cache_creation_tokens when a Claude upstream was
+  // pivoted to OpenAI (buildUsage) or when an OpenAI-compatible gateway in
+  // front of Anthropic reports them natively (e.g. LiteLLM, GitHub Copilot
+  // Claude models). cached_tokens must then be a number, even 0, so
+  // canonicalizeUsage() takes its pass-through branch instead of folding the
+  // cache into the prompt again.
   if (responseBody.usage?.prompt_tokens !== undefined) {
     const usage = responseBody.usage;
+    const cacheCreation = usage.prompt_tokens_details?.cache_creation_tokens;
+    const hasCacheCreation = cacheCreation != null;
+    const cached = usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens;
     return {
       prompt_tokens: usage.prompt_tokens || 0,
       completion_tokens: reasoningInclusiveCompletion(usage),
-      cached_tokens: usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens,
+      cached_tokens: hasCacheCreation ? (cached ?? 0) : cached,
       reasoning_tokens: usage.completion_tokens_details?.reasoning_tokens,
+      ...(hasCacheCreation ? { cache_creation_input_tokens: cacheCreation } : {}),
     };
   }
 

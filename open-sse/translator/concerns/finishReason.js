@@ -98,3 +98,24 @@ export function claudeRefusalText(stopDetails) {
   }
   return "Request refused by upstream provider.";
 }
+
+// OpenAI refusal text → Claude stop_details for stop_reason "refusal". The
+// pivot keeps only the text, so the upstream category cannot be restored.
+export function claudeRefusalDetails(refusalText) {
+  return typeof refusalText === "string" && refusalText
+    ? { type: CLAUDE_STOP.REFUSAL, explanation: refusalText }
+    : null;
+}
+
+// OpenAI finish_reason + refusal text → Claude { stop_reason, stop_details }.
+// A native OpenAI refusal ends with finish_reason "stop" plus refusal text, so
+// end_turn with a refusal is a refusal too. tool_use / max_tokens are kept.
+export function claudeStopFromOpenAI(finishReason, refusalText) {
+  let stopReason = fromOpenAIFinish(finishReason, "claude");
+  const details = claudeRefusalDetails(refusalText);
+  if (details && stopReason === CLAUDE_STOP.END_TURN) stopReason = CLAUDE_STOP.REFUSAL;
+  return {
+    stopReason,
+    stopDetails: stopReason === CLAUDE_STOP.REFUSAL ? details : null,
+  };
+}
