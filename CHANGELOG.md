@@ -1,3 +1,45 @@
+# v1.2.0 (2026-11-04)
+
+The second tokenhop minor. The Usage page and Token saver get custom ranges, period comparisons and CSV/JSON export. Combos keep each conversation on one model and account so prompt caching keeps working. Sessions can be listed and revoked per device. Live model catalogs reach Vertex AI, MiniMax, GLM, Cohere, Kilo and more. Every outbound media, catalog and token-refresh call now goes through the connection proxy. The Users & teams switch is still off by default; instance admins can turn it on in Instance settings.
+
+## Highlights
+
+- **Usage and Token saver**: 90d and All time periods (#935, #1038), custom date ranges (#940), period-over-period deltas (#944), a previous-period chart overlay and a cost-saved trend (#1079, #1087), CSV/JSON export with a CSV-for-Excel option (#1021, #1060), opt-in retention for request-level history (#949), free-model savings counted as priced (#1094).
+- **Cache-aware routing**: each conversation stays on one combo model and provider account so prompt caching keeps paying off (#930). Pins are scoped per workspace and committed only once a request is served, including nested combos and fusion panels (#1031, #1042, #1046, #1052).
+- **Sessions and auth**: list and revoke sessions per device (#924), a fresh SSO reauthentication before sensitive data transfers (#945), and compare-and-set session re-mints (#1062, #1088, #1093).
+- **Live model catalogs**: GLM Coding and GLM China (#953), MiniMax Coding and MiniMax China (#995), Vertex AI and Vertex Partner (#1008), Cohere, TokenRouter, Kilo Gateway and API.airforce (#1071), Kilo Code and Featherless (#1072). Registry models missing from a live catalog stay listed for every live-catalog provider (#955).
+- **Connection proxy everywhere**: reactive token refresh, media, Vertex and Google catalogs, STT, TTS, search and web executors all use the connection's proxy, so Strict Proxy fails closed (#959, #998, #1037). The caller's redirect mode is honoured (#1020).
+
+## Features
+
+- **CLI**: user, key and auth-recovery commands (ed948c79).
+- **Settings**: the Users & teams switch is exposed in Instance settings; the built-in default stays off (#980).
+- **OAuth**: each user can run their own Codex and xAI login proxy (#939).
+- **Data**: bounded-memory snapshot transfer and backup size guardrails (#956).
+- **Cursor**: AgentService native read/grep/ls/shell calls are redirected to the client's tools (#1014).
+- **Home and Token saver**: usage from before tracking began is flagged as pruned instead of "never saved" (#1056, #1068).
+- **Performance**: lower principal, scoping and budget overhead on the single-user path (#970); day-grain usage stats are summed in SQL (#1099).
+
+## Fixes
+
+- **Security (images)**: provider-returned and Cloudflare image URLs go through the hardened image fetcher. Downloads stay pinned to the checked address through a proxy, relayed downloads are refused, and polling URL hosts are checked (#1003, #1007, #1010, #1012, #1015).
+- **Security (tenancy)**: tenant isolation and safe upgrades enforced (#906); the Kimchi browser-token flow is bound to the authorizing user (#901); the workspace re-mint is rejected after a concurrent sign-out-everywhere (#929).
+- **Security (Node)**: runtime pinned to 22.23.4, with the October npm advisories patched (c0e4b0e9).
+- **Proxy**: relay templates are version-checked, and proxy errors are hidden from API clients behind a generic `502` (#1069).
+- **OAuth (Codex)**: token expiry taken from the JWT (#968); connections that need re-authentication are flagged and rotated refresh tokens adopted (#974); a clear re-auth message, revoked tokens flagged and stale rows replaced (#1030).
+- **Providers**: Google API keys are sent in the `x-goog-api-key` header (#1043); Gemini 4 Argon on Antigravity (#908); the native Gemini forward honours disabled models (#960).
+- **Translator and chat**: upstream refusals kept for Responses clients and SSE-to-JSON aggregation (#1100); cut-off Responses tool calls reported as `length`/`content_filter` on non-stream paths (#1103); empty fusion answers and reasoning-only streams rejected (#1055).
+- **Quota**: quota locks released on fresh positive polls, and provider resets honoured (#1081).
+- **Users & teams**: member Home requests and key lists are scoped (#912, #916); move focus and connection identity preserved (#921); usage from deleted workspaces stays detached (#983); legacy usage adopted once per install (#999).
+- **Settings**: config export/import passwords are sent in an encoding-safe header (#978).
+
+## Upgrade notes
+
+- **Back up the database before upgrading.** On first start, migrations 018–022 add device sessions, budget carry, the usage adoption guard, the daily savings/combo rollup (with an idempotent batched backfill) and untracked-usage indexes. Downgrading to v1.1.x afterwards is not supported.
+- **Redeploy connection relays.** Relay templates now send `x-relay-version: 2`, and tokenhop refuses outdated relays for non-follow redirect requests. The proxy pool test shows a "Redeploy needed" badge for each relay you need to update (#1069).
+- **Single-user installs need no action.** The Users & teams switch stays off unless `TOKENHOP_MULTI_USER` or the Instance settings toggle turns it on.
+- **Contributors only:** `next dev` (`npm run dev*`) now requires `TOKENHOP_DEV_ALLOWED_ORIGINS` (use `localhost` for local-only dev). Production images are unaffected.
+
 # v1.1.3 (2026-11-03)
 
 Third patch on the tokenhop 1.1 line: the remaining media, Vertex and Google catalog calls go through the connection proxy, Cloudflare image inputs use the hardened image fetcher, Codex re-authentication gets a clear message and replaces stale rows, and quota locks clear as soon as a usage poll shows headroom again.
