@@ -1,3 +1,14 @@
+# v1.1.3 (2026-11-03)
+
+Third patch on the tokenhop 1.1 line: the remaining media, Vertex and Google catalog calls go through the connection proxy, Cloudflare image inputs use the hardened image fetcher, Codex re-authentication gets a clear message and replaces stale rows, and quota locks clear as soon as a usage poll shows headroom again.
+
+## Fixes
+
+- **Proxy**: image generation, embeddings, video (including the Vertex service-account token mint), the Google AI Studio, Gemini CLI and Antigravity catalogs, and the dev translator send route use the connection's proxy options, so a Strict Proxy connection fails closed. The Vertex token cache is keyed on the full service-account credential (#1000).
+- **Security (images)**: Cloudflare Workers AI image and mask URL inputs are downloaded by the hardened image fetcher; an unfetchable URL returns a `400` (#1003).
+- **OAuth (Codex)**: all accounts flagged returns `503` with `code: "reauth_required"` instead of `404`; access-token-only rows are flagged on the first conclusive `401`; a reconnect or re-import replaces the account's flagged row (#1032).
+- **Quota**: a fresh positive usage poll clears GitHub and Codex quota locks and Antigravity exact-reset blocks; Codex provider-reported resets are honoured instead of capped at 30 minutes (#1082).
+
 # v1.1.2 (2026-10-23)
 
 Second patch on the tokenhop 1.1 line: the Node.js October 21, 2026 security releases, pinned to Node 22.23.4, plus the recent high and critical npm advisories in undici, Next.js, DOMPurify, markdown-it and sharp.
