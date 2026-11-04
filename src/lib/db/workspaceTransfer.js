@@ -276,7 +276,7 @@ function mergeWorkspacePreferences(db, workspaceId, prefs) {
 
 // ─── import: apply (single transaction, all-or-nothing) ───────────────────
 
-function applyImport(db, credCtx, ctx, workspaceId, sections) {
+function applyImport(db, credCtx, ctx, workspaceId, sections, { ip = null } = {}) {
   // Re-check in-tx: only a live owner membership of an active, non-pending
   // user may mutate this workspace's rows (defense in depth; the route gate
   // alone is not enough once imports run inside one transaction).
@@ -416,7 +416,7 @@ function applyImport(db, credCtx, ctx, workspaceId, sections) {
     );
     auditSync(
       db,
-      { principal: ctx, workspaceId },
+      { principal: ctx, ip, workspaceId },
       "budget.create",
       { type: "budget", id: row.id },
       { after: row },
@@ -437,9 +437,9 @@ function applyImport(db, credCtx, ctx, workspaceId, sections) {
  * @param {import("../users/principal.js").Principal} ctx
  * @param {string} workspaceId
  * @param {object} payload the parsed export document
- * @param {{ passphrase: string }} opts
+ * @param {{ passphrase: string, ip?: string|null }} opts ip: audit context of written budgets
  */
-export async function importWorkspace(ctx, workspaceId, payload, { passphrase } = {}) {
+export async function importWorkspace(ctx, workspaceId, payload, { passphrase, ip = null } = {}) {
   requirePassphrase(passphrase);
   await authorizeWorkspace(ctx, workspaceId);
   const sections = parseImportPayload(structuredClone(payload));
@@ -449,7 +449,9 @@ export async function importWorkspace(ctx, workspaceId, payload, { passphrase } 
     openAllLeaves(sections, portableDek);
     const db = await getAdapter();
     const credCtx = await prepareCredentialCtx(db);
-    const counts = db.transaction(() => applyImport(db, credCtx, ctx, workspaceId, sections));
+    const counts = db.transaction(() =>
+      applyImport(db, credCtx, ctx, workspaceId, sections, { ip }),
+    );
     if (counts.budgets) bumpBudgetsGeneration();
     return { success: true, imported: counts };
   } finally {

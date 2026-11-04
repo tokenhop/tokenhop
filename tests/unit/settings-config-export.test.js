@@ -524,13 +524,26 @@ describe("YAN-1834 budgets in config export/import", () => {
       entry("workspace", null, { limitUsd: -1 }),
       entry("workspace", null, {}),
       entry("workspace", null, { limitTokens: 1.5 }),
-      { ...entry("workspace", null, { limitRequests: 1 }), id: "smuggled" },
     ]) {
       const res = await importConfig({ ...doc, budgets: [bad] }, { mode: "apply" });
       expect(res.status).toBe(400);
       expect((await res.json()).errors[0]).toMatch(/^budgets\[0\]: /);
     }
     expect(state()).toBe(before);
+  });
+
+  it("ignores unknown budget fields with a warning; they never reach the row", async () => {
+    await fresh();
+    const doc = await exportDoc();
+    doc.budgets = [
+      { ...entry("workspace", null, { limitRequests: 3 }), id: "smuggled", createdByUserId: "x" },
+    ];
+    const res = await importConfig(doc, { mode: "apply" });
+    expect(res.status).toBe(200);
+    expect((await res.json()).warnings).toContain("budgets[0]: unknown fields ignored");
+    const row = db.get("SELECT id, createdByUserId, limitRequests FROM budgets");
+    expect(row).toMatchObject({ createdByUserId: null, limitRequests: 3 });
+    expect(row.id).not.toBe("smuggled");
   });
 
   it("an older file without budgets applies and keeps existing budgets", async () => {
@@ -661,6 +674,34 @@ describe("YAN-1834 budgets in config export/import, switch on", () => {
       { workspaceId: DEF, scopeType: "grant", scopeId: "cfg-grant", limitRequests: 4 },
       { workspaceId: DEF, scopeType: "membership", scopeId: `${DEF}:cfg-user`, limitRequests: 3 },
     ]);
+  });
+
+  it("audits budget writes and the import as the session principal", async () => {
+    db.run("DELETE FROM budgets");
+    vi.doMock("@/lib/users/session", () => ({
+      getPrincipal: async () => ({ userId: "cfg-user", via: "session" }),
+    }));
+    vi.resetModules();
+    try {
+      const doc = await exportDoc();
+      doc.budgets = [entry("workspace", null, 7)];
+      expect((await importConfig(doc, { mode: "apply" })).status).toBe(200);
+    } finally {
+      vi.doUnmock("@/lib/users/session");
+      vi.resetModules();
+    }
+    const id = db.get("SELECT id FROM budgets WHERE scopeType = 'workspace'").id;
+    expect(
+      db.get(
+        "SELECT actorUserId, via FROM auditEvents WHERE action = 'budget.create' AND targetId = ?",
+        [id],
+      ),
+    ).toEqual({ actorUserId: "cfg-user", via: "session" });
+    const imported = db.get(
+      "SELECT actorUserId, via, after FROM auditEvents WHERE action = 'config.import' ORDER BY ts DESC, rowid DESC LIMIT 1",
+    );
+    expect(imported).toMatchObject({ actorUserId: "cfg-user", via: "session" });
+    expect(JSON.parse(imported.after).count).toBe(1);
   });
 
   it("skips a key budget filed in another workspace and a user budget; the rest still commits", async () => {

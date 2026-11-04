@@ -206,8 +206,8 @@ function isExportableKey(key) {
 
 /**
  * Portable budget shape (YAN-1834): limits only. Ids, the managing workspace,
- * creator, timestamps, resetAt, spend and notices are dropped (an import
- * entry carrying any other key is rejected by validateConfigDocument).
+ * creator, timestamps, resetAt, spend and notices are dropped; an import
+ * entry's unknown keys are ignored with a warning.
  */
 const BUDGET_KEYS = [
   "scopeType",
@@ -379,8 +379,7 @@ export function validateConfigDocument(doc, knownKeys) {
       return;
     }
     if (Object.keys(budget).some((key) => !BUDGET_KEYS.includes(key))) {
-      errors.push(`budgets[${i}]: Invalid budget fields`);
-      return;
+      warnings.push(`budgets[${i}]: unknown fields ignored`);
     }
     const key = `${budget.scopeType}:${budget.scopeId ?? "workspace"}:${budget.window}`;
     if (budgetKeys.has(key)) errors.push(`Duplicate budget "${key}"`);

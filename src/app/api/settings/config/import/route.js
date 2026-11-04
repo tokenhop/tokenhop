@@ -77,6 +77,10 @@ export async function POST(request) {
     return NextResponse.json({ error: 'mode must be "preview" or "apply"' }, { status: 400 });
   }
 
+  // Audit actor of the import and of every budget it writes: the session
+  // principal when there is one (password/CLI-token auth has none). Declared
+  // here so the failure audit names it too.
+  let principal = null;
   try {
     // A valid CLI token authenticates on its own. Otherwise the JSON body
     // password wins, then YAN-1248's encoding-safe x-tokenhop-password-b64
@@ -187,9 +191,6 @@ export async function POST(request) {
       });
     }
 
-    // Audit actor of the import and of every budget it writes: the session
-    // principal when there is one (password/CLI-token auth has none).
-    let principal = null;
     try {
       principal = await getPrincipal();
     } catch (err) {
@@ -264,7 +265,7 @@ export async function POST(request) {
     console.log("Error importing config:", error);
     if (mode === "apply") {
       await audit(
-        { ip: getClientIp(request) },
+        { principal, ip: getClientIp(request) },
         "config.import",
         { type: "config" },
         { result: "failure" },

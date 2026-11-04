@@ -9,15 +9,6 @@ export const LIMIT_FIELDS = ["limitUsd", "limitTokens", "limitRequests"];
 /** membership scopeId: "<workspaceId>:<userId>". */
 export const membershipScopeId = (workspaceId, userId) => `${workspaceId}:${userId}`;
 
-/** Fields of a portable budget definition (config documents, YAN-1834). */
-export const BUDGET_DEFINITION_FIELDS = [
-  "scopeType",
-  "scopeId",
-  "window",
-  ...LIMIT_FIELDS,
-  "softLimitPct",
-];
-
 /**
  * Limit rules shared by the budget API and imports: each limit is null or a
  * finite non-negative number (tokens/requests integers), at least one is
@@ -45,14 +36,13 @@ export function budgetLimitsError(row) {
 }
 
 /**
- * Value rules of a portable budget definition: allowed fields only, a known
- * scope type and window, a string-or-null scopeId, then budgetLimitsError.
+ * Value rules of a portable budget definition (already projected onto its
+ * fields): a known scope type and window, a string-or-null scopeId, then
+ * budgetLimitsError.
  * @param {object} entry
  * @returns {string|null}
  */
 export function budgetDefinitionError(entry) {
-  if (Object.keys(entry).some((key) => !BUDGET_DEFINITION_FIELDS.includes(key)))
-    return "Invalid budget fields";
   if (!SCOPE_TYPES.includes(entry.scopeType) || !WINDOWS.includes(entry.window))
     return "Invalid budget scope or window";
   const scopeId = entry.scopeId ?? null;

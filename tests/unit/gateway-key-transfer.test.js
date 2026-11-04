@@ -783,15 +783,18 @@ describe("legacy snapshot into hashed instance (compatibility import)", () => {
         [id, ws, scopeId, NOW],
       );
     }
-    await dbApi.importDb(legacyPayload(), { masterKey: MASTER });
-    expect(all(`SELECT id FROM budgets WHERE scopeType = 'key'`)).toEqual([{ id: "b-default" }]);
-    expect(
-      all(
-        `SELECT targetId FROM auditEvents WHERE action = 'budget.delete' AND after LIKE '%key_removed_by_import%' ORDER BY targetId`,
-      ),
-    ).toEqual([{ targetId: "b-replaced" }, { targetId: "b-side" }]);
-    db.run(`DELETE FROM budgets`);
-    db.run(`DELETE FROM workspaces WHERE id = 'ws-side'`);
+    try {
+      await dbApi.importDb(legacyPayload(), { masterKey: MASTER });
+      expect(all(`SELECT id FROM budgets WHERE scopeType = 'key'`)).toEqual([{ id: "b-default" }]);
+      expect(
+        all(
+          `SELECT targetId FROM auditEvents WHERE action = 'budget.delete' AND after LIKE '%target_missing_at_import%' ORDER BY targetId`,
+        ),
+      ).toEqual([{ targetId: "b-replaced" }, { targetId: "b-side" }]);
+    } finally {
+      db.run(`DELETE FROM budgets`);
+      db.run(`DELETE FROM workspaces WHERE id = 'ws-side'`);
+    }
   });
 
   it("wrong master fails preflight with zero mutation", async () => {

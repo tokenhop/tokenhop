@@ -203,9 +203,11 @@ async function importStaged(
     );
   }
 
-  // Audit actor of rows the apply removes (YAN-1913 orphaned budgets).
+  // Audit actor of rows the apply removes (YAN-1913 orphaned budgets): the
+  // session user like the route's db.import row; the switch-off legacy
+  // stand-in has no user, so it audits as the system.
   const auditActor = {
-    principal: actor ? { userId: actor.userId ?? null, via: actor.via } : null,
+    principal: actor?.userId ? { userId: actor.userId, via: actor.via } : null,
     ip,
   };
   if (plan.format === "hashed") {

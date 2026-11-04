@@ -6,7 +6,7 @@ import { auditSync } from "@/lib/users/audit.js";
 const COLS =
   "id, workspaceId, scopeType, scopeId, window, limitUsd, limitTokens, limitRequests, softLimitPct, resetAt, createdByUserId, createdAt";
 
-// Target table per scope, the "still exists" test, and the audit reason.
+// Target table per scope and its "still exists" test.
 // Key: hashed storage needs the key in the budget's workspace (the budget
 // API's rule); legacy storage has no apiKeys.workspaceId, so id only.
 const SCOPES = [
@@ -17,26 +17,22 @@ const SCOPES = [
       legacy
         ? "SELECT 1 FROM apiKeys k WHERE k.id = budgets.scopeId"
         : "SELECT 1 FROM apiKeys k WHERE k.id = budgets.scopeId AND k.workspaceId = budgets.workspaceId",
-    reason: "key_removed_by_import",
   },
   {
     scopeType: "grant",
     table: "connectionGrants",
     exists: () => "SELECT 1 FROM connectionGrants g WHERE g.id = budgets.scopeId",
-    reason: "grant_removed_by_import",
   },
   {
     scopeType: "membership",
     table: "memberships",
     exists: () =>
       "SELECT 1 FROM memberships m WHERE m.workspaceId || ':' || m.userId = budgets.scopeId",
-    reason: "membership_removed_by_import",
   },
   {
     scopeType: "user",
     table: "users",
     exists: () => "SELECT 1 FROM users u WHERE u.id = budgets.scopeId",
-    reason: "user_removed_by_import",
   },
 ];
 
@@ -45,7 +41,8 @@ const tableExists = (db, name) =>
 
 /**
  * Delete budgets whose target no longer exists: key, grant, membership and
- * user budgets. Runs inside the caller's import transaction; each removal is
+ * user budgets. Audit reason `target_missing_at_import` (with the scopeType):
+ * the import may have removed the target or merely not carried it. Runs inside the caller's import transaction; each removal is
  * audited as the importing `actor` ({ principal, ip }) — a removed budget is
  * a raise (ADR-0007). Notices cascade; the usage carry ledger is left alone.
  * Scopes whose target table is absent (pristine schemas) are skipped.
@@ -62,16 +59,16 @@ export function pruneOrphanedScopeBudgetsUnscoped(
         `SELECT ${COLS} FROM budgets WHERE scopeType = ? AND NOT EXISTS (${s.exists(legacyStorage)})`,
         [s.scopeType],
       )
-      .map((row) => ({ row, reason: s.reason })),
+      .map((row) => ({ row })),
   );
-  for (const { row, reason } of doomed) {
+  for (const { row } of doomed) {
     db.run("DELETE FROM budgets WHERE id = ?", [row.id]);
     auditSync(
       db,
       { principal: actor?.principal ?? null, ip: actor?.ip ?? null, workspaceId: row.workspaceId },
       "budget.delete",
       { type: "budget", id: row.id },
-      { before: row, after: { reason } },
+      { before: row, after: { reason: "target_missing_at_import", scopeType: row.scopeType } },
     );
   }
   return doomed.length;

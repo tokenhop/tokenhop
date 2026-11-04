@@ -138,15 +138,26 @@ export function parseImportPayload(payload) {
   if (!Array.isArray(budgets) || budgets.length > WINDOWS.length) {
     invalidFormat(`budgets must be an array of at most ${WINDOWS.length} entries`);
   }
-  budgets.forEach((b, i) => {
-    if (!isPlainObject(b) || Object.keys(b).some((key) => !BUDGET_FIELDS.includes(key))) {
-      invalidFormat(`budgets[${i}] has invalid fields`);
-    }
-    if (!WINDOWS.includes(b.window)) invalidFormat(`budgets[${i}].window is invalid`);
-    const error = budgetLimitsError(b);
+  const windows = new Set();
+  // Projected onto the portable fields: unknown keys are ignored.
+  const portableBudgets = budgets.map((b, i) => {
+    if (!isPlainObject(b)) invalidFormat(`budgets[${i}] must be an object`);
+    const budget = Object.fromEntries(BUDGET_FIELDS.map((key) => [key, b[key] ?? null]));
+    if (!WINDOWS.includes(budget.window)) invalidFormat(`budgets[${i}].window is invalid`);
+    if (windows.has(budget.window)) invalidFormat(`budgets[${i}].window is duplicated`);
+    windows.add(budget.window);
+    const error = budgetLimitsError(budget);
     if (error) invalidFormat(`budgets[${i}]: ${error}`);
+    return budget;
   });
-  return { connections, nodes, combos, kv, preferences: payload.preferences, budgets };
+  return {
+    connections,
+    nodes,
+    combos,
+    kv,
+    preferences: payload.preferences,
+    budgets: portableBudgets,
+  };
 }
 
 // ─── import: conflicts (refuse atomically, no merge) ──────────────────────
@@ -229,11 +240,9 @@ export function assertNoImportConflicts(db, workspaceId, sections) {
       if (existing.has(key)) conflict(`kv:${scope}/${key}`);
     }
   }
-  // Workspace budget windows (one budget per scope + window).
-  const seenWindows = new Set();
+  // Workspace budget windows already budgeted on the destination (duplicate
+  // windows inside the file are a format error in parseImportPayload).
   for (const b of sections.budgets) {
-    if (seenWindows.has(b.window)) conflict(`budget:workspace/${b.window}`);
-    seenWindows.add(b.window);
     if (
       db.get(
         `SELECT 1 AS x FROM budgets WHERE scopeType = 'workspace' AND scopeId = ? AND window = ?`,

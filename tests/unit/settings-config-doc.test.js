@@ -287,13 +287,18 @@ describe("config doc budgets section", () => {
     expect(checked.doc.budgets).toEqual([]);
   });
 
-  it("rejects a non-array, a non-object entry, an unknown field and a duplicate scope + window", () => {
-    for (const budgets of [
-      {},
-      ["x"],
-      [BUDGET, { ...BUDGET, limitUsd: 1 }],
-      [{ ...BUDGET, id: "smuggled" }],
-    ]) {
+  it("ignores unknown budget fields with a warning", () => {
+    const checked = validateConfigDocument(
+      { schemaVersion: 1, settings: {}, budgets: [{ ...BUDGET, id: "smuggled" }] },
+      KNOWN,
+    );
+    expect(checked.valid).toBe(true);
+    expect(checked.warnings).toEqual(["budgets[0]: unknown fields ignored"]);
+    expect(checked.doc.budgets).toEqual([BUDGET]);
+  });
+
+  it("rejects a non-array, a non-object entry and a duplicate scope + window", () => {
+    for (const budgets of [{}, ["x"], [BUDGET, { ...BUDGET, limitUsd: 1 }]]) {
       const checked = validateConfigDocument({ schemaVersion: 1, settings: {}, budgets }, KNOWN);
       expect(checked.valid).toBe(false);
     }

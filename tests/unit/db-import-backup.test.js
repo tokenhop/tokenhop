@@ -463,7 +463,10 @@ describe("legacy import prunes orphaned key budgets", () => {
     const audit = one(
       `SELECT before, after FROM auditEvents WHERE action = 'budget.delete' AND targetId = 'b-live'`,
     );
-    expect(JSON.parse(audit.after)).toEqual({ reason: "key_removed_by_import" });
+    expect(JSON.parse(audit.after)).toEqual({
+      reason: "target_missing_at_import",
+      scopeType: "key",
+    });
     expect(JSON.parse(audit.before)).toMatchObject({ scopeType: "key", scopeId: "legacy-live" });
   });
 
@@ -482,10 +485,13 @@ describe("legacy import prunes orphaned key budgets", () => {
     const audit = one(
       `SELECT after FROM auditEvents WHERE action = 'budget.delete' AND targetId = 'b-grant'`,
     );
-    expect(JSON.parse(audit.after)).toEqual({ reason: "grant_removed_by_import" });
+    expect(JSON.parse(audit.after)).toEqual({
+      reason: "target_missing_at_import",
+      scopeType: "grant",
+    });
   });
 
-  it("rolls the prune back with the import when a later write fails", async () => {
+  it("rolls the prune back with the import when its audit write fails", async () => {
     const realRun = db.run.bind(db);
     db.run = (sql, params) => {
       if (String(sql).startsWith("INSERT INTO auditEvents")) throw new Error("boom after prune");

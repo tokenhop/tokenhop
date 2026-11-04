@@ -289,12 +289,34 @@ describe("workspace transfer budgets", () => {
       { window: "day", limitUsd: -1 },
       { window: "day", softLimitPct: 50 },
       { window: "year", limitUsd: 1 },
-      { window: "day", limitUsd: 1, scopeId: "elsewhere" },
     ]) {
       await expect(
         importWorkspace(ctx, "dest", { ...doc, budgets: [bad] }, { passphrase: "test" }),
       ).rejects.toMatchObject({ code: "TRANSFER_FORMAT_INVALID" });
     }
+    // A window twice in the file is a format error, not a conflict.
+    const twice = [
+      { window: "day", limitUsd: 1 },
+      { window: "day", limitUsd: 2 },
+    ];
+    await expect(
+      importWorkspace(ctx, "dest", { ...doc, budgets: twice }, { passphrase: "test" }),
+    ).rejects.toMatchObject({ code: "TRANSFER_FORMAT_INVALID" });
     expect(budgetDump()).toBe(before);
+  });
+
+  it("ignores unknown budget fields and audits the import actor and ip", async () => {
+    clearDest();
+    const doc = await exportWorkspace(ctx, "source", { passphrase: "test" });
+    doc.budgets = [{ window: "week", limitUsd: 4, id: "smuggled", scopeId: "elsewhere" }];
+    await importWorkspace(ctx, "dest", doc, { passphrase: "test", ip: "1.2.3.4" });
+    const row = db.get("SELECT * FROM budgets WHERE workspaceId = 'dest'");
+    expect(row).toMatchObject({ scopeId: "dest", window: "week", limitUsd: 4 });
+    expect(row.id).not.toBe("smuggled");
+    const audit = db.get(
+      "SELECT actorUserId, ip FROM auditEvents WHERE action = 'budget.create' AND targetId = ?",
+      [row.id],
+    );
+    expect(audit).toEqual({ actorUserId: ctx.userId, ip: "1.2.3.4" });
   });
 });

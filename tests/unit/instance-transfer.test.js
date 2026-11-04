@@ -826,20 +826,30 @@ describe("instance full-table sections (plain hashed v2)", () => {
     expect(dump("SELECT id FROM budgets ORDER BY id")).toEqual(kept);
     expect(
       dump(
-        `SELECT targetId FROM auditEvents WHERE action = 'budget.delete' AND after LIKE '%key_removed_by_import%'`,
+        `SELECT targetId FROM auditEvents WHERE action = 'budget.delete' AND after LIKE '%target_missing_at_import%'`,
       ),
     ).toEqual([{ targetId: "budget-extra" }]);
   });
 
-  // YAN-1913: membership and user budgets whose membership or user the
-  // restore replaced are pruned too, each audited with its reason.
-  it("prunes retained membership and user budgets whose target the restore replaced", async () => {
+  // YAN-1913: a user and membership added after the export are replaced by
+  // the restore; their retained budgets are pruned, audited as the importing
+  // session actor with the client ip.
+  it("prunes membership and user budgets whose target the restore replaced", async () => {
     const snapshot = await dbApi.exportDb();
-    delete snapshot.budgets;
+    delete snapshot.budgets; // older snapshot: live budgets are retained
+    db.run(
+      `INSERT INTO users(id, email, username, displayName, instanceRole, status, passwordHash, mustChangePassword, sessionVersion, createdAt, updatedAt, lastLoginAt)
+       VALUES('late', 'late@x.test', 'late', 'late', 'user', 'active', 'h', 0, 1, ?, ?, NULL)`,
+      [NOW, NOW],
+    );
+    db.run(
+      `INSERT INTO memberships(workspaceId, userId, role, source, createdAt) VALUES(?, 'late', 'member', 'manual', ?)`,
+      [WS, NOW],
+    );
     for (const [id, workspaceId, scopeType, scopeId] of [
-      ["budget-member-gone", WS, "membership", `${WS}:ghost`],
+      ["budget-member-late", WS, "membership", `${WS}:late`],
       ["budget-member-kept", WS, "membership", `${WS}:member1`],
-      ["budget-user-gone", null, "user", "ghost"],
+      ["budget-user-late", null, "user", "late"],
     ]) {
       db.run(
         `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, createdAt)
@@ -847,17 +857,35 @@ describe("instance full-table sections (plain hashed v2)", () => {
         [id, workspaceId, scopeType, scopeId, NOW],
       );
     }
-    await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    await dbApi.importDb(structuredClone(snapshot), {
+      masterKey: MASTER,
+      force: true,
+      actor: { userId: "owner", instanceRole: "owner", via: "session" },
+      ip: "1.2.3.4",
+    });
+    expect(dump("SELECT id FROM users WHERE id = 'late'")).toEqual([]);
     expect(dump("SELECT id FROM budgets WHERE window = 'week'")).toEqual([
       { id: "budget-member-kept" },
     ]);
     expect(
       dump(
-        `SELECT targetId, after FROM auditEvents WHERE action = 'budget.delete' ORDER BY targetId`,
-      ).map((r) => [r.targetId, JSON.parse(r.after).reason]),
+        `SELECT targetId, actorUserId, via, ip, after FROM auditEvents WHERE action = 'budget.delete' ORDER BY targetId`,
+      ).map((r) => ({ ...r, after: JSON.parse(r.after) })),
     ).toEqual([
-      ["budget-member-gone", "membership_removed_by_import"],
-      ["budget-user-gone", "user_removed_by_import"],
+      {
+        targetId: "budget-member-late",
+        actorUserId: "owner",
+        via: "session",
+        ip: "1.2.3.4",
+        after: { reason: "target_missing_at_import", scopeType: "membership" },
+      },
+      {
+        targetId: "budget-user-late",
+        actorUserId: "owner",
+        via: "session",
+        ip: "1.2.3.4",
+        after: { reason: "target_missing_at_import", scopeType: "user" },
+      },
     ]);
   });
 
