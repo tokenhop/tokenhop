@@ -459,7 +459,7 @@ describe("Endpoint key identity invalidation", () => {
     expect(r.revealed).toBeNull();
     expect(r.keys).toEqual([]);
   });
-  it("deleting the revealed key drops its budget retry; a failed delete keeps the reveal", async () => {
+  it("only deleting the revealed key drops its budget retry; failed or other deletes keep both", async () => {
     let deleteOk = false;
     fetchMock.mockImplementation(async (url, init) => {
       if (init?.method === "POST" && url.startsWith("/api/keys"))
@@ -484,6 +484,9 @@ describe("Endpoint key identity invalidation", () => {
     expect(render(hook).revealed?.id).toBe("new");
     expect(render(hook).budgetFailure?.keyId).toBe("new");
     deleteOk = true;
+    await render(hook).deleteKey("mine");
+    expect(render(hook).revealed?.id).toBe("new");
+    expect(render(hook).budgetFailure?.keyId).toBe("new");
     await render(hook).deleteKey("new");
     const r = render(hook);
     expect(r.revealed).toBeNull();
