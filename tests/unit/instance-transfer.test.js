@@ -805,6 +805,32 @@ describe("instance full-table sections (plain hashed v2)", () => {
     expect(await guard.hasBudgets(principal)).toBe(true);
   });
 
+  // YAN-1913 (§7.4): an older snapshot without a budgets section keeps the
+  // live budgets; a key budget for a key the restore replaced is pruned.
+  it("prunes retained key budgets whose key the restore replaced", async () => {
+    const snapshot = await dbApi.exportDb();
+    delete snapshot.budgets;
+    const RAW_X = "th_EXTRAGATEWAYTOKENxxxxxxxxxxxxxxxx";
+    db.run(
+      `INSERT INTO apiKeys(id, workspaceId, userId, createdByUserId, keyHash, hashKid, prefix, name, machineId, legacy, isActive, allowedModels, createdAt)
+       VALUES('hk-extra', ?, 'owner', 'owner', ?, ?, ?, 'Extra', NULL, 0, 1, '[]', ?)`,
+      [WS, digest(RAW_X), KID, apiKeyPrefix(RAW_X), NOW],
+    );
+    db.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, createdAt)
+       VALUES('budget-extra', ?, 'key', 'hk-extra', 'day', 1, ?)`,
+      [WS, NOW],
+    );
+    const kept = dump("SELECT id FROM budgets WHERE id <> 'budget-extra' ORDER BY id");
+    await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    expect(dump("SELECT id FROM budgets ORDER BY id")).toEqual(kept);
+    expect(
+      dump(
+        `SELECT targetId FROM auditEvents WHERE action = 'budget.delete' AND after LIKE '%key_removed_by_import%'`,
+      ),
+    ).toEqual([{ targetId: "budget-extra" }]);
+  });
+
   it("wrong master fails preflight on a full snapshot with zero mutation", async () => {
     const snapshot = await dbApi.exportDb();
     const before = fullDump();

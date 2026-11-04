@@ -3,6 +3,7 @@
 // db.transaction, after assertStateCurrent().
 import { stringifyJson } from "../helpers/jsonCol.js";
 import { adoptOwnerlessRowsUnscoped } from "../repos/ownership.js";
+import { pruneOrphanedScopeBudgetsUnscoped } from "../repos/budgetOrphansRepo.js";
 import {
   encodeLegacyCredentialRows,
   insertLegacyEncryptedRowsSync,
@@ -203,4 +204,9 @@ export function applyLegacySnapshotSync(
   adoptOwnerlessRowsUnscoped(db);
 
   if (instance.storage === "hashed") insertLegacyKeysHashedSync(db, payload, plan);
+  // YAN-1913: budgets is never wiped here, so drop the key budgets whose key
+  // the replace removed (and grant budgets whose grant the connection wipe
+  // cascaded away) in this same transaction. The pending Default and its
+  // workspace budgets stay.
+  pruneOrphanedScopeBudgetsUnscoped(db, { legacyStorage: instance.storage === "legacy" });
 }
