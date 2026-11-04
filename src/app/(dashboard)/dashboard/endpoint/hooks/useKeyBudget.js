@@ -31,6 +31,10 @@ export function useKeyBudget(context) {
   /** Clear a recorded failure (new create attempt / reveal dismissed). */
   const clearBudgetFailure = () => setBudgetFailure(null);
 
+  /** Clear the failure only while it still belongs to `keyId` (key deleted). */
+  const clearBudgetFailureFor = (keyId) =>
+    setBudgetFailure((cur) => (cur?.keyId === keyId ? null : cur));
+
   /** Validate the optional inputs: { budget|null, error|null }. Empty = off. */
   const parseBudgetInput = () => parseKeyBudget(createBudgetUsd, createBudgetWindow);
 
@@ -89,6 +93,7 @@ export function useKeyBudget(context) {
     budgetFailure,
     resetBudgetForm,
     clearBudgetFailure,
+    clearBudgetFailureFor,
     parseBudgetInput,
     postKeyBudget,
     reportBudgetFailure,

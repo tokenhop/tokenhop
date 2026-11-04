@@ -431,4 +431,65 @@ describe("Endpoint key identity invalidation", () => {
     await old.fetchKeys();
     expect(fetchMock.mock.calls).toHaveLength(calls);
   });
+  it("deleting the revealed key clears its one-time reveal; deleting another key keeps it", async () => {
+    fetchMock.mockImplementation(async (url, init) => {
+      if (init?.method === "POST") return json({ id: "new", key: "th_plain_secret", name: "k" });
+      if (init?.method === "DELETE") return json({ ok: true });
+      return json(
+        url.includes("/context")
+          ? hashed()
+          : {
+              keys: [
+                { id: "mine", prefix: "th_m…e" },
+                { id: "new", prefix: "th_p…t" },
+              ],
+              storage: "hashed",
+            },
+      );
+    });
+    render(useApiKeys);
+    await flush();
+    render(useApiKeys).setNewKeyName("k");
+    await render(useApiKeys).createKey();
+    expect(render(useApiKeys).revealed).toMatchObject({ id: "new", plain: "th_plain_secret" });
+    await render(useApiKeys).deleteKey("mine");
+    expect(render(useApiKeys).revealed?.id).toBe("new");
+    await render(useApiKeys).deleteKey("new");
+    const r = render(useApiKeys);
+    expect(r.revealed).toBeNull();
+    expect(r.keys).toEqual([]);
+  });
+  it("only deleting the revealed key drops its budget retry; failed or other deletes keep both", async () => {
+    let deleteOk = false;
+    fetchMock.mockImplementation(async (url, init) => {
+      if (init?.method === "POST" && url.startsWith("/api/keys"))
+        return json({ id: "new", key: "th_plain_secret", name: "k" });
+      if (init?.method === "POST") return json({ error: "budget down" }, 500);
+      if (init?.method === "DELETE")
+        return deleteOk ? json({ ok: true }) : json({ error: "nope" }, 500);
+      return json(
+        url.includes("/context")
+          ? hashed()
+          : { keys: [{ id: "new", prefix: "th_p…t" }], storage: "hashed" },
+      );
+    });
+    const hook = () => useApiKeys({ multiUser: true });
+    render(hook);
+    await flush();
+    render(hook).setNewKeyName("k");
+    render(hook).setCreateBudgetUsd("5");
+    await render(hook).createKey();
+    expect(render(hook).budgetFailure?.keyId).toBe("new");
+    await render(hook).deleteKey("new");
+    expect(render(hook).revealed?.id).toBe("new");
+    expect(render(hook).budgetFailure?.keyId).toBe("new");
+    deleteOk = true;
+    await render(hook).deleteKey("mine");
+    expect(render(hook).revealed?.id).toBe("new");
+    expect(render(hook).budgetFailure?.keyId).toBe("new");
+    await render(hook).deleteKey("new");
+    const r = render(hook);
+    expect(r.revealed).toBeNull();
+    expect(r.budgetFailure).toBeNull();
+  });
 });
