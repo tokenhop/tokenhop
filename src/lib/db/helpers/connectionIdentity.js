@@ -61,21 +61,38 @@ const parseMs = (v) => {
 };
 
 /**
- * An access-token-only row (no refresh token) whose known expiry has passed:
- * the earlier of the stored expiresAt/tokenExpiresAt and the JWT exp. Mirrors
- * reauthState.isAccessTokenOnlyExpired for codex without importing it
- * (reauthState → tokenLifetime → the provider registry is too heavy for the
+ * An access-token-only row (no refresh token) whose known expiry has passed.
+ * Mirrors tokenLifetime.getCredentialExpiryMs exactly: stored =
+ * expiresAt ?? tokenExpiresAt, then the earlier of stored and the JWT exp.
+ * Not imported (tokenLifetime → the provider registry is too heavy for the
  * DB layer's cold-start path).
  */
 function isExpiredAccessTokenOnly(row, nowMs) {
   if (row.refreshToken || !row.accessToken) return false;
-  const exp = decodeJwtPayload(row.accessToken)?.exp;
-  const candidates = [
-    parseMs(row.expiresAt),
-    parseMs(row.tokenExpiresAt),
-    Number.isFinite(Number(exp)) && Number(exp) > 0 ? Number(exp) * 1000 : null,
-  ].filter((t) => t !== null);
-  return candidates.length > 0 && Math.min(...candidates) <= nowMs;
+  const stored = parseMs(row.expiresAt ?? row.tokenExpiresAt);
+  const exp = Number(decodeJwtPayload(row.accessToken)?.exp);
+  const expMs = Number.isFinite(exp) && exp > 0 ? exp * 1000 : null;
+  const expiry = expMs === null ? stored : stored === null ? expMs : Math.min(stored, expMs);
+  return expiry !== null && expiry <= nowMs;
+}
+
+const accountIdFromJwt = (token) => {
+  const payload = typeof token === "string" && token ? decodeJwtPayload(token) : null;
+  const id = payload?.["https://api.openai.com/auth"]?.chatgpt_account_id || payload?.account_id;
+  return typeof id === "string" && id ? id : null;
+};
+
+/**
+ * YAN-1623: the ChatGPT account id a codex row/grant provably belongs to —
+ * providerSpecificData.chatgptAccountId, else the auth claim of the idToken,
+ * then the accessToken (same claims as oauth extractCodexAccountInfo). Null
+ * when none is derivable.
+ */
+export function codexAccountIdOf(row) {
+  if (!row) return null;
+  const stored = row.providerSpecificData?.chatgptAccountId;
+  if (typeof stored === "string" && stored) return stored;
+  return accountIdFromJwt(row.idToken) ?? accountIdFromJwt(row.accessToken);
 }
 
 /**
@@ -124,4 +141,16 @@ export function matchesFlaggedReplacement(existing, incoming, nowMs = Date.now()
     return sameAccountId(existingAccountId, incomingAccountId);
   }
   return false;
+}
+
+/**
+ * YAN-1623: may this flagged row be REMOVED as a duplicate of the incoming
+ * grant? Stricter than matchesFlaggedReplacement: the row must also carry a
+ * proven account id equal to the incoming one, so a dead row of another
+ * account sharing the email is never deleted.
+ */
+export function matchesFlaggedDuplicate(existing, incoming, nowMs = Date.now()) {
+  if (!matchesFlaggedReplacement(existing, incoming, nowMs)) return false;
+  const rowId = codexAccountIdOf(existing);
+  return !!rowId && rowId === codexAccountIdOf(incoming);
 }

@@ -7,8 +7,7 @@ import { setMetaSync } from "../helpers/metaStore.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { TenancyError, assertCtx } from "@/lib/users/errors.js";
 import { expireBudgetSwitchCache } from "@/lib/users/budgets.js";
-import { LATENCY_COLUMNS, LATENCY_MERGE_SQL } from "../helpers/usageLatencyRollup.js";
-import { SAVINGS_COLUMNS, SAVINGS_MERGE_SQL } from "../helpers/usageSavingsRollup.js";
+import { foldUsageRollupSql } from "../helpers/usageRollupFold.js";
 
 const OWNED = ["providerConnections", "providerNodes", "combos"];
 
@@ -148,14 +147,10 @@ export function adoptOwnerlessRowsUnscoped(db, { includeUsage = false, reusedWs 
 // owner. Merges by summing into any existing target row.
 function foldRollups(db, where, params, ws, owner) {
   let n = db.run(
-    `INSERT INTO usageRollup (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost, ${LATENCY_COLUMNS.join(", ")}, ${SAVINGS_COLUMNS.join(", ")}, lastUsedAt)
-     SELECT dateKey, ?, CASE WHEN userId = '' THEN ? ELSE userId END, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost, ${LATENCY_COLUMNS.join(", ")}, ${SAVINGS_COLUMNS.join(", ")}, lastUsedAt
-     FROM usageRollup WHERE ${where}
-     ON CONFLICT (dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint) DO UPDATE SET
-       requests = requests + excluded.requests, tokensIn = tokensIn + excluded.tokensIn,
-       tokensOut = tokensOut + excluded.tokensOut, tokensCached = tokensCached + excluded.tokensCached,
-       cost = cost + excluded.cost, ${LATENCY_MERGE_SQL}, ${SAVINGS_MERGE_SQL},
-       lastUsedAt = MAX(lastUsedAt, excluded.lastUsedAt)`,
+    foldUsageRollupSql(where, {
+      workspaceId: "?",
+      userId: "CASE WHEN userId = '' THEN ? ELSE userId END",
+    }),
     [ws, owner ?? "", ...params],
   ).changes;
   db.run(`DELETE FROM usageRollup WHERE ${where}`, params);
