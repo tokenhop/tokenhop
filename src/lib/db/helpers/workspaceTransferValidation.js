@@ -4,6 +4,7 @@
 // mutates the database.
 import { latestVersion } from "../migrations/index.js";
 import { parseJson } from "./jsonCol.js";
+import { LIMIT_FIELDS, WINDOWS, budgetLimitsError } from "../../users/budgets.js";
 
 export const WORKSPACE_EXPORT_TYPE = "tokenhop.workspaceExport";
 export const WORKSPACE_EXPORT_VERSION = 1;
@@ -11,6 +12,8 @@ const MAX_PASSPHRASE_BYTES = 1024;
 const MAX_ROWS = 10000;
 const MAX_KV_ENTRIES = 10000;
 export const KV_SCOPES = ["modelAliases", "customModels", "disabledModels"];
+// YAN-1834: the workspace's own budget, one row per window.
+const BUDGET_FIELDS = ["window", ...LIMIT_FIELDS, "softLimitPct"];
 
 export function fail(code, message, extra = {}) {
   throw Object.assign(new Error(message), { code, ...extra });
@@ -130,7 +133,20 @@ export function parseImportPayload(payload) {
       kv[scope] = out;
     }
   }
-  return { connections, nodes, combos, kv, preferences: payload.preferences };
+  // Older files have no budgets section.
+  const budgets = payload.budgets ?? [];
+  if (!Array.isArray(budgets) || budgets.length > WINDOWS.length) {
+    invalidFormat(`budgets must be an array of at most ${WINDOWS.length} entries`);
+  }
+  budgets.forEach((b, i) => {
+    if (!isPlainObject(b) || Object.keys(b).some((key) => !BUDGET_FIELDS.includes(key))) {
+      invalidFormat(`budgets[${i}] has invalid fields`);
+    }
+    if (!WINDOWS.includes(b.window)) invalidFormat(`budgets[${i}].window is invalid`);
+    const error = budgetLimitsError(b);
+    if (error) invalidFormat(`budgets[${i}]: ${error}`);
+  });
+  return { connections, nodes, combos, kv, preferences: payload.preferences, budgets };
 }
 
 // ─── import: conflicts (refuse atomically, no merge) ──────────────────────
@@ -211,6 +227,20 @@ export function assertNoImportConflicts(db, workspaceId, sections) {
       if (seenKeys.has(key)) conflict(`kv:${scope}/${key}`);
       seenKeys.add(key);
       if (existing.has(key)) conflict(`kv:${scope}/${key}`);
+    }
+  }
+  // Workspace budget windows (one budget per scope + window).
+  const seenWindows = new Set();
+  for (const b of sections.budgets) {
+    if (seenWindows.has(b.window)) conflict(`budget:workspace/${b.window}`);
+    seenWindows.add(b.window);
+    if (
+      db.get(
+        `SELECT 1 AS x FROM budgets WHERE scopeType = 'workspace' AND scopeId = ? AND window = ?`,
+        [workspaceId, b.window],
+      )
+    ) {
+      conflict(`budget:workspace/${b.window}`);
     }
   }
   if (conflicts.length > 0) {

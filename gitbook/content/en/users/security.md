@@ -170,16 +170,16 @@ Both need **re-authentication** every time. See [Re-authentication](#re-authenti
 
 Moves one workspace's configuration to another workspace, possibly on another instance.
 
-**Included:** provider connections, custom provider nodes, combos, model aliases, custom models, disabled models, and the workspace's setting overrides.
+**Included:** provider connections, custom provider nodes, combos, model aliases, custom models, disabled models, the workspace's setting overrides, and the workspace's own budget (its limits only).
 
-**Never included:** users, memberships, grants, budgets, usage, audit records or other workspaces.
+**Never included:** users, memberships, grants, key, member, grant and user budgets, budget spend and notices, usage, audit records or other workspaces.
 
 How it works:
 
 - Credentials are **decrypted with the source workspace's data key and re-sealed** under a fresh random key that is protected only by your passphrase. The file never contains the master key or any raw key material.
 - A passphrase is required to export and to import. Choose a strong one and store it separately from the file. tokenhop cannot recover a lost passphrase.
 - Import checks every credential in the file **before changing anything**, then creates new ids and re-encrypts under the destination workspace's data key.
-- Import is all-or-nothing. If a name or key collides with something already in the destination, the whole import is refused (HTTP 409 `TRANSFER_CONFLICT`) with a short list of conflicts.
+- Import is all-or-nothing. If a name or key collides with something already in the destination, the whole import is refused (HTTP 409 `TRANSFER_CONFLICT`) with a short list of conflicts. A workspace budget conflicts when the destination already has a workspace budget for the same window (`budget:workspace/day`, for example).
 - You must be the **owner** of the workspace you export from or import into. Other members get 403; non-members get 404.
 - Available in the dashboard under **Settings → Data & backup → Workspace backup** (for workspaces you own; needs the workspace owner role) and over the API at `POST /api/workspaces/{id}/export` and `/import`.
 
@@ -201,7 +201,7 @@ Restore behavior:
 - It **replaces** the instance's data. tokenhop first proves the master key and checks the file, then takes a protected `pre-import-` backup, then replaces tables. A failure before that point changes nothing.
 - If the backup's users differ from the current instance, the restore is refused with 409 `IMPORT_USER_MISMATCH` and a metadata-only diff. Only the **instance owner** can override this by forcing the restore, which replaces the differing users.
 - The `multiUserEnabled` setting inside a backup is ignored, so a restore never flips the users & teams switch.
-- Encrypted instances accept only format v3 exports. The one exception is an older, pre-encryption backup restored while users & teams is on, which is imported into the Default workspace. Other plaintext and older formats are rejected. Portable configuration export (settings only) never includes secrets.
+- Encrypted instances accept only format v3 exports. The one exception is an older, pre-encryption backup restored while users & teams is on, which is imported into the Default workspace. Other plaintext and older formats are rejected. Portable configuration export (settings, combos, pricing overrides and Default-workspace budgets) never includes secrets.
 - Large restores stream. The accepted body size is the smaller of `TOKENHOP_INSTANCE_IMPORT_MAX_BODY_SIZE` and `TOKENHOP_PROXY_CLIENT_MAX_BODY_SIZE` (default `128mb`).
 - Export and import check free disk before writing. Not enough space returns HTTP 507 (`EXPORT_DISK_INSUFFICIENT` or `IMPORT_DISK_INSUFFICIENT`) and changes nothing. The message says how much space it needs.
 - A single snapshot row larger than 64 MiB is refused at export with HTTP 422 (`EXPORT_ROW_TOO_LARGE`). Delete or trim that row and export again.

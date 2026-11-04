@@ -212,3 +212,89 @@ describe("workspace transfer", () => {
     ).toBe('["old"]');
   });
 });
+
+// YAN-1834: the workspace's own budget travels; key/member/grant budgets never do.
+describe("workspace transfer budgets", () => {
+  const insertBudget = (id, workspaceId, scopeType, scopeId, window, limitUsd) =>
+    db.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, softLimitPct, createdByUserId, createdAt)
+       VALUES(?, ?, ?, ?, ?, ?, 80, 'u', ?)`,
+      [id, workspaceId, scopeType, scopeId, window, limitUsd, NOW],
+    );
+  const clearDest = () => {
+    for (const table of ["providerConnections", "providerNodes", "combos"])
+      db.run(`DELETE FROM ${table} WHERE workspaceId = 'dest'`);
+    db.run("DELETE FROM kv WHERE key LIKE 'ws:dest/%'");
+    db.run("DELETE FROM budgets WHERE workspaceId = 'dest'");
+  };
+  const budgetDump = () => JSON.stringify(db.all("SELECT * FROM budgets ORDER BY id"));
+
+  beforeAll(() => {
+    db.run("DELETE FROM budgets");
+    insertBudget("src-ws-day", "source", "workspace", "source", "day", 10);
+    insertBudget("src-key-day", "source", "key", "some-key", "day", 2);
+    insertBudget("src-member-day", "source", "membership", "source:u", "day", 3);
+  });
+
+  it("exports only the workspace budget and imports it onto the destination with a new id", async () => {
+    clearDest();
+    const doc = await exportWorkspace(ctx, "source", { passphrase: "test" });
+    expect(doc.budgets).toEqual([
+      { window: "day", limitUsd: 10, limitTokens: null, limitRequests: null, softLimitPct: 80 },
+    ]);
+    const result = await importWorkspace(ctx, "dest", doc, { passphrase: "test" });
+    expect(result.imported.budgets).toBe(1);
+    const rows = db.all("SELECT * FROM budgets WHERE workspaceId = 'dest'");
+    expect(rows).toEqual([
+      expect.objectContaining({
+        scopeType: "workspace",
+        scopeId: "dest",
+        window: "day",
+        limitUsd: 10,
+        softLimitPct: 80,
+        createdByUserId: "u",
+      }),
+    ]);
+    expect(rows[0].id).not.toBe("src-ws-day");
+  });
+
+  it("refuses a destination that already has a budget for that window, with zero mutation", async () => {
+    clearDest();
+    insertBudget("dest-ws-day", "dest", "workspace", "dest", "day", 1);
+    const doc = await exportWorkspace(ctx, "source", { passphrase: "test" });
+    const before = budgetDump();
+    const conns = JSON.stringify(db.all("SELECT * FROM providerConnections ORDER BY id"));
+    const error = await importWorkspace(ctx, "dest", doc, { passphrase: "test" }).catch((e) => e);
+    expect(error).toMatchObject({ code: "TRANSFER_CONFLICT" });
+    expect(error.conflicts).toContain("budget:workspace/day");
+    expect(budgetDump()).toBe(before);
+    expect(JSON.stringify(db.all("SELECT * FROM providerConnections ORDER BY id"))).toBe(conns);
+  });
+
+  it("imports an older document without a budgets section", async () => {
+    clearDest();
+    const doc = await exportWorkspace(ctx, "source", { passphrase: "test" });
+    delete doc.budgets;
+    const result = await importWorkspace(ctx, "dest", doc, { passphrase: "test" });
+    expect(result.imported.budgets).toBe(0);
+    expect(db.all("SELECT id FROM budgets WHERE workspaceId = 'dest'")).toEqual([]);
+    expect(db.get("SELECT id FROM providerConnections WHERE workspaceId = 'dest'")).toBeTruthy();
+  });
+
+  it("rejects invalid budget limits as TRANSFER_FORMAT_INVALID", async () => {
+    clearDest();
+    const doc = await exportWorkspace(ctx, "source", { passphrase: "test" });
+    const before = budgetDump();
+    for (const bad of [
+      { window: "day", limitUsd: -1 },
+      { window: "day", softLimitPct: 50 },
+      { window: "year", limitUsd: 1 },
+      { window: "day", limitUsd: 1, scopeId: "elsewhere" },
+    ]) {
+      await expect(
+        importWorkspace(ctx, "dest", { ...doc, budgets: [bad] }, { passphrase: "test" }),
+      ).rejects.toMatchObject({ code: "TRANSFER_FORMAT_INVALID" });
+    }
+    expect(budgetDump()).toBe(before);
+  });
+});

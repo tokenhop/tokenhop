@@ -255,3 +255,45 @@ describe("YAN-313 config doc pure logic", () => {
     }
   });
 });
+
+// YAN-1834: budgets section (shape only; values are checked server-side).
+describe("config doc budgets section", () => {
+  const BUDGET = {
+    scopeType: "key",
+    scopeId: "k1",
+    window: "day",
+    limitUsd: 5,
+    limitTokens: null,
+    limitRequests: null,
+    softLimitPct: 80,
+  };
+
+  it("emits budget definitions with exactly the portable keys", () => {
+    const doc = buildConfigDocument({ ...LIVE, budgets: [BUDGET], version: "t" });
+    expect(doc.budgets).toEqual([BUDGET]);
+    expect(Object.keys(doc.budgets[0]).sort()).toEqual(
+      [
+        "limitRequests",
+        "limitTokens",
+        "limitUsd",
+        "scopeId",
+        "scopeType",
+        "softLimitPct",
+        "window",
+      ].sort(),
+    );
+  });
+
+  it("an older document without budgets validates to an empty list", () => {
+    const checked = validateConfigDocument({ schemaVersion: 1, settings: {} }, KNOWN);
+    expect(checked.valid).toBe(true);
+    expect(checked.doc.budgets).toEqual([]);
+  });
+
+  it("rejects a non-array, a non-object entry and a duplicate scope + window", () => {
+    for (const budgets of [{}, ["x"], [BUDGET, { ...BUDGET, limitUsd: 1 }]]) {
+      const checked = validateConfigDocument({ schemaVersion: 1, settings: {}, budgets }, KNOWN);
+      expect(checked.valid).toBe(false);
+    }
+  });
+});

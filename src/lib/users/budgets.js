@@ -9,6 +9,58 @@ export const LIMIT_FIELDS = ["limitUsd", "limitTokens", "limitRequests"];
 /** membership scopeId: "<workspaceId>:<userId>". */
 export const membershipScopeId = (workspaceId, userId) => `${workspaceId}:${userId}`;
 
+/** Fields of a portable budget definition (config documents, YAN-1834). */
+export const BUDGET_DEFINITION_FIELDS = [
+  "scopeType",
+  "scopeId",
+  "window",
+  ...LIMIT_FIELDS,
+  "softLimitPct",
+];
+
+/**
+ * Limit rules shared by the budget API and imports: each limit is null or a
+ * finite non-negative number (tokens/requests integers), at least one is
+ * set, and softLimitPct is null or an integer 1..100.
+ * @param {object} row Budget row or definition (missing fields read as null).
+ * @returns {string|null} The error message, else null.
+ */
+export function budgetLimitsError(row) {
+  for (const field of LIMIT_FIELDS) {
+    const value = row[field] ?? null;
+    if (
+      value !== null &&
+      (typeof value !== "number" ||
+        !Number.isFinite(value) ||
+        value < 0 ||
+        (field !== "limitUsd" && !Number.isInteger(value)))
+    )
+      return "Invalid budget limit";
+  }
+  if (LIMIT_FIELDS.every((field) => (row[field] ?? null) === null)) return "A limit is required";
+  const soft = row.softLimitPct ?? null;
+  if (soft !== null && (!Number.isInteger(soft) || soft < 1 || soft > 100))
+    return "Invalid soft limit";
+  return null;
+}
+
+/**
+ * Value rules of a portable budget definition: allowed fields only, a known
+ * scope type and window, a string-or-null scopeId, then budgetLimitsError.
+ * @param {object} entry
+ * @returns {string|null}
+ */
+export function budgetDefinitionError(entry) {
+  if (Object.keys(entry).some((key) => !BUDGET_DEFINITION_FIELDS.includes(key)))
+    return "Invalid budget fields";
+  if (!SCOPE_TYPES.includes(entry.scopeType) || !WINDOWS.includes(entry.window))
+    return "Invalid budget scope or window";
+  const scopeId = entry.scopeId ?? null;
+  if (entry.scopeType === "workspace" ? scopeId !== null : typeof scopeId !== "string" || !scopeId)
+    return "Invalid budget scopeId";
+  return budgetLimitsError(entry);
+}
+
 /**
  * Start of the UTC calendar window containing `now`. Weeks start Monday 00:00
  * UTC. `total` starts at the epoch (never resets).

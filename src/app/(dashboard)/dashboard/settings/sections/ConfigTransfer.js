@@ -16,9 +16,10 @@ const GROUPS = [
   ["settings", "Settings"],
   ["combos", "Combos"],
   ["pricing", "Pricing overrides"],
+  ["budgets", "Budgets"],
 ];
 const SCOPE_NOTE =
-  "Configuration only: settings, combos and pricing overrides. Passwords, secrets and provider accounts are never included. URL credentials are redacted; masked URL settings keep their current values on import. For a full backup, use Data & backup.";
+  "Configuration only: settings, combos, pricing overrides and Default-workspace budgets (limits only; spend and notices are never included). Passwords, secrets and provider accounts are never included. URL credentials are redacted; masked URL settings keep their current values on import. For a full backup, use Data & backup.";
 
 async function postImport(body) {
   const res = await fetch("/api/settings/config/import", {

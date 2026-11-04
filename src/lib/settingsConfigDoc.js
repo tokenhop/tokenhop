@@ -2,7 +2,13 @@
  * YAN-313 configuration export/import: pure document logic.
  *
  * Document: { schemaVersion, exportedAt, app: { version }, settings,
- *   redactedSettings, combos, pricingOverrides }.
+ *   redactedSettings, combos, pricingOverrides, budgets }.
+ *
+ * `budgets` (YAN-1834) holds portable budget definitions of the Default
+ * workspace: { scopeType, scopeId, window, limitUsd, limitTokens,
+ * limitRequests, softLimitPct } — limits only, never ids, spend or notices.
+ * This module checks only its shape (it is client-imported); value and
+ * target rules run server-side with the budget API's own helpers.
  *
  * The settings subset is derived, not listed: export takes every stored
  * setting minus the denylists below, and import accepts every key the
@@ -160,6 +166,7 @@ const VALID_COMBO_NAME = /^[a-zA-Z0-9_.-]+$/;
 const MAX_COMBOS = 1000;
 const MAX_SETTINGS_KEYS = 500;
 const MAX_PRICING_PROVIDERS = 500;
+const MAX_BUDGETS = 1000;
 const PRICING_FIELDS = new Set(["input", "output", "cached", "reasoning", "cache_creation"]);
 
 function isPlainObject(value) {
@@ -205,10 +212,10 @@ function portableCombo(combo) {
 /**
  * Build the export document. Secrets, machine-local and read-only keys are
  * stripped; every exported string is scrubbed of embedded URL credentials.
- * @param {{ settings: object, combos: Array, pricingOverrides: object, version: string }} state
+ * @param {{ settings: object, combos: Array, pricingOverrides: object, budgets?: Array, version: string }} state
  * @returns {object} Versioned config document.
  */
-export function buildConfigDocument({ settings, combos, pricingOverrides, version }) {
+export function buildConfigDocument({ settings, combos, pricingOverrides, budgets, version }) {
   const portable = {};
   const redactedSettings = [];
   for (const [key, value] of Object.entries(settings ?? {})) {
@@ -225,6 +232,7 @@ export function buildConfigDocument({ settings, combos, pricingOverrides, versio
     redactedSettings: redactedSettings.sort(),
     combos: (combos ?? []).map(portableCombo),
     pricingOverrides: isPlainObject(pricingOverrides) ? pricingOverrides : {},
+    budgets: budgets ?? [],
   };
 }
 
@@ -307,6 +315,8 @@ export function validateConfigDocument(doc, knownKeys) {
   if (doc.pricingOverrides !== undefined && !isPlainObject(doc.pricingOverrides)) {
     errors.push("pricingOverrides must be an object");
   }
+  if (doc.budgets !== undefined && !Array.isArray(doc.budgets))
+    errors.push("budgets must be an array");
   if (errors.length > 0) return fail();
 
   const settingKeys = Object.keys(doc.settings);
@@ -340,6 +350,21 @@ export function validateConfigDocument(doc, knownKeys) {
   const pricingProblem = pricingError(pricingOverrides);
   if (pricingProblem) errors.push(pricingProblem);
 
+  // Budgets: shape only here; values and targets are checked server-side.
+  // Older files have no budgets section and import unchanged.
+  const budgets = doc.budgets ?? [];
+  if (budgets.length > MAX_BUDGETS) errors.push("Too many budgets");
+  const budgetKeys = new Set();
+  budgets.forEach((budget, i) => {
+    if (!isPlainObject(budget)) {
+      errors.push(`budgets[${i}] must be an object`);
+      return;
+    }
+    const key = `${budget.scopeType}:${budget.scopeId ?? "workspace"}:${budget.window}`;
+    if (budgetKeys.has(key)) errors.push(`Duplicate budget "${key}"`);
+    else budgetKeys.add(key);
+  });
+
   if (errors.length > 0) return fail();
   const redactedSettings = Array.isArray(doc.redactedSettings)
     ? doc.redactedSettings.filter((k) => typeof k === "string")
@@ -349,7 +374,7 @@ export function validateConfigDocument(doc, knownKeys) {
     errors,
     warnings,
     redactedSettings,
-    doc: { settings, combos: combos.map(portableCombo), pricingOverrides },
+    doc: { settings, combos: combos.map(portableCombo), pricingOverrides, budgets },
   };
 }
 
@@ -358,7 +383,8 @@ function statusOf(exists, same) {
   return same ? "unchanged" : "changed";
 }
 
-function summarize(entries) {
+/** Group summary of diff entries: changed/added/unchanged counts + entries. */
+export function summarize(entries) {
   const count = (status) => entries.filter((e) => e.status === status).length;
   return {
     changed: count("changed"),

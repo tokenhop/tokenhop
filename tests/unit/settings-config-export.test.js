@@ -336,3 +336,234 @@ describe("YAN-359 SSO policy keys in config export/import", () => {
     expect((await readStored()).ssoGroupWorkspaceMap).toEqual(before.ssoGroupWorkspaceMap);
   });
 });
+
+// YAN-1834: Default-workspace budgets ride the config document (limits only)
+// and import with the budget API's rules. Pristine install, switch off.
+describe("YAN-1834 budgets in config export/import", () => {
+  const originalSwitch = process.env.TOKENHOP_MULTI_USER;
+  const OLD = "2026-01-01T00:00:00.000Z";
+  const RAW = "sk-config-budget-key-0123456789abcdef";
+  const PORTABLE_KEYS = [
+    "limitRequests",
+    "limitTokens",
+    "limitUsd",
+    "scopeId",
+    "scopeType",
+    "softLimitPct",
+    "window",
+  ];
+  let db;
+
+  const fresh = async () => {
+    vi.resetModules();
+    process.env.TOKENHOP_MULTI_USER = "off";
+    db = await (await import("@/lib/db/driver.js")).getAdapter();
+    for (const table of ["budgets", "usageHistory", "usageBudgetCarry", "apiKeys", "workspaces"])
+      db.run(`DELETE FROM ${table}`);
+    db.run(
+      `DELETE FROM _meta WHERE key IN ('defaultWorkspaceId', 'pendingDefaultWorkspaceId', 'usageAdoptedAt')`,
+    );
+    db.run(
+      "INSERT INTO apiKeys(id, key, name, isActive, createdAt) VALUES('cfg-key', ?, 'cfg', 1, ?)",
+      [RAW, OLD],
+    );
+  };
+  const budget = (id, ws, scopeType, scopeId, limitRequests, softLimitPct = null) =>
+    db.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitRequests, softLimitPct, resetAt, createdByUserId, createdAt)
+       VALUES(?, ?, ?, ?, 'day', ?, ?, '2026-01-02T00:00:00.000Z', NULL, ?)`,
+      [id, ws, scopeType, scopeId, limitRequests, softLimitPct, OLD],
+    );
+  // Pending Default with a workspace budget (2 requests/day) and a key budget (1).
+  const seed = async () => {
+    const { ensurePendingDefaultWorkspaceUnscoped } = await import("@/lib/db/repos/ownership.js");
+    const ws = db.transaction(() => ensurePendingDefaultWorkspaceUnscoped(db));
+    budget("cfg-ws", ws, "workspace", ws, 2, 80);
+    budget("cfg-k", ws, "key", "cfg-key", 1);
+    return ws;
+  };
+  const entry = (scopeType, scopeId, limits) => ({
+    scopeType,
+    scopeId,
+    window: "day",
+    limitUsd: null,
+    limitTokens: null,
+    limitRequests: null,
+    softLimitPct: null,
+    ...limits,
+  });
+  const budgetDump = () => JSON.stringify(db.all("SELECT * FROM budgets ORDER BY id"));
+  // Budget-only document: no settings, so an apply fires no settings side effects.
+  const exportDoc = async () => ({ ...(await (await exportConfig()).json()), settings: {} });
+  const call = async (guard, apiKey) =>
+    guard.budgeted(null, { provider: "openai", model: "gpt-x", nonToken: true, apiKey }, () =>
+      Promise.resolve(new Response("ok")),
+    );
+  const expect429 = async (res, level) => {
+    expect(res.status).toBe(429);
+    expect((await res.json()).error).toMatchObject({ code: "budget_exceeded", level });
+  };
+
+  afterAll(() => {
+    vi.resetModules();
+    if (originalSwitch === undefined) delete process.env.TOKENHOP_MULTI_USER;
+    else process.env.TOKENHOP_MULTI_USER = originalSwitch;
+  });
+
+  it("round-trips onto a fresh instance and enforces both levels", async () => {
+    await fresh();
+    const ws = await seed();
+    db.run(
+      `INSERT INTO budgetNotices(budgetId, kind, windowStart, signature, notifiedAt) VALUES('cfg-ws', 'soft', ?, 'sig', ?)`,
+      [OLD, OLD],
+    );
+    db.run(
+      `INSERT INTO usageHistory(timestamp, provider, model, cost, status, apiKeyId, workspaceId) VALUES(?, 'openai', 'gpt-x', 1, 'success', 'cfg-key', ?)`,
+      [OLD, ws],
+    );
+    const doc = await exportDoc();
+    expect(doc.budgets).toEqual([
+      entry("workspace", null, { limitRequests: 2, softLimitPct: 80 }),
+      entry("key", "cfg-key", { limitRequests: 1 }),
+    ]);
+    for (const b of doc.budgets) expect(Object.keys(b).sort()).toEqual(PORTABLE_KEYS);
+    expect(JSON.stringify(doc)).not.toContain(ws);
+
+    // Fresh instance: no budgets, no budget workspace.
+    db.run("DELETE FROM budgets");
+    db.run("DELETE FROM workspaces");
+    db.run(`DELETE FROM _meta WHERE key = 'pendingDefaultWorkspaceId'`);
+    const res = await importConfig(doc, { mode: "apply" });
+    expect(res.status).toBe(200);
+    expect((await res.json()).diff.budgets).toMatchObject({ unchanged: 2 });
+
+    const { pendingDefaultWorkspaceIdUnscoped } = await import("@/lib/db/repos/ownership.js");
+    const next = pendingDefaultWorkspaceIdUnscoped(db);
+    expect(next).toEqual(expect.any(String));
+    expect(next).not.toBe(ws);
+    expect(
+      db.all("SELECT workspaceId, scopeType, scopeId FROM budgets ORDER BY scopeType"),
+    ).toEqual([
+      { workspaceId: next, scopeType: "key", scopeId: "cfg-key" },
+      { workspaceId: next, scopeType: "workspace", scopeId: next },
+    ]);
+
+    const guard = await import("@/sse/services/budgetGuard.js");
+    expect((await call(guard, RAW)).status).toBe(200);
+    await expect429(await call(guard, RAW), "key");
+    expect((await call(guard, null)).status).toBe(200);
+    await expect429(await call(guard, null), "workspace");
+  });
+
+  it("skips an unmapped key budget and still applies the workspace budget", async () => {
+    await fresh();
+    const doc = await exportDoc();
+    doc.budgets = [
+      entry("workspace", null, { limitRequests: 5 }),
+      entry("key", "missing-key", { limitRequests: 1 }),
+    ];
+    const warning = "Budget key:missing-key:day skipped: target not found on this instance";
+    const preview = await (await importConfig(doc, { mode: "preview" })).json();
+    expect(preview.warnings).toContain(warning);
+    expect(db.all("SELECT id FROM budgets")).toEqual([]);
+
+    const applied = await (await importConfig(doc, { mode: "apply" })).json();
+    expect(applied.warnings).toContain(warning);
+    expect(db.all("SELECT scopeType, limitRequests FROM budgets")).toEqual([
+      { scopeType: "workspace", limitRequests: 5 },
+    ]);
+  });
+
+  it("skips membership and grant budgets while Users & teams is off", async () => {
+    await fresh();
+    await seed();
+    const doc = await exportDoc();
+    doc.budgets = [
+      entry("membership", "user-1", { limitRequests: 1 }),
+      entry("grant", "grant-1", { limitRequests: 1 }),
+    ];
+    const before = budgetDump();
+    const applied = await (await importConfig(doc, { mode: "apply" })).json();
+    expect(applied.warnings).toEqual(
+      expect.arrayContaining([
+        "Budget membership:user-1:day skipped: needs Users & teams",
+        "Budget grant:grant-1:day skipped: needs Users & teams",
+      ]),
+    );
+    expect(budgetDump()).toBe(before);
+  });
+
+  it("skips a key budget over the imported workspace ceiling", async () => {
+    await fresh();
+    const doc = await exportDoc();
+    // Key first in the file: the workspace entry still sets the ceiling.
+    doc.budgets = [
+      entry("key", "cfg-key", { limitRequests: 5 }),
+      entry("workspace", null, { limitRequests: 2 }),
+    ];
+    const applied = await (await importConfig(doc, { mode: "apply" })).json();
+    expect(applied.warnings).toContain("Budget key:cfg-key:day skipped: Exceeds workspace budget");
+    expect(db.all("SELECT scopeType FROM budgets")).toEqual([{ scopeType: "workspace" }]);
+  });
+
+  it("rejects invalid budget values with a 400 and writes nothing", async () => {
+    await fresh();
+    await seed();
+    const doc = await exportDoc();
+    doc.settings = { stickyRoundRobinLimit: 4 };
+    doc.combos = [...doc.combos, { name: "yan1834-combo", models: [] }];
+    const state = () =>
+      JSON.stringify({
+        settings: db.all("SELECT * FROM settings"),
+        combos: db.all("SELECT * FROM combos ORDER BY id"),
+        budgets: db.all("SELECT * FROM budgets ORDER BY id"),
+      });
+    const before = state();
+    for (const bad of [
+      entry("workspace", null, { limitRequests: 1, softLimitPct: 0 }),
+      entry("workspace", null, { limitUsd: -1 }),
+      entry("workspace", null, {}),
+      entry("workspace", null, { limitTokens: 1.5 }),
+      { ...entry("workspace", null, { limitRequests: 1 }), id: "smuggled" },
+    ]) {
+      const res = await importConfig({ ...doc, budgets: [bad] }, { mode: "apply" });
+      expect(res.status).toBe(400);
+      expect((await res.json()).errors[0]).toMatch(/^budgets\[0\]: /);
+    }
+    expect(state()).toBe(before);
+  });
+
+  it("an older file without budgets applies and keeps existing budgets", async () => {
+    await fresh();
+    await seed();
+    const doc = await exportDoc();
+    delete doc.budgets;
+    const before = budgetDump();
+    const res = await importConfig(doc, { mode: "apply" });
+    expect(res.status).toBe(200);
+    expect(budgetDump()).toBe(before);
+  });
+
+  it("updates a matching budget in place and audits it", async () => {
+    await fresh();
+    await seed();
+    const doc = await exportDoc();
+    doc.budgets[0] = { ...doc.budgets[0], limitRequests: 9 };
+    const preview = await (await importConfig(doc, { mode: "preview" })).json();
+    expect(preview.diff.budgets.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "workspace:workspace:day", status: "changed" }),
+        expect.objectContaining({ key: "key:cfg-key:day", status: "unchanged" }),
+      ]),
+    );
+    expect((await importConfig(doc, { mode: "apply" })).status).toBe(200);
+    const row = db.get("SELECT * FROM budgets WHERE scopeType = 'workspace'");
+    expect(row).toMatchObject({ id: "cfg-ws", limitRequests: 9, softLimitPct: 80 });
+    expect(row.resetAt).not.toBe("2026-01-02T00:00:00.000Z");
+    const audit = db.get(
+      `SELECT before, after FROM auditEvents WHERE action = 'budget.update' AND targetId = 'cfg-ws'`,
+    );
+    expect(JSON.parse(audit.before)).toMatchObject({ limitRequests: 2 });
+    expect(JSON.parse(audit.after)).toMatchObject({ limitRequests: 9 });
+  });
+});

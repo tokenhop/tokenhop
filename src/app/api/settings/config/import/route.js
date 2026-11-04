@@ -13,6 +13,8 @@ import {
 import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
 import {
   applyConfig,
+  configBudgetErrors,
+  configDiff,
   exportConfig,
   getConfigState,
   getKnownConfigSettingKeys,
@@ -20,7 +22,6 @@ import {
 import {
   MAX_CONFIG_BYTES,
   SECRET_SETTING_KEYS,
-  diffConfig,
   validateConfigDocument,
 } from "@/lib/settingsConfigDoc.js";
 import { audit } from "@/lib/users/audit.js";
@@ -119,13 +120,21 @@ export async function POST(request) {
     }
 
     // An import must never store what the settings UI could not save: run the
-    // same boundary validators as PATCH /api/settings.
+    // same boundary validators as PATCH /api/settings, and the budget API's
+    // value rules for budgets (YAN-1834).
     const settingsError =
       validateSettingsBody(checked.doc.settings) ||
       ssoLockoutError(await getSettings(), checked.doc.settings);
     if (settingsError) {
       return NextResponse.json(
         { error: settingsError, errors: [settingsError], warnings: checked.warnings },
+        { status: 400 },
+      );
+    }
+    const budgetErrors = configBudgetErrors(checked.doc.budgets);
+    if (budgetErrors.length > 0) {
+      return NextResponse.json(
+        { error: budgetErrors[0], errors: budgetErrors, warnings: checked.warnings },
         { status: 400 },
       );
     }
@@ -167,23 +176,29 @@ export async function POST(request) {
     }
 
     if (mode === "preview") {
-      const diff = diffConfig(checked.doc, await getConfigState());
+      const { diff, budgetWarnings } = await configDiff(checked.doc);
       return NextResponse.json({
         valid: true,
-        warnings: checked.warnings,
+        warnings: [...checked.warnings, ...budgetWarnings],
         redactedSettings: checked.redactedSettings,
         diff,
         restartRequired: diff.restartRequired,
       });
     }
 
-    const { restartRequired } = await applyConfig(checked.doc);
+    const ip = getClientIp(request);
+    const { restartRequired, budgetWarnings } = await applyConfig(checked.doc, { ip });
     // YAN-367: audit the applied import (preview mode never writes → no event).
     await audit(
-      { ip: getClientIp(request) },
+      { ip },
       "config.import",
       { type: "config" },
-      { after: { keyNames: Object.keys(checked.doc.settings ?? {}) } },
+      {
+        after: {
+          keyNames: Object.keys(checked.doc.settings ?? {}),
+          count: checked.doc.budgets.length,
+        },
+      },
     );
 
     // Re-apply side effects the same way PATCH /api/settings does.
@@ -220,10 +235,12 @@ export async function POST(request) {
         console.warn("[Settings][ConfigImport] quota poller sync failed:", error?.message),
       );
 
-    const after = diffConfig(checked.doc, await getConfigState());
+    // The post-apply diff reflects the committed state; the skips reported are
+    // the apply transaction's own (preview is advisory).
+    const { diff: after } = await configDiff(checked.doc);
     return NextResponse.json({
       valid: true,
-      warnings: checked.warnings,
+      warnings: [...checked.warnings, ...budgetWarnings],
       redactedSettings: checked.redactedSettings,
       diff: after,
       restartRequired: restartRequired || after.restartRequired,

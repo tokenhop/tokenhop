@@ -25,8 +25,8 @@ redirect there): General (theme, language, start page, density), Security & acce
 Single sign-on, Routing, **Reliability** (retry/cooldown/backoff/stream-timeout policy —
 previously hardcoded), Network, Token saver, Providers & models, Observability & logs,
 Pricing, **Data & backup** (database location, backup download/restore, and a
-config export/import for settings, combos and pricing overrides — secrets and provider
-accounts are never included), Environment (read-only `.env` readout) and Danger zone.
+config export/import for settings, combos, pricing overrides and Default-workspace budgets —
+secrets, provider accounts and budget spend are never included), Environment (read-only `.env` readout) and Danger zone.
 
 ### Screenshots
 
