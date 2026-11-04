@@ -1,8 +1,9 @@
 // YAN-372 gateway budget enforcement (ADR-0007) on the YAN-354 harness:
 // per-level blocking with the exact 429 shape, no concurrent overshoot, UTC
 // window reset, release on failure/abort, grant budgets only through the
-// grant, zero overhead without budgets or with the switch off, and spent
-// rebuilt from settled usageHistory rows after a restart.
+// grant, zero overhead without budgets, switch-off levels (YAN-1829: key and
+// workspace only), and spent rebuilt from settled usageHistory rows after a
+// restart. Pristine switch-off installs: budgets-switch-off.test.js.
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { seedTenancy } from "../setup/tenancyHarness.js";
 
@@ -348,11 +349,33 @@ describe("zero overhead", () => {
     expect((await call(who())).status).toBe(429); // recovers on the next request
   });
 
-  it("switch off or legacy principal: never enforced, even with rows", async () => {
+  it("switch off: workspace budgets enforce for a principal (ADR-0007 429)", async () => {
     await load("off");
     budget("workspace", t.shared.id, { requests: 0 });
-    expect(await call(who())).toBeNull();
-    await load("on");
+    const r = await call(who());
+    expect(r.status).toBe(429);
+    expect((await r.json()).error).toMatchObject({ code: "budget_exceeded", level: "workspace" });
+  });
+
+  it("switch off: user, membership and grant budgets are never enforced", async () => {
+    await load("off");
+    const p = who();
+    budget("user", p.userId, { requests: 0 });
+    budget("membership", budgets.membershipScopeId(p.workspaceId, p.userId), { requests: 0 });
+    budget("grant", "g-off", { requests: 0 });
+    expect(await call(p)).toBeNull(); // no off-mode rows: zero-cost pass-through
+    // With an off-mode row the request is scoped, yet only that row applies.
+    budget("workspace", t.shared.id, { requests: 100 });
+    let ctx = "unset";
+    const res = await guard.withBudgetScope(p, { nonToken: true }, async () => {
+      ctx = guard.grantBudgetContext();
+      return new Response("ok");
+    });
+    expect(res.status).toBe(200);
+    expect(ctx).toBeNull();
+  });
+
+  it("switch on: a legacy (null) principal is never enforced, even with rows", async () => {
     budget("workspace", t.shared.id, { requests: 0 });
     expect(await call(null)).toBeNull();
   });

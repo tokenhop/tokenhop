@@ -71,7 +71,7 @@ export async function handleStt(request) {
   if (denied) return denied;
 
   // YAN-372: budgets on the principal's path (non-token: audio length unknown).
-  return withBudgetScope(gateway, { provider, model, nonToken: true }, () =>
+  return withBudgetScope(gateway, { provider, model, nonToken: true, apiKey }, () =>
     sttRoute({ formData, provider, model, gateway, gatewayCreds, apiKey, endpoint }),
   );
 }

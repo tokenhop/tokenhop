@@ -23,7 +23,10 @@ import {
   acknowledgeMigration,
 } from "@/app/(dashboard)/dashboard/endpoint/hooks/useApiKeys";
 import { groupKeys } from "@/app/(dashboard)/dashboard/endpoint/keyGroups";
-import { parseKeyBudget } from "@/app/(dashboard)/dashboard/endpoint/keyBudget";
+import {
+  keyBudgetsAvailable,
+  parseKeyBudget,
+} from "@/app/(dashboard)/dashboard/endpoint/keyBudget";
 import { keyRowDisplay, maskApiKey } from "@/app/(dashboard)/dashboard/home/format";
 
 const ROOT = new URL("../../", import.meta.url);
@@ -479,6 +482,40 @@ describe("UI source contracts", () => {
     expect(page).toContain("apiKeys.retryBudget");
     expect(page).toContain("Spend limit (USD, optional)");
     expect(page).toContain("Spend window");
+  });
+});
+
+describe("keyBudgetsAvailable (YAN-1829)", () => {
+  const workspaces = [
+    { id: "def", isDefault: true },
+    { id: "mine", isDefault: false },
+  ];
+
+  it("is off for legacy storage or a missing workspace", () => {
+    expect(
+      keyBudgetsAvailable({ hashedMode: false, workspaceId: "def", multiUser: true, workspaces }),
+    ).toBe(false);
+    expect(
+      keyBudgetsAvailable({ hashedMode: true, workspaceId: null, multiUser: true, workspaces }),
+    ).toBe(false);
+  });
+
+  it("switch on: any workspace", () => {
+    expect(
+      keyBudgetsAvailable({ hashedMode: true, workspaceId: "mine", multiUser: true, workspaces }),
+    ).toBe(true);
+  });
+
+  it("switch off: only the Default workspace, never a personal one", () => {
+    expect(
+      keyBudgetsAvailable({ hashedMode: true, workspaceId: "def", multiUser: false, workspaces }),
+    ).toBe(true);
+    expect(
+      keyBudgetsAvailable({ hashedMode: true, workspaceId: "mine", multiUser: false, workspaces }),
+    ).toBe(false);
+    expect(keyBudgetsAvailable({ hashedMode: true, workspaceId: "def", multiUser: false })).toBe(
+      false,
+    );
   });
 });
 

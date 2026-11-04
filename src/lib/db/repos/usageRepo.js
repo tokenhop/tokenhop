@@ -11,6 +11,7 @@ import { getApiKeyHashKey } from "../../security/apiKeyHashKey.js";
 import { pushToRing, scheduleStatsEvent } from "./usageLiveFeed.js";
 import { emitUsageCommitted } from "../../usage/usageCommitted.js";
 import { apiKeyNames } from "./usageStatsRepo.js";
+import { pendingDefaultWorkspaceIdUnscoped } from "./ownership.js";
 import {
   NO_KEY,
   legacyKeyId,
@@ -171,7 +172,11 @@ export async function saveRequestUsageUnscoped(entry) {
       identity.storage === "legacy"
         ? legacyKeyId(db, identity.credential)
         : identity.credential || NO_KEY;
-    const workspaceId = idOrNull(entry.workspaceId);
+    // YAN-1829: legacy-storage usage joins the pending Default (switch-off
+    // budgets) once one exists, so workspace budgets settle; null otherwise.
+    const workspaceId =
+      idOrNull(entry.workspaceId) ??
+      (identity.storage === "legacy" ? pendingDefaultWorkspaceIdUnscoped(db) : null);
     const userId = idOrNull(entry.userId);
     const metaObj = entry.meta && typeof entry.meta === "object" ? { ...entry.meta } : {};
     delete metaObj.apiKey;

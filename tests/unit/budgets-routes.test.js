@@ -1,6 +1,8 @@
-// YAN-372 budget routes on the YAN-354 harness: switch-off 404, manager may
-// create/lower but not raise or delete (ADR-0007), admin may, cross-workspace
-// 404, duplicate scope+window 409, user-level budgets admin only, audit rows.
+// YAN-372 budget routes on the YAN-354 harness: switch-off scope (YAN-1829:
+// user routes 404, workspace/key budgets on Default), manager may create/lower
+// but not raise or delete (ADR-0007), admin may, cross-workspace 404,
+// duplicate scope+window 409, user-level budgets admin only, audit rows.
+// Pristine switch-off installs: budgets-switch-off-routes.test.js.
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { callRoute, seedTenancy } from "../setup/tenancyHarness.js";
 
@@ -88,16 +90,66 @@ afterAll(() => {
 });
 
 describe("budget routes, switch off", () => {
-  it("hides every route (404)", async () => {
+  it("user routes stay hidden (404)", async () => {
     await load("off");
     const params = { id: "x", budgetId: "b" };
     for (const [h, url] of [
-      [routes.ws.GET, "/api/workspaces/x/budgets"],
-      [routes.wsOne.DELETE, "/api/workspaces/x/budgets/b"],
       [routes.user.GET, "/api/users/x/budgets"],
+      [routes.user.POST, "/api/users/x/budgets"],
     ]) {
-      expect((await callRoute(h, url, { params })).status).toBe(404);
+      expect((await callRoute(h, url, { params, method: "POST", body: {} })).status).toBe(404);
     }
+  });
+
+  it("owner manages workspace and key budgets on Default; other scopes 400", async () => {
+    await load("off");
+    const { setMeta } = await import("@/lib/db/index.js");
+    await setMeta("defaultWorkspaceId", t.shared.id);
+    adapter.run(`DELETE FROM apiKeys`);
+    adapter.run(
+      `INSERT INTO apiKeys(id, key, name, isActive, createdAt) VALUES('k-off', 'sk-off-raw-0123456789', 'k', 1, ?)`,
+      [new Date().toISOString()],
+    );
+    const ws = await create(t.a, "default", wsBudget("default"));
+    expect(ws.status).toBe(201);
+    expect((await ws.json()).budget).toMatchObject({
+      scopeType: "workspace",
+      scopeId: t.shared.id,
+    });
+    const key = await create(t.a, t.shared.id, {
+      scopeType: "key",
+      scopeId: "k-off",
+      window: "month",
+      limitUsd: 10,
+    });
+    expect(key.status).toBe(201);
+    const scoped = await create(t.a, "default", {
+      scopeType: "membership",
+      scopeId: `${t.shared.id}:${t.b.user.id}`,
+      window: "day",
+      limitUsd: 1,
+    });
+    expect(scoped.status).toBe(400);
+    expect(await scoped.json()).toEqual({
+      error: "This budget scope needs Users & teams",
+      code: "scope_unavailable",
+    });
+    // Non-Default ids are invisible; the list holds only off-mode scopes.
+    expect((await create(t.a, t.a.personal, wsBudget(t.a.personal))).status).toBe(404);
+    adapter.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, createdAt) VALUES('stale', ?, 'membership', ?, 'week', 1, ?)`,
+      [t.shared.id, `${t.shared.id}:${t.b.user.id}`, new Date().toISOString()],
+    );
+    const list = await as(t.a, routes.ws.GET, "/api/workspaces/default/budgets", {
+      params: { id: "default" },
+    });
+    const body = await list.json();
+    expect(body.workspaceId).toBe(t.shared.id);
+    expect(body.budgets.map((b) => b.scopeType).sort()).toEqual(["key", "workspace"]);
+    // Stale on-era rows stay untouched while off.
+    expect((await patch(t.a, "default", "stale", { limitUsd: 0.5 })).status).toBe(400);
+    expect((await del(t.a, "default", "stale")).status).toBe(400);
+    expect(adapter.get(`SELECT limitUsd FROM budgets WHERE id = 'stale'`).limitUsd).toBe(1);
   });
 });
 

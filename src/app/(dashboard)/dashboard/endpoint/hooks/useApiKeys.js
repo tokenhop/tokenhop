@@ -10,6 +10,7 @@ import {
   expiryToIso,
   validateExpiry,
 } from "../endpointLogic";
+import { keyBudgetsAvailable } from "../keyBudget";
 import { useKeyBudget } from "./useKeyBudget";
 import {
   LEGACY_CONTEXT,
@@ -46,13 +47,16 @@ export { loadKeyContext, loadKeyList, acknowledgeMigration };
  * another user's keys. Before identity/auth is ready (except the existing
  * auth status bootstrap) no request starts and capabilities stay closed.
  *
+ * @param {object} [options]
+ * @param {boolean} [options.multiUser] Users & teams switch from the shell
+ *   summary; gates the optional key-create budget (see keyBudgetsAvailable).
  * @returns {object} context + hashedMode + capabilities, keys, loading, error,
  * modal/new-name state + createError, revealed + dismissRevealed, visibleKeys +
  * toggleVisibility, togglingId, deletingId, renamingId + renameErrors,
- * confirmState + confirmPauseKey, create-form state (type, models, expiry),
- * and the fetch/create/rename/toggle/delete actions.
+ * confirmState + confirmPauseKey, create-form state (type, models, expiry,
+ * budget when budgetsAvailable), and the fetch/create/rename/toggle/delete actions.
  */
-export function useApiKeys() {
+export function useApiKeys({ multiUser } = {}) {
   const { status: authStatus, loaded: authReady } = useAuthStatusState();
   const bootstrapIdentity = keyIdentity(authStatus);
   const ready = authReady && keyIdentityReady(authStatus);
@@ -137,6 +141,12 @@ export function useApiKeys() {
   };
 
   const hashedMode = context?.storage === "hashed";
+  const budgetsAvailable = keyBudgetsAvailable({
+    hashedMode,
+    workspaceId: context?.workspaceId,
+    multiUser,
+    workspaces: authStatus?.principal?.workspaces,
+  });
   /** Mutation URL: hashed storage scopes every key call to the workspace. */
   const scopedUrl = useCallback(
     (path) =>
@@ -276,12 +286,14 @@ export function useApiKeys() {
         setCreateError(expiryError);
         return;
       }
-      const parsedBudget = keyBudget.parseBudgetInput();
-      if (parsedBudget.error) {
-        setCreateError(parsedBudget.error);
-        return;
+      if (budgetsAvailable) {
+        const parsedBudget = keyBudget.parseBudgetInput();
+        if (parsedBudget.error) {
+          setCreateError(parsedBudget.error);
+          return;
+        }
+        budget = parsedBudget.budget;
       }
-      budget = parsedBudget.budget;
       body = {
         name,
         type: context?.canCreateService ? createType : "user",
@@ -479,6 +491,7 @@ export function useApiKeys() {
     setCreateExpiry,
     customExpiryDate,
     setCustomExpiryDate,
+    budgetsAvailable,
     createBudgetUsd: keyBudget.createBudgetUsd,
     setCreateBudgetUsd: keyBudget.setCreateBudgetUsd,
     createBudgetWindow: keyBudget.createBudgetWindow,

@@ -1,6 +1,7 @@
 // YAN-372: PATCH limits/softLimitPct of one workspace budget, DELETE it.
 // Raising a limit or deleting needs instance.budgets.raise — enforced live in
-// the repo (403 otherwise); scope/window are immutable.
+// the repo (403 otherwise); scope/window are immutable. YAN-1829 switch off:
+// workspace/key budgets on Default (`[id]` may be `default`), see ../route.js.
 import { json } from "@/lib/users/userManagement.js";
 import { badRequest, fail, gate, publicBudget, readBody } from "@/lib/users/budgetRoutes.js";
 import { deleteBudget, updateBudget } from "@/lib/db/repos/budgetsRepo.js";
@@ -11,7 +12,7 @@ export const revalidate = 0;
 const KEYS = ["limitUsd", "limitTokens", "limitRequests", "softLimitPct"];
 
 export async function PATCH(request, { params }) {
-  const g = await gate(request, { body: true });
+  const g = await gate(request, { body: true, offAllowed: true });
   if (g.res) return g.res;
   try {
     const { id, budgetId } = await params;
@@ -25,7 +26,7 @@ export async function PATCH(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
-  const g = await gate(request);
+  const g = await gate(request, { offAllowed: true });
   if (g.res) return g.res;
   try {
     const { id, budgetId } = await params;

@@ -24,6 +24,7 @@ import {
 } from "@/lib/db/index.js";
 import { audit } from "@/lib/users/audit.js";
 import { getClientIp } from "@/lib/auth/loginLimiter.js";
+import { PENDING_DEFAULT_WORKSPACE } from "@/lib/db/repos/ownership.js";
 
 /**
  * Normal live principal, or the authenticated single-admin authority on a
@@ -101,18 +102,24 @@ export async function multiUserSwitchVisible() {
   }
 }
 
-/** Shared workspaces exclude Default by its stable marker, not its name. */
+/**
+ * Shared workspaces exclude Default by its stable marker, not its name, and
+ * the pending Default of switch-off budgets (YAN-1829), which becomes it.
+ */
 export async function multiUserSwitchResponse() {
-  const [state, activeUsers, workspaces, defaultId] = await Promise.all([
+  const [state, activeUsers, workspaces, defaultId, pendingId] = await Promise.all([
     getMultiUserSwitchState(),
     countActiveUsersUnscoped(),
     listWorkspacesUnscoped(),
     getMeta("defaultWorkspaceId"),
+    getMeta(PENDING_DEFAULT_WORKSPACE),
   ]);
   return {
     ...state,
     activeUsers,
-    sharedWorkspaces: workspaces.filter((w) => w.kind === "shared" && w.id !== defaultId).length,
+    sharedWorkspaces: workspaces.filter(
+      (w) => w.kind === "shared" && w.id !== defaultId && w.id !== pendingId,
+    ).length,
   };
 }
 

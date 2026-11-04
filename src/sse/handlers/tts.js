@@ -134,7 +134,7 @@ async function handleSingleModelTts(
   // YAN-372: budgets on the principal's path (input chars priced as tokens).
   const held = await budgeted(
     gateway,
-    { provider, model, body: { input: body.input }, noOutput: true },
+    { provider, model, body: { input: body.input }, noOutput: true, apiKey: usageCtx.apiKey },
     () => handleSingleModelTts(body, modelStr, responseFormat, language, style, gateway, usageCtx),
   );
   if (held) return held;

@@ -12,7 +12,12 @@ import { rebindBumpedSessionSyncUnscoped } from "./sessionsRepo.js";
 import { getSettings } from "./settingsRepo.js";
 import { getMetaSync, setMetaSync } from "../helpers/metaStore.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
-import { adoptOwnerlessRowsUnscoped, USAGE_ADOPTED_AT } from "./ownership.js";
+import {
+  adoptOwnerlessRowsUnscoped,
+  PENDING_DEFAULT_WORKSPACE,
+  pendingDefaultWorkspaceIdUnscoped,
+  USAGE_ADOPTED_AT,
+} from "./ownership.js";
 import { detachBudgetCarryUnscoped } from "./usageBudgetCarryRepo.js";
 import { clearCredentialCache } from "../helpers/credentialStorage.js";
 import { audit } from "@/lib/users/audit.js";
@@ -591,8 +596,10 @@ export async function deleteUserUnscoped(id, options = {}) {
  * YAN-356 bootstrap (ADR-0003), one transaction: the owner (username "owner",
  * the settings password hash), their personal workspace, a `password`
  * identity, and the shared "Default" workspace, whose id goes to
- * `_meta.defaultWorkspaceId`. A second run fails on idx_users_owner
- * (OWNER_EXISTS). Bypasses the single-user refusal: it creates the first user.
+ * `_meta.defaultWorkspaceId`. YAN-1829: a pending Default (switch-off
+ * budgets) is promoted instead of creating a second one. A second run fails
+ * on idx_users_owner (OWNER_EXISTS). Bypasses the single-user refusal: it
+ * creates the first user.
  * @param {{ passwordHash?: string|null }} [opts]
  */
 export async function bootstrapOwnerUnscoped({ passwordHash } = {}) {
@@ -605,14 +612,24 @@ export async function bootstrapOwnerUnscoped({ passwordHash } = {}) {
         `INSERT INTO users(id, username, instanceRole, status, passwordHash, mustChangePassword, createdAt, updatedAt) VALUES(?, 'owner', 'owner', 'active', ?, ?, ?, ?)`,
         [id, passwordHash ?? null, passwordHash == null ? 1 : 0, now, now],
       );
-      const workspaces = { Personal: "personal", Default: "shared" };
-      const ids = {};
-      for (const [name, kind] of Object.entries(workspaces)) {
-        ids[name] = uuidv4();
-        db.run(
-          `INSERT INTO workspaces(id, name, kind, createdBy, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-          [ids[name], name, kind, id, now, now],
-        );
+      const pending = pendingDefaultWorkspaceIdUnscoped(db);
+      const ids = { Personal: uuidv4(), Default: pending ?? uuidv4() };
+      for (const [name, kind] of [
+        ["Personal", "personal"],
+        ["Default", "shared"],
+      ]) {
+        if (name === "Default" && pending) {
+          db.run(`UPDATE workspaces SET createdBy = ?, updatedAt = ? WHERE id = ?`, [
+            id,
+            now,
+            pending,
+          ]);
+        } else {
+          db.run(
+            `INSERT INTO workspaces(id, name, kind, createdBy, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+            [ids[name], name, kind, id, now, now],
+          );
+        }
         db.run(
           `INSERT INTO memberships(workspaceId, userId, role, source, createdAt) VALUES(?, ?, 'owner', 'manual', ?)`,
           [ids[name], id, now],
@@ -623,10 +640,14 @@ export async function bootstrapOwnerUnscoped({ passwordHash } = {}) {
         [uuidv4(), id, id, now],
       );
       setMetaSync(db, "defaultWorkspaceId", ids.Default);
+      db.run(`DELETE FROM _meta WHERE key = ?`, [PENDING_DEFAULT_WORKSPACE]);
       // YAN-1553: adopt legacy usage once per install, not once per owner.
       // Restores retain this marker even if they replace the owner graph.
       const usageAdoptedAt = getMetaSync(db, USAGE_ADOPTED_AT);
-      adoptOwnerlessRowsUnscoped(db, { includeUsage: usageAdoptedAt === null });
+      adoptOwnerlessRowsUnscoped(db, {
+        includeUsage: usageAdoptedAt === null,
+        reusedWs: pending,
+      });
       setMetaSync(db, USAGE_ADOPTED_AT, usageAdoptedAt ?? now);
       dropSession(id);
       return {
