@@ -390,7 +390,17 @@ describe("budget notices (YAN-1830, YAN-1832)", () => {
       // Deleted without a generation bump: the guard still holds the old row,
       // as in a request racing the delete; the real FK rejects the claim.
       db.run("DELETE FROM budgets WHERE id = ?", [id]);
+      const claims = vi.spyOn(db, "run");
       expect((await call(who())).status).toBe(429);
+      const claim = claims.mock.calls.findIndex(([sql]) => /INTO budgetNotices/.test(sql));
+      expect(claim).toBeGreaterThanOrEqual(0); // the claim was attempted…
+      expect(claims.mock.results[claim]).toMatchObject({
+        type: "throw",
+        value: expect.objectContaining({
+          message: expect.stringContaining("FOREIGN KEY constraint failed"),
+        }),
+      }); // …and rejected by the real FK
+      claims.mockRestore();
       expect(notices).toEqual([]);
       expect(db.get("SELECT COUNT(*) AS c FROM budgetNotices").c).toBe(0);
       expect(warn).not.toHaveBeenCalledWith(

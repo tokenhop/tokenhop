@@ -9,11 +9,12 @@ import { appendUsageFilters } from "./filterParams";
  * Budget notices on every Usage tab (YAN-1830). `onNotice` handles a
  * `budgetNotice` SSE event: one toast per notice id (deduped across
  * reconnects and tabs) and a `noticeKey` bump so the Budgets tab refetches
- * its notice pills. The Overview stream (useUsageStats) calls `onNotice` on
- * its own EventSource; with `listen` set (another tab is active) this hook
- * opens a notice-only stream instead, closed while the page is hidden. The
- * two are never open together. Live only: notices sent while no stream was
- * open still show as Budgets-tab pills.
+ * its notice pills. On Overview, the live stream (useUsageStats) calls
+ * `onNotice`; with `listen` set (another tab is active) this hook opens a
+ * notice-only stream (`events=notices`: no live frames) instead, closed while
+ * the page is hidden. Tab switches hand over between the two, so a notice
+ * sent during the handover may be missed (it still shows as a Budgets-tab
+ * pill). Live only: nothing is replayed on connect.
  * @param {object|null} filters usage scope (workspaceId, view, …)
  * @param {{ listen: boolean }} options open the notice-only stream
  * @returns {{ onNotice: (e: MessageEvent) => void, noticeKey: number }}
@@ -21,7 +22,7 @@ import { appendUsageFilters } from "./filterParams";
 export default function useBudgetNotices(filters, { listen }) {
   const addNotification = useNotificationStore((s) => s.addNotification);
   const [noticeKey, setNoticeKey] = useState(0);
-  const [hidden, setHidden] = useState(false);
+  const [hidden, setHidden] = useState(() => typeof document !== "undefined" && document.hidden);
   const scopeKey = appendUsageFilters("", filters);
 
   const onNotice = useCallback(
@@ -47,7 +48,8 @@ export default function useBudgetNotices(filters, { listen }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: filters are keyed by scopeKey.
   useEffect(() => {
     if (!listen || hidden) return undefined;
-    const es = new EventSource(appendUsageFilters("/api/usage/stream", filters));
+    const url = appendUsageFilters("/api/usage/stream", filters);
+    const es = new EventSource(`${url}${url.includes("?") ? "&" : "?"}events=notices`);
     es.addEventListener("budgetNotice", onNotice);
     return () => es.close();
   }, [listen, hidden, scopeKey, onNotice]);

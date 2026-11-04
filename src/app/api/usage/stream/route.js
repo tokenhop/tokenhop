@@ -32,6 +32,10 @@ export async function GET(request) {
   const liveScope = scope
     ? { workspaceId: scope.workspaceId, userId: scope.userId, apiKeyId: scope.apiKeyId }
     : null;
+  // `events=notices` (YAN-1830): budget notices only, for Usage tabs without
+  // live frames. No connect snapshot and no update/pending subscriptions; the
+  // notice path, keepalive and revocation checks are the same as the full stream.
+  const noticesOnly = new URL(request.url).searchParams.get("events") === "notices";
 
   // Emitter and timer callbacks run outside the request context, so re-resolve
   // from the captured request (cookies/headers), never from next/headers.
@@ -115,12 +119,19 @@ export async function GET(request) {
         }
       };
 
-      // One frame on connect so a fresh client paints live fields immediately.
-      await state.send();
-      if (state.closed) return;
-
-      statsEmitter.on("update", state.send);
-      statsEmitter.on("pending", state.send);
+      if (noticesOnly) {
+        // Connect marker (an SSE comment, not a data frame), sent only while
+        // the viewer still passes the scope check.
+        if (!(await stillAllowed())) return cleanup();
+        if (state.closed) return;
+        controller.enqueue(encoder.encode(": connected\n\n"));
+      } else {
+        // One frame on connect so a fresh client paints live fields immediately.
+        await state.send();
+        if (state.closed) return;
+        statsEmitter.on("update", state.send);
+        statsEmitter.on("pending", state.send);
+      }
 
       state.notice = async (notice) => {
         if (state.closed) return;

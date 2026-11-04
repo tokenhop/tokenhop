@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import {
   Button,
@@ -168,15 +168,24 @@ export default function BudgetsTab({
       ? `/api/users/${encodeURIComponent(userId)}/budgets`
       : `/api/workspaces/${encodeURIComponent(workspaceId)}/budgets`;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `reload` re-fetches after a save
+  // One effect owns the list, so a newer request always aborts the older one.
+  // A URL change or `reload` shows the loading state; a `refreshKey` bump (a
+  // live budget notice, YAN-1830) refreshes in the background and keeps the
+  // current rows on screen. `shown` is the URL+reload the rows belong to.
+  const shown = useRef(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `reload` re-fetches after a save; `refreshKey` after a live notice
   useEffect(() => {
     if (!workspaceId) return undefined;
     if (userTarget && !userId) {
+      shown.current = null;
       setState({ budgets: [], error: null, loading: false });
       return undefined;
     }
+    const view = `${listUrl}#${reload}`;
+    const background = shown.current === view;
+    shown.current = view;
     const controller = new AbortController();
-    setState({ budgets: null, error: null, loading: true });
+    if (!background) setState({ budgets: null, error: null, loading: true });
     fetch(listUrl, {
       signal: controller.signal,
     })
@@ -191,26 +200,12 @@ export default function BudgetsTab({
         });
       })
       .catch((error) => {
-        if (!controller.signal.aborted) setState({ budgets: null, error, loading: false });
+        if (controller.signal.aborted) return;
+        // A failed background refresh keeps rows already on screen.
+        setState((s) => (background && s.budgets ? s : { budgets: null, error, loading: false }));
       });
     return () => controller.abort();
-  }, [workspaceId, userTarget, userId, listUrl, reload]);
-
-  // A live budget notice arrived (YAN-1830): refresh rows and their notice
-  // pills in the background, keeping the current list on screen meanwhile.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshKey is the trigger; listUrl/workspaceId are read at that moment.
-  useEffect(() => {
-    if (!refreshKey || !workspaceId || (userTarget && !userId)) return undefined;
-    const controller = new AbortController();
-    fetch(listUrl, { signal: controller.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (controller.signal.aborted || !Array.isArray(data?.budgets)) return;
-        setState({ budgets: data.budgets, error: null, loading: false });
-      })
-      .catch(() => {}); // keep the shown list; the next notice or reload retries
-    return () => controller.abort();
-  }, [refreshKey]);
+  }, [workspaceId, userTarget, userId, listUrl, reload, refreshKey]);
 
   return (
     <Card

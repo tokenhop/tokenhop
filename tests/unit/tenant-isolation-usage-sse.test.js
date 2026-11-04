@@ -427,7 +427,8 @@ describe("budget notices on the usage stream", () => {
     "windowStart",
   ];
 
-  // Collect every chunk a reader yields until afterEach cancels it.
+  // Collect every chunk a reader yields until afterEach cancels it. The
+  // returned function lists notices; `.raw()` every chunk.
   function tap(reader) {
     const chunks = [];
     (async () => {
@@ -439,10 +440,12 @@ describe("budget notices on the usage stream", () => {
         }
       } catch {}
     })();
-    return () =>
+    const notices = () =>
       chunks
         .filter((c) => c.startsWith("event: budgetNotice\n"))
         .map((c) => JSON.parse(c.split("\ndata: ")[1]));
+    notices.raw = () => chunks;
+    return notices;
   }
   const settle = () => new Promise((r) => setTimeout(r, 300));
 
@@ -560,6 +563,37 @@ describe("budget notices on the usage stream", () => {
     await frame(s.reader);
     return { ...s, seen: tap(s.reader) };
   }
+
+  it("events=notices: notices only, no data frames and no live subscriptions", async () => {
+    const { spend } = await crossSoftLimit();
+    sentinel(t.b, t.shared.id, "b-live-sentinel");
+    const s = await open(t.b, t.shared.id, "&events=notices");
+    expect(s.response.status).toBe(200);
+    const first = await s.reader.read();
+    expect(new TextDecoder().decode(first.value)).toBe(": connected\n\n"); // comment, not data
+    expect(counts()).toEqual({ update: 0, pending: 0 });
+    const seen = tap(s.reader);
+    feed.statsEmitter.emit("update");
+    feed.statsEmitter.emit("pending");
+    await spend();
+    await settle();
+    expect(seen().map((n) => n.kind)).toEqual(["soft"]);
+    expect(seen.raw().filter((c) => /^data: /m.test(c) && !c.startsWith("event: "))).toEqual([]);
+  });
+
+  it("events=notices stops delivery once the session is revoked", async () => {
+    const { spend, reject } = await crossSoftLimit();
+    const s = await open(t.b, t.shared.id, "&events=notices");
+    await s.reader.read(); // connect comment
+    const seen = tap(s.reader);
+    await spend();
+    await settle();
+    await db.bumpSessionVersion(t.b.user.id);
+    await reject();
+    await settle();
+    expect(seen().map((n) => n.kind)).toEqual(["soft"]);
+    expect(feed.statsEmitter.listenerCount("budgetNotice")).toBe(0);
+  });
 
   it("a request carrying gateway credentials never receives notices", async () => {
     const { spend } = await crossSoftLimit();

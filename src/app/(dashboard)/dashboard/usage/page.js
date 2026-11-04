@@ -140,8 +140,8 @@ function UsageContent() {
     }
     router.replace(`/dashboard/usage?${params}`, { scroll: false });
   };
-  // YAN-1830: budget notices on every tab — on the Overview stream there, a
-  // notice-only stream elsewhere (never both open).
+  // YAN-1830: budget notices on every tab — via the Overview live stream
+  // there, a notice-only stream (events=notices) on the other tabs.
   const notices = useBudgetNotices(usageFilters, { listen: activeTab !== "overview" });
   const { stats, statsPeriod, live, loading, error, retry, catchUpKey } = useUsageStats(
     loaded ? period : null,

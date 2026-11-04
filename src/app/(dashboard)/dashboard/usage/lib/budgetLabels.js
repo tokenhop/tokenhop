@@ -1,4 +1,4 @@
-// Budget display labels shared by the Budgets tab and budget notice toasts.
+// Budget display labels shared by the Budgets tab and the budget dialog.
 
 export const SCOPE_LABELS = {
   workspace: "Workspace",

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Callout, Input, Modal, Select } from "@/shared/components";
+import { WINDOW_LABELS } from "../lib/budgetLabels";
 
 // Budget create/edit dialog (YAN-376). Create POSTs /api/workspaces/:id/budgets
 // with {scopeType, scopeId, window, limits…}; edit PATCHes /:budgetId with
@@ -15,7 +16,6 @@ import { Button, Callout, Input, Modal, Select } from "@/shared/components";
 
 const SCOPE_TYPES = ["workspace", "key", "membership", "grant"];
 const WINDOWS = ["day", "week", "month", "total"];
-const WINDOW_LABELS = { day: "Daily", week: "Weekly", month: "Monthly", total: "Total" };
 
 const emptyText = (value) => (value === "" || value == null ? null : value);
 const numberError = (text, { integer = false } = {}) => {
