@@ -3,9 +3,10 @@
 // session, fixed error messages (repo text is never echoed), and the public
 // row projection (no createdByUserId).
 // YAN-1829 off mode (workspace routes): the dashboard admin manages workspace
-// and key budgets on Default — an owner/admin session on established
-// installs; on pristine ones a legacy session or login-off local access,
-// never a gateway credential.
+// and key budgets on Default — an owner/admin session, or login-off local
+// access (the repo re-checks the live user row), on established installs; on
+// pristine ones a legacy session or login-off local access, never a gateway
+// credential.
 import { json, PayloadTooLarge, readJsonBody } from "@/lib/users/userManagement.js";
 import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
 import { getPrincipal, hasValidSession, singleUserMode } from "@/lib/users/session.js";
@@ -41,7 +42,7 @@ const unauthorized = () => ({ res: json({ error: "Unauthorized" }, 401) });
 async function offPrincipal(request) {
   if (await isUserSecurityEnforced()) {
     const principal = await getPrincipal();
-    if (principal?.via !== "session") return unauthorized();
+    if (principal?.via !== "session" && principal?.via !== "local") return unauthorized();
     return { principal: { ...principal, budgetMode: "off" } };
   }
   if (GATEWAY_HEADERS.some((h) => request.headers.has(h))) return unauthorized();

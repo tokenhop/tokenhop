@@ -48,8 +48,9 @@ export { loadKeyContext, loadKeyList, acknowledgeMigration };
  * auth status bootstrap) no request starts and capabilities stay closed.
  *
  * @param {object} [options]
- * @param {boolean} [options.multiUser] Users & teams switch from the shell
- *   summary; gates the optional key-create budget (see keyBudgetsAvailable).
+ * @param {boolean|null} [options.multiUser] Users & teams switch from the shell
+ *   summary (null: unknown); gates the optional key-create budget (see
+ *   keyBudgetsAvailable).
  * @returns {object} context + hashedMode + capabilities, keys, loading, error,
  * modal/new-name state + createError, revealed + dismissRevealed, visibleKeys +
  * toggleVisibility, togglingId, deletingId, renamingId + renameErrors,

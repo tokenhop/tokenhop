@@ -349,8 +349,11 @@ describe("zero overhead", () => {
     expect((await call(who())).status).toBe(429); // recovers on the next request
   });
 
-  it("switch off: workspace budgets enforce for a principal (ADR-0007 429)", async () => {
+  it("switch off: Default workspace budgets enforce for a principal (ADR-0007 429)", async () => {
     await load("off");
+    db.run(`INSERT OR REPLACE INTO _meta(key, value) VALUES('defaultWorkspaceId', ?)`, [
+      t.shared.id,
+    ]);
     budget("workspace", t.shared.id, { requests: 0 });
     const r = await call(who());
     expect(r.status).toBe(429);
@@ -359,6 +362,9 @@ describe("zero overhead", () => {
 
   it("switch off: user, membership and grant budgets are never enforced", async () => {
     await load("off");
+    db.run(`INSERT OR REPLACE INTO _meta(key, value) VALUES('defaultWorkspaceId', ?)`, [
+      t.shared.id,
+    ]);
     const p = who();
     budget("user", p.userId, { requests: 0 });
     budget("membership", budgets.membershipScopeId(p.workspaceId, p.userId), { requests: 0 });

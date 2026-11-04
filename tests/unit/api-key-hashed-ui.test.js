@@ -517,6 +517,17 @@ describe("keyBudgetsAvailable (YAN-1829)", () => {
       false,
     );
   });
+
+  it("unknown switch (shell summary not loaded or failed): switch-on behaviour", () => {
+    for (const multiUser of [null, undefined]) {
+      expect(
+        keyBudgetsAvailable({ hashedMode: true, workspaceId: "mine", multiUser, workspaces }),
+      ).toBe(true);
+      expect(keyBudgetsAvailable({ hashedMode: false, workspaceId: "mine", multiUser })).toBe(
+        false,
+      );
+    }
+  });
 });
 
 describe("parseKeyBudget (key-create budget fields)", () => {

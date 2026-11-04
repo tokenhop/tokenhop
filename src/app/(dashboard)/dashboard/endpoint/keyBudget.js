@@ -26,19 +26,20 @@ export function parseKeyBudget(usd, window) {
  * storage only, and the budget POST must be able to succeed. With the Users &
  * teams switch on any workspace works; with it off only the Default
  * workspace's budget routes exist, so another workspace hides the fields
- * instead of failing after the key is created.
+ * instead of failing after the key is created. An unknown switch (null: shell
+ * summary not loaded or failed) keeps the switch-on behaviour.
  *
  * @param {object} input
  * @param {boolean} input.hashedMode Key storage is hashed.
  * @param {string|null|undefined} input.workspaceId Key context workspace.
- * @param {boolean} input.multiUser Users & teams switch (shell summary).
+ * @param {boolean|null} input.multiUser Users & teams switch (shell summary), null when unknown.
  * @param {Array<{id: string, isDefault?: boolean}>|undefined} input.workspaces
  *   `/api/auth/status` principal workspaces.
  * @returns {boolean}
  */
 export function keyBudgetsAvailable({ hashedMode, workspaceId, multiUser, workspaces }) {
   if (!hashedMode || !workspaceId) return false;
-  if (multiUser === true) return true;
+  if (multiUser !== false) return true;
   return Array.isArray(workspaces)
     ? workspaces.some((w) => w?.isDefault === true && w.id === workspaceId)
     : false;

@@ -211,6 +211,22 @@ describe("applyShellSummary", () => {
     const garbage = applyShellSummary(prev, 200, { gateway, savings: { pendingMilestone: "1M" } });
     expect(garbage.savingsMilestone).toBe(prev.savingsMilestone);
   });
+
+  it("multiUser stays unknown (null) until a 2xx body carries a boolean", () => {
+    const unknown = { ...prev, multiUser: null };
+    for (const [status, body] of [
+      [null, null],
+      [503, null],
+      [200, null],
+      [401, null],
+      [200, { gateway }],
+      [200, { gateway, multiUser: "false" }],
+    ]) {
+      expect(applyShellSummary(unknown, status, body).multiUser).toBeNull();
+    }
+    expect(applyShellSummary(unknown, 200, { gateway, multiUser: false }).multiUser).toBe(false);
+    expect(applyShellSummary(unknown, 200, { gateway, multiUser: true }).multiUser).toBe(true);
+  });
 });
 
 describe("useShellStatus refresh lifecycle", () => {

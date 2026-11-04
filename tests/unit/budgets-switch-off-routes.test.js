@@ -15,9 +15,10 @@ let adapter;
 let routes;
 let db;
 
-async function load({ requireLogin = true } = {}) {
+async function load({ requireLogin = true, env = "off" } = {}) {
   vi.resetModules();
-  process.env[ENV] = "off";
+  if (env === null) delete process.env[ENV];
+  else process.env[ENV] = env;
   adapter = await (await import("@/lib/db/driver.js")).getAdapter();
   for (const tbl of [
     "budgets",
@@ -209,5 +210,29 @@ describe("pristine install, switch off", () => {
     expect((await post(wsBudget, { cookie: await legacyCookie() })).status).toBe(201);
     const { multiUserSwitchResponse } = await import("@/app/api/settings/multiUserSwitchPatch.js");
     expect((await multiUserSwitchResponse()).sharedWorkspaces).toBe(0);
+  });
+
+  it("the switch turning on after the gate: the write transaction refuses (403)", async () => {
+    await load({ env: null }); // stored setting decides
+    const cookie = await legacyCookie();
+    const setStored = (on) =>
+      adapter.run(
+        `UPDATE settings SET data = json_set(data, '$.multiUserEnabled', json(?)) WHERE id = 1`,
+        [String(on)],
+      );
+    const tx = adapter.transaction.bind(adapter);
+    const spy = vi.spyOn(adapter, "transaction").mockImplementationOnce((fn) => {
+      setStored(true); // flip between the gate/assertActor and the transaction
+      return tx(fn);
+    });
+    try {
+      const res = await post(wsBudget, { cookie });
+      expect(res.status).toBe(403);
+      expect(adapter.get(`SELECT COUNT(*) AS c FROM budgets`).c).toBe(0);
+      expect(adapter.get(`SELECT COUNT(*) AS c FROM workspaces`).c).toBe(0);
+    } finally {
+      spy.mockRestore();
+      setStored(false);
+    }
   });
 });

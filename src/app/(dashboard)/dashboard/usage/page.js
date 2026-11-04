@@ -96,7 +96,8 @@ function UsageContent() {
   );
   // Budgets with the Users & teams switch off (YAN-1829): workspace and key
   // budgets on the Default workspace, for the dashboard admin only. `null`
-  // while the shell summary is loading, so no request uses the wrong mode.
+  // while the shell summary is loading, so no request uses the wrong mode;
+  // an unknown switch (summary failed: multiUser null) keeps switch-on mode.
   const { multiUser, loading: shellLoading } = useShellStatus();
   const budgetsOff = shellLoading ? null : multiUser === false;
   const showBudgets =

@@ -11,7 +11,7 @@ import { getApiKeyHashKey } from "../../security/apiKeyHashKey.js";
 import { pushToRing, scheduleStatsEvent } from "./usageLiveFeed.js";
 import { emitUsageCommitted } from "../../usage/usageCommitted.js";
 import { apiKeyNames } from "./usageStatsRepo.js";
-import { pendingDefaultWorkspaceIdUnscoped } from "./ownership.js";
+import { PENDING_DEFAULT_WORKSPACE } from "./ownership.js";
 import {
   NO_KEY,
   legacyKeyId,
@@ -174,9 +174,12 @@ export async function saveRequestUsageUnscoped(entry) {
         : identity.credential || NO_KEY;
     // YAN-1829: legacy-storage usage joins the pending Default (switch-off
     // budgets) once one exists, so workspace budgets settle; null otherwise.
-    const workspaceId =
-      idOrNull(entry.workspaceId) ??
-      (identity.storage === "legacy" ? pendingDefaultWorkspaceIdUnscoped(db) : null);
+    // Resolved inside the INSERT: no extra query per request.
+    const workspaceId = idOrNull(entry.workspaceId);
+    const pendingFallback = workspaceId == null && identity.storage === "legacy";
+    const workspaceSql = pendingFallback
+      ? `(SELECT w.id FROM _meta m JOIN workspaces w ON w.id = m.value WHERE m.key = '${PENDING_DEFAULT_WORKSPACE}')`
+      : "(SELECT id FROM workspaces WHERE id = ?)";
     const userId = idOrNull(entry.userId);
     const metaObj = entry.meta && typeof entry.meta === "object" ? { ...entry.meta } : {};
     delete metaObj.apiKey;
@@ -207,7 +210,7 @@ export async function saveRequestUsageUnscoped(entry) {
     let stored = null;
     db.transaction(() => {
       db.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta, workspaceId, userId, apiKeyId, grantId) VALUES(?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM workspaces WHERE id = ?), (SELECT id FROM users WHERE id = ?), ?, ?)`,
+        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta, workspaceId, userId, apiKeyId, grantId) VALUES(?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ${workspaceSql}, (SELECT id FROM users WHERE id = ?), ?, ?)`,
         [
           entry.timestamp,
           entry.provider || null,
@@ -220,7 +223,7 @@ export async function saveRequestUsageUnscoped(entry) {
           entry.status || "ok",
           stringifyJson(tokens),
           stringifyJson(metaObj),
-          workspaceId,
+          ...(pendingFallback ? [] : [workspaceId]),
           userId,
           apiKeyId,
           typeof entry.grantId === "string" ? entry.grantId : null,
@@ -296,7 +299,7 @@ export async function saveRequestUsageUnscoped(entry) {
       cost: entry.cost,
       status: entry.status,
       tokens,
-      workspaceId,
+      workspaceId: pendingFallback ? (stored?.workspaceId ?? null) : workspaceId,
       userId,
     });
     scheduleStatsEvent("update", 250);

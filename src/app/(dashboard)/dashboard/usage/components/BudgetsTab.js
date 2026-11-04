@@ -205,6 +205,8 @@ export default function BudgetsTab({
             variant="secondary"
             size="sm"
             icon="add"
+            // Until the list resolves the off-mode key workspace is unknown.
+            disabled={state.budgets === null}
             onClick={() => setDialog({ budget: null })}
           >
             Add budget

@@ -151,6 +151,38 @@ describe("budget routes, switch off", () => {
     expect((await del(t.a, "default", "stale")).status).toBe(400);
     expect(adapter.get(`SELECT limitUsd FROM budgets WHERE id = 'stale'`).limitUsd).toBe(1);
   });
+
+  it("established, login off: the local owner manages Default budgets", async () => {
+    await load("off");
+    const { setMeta, updateSettings } = await import("@/lib/db/index.js");
+    await setMeta("defaultWorkspaceId", t.shared.id);
+    // Established: hashed marker; single active user so login-off resolves `local`.
+    adapter.run(
+      `INSERT OR REPLACE INTO _meta(key, value) VALUES('apiKeysHashedVersion', '1'), ('apiKeysHashKid', '0123456789abcdef')`,
+    );
+    adapter.run(`UPDATE users SET status = 'disabled' WHERE id != ?`, [t.a.user.id]);
+    await updateSettings({ requireLogin: false });
+    try {
+      const res = await callRoute(routes.ws.POST, "/api/workspaces/default/budgets", {
+        method: "POST",
+        body: wsBudget("default"),
+        params: { id: "default" },
+      });
+      expect(res.status).toBe(201);
+      expect((await res.json()).budget).toMatchObject({ scopeId: t.shared.id });
+      const list = await callRoute(routes.ws.GET, "/api/workspaces/default/budgets", {
+        params: { id: "default" },
+      });
+      expect(list.status).toBe(200);
+      expect((await list.json()).budgets).toHaveLength(1);
+      expect(
+        adapter.get(`SELECT actorUserId, via FROM auditEvents WHERE action = 'budget.create'`),
+      ).toEqual({ actorUserId: t.a.user.id, via: "local" });
+    } finally {
+      await updateSettings({ requireLogin: true });
+      adapter.run(`DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion', 'apiKeysHashKid')`);
+    }
+  });
 });
 
 describe("budget routes, switch on", () => {

@@ -203,9 +203,13 @@ describe("pristine install, switch off", () => {
 });
 
 describe("established install, switch off", () => {
+  const setDefault = (id) =>
+    db.run(`INSERT OR REPLACE INTO _meta(key, value) VALUES('defaultWorkspaceId', ?)`, [id]);
+
   it("key and owner principals hit workspace and key budgets; membership/grant ignored", async () => {
     const t = await load("off", { pristine: false });
     const ws = t.shared.id;
+    setDefault(ws);
     const key = Object.freeze({
       via: "apiKey",
       workspaceId: ws,
@@ -227,6 +231,27 @@ describe("established install, switch off", () => {
     expect((await call(owner)).status).toBe(200); // owners carry no key id
     budget("workspace", ws, ws, { requests: 0 });
     await expect429(await call(owner), "workspace");
+  });
+
+  it("budgets outside Default (unmanageable while off) are not enforced; enforced when on", async () => {
+    for (const state of ["off", "on"]) {
+      const t = await load(state, { pristine: false });
+      setDefault(t.shared.id);
+      const team = t.a.personal; // a non-Default workspace
+      const key = Object.freeze({
+        via: "apiKey",
+        workspaceId: team,
+        userId: t.a.user.id,
+        apiKeyId: "key-b",
+      });
+      budget("key", "key-b", team, { requests: 0 });
+      budget("workspace", team, team, { requests: 0 });
+      if (state === "off") {
+        expect(await call(key)).toBeNull();
+      } else {
+        await expect429(await call(key), "key");
+      }
+    }
   });
 });
 

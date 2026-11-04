@@ -8,7 +8,7 @@ import { getAdapter } from "../driver.js";
 import { readApiKeyStorageState } from "../apiKeyState.js";
 import { membershipRole } from "./membershipsRepo.js";
 import { TenancyError, assertCtx, mapConstraintErrors } from "@/lib/users/errors.js";
-import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
+import { isMultiUserEnabled, isMultiUserEnabledSync } from "@/lib/users/featureSwitch.js";
 import {
   ensurePendingDefaultWorkspaceUnscoped,
   offBudgetWorkspaceIdUnscoped,
@@ -55,8 +55,10 @@ function requireOffScope(row) {
  * no user row. Path id: the alias or the resolved id, else NOT_FOUND.
  * `create` makes the pending Default when no budget workspace exists yet;
  * `list` reads an empty one; anything else needs it (NOT_FOUND).
+ * The switch is re-read in the transaction: a flip after assertActor fails.
  */
 function offAccess(db, ctx, { workspaceId = null, userId = null } = {}, opts = {}) {
+  if (isMultiUserEnabledSync(db)) throw new TenancyError("FORBIDDEN", "Switch is on");
   if (!["session", "local"].includes(ctx.via) || ctx.apiKeyId != null)
     throw new TenancyError("FORBIDDEN", "Session required");
   if (ctx.userId != null) {
