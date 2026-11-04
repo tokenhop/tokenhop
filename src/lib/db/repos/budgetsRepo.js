@@ -10,6 +10,7 @@ import { membershipRole } from "./membershipsRepo.js";
 import { TenancyError, assertCtx, mapConstraintErrors } from "@/lib/users/errors.js";
 import { isMultiUserEnabled, isMultiUserEnabledSync } from "@/lib/users/featureSwitch.js";
 import {
+  defaultWorkspaceIdUnscoped,
   ensurePendingDefaultWorkspaceUnscoped,
   offBudgetWorkspaceIdUnscoped,
 } from "./ownership.js";
@@ -51,8 +52,9 @@ function requireOffScope(row) {
 
 /**
  * Off-mode authority and target: established installs need a live active
- * owner/admin session; the pristine admin (session or login-off local) has
- * no user row. Path id: the alias or the resolved id, else NOT_FOUND.
+ * owner/admin session (or login-off local owner) with a membership in the
+ * budget workspace; the pristine admin (session or login-off local) has no
+ * user row. Path id: the alias or the resolved id, else NOT_FOUND.
  * `create` makes the pending Default when no budget workspace exists yet;
  * `list` reads an empty one; anything else needs it (NOT_FOUND).
  * The switch is re-read in the transaction: a flip after assertActor fails.
@@ -72,6 +74,13 @@ function offAccess(db, ctx, { workspaceId = null, userId = null } = {}, opts = {
   if (workspaceId !== OFF_WORKSPACE_ALIAS && workspaceId !== ws) throw missing();
   if (!ws && opts.create) ws = ensurePendingDefaultWorkspaceUnscoped(db);
   if (!ws && !opts.list) throw missing();
+  // A user principal acts on the real Default only as a member, like key
+  // management: an instance admin outside Default sees NOT_FOUND instead of
+  // budgets whose keys it cannot list (a create rolls back). The pending
+  // Default has no memberships by design.
+  if (ctx.userId != null && ws && ws === defaultWorkspaceIdUnscoped(db)) {
+    if (!membershipRole(db, ws, ctx.userId)) throw missing();
+  }
   return { raise: true, allowed: () => true, workspaceId: ws };
 }
 

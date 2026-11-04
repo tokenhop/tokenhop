@@ -202,6 +202,40 @@ describe("pristine install, switch off", () => {
   });
 });
 
+describe("off workspace selection and switch cache", () => {
+  it("a legacy request uses the real Default when both it and a pending row exist", async () => {
+    await load("off");
+    const pending = pendingDefault();
+    // A restored/promoted Default next to a stale pending marker.
+    db.run(
+      `INSERT INTO workspaces(id, name, kind, createdBy, createdAt, updatedAt) VALUES('ws-real', 'Default', 'shared', NULL, ?, ?)`,
+      [NOW, NOW],
+    );
+    db.run(`INSERT OR REPLACE INTO _meta(key, value) VALUES('defaultWorkspaceId', 'ws-real')`);
+    budget("workspace", pending, pending, { requests: 0 }); // not the selected workspace
+    expect(await call(null, RAW_A)).toBeNull();
+    budget("workspace", "ws-real", "ws-real", { requests: 0 });
+    await expect429(await call(null, RAW_A), "workspace");
+  });
+
+  it("committing the switch expires the cached switch value at once", async () => {
+    await load(""); // stored setting decides
+    const ws = pendingDefault();
+    budget("workspace", ws, ws, { requests: 0 });
+    const { setMultiUserEnabledUnscoped } = await import("@/lib/db/repos/ownership.js");
+    await setMultiUserEnabledUnscoped(false, { adopt: false });
+    await expect429(await call(null, RAW_A), "workspace"); // off: the legacy subject is budgeted
+    // Within the cache TTL: the next request already sees the switch on
+    // (legacy requests carry no principal there, so nothing is budgeted).
+    await setMultiUserEnabledUnscoped(true, { adopt: false });
+    try {
+      expect(await call(null, RAW_A)).toBeNull();
+    } finally {
+      await setMultiUserEnabledUnscoped(false, { adopt: false });
+    }
+  });
+});
+
 describe("established install, switch off", () => {
   const setDefault = (id) =>
     db.run(`INSERT OR REPLACE INTO _meta(key, value) VALUES('defaultWorkspaceId', ?)`, [id]);

@@ -178,10 +178,41 @@ describe("budget routes, switch off", () => {
       expect(
         adapter.get(`SELECT actorUserId, via FROM auditEvents WHERE action = 'budget.create'`),
       ).toEqual({ actorUserId: t.a.user.id, via: "local" });
+      // Gateway credentials never authorize, even where login-off local would.
+      for (const apiKey of ["sk-off-raw-0123456789", "th_anything"]) {
+        const bearer = await callRoute(routes.ws.POST, "/api/workspaces/default/budgets", {
+          method: "POST",
+          apiKey,
+          body: { ...wsBudget("default"), window: "day" },
+          params: { id: "default" },
+        });
+        expect(bearer.status).toBe(401);
+      }
+      expect(adapter.get(`SELECT COUNT(*) AS c FROM budgets`).c).toBe(1);
     } finally {
       await updateSettings({ requireLogin: true });
       adapter.run(`DELETE FROM _meta WHERE key IN ('apiKeysHashedVersion', 'apiKeysHashKid')`);
     }
+  });
+
+  it("an instance admin outside Default gets 404 (keys there are not theirs to list)", async () => {
+    await load("off");
+    const db = await import("@/lib/db/index.js");
+    await db.setMeta("defaultWorkspaceId", t.shared.id);
+    const admin = await db.createUserUnscoped({ email: "adm@tenancy.test", instanceRole: "admin" });
+    const seeded = {
+      user: admin,
+      ctx: { ...t.b.ctx, userId: admin.id, activeWorkspaceId: admin.personalWorkspaceId },
+    };
+    expect((await create(seeded, "default", wsBudget("default"))).status).toBe(404);
+    const list = await as(seeded, routes.ws.GET, "/api/workspaces/default/budgets", {
+      params: { id: "default" },
+    });
+    expect(list.status).toBe(404);
+    expect(adapter.get(`SELECT COUNT(*) AS c FROM budgets`).c).toBe(0);
+    // Once a member of Default, the same admin manages its budgets.
+    await db.addMembership(t.a.ctx, t.shared.id, { userId: admin.id, role: "member" });
+    expect((await create(seeded, "default", wsBudget("default"))).status).toBe(201);
   });
 });
 

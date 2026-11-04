@@ -2,23 +2,14 @@
 // Never bootstrap, hash gateway keys or encrypt credentials from this control.
 import { NextResponse } from "next/server";
 import { cookies, headers } from "next/headers";
-import { getPrincipal, cliTokenAccepted, singleUserMode } from "@/lib/users/session.js";
+import { getPrincipal, pristineAdminPrincipal } from "@/lib/users/session.js";
 import { isUserSecurityEnforced } from "@/lib/users/securityState.js";
-import { getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
 import { can } from "@/lib/users/principal.js";
-import {
-  effectiveFor,
-  getMultiUserSwitchState,
-  isMultiUserEnabled,
-} from "@/lib/users/featureSwitch.js";
+import { effectiveFor, getMultiUserSwitchState } from "@/lib/users/featureSwitch.js";
 import { isCrossSite } from "@/lib/auth/sameOrigin.js";
 import {
   countActiveUsersUnscoped,
   getMeta,
-  getOwnerUnscoped,
-  getSessionUserUnscoped,
-  getSessionForValidationUnscoped,
-  getSettings,
   listWorkspacesUnscoped,
   setMultiUserEnabledUnscoped,
 } from "@/lib/db/index.js";
@@ -44,54 +35,7 @@ async function switchPrincipal() {
   const principal = await getPrincipal();
   if (principal) return principal;
   if (await isUserSecurityEnforced()) return null;
-  const request = { cookies: cookieStore, headers: headerList };
-  const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
-  // Off-mode getPrincipal has no principal, but sub sessions must still retain
-  // their live role and revocation checks; never promote a member to owner.
-  if (session?.sub) {
-    const user = await getSessionUserUnscoped(session.sub);
-    if (user?.status !== "active" || user.mustChangePassword || user.sessionVersion !== session.sv)
-      return null;
-    if (!(await isMultiUserEnabled()) && !["owner", "admin"].includes(user.instanceRole))
-      return null;
-    if (Object.hasOwn(session, "sid")) {
-      const row =
-        typeof session.sid === "string" ? await getSessionForValidationUnscoped(session.sid) : null;
-      if (
-        !row ||
-        row.userId !== user.id ||
-        row.revokedAt ||
-        row.expiresAt <= new Date().toISOString()
-      )
-        return null;
-    }
-    return {
-      userId: user.id,
-      instanceRole: user.instanceRole,
-      workspaceIds: [],
-      activeWorkspaceId: null,
-      via: "session",
-    };
-  }
-  if ((await countActiveUsersUnscoped()) > 1) return null;
-  const via = session
-    ? "session"
-    : (await cliTokenAccepted(request))
-      ? "cli"
-      : (await singleUserMode(await getSettings({ secretMode: "metadata" })))
-        ? "local"
-        : null;
-  if (!via) return null;
-  const owner = await getOwnerUnscoped();
-  if (owner && (owner.status !== "active" || owner.mustChangePassword)) return null;
-  if (!owner && (await countActiveUsersUnscoped()) !== 0) return null;
-  return {
-    userId: owner?.id ?? null,
-    instanceRole: "owner",
-    workspaceIds: [],
-    activeWorkspaceId: null,
-    via,
-  };
+  return pristineAdminPrincipal({ cookies: cookieStore, headers: headerList });
 }
 
 export async function multiUserSwitchVisible() {

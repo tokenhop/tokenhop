@@ -162,6 +162,67 @@ export async function isLiveSession(token) {
 }
 
 /**
+ * Off-mode instance admin while user security is NOT enforced (pristine
+ * switch-off install), where getPrincipal intentionally returns null. Callers
+ * check `isUserSecurityEnforced()` and refuse gateway headers first. A `sub`
+ * session keeps its live status, sessionVersion and revocation checks, and
+ * only an owner/admin passes while the switch is off. Otherwise the single
+ * admin: a pre-users session, the CLI token (`cli`) or login-off local access,
+ * never while a second active user exists or the owner is disabled or owes a
+ * rotation. Creates no owner row.
+ * @param {{ headers: Headers, cookies: { get(name: string): { value: string }|undefined } }} request
+ * @param {{ cli?: boolean }} [opts] `cli: false` refuses the CLI token.
+ * @returns {Promise<Principal|null>}
+ */
+export async function pristineAdminPrincipal(request, { cli = true } = {}) {
+  const session = await getDashboardAuthSession(request.cookies.get(AUTH_COOKIE)?.value);
+  if (session?.sub) {
+    const user = await getSessionUserUnscoped(session.sub);
+    if (user?.status !== "active" || user.mustChangePassword || user.sessionVersion !== session.sv)
+      return null;
+    if (!(await isMultiUserEnabled()) && !["owner", "admin"].includes(user.instanceRole))
+      return null;
+    if (Object.hasOwn(session, "sid")) {
+      const row =
+        typeof session.sid === "string" ? await getSessionForValidationUnscoped(session.sid) : null;
+      if (
+        !row ||
+        row.userId !== user.id ||
+        row.revokedAt ||
+        row.expiresAt <= new Date().toISOString()
+      )
+        return null;
+    }
+    return {
+      userId: user.id,
+      instanceRole: user.instanceRole,
+      workspaceIds: [],
+      activeWorkspaceId: null,
+      via: "session",
+    };
+  }
+  if ((await countActiveUsersUnscoped()) > 1) return null;
+  const via = session
+    ? "session"
+    : cli && (await cliTokenAccepted(request))
+      ? "cli"
+      : (await singleUserMode(await getSettings({ secretMode: "metadata" })))
+        ? "local"
+        : null;
+  if (!via) return null;
+  const owner = await getOwnerUnscoped();
+  if (owner && (owner.status !== "active" || owner.mustChangePassword)) return null;
+  if (!owner && (await countActiveUsersUnscoped()) !== 0) return null;
+  return {
+    userId: owner?.id ?? null,
+    instanceRole: "owner",
+    workspaceIds: [],
+    activeWorkspaceId: null,
+    via,
+  };
+}
+
+/**
  * The CLI token acts as the owner. Once a second active user exists it is only
  * accepted from a direct loopback peer (ADR-0003), never through a proxy hop.
  * Single authority: @/lib/auth/cliTokenPolicy (this is its only behavior delta).

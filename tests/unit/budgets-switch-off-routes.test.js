@@ -205,6 +205,33 @@ describe("pristine install, switch off", () => {
     ).toEqual({ actorUserId: null, via: "local" });
   });
 
+  it("user sessions keep their live checks: only an active owner/admin with a current sv", async () => {
+    await load();
+    const { createDashboardAuthToken } = await import("@/lib/auth/dashboardSession.js");
+    for (const [id, role, status] of [
+      ["u-admin", "admin", "active"],
+      ["u-user", "user", "active"],
+      ["u-off", "admin", "disabled"],
+    ])
+      adapter.run(
+        `INSERT INTO users(id, email, username, displayName, instanceRole, status, passwordHash, mustChangePassword, sessionVersion, createdAt, updatedAt)
+         VALUES(?, ?, ?, ?, ?, ?, NULL, 0, 1, ?, ?)`,
+        [id, `${id}@x.test`, id, id, role, status, NOW, NOW],
+      );
+    const cookieFor = async (sub, sv = 1) =>
+      `auth_token=${await createDashboardAuthToken({ sub, sv })}`;
+    expect((await post(wsBudget, { cookie: await cookieFor("u-user") })).status).toBe(401);
+    expect((await post(wsBudget, { cookie: await cookieFor("u-off") })).status).toBe(401);
+    expect((await post(wsBudget, { cookie: await cookieFor("u-admin", 2) })).status).toBe(401);
+    expect((await list({ cookie: await cookieFor("u-user") })).status).toBe(401);
+    expect(adapter.get(`SELECT COUNT(*) AS c FROM budgets`).c).toBe(0);
+    const ok = await post(wsBudget, { cookie: await cookieFor("u-admin") });
+    expect(ok.status).toBe(201);
+    expect(
+      adapter.get(`SELECT actorUserId, via FROM auditEvents WHERE action = 'budget.create'`),
+    ).toEqual({ actorUserId: "u-admin", via: "session" });
+  });
+
   it("the switch response does not count the pending Default as a shared workspace", async () => {
     await load();
     expect((await post(wsBudget, { cookie: await legacyCookie() })).status).toBe(201);

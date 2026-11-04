@@ -11,10 +11,10 @@ export const offScoped = (budget) => OFF_LEVELS.includes(budget.scopeType);
 
 /**
  * Subject for a null (legacy-storage) principal: the raw key's keys-table id
- * (as usageHistory.apiKeyId) and the pending Default workspace.
+ * (as usageHistory.apiKeyId) and the switch-off budget workspace.
  * @param {object} db adapter
  * @param {string|null|undefined} apiKey raw legacy key, null when keyless
- * @param {string|null} workspaceId pending Default id, null when none
+ * @param {string|null} workspaceId Default, else the pending Default; null when none
  */
 export function legacySubject(db, apiKey, workspaceId) {
   let apiKeyId = null;

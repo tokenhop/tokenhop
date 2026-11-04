@@ -518,14 +518,18 @@ describe("keyBudgetsAvailable (YAN-1829)", () => {
     );
   });
 
-  it("unknown switch (shell summary not loaded or failed): switch-on behaviour", () => {
+  it("unknown switch (shell summary not loaded or failed): Default workspace only", () => {
     for (const multiUser of [null, undefined]) {
       expect(
-        keyBudgetsAvailable({ hashedMode: true, workspaceId: "mine", multiUser, workspaces }),
+        keyBudgetsAvailable({ hashedMode: true, workspaceId: "def", multiUser, workspaces }),
       ).toBe(true);
-      expect(keyBudgetsAvailable({ hashedMode: false, workspaceId: "mine", multiUser })).toBe(
-        false,
-      );
+      expect(
+        keyBudgetsAvailable({ hashedMode: true, workspaceId: "mine", multiUser, workspaces }),
+      ).toBe(false);
+      expect(keyBudgetsAvailable({ hashedMode: true, workspaceId: "def", multiUser })).toBe(false);
+      expect(
+        keyBudgetsAvailable({ hashedMode: false, workspaceId: "def", multiUser, workspaces }),
+      ).toBe(false);
     }
   });
 });

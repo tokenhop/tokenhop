@@ -5,13 +5,12 @@
 // YAN-1829 off mode (workspace routes): the dashboard admin manages workspace
 // and key budgets on Default — an owner/admin session, or login-off local
 // access (the repo re-checks the live user row), on established installs; on
-// pristine ones a legacy session or login-off local access, never a gateway
-// credential.
+// pristine ones the switch control's single-admin proof (session or login-off
+// local, see pristineAdminPrincipal). Gateway credentials never authorize.
 import { json, PayloadTooLarge, readJsonBody } from "@/lib/users/userManagement.js";
 import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
-import { getPrincipal, hasValidSession, singleUserMode } from "@/lib/users/session.js";
+import { getPrincipal, pristineAdminPrincipal } from "@/lib/users/session.js";
 import { isUserSecurityEnforced } from "@/lib/users/securityState.js";
-import { getSettings } from "@/lib/db/repos/settingsRepo.js";
 import { isCrossSite, isJson } from "@/lib/auth/sameOrigin.js";
 import { getAdapter } from "@/lib/db/driver.js";
 import { spentFor } from "@/sse/services/budgetGuard.js";
@@ -38,23 +37,20 @@ export function fail(err) {
 const GATEWAY_HEADERS = ["authorization", "x-api-key", "x-goog-api-key"];
 const unauthorized = () => ({ res: json({ error: "Unauthorized" }, 401) });
 
-// Switch-off actor (budgetMode "off"): see the header comment.
+// Switch-off actor (budgetMode "off"): see the header comment. Gateway
+// credentials are refused on every install type, before any principal read.
 async function offPrincipal(request) {
+  if (GATEWAY_HEADERS.some((h) => request.headers.has(h))) return unauthorized();
   if (await isUserSecurityEnforced()) {
     const principal = await getPrincipal();
     if (principal?.via !== "session" && principal?.via !== "local") return unauthorized();
     return { principal: { ...principal, budgetMode: "off" } };
   }
-  if (GATEWAY_HEADERS.some((h) => request.headers.has(h))) return unauthorized();
-  const via = (await hasValidSession(request))
-    ? "session"
-    : (await singleUserMode(await getSettings({ secretMode: "metadata" })))
-      ? "local"
-      : null;
-  if (!via) return unauthorized();
-  return {
-    principal: { userId: null, instanceRole: "owner", workspaceIds: [], via, budgetMode: "off" },
-  };
+  // Same proof as the switch control (live sub-session checks, single admin),
+  // without the CLI token: budgets are browser-session management.
+  const principal = await pristineAdminPrincipal(request, { cli: false });
+  if (!principal) return unauthorized();
+  return { principal: { ...principal, budgetMode: "off" } };
 }
 
 export async function gate(request, { body = false, offAllowed = false } = {}) {

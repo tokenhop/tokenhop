@@ -27,7 +27,8 @@ export function parseKeyBudget(usd, window) {
  * teams switch on any workspace works; with it off only the Default
  * workspace's budget routes exist, so another workspace hides the fields
  * instead of failing after the key is created. An unknown switch (null: shell
- * summary not loaded or failed) keeps the switch-on behaviour.
+ * summary not loaded or failed) offers them on Default only, which works in
+ * both modes.
  *
  * @param {object} input
  * @param {boolean} input.hashedMode Key storage is hashed.
@@ -39,7 +40,7 @@ export function parseKeyBudget(usd, window) {
  */
 export function keyBudgetsAvailable({ hashedMode, workspaceId, multiUser, workspaces }) {
   if (!hashedMode || !workspaceId) return false;
-  if (multiUser !== false) return true;
+  if (multiUser === true) return true;
   return Array.isArray(workspaces)
     ? workspaces.some((w) => w?.isDefault === true && w.id === workspaceId)
     : false;

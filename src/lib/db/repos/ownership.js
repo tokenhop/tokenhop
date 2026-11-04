@@ -6,6 +6,7 @@ import { getAdapter } from "../driver.js";
 import { setMetaSync } from "../helpers/metaStore.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { TenancyError, assertCtx } from "@/lib/users/errors.js";
+import { expireBudgetSwitchCache } from "@/lib/users/budgets.js";
 import { LATENCY_COLUMNS, LATENCY_MERGE_SQL } from "../helpers/usageLatencyRollup.js";
 import { SAVINGS_COLUMNS, SAVINGS_MERGE_SQL } from "../helpers/usageSavingsRollup.js";
 
@@ -214,7 +215,7 @@ function adoptUsage(db, ws, owner, { details = true, reusedWs = null } = {}) {
  */
 export async function setMultiUserEnabledUnscoped(enabled, { adopt }) {
   const db = await getAdapter();
-  return db.transaction(() => {
+  const n = db.transaction(() => {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
     const next = { ...(row ? parseJson(row.data, {}) : {}), multiUserEnabled: enabled === true };
     db.run(
@@ -224,6 +225,9 @@ export async function setMultiUserEnabledUnscoped(enabled, { adopt }) {
     if (!adopt || !db.get(`SELECT 1 AS x FROM users WHERE instanceRole = 'owner'`)) return 0;
     return adoptOwnerlessRowsUnscoped(db);
   });
+  // YAN-1829: the gateway budget guard re-reads the switch on its next request.
+  expireBudgetSwitchCache();
+  return n;
 }
 
 /** Existing-owner adoption in its own transaction; never adopts usage (YAN-1549). */

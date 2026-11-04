@@ -15,6 +15,7 @@ import { statsEmitter } from "@/lib/db/repos/usageLiveFeed.js";
 import { audit } from "@/lib/users/audit.js";
 import {
   budgetsGeneration,
+  budgetSwitchEpoch,
   membershipScopeId,
   windowEnd,
   windowStart,
@@ -52,8 +53,9 @@ let generation = -1;
 let loading = null;
 let enabled = false;
 let switchExpires = 0;
+let switchEpoch = -1; // budgetSwitchEpoch() the cached `enabled` was read in
 let db = null;
-let pendingWs = null; // pending Default (pristine installs), the legacy subject's workspace
+let offWs = null; // switch-off budget workspace: Default, else the pending Default
 
 // Trusted gateway reader: compares scopes against resolved attribution only.
 function listBudgetRowsUnscoped(adapter) {
@@ -69,7 +71,8 @@ function listBudgetRowsUnscoped(adapter) {
 export async function hasBudgets(principal) {
   // Zero rows: false in every mode, no clock or switch read.
   if (rows.length === 0 && generation === budgetsGeneration()) return false;
-  if (Date.now() >= switchExpires) {
+  if (Date.now() >= switchExpires || switchEpoch !== budgetSwitchEpoch()) {
+    switchEpoch = budgetSwitchEpoch();
     enabled = await isMultiUserEnabled();
     switchExpires = Date.now() + SWITCH_TTL_MS;
   }
@@ -109,8 +112,7 @@ function offBudgets() {
   const scoped = rows.filter(offScoped);
   try {
     const def = scoped.length ? defaultWorkspaceIdUnscoped(db) : null;
-    pendingWs = scoped.length && !def ? pendingDefaultWorkspaceIdUnscoped(db) : null;
-    const offWs = def ?? pendingWs;
+    offWs = def ?? (scoped.length ? pendingDefaultWorkspaceIdUnscoped(db) : null);
     offRows = offWs ? scoped.filter((b) => b.workspaceId === offWs) : [];
   } catch (e) {
     console.warn("[budgetGuard] budget workspace read failed, not enforcing:", e?.message);
@@ -120,10 +122,11 @@ function offBudgets() {
   return offRows;
 }
 
-// Switch-off legacy subject: the pending Default and the raw key's id when
-// off-mode key budgets exist. Runs after offBudgets in the same request.
+// Switch-off legacy subject: the off workspace offBudgets selected (Default,
+// else the pending Default) and the raw key's id when off-mode key budgets
+// exist. Runs after offBudgets in the same request.
 function offSubject(apiKey) {
-  return legacySubject(db, offRows.some((b) => b.scopeType === "key") ? apiKey : null, pendingWs);
+  return legacySubject(db, offRows.some((b) => b.scopeType === "key") ? apiKey : null, offWs);
 }
 
 function scopeIdOf(level, who) {
