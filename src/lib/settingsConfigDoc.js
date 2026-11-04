@@ -166,7 +166,6 @@ const VALID_COMBO_NAME = /^[a-zA-Z0-9_.-]+$/;
 const MAX_COMBOS = 1000;
 const MAX_SETTINGS_KEYS = 500;
 const MAX_PRICING_PROVIDERS = 500;
-const MAX_BUDGETS = 1000;
 const PRICING_FIELDS = new Set(["input", "output", "cached", "reasoning", "cache_creation"]);
 
 function isPlainObject(value) {
@@ -371,7 +370,8 @@ export function validateConfigDocument(doc, knownKeys) {
   // Budgets: shape only here; values and targets are checked server-side.
   // Older files have no budgets section and import unchanged.
   const budgets = doc.budgets ?? [];
-  if (budgets.length > MAX_BUDGETS) errors.push("Too many budgets");
+  // No count cap of its own: MAX_CONFIG_BYTES bounds the document, so any
+  // export (which writes every Default budget) re-imports.
   const budgetKeys = new Set();
   budgets.forEach((budget, i) => {
     if (!isPlainObject(budget)) {
@@ -381,8 +381,10 @@ export function validateConfigDocument(doc, knownKeys) {
     if (Object.keys(budget).some((key) => !BUDGET_KEYS.includes(key))) {
       warnings.push(`budgets[${i}]: unknown fields ignored`);
     }
-    const key = `${budget.scopeType}:${budget.scopeId ?? "workspace"}:${budget.window}`;
-    if (budgetKeys.has(key)) errors.push(`Duplicate budget "${key}"`);
+    // JSON, not a template literal: values are unchecked here, and coercing
+    // an object with a non-callable toString would throw (500, not 400).
+    const key = JSON.stringify([budget.scopeType, budget.scopeId ?? "workspace", budget.window]);
+    if (budgetKeys.has(key)) errors.push(`Duplicate budget ${key}`);
     else budgetKeys.add(key);
   });
 

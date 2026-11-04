@@ -171,12 +171,11 @@ export default function ConfigTransfer({ onSettingsChange }) {
       });
       closePreview();
       onSettingsChange?.();
-      setStatus({
-        type: "ok",
-        message: data.restartRequired
-          ? "Configuration imported. Some changes apply after a restart."
-          : "Configuration imported",
-      });
+      const base = data.restartRequired
+        ? "Configuration imported. Some changes apply after a restart."
+        : "Configuration imported";
+      // The apply transaction's own skips (preview is advisory).
+      setStatus({ type: "ok", message: [base, ...(data.warnings ?? [])].join(" · ") });
     } catch (err) {
       setPreview((p) => (p ? { ...p, applyError: err.message } : p));
     } finally {

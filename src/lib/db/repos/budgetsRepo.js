@@ -414,6 +414,11 @@ export function exportPortableBudgetsUnscoped(db) {
       `SELECT ${COLS} FROM budgets WHERE workspaceId = ?${scopes} ORDER BY scopeType <> 'workspace', createdAt, id`,
       [ws],
     )
+    .filter(
+      // A membership scopeId outside this workspace is unenforceable here and
+      // would export as a wrong user id: leave it behind.
+      (row) => row.scopeType !== "membership" || row.scopeId.startsWith(`${ws}:`),
+    )
     .map((row) => portableDefinition(row, ws));
 }
 
@@ -448,6 +453,9 @@ function portableSkipReason(db, row, target, { off, ceilings }) {
     [row.scopeType, row.scopeId, row.window],
   );
   if (existing && existing.workspaceId !== target) return "budget exists in another workspace";
+  // Same ceiling rule as the API: a raise needs instance.budgets.raise (the
+  // import holds it) and skips the ceiling; any other key write obeys it.
+  if (existing && isRaise(existing, row)) return null;
   return budgetCeilingErrorUnscoped(db, row, target, ceilings.get(row.window));
 }
 

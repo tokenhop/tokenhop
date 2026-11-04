@@ -27,7 +27,7 @@ const SCOPES = [
     scopeType: "membership",
     table: "memberships",
     exists: () =>
-      "SELECT 1 FROM memberships m WHERE m.workspaceId || ':' || m.userId = budgets.scopeId",
+      "SELECT 1 FROM memberships m WHERE m.workspaceId = budgets.workspaceId AND m.userId = substr(budgets.scopeId, length(budgets.workspaceId) + 2) AND budgets.scopeId = m.workspaceId || ':' || m.userId",
   },
   {
     scopeType: "user",

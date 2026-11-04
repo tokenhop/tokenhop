@@ -303,4 +303,11 @@ describe("config doc budgets section", () => {
       expect(checked.valid).toBe(false);
     }
   });
+
+  it("does not throw on values that can't become strings (left to the value check)", () => {
+    const odd = { ...BUDGET, window: { toString: null } };
+    expect(() =>
+      validateConfigDocument({ schemaVersion: 1, settings: {}, budgets: [odd, odd] }, KNOWN),
+    ).not.toThrow();
+  });
 });

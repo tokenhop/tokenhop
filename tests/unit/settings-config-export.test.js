@@ -433,6 +433,10 @@ describe("YAN-1834 budgets in config export/import", () => {
     db.run("DELETE FROM budgets");
     db.run("DELETE FROM workspaces");
     db.run(`DELETE FROM _meta WHERE key = 'pendingDefaultWorkspaceId'`);
+    // Warm the guard on the empty set: only the apply's generation bump can
+    // make it see the imported budgets.
+    const guard = await import("@/sse/services/budgetGuard.js");
+    expect(await guard.hasBudgets(null)).toBe(false);
     const res = await importConfig(doc, { mode: "apply" });
     expect(res.status).toBe(200);
     expect((await res.json()).diff.budgets).toMatchObject({ unchanged: 2 });
@@ -448,7 +452,6 @@ describe("YAN-1834 budgets in config export/import", () => {
       { workspaceId: next, scopeType: "workspace", scopeId: next },
     ]);
 
-    const guard = await import("@/sse/services/budgetGuard.js");
     expect((await call(guard, RAW)).status).toBe(200);
     await expect429(await call(guard, RAW), "key");
     expect((await call(guard, null)).status).toBe(200);
@@ -544,6 +547,45 @@ describe("YAN-1834 budgets in config export/import", () => {
     const row = db.get("SELECT id, createdByUserId, limitRequests FROM budgets");
     expect(row).toMatchObject({ createdByUserId: null, limitRequests: 3 });
     expect(row.id).not.toBe("smuggled");
+  });
+
+  it("rolls settings, combos and budgets back together when a budget write fails", async () => {
+    await fresh();
+    await seed();
+    const doc = await exportDoc();
+    doc.settings = { stickyRoundRobinLimit: 3 };
+    doc.combos = [...doc.combos, { name: "yan1834-rollback", models: [] }];
+    doc.budgets = [entry("workspace", null, { limitRequests: 9 })];
+    const state = () =>
+      JSON.stringify({
+        settings: db.all("SELECT * FROM settings"),
+        combos: db.all("SELECT * FROM combos ORDER BY id"),
+        budgets: db.all("SELECT * FROM budgets ORDER BY id"),
+      });
+    const before = state();
+    const realRun = db.run.bind(db);
+    db.run = (sql, params) => {
+      if (String(sql).startsWith("UPDATE budgets SET")) throw new Error("Invalid budget write");
+      return realRun(sql, params);
+    };
+    let res;
+    try {
+      res = await importConfig(doc, { mode: "apply" });
+    } finally {
+      db.run = realRun;
+    }
+    expect(res.status).toBe(400);
+    expect(state()).toBe(before);
+  });
+
+  it("restores a key budget raised above the workspace ceiling, like the API allows", async () => {
+    await fresh();
+    await seed(); // workspace ceiling 2 requests, key budget 1
+    const doc = await exportDoc();
+    doc.budgets = [entry("key", "cfg-key", { limitRequests: 5 })];
+    const applied = await (await importConfig(doc, { mode: "apply" })).json();
+    expect(applied.warnings).toEqual([]);
+    expect(db.get("SELECT limitRequests FROM budgets WHERE id = 'cfg-k'").limitRequests).toBe(5);
   });
 
   it("an older file without budgets applies and keeps existing budgets", async () => {
@@ -661,6 +703,11 @@ describe("YAN-1834 budgets in config export/import, switch on", () => {
     db.run(
       `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitRequests, createdAt) VALUES('cfg-m', ?, 'membership', ?, 'day', 3, ?)`,
       [DEF, `${DEF}:cfg-user`, T],
+    );
+    // A membership scopeId outside Default never exports (as a wrong user id).
+    db.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitRequests, createdAt) VALUES('cfg-m-stray', ?, 'membership', 'ws-cfg-side:cfg-user', 'week', 3, ?)`,
+      [DEF, T],
     );
     const doc = await exportDoc();
     expect(doc.budgets).toEqual([entry("membership", "cfg-user", 3)]);
