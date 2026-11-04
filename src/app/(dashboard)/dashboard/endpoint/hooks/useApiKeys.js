@@ -401,6 +401,10 @@ export function useApiKeys({ multiUser } = {}) {
         return next;
       });
       clearRenameError(id);
+      // The one-time reveal (and its budget retry) belongs to its key:
+      // deleting that key dismisses both. Other keys' deletes keep the reveal.
+      setRevealed((prev) => (prev?.id === id ? null : prev));
+      keyBudget.clearBudgetFailureFor(id);
     } catch (err) {
       notifyError(err?.message || "Failed to delete API key.");
     } finally {
