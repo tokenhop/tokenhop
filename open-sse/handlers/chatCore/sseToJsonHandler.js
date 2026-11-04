@@ -59,16 +59,18 @@ function refusalFromResponsesOutput(output) {
 }
 
 // Responses terminal status → chat finish_reason. "incomplete" is not a chat
-// finish_reason: map its reason (content_filter / max_output_tokens). Tool
-// calls win; other statuses keep their previous mapping.
+// finish_reason: map its reason (content_filter / max_output_tokens). It wins
+// over tool calls, as in the streaming computeFinishReason: a cut-off
+// function call may carry partial arguments. Then tool calls; other statuses
+// keep their previous mapping.
 function chatFinishFromResponses(jsonResponse, hasToolCalls) {
-  if (hasToolCalls) return OPENAI_FINISH.TOOL_CALLS;
   const status = jsonResponse.status;
   if (status === "incomplete") {
     return jsonResponse.incomplete_details?.reason === RESPONSES_INCOMPLETE.CONTENT_FILTER
       ? OPENAI_FINISH.CONTENT_FILTER
       : OPENAI_FINISH.LENGTH;
   }
+  if (hasToolCalls) return OPENAI_FINISH.TOOL_CALLS;
   if (status === "completed" || status === "done") return OPENAI_FINISH.STOP;
   return status || OPENAI_FINISH.STOP;
 }

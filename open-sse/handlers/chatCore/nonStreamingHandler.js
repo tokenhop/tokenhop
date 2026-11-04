@@ -23,6 +23,11 @@ import { geminiUsageCounts } from "../../translator/concerns/usage.js";
 import { CLAUDE_BLOCK, CLAUDE_STOP, RESPONSES_ITEM } from "../../translator/schema/index.js";
 import { GEMINI_FINISH, OPENAI_FINISH } from "../../translator/schema/finishReasons.js";
 
+// Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other").
+// A cut-off (length / content_filter) stays: its tool call may carry partial
+// arguments, and the streaming translators report the cut-off too (YAN-1848).
+const CUT_OFF_FINISH = new Set([OPENAI_FINISH.LENGTH, OPENAI_FINISH.CONTENT_FILTER]);
+
 /**
  * Translate a non-streaming provider body into the client's format (pivoting
  * through OpenAI chat.completion).
@@ -412,13 +417,17 @@ export async function handleNonStreamingResponse({
   const isResponsesResponse =
     sourceFormat === FORMATS.OPENAI_RESPONSES && translatedResponse?.object === "response";
 
-  // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
+  // Normalize finish_reason for tool calls; keep cut-offs (see CUT_OFF_FINISH).
   if (translatedResponse?.choices?.[0]) {
     const choice = translatedResponse.choices[0];
     const msg = choice.message;
     const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
-    if (hasToolCalls && choice.finish_reason !== "tool_calls") {
-      choice.finish_reason = "tool_calls";
+    if (
+      hasToolCalls &&
+      choice.finish_reason !== OPENAI_FINISH.TOOL_CALLS &&
+      !CUT_OFF_FINISH.has(choice.finish_reason)
+    ) {
+      choice.finish_reason = OPENAI_FINISH.TOOL_CALLS;
     }
   }
 

@@ -336,6 +336,39 @@ describe("aggregator review follow-ups", () => {
     expect(out.choices[0].finish_reason).toBe("content_filter");
   });
 
+  // YAN-1848: a Responses function call cut off by max_output_tokens or
+  // content_filter reports the cut-off, not tool_calls, on the stream-parse
+  // path and through handleNonStreamingResponse's tool-call normalization.
+  const cutOffCall = (reason) =>
+    responsesSse([
+      { type: "response.created", response: { id: "resp_1", model: "gpt-r" } },
+      {
+        type: "response.output_item.added",
+        output_index: 0,
+        item: { type: "function_call", call_id: "call_1", name: "lookup", arguments: "" },
+      },
+      { type: "response.function_call_arguments.delta", output_index: 0, delta: '{"q":"par' },
+      { type: "response.incomplete", response: { id: "resp_1", incomplete_details: { reason } } },
+    ]);
+
+  it.each([
+    ["max_output_tokens", "length"],
+    ["content_filter", "content_filter"],
+  ])("Responses function_call + %s → %s on both non-stream paths", async (reason, finish) => {
+    const parsed = parseSSEToOpenAIResponse(cutOffCall(reason), "fallback", {
+      format: FORMATS.OPENAI_RESPONSES,
+    });
+    expect(parsed.choices[0].finish_reason).toBe(finish);
+    expect(parsed.choices[0].message.tool_calls[0].function.arguments).toBe('{"q":"par');
+
+    const result = await handleNonStreamingResponse(
+      nonStreamCtx(cutOffCall(reason), FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES),
+    );
+    const json = await result.response.json();
+    expect(json.choices[0].finish_reason).toBe(finish);
+    expect(json.choices[0].message.tool_calls).toHaveLength(1);
+  });
+
   it("non-stream SSE path records Claude cache read + write as canonical usage", async () => {
     vi.mocked(saveRequestUsageUnscoped).mockClear();
     const result = await handleNonStreamingResponse(

@@ -302,6 +302,38 @@ describe("6. Codex/Responses upstream → non-Responses client", () => {
     expect(json.stop_reason).toBe("refusal");
     expect(json.stop_details).toEqual({ type: "refusal", explanation: "No." });
   });
+
+  // YAN-1848: a cut-off function call is not a complete tool call.
+  const funcCallItem = {
+    type: "response.output_item.done",
+    output_index: 0,
+    item: {
+      type: "function_call",
+      id: "fc_1",
+      call_id: "call_1",
+      name: "lookup",
+      arguments: '{"q":"par',
+      status: "incomplete",
+    },
+  };
+
+  it.each([
+    ["max_output_tokens", "length", "max_tokens"],
+    ["content_filter", "content_filter", "refusal"],
+  ])("function_call + %s → chat %s / Claude %s, not tool_calls", async (reason, chat, claude) => {
+    const chatResult = await handleForcedSSEToJson(
+      codexCtx([funcCallItem, incomplete(reason)], FORMATS.OPENAI),
+    );
+    const chatJson = await chatResult.response.json();
+    expect(chatJson.choices[0].finish_reason).toBe(chat);
+    expect(chatJson.choices[0].message.tool_calls[0].function.arguments).toBe('{"q":"par');
+
+    const claudeResult = await handleForcedSSEToJson(
+      codexCtx([funcCallItem, incomplete(reason)], FORMATS.CLAUDE),
+    );
+    const claudeJson = await claudeResult.response.json();
+    expect(claudeJson.stop_reason).toBe(claude);
+  });
 });
 
 describe("7. usage-only OpenAI frame under a Claude target", () => {
