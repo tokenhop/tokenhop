@@ -142,14 +142,16 @@ describe("handleForcedSSEToJson with a Claude-format upstream", () => {
     expect(json.choices[0].message.refusal).toBe("X");
   });
 
-  it("Claude client gets stop_reason refusal with the explanation", async () => {
+  // YAN-1842: Claude → Claude is aggregated natively, so the upstream
+  // stop_details (including the category) passes through unchanged.
+  it("Claude client gets stop_reason refusal with the upstream stop_details", async () => {
     const result = await handleForcedSSEToJson(
       baseCtx(CLAUDE_REFUSAL_SSE, FORMATS.CLAUDE, FORMATS.CLAUDE),
     );
     const json = await result.response.json();
     expect(json.type).toBe("message");
     expect(json.stop_reason).toBe("refusal");
-    expect(json.stop_details).toEqual({ type: "refusal", explanation: "X" });
+    expect(json.stop_details).toEqual(refusalDetails);
   });
 });
 
@@ -171,7 +173,7 @@ describe("handleNonStreamingResponse text/event-stream fallback", () => {
     const json = await result.response.json();
     expect(json.type).toBe("message");
     expect(json.stop_reason).toBe("refusal");
-    expect(json.stop_details).toEqual({ type: "refusal", explanation: "X" });
+    expect(json.stop_details).toEqual(refusalDetails);
   });
 
   it("Claude upstream SSE refusal → Responses client", async () => {

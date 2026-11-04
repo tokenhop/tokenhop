@@ -7,6 +7,7 @@ import {
   reasoningInclusiveCompletion,
 } from "../../translator/concerns/usage.js";
 import { clockTime } from "../../utils/clockTime.js";
+import { CLAUDE_BLOCK, RESPONSES_ITEM } from "../../translator/schema/index.js";
 
 const OPTIONAL_PARAMS = [
   "temperature",
@@ -118,6 +119,66 @@ export function buildRequestDetail(base, overrides = {}) {
     pxpipe: base.pxpipe || undefined,
     status: base.status || "success",
     ...overrides,
+  };
+}
+
+/**
+ * Summarize a client-format body for the request-detail log. The pivot is an
+ * OpenAI chat.completion, but the logged `translatedResponse` is already the
+ * client format (Claude message / Responses body / chat.completion).
+ */
+export function summarizeClientResponse(body) {
+  if (body?.choices?.[0]) {
+    const message = body.choices[0].message || {};
+    // Legacy completions choices carry `text`, not `message`.
+    const text =
+      message.content ?? (typeof body.choices[0].text === "string" ? body.choices[0].text : null);
+    return {
+      content: text || null,
+      thinking: message.reasoning_content || null,
+      finish_reason: body.choices[0].finish_reason || "unknown",
+    };
+  }
+  // Claude message: content blocks (+ top-level stop_reason).
+  if (body?.type === "message" && Array.isArray(body.content)) {
+    const text = body.content
+      .filter((block) => block?.type === CLAUDE_BLOCK.TEXT && block.text)
+      .map((block) => block.text)
+      .join("");
+    const thinking = body.content
+      .filter((block) => block?.type === CLAUDE_BLOCK.THINKING && block.thinking)
+      .map((block) => block.thinking)
+      .join("");
+    return {
+      content: text || null,
+      thinking: thinking || null,
+      finish_reason: body.stop_reason || "unknown",
+    };
+  }
+  // Responses body: message items hold output_text, reasoning items hold summary.
+  if (body?.object === "response" && Array.isArray(body.output)) {
+    const text = body.output
+      .filter((item) => item?.type === RESPONSES_ITEM.MESSAGE && Array.isArray(item.content))
+      .flatMap((item) => item.content)
+      .filter((part) => part?.type === RESPONSES_ITEM.OUTPUT_TEXT && part.text)
+      .map((part) => part.text)
+      .join("");
+    const thinking = body.output
+      .filter((item) => item?.type === RESPONSES_ITEM.REASONING && Array.isArray(item.summary))
+      .flatMap((item) => item.summary)
+      .filter((part) => part?.type === RESPONSES_ITEM.SUMMARY_TEXT && part.text)
+      .map((part) => part.text)
+      .join("");
+    return {
+      content: text || null,
+      thinking: thinking || null,
+      finish_reason: body.status || "unknown",
+    };
+  }
+  return {
+    content: body?.content || null,
+    thinking: body?.reasoning_content || null,
+    finish_reason: body?.finish_reason || "unknown",
   };
 }
 

@@ -1,14 +1,19 @@
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { createErrorResult } from "../../utils/error.js";
+import { decloakToolNames } from "../../utils/claudeCloaking.js";
+import { canonicalizeUsage } from "../../utils/usageTracking.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS, isFimFormat } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import {
   buildRequestDetail,
   extractRequestConfig,
+  extractUsageFromResponse,
   saveUsageStats,
   formatDoneLine,
+  summarizeClientResponse,
 } from "./requestDetail.js";
+import { claudeSseToMessage, readSSEData } from "./claudeSseToMessage.js";
 import { openAICompletionToClientFormat } from "./completionToClient.js";
 import { fimContextFor } from "../../translator/concerns/fim.js";
 import { initState, translateResponse } from "../../translator/index.js";
@@ -126,22 +131,7 @@ function toOpenAIChunks(chunks, format, toolNameMap, model) {
  * OpenAI chat.completion body.
  */
 export function parseSSEToOpenAIResponse(rawSSE, fallbackModel, { format, toolNameMap } = {}) {
-  const rawChunks = [];
-  let streamError = null;
-
-  for (const line of String(rawSSE || "").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("data:")) continue;
-    const payload = trimmed.slice(5).trim();
-    if (!payload || payload === "[DONE]") continue;
-    try {
-      const chunk = JSON.parse(payload);
-      if (chunk?.error) streamError = chunk.error;
-      else rawChunks.push(chunk);
-    } catch {
-      /* ignore malformed lines */
-    }
-  }
+  const { events: rawChunks, error: streamError } = readSSEData(rawSSE);
 
   if (streamError) return { error: streamError };
   const chunks = toOpenAIChunks(rawChunks, format, toolNameMap, fallbackModel);
@@ -205,6 +195,26 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel, { format, toolNa
   };
   if (usage) result.usage = usage;
   return result;
+}
+
+/**
+ * Aggregate an upstream SSE body for a non-streaming client.
+ * A Claude client behind a Claude upstream gets a native Claude message
+ * (YAN-1842: the OpenAI pivot drops thinking signatures and server-tool
+ * blocks); everything else gets the OpenAI chat.completion pivot. Tool names
+ * of the native message are still cloaked: the caller decloaks them once.
+ * @returns {{ body: object, format: string }|{ error: object }|null}
+ */
+export function aggregateSSEBody(rawSSE, { sourceFormat, targetFormat, model, toolNameMap }) {
+  if (sourceFormat === FORMATS.CLAUDE && targetFormat === FORMATS.CLAUDE) {
+    const message = claudeSseToMessage(rawSSE, model);
+    if (message?.error) return { error: message.error };
+    if (message) return { body: message, format: FORMATS.CLAUDE };
+  }
+  const parsed = parseSSEToOpenAIResponse(rawSSE, model, { format: targetFormat, toolNameMap });
+  if (!parsed) return null;
+  if (parsed.error) return { error: parsed.error };
+  return { body: parsed, format: FORMATS.OPENAI };
 }
 
 /**
@@ -341,9 +351,11 @@ export async function handleForcedSSEToJson({
               },
             }
           : {};
-      let finalResp;
 
-      // Extract tool calls from Responses API output (function_call items)
+      // Extract tool calls from Responses API output (function_call items).
+      // No Gemini-family client branch: chatCore only calls this handler when
+      // !clientRequestedStreaming, which is always false for Gemini /
+      // Gemini-CLI / Antigravity sources (YAN-1853).
       const funcCallItems = (jsonResponse.output || []).filter(
         (item) => item.type === "function_call",
       );
@@ -360,64 +372,36 @@ export async function handleForcedSSEToJson({
       }));
       const hasToolCalls = toolCalls.length > 0;
 
-      if (
-        sourceFormat === FORMATS.ANTIGRAVITY ||
-        sourceFormat === FORMATS.GEMINI ||
-        sourceFormat === FORMATS.GEMINI_CLI
-      ) {
-        finalResp = {
-          response: {
-            candidates: [
-              {
-                content: { role: "model", parts: [{ text: textContent || "" }] },
-                finishReason: "STOP",
-                index: 0,
-              },
-            ],
-            usageMetadata: {
-              // Gemini candidates exclude thoughts; prompt includes cached content.
-              promptTokenCount: inTokens,
-              candidatesTokenCount: Math.max(0, outTokens - reasoningTokens),
-              totalTokenCount: inTokens + outTokens,
-              ...(cacheRead > 0 ? { cachedContentTokenCount: cacheRead } : {}),
-              ...(reasoningTokens > 0 ? { thoughtsTokenCount: reasoningTokens } : {}),
-            },
-            modelVersion: model,
-            responseId: jsonResponse.id || `resp_${Date.now()}`,
-          },
-        };
-      } else {
-        const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
-        if (hasToolCalls) message.tool_calls = toolCalls;
-        const refusal = refusalFromResponsesOutput(jsonResponse.output);
-        if (refusal) message.refusal = refusal;
-        const finishReason = chatFinishFromResponses(jsonResponse, hasToolCalls);
-        finalResp = {
-          id: jsonResponse.id || `chatcmpl-${Date.now()}`,
-          object: "chat.completion",
-          created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
-          model: jsonResponse.model || model,
-          choices: [{ index: 0, message, finish_reason: finishReason }],
-          usage: {
-            prompt_tokens: inTokens,
-            completion_tokens: outTokens,
-            total_tokens: inTokens + outTokens,
-            ...(reasoningTokens > 0
-              ? { completion_tokens_details: { reasoning_tokens: reasoningTokens } }
-              : {}),
-            ...cacheDetails,
-          },
-        };
-        // Convert the chat.completion pivot to the client's format (Claude /
-        // Responses). Shared converter in completionToClient.js, imported
-        // without a circular import.
-        finalResp = openAICompletionToClientFormat(
-          finalResp,
-          sourceFormat,
-          customToolNames,
-          fimContext,
-        );
-      }
+      const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
+      if (hasToolCalls) message.tool_calls = toolCalls;
+      const refusal = refusalFromResponsesOutput(jsonResponse.output);
+      if (refusal) message.refusal = refusal;
+      const finishReason = chatFinishFromResponses(jsonResponse, hasToolCalls);
+      const chatResp = {
+        id: jsonResponse.id || `chatcmpl-${Date.now()}`,
+        object: "chat.completion",
+        created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
+        model: jsonResponse.model || model,
+        choices: [{ index: 0, message, finish_reason: finishReason }],
+        usage: {
+          prompt_tokens: inTokens,
+          completion_tokens: outTokens,
+          total_tokens: inTokens + outTokens,
+          ...(reasoningTokens > 0
+            ? { completion_tokens_details: { reasoning_tokens: reasoningTokens } }
+            : {}),
+          ...cacheDetails,
+        },
+      };
+      // Convert the chat.completion pivot to the client's format (Claude /
+      // Responses). Shared converter in completionToClient.js, imported
+      // without a circular import.
+      const finalResp = openAICompletionToClientFormat(
+        chatResp,
+        sourceFormat,
+        customToolNames,
+        fimContext,
+      );
 
       return {
         success: true,
@@ -435,25 +419,9 @@ export async function handleForcedSSEToJson({
     }
   }
 
-  // Standard Chat Completions SSE path
-  try {
-    const sseText = await readResponse(() => providerResponse.text());
-    const parsed = parseSSEToOpenAIResponse(sseText, model, { format: targetFormat, toolNameMap });
-    if (!parsed)
-      return createErrorResult(
-        HTTP_STATUS.BAD_GATEWAY,
-        "Invalid SSE response for non-streaming request",
-      );
-    if (parsed.error) {
-      return createErrorResult(
-        HTTP_STATUS.BAD_GATEWAY,
-        parsed.error.message || "Upstream SSE stream failed",
-      );
-    }
-
-    if (onRequestSuccess) await onRequestSuccess();
-
-    const usage = parsed.usage || {};
+  // Standard Chat Completions SSE path (and native Claude for Claude → Claude).
+  // Logs, usage stats and the request detail for a successful aggregation.
+  const recordSuccess = (usage, response) => {
     appendLog({ tokens: usage, status: "200 OK" });
     saveUsageStats({
       provider,
@@ -469,30 +437,63 @@ export async function handleForcedSSEToJson({
       comboName,
       silent: true,
     });
-    if (log?.line)
-      log.line(
-        reqTag,
-        "📊",
-        formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }),
-      );
-
     const totalLatency = Date.now() - requestStartTime;
+    if (log?.line)
+      log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: totalLatency } }));
     saveRequestDetailUnscoped(
       buildRequestDetail(
         {
           ...ctx,
           latency: { ttft: totalLatency, total: totalLatency },
           tokens: usage,
-          response: {
-            content: parsed.choices?.[0]?.message?.content || null,
-            thinking: parsed.choices?.[0]?.message?.reasoning_content || null,
-            finish_reason: parsed.choices?.[0]?.finish_reason || "unknown",
-          },
+          response,
           status: "success",
         },
         { endpoint: clientRawRequest?.endpoint || null },
       ),
     ).catch(() => {});
+  };
+
+  try {
+    const sseText = await readResponse(() => providerResponse.text());
+    const aggregated = aggregateSSEBody(sseText, {
+      sourceFormat,
+      targetFormat,
+      model,
+      toolNameMap,
+    });
+    if (!aggregated)
+      return createErrorResult(
+        HTTP_STATUS.BAD_GATEWAY,
+        "Invalid SSE response for non-streaming request",
+      );
+    if (aggregated.error) {
+      return createErrorResult(
+        HTTP_STATUS.BAD_GATEWAY,
+        aggregated.error.message || "Upstream SSE stream failed",
+      );
+    }
+
+    if (onRequestSuccess) await onRequestSuccess();
+
+    // A native Claude message (Claude client + Claude upstream) is already the
+    // client body. Its usage excludes cache from input_tokens: record the
+    // canonical (cache-inclusive) counts, as the OpenAI pivot path does.
+    if (aggregated.format === FORMATS.CLAUDE) {
+      const message = decloakToolNames(aggregated.body, toolNameMap);
+      const usage = canonicalizeUsage(extractUsageFromResponse(message));
+      recordSuccess(usage, summarizeClientResponse(message));
+      return {
+        success: true,
+        response: new Response(JSON.stringify(message), {
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        }),
+      };
+    }
+
+    const parsed = aggregated.body;
+    const usage = parsed.usage || {};
+    recordSuccess(usage, summarizeClientResponse(parsed));
 
     // Re-attach usage explicitly. This handler already HAS the correct usage — it is
     // the same object written to the usage DB, and for a cached Claude request that DB

@@ -79,6 +79,8 @@ export function filterUsageForFormat(usage, targetFormat) {
       "output_tokens",
       "cache_read_input_tokens",
       "cache_creation_input_tokens",
+      "server_tool_use",
+      "service_tier",
       "estimated",
     ],
     [FORMATS.GEMINI]: [
