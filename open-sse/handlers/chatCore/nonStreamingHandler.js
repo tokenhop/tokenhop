@@ -1,10 +1,14 @@
 import { FORMATS, isFimFormat } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
-import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
+import {
+  addBufferToUsage,
+  canonicalizeUsage,
+  filterUsageForFormat,
+} from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
-import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
+import { aggregateSSEBody } from "./sseToJsonHandler.js";
 import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
 import {
   buildRequestDetail,
@@ -12,6 +16,7 @@ import {
   extractUsageFromResponse,
   saveUsageStats,
   formatDoneLine,
+  summarizeClientResponse,
 } from "./requestDetail.js";
 import { saveRequestDetailUnscoped } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
@@ -20,7 +25,7 @@ import { fimContextFor } from "../../translator/concerns/fim.js";
 import { normalizeFimNativeBody } from "../../translator/response/fim-native.js";
 import { claudeRefusalText, toOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { geminiUsageCounts } from "../../translator/concerns/usage.js";
-import { CLAUDE_BLOCK, CLAUDE_STOP, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { CLAUDE_STOP } from "../../translator/schema/index.js";
 import { GEMINI_FINISH, OPENAI_FINISH } from "../../translator/schema/finishReasons.js";
 
 // Cut-off finishes kept when tool calls are present: a cut-off call may carry
@@ -224,66 +229,6 @@ export function translateNonStreamingResponse(
 }
 
 /**
- * Summarize a client-format body for the request-detail log. The pivot is an
- * OpenAI chat.completion, but the logged `translatedResponse` is already the
- * client format (Claude message / Responses body / chat.completion).
- */
-function summarizeClientResponse(body) {
-  if (body?.choices?.[0]) {
-    const message = body.choices[0].message || {};
-    // Legacy completions choices carry `text`, not `message`.
-    const text =
-      message.content ?? (typeof body.choices[0].text === "string" ? body.choices[0].text : null);
-    return {
-      content: text || null,
-      thinking: message.reasoning_content || null,
-      finish_reason: body.choices[0].finish_reason || "unknown",
-    };
-  }
-  // Claude message: content blocks (+ top-level stop_reason).
-  if (body?.type === "message" && Array.isArray(body.content)) {
-    const text = body.content
-      .filter((block) => block?.type === CLAUDE_BLOCK.TEXT && block.text)
-      .map((block) => block.text)
-      .join("");
-    const thinking = body.content
-      .filter((block) => block?.type === CLAUDE_BLOCK.THINKING && block.thinking)
-      .map((block) => block.thinking)
-      .join("");
-    return {
-      content: text || null,
-      thinking: thinking || null,
-      finish_reason: body.stop_reason || "unknown",
-    };
-  }
-  // Responses body: message items hold output_text, reasoning items hold summary.
-  if (body?.object === "response" && Array.isArray(body.output)) {
-    const text = body.output
-      .filter((item) => item?.type === RESPONSES_ITEM.MESSAGE && Array.isArray(item.content))
-      .flatMap((item) => item.content)
-      .filter((part) => part?.type === RESPONSES_ITEM.OUTPUT_TEXT && part.text)
-      .map((part) => part.text)
-      .join("");
-    const thinking = body.output
-      .filter((item) => item?.type === RESPONSES_ITEM.REASONING && Array.isArray(item.summary))
-      .flatMap((item) => item.summary)
-      .filter((part) => part?.type === RESPONSES_ITEM.SUMMARY_TEXT && part.text)
-      .map((part) => part.text)
-      .join("");
-    return {
-      content: text || null,
-      thinking: thinking || null,
-      finish_reason: body.status || "unknown",
-    };
-  }
-  return {
-    content: body?.content || null,
-    thinking: body?.reasoning_content || null,
-    finish_reason: body?.finish_reason || "unknown",
-  };
-}
-
-/**
  * Handle non-streaming response from provider.
  */
 export async function handleNonStreamingResponse({
@@ -319,15 +264,22 @@ export async function handleNonStreamingResponse({
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
-  // Format of responseBody. An SSE body is translated and aggregated into an
-  // OpenAI chat.completion here, so it must not be translated from
-  // targetFormat a second time below.
+  // Format of responseBody. An SSE body is aggregated here into an OpenAI
+  // chat.completion (or a native Claude message for Claude → Claude), so it
+  // must not be translated from targetFormat a second time below.
   let bodyFormat = targetFormat;
+  // Format an SSE body was aggregated into; null for a JSON body.
+  let sseFormat = null;
 
   if (contentType.includes("text/event-stream")) {
     const sseText = await readResponse(() => providerResponse.text());
-    const parsed = parseSSEToOpenAIResponse(sseText, model, { format: targetFormat, toolNameMap });
-    if (!parsed) {
+    const aggregated = aggregateSSEBody(sseText, {
+      sourceFormat,
+      targetFormat,
+      model,
+      toolNameMap,
+    });
+    if (!aggregated) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       return createErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
@@ -335,15 +287,16 @@ export async function handleNonStreamingResponse({
       );
     }
     // A terminal SSE error frame is an upstream failure, not a 200 body.
-    if (parsed.error) {
+    if (aggregated.error) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       return createErrorResult(
         HTTP_STATUS.BAD_GATEWAY,
-        parsed.error.message || "Upstream SSE stream failed",
+        aggregated.error.message || "Upstream SSE stream failed",
       );
     }
-    responseBody = parsed;
-    bodyFormat = FORMATS.OPENAI;
+    responseBody = aggregated.body;
+    bodyFormat = aggregated.format;
+    sseFormat = aggregated.format;
   } else {
     try {
       responseBody = await readResponse(() => providerResponse.json());
@@ -377,7 +330,10 @@ export async function handleNonStreamingResponse({
   // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
   responseBody = decloakToolNames(responseBody, toolNameMap);
 
-  const usage = extractUsageFromResponse(responseBody);
+  // A native Claude message aggregated from SSE has cache-exclusive input_tokens;
+  // log canonical (cache-inclusive) counts, as the OpenAI pivot of that SSE did.
+  const rawUsage = extractUsageFromResponse(responseBody);
+  const usage = sseFormat === FORMATS.CLAUDE ? canonicalizeUsage(rawUsage) : rawUsage;
   appendLog({ tokens: usage, status: "200 OK" });
   saveUsageStats({
     provider,

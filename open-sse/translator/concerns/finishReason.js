@@ -10,6 +10,7 @@ export function toOpenAIFinish(reason, format) {
         case CLAUDE_STOP.END_TURN:
           return OPENAI_FINISH.STOP;
         case CLAUDE_STOP.MAX_TOKENS:
+        case CLAUDE_STOP.MODEL_CONTEXT_WINDOW_EXCEEDED:
           return OPENAI_FINISH.LENGTH;
         case CLAUDE_STOP.TOOL_USE:
           return OPENAI_FINISH.TOOL_CALLS;

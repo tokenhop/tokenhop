@@ -46,6 +46,7 @@ describe("toOpenAIFinish - claude", () => {
   it.each([
     ["end_turn", "stop"],
     ["max_tokens", "length"],
+    ["model_context_window_exceeded", "length"],
     ["tool_use", "tool_calls"],
     ["refusal", "content_filter"],
   ])("%s -> %s", (input, expected) => {

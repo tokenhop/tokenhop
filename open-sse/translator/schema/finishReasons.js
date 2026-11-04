@@ -21,6 +21,7 @@ export const CLAUDE_STOP = {
   TOOL_USE: "tool_use",
   STOP_SEQUENCE: "stop_sequence",
   REFUSAL: "refusal",
+  MODEL_CONTEXT_WINDOW_EXCEEDED: "model_context_window_exceeded",
 };
 
 // Gemini finishReason values.
