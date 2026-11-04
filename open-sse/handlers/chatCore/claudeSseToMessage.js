@@ -18,30 +18,65 @@ const CLAUDE_EVENTS = new Set([
   "message_delta",
 ]);
 
+// Stop reasons that cut the response off mid-output.
+const CUT_OFF_STOPS = new Set([CLAUDE_STOP.MAX_TOKENS, CLAUDE_STOP.MODEL_CONTEXT_WINDOW_EXCEEDED]);
+
+// Block type a content delta implies when no content_block_start opened it.
+const DELTA_BLOCK = {
+  text_delta: CLAUDE_BLOCK.TEXT,
+  thinking_delta: CLAUDE_BLOCK.THINKING,
+};
+
+function pushPayload(payload, out) {
+  if (!payload || payload === "[DONE]") return true;
+  try {
+    const event = JSON.parse(payload);
+    if (event?.error) out.error = event.error;
+    else out.events.push(event);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// One SSE event's data: its `data:` lines joined with "\n" (SSE spec). Some
+// upstreams put one JSON frame per `data:` line with no blank line between
+// events; when the joined text is not JSON, each line is parsed on its own.
+function parseEventData(lines, out) {
+  if (lines.length === 0) return;
+  if (pushPayload(lines.join("\n").trim(), out)) return;
+  if (lines.length === 1) {
+    out.malformed++;
+    return;
+  }
+  for (const line of lines) {
+    if (!pushPayload(line, out)) out.malformed++;
+  }
+}
+
 /**
- * Parsed JSON payloads of the `data:` lines of an SSE body. `error` is set when
- * any frame carries an error (a Claude `type:"error"` event or an OpenAI-style
- * `{error}` frame): a terminal error means the stream failed.
+ * Parsed JSON payloads of the SSE events in a body. Consecutive `data:` lines
+ * of one event are joined and parsed at the blank line that ends it (or at
+ * EOF). `error` is set when any frame carries an error (a Claude
+ * `type:"error"` event or an OpenAI-style `{error}` frame): a terminal error
+ * means the stream failed. `malformed` counts frames that are not JSON.
  * @param {string} rawSSE
- * @returns {{ events: object[], error: object|null }}
+ * @returns {{ events: object[], error: object|null, malformed: number }}
  */
 export function readSSEData(rawSSE) {
-  const events = [];
-  let error = null;
+  const out = { events: [], error: null, malformed: 0 };
+  let lines = [];
   for (const line of String(rawSSE || "").split("\n")) {
     const trimmed = line.trim();
-    if (!trimmed.startsWith("data:")) continue;
-    const payload = trimmed.slice(5).trim();
-    if (!payload || payload === "[DONE]") continue;
-    try {
-      const event = JSON.parse(payload);
-      if (event?.error) error = event.error;
-      else events.push(event);
-    } catch {
-      /* ignore malformed lines */
+    if (trimmed === "") {
+      parseEventData(lines, out);
+      lines = [];
+    } else if (trimmed.startsWith("data:")) {
+      lines.push(trimmed.slice(5).trim());
     }
   }
-  return { events, error };
+  parseEventData(lines, out);
+  return out;
 }
 
 function applyDelta(block, delta) {
@@ -75,12 +110,34 @@ function newMessage(fallbackModel) {
   };
 }
 
+// Merge usage counts, skipping null/undefined so a later event never erases a
+// count an earlier one reported.
+function mergeUsage(base, next) {
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(next || {})) {
+    if (value != null) merged[key] = value;
+  }
+  return merged;
+}
+
+// Block at `index`; a delta without content_block_start gets an empty block of
+// the delta's kind (index 0 when the event names none).
+function blockFor(state, event) {
+  const index = Number.isInteger(event.index) ? event.index : 0;
+  if (!state.blocks[index]) {
+    const type = DELTA_BLOCK[event.delta?.type];
+    if (!type) return { index, block: null };
+    state.blocks[index] = type === CLAUDE_BLOCK.TEXT ? { type, text: "" } : { type, thinking: "" };
+  }
+  return { index, block: state.blocks[index] };
+}
+
 // Fold one Claude event into the aggregation state.
 function applyEvent(state, event) {
   switch (event?.type) {
     case "message_start": {
       const start = event.message || {};
-      const usage = { ...state.message.usage, ...(start.usage || {}) };
+      const usage = mergeUsage(state.message.usage, start.usage);
       state.message = { ...state.message, ...start, usage };
       if (!state.message.model) state.message.model = state.fallbackModel || "unknown";
       break;
@@ -89,19 +146,23 @@ function applyEvent(state, event) {
       state.blocks[event.index] = { ...event.content_block };
       break;
     case "content_block_delta": {
-      if (!state.blocks[event.index]) break;
+      const { index, block } = blockFor(state, event);
+      if (!block) break;
       if (event.delta?.type === "input_json_delta") {
-        const prev = state.jsonBuffers.get(event.index) || "";
-        state.jsonBuffers.set(event.index, prev + (event.delta.partial_json || ""));
+        const prev = state.jsonBuffers.get(index) || "";
+        state.jsonBuffers.set(index, prev + (event.delta.partial_json || ""));
       } else {
-        applyDelta(state.blocks[event.index], event.delta);
+        applyDelta(block, event.delta);
       }
       break;
     }
     case "message_delta":
       Object.assign(state.message, event.delta || {});
       // message_delta usage is cumulative: it overrides message_start counts.
-      if (event.usage) state.message.usage = { ...state.message.usage, ...event.usage };
+      state.message.usage = mergeUsage(state.message.usage, event.usage);
+      break;
+    case "message_stop":
+      state.stopped = true;
       break;
     default:
       break;
@@ -109,38 +170,53 @@ function applyEvent(state, event) {
 }
 
 // Streamed tool input (tool_use, server_tool_use, mcp_tool_use…). Only a
-// response cut off by max_tokens keeps the finished arguments of an unfinished
-// call (YAN-1854, see parseToolArguments in completionToClient.js); otherwise
-// invalid JSON becomes `{}`, as before.
+// response cut off by the token limit or the context window keeps the finished
+// arguments of an unfinished call (YAN-1854, see parseToolArguments in
+// completionToClient.js); otherwise invalid JSON becomes `{}`, as before.
 function toolInput(json, stopReason) {
-  if (stopReason === CLAUDE_STOP.MAX_TOKENS) return parsePartialJSONObject(json);
+  if (CUT_OFF_STOPS.has(stopReason)) return parsePartialJSONObject(json);
   return parseJSONObject(json);
+}
+
+// message_stop without a stop_reason: infer it like the streaming pivot
+// (claude-to-openai.js message_stop), tool_use when a tool was called.
+function inferredStopReason(blocks) {
+  return blocks.some((block) => block?.type === CLAUDE_BLOCK.TOOL_USE)
+    ? CLAUDE_STOP.TOOL_USE
+    : CLAUDE_STOP.END_TURN;
 }
 
 /**
  * Aggregate Claude Messages SSE into one Claude `message` body.
  * @param {string} rawSSE
  * @param {string} fallbackModel - used when message_start names no model
- * @returns {object|{error: object}|null} the message; `{error}` for a failed or
- *   truncated stream (no stop_reason); null when the body holds no Claude events.
+ * @returns {object|{error: object}|null} the message; `{error}` for a failed,
+ *   malformed or truncated stream (neither stop_reason nor message_stop); null
+ *   when the body holds no Claude events.
  */
 export function claudeSseToMessage(rawSSE, fallbackModel) {
-  const { events, error } = readSSEData(rawSSE);
+  const { events, error, malformed } = readSSEData(rawSSE);
   if (error) return { error };
   if (!events.some((event) => CLAUDE_EVENTS.has(event?.type))) return null;
+  // A dropped frame could be any content delta: never return a silently
+  // truncated body as a success.
+  if (malformed > 0) return { error: { message: "Upstream Claude stream had a malformed frame" } };
 
   const state = {
     fallbackModel,
     message: newMessage(fallbackModel),
     blocks: [],
     jsonBuffers: new Map(), // block index -> streamed input JSON text
+    stopped: false,
   };
   for (const event of events) applyEvent(state, event);
 
   const { message, blocks } = state;
-  // Every complete Claude stream ends with a stop_reason in message_delta.
   if (!message.stop_reason) {
-    return { error: { message: "Upstream Claude stream ended before stop_reason" } };
+    if (!state.stopped) {
+      return { error: { message: "Upstream Claude stream ended before stop_reason" } };
+    }
+    message.stop_reason = inferredStopReason(blocks);
   }
   for (const [index, json] of state.jsonBuffers) {
     if (json) blocks[index].input = toolInput(json, message.stop_reason);

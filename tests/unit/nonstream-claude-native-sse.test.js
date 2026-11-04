@@ -373,3 +373,175 @@ describe("YAN-1854: truncated tool arguments under max_tokens", () => {
     expect(json.content.at(-1)).toMatchObject({ type: "tool_use", input: { path: "c.md" } });
   });
 });
+
+describe("PR #1114 review: native Claude aggregation edge cases", () => {
+  const start = events("x")[0];
+  const text = (index, value) => ({
+    type: "content_block_delta",
+    index,
+    delta: { type: "text_delta", text: value },
+  });
+  const bothPaths = async (raw, extra = {}) => [
+    await handleForcedSSEToJson(forcedCtx(raw, FORMATS.CLAUDE, FORMATS.CLAUDE, extra)),
+    await handleNonStreamingResponse(nonStreamCtx(raw, FORMATS.CLAUDE, FORMATS.CLAUDE, extra)),
+  ];
+
+  it("a null usage field in message_delta keeps the message_start value", async () => {
+    vi.mocked(saveRequestUsageUnscoped).mockClear();
+    const raw = claudeSse([
+      start,
+      text(0, "Hi"),
+      {
+        type: "message_delta",
+        delta: { stop_reason: "end_turn" },
+        usage: { output_tokens: 9, cache_read_input_tokens: null },
+      },
+      { type: "message_stop" },
+    ]);
+    const result = await handleForcedSSEToJson(forcedCtx(raw, FORMATS.CLAUDE, FORMATS.CLAUDE));
+    const json = await result.response.json();
+    expect(json.usage.cache_read_input_tokens).toBe(100);
+    expect(vi.mocked(saveRequestUsageUnscoped).mock.calls[0][0].tokens).toMatchObject(
+      CANONICAL_USAGE,
+    );
+  });
+
+  it.each([
+    ["with a tool_use block", "lookup", "tool_use"],
+    ["without a tool_use block", null, "end_turn"],
+  ])("message_stop without stop_reason, %s → 200 (tool %s, %s)", async (_name, tool, expected) => {
+    const toolBlock = tool
+      ? [
+          {
+            type: "content_block_start",
+            index: 1,
+            content_block: { type: "tool_use", id: "toolu_1", name: tool, input: {} },
+          },
+          {
+            type: "content_block_delta",
+            index: 1,
+            delta: { type: "input_json_delta", partial_json: '{"q":"x"}' },
+          },
+        ]
+      : [];
+    const raw = claudeSse([
+      start,
+      text(0, "Hi"),
+      ...toolBlock,
+      { type: "message_delta", delta: {}, usage: { output_tokens: 9 } },
+      { type: "message_stop" },
+    ]);
+    for (const result of await bothPaths(raw)) {
+      expect(result.success).toBe(true);
+      expect((await result.response.json()).stop_reason).toBe(expected);
+    }
+  });
+
+  it("a text_delta without content_block_start still yields the text", async () => {
+    const raw = claudeSse([
+      start,
+      text(0, "Hel"),
+      { type: "content_block_delta", delta: { type: "text_delta", text: "lo" } },
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 2 } },
+      { type: "message_stop" },
+    ]);
+    for (const result of await bothPaths(raw)) {
+      expect((await result.response.json()).content).toEqual([{ type: "text", text: "Hello" }]);
+    }
+  });
+
+  it("model_context_window_exceeded is a cut-off: partial tool input, OpenAI length", async () => {
+    const raw = claudeSse([
+      start,
+      {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "tool_use", id: "toolu_1", name: "write_file", input: {} },
+      },
+      {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "input_json_delta", partial_json: '{"path":"c.md","content":"lo' },
+      },
+      {
+        type: "message_delta",
+        delta: { stop_reason: "model_context_window_exceeded" },
+        usage: { output_tokens: 9 },
+      },
+      { type: "message_stop" },
+    ]);
+    for (const result of await bothPaths(raw)) {
+      expect((await result.response.json()).content.at(-1).input).toEqual({ path: "c.md" });
+    }
+    const chat = await handleNonStreamingResponse(
+      nonStreamCtx(raw, FORMATS.OPENAI, FORMATS.CLAUDE),
+    );
+    expect((await chat.response.json()).choices[0].finish_reason).toBe("length");
+  });
+
+  it("OpenAI-chunk SSE under a Claude source + target → Claude message on both paths", async () => {
+    const chunk = (delta, finish = null) => ({
+      id: "chatcmpl-1",
+      object: "chat.completion.chunk",
+      model: "gpt-x",
+      choices: [{ index: 0, delta, finish_reason: finish }],
+    });
+    const raw = openaiSse([chunk({ role: "assistant", content: "Hi" }), chunk({}, "stop")]);
+    for (const result of await bothPaths(raw)) {
+      const json = await result.response.json();
+      expect(json.type).toBe("message");
+      expect(json.content).toEqual([{ type: "text", text: "Hi" }]);
+      expect(json.stop_reason).toBe("end_turn");
+    }
+  });
+
+  it("client usage keeps the cache_creation breakdown", async () => {
+    const cacheCreation = { ephemeral_5m_input_tokens: 20, ephemeral_1h_input_tokens: 0 };
+    const raw = claudeSse([
+      {
+        ...start,
+        message: { ...start.message, usage: { input_tokens: 7, cache_creation: cacheCreation } },
+      },
+      text(0, "Hi"),
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } },
+      { type: "message_stop" },
+    ]);
+    const result = await handleNonStreamingResponse(
+      nonStreamCtx(raw, FORMATS.CLAUDE, FORMATS.CLAUDE),
+    );
+    expect((await result.response.json()).usage.cache_creation).toEqual(cacheCreation);
+  });
+
+  it("a malformed data frame fails the native Claude stream on both paths", async () => {
+    const good = claudeSse([
+      start,
+      text(0, "Hi"),
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } },
+      { type: "message_stop" },
+    ]);
+    const raw = good.replace(
+      "event: message_delta",
+      'event: content_block_delta\ndata: {"type":"content_block_delta","ind\n\nevent: message_delta',
+    );
+    for (const result of await bothPaths(raw)) {
+      expect(result.success).toBe(false);
+      expect(result.response.status).toBe(502);
+    }
+  });
+
+  it("joins a multi-line data event before parsing", async () => {
+    const multiLine =
+      'event: content_block_delta\ndata: {"type":"content_block_delta",\ndata: "index":0,\n' +
+      'data: "delta":{"type":"text_delta","text":"lo"}}\n\n';
+    const raw =
+      claudeSse([start, text(0, "Hel")]) +
+      multiLine +
+      claudeSse([
+        { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 2 } },
+        { type: "message_stop" },
+      ]);
+    for (const result of await bothPaths(raw)) {
+      expect((await result.response.json()).content).toEqual([{ type: "text", text: "Hello" }]);
+    }
+  });
+});

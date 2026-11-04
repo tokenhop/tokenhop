@@ -20,12 +20,15 @@ export function parseJSONObject(text) {
 
 const LITERALS = ["true", "false", "null"];
 const NUMBER_CHAR = /[-+.eE0-9]/;
+const JSON_NUMBER = /^-?(0|[1-9]\d*)(\.\d+)?([eE][-+]?\d+)?$/;
 const WHITESPACE = /\s/;
 // Deeper nesting stops the scan; what finished above the cap is kept.
 const MAX_DEPTH = 256;
 
 // End index of the scalar (string / number / literal) starting at `i`, or -1
-// when it is cut off. A number reaching the end may be missing digits.
+// when it is cut off or malformed. A number reaching the end may be missing
+// digits; a run of number characters that is not a JSON number (`1-2`, `01`)
+// stops the scan like a cut.
 function scalarEnd(text, i) {
   const ch = text[i];
   if (ch === '"') {
@@ -36,7 +39,7 @@ function scalarEnd(text, i) {
   if (NUMBER_CHAR.test(ch)) {
     let j = i;
     while (j < text.length && NUMBER_CHAR.test(text[j])) j++;
-    return j < text.length ? j : -1;
+    return j < text.length && JSON_NUMBER.test(text.slice(i, j)) ? j : -1;
   }
   const literal = LITERALS.find((word) => text.startsWith(word, i));
   return literal ? i + literal.length : -1;

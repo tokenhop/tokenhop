@@ -19,6 +19,7 @@ import { fimContextFor } from "../../translator/concerns/fim.js";
 import { initState, translateResponse } from "../../translator/index.js";
 import {
   OPENAI_FINISH,
+  ROLE,
   RESPONSES_INCOMPLETE,
   RESPONSES_ITEM,
 } from "../../translator/schema/index.js";
@@ -177,7 +178,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel, { format, toolNa
   }
 
   const message = {
-    role: "assistant",
+    role: ROLE.ASSISTANT,
     content: contentParts.join("") || (toolCallMap.size > 0 ? null : ""),
   };
   if (reasoningParts.length > 0) message.reasoning_content = reasoningParts.join("");
@@ -372,7 +373,7 @@ export async function handleForcedSSEToJson({
       }));
       const hasToolCalls = toolCalls.length > 0;
 
-      const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
+      const message = { role: ROLE.ASSISTANT, content: textContent || (hasToolCalls ? null : "") };
       if (hasToolCalls) message.tool_calls = toolCalls;
       const refusal = refusalFromResponsesOutput(jsonResponse.output);
       if (refusal) message.refusal = refusal;
