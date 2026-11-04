@@ -27,6 +27,7 @@ import {
 import { audit } from "@/lib/users/audit.js";
 import { getClientIp } from "@/lib/auth/loginLimiter.js";
 import { readPasswordHeader } from "@/lib/users/snapshotUpload.js";
+import { getPrincipal } from "@/lib/users/session";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -186,17 +187,30 @@ export async function POST(request) {
       });
     }
 
+    // Audit actor of the import and of every budget it writes: the session
+    // principal when there is one (password/CLI-token auth has none).
+    let principal = null;
+    try {
+      principal = await getPrincipal();
+    } catch (err) {
+      if (err?.code === "API_KEY_STATE_INVALID") {
+        return NextResponse.json({ error: "Service unavailable" }, { status: 503 });
+      }
+    }
     const ip = getClientIp(request);
-    const { restartRequired, budgetWarnings } = await applyConfig(checked.doc, { ip });
+    const { restartRequired, budgetWarnings, budgetsWritten } = await applyConfig(checked.doc, {
+      principal,
+      ip,
+    });
     // YAN-367: audit the applied import (preview mode never writes → no event).
     await audit(
-      { ip },
+      { principal, ip },
       "config.import",
       { type: "config" },
       {
         after: {
           keyNames: Object.keys(checked.doc.settings ?? {}),
-          count: checked.doc.budgets.length,
+          count: budgetsWritten,
         },
       },
     );

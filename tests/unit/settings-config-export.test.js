@@ -567,3 +567,126 @@ describe("YAN-1834 budgets in config export/import", () => {
     expect(JSON.parse(audit.after)).toMatchObject({ limitRequests: 9 });
   });
 });
+
+// YAN-1834 review: switch on, the config document carries every
+// Default-workspace scope; targets map by id, membership via the user id.
+describe("YAN-1834 budgets in config export/import, switch on", () => {
+  const originalSwitch = process.env.TOKENHOP_MULTI_USER;
+  const T = "2026-01-01T00:00:00.000Z";
+  const DEF = "ws-cfg-default";
+  let db;
+  const entry = (scopeType, scopeId, limitRequests) => ({
+    scopeType,
+    scopeId,
+    window: "day",
+    limitUsd: null,
+    limitTokens: null,
+    limitRequests,
+    softLimitPct: null,
+  });
+  const exportDoc = async () => ({ ...(await (await exportConfig()).json()), settings: {} });
+  const budgetRows = () =>
+    db.all("SELECT workspaceId, scopeType, scopeId, limitRequests FROM budgets ORDER BY scopeType");
+
+  // Hashed key storage (key budgets need it with the switch on), a Default
+  // workspace with one member, a key and an active grant in it, plus a
+  // sibling workspace.
+  beforeAll(async () => {
+    vi.resetModules();
+    process.env.TOKENHOP_MULTI_USER = "on";
+    db = await (await import("@/lib/db/driver.js")).getAdapter();
+    for (const table of ["budgets", "connectionGrants", "memberships", "apiKeys", "workspaces"])
+      db.run(`DELETE FROM ${table}`);
+    db.exec(`DROP TABLE IF EXISTS apiKeys`);
+    db.exec(`CREATE TABLE apiKeys (
+      id TEXT PRIMARY KEY, workspaceId TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+      userId TEXT REFERENCES users(id) ON DELETE CASCADE,
+      createdByUserId TEXT REFERENCES users(id) ON DELETE SET NULL,
+      keyHash TEXT UNIQUE NOT NULL, hashKid TEXT NOT NULL, prefix TEXT NOT NULL, name TEXT,
+      machineId TEXT, legacy INTEGER NOT NULL DEFAULT 0, isActive INTEGER NOT NULL DEFAULT 1,
+      revokedAt TEXT, allowedModels TEXT NOT NULL DEFAULT '[]', allowedCombos TEXT NOT NULL DEFAULT '[]',
+      expiresAt TEXT, lastUsedAt TEXT, createdAt TEXT NOT NULL)`);
+    db.run(
+      `INSERT OR REPLACE INTO _meta(key, value) VALUES ('apiKeysHashedVersion', '1'), ('apiKeysHashKid', '0123456789abcdef'), ('defaultWorkspaceId', ?)`,
+      [DEF],
+    );
+    db.run(
+      `INSERT OR IGNORE INTO users(id, instanceRole, status, sessionVersion, createdAt, updatedAt) VALUES('cfg-user', 'user', 'active', 1, ?, ?)`,
+      [T, T],
+    );
+    for (const ws of [DEF, "ws-cfg-side"])
+      db.run(
+        `INSERT INTO workspaces(id, name, kind, createdBy, createdAt, updatedAt) VALUES(?, ?, 'shared', NULL, ?, ?)`,
+        [ws, ws, T, T],
+      );
+    db.run(
+      `INSERT INTO memberships(workspaceId, userId, role, source, createdAt) VALUES(?, 'cfg-user', 'member', 'manual', ?)`,
+      [DEF, T],
+    );
+    db.run(
+      `INSERT INTO apiKeys(id, workspaceId, keyHash, hashKid, prefix, createdAt) VALUES('cfg-hk', ?, 'h1', '0123456789abcdef', 'th_x', ?)`,
+      [DEF, T],
+    );
+    db.run(
+      `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, priority, isActive, data, createdAt, updatedAt, workspaceId)
+       VALUES('cfg-conn', 'openai', 'api_key', 'cfg', 1, 1, '{}', ?, ?, ?)`,
+      [T, T, DEF],
+    );
+    db.run(
+      `INSERT INTO connectionGrants(id, connectionId, workspaceId, createdAt) VALUES('cfg-grant', 'cfg-conn', 'ws-cfg-side', ?)`,
+      [Date.parse(T)],
+    );
+  });
+
+  afterAll(() => {
+    vi.resetModules();
+    if (originalSwitch === undefined) delete process.env.TOKENHOP_MULTI_USER;
+    else process.env.TOKENHOP_MULTI_USER = originalSwitch;
+  });
+
+  it("round-trips a membership budget as <Default>:<user> and maps an existing grant", async () => {
+    db.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitRequests, createdAt) VALUES('cfg-m', ?, 'membership', ?, 'day', 3, ?)`,
+      [DEF, `${DEF}:cfg-user`, T],
+    );
+    const doc = await exportDoc();
+    expect(doc.budgets).toEqual([entry("membership", "cfg-user", 3)]);
+    db.run("DELETE FROM budgets");
+    doc.budgets.push(entry("grant", "cfg-grant", 4), entry("grant", "gone-grant", 4));
+    const applied = await (await importConfig(doc, { mode: "apply" })).json();
+    expect(applied.warnings).toContain(
+      "Budget grant:gone-grant:day skipped: target not found on this instance",
+    );
+    expect(budgetRows()).toEqual([
+      { workspaceId: DEF, scopeType: "grant", scopeId: "cfg-grant", limitRequests: 4 },
+      { workspaceId: DEF, scopeType: "membership", scopeId: `${DEF}:cfg-user`, limitRequests: 3 },
+    ]);
+  });
+
+  it("skips a key budget filed in another workspace and a user budget; the rest still commits", async () => {
+    db.run("DELETE FROM budgets");
+    db.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitRequests, createdAt) VALUES('cfg-side', 'ws-cfg-side', 'key', 'cfg-hk', 'day', 9, ?)`,
+      [T],
+    );
+    const doc = await exportDoc();
+    doc.settings = { stickyRoundRobinLimit: 6 };
+    doc.combos = [{ name: "yan1834-on", models: [] }];
+    doc.budgets = [entry("key", "cfg-hk", 1), entry("user", "cfg-user", 1)];
+    const res = await importConfig(doc, { mode: "apply" });
+    expect(res.status).toBe(200);
+    expect((await res.json()).warnings).toEqual(
+      expect.arrayContaining([
+        "Budget key:cfg-hk:day skipped: budget exists in another workspace",
+        "Budget user:cfg-user:day skipped: user budgets are not part of config files",
+      ]),
+    );
+    expect(budgetRows()).toEqual([
+      { workspaceId: "ws-cfg-side", scopeType: "key", scopeId: "cfg-hk", limitRequests: 9 },
+    ]);
+    expect((await readStored()).stickyRoundRobinLimit).toBe(6);
+    expect(db.get("SELECT workspaceId FROM combos WHERE name = 'yan1834-on'")).toEqual({
+      workspaceId: DEF,
+    });
+  });
+});

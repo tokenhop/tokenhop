@@ -421,132 +421,121 @@ const SKIP_REASONS = {
   NOT_FOUND: "target not found on this instance",
   SCOPE_UNAVAILABLE: "needs Users & teams",
 };
+// Off with no budget workspace yet: plan against this placeholder; the write
+// creates the pending Default only when something will be written.
+const PENDING_WS = "\u0000pending-default";
+
+function portableRow(entry, target) {
+  const { scopeType } = entry;
+  let scopeId = entry.scopeId;
+  if (scopeType === "workspace") scopeId = target;
+  else if (scopeType === "membership") scopeId = membershipScopeId(target, entry.scopeId);
+  return { workspaceId: target, scopeType, scopeId, window: entry.window, ...limitsOf(entry) };
+}
+
+/** Why one entry can't map onto `target` (API rules), else null. */
+function portableSkipReason(db, row, target, { off, ceilings }) {
+  if (row.scopeType === "user") return "user budgets are not part of config files";
+  try {
+    if (off) requireOffScope(row);
+    resolveBudgetScopeUnscoped(db, row, { workspaceId: target, off });
+  } catch (err) {
+    if (!(err instanceof TenancyError)) throw err;
+    return SKIP_REASONS[err.code] ?? err.message;
+  }
+  const existing = db.get(
+    `SELECT ${COLS} FROM budgets WHERE scopeType = ? AND scopeId = ? AND window = ?`,
+    [row.scopeType, row.scopeId, row.window],
+  );
+  if (existing && existing.workspaceId !== target) return "budget exists in another workspace";
+  return budgetCeilingErrorUnscoped(db, row, target, ceilings.get(row.window));
+}
 
 /**
- * Map portable definitions (already value-checked with budgetDefinitionError)
- * onto this instance with the budget API's rules, inside the caller's
- * transaction. Adds and updates only. Unmappable entries are skipped with a
- * reason, never attached elsewhere. `write: false` is a preview: nothing is
- * written and a missing pending Default is not created.
- * @returns {{ entries: Array<{key, status, from, to}>, skipped: Array<{key, scopeType, scopeId, window, reason}>, written: number }}
+ * Plan how portable definitions (already value-checked with
+ * budgetDefinitionError) map onto this instance with the budget API's rules.
+ * Read-only. Unmappable entries are skipped with a reason, never attached
+ * elsewhere.
+ * @returns {{ ws: string|null, plan: Array<{row, existing, status}>, entries: Array<{key, status, from, to}>, skipped: Array<{key, scopeType, scopeId, window, reason}> }}
  */
-export function applyPortableBudgetsUnscoped(db, entries, { write = false, actor = null } = {}) {
+export function planPortableBudgetsUnscoped(db, entries) {
   const off = !isMultiUserEnabledSync(db);
-  let ws = off ? offBudgetWorkspaceIdUnscoped(db) : defaultWorkspaceIdUnscoped(db);
-  // Off with no budget workspace yet: plan against a placeholder, then
-  // create the pending Default only when something will be written.
-  const PENDING = "\u0000pending-default";
-  const target = ws ?? PENDING;
-  const out = { entries: [], skipped: [], written: 0 };
-  const skip = (entry, reason) =>
-    out.skipped.push({
-      key: portableKey(entry),
-      scopeType: entry.scopeType,
-      scopeId: entry.scopeId ?? null,
-      window: entry.window,
-      reason,
-    });
+  const ws = off ? offBudgetWorkspaceIdUnscoped(db) : defaultWorkspaceIdUnscoped(db);
+  const target = ws ?? PENDING_WS;
+  const out = { ws, plan: [], entries: [], skipped: [] };
+  const ceilings = new Map(); // window → planned workspace budget
   // Workspace entries first, so key entries meet the imported ceiling.
   const ordered = [...(entries ?? [])].sort(
     (a, b) => (a.scopeType !== "workspace") - (b.scopeType !== "workspace"),
   );
-  const ceilings = new Map(); // window → planned workspace budget
-  const plan = [];
   for (const entry of ordered) {
-    if (!off && !ws) {
-      skip(entry, "no Default workspace");
+    const key = portableKey(entry);
+    const row = portableRow(entry, target);
+    const reason =
+      !off && !ws ? "no Default workspace" : portableSkipReason(db, row, target, { off, ceilings });
+    if (reason) {
+      const { scopeType, window } = entry;
+      out.skipped.push({ key, scopeType, scopeId: entry.scopeId ?? null, window, reason });
       continue;
     }
-    if (entry.scopeType === "user") {
-      skip(entry, "user budgets are not part of config files");
-      continue;
-    }
-    const row = {
-      workspaceId: target,
-      scopeType: entry.scopeType,
-      scopeId:
-        entry.scopeType === "workspace"
-          ? target
-          : entry.scopeType === "membership"
-            ? membershipScopeId(target, entry.scopeId)
-            : entry.scopeId,
-      window: entry.window,
-      ...limitsOf(entry),
-    };
-    try {
-      if (off) requireOffScope(row);
-      resolveBudgetScopeUnscoped(db, row, { workspaceId: target, off });
-    } catch (err) {
-      if (!(err instanceof TenancyError)) throw err;
-      skip(entry, SKIP_REASONS[err.code] ?? err.message);
-      continue;
-    }
+    if (row.scopeType === "workspace") ceilings.set(row.window, row);
     const existing = db.get(
       `SELECT ${COLS} FROM budgets WHERE scopeType = ? AND scopeId = ? AND window = ?`,
       [row.scopeType, row.scopeId, row.window],
     );
-    if (existing && existing.workspaceId !== target) {
-      skip(entry, "budget exists in another workspace");
-      continue;
-    }
-    const ceilingError = budgetCeilingErrorUnscoped(db, row, target, ceilings.get(row.window));
-    if (ceilingError) {
-      skip(entry, ceilingError);
-      continue;
-    }
-    if (row.scopeType === "workspace") ceilings.set(row.window, row);
     const status = !existing ? "added" : sameLimits(existing, row) ? "unchanged" : "changed";
-    plan.push({ entry, row, existing, status });
-    out.entries.push({
-      key: portableKey(entry),
-      status,
-      from: existing ? portableDefinition(existing, target) : null,
-      to: portableDefinition(row, target),
-    });
+    out.plan.push({ row, existing, status });
+    const from = existing ? portableDefinition(existing, target) : null;
+    out.entries.push({ key, status, from, to: portableDefinition(row, target) });
   }
-  if (!write) return out;
+  return out;
+}
 
+/**
+ * Write a plan from planPortableBudgetsUnscoped inside the caller's
+ * transaction (adds and updates only), auditing every row with the import's
+ * actor ({ principal, ip }). Creates the pending Default on first write.
+ * @returns {number} Rows written.
+ */
+export function writePortableBudgetsUnscoped(db, planned, { actor = null } = {}) {
+  let ws = planned.ws;
+  let written = 0;
   const now = new Date().toISOString();
-  for (const { row, existing, status } of plan) {
+  const audit = (action, id, change) =>
+    auditSync(
+      db,
+      { principal: actor?.principal ?? null, ip: actor?.ip ?? null, workspaceId: ws },
+      action,
+      { type: "budget", id },
+      change,
+    );
+  for (const { row, existing, status } of planned.plan) {
     if (status === "unchanged") continue;
-    if (!ws) ws = ensurePendingDefaultWorkspaceUnscoped(db);
-    const fix = (value) => (typeof value === "string" ? value.replace(PENDING, ws) : value);
+    ws ??= ensurePendingDefaultWorkspaceUnscoped(db);
     if (existing) {
       const after = { ...existing, ...limitsOf(row), resetAt: resetAtIso(existing.window) };
       db.run(
         "UPDATE budgets SET limitUsd = ?, limitTokens = ?, limitRequests = ?, softLimitPct = ?, resetAt = ? WHERE id = ?",
         [...MUTABLE.map((field) => after[field]), after.resetAt, existing.id],
       );
-      auditSync(
-        db,
-        { ip: actor?.ip ?? null, workspaceId: ws },
-        "budget.update",
-        { type: "budget", id: existing.id },
-        { before: existing, after },
-      );
+      audit("budget.update", existing.id, { before: existing, after });
     } else {
       const created = {
         ...row,
         id: uuidv4(),
         workspaceId: ws,
-        scopeId: fix(row.scopeId),
+        scopeId: row.scopeId.replace(PENDING_WS, ws),
         resetAt: resetAtIso(row.window),
-        createdByUserId: null,
+        createdByUserId: null, // the audit row names the importing actor
         createdAt: now,
       };
       db.run(
         `INSERT INTO budgets(${COLS}) VALUES(${Array(12).fill("?").join(", ")})`,
         COLS.split(", ").map((field) => created[field]),
       );
-      auditSync(
-        db,
-        { ip: actor?.ip ?? null, workspaceId: ws },
-        "budget.create",
-        { type: "budget", id: created.id },
-        { after: created },
-      );
+      audit("budget.create", created.id, { after: created });
     }
-    out.written += 1;
+    written += 1;
   }
-  return out;
+  return written;
 }

@@ -13,8 +13,9 @@ import { WORKSPACE_KEYS, mergeWorkspaceLayer, pickKeys } from "@/lib/settings/se
 import { getPortableCombosUnscoped } from "./repos/combosRepo.js";
 import { getUserPricing, invalidatePricingCache } from "./repos/pricingRepo.js";
 import {
-  applyPortableBudgetsUnscoped,
   exportPortableBudgetsUnscoped,
+  planPortableBudgetsUnscoped,
+  writePortableBudgetsUnscoped,
 } from "./repos/budgetsRepo.js";
 import { budgetDefinitionError, bumpBudgetsGeneration } from "@/lib/users/budgets.js";
 import {
@@ -101,10 +102,9 @@ const budgetWarning = (s) => `Budget ${s.key} skipped: ${s.reason}`;
  */
 export async function configDiff(doc) {
   const diff = diffConfig(doc, await getConfigState());
-  const db = await getAdapter();
-  const planned = db.transaction(() =>
-    applyPortableBudgetsUnscoped(db, doc.budgets ?? [], { write: false }),
-  );
+  // Read-only: no transaction (a no-op transaction still schedules a save on
+  // the sql.js driver).
+  const planned = planPortableBudgetsUnscoped(await getAdapter(), doc.budgets ?? []);
   diff.budgets = summarize(planned.entries);
   return { diff, budgetWarnings: planned.skipped.map(budgetWarning) };
 }
@@ -130,10 +130,10 @@ export async function getConfigState() {
  * merged. Any write failure rolls back the settings, combo, pricing and
  * budget changes together.
  * @param {{settings: object, combos: Array, pricingOverrides: object, budgets?: Array}} doc
- * @param {{ ip?: string|null }} [opts] Audit context of the budget writes.
- * @returns {{ diff: object, restartRequired: boolean, budgetWarnings: string[] }}
+ * @param {{ principal?: object|null, ip?: string|null }} [actor] Audit actor of the budget writes.
+ * @returns {{ diff: object, restartRequired: boolean, budgetWarnings: string[], budgetsWritten: number }}
  */
-export async function applyConfig(doc, { ip = null } = {}) {
+export async function applyConfig(doc, { principal = null, ip = null } = {}) {
   const db = await getAdapter();
   let result;
   db.transaction(() => {
@@ -219,16 +219,16 @@ export async function applyConfig(doc, { ip = null } = {}) {
 
     // YAN-1834: budgets last, mapped with the budget API's rules; the
     // in-transaction result is authoritative (preview is advisory).
-    const budgets = applyPortableBudgetsUnscoped(db, doc.budgets ?? [], {
-      write: true,
-      actor: { ip },
+    const planned = planPortableBudgetsUnscoped(db, doc.budgets ?? []);
+    const budgetsWritten = writePortableBudgetsUnscoped(db, planned, {
+      actor: { principal, ip },
     });
 
     result = {
       diff,
       restartRequired: diff.restartRequired,
-      budgetWarnings: budgets.skipped.map(budgetWarning),
-      budgetsWritten: budgets.written,
+      budgetWarnings: planned.skipped.map(budgetWarning),
+      budgetsWritten,
     };
   });
   invalidatePricingCache();

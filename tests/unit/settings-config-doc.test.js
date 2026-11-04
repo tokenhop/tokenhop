@@ -268,20 +268,17 @@ describe("config doc budgets section", () => {
     softLimitPct: 80,
   };
 
-  it("emits budget definitions with exactly the portable keys", () => {
-    const doc = buildConfigDocument({ ...LIVE, budgets: [BUDGET], version: "t" });
+  it("projects stored budget rows onto the portable keys only", () => {
+    const row = {
+      ...BUDGET,
+      id: "budget-1",
+      workspaceId: "ws-1",
+      createdByUserId: "user-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      resetAt: "2026-01-02T00:00:00.000Z",
+    };
+    const doc = buildConfigDocument({ ...LIVE, budgets: [row], version: "t" });
     expect(doc.budgets).toEqual([BUDGET]);
-    expect(Object.keys(doc.budgets[0]).sort()).toEqual(
-      [
-        "limitRequests",
-        "limitTokens",
-        "limitUsd",
-        "scopeId",
-        "scopeType",
-        "softLimitPct",
-        "window",
-      ].sort(),
-    );
   });
 
   it("an older document without budgets validates to an empty list", () => {
@@ -290,8 +287,13 @@ describe("config doc budgets section", () => {
     expect(checked.doc.budgets).toEqual([]);
   });
 
-  it("rejects a non-array, a non-object entry and a duplicate scope + window", () => {
-    for (const budgets of [{}, ["x"], [BUDGET, { ...BUDGET, limitUsd: 1 }]]) {
+  it("rejects a non-array, a non-object entry, an unknown field and a duplicate scope + window", () => {
+    for (const budgets of [
+      {},
+      ["x"],
+      [BUDGET, { ...BUDGET, limitUsd: 1 }],
+      [{ ...BUDGET, id: "smuggled" }],
+    ]) {
       const checked = validateConfigDocument({ schemaVersion: 1, settings: {}, budgets }, KNOWN);
       expect(checked.valid).toBe(false);
     }

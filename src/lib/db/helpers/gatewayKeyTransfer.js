@@ -1480,9 +1480,9 @@ export function insertLegacyKeysHashedSync(db, payload, plan) {
  * destructive instance restore: users/identities/workspaces/memberships and
  * hashed keys replace the live rows; the durable marker is kept (root
  * equality was proven in preflight). Throws on any FK violation so the whole
- * transaction rolls back.
+ * transaction rolls back. `actor` ({ principal, ip }) audits removed orphans.
  */
-export function applyGatewayKeySnapshot(db, payload, plan) {
+export function applyGatewayKeySnapshot(db, payload, plan, { actor = null } = {}) {
   // Preserve local-only settings inside the transaction, after any portable
   // decryption and BEFORE the destructive replace. Imported values must not
   // change the local switch or a running child's MITM verifier.
@@ -1781,9 +1781,9 @@ export function applyGatewayKeySnapshot(db, payload, plan) {
     }
   }
   // YAN-1913: an older snapshot without a budgets section retains the live
-  // budgets; drop key/grant budgets whose key or grant the restore replaced.
-  // Idempotent: a snapshot that carried its budgets has no orphans.
-  pruneOrphanedScopeBudgetsUnscoped(db);
+  // budgets; drop key/grant/membership/user budgets whose target the restore
+  // replaced. Idempotent: a snapshot that carried its budgets has no orphans.
+  pruneOrphanedScopeBudgetsUnscoped(db, { actor });
   if (db.all(`PRAGMA foreign_key_check`).length) {
     fail("TRANSFER_APPLY_INVALID", "Foreign key violations after snapshot apply");
   }

@@ -831,6 +831,36 @@ describe("instance full-table sections (plain hashed v2)", () => {
     ).toEqual([{ targetId: "budget-extra" }]);
   });
 
+  // YAN-1913: membership and user budgets whose membership or user the
+  // restore replaced are pruned too, each audited with its reason.
+  it("prunes retained membership and user budgets whose target the restore replaced", async () => {
+    const snapshot = await dbApi.exportDb();
+    delete snapshot.budgets;
+    for (const [id, workspaceId, scopeType, scopeId] of [
+      ["budget-member-gone", WS, "membership", `${WS}:ghost`],
+      ["budget-member-kept", WS, "membership", `${WS}:member1`],
+      ["budget-user-gone", null, "user", "ghost"],
+    ]) {
+      db.run(
+        `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, createdAt)
+         VALUES(?, ?, ?, ?, 'week', 1, ?)`,
+        [id, workspaceId, scopeType, scopeId, NOW],
+      );
+    }
+    await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    expect(dump("SELECT id FROM budgets WHERE window = 'week'")).toEqual([
+      { id: "budget-member-kept" },
+    ]);
+    expect(
+      dump(
+        `SELECT targetId, after FROM auditEvents WHERE action = 'budget.delete' ORDER BY targetId`,
+      ).map((r) => [r.targetId, JSON.parse(r.after).reason]),
+    ).toEqual([
+      ["budget-member-gone", "membership_removed_by_import"],
+      ["budget-user-gone", "user_removed_by_import"],
+    ]);
+  });
+
   it("wrong master fails preflight on a full snapshot with zero mutation", async () => {
     const snapshot = await dbApi.exportDb();
     const before = fullDump();

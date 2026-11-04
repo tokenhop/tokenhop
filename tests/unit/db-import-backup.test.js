@@ -467,6 +467,24 @@ describe("legacy import prunes orphaned key budgets", () => {
     expect(JSON.parse(audit.before)).toMatchObject({ scopeType: "key", scopeId: "legacy-live" });
   });
 
+  it("removes a grant budget whose grant the connection wipe cascaded away", async () => {
+    db.run(
+      `INSERT INTO connectionGrants(id, connectionId, workspaceId, createdAt) VALUES('grant-live', 'conn-live', ?, ?)`,
+      [ws, Date.parse(NOW)],
+    );
+    db.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitRequests, createdAt) VALUES('b-grant', ?, 'grant', 'grant-live', 'day', 5, ?)`,
+      [ws, NOW],
+    );
+    await dbApi.importDb(legacyPayload());
+    expect(one(`SELECT COUNT(*) AS c FROM connectionGrants`).c).toBe(0);
+    expect(one(`SELECT COUNT(*) AS c FROM budgets WHERE id = 'b-grant'`).c).toBe(0);
+    const audit = one(
+      `SELECT after FROM auditEvents WHERE action = 'budget.delete' AND targetId = 'b-grant'`,
+    );
+    expect(JSON.parse(audit.after)).toEqual({ reason: "grant_removed_by_import" });
+  });
+
   it("rolls the prune back with the import when a later write fails", async () => {
     const realRun = db.run.bind(db);
     db.run = (sql, params) => {
